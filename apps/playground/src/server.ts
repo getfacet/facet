@@ -10,7 +10,7 @@
 import type { FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { createFacetServer } from "@facet/server";
-import { FileSink, FileStageStore } from "@facet/runtime";
+import { FileSink, FileStageStore } from "@facet/runtime/node";
 import { page, text } from "@facet/kit";
 import { generatePage } from "./generator.js";
 

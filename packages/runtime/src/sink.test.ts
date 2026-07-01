@@ -2,14 +2,8 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  FileSink,
-  ForwardSink,
-  MemorySink,
-  NullSink,
-  type Sink,
-  type StoredEvent,
-} from "./sink.js";
+import { ForwardSink, MemorySink, NullSink, type Sink, type StoredEvent } from "./sink.js";
+import { FileSink } from "./file-sink.js";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "facet-sink-"));

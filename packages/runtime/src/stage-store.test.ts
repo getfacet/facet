@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { FacetTree } from "@facet/core";
-import { FileStageStore, MemoryStageStore, type StageStore } from "./stage-store.js";
+import { MemoryStageStore, type StageStore } from "./stage-store.js";
+import { FileStageStore } from "./file-stage-store.js";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "facet-stage-"));

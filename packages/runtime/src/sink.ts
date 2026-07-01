@@ -1,5 +1,3 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { ClientEvent, ServerMessage } from "@facet/core";
 import { sessionKey } from "./stage-store.js";
 
@@ -21,7 +19,8 @@ export interface StoredEvent {
  * - `ForwardSink` — hand each interaction to your system; Facet keeps nothing.
  * - `NullSink` — drop it.
  *
- * Methods are async so a backend can be a database.
+ * Methods are async so a backend can be a database. This module is browser-safe;
+ * the file backend (`FileSink`) lives in its own module.
  */
 export interface Sink {
   /** Called once per handled interaction. */
@@ -51,31 +50,6 @@ export class MemorySink implements Sink {
 
   async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
     return this.log.get(sessionKey(agentId, visitorId)) ?? [];
-  }
-}
-
-/** Durable, dependency-free: appends the conversation to disk as JSONL (replayable). */
-export class FileSink implements Sink {
-  constructor(private readonly dir: string) {
-    mkdirSync(dir, { recursive: true });
-  }
-
-  private fileFor(agentId: string, visitorId: string): string {
-    const name = Buffer.from(sessionKey(agentId, visitorId)).toString("base64url");
-    return join(this.dir, `${name}.jsonl`);
-  }
-
-  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
-    appendFileSync(this.fileFor(agentId, visitorId), `${JSON.stringify(entry)}\n`);
-  }
-
-  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
-    const file = this.fileFor(agentId, visitorId);
-    if (!existsSync(file)) return [];
-    return readFileSync(file, "utf8")
-      .split("\n")
-      .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as StoredEvent);
   }
 }
 
