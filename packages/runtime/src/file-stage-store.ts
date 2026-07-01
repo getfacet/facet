@@ -48,6 +48,7 @@ export class FileStageStore implements StageStore {
 
   async save(session: FacetSession): Promise<void> {
     this.cache.set(sessionKey(session.agentId, session.visitor.visitorId), session);
+    mkdirSync(this.dir, { recursive: true }); // resilient if the dir was removed at runtime
     writeFileSync(
       this.fileFor(session.agentId, session.visitor.visitorId),
       JSON.stringify(session),

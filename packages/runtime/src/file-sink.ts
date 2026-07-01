@@ -19,6 +19,7 @@ export class FileSink implements Sink {
   }
 
   async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    mkdirSync(this.dir, { recursive: true }); // resilient if the dir was removed at runtime
     appendFileSync(this.fileFor(agentId, visitorId), `${JSON.stringify(entry)}\n`);
   }
 
