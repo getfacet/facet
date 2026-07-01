@@ -27,14 +27,35 @@ Style values MUST be tokens (never pixels or hex):
 
 Compose freely from these four bricks. Output JSON only.`;
 
+/**
+ * Extracts the FIRST complete, balanced JSON object from the model output —
+ * tolerant of prose or extra content before/after (models sometimes append a
+ * sentence). Brace-counts while respecting string literals and escapes, so a `}`
+ * inside a string doesn't end it early.
+ */
 function extractJson(text: string): unknown {
   const fenced = text.replace(/```(?:json)?/gi, "");
   const start = fenced.indexOf("{");
-  const end = fenced.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) {
-    throw new Error("no JSON object found in model output");
+  if (start === -1) throw new Error("no JSON object found in model output");
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < fenced.length; i += 1) {
+    const ch = fenced[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === '"') inString = false;
+    } else if (ch === '"') {
+      inString = true;
+    } else if (ch === "{") {
+      depth += 1;
+    } else if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) return JSON.parse(fenced.slice(start, i + 1));
+    }
   }
-  return JSON.parse(fenced.slice(start, end + 1));
+  throw new Error("no complete JSON object found in model output");
 }
 
 function callClaude(prompt: string): Promise<string> {
