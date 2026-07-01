@@ -9,7 +9,6 @@
  */
 import type { FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
-import { FacetRuntime } from "@facet/runtime";
 import { createFacetServer } from "@facet/server";
 import { generatePage } from "./generator.js";
 
@@ -60,9 +59,12 @@ const agent = defineAgent(async ({ event, stage }) => {
   }
 });
 
-const runtime = new FacetRuntime({ agentId: "live", agent });
-void createFacetServer({ runtime, port: PORT })
+// This agent is the IN-PROCESS FALLBACK. If an external agent connects at
+// /agent/stream (see `pnpm --filter @facet/playground agent`), it takes over.
+void createFacetServer({ port: PORT, agentId: "live", agent })
   .listen()
   .then(() => {
-    console.log(`Facet live server → http://localhost:${String(PORT)}  (agent: ${useLlm ? "LLM" : "echo"})`);
+    console.log(
+      `Facet live server → http://localhost:${String(PORT)}  (fallback agent: ${useLlm ? "LLM" : "echo"})`,
+    );
   });

@@ -9,6 +9,7 @@
     "demo": "tsx src/demo.ts",
     "gen": "tsx src/gen.ts",
     "serve": "tsx src/server.ts",
+    "agent": "tsx src/agent-client.ts",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
