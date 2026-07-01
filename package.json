@@ -1,0 +1,21 @@
+{
+  "name": "facet",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Living pages for agents — one link, a different face for every visitor.",
+  "license": "MIT",
+  "type": "module",
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "typecheck": "pnpm -r --if-present typecheck",
+    "demo": "pnpm --filter @facet/playground demo"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@facet/playground",
+  "version": "0.0.0",
+  "private": true,
+  "description": "In-process Facet demo: two visitors hit one agent link and see different, live-mutating stages.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "demo": "tsx src/demo.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@facet/agent": "workspace:*",
+    "@facet/core": "workspace:*",
+    "@facet/runtime": "workspace:*"
+  }
+}

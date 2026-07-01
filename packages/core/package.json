@@ -1,0 +1,15 @@
+{
+  "name": "@facet/core",
+  "version": "0.0.0",
+  "description": "Core types and protocol for Facet — declarative stage spec, patches, and session/event contracts.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}
