@@ -1,6 +1,8 @@
-# Facet
+<h1 align="center">Facet</h1>
 
-**Interfaces your model draws.** The UI layer for LLMs and agents.
+<p align="center">
+  <strong>The UI layer for LLMs and agents — interfaces your model draws.</strong>
+</p>
 
 Facet is a TypeScript framework for UI a language model renders itself — safe,
 live, and different for every user. You give the model a small set of safe visual
