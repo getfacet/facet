@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { FacetAction, VisitorContext } from "@facet/core";
-import { ChatDock, StageRenderer, useFacet } from "@facet/react";
+import { browserVisitorId, ChatDock, StageRenderer, useFacet } from "@facet/react";
 import { SseTransport } from "./sse-transport.js";
 
 const SERVER = "http://localhost:5291";
-const VISITOR: VisitorContext = { visitorId: "live-you", locale: "en-US" };
+// A stable anonymous id for this browser (persisted in localStorage), so a
+// refresh or a return visit re-hydrates the same page.
+const VISITOR: VisitorContext = { visitorId: browserVisitorId(), locale: "en-US" };
 
 type LogLine = { readonly who: "You" | "Nova"; readonly text: string };
 

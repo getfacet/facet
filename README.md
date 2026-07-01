@@ -118,6 +118,13 @@ Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
 *conversation* is a `Sink` you choose: store it for replay, forward it to your
 own system (e.g. a chat platform that already keeps it), or drop it.
 
+**Each viewer is a `visitorId`, and you decide where it comes from.** For an
+anonymous page, `browserVisitorId()` stores an unguessable id in the browser so a
+refresh or return visit re-hydrates the same page. When your app already knows
+who the visitor is — a logged-in user, an actor id — pass *that* id instead;
+Facet keys sessions by whatever id you give it (bring-your-own-identity, same as
+the stores).
+
 Two engineering choices keep "constantly re-rendering" cheap and correct:
 
 - **Stage changes travel as [RFC 6902 JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902)**
