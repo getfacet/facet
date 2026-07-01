@@ -11,16 +11,16 @@ function tempDir(): string {
 
 function contract(name: string, make: () => StageStore): void {
   describe(name, () => {
-    it("opens a session with an empty stage", () => {
+    it("opens a session with an empty stage", async () => {
       const store = make();
-      const session = store.open("a", { visitorId: "v" });
+      const session = await store.open("a", { visitorId: "v" });
       expect(session.stage.root).toBe("root");
-      expect(store.get("a", "v")).toBeDefined();
+      expect(await store.get("a", "v")).toBeDefined();
     });
 
-    it("saves an updated stage", () => {
+    it("saves an updated stage", async () => {
       const store = make();
-      const session = store.open("a", { visitorId: "v" });
+      const session = await store.open("a", { visitorId: "v" });
       const stage: FacetTree = {
         root: "root",
         nodes: {
@@ -28,14 +28,14 @@ function contract(name: string, make: () => StageStore): void {
           t: { id: "t", type: "text", value: "hi" },
         },
       };
-      store.save({ ...session, stage });
-      expect(store.get("a", "v")?.stage.nodes["t"]).toMatchObject({ value: "hi" });
+      await store.save({ ...session, stage });
+      expect((await store.get("a", "v"))?.stage.nodes["t"]).toMatchObject({ value: "hi" });
     });
 
-    it("isolates by (agent, visitor)", () => {
+    it("isolates by (agent, visitor)", async () => {
       const store = make();
-      store.open("a", { visitorId: "v1" });
-      expect(store.get("a", "v2")).toBeUndefined();
+      await store.open("a", { visitorId: "v1" });
+      expect(await store.get("a", "v2")).toBeUndefined();
     });
   });
 }
@@ -44,10 +44,10 @@ contract("MemoryStageStore", () => new MemoryStageStore());
 contract("FileStageStore", () => new FileStageStore(tempDir()));
 
 describe("FileStageStore durability", () => {
-  it("restores the stage after a fresh instance (simulated restart)", () => {
+  it("restores the stage after a fresh instance (simulated restart)", async () => {
     const dir = tempDir();
     const first = new FileStageStore(dir);
-    const session = first.open("agent", { visitorId: "v" });
+    const session = await first.open("agent", { visitorId: "v" });
     const stage: FacetTree = {
       root: "root",
       nodes: {
@@ -55,9 +55,9 @@ describe("FileStageStore durability", () => {
         t: { id: "t", type: "text", value: "kept" },
       },
     };
-    first.save({ ...session, stage });
+    await first.save({ ...session, stage });
 
     const restarted = new FileStageStore(dir);
-    expect(restarted.get("agent", "v")?.stage.nodes["t"]).toMatchObject({ value: "kept" });
+    expect((await restarted.get("agent", "v"))?.stage.nodes["t"]).toMatchObject({ value: "kept" });
   });
 });

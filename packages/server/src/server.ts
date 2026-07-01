@@ -207,15 +207,17 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       }
       set.add(res);
       // Re-hydrate a (re)connecting viewer: the current page, then past chat.
-      const stage = runtime.stageFor(visitorId);
-      if (stage !== undefined) {
-        sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] });
-      }
-      for (const entry of runtime.historyFor(visitorId)) {
-        for (const message of entry.messages) {
-          if (message.kind === "say") sse(res, message);
+      void (async () => {
+        const stage = await runtime.stageFor(visitorId);
+        if (stage !== undefined) {
+          sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] });
         }
-      }
+        for (const entry of await runtime.historyFor(visitorId)) {
+          for (const message of entry.messages) {
+            if (message.kind === "say") sse(res, message);
+          }
+        }
+      })().catch((error: unknown) => console.error("[facet] rehydrate failed:", error));
       req.on("close", () => set?.delete(res));
       return;
     }

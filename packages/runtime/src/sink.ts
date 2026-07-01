@@ -20,18 +20,20 @@ export interface StoredEvent {
  * - `MemorySink` / `FileSink` — Facet stores it (replayable on reconnect).
  * - `ForwardSink` — hand each interaction to your system; Facet keeps nothing.
  * - `NullSink` — drop it.
+ *
+ * Methods are async so a backend can be a database.
  */
 export interface Sink {
-  /** Called once per handled interaction. May be async (e.g. an HTTP forward). */
-  record(agentId: string, visitorId: string, entry: StoredEvent): void | Promise<void>;
+  /** Called once per handled interaction. */
+  record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void>;
   /** Past interactions for replay, oldest first. `[]` if this sink can't replay. */
-  history(agentId: string, visitorId: string): readonly StoredEvent[];
+  history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]>;
 }
 
 /** Drops everything — for consumers whose conversation lives entirely elsewhere. */
 export class NullSink implements Sink {
-  record(_agentId: string, _visitorId: string, _entry: StoredEvent): void {}
-  history(_agentId: string, _visitorId: string): readonly StoredEvent[] {
+  async record(_agentId: string, _visitorId: string, _entry: StoredEvent): Promise<void> {}
+  async history(_agentId: string, _visitorId: string): Promise<readonly StoredEvent[]> {
     return [];
   }
 }
@@ -40,14 +42,14 @@ export class NullSink implements Sink {
 export class MemorySink implements Sink {
   private readonly log = new Map<string, StoredEvent[]>();
 
-  record(agentId: string, visitorId: string, entry: StoredEvent): void {
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
     const key = sessionKey(agentId, visitorId);
     const existing = this.log.get(key);
     if (existing !== undefined) existing.push(entry);
     else this.log.set(key, [entry]);
   }
 
-  history(agentId: string, visitorId: string): readonly StoredEvent[] {
+  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
     return this.log.get(sessionKey(agentId, visitorId)) ?? [];
   }
 }
@@ -63,11 +65,11 @@ export class FileSink implements Sink {
     return join(this.dir, `${name}.jsonl`);
   }
 
-  record(agentId: string, visitorId: string, entry: StoredEvent): void {
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
     appendFileSync(this.fileFor(agentId, visitorId), `${JSON.stringify(entry)}\n`);
   }
 
-  history(agentId: string, visitorId: string): readonly StoredEvent[] {
+  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
     const file = this.fileFor(agentId, visitorId);
     if (!existsSync(file)) return [];
     return readFileSync(file, "utf8")
@@ -92,11 +94,11 @@ export class ForwardSink implements Sink {
     ) => void | Promise<void>,
   ) {}
 
-  record(agentId: string, visitorId: string, entry: StoredEvent): void | Promise<void> {
-    return this.forward(agentId, visitorId, entry);
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    await this.forward(agentId, visitorId, entry);
   }
 
-  history(_agentId: string, _visitorId: string): readonly StoredEvent[] {
+  async history(_agentId: string, _visitorId: string): Promise<readonly StoredEvent[]> {
     return [];
   }
 }

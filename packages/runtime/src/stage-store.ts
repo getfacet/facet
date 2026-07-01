@@ -5,15 +5,15 @@ import { EMPTY_TREE, type FacetSession, type VisitorContext } from "@facet/core"
 /**
  * Persists the STAGE — the current rendered page per `(agent, visitor)`. This is
  * always Facet's to own (nobody else tracks which bricks a visitor is looking
- * at), so a store is always present. Swap the backend to change durability/scale;
- * the interface is intentionally tiny.
+ * at), so a store is always present. Swap the backend to change durability/scale.
  *
- * The conversation is a SEPARATE concern — see `Sink`.
+ * Methods are async so a backend can be a database (Postgres, etc.). The
+ * conversation is a SEPARATE concern — see `Sink`.
  */
 export interface StageStore {
-  get(agentId: string, visitorId: string): FacetSession | undefined;
-  open(agentId: string, visitor: VisitorContext): FacetSession;
-  save(session: FacetSession): void;
+  get(agentId: string, visitorId: string): Promise<FacetSession | undefined>;
+  open(agentId: string, visitor: VisitorContext): Promise<FacetSession>;
+  save(session: FacetSession): Promise<void>;
 }
 
 export function sessionKey(agentId: string, visitorId: string): string {
@@ -24,19 +24,19 @@ export function sessionKey(agentId: string, visitorId: string): string {
 export class MemoryStageStore implements StageStore {
   private readonly sessions = new Map<string, FacetSession>();
 
-  get(agentId: string, visitorId: string): FacetSession | undefined {
+  async get(agentId: string, visitorId: string): Promise<FacetSession | undefined> {
     return this.sessions.get(sessionKey(agentId, visitorId));
   }
 
-  open(agentId: string, visitor: VisitorContext): FacetSession {
-    const existing = this.get(agentId, visitor.visitorId);
+  async open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
+    const existing = this.sessions.get(sessionKey(agentId, visitor.visitorId));
     if (existing !== undefined) return existing;
     const session: FacetSession = { agentId, visitor, stage: EMPTY_TREE };
-    this.save(session);
+    await this.save(session);
     return session;
   }
 
-  save(session: FacetSession): void {
+  async save(session: FacetSession): Promise<void> {
     this.sessions.set(sessionKey(session.agentId, session.visitor.visitorId), session);
   }
 }
@@ -58,7 +58,7 @@ export class FileStageStore implements StageStore {
     return join(this.dir, `${name}.json`);
   }
 
-  get(agentId: string, visitorId: string): FacetSession | undefined {
+  async get(agentId: string, visitorId: string): Promise<FacetSession | undefined> {
     const key = sessionKey(agentId, visitorId);
     const cached = this.cache.get(key);
     if (cached !== undefined) return cached;
@@ -73,15 +73,15 @@ export class FileStageStore implements StageStore {
     }
   }
 
-  open(agentId: string, visitor: VisitorContext): FacetSession {
-    const existing = this.get(agentId, visitor.visitorId);
+  async open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
+    const existing = await this.get(agentId, visitor.visitorId);
     if (existing !== undefined) return existing;
     const session: FacetSession = { agentId, visitor, stage: EMPTY_TREE };
-    this.save(session);
+    await this.save(session);
     return session;
   }
 
-  save(session: FacetSession): void {
+  async save(session: FacetSession): Promise<void> {
     this.cache.set(sessionKey(session.agentId, session.visitor.visitorId), session);
     writeFileSync(
       this.fileFor(session.agentId, session.visitor.visitorId),

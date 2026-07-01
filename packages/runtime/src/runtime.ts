@@ -45,12 +45,12 @@ export class FacetRuntime {
    * send a snapshot when a viewer (re)connects, so a fresh connection or a second
    * tab immediately shows the live page.
    */
-  stageFor(visitorId: string): FacetTree | undefined {
-    return this.stageStore.get(this.agentId, visitorId)?.stage;
+  async stageFor(visitorId: string): Promise<FacetTree | undefined> {
+    return (await this.stageStore.get(this.agentId, visitorId))?.stage;
   }
 
   /** The recorded conversation for a viewer (events + agent replies), if the sink retains it. */
-  historyFor(visitorId: string): readonly StoredEvent[] {
+  historyFor(visitorId: string): Promise<readonly StoredEvent[]> {
     return this.sink.history(this.agentId, visitorId);
   }
 
@@ -60,17 +60,14 @@ export class FacetRuntime {
    * truth), then the interaction is handed to the sink.
    */
   async handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]> {
-    const session = this.stageStore.open(this.agentId, visitor);
+    const session = await this.stageStore.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
-    this.stageStore.save(this.applyToSession(session, messages));
-    const recorded = this.sink.record(this.agentId, visitor.visitorId, {
-      at: Date.now(),
-      event,
-      messages,
-    });
-    if (recorded !== undefined) {
-      void recorded.catch((error: unknown) => console.error("[facet] sink failed:", error));
-    }
+    await this.stageStore.save(this.applyToSession(session, messages));
+    // Record the conversation without blocking the response — the stage is the
+    // source of truth for reconnect; the sink is best-effort.
+    void this.sink
+      .record(this.agentId, visitor.visitorId, { at: Date.now(), event, messages })
+      .catch((error: unknown) => console.error("[facet] sink failed:", error));
     return messages;
   }
 
