@@ -1,0 +1,18 @@
+{
+  "name": "@facet/cli",
+  "version": "0.0.0",
+  "description": "The `facet` command — an agent's action surface for the stage. A running agent calls `facet append/say/…` and the local bridge forwards the change.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "facet": "./src/cli.ts"
+  },
+  "main": "./src/cli.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@facet/agent": "workspace:*",
+    "@facet/core": "workspace:*"
+  }
+}

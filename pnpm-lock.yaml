@@ -70,6 +70,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/cli:
+    dependencies:
+      '@facet/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/core: {}
 
   packages/react:
