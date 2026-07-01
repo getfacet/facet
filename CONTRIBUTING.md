@@ -31,6 +31,19 @@ patches-only with a fail-safe renderer) and the scope boundary (agent brain and
 scale infra are out of scope) shape almost every decision. When in doubt, prefer
 adding a brick/token deliberately over widening what an agent can emit.
 
+## Releases
+
+Facet uses [Changesets](https://github.com/changesets/changesets). If your PR
+changes a published `@facet/*` package, add a changeset:
+
+```bash
+pnpm changeset   # pick a bump type + write a one-line summary
+```
+
+All `@facet/*` packages are versioned together (a fixed group), so they always
+share one version. On merge to `main`, a bot opens/updates a "Version Packages"
+PR; merging that PR builds and publishes to npm. You don't publish manually.
+
 ## License
 
 By contributing you agree your contributions are licensed under the [MIT License](LICENSE).

@@ -1,0 +1,38 @@
+name: Bug report
+description: Report a problem with Facet
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for taking the time to file a bug! Please fill out the sections below.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Ideally a minimal repro (a code snippet or link to a repo).
+      placeholder: |
+        1. ...
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: package
+    attributes:
+      label: Affected package(s) and version
+      placeholder: "@facet/react 0.1.0"
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      placeholder: "node 20.x, pnpm 9.x, macOS 14"
+    validations:
+      required: false

@@ -15,13 +15,17 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "build": "pnpm -r --filter \"./packages/*\" build",
+    "release": "pnpm build && changeset publish",
     "demo": "pnpm --filter @facet/playground demo"
   },
   "devDependencies": {
+    "@changesets/cli": "^2.31.0",
     "@eslint/js": "^9.17.0",
     "@types/node": "^22.10.0",
     "eslint": "^9.17.0",
     "prettier": "^3.4.0",
+    "tsup": "^8.3.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.0",
     "typescript-eslint": "^8.19.0",

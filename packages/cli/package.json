@@ -9,10 +9,20 @@
   },
   "main": "./src/cli.ts",
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/cli.ts --format esm --clean"
   },
   "dependencies": {
     "@facet/agent": "workspace:*",
     "@facet/core": "workspace:*"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "bin": {
+      "facet": "./dist/cli.js"
+    }
   }
 }
