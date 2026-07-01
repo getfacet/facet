@@ -6,7 +6,7 @@
 import { spawn } from "node:child_process";
 import { validateTree, type FacetTree } from "@facet/core";
 
-const SYSTEM = `You generate Facet pages. Output ONLY a single JSON object for a stage tree — no prose, no markdown code fences.
+export const SYSTEM = `You generate Facet pages. Output ONLY a single JSON object for a stage tree — no prose, no markdown code fences.
 
 Shape: { "root": "root", "nodes": { "<id>": <node>, ... } }. Exactly one node has id "root" and type "box". Every child id referenced must exist in nodes.
 
@@ -27,21 +27,13 @@ Style values MUST be tokens (never pixels or hex):
 
 Compose freely from these four bricks. Output JSON only.`;
 
-/**
- * Extracts the FIRST complete, balanced JSON object from the model output —
- * tolerant of prose or extra content before/after (models sometimes append a
- * sentence). Brace-counts while respecting string literals and escapes, so a `}`
- * inside a string doesn't end it early.
- */
-function extractJson(text: string): unknown {
-  const fenced = text.replace(/```(?:json)?/gi, "");
-  const start = fenced.indexOf("{");
-  if (start === -1) throw new Error("no JSON object found in model output");
+/** The index after the balanced `{...}` starting at `start`, or -1. String/escape aware. */
+function balancedEnd(text: string, start: number): number {
   let depth = 0;
   let inString = false;
   let escaped = false;
-  for (let i = start; i < fenced.length; i += 1) {
-    const ch = fenced[i];
+  for (let i = start; i < text.length; i += 1) {
+    const ch = text[i];
     if (inString) {
       if (escaped) escaped = false;
       else if (ch === "\\") escaped = true;
@@ -52,10 +44,48 @@ function extractJson(text: string): unknown {
       depth += 1;
     } else if (ch === "}") {
       depth -= 1;
-      if (depth === 0) return JSON.parse(fenced.slice(start, i + 1));
+      if (depth === 0) return i + 1;
     }
   }
-  throw new Error("no complete JSON object found in model output");
+  return -1;
+}
+
+function isStageTree(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { nodes?: unknown }).nodes === "object" &&
+    (value as { nodes?: unknown }).nodes !== null
+  );
+}
+
+/**
+ * Extracts the stage tree from the model output — robust to prose, code fences,
+ * or extra JSON objects before/after the tree (models sometimes emit a preamble
+ * object or a trailing sentence). Scans every balanced top-level `{...}`, parses
+ * each, and returns the FIRST one that looks like a stage tree (has a `nodes`
+ * object); falls back to the last parseable object. Brace-counting is
+ * string/escape aware so a `}` inside a string doesn't end an object early.
+ */
+export function extractJson(text: string): unknown {
+  const fenced = text.replace(/```(?:json)?/gi, "");
+  const objects: unknown[] = [];
+  for (let i = 0; i < fenced.length; i += 1) {
+    if (fenced[i] !== "{") continue;
+    const end = balancedEnd(fenced, i);
+    if (end === -1) break;
+    try {
+      const parsed: unknown = JSON.parse(fenced.slice(i, end));
+      if (isStageTree(parsed)) return parsed;
+      objects.push(parsed);
+    } catch {
+      // not a complete/valid object at this position; keep scanning
+    }
+    i = end - 1; // skip past this object
+  }
+  const last = objects[objects.length - 1];
+  if (last !== undefined) return last;
+  throw new Error("no JSON object found in model output");
 }
 
 function callClaude(prompt: string): Promise<string> {
@@ -78,16 +108,38 @@ export interface GenerateResult {
   readonly issues: readonly string[];
 }
 
+/** A tree renders something only if its root box has at least one child. */
+function isRenderable(tree: FacetTree): boolean {
+  const root = tree.nodes[tree.root];
+  return root !== undefined && root.type === "box" && root.children.length > 0;
+}
+
 /**
  * Generates (or refines) a page. When `current` is given and non-empty, the
  * model is asked to MODIFY that page rather than build a fresh one — the basis
  * for multi-turn refinement (step B).
+ *
+ * The model occasionally emits malformed output that validates down to an empty
+ * page; rather than show a blank stage, retry once before giving up.
  */
 export async function generatePage(request: string, current?: FacetTree): Promise<GenerateResult> {
   const hasCurrent = current !== undefined && Object.keys(current.nodes).length > 1;
   const context = hasCurrent
     ? `\n\nThe visitor's CURRENT page (modify it, reusing node ids where possible): ${JSON.stringify(current)}`
     : "";
-  const raw = await callClaude(`${SYSTEM}${context}\n\nUser request: ${request}\n\nJSON:`);
-  return validateTree(extractJson(raw));
+  const prompt = `${SYSTEM}${context}\n\nUser request: ${request}\n\nJSON:`;
+
+  let last: GenerateResult | undefined;
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = validateTree(extractJson(await callClaude(prompt)));
+      last = result;
+      if (isRenderable(result.tree)) return result;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (last !== undefined) return last;
+  throw lastError instanceof Error ? lastError : new Error("generation failed");
 }
