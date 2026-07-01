@@ -169,7 +169,8 @@ Deliberately deferred:
 - **Presets** — the `@facet/kit` preset package.
 - **Cost & latency** — caching and a static skeleton so the first paint isn't
   gated on a model call.
-- **Durability & scale** — a `SessionStore` backend beyond in-memory.
+- **Durability & scale** — a database `StageStore`/`Sink` backend beyond the
+  in-memory and file references (e.g. Postgres for a hosted SaaS).
 - **Safety** — content moderation for public, agent-authored pages.
 - **SEO/crawlers** — a stable default face for non-interactive clients.
 

@@ -25,14 +25,15 @@ link the agent re-renders live, per visitor, driven by conversation. See
   the renderer, the transports (reference SSE+POST), the agent SDKs/CLI.
 - **Out of scope:** the agent's *brain* (LLM/rules — the user brings it) and
   large distributed/scale infrastructure (Redis fan-out, durable stores) — those
-  are **pluggable adapters** behind interfaces (e.g. `SessionStore`), not baked in.
+  are **pluggable adapters** behind interfaces (e.g. `StageStore` for the page,
+  `Sink` for the conversation), not baked in.
 
 ## Package map
 
 | Package | Role |
 | --- | --- |
 | `@facet/core` | Contract: bricks, tokens, RFC 6902 patch, `validateTree`, session/event types. Depends on nothing. |
-| `@facet/runtime` | Per-`(agent, visitor)` session store + event loop. |
+| `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop). |
 | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
 | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
 | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |

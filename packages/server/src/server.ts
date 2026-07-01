@@ -7,7 +7,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { FacetRuntime, type SessionStore } from "@facet/runtime";
+import { FacetRuntime, type Sink, type StageStore } from "@facet/runtime";
 
 /**
  * The reference Facet transport: a tiny Node server carrying events to an agent
@@ -31,8 +31,10 @@ export interface FacetServerOptions {
   readonly agentTimeoutMs?: number;
   /** Page shown to a fresh visitor when no agent is connected (the offline face). */
   readonly offlineFace?: FacetTree;
-  /** Session store — defaults to in-memory. Pass a durable one to survive restarts. */
-  readonly store?: SessionStore;
+  /** Where the page lives — defaults to in-memory. Pass a durable one to survive restarts. */
+  readonly stageStore?: StageStore;
+  /** Where the conversation goes — store, forward, or drop. Defaults to in-memory. */
+  readonly sink?: Sink;
 }
 
 const DEFAULT_OFFLINE_FACE: FacetTree = {
@@ -156,7 +158,8 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   const runtime = new FacetRuntime({
     agentId: options.agentId,
     agent,
-    ...(options.store !== undefined ? { store: options.store } : {}),
+    ...(options.stageStore !== undefined ? { stageStore: options.stageStore } : {}),
+    ...(options.sink !== undefined ? { sink: options.sink } : {}),
   });
 
   const pushToBrowser = (visitorId: string, messages: readonly ServerMessage[]): void => {

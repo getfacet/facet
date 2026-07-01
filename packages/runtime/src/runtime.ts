@@ -7,57 +7,70 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { MemorySessionStore, type SessionStore, type StoredEvent } from "./session-store.js";
+import { MemoryStageStore, type StageStore } from "./stage-store.js";
+import { MemorySink, type Sink, type StoredEvent } from "./sink.js";
 
 export interface FacetRuntimeOptions {
   readonly agentId: string;
   readonly agent: FacetAgent;
-  /** Defaults to an in-memory store. */
-  readonly store?: SessionStore;
+  /** Where the current page lives. Defaults to in-memory. */
+  readonly stageStore?: StageStore;
+  /** Where the conversation goes. Defaults to an in-memory (replayable) sink. */
+  readonly sink?: Sink;
 }
 
 /**
  * Wires a transport's inbound events to the agent and keeps each session's stage
- * up to date. A transport (WebSocket/SSE server, or the in-process demo) calls
- * `handle` for every event from a given viewer and ships the returned messages
- * back over that viewer's connection.
+ * up to date. A transport (SSE server, or the in-process demo) calls `handle` for
+ * every event from a viewer and ships the returned messages back.
+ *
+ * Two persistence concerns are kept separate: the STAGE (always Facet's, via
+ * `stageStore`) and the CONVERSATION (optional, via `sink` — store, forward, or drop).
  */
 export class FacetRuntime {
   private readonly agentId: string;
   private readonly agent: FacetAgent;
-  private readonly store: SessionStore;
+  private readonly stageStore: StageStore;
+  private readonly sink: Sink;
 
   constructor(options: FacetRuntimeOptions) {
     this.agentId = options.agentId;
     this.agent = options.agent;
-    this.store = options.store ?? new MemorySessionStore();
+    this.stageStore = options.stageStore ?? new MemoryStageStore();
+    this.sink = options.sink ?? new MemorySink();
+  }
+
+  /**
+   * The current stage for a viewer, if a session exists. A transport uses this to
+   * send a snapshot when a viewer (re)connects, so a fresh connection or a second
+   * tab immediately shows the live page.
+   */
+  stageFor(visitorId: string): FacetTree | undefined {
+    return this.stageStore.get(this.agentId, visitorId)?.stage;
+  }
+
+  /** The recorded conversation for a viewer (events + agent replies), if the sink retains it. */
+  historyFor(visitorId: string): readonly StoredEvent[] {
+    return this.sink.history(this.agentId, visitorId);
   }
 
   /**
    * Processes one inbound event for one viewer and returns the messages to send
-   * back to that viewer. Stage patches are applied to the session before return
-   * so server state stays the source of truth.
+   * back. Stage patches are applied to the stored session (server is the source of
+   * truth), then the interaction is handed to the sink.
    */
-  /**
-   * The current stage for a viewer, if a session exists. A transport uses this
-   * to send a snapshot when a viewer (re)connects, so a fresh connection or a
-   * second tab immediately shows the live page.
-   */
-  stageFor(visitorId: string): FacetTree | undefined {
-    return this.store.get(this.agentId, visitorId)?.stage;
-  }
-
-  /** The recorded interaction history for a viewer (events + agent replies). */
-  historyFor(visitorId: string): readonly StoredEvent[] {
-    return this.store.history(this.agentId, visitorId);
-  }
-
   async handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]> {
-    const session = this.store.open(this.agentId, visitor);
+    const session = this.stageStore.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
-    const next = this.applyToSession(session, messages);
-    this.store.save(next);
-    this.store.append(this.agentId, visitor.visitorId, { at: Date.now(), event, messages });
+    this.stageStore.save(this.applyToSession(session, messages));
+    const recorded = this.sink.record(this.agentId, visitor.visitorId, {
+      at: Date.now(),
+      event,
+      messages,
+    });
+    if (recorded !== undefined) {
+      void recorded.catch((error: unknown) => console.error("[facet] sink failed:", error));
+    }
     return messages;
   }
 

@@ -1,3 +1,3 @@
-export * from "./session-store.js";
-export * from "./file-session-store.js";
+export * from "./stage-store.js";
+export * from "./sink.js";
 export * from "./runtime.js";

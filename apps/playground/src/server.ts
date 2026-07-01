@@ -10,7 +10,7 @@
 import type { FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { createFacetServer } from "@facet/server";
-import { FileSessionStore } from "@facet/runtime";
+import { FileSink, FileStageStore } from "@facet/runtime";
 import { page, text } from "@facet/kit";
 import { generatePage } from "./generator.js";
 
@@ -31,9 +31,10 @@ const PORT = 5291;
 // llm (default) | echo (fast) | none (no fallback → offline face shows)
 const MODE = process.env.FACET_AGENT ?? "llm";
 const useLlm = MODE === "llm";
-// FACET_STORE=file → durable sessions on disk (survive a server restart).
-const store =
-  process.env.FACET_STORE === "file" ? new FileSessionStore(".facet-sessions") : undefined;
+// FACET_STORE=file → durable page + conversation on disk (survive a server restart).
+const durable = process.env.FACET_STORE === "file";
+const stageStore = durable ? new FileStageStore(".facet-sessions/stage") : undefined;
+const sink = durable ? new FileSink(".facet-sessions/chat") : undefined;
 
 function welcome(): FacetTree {
   return {
@@ -100,7 +101,8 @@ void createFacetServer({
   agentId: "live",
   offlineFace: OFFLINE_FACE,
   ...(MODE === "none" ? {} : { agent }),
-  ...(store !== undefined ? { store } : {}),
+  ...(stageStore !== undefined ? { stageStore } : {}),
+  ...(sink !== undefined ? { sink } : {}),
 })
   .listen()
   .then(() => {
