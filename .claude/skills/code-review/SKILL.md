@@ -26,8 +26,9 @@ repo, review all of `packages/**/src` and `apps/**/src`.
 1. **Find (parallel).** Spawn one reviewer per dimension, in a single message, each
    scoped to the diff. Use these agents (fall back to `general-purpose` if a type
    is unavailable): `review-bugs`, `review-types`, `review-edge`,
-   `review-security`, `review-concurrency`, `review-consistency`. Each returns
-   findings as `{title, file, line, severity, evidence, why}`.
+   `review-security`, `review-concurrency`, `review-consistency`,
+   `review-test-gaps`. Each returns findings as
+   `{title, file, line, severity, evidence, why}`.
 
 2. **Verify (adversarial).** For every candidate finding, spawn `review-verifier`
    to try to REFUTE it — is it real, is the severity right, does the triggering

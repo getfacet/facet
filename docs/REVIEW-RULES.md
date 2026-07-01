@@ -52,6 +52,10 @@ for a small TypeScript monorepo — rigorous, not bureaucratic.
   + persistent generator handshake (deadlock/ordering), timeouts, resource leaks.
 - **consistency** — duplication, cross-package drift, dev-vs-published resolution
   (`publishConfig`/`exports`), barrel usage, naming.
+- **test-gaps** — changed behavior without a test; critical pure logic
+  (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
+  coverage; untested testable surface (`@facet/kit`, `@facet/cli`); tautological
+  tests.
 
 ## `/refactor-audit` dimensions
 
