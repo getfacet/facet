@@ -47,6 +47,9 @@ importers:
       '@facet/agent-client':
         specifier: workspace:*
         version: link:../../packages/agent-client
+      '@facet/bridge':
+        specifier: workspace:*
+        version: link:../../packages/bridge
       '@facet/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -90,6 +93,18 @@ importers:
 
   packages/agent-client:
     dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/bridge:
+    dependencies:
+      '@facet/agent-client':
+        specifier: workspace:*
+        version: link:../agent-client
+      '@facet/cli':
+        specifier: workspace:*
+        version: link:../cli
       '@facet/core':
         specifier: workspace:*
         version: link:../core

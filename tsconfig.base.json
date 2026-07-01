@@ -24,7 +24,8 @@
       "@facet/agent-client": ["packages/agent-client/src/index.ts"],
       "@facet/kit": ["packages/kit/src/index.ts"],
       "@facet/cli": ["packages/cli/src/cli.ts"],
-      "@facet/server": ["packages/server/src/index.ts"]
+      "@facet/server": ["packages/server/src/index.ts"],
+      "@facet/bridge": ["packages/bridge/src/index.ts"]
     }
   }
 }

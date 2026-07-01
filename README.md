@@ -146,6 +146,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/react`          | Brick renderer (`StageRenderer`), default `theme`, `useFacet`, `ChatDock`.               |
 | `@facet/kit`            | Optional presets (`card/hero/grid/…`) — sugar over the bricks.                            |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
+| `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 
 ## Quickstart
 

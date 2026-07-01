@@ -43,6 +43,7 @@ small set of safe primitives and mutates them live as the conversation goes.
 | `@facet/react` | Renderer (`StageRenderer`), token `theme`, `useFacet`, `ChatDock`. |
 | `@facet/kit` | Optional presets (`page/hero/card/grid/…`) — sugar over the bricks. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres (`pg` peer dep). |
+| `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
 | `apps/playground` | Demos (not published). |
 
 `StageStore` and `Sink` methods are **async** (Promise-based) so backends can be
