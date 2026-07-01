@@ -22,7 +22,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import type { ClientEvent, FacetSession, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 
 const SERVER = "http://localhost:5291";
@@ -61,14 +61,19 @@ createServer((req, res) => {
   res.end();
 }).listen(BRIDGE_PORT);
 
-function promptFor(event: ClientEvent): string {
-  const spec = `You control a live web page via the \`facet\` command. Build/change the page by running:
-  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet say <text>
+function promptFor(event: ClientEvent, stage: FacetTree): string {
+  const spec = `You control a live web page via the \`facet\` command. Change the page by running:
+  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet say <text>
 Nodes: box {id,type:"box",children:[ids],style?,onPress?} · text {id,type:"text",value,style?} · image · field.
 box is the only container (bordered box=card, box+onPress=button). Style values are tokens: gap/pad(xs..2xl), color(fg,fg-muted,surface,accent,accent-fg,…), size(xs..3xl), weight, radius, direction(row|col). Run facet commands now; do not print anything else.`;
-  if (event.kind === "visit") return `${spec}\n\nA visitor just arrived. Render a short welcome page.`;
-  if (event.kind === "message") return `${spec}\n\nThe visitor said: "${event.text}". Update the page (facet render or append) and optionally facet say a short reply.`;
-  return `${spec}\n\nThe visitor pressed "${event.action.name}". React with facet commands.`;
+  const current = `The page THIS visitor currently sees (a Facet stage tree): ${JSON.stringify(stage)}`;
+  if (event.kind === "visit") {
+    return `${spec}\n\nA visitor just arrived. Render a short welcome page with \`facet render\`.`;
+  }
+  if (event.kind === "message") {
+    return `${spec}\n\n${current}\n\nThe visitor said: "${event.text}". MODIFY the current page — prefer \`facet append\`/\`set\`/\`remove\` on existing node ids to change just what's needed (only \`facet render\` a fresh page if they ask for something totally new). Optionally \`facet say\` a short reply.`;
+  }
+  return `${spec}\n\n${current}\n\nThe visitor pressed "${event.action.name}". React with facet commands on the current page.`;
 }
 
 function runClaude(prompt: string, visitorId: string, token: string): Promise<void> {
@@ -105,7 +110,7 @@ async function drive(event: ClientEvent, session: FacetSession): Promise<readonl
     console.log(`\n[manual] event=${event.kind} token=${token} — run e.g.:\n  FACET_BRIDGE_URL=${BRIDGE_URL} FACET_EVENT=${token} tsx ${CLI_PATH} say "hi"\n`);
     await delay(6000);
   } else {
-    await runClaude(promptFor(event), visitorId, token);
+    await runClaude(promptFor(event, session.stage), visitorId, token);
   }
   const messages = buffers.get(token) ?? [];
   buffers.delete(token);

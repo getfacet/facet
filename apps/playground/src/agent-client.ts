@@ -37,7 +37,7 @@ function welcome(): FacetTree {
   };
 }
 
-const logic = defineAgent(async ({ event, stage }) => {
+const logic = defineAgent(async ({ event, session, stage }) => {
   if (event.kind === "visit") {
     stage.render(welcome());
     return;
@@ -47,11 +47,11 @@ const logic = defineAgent(async ({ event, stage }) => {
     return;
   }
   if (!useLlm) {
-    stage.say(`echo: ${event.text}`);
+    stage.say(`echo: ${event.text} (current page: ${String(Object.keys(session.stage.nodes).length)} nodes)`);
     return;
   }
   try {
-    const { tree, issues } = await generatePage(event.text);
+    const { tree, issues } = await generatePage(event.text, session.stage);
     stage.render(tree);
     stage.say(issues.length === 0 ? "Here's your page." : `Built (repaired ${String(issues.length)}).`);
   } catch (error) {

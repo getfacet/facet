@@ -57,7 +57,16 @@ export interface GenerateResult {
   readonly issues: readonly string[];
 }
 
-export async function generatePage(request: string): Promise<GenerateResult> {
-  const raw = await callClaude(`${SYSTEM}\n\nUser request: ${request}\n\nJSON:`);
+/**
+ * Generates (or refines) a page. When `current` is given and non-empty, the
+ * model is asked to MODIFY that page rather than build a fresh one — the basis
+ * for multi-turn refinement (step B).
+ */
+export async function generatePage(request: string, current?: FacetTree): Promise<GenerateResult> {
+  const hasCurrent = current !== undefined && Object.keys(current.nodes).length > 1;
+  const context = hasCurrent
+    ? `\n\nThe visitor's CURRENT page (modify it, reusing node ids where possible): ${JSON.stringify(current)}`
+    : "";
+  const raw = await callClaude(`${SYSTEM}${context}\n\nUser request: ${request}\n\nJSON:`);
   return validateTree(extractJson(raw));
 }

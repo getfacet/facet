@@ -3,6 +3,7 @@ import {
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
+  type FacetTree,
   type ServerMessage,
 } from "@facet/core";
 
@@ -36,6 +37,8 @@ interface EventFrame {
   readonly requestId: number;
   readonly visitorId: string;
   readonly event: ClientEvent;
+  /** The visitor's current stage — so the agent can refine, not rebuild. */
+  readonly stage?: FacetTree;
 }
 
 function isEventFrame(value: unknown): value is EventFrame {
@@ -75,7 +78,7 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
     const session: FacetSession = {
       agentId,
       visitor: { visitorId: frame.visitorId },
-      stage: EMPTY_TREE,
+      stage: frame.stage ?? EMPTY_TREE,
     };
     let messages: readonly ServerMessage[];
     try {

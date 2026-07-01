@@ -104,6 +104,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
         requestId,
         visitorId: session.visitor.visitorId,
         event,
+        stage: session.stage,
       });
     });
   };
