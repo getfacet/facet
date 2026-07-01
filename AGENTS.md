@@ -65,13 +65,16 @@ pnpm --filter @facet/playground serve   # live server (port 5291)
 
 ## Definition of Done (before you commit)
 
-- `pnpm typecheck` passes.
-- `pnpm test` passes (add/adjust tests for any behavior change — core logic like
-  `validateTree`, `applyPatch`, and `Stage` op-generation must stay covered).
+- **`/verify`** passes — typecheck, test, lint, format:check, build (or run those
+  `pnpm` commands directly). Add/adjust tests for any behavior change; core logic
+  (`validateTree`, `applyPatch`, `Stage` op-generation) must stay covered.
+- **`/code-review`** on a non-trivial change — P0–P1 = 0, P2 fixed-or-deferred.
 - New public API is exported through the package's barrel `index.ts`.
 - No new dependency without a clear reason (keep `@facet/core` dependency-free).
 
-There is no heavy multi-agent review gate — this checklist plus CI is the bar.
+The gate is right-sized: `/verify` (mechanical) and `/code-review` (evidence-based,
+adversarially verified) per change; `/refactor-audit` for consolidation passes.
+See [docs/REVIEW-RULES.md](docs/REVIEW-RULES.md) for the rubric and severity.
 
 ## Conventions
 
