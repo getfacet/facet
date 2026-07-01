@@ -40,7 +40,11 @@ link the agent re-renders live, per visitor, driven by conversation. See
 | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | `@facet/react` | Renderer (`StageRenderer`), token `theme`, `useFacet`, `ChatDock`. |
 | `@facet/kit` | Optional presets (`page/hero/card/grid/…`) — sugar over the bricks. |
+| `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres (`pg` peer dep). |
 | `apps/playground` | Demos (not published). |
+
+`StageStore` and `Sink` methods are **async** (Promise-based) so backends can be
+databases; the in-memory and file references resolve immediately.
 
 Dependencies flow one way: everything depends on `@facet/core`; nothing depends
 on `apps/playground`.
