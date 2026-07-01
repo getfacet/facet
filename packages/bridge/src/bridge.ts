@@ -4,9 +4,10 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ClientEvent, FacetAgent, FacetTree, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
+import { createSerialQueue } from "./serial-queue.js";
 
 /**
  * The local bridge lets a coding agent on your machine (Claude Code, Codex, …)
@@ -187,7 +188,10 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
       });
     });
 
-  const agent: FacetAgent = async (event, session) => {
+  const runOne = async (
+    event: ClientEvent,
+    session: FacetSession,
+  ): Promise<readonly ServerMessage[]> => {
     const token = String((counter += 1));
     buffers.set(token, []);
     await runBrain(promptFor(event, session.stage), session.visitor.visitorId, token);
@@ -196,6 +200,12 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
     options.onEvent?.(event.kind, session.visitor.visitorId, messages.length);
     return messages;
   };
+
+  // Serialize a single visitor's events (no same-visitor race); different
+  // visitors run in parallel. So concurrent spawns ≈ number of active visitors.
+  const serialize = createSerialQueue<readonly ServerMessage[]>();
+  const agent: FacetAgent = (event, session) =>
+    serialize(session.visitor.visitorId, () => runOne(event, session));
 
   return {
     agent,
