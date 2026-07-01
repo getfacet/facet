@@ -26,7 +26,12 @@ function welcome(): FacetTree {
         style: { direction: "col", gap: "md", pad: "2xl", align: "center" },
         children: ["h", "p"],
       },
-      h: { id: "h", type: "text", value: "What should this page be?", style: { size: "2xl", weight: "bold" } },
+      h: {
+        id: "h",
+        type: "text",
+        value: "What should this page be?",
+        style: { size: "2xl", weight: "bold" },
+      },
       p: {
         id: "p",
         type: "text",
@@ -47,13 +52,17 @@ const logic = defineAgent(async ({ event, session, stage }) => {
     return;
   }
   if (!useLlm) {
-    stage.say(`echo: ${event.text} (current page: ${String(Object.keys(session.stage.nodes).length)} nodes)`);
+    stage.say(
+      `echo: ${event.text} (current page: ${String(Object.keys(session.stage.nodes).length)} nodes)`,
+    );
     return;
   }
   try {
     const { tree, issues } = await generatePage(event.text, session.stage);
     stage.render(tree);
-    stage.say(issues.length === 0 ? "Here's your page." : `Built (repaired ${String(issues.length)}).`);
+    stage.say(
+      issues.length === 0 ? "Here's your page." : `Built (repaired ${String(issues.length)}).`,
+    );
   } catch (error) {
     stage.say(`generation failed: ${error instanceof Error ? error.message : String(error)}`);
   }

@@ -29,7 +29,16 @@ const SERVER = "http://localhost:5291";
 const BRIDGE_PORT = 5292;
 const BRIDGE_URL = `http://localhost:${String(BRIDGE_PORT)}`;
 const METHOD = process.env.FACET_METHOD ?? "oneshot";
-const CLI_PATH = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "packages", "cli", "src", "cli.ts");
+const CLI_PATH = join(
+  dirname(fileURLToPath(import.meta.url)),
+  "..",
+  "..",
+  "..",
+  "packages",
+  "cli",
+  "src",
+  "cli.ts",
+);
 
 const buffers = new Map<string, ServerMessage[]>();
 let counter = 0;
@@ -47,7 +56,10 @@ createServer((req, res) => {
     req.on("data", (c) => (body += String(c)));
     req.on("end", () => {
       try {
-        const { token, messages } = JSON.parse(body) as { token: string; messages: ServerMessage[] };
+        const { token, messages } = JSON.parse(body) as {
+          token: string;
+          messages: ServerMessage[];
+        };
         buffers.get(token)?.push(...messages);
       } catch {
         /* ignore malformed */
@@ -78,7 +90,12 @@ box is the only container (bordered box=card, box+onPress=button). Style values 
 
 function runClaude(prompt: string, visitorId: string, token: string): Promise<void> {
   return new Promise((resolve) => {
-    const env = { ...process.env, FACET_BRIDGE_URL: BRIDGE_URL, FACET_EVENT: token, PATH: `${shimDir}:${process.env.PATH ?? ""}` };
+    const env = {
+      ...process.env,
+      FACET_BRIDGE_URL: BRIDGE_URL,
+      FACET_EVENT: token,
+      PATH: `${shimDir}:${process.env.PATH ?? ""}`,
+    };
     const resume = METHOD === "session" ? sessionIds.get(visitorId) : undefined;
     const args = ["-p", prompt, "--output-format", "json", "--dangerously-skip-permissions"];
     if (resume !== undefined) args.push("--resume", resume);
@@ -107,7 +124,9 @@ async function drive(event: ClientEvent, session: FacetSession): Promise<readonl
   buffers.set(token, []);
   const visitorId = session.visitor.visitorId;
   if (METHOD === "manual") {
-    console.log(`\n[manual] event=${event.kind} token=${token} — run e.g.:\n  FACET_BRIDGE_URL=${BRIDGE_URL} FACET_EVENT=${token} tsx ${CLI_PATH} say "hi"\n`);
+    console.log(
+      `\n[manual] event=${event.kind} token=${token} — run e.g.:\n  FACET_BRIDGE_URL=${BRIDGE_URL} FACET_EVENT=${token} tsx ${CLI_PATH} say "hi"\n`,
+    );
     await delay(6000);
   } else {
     await runClaude(promptFor(event, session.stage), visitorId, token);
@@ -122,7 +141,8 @@ connectAgent({
   serverUrl: SERVER,
   agentId: "live",
   agent: drive,
-  onStatus: (s) => console.log(s === "connected" ? "● bridge connected to server" : "○ disconnected"),
+  onStatus: (s) =>
+    console.log(s === "connected" ? "● bridge connected to server" : "○ disconnected"),
 });
 
 console.log(`Facet bridge (method=${METHOD}) — local cmd endpoint ${BRIDGE_URL}, cli ${CLI_PATH}`);

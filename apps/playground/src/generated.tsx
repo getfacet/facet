@@ -58,7 +58,9 @@ export function GeneratedView(): React.ReactNode {
       {status === "empty" ? (
         <div style={styles.empty}>
           Nothing generated yet. Run the generator, then hit Reload:
-          <pre style={styles.pre}>pnpm --filter @facet/playground gen "a landing page for a bakery"</pre>
+          <pre style={styles.pre}>
+            pnpm --filter @facet/playground gen "a landing page for a bakery"
+          </pre>
         </div>
       ) : (
         <div style={styles.frame}>
@@ -67,7 +69,9 @@ export function GeneratedView(): React.ReactNode {
       )}
 
       {lastAction !== null ? (
-        <div style={styles.action}>Pressed action: <strong>{lastAction}</strong></div>
+        <div style={styles.action}>
+          Pressed action: <strong>{lastAction}</strong>
+        </div>
       ) : null}
 
       {issues.length > 0 ? (
@@ -86,7 +90,13 @@ export function GeneratedView(): React.ReactNode {
 
 const styles: Record<string, CSSProperties> = {
   wrap: { maxWidth: "760px", margin: "0 auto" },
-  bar: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", marginBottom: "12px" },
+  bar: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "12px",
+    marginBottom: "12px",
+  },
   hint: { color: "#9aa0aa", fontSize: "13px" },
   reload: {
     padding: "6px 12px",
@@ -107,7 +117,14 @@ const styles: Record<string, CSSProperties> = {
     minHeight: "300px",
   },
   empty: { color: "#9aa0aa", fontSize: "14px", padding: "40px 0", textAlign: "center" },
-  pre: { color: "#c7ccd4", background: "#16181d", padding: "12px", borderRadius: "8px", marginTop: "12px", overflowX: "auto" },
+  pre: {
+    color: "#c7ccd4",
+    background: "#16181d",
+    padding: "12px",
+    borderRadius: "8px",
+    marginTop: "12px",
+    overflowX: "auto",
+  },
   action: { marginTop: "12px", color: "#c7ccd4", fontSize: "13px" },
   issues: { marginTop: "12px", color: "#d97706", fontSize: "13px" },
 };

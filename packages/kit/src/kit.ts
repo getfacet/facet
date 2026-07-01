@@ -36,19 +36,30 @@ class Builder {
 
   text(value: string, style?: TextStyle): NodeId {
     const id = this.next();
-    this.nodes[id] = style === undefined ? { id, type: "text", value } : { id, type: "text", value, style };
+    this.nodes[id] =
+      style === undefined ? { id, type: "text", value } : { id, type: "text", value, style };
     return id;
   }
 
   image(src: string, alt: string, style?: ImageStyle): NodeId {
     const id = this.next();
-    this.nodes[id] = style === undefined ? { id, type: "image", src, alt } : { id, type: "image", src, alt, style };
+    this.nodes[id] =
+      style === undefined
+        ? { id, type: "image", src, alt }
+        : { id, type: "image", src, alt, style };
     return id;
   }
 
   field(name: string, label?: string, placeholder?: string): NodeId {
     const id = this.next();
-    this.nodes[id] = { id, type: "field", name, style: { width: "full" }, ...(label !== undefined ? { label } : {}), ...(placeholder !== undefined ? { placeholder } : {}) };
+    this.nodes[id] = {
+      id,
+      type: "field",
+      name,
+      style: { width: "full" },
+      ...(label !== undefined ? { label } : {}),
+      ...(placeholder !== undefined ? { placeholder } : {}),
+    };
     return id;
   }
 }
@@ -74,7 +85,12 @@ export function field(name: string, label?: string, placeholder?: string): Block
 }
 
 export function button(label: string, action: string): Block {
-  return (b) => b.box({ bg: "accent", radius: "md", pad: "md", align: "center" }, [b.text(label, { color: "accent-fg", weight: "semibold" })], { name: action });
+  return (b) =>
+    b.box(
+      { bg: "accent", radius: "md", pad: "md", align: "center" },
+      [b.text(label, { color: "accent-fg", weight: "semibold" })],
+      { name: action },
+    );
 }
 
 export interface StackOptions {
@@ -83,19 +99,39 @@ export interface StackOptions {
 }
 
 export function stack(children: readonly Block[], options: StackOptions = {}): Block {
-  return (b) => b.box({ direction: "col", gap: options.gap ?? "md", ...(options.pad !== undefined ? { pad: options.pad } : {}) }, children.map((child) => child(b)));
+  return (b) =>
+    b.box(
+      {
+        direction: "col",
+        gap: options.gap ?? "md",
+        ...(options.pad !== undefined ? { pad: options.pad } : {}),
+      },
+      children.map((child) => child(b)),
+    );
 }
 
 export function row(children: readonly Block[], options: StackOptions = {}): Block {
-  return (b) => b.box({ direction: "row", gap: options.gap ?? "md", wrap: true }, children.map((child) => child(b)));
+  return (b) =>
+    b.box(
+      { direction: "row", gap: options.gap ?? "md", wrap: true },
+      children.map((child) => child(b)),
+    );
 }
 
 export function card(children: readonly Block[]): Block {
-  return (b) => b.box({ direction: "col", gap: "sm", pad: "lg", border: true, radius: "lg" }, children.map((child) => child(b)));
+  return (b) =>
+    b.box(
+      { direction: "col", gap: "sm", pad: "lg", border: true, radius: "lg" },
+      children.map((child) => child(b)),
+    );
 }
 
 export function grid(items: readonly Block[]): Block {
-  return (b) => b.box({ direction: "row", gap: "md", wrap: true }, items.map((item) => item(b)));
+  return (b) =>
+    b.box(
+      { direction: "row", gap: "md", wrap: true },
+      items.map((item) => item(b)),
+    );
 }
 
 export interface HeroOptions {
@@ -106,7 +142,9 @@ export interface HeroOptions {
 
 export function hero(options: HeroOptions): Block {
   return (b) => {
-    const children: NodeId[] = [b.text(options.title, { size: "3xl", weight: "bold", align: "center" })];
+    const children: NodeId[] = [
+      b.text(options.title, { size: "3xl", weight: "bold", align: "center" }),
+    ];
     if (options.subtitle !== undefined) {
       children.push(b.text(options.subtitle, { size: "md", color: "fg-muted", align: "center" }));
     }

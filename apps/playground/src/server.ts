@@ -18,7 +18,10 @@ import { generatePage } from "./generator.js";
 const OFFLINE_FACE: FacetTree = page(
   [
     text("Nova is offline right now", { size: "2xl", weight: "bold", align: "center" }),
-    text("This page's agent isn't connected — check back soon.", { color: "fg-muted", align: "center" }),
+    text("This page's agent isn't connected — check back soon.", {
+      color: "fg-muted",
+      align: "center",
+    }),
   ],
   { pad: "2xl" },
 );
@@ -38,11 +41,17 @@ function welcome(): FacetTree {
         style: { direction: "col", gap: "md", pad: "2xl", align: "center" },
         children: ["h", "p"],
       },
-      h: { id: "h", type: "text", value: "What should this page be?", style: { size: "2xl", weight: "bold" } },
+      h: {
+        id: "h",
+        type: "text",
+        value: "What should this page be?",
+        style: { size: "2xl", weight: "bold" },
+      },
       p: {
         id: "p",
         type: "text",
-        value: 'Type a request below — e.g. "a landing page for a bakery" — and I\'ll build it live.',
+        value:
+          'Type a request below — e.g. "a landing page for a bakery" — and I\'ll build it live.',
         style: { color: "fg-muted", align: "center" },
       },
     },
@@ -60,15 +69,23 @@ const agent = defineAgent(async ({ event, session, stage }) => {
   }
   // message
   if (!useLlm) {
-    stage.say(`echo: ${event.text} (current page: ${String(Object.keys(session.stage.nodes).length)} nodes)`);
+    stage.say(
+      `echo: ${event.text} (current page: ${String(Object.keys(session.stage.nodes).length)} nodes)`,
+    );
     return;
   }
   try {
     const { tree, issues } = await generatePage(event.text, session.stage);
     stage.render(tree);
-    stage.say(issues.length === 0 ? "Here's your page." : `Built (repaired ${String(issues.length)} issue(s)).`);
+    stage.say(
+      issues.length === 0
+        ? "Here's your page."
+        : `Built (repaired ${String(issues.length)} issue(s)).`,
+    );
   } catch (error) {
-    stage.say(`Sorry — generation failed: ${error instanceof Error ? error.message : String(error)}`);
+    stage.say(
+      `Sorry — generation failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 });
 

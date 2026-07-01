@@ -21,7 +21,12 @@ export interface ChatDockProps {
  * app chrome that turns a visitor's typing into `message` events. Presentational
  * — the parent owns the message list and handles `onSend`.
  */
-export function ChatDock({ messages, onSend, pending = false, placeholder = "Type a message…" }: ChatDockProps): ReactNode {
+export function ChatDock({
+  messages,
+  onSend,
+  pending = false,
+  placeholder = "Type a message…",
+}: ChatDockProps): ReactNode {
   const [draft, setDraft] = useState("");
 
   const submit = (): void => {
@@ -60,12 +65,37 @@ export function ChatDock({ messages, onSend, pending = false, placeholder = "Typ
 }
 
 const styles: Record<string, CSSProperties> = {
-  dock: { border: "1px solid #e2e5ea", borderRadius: "12px", overflow: "hidden", background: "#fbfbfc" },
-  log: { maxHeight: "140px", overflowY: "auto", padding: "10px 14px", fontSize: "13px", color: "#1a1d23" },
+  dock: {
+    border: "1px solid #e2e5ea",
+    borderRadius: "12px",
+    overflow: "hidden",
+    background: "#fbfbfc",
+  },
+  log: {
+    maxHeight: "140px",
+    overflowY: "auto",
+    padding: "10px 14px",
+    fontSize: "13px",
+    color: "#1a1d23",
+  },
   line: { marginBottom: "4px" },
   who: { fontWeight: 600, color: "#4f46e5" },
   pending: { color: "#6b7280", fontStyle: "italic" },
   inputRow: { display: "flex", gap: "8px", padding: "10px 14px", borderTop: "1px solid #eceef1" },
-  input: { flex: 1, padding: "8px 10px", borderRadius: "8px", border: "1px solid #d7dbe0", fontSize: "14px" },
-  send: { padding: "8px 14px", borderRadius: "8px", border: "none", background: "#4f46e5", color: "#fff", fontWeight: 600, cursor: "pointer" },
+  input: {
+    flex: 1,
+    padding: "8px 10px",
+    borderRadius: "8px",
+    border: "1px solid #d7dbe0",
+    fontSize: "14px",
+  },
+  send: {
+    padding: "8px 14px",
+    borderRadius: "8px",
+    border: "none",
+    background: "#4f46e5",
+    color: "#fff",
+    fontWeight: 600,
+    cursor: "pointer",
+  },
 };

@@ -40,13 +40,17 @@ class Sheet {
 
   text(value: string, style?: TextStyle): string {
     const id = this.next();
-    this.nodes[id] = style === undefined ? { id, type: "text", value } : { id, type: "text", value, style };
+    this.nodes[id] =
+      style === undefined ? { id, type: "text", value } : { id, type: "text", value, style };
     return id;
   }
 
   image(src: string, alt: string, style?: ImageStyle): string {
     const id = this.next();
-    this.nodes[id] = style === undefined ? { id, type: "image", src, alt } : { id, type: "image", src, alt, style };
+    this.nodes[id] =
+      style === undefined
+        ? { id, type: "image", src, alt }
+        : { id, type: "image", src, alt, style };
     return id;
   }
 
@@ -90,12 +94,18 @@ function productGrid(): FacetTree {
   const s = new Sheet();
   const card = (seed: string, name: string, price: string): string =>
     s.box({ direction: "col", gap: "sm", border: true, radius: "lg", pad: "md", grow: true }, [
-      s.image(`https://picsum.photos/seed/${seed}/400/300`, name, { width: "full", ratio: "wide", radius: "md" }),
+      s.image(`https://picsum.photos/seed/${seed}/400/300`, name, {
+        width: "full",
+        ratio: "wide",
+        radius: "md",
+      }),
       s.text(name, { weight: "semibold" }),
       s.text(price, { color: "fg-muted", size: "sm" }),
-      s.box({ bg: "accent", radius: "sm", pad: "sm", align: "center" }, [
-        s.text("Add to cart", { color: "accent-fg", size: "sm", weight: "semibold" }),
-      ], { name: "add", payload: { sku: seed } }),
+      s.box(
+        { bg: "accent", radius: "sm", pad: "sm", align: "center" },
+        [s.text("Add to cart", { color: "accent-fg", size: "sm", weight: "semibold" })],
+        { name: "add", payload: { sku: seed } },
+      ),
     ]);
   return s.tree({ direction: "col", gap: "lg", pad: "xl" }, [
     s.text("Featured", { size: "2xl", weight: "bold" }),
@@ -114,9 +124,11 @@ function signupForm(): FacetTree {
     s.text("We'll email you an invite.", { color: "fg-muted", size: "sm" }),
     s.field("email", "Email", "you@example.com"),
     s.field("name", "Name", "Ada Lovelace"),
-    s.box({ bg: "accent", radius: "md", pad: "md", align: "center" }, [
-      s.text("Request invite", { color: "accent-fg", weight: "semibold" }),
-    ], { name: "submit" }),
+    s.box(
+      { bg: "accent", radius: "md", pad: "md", align: "center" },
+      [s.text("Request invite", { color: "accent-fg", weight: "semibold" })],
+      { name: "submit" },
+    ),
   ]);
 }
 
@@ -139,7 +151,12 @@ function stats(): FacetTree {
 
 function pricing(): FacetTree {
   const s = new Sheet();
-  const tier = (name: string, price: string, feats: readonly string[], highlight: boolean): string => {
+  const tier = (
+    name: string,
+    price: string,
+    feats: readonly string[],
+    highlight: boolean,
+  ): string => {
     const fg: Color = highlight ? "accent-fg" : "fg";
     const muted: Color = highlight ? "accent-fg" : "fg-muted";
     return s.box(
@@ -154,7 +171,13 @@ function pricing(): FacetTree {
           highlight
             ? { bg: "bg", radius: "sm", pad: "sm", align: "center" }
             : { bg: "accent", radius: "sm", pad: "sm", align: "center" },
-          [s.text("Choose", { size: "sm", weight: "semibold", color: highlight ? "accent" : "accent-fg" })],
+          [
+            s.text("Choose", {
+              size: "sm",
+              weight: "semibold",
+              color: highlight ? "accent" : "accent-fg",
+            }),
+          ],
           { name: "choose", payload: { tier: name } },
         ),
       ],
@@ -174,7 +197,11 @@ function imageGallery(): FacetTree {
   const s = new Sheet();
   const cell = (seed: string, caption: string): string =>
     s.box({ direction: "col", gap: "xs", grow: true }, [
-      s.image(`https://picsum.photos/seed/${seed}/300/300`, caption, { width: "full", ratio: "square", radius: "md" }),
+      s.image(`https://picsum.photos/seed/${seed}/300/300`, caption, {
+        width: "full",
+        ratio: "square",
+        radius: "md",
+      }),
       s.text(caption, { size: "sm", color: "fg-muted", align: "center" }),
     ]);
   return s.tree({ direction: "col", gap: "lg", pad: "xl" }, [

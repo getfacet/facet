@@ -65,7 +65,14 @@ export const nova = defineAgent(({ event, stage }) => {
         stage.append("root", {
           id: card,
           type: "box",
-          style: { direction: "col", gap: "sm", pad: "lg", bg: "surface", radius: "lg", border: true },
+          style: {
+            direction: "col",
+            gap: "sm",
+            pad: "lg",
+            bg: "surface",
+            radius: "lg",
+            border: true,
+          },
           children: [title, price],
         });
         stage.set({ id: title, type: "text", value: "Pro", style: { size: "lg", weight: "bold" } });

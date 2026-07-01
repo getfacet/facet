@@ -1,9 +1,4 @@
-import type {
-  ClientEvent,
-  FacetAgent,
-  FacetSession,
-  ServerMessage,
-} from "@facet/core";
+import type { ClientEvent, FacetAgent, FacetSession, ServerMessage } from "@facet/core";
 import { Stage } from "./stage.js";
 
 export interface FacetContext {
@@ -21,10 +16,7 @@ export type FacetLogic = (ctx: FacetContext) => void | Promise<void>;
  * the recorded commands are flushed into the messages sent back to the viewer.
  */
 export function defineAgent(logic: FacetLogic): FacetAgent {
-  return async (
-    event: ClientEvent,
-    session: FacetSession,
-  ): Promise<readonly ServerMessage[]> => {
+  return async (event: ClientEvent, session: FacetSession): Promise<readonly ServerMessage[]> => {
     const stage = new Stage();
     await logic({ event, session, stage });
     return stage.flush();

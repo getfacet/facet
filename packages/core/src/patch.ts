@@ -164,10 +164,7 @@ function applyOperation(root: unknown, operation: JsonPatchOperation): unknown {
 }
 
 /** Applies an ordered batch of operations to a tree, returning a new tree. */
-export function applyPatch(
-  tree: FacetTree,
-  operations: readonly JsonPatchOperation[],
-): FacetTree {
+export function applyPatch(tree: FacetTree, operations: readonly JsonPatchOperation[]): FacetTree {
   let root: unknown = structuredClone(tree);
   for (const operation of operations) {
     root = applyOperation(root, operation);

@@ -12,12 +12,19 @@
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
     "test": "vitest run",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "demo": "pnpm --filter @facet/playground demo"
   },
   "devDependencies": {
+    "@eslint/js": "^9.17.0",
     "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.0",
     "tsx": "^4.19.0",
     "typescript": "^5.9.0",
+    "typescript-eslint": "^8.19.0",
     "vitest": "^3.0.0"
   }
 }

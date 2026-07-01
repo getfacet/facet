@@ -42,10 +42,7 @@ export function useFacet(transport: FacetTransport): FacetState {
     });
   }, [transport]);
 
-  const send = useCallback(
-    (event: ClientEvent) => transport.send(event),
-    [transport],
-  );
+  const send = useCallback((event: ClientEvent) => transport.send(event), [transport]);
 
   return { tree, chat, send };
 }

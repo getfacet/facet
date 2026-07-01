@@ -12,10 +12,13 @@ import { LiveView } from "./live.js";
 type View = "gallery" | "generated" | "live" | "visitors";
 
 const SUBTITLES: Record<View, string> = {
-  gallery: "Six very different pages — all from four bricks (box/text/image/field) + tokens. No LLM.",
-  generated: "The page an LLM just built from the four bricks via the CLI generator, validated and rendered.",
+  gallery:
+    "Six very different pages — all from four bricks (box/text/image/field) + tokens. No LLM.",
+  generated:
+    "The page an LLM just built from the four bricks via the CLI generator, validated and rendered.",
   live: "Talk to a real @facet/server: type a request and the LLM agent builds the page live over SSE.",
-  visitors: "One agent (Nova), two visitors. Rule-based — no LLM. Type in a chat dock and watch only that visitor's stage rebuild.",
+  visitors:
+    "One agent (Nova), two visitors. Rule-based — no LLM. Type in a chat dock and watch only that visitor's stage rebuild.",
 };
 
 const ALICE: VisitorContext = {
@@ -89,7 +92,13 @@ interface LogLine {
   readonly text: string;
 }
 
-function VisitorPane({ title, visitor }: { title: string; visitor: VisitorContext }): React.ReactNode {
+function VisitorPane({
+  title,
+  visitor,
+}: {
+  title: string;
+  visitor: VisitorContext;
+}): React.ReactNode {
   const transport = useMemo(() => {
     const runtime = new FacetRuntime({ agentId: "nova", agent: nova });
     return new LocalTransport(runtime, visitor);
@@ -140,7 +149,8 @@ function VisitorPane({ title, visitor }: { title: string; visitor: VisitorContex
         <div style={styles.log}>
           {log.map((line, index) => (
             <div key={index} style={styles.logLine}>
-              <span style={line.who === "You" ? styles.you : styles.nova}>{line.who}:</span> {line.text}
+              <span style={line.who === "You" ? styles.you : styles.nova}>{line.who}:</span>{" "}
+              {line.text}
             </div>
           ))}
         </div>

@@ -21,7 +21,11 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     stage.render({ root: "root", nodes: {} });
     const message = stage.flush()[0];
     if (message?.kind !== "patch") throw new Error("expected patch");
-    expect(message.patches[0]).toEqual({ op: "replace", path: "", value: { root: "root", nodes: {} } });
+    expect(message.patches[0]).toEqual({
+      op: "replace",
+      path: "",
+      value: { root: "root", nodes: {} },
+    });
   });
 
   it("say flushes queued patches first, preserving order", () => {

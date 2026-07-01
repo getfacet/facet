@@ -58,7 +58,14 @@ function RenderNode({ tree, id, onAction }: RenderNodeProps): ReactNode {
       return <img src={node.src} alt={node.alt} style={imageStyle(node.style)} />;
     case "field":
       return (
-        <label style={{ display: "flex", flexDirection: "column", gap: "4px", ...fieldStyle(node.style) }}>
+        <label
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+            ...fieldStyle(node.style),
+          }}
+        >
           {node.label !== undefined ? <span>{node.label}</span> : null}
           <input type={node.input ?? "text"} name={node.name} placeholder={node.placeholder} />
         </label>

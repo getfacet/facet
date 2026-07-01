@@ -1,10 +1,4 @@
-import type {
-  FacetNode,
-  FacetTree,
-  JsonPatchOperation,
-  NodeId,
-  ServerMessage,
-} from "@facet/core";
+import type { FacetNode, FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
 
 /** Escapes a token for use in an RFC 6901 JSON Pointer. */
 function escape(token: string): string {

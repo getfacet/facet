@@ -35,7 +35,9 @@ describe("validateTree", () => {
         root: { id: "root", type: "box", style: { gap: "HUGE", pad: "md" }, children: [] },
       },
     };
-    const root = validateTree(input).tree.nodes["root"] as unknown as { style?: Record<string, unknown> };
+    const root = validateTree(input).tree.nodes["root"] as unknown as {
+      style?: Record<string, unknown>;
+    };
     expect(root.style?.["gap"]).toBeUndefined();
     expect(root.style?.["pad"]).toBe("md");
   });

@@ -47,10 +47,7 @@ export class FacetRuntime {
     return this.store.get(this.agentId, visitorId)?.stage;
   }
 
-  async handle(
-    visitor: VisitorContext,
-    event: ClientEvent,
-  ): Promise<readonly ServerMessage[]> {
+  async handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]> {
     const session = this.store.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
     const next = this.applyToSession(session, messages);
@@ -58,10 +55,7 @@ export class FacetRuntime {
     return messages;
   }
 
-  private applyToSession(
-    session: FacetSession,
-    messages: readonly ServerMessage[],
-  ): FacetSession {
+  private applyToSession(session: FacetSession, messages: readonly ServerMessage[]): FacetSession {
     let stage = session.stage;
     for (const message of messages) {
       if (message.kind === "patch") {

@@ -21,7 +21,8 @@ function printTree(tree: FacetTree): void {
           : node.type === "field"
             ? `: ${node.name}`
             : "";
-    const press = node.type === "box" && node.onPress !== undefined ? ` [→ ${node.onPress.name}]` : "";
+    const press =
+      node.type === "box" && node.onPress !== undefined ? ` [→ ${node.onPress.name}]` : "";
     console.log(`${pad}${node.type}${detail}${press}`);
     if (node.type === "box") {
       for (const child of node.children) walk(child, depth + 1);
@@ -31,8 +32,11 @@ function printTree(tree: FacetTree): void {
 }
 
 async function main(): Promise<void> {
-  const request = process.argv.slice(2).join(" ").trim() || "a simple landing page for a coffee shop";
-  console.log(`\n▸ Asking the agent to build: "${request}"\n  (calling local claude CLI — no API key)…\n`);
+  const request =
+    process.argv.slice(2).join(" ").trim() || "a simple landing page for a coffee shop";
+  console.log(
+    `\n▸ Asking the agent to build: "${request}"\n  (calling local claude CLI — no API key)…\n`,
+  );
 
   const { tree, issues } = await generatePage(request);
 
@@ -49,7 +53,10 @@ async function main(): Promise<void> {
   }
 
   mkdirSync(new URL("../generated/", import.meta.url), { recursive: true });
-  writeFileSync(new URL("../generated/latest.json", import.meta.url), JSON.stringify(tree, null, 2));
+  writeFileSync(
+    new URL("../generated/latest.json", import.meta.url),
+    JSON.stringify(tree, null, 2),
+  );
   console.log(`\nSaved tree → apps/playground/generated/latest.json`);
 }
 

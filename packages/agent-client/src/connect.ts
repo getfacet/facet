@@ -43,9 +43,7 @@ interface EventFrame {
 
 function isEventFrame(value: unknown): value is EventFrame {
   return (
-    typeof value === "object" &&
-    value !== null &&
-    (value as { type?: unknown }).type === "event"
+    typeof value === "object" && value !== null && (value as { type?: unknown }).type === "event"
   );
 }
 
@@ -84,7 +82,12 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
     try {
       messages = await agent(frame.event, session);
     } catch (error) {
-      messages = [{ kind: "say", text: `(agent error: ${error instanceof Error ? error.message : "unknown"})` }];
+      messages = [
+        {
+          kind: "say",
+          text: `(agent error: ${error instanceof Error ? error.message : "unknown"})`,
+        },
+      ];
     }
     await sendControl(frame.requestId, messages);
   };

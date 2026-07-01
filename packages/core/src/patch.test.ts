@@ -4,7 +4,10 @@ import { EMPTY_TREE } from "./tree.js";
 
 describe("applyPatch (RFC 6902)", () => {
   it("replace at the root path swaps the whole tree", () => {
-    const next = { root: "root", nodes: { root: { id: "root", type: "box" as const, children: [] } } };
+    const next = {
+      root: "root",
+      nodes: { root: { id: "root", type: "box" as const, children: [] } },
+    };
     const out = applyPatch(EMPTY_TREE, [{ op: "replace", path: "", value: next }]);
     expect(out).toEqual(next);
   });
@@ -35,7 +38,9 @@ describe("applyPatch (RFC 6902)", () => {
 
   it("is pure — never mutates the input tree", () => {
     const before = JSON.stringify(EMPTY_TREE);
-    applyPatch(EMPTY_TREE, [{ op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } }]);
+    applyPatch(EMPTY_TREE, [
+      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
+    ]);
     expect(JSON.stringify(EMPTY_TREE)).toBe(before);
   });
 });
