@@ -7,6 +7,7 @@ dist/
 !.env.example
 coverage/
 generated/
+.facet-sessions/
 .turbo/
 .idea/
 .vscode/

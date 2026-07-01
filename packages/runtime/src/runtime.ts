@@ -7,7 +7,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { MemorySessionStore, type SessionStore } from "./session-store.js";
+import { MemorySessionStore, type SessionStore, type StoredEvent } from "./session-store.js";
 
 export interface FacetRuntimeOptions {
   readonly agentId: string;
@@ -47,11 +47,17 @@ export class FacetRuntime {
     return this.store.get(this.agentId, visitorId)?.stage;
   }
 
+  /** The recorded interaction history for a viewer (events + agent replies). */
+  historyFor(visitorId: string): readonly StoredEvent[] {
+    return this.store.history(this.agentId, visitorId);
+  }
+
   async handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]> {
     const session = this.store.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
     const next = this.applyToSession(session, messages);
     this.store.save(next);
+    this.store.append(this.agentId, visitor.visitorId, { at: Date.now(), event, messages });
     return messages;
   }
 

@@ -21,5 +21,9 @@ npm yet, so there are no released versions.
 - `@facet/kit`: optional presets over the bricks.
 - Statefulness: the visitor's current stage travels with each event so agents
   refine instead of rebuild.
+- Session store keeps per-`(agent, visitor)` interaction history (events + agent
+  replies), not just the current stage; a browser re-connect re-hydrates the page
+  and past chat. `FileSessionStore` is a durable, dependency-free reference that
+  survives a restart (playground: `FACET_STORE=file`).
 - `apps/playground`: gallery, LLM-generated, live-server, and two-visitor demos.
 - Unit tests, CI, and contributor docs.

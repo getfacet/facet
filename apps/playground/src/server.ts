@@ -10,6 +10,7 @@
 import type { FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { createFacetServer } from "@facet/server";
+import { FileSessionStore } from "@facet/runtime";
 import { page, text } from "@facet/kit";
 import { generatePage } from "./generator.js";
 
@@ -30,6 +31,9 @@ const PORT = 5291;
 // llm (default) | echo (fast) | none (no fallback → offline face shows)
 const MODE = process.env.FACET_AGENT ?? "llm";
 const useLlm = MODE === "llm";
+// FACET_STORE=file → durable sessions on disk (survive a server restart).
+const store =
+  process.env.FACET_STORE === "file" ? new FileSessionStore(".facet-sessions") : undefined;
 
 function welcome(): FacetTree {
   return {
@@ -96,6 +100,7 @@ void createFacetServer({
   agentId: "live",
   offlineFace: OFFLINE_FACE,
   ...(MODE === "none" ? {} : { agent }),
+  ...(store !== undefined ? { store } : {}),
 })
   .listen()
   .then(() => {

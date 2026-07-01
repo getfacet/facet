@@ -7,7 +7,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { FacetRuntime } from "@facet/runtime";
+import { FacetRuntime, type SessionStore } from "@facet/runtime";
 
 /**
  * The reference Facet transport: a tiny Node server carrying events to an agent
@@ -31,6 +31,8 @@ export interface FacetServerOptions {
   readonly agentTimeoutMs?: number;
   /** Page shown to a fresh visitor when no agent is connected (the offline face). */
   readonly offlineFace?: FacetTree;
+  /** Session store — defaults to in-memory. Pass a durable one to survive restarts. */
+  readonly store?: SessionStore;
 }
 
 const DEFAULT_OFFLINE_FACE: FacetTree = {
@@ -151,7 +153,11 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
         ? options.agent(event, session)
         : offlineFor(event);
 
-  const runtime = new FacetRuntime({ agentId: options.agentId, agent });
+  const runtime = new FacetRuntime({
+    agentId: options.agentId,
+    agent,
+    ...(options.store !== undefined ? { store: options.store } : {}),
+  });
 
   const pushToBrowser = (visitorId: string, messages: readonly ServerMessage[]): void => {
     const connections = browserStreams.get(visitorId);
@@ -197,9 +203,15 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
         browserStreams.set(visitorId, set);
       }
       set.add(res);
+      // Re-hydrate a (re)connecting viewer: the current page, then past chat.
       const stage = runtime.stageFor(visitorId);
       if (stage !== undefined) {
         sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] });
+      }
+      for (const entry of runtime.historyFor(visitorId)) {
+        for (const message of entry.messages) {
+          if (message.kind === "say") sse(res, message);
+        }
       }
       req.on("close", () => set?.delete(res));
       return;
