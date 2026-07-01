@@ -4,8 +4,9 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ClientEvent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetAgent, FacetTree, ServerMessage } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
+import { createPersistentDriver } from "./persistent.js";
 
 /**
  * The local bridge lets a coding agent on your machine (Claude Code, Codex, …)
@@ -22,10 +23,18 @@ export interface BridgeOptions {
   readonly serverUrl?: string;
   /** Which link (agent id) to own. Default `live`. */
   readonly agentId?: string;
-  /** `oneshot` = fresh agent per event; `session` = `--resume` for continuity. Default `session`. */
+  /**
+   * How the brain runs:
+   * - `spawn` (default): run a CLI (`claude`/`codex`) per event — works with any CLI.
+   * - `persistent`: one always-on Claude session (Agent SDK) owns the link.
+   */
+  readonly mode?: "spawn" | "persistent";
+  /** `oneshot` = fresh agent per event; `session` = `--resume` for continuity. Default `session`. (spawn mode) */
   readonly method?: "oneshot" | "session";
-  /** The brain CLI to run, e.g. `claude` or `codex`. Default `claude`. */
+  /** The brain CLI to run, e.g. `claude` or `codex`. Default `claude`. (spawn mode) */
   readonly command?: string;
+  /** Model for the persistent session (Agent SDK). Optional. */
+  readonly model?: string;
   /** Extra args passed to the brain command before the prompt. */
   readonly commandArgs?: readonly string[];
   /** Local port the `facet` CLI posts changes to. Default `5292`. */
@@ -71,6 +80,44 @@ function promptFor(event: ClientEvent, stage: FacetTree): string {
 export function createBridge(options: BridgeOptions = {}): Bridge {
   const serverUrl = options.serverUrl ?? "http://localhost:5291";
   const agentId = options.agentId ?? "live";
+  const mode = options.mode ?? "spawn";
+
+  let agent: FacetAgent;
+  let cleanup: () => void = () => {};
+
+  if (mode === "persistent") {
+    const driver = createPersistentDriver(
+      options.model !== undefined ? { model: options.model } : {},
+    );
+    agent = async (event, session) => {
+      const messages = await driver.agent(event, session);
+      options.onEvent?.(event.kind, session.visitor.visitorId, messages.length);
+      return messages;
+    };
+    cleanup = driver.close;
+  } else {
+    const spawned = createSpawnAgent(options);
+    agent = spawned.agent;
+    cleanup = spawned.close;
+  }
+
+  const connection = connectAgent({
+    serverUrl,
+    agentId,
+    agent,
+    ...(options.onStatus !== undefined ? { onStatus: options.onStatus } : {}),
+  });
+
+  return {
+    close: (): void => {
+      connection.close();
+      cleanup();
+    },
+  };
+}
+
+/** The spawn-per-event driver: runs a CLI (`claude`/`codex`) for each event. */
+function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: () => void } {
   const method = options.method ?? "session";
   const command = options.command ?? "claude";
   const bridgePort = options.bridgePort ?? 5292;
@@ -140,10 +187,7 @@ export function createBridge(options: BridgeOptions = {}): Bridge {
       });
     });
 
-  const drive = async (
-    event: ClientEvent,
-    session: FacetSession,
-  ): Promise<readonly ServerMessage[]> => {
+  const agent: FacetAgent = async (event, session) => {
     const token = String((counter += 1));
     buffers.set(token, []);
     await runBrain(promptFor(event, session.stage), session.visitor.visitorId, token);
@@ -153,16 +197,9 @@ export function createBridge(options: BridgeOptions = {}): Bridge {
     return messages;
   };
 
-  const connection = connectAgent({
-    serverUrl,
-    agentId,
-    agent: drive,
-    ...(options.onStatus !== undefined ? { onStatus: options.onStatus } : {}),
-  });
-
   return {
+    agent,
     close: (): void => {
-      connection.close();
       cmdServer.close();
     },
   };
