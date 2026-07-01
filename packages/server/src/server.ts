@@ -3,6 +3,7 @@ import {
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
+  type FacetTree,
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
@@ -28,7 +29,18 @@ export interface FacetServerOptions {
   readonly agent?: FacetAgent;
   /** How long to wait for a remote agent's control response (default 60s). */
   readonly agentTimeoutMs?: number;
+  /** Page shown to a fresh visitor when no agent is connected (the offline face). */
+  readonly offlineFace?: FacetTree;
 }
+
+const DEFAULT_OFFLINE_FACE: FacetTree = {
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", style: { direction: "col", gap: "sm", pad: "2xl", align: "center" }, children: ["o1", "o2"] },
+    o1: { id: "o1", type: "text", value: "This page is offline right now", style: { size: "xl", weight: "bold" } },
+    o2: { id: "o2", type: "text", value: "Its agent isn't connected. Check back soon.", style: { color: "fg-muted" } },
+  },
+};
 
 export interface FacetServer {
   listen(): Promise<void>;
@@ -74,7 +86,15 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   let lastHeartbeat = 0;
   let requestCounter = 0;
 
+  const offlineFace = options.offlineFace ?? DEFAULT_OFFLINE_FACE;
   const offline = (text: string): readonly ServerMessage[] => [{ kind: "say", text }];
+
+  /** What a visitor gets when no agent is connected: the offline face on a fresh
+   * visit, a short note otherwise. */
+  const offlineFor = (event: ClientEvent): readonly ServerMessage[] =>
+    event.kind === "visit"
+      ? [{ kind: "patch", patches: [{ op: "replace", path: "", value: offlineFace }] }]
+      : [{ kind: "say", text: "This page's agent is offline right now — check back soon." }];
 
   const dropAgent = (reason: string): void => {
     if (agentStream === null) return;
@@ -90,7 +110,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   const remoteAgent: FacetAgent = (event: ClientEvent, session: FacetSession) => {
     const stream = agentStream;
     if (stream === null) {
-      return offline("(no agent connected)");
+      return offlineFor(event);
     }
     const requestId = (requestCounter += 1);
     return new Promise<readonly ServerMessage[]>((resolve) => {
@@ -114,7 +134,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       ? remoteAgent(event, session)
       : options.agent !== undefined
         ? options.agent(event, session)
-        : offline("(no agent connected)");
+        : offlineFor(event);
 
   const runtime = new FacetRuntime({ agentId: options.agentId, agent });
 

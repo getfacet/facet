@@ -10,7 +10,18 @@
 import type { FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { createFacetServer } from "@facet/server";
+import { page, text } from "@facet/kit";
 import { generatePage } from "./generator.js";
+
+// The offline face — built from presets, shown to a fresh visitor when no agent
+// is connected (instead of a blank page).
+const OFFLINE_FACE: FacetTree = page(
+  [
+    text("Nova is offline right now", { size: "2xl", weight: "bold", align: "center" }),
+    text("This page's agent isn't connected — check back soon.", { color: "fg-muted", align: "center" }),
+  ],
+  { pad: "2xl" },
+);
 
 const PORT = 5291;
 const useLlm = process.env.FACET_AGENT !== "echo";
@@ -61,7 +72,7 @@ const agent = defineAgent(async ({ event, session, stage }) => {
 
 // This agent is the IN-PROCESS FALLBACK. If an external agent connects at
 // /agent/stream (see `pnpm --filter @facet/playground agent`), it takes over.
-void createFacetServer({ port: PORT, agentId: "live", agent })
+void createFacetServer({ port: PORT, agentId: "live", agent, offlineFace: OFFLINE_FACE })
   .listen()
   .then(() => {
     console.log(

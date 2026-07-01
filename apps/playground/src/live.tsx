@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { FacetAction, VisitorContext } from "@facet/core";
-import { StageRenderer, useFacet } from "@facet/react";
+import { ChatDock, StageRenderer, useFacet } from "@facet/react";
 import { SseTransport } from "./sse-transport.js";
 
 const SERVER = "http://localhost:5291";
@@ -30,7 +30,6 @@ export function LiveView(): React.ReactNode {
   const transport = useMemo(() => new SseTransport(SERVER, VISITOR), []);
   const { tree, chat, send } = useFacet(transport);
   const [log, setLog] = useState<readonly LogLine[]>([]);
-  const [draft, setDraft] = useState("");
   const [pending, setPending] = useState(false);
   const seen = useRef(0);
 
@@ -51,13 +50,10 @@ export function LiveView(): React.ReactNode {
     setPending(false);
   }, [tree]);
 
-  const submit = (): void => {
-    const text = draft.trim();
-    if (text === "") return;
+  const onSend = (text: string): void => {
     setLog((current) => [...current, { who: "You", text }]);
     setPending(true);
     send({ kind: "message", text });
-    setDraft("");
   };
 
   const onAction = (action: FacetAction): void => {
@@ -78,30 +74,7 @@ export function LiveView(): React.ReactNode {
         <StageRenderer tree={tree} onAction={onAction} />
       </div>
 
-      <div style={styles.dock}>
-        <div style={styles.log}>
-          {log.map((line, index) => (
-            <div key={index} style={styles.logLine}>
-              <span style={line.who === "You" ? styles.you : styles.nova}>{line.who}:</span> {line.text}
-            </div>
-          ))}
-          {pending ? <div style={styles.thinking}>Nova is building…</div> : null}
-        </div>
-        <div style={styles.inputRow}>
-          <input
-            style={styles.input}
-            value={draft}
-            placeholder="describe a page…"
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") submit();
-            }}
-          />
-          <button style={styles.send} type="button" onClick={submit}>
-            Send
-          </button>
-        </div>
-      </div>
+      <ChatDock messages={log} onSend={onSend} pending={pending} placeholder="describe a page…" />
     </div>
   );
 }
