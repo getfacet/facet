@@ -1,6 +1,6 @@
 # Facet
 
-**Interfaces your model draws.**
+**Interfaces your model draws.** The UI layer for LLMs and agents.
 
 Facet is a TypeScript framework for UI a language model renders itself — safe,
 live, and different for every user. You give the model a small set of safe visual
