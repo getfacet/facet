@@ -23,6 +23,9 @@ importers:
       '@facet/agent':
         specifier: workspace:*
         version: link:../../packages/agent
+      '@facet/agent-client':
+        specifier: workspace:*
+        version: link:../../packages/agent-client
       '@facet/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -56,6 +59,12 @@ importers:
         version: 6.4.3(@types/node@22.20.0)(tsx@4.22.4)
 
   packages/agent:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/agent-client:
     dependencies:
       '@facet/core':
         specifier: workspace:*

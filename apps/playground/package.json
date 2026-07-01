@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@facet/agent": "workspace:*",
+    "@facet/agent-client": "workspace:*",
     "@facet/core": "workspace:*",
     "@facet/react": "workspace:*",
     "@facet/runtime": "workspace:*",

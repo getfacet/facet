@@ -67,12 +67,24 @@ function readJson(req: IncomingMessage): Promise<unknown> {
 
 export function createFacetServer(options: FacetServerOptions): FacetServer {
   const timeoutMs = options.agentTimeoutMs ?? 60_000;
+  const staleMs = 30_000; // reap an agent that hasn't sent a heartbeat this long
   const browserStreams = new Map<string, Set<ServerResponse>>();
   const pending = new Map<number, Pending>();
   let agentStream: ServerResponse | null = null;
+  let lastHeartbeat = 0;
   let requestCounter = 0;
 
   const offline = (text: string): readonly ServerMessage[] => [{ kind: "say", text }];
+
+  const dropAgent = (reason: string): void => {
+    if (agentStream === null) return;
+    agentStream = null;
+    for (const [id, p] of pending) {
+      clearTimeout(p.timer);
+      p.resolve(offline(reason));
+      pending.delete(id);
+    }
+  };
 
   /** The remote agent, presented to the runtime as a normal FacetAgent. */
   const remoteAgent: FacetAgent = (event: ClientEvent, session: FacetSession) => {
@@ -185,14 +197,17 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       res.writeHead(200, streamHeaders);
       res.write(": agent connected\n\n");
       agentStream = res;
+      lastHeartbeat = Date.now();
       req.on("close", () => {
-        if (agentStream === res) agentStream = null;
-        for (const [id, p] of pending) {
-          clearTimeout(p.timer);
-          p.resolve(offline("(agent disconnected)"));
-          pending.delete(id);
-        }
+        if (agentStream === res) dropAgent("(agent disconnected)");
       });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/agent/heartbeat") {
+      lastHeartbeat = Date.now();
+      res.writeHead(204);
+      res.end();
       return;
     }
 
@@ -223,6 +238,18 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
     res.end();
   });
 
+  // Liveness: keep the agent stream warm and reap it if heartbeats stop (covers
+  // a half-open connection where the agent's machine died without a clean close).
+  const reaper = setInterval(() => {
+    if (agentStream === null) return;
+    if (Date.now() - lastHeartbeat > staleMs) {
+      agentStream.end();
+      dropAgent("(agent went quiet)");
+      return;
+    }
+    agentStream.write(": ping\n\n");
+  }, 10_000);
+
   return {
     listen: () =>
       new Promise((resolve) => {
@@ -230,6 +257,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       }),
     close: () =>
       new Promise((resolve, reject) => {
+        clearInterval(reaper);
         server.close((error) => (error ? reject(error) : resolve()));
       }),
   };
