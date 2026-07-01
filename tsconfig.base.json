@@ -19,7 +19,8 @@
       "@facet/core": ["packages/core/src/index.ts"],
       "@facet/runtime": ["packages/runtime/src/index.ts"],
       "@facet/react": ["packages/react/src/index.ts"],
-      "@facet/agent": ["packages/agent/src/index.ts"]
+      "@facet/agent": ["packages/agent/src/index.ts"],
+      "@facet/server": ["packages/server/src/index.ts"]
     }
   }
 }

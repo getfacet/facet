@@ -7,12 +7,14 @@ import { nova } from "./nova.js";
 import { LocalTransport } from "./transport.js";
 import { Gallery } from "./gallery.js";
 import { GeneratedView } from "./generated.js";
+import { LiveView } from "./live.js";
 
-type View = "gallery" | "generated" | "visitors";
+type View = "gallery" | "generated" | "live" | "visitors";
 
 const SUBTITLES: Record<View, string> = {
   gallery: "Six very different pages — all from four bricks (box/text/image/field) + tokens. No LLM.",
   generated: "The page an LLM just built from the four bricks via the CLI generator, validated and rendered.",
+  live: "Talk to a real @facet/server: type a request and the LLM agent builds the page live over SSE.",
   visitors: "One agent (Nova), two visitors. Rule-based — no LLM. Type in a chat dock and watch only that visitor's stage rebuild.",
 };
 
@@ -52,10 +54,17 @@ export function App(): React.ReactNode {
           </button>
           <button
             type="button"
+            style={view === "live" ? styles.tabActive : styles.tab}
+            onClick={() => setView("live")}
+          >
+            Live (server)
+          </button>
+          <button
+            type="button"
             style={view === "visitors" ? styles.tabActive : styles.tab}
             onClick={() => setView("visitors")}
           >
-            Two visitors (live)
+            Two visitors
           </button>
         </nav>
       </header>
@@ -63,6 +72,8 @@ export function App(): React.ReactNode {
         <Gallery />
       ) : view === "generated" ? (
         <GeneratedView />
+      ) : view === "live" ? (
+        <LiveView />
       ) : (
         <div style={styles.panes}>
           <VisitorPane title="Alice — came from Twitter" visitor={ALICE} />

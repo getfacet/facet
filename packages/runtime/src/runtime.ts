@@ -3,6 +3,7 @@ import {
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
+  type FacetTree,
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
@@ -37,6 +38,15 @@ export class FacetRuntime {
    * back to that viewer. Stage patches are applied to the session before return
    * so server state stays the source of truth.
    */
+  /**
+   * The current stage for a viewer, if a session exists. A transport uses this
+   * to send a snapshot when a viewer (re)connects, so a fresh connection or a
+   * second tab immediately shows the live page.
+   */
+  stageFor(visitorId: string): FacetTree | undefined {
+    return this.store.get(this.agentId, visitorId)?.stage;
+  }
+
   async handle(
     visitor: VisitorContext,
     event: ClientEvent,

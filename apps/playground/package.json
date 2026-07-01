@@ -8,6 +8,7 @@
   "scripts": {
     "demo": "tsx src/demo.ts",
     "gen": "tsx src/gen.ts",
+    "serve": "tsx src/server.ts",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
@@ -17,6 +18,7 @@
     "@facet/core": "workspace:*",
     "@facet/react": "workspace:*",
     "@facet/runtime": "workspace:*",
+    "@facet/server": "workspace:*",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

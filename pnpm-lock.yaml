@@ -32,6 +32,9 @@ importers:
       '@facet/runtime':
         specifier: workspace:*
         version: link:../../packages/runtime
+      '@facet/server':
+        specifier: workspace:*
+        version: link:../../packages/server
       react:
         specifier: ^19.0.0
         version: 19.2.7
@@ -78,6 +81,15 @@ importers:
       '@facet/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/server:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@facet/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
 packages:
 
