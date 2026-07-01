@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "demo": "tsx src/demo.ts",
+    "gen": "tsx src/gen.ts",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit"

@@ -2,49 +2,64 @@
  * Style tokens — the bounded vocabulary an agent may use for styling bricks.
  *
  * Values are TOKEN NAMES, never raw scalars (no `padding: 23`, no `color:
- * "#abc"`). This is what lets the agent style freely yet always land on a
+ * "#abc"`). This is what lets an agent style freely yet always land on a
  * coherent scale: any token choice is, by construction, a good-looking one. The
  * renderer (a theme) maps these names to concrete CSS. Token names are kept
  * compatible-in-spirit with the W3C Design Tokens (DTCG) format so a theme can
  * be expressed as a DTCG token file later.
+ *
+ * Each token group is a runtime array (the single source of truth) with its type
+ * derived from it, so validators can check membership and types stay in sync.
  */
 
 /** Spacing scale (gap, padding). */
-export type Space = "none" | "xs" | "sm" | "md" | "lg" | "xl" | "2xl";
+export const SPACES = ["none", "xs", "sm", "md", "lg", "xl", "2xl"] as const;
+export type Space = (typeof SPACES)[number];
 
 /** Font size scale. */
-export type FontSize = "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "3xl";
+export const FONT_SIZES = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl"] as const;
+export type FontSize = (typeof FONT_SIZES)[number];
 
-export type FontWeight = "regular" | "medium" | "semibold" | "bold";
+export const FONT_WEIGHTS = ["regular", "medium", "semibold", "bold"] as const;
+export type FontWeight = (typeof FONT_WEIGHTS)[number];
 
-export type Radius = "none" | "sm" | "md" | "lg" | "full";
+export const RADII = ["none", "sm", "md", "lg", "full"] as const;
+export type Radius = (typeof RADII)[number];
 
 /** Semantic color tokens — meaning, not hex. The theme decides the actual hue. */
-export type Color =
-  | "fg"
-  | "fg-muted"
-  | "bg"
-  | "surface"
-  | "surface-2"
-  | "accent"
-  | "accent-fg"
-  | "border"
-  | "success"
-  | "warning"
-  | "danger";
+export const COLORS = [
+  "fg",
+  "fg-muted",
+  "bg",
+  "surface",
+  "surface-2",
+  "accent",
+  "accent-fg",
+  "border",
+  "success",
+  "warning",
+  "danger",
+] as const;
+export type Color = (typeof COLORS)[number];
 
 /** Flow direction. There is no absolute positioning — only flow layout. */
-export type Direction = "row" | "col";
+export const DIRECTIONS = ["row", "col"] as const;
+export type Direction = (typeof DIRECTIONS)[number];
 
 /** Cross-axis alignment. */
-export type Align = "start" | "center" | "end" | "stretch";
+export const ALIGNS = ["start", "center", "end", "stretch"] as const;
+export type Align = (typeof ALIGNS)[number];
 
 /** Main-axis distribution. */
-export type Justify = "start" | "center" | "end" | "between" | "around";
+export const JUSTIFIES = ["start", "center", "end", "between", "around"] as const;
+export type Justify = (typeof JUSTIFIES)[number];
 
-export type TextAlign = "start" | "center" | "end";
+export const TEXT_ALIGNS = ["start", "center", "end"] as const;
+export type TextAlign = (typeof TEXT_ALIGNS)[number];
 
 /** Bounded sizing — never arbitrary widths, so nothing overflows the viewport. */
-export type Sizing = "auto" | "full";
+export const SIZINGS = ["auto", "full"] as const;
+export type Sizing = (typeof SIZINGS)[number];
 
-export type Ratio = "square" | "wide" | "tall";
+export const RATIOS = ["square", "wide", "tall"] as const;
+export type Ratio = (typeof RATIOS)[number];
