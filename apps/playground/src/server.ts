@@ -24,7 +24,9 @@ const OFFLINE_FACE: FacetTree = page(
 );
 
 const PORT = 5291;
-const useLlm = process.env.FACET_AGENT !== "echo";
+// llm (default) | echo (fast) | none (no fallback → offline face shows)
+const MODE = process.env.FACET_AGENT ?? "llm";
+const useLlm = MODE === "llm";
 
 function welcome(): FacetTree {
   return {
@@ -72,10 +74,13 @@ const agent = defineAgent(async ({ event, session, stage }) => {
 
 // This agent is the IN-PROCESS FALLBACK. If an external agent connects at
 // /agent/stream (see `pnpm --filter @facet/playground agent`), it takes over.
-void createFacetServer({ port: PORT, agentId: "live", agent, offlineFace: OFFLINE_FACE })
+void createFacetServer({
+  port: PORT,
+  agentId: "live",
+  offlineFace: OFFLINE_FACE,
+  ...(MODE === "none" ? {} : { agent }),
+})
   .listen()
   .then(() => {
-    console.log(
-      `Facet live server → http://localhost:${String(PORT)}  (fallback agent: ${useLlm ? "LLM" : "echo"})`,
-    );
+    console.log(`Facet live server → http://localhost:${String(PORT)}  (fallback agent: ${MODE})`);
   });
