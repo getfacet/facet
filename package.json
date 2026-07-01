@@ -11,11 +11,13 @@
   },
   "scripts": {
     "typecheck": "pnpm -r --if-present typecheck",
+    "test": "vitest run",
     "demo": "pnpm --filter @facet/playground demo"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "tsx": "^4.19.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
   }
 }
