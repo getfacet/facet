@@ -1,90 +1,115 @@
 # Facet
 
-**Living pages for agents — one link, a different face for every visitor.**
+**Interfaces your model draws.**
 
-Facet is a TypeScript framework for giving an AI agent a single public address
-that it re-renders, live and per visitor, as it talks to whoever shows up.
-
-Today an "agent link" is a static page or a chat box. Facet makes it a surface
-the agent *owns and rewrites*: two people opening the same link at the same time
-see two different pages, because the agent builds each one for the person in
-front of it and keeps changing it as the conversation goes.
+Facet is a TypeScript framework for UI a language model renders itself — safe,
+live, and different for every user. You give the model a small set of safe visual
+primitives; it composes whatever interface the moment calls for, keeps changing
+it as the conversation goes, and can build a different one for each person — all
+without ever emitting unsafe or broken markup.
 
 > Status: **pre-1.0.** The spec, patch protocol, runtime, renderer, the SSE/POST
 > transport (browser + external agents), a browser playground, durable stores,
 > and a Postgres adapter are all in place and tested. APIs may still change.
 
+## Why
+
+Today, when an AI wants to *show* you something, there are three options — and
+they all hurt:
+
+- **Text / markdown only** — the model can't really build UI; you get a wall of words.
+- **Let the model emit HTML/React** — unlimited, but **unsafe** (injection),
+  **fragile** (broken layouts), and **unreliable** (hallucinated markup).
+- **A fixed catalog of your components** (today's "generative UI") — safe, but the
+  model can only assemble what you pre-built. **Rigid.**
+
+Facet is the missing middle: the model composes **anything** from low-level
+bricks, it **can't inject or break the layout**, and it updates **live, per user**
+— you don't pre-build a component for every case, and you don't hand a model raw
+markup.
+
 ## The mental model: two layers
 
-A Facet page is just two layers stacked together:
+A Facet page is two layers stacked together:
 
-- **The Stage** — the body of the page. The agent rebuilds this per visitor and
+- **The Stage** — the body of the page. The model rebuilds this per user and
   mutates it as you talk. Everything visible is built here.
 - **The Chat dock** — always present (floating or pinned). It is *not* generated;
-  it is the control surface the visitor uses to drive the Stage.
+  it's the control surface the user drives the Stage with.
 
 ```
-the visitor speaks in the Chat  →  the agent rebuilds the Stage
+the user speaks in the Chat  →  the model rebuilds the Stage
 ```
 
-The Stage also diverges *before* anyone says a word: who showed up (referrer,
-locale, prior relationship) is enough to make the first paint different.
+The Stage can also diverge *before* anyone says a word: who showed up (referrer,
+locale, prior context) is enough to make the first paint different.
 
 ## Low-level bricks, not finished widgets
 
-The agent builds the Stage from **four low-level bricks** — not a catalog of
+The model builds the Stage from **four low-level bricks** — not a catalog of
 pre-made components:
 
-| Brick    | It is…                                                          |
-| -------- | -------------------------------------------------------------- |
-| `box`    | the universal container. Flow layout, token styles, optional `onPress`. |
-| `text`   | text with token styles (size/weight/color).                    |
-| `image`  | an image.                                                      |
-| `field`  | an input.                                                      |
+| Brick   | It is…                                                                  |
+| ------- | ----------------------------------------------------------------------- |
+| `box`   | the universal container. Flow layout, token styles, optional `onPress`. |
+| `text`  | text with token styles (size/weight/color).                             |
+| `image` | an image.                                                               |
+| `field` | an input.                                                               |
 
 A *card* is a `box` with a border. A *button* is a `box` with `onPress`. A
-*heading* is a big `text`. The agent composes everything from these four, so the
-set of producible pages is unbounded — yet it stays safe and unbreakable because:
+*heading* is a big `text`. Everything is composed from these four, so the set of
+producible interfaces is unbounded — yet it stays safe and unbreakable because:
 
 1. **Bricks are typed data, never raw HTML/JS** → nothing can be injected.
 2. **Style values are tokens, not raw scalars** (`gap: "md"`, not `gap: 23`) →
-   any combination lands on a coherent scale; the agent can't produce visual
+   any combination lands on a coherent scale; the model can't produce visual
    chaos, and good output comes out in one shot.
 3. **Layout is flow-only** (row/col, no absolute positioning) → children stack or
    wrap; they can't overlap or fall off the page.
 4. **The renderer is fail-safe** → unknown or dangling nodes are skipped, so a
    partial stage renders as "plain", never broken.
 
-Higher-level shapes (`card()`, `hero()`, `grid()`) are deferred to an optional
-preset package — they're just functions that emit box compositions, giving
-one-shot convenience without giving up the low-level foundation.
+Higher-level shapes (`card()`, `hero()`, `grid()`) live in an optional preset
+package — they're just functions that emit box compositions, giving one-shot
+convenience without giving up the low-level foundation.
+
+## What you can build
+
+- **An AI that answers with UI, not text** — "compare these three" → a real
+  table; "I need your details" → a real form; "show me the plan" → a live
+  dashboard, assembled on the spot.
+- **Living pages** — a link that assembles itself for each visitor and keeps
+  changing as they talk. (An agent that owns its own public page is one case of
+  this.)
+- **Copilot canvases** — an agent that manipulates a live panel — adds a chart,
+  updates a card — as it reasons.
 
 ## How it works
 
 ```
- [ Visitor's browser ]
+ [ user's browser ]
    Stage (dynamic)  +  Chat dock (persistent)
         │  ClientEvent: visit / message / action
         ▼
- [ @facet/server ]    reference SSE/POST transport (browser side + agent side)
+ [ @facet/server ]    reference SSE/POST transport (browser side + model side)
         │
  [ @facet/runtime ]   one isolated session per (agent, visitor)
-        │  calls the agent, applies the resulting patches, persists the session
+        │  calls your model, applies the resulting patches, persists the session
         ▼
- [ your agent ]   drives the Stage via @facet/agent + your LLM
+ [ your model ]   drives the Stage via @facet/agent + your LLM
         │  ServerMessage: stage patches (RFC 6902) + chat replies
         ▼
  [ @facet/react ]   renders the brick spec to safe DOM; applies patches live
 ```
 
-**Your agent connects in one of three ways** — all the same `Stage` API:
+**Your model connects in one of three ways** — all the same `Stage` API:
 
 - **in-process** — a JS function inside the server (`@facet/agent`).
 - **local CLI** — a running agent (e.g. Claude Code) calls `facet append/say/…`
   and a local bridge forwards it (`@facet/cli`).
 - **dial-in** — an external agent connects out over SSE, NAT-safe, and is served
-  events to answer (`@facet/agent-client`). The agent brain (the LLM/rules) is
-  always yours; Facet is the surface it drives.
+  events to answer (`@facet/agent-client`). The model (the LLM/rules) is always
+  yours; Facet is the surface it draws on.
 
 **Persistence is two separate concerns.** The *stage* (the page) is always
 Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
@@ -97,21 +122,21 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
   (the IETF standard, also used by AG-UI). Only diffs move, and the *same* pure
   `applyPatch` runs on server and client so they never drift.
 - **The tree is a flat map of nodes with a `root` id** (the A2UI shape), so the
-  agent can stream and patch one node at a time.
+  model can stream and patch one node at a time.
 
 ## Packages
 
-| Package                 | Role                                                              |
-| ----------------------- | ---------------------------------------------------------------- |
+| Package                 | Role                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------- |
 | `@facet/core`           | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, session/event types. |
-| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation).  |
-| `@facet/agent`          | In-process agent SDK — the `Stage` control API + `defineAgent`.  |
-| `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect). |
-| `@facet/cli`            | The `facet` command — a running agent's action surface.          |
-| `@facet/server`         | Reference SSE/POST transport (browser side + agent side).        |
-| `@facet/react`          | Brick renderer (`StageRenderer`), default `theme`, `useFacet`, `ChatDock`. |
-| `@facet/kit`            | Optional presets (`card/hero/grid/…`) — sugar over the bricks.   |
-| `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                  |
+| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation).                          |
+| `@facet/agent`          | In-process agent SDK — the `Stage` control API + `defineAgent`.                           |
+| `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect).                          |
+| `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |
+| `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
+| `@facet/react`          | Brick renderer (`StageRenderer`), default `theme`, `useFacet`, `ChatDock`.               |
+| `@facet/kit`            | Optional presets (`card/hero/grid/…`) — sugar over the bricks.                            |
+| `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
 
 ## Quickstart
 
@@ -121,8 +146,8 @@ pnpm demo
 ```
 
 The demo runs entirely in-process (no browser, no LLM): two visitors hit one
-agent link and you watch their stages diverge, then one of them mutate live
-after a chat message. See [`apps/playground/src/demo.ts`](apps/playground/src/demo.ts).
+session and you watch their stages diverge, then one of them mutate live after a
+chat message. See [`apps/playground/src/demo.ts`](apps/playground/src/demo.ts).
 
 For the browser playground (a real page + chat dock, live-updating):
 
@@ -131,7 +156,7 @@ pnpm --filter @facet/playground dev      # http://localhost:5290
 pnpm --filter @facet/playground serve    # live server on :5291 (uses your local Claude)
 ```
 
-Authoring an agent looks like this:
+Authoring a model's logic looks like this:
 
 ```ts
 import { defineAgent } from "@facet/agent";

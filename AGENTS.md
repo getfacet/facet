@@ -3,8 +3,10 @@
 Guidance for coding agents (and humans) working on **Facet**. This is the source
 of truth; `CLAUDE.md` points here.
 
-Facet is a TypeScript framework for **living pages an agent owns**: one public
-link the agent re-renders live, per visitor, driven by conversation. See
+Facet is a TypeScript framework for **UI a language model renders itself** —
+safe, live, and different for every user. The model composes interfaces from a
+small set of safe primitives and mutates them live as the conversation goes.
+(Living, per-visitor pages an agent "owns" are one application.) See
 [README.md](README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Two invariants (do not break)
