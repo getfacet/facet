@@ -6,8 +6,15 @@ import { StageRenderer, useFacet } from "@facet/react";
 import { nova } from "./nova.js";
 import { LocalTransport } from "./transport.js";
 import { Gallery } from "./gallery.js";
+import { GeneratedView } from "./generated.js";
 
-type View = "gallery" | "visitors";
+type View = "gallery" | "generated" | "visitors";
+
+const SUBTITLES: Record<View, string> = {
+  gallery: "Six very different pages — all from four bricks (box/text/image/field) + tokens. No LLM.",
+  generated: "The page an LLM just built from the four bricks via the CLI generator, validated and rendered.",
+  visitors: "One agent (Nova), two visitors. Rule-based — no LLM. Type in a chat dock and watch only that visitor's stage rebuild.",
+};
 
 const ALICE: VisitorContext = {
   visitorId: "alice",
@@ -27,11 +34,7 @@ export function App(): React.ReactNode {
     <div style={styles.page}>
       <header style={styles.header}>
         <h1 style={styles.title}>Facet playground</h1>
-        <p style={styles.subtitle}>
-          {view === "gallery"
-            ? "Six very different pages — all from four bricks (box/text/image/field) + tokens. No LLM."
-            : "One agent (Nova), two visitors. Rule-based — no LLM. Type in a chat dock and watch only that visitor's stage rebuild."}
-        </p>
+        <p style={styles.subtitle}>{SUBTITLES[view]}</p>
         <nav style={styles.nav}>
           <button
             type="button"
@@ -39,6 +42,13 @@ export function App(): React.ReactNode {
             onClick={() => setView("gallery")}
           >
             Brick gallery
+          </button>
+          <button
+            type="button"
+            style={view === "generated" ? styles.tabActive : styles.tab}
+            onClick={() => setView("generated")}
+          >
+            LLM-generated
           </button>
           <button
             type="button"
@@ -51,6 +61,8 @@ export function App(): React.ReactNode {
       </header>
       {view === "gallery" ? (
         <Gallery />
+      ) : view === "generated" ? (
+        <GeneratedView />
       ) : (
         <div style={styles.panes}>
           <VisitorPane title="Alice — came from Twitter" visitor={ALICE} />
