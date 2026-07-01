@@ -10,9 +10,9 @@ the agent *owns and rewrites*: two people opening the same link at the same time
 see two different pages, because the agent builds each one for the person in
 front of it and keeps changing it as the conversation goes.
 
-> Status: **early scaffold.** The core spec, patch protocol, runtime, renderer,
-> and an in-process demo are in place; the network transport and a browser
-> playground are next. APIs will change.
+> Status: **pre-1.0.** The spec, patch protocol, runtime, renderer, the SSE/POST
+> transport (browser + external agents), a browser playground, durable stores,
+> and a Postgres adapter are all in place and tested. APIs may still change.
 
 ## The mental model: two layers
 
@@ -66,14 +66,30 @@ one-shot convenience without giving up the low-level foundation.
    Stage (dynamic)  +  Chat dock (persistent)
         │  ClientEvent: visit / message / action
         ▼
+ [ @facet/server ]    reference SSE/POST transport (browser side + agent side)
+        │
  [ @facet/runtime ]   one isolated session per (agent, visitor)
-        │  calls the agent, applies the resulting patches to the session
+        │  calls the agent, applies the resulting patches, persists the session
         ▼
- [ your agent ]   (@facet/agent + your LLM)  drives the Stage via a small CLI
+ [ your agent ]   drives the Stage via @facet/agent + your LLM
         │  ServerMessage: stage patches (RFC 6902) + chat replies
         ▼
  [ @facet/react ]   renders the brick spec to safe DOM; applies patches live
 ```
+
+**Your agent connects in one of three ways** — all the same `Stage` API:
+
+- **in-process** — a JS function inside the server (`@facet/agent`).
+- **local CLI** — a running agent (e.g. Claude Code) calls `facet append/say/…`
+  and a local bridge forwards it (`@facet/cli`).
+- **dial-in** — an external agent connects out over SSE, NAT-safe, and is served
+  events to answer (`@facet/agent-client`). The agent brain (the LLM/rules) is
+  always yours; Facet is the surface it drives.
+
+**Persistence is two separate concerns.** The *stage* (the page) is always
+Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
+*conversation* is a `Sink` you choose: store it for replay, forward it to your
+own system (e.g. a chat platform that already keeps it), or drop it.
 
 Two engineering choices keep "constantly re-rendering" cheap and correct:
 
@@ -85,12 +101,17 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 
 ## Packages
 
-| Package          | Role                                                              |
-| ---------------- | ---------------------------------------------------------------- |
-| `@facet/core`    | The contract: bricks, style tokens, RFC 6902 patch, session/event types. |
-| `@facet/runtime` | Per-(agent, visitor) session store and the event loop.           |
-| `@facet/agent`   | The agent's "CLI" — the `Stage` control API + `defineAgent`.     |
-| `@facet/react`   | Brick renderer (`StageRenderer`), default `theme`, `useFacet` hook. |
+| Package                 | Role                                                              |
+| ----------------------- | ---------------------------------------------------------------- |
+| `@facet/core`           | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, session/event types. |
+| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation).  |
+| `@facet/agent`          | In-process agent SDK — the `Stage` control API + `defineAgent`.  |
+| `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect). |
+| `@facet/cli`            | The `facet` command — a running agent's action surface.          |
+| `@facet/server`         | Reference SSE/POST transport (browser side + agent side).        |
+| `@facet/react`          | Brick renderer (`StageRenderer`), default `theme`, `useFacet`, `ChatDock`. |
+| `@facet/kit`            | Optional presets (`card/hero/grid/…`) — sugar over the bricks.   |
+| `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                  |
 
 ## Quickstart
 
@@ -102,6 +123,13 @@ pnpm demo
 The demo runs entirely in-process (no browser, no LLM): two visitors hit one
 agent link and you watch their stages diverge, then one of them mutate live
 after a chat message. See [`apps/playground/src/demo.ts`](apps/playground/src/demo.ts).
+
+For the browser playground (a real page + chat dock, live-updating):
+
+```bash
+pnpm --filter @facet/playground dev      # http://localhost:5290
+pnpm --filter @facet/playground serve    # live server on :5291 (uses your local Claude)
+```
 
 Authoring an agent looks like this:
 
@@ -123,13 +151,17 @@ export const agent = defineAgent(({ event, stage }) => {
 ## Roadmap
 
 - [x] Core spec (low-level bricks + tokens) + RFC 6902 patches + in-process demo
-- [ ] WebSocket/SSE transport + a real `apps/playground` web page
+- [x] SSE/POST transport + a browser playground
+- [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
+- [x] Durable `StageStore`/`Sink` + a Postgres adapter
+- [x] `@facet/kit` presets (card/hero/grid as box compositions)
+- [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint
-- [ ] `@facet/kit` preset package (card/hero/grid as box compositions)
 - [ ] Content-safety / moderation hooks
-- [ ] Adapters (e.g. agent-messaging identity providers)
+- [ ] Distributed store + fan-out for horizontal scale
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the longer write-up.
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the longer write-up and
+[AGENTS.md](AGENTS.md) if you're contributing.
 
 ## License
 
