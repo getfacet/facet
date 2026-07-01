@@ -2,16 +2,27 @@
   "name": "@facet/playground",
   "version": "0.0.0",
   "private": true,
-  "description": "In-process Facet demo: two visitors hit one agent link and see different, live-mutating stages.",
+  "description": "Facet demo: two visitors hit one agent link and see different, live-mutating stages. Node demo + browser app.",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "demo": "tsx src/demo.ts",
+    "dev": "vite",
+    "build": "vite build",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@facet/agent": "workspace:*",
     "@facet/core": "workspace:*",
-    "@facet/runtime": "workspace:*"
+    "@facet/react": "workspace:*",
+    "@facet/runtime": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^6.0.7"
   }
 }

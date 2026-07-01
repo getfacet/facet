@@ -1,13 +1,10 @@
 /**
  * In-process Facet demo — no browser, no LLM, no network.
  *
- * It proves the core model end to end: two visitors hit the SAME agent link and
- * get DIFFERENT stages from the first paint, and a chat message mutates one
- * visitor's stage live while the other's is untouched. Everything is built from
- * the four low-level bricks (box / text / image / field) with token styles. Swap
- * the hand-written logic in `nova` for a real LLM call and the rest is identical.
- *
- * Run:  pnpm demo
+ * Proves the core model in the terminal: two visitors hit the SAME agent link and
+ * get DIFFERENT stages, and a chat message mutates one visitor's stage while the
+ * other's is untouched. The browser playground (pnpm dev) shows the same `nova`
+ * agent rendered for real. Run:  pnpm demo
  */
 import {
   applyPatch,
@@ -16,91 +13,8 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { defineAgent } from "@facet/agent";
 import { FacetRuntime } from "@facet/runtime";
-
-let counter = 0;
-const id = (prefix: string): string => `${prefix}-${++counter}`;
-
-/** A toy agent that diverges per visitor and reacts to chat — pure bricks. */
-const nova = defineAgent(({ event, stage }) => {
-  switch (event.kind) {
-    case "visit": {
-      const fromTwitter = event.visitor.referrer?.includes("twitter") ?? false;
-      const heading = id("text");
-      const intro = id("text");
-      const cta = id("box"); // a pressable box = a button
-      const ctaLabel = id("text");
-      stage.render({
-        root: "root",
-        nodes: {
-          root: {
-            id: "root",
-            type: "box",
-            style: { direction: "col", gap: "lg", pad: "xl" },
-            children: [heading, intro, cta],
-          },
-          [heading]: {
-            id: heading,
-            type: "text",
-            value: "Hi, I'm Nova",
-            style: { size: "3xl", weight: "bold", color: "fg" },
-          },
-          [intro]: {
-            id: intro,
-            type: "text",
-            value: fromTwitter
-              ? "Saw you came from Twitter — here's the short version."
-              : "Ask me anything, and this page rebuilds itself for you.",
-            style: { size: "md", color: "fg-muted" },
-          },
-          [cta]: {
-            id: cta,
-            type: "box",
-            style: { bg: "accent", radius: "md", pad: "md", align: "center" },
-            onPress: { name: "view_pricing" },
-            children: [ctaLabel],
-          },
-          [ctaLabel]: {
-            id: ctaLabel,
-            type: "text",
-            value: "See pricing",
-            style: { color: "accent-fg", weight: "semibold" },
-          },
-        },
-      });
-      break;
-    }
-    case "message": {
-      if (/pric|가격/i.test(event.text)) {
-        const card = id("box"); // a box with a border = a card
-        const title = id("text");
-        const price = id("text");
-        stage.append("root", {
-          id: card,
-          type: "box",
-          style: { direction: "col", gap: "sm", pad: "lg", bg: "surface", radius: "lg", border: true },
-          children: [title, price],
-        });
-        stage.set({ id: title, type: "text", value: "Pro", style: { size: "lg", weight: "bold" } });
-        stage.set({
-          id: price,
-          type: "text",
-          value: "$20/mo — everything, no limits.",
-          style: { color: "fg-muted" },
-        });
-        stage.say("Added the pricing card below 👇");
-      } else {
-        stage.say(`You said: "${event.text}". Tell me what to put on the page.`);
-      }
-      break;
-    }
-    case "action": {
-      stage.say(`(action: ${event.action.name})`);
-      break;
-    }
-  }
-});
+import { nova } from "./nova.js";
 
 const runtime = new FacetRuntime({ agentId: "nova", agent: nova });
 
@@ -148,7 +62,6 @@ async function main(): Promise<void> {
   printStage("Alice (from Twitter) — first paint", aliceTree);
   printStage("Bob (direct) — first paint", bobTree);
 
-  // Alice chats; her stage mutates. Bob's does not.
   const alicePricing = await runtime.handle(alice, {
     kind: "message",
     text: "what's your pricing?",
