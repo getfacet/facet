@@ -77,6 +77,23 @@ The gate is right-sized: `/verify` (mechanical) and `/code-review` (evidence-bas
 adversarially verified) per change; `/refactor-audit` for consolidation passes.
 See [docs/REVIEW-RULES.md](docs/REVIEW-RULES.md) for the rubric and severity.
 
+## Building a non-trivial feature (the pipeline)
+
+For anything bigger than a quick fix, use the skill pipeline instead of coding
+straight away:
+
+```
+/feature-intake   rough idea → structured, testable, invariant-checked brief
+/spec-bridge      brief → dev spec + execution manifest (Work Units, TDD red checks)
+/implement        branch/worktree → run WUs TDD-first → inner-loop gates
+   └─ inner loop:  /update-tests → /verify → /code-review → /update-docs
+```
+
+`/feature-intake` and `/spec-bridge` both enforce Facet's invariants as gates
+(UI-out/UI-in only, mechanism-vs-policy, fail-safe, declarative-only, flow-only
+overlay discipline, two-writers coherence, backend-via-agent). Quick mechanical
+fixes can skip straight to `/verify` → `/code-review`.
+
 ## Conventions
 
 - TypeScript strict (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,

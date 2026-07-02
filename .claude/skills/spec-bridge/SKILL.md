@@ -165,42 +165,15 @@ a one-line log — this is not a gate violation for Facet.
 - Reviewer P0 or P1 → FAIL (fix before approval). 3 FAIL rounds → escalate.
 - Starts implementation without approval → FAIL.
 
-## Handoff — Work Unit execution (TDD-first)
+## Handoff — implementation
 
-After approval, the main agent orchestrates from the MANIFEST (not memory).
+After the user approves the spec + manifest, **execution is `/implement`'s job**
+(branch/worktree setup → Work Units TDD-first from the manifest → inner-loop hard
+gate `/update-tests` → `/verify` → `/code-review` → `/update-docs`). This skill
+stops at an approved, delegatable plan; it does not write production code.
 
-Per WU, spawn a `general-purpose` subagent with this work order (deviation = WU rejected):
-- **STEP 1 RED**: run the WU's `red_check` BEFORE touching production code (only
-  test files may change). It must FAIL → capture `red_check_output_before`.
-  (`N/A` only for deletion/docs/move-only WUs, with justification.)
-- **STEP 2 GREEN**: minimal production change within the WU's ≤5 files to flip RED
-  → GREEN. Re-run; capture `red_check_output_after` (must PASS).
-- **STEP 3 REFACTOR** (WU files only, STEP-2 code only): apply the minimal
-  refactor if a trigger fires (function too long, dup ≥5 lines ×2, dead code,
-  cross-package/`internal` leak, `@facet/core` gaining a node import); else skip
-  with per-trigger evidence. Anything larger → record for `/refactor-audit`.
-- **STEP 4 Report** (`handoff_format`): `changed_files`, `executed_commands`,
-  `red_check_output_before` (FAIL), `red_check_output_after` (PASS),
-  `green_diff_summary`, `refactor_decision`, `pass_fail`, `next_action`.
-- Subagents do NOT run the final gate chain. `/verify` and `/code-review` stay
-  with the main agent.
-
-### DoD verification (main agent)
-- Only the WU's listed files changed.
-- `red_check_output_before` shows FAIL and `_after` shows PASS (or `N/A` justified).
-- `refactor_decision` present and concrete. `green_diff_summary` not
-  disproportionate to scope.
-- On pass: `git commit` the WU (branch, not the default branch).
-
-### Retry policy (max 3): re-delegate with error context → main agent fixes → escalate.
-
-### Final gate chain (post-WU) — Facet
-1. `/verify` (typecheck + tests + lint + format:check + build).
-2. `/code-review` (PASS = P0–P2 = 0; P3 are non-blocking nits).
-3. `/refactor-audit` — periodic, not required per feature (owner runs it).
-4. Squash WU commits into one feature commit; commit/PR only on the user's
-   explicit go (no `/qa`, `/visual-check`, `/update-docs`, `/commit-push-pr` in
-   Facet — those are AMA2-only).
+Pass to `/implement` with the slug so it can read
+`specs/dev-specs/<slug>.md` + `specs/dev-specs/<slug>.execution.yaml`.
 
 ## Output contract
 1. `Context Evidence Path`
