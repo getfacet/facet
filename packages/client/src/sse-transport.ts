@@ -1,5 +1,9 @@
 import type { ClientEvent, FacetTransport, ServerMessage, VisitorContext } from "@facet/core";
 
+/** Pre-connect sends are held until the stream opens; bound the buffer so a
+ * transport that never (re)connects can't accumulate events forever. */
+const MAX_QUEUE = 100;
+
 /**
  * Browser transport over the reference server: Server-Sent Events for the
  * server→client channel, `fetch` POST for client→server. Events sent before the
@@ -19,6 +23,7 @@ export class SseTransport implements FacetTransport {
 
   send(event: ClientEvent): void {
     if (!this.ready) {
+      if (this.queue.length >= MAX_QUEUE) this.queue.shift(); // drop the oldest
       this.queue.push(event);
       return;
     }
