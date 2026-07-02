@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-import { EMPTY_TREE, type FacetSession, type VisitorContext } from "@facet/core";
-import { sessionKey, type StageStore } from "./stage-store.js";
+import type { FacetSession, VisitorContext } from "@facet/core";
+import { openSession, sessionKey, type StageStore } from "./stage-store.js";
+import { sessionFilePath } from "./session-file.js";
 
 /**
  * Durable, dependency-free reference `StageStore`: each session's stage is a JSON
@@ -19,8 +19,7 @@ export class FileStageStore implements StageStore {
   }
 
   private fileFor(agentId: string, visitorId: string): string {
-    const name = Buffer.from(sessionKey(agentId, visitorId)).toString("base64url");
-    return join(this.dir, `${name}.json`);
+    return sessionFilePath(this.dir, agentId, visitorId, "json");
   }
 
   async get(agentId: string, visitorId: string): Promise<FacetSession | undefined> {
@@ -39,11 +38,7 @@ export class FileStageStore implements StageStore {
   }
 
   async open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
-    const existing = await this.get(agentId, visitor.visitorId);
-    if (existing !== undefined) return existing;
-    const session: FacetSession = { agentId, visitor, stage: EMPTY_TREE };
-    await this.save(session);
-    return session;
+    return openSession(this, agentId, visitor);
   }
 
   async save(session: FacetSession): Promise<void> {

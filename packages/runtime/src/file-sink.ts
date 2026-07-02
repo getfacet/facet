@@ -1,6 +1,5 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { sessionKey } from "./stage-store.js";
+import { sessionFilePath } from "./session-file.js";
 import type { Sink, StoredEvent } from "./sink.js";
 
 /**
@@ -14,8 +13,7 @@ export class FileSink implements Sink {
   }
 
   private fileFor(agentId: string, visitorId: string): string {
-    const name = Buffer.from(sessionKey(agentId, visitorId)).toString("base64url");
-    return join(this.dir, `${name}.jsonl`);
+    return sessionFilePath(this.dir, agentId, visitorId, "jsonl");
   }
 
   async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {

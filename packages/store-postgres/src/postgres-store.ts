@@ -1,12 +1,6 @@
 import type { Pool } from "pg";
-import {
-  EMPTY_TREE,
-  type ClientEvent,
-  type FacetSession,
-  type ServerMessage,
-  type VisitorContext,
-} from "@facet/core";
-import type { Sink, StageStore, StoredEvent } from "@facet/runtime";
+import type { ClientEvent, FacetSession, ServerMessage, VisitorContext } from "@facet/core";
+import { openSession, type Sink, type StageStore, type StoredEvent } from "@facet/runtime";
 
 /**
  * Postgres adapter for Facet's persistence seams — a durable `StageStore` and
@@ -56,11 +50,7 @@ export class PostgresStageStore implements StageStore {
   }
 
   async open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
-    const existing = await this.get(agentId, visitor.visitorId);
-    if (existing !== undefined) return existing;
-    const session: FacetSession = { agentId, visitor, stage: EMPTY_TREE };
-    await this.save(session);
-    return session;
+    return openSession(this, agentId, visitor);
   }
 
   async save(session: FacetSession): Promise<void> {

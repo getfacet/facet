@@ -21,6 +21,23 @@ export function sessionKey(agentId: string, visitorId: string): string {
   return `${agentId}::${visitorId}`;
 }
 
+/**
+ * The protocol default for `open()`: return the existing session, else create,
+ * save, and return a fresh one whose stage is `EMPTY_TREE`. One source so every
+ * `StageStore` backend starts sessions identically.
+ */
+export async function openSession(
+  store: Pick<StageStore, "get" | "save">,
+  agentId: string,
+  visitor: VisitorContext,
+): Promise<FacetSession> {
+  const existing = await store.get(agentId, visitor.visitorId);
+  if (existing !== undefined) return existing;
+  const session: FacetSession = { agentId, visitor, stage: EMPTY_TREE };
+  await store.save(session);
+  return session;
+}
+
 /** In-memory stage store — the zero-config default. Lost on restart. */
 export class MemoryStageStore implements StageStore {
   private readonly sessions = new Map<string, FacetSession>();
@@ -30,11 +47,7 @@ export class MemoryStageStore implements StageStore {
   }
 
   async open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
-    const existing = this.sessions.get(sessionKey(agentId, visitor.visitorId));
-    if (existing !== undefined) return existing;
-    const session: FacetSession = { agentId, visitor, stage: EMPTY_TREE };
-    await this.save(session);
-    return session;
+    return openSession(this, agentId, visitor);
   }
 
   async save(session: FacetSession): Promise<void> {
