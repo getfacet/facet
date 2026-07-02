@@ -77,6 +77,20 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(out).not.toContain("<img");
   });
 
+  it("skips a node patched to JSON null (root and child)", () => {
+    const rootNull = { root: "root", nodes: { root: null } } as unknown as FacetTree;
+    expect(() => render(rootNull)).not.toThrow();
+    expect(render(rootNull)).toBe("");
+
+    const childNull = tree({
+      root: box("root", ["gone", "a"]),
+      gone: null as unknown as FacetNode,
+      a: text("a", "still up"),
+    });
+    expect(() => render(childNull)).not.toThrow();
+    expect(render(childNull)).toContain("still up");
+  });
+
   it("survives a style patched to null on any node", () => {
     const noisy = {
       root: { id: "root", type: "box", style: null, children: ["t", "f"] },

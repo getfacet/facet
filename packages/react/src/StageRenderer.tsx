@@ -19,7 +19,8 @@ function isRenderableTree(tree: FacetTree): boolean {
     tree !== null &&
     typeof (tree as { nodes?: unknown }).nodes === "object" &&
     (tree as { nodes?: Record<string, unknown> }).nodes !== null &&
-    tree.nodes[tree.root] !== undefined
+    // != null: a patch can set the root node to JSON null, not just remove it
+    tree.nodes[tree.root] != null
   );
 }
 
@@ -57,7 +58,8 @@ interface RenderNodeProps {
 
 function RenderNode({ tree, id, onAction, ancestors, depth }: RenderNodeProps): ReactNode {
   const node = tree.nodes[id];
-  if (node === undefined || depth > MAX_DEPTH) {
+  // == null also skips a node a patch replaced with JSON null (not just missing ids).
+  if (node == null || depth > MAX_DEPTH) {
     return null;
   }
 
