@@ -3,3 +3,4 @@
 // contract from @facet/core, so `useFacet(transport)` accepts either.
 export { SseTransport } from "./sse-transport.js";
 export { LocalTransport } from "./local-transport.js";
+export { browserVisitorId } from "./visitor.js";

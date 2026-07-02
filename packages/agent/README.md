@@ -3,7 +3,7 @@
 The in-process agent SDK for Facet: `defineAgent` wraps your logic into an agent
 the runtime can call, and `Stage` is the control surface it drives —
 `render` / `set` / `append` / `remove` / `screens` / `say` — to compose and
-mutate a viewer's page. Each method records standard RFC 6902 operations
+mutate a visitor's page. Each method records standard RFC 6902 operations
 underneath.
 
 ```bash
@@ -11,7 +11,7 @@ npm install @facet/agent @facet/core
 ```
 
 You write a function that reacts to an event by driving `stage`; the recorded
-commands are flushed into the messages sent back to the viewer.
+commands are flushed into the messages sent back to the visitor.
 
 ```ts
 import { defineAgent } from "@facet/agent";

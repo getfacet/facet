@@ -3,6 +3,16 @@
   "version": "0.0.0",
   "description": "Facet reference transport — a tiny Node SSE + POST server that carries events to the runtime and streams patches back.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/server"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./src/index.ts",

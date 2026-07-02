@@ -3,6 +3,16 @@
   "version": "0.0.0",
   "description": "Postgres adapter for Facet — durable StageStore + Sink backed by Postgres/Supabase.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/store-postgres"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./src/index.ts",

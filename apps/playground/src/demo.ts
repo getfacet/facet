@@ -19,7 +19,7 @@ import { printTree } from "./print-tree.js";
 
 const runtime = new FacetRuntime({ agentId: "nova", agent: nova });
 
-/** Re-derive a viewer's stage from the messages they received, for printing. */
+/** Re-derive a visitor's stage from the messages they received, for printing. */
 function render(messages: readonly ServerMessage[], base: FacetTree): FacetTree {
   let tree = base;
   for (const message of messages) {

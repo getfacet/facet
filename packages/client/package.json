@@ -3,6 +3,16 @@
   "version": "0.0.0",
   "description": "Facet browser-side transports — connect the React renderer to a Facet server (SSE + POST) or to an in-process runtime. The browser counterpart of @facet/agent-client.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/client"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./src/index.ts",
@@ -15,7 +25,9 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean"
   },
   "dependencies": {
-    "@facet/core": "workspace:*",
+    "@facet/core": "workspace:*"
+  },
+  "devDependencies": {
     "@facet/runtime": "workspace:*"
   },
   "files": [

@@ -3,6 +3,16 @@
   "version": "0.0.0",
   "description": "Facet agent-side SDK — dial into a Facet server, receive visitor events, and drive the stage from an external agent (with heartbeat + reconnect).",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/agent-client"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./src/index.ts",

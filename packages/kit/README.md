@@ -1,6 +1,6 @@
 # @facet/kit
 
-Optional presets — `hero` / `card` / `grid` / `stack` / `page` / … — that
+Optional presets — `hero` / `card` / `row` / `stack` / `page` / … — that
 compose the four low-level bricks into common shapes. One call for a common
 layout, raw bricks when you need something custom. Sugar over `@facet/core`; it
 adds no new node types.

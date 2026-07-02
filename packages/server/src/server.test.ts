@@ -53,6 +53,19 @@ function parseBlock(block: string): SseFrame | undefined {
   return id === undefined ? { data: JSON.parse(dataLine) } : { id, data: JSON.parse(dataLine) };
 }
 
+/** Split a raw SSE buffer at `\n\n` boundaries into complete blocks plus the
+ * leftover (incomplete) tail — the frame-splitting loop the readers share. */
+function drainFrames(buffer: string): { blocks: string[]; rest: string } {
+  const blocks: string[] = [];
+  let index = buffer.indexOf("\n\n");
+  while (index !== -1) {
+    blocks.push(buffer.slice(0, index));
+    buffer = buffer.slice(index + 2);
+    index = buffer.indexOf("\n\n");
+  }
+  return { blocks, rest: buffer };
+}
+
 /** Read SSE frames from a /stream response until `count` data frames arrived. */
 async function readEvents(response: Response, count: number): Promise<SseFrame[]> {
   const reader = response.body?.getReader();
@@ -64,12 +77,11 @@ async function readEvents(response: Response, count: number): Promise<SseFrame[]
     const { value, done } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
-    let index = buffer.indexOf("\n\n");
-    while (index !== -1) {
-      const frame = parseBlock(buffer.slice(0, index));
-      buffer = buffer.slice(index + 2);
+    const { blocks, rest } = drainFrames(buffer);
+    buffer = rest;
+    for (const block of blocks) {
+      const frame = parseBlock(block);
       if (frame !== undefined) frames.push(frame);
-      index = buffer.indexOf("\n\n");
     }
   }
   await reader.cancel();
@@ -96,12 +108,11 @@ async function collectEvents(response: Response, ms: number): Promise<SseFrame[]
       const chunk = await Promise.race([reader.read(), timeout]);
       if (chunk === null || chunk.done) break;
       buffer += decoder.decode(chunk.value, { stream: true });
-      let index = buffer.indexOf("\n\n");
-      while (index !== -1) {
-        const frame = parseBlock(buffer.slice(0, index));
-        buffer = buffer.slice(index + 2);
+      const { blocks, rest } = drainFrames(buffer);
+      buffer = rest;
+      for (const block of blocks) {
+        const frame = parseBlock(block);
         if (frame !== undefined) frames.push(frame);
-        index = buffer.indexOf("\n\n");
       }
     }
   } finally {
@@ -143,17 +154,23 @@ async function dialAgent(base: string, token?: string): Promise<AgentLink> {
   let buffer = "";
   const nextEvent = async (): Promise<AgentEventFrame> => {
     for (;;) {
-      let index = buffer.indexOf("\n\n");
-      while (index !== -1) {
-        const block = buffer.slice(0, index);
-        buffer = buffer.slice(index + 2);
+      const { blocks, rest } = drainFrames(buffer);
+      buffer = rest;
+      for (const [i, block] of blocks.entries()) {
         for (const line of block.split("\n")) {
           if (line.startsWith("data: ")) {
             const data = JSON.parse(line.slice(6)) as { type?: string };
-            if (data.type === "event") return data as AgentEventFrame;
+            if (data.type === "event") {
+              // Re-buffer the blocks after this one so a later nextEvent still sees them.
+              buffer =
+                blocks
+                  .slice(i + 1)
+                  .map((b) => `${b}\n\n`)
+                  .join("") + buffer;
+              return data as AgentEventFrame;
+            }
           }
         }
-        index = buffer.indexOf("\n\n");
       }
       const { value, done } = await reader.read();
       if (done) throw new Error("agent stream ended");
@@ -868,7 +885,7 @@ describe("async delivery — resume & rehydrate", () => {
     await postEvent(base, "v", { kind: "message", text: "seed" });
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
-    // Open the (re)connecting viewer, then fire a bump whose frame is delivered
+    // Open the (re)connecting visitor, then fire a bump whose frame is delivered
     // DURING the delayed rehydrate read — it must be replayed before live flow.
     const stream = await fetch(`${base}/stream?visitorId=v`);
     await postEvent(base, "v", { kind: "message", text: "bump" });
@@ -985,7 +1002,7 @@ describe("hardening", () => {
     await post("seed");
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
-    // Open the (re)connecting viewer, then immediately fire a newer live patch. The
+    // Open the (re)connecting visitor, then immediately fire a newer live patch. The
     // stale rehydrate snapshot (delayed 150ms) resolves AFTER the bump has shipped.
     const stream = await fetch(`${base}/stream?visitorId=v`);
     expect(stream.status).toBe(200);
@@ -1004,17 +1021,17 @@ describe("hardening", () => {
 
     expect(fullIdx).toBeGreaterThanOrEqual(0); // the full-replace rehydrate must arrive
     // …and it must precede any live patch (a stale full-replace after a newer patch
-    // would silently roll the viewer back).
+    // would silently roll the visitor back).
     expect(liveIdx === -1 || fullIdx < liveIdx).toBe(true);
   });
 
-  it("ends the stream when rehydrate fails, so the viewer can reconnect", async () => {
+  it("ends the stream when rehydrate fails, so the visitor can reconnect", async () => {
     const stageStore = new FailOnceGetStore(new MemoryStageStore());
     const { server, base } = await start({ agentId: "a", agent: sayAgent, stageStore });
     running = server;
 
     // First connect: the rehydrate `get` throws — the response must END rather than
-    // stay open forever (a frozen viewer the server never pings or reconnects).
+    // stay open forever (a frozen visitor the server never pings or reconnects).
     const first = await fetch(`${base}/stream?visitorId=v`);
     expect(first.status).toBe(200);
     expect(await streamEnded(first, 1_000)).toBe(true);

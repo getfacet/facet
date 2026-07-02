@@ -113,7 +113,12 @@ export function stack(children: readonly Block[], options: StackOptions = {}): B
 export function row(children: readonly Block[], options: StackOptions = {}): Block {
   return (b) =>
     b.box(
-      { direction: "row", gap: options.gap ?? "md", wrap: true },
+      {
+        direction: "row",
+        gap: options.gap ?? "md",
+        wrap: true,
+        ...(options.pad !== undefined ? { pad: options.pad } : {}),
+      },
       children.map((child) => child(b)),
     );
 }
@@ -123,14 +128,6 @@ export function card(children: readonly Block[]): Block {
     b.box(
       { direction: "col", gap: "sm", pad: "lg", border: true, radius: "lg" },
       children.map((child) => child(b)),
-    );
-}
-
-export function grid(items: readonly Block[]): Block {
-  return (b) =>
-    b.box(
-      { direction: "row", gap: "md", wrap: true },
-      items.map((item) => item(b)),
     );
 }
 

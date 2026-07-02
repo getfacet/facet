@@ -1,5 +1,13 @@
 import type { ClientEvent, FacetTransport, ServerMessage, VisitorContext } from "@facet/core";
-import type { FacetRuntime } from "@facet/runtime";
+
+/**
+ * The one thing LocalTransport needs from a runtime: the request/response
+ * `handle`. Structural (not `FacetRuntime`) so `@facet/runtime` stays a
+ * dev-only dependency — any object with this method works.
+ */
+interface RuntimeLike {
+  handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]>;
+}
 
 /**
  * An in-process transport — the client talks to a `FacetRuntime` directly, with
@@ -10,7 +18,7 @@ export class LocalTransport implements FacetTransport {
   private readonly listeners = new Set<(message: ServerMessage) => void>();
 
   constructor(
-    private readonly runtime: FacetRuntime,
+    private readonly runtime: RuntimeLike,
     private readonly visitor: VisitorContext,
   ) {}
 

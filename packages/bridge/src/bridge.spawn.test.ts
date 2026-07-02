@@ -104,8 +104,8 @@ function spawnBridge(opts: {
     ...(opts.hangTokens !== undefined ? { hangTokens: opts.hangTokens } : {}),
   });
   const bridge = createBridge({
-    mode: "spawn",
-    method: "oneshot", // no --resume session-id parsing; irrelevant to the cap
+    runner: "spawn",
+    continuity: "oneshot", // no --resume session-id parsing; irrelevant to the cap
     command: process.execPath,
     commandArgs: [scriptPath],
     bridgePort: (bridgePortSeq += 1),

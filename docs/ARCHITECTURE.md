@@ -142,16 +142,16 @@ ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[]
                     └── applies patches to the session ┘
 ```
 
-- `ClientEvent` is everything a viewer can do: `visit`, `message`, `action`.
+- `ClientEvent` is everything a visitor can do: `visit`, `message`, `action`.
 - `FacetRuntime.handle(visitor, event)` opens (or finds) the session for that
   `(agent, visitor)` pair, runs the agent, applies any returned patches to the
-  stored stage, and returns the messages to ship back over that viewer's
+  stored stage, and returns the messages to ship back over that visitor's
   connection.
 - `ServerMessage` is what the agent answers with: `patch` (RFC 6902 operations)
   and/or `say` (chat text).
 
 Sessions are keyed by `(agentId, visitorId)`, which is exactly why the page is
-"different for everyone": each viewer has an isolated stage.
+"different for everyone": each visitor has an isolated stage.
 
 ## The agent's "CLI"
 
@@ -183,6 +183,15 @@ closest (A2UI, Adaptive Cards) are semantic widget catalogs. So:
 - Adaptive Cards independently validates the flow-only + semantic-token choices;
   AG-UI (transport-only) remains a candidate event channel but is not a v0
   dependency (a native SSE/WebSocket channel emitting RFC 6902 patches is simpler).
+
+### What belongs in `@facet/core`
+
+`@facet/core` is the contract everything else depends on and depends on nothing
+itself, so its surface is guarded. Beyond the protocol types, it may carry
+**zero-dependency, browser-safe primitives** (`createSerialQueue`,
+`createSemaphore`, `createLruMap`) — but only when **≥2 packages that share no
+other common home** need them. A helper used by a single package, or one that
+would pull in a dependency or Node built-in, lives in that package instead.
 
 ## Boundaries and what's deferred
 

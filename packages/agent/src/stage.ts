@@ -68,7 +68,7 @@ export class Stage {
     return this;
   }
 
-  /** Send a chat message to the viewer, after any queued stage edits. */
+  /** Send a chat message to the visitor, after any queued stage edits. */
   say(text: string): this {
     this.flushPending();
     this.out.push({ kind: "say", text });

@@ -6,7 +6,7 @@ Drop them into any runtime seam that takes a `StageStore` / `Sink` (e.g.
 `createFacetServer`).
 
 ```bash
-npm install @facet/store-postgres @facet/runtime @facet/core pg
+npm install @facet/store-postgres @facet/server @facet/runtime @facet/core pg
 ```
 
 `pg` is a peer dependency — bring your own `Pool`. Call `initSchema(pool)` once

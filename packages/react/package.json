@@ -3,6 +3,16 @@
   "version": "0.0.0",
   "description": "Facet React renderer — turns the declarative stage spec into a sandboxed component tree and applies patches live.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/react"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "sideEffects": false,
   "main": "./src/index.ts",

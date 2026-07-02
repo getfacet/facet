@@ -24,7 +24,7 @@ import {
  * handlers write to the current turn's Stage. Because turns are processed
  * serially, each event's changes are cleanly attributed to that event.
  *
- * Uses the local Claude Code auth (no API key needed), same as the spawn mode.
+ * Uses the local Claude Code auth (no API key needed), same as the spawn runner.
  */
 
 const SYSTEM = `You own a live web page and update it as visitors interact. Use the facet tools to change the page:
@@ -61,6 +61,7 @@ function userText(event: ClientEvent, stage: FacetTree): string {
   // Defensive: a malformed action event (no action object) must not throw here —
   // this runs inside the input() generator, where an uncaught TypeError would
   // end the SDK query stream and permanently kill the session for ALL visitors.
+  // The spawn twin's `promptFor` (bridge.ts) mirrors this same guard.
   const name = typeof event.action?.name === "string" ? event.action.name : "(unknown)";
   return `${current}\n\nThe visitor pressed "${name}". React by updating their page with the facet tools.`;
 }

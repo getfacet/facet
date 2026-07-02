@@ -3,7 +3,9 @@ import type { ReactNode } from "react";
 import {
   FIELD_INPUTS,
   isSafeImageSrc,
+  isTreeShaped,
   MAX_DEPTH,
+  sanitizeActionPayload,
   type AgentAction,
   type FacetAction,
   type FacetNode,
@@ -21,16 +23,10 @@ function styleOf<T extends object>(style: T | undefined): T | undefined {
   return typeof style === "object" && style !== null ? style : undefined;
 }
 
-/** A tree is renderable only if it's an object with a `nodes` map and a resolvable root. */
+/** A tree is renderable only if it's tree-shaped (core floor) AND its root resolves. */
 function isRenderableTree(tree: FacetTree): boolean {
-  return (
-    typeof tree === "object" &&
-    tree !== null &&
-    typeof (tree as { nodes?: unknown }).nodes === "object" &&
-    (tree as { nodes?: Record<string, unknown> }).nodes !== null &&
-    // != null: a patch can set the root node to JSON null, not just remove it
-    tree.nodes[tree.root] != null
-  );
+  // != null: a patch can set the root node to JSON null, not just remove it.
+  return isTreeShaped(tree) && tree.nodes[tree.root] != null;
 }
 
 /**
@@ -105,18 +101,11 @@ function classifyPress(onPress: unknown): ClassifiedPress | null {
   }
   if ((press.kind === undefined || press.kind === "agent") && typeof press.name === "string") {
     // Emit the canonical kind-stamped agent action (a bare {name} IS an agent action).
-    const payload = press.payload;
-    if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
-      // Payload must be a plain (non-array) object, then keep only primitive
-      // values — mirror of core asAction (arrays fail its isObject check, so no
-      // payload is emitted at all rather than an index-keyed object).
-      const filtered: Record<string, string | number | boolean> = {};
-      for (const [key, raw] of Object.entries(payload)) {
-        if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
-          filtered[key] = raw;
-        }
-      }
-      return { kind: "agent", action: { kind: "agent", name: press.name, payload: filtered } };
+    // Reuse core's fail-safe filter: a plain (non-array) object keeps only its
+    // primitive values; anything else yields undefined and no payload is emitted.
+    const payload = sanitizeActionPayload(press.payload);
+    if (payload !== undefined) {
+      return { kind: "agent", action: { kind: "agent", name: press.name, payload } };
     }
     return { kind: "agent", action: { kind: "agent", name: press.name } };
   }

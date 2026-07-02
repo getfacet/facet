@@ -10,7 +10,7 @@ export interface StoredEvent {
 }
 
 /**
- * A conversation sink — where a viewer's interactions (events + agent replies)
+ * A conversation sink — where a visitor's interactions (events + agent replies)
  * go. Facet always owns the STAGE (`StageStore`), but the conversation is a
  * separate concern that often already lives elsewhere (a chat platform, AMA2,
  * your own DB). So it's pluggable:

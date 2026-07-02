@@ -8,7 +8,7 @@ import type { FacetTree } from "./tree.js";
  * link can see different stages immediately.
  */
 export interface VisitorContext {
-  /** Stable per-viewer id (cookie/device scoped). */
+  /** Stable per-visitor id (cookie/device scoped). */
   readonly visitorId: string;
   /** Where the visitor came from, if known. */
   readonly referrer?: string;
@@ -19,7 +19,7 @@ export interface VisitorContext {
 }
 
 /**
- * One live (agent, visitor) pair with its own stage. Two viewers of the same
+ * One live (agent, visitor) pair with its own stage. Two visitors of the same
  * agent link are two independent sessions — that isolation is what makes the
  * page "different for everyone".
  */
@@ -29,7 +29,7 @@ export interface FacetSession {
   readonly stage: FacetTree;
 }
 
-/** Browser → agent. Everything the viewer does flows in as one of these. */
+/** Browser → agent. Everything the visitor does flows in as one of these. */
 export type ClientEvent =
   | { readonly kind: "visit"; readonly visitor: VisitorContext }
   | { readonly kind: "message"; readonly text: string }
@@ -39,11 +39,14 @@ export type ClientEvent =
  * Agent → browser. The agent answers events with stage patches (RFC 6902
  * operations) and/or chat text.
  *
- * `reset` is TRANSPORT-synthesized, never sent by an agent: a transport emits it
- * when a dropped connection reopens, so the client clears accumulated chat
- * before the server replays the session's history (the stage replay is an
- * idempotent root-replace; the chat replay is not — without the reset every
- * reconnect would duplicate the whole conversation).
+ * `reset` is SERVER-emitted, and only at the start of a full rehydrate — when
+ * the server replays a session's entire history from the beginning (no resume
+ * cursor to pick up from). It tells the client to clear accumulated chat before
+ * the replay, so the conversation isn't duplicated (the stage replay is an
+ * idempotent root-replace; the chat replay is not). It is NOT emitted on a
+ * resume replay (which continues after the last seen frame), never sent by an
+ * agent, and never synthesized by a client transport — `SseTransport` relays it
+ * through like any other frame.
  */
 export type ServerMessage =
   | { readonly kind: "patch"; readonly patches: readonly JsonPatchOperation[] }
@@ -52,7 +55,7 @@ export type ServerMessage =
 
 /**
  * The contract a Facet agent implements: given an event and the current session,
- * return the messages to send back to that one viewer. The runtime owns calling
+ * return the messages to send back to that one visitor. The runtime owns calling
  * this and persisting the resulting stage; `@facet/agent` provides an ergonomic
  * way to author it.
  */
@@ -62,7 +65,7 @@ export type FacetAgent = (
 ) => Promise<readonly ServerMessage[]> | readonly ServerMessage[];
 
 /**
- * The wire between a viewer (browser) and the runtime. A concrete transport wraps
+ * The wire between a visitor (browser) and the runtime. A concrete transport wraps
  * a WebSocket/SSE connection (or an in-process link); keeping it an interface lets
  * one renderer/hook drive any of them.
  */
@@ -83,4 +86,19 @@ export interface AgentEventFrame {
   readonly event: ClientEvent;
   /** The visitor's current stage — so the agent can refine, not rebuild. */
   readonly stage?: FacetTree;
+}
+
+/**
+ * External agent → server control reply (the agent-side channel): the agent's
+ * `ServerMessage`s answering one `AgentEventFrame`, tagged with the same
+ * `requestId`. Single-sourced here so `@facet/server` (validator) and
+ * `@facet/agent-client` (sender) can't drift.
+ *
+ * `agentId` is intentionally NOT part of the frame: the server routes the reply
+ * by `requestId` (which pending event it settles), and the connection's token —
+ * not a self-declared id — authenticates the link.
+ */
+export interface AgentControlFrame {
+  readonly requestId: number;
+  readonly messages: readonly ServerMessage[];
 }

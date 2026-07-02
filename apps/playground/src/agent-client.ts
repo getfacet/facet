@@ -9,37 +9,14 @@
  *
  * FACET_AGENT=echo for a fast no-LLM agent.
  */
-import { defineAgent } from "@facet/agent";
 import { connectAgent } from "@facet/agent-client";
-import { generatePage } from "./generator.js";
-import { welcome } from "./ui.js";
+import { makeLiveAgent } from "./live-agent.js";
 
 const useLlm = process.env.FACET_AGENT !== "echo";
 
-const logic = defineAgent(async ({ event, session, stage }) => {
-  if (event.kind === "visit") {
-    stage.render(welcome("Type a request — an external agent (this process) will build it."));
-    return;
-  }
-  if (event.kind === "action") {
-    stage.say(`(you pressed: ${event.action.name})`);
-    return;
-  }
-  if (!useLlm) {
-    stage.say(
-      `echo: ${event.text} (current page: ${String(Object.keys(session.stage.nodes).length)} nodes)`,
-    );
-    return;
-  }
-  try {
-    const { tree, issues } = await generatePage(event.text, session.stage);
-    stage.render(tree);
-    stage.say(
-      issues.length === 0 ? "Here's your page." : `Built (repaired ${String(issues.length)}).`,
-    );
-  } catch (error) {
-    stage.say(`generation failed: ${error instanceof Error ? error.message : String(error)}`);
-  }
+const logic = makeLiveAgent({
+  useLlm,
+  welcomeSubtitle: "Type a request — an external agent (this process) will build it.",
 });
 
 connectAgent({
