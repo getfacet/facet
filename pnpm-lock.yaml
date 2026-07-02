@@ -50,6 +50,9 @@ importers:
       '@facet/bridge':
         specifier: workspace:*
         version: link:../../packages/bridge
+      '@facet/client':
+        specifier: workspace:*
+        version: link:../../packages/client
       '@facet/core':
         specifier: workspace:*
         version: link:../../packages/core
@@ -126,6 +129,15 @@ importers:
       '@facet/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/client:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@facet/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   packages/core: {}
 

@@ -1,11 +1,10 @@
-import type { ClientEvent, ServerMessage, VisitorContext } from "@facet/core";
+import type { ClientEvent, FacetTransport, ServerMessage, VisitorContext } from "@facet/core";
 import type { FacetRuntime } from "@facet/runtime";
-import type { FacetTransport } from "@facet/react";
 
 /**
- * An in-process transport — the browser talks to the runtime directly, with no
- * network. It stands in for the future WebSocket/SSE transport (step 3) so the
- * playground can exercise the full loop (renderer + runtime + agent) today.
+ * An in-process transport — the client talks to a `FacetRuntime` directly, with
+ * no network. Useful for embedding, demos, tests, and SSR: the full loop
+ * (renderer + runtime + agent) runs in one process.
  */
 export class LocalTransport implements FacetTransport {
   private readonly listeners = new Set<(message: ServerMessage) => void>();

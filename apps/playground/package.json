@@ -19,6 +19,7 @@
     "@facet/agent": "workspace:*",
     "@facet/agent-client": "workspace:*",
     "@facet/bridge": "workspace:*",
+    "@facet/client": "workspace:*",
     "@facet/core": "workspace:*",
     "@facet/kit": "workspace:*",
     "@facet/react": "workspace:*",

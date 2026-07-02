@@ -38,6 +38,7 @@ small set of safe primitives and mutates them live as the conversation goes.
 | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop). File-backed Node references via `@facet/runtime/node`. |
 | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
 | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
+| `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
 | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
 | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |

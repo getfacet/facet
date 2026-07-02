@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { FacetAction, VisitorContext } from "@facet/core";
 import { browserVisitorId, ChatDock, StageRenderer, useFacet } from "@facet/react";
-import { SseTransport } from "./sse-transport.js";
+import { SseTransport } from "@facet/client";
 
 const SERVER = "http://localhost:5291";
 // A stable anonymous id for this browser (persisted in localStorage), so a

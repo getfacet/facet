@@ -141,6 +141,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation). File-backed Node references via `@facet/runtime/node`. |
 | `@facet/agent`          | In-process agent SDK — the `Stage` control API + `defineAgent`.                           |
 | `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect).                          |
+| `@facet/client`         | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`.               |
 | `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |
 | `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
 | `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |

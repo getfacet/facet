@@ -1,5 +1,4 @@
-import type { ClientEvent, ServerMessage, VisitorContext } from "@facet/core";
-import type { FacetTransport } from "@facet/react";
+import type { ClientEvent, FacetTransport, ServerMessage, VisitorContext } from "@facet/core";
 
 /**
  * Browser transport over the reference server: Server-Sent Events for the
@@ -7,7 +6,7 @@ import type { FacetTransport } from "@facet/react";
  * stream is open are queued and flushed on connect, so the first `visit` can't
  * race the stream registration.
  *
- * (A ~40-line browser client — it would graduate to a `@facet/client` package.)
+ * Browser-safe: web-standard `EventSource`/`fetch` only, no Node built-ins.
  */
 export class SseTransport implements FacetTransport {
   private ready = false;
