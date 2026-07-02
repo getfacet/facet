@@ -47,9 +47,17 @@ Any `packages/*/src/**` (non-test) or config/build change → do NOT skip.
    behavior. Prefer testing pure logic directly (the four bricks' behavior lives
    in `@facet/core`: patch/validate/tokens; the runtime, stores, serial-queue,
    agent Stage, cli commands, agent-client parseSseFrames are all unit-testable).
-   For React render behavior (`@facet/react`) that a unit test can't easily reach,
-   record it as accountability (defer to manual/visual check) rather than forcing
-   a brittle test.
+   For `@facet/react`, split by what the test needs:
+   - static output + fail-safe (renders X, degrades to plain, never throws) →
+     `renderToStaticMarkup` in a `.test.ts` (node env) — see `StageRenderer.test.ts`.
+   - **interaction / hook behavior** (a click reaching `onAction`, the `useFacet`
+     patch/say/fail-safe loop, field rendering, and — once it lands — field-value
+     capture and local `kind:"patch"` execution) → a **jsdom render test** with
+     `@testing-library/react` in a `.test.tsx` file that starts with
+     `// @vitest-environment jsdom` — see `StageRenderer.interaction.test.tsx` and
+     `useFacet.test.tsx`. This is Facet's "QA": the render loop unit tests can't
+     otherwise reach. Only defer to manual/visual dogfood for genuinely
+     pixel-visual concerns.
    - **Fail-safe obligations (Facet-specific):** if the change touches
      `@facet/core` validate/patch or `@facet/react` StageRenderer, include a
      boundary test (malformed / empty / deep / cyclic input, unsafe image src) —

@@ -21,7 +21,9 @@ pnpm build
 ```
 
 - `typecheck` — `tsc --noEmit` across all packages.
-- `test` — `vitest run` (unit tests in `packages/**` and `apps/**`).
+- `test` — `vitest run` (unit tests in `packages/**` and `apps/**`, including the
+  `@facet/react` jsdom render tests — `.test.tsx` files with a
+  `// @vitest-environment jsdom` docblock; this is Facet's render-loop "QA").
 - `lint` — eslint.
 - `format:check` — prettier.
 - `build` — tsup builds every publishable package to `dist` (catches

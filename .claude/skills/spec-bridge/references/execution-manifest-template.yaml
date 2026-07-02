@@ -27,12 +27,12 @@ final_gate_owner: "main-agent"
 work_units:
   - id: "WU-1"
     title: "[short title]"
-    owner_role: "subagent"           # subagent | main-agent
-    packages: ["@facet/core"]        # affected Facet package(s)
+    owner_role: "subagent" # subagent | main-agent
+    packages: ["@facet/core"] # affected Facet package(s)
     objective: "[one sentence]"
     files:
       - path: "packages/<pkg>/src/<file>.ts"
-        change_type: "update"        # add | update | delete
+        change_type: "update" # add | update | delete
         purpose: "[why]"
     depends_on: []
     parallel_group: "serial-a"
@@ -41,16 +41,16 @@ work_units:
       # Deletion/docs/move-only: command = "N/A" + justification.
       command: "cd packages/<pkg> && pnpm exec vitest run src/<file>.test.ts -t '<name>'"
       target: "packages/<pkg>/src/<file>.test.ts"
-      justification: ""              # required only when command == "N/A"
+      justification: "" # required only when command == "N/A"
     quick_checks:
       - "[first re-runs red_check, then any scoped check]"
     no_regression_checks:
       - "pnpm -C packages/<pkg> test"
     test_plan:
-      - type: "unit"                 # unit | integration | e2e
+      - type: "unit" # unit | integration | e2e
         target: "packages/<pkg>/src/<file>.test.ts"
         covers_dc: ["DC-001"]
-        action: "new"                # new | update
+        action: "new" # new | update
     done_conditions:
       - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl); N/A WUs acknowledge justification"
       - "[testable completion condition]"
@@ -58,10 +58,10 @@ work_units:
     handoff_format:
       - "changed_files"
       - "executed_commands"
-      - "red_check_output_before"    # raw FAIL output before any prod-code edit
-      - "red_check_output_after"     # raw PASS output after impl
-      - "green_diff_summary"         # {production_lines_added, production_lines_removed, non_red_check_tests_newly_passing}
-      - "refactor_decision"          # applied:<...> | skipped:<per-trigger evidence> | skipped_scope_exceeded:<trigger>@<path>:<line>
+      - "red_check_output_before" # raw FAIL output before any prod-code edit
+      - "red_check_output_after" # raw PASS output after impl
+      - "green_diff_summary" # {production_lines_added, production_lines_removed, non_red_check_tests_newly_passing}
+      - "refactor_decision" # applied:<...> | skipped:<per-trigger evidence> | skipped_scope_exceeded:<trigger>@<path>:<line>
       - "pass_fail"
       - "first_error_line"
       - "assumptions"
