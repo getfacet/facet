@@ -37,6 +37,11 @@ export class FacetRuntime {
   // Serialize events per (agent, visitor) so concurrent same-visitor events don't
   // race on the open→apply→save read-modify-write. Different visitors stay parallel.
   private readonly serialize = createSerialQueue<readonly ServerMessage[]>();
+  // Serialize sink records per (agent, visitor) too: `record` is fire-and-forget
+  // off the response path, so with an async sink a fast later record could persist
+  // before a slow earlier one. This queue keeps per-visitor records in event order
+  // without the response ever awaiting them. Different visitors stay parallel.
+  private readonly serializeRecord = createSerialQueue<void>();
 
   constructor(options: FacetRuntimeOptions) {
     this.agentId = options.agentId;
@@ -78,10 +83,12 @@ export class FacetRuntime {
     const messages = await this.agent(event, session);
     await this.stageStore.save(this.applyToSession(session, messages));
     // Record the conversation without blocking the response — the stage is the
-    // source of truth for reconnect; the sink is best-effort.
-    void this.sink
-      .record(this.agentId, visitor.visitorId, { at: Date.now(), event, messages })
-      .catch((error: unknown) => console.error("[facet] sink failed:", error));
+    // source of truth for reconnect; the sink is best-effort. Enqueue per visitor
+    // so an async sink persists records in event order; still fire-and-forget.
+    const entry = { at: Date.now(), event, messages };
+    void this.serializeRecord(sessionKey(this.agentId, visitor.visitorId), () =>
+      this.sink.record(this.agentId, visitor.visitorId, entry),
+    ).catch((error: unknown) => console.error("[facet] sink failed:", error));
     return messages;
   }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateTree } from "./validate.js";
+import { isSafeImageSrc, MAX_DEPTH, validateTree } from "./validate.js";
 
 describe("validateTree", () => {
   it("keeps a valid tree unchanged", () => {
@@ -52,6 +52,20 @@ describe("validateTree", () => {
     };
     const root = validateTree(input).tree.nodes["root"] as unknown as { children: string[] };
     expect(root.children).toEqual(["t"]);
+  });
+
+  it("dedupes duplicate sibling child ids", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["a", "a"] },
+        a: { id: "a", type: "text", value: "x" },
+      },
+    };
+    const { tree, issues } = validateTree(input);
+    const root = tree.nodes["root"] as unknown as { children: string[] };
+    expect(root.children).toEqual(["a"]);
+    expect(issues.some((i) => i.includes("duplicate"))).toBe(true);
   });
 
   it("drops a text node with no value", () => {
@@ -129,6 +143,49 @@ describe("validateTree", () => {
       };
     }
     expect(() => validateTree({ root: "root", nodes })).not.toThrow();
+  });
+});
+
+describe("MAX_DEPTH export", () => {
+  it("is exported as the single source of truth with value 100", () => {
+    expect(MAX_DEPTH).toBe(100);
+  });
+});
+
+describe("isSafeImageSrc", () => {
+  it("accepts data:image/ URLs", () => {
+    expect(isSafeImageSrc("data:image/png;base64,AAAA")).toBe(true);
+  });
+
+  it("rejects data:text/html URLs", () => {
+    expect(isSafeImageSrc("data:text/html,<script>alert(1)</script>")).toBe(false);
+  });
+
+  it("accepts protocol-relative //cdn URLs", () => {
+    expect(isSafeImageSrc("//cdn.example.com/x.png")).toBe(true);
+  });
+
+  it("accepts absolute /local paths", () => {
+    expect(isSafeImageSrc("/local/x.png")).toBe(true);
+  });
+
+  it("accepts http:// and https:// URLs", () => {
+    expect(isSafeImageSrc("https://example.com/x.png")).toBe(true);
+    expect(isSafeImageSrc("http://example.com/x.png")).toBe(true);
+  });
+
+  it("rejects javascript: URLs", () => {
+    expect(isSafeImageSrc("javascript:alert(1)")).toBe(false);
+  });
+
+  it("rejects a bare relative path (no leading slash or scheme)", () => {
+    expect(isSafeImageSrc("images/x.png")).toBe(false);
+  });
+
+  it("ignores case and surrounding whitespace", () => {
+    expect(isSafeImageSrc("  HTTPS://example.com/x.png  ")).toBe(true);
+    expect(isSafeImageSrc("  DATA:IMAGE/PNG;base64,AAAA")).toBe(true);
+    expect(isSafeImageSrc("  JavaScript:alert(1)")).toBe(false);
   });
 });
 

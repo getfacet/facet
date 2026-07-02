@@ -1,5 +1,6 @@
+import type { BoxStyle, TextStyle } from "@facet/core";
 import { describe, expect, it } from "vitest";
-import { boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
+import { COLOR, boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
 
 // The theme is where token NAMES become concrete CSS (invariant #1's trusted
 // side): agents only ever emit tokens, so these maps are the single place a
@@ -78,5 +79,31 @@ describe("fieldStyle", () => {
 
   it("maps full width", () => {
     expect(fieldStyle({ width: "full" }).width).toBe("100%");
+  });
+});
+
+// Agents emit token NAMES that index straight into these maps. A plain object
+// literal carries Object.prototype, so a hostile token like "constructor" or
+// "__proto__" would resolve to a truthy prototype value and land in the CSS.
+// The maps must be null-prototype so those keys resolve to nothing.
+describe("prototype-safe token maps", () => {
+  it("prototype-key tokens resolve to no style on the raw path", () => {
+    expect(boxStyle({ bg: "constructor" } as unknown as BoxStyle).background).toBeUndefined();
+    expect(boxStyle({ bg: "__proto__" } as unknown as BoxStyle).background).toBeUndefined();
+    expect(textStyle({ color: "constructor" } as unknown as TextStyle).color).toBeUndefined();
+    expect(textStyle({ color: "__proto__" } as unknown as TextStyle).color).toBeUndefined();
+  });
+});
+
+// COLOR is the single source of truth for the palette (ChatDock consumes it),
+// so its values are pinned here.
+describe("COLOR", () => {
+  it("is exported with a pinned palette", () => {
+    expect(COLOR.border).toBe("#e2e5ea");
+    expect(COLOR.fg).toBe("#1a1d23");
+    expect(COLOR.accent).toBe("#4f46e5");
+    expect(COLOR["fg-muted"]).toBe("#6b7280");
+    expect(COLOR["surface-2"]).toBe("#eceef1");
+    expect(COLOR["accent-fg"]).toBe("#ffffff");
   });
 });

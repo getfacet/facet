@@ -39,8 +39,13 @@ export interface ValidationResult {
   readonly issues: readonly string[];
 }
 
-/** Max stage nesting depth — beyond this, children are dropped (fail-safe, no stack overflow). */
-const MAX_DEPTH = 100;
+/**
+ * Max stage nesting depth — beyond this, children are dropped (fail-safe, no
+ * stack overflow). Single source of truth: the @facet/react renderer imports
+ * this (barrel-reachable via `export * from "./validate.js"`) to cap its own
+ * recursion at the same bound, so validation and render never disagree.
+ */
+export const MAX_DEPTH = 100;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -335,13 +340,32 @@ export function validateTree(input: unknown): ValidationResult {
     }
   }
 
-  // Drop child references that point at nodes we couldn't keep.
+  // Drop child references that point at nodes we couldn't keep, and dedupe
+  // duplicate siblings (a child id may appear at most once under one parent —
+  // keep the first occurrence). A dup would otherwise render the same subtree
+  // twice and make patch pointers to it ambiguous.
   for (const node of Object.values(nodes)) {
     if (isContainer(node)) {
-      const kept = node.children.filter((child) => nodes[child] !== undefined);
+      const seen = new Set<string>();
+      const kept: string[] = [];
+      let dangling = false;
+      for (const child of node.children) {
+        if (nodes[child] === undefined) {
+          dangling = true;
+          continue;
+        }
+        if (seen.has(child)) {
+          issues.push(`node "${node.id}": removed duplicate sibling child "${child}"`);
+          continue;
+        }
+        seen.add(child);
+        kept.push(child);
+      }
+      if (dangling) {
+        issues.push(`node "${node.id}": removed dangling child references`);
+      }
       if (kept.length !== node.children.length) {
         nodes[node.id] = { ...node, children: kept };
-        issues.push(`node "${node.id}": removed dangling child references`);
       }
     }
   }

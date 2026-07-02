@@ -51,11 +51,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/core/src/validate.test.ts -t \"dedupes duplicate sibling child ids\""
+      command: 'pnpm exec vitest run packages/core/src/validate.test.ts -t "dedupes duplicate sibling child ids"'
       target: "packages/core/src/validate.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/core/src/validate.test.ts -t \"dedupes duplicate sibling child ids\""
+      - 'pnpm exec vitest run packages/core/src/validate.test.ts -t "dedupes duplicate sibling child ids"'
       - "pnpm exec vitest run packages/core/src/validate.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -97,11 +97,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/core/src/patch.test.ts -t \"test op passes on deep-equal values regardless of key order\""
+      command: 'pnpm exec vitest run packages/core/src/patch.test.ts -t "test op passes on deep-equal values regardless of key order"'
       target: "packages/core/src/patch.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/core/src/patch.test.ts -t \"test op passes on deep-equal values regardless of key order\""
+      - 'pnpm exec vitest run packages/core/src/patch.test.ts -t "test op passes on deep-equal values regardless of key order"'
       - "pnpm exec vitest run packages/core/src/patch.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -146,11 +146,11 @@ work_units:
     depends_on: ["WU-1"]
     parallel_group: "par-2"
     red_check:
-      command: "pnpm exec vitest run packages/react/src/StageRenderer.interaction.test.tsx -t \"filters non-primitive payload values from a raw-path press\""
+      command: 'pnpm exec vitest run packages/react/src/StageRenderer.interaction.test.tsx -t "filters non-primitive payload values from a raw-path press"'
       target: "packages/react/src/StageRenderer.interaction.test.tsx"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/react/src/StageRenderer.interaction.test.tsx -t \"filters non-primitive payload values from a raw-path press\""
+      - 'pnpm exec vitest run packages/react/src/StageRenderer.interaction.test.tsx -t "filters non-primitive payload values from a raw-path press"'
       - "pnpm exec vitest run packages/react/src/StageRenderer.test.ts packages/react/src/StageRenderer.interaction.test.tsx"
       - "pnpm typecheck"
     no_regression_checks:
@@ -199,11 +199,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/react/src/theme.test.ts -t \"prototype-key tokens resolve to no style on the raw path\""
+      command: 'pnpm exec vitest run packages/react/src/theme.test.ts -t "prototype-key tokens resolve to no style on the raw path"'
       target: "packages/react/src/theme.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/react/src/theme.test.ts -t \"prototype-key tokens resolve to no style on the raw path\""
+      - 'pnpm exec vitest run packages/react/src/theme.test.ts -t "prototype-key tokens resolve to no style on the raw path"'
       - "pnpm exec vitest run packages/react/src/theme.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -254,11 +254,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/runtime/src/stage-store.test.ts -t \"rejects a wrong-shape session file\""
+      command: 'pnpm exec vitest run packages/runtime/src/stage-store.test.ts -t "rejects a wrong-shape session file"'
       target: "packages/runtime/src/stage-store.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/runtime/src/stage-store.test.ts -t \"rejects a wrong-shape session file\""
+      - 'pnpm exec vitest run packages/runtime/src/stage-store.test.ts -t "rejects a wrong-shape session file"'
       - "pnpm exec vitest run packages/runtime/src/stage-store.test.ts packages/runtime/src/sink.test.ts packages/runtime/src/session-file.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -308,11 +308,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/runtime/src/runtime.test.ts -t \"persists sink records in event order with an async sink\""
+      command: 'pnpm exec vitest run packages/runtime/src/runtime.test.ts -t "persists sink records in event order with an async sink"'
       target: "packages/runtime/src/runtime.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/runtime/src/runtime.test.ts -t \"persists sink records in event order with an async sink\""
+      - 'pnpm exec vitest run packages/runtime/src/runtime.test.ts -t "persists sink records in event order with an async sink"'
       - "pnpm exec vitest run packages/runtime/src/runtime.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -354,11 +354,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/client/src/sse-transport.test.ts -t \"sends events strictly in order\""
+      command: 'pnpm exec vitest run packages/client/src/sse-transport.test.ts -t "sends events strictly in order"'
       target: "packages/client/src/sse-transport.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/client/src/sse-transport.test.ts -t \"sends events strictly in order\""
+      - 'pnpm exec vitest run packages/client/src/sse-transport.test.ts -t "sends events strictly in order"'
       - "pnpm exec vitest run packages/client/src/sse-transport.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -400,11 +400,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/agent-client/src/connect.test.ts -t \"stops reconnecting after a terminal 403\""
+      command: 'pnpm exec vitest run packages/agent-client/src/connect.test.ts -t "stops reconnecting after a terminal 403"'
       target: "packages/agent-client/src/connect.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/agent-client/src/connect.test.ts -t \"stops reconnecting after a terminal 403\""
+      - 'pnpm exec vitest run packages/agent-client/src/connect.test.ts -t "stops reconnecting after a terminal 403"'
       - "pnpm exec vitest run packages/agent-client/src/connect.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -452,11 +452,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/bridge/src/env.test.ts -t \"parseBridgePort\""
+      command: 'pnpm exec vitest run packages/bridge/src/env.test.ts -t "parseBridgePort"'
       target: "packages/bridge/src/env.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/bridge/src/env.test.ts -t \"parseBridgePort\""
+      - 'pnpm exec vitest run packages/bridge/src/env.test.ts -t "parseBridgePort"'
       - "pnpm exec vitest run packages/bridge/src/env.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -543,11 +543,11 @@ work_units:
     depends_on: []
     parallel_group: "par-1"
     red_check:
-      command: "pnpm exec vitest run packages/server/src/server.test.ts -t \"rehydrate cannot overwrite a newer live patch\""
+      command: 'pnpm exec vitest run packages/server/src/server.test.ts -t "rehydrate cannot overwrite a newer live patch"'
       target: "packages/server/src/server.test.ts"
       justification: ""
     quick_checks:
-      - "pnpm exec vitest run packages/server/src/server.test.ts -t \"rehydrate cannot overwrite a newer live patch\""
+      - 'pnpm exec vitest run packages/server/src/server.test.ts -t "rehydrate cannot overwrite a newer live patch"'
       - "pnpm exec vitest run packages/server/src/server.test.ts"
       - "pnpm typecheck"
     no_regression_checks:
@@ -628,7 +628,8 @@ work_units:
   - id: "WU-13"
     title: "package READMEs (UI-side) + playground phantom dependency"
     owner_role: "subagent"
-    packages: ["@facet/react", "@facet/server", "@facet/kit", "@facet/store-postgres", "apps/playground"]
+    packages:
+      ["@facet/react", "@facet/server", "@facet/kit", "@facet/store-postgres", "apps/playground"]
     objective: "Remaining four READMEs, and remove the never-imported @facet/bridge dependency from the playground."
     findings: ["H-27 (part 2)", "H-22"]
     files:
@@ -654,7 +655,7 @@ work_units:
       target: ""
       justification: "Docs + manifest-only WU: no executable behavior changes; the dependency removal is verified mechanically (grep guard + install + typecheck in quick_checks), not by a unit test. Runs in par-2 (not par-1) because its `pnpm install` rewrites node_modules/lockfile — mustn't run concurrently with sibling WUs' vitest/typecheck (reviewer P2-1)."
     quick_checks:
-      - "! grep -rn \"@facet/bridge\" apps/playground/src"
+      - '! grep -rn "@facet/bridge" apps/playground/src'
       - "pnpm install"
       - "pnpm typecheck"
     no_regression_checks:
@@ -679,7 +680,8 @@ work_units:
 
 execution_order:
   - group: "par-1"
-    parallel: ["WU-1", "WU-2", "WU-4", "WU-5", "WU-6", "WU-7", "WU-8", "WU-9", "WU-10", "WU-11", "WU-12"]
+    parallel:
+      ["WU-1", "WU-2", "WU-4", "WU-5", "WU-6", "WU-7", "WU-8", "WU-9", "WU-10", "WU-11", "WU-12"]
   - group: "par-2"
     parallel: ["WU-3", "WU-13"] # WU-3 after WU-1 (consumes additive MAX_DEPTH export); WU-13 here so its `pnpm install` runs OUTSIDE the par-1 concurrent-vitest window (reviewer P2-1)
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { safeEnv } from "./env.js";
+import { parseBridgePort, safeEnv } from "./env.js";
+import { BRIDGE_DEFAULTS } from "./defaults.js";
 
 const added: string[] = [];
 const set = (key: string, value: string): void => {
@@ -26,5 +27,32 @@ describe("safeEnv", () => {
     const env = safeEnv({ PATH: "/custom/bin", FACET_EVENT: "42" });
     expect(env["PATH"]).toBe("/custom/bin");
     expect(env["FACET_EVENT"]).toBe("42");
+  });
+});
+
+describe("parseBridgePort", () => {
+  it("passes undefined through", () => {
+    expect(parseBridgePort(undefined)).toBeUndefined();
+  });
+
+  it("parses a valid port", () => {
+    expect(parseBridgePort("5292")).toBe(5292);
+  });
+
+  it.each(["abc", "-1", "0", "1.5", "70000"])(
+    "throws on invalid value %j (naming the offender)",
+    (value) => {
+      expect(() => parseBridgePort(value)).toThrow(value);
+    },
+  );
+});
+
+describe("BRIDGE_DEFAULTS", () => {
+  it("pins the single-source defaults so cli/bridge cannot drift", () => {
+    expect(BRIDGE_DEFAULTS).toEqual({
+      serverUrl: "http://localhost:5291",
+      agentId: "live",
+      bridgePort: 5292,
+    });
   });
 });

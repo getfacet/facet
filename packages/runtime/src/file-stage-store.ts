@@ -1,7 +1,57 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { FacetSession, VisitorContext } from "@facet/core";
 import { openSession, sessionKey, type StageStore } from "./stage-store.js";
 import { sessionFilePath } from "./session-file.js";
+
+/** A persisted blob is only a session if it has the shape the runtime relies on.
+ * Anything else (hand-edited file, partial write, unrelated JSON) is treated as
+ * absent so a fresh session opens rather than crashing the render loop. */
+function isSession(value: unknown): value is FacetSession {
+  if (typeof value !== "object" || value === null) return false;
+  const s = value as Record<string, unknown>;
+  const visitor = s["visitor"];
+  const stage = s["stage"];
+  return (
+    typeof s["agentId"] === "string" &&
+    typeof visitor === "object" &&
+    visitor !== null &&
+    typeof (visitor as Record<string, unknown>)["visitorId"] === "string" &&
+    isTreeShaped(stage)
+  );
+}
+
+/** The stage must be a real tree that survives the server's offline visit path
+ * (`server.ts` `hasBuiltStage`), which does `nodes[root]` then `"children" in
+ * root`, and `Object.keys(screens)` when `screens !== undefined`. So beyond
+ * root/nodes being present we require the root node itself to exist as a
+ * non-null object, and any `screens` to be a non-null non-array object —
+ * otherwise those reads throw a TypeError instead of failing safe to a fresh
+ * session. (Stricter than the client renderer's `isTreeShaped`, which only
+ * checks root/nodes; a persisted blob has to clear the server path too.) */
+function isTreeShaped(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const t = value as Record<string, unknown>;
+  const root = t["root"];
+  const nodes = t["nodes"];
+  const screens = t["screens"];
+  if (typeof root !== "string") return false;
+  if (typeof nodes !== "object" || nodes === null || Array.isArray(nodes)) return false;
+  // The root node must actually exist as a node object — `"children" in root`
+  // throws on a null/primitive entry.
+  const rootNode = (nodes as Record<string, unknown>)[root];
+  if (typeof rootNode !== "object" || rootNode === null) return false;
+  // ...and a `children` property, when present, must be an array — the offline
+  // path reads `root.children.length` after the `in` check.
+  const children = (rootNode as Record<string, unknown>)["children"];
+  if (children !== undefined && !Array.isArray(children)) return false;
+  // `screens` is optional, but if present must be an object `Object.keys` can read.
+  if (
+    screens !== undefined &&
+    (typeof screens !== "object" || screens === null || Array.isArray(screens))
+  )
+    return false;
+  return true;
+}
 
 /** Read-through cache bound: past this many sessions the least-recently-used
  * entry is evicted (the file on disk stays the source of truth). */
@@ -46,13 +96,19 @@ export class FileStageStore implements StageStore {
     }
     const file = this.fileFor(agentId, visitorId);
     if (!existsSync(file)) return undefined;
+    let parsed: unknown;
     try {
-      const session = JSON.parse(readFileSync(file, "utf8")) as FacetSession;
-      this.cachePut(key, session);
-      return session;
-    } catch {
+      parsed = JSON.parse(readFileSync(file, "utf8"));
+    } catch (err) {
+      console.error(`[FileStageStore] unreadable session file ${file}:`, err);
       return undefined;
     }
+    if (!isSession(parsed)) {
+      console.error(`[FileStageStore] ignoring wrong-shape session file ${file}`);
+      return undefined;
+    }
+    this.cachePut(key, parsed);
+    return parsed;
   }
 
   async open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
@@ -62,9 +118,11 @@ export class FileStageStore implements StageStore {
   async save(session: FacetSession): Promise<void> {
     this.cachePut(sessionKey(session.agentId, session.visitor.visitorId), session);
     mkdirSync(this.dir, { recursive: true }); // resilient if the dir was removed at runtime
-    writeFileSync(
-      this.fileFor(session.agentId, session.visitor.visitorId),
-      JSON.stringify(session),
-    );
+    // Write-then-rename: a crash or ENOSPC leaves the old file intact rather than
+    // a half-written one, since rename is atomic on the same filesystem.
+    const file = this.fileFor(session.agentId, session.visitor.visitorId);
+    const tmp = `${file}.tmp`;
+    writeFileSync(tmp, JSON.stringify(session));
+    renameSync(tmp, file);
   }
 }

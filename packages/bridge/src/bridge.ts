@@ -8,7 +8,11 @@ import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } 
 import { createSerialQueue, STAGE_SPEC } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
+import { BRIDGE_DEFAULTS } from "./defaults.js";
 import { safeEnv } from "./env.js";
+
+/** Cap on the spawn-mode per-visitor `--resume` session-id map (LRU eviction). */
+const MAX_SESSION_IDS = 500;
 
 /**
  * The local bridge lets a coding agent on your machine (Claude Code, Codex, …)
@@ -89,8 +93,8 @@ function promptFor(event: ClientEvent, stage: FacetTree): string {
 }
 
 export function createBridge(options: BridgeOptions = {}): Bridge {
-  const serverUrl = options.serverUrl ?? "http://localhost:5291";
-  const agentId = options.agentId ?? "live";
+  const serverUrl = options.serverUrl ?? BRIDGE_DEFAULTS.serverUrl;
+  const agentId = options.agentId ?? BRIDGE_DEFAULTS.agentId;
   const mode = options.mode ?? "spawn";
 
   let agent: FacetAgent;
@@ -132,13 +136,25 @@ export function createBridge(options: BridgeOptions = {}): Bridge {
 function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: () => void } {
   const method = options.method ?? "session";
   const command = options.command ?? "claude";
-  const bridgePort = options.bridgePort ?? 5292;
+  const bridgePort = options.bridgePort ?? BRIDGE_DEFAULTS.bridgePort;
   const bridgeUrl = `http://localhost:${String(bridgePort)}`;
   const brainTimeoutMs = options.brainTimeoutMs ?? 180_000;
 
   const shimDir = makeFacetShim();
   const buffers = new Map<string, ServerMessage[]>();
+  // Per-visitor `--resume` session ids, bounded so a long-lived bridge serving
+  // many one-off visitors can't grow this map without limit. LRU by insertion
+  // order (Map iterates oldest-first); re-inserting on every touch keeps the
+  // oldest key first so eviction is O(1). Mirrors `FileStageStore.cachePut`.
   const sessionIds = new Map<string, string>();
+  const touchSessionId = (visitorId: string, id: string): void => {
+    sessionIds.delete(visitorId);
+    sessionIds.set(visitorId, id);
+    if (sessionIds.size > MAX_SESSION_IDS) {
+      const oldest = sessionIds.keys().next().value;
+      if (oldest !== undefined) sessionIds.delete(oldest);
+    }
+  };
   const children = new Set<ReturnType<typeof spawn>>();
   let counter = 0;
 
@@ -182,6 +198,7 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
         FACET_EVENT: token,
       });
       const resume = method === "session" ? sessionIds.get(visitorId) : undefined;
+      if (resume !== undefined) touchSessionId(visitorId, resume); // keep active visitors from being evicted
       const args = [
         ...(options.commandArgs ?? []),
         "-p",
@@ -229,7 +246,7 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
         if (method === "session") {
           try {
             const id = (JSON.parse(out) as { session_id?: string }).session_id;
-            if (typeof id === "string") sessionIds.set(visitorId, id);
+            if (typeof id === "string") touchSessionId(visitorId, id);
           } catch {
             /* no session id in output */
           }

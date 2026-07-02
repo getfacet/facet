@@ -19,7 +19,13 @@ import type {
  * one place pixels and hex codes live; the agent never sees them. Swap this map
  * to reskin every Facet page without touching a single agent.
  */
-const SPACE: Record<Space, string> = {
+// Agents emit token NAMES that index straight into these maps, so the maps are
+// built on a null prototype: a hostile token like "constructor" or "__proto__"
+// then resolves to `undefined` instead of an inherited prototype value that
+// would land in the CSS. The `satisfies Record<...>` on each source literal
+// keeps the exhaustiveness check (a missing or typo'd key is a compile error);
+// the outer `Object.assign` return type would otherwise erase it.
+const SPACE: Record<Space, string> = Object.assign(Object.create(null) as Record<Space, string>, {
   none: "0",
   xs: "4px",
   sm: "8px",
@@ -27,52 +33,68 @@ const SPACE: Record<Space, string> = {
   lg: "24px",
   xl: "40px",
   "2xl": "64px",
-};
+} satisfies Record<Space, string>);
 
-const FONT_SIZE: Record<FontSize, string> = {
-  xs: "12px",
-  sm: "14px",
-  md: "16px",
-  lg: "20px",
-  xl: "28px",
-  "2xl": "36px",
-  "3xl": "48px",
-};
+const FONT_SIZE: Record<FontSize, string> = Object.assign(
+  Object.create(null) as Record<FontSize, string>,
+  {
+    xs: "12px",
+    sm: "14px",
+    md: "16px",
+    lg: "20px",
+    xl: "28px",
+    "2xl": "36px",
+    "3xl": "48px",
+  } satisfies Record<FontSize, string>,
+);
 
-const FONT_WEIGHT: Record<FontWeight, number> = {
-  regular: 400,
-  medium: 500,
-  semibold: 600,
-  bold: 700,
-};
+const FONT_WEIGHT: Record<FontWeight, number> = Object.assign(
+  Object.create(null) as Record<FontWeight, number>,
+  {
+    regular: 400,
+    medium: 500,
+    semibold: 600,
+    bold: 700,
+  } satisfies Record<FontWeight, number>,
+);
 
-const RADIUS: Record<Radius, string> = {
-  none: "0",
-  sm: "6px",
-  md: "10px",
-  lg: "16px",
-  full: "9999px",
-};
+const RADIUS: Record<Radius, string> = Object.assign(
+  Object.create(null) as Record<Radius, string>,
+  {
+    none: "0",
+    sm: "6px",
+    md: "10px",
+    lg: "16px",
+    full: "9999px",
+  } satisfies Record<Radius, string>,
+);
 
-const COLOR: Record<Color, string> = {
-  fg: "#1a1d23",
-  "fg-muted": "#6b7280",
-  bg: "#ffffff",
-  surface: "#f6f7f9",
-  "surface-2": "#eceef1",
-  accent: "#4f46e5",
-  "accent-fg": "#ffffff",
-  border: "#e2e5ea",
-  success: "#16a34a",
-  warning: "#d97706",
-  danger: "#dc2626",
-};
+/**
+ * The palette — token NAMES → hex. Exported as the single source of truth so
+ * app chrome (e.g. `ChatDock`) reuses these values instead of re-hardcoding hex.
+ */
+export const COLOR: Record<Color, string> = Object.assign(
+  Object.create(null) as Record<Color, string>,
+  {
+    fg: "#1a1d23",
+    "fg-muted": "#6b7280",
+    bg: "#ffffff",
+    surface: "#f6f7f9",
+    "surface-2": "#eceef1",
+    accent: "#4f46e5",
+    "accent-fg": "#ffffff",
+    border: "#e2e5ea",
+    success: "#16a34a",
+    warning: "#d97706",
+    danger: "#dc2626",
+  } satisfies Record<Color, string>,
+);
 
-const RATIO: Record<Ratio, string> = {
+const RATIO: Record<Ratio, string> = Object.assign(Object.create(null) as Record<Ratio, string>, {
   square: "1 / 1",
   wide: "16 / 9",
   tall: "3 / 4",
-};
+} satisfies Record<Ratio, string>);
 
 function alignValue(align: Align): CSSProperties["alignItems"] {
   switch (align) {

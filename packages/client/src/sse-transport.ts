@@ -15,6 +15,10 @@ const MAX_QUEUE = 100;
 export class SseTransport implements FacetTransport {
   private ready = false;
   private readonly queue: ClientEvent[] = [];
+  /** Serializes client→server POSTs: each starts only after the previous one
+   * settles, so events arrive in the order they were sent (the queue flush
+   * routes through `send`, so ordering holds from pre-connect through live). */
+  private sendChain: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly baseUrl: string,
@@ -31,15 +35,19 @@ export class SseTransport implements FacetTransport {
       this.queue.push(event);
       return;
     }
-    void fetch(`${this.baseUrl}/event`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitor: this.visitor, event }),
-    }).catch((error: unknown) => {
-      // A failed POST must not become an unhandled rejection; the event is
-      // lost, so at least leave a trace for the operator.
-      console.error("[facet] event send failed:", error);
-    });
+    this.sendChain = this.sendChain
+      .then(() =>
+        fetch(`${this.baseUrl}/event`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ visitor: this.visitor, event }),
+        }).then(() => undefined),
+      )
+      .catch((error: unknown) => {
+        // A failed POST must not become an unhandled rejection or wedge the
+        // chain; the event is lost, so at least leave a trace for the operator.
+        console.error("[facet] event send failed:", error);
+      });
   }
 
   subscribe(onMessage: (message: ServerMessage) => void): () => void {

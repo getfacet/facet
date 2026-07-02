@@ -1,0 +1,32 @@
+# @facet/runtime
+
+The Facet runtime: the event loop that drives stage patches, plus the two
+persistence seams — a `StageStore` for the page (always Facet's) and a `Sink`
+for the conversation (store, forward, or drop). Both default to in-memory;
+file-backed Node references live in `@facet/runtime/node`.
+
+```bash
+npm install @facet/runtime @facet/core
+```
+
+`FacetRuntime.handle` processes one inbound event per viewer, calls your agent,
+applies the resulting patches to the stored session, and returns the messages to
+ship back. Sessions are isolated and serialized per `(agent, visitor)`.
+
+```ts
+import { FacetRuntime } from "@facet/runtime";
+import { defineAgent } from "@facet/agent";
+
+const agent = defineAgent(({ event, stage }) => {
+  if (event.kind === "visit") {
+    stage.say("Welcome!");
+  }
+});
+
+const runtime = new FacetRuntime({ agentId: "live", agent });
+
+const messages = await runtime.handle({ visitorId: "alice" }, { kind: "visit" });
+```
+
+See the [Facet docs](https://github.com/getfacet/facet) and
+[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).

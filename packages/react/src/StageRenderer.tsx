@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import {
+  FIELD_INPUTS,
   isSafeImageSrc,
+  MAX_DEPTH,
   type AgentAction,
   type FacetAction,
   type FacetNode,
@@ -11,7 +13,6 @@ import {
 import { boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
 
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
-const MAX_DEPTH = 100;
 
 // Fail-safe (invariant #2): the live path applies raw RFC 6902 patches with no
 // validateTree, so any node FIELD can hold arbitrary JSON (children: "oops",
@@ -105,15 +106,19 @@ function classifyPress(onPress: unknown): ClassifiedPress | null {
   if ((press.kind === undefined || press.kind === "agent") && typeof press.name === "string") {
     // Emit the canonical kind-stamped agent action (a bare {name} IS an agent action).
     const payload = press.payload;
-    const action: AgentAction =
-      typeof payload === "object" && payload !== null
-        ? {
-            kind: "agent",
-            name: press.name,
-            payload: payload as NonNullable<AgentAction["payload"]>,
-          }
-        : { kind: "agent", name: press.name };
-    return { kind: "agent", action };
+    if (typeof payload === "object" && payload !== null && !Array.isArray(payload)) {
+      // Payload must be a plain (non-array) object, then keep only primitive
+      // values — mirror of core asAction (arrays fail its isObject check, so no
+      // payload is emitted at all rather than an index-keyed object).
+      const filtered: Record<string, string | number | boolean> = {};
+      for (const [key, raw] of Object.entries(payload)) {
+        if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
+          filtered[key] = raw;
+        }
+      }
+      return { kind: "agent", action: { kind: "agent", name: press.name, payload: filtered } };
+    }
+    return { kind: "agent", action: { kind: "agent", name: press.name } };
   }
   return null;
 }
@@ -227,19 +232,28 @@ function RenderNode({
       const seen = ancestors ?? EMPTY_ANCESTORS;
       const childAncestors = new Set(seen).add(id);
       const childIds: readonly NodeId[] = Array.isArray(node.children) ? node.children : [];
-      const children = childIds
-        .filter((childId) => !seen.has(childId))
-        .map((childId) => (
-          <RenderNode
-            key={childId}
-            tree={tree}
-            id={childId}
-            onPress={onPress}
-            visibilityOverrides={visibilityOverrides}
-            ancestors={childAncestors}
-            depth={depth + 1}
-          />
-        ));
+      // One linear pass skips ancestors (cycle break) and dedupes sibling ids
+      // (raw path can repeat one; validateTree dedupes too) — first occurrence
+      // wins so React keys stay unique.
+      const emitted = new Set<NodeId>(seen);
+      const uniqueChildIds = childIds.filter((childId) => {
+        if (emitted.has(childId)) {
+          return false;
+        }
+        emitted.add(childId);
+        return true;
+      });
+      const children = uniqueChildIds.map((childId) => (
+        <RenderNode
+          key={childId}
+          tree={tree}
+          id={childId}
+          onPress={onPress}
+          visibilityOverrides={visibilityOverrides}
+          ancestors={childAncestors}
+          depth={depth + 1}
+        />
+      ));
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.
       const press = classifyPress(node.onPress);
@@ -271,7 +285,15 @@ function RenderNode({
           style={imageStyle(styleOf(node.style))}
         />
       ) : null;
-    case "field":
+    case "field": {
+      // Raw-path junk: constrain `input` to the token set (else "text") and
+      // omit non-string name/placeholder, mirroring core's field coercion.
+      const input =
+        typeof node.input === "string" && (FIELD_INPUTS as readonly string[]).includes(node.input)
+          ? node.input
+          : "text";
+      const name = typeof node.name === "string" ? node.name : undefined;
+      const placeholder = typeof node.placeholder === "string" ? node.placeholder : undefined;
       return (
         <label
           style={{
@@ -282,8 +304,9 @@ function RenderNode({
           }}
         >
           {typeof node.label === "string" ? <span>{node.label}</span> : null}
-          <input type={node.input ?? "text"} name={node.name} placeholder={node.placeholder} />
+          <input type={input} name={name} placeholder={placeholder} />
         </label>
       );
+    }
   }
 }
