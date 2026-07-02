@@ -4,28 +4,13 @@
  * server (`serve`). No API key needed.
  */
 import { spawn } from "node:child_process";
-import { validateTree, type FacetTree } from "@facet/core";
+import { STAGE_SPEC, validateTree, type FacetTree } from "@facet/core";
 
 export const SYSTEM = `You generate Facet pages. Output ONLY a single JSON object for a stage tree — no prose, no markdown code fences.
 
-Shape: { "root": "root", "nodes": { "<id>": <node>, ... } }. Exactly one node has id "root" and type "box". Every child id referenced must exist in nodes.
+${STAGE_SPEC}
 
-Node types (the ONLY allowed types):
-- box:   { "id", "type":"box", "children":[ids], "style"?:BoxStyle, "onPress"?:{"name":string} }
-- text:  { "id", "type":"text", "value":string, "style"?:TextStyle }
-- image: { "id", "type":"image", "src":url, "alt":string, "style"?:ImageStyle }
-- field: { "id", "type":"field", "name":string, "label"?, "placeholder"?, "input"?:("text"|"number"|"email"|"password"|"search"), "style"?:{"width"?} }
-
-box is the ONLY container. A bordered box = a card; a box with onPress = a button; nested boxes = any layout. Layout is flow-only (no absolute positioning).
-
-Style values MUST be tokens (never pixels or hex):
-- BoxStyle: direction(row|col), gap/pad(none|xs|sm|md|lg|xl|2xl), align(start|center|end|stretch), justify(start|center|end|between|around), wrap(bool), bg(color), radius(none|sm|md|lg|full), border(bool), grow(bool), width(auto|full)
-- TextStyle: size(xs|sm|md|lg|xl|2xl|3xl), weight(regular|medium|semibold|bold), color(color), align(start|center|end)
-- ImageStyle: radius(...), width(auto|full), ratio(square|wide|tall)
-- color tokens: fg, fg-muted, bg, surface, surface-2, accent, accent-fg, border, success, warning, danger
-- for images use https://picsum.photos/seed/<word>/600/400
-
-Compose freely from these four bricks. Output JSON only.`;
+Output JSON only.`;
 
 /** The index after the balanced `{...}` starting at `start`, or -1. String/escape aware. */
 function balancedEnd(text: string, start: number): number {

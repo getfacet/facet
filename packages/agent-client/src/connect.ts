@@ -25,6 +25,8 @@ export interface ConnectOptions {
   readonly heartbeatMs?: number;
   /** Delay before reconnecting after a drop (default 2s). */
   readonly reconnectMs?: number;
+  /** Shared secret for the `/agent/*` channel, if the server requires one. */
+  readonly token?: string;
   readonly onStatus?: (status: "connected" | "disconnected") => void;
 }
 
@@ -47,6 +49,26 @@ function isEventFrame(value: unknown): value is EventFrame {
   );
 }
 
+/**
+ * Splits an SSE buffer into complete frames' `data:` payloads plus the leftover
+ * (an incomplete trailing frame). Pure and testable: handles a frame split
+ * across chunks, multiple frames per chunk, and non-`data:` lines (comments /
+ * heartbeats) without losing following frames.
+ */
+export function parseSseFrames(buffer: string): { readonly data: string[]; readonly rest: string } {
+  const data: string[] = [];
+  let rest = buffer;
+  let split = rest.indexOf("\n\n");
+  while (split !== -1) {
+    const frame = rest.slice(0, split);
+    rest = rest.slice(split + 2);
+    const dataLine = frame.split("\n").find((line) => line.startsWith("data:"));
+    if (dataLine !== undefined) data.push(dataLine.slice("data:".length).trim());
+    split = rest.indexOf("\n\n");
+  }
+  return { data, rest };
+}
+
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 export function connectAgent(options: ConnectOptions): AgentConnection {
@@ -58,8 +80,11 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
   let controller: AbortController | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
+  const tokenQuery =
+    options.token !== undefined ? `token=${encodeURIComponent(options.token)}` : "";
+
   const post = (path: string, body: unknown): Promise<unknown> =>
-    fetch(`${serverUrl}${path}`, {
+    fetch(`${serverUrl}${path}${tokenQuery !== "" ? `?${tokenQuery}` : ""}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -96,10 +121,13 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
     controller = new AbortController();
     let response: Response;
     try {
-      response = await fetch(`${serverUrl}/agent/stream?agentId=${encodeURIComponent(agentId)}`, {
-        headers: { Accept: "text/event-stream" },
-        signal: controller.signal,
-      });
+      response = await fetch(
+        `${serverUrl}/agent/stream?agentId=${encodeURIComponent(agentId)}${tokenQuery !== "" ? `&${tokenQuery}` : ""}`,
+        {
+          headers: { Accept: "text/event-stream" },
+          signal: controller.signal,
+        },
+      );
     } catch {
       return; // server down — the loop will retry
     }
@@ -119,14 +147,15 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        let split: number;
-        while ((split = buffer.indexOf("\n\n")) !== -1) {
-          const frameText = buffer.slice(0, split);
-          buffer = buffer.slice(split + 2);
-          const dataLine = frameText.split("\n").find((line) => line.startsWith("data:"));
-          if (dataLine === undefined) continue;
-          const parsed: unknown = JSON.parse(dataLine.slice("data:".length).trim());
-          if (isEventFrame(parsed)) void handleEvent(parsed);
+        const { data, rest } = parseSseFrames(buffer);
+        buffer = rest;
+        for (const payload of data) {
+          try {
+            const parsed: unknown = JSON.parse(payload);
+            if (isEventFrame(parsed)) void handleEvent(parsed);
+          } catch {
+            // skip one malformed frame without dropping the rest of the buffer
+          }
         }
       }
     } catch {

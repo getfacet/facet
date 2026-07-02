@@ -79,4 +79,41 @@ describe("validateTree", () => {
     expect(() => validateTree("nope")).not.toThrow();
     expect(validateTree(null).tree.root).toBe("root");
   });
+
+  it("breaks a self-referencing cycle (root child = root)", () => {
+    const input = {
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: ["root"] } },
+    };
+    const root = validateTree(input).tree.nodes["root"] as unknown as { children: string[] };
+    expect(root.children).toEqual([]);
+  });
+
+  it("breaks an indirect cycle without infinite recursion", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["a"] },
+        a: { id: "a", type: "box", children: ["root"] },
+      },
+    };
+    const { tree, issues } = validateTree(input);
+    const a = tree.nodes["a"] as unknown as { children: string[] };
+    expect(a.children).toEqual([]); // the back-edge a -> root is removed
+    expect(issues.some((i) => i.includes("cyclic"))).toBe(true);
+  });
+
+  it("drops an image with an unsafe src scheme, keeps safe ones", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["bad", "ok"] },
+        bad: { id: "bad", type: "image", src: "javascript:alert(1)", alt: "x" },
+        ok: { id: "ok", type: "image", src: "https://picsum.photos/seed/x/600/400", alt: "y" },
+      },
+    };
+    const { tree } = validateTree(input);
+    expect(tree.nodes["bad"]).toBeUndefined();
+    expect(tree.nodes["ok"]).toBeDefined();
+  });
 });

@@ -43,4 +43,35 @@ describe("applyPatch (RFC 6902)", () => {
     ]);
     expect(JSON.stringify(EMPTY_TREE)).toBe(before);
   });
+
+  it("move relocates a node", () => {
+    const seeded = applyPatch(EMPTY_TREE, [
+      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
+    ]);
+    const out = applyPatch(seeded, [{ op: "move", from: "/nodes/a", path: "/nodes/b" }]);
+    expect(out.nodes["a"]).toBeUndefined();
+    expect(out.nodes["b"]).toMatchObject({ value: "x" });
+  });
+
+  it("copy duplicates a node (deep clone)", () => {
+    const seeded = applyPatch(EMPTY_TREE, [
+      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
+    ]);
+    const out = applyPatch(seeded, [{ op: "copy", from: "/nodes/a", path: "/nodes/b" }]);
+    expect(out.nodes["a"]).toMatchObject({ value: "x" });
+    expect(out.nodes["b"]).toMatchObject({ value: "x" });
+  });
+
+  it("test passes on a match and throws on a mismatch", () => {
+    expect(() =>
+      applyPatch(EMPTY_TREE, [{ op: "test", path: "/root", value: "root" }]),
+    ).not.toThrow();
+    expect(() => applyPatch(EMPTY_TREE, [{ op: "test", path: "/root", value: "nope" }])).toThrow();
+  });
+
+  it("throws on an op whose parent path is missing (the documented contract)", () => {
+    expect(() =>
+      applyPatch(EMPTY_TREE, [{ op: "add", path: "/nodes/missing/children/-", value: "x" }]),
+    ).toThrow();
+  });
 });

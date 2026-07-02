@@ -1,5 +1,6 @@
 import {
   applyPatch,
+  createSerialQueue,
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
@@ -7,7 +8,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { MemoryStageStore, type StageStore } from "./stage-store.js";
+import { MemoryStageStore, sessionKey, type StageStore } from "./stage-store.js";
 import { MemorySink, type Sink, type StoredEvent } from "./sink.js";
 
 export interface FacetRuntimeOptions {
@@ -32,6 +33,9 @@ export class FacetRuntime {
   private readonly agent: FacetAgent;
   private readonly stageStore: StageStore;
   private readonly sink: Sink;
+  // Serialize events per (agent, visitor) so concurrent same-visitor events don't
+  // race on the open→apply→save read-modify-write. Different visitors stay parallel.
+  private readonly serialize = createSerialQueue<readonly ServerMessage[]>();
 
   constructor(options: FacetRuntimeOptions) {
     this.agentId = options.agentId;
@@ -59,7 +63,16 @@ export class FacetRuntime {
    * back. Stage patches are applied to the stored session (server is the source of
    * truth), then the interaction is handed to the sink.
    */
-  async handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]> {
+  handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]> {
+    return this.serialize(sessionKey(this.agentId, visitor.visitorId), () =>
+      this.handleOne(visitor, event),
+    );
+  }
+
+  private async handleOne(
+    visitor: VisitorContext,
+    event: ClientEvent,
+  ): Promise<readonly ServerMessage[]> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
     await this.stageStore.save(this.applyToSession(session, messages));
@@ -75,7 +88,13 @@ export class FacetRuntime {
     let stage = session.stage;
     for (const message of messages) {
       if (message.kind === "patch") {
-        stage = applyPatch(stage, message.patches);
+        // Fail-safe: a single bad op must not lose the whole turn (incl. chat
+        // replies). Skip the offending patch, keep the rest.
+        try {
+          stage = applyPatch(stage, message.patches);
+        } catch (error) {
+          console.error("[facet] dropped an invalid patch:", error);
+        }
       }
     }
     return { ...session, stage };

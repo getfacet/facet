@@ -4,6 +4,7 @@
   "description": "The `facet` command — an agent's action surface for the stage. A running agent calls `facet append/say/…` and the local bridge forwards the change.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "bin": {
     "facet": "./src/cli.ts"
   },
@@ -23,6 +24,7 @@
     "access": "public",
     "bin": {
       "facet": "./dist/cli.js"
-    }
+    },
+    "main": "./dist/cli.js"
   }
 }

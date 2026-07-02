@@ -53,3 +53,13 @@ export type FacetAgent = (
   event: ClientEvent,
   session: FacetSession,
 ) => Promise<readonly ServerMessage[]> | readonly ServerMessage[];
+
+/**
+ * The wire between a viewer (browser) and the runtime. A concrete transport wraps
+ * a WebSocket/SSE connection (or an in-process link); keeping it an interface lets
+ * one renderer/hook drive any of them.
+ */
+export interface FacetTransport {
+  send(event: ClientEvent): void;
+  subscribe(onMessage: (message: ServerMessage) => void): () => void;
+}

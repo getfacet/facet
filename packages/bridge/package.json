@@ -4,6 +4,7 @@
   "description": "Local bridge — lets a local coding agent (Claude, Codex, …) own a Facet link from your machine, driving the page via the `facet` CLI.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "bin": {
     "facet-bridge": "./src/cli.ts"
   },

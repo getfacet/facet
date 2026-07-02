@@ -26,9 +26,16 @@ export class FileSink implements Sink {
   async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
     const file = this.fileFor(agentId, visitorId);
     if (!existsSync(file)) return [];
-    return readFileSync(file, "utf8")
-      .split("\n")
-      .filter((line) => line.length > 0)
-      .map((line) => JSON.parse(line) as StoredEvent);
+    const entries: StoredEvent[] = [];
+    for (const line of readFileSync(file, "utf8").split("\n")) {
+      if (line.length === 0) continue;
+      // Skip a corrupt/partial line rather than fail the whole replay.
+      try {
+        entries.push(JSON.parse(line) as StoredEvent);
+      } catch {
+        /* ignore corrupt line */
+      }
+    }
+    return entries;
   }
 }

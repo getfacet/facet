@@ -71,6 +71,18 @@ function asAction(value: unknown): FacetAction | undefined {
   return action;
 }
 
+/** Only render images from safe URL schemes — never `javascript:`, `data:text/html`, etc. */
+function isSafeImageSrc(src: string): boolean {
+  const s = src.trim().toLowerCase();
+  return (
+    s.startsWith("https://") ||
+    s.startsWith("http://") ||
+    s.startsWith("//") ||
+    s.startsWith("data:image/") ||
+    (s.startsWith("/") && !s.startsWith("//"))
+  );
+}
+
 function boxStyle(value: unknown): BoxStyle {
   const style: Record<string, unknown> = {};
   if (isObject(value)) {
@@ -161,6 +173,10 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
         issues.push(`node "${id}": image needs src and alt`);
         return undefined;
       }
+      if (!isSafeImageSrc(src)) {
+        issues.push(`node "${id}": unsafe image src dropped`);
+        return undefined;
+      }
       return { id, type: "image", src, alt, style: imageStyle(raw.style) };
     }
     case "field": {
@@ -233,6 +249,35 @@ export function validateTree(input: unknown): ValidationResult {
     issues.push("root node must be a box");
     return { tree: EMPTY_TREE, issues };
   }
+
+  // Break cycles: drop any child ref that points back to an ancestor, which would
+  // otherwise recurse forever in the renderer. DFS from root; a node in the
+  // current path (gray) reached again is a back-edge.
+  const inPath = new Set<string>();
+  const settled = new Set<string>();
+  const breakCycles = (nodeId: string): void => {
+    const node = nodes[nodeId];
+    if (node === undefined || node.type !== "box") {
+      settled.add(nodeId);
+      return;
+    }
+    inPath.add(nodeId);
+    const kept: string[] = [];
+    for (const child of node.children) {
+      if (inPath.has(child)) {
+        issues.push(`node "${nodeId}": removed cyclic child "${child}"`);
+        continue;
+      }
+      kept.push(child);
+      if (!settled.has(child)) breakCycles(child);
+    }
+    if (kept.length !== node.children.length) {
+      nodes[nodeId] = { ...node, children: kept };
+    }
+    inPath.delete(nodeId);
+    settled.add(nodeId);
+  };
+  breakCycles(rootId);
 
   return { tree: { root: rootId, nodes }, issues };
 }

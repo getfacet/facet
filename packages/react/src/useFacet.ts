@@ -3,19 +3,14 @@ import {
   applyPatch,
   EMPTY_TREE,
   type ClientEvent,
+  type FacetTransport,
   type FacetTree,
   type ServerMessage,
 } from "@facet/core";
 
-/**
- * The wire between a viewer and the runtime. A concrete transport wraps a
- * WebSocket or SSE connection; the demo uses an in-process one. Keeping it an
- * interface lets the same `useFacet` hook drive any of them.
- */
-export interface FacetTransport {
-  send(event: ClientEvent): void;
-  subscribe(onMessage: (message: ServerMessage) => void): () => void;
-}
+// FacetTransport now lives in @facet/core (it's a protocol type); re-exported
+// here for back-compat with consumers that imported it from @facet/react.
+export type { FacetTransport } from "@facet/core";
 
 export interface FacetState {
   readonly tree: FacetTree;

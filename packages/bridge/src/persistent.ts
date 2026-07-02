@@ -6,7 +6,14 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { Stage } from "@facet/agent";
-import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
+import {
+  STAGE_SPEC,
+  type ClientEvent,
+  type FacetAgent,
+  type FacetSession,
+  type FacetTree,
+  type ServerMessage,
+} from "@facet/core";
 
 /**
  * The PERSISTENT driver: one always-on Claude session (via the Agent SDK's
@@ -24,7 +31,10 @@ const SYSTEM = `You own a live web page and update it as visitors interact. Use 
 - set(node): add or replace a node by id
 - remove(id): delete a node
 - say(text): send a short chat reply
-A stage tree is { "root":"root", "nodes": { "<id>": <node> } }. Node types: box {id,type:"box",children:[ids],style?,onPress?} (the only container; bordered box=card, box+onPress=button), text {id,type:"text",value,style?}, image {id,type:"image",src,alt,style?}, field {id,type:"field",name,label?,placeholder?}. Style values are tokens: gap/pad(none,xs,sm,md,lg,xl,2xl), color(fg,fg-muted,bg,surface,surface-2,accent,accent-fg,border,success,warning,danger), size(xs..3xl), weight(regular,medium,semibold,bold), radius(none,sm,md,lg,full), direction(row|col), align, justify. Use https://picsum.photos/seed/<word>/600/400 for images. On a fresh visit, render a page. On a message, prefer append/set/remove to change just what's needed; render a fresh page only for a totally new request. Keep pages polished and complete.`;
+
+${STAGE_SPEC}
+
+On a fresh visit, render a page. On a message, prefer append/set/remove to change just what's needed; render a fresh page only for a totally new request. Keep pages polished and complete.`;
 
 interface Turn {
   readonly event: ClientEvent;
@@ -117,45 +127,76 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
     }
   }
 
+  let dead = false;
+  // If the session stream ends/errors, settle every waiting event instead of
+  // stranding visitors forever (their `handle` promises would hang → server
+  // timeout). Resolve with a short notice.
+  const settleAll = (text: string): void => {
+    const notice: readonly ServerMessage[] = [{ kind: "say", text }];
+    if (current !== undefined) {
+      current.resolve(notice);
+      current = undefined;
+    }
+    for (const turn of pending) turn.resolve(notice);
+    pending.length = 0;
+    turnDone?.();
+    turnDone = undefined;
+  };
+
   const run = async (): Promise<void> => {
-    for await (const message of query({
-      prompt: input(),
-      options: {
-        systemPrompt: SYSTEM,
-        mcpServers: { facet: facetServer },
-        allowedTools: [
-          "mcp__facet__render",
-          "mcp__facet__append",
-          "mcp__facet__set",
-          "mcp__facet__remove",
-          "mcp__facet__say",
-        ],
-        permissionMode: "bypassPermissions",
-        ...(options.model !== undefined ? { model: options.model } : {}),
-      },
-    })) {
-      if (message.type === "result") {
-        current?.resolve(current.stage.flush());
-        current = undefined;
-        turnDone?.();
-        turnDone = undefined;
+    try {
+      for await (const message of query({
+        prompt: input(),
+        options: {
+          systemPrompt: SYSTEM,
+          mcpServers: { facet: facetServer },
+          allowedTools: [
+            "mcp__facet__render",
+            "mcp__facet__append",
+            "mcp__facet__set",
+            "mcp__facet__remove",
+            "mcp__facet__say",
+          ],
+          permissionMode: "bypassPermissions",
+          ...(options.model !== undefined ? { model: options.model } : {}),
+        },
+      })) {
+        if (message.type === "result") {
+          current?.resolve(current.stage.flush());
+          current = undefined;
+          turnDone?.();
+          turnDone = undefined;
+        }
+      }
+    } finally {
+      if (!closed) {
+        dead = true;
+        console.error("[facet] persistent session ended — restart the bridge to resume");
+        settleAll("(this page's agent went offline — check back soon)");
       }
     }
   };
-  void run().catch((error: unknown) => console.error("[facet] persistent session ended:", error));
+  void run().catch((error: unknown) => console.error("[facet] persistent session error:", error));
 
-  const agent: FacetAgent = (event, session) =>
-    new Promise<readonly ServerMessage[]>((resolve) => {
+  const agent: FacetAgent = (event, session) => {
+    if (dead || closed) {
+      return Promise.resolve<readonly ServerMessage[]>([
+        { kind: "say", text: "(this page's agent is offline)" },
+      ]);
+    }
+    return new Promise<readonly ServerMessage[]>((resolve) => {
       pending.push({ event, session, stage: new Stage(), resolve });
       wake?.();
       wake = undefined;
     });
+  };
 
   return {
     agent,
     close: (): void => {
       closed = true;
       wake?.();
+      settleAll("(this page's agent is offline)");
     },
   };
 }

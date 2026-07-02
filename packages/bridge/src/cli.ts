@@ -19,6 +19,7 @@ const mode = process.env["FACET_MODE"] === "persistent" ? "persistent" : "spawn"
 const method = process.env["FACET_METHOD"] === "oneshot" ? "oneshot" : "session";
 const command = process.env["FACET_BRAIN"] ?? "claude";
 const model = process.env["FACET_MODEL"];
+const token = process.env["FACET_AGENT_TOKEN"];
 const portEnv = process.env["FACET_BRIDGE_PORT"];
 
 createBridge({
@@ -28,6 +29,7 @@ createBridge({
   method,
   command,
   ...(model !== undefined ? { model } : {}),
+  ...(token !== undefined ? { token } : {}),
   ...(portEnv !== undefined ? { bridgePort: Number(portEnv) } : {}),
   onStatus: (status) =>
     console.log(status === "connected" ? "● bridge connected" : "○ disconnected"),

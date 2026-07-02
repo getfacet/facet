@@ -29,6 +29,8 @@ export interface FacetServerOptions {
   readonly agent?: FacetAgent;
   /** How long to wait for a remote agent's control response (default 60s). */
   readonly agentTimeoutMs?: number;
+  /** Shared secret required on the `/agent/*` channel. When set, an agent must present a matching `?token=`. */
+  readonly agentToken?: string;
   /** Page shown to a fresh visitor when no agent is connected (the offline face). */
   readonly offlineFace?: FacetTree;
   /** Where the page lives — defaults to in-memory. Pass a durable one to survive restarts. */
@@ -241,6 +243,19 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
     }
 
     // ── agent side ────────────────────────────────────────────────
+    // The agent-side channel is a control surface for the link — gate it with the
+    // shared token so a third party can't connect or inject control responses.
+    if (url.pathname.startsWith("/agent/")) {
+      if (
+        options.agentToken !== undefined &&
+        url.searchParams.get("token") !== options.agentToken
+      ) {
+        res.writeHead(403, { "Content-Type": "text/plain" });
+        res.end("forbidden");
+        return;
+      }
+    }
+
     if (req.method === "GET" && url.pathname === "/agent/stream") {
       if (agentStream !== null) {
         res.writeHead(409, { "Content-Type": "text/plain" });

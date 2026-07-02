@@ -5,9 +5,9 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
+import { createSerialQueue, STAGE_SPEC } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
-import { createSerialQueue } from "./serial-queue.js";
 
 /**
  * The local bridge lets a coding agent on your machine (Claude Code, Codex, …)
@@ -36,6 +36,8 @@ export interface BridgeOptions {
   readonly command?: string;
   /** Model for the persistent session (Agent SDK). Optional. */
   readonly model?: string;
+  /** Shared secret for the server's `/agent/*` channel, if it requires one. */
+  readonly token?: string;
   /** Extra args passed to the brain command before the prompt. */
   readonly commandArgs?: readonly string[];
   /** Local port the `facet` CLI posts changes to. Default `5292`. */
@@ -47,6 +49,21 @@ export interface BridgeOptions {
 export interface Bridge {
   close(): void;
 }
+
+/** Env vars safe to pass to the spawned brain — everything else (API keys, tokens, cloud creds) is withheld. */
+const SAFE_ENV_KEYS = [
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "TERM",
+  "USER",
+  "LOGNAME",
+  "SHELL",
+  "TMPDIR",
+  "TZ",
+  "XDG_CONFIG_HOME",
+  "XDG_CACHE_HOME",
+];
 
 /** A `facet` shim on PATH so the spawned agent can just run `facet …`. */
 function makeFacetShim(): string {
@@ -64,8 +81,10 @@ function makeFacetShim(): string {
 
 const SPEC = `You control a live web page via the \`facet\` command. Change the page by running:
   facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet say <text>
-Nodes: box {id,type:"box",children:[ids],style?,onPress?} · text {id,type:"text",value,style?} · image · field.
-box is the only container (bordered box=card, box+onPress=button). Style values are tokens: gap/pad(xs..2xl), color(fg,fg-muted,surface,accent,accent-fg,…), size(xs..3xl), weight, radius, direction(row|col). Run facet commands now; do not print anything else.`;
+
+${STAGE_SPEC}
+
+Run facet commands now; do not print anything else.`;
 
 function promptFor(event: ClientEvent, stage: FacetTree): string {
   const current = `The page THIS visitor currently sees (a Facet stage tree): ${JSON.stringify(stage)}`;
@@ -106,6 +125,7 @@ export function createBridge(options: BridgeOptions = {}): Bridge {
     serverUrl,
     agentId,
     agent,
+    ...(options.token !== undefined ? { token: options.token } : {}),
     ...(options.onStatus !== undefined ? { onStatus: options.onStatus } : {}),
   });
 
@@ -155,12 +175,18 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
 
   const runBrain = (prompt: string, visitorId: string, token: string): Promise<void> =>
     new Promise((resolve) => {
-      const env = {
-        ...process.env,
+      // Untrusted visitor text reaches this prompt, so DON'T hand the brain the
+      // operator's secrets: pass only a safe env allowlist (+ the facet shim on
+      // PATH), never the full process.env.
+      const env: Record<string, string> = {
+        PATH: `${shimDir}:${process.env.PATH ?? ""}`,
         FACET_BRIDGE_URL: bridgeUrl,
         FACET_EVENT: token,
-        PATH: `${shimDir}:${process.env.PATH ?? ""}`,
       };
+      for (const key of SAFE_ENV_KEYS) {
+        const value = process.env[key];
+        if (value !== undefined) env[key] = value;
+      }
       const resume = method === "session" ? sessionIds.get(visitorId) : undefined;
       const args = [
         ...(options.commandArgs ?? []),
@@ -168,7 +194,11 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
         prompt,
         "--output-format",
         "json",
-        "--dangerously-skip-permissions",
+        // Scope the brain to ONLY the facet CLI — no arbitrary shell/file/network.
+        // Replaces --dangerously-skip-permissions so a prompt-injected visitor
+        // can't drive the brain into running other commands.
+        "--allowedTools",
+        "Bash(facet:*)",
       ];
       if (resume !== undefined) args.push("--resume", resume);
       let out = "";
