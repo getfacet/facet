@@ -38,6 +38,13 @@ class Sheet {
     return id;
   }
 
+  /** A box that starts hidden (content-declared default) — a toggle target. */
+  hiddenBox(style: BoxStyle, children: readonly string[]): string {
+    const id = this.next();
+    this.nodes[id] = { id, type: "box", style, children: [...children], hidden: true };
+    return id;
+  }
+
   text(value: string, style?: TextStyle): string {
     const id = this.next();
     this.nodes[id] =
@@ -64,6 +71,21 @@ class Sheet {
     this.nodes["root"] = { id: "root", type: "box", style: rootStyle, children: [...children] };
     return { root: "root", nodes: this.nodes };
   }
+
+  /**
+   * A multi-screen tree: `screens` maps name → screen root box id (named roots
+   * into the same flat map). `root` keeps every screen as a child so a
+   * screens-unaware renderer still shows all content (plain fallback).
+   */
+  screensTree(screens: Readonly<Record<string, string>>, entry: string): FacetTree {
+    this.nodes["root"] = {
+      id: "root",
+      type: "box",
+      style: { direction: "col" },
+      children: Object.values(screens),
+    };
+    return { root: "root", nodes: this.nodes, screens, entry };
+  }
 }
 
 function hero(): FacetTree {
@@ -74,7 +96,7 @@ function hero(): FacetTree {
         ? { bg: "accent", radius: "md", pad: "md" }
         : { bg: "surface", radius: "md", pad: "md", border: true },
       [s.text(label, { color: primary ? "accent-fg" : "fg", weight: "semibold" })],
-      { name },
+      { kind: "agent", name },
     );
   return s.tree({ direction: "col", gap: "lg", pad: "2xl", align: "center" }, [
     s.text("Build living pages", { size: "3xl", weight: "bold", align: "center" }),
@@ -104,7 +126,7 @@ function productGrid(): FacetTree {
       s.box(
         { bg: "accent", radius: "sm", pad: "sm", align: "center" },
         [s.text("Add to cart", { color: "accent-fg", size: "sm", weight: "semibold" })],
-        { name: "add", payload: { sku: seed } },
+        { kind: "agent", name: "add", payload: { sku: seed } },
       ),
     ]);
   return s.tree({ direction: "col", gap: "lg", pad: "xl" }, [
@@ -127,7 +149,7 @@ function signupForm(): FacetTree {
     s.box(
       { bg: "accent", radius: "md", pad: "md", align: "center" },
       [s.text("Request invite", { color: "accent-fg", weight: "semibold" })],
-      { name: "submit" },
+      { kind: "agent", name: "submit" },
     ),
   ]);
 }
@@ -178,7 +200,7 @@ function pricing(): FacetTree {
               color: highlight ? "accent" : "accent-fg",
             }),
           ],
-          { name: "choose", payload: { tier: name } },
+          { kind: "agent", name: "choose", payload: { tier: name } },
         ),
       ],
     );
@@ -215,6 +237,49 @@ function imageGallery(): FacetTree {
   ]);
 }
 
+function screensAndToggle(): FacetTree {
+  const s = new Sheet();
+  const navButton = (label: string, to: string): string =>
+    s.box(
+      { bg: "surface", radius: "md", pad: "sm", border: true, align: "center" },
+      [s.text(label, { size: "sm", weight: "semibold" })],
+      { kind: "navigate", to },
+    );
+  // Pre-drawn menu panel, hidden on first paint — the ☰ box toggles it,
+  // browser-locally (no agent turn), exactly like navigate below.
+  const menu = s.hiddenBox(
+    { direction: "col", gap: "xs", pad: "md", bg: "surface-2", radius: "md" },
+    [
+      s.text("Home", { size: "sm" }),
+      s.text("Pricing", { size: "sm" }),
+      s.text("Contact", { size: "sm" }),
+    ],
+  );
+  const main = s.box({ direction: "col", gap: "md", pad: "xl" }, [
+    s.text("Home", { size: "2xl", weight: "bold" }),
+    s.text("Navigate and toggle run instantly in the browser — no agent turn.", {
+      size: "sm",
+      color: "fg-muted",
+    }),
+    s.box(
+      { bg: "accent", radius: "md", pad: "sm", align: "center" },
+      [s.text("☰ Menu", { color: "accent-fg", size: "sm", weight: "semibold" })],
+      { kind: "toggle", target: menu },
+    ),
+    menu,
+    navButton("About →", "about"),
+  ]);
+  const about = s.box({ direction: "col", gap: "md", pad: "xl" }, [
+    s.text("About", { size: "2xl", weight: "bold" }),
+    s.text("This screen was pre-drawn; the browser switched to it.", {
+      size: "sm",
+      color: "fg-muted",
+    }),
+    navButton("← Home", "main"),
+  ]);
+  return s.screensTree({ main, about }, "main");
+}
+
 const PAGES: readonly { readonly title: string; readonly tree: FacetTree }[] = [
   { title: "Hero / landing", tree: hero() },
   { title: "Product grid", tree: productGrid() },
@@ -222,6 +287,7 @@ const PAGES: readonly { readonly title: string; readonly tree: FacetTree }[] = [
   { title: "Stats", tree: stats() },
   { title: "Pricing tiers", tree: pricing() },
   { title: "Image gallery", tree: imageGallery() },
+  { title: "Screens & toggle", tree: screensAndToggle() },
 ];
 
 export function Gallery(): React.ReactNode {

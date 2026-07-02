@@ -89,7 +89,7 @@ export function button(label: string, action: string): Block {
     b.box(
       { bg: "accent", radius: "md", pad: "md", align: "center" },
       [b.text(label, { color: "accent-fg", weight: "semibold" })],
-      { name: action },
+      { kind: "agent", name: action },
     );
 }
 

@@ -13,6 +13,16 @@ import type { FacetNode, NodeId } from "./nodes.js";
 export interface FacetTree {
   readonly root: NodeId;
   readonly nodes: Readonly<Record<NodeId, FacetNode>>;
+  /**
+   * Optional named screens — NAMED ROOTS into the same flat `nodes` map
+   * (screen name → the screen's root box id), not nested per-screen trees.
+   * This keeps `/nodes/<id>` patch paths working unchanged and lets screens
+   * share nodes. A screenless tree is the single-screen form: `screens`
+   * absent ⇒ render `root`.
+   */
+  readonly screens?: Readonly<Record<string, NodeId>>;
+  /** Screen shown first (a key of `screens`). Meaningless without `screens`. */
+  readonly entry?: string;
 }
 
 /** A fresh, empty stage: a single vertical root box with no children. */

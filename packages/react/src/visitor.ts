@@ -26,15 +26,21 @@ function randomId(): string {
  * otherwise one visitor can read another's page and history.
  */
 export function browserVisitorId(storageKey: string = DEFAULT_STORAGE_KEY): string {
-  if (typeof localStorage === "undefined") {
-    // No persistent storage (SSR / private modes): a fresh id per call.
+  // localStorage can be undefined (SSR), throw on ACCESS (sandboxed iframes with
+  // storage blocked), or throw on WRITE (quota / strict privacy modes). Any of
+  // those degrades to a fresh per-call id rather than crashing the page.
+  try {
+    if (typeof localStorage === "undefined") {
+      return randomId();
+    }
+    const existing = localStorage.getItem(storageKey);
+    if (existing !== null && existing.length > 0) {
+      return existing;
+    }
+    const id = randomId();
+    localStorage.setItem(storageKey, id);
+    return id;
+  } catch {
     return randomId();
   }
-  const existing = localStorage.getItem(storageKey);
-  if (existing !== null && existing.length > 0) {
-    return existing;
-  }
-  const id = randomId();
-  localStorage.setItem(storageKey, id);
-  return id;
 }

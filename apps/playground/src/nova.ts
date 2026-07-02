@@ -44,7 +44,7 @@ export const nova = defineAgent(({ event, stage }) => {
             id: cta,
             type: "box",
             style: { bg: "accent", radius: "md", pad: "md", align: "center" },
-            onPress: { name: "view_pricing" },
+            onPress: { kind: "agent", name: "view_pricing" },
             children: [ctaLabel],
           },
           [ctaLabel]: {

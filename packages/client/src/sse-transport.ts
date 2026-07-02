@@ -35,6 +35,10 @@ export class SseTransport implements FacetTransport {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ visitor: this.visitor, event }),
+    }).catch((error: unknown) => {
+      // A failed POST must not become an unhandled rejection; the event is
+      // lost, so at least leave a trace for the operator.
+      console.error("[facet] event send failed:", error);
     });
   }
 
@@ -42,7 +46,16 @@ export class SseTransport implements FacetTransport {
     const source = new EventSource(
       `${this.baseUrl}/stream?visitorId=${encodeURIComponent(this.visitor.visitorId)}`,
     );
+    let opened = false;
     source.onopen = () => {
+      // EventSource auto-reconnects; every (re)open makes the server replay the
+      // session (stage snapshot + full chat history). Stage replay is
+      // idempotent, chat replay is not — synthesize a reset on RE-opens so the
+      // client clears accumulated chat before the duplicate history arrives.
+      if (opened) {
+        onMessage({ kind: "reset" });
+      }
+      opened = true;
       this.ready = true;
       const pending = this.queue.splice(0, this.queue.length);
       for (const event of pending) this.send(event);

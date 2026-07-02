@@ -17,9 +17,19 @@ describe("@facet/kit", () => {
   it("button() emits a box carrying the onPress action", () => {
     const tree = page([button("Go", "act")]);
     const withAction = Object.values(tree.nodes).find(
-      (node): node is BoxNode => node.type === "box" && node.onPress?.name === "act",
+      (node): node is BoxNode =>
+        node.type === "box" && node.onPress?.kind === "agent" && node.onPress.name === "act",
     );
     expect(withAction).toBeDefined();
+  });
+
+  it("button emits an explicit kind agent onPress", () => {
+    const tree = page([button("Go", "act")]);
+    const pressable = Object.values(tree.nodes).find(
+      (node): node is BoxNode => node.type === "box" && node.onPress !== undefined,
+    );
+    expect(pressable).toBeDefined();
+    expect(pressable?.onPress).toEqual({ kind: "agent", name: "act" });
   });
 
   it("hero() includes the cta only when given", () => {

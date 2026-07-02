@@ -12,6 +12,17 @@ import {
 // here for back-compat with consumers that imported it from @facet/react.
 export type { FacetTransport } from "@facet/core";
 
+/** A root replace can carry arbitrary JSON — only accept something tree-shaped. */
+function isTreeShaped(value: unknown): value is FacetTree {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { root?: unknown }).root === "string" &&
+    typeof (value as { nodes?: unknown }).nodes === "object" &&
+    (value as { nodes?: unknown }).nodes !== null
+  );
+}
+
 export interface FacetState {
   readonly tree: FacetTree;
   readonly chat: readonly string[];
@@ -32,16 +43,25 @@ export function useFacet(transport: FacetTransport): FacetState {
       if (message.kind === "patch") {
         setTree((current) => {
           // Fail-safe (invariant #2): a malformed patch must never crash the
-          // render — keep the current tree if applyPatch throws.
+          // render — keep the current tree if applyPatch throws, and never let
+          // a root replace smuggle a non-tree (null/scalar) into `tree`, which
+          // the FacetState type promises is a FacetTree.
           try {
-            return applyPatch(current, message.patches);
+            const next: unknown = applyPatch(current, message.patches);
+            return isTreeShaped(next) ? next : current;
           } catch {
             return current;
           }
         });
-      } else {
+      } else if (message.kind === "reset") {
+        // Transport-synthesized on reconnect: the server is about to replay the
+        // session (stage snapshot + full chat history), so clear accumulated
+        // chat or every reconnect would duplicate the whole conversation.
+        setChat([]);
+      } else if (message.kind === "say" && typeof message.text === "string") {
         setChat((current) => [...current, message.text]);
       }
+      // Unknown kinds are ignored (fail-safe) — never push undefined into chat.
     });
   }, [transport]);
 

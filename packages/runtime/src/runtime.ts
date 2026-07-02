@@ -90,11 +90,24 @@ export class FacetRuntime {
     for (const message of messages) {
       if (message.kind === "patch") {
         // Fail-safe: a single bad op must not lose the whole turn (incl. chat
-        // replies). Skip the offending patch, keep the rest.
+        // replies). Guard the patches FIELD first (a wire message can carry a
+        // non-array), then try the batch atomically; if it throws, salvage the
+        // good ops one-by-one so ONE bad op doesn't silently discard every
+        // edit the agent's tools already reported as applied.
+        if (!Array.isArray(message.patches)) {
+          console.error("[facet] dropped a patch message with non-array patches");
+          continue;
+        }
         try {
           stage = applyPatch(stage, message.patches);
-        } catch (error) {
-          console.error("[facet] dropped an invalid patch:", error);
+        } catch {
+          for (const op of message.patches) {
+            try {
+              stage = applyPatch(stage, [op]);
+            } catch (error) {
+              console.error("[facet] dropped an invalid patch op:", error);
+            }
+          }
         }
       }
     }

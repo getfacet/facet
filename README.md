@@ -62,6 +62,11 @@ A *card* is a `box` with a border. A *button* is a `box` with `onPress`. A
 *heading* is a big `text`. Everything is composed from these four, so the set of
 producible interfaces is unbounded — yet it stays safe and unbreakable because:
 
+An `onPress` can also be declarative — `{kind:"navigate", to}` to switch between
+pre-drawn **screens** or `{kind:"toggle", target}` to show/hide a node — and the
+browser runs those **instantly with no round-trip to the model**; `{kind:"agent"}`
+is the path back to the model for anything open-ended.
+
 1. **Bricks are typed data, never raw HTML/JS** → nothing can be injected.
 2. **Style values are tokens, not raw scalars** (`gap: "md"`, not `gap: 23`) →
    any combination lands on a coherent scale; the model can't produce visual

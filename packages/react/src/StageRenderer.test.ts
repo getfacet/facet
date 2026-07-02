@@ -165,3 +165,70 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain("press me");
   });
 });
+
+// Screens are named roots into the same flat nodes map; a screenless tree is the
+// single-screen form. The raw live-patch path bypasses validateTree, so garbage
+// screens/entry/hidden must degrade to a plain render — never throw.
+describe("StageRenderer screens + hidden (static)", () => {
+  it("renders ONLY the entry screen's content for a screens tree", () => {
+    const out = render({
+      root: "root",
+      nodes: {
+        root: box("root", ["rt"]),
+        rt: text("rt", "plain root content"),
+        home: box("home", ["h"]),
+        h: text("h", "home content"),
+        about: box("about", ["a"]),
+        a: text("a", "about content"),
+      },
+      screens: { home: "home", about: "about" },
+      entry: "home",
+    });
+    expect(out).toContain("home content");
+    expect(out).not.toContain("about content");
+    expect(out).not.toContain("plain root content");
+  });
+
+  it("renders a screenless tree from root exactly as before", () => {
+    const plain = tree({ root: box("root", ["t"]), t: text("t", "single screen") });
+    expect(render(plain)).toContain("single screen");
+  });
+
+  it("omits a hidden: true box from the output", () => {
+    const out = render(
+      tree({
+        root: box("root", ["shown", "menu"]),
+        shown: text("shown", "visible line"),
+        menu: { id: "menu", type: "box", hidden: true, children: ["m"] },
+        m: text("m", "secret menu"),
+      }),
+    );
+    expect(out).toContain("visible line");
+    expect(out).not.toContain("secret menu");
+  });
+
+  it("only literal true hides — a hidden patched to a non-boolean stays visible", () => {
+    const noisy = {
+      root: box("root", ["p"]),
+      p: { id: "p", type: "box", hidden: "yes", children: ["t"] },
+      t: text("t", "still shown"),
+    } as unknown as Record<NodeId, FacetNode>;
+    expect(render(tree(noisy))).toContain("still shown");
+  });
+
+  it("never throws on garbage screens/entry on the raw path (falls back to root)", () => {
+    const nodes = { root: box("root", ["t"]), t: text("t", "root fallback") };
+    const junkTrees = [
+      { root: "root", nodes, screens: "not an object", entry: "x" },
+      { root: "root", nodes, screens: 42 },
+      { root: "root", nodes, screens: null },
+      { root: "root", nodes, screens: { a: 99, b: null, c: {} }, entry: "a" },
+      { root: "root", nodes, screens: { a: "missingNode" }, entry: 7 },
+      { root: "root", nodes, screens: {}, entry: "a" },
+    ] as unknown as FacetTree[];
+    for (const junk of junkTrees) {
+      expect(() => render(junk)).not.toThrow();
+      expect(render(junk)).toContain("root fallback");
+    }
+  });
+});

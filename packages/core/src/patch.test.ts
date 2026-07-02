@@ -44,6 +44,39 @@ describe("applyPatch (RFC 6902)", () => {
     expect(JSON.stringify(EMPTY_TREE)).toBe(before);
   });
 
+  it("never mutates the OPERATIONS — applying the same batch twice yields identical trees", () => {
+    // add a box, then append a child into it: without value-cloning the second
+    // op would mutate the first op's value in place (server apply would corrupt
+    // the outgoing message; the client would then double-append).
+    const batch = [
+      { op: "add" as const, path: "/nodes/boxA", value: { id: "boxA", type: "box", children: [] } },
+      { op: "add" as const, path: "/nodes/boxA/children/-", value: "c" },
+    ];
+    const before = JSON.stringify(batch);
+    const serverSide = applyPatch(EMPTY_TREE, batch);
+    expect(JSON.stringify(batch)).toBe(before); // ops untouched by the first apply
+    const clientSide = applyPatch(EMPTY_TREE, batch);
+    expect(clientSide).toEqual(serverSide); // second apply gives the same result
+    const boxA = clientSide.nodes["boxA"] as unknown as { children: string[] };
+    expect(boxA.children).toEqual(["c"]); // exactly once, not ["c", "c"]
+  });
+
+  it("throws on an unknown op instead of returning undefined", () => {
+    const bogus = { op: "append", path: "/nodes/a", value: "x" } as unknown as Parameters<
+      typeof applyPatch
+    >[1][number];
+    expect(() => applyPatch(EMPTY_TREE, [bogus])).toThrow(/unknown patch op/);
+  });
+
+  it("rejects prototype-polluting pointer tokens", () => {
+    for (const path of ["/__proto__/polluted", "/nodes/__proto__", "/constructor/prototype/x"]) {
+      expect(() => applyPatch(EMPTY_TREE, [{ op: "add", path, value: "HACKED" }])).toThrow(
+        /forbidden pointer token/,
+      );
+    }
+    expect({} as { polluted?: unknown }).not.toHaveProperty("polluted"); // globals untouched
+  });
+
   it("move relocates a node", () => {
     const seeded = applyPatch(EMPTY_TREE, [
       { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },

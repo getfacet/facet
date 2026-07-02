@@ -28,13 +28,49 @@ import type {
 /** Identifier for a node within a stage tree. */
 export type NodeId = string;
 
-/** Fired when an interactive brick is used (a pressed box, a submitted field). */
-export interface FacetAction {
+/**
+ * An action routed to the agent (a ClientEvent over the transport). `kind` is
+ * OPTIONAL by design: a bare legacy `{name}` IS an agent action, so every
+ * pre-union `onPress` literal keeps compiling and behaving. `validateTree`
+ * stamps the canonical `kind: "agent"` when normalizing.
+ */
+export interface AgentAction {
+  readonly kind?: "agent";
   /** Stable action name the agent listens for, e.g. "view_pricing". */
   readonly name: string;
   /** Optional structured payload carried back to the agent. */
   readonly payload?: Readonly<Record<string, string | number | boolean>>;
 }
+
+/**
+ * Switches the visible screen instantly in the browser — no agent turn, no
+ * transport traffic. `name?: undefined` keeps legacy `.name` probes on the
+ * union compiling while truthfully reporting there is no agent action name.
+ */
+export interface NavigateAction {
+  readonly kind: "navigate";
+  /** Screen name to show (a key of `FacetTree.screens`). Unknown names no-op. */
+  readonly to: string;
+  readonly name?: undefined;
+}
+
+/**
+ * Shows/hides the target node instantly in the browser (view-state only).
+ * `name?: undefined` for the same source-compat reason as NavigateAction.
+ */
+export interface ToggleAction {
+  readonly kind: "toggle";
+  /** Node id whose visibility flips. Unknown ids no-op. */
+  readonly target: NodeId;
+  readonly name?: undefined;
+}
+
+/**
+ * Fired when an interactive brick is used (a pressed box, a submitted field).
+ * Narrow on `kind`: `"navigate"`/`"toggle"` are exact literals, and the
+ * else-branch (absent or `"agent"`) is the agent-routed action.
+ */
+export type FacetAction = AgentAction | NavigateAction | ToggleAction;
 
 export interface BoxStyle {
   readonly direction?: Direction;
@@ -79,6 +115,11 @@ export interface BoxNode {
   readonly style?: BoxStyle;
   /** Makes the box pressable. Any box can be a button — or a clickable card. */
   readonly onPress?: FacetAction;
+  /**
+   * Content-declared default visibility (server-written). The browser's toggle
+   * override wins after first interaction; only literal `true` hides.
+   */
+  readonly hidden?: boolean;
   readonly children: readonly NodeId[];
 }
 

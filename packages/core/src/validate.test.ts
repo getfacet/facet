@@ -131,3 +131,275 @@ describe("validateTree", () => {
     expect(() => validateTree({ root: "root", nodes })).not.toThrow();
   });
 });
+
+describe("validateTree action normalization", () => {
+  const pressBox = (onPress: unknown): unknown => ({
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", onPress, children: [] },
+    },
+  });
+  const rootPress = (input: unknown): Record<string, unknown> | undefined =>
+    (validateTree(input).tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> })
+      .onPress;
+
+  it("normalizes a legacy onPress action to kind agent", () => {
+    const { tree, issues } = validateTree(pressBox({ name: "go", payload: { id: 7 } }));
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toEqual({ kind: "agent", name: "go", payload: { id: 7 } });
+    expect(issues).toHaveLength(0); // the legacy stamp is silent normalization
+  });
+
+  it("keeps an explicit kind agent action", () => {
+    const { tree, issues } = validateTree(pressBox({ kind: "agent", name: "go" }));
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toEqual({ kind: "agent", name: "go" });
+    expect(issues).toHaveLength(0);
+  });
+
+  it("keeps navigate and toggle actions", () => {
+    expect(rootPress(pressBox({ kind: "navigate", to: "about" }))).toEqual({
+      kind: "navigate",
+      to: "about",
+    });
+    expect(rootPress(pressBox({ kind: "toggle", target: "menu" }))).toEqual({
+      kind: "toggle",
+      target: "menu",
+    });
+  });
+
+  it("strips an unknown action kind with an issue", () => {
+    const { tree, issues } = validateTree(pressBox({ kind: "fetch", url: "https://x" }));
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toBeUndefined(); // box renders non-pressable
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("strips a navigate action with a malformed to", () => {
+    const { tree, issues } = validateTree(pressBox({ kind: "navigate", to: 42 }));
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toBeUndefined();
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("strips a toggle action with a malformed target", () => {
+    const { tree, issues } = validateTree(pressBox({ kind: "toggle" }));
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toBeUndefined();
+    expect(issues.length).toBeGreaterThan(0);
+  });
+});
+
+describe("validateTree hidden", () => {
+  it("keeps a literal boolean hidden", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["panel"] },
+        panel: { id: "panel", type: "box", hidden: true, children: [] },
+      },
+    };
+    const panel = validateTree(input).tree.nodes["panel"] as unknown as { hidden?: unknown };
+    expect(panel.hidden).toBe(true);
+  });
+
+  it("strips a non-boolean hidden", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", hidden: "yes", children: [] },
+      },
+    };
+    const root = validateTree(input).tree.nodes["root"] as unknown as { hidden?: unknown };
+    expect(root.hidden).toBeUndefined();
+  });
+});
+
+describe("validateTree screens", () => {
+  it("keeps screens whose targets are existing boxes, with a valid entry", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [] },
+        about: { id: "about", type: "box", children: [] },
+      },
+      screens: { home: "root", about: "about" },
+      entry: "about",
+    };
+    const { tree, issues } = validateTree(input);
+    expect(tree.screens).toEqual({ home: "root", about: "about" });
+    expect(tree.entry).toBe("about");
+    expect(issues).toHaveLength(0);
+  });
+
+  it("drops dangling, non-box, and non-string screen targets", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["t"] },
+        t: { id: "t", type: "text", value: "hi" },
+      },
+      screens: { home: "root", ghost: "nope", words: "t", bad: 42 },
+      entry: "home",
+    };
+    const { tree, issues } = validateTree(input);
+    expect(tree.screens).toEqual({ home: "root" });
+    expect(tree.entry).toBe("home");
+    expect(issues.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("omits screens and entry when no screen entries survive", () => {
+    const input = {
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+      screens: { ghost: "nope" },
+      entry: "ghost",
+    };
+    const { tree, issues } = validateTree(input);
+    expect(tree.screens).toBeUndefined();
+    expect(tree.entry).toBeUndefined();
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("drops a non-object screens value with an issue", () => {
+    const input = {
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+      screens: "junk",
+    };
+    const { tree, issues } = validateTree(input);
+    expect(tree.screens).toBeUndefined();
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("falls back entry to the first kept screen and logs an issue", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [] },
+        b: { id: "b", type: "box", children: [] },
+      },
+      screens: { first: "root", second: "b" },
+      entry: "missing",
+    };
+    const { tree, issues } = validateTree(input);
+    expect(tree.entry).toBe("first");
+    expect(issues.some((issue) => issue.includes("entry"))).toBe(true);
+  });
+
+  it("breaks a cycle inside a non-entry screen without throwing", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [] },
+        s1: { id: "s1", type: "box", children: ["s2"] },
+        s2: { id: "s2", type: "box", children: ["s1"] },
+      },
+      screens: { home: "root", extra: "s1" },
+      entry: "home",
+    };
+    const { tree, issues } = validateTree(input);
+    const s2 = tree.nodes["s2"] as unknown as { children: string[] };
+    expect(s2.children).toEqual([]); // the back-edge s2 -> s1 is removed
+    expect(issues.some((issue) => issue.includes("cyclic"))).toBe(true);
+  });
+
+  it("does not throw or overflow on a deep chain inside a non-entry screen", () => {
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    for (let i = 0; i < 5000; i += 1) {
+      nodes[`n${String(i)}`] = {
+        id: `n${String(i)}`,
+        type: "box",
+        children: i < 4999 ? [`n${String(i + 1)}`] : [],
+      };
+    }
+    const input = { root: "root", nodes, screens: { home: "root", deep: "n0" }, entry: "home" };
+    expect(() => validateTree(input)).not.toThrow();
+  });
+});
+
+describe("validateTree legacy pass-through", () => {
+  it("passes a screenless action-free tree through unchanged", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: { gap: "md" }, children: ["t"] },
+        t: { id: "t", type: "text", value: "hi", style: {} },
+      },
+    };
+    const { tree, issues } = validateTree(input);
+    expect(issues).toHaveLength(0);
+    expect(tree).toEqual(input); // no screens/entry materialized, nothing rewritten
+    expect("screens" in tree).toBe(false);
+    expect("entry" in tree).toBe(false);
+  });
+
+  it("passes a bare-onPress tree through identical except the silent kind stamp", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: {}, onPress: { name: "go" }, children: ["t"] },
+        t: { id: "t", type: "text", value: "hi", style: {} },
+      },
+    };
+    const { tree, issues } = validateTree(input);
+    expect(issues).toHaveLength(0);
+    expect(tree).toEqual({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          style: {},
+          onPress: { kind: "agent", name: "go" },
+          children: ["t"],
+        },
+        t: { id: "t", type: "text", value: "hi", style: {} },
+      },
+    });
+  });
+});
+
+describe("validateTree field style", () => {
+  it("keeps a valid field style instead of stripping it", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["f"] },
+        f: { id: "f", type: "field", name: "email", style: { width: "full" } },
+      },
+    };
+    const { tree } = validateTree(input);
+    expect(tree.nodes["f"]).toMatchObject({ style: { width: "full" } });
+  });
+
+  it("strips an invalid field style token but keeps the field", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["f"] },
+        f: { id: "f", type: "field", name: "q", style: { width: "97vw" } },
+      },
+    };
+    const { tree } = validateTree(input);
+    const field = tree.nodes["f"] as unknown as { style?: unknown };
+    expect(field).toBeDefined();
+    expect(field.style).toBeUndefined();
+  });
+});
+
+describe("validateTree prototype-key safety", () => {
+  it("drops a node keyed __proto__ (with an issue) instead of flipping the map prototype", () => {
+    const input = JSON.parse(
+      '{"root":"root","nodes":{"root":{"id":"root","type":"box","children":["value"]},"__proto__":{"id":"__proto__","type":"text","value":"x"}}}',
+    ) as unknown;
+    const { tree, issues } = validateTree(input);
+    expect(Object.keys(tree.nodes)).toEqual(["root"]);
+    expect(issues.some((issue) => issue.includes("forbidden node id"))).toBe(true);
+    // the dangling "value" child (only resolvable via prototype-chain leak) is gone
+    const root = tree.nodes["root"] as unknown as { children: string[] };
+    expect(root.children).toEqual([]);
+  });
+});

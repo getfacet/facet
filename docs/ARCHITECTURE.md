@@ -64,10 +64,27 @@ package whose helpers are themselves just box compositions.
 `FacetNode` is a closed union of four bricks (see `core/src/nodes.ts`):
 
 - `box` — the only container. Flow layout (`direction: row|col`), token styles,
-  and an optional `onPress` action (a pressable box is the button primitive).
+  an optional `onPress` action (a pressable box is the button primitive), and an
+  optional `hidden` flag (a content-declared initial-collapsed default).
 - `text` — a string with token text styles.
 - `image` — `src` + `alt` + token styles.
-- `field` — an input (`name`, `input` kind, optional `submit` action).
+- `field` — an input (`name`, `input` kind, token styles).
+
+`onPress` is a small **behavior language** — a discriminated union so the agent
+can pre-declare what an interaction does:
+
+- `{ kind: "agent", name, payload? }` — send an event to the agent (the open-ended
+  path; a bare `{ name }` is treated as this). This is the only kind that reaches
+  the transport.
+- `{ kind: "navigate", to }` — switch to another pre-drawn screen.
+- `{ kind: "toggle", target }` — show/hide an in-flow node.
+
+`navigate`/`toggle` run **instantly in the browser with no agent turn** — the
+renderer owns that view-state (which screen is showing, per-node visibility)
+while the server stays the only writer of stage content, so the two never
+contend. Pre-draw the reachable screens (how deep is the agent's call) and let
+the browser flip between them for free; reserve `kind:"agent"` for anything that
+needs new reasoning.
 
 Style values are **tokens** defined in `core/src/tokens.ts` (`Space`, `FontSize`,
 `Color`, `Radius`, …). Token names are the agent-facing vocabulary; the concrete
@@ -84,12 +101,20 @@ is `root`.
 interface FacetTree {
   root: NodeId;
   nodes: Record<NodeId, FacetNode>;
+  screens?: Record<string, NodeId>; // named screens → their root node id
+  entry?: string; // which screen shows first
 }
 ```
 
 The flat-list-with-id-references shape (the same idea as Google A2UI) lets an
 agent stream and patch a tree incrementally — adding one node at a time — instead
 of re-emitting a whole page on every change.
+
+**Screens** are named roots INTO the same flat `nodes` map (not separate trees),
+so every `/nodes/<id>` patch path, `applyPatch`, and existing consumer keeps
+working unchanged: a screenless tree simply renders `root` (the single-screen
+form). `navigate` picks which screen the browser shows; the server never needs to
+be involved in the switch.
 
 ## Patches: RFC 6902 JSON Patch
 

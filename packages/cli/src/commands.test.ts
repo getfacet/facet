@@ -53,6 +53,26 @@ describe("buildMessages", () => {
     expect(() => buildMessages("remove", [])).toThrow(/node id/);
   });
 
+  it("screens sets the screens map and entry", () => {
+    const [message] = buildMessages("screens", [
+      JSON.stringify({ home: "root", about: "about-box" }),
+      "home",
+    ]);
+    if (message?.kind !== "patch") throw new Error("expected a patch");
+    expect(message.patches).toEqual([
+      { op: "add", path: "/screens", value: { home: "root", about: "about-box" } },
+      { op: "add", path: "/entry", value: "home" },
+    ]);
+  });
+
+  it("throws on a missing entry for screens", () => {
+    expect(() => buildMessages("screens", [JSON.stringify({ home: "root" })])).toThrow(/entry/);
+  });
+
+  it("throws on invalid JSON for the screens map", () => {
+    expect(() => buildMessages("screens", ["{not json", "home"])).toThrow(/invalid JSON/);
+  });
+
   it("throws on an unknown command", () => {
     expect(() => buildMessages("frobnicate", [])).toThrow(/unknown command/);
   });
