@@ -4,15 +4,13 @@
 > these on their own merits (not under a feature gate): `/spec-bridge` (this file
 > as input) → `/implement`, or fix item-by-item with `/verify` after each.
 >
-> **Sources (fresh, against current `main` 2026-07-02):**
-> - code-review workflow `wf_4e2fadd0-31d` — 14 confirmed (⚠ `types` lane did not
->   run: session limit).
-> - refactor-audit workflow `wf_84bc52dc-f8f` — 6 confirmed (⚠ `hygiene` lane did
->   not run: session limit).
->
-> **Two lanes still owed (re-run after quota reset to complete the sweep):**
-> `code-review: types` (API/type-safety) and `refactor-audit: hygiene`
-> (package.json uniformity, file/function size, tsconfig drift).
+> **Sources (fresh, against current `main` 2026-07-02) — sweep COMPLETE:**
+> - code-review: 6 lanes (`wf_4e2fadd0-31d`, 14 confirmed) + `types` lane
+>   (`wf_0f294ddd-bb4`, 2 confirmed).
+> - refactor-audit: 5 dimensions (`wf_84bc52dc-f8f`, 6 confirmed) + `hygiene`
+>   dimension (`wf_4d26ff5d-8e6`, 2 confirmed).
+> All 7 code-review lanes + all 5 refactor-audit dimensions ran and were
+> adversarially verified. 24 confirmed findings total.
 
 ## P2 — should-fix
 
@@ -22,6 +20,13 @@
   unstable reconciliation ("rendered broken", violates fail-safe invariant #2).
   Trigger: `children:["a","a"]` on the raw path or a double `stage.append`.
   *Fix:* dedupe sibling child ids in validateTree AND in the renderer's child pass.
+- **[P2] react/StageRenderer.tsx:113 (classifyPress)** — the raw-path `onPress`
+  payload is cast to `Record<string, string|number|boolean>` after only a
+  `typeof === "object"` check — nested/non-primitive values are never filtered
+  (drift from validate's `asAction`), so a bad payload reaches `onAction` →
+  transport → agent typed as primitives-only. `server.ts` isEventBody has the same
+  hole. *Fix:* filter payload values to primitives in classifyPress (mirror
+  asAction), and/or in isEventBody.
 - **[P2] server/server.ts:277-294** — `/stream` reconnect rehydrate can overwrite
   a newer live patch (ordering race): the res is added to the fan-out set before
   the async `stageFor()` snapshot, so a concurrent `/event` v2 patch can land
@@ -95,8 +100,16 @@
   branches unpinned.
 - **[P3] agent-client/connect.ts** — the agent-error fallback + event routing are
   untested (only the pure `parseSseFrames` helper is covered).
+- **[P3] packages/*/ (hygiene)** — 9 of 11 publishable `@facet/*` packages have no
+  README (only bridge + client do); all carry `publishConfig.access:public`, so
+  they'd land on npm with a blank page. *Fix:* short README per package before
+  first release (mirror the package.json description + a usage snippet).
+- **[P3] server/server.ts (hygiene)** — `createFacetServer` is a 271-line function
+  (429-line file, largest in the tree): request dispatch + SSE wiring + control
+  handling + lifecycle inline in one closure. *Fix:* extract per-request dispatch
+  into named helpers alongside the existing `setCors`/`sse`/`readJson` helpers.
 
 ---
-_Rebuilt against current `main` from two fresh review workflows. Supersedes the
-prior screens-feature-incidental list. Complete the two owed lanes (code-review
-types, refactor-audit hygiene) before treating this as exhaustive._
+_Rebuilt against current `main` from a COMPLETE fresh sweep (all code-review lanes
++ all refactor-audit dimensions, adversarially verified). Supersedes the prior
+screens-feature-incidental list._
