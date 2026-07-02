@@ -23,7 +23,11 @@ export class SseTransport implements FacetTransport {
 
   send(event: ClientEvent): void {
     if (!this.ready) {
-      if (this.queue.length >= MAX_QUEUE) this.queue.shift(); // drop the oldest
+      if (this.queue.length >= MAX_QUEUE) {
+        // Drop the oldest — but spare a leading "visit": it's the event the
+        // queue exists to protect (it opens the session on the server).
+        this.queue.splice(this.queue[0]?.kind === "visit" ? 1 : 0, 1);
+      }
       this.queue.push(event);
       return;
     }

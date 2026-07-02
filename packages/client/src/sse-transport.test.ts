@@ -118,4 +118,19 @@ describe("SseTransport", () => {
     expect(events[0]?.text).toBe("m50"); // oldest 50 dropped
     expect(events[99]?.text).toBe("m149");
   });
+
+  it("spares a leading visit when the queue overflows", () => {
+    const transport = new SseTransport("http://s", visitor);
+    transport.subscribe(() => {});
+    transport.send({ kind: "visit", visitor });
+    for (let i = 0; i < 150; i += 1) {
+      transport.send({ kind: "message", text: `m${i}` });
+    }
+    FakeEventSource.instances[0]?.onopen?.();
+
+    const events = sentEvents() as { kind: string; text?: string }[];
+    expect(events).toHaveLength(100);
+    expect(events[0]).toEqual({ kind: "visit", visitor }); // still first
+    expect(events[99]?.text).toBe("m149");
+  });
 });
