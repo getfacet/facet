@@ -26,6 +26,18 @@ const server = createFacetServer({ port: 5291, agentId: "live", agent });
 await server.listen();
 ```
 
+## Delivery guarantees
+
+Browser SSE frames carry a per-session sequence in the standard `id:` field, so
+an `EventSource` reconnect resumes exactly where it left off (`Last-Event-ID`
+replays only the missed frames; a full rehydrate is always preceded by an
+explicit `reset` message). An agent turn that outlives the per-event timeout is
+NOT discarded: the visitor gets an interim note and the finished result is
+applied and delivered when it arrives — unless a newer turn has already changed
+the page, in which case only the late reply text is shown (a stale result never
+overwrites a newer stage). Tune `agentTimeoutMs` (interim-note threshold) and
+`agentStaleMs` (dead-agent reaper) via `FacetServerOptions`.
+
 ## Trust model (read before hosting)
 
 This is a REFERENCE transport for local/self-hosted single-operator use with

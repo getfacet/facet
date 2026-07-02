@@ -4,6 +4,11 @@ import type { ClientEvent, FacetTransport, ServerMessage, VisitorContext } from 
  * transport that never (re)connects can't accumulate events forever. */
 const MAX_QUEUE = 100;
 
+/** Pure network headroom — the POST is answered 202 before the turn runs, so a
+ * healthy request settles fast. The abort exists only so a black-holed POST
+ * (no response ever) can't wedge the ordered send chain. */
+const POST_TIMEOUT_MS = 10_000;
+
 /**
  * Browser transport over the reference server: Server-Sent Events for the
  * server→client channel, `fetch` POST for client→server. Events sent before the
@@ -41,6 +46,7 @@ export class SseTransport implements FacetTransport {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ visitor: this.visitor, event }),
+          signal: AbortSignal.timeout(POST_TIMEOUT_MS),
         }).then(() => undefined),
       )
       .catch((error: unknown) => {
@@ -54,16 +60,11 @@ export class SseTransport implements FacetTransport {
     const source = new EventSource(
       `${this.baseUrl}/stream?visitorId=${encodeURIComponent(this.visitor.visitorId)}`,
     );
-    let opened = false;
     source.onopen = () => {
-      // EventSource auto-reconnects; every (re)open makes the server replay the
-      // session (stage snapshot + full chat history). Stage replay is
-      // idempotent, chat replay is not — synthesize a reset on RE-opens so the
-      // client clears accumulated chat before the duplicate history arrives.
-      if (opened) {
-        onMessage({ kind: "reset" });
-      }
-      opened = true;
+      // EventSource auto-reconnects and re-sends Last-Event-ID, so the server
+      // decides whether a reopen gets a RESUME replay (no reset) or a FULL
+      // rehydrate (preceded by an explicit `reset` frame). The client can't tell
+      // the two apart, so it never synthesizes a reset — it just relays frames.
       this.ready = true;
       const pending = this.queue.splice(0, this.queue.length);
       for (const event of pending) this.send(event);

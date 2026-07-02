@@ -50,4 +50,10 @@ If you build a hosted / multi-tenant product on top of `@facet/server`, treat th
 above as required work, not optional — add authentication, per-tenant isolation,
 and rate limiting at your edge.
 
+Two in-memory server structures are bounded, best-effort caches under that same
+trust model: the per-session frame log backing `Last-Event-ID` resume (session
+churn evicts it — resume then degrades to a full rehydrate, nothing is lost)
+and the late-result window keyed by sequential request ids (bounded FIFO; on an
+unauthenticated port it is one more reason to set `agentToken`).
+
 [gh-report]: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { parseBridgePort, safeEnv } from "./env.js";
+import { parseBridgePort, parseMaxConcurrent, safeEnv } from "./env.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";
 
 const added: string[] = [];
@@ -43,6 +43,26 @@ describe("parseBridgePort", () => {
     "throws on invalid value %j (naming the offender)",
     (value) => {
       expect(() => parseBridgePort(value)).toThrow(value);
+    },
+  );
+});
+
+describe("parseMaxConcurrent", () => {
+  it("passes undefined through", () => {
+    expect(parseMaxConcurrent(undefined)).toBeUndefined();
+  });
+
+  it.each([
+    ["4", 4],
+    ["1", 1],
+  ])("parses a valid cap %j → %d", (value, expected) => {
+    expect(parseMaxConcurrent(value)).toBe(expected);
+  });
+
+  it.each(["0", "abc", "-2", "1.5"])(
+    "throws on invalid value %j (naming the offender)",
+    (value) => {
+      expect(() => parseMaxConcurrent(value)).toThrow(value);
     },
   );
 });

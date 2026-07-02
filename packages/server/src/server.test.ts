@@ -1,9 +1,21 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type { FacetAgent, FacetSession, FacetTree, VisitorContext } from "@facet/core";
-import { MemoryStageStore, type StageStore } from "@facet/runtime";
+import type {
+  AgentEventFrame,
+  FacetAgent,
+  FacetSession,
+  FacetTree,
+  ServerMessage,
+  VisitorContext,
+} from "@facet/core";
+import { MemorySink, MemoryStageStore, type StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "./server.js";
+import { isStaleLateResult } from "./late.js";
 
 const sayAgent: FacetAgent = () => [{ kind: "say", text: "hello from agent" }];
+
+/** The non-terminal note the per-event timeout now delivers (A-3). */
+const INTERIM_SAY =
+  "(still working — this is taking longer than usual; the answer will appear here when it's ready)";
 
 /** Bind to a random high port, retrying on collisions. */
 async function start(
@@ -22,12 +34,31 @@ async function start(
   throw new Error("could not bind a test port");
 }
 
-/** Read SSE frames from a /stream response until `count` data lines arrived. */
-async function readFrames(response: Response, count: number): Promise<unknown[]> {
+/** One parsed SSE frame: its optional `id:` line and its decoded `data:` payload. */
+interface SseFrame {
+  readonly id?: string;
+  readonly data: unknown;
+}
+
+/** Parse a `\n\n`-delimited SSE block into its id + data, or undefined for a
+ * comment-only block (`: connected`). */
+function parseBlock(block: string): SseFrame | undefined {
+  let id: string | undefined;
+  let dataLine: string | undefined;
+  for (const line of block.split("\n")) {
+    if (line.startsWith("id: ")) id = line.slice(4);
+    else if (line.startsWith("data: ")) dataLine = line.slice(6);
+  }
+  if (dataLine === undefined) return undefined;
+  return id === undefined ? { data: JSON.parse(dataLine) } : { id, data: JSON.parse(dataLine) };
+}
+
+/** Read SSE frames from a /stream response until `count` data frames arrived. */
+async function readEvents(response: Response, count: number): Promise<SseFrame[]> {
   const reader = response.body?.getReader();
   if (reader === undefined) throw new Error("no body");
   const decoder = new TextDecoder();
-  const frames: unknown[] = [];
+  const frames: SseFrame[] = [];
   let buffer = "";
   while (frames.length < count) {
     const { value, done } = await reader.read();
@@ -35,9 +66,9 @@ async function readFrames(response: Response, count: number): Promise<unknown[]>
     buffer += decoder.decode(value, { stream: true });
     let index = buffer.indexOf("\n\n");
     while (index !== -1) {
-      const chunk = buffer.slice(0, index);
+      const frame = parseBlock(buffer.slice(0, index));
       buffer = buffer.slice(index + 2);
-      if (chunk.startsWith("data: ")) frames.push(JSON.parse(chunk.slice(6)));
+      if (frame !== undefined) frames.push(frame);
       index = buffer.indexOf("\n\n");
     }
   }
@@ -45,13 +76,18 @@ async function readFrames(response: Response, count: number): Promise<unknown[]>
   return frames;
 }
 
-/** Collect SSE data frames for a bounded window, then stop (the stream stays open,
- * so a count-based reader would block — here we want "whatever arrived in `ms`"). */
-async function collectFrames(response: Response, ms: number): Promise<unknown[]> {
+/** Read SSE frames from a /stream response until `count` data lines arrived. */
+async function readFrames(response: Response, count: number): Promise<unknown[]> {
+  return (await readEvents(response, count)).map((f) => f.data);
+}
+
+/** Collect SSE frames (id + data) for a bounded window, then stop (the stream stays
+ * open, so a count-based reader would block — here we want "whatever arrived in `ms`"). */
+async function collectEvents(response: Response, ms: number): Promise<SseFrame[]> {
   const reader = response.body?.getReader();
   if (reader === undefined) throw new Error("no body");
   const decoder = new TextDecoder();
-  const frames: unknown[] = [];
+  const frames: SseFrame[] = [];
   let buffer = "";
   const deadline = Date.now() + ms;
   try {
@@ -62,9 +98,9 @@ async function collectFrames(response: Response, ms: number): Promise<unknown[]>
       buffer += decoder.decode(chunk.value, { stream: true });
       let index = buffer.indexOf("\n\n");
       while (index !== -1) {
-        const line = buffer.slice(0, index);
+        const frame = parseBlock(buffer.slice(0, index));
         buffer = buffer.slice(index + 2);
-        if (line.startsWith("data: ")) frames.push(JSON.parse(line.slice(6)));
+        if (frame !== undefined) frames.push(frame);
         index = buffer.indexOf("\n\n");
       }
     }
@@ -72,6 +108,11 @@ async function collectFrames(response: Response, ms: number): Promise<unknown[]>
     await reader.cancel();
   }
   return frames;
+}
+
+/** Collect SSE data payloads for a bounded window. */
+async function collectFrames(response: Response, ms: number): Promise<unknown[]> {
+  return (await collectEvents(response, ms)).map((f) => f.data);
 }
 
 /** Poll `predicate` until it's true or the window elapses. */
@@ -82,6 +123,72 @@ async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 2_000): Pr
     await new Promise((r) => setTimeout(r, 5));
   }
   throw new Error("waitFor timed out");
+}
+
+/** A dialed-in fake remote agent: holds `/agent/stream` and reads the event
+ * frames the server pushes, so a test can respond via `/agent/control`. */
+interface AgentLink {
+  readonly response: Response;
+  nextEvent(): Promise<AgentEventFrame>;
+  close(): Promise<void>;
+}
+
+async function dialAgent(base: string, token?: string): Promise<AgentLink> {
+  const response = await fetch(`${base}/agent/stream`, {
+    headers: token !== undefined ? { "x-facet-token": token } : {},
+  });
+  const reader = response.body?.getReader();
+  if (reader === undefined) throw new Error("no agent body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const nextEvent = async (): Promise<AgentEventFrame> => {
+    for (;;) {
+      let index = buffer.indexOf("\n\n");
+      while (index !== -1) {
+        const block = buffer.slice(0, index);
+        buffer = buffer.slice(index + 2);
+        for (const line of block.split("\n")) {
+          if (line.startsWith("data: ")) {
+            const data = JSON.parse(line.slice(6)) as { type?: string };
+            if (data.type === "event") return data as AgentEventFrame;
+          }
+        }
+        index = buffer.indexOf("\n\n");
+      }
+      const { value, done } = await reader.read();
+      if (done) throw new Error("agent stream ended");
+      buffer += decoder.decode(value, { stream: true });
+    }
+  };
+  return { response, nextEvent, close: () => reader.cancel() };
+}
+
+function postEvent(base: string, visitorId: string, event: ClientEventLike): Promise<Response> {
+  return fetch(`${base}/event`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visitor: { visitorId }, event }),
+  });
+}
+type ClientEventLike =
+  | { kind: "message"; text: string }
+  | { kind: "visit"; visitor: { visitorId: string } }
+  | { kind: "action"; action: { name: string; payload?: unknown } };
+
+function control(
+  base: string,
+  requestId: number,
+  messages: readonly ServerMessage[],
+  token?: string,
+): Promise<Response> {
+  return fetch(`${base}/agent/control`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token !== undefined ? { "x-facet-token": token } : {}),
+    },
+    body: JSON.stringify({ requestId, messages }),
+  });
 }
 
 /** Wraps a StageStore so only `get` (the rehydrate read) is delayed — `open`/`save`
@@ -126,6 +233,27 @@ class FailOnceGetStore implements StageStore {
   }
 }
 
+/** A store whose `open` can be toggled to throw — models a store that fails on a
+ * specific write (here, the late-apply path) without disturbing earlier writes. */
+class ToggleOpenFailStore implements StageStore {
+  failOpen = false;
+  constructor(private readonly inner: StageStore) {}
+  get(agentId: string, visitorId: string): Promise<FacetSession | undefined> {
+    return this.inner.get(agentId, visitorId);
+  }
+  open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
+    if (this.failOpen) throw new Error("late store failure");
+    return this.inner.open(agentId, visitor);
+  }
+  save(session: FacetSession): Promise<void> {
+    return this.inner.save(session);
+  }
+}
+
+/** The text field of a stored node, if present (nodes are a union — box has no value). */
+const nodeValue = (session: FacetSession | undefined, id: string): string | undefined =>
+  (session?.stage.nodes[id] as { value?: string } | undefined)?.value;
+
 /** Resolves `true` if the server ends the SSE response within `ms`, else `false`
  * (the stream is still open). Data/comment frames are ignored — only closure matters. */
 async function streamEnded(response: Response, ms: number): Promise<boolean> {
@@ -144,6 +272,12 @@ async function streamEnded(response: Response, ms: number): Promise<boolean> {
     await reader.cancel();
   }
 }
+
+const sayText = (frames: SseFrame[]): string[] =>
+  frames
+    .map((f) => f.data)
+    .filter((d): d is { kind: "say"; text: string } => (d as { kind?: string }).kind === "say")
+    .map((d) => d.text);
 
 let running: FacetServer | undefined;
 afterEach(async () => {
@@ -189,15 +323,23 @@ describe("browser channel", () => {
     const stream = await fetch(`${base}/stream?visitorId=v`);
     expect(stream.status).toBe(200);
 
-    const accepted = await fetch(`${base}/event`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ visitor: { visitorId: "v" }, event: { kind: "message", text: "hi" } }),
-    });
+    const accepted = await postEvent(base, "v", { kind: "message", text: "hi" });
     expect(accepted.status).toBe(202);
 
-    const frames = await readFrames(stream, 1);
-    expect(frames[0]).toEqual({ kind: "say", text: "hello from agent" });
+    // A full (re)connect now leads with an unstamped reset, then the live say.
+    const frames = await readFrames(stream, 2);
+    expect(frames[0]).toEqual({ kind: "reset" });
+    expect(frames[1]).toEqual({ kind: "say", text: "hello from agent" });
+  });
+
+  it("advertises Last-Event-ID in CORS so cross-origin resume works", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // The cross-origin EventSource reconnect carries Last-Event-ID; the preflight
+    // must allow it or the resume never happens.
+    const preflight = await fetch(`${base}/stream?visitorId=v`, { method: "OPTIONS" });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-headers")).toContain("Last-Event-ID");
   });
 
   it("only sends CORS headers on the browser channel", async () => {
@@ -227,22 +369,587 @@ describe("agent channel", () => {
     const { server, base } = await start({ agentId: "a" }); // no in-process agent
     running = server;
     const stream = await fetch(`${base}/stream?visitorId=v`);
-    await fetch(`${base}/event`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        visitor: { visitorId: "v" },
-        event: { kind: "visit", visitor: { visitorId: "v" } },
-      }),
-    });
-    const frames = (await readFrames(stream, 1)) as { kind: string }[];
-    expect(frames[0]?.kind).toBe("patch"); // the offline face render
+    await postEvent(base, "v", { kind: "visit", visitor: { visitorId: "v" } });
+    // reset (leading) then the offline-face patch.
+    const frames = (await readFrames(stream, 2)) as { kind: string }[];
+    expect(frames[0]?.kind).toBe("reset");
+    expect(frames.some((f) => f.kind === "patch")).toBe(true);
   });
 
   it("returns 404 for unknown routes", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
     expect((await fetch(`${base}/nope`)).status).toBe(404);
+  });
+});
+
+describe("isStaleLateResult (late-apply staleness)", () => {
+  it("is not stale when the era matches and no newer turn applied", () => {
+    expect(isStaleLateResult({ era: "e1", index: 3 }, { era: "e1", lastApplied: 3 })).toBe(false);
+    expect(isStaleLateResult({ era: "e1", index: 3 }, { era: "e1", lastApplied: 2 })).toBe(false);
+    expect(isStaleLateResult({ era: "e1", index: 3 }, { era: "e1", lastApplied: -1 })).toBe(false);
+  });
+
+  it("is stale when a newer turn already applied (same era)", () => {
+    expect(isStaleLateResult({ era: "e1", index: 3 }, { era: "e1", lastApplied: 4 })).toBe(true);
+  });
+
+  it("is stale when the era no longer matches (log re-minted after eviction/restart)", () => {
+    // Even though 0 is not > 5, the era mismatch alone makes it stale — a re-minted
+    // log's counters are meaningless, so the fail-safe direction is to drop the patch.
+    expect(isStaleLateResult({ era: "old", index: 5 }, { era: "new", lastApplied: 0 })).toBe(true);
+    expect(isStaleLateResult({ era: "old", index: 5 }, { era: "new", lastApplied: 9 })).toBe(true);
+  });
+});
+
+describe("async delivery — late results", () => {
+  it("applies a late /agent/control result after the per-event timeout", async () => {
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 100, stageStore: inner });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "slow please" });
+    const evt = await link.nextEvent();
+
+    const seed: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: { direction: "col" }, children: ["t1"] },
+        t1: { id: "t1", type: "text", value: "late answer body" },
+      },
+    };
+    // Respond only AFTER the per-event timeout has fired (interim note delivered).
+    await new Promise((r) => setTimeout(r, 180));
+    const posted = await control(base, evt.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: seed }] },
+      { kind: "say", text: "here is the late answer" },
+    ]);
+    expect(posted.status).toBe(202);
+
+    // Collect everything the tab received (leading reset, interim note, late result).
+    const frames = await collectEvents(stream, 1_000);
+    const says = sayText(frames);
+    expect(says).toContain(INTERIM_SAY); // non-terminal note fired at the timeout
+    expect(says).toContain("here is the late answer"); // the late result was delivered
+    // …and applied to the stored session.
+    await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
+    await link.close();
+  });
+
+  it("applies an in-time result exactly once with no interim note", async () => {
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 5_000 });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "hi" });
+    const evt = await link.nextEvent();
+    await control(base, evt.requestId, [{ kind: "say", text: "prompt answer" }]);
+
+    const frames = await collectEvents(stream, 500);
+    const says = sayText(frames);
+    expect(says).toEqual(["prompt answer"]); // exactly once, no interim note
+    await link.close();
+  });
+
+  it("salvages a good op from a late result with one stale op", async () => {
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 100, stageStore: inner });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "go" });
+    const evt = await link.nextEvent();
+    await new Promise((r) => setTimeout(r, 160));
+
+    const good: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: { direction: "col" }, children: ["g1"] },
+        g1: { id: "g1", type: "text", value: "good op landed" },
+      },
+    };
+    // One stale op (replace a node that doesn't exist) + one good op (replace root).
+    await control(base, evt.requestId, [
+      {
+        kind: "patch",
+        patches: [
+          { op: "replace", path: "/nodes/ghost/value", value: "nope" },
+          { op: "replace", path: "", value: good },
+        ],
+      },
+    ]);
+
+    // The good op lands in the store despite the stale op…
+    await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["g1"] !== undefined);
+    // …and the stream survives (still open, not torn down by the bad op).
+    expect(await streamEnded(stream, 200)).toBe(false);
+    await link.close();
+  });
+
+  it("lands a result the agent posts after reconnecting (dropAgent parks pending)", async () => {
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 5_000 });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "work" });
+    const evt = await link.nextEvent();
+    // Agent dies mid-turn — dropAgent parks {visitor,event} in the late window.
+    await link.close();
+    await waitFor(async () => (await (await fetch(`${base}/health`)).text()) === "ok agent=local");
+
+    // The agent reconnects and posts the finished work for the same requestId.
+    const link2 = await dialAgent(base);
+    await control(base, evt.requestId, [{ kind: "say", text: "reconnected answer" }]);
+    const frames = await collectEvents(stream, 800);
+    expect(sayText(frames)).toContain("reconnected answer");
+    await link2.close();
+  });
+
+  it("answers 202 no-op for a control POST whose late-window entry was evicted", async () => {
+    // LATE_WINDOW_LIMIT is 100; a requestId never parked answers a silent 202.
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const response = await control(base, 999_999, [{ kind: "say", text: "orphan" }]);
+    expect(response.status).toBe(202);
+  });
+
+  const labelTree = (label: string): FacetTree => ({
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", style: { direction: "col" }, children: ["t"] },
+      t: { id: "t", type: "text", value: label },
+    },
+  });
+
+  it("drops a stale late result's patch but keeps its say when a newer turn applied", async () => {
+    // Inversion: e1 times out and parks (index 0); e2 (index 1) then applies r2
+    // fully; e1's real result r1 arrives LAST. r1's stage mutation must NOT overwrite
+    // r2 — but r1's conversational say still lands (the interim promise is honored).
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 120, stageStore: inner });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+
+    // e2 queues behind e1; its agent frame only arrives after e1's interim timeout.
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    const evt2 = await link.nextEvent();
+    await control(base, evt2.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r2") }] },
+      { kind: "say", text: "answer 2" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r2");
+
+    // e1's real result arrives late — stale (index 0 < lastApplied 1).
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+
+    const frames = await collectEvents(stream, 800);
+    expect(sayText(frames)).toContain("answer 1"); // the say still lands
+    // …and the stored stage is still r2's — no stale rollback.
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r2");
+    await link.close();
+  });
+
+  it("applies a late result's patches when only interim turns intervened (no stage mutation)", async () => {
+    // e1 parks (idx 0); e2 ALSO times out (interim say only, idx 1) — no newer stage
+    // mutation. e1's real result must still apply its patches (lastApplied stays -1;
+    // an interim/say-only turn must not falsely mark the parked patch stale).
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 100, stageStore: inner });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    await link.nextEvent(); // e2's frame arrives after e1's timeout
+    await new Promise((r) => setTimeout(r, 160)); // let e2 time out too (interim only)
+
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r1");
+    const frames = await collectEvents(stream, 400);
+    expect(sayText(frames)).toContain("answer 1");
+    await link.close();
+  });
+
+  it("delivers an error say when a late apply's store write fails", async () => {
+    const store = new ToggleOpenFailStore(new MemoryStageStore());
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 120, stageStore: store });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "go" });
+    const evt = await link.nextEvent();
+    await new Promise((r) => setTimeout(r, 200)); // let e1 time out + park
+
+    // The late apply's store open throws — the visitor must get an error say, not be
+    // left waiting forever on the interim "it's coming" note.
+    store.failOpen = true;
+    await control(base, evt.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("late") }] },
+    ]);
+    const frames = await collectEvents(stream, 800);
+    expect(sayText(frames)).toContain("(the agent hit an error — try again)");
+    await link.close();
+  });
+
+  it("records two sink entries for a timed-out event (interim then real)", async () => {
+    const sink = new MemorySink();
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 100, sink });
+    running = server;
+    const link = await dialAgent(base);
+    await postEvent(base, "v", { kind: "message", text: "slow" });
+    const evt = await link.nextEvent();
+    await new Promise((r) => setTimeout(r, 160)); // interim fires + parks
+    await control(base, evt.requestId, [{ kind: "say", text: "the real answer" }]);
+    // A timed-out turn records TWICE: handleOne's interim say, then applyMessages' real.
+    await waitFor(async () => (await sink.history("a", "v")).length >= 2);
+    expect((await sink.history("a", "v")).length).toBe(2);
+    await link.close();
+  });
+});
+
+describe("async delivery — resume & rehydrate", () => {
+  const echoAgent: FacetAgent = (event) =>
+    event.kind === "message" ? [{ kind: "say", text: event.text }] : [];
+
+  it("replays exactly the missed frames on resume with Last-Event-ID", async () => {
+    const { server, base } = await start({ agentId: "a", agent: echoAgent });
+    running = server;
+
+    const stream1 = await fetch(`${base}/stream?visitorId=v`);
+    await postEvent(base, "v", { kind: "message", text: "a" });
+    await postEvent(base, "v", { kind: "message", text: "b" });
+    // reset + say(a) + say(b); grab the era from the last stamped frame.
+    const first = await readEvents(stream1, 3);
+    const stamped = first.filter((f) => f.id !== undefined);
+    const lastId = stamped[stamped.length - 1]?.id;
+    expect(lastId).toBeDefined();
+    const era = lastId!.slice(0, lastId!.indexOf(":"));
+    const lastSeq = Number(lastId!.slice(lastId!.indexOf(":") + 1));
+
+    // readEvents already cancelled stream1's reader (disconnecting it); two more
+    // events land while nobody is listening.
+    await postEvent(base, "v", { kind: "message", text: "c" });
+    await postEvent(base, "v", { kind: "message", text: "d" });
+    await waitFor(async () => true); // let the lane drain
+    await new Promise((r) => setTimeout(r, 50));
+
+    // Reconnect with the resume token: exactly the gap, in seq order, no reset, no dups.
+    const stream2 = await fetch(`${base}/stream?visitorId=v`, {
+      headers: { "Last-Event-ID": `${era}:${lastSeq}` },
+    });
+    const resumed = await readEvents(stream2, 2);
+    expect(resumed.map((f) => f.data)).toEqual([
+      { kind: "say", text: "c" },
+      { kind: "say", text: "d" },
+    ]);
+    // No reset on a resume (a resume must not clear chat).
+    expect(resumed.every((f) => (f.data as { kind: string }).kind === "say")).toBe(true);
+    // Stamped in strictly increasing seq order continuing past lastSeq.
+    const seqs = resumed.map((f) => Number(f.id!.slice(f.id!.indexOf(":") + 1)));
+    expect(seqs).toEqual([lastSeq + 1, lastSeq + 2]);
+  });
+
+  const seededTree: FacetTree = {
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", style: { direction: "col" }, children: ["s1"] },
+      s1: { id: "s1", type: "text", value: "seeded stage" },
+    },
+  };
+  // Seeds a stored stage on "seed", otherwise echoes the message text.
+  const seedAgent: FacetAgent = (event) => {
+    if (event.kind === "message" && event.text === "seed") {
+      return [{ kind: "patch", patches: [{ op: "replace", path: "", value: seededTree }] }];
+    }
+    return event.kind === "message" ? [{ kind: "say", text: event.text }] : [];
+  };
+
+  it("degrades every malformed resume token to a full rehydrate, never 4xx/5xx", async () => {
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
+    running = server;
+
+    // Seed a stored stage so a full rehydrate produces a full-replace patch, and
+    // grab the live era from the stamped snapshot.
+    const seedStream = await fetch(`${base}/stream?visitorId=v`);
+    await postEvent(base, "v", { kind: "message", text: "seed" });
+    const seedFrames = await readEvents(seedStream, 2); // reset + snapshot patch
+    const stampedSeed = seedFrames.find((f) => f.id !== undefined);
+    const era = stampedSeed?.id?.slice(0, stampedSeed.id.indexOf(":")) ?? "zzz";
+
+    const tokens = [
+      "", // empty
+      "garbage", // no colon
+      "nocolon-either", // no colon
+      `${era}:`, // empty seq (Number("") === 0 would wrongly resume)
+      `${era}:abc`, // non-integer seq
+      `${era}: 1`, // leading whitespace coerces under Number()
+      `${era}:0x1`, // hex coerces under Number()
+      `${era}:1e2`, // exponent coerces under Number()
+      `${era}:-2`, // negative other than the valid -1 base
+      `wrong-era:0`, // era mismatch
+      `${era}:999999`, // future seq beyond lastAssigned
+    ];
+    for (const token of tokens) {
+      const stream = await fetch(`${base}/stream?visitorId=v`, {
+        headers: { "Last-Event-ID": token },
+      });
+      expect(stream.status).toBe(200); // never 4xx/5xx for a resume token
+      const frames = await readEvents(stream, 2);
+      expect(frames[0]?.data).toEqual({ kind: "reset" }); // leading reset
+      expect(
+        frames.some(
+          (f) =>
+            (f.data as { kind?: string }).kind === "patch" &&
+            (f.data as { patches?: { path?: string }[] }).patches?.[0]?.path === "",
+        ),
+      ).toBe(true); // full-replace snapshot
+    }
+  });
+
+  it("accepts era:-1 as a valid resume base (no reset, no re-rehydrate loop)", async () => {
+    // A pre-populated stage with NO delivered frames stamps its snapshot id era:-1;
+    // resuming from that base must join without a reset (else an idle tab that only
+    // ever received the snapshot would full-rehydrate on every reconnect).
+    const inner = new MemoryStageStore();
+    await inner.save({ agentId: "a", visitor: { visitorId: "v" }, stage: seededTree });
+    const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
+    running = server;
+
+    const s1 = await fetch(`${base}/stream?visitorId=v`);
+    const first = await readEvents(s1, 2); // reset + snapshot stamped era:-1
+    const snap = first.find((f) => f.id !== undefined);
+    expect(snap?.id?.endsWith(":-1")).toBe(true); // stamped at N0 = -1
+    const era = snap!.id!.slice(0, snap!.id!.indexOf(":"));
+
+    const s2 = await fetch(`${base}/stream?visitorId=v`, {
+      headers: { "Last-Event-ID": `${era}:-1` },
+    });
+    // Valid resume: no reset frame (not a full rehydrate).
+    const frames = await collectEvents(s2, 250);
+    expect(frames.every((f) => (f.data as { kind?: string }).kind !== "reset")).toBe(true);
+  });
+
+  it("ends the stream when the ring overflows during a rehydrate read", async () => {
+    // The gap's head falls off the 200-frame ring mid-read → unstitchable → the
+    // finalization writes nothing and ends, and the retry full-rehydrates.
+    const RING_OVERFLOW = 201; // > FRAME_LOG_LIMIT (200) in server.ts
+    const flood: FacetAgent = (event) =>
+      event.kind === "message" && event.text === "flood"
+        ? Array.from({ length: RING_OVERFLOW }, (_, i) => ({ kind: "say", text: `f${i}` }))
+        : [{ kind: "patch", patches: [{ op: "replace", path: "", value: seededTree }] }];
+    const inner = new MemoryStageStore();
+    const stageStore = new DelayedGetStore(inner, 200);
+    const { server, base } = await start({ agentId: "a", agent: flood, stageStore });
+    running = server;
+
+    // Seed a stored stage (one delivered frame → watermark N0 = 0 at the next connect).
+    await postEvent(base, "v", { kind: "message", text: "seed" });
+    await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["s1"] !== undefined);
+
+    const first = await fetch(`${base}/stream?visitorId=v`);
+    // During the 200ms delayed read, one event floods >FRAME_LOG_LIMIT frames.
+    await postEvent(base, "v", { kind: "message", text: "flood" });
+    expect(await streamEnded(first, 1_500)).toBe(true);
+
+    // The retry (no token) full-rehydrates cleanly and stays open.
+    const second = await fetch(`${base}/stream?visitorId=v`);
+    const frames = await readEvents(second, 1);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+  });
+
+  it("leads a full rehydrate with an unstamped reset and stamps from the snapshot", async () => {
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
+    running = server;
+
+    // Seed a stored stage first, from a connection we then drop.
+    const s1 = await fetch(`${base}/stream?visitorId=v`);
+    await postEvent(base, "v", { kind: "message", text: "seed" });
+    await readEvents(s1, 2); // reset + snapshot (also disconnects s1)
+
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    const frames = await readEvents(stream, 2);
+    // The reset frame carries NO id:.
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(frames[0]?.id).toBeUndefined();
+    // Stamping starts at the snapshot (the full-replace patch).
+    const snapshot = frames[1];
+    expect((snapshot?.data as { kind?: string }).kind).toBe("patch");
+    expect(snapshot?.id).toBeDefined();
+    expect(snapshot?.id).toContain(":");
+  });
+
+  it("paints a token-less tab promptly during a mid-flight slow turn", async () => {
+    // A slow (never-answered within the window) turn is in flight; a fresh
+    // token-less tab must still rehydrate promptly (rehydrate runs OUTSIDE the lane).
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({
+      agentId: "a",
+      agentTimeoutMs: 5_000,
+      stageStore: inner,
+    });
+    running = server;
+    const link = await dialAgent(base);
+
+    // Seed a stored stage via a first quick turn (no browser stream needed — the
+    // turn persists to the store regardless).
+    await postEvent(base, "v", { kind: "message", text: "seed" });
+    const seedEvt = await link.nextEvent();
+    const seed: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: { direction: "col" }, children: ["t1"] },
+        t1: { id: "t1", type: "text", value: "seeded" },
+      },
+    };
+    await control(base, seedEvt.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: seed }] },
+    ]);
+    await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
+
+    // Start a slow turn that the agent will NOT answer within the window.
+    await postEvent(base, "v", { kind: "message", text: "slow" });
+    await link.nextEvent(); // agent received it but sits on it
+
+    // A brand-new token-less tab connects: it must get reset+snapshot promptly,
+    // NOT block behind the mid-flight slow turn (rehydrate runs outside the lane).
+    const started = Date.now();
+    const fresh = await fetch(`${base}/stream?visitorId=v`);
+    const frames = await readEvents(fresh, 2);
+    expect(Date.now() - started).toBeLessThan(1_000); // well before the slow turn resolves
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect((frames[1]?.data as { kind?: string }).kind).toBe("patch");
+    await link.close();
+  });
+
+  it("replays a frame delivered during the rehydrate read (loss-free window)", async () => {
+    const seedTree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: { direction: "col" }, children: ["t1"] },
+        t1: { id: "t1", type: "text", value: "seed" },
+      },
+    };
+    const agent: FacetAgent = (event) => {
+      if (event.kind === "message" && event.text === "seed") {
+        return [{ kind: "patch", patches: [{ op: "replace", path: "", value: seedTree }] }];
+      }
+      if (event.kind === "message" && event.text === "bump") {
+        return [
+          { kind: "patch", patches: [{ op: "replace", path: "/nodes/t1/value", value: "bumped" }] },
+        ];
+      }
+      return [];
+    };
+    const inner = new MemoryStageStore();
+    const stageStore = new DelayedGetStore(inner, 150);
+    const { server, base } = await start({ agentId: "a", agent, stageStore });
+    running = server;
+
+    await postEvent(base, "v", { kind: "message", text: "seed" });
+    await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
+
+    // Open the (re)connecting viewer, then fire a bump whose frame is delivered
+    // DURING the delayed rehydrate read — it must be replayed before live flow.
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    await postEvent(base, "v", { kind: "message", text: "bump" });
+
+    const frames = (await collectFrames(stream, 600)) as {
+      kind?: string;
+      patches?: { path?: string }[];
+    }[];
+    const fullIdx = frames.findIndex((f) => f.kind === "patch" && f.patches?.[0]?.path === "");
+    const liveIdx = frames.findIndex(
+      (f) => f.kind === "patch" && f.patches?.[0]?.path === "/nodes/t1/value",
+    );
+    expect(fullIdx).toBeGreaterThanOrEqual(0); // the full-replace rehydrate arrived
+    expect(liveIdx).toBeGreaterThanOrEqual(0); // the bump was NOT lost in the window
+    expect(fullIdx).toBeLessThan(liveIdx); // …and arrived before the live patch
+  });
+});
+
+describe("agent handshake (DC-009)", () => {
+  it("rejects a bad agent token with 403 on stream and control", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, agentToken: "s3cret" });
+    running = server;
+    const badStream = await fetch(`${base}/agent/stream`, { headers: { "x-facet-token": "nope" } });
+    expect(badStream.status).toBe(403);
+    await badStream.body?.cancel();
+    const badControl = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-facet-token": "nope" },
+      body: JSON.stringify({ requestId: 1, messages: [] }),
+    });
+    expect(badControl.status).toBe(403);
+  });
+
+  it("rejects a non-positive or non-integer agentStaleMs at construction", () => {
+    // 0/negative would make the reaper interval fire on ~0ms ticks and reap healthy
+    // agents; fail fast at construction (no server is started, so nothing leaks).
+    expect(() => createFacetServer({ port: 0, agentId: "a", agentStaleMs: 0 })).toThrow();
+    expect(() => createFacetServer({ port: 0, agentId: "a", agentStaleMs: -5 })).toThrow();
+    expect(() => createFacetServer({ port: 0, agentId: "a", agentStaleMs: 1.5 })).toThrow();
+  });
+
+  it("rejects a second agent with 409", async () => {
+    const { server, base } = await start({ agentId: "a" });
+    running = server;
+    const first = await dialAgent(base);
+    const second = await fetch(`${base}/agent/stream`);
+    expect(second.status).toBe(409);
+    await second.body?.cancel();
+    await first.close();
+  });
+
+  it("keeps the agent slot alive while heartbeats arrive", async () => {
+    const { server, base } = await start({ agentId: "a", agentStaleMs: 300 });
+    running = server;
+    const link = await dialAgent(base);
+    for (let i = 0; i < 6; i += 1) {
+      await new Promise((r) => setTimeout(r, 80));
+      await fetch(`${base}/agent/heartbeat`, { method: "POST" });
+    }
+    // Slot still held: a second dial is refused, health still reports remote.
+    const second = await fetch(`${base}/agent/stream`);
+    expect(second.status).toBe(409);
+    await second.body?.cancel();
+    expect(await (await fetch(`${base}/health`)).text()).toBe("ok agent=remote");
+    await link.close();
+  });
+
+  it("reaps a stale agent and accepts a new dial", async () => {
+    const { server, base } = await start({ agentId: "a", agentStaleMs: 200 });
+    running = server;
+    const link = await dialAgent(base);
+    // Stop heartbeating; the reaper (interval min(10s, staleMs)) drops the slot.
+    await waitFor(
+      async () => (await (await fetch(`${base}/health`)).text()) === "ok agent=local",
+      3_000,
+    );
+    // The freed slot accepts a new dial.
+    const redial = await fetch(`${base}/agent/stream`);
+    expect(redial.status).toBe(200);
+    await redial.body?.cancel();
+    await link.close();
   });
 });
 
@@ -272,11 +979,7 @@ describe("hardening", () => {
     running = server;
 
     const post = (text: string): Promise<Response> =>
-      fetch(`${base}/event`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ visitor: { visitorId: "v" }, event: { kind: "message", text } }),
-      });
+      postEvent(base, "v", { kind: "message", text });
 
     // Seed a stored stage to rehydrate FROM (no stream connected yet — just persist).
     await post("seed");
@@ -316,10 +1019,12 @@ describe("hardening", () => {
     expect(first.status).toBe(200);
     expect(await streamEnded(first, 1_000)).toBe(true);
 
-    // Reconnect: the second `get` succeeds, so the stream stays open (stays healthy).
+    // Reconnect (no resume token): the second `get` succeeds, so the stream stays
+    // open — and it performs a FULL rehydrate (leading reset), never a false resume.
     const second = await fetch(`${base}/stream?visitorId=v`);
     expect(second.status).toBe(200);
-    expect(await streamEnded(second, 300)).toBe(false);
+    const frames = await readEvents(second, 1);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
   });
 
   it("rejects an /event action payload that is an array", async () => {

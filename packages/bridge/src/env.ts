@@ -44,3 +44,20 @@ export function parseBridgePort(value: string | undefined): number | undefined {
   }
   return port;
 }
+
+/**
+ * Parse the spawn-mode concurrency cap from an env var. `undefined` passes
+ * through (use the default); otherwise it must be an integer >= 1 or we throw a
+ * clear error naming the offending value — so a typo fails fast instead of
+ * silently handing `NaN`/0 to the semaphore.
+ */
+export function parseMaxConcurrent(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const limit = Number(value);
+  if (!Number.isInteger(limit) || limit < 1) {
+    throw new Error(
+      `Invalid FACET_MAX_CONCURRENT ${JSON.stringify(value)}: expected an integer >= 1.`,
+    );
+  }
+  return limit;
+}
