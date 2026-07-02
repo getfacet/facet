@@ -1,48 +1,102 @@
 # Hardening Backlog
 
-> Latent issues surfaced by the whole-codebase review during the screens-view-actions
-> feature (2026-07-02), deliberately deferred out of that feature PR. These are
-> mostly PRE-EXISTING bugs, not caused by that feature. Work them as a dedicated
-> hardening campaign (/refactor-audit + focused review), each on its own merits —
-> not under a feature gate.
+> A dedicated hardening campaign for pre-existing latent issues in Facet. Work
+> these on their own merits (not under a feature gate): `/spec-bridge` (this file
+> as input) → `/implement`, or fix item-by-item with `/verify` after each.
+>
+> **Sources (fresh, against current `main` 2026-07-02):**
+> - code-review workflow `wf_4e2fadd0-31d` — 14 confirmed (⚠ `types` lane did not
+>   run: session limit).
+> - refactor-audit workflow `wf_84bc52dc-f8f` — 6 confirmed (⚠ `hygiene` lane did
+>   not run: session limit).
+>
+> **Two lanes still owed (re-run after quota reset to complete the sweep):**
+> `code-review: types` (API/type-safety) and `refactor-audit: hygiene`
+> (package.json uniformity, file/function size, tsconfig drift).
 
-## Deferred P2 (waived on the feature; must be addressed)
+## P2 — should-fix
 
-These P2s were waived under the async-delivery/scale umbrella + a server-test-harness follow-up:
+### Correctness
+- **[P2] react/StageRenderer.tsx + core/validate.ts** — Duplicate sibling child
+  ids survive validateTree → two `RenderNode`s with the same React `key` →
+  unstable reconciliation ("rendered broken", violates fail-safe invariant #2).
+  Trigger: `children:["a","a"]` on the raw path or a double `stage.append`.
+  *Fix:* dedupe sibling child ids in validateTree AND in the renderer's child pass.
+- **[P2] server/server.ts:277-294** — `/stream` reconnect rehydrate can overwrite
+  a newer live patch (ordering race): the res is added to the fan-out set before
+  the async `stageFor()` snapshot, so a concurrent `/event` v2 patch can land
+  before the v1 full-replace rehydrate reverts the client. Manifests on
+  File/Postgres stores (I/O gap); `stageFor` also bypasses the per-visitor serial
+  queue. *Fix:* order rehydrate before joining the fan-out set, or carry a stage
+  version/seq and drop stale full-replaces.
 
-- **[P2] packages/server/src/server.ts** — Server per-event timeout silently discards a queued agent turn's completed result (persistent mode makes this routine)
-- **[P2] packages/bridge/src/bridge.ts** — Spawn mode: unbounded concurrent brain-CLI processes keyed on client-supplied visitorId
-- **[P2] packages/server/src/server.ts** — Server per-kind /event payload validation (the P1 'malformed event kills the persistent session' fix) has no regression test
-- **[P2] packages/server/src/server.ts** — Server remote-agent handshake (pending/requestId resolve, agent timeout, dropAgent settling, single-agent 409) is entirely untested
-- **[P2] packages/bridge/src/persistent.ts** — Persistent bridge driver (turn queue / wake / turnDone / settleAll coordination, 229 lines) has zero tests — owner waiver recorded
+### Single-source (from refactor-audit)
+- **[P2] core/validate.ts + react/StageRenderer.tsx** — `MAX_DEPTH = 100`
+  duplicated in two packages (raise one → the other silently truncates). *Fix:*
+  `export` it from @facet/core, import in the renderer; reconcile `>=` vs `>`.
+- **[P2] react/ChatDock.tsx + react/theme.ts** — ChatDock re-hardcodes the exact
+  theme hex values; `theme.ts` claims to be "the one place pixels and hex live"
+  but `COLOR` is unexported. *Fix:* export the palette, reference it in ChatDock.
 
-## P3 (non-blocking nits — track, fix opportunistically)
+### Test gaps (highest-value coverage)
+- **[P2] bridge/persistent.ts:73-229** — `createPersistentDriver` coordination
+  (pending queue / input() generator / settleAll / dead-guard / malformed-event
+  skip) has ZERO tests. *Fix:* driver tests with a faked `query`. (Prior waiver.)
+- **[P2] client/sse-transport.ts:50-62** — the reconnect `reset` synthesis (drop
+  the `if (opened)` guard and duplicate-chat returns) is untested. *Fix:* a test
+  that fires `onopen` twice and asserts a `reset` on re-open.
 
-- **[P3] packages/core/src/patch.ts** — applyPatch array handling violates RFC 6902: negative index inserts mid-array, out-of-bounds index silently appends, and copy/move/add from a missing path inserts literal undefined into the tree
-- **[P3] packages/react/src/useFacet.ts** — useFacet treats ANY non-"patch" message kind as a say — an unknown-kind message appends undefined to the chat array
-- **[P3] packages/core/src/patch.ts** — RFC 6902 `test` op compares via JSON.stringify — structurally-equal objects with different key order fail the test
-- **[P3] packages/react/src/StageRenderer.tsx** — classifyPress casts an untrusted onPress payload to the scalar-record payload type, diverging from validateTree's filtering
-- **[P3] packages/core/src/patch.ts** — applyPatch's public signature promises FacetTree but a root replace/move/copy returns the raw operation value via an unchecked cast
-- **[P3] packages/runtime/src/file-stage-store.ts** — File-backed store and sink cast disk JSON to FacetSession/StoredEvent unchecked
-- **[P3] packages/react/src/useFacet.ts** — useFacet's else-branch treats every non-patch message as "say", letting `undefined` into the public `chat: readonly string[]`
-- **[P3] packages/client/src/sse-transport.ts** — SseTransport.send: fetch rejection unhandled — event silently lost plus an unhandled promise rejection
-- **[P3] packages/agent-client/src/connect.ts** — connectAgent retries a terminal 403/409 forever, silently, with no log or status callback
-- **[P3] packages/runtime/src/file-stage-store.ts** — FileStageStore.get caches JSON.parse output with no shape check — a valid-JSON-but-wrong-shape file (e.g. `null`) poisons the session permanently
-- **[P3] packages/runtime/src/file-stage-store.ts** — FileStageStore.save writes non-atomically — a crash mid-write leaves a torn file and loses the durable stage
-- **[P3] packages/server/src/server.ts** — readJson buffers request bodies with no size limit — a huge POST body accumulates unbounded in memory
-- **[P3] packages/bridge/src/cli.ts** — Non-numeric FACET_BRIDGE_PORT crashes the bridge with an uncaught ERR_SOCKET_BAD_PORT
-- **[P3] packages/bridge/src/bridge.ts** — makeFacetShim leaks a temp directory per bridge launch — never removed on close()
-- **[P3] packages/react/src/visitor.ts** — visitor id fallback collapses to a fixed constant when crypto.getRandomValues is unavailable, contradicting the "hard to guess" safety comment
-- **[P3] packages/bridge/src/bridge.ts** — Spawn mode sessionIds map grows unbounded (one entry per visitorId ever seen, never evicted)
-- **[P3] packages/runtime/src/runtime.ts** — Fire-and-forget sink.record can persist a visitor's events out of order in PostgresSink (history replays misordered)
-- **[P3] packages/server/src/server.ts** — /stream rehydrate can write a stale full-stage snapshot after a newer patch was already pushed to the same connection
-- **[P3] packages/react/src/ChatDock.tsx** — ChatDock hardcodes theme hex values, duplicating theme.ts's COLOR map and contradicting its 'one place pixels and hex codes live' claim
-- **[P3] packages/bridge/src/persistent.ts** — Driver-mode parity drift: spawn mode ships `facet screens` but the persistent driver has no `screens` tool
-- **[P3] packages/bridge/src/bridge.ts** — Copy-pasted streaming UTF-8 JSON body reader (bridge cmd server re-implements server.ts readJson, comment included)
-- **[P3] packages/bridge/src/cli.ts** — facet-bridge env-config doc block omits FACET_AGENT_TOKEN, which the code reads
-- **[P3] packages/react/src/visitor.ts** — browserVisitorId storage-failure degradation (blocked/write-denied localStorage) is untested
-- **[P3] packages/core/src/validate.ts** — isSafeImageSrc branch coverage: only javascript: (reject) and https: (accept) are tested; data:image/ vs data:text/html and //-vs-/ branches are unpinned
-- **[P3] packages/agent-client/src/connect.ts** — connectAgent's agent-error fallback and event routing are untested — only the pure parseSseFrames helper has coverage
+### Scale / async-delivery (deferred umbrella — design before fixing)
+- **[P2] server/server.ts** — per-event timeout silently discards a queued
+  agent turn's completed result (routine in persistent mode).
+- **[P2] bridge/bridge.ts** — spawn mode: unbounded concurrent brain CLIs keyed
+  on client-supplied `visitorId` (resource exhaustion vector).
+- **[P2] server + bridge** — server remote-agent handshake and per-kind `/event`
+  validation have no HTTP-level regression tests (needs a small server test
+  harness).
+
+## P3 — nits (track, fix opportunistically)
+
+- **[P3] runtime/file-stage-store.ts + file-sink.ts** — non-atomic `writeFileSync`
+  + swallowed parse errors: a crash/ENOSPC mid-write silently resets the session;
+  a wrong-shape-but-valid-JSON file poisons it. *Fix:* write-temp-then-rename +
+  shape-check on read. (corrupt-input fail-safe branches also untested.)
+- **[P3] core/patch.ts:175** — RFC 6902 `test` op uses `JSON.stringify` equality
+  (key-order sensitive). *Fix:* deep-equal.
+- **[P3] core/patch.ts** — array-index handling: negative / out-of-range / `""` /
+  float indices insert wrong-position or literal `undefined` instead of erroring.
+- **[P3] react/StageRenderer.tsx:285** — field case does not coerce
+  name/placeholder/input on the raw path, and `input` isn't constrained to
+  `FIELD_INPUTS`, unlike every other coerced node. *Fix:* coerce like the others.
+- **[P3] react/theme.ts:111-117** — token maps are prototype-bearing object
+  literals; a `__proto__`/`constructor` token name resolves to a function on the
+  raw path. *Fix:* `Object.create(null)` maps (same class as the validate fix).
+- **[P3] server/server.ts** — reference server: `/agent/*` unauthenticated by
+  default + CORS `*`. Documented trust model (SECURITY.md); revisit if a
+  hardened/multi-tenant deploy path appears. Also: readJson has no body-size cap.
+- **[P3] client/sse-transport.ts:34-43** — visitor events fire as unordered
+  concurrent POSTs; a visitor's messages can be processed out of order.
+- **[P3] agent-client/connect.ts** — retries a terminal 403/409 forever, silently.
+- **[P3] runtime/runtime.ts** — fire-and-forget `sink.record` can persist events
+  out of order in an async sink (misordered history replay).
+- **[P3] bridge/cli.ts + bridge.ts** — default serverURL/port encoded twice
+  (drift risk); non-numeric `FACET_BRIDGE_PORT` crashes with an uncaught error;
+  env-config doc omits `FACET_AGENT_TOKEN`.
+- **[P3] bridge/bridge.ts** — spawn `sessionIds` map grows unbounded (one entry
+  per visitorId ever seen).
+- **[P3] apps/playground/package.json** — declares `@facet/bridge` but never
+  imports it (phantom dependency). *Fix:* remove it.
+- **[P3] naming** — the concept is "visitor" in every identifier but "viewer" in
+  ~15 comments across 5 packages; `BridgeOptions.mode` vs `method` are
+  near-synonyms for two levels of one knob. *Fix:* pick one term each.
+- **[P3] runtime/session-file.ts** — filename path-safety encoding has no test.
+- **[P3] core/validate.ts** — `isSafeImageSrc` branch coverage: only
+  `javascript:`/`https:` tested; `data:image/` vs `data:text/html` and `//` vs `/`
+  branches unpinned.
+- **[P3] agent-client/connect.ts** — the agent-error fallback + event routing are
+  untested (only the pure `parseSseFrames` helper is covered).
 
 ---
-_Source: code-review run wf_4e3dca98-667 (52 candidates, 47 confirmed). Feature-introduced findings were fixed in the feature branch; everything above is deferred._
+_Rebuilt against current `main` from two fresh review workflows. Supersedes the
+prior screens-feature-incidental list. Complete the two owed lanes (code-review
+types, refactor-audit hygiene) before treating this as exhaustive._
