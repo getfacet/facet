@@ -16,8 +16,8 @@
  * the Facet server over the agent connection. FACET_EVENT ties the command to
  * the visitor event currently being handled.
  */
-import { Stage } from "@facet/agent";
-import type { FacetNode, FacetTree } from "@facet/core";
+import type { ServerMessage } from "@facet/core";
+import { buildMessages } from "./commands.js";
 
 const bridgeUrl = process.env.FACET_BRIDGE_URL;
 const eventToken = process.env.FACET_EVENT ?? "";
@@ -27,45 +27,18 @@ function fail(message: string, code = 2): never {
   process.exit(code);
 }
 
-function parseJson<T>(value: string | undefined, what: string): T {
-  if (value === undefined) fail(`missing ${what}`);
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return fail(`invalid JSON for ${what}`);
-  }
-}
-
 async function main(): Promise<void> {
   if (bridgeUrl === undefined) {
     fail("FACET_BRIDGE_URL is not set — run this inside a Facet bridge session");
   }
   const [command, ...rest] = process.argv.slice(2);
-  const stage = new Stage();
-
-  switch (command) {
-    case "render":
-      stage.render(parseJson<FacetTree>(rest[0], "tree"));
-      break;
-    case "set":
-      stage.set(parseJson<FacetNode>(rest[0], "node"));
-      break;
-    case "append":
-      if (rest[0] === undefined) fail("append needs a parent id");
-      stage.append(rest[0], parseJson<FacetNode>(rest[1], "node"));
-      break;
-    case "remove":
-      if (rest[0] === undefined) fail("remove needs a node id");
-      stage.remove(rest[0]);
-      break;
-    case "say":
-      stage.say(rest.join(" "));
-      break;
-    default:
-      fail(`unknown command "${command ?? ""}" (render|set|append|remove|say)`);
+  let messages: readonly ServerMessage[];
+  try {
+    messages = buildMessages(command, rest);
+  } catch (error) {
+    fail(error instanceof Error ? error.message : "bad command");
   }
 
-  const messages = stage.flush();
   const response = await fetch(`${bridgeUrl}/cmd`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },

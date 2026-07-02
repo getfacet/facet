@@ -11,13 +11,14 @@ import {
   SPACES,
   TEXT_ALIGNS,
 } from "./tokens.js";
-import type {
-  BoxStyle,
-  FacetAction,
-  FacetNode,
-  FieldInput,
-  ImageStyle,
-  TextStyle,
+import {
+  FIELD_INPUTS,
+  type BoxStyle,
+  type FacetAction,
+  type FacetNode,
+  type FieldInput,
+  type ImageStyle,
+  type TextStyle,
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 
@@ -35,8 +36,6 @@ export interface ValidationResult {
   readonly tree: FacetTree;
   readonly issues: readonly string[];
 }
-
-const FIELD_INPUTS = ["text", "number", "email", "password", "search"] as const;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

@@ -27,7 +27,8 @@ export interface FacetServerOptions {
   readonly agentId: string;
   /** In-process fallback used when no external agent is connected. */
   readonly agent?: FacetAgent;
-  /** How long to wait for a remote agent's control response (default 60s). */
+  /** How long to wait for a remote agent's control response (default 120s — a
+   * persistent session's cold first turn includes model + MCP startup). */
   readonly agentTimeoutMs?: number;
   /** Shared secret required on the `/agent/*` channel. When set, an agent must present a matching `?token=`. */
   readonly agentToken?: string;
@@ -98,8 +99,19 @@ function readJson(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+/** Shape-check an untrusted browser /event body before trusting it. */
+function isEventBody(body: unknown): body is { visitor: VisitorContext; event: ClientEvent } {
+  if (typeof body !== "object" || body === null) return false;
+  const { visitor, event } = body as { visitor?: unknown; event?: unknown };
+  if (typeof visitor !== "object" || visitor === null) return false;
+  if (typeof (visitor as { visitorId?: unknown }).visitorId !== "string") return false;
+  if (typeof event !== "object" || event === null) return false;
+  const kind = (event as { kind?: unknown }).kind;
+  return kind === "visit" || kind === "message" || kind === "action";
+}
+
 export function createFacetServer(options: FacetServerOptions): FacetServer {
-  const timeoutMs = options.agentTimeoutMs ?? 60_000;
+  const timeoutMs = options.agentTimeoutMs ?? 120_000;
   const staleMs = 30_000; // reap an agent that hasn't sent a heartbeat this long
   const browserStreams = new Map<string, Set<ServerResponse>>();
   const pending = new Map<number, Pending>();
@@ -220,14 +232,23 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
           }
         }
       })().catch((error: unknown) => console.error("[facet] rehydrate failed:", error));
-      req.on("close", () => set?.delete(res));
+      req.on("close", () => {
+        set?.delete(res);
+        // Prune the empty Set so browserStreams doesn't grow unbounded.
+        if (set?.size === 0) browserStreams.delete(visitorId);
+      });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/event") {
       readJson(req)
         .then((body) => {
-          const { visitor, event } = body as { visitor: VisitorContext; event: ClientEvent };
+          if (!isEventBody(body)) {
+            res.writeHead(400);
+            res.end();
+            return;
+          }
+          const { visitor, event } = body;
           res.writeHead(202);
           res.end();
           void runtime
@@ -320,13 +341,24 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
 
   return {
     listen: () =>
-      new Promise((resolve) => {
-        server.listen(options.port, () => resolve());
+      new Promise((resolve, reject) => {
+        const onError = (error: Error): void => reject(error); // e.g. EADDRINUSE
+        server.once("error", onError);
+        server.listen(options.port, () => {
+          server.removeListener("error", onError);
+          resolve();
+        });
       }),
     close: () =>
       new Promise((resolve, reject) => {
         clearInterval(reaper);
+        // End held-open SSE connections first, or server.close() never resolves.
+        agentStream?.end();
+        for (const set of browserStreams.values()) {
+          for (const res of set) res.end();
+        }
         server.close((error) => (error ? reject(error) : resolve()));
+        server.closeAllConnections?.();
       }),
   };
 }

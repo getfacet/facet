@@ -97,7 +97,9 @@ export interface ImageNode {
   readonly style?: ImageStyle;
 }
 
-export type FieldInput = "text" | "number" | "email" | "password" | "search";
+/** Allowed field input types — single source (validator derives its check from this). */
+export const FIELD_INPUTS = ["text", "number", "email", "password", "search"] as const;
+export type FieldInput = (typeof FIELD_INPUTS)[number];
 
 /** The input primitive. */
 export interface FieldNode {
@@ -107,8 +109,6 @@ export interface FieldNode {
   readonly input?: FieldInput;
   readonly label?: string;
   readonly placeholder?: string;
-  /** Fired when the field is submitted (Enter). */
-  readonly submit?: FacetAction;
   readonly style?: FieldStyle;
 }
 

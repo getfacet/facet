@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import type { FacetAction, FacetTree, NodeId } from "@facet/core";
 import { boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
 
+const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
+
 export interface StageRendererProps {
   readonly tree: FacetTree;
   /** Invoked when an interactive brick fires (a pressed box, a submitted field). */
@@ -24,9 +26,11 @@ interface RenderNodeProps {
   readonly tree: FacetTree;
   readonly id: NodeId;
   readonly onAction?: ((action: FacetAction) => void) | undefined;
+  /** Ids on the path from the root to here — used to break cycles fail-safe. */
+  readonly ancestors?: ReadonlySet<NodeId> | undefined;
 }
 
-function RenderNode({ tree, id, onAction }: RenderNodeProps): ReactNode {
+function RenderNode({ tree, id, onAction, ancestors }: RenderNodeProps): ReactNode {
   const node = tree.nodes[id];
   if (node === undefined) {
     return null;
@@ -34,9 +38,22 @@ function RenderNode({ tree, id, onAction }: RenderNodeProps): ReactNode {
 
   switch (node.type) {
     case "box": {
-      const children = node.children.map((childId) => (
-        <RenderNode key={childId} tree={tree} id={childId} onAction={onAction} />
-      ));
+      // Fail-safe (invariant #2): skip a child that points back to an ancestor so
+      // a cyclic tree (which never passes through validateTree on the live path)
+      // can't infinitely recurse and crash the render.
+      const seen = ancestors ?? EMPTY_ANCESTORS;
+      const childAncestors = new Set(seen).add(id);
+      const children = node.children
+        .filter((childId) => !seen.has(childId))
+        .map((childId) => (
+          <RenderNode
+            key={childId}
+            tree={tree}
+            id={childId}
+            onAction={onAction}
+            ancestors={childAncestors}
+          />
+        ));
       const action = node.onPress;
       if (action !== undefined) {
         return (

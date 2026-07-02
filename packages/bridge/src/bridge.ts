@@ -8,6 +8,7 @@ import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } 
 import { createSerialQueue, STAGE_SPEC } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
+import { safeEnv } from "./env.js";
 
 /**
  * The local bridge lets a coding agent on your machine (Claude Code, Codex, …)
@@ -49,21 +50,6 @@ export interface BridgeOptions {
 export interface Bridge {
   close(): void;
 }
-
-/** Env vars safe to pass to the spawned brain — everything else (API keys, tokens, cloud creds) is withheld. */
-const SAFE_ENV_KEYS = [
-  "HOME",
-  "LANG",
-  "LC_ALL",
-  "TERM",
-  "USER",
-  "LOGNAME",
-  "SHELL",
-  "TMPDIR",
-  "TZ",
-  "XDG_CONFIG_HOME",
-  "XDG_CACHE_HOME",
-];
 
 /** A `facet` shim on PATH so the spawned agent can just run `facet …`. */
 function makeFacetShim(): string {
@@ -171,6 +157,10 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
     res.writeHead(404);
     res.end();
   });
+  cmdServer.on("error", (error) => {
+    // A port conflict (etc.) must not crash the whole bridge process.
+    console.error(`[facet] bridge cmd server error on :${String(bridgePort)}:`, error);
+  });
   cmdServer.listen(bridgePort);
 
   const runBrain = (prompt: string, visitorId: string, token: string): Promise<void> =>
@@ -178,15 +168,11 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
       // Untrusted visitor text reaches this prompt, so DON'T hand the brain the
       // operator's secrets: pass only a safe env allowlist (+ the facet shim on
       // PATH), never the full process.env.
-      const env: Record<string, string> = {
+      const env = safeEnv({
         PATH: `${shimDir}:${process.env.PATH ?? ""}`,
         FACET_BRIDGE_URL: bridgeUrl,
         FACET_EVENT: token,
-      };
-      for (const key of SAFE_ENV_KEYS) {
-        const value = process.env[key];
-        if (value !== undefined) env[key] = value;
-      }
+      });
       const resume = method === "session" ? sessionIds.get(visitorId) : undefined;
       const args = [
         ...(options.commandArgs ?? []),

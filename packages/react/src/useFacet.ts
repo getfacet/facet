@@ -30,7 +30,15 @@ export function useFacet(transport: FacetTransport): FacetState {
   useEffect(() => {
     return transport.subscribe((message: ServerMessage) => {
       if (message.kind === "patch") {
-        setTree((current) => applyPatch(current, message.patches));
+        setTree((current) => {
+          // Fail-safe (invariant #2): a malformed patch must never crash the
+          // render — keep the current tree if applyPatch throws.
+          try {
+            return applyPatch(current, message.patches);
+          } catch {
+            return current;
+          }
+        });
       } else {
         setChat((current) => [...current, message.text]);
       }

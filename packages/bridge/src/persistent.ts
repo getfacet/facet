@@ -6,8 +6,10 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { Stage } from "@facet/agent";
+import { safeEnv } from "./env.js";
 import {
   STAGE_SPEC,
+  validateTree,
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
@@ -80,7 +82,8 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
         "Replace the whole page with a stage tree.",
         { tree: z.any() },
         async (args) => {
-          current?.stage.render(asJson<FacetTree>(args.tree));
+          // Sanitize untrusted LLM output through the fail-safe validator.
+          current?.stage.render(validateTree(asJson<FacetTree>(args.tree)).tree);
           return { content: [{ type: "text", text: "rendered" }] };
         },
       ),
@@ -150,6 +153,10 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
         options: {
           systemPrompt: SYSTEM,
           mcpServers: { facet: facetServer },
+          // Disable ALL built-in tools (Bash/Read/WebFetch/…); the brain gets only
+          // the in-process facet_* tools. Stops a prompt-injected visitor from
+          // reaching the shell/filesystem/network.
+          tools: [],
           allowedTools: [
             "mcp__facet__render",
             "mcp__facet__append",
@@ -158,6 +165,9 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
             "mcp__facet__say",
           ],
           permissionMode: "bypassPermissions",
+          // Replace the subprocess env entirely (the SDK does not merge) with a
+          // safe allowlist — no operator secrets reach the prompt-injectable brain.
+          env: safeEnv(),
           ...(options.model !== undefined ? { model: options.model } : {}),
         },
       })) {
