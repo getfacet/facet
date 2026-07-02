@@ -35,6 +35,7 @@ FACET_MODE=spawn FACET_BRAIN=codex facet-bridge   # a CLI per event
 | `FACET_BRAIN` | `claude` | (spawn) the brain CLI to run (e.g. `codex`) |
 | `FACET_MODEL` | — | (persistent) model for the session |
 | `FACET_BRIDGE_PORT` | `5292` | (spawn) local port the `facet` CLI posts to |
+| `FACET_MAX_CONCURRENT` | `4` | (spawn) max brain CLIs running at once — extra visitors queue FIFO |
 | `FACET_AGENT_TOKEN` | — | shared token sent to the server's `/agent/*` channel (set when the server sets `agentToken`) |
 
 Or programmatically:

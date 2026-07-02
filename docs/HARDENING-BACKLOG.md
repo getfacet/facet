@@ -10,24 +10,37 @@
 > work: the three deferred scale items, the two deliberately-dropped items, and
 > the residual P3s surfaced by campaign 1's own adversarially-verified review.
 
-## P2 — scale / async-delivery (deferred umbrella — design before fixing)
+## P2 — scale / async-delivery: RESOLVED by async-delivery-1 (2026-07-03)
 
-Deferred from campaign 1 by scope pin (`specs/context/hardening-1.md`). These
-need a design round (version/seq on frames, delivery guarantees) before code —
-start with `/feature-intake`.
+The deferred umbrella was designed (`specs/dev-specs/async-delivery-1.md`) and
+implemented: late results are applied + delivered (never discarded, with an
+era/index staleness guard so a late result can't overwrite a newer stage);
+browser frames carry `id: era:seq` and reconnects resume via `Last-Event-ID`
+(the RISK-HRD-4 say-loss window is closed); spawn mode is capped by a global
+FIFO semaphore (`FACET_MAX_CONCURRENT`, default 4); the client send chain has a
+10s `AbortSignal.timeout` (RISK-HRD-3 interim fix); the remote-agent handshake
+and the new delivery behaviors are pinned by an HTTP-level harness.
+**Remaining from the umbrella:** the full per-kind `/event` validation matrix
+(visit/message/action × normal/malformed/boundary) — behavior-scoped tests
+landed, the exhaustive matrix did not.
 
-- **[P2] server/server.ts** — per-event timeout silently discards a queued
-  agent turn's completed result (routine in persistent mode).
-- **[P2] bridge/bridge.ts** — spawn mode: unbounded concurrent brain CLIs keyed
-  on client-supplied `visitorId` (resource exhaustion vector).
-- **[P2] server + bridge** — server remote-agent handshake and per-kind `/event`
-  validation have no HTTP-level regression tests (needs a small server test
-  harness).
-- Folds in two waived residuals from campaign 1 (both documented in code and in
-  RISK-HRD-3/4): the `/stream` rehydrate window can lose a `say` under an
-  *async* sink (in-memory reference unaffected), and the client send chain has
-  no fetch timeout (`AbortSignal.timeout` is the cheap interim fix). A stage
-  version/seq design closes the first properly.
+## P3 — residuals from async-delivery-1's review (track, fix opportunistically)
+
+- **server lateWindow TTL** — parked late-turn entries are FIFO-bounded (100)
+  but have no expiry; on an unauthenticated port, sequential request ids make
+  them injectable until evicted. Accepted per the trust model (port access
+  already grants full takeover via `/agent/stream`); a TTL is defense-in-depth.
+- **server backpressure** — no global cap on in-flight turns/timers; SSE
+  `res.write` return values ignored (slow-client buffering). Trust-model
+  territory; the resource-exhaustion surface of the reference server.
+- **era/LRU continuity-guard variant untested** — the ring-overflow guard has a
+  test; the LRU-churn re-mint variant is waived (needs 1000+ session churn or
+  constant injection). The stale-decision itself is unit-tested
+  (`isStaleLateResult`).
+- **client/server version pairing** — the client no longer synthesizes `reset`
+  on reopen (the server sends it); a new client against a pre-async-delivery
+  server duplicates chat on reconnect (cosmetic). Reference transports ship
+  together; noted in the changeset.
 
 ## P3 — dropped from campaign 1 with recorded reasons
 
@@ -73,7 +86,7 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
 - **agent-client/connect.test.ts** — the sustained-409 test asserts the error
   log + loop stop but not the fetch call count, so a regression back to
   attempt-counted budgeting would pass it. *Fix:* assert the count.
-- **runtime + bridge (LRU duplication)** — the bounded re-insert-on-touch LRU
+- **runtime + bridge + server (LRU duplication)** — the bounded re-insert-on-touch LRU
   now lives in `FileStageStore.cachePut` AND `bridge` `touchSessionId`, and
   neither eviction path has a test (silent, user-visible failure: an active
   visitor's `--resume` id evicted → conversation resets). *Fix:* extract a

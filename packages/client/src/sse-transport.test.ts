@@ -37,11 +37,12 @@ afterEach(() => {
 });
 
 const visitor = { visitorId: "v/1" };
-const sentEvents = (): unknown[] =>
-  fetchMock.mock.calls.map((call) => {
-    const [, init] = call as unknown as [string, { body: string }];
+const eventsOf = (mock: { mock: { calls: unknown[] } }): unknown[] =>
+  mock.mock.calls.map((call) => {
+    const [, init] = call as [string, { body: string }];
     return (JSON.parse(init.body) as { event: unknown }).event;
   });
+const sentEvents = (): unknown[] => eventsOf(fetchMock);
 
 /** Flush the microtask queue (and any settled promises) by yielding to a
  * macrotask — lets the per-instance send chain advance a step. */
@@ -197,16 +198,84 @@ describe("SseTransport", () => {
     errorSpy.mockRestore();
   });
 
-  it("synthesizes a single reset on re-open, none on first open", () => {
+  it("aborts a black-holed POST and sends the next queued event", async () => {
+    // The production POST carries `signal: AbortSignal.timeout(...)`. Stub the
+    // factory to hand back a signal we control (avoids faking Node's timers),
+    // and a fetch that hangs until that signal aborts.
+    const controllers: AbortController[] = [];
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
+      const controller = new AbortController();
+      controllers.push(controller);
+      return controller.signal;
+    });
+    const blackHoleFetch = vi.fn(
+      (_url: string, init?: { signal?: AbortSignal }) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
+        }),
+    );
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", blackHoleFetch);
+
+    const transport = new SseTransport("http://s", visitor);
+    transport.subscribe(() => {});
+    FakeEventSource.instances[0]?.onopen?.();
+
+    transport.send({ kind: "message", text: "a" });
+    transport.send({ kind: "message", text: "b" });
+
+    await flush();
+    // First POST is black-holed; the second waits behind it.
+    expect(blackHoleFetch).toHaveBeenCalledTimes(1);
+
+    // Fire the timeout abort on the first POST's signal.
+    controllers[0]?.abort();
+    await flush();
+
+    // The abort frees the chain head → the next queued event is issued.
+    expect(blackHoleFetch).toHaveBeenCalledTimes(2);
+    expect(eventsOf(blackHoleFetch)).toEqual([
+      { kind: "message", text: "a" },
+      { kind: "message", text: "b" },
+    ]);
+
+    errorSpy.mockRestore();
+    timeoutSpy.mockRestore();
+  });
+
+  it("passes an abort signal on the POST", async () => {
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const transport = new SseTransport("http://s", visitor);
+    transport.subscribe(() => {});
+    FakeEventSource.instances[0]?.onopen?.();
+    transport.send({ kind: "message", text: "hi" });
+    await flush();
+
+    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { signal: unknown }];
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+    expect(timeoutSpy).toHaveBeenCalledWith(10_000);
+    timeoutSpy.mockRestore();
+  });
+
+  it("does not synthesize a reset on reopen — the server owns that decision", () => {
     const messages: ServerMessage[] = [];
     const transport = new SseTransport("http://s", visitor);
     transport.subscribe((message) => messages.push(message));
     const source = FakeEventSource.instances[0];
 
-    source?.onopen?.(); // first open: no reset
-    expect(messages).toEqual([]);
+    source?.onopen?.(); // first open
+    source?.onopen?.(); // re-open: the client no longer decides reset
+    expect(messages).toEqual([]); // zero synthesized messages
+  });
 
-    source?.onopen?.(); // re-open: exactly one reset
-    expect(messages).toEqual([{ kind: "reset" }]);
+  it("passes a server-sent reset frame through to the handler untouched", () => {
+    const received: ServerMessage[] = [];
+    const transport = new SseTransport("http://s", visitor);
+    transport.subscribe((message) => received.push(message));
+    const source = FakeEventSource.instances[0];
+
+    source?.emit(JSON.stringify({ kind: "reset" }));
+
+    expect(received).toEqual([{ kind: "reset" }]);
   });
 });

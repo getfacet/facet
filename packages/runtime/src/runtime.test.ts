@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FacetAgent, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetAgent, ServerMessage } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
 import type { Sink, StoredEvent } from "./sink.js";
 
@@ -123,6 +123,82 @@ describe("FacetRuntime.handle", () => {
     const stage = await rt.stageFor("v");
     const root = stage?.nodes["root"] as { children: string[] } | undefined;
     expect(root?.children).toHaveLength(2); // both applied, neither overwrote the other
+  });
+});
+
+describe("FacetRuntime.applyMessages", () => {
+  it("applyMessages applies a late result through the per-visitor queue", async () => {
+    // agentOf() with no messages: applyMessages must NOT call the agent — it
+    // applies already-produced messages. The stage change + sink record come
+    // entirely from the passed-in batch.
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf() });
+    const event: ClientEvent = { kind: "message", text: "late" };
+    const messages: ServerMessage[] = [renderPatch, { kind: "say", text: "late reply" }];
+    const out = await rt.applyMessages(visitor, event, messages);
+    expect(out).toEqual(messages); // returned so the transport can deliver them
+    const stage = await rt.stageFor("v");
+    expect(stage?.root).toBe("root"); // late patch persisted to the stored session
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event).toMatchObject({ text: "late" }); // recorded with the given event
+    expect(history[0]?.messages).toEqual(messages);
+  });
+
+  it("applies a late result in enqueue order when racing handle for the same visitor", async () => {
+    // handle's agent is slow; applyMessages has no agent and would win a raw
+    // race. Both go through the same per-visitor serial queue, so the final
+    // stage must reflect ENQUEUE order (handle first, then applyMessages).
+    const slowAgent: FacetAgent = () =>
+      new Promise((resolve) =>
+        setTimeout(
+          () =>
+            resolve([
+              {
+                kind: "patch",
+                patches: [
+                  { op: "add", path: "/nodes/h", value: { id: "h", type: "text", value: "h" } },
+                  { op: "add", path: "/nodes/root/children/-", value: "h" },
+                ],
+              } as ServerMessage,
+            ]),
+          20,
+        ),
+      );
+    const rt = new FacetRuntime({ agentId: "a", agent: slowAgent });
+    const lateMessages: ServerMessage[] = [
+      {
+        kind: "patch",
+        patches: [
+          { op: "add", path: "/nodes/m", value: { id: "m", type: "text", value: "m" } },
+          { op: "add", path: "/nodes/root/children/-", value: "m" },
+        ],
+      },
+    ];
+    const handled = rt.handle(visitor, { kind: "message", text: "hi" });
+    const applied = rt.applyMessages(visitor, { kind: "message", text: "late" }, lateMessages);
+    await Promise.all([handled, applied]);
+    const stage = await rt.stageFor("v");
+    const root = stage?.nodes["root"] as { children: string[] } | undefined;
+    expect(root?.children).toEqual(["h", "m"]); // enqueue order despite the delay
+  });
+
+  it("salvages good ops in a late batch when one op is stale (DC-008)", async () => {
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf() });
+    const messages: ServerMessage[] = [
+      {
+        kind: "patch",
+        patches: [
+          // stale: the node this op targets no longer exists → applyPatch throws
+          { op: "remove", path: "/nodes/ghost/children/0" },
+          { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
+        ],
+      },
+      { kind: "say", text: "late" },
+    ];
+    const out = await rt.applyMessages(visitor, { kind: "message", text: "x" }, messages);
+    expect(out.some((m) => m.kind === "say" && m.text === "late")).toBe(true); // say kept, no throw
+    const stage = await rt.stageFor("v");
+    expect(stage?.nodes["good"]).toBeDefined(); // good op salvaged past the stale one
   });
 });
 

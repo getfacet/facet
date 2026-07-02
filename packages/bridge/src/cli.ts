@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createBridge } from "./bridge.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";
-import { parseBridgePort } from "./env.js";
+import { parseBridgePort, parseMaxConcurrent } from "./env.js";
 
 /**
  * `facet-bridge` — point a local coding agent at a Facet link.
@@ -15,6 +15,7 @@ import { parseBridgePort } from "./env.js";
  *   FACET_MODEL     model for persistent     (optional; persistent mode)
  *   FACET_AGENT_TOKEN  shared secret for the server's /agent/* channel (optional)
  *   FACET_BRIDGE_PORT  local cmd port        (default 5292; spawn mode)
+ *   FACET_MAX_CONCURRENT  max brains at once  (default 4; spawn mode)
  */
 const serverUrl = process.env["FACET_SERVER"] ?? BRIDGE_DEFAULTS.serverUrl;
 const agentId = process.env["FACET_AGENT_ID"] ?? BRIDGE_DEFAULTS.agentId;
@@ -25,8 +26,10 @@ const model = process.env["FACET_MODEL"];
 const token = process.env["FACET_AGENT_TOKEN"];
 
 let bridgePort: number | undefined;
+let maxConcurrent: number | undefined;
 try {
   bridgePort = parseBridgePort(process.env["FACET_BRIDGE_PORT"]);
+  maxConcurrent = parseMaxConcurrent(process.env["FACET_MAX_CONCURRENT"]);
 } catch (error) {
   console.error(`[facet-bridge] ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
@@ -41,6 +44,7 @@ createBridge({
   ...(model !== undefined ? { model } : {}),
   ...(token !== undefined ? { token } : {}),
   ...(bridgePort !== undefined ? { bridgePort } : {}),
+  ...(maxConcurrent !== undefined ? { maxConcurrent } : {}),
   onStatus: (status) =>
     console.log(status === "connected" ? "● bridge connected" : "○ disconnected"),
   onEvent: (kind, visitorId, changes) =>

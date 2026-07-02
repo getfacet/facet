@@ -75,16 +75,49 @@ export class FacetRuntime {
     );
   }
 
+  /**
+   * Applies ALREADY-PRODUCED agent messages to a session — the re-injection seam
+   * for a late/out-of-band result: messages produced after the original turn's
+   * wait already ended (e.g. the transport gave up waiting and the agent replied
+   * later). It runs the same open→apply→save→record path as a live turn, MINUS
+   * the agent call, and through the SAME per-visitor serial queue as `handle`, so
+   * a late apply can't race a concurrent live turn for that visitor. Returns the
+   * messages so the transport can deliver them out of band.
+   */
+  applyMessages(
+    visitor: VisitorContext,
+    event: ClientEvent,
+    messages: readonly ServerMessage[],
+  ): Promise<readonly ServerMessage[]> {
+    return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
+      const session = await this.stageStore.open(this.agentId, visitor);
+      return this.persist(visitor, session, event, messages);
+    });
+  }
+
   private async handleOne(
     visitor: VisitorContext,
     event: ClientEvent,
   ): Promise<readonly ServerMessage[]> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
+    return this.persist(visitor, session, event, messages);
+  }
+
+  /**
+   * Applies a turn's messages to the open session, saves, and fire-and-forget
+   * records it — the shared tail of a live turn (`handleOne`) and a late apply
+   * (`applyMessages`). The response never awaits the record: the stage is the
+   * source of truth for reconnect; the sink is best-effort. Records enqueue per
+   * visitor so an async sink persists them in event order.
+   */
+  private async persist(
+    visitor: VisitorContext,
+    session: FacetSession,
+    event: ClientEvent,
+    messages: readonly ServerMessage[],
+  ): Promise<readonly ServerMessage[]> {
     await this.stageStore.save(this.applyToSession(session, messages));
-    // Record the conversation without blocking the response — the stage is the
-    // source of truth for reconnect; the sink is best-effort. Enqueue per visitor
-    // so an async sink persists records in event order; still fire-and-forget.
     const entry = { at: Date.now(), event, messages };
     void this.serializeRecord(sessionKey(this.agentId, visitor.visitorId), () =>
       this.sink.record(this.agentId, visitor.visitorId, entry),

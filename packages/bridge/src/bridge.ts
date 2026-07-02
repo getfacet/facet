@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
-import { createSerialQueue, STAGE_SPEC } from "@facet/core";
+import { createSemaphore, createSerialQueue, STAGE_SPEC } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";
@@ -13,6 +13,9 @@ import { safeEnv } from "./env.js";
 
 /** Cap on the spawn-mode per-visitor `--resume` session-id map (LRU eviction). */
 const MAX_SESSION_IDS = 500;
+
+/** Default ceiling on spawn-mode brain CLIs running at once, across all visitors. */
+const DEFAULT_MAX_CONCURRENT = 4;
 
 /**
  * The local bridge lets a coding agent on your machine (Claude Code, Codex, …)
@@ -50,6 +53,8 @@ export interface BridgeOptions {
   readonly bridgePort?: number;
   /** Kill a spawned brain CLI after this long (ms) so a hung child can't wedge a visitor. Default 180000. */
   readonly brainTimeoutMs?: number;
+  /** Max spawn-mode brain CLIs running at once, across all visitors (FIFO queue beyond it). Default 4. (spawn mode) */
+  readonly maxConcurrent?: number;
   readonly onStatus?: (status: "connected" | "disconnected") => void;
   readonly onEvent?: (kind: string, visitorId: string, changes: number) => void;
 }
@@ -222,23 +227,33 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
         resolve();
       };
       // Bound the brain: a hung CLI would otherwise wedge this visitor's serial
-      // queue forever. On timeout, kill and move on.
+      // queue forever. On timeout, kill AND settle immediately — we can't rely on
+      // `close` firing, since a descendant that inherited the brain's stdio keeps
+      // those pipes open after SIGKILL, so `close` may never arrive. `finish()` is
+      // idempotent (the `settled` flag), and if `close` does fire later its parse
+      // of any truncated output lands harmlessly in the existing catch.
       const timer = setTimeout(() => {
         if (!settled) {
           console.error(`[facet] brain timed out after ${String(brainTimeoutMs)}ms; killing`);
           child.kill("SIGKILL");
+          finish();
         }
       }, brainTimeoutMs);
       timer.unref?.();
       children.add(child);
-      child.on("close", () => children.delete(child));
+      // Drop from `children` on `exit` (which SIGKILL guarantees), NOT `close`:
+      // a descendant holding the inherited stdio can withhold `close` forever, so
+      // keying cleanup on it would leak entries here for repeatedly-hung brains.
+      child.on("exit", () => children.delete(child));
       child.stdout.on("data", (chunk) => (out += String(chunk)));
       // Drain stderr — an unconsumed pipe backpressures a chatty child into a
       // permanent wedge (that visitor's queue would never advance).
       child.stderr.resume();
       child.on("error", (error) => {
         // e.g. the brain CLI isn't installed — surface it instead of silently
-        // "succeeding" with 0 changes every event.
+        // "succeeding" with 0 changes every event. A spawn failure emits `error`
+        // (+`close`) but never `exit`, so reclaim the entry here too.
+        children.delete(child);
         console.error(`[facet] failed to spawn "${command}":`, error);
         finish();
       });
@@ -269,10 +284,16 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
   };
 
   // Serialize a single visitor's events (no same-visitor race); different
-  // visitors run in parallel. So concurrent spawns ≈ number of active visitors.
+  // visitors run in parallel, but a global semaphore caps how many brains run at
+  // once. The cap sits INSIDE the per-visitor serialization so a visitor's own
+  // events never reorder while waiting for a slot — only cross-visitor
+  // concurrency is bounded. Every brain frees its slot: a normal exit or spawn
+  // error settles `runBrain` via the child's close/error handlers, and a timeout
+  // settles it directly in the timeout callback (which can't wait on `close`).
   const serialize = createSerialQueue<readonly ServerMessage[]>();
+  const limit = createSemaphore(options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT);
   const agent: FacetAgent = (event, session) =>
-    serialize(session.visitor.visitorId, () => runOne(event, session));
+    serialize(session.visitor.visitorId, () => limit(() => runOne(event, session)));
 
   return {
     agent,

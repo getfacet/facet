@@ -30,5 +30,9 @@ const next = applyPatch(tree, [
 ]);
 ```
 
+Also exported: small dependency-free async primitives the other packages build
+on — `createSerialQueue` (per-key ordering) and `createSemaphore` (FIFO
+concurrency cap).
+
 See the [Facet docs](https://github.com/getfacet/facet) and
 [ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
