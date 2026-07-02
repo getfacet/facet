@@ -44,6 +44,10 @@ All `@facet/*` packages are versioned together (a fixed group), so they always
 share one version. On merge to `main`, a bot opens/updates a "Version Packages"
 PR; merging that PR builds and publishes to npm. You don't publish manually.
 
+Changesets are the changelog source of truth: each package's `CHANGELOG.md` is
+generated from the changeset entries, so write the summary for the reader of that
+package — not the root `CHANGELOG.md`, which only points at the per-package logs.
+
 ## License
 
 By contributing you agree your contributions are licensed under the [MIT License](LICENSE).

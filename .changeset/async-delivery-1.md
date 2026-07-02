@@ -1,5 +1,9 @@
 ---
 "@facet/core": patch
+"@facet/runtime": patch
+"@facet/server": patch
+"@facet/client": patch
+"@facet/bridge": patch
 ---
 
 Async delivery & scale round 1 — an agent turn's result is never silently lost

@@ -1,5 +1,10 @@
 ---
 "@facet/core": patch
+"@facet/react": patch
+"@facet/runtime": patch
+"@facet/server": patch
+"@facet/client": patch
+"@facet/agent-client": patch
 ---
 
 Hardening campaign 1 — robustness fixes across the protocol, renderer,

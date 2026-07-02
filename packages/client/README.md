@@ -10,9 +10,14 @@ Browser-side transports for Facet — the visitor's counterpart of
 - **`LocalTransport`** — no network: the client talks to a `FacetRuntime` in the
   same process. For embedding, demos, and tests.
 
+```bash
+npm install @facet/client @facet/react @facet/core
+```
+
 ```tsx
 import { SseTransport } from "@facet/client";
-import { browserVisitorId, StageRenderer, useFacet } from "@facet/react";
+import { StageRenderer, useFacet } from "@facet/react";
+import { browserVisitorId } from "@facet/client";
 
 const transport = new SseTransport("http://localhost:5291", {
   visitorId: browserVisitorId(),

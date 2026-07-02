@@ -3,10 +3,10 @@
 The Facet React renderer: `StageRenderer` turns the declarative stage spec into a
 sandboxed component tree built from the four bricks, and `useFacet(transport)`
 keeps that tree in sync by applying patches live. It also ships the token→CSS
-theme (`boxStyle`/`textStyle`/…), `ChatDock`, and `browserVisitorId`.
+theme (`boxStyle`/`textStyle`/…), `ChatDock`, and `useFacet`. (`browserVisitorId` lives in `@facet/client`, next to the transport that needs it.)
 
 ```bash
-npm install @facet/react @facet/core
+npm install @facet/react @facet/client @facet/core react
 ```
 
 `StageRenderer` is the security + fail-safe boundary: only known brick types are
@@ -16,7 +16,8 @@ than thrown on. Wire it to a transport with `useFacet` and pass `send` through
 
 ```tsx
 import { SseTransport } from "@facet/client";
-import { browserVisitorId, StageRenderer, useFacet } from "@facet/react";
+import { StageRenderer, useFacet } from "@facet/react";
+import { browserVisitorId } from "@facet/client";
 
 const transport = new SseTransport("http://localhost:5291", {
   visitorId: browserVisitorId(),

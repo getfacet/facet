@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { parseBridgePort, parseMaxConcurrent, safeEnv } from "./env.js";
+import {
+  parseBridgePort,
+  parseContinuity,
+  parseMaxConcurrent,
+  parseRunner,
+  safeEnv,
+} from "./env.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";
 
 const added: string[] = [];
@@ -63,6 +69,40 @@ describe("parseMaxConcurrent", () => {
     "throws on invalid value %j (naming the offender)",
     (value) => {
       expect(() => parseMaxConcurrent(value)).toThrow(value);
+    },
+  );
+});
+
+describe("parseRunner", () => {
+  it("passes undefined through (caller applies the default)", () => {
+    expect(parseRunner(undefined)).toBeUndefined();
+  });
+
+  it.each(["spawn", "persistent"] as const)("accepts %j", (value) => {
+    expect(parseRunner(value)).toBe(value);
+  });
+
+  it.each(["persistant", "Spawn", "", "oneshot"])(
+    "throws on unrecognized value %j (naming the offender) instead of defaulting",
+    (value) => {
+      expect(() => parseRunner(value)).toThrow(value === "" ? "FACET_RUNNER" : value);
+    },
+  );
+});
+
+describe("parseContinuity", () => {
+  it("passes undefined through (caller applies the default)", () => {
+    expect(parseContinuity(undefined)).toBeUndefined();
+  });
+
+  it.each(["oneshot", "resume"] as const)("accepts %j", (value) => {
+    expect(parseContinuity(value)).toBe(value);
+  });
+
+  it.each(["session", "Resume", "", "spawn"])(
+    "throws on unrecognized value %j (naming the offender) instead of defaulting",
+    (value) => {
+      expect(() => parseContinuity(value)).toThrow(value === "" ? "FACET_CONTINUITY" : value);
     },
   );
 });

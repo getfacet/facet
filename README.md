@@ -76,7 +76,7 @@ is the path back to the model for anything open-ended.
 4. **The renderer is fail-safe** → unknown or dangling nodes are skipped, so a
    partial stage renders as "plain", never broken.
 
-Higher-level shapes (`card()`, `hero()`, `grid()`) live in an optional preset
+Higher-level shapes (`card()`, `hero()`, `row()`) live in an optional preset
 package — they're just functions that emit box compositions, giving one-shot
 convenience without giving up the low-level foundation.
 
@@ -123,7 +123,7 @@ Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
 *conversation* is a `Sink` you choose: store it for replay, forward it to your
 own system (e.g. a chat platform that already keeps it), or drop it.
 
-**Each viewer is a `visitorId`, and you decide where it comes from.** For an
+**Each visitor is a `visitorId`, and you decide where it comes from.** For an
 anonymous page, `browserVisitorId()` stores an unguessable id in the browser so a
 refresh or return visit re-hydrates the same page. When your app already knows
 who the visitor is — a logged-in user, an actor id — pass *that* id instead;
@@ -150,7 +150,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |
 | `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
 | `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
-| `@facet/kit`            | Optional presets (`card/hero/grid/…`) — sugar over the bricks.                            |
+| `@facet/kit`            | Optional presets (`card/hero/row/…`) — sugar over the bricks.                            |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 
@@ -195,7 +195,7 @@ export const agent = defineAgent(({ event, stage }) => {
 - [x] SSE/POST transport + a browser playground
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
 - [x] Durable `StageStore`/`Sink` + a Postgres adapter
-- [x] `@facet/kit` presets (card/hero/grid as box compositions)
+- [x] `@facet/kit` presets (card/hero/row as box compositions)
 - [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint
 - [ ] Content-safety / moderation hooks

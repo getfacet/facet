@@ -51,6 +51,38 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isPrimitive(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+/**
+ * FILTERING form of the action-payload rule: a plain (non-array) object keeps
+ * only its primitive-valued entries; anything else yields `undefined`. Used by
+ * the fail-safe path (`asAction`) that salvages a partial payload. For the
+ * REJECTING form (validators that discard the whole thing on any non-primitive
+ * value) use `isPrimitiveRecord`.
+ */
+export function sanitizeActionPayload(
+  value: unknown,
+): Record<string, string | number | boolean> | undefined {
+  if (!isObject(value)) return undefined;
+  const payload: Record<string, string | number | boolean> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    if (isPrimitive(raw)) payload[key] = raw;
+  }
+  return payload;
+}
+
+/**
+ * PREDICATE form of the action-payload rule: true iff `value` is a plain
+ * (non-array) object whose every value is a primitive. Unlike
+ * `sanitizeActionPayload`, this rejects rather than filters — for callers that
+ * discard an action wholesale on any non-primitive value.
+ */
+export function isPrimitiveRecord(value: unknown): boolean {
+  return isObject(value) && Object.values(value).every(isPrimitive);
+}
+
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -88,13 +120,8 @@ function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction
       name: string;
       payload?: Record<string, string | number | boolean>;
     } = { kind: "agent", name };
-    if (isObject(value.payload)) {
-      const payload: Record<string, string | number | boolean> = {};
-      for (const [key, raw] of Object.entries(value.payload)) {
-        if (typeof raw === "string" || typeof raw === "number" || typeof raw === "boolean") {
-          payload[key] = raw;
-        }
-      }
+    const payload = sanitizeActionPayload(value.payload);
+    if (payload !== undefined) {
       action.payload = payload;
     }
     return action;

@@ -2,26 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import {
   applyPatch,
   EMPTY_TREE,
+  isTreeShaped,
   type ClientEvent,
   type FacetTransport,
   type FacetTree,
   type ServerMessage,
 } from "@facet/core";
 
-// FacetTransport now lives in @facet/core (it's a protocol type); re-exported
-// here for back-compat with consumers that imported it from @facet/react.
+// FacetTransport lives in @facet/core (it's a protocol type). Re-exported here
+// so a consumer wiring up the renderer can pull both `useFacet` and the type it
+// takes from one import, without reaching into @facet/core directly.
 export type { FacetTransport } from "@facet/core";
-
-/** A root replace can carry arbitrary JSON — only accept something tree-shaped. */
-function isTreeShaped(value: unknown): value is FacetTree {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { root?: unknown }).root === "string" &&
-    typeof (value as { nodes?: unknown }).nodes === "object" &&
-    (value as { nodes?: unknown }).nodes !== null
-  );
-}
 
 export interface FacetState {
   readonly tree: FacetTree;
@@ -54,9 +45,9 @@ export function useFacet(transport: FacetTransport): FacetState {
           }
         });
       } else if (message.kind === "reset") {
-        // Transport-synthesized on reconnect: the server is about to replay the
-        // session (stage snapshot + full chat history), so clear accumulated
-        // chat or every reconnect would duplicate the whole conversation.
+        // Server-emitted on a full rehydrate: it is about to replay the session
+        // (stage snapshot + full chat history), so clear accumulated chat or
+        // every rehydrate would duplicate the whole conversation.
         setChat([]);
       } else if (message.kind === "say" && typeof message.text === "string") {
         setChat((current) => [...current, message.text]);

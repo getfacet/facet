@@ -4,7 +4,7 @@
  * server (`serve`). No API key needed.
  */
 import { spawn } from "node:child_process";
-import { STAGE_SPEC, validateTree, type FacetTree } from "@facet/core";
+import { isTreeShaped, STAGE_SPEC, validateTree, type FacetTree } from "@facet/core";
 
 export const SYSTEM = `You generate Facet pages. Output ONLY a single JSON object for a stage tree — no prose, no markdown code fences.
 
@@ -35,23 +35,24 @@ function balancedEnd(text: string, start: number): number {
   return -1;
 }
 
-function isStageTree(value: unknown): boolean {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    typeof (value as { nodes?: unknown }).nodes === "object" &&
-    (value as { nodes?: unknown }).nodes !== null
-  );
-}
-
 /**
  * Extracts the stage tree from the model output — robust to prose, code fences,
  * or extra JSON objects before/after the tree (models sometimes emit a preamble
  * object or a trailing sentence). Scans every balanced top-level `{...}`, parses
- * each, and returns the FIRST one that looks like a stage tree (has a `nodes`
- * object); falls back to the last parseable object. Brace-counting is
+ * each, and returns the FIRST one that is tree-shaped (a `root` string and a
+ * `nodes` object); falls back to the last parseable object. Brace-counting is
  * string/escape aware so a `}` inside a string doesn't end an object early.
  */
+
+/** Salvage acceptance for LLM output: a full tree shape OR a rootless `{nodes}`
+ * object (validateTree falls back to `nodes["root"]`, so a missing top-level
+ * `root` is still buildable — don't skip it for a trailing JSON object). */
+function hasNodesObject(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const nodes = (value as Record<string, unknown>)["nodes"];
+  return typeof nodes === "object" && nodes !== null && !Array.isArray(nodes);
+}
+
 export function extractJson(text: string): unknown {
   const fenced = text.replace(/```(?:json)?/gi, "");
   const objects: unknown[] = [];
@@ -61,7 +62,7 @@ export function extractJson(text: string): unknown {
     if (end === -1) break;
     try {
       const parsed: unknown = JSON.parse(fenced.slice(i, end));
-      if (isStageTree(parsed)) return parsed;
+      if (isTreeShaped(parsed) || hasNodesObject(parsed)) return parsed;
       objects.push(parsed);
     } catch {
       // not a complete/valid object at this position; keep scanning

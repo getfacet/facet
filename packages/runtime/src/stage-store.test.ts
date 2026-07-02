@@ -51,7 +51,7 @@ describe("FileStageStore cache bound", () => {
     for (let i = 0; i < 550; i += 1) {
       await store.open("a", { visitorId: `v${i}` });
     }
-    const cache = (store as unknown as { cache: Map<string, unknown> }).cache;
+    const cache = (store as unknown as { cache: { readonly size: number } }).cache;
     expect(cache.size).toBeLessThanOrEqual(500);
     // v0 was evicted from the cache long ago — the file is still the truth.
     expect(await store.get("a", "v0")).toBeDefined();

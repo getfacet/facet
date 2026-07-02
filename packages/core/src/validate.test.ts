@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { isSafeImageSrc, MAX_DEPTH, validateTree } from "./validate.js";
+import {
+  isPrimitiveRecord,
+  isSafeImageSrc,
+  MAX_DEPTH,
+  sanitizeActionPayload,
+  validateTree,
+} from "./validate.js";
 
 describe("validateTree", () => {
   it("keeps a valid tree unchanged", () => {
@@ -458,5 +464,57 @@ describe("validateTree prototype-key safety", () => {
     // the dangling "value" child (only resolvable via prototype-chain leak) is gone
     const root = tree.nodes["root"] as unknown as { children: string[] };
     expect(root.children).toEqual([]);
+  });
+});
+
+describe("sanitizeActionPayload", () => {
+  it("keeps only primitive-valued entries", () => {
+    expect(sanitizeActionPayload({ a: "x", n: 1, b: true, obj: {}, arr: [], nul: null })).toEqual({
+      a: "x",
+      n: 1,
+      b: true,
+    });
+  });
+
+  it("returns an empty object for a primitive-free object", () => {
+    expect(sanitizeActionPayload({ obj: {}, arr: [1] })).toEqual({});
+  });
+
+  it("returns undefined for non-plain-object input", () => {
+    expect(sanitizeActionPayload(undefined)).toBeUndefined();
+    expect(sanitizeActionPayload(null)).toBeUndefined();
+    expect(sanitizeActionPayload([1, 2])).toBeUndefined();
+    expect(sanitizeActionPayload("x")).toBeUndefined();
+  });
+
+  it("is what validateTree uses to filter agent-action payloads", () => {
+    const { tree } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: [],
+          onPress: { kind: "agent", name: "go", payload: { keep: "yes", drop: { nested: 1 } } },
+        },
+      },
+    });
+    const root = tree.nodes["root"] as unknown as { onPress?: { payload?: unknown } };
+    expect(root.onPress?.payload).toEqual({ keep: "yes" });
+  });
+});
+
+describe("isPrimitiveRecord", () => {
+  it("is true only for a plain object whose every value is primitive", () => {
+    expect(isPrimitiveRecord({ a: "x", n: 1, b: false })).toBe(true);
+    expect(isPrimitiveRecord({})).toBe(true);
+  });
+
+  it("is false when any value is non-primitive or the input is not a plain object", () => {
+    expect(isPrimitiveRecord({ a: 1, bad: {} })).toBe(false);
+    expect(isPrimitiveRecord({ a: [1] })).toBe(false);
+    expect(isPrimitiveRecord(null)).toBe(false);
+    expect(isPrimitiveRecord([1, 2])).toBe(false);
+    expect(isPrimitiveRecord("x")).toBe(false);
   });
 });

@@ -8,12 +8,10 @@
  * for a fast, no-LLM smoke agent.
  */
 import type { FacetTree } from "@facet/core";
-import { defineAgent } from "@facet/agent";
 import { createFacetServer } from "@facet/server";
 import { FileSink, FileStageStore } from "@facet/runtime/node";
 import { page, text } from "@facet/kit";
-import { generatePage } from "./generator.js";
-import { welcome } from "./ui.js";
+import { makeLiveAgent } from "./live-agent.js";
 
 // The offline face — built from presets, shown to a fresh visitor when no agent
 // is connected (instead of a blank page).
@@ -37,39 +35,10 @@ const durable = process.env.FACET_STORE === "file";
 const stageStore = durable ? new FileStageStore(".facet-sessions/stage") : undefined;
 const sink = durable ? new FileSink(".facet-sessions/chat") : undefined;
 
-const agent = defineAgent(async ({ event, session, stage }) => {
-  if (event.kind === "visit") {
-    stage.render(
-      welcome(
-        'Type a request below — e.g. "a landing page for a bakery" — and I\'ll build it live.',
-      ),
-    );
-    return;
-  }
-  if (event.kind === "action") {
-    stage.say(`(you pressed: ${event.action.name})`);
-    return;
-  }
-  // message
-  if (!useLlm) {
-    stage.say(
-      `echo: ${event.text} (current page: ${String(Object.keys(session.stage.nodes).length)} nodes)`,
-    );
-    return;
-  }
-  try {
-    const { tree, issues } = await generatePage(event.text, session.stage);
-    stage.render(tree);
-    stage.say(
-      issues.length === 0
-        ? "Here's your page."
-        : `Built (repaired ${String(issues.length)} issue(s)).`,
-    );
-  } catch (error) {
-    stage.say(
-      `Sorry — generation failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
+const agent = makeLiveAgent({
+  useLlm,
+  welcomeSubtitle:
+    'Type a request below — e.g. "a landing page for a bakery" — and I\'ll build it live.',
 });
 
 // This agent is the IN-PROCESS FALLBACK. If an external agent connects at

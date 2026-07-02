@@ -1,31 +1,21 @@
 # Changelog
 
-All notable changes to this project are documented here. The format loosely
-follows [Keep a Changelog](https://keepachangelog.com/). Nothing is published to
-npm yet, so there are no released versions.
+Facet is released **per package**. Each published `@facet/*` package carries its
+own `CHANGELOG.md` (generated from [Changesets](https://github.com/changesets/changesets)),
+so the authoritative, version-by-version history for a package lives alongside it
+— in that package's directory and on its npm page — once the first version ships.
+Pending changes awaiting a release live as changeset entries under
+[`.changeset/`](.changeset/).
 
-## Unreleased
+All `@facet/*` packages are versioned together as a fixed group, so they always
+share one version.
 
-### Added
+## Pre-release history
 
-- Core spec: four low-level bricks (`box`/`text`/`image`/`field`), style tokens,
-  a dependency-free RFC 6902 JSON Patch implementation, and `validateTree`
-  (the fail-safe boundary for untrusted stage sources).
-- `@facet/runtime`: per-`(agent, visitor)` session store + event loop.
-- `@facet/agent`: the `Stage` control API + `defineAgent` (in-process agents).
-- `@facet/react`: `StageRenderer`, token `theme`, `useFacet`, `ChatDock`.
-- `@facet/server`: reference SSE + POST transport for both the browser side and
-  the agent side (external agents dial in; heartbeat + liveness); offline face.
-- `@facet/agent-client`: dial-in SDK for external agents.
-- `@facet/cli`: the `facet` command (a running agent's action surface).
-- `@facet/kit`: optional presets over the bricks.
-- Statefulness: the visitor's current stage travels with each event so agents
-  refine instead of rebuild.
-- Persistence is split into two concerns: `StageStore` (the page — always Facet's,
-  used to re-hydrate a reconnecting viewer) and `Sink` (the conversation — often
-  owned elsewhere, so pluggable: `MemorySink`/`FileSink` store it for replay,
-  `ForwardSink` hands it to your system, `NullSink` drops it). Durable,
-  dependency-free `FileStageStore`/`FileSink` reference implementations survive a
-  restart (playground: `FACET_STORE=file`).
-- `apps/playground`: gallery, LLM-generated, live-server, and two-visitor demos.
-- Unit tests, CI, and contributor docs.
+Nothing has been published to npm yet, so there are no released versions. The
+initial `0.1.0` line establishes the core spec (four bricks + tokens, RFC 6902
+patch, `validateTree`), the runtime (session store + event loop, `StageStore` /
+`Sink` seams), the agent SDKs and `facet` CLI, the React renderer, the reference
+SSE + POST server and browser client, the Postgres store adapter, the kit
+presets, and the local bridge. From the first published version onward, see each
+package's own `CHANGELOG.md`.

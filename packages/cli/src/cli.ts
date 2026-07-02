@@ -18,7 +18,12 @@
  * the visitor event currently being handled.
  */
 import type { ServerMessage } from "@facet/core";
+import type { CmdFrame } from "./commands.js";
 import { buildMessages } from "./commands.js";
+
+// Re-export the cli→bridge wire contract so the bridge can import it via the
+// bare `@facet/cli` specifier (the sanctioned bin entry) rather than a deep path.
+export type { CmdFrame } from "./commands.js";
 
 const bridgeUrl = process.env.FACET_BRIDGE_URL;
 const eventToken = process.env.FACET_EVENT ?? "";
@@ -40,10 +45,11 @@ async function main(): Promise<void> {
     fail(error instanceof Error ? error.message : "bad command");
   }
 
+  const frame: CmdFrame = { token: eventToken, messages };
   const response = await fetch(`${bridgeUrl}/cmd`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: eventToken, messages }),
+    body: JSON.stringify(frame),
   }).catch(() => undefined);
 
   if (response === undefined || !response.ok) {

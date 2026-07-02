@@ -24,7 +24,7 @@ export interface FacetRuntimeOptions {
 /**
  * Wires a transport's inbound events to the agent and keeps each session's stage
  * up to date. A transport (SSE server, or the in-process demo) calls `handle` for
- * every event from a viewer and ships the returned messages back.
+ * every event from a visitor and ships the returned messages back.
  *
  * Two persistence concerns are kept separate: the STAGE (always Facet's, via
  * `stageStore`) and the CONVERSATION (optional, via `sink` — store, forward, or drop).
@@ -51,21 +51,21 @@ export class FacetRuntime {
   }
 
   /**
-   * The current stage for a viewer, if a session exists. A transport uses this to
-   * send a snapshot when a viewer (re)connects, so a fresh connection or a second
+   * The current stage for a visitor, if a session exists. A transport uses this to
+   * send a snapshot when a visitor (re)connects, so a fresh connection or a second
    * tab immediately shows the live page.
    */
   async stageFor(visitorId: string): Promise<FacetTree | undefined> {
     return (await this.stageStore.get(this.agentId, visitorId))?.stage;
   }
 
-  /** The recorded conversation for a viewer (events + agent replies), if the sink retains it. */
+  /** The recorded conversation for a visitor (events + agent replies), if the sink retains it. */
   historyFor(visitorId: string): Promise<readonly StoredEvent[]> {
     return this.sink.history(this.agentId, visitorId);
   }
 
   /**
-   * Processes one inbound event for one viewer and returns the messages to send
+   * Processes one inbound event for one visitor and returns the messages to send
    * back. Stage patches are applied to the stored session (server is the source of
    * truth), then the interaction is handed to the sink.
    */

@@ -6,7 +6,7 @@ agent behind NAT only ever dials OUT — a browser side (`GET /stream` + `POST
 /event`) and an agent side (`GET /agent/stream` + `POST /agent/control`).
 
 ```bash
-npm install @facet/server @facet/runtime @facet/core
+npm install @facet/server @facet/agent @facet/runtime @facet/core
 ```
 
 `createFacetServer` returns a `FacetServer` with `listen()` / `close()`. Give it

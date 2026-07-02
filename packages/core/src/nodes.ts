@@ -8,7 +8,7 @@
  * unbounded — while every brick stays a typed, token-styled data value (never
  * raw HTML/JS), so nothing can be injected and nothing can render broken.
  *
- * Higher-level shapes (card(), hero(), grid()) live in an optional preset
+ * Higher-level shapes (card(), hero(), row()) live in an optional preset
  * package, not here — they are just functions that emit box compositions.
  */
 import type {

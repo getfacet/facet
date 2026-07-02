@@ -3,6 +3,16 @@
   "version": "0.0.0",
   "description": "Local bridge — lets a local coding agent (Claude, Codex, …) own a Facet link from your machine, driving the page via the `facet` CLI.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/bridge"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
   "type": "module",
   "sideEffects": false,
   "bin": {

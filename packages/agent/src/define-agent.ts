@@ -4,7 +4,7 @@ import { Stage } from "./stage.js";
 export interface FacetContext {
   readonly event: ClientEvent;
   readonly session: FacetSession;
-  /** The control surface for this viewer's page. */
+  /** The control surface for this visitor's page. */
   readonly stage: Stage;
 }
 
@@ -13,7 +13,7 @@ export type FacetLogic = (ctx: FacetContext) => void | Promise<void>;
 
 /**
  * Wraps your logic into a `FacetAgent` the runtime can call. You drive `stage`;
- * the recorded commands are flushed into the messages sent back to the viewer.
+ * the recorded commands are flushed into the messages sent back to the visitor.
  */
 export function defineAgent(logic: FacetLogic): FacetAgent {
   return async (event: ClientEvent, session: FacetSession): Promise<readonly ServerMessage[]> => {

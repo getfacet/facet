@@ -33,10 +33,9 @@ landed, the exhaustive matrix did not.
 - **server backpressure** — no global cap on in-flight turns/timers; SSE
   `res.write` return values ignored (slow-client buffering). Trust-model
   territory; the resource-exhaustion surface of the reference server.
-- **era/LRU continuity-guard variant untested** — the ring-overflow guard has a
-  test; the LRU-churn re-mint variant is waived (needs 1000+ session churn or
-  constant injection). The stale-decision itself is unit-tested
-  (`isStaleLateResult`).
+- ~~era/LRU continuity-guard variant untested~~ — RESOLVED by refactor-audit-1:
+  the frame-log store is now a unit seam (`frame-log.test.ts` covers eviction /
+  era re-mint / ring bound directly).
 - **client/server version pairing** — the client no longer synthesizes `reset`
   on reopen (the server sends it); a new client against a pre-async-delivery
   server duplicates chat on reconnect (cosmetic). Reference transports ship
@@ -44,16 +43,13 @@ landed, the exhaustive matrix did not.
 
 ## P3 — dropped from campaign 1 with recorded reasons
 
-- **[P3] naming** — the concept is "visitor" in every identifier but "viewer" in
-  ~15 comments across 5 packages; `BridgeOptions.mode` vs `method` are
-  near-synonyms for two levels of one knob. *Fix:* a standalone comment-only
-  sweep commit; decide `mode`/`method` deliberately BEFORE first npm release
-  (renaming after is breaking).
-- **[P3] server/server.ts (hygiene)** — `createFacetServer` is a ~300-line
-  function: request dispatch + SSE wiring + control handling + lifecycle in one
-  closure. *Fix:* dedicated refactor PR (extract per-request dispatch into named
-  helpers); deliberately kept out of campaign 1 so behavior fixes stayed
-  reviewable. Re-run `/refactor-audit` first.
+- ~~[P3] naming~~ — RESOLVED by refactor-audit-1 (2026-07-03): viewer→visitor
+  swept everywhere (28 lines); `mode`/`method` renamed to `runner`/`continuity`
+  (env `FACET_RUNNER`/`FACET_CONTINUITY`, invalid values now fail fast).
+- ~~[P3] server/server.ts (hygiene)~~ — RESOLVED by refactor-audit-1
+  (2026-07-03): `createFacetServer` decomposed into `frame-log.ts` /
+  `late.ts` / `agent-channel.ts` / `offline.ts` (non-barreled) + a flat route
+  table; 530→180 lines; the LRU/era/FIFO seams gained direct unit tests.
 
 ## P3 — residuals from campaign 1's review (track, fix opportunistically)
 
@@ -86,7 +82,7 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
 - **agent-client/connect.test.ts** — the sustained-409 test asserts the error
   log + loop stop but not the fetch call count, so a regression back to
   attempt-counted budgeting would pass it. *Fix:* assert the count.
-- **runtime + bridge + server (LRU duplication)** — the bounded re-insert-on-touch LRU
+- ~~runtime + bridge + server (LRU duplication)~~ — RESOLVED by refactor-audit-1: `createLruMap` in `@facet/core`, adopted at all three sites, eviction unit-tested once for everyone. Original note: the bounded re-insert-on-touch LRU
   now lives in `FileStageStore.cachePut` AND `bridge` `touchSessionId`, and
   neither eviction path has a test (silent, user-visible failure: an active
   visitor's `--resume` id evicted → conversation resets). *Fix:* extract a

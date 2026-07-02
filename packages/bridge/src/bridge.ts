@@ -5,16 +5,17 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
-import { createSemaphore, createSerialQueue, STAGE_SPEC } from "@facet/core";
+import { createLruMap, createSemaphore, createSerialQueue, STAGE_SPEC } from "@facet/core";
+import type { CmdFrame } from "@facet/cli";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";
 import { safeEnv } from "./env.js";
 
-/** Cap on the spawn-mode per-visitor `--resume` session-id map (LRU eviction). */
+/** Cap on the spawn-runner per-visitor `--resume` session-id map (LRU eviction). */
 const MAX_SESSION_IDS = 500;
 
-/** Default ceiling on spawn-mode brain CLIs running at once, across all visitors. */
+/** Default ceiling on spawn-runner brain CLIs running at once, across all visitors. */
 const DEFAULT_MAX_CONCURRENT = 4;
 
 /**
@@ -23,10 +24,10 @@ const DEFAULT_MAX_CONCURRENT = 4;
  * each visitor event it runs your local agent, exposing a `facet` command the
  * agent calls to change the page (`facet render/append/set/remove/say`).
  *
- * Two shipped modes: `spawn` runs the agent per event (stateless `oneshot`, or
- * `session` which `--resume`s the same conversation so context carries across
- * events); `persistent` keeps one always-on Claude session (Agent SDK) that
- * owns the link.
+ * Two shipped runners: `spawn` runs the agent per event (with `continuity`
+ * `oneshot` for a stateless child each time, or `resume` which `--resume`s the
+ * same conversation so context carries across events); `persistent` keeps one
+ * always-on Claude session (Agent SDK) that owns the link.
  */
 export interface BridgeOptions {
   /** Facet server to dial into. Default `http://localhost:5291`. */
@@ -34,14 +35,19 @@ export interface BridgeOptions {
   /** Which link (agent id) to own. Default `live`. */
   readonly agentId?: string;
   /**
-   * How the brain runs:
+   * What owns the brain process:
    * - `spawn` (default): run a CLI (`claude`/`codex`) per event — works with any CLI.
    * - `persistent`: one always-on Claude session (Agent SDK) owns the link.
    */
-  readonly mode?: "spawn" | "persistent";
-  /** `oneshot` = fresh agent per event; `session` = `--resume` for continuity. Default `session`. (spawn mode) */
-  readonly method?: "oneshot" | "session";
-  /** The brain CLI to run, e.g. `claude` or `codex`. Default `claude`. (spawn mode) */
+  readonly runner?: "spawn" | "persistent";
+  /**
+   * Whether a spawned brain remembers earlier events (spawn runner):
+   * - `oneshot`: a fresh, stateless child per event.
+   * - `resume` (default): `--resume` the visitor's prior conversation so context
+   *   carries across events.
+   */
+  readonly continuity?: "oneshot" | "resume";
+  /** The brain CLI to run, e.g. `claude` or `codex`. Default `claude`. (spawn runner) */
   readonly command?: string;
   /** Model for the persistent session (Agent SDK). Optional. */
   readonly model?: string;
@@ -53,7 +59,7 @@ export interface BridgeOptions {
   readonly bridgePort?: number;
   /** Kill a spawned brain CLI after this long (ms) so a hung child can't wedge a visitor. Default 180000. */
   readonly brainTimeoutMs?: number;
-  /** Max spawn-mode brain CLIs running at once, across all visitors (FIFO queue beyond it). Default 4. (spawn mode) */
+  /** Max spawn-runner brain CLIs running at once, across all visitors (FIFO queue beyond it). Default 4. (spawn runner) */
   readonly maxConcurrent?: number;
   readonly onStatus?: (status: "connected" | "disconnected") => void;
   readonly onEvent?: (kind: string, visitorId: string, changes: number) => void;
@@ -94,18 +100,22 @@ function promptFor(event: ClientEvent, stage: FacetTree): string {
   if (event.kind === "message") {
     return `${SPEC}\n\n${current}\n\nThe visitor said: "${event.text}". MODIFY the current page — prefer \`facet append\`/\`set\`/\`remove\` on existing node ids to change just what's needed (only \`facet render\` a fresh page if they ask for something totally new). Optionally \`facet say\` a short reply.`;
   }
-  return `${SPEC}\n\n${current}\n\nThe visitor pressed "${event.action.name}". React with facet commands on the current page.`;
+  // Defense-in-depth parity with persistent.ts's `userText`: a malformed action
+  // event (no action object) must not throw while building the prompt. Guard the
+  // name the same way both twins do.
+  const name = typeof event.action?.name === "string" ? event.action.name : "(unknown)";
+  return `${SPEC}\n\n${current}\n\nThe visitor pressed "${name}". React with facet commands on the current page.`;
 }
 
 export function createBridge(options: BridgeOptions = {}): Bridge {
   const serverUrl = options.serverUrl ?? BRIDGE_DEFAULTS.serverUrl;
   const agentId = options.agentId ?? BRIDGE_DEFAULTS.agentId;
-  const mode = options.mode ?? "spawn";
+  const runner = options.runner ?? "spawn";
 
   let agent: FacetAgent;
   let cleanup: () => void = () => {};
 
-  if (mode === "persistent") {
+  if (runner === "persistent") {
     const driver = createPersistentDriver(
       options.model !== undefined ? { model: options.model } : {},
     );
@@ -139,7 +149,7 @@ export function createBridge(options: BridgeOptions = {}): Bridge {
 
 /** The spawn-per-event driver: runs a CLI (`claude`/`codex`) for each event. */
 function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: () => void } {
-  const method = options.method ?? "session";
+  const continuity = options.continuity ?? "resume";
   const command = options.command ?? "claude";
   const bridgePort = options.bridgePort ?? BRIDGE_DEFAULTS.bridgePort;
   const bridgeUrl = `http://localhost:${String(bridgePort)}`;
@@ -148,18 +158,10 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
   const shimDir = makeFacetShim();
   const buffers = new Map<string, ServerMessage[]>();
   // Per-visitor `--resume` session ids, bounded so a long-lived bridge serving
-  // many one-off visitors can't grow this map without limit. LRU by insertion
-  // order (Map iterates oldest-first); re-inserting on every touch keeps the
-  // oldest key first so eviction is O(1). Mirrors `FileStageStore.cachePut`.
-  const sessionIds = new Map<string, string>();
-  const touchSessionId = (visitorId: string, id: string): void => {
-    sessionIds.delete(visitorId);
-    sessionIds.set(visitorId, id);
-    if (sessionIds.size > MAX_SESSION_IDS) {
-      const oldest = sessionIds.keys().next().value;
-      if (oldest !== undefined) sessionIds.delete(oldest);
-    }
-  };
+  // many one-off visitors can't grow this map without limit. LRU eviction drops
+  // the coldest visitor past the cap; a `get`/`set` counts as a touch, keeping
+  // active visitors resident.
+  const sessionIds = createLruMap<string>(MAX_SESSION_IDS);
   const children = new Set<ReturnType<typeof spawn>>();
   let counter = 0;
 
@@ -170,10 +172,7 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
       req.on("data", (chunk: string) => (body += chunk));
       req.on("end", () => {
         try {
-          const { token, messages } = JSON.parse(body) as {
-            token: string;
-            messages: ServerMessage[];
-          };
+          const { token, messages } = JSON.parse(body) as CmdFrame;
           buffers.get(token)?.push(...messages);
         } catch {
           /* ignore malformed */
@@ -202,8 +201,9 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
         FACET_BRIDGE_URL: bridgeUrl,
         FACET_EVENT: token,
       });
-      const resume = method === "session" ? sessionIds.get(visitorId) : undefined;
-      if (resume !== undefined) touchSessionId(visitorId, resume); // keep active visitors from being evicted
+      // `get` counts as a touch, so an active visitor stays resident (won't be
+      // evicted out from under an in-flight `--resume`).
+      const resume = continuity === "resume" ? sessionIds.get(visitorId) : undefined;
       const args = [
         ...(options.commandArgs ?? []),
         "-p",
@@ -258,10 +258,14 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
         finish();
       });
       child.on("close", () => {
-        if (method === "session") {
+        // A brain settled by the TIMEOUT path may emit `close` minutes later (a
+        // descendant can hold the pipes); by then a newer brain may have run, so
+        // writing this session id would fork the visitor back to an older
+        // conversation branch. Only the un-settled (normal) path records it.
+        if (!settled && continuity === "resume") {
           try {
             const id = (JSON.parse(out) as { session_id?: string }).session_id;
-            if (typeof id === "string") touchSessionId(visitorId, id);
+            if (typeof id === "string") sessionIds.set(visitorId, id);
           } catch {
             /* no session id in output */
           }

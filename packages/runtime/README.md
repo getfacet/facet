@@ -6,10 +6,10 @@ for the conversation (store, forward, or drop). Both default to in-memory;
 file-backed Node references live in `@facet/runtime/node`.
 
 ```bash
-npm install @facet/runtime @facet/core
+npm install @facet/runtime @facet/agent @facet/core
 ```
 
-`FacetRuntime.handle` processes one inbound event per viewer, calls your agent,
+`FacetRuntime.handle` processes one inbound event per visitor, calls your agent,
 applies the resulting patches to the stored session, and returns the messages to
 ship back. Sessions are isolated and serialized per `(agent, visitor)`.
 `FacetRuntime.applyMessages` applies an already-produced result (e.g. one that

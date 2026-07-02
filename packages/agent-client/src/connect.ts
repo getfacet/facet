@@ -1,5 +1,6 @@
 import {
   EMPTY_TREE,
+  type AgentControlFrame,
   type AgentEventFrame,
   type FacetAgent,
   type FacetSession,
@@ -118,11 +119,17 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
       body: JSON.stringify(body),
     }).catch(() => undefined);
 
-  const sendControl = (requestId: number, messages: readonly ServerMessage[]): Promise<unknown> =>
-    post("/agent/control", { agentId, requestId, messages });
+  // The control reply carries only what the server reads: it routes by requestId
+  // and authenticates the link by token, so the frame omits agentId (see
+  // AgentControlFrame). The heartbeat handler reads nothing from its body — it
+  // just stamps lastHeartbeat — so the beat posts an empty body.
+  const sendControl = (requestId: number, messages: readonly ServerMessage[]): Promise<unknown> => {
+    const frame: AgentControlFrame = { requestId, messages };
+    return post("/agent/control", frame);
+  };
 
   const beat = (): void => {
-    void post("/agent/heartbeat", { agentId });
+    void post("/agent/heartbeat", {});
   };
 
   const handleEvent = async (frame: AgentEventFrame): Promise<void> => {

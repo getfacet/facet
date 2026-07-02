@@ -42,7 +42,7 @@ small set of safe primitives and mutates them live as the conversation goes.
 | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
 | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
-| `@facet/kit` | Optional presets (`page/hero/card/grid/…`) — sugar over the bricks. |
+| `@facet/kit` | Optional presets (`page/hero/card/row/…`) — sugar over the bricks. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres (`pg` peer dep). |
 | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
 | `apps/playground` | Demos (not published). |

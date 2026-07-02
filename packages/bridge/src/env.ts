@@ -46,7 +46,7 @@ export function parseBridgePort(value: string | undefined): number | undefined {
 }
 
 /**
- * Parse the spawn-mode concurrency cap from an env var. `undefined` passes
+ * Parse the spawn-runner concurrency cap from an env var. `undefined` passes
  * through (use the default); otherwise it must be an integer >= 1 or we throw a
  * clear error naming the offending value — so a typo fails fast instead of
  * silently handing `NaN`/0 to the semaphore.
@@ -60,4 +60,36 @@ export function parseMaxConcurrent(value: string | undefined): number | undefine
     );
   }
   return limit;
+}
+
+/**
+ * Parse the runner (which owns the brain process) from `FACET_RUNNER`.
+ * `undefined` passes through (use the default); otherwise it must be exactly
+ * `spawn` or `persistent`. A typo like `persistant` THROWS naming the offender
+ * rather than silently falling back to `spawn` — a misconfigured runner should
+ * fail loudly, not quietly run the wrong thing.
+ */
+export function parseRunner(value: string | undefined): "spawn" | "persistent" | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "spawn" && value !== "persistent") {
+    throw new Error(
+      `Invalid FACET_RUNNER ${JSON.stringify(value)}: expected "spawn" or "persistent".`,
+    );
+  }
+  return value;
+}
+
+/**
+ * Parse the spawn-runner continuity from `FACET_CONTINUITY`. `undefined` passes
+ * through (use the default); otherwise it must be exactly `oneshot` or `resume`.
+ * A typo THROWS naming the offender rather than silently defaulting.
+ */
+export function parseContinuity(value: string | undefined): "oneshot" | "resume" | undefined {
+  if (value === undefined) return undefined;
+  if (value !== "oneshot" && value !== "resume") {
+    throw new Error(
+      `Invalid FACET_CONTINUITY ${JSON.stringify(value)}: expected "oneshot" or "resume".`,
+    );
+  }
+  return value;
 }
