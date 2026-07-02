@@ -138,12 +138,12 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | Package                 | Role                                                                                     |
 | ----------------------- | ---------------------------------------------------------------------------------------- |
 | `@facet/core`           | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, session/event types. |
-| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation).                          |
+| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation). File-backed Node references via `@facet/runtime/node`. |
 | `@facet/agent`          | In-process agent SDK — the `Stage` control API + `defineAgent`.                           |
 | `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect).                          |
 | `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |
 | `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
-| `@facet/react`          | Brick renderer (`StageRenderer`), default `theme`, `useFacet`, `ChatDock`.               |
+| `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
 | `@facet/kit`            | Optional presets (`card/hero/grid/…`) — sugar over the bricks.                            |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |

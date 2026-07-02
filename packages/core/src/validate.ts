@@ -13,6 +13,7 @@ import {
 } from "./tokens.js";
 import {
   FIELD_INPUTS,
+  isContainer,
   type BoxStyle,
   type FacetAction,
   type FacetNode,
@@ -226,7 +227,7 @@ export function validateTree(input: unknown): ValidationResult {
 
   // Drop child references that point at nodes we couldn't keep.
   for (const node of Object.values(nodes)) {
-    if (node.type === "box") {
+    if (isContainer(node)) {
       const kept = node.children.filter((child) => nodes[child] !== undefined);
       if (kept.length !== node.children.length) {
         nodes[node.id] = { ...node, children: kept };

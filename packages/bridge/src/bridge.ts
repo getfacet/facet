@@ -16,9 +16,10 @@ import { safeEnv } from "./env.js";
  * each visitor event it runs your local agent, exposing a `facet` command the
  * agent calls to change the page (`facet render/append/set/remove/say`).
  *
- * Current model: the agent is SPAWNED per event (stateless `oneshot`, or
+ * Two shipped modes: `spawn` runs the agent per event (stateless `oneshot`, or
  * `session` which `--resume`s the same conversation so context carries across
- * events). A persistent always-on session that owns the link is a future upgrade.
+ * events); `persistent` keeps one always-on Claude session (Agent SDK) that
+ * owns the link.
  */
 export interface BridgeOptions {
   /** Facet server to dial into. Default `http://localhost:5291`. */

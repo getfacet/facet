@@ -115,8 +115,6 @@ export interface FieldNode {
 /** Any brick the agent may place on a stage. */
 export type FacetNode = BoxNode | TextNode | ImageNode | FieldNode;
 
-export type FacetNodeType = FacetNode["type"];
-
 /** Narrows a node to the one brick that can hold children. */
 export function isContainer(node: FacetNode): node is BoxNode {
   return node.type === "box";
