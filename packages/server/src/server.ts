@@ -21,6 +21,12 @@ import { FacetRuntime, type Sink, type StageStore } from "@facet/runtime";
  * it is exposed to the runtime as an ordinary `FacetAgent` (see RemoteAgent), so
  * the runtime treats remote and in-process agents identically. If no external
  * agent is connected, the optional in-process `agent` is used as a fallback.
+ *
+ * TRUST MODEL: this is a REFERENCE transport for local/self-hosted single-operator
+ * use with public/anonymous pages — NOT a hardened multi-tenant server. By default
+ * the `/agent/*` channel is unauthenticated (set `agentToken` to require a secret)
+ * and `visitorId` is trusted verbatim as the session key. Put your own auth in
+ * front of it for multi-tenant or sensitive-per-visitor deployments. See SECURITY.md.
  */
 export interface FacetServerOptions {
   readonly port: number;
