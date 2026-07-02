@@ -25,6 +25,11 @@ export function sessionKey(agentId: string, visitorId: string): string {
  * The protocol default for `open()`: return the existing session, else create,
  * save, and return a fresh one whose stage is `EMPTY_TREE`. One source so every
  * `StageStore` backend starts sessions identically.
+ *
+ * Not atomic: get-then-save has a window where two concurrent `open()` calls for
+ * the same key both create. The runtime serializes all session access per
+ * `(agent, visitor)` key (see `FacetRuntime.handle`), so callers going through
+ * it never race; direct callers must serialize per key themselves.
  */
 export async function openSession(
   store: Pick<StageStore, "get" | "save">,

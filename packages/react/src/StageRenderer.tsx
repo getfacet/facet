@@ -5,6 +5,13 @@ import { boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
 const MAX_DEPTH = 100;
 
+// Fail-safe (invariant #2): the live path applies raw RFC 6902 patches with no
+// validateTree, so any node FIELD can hold arbitrary JSON (children: "oops",
+// src: 42, style: null). Coerce shapes here instead of trusting the types.
+function styleOf<T extends object>(style: T | undefined): T | undefined {
+  return typeof style === "object" && style !== null ? style : undefined;
+}
+
 /** A tree is renderable only if it's an object with a `nodes` map and a resolvable root. */
 function isRenderableTree(tree: FacetTree): boolean {
   return (
@@ -61,7 +68,8 @@ function RenderNode({ tree, id, onAction, ancestors, depth }: RenderNodeProps): 
       // can't infinitely recurse and crash the render.
       const seen = ancestors ?? EMPTY_ANCESTORS;
       const childAncestors = new Set(seen).add(id);
-      const children = node.children
+      const childIds: readonly NodeId[] = Array.isArray(node.children) ? node.children : [];
+      const children = childIds
         .filter((childId) => !seen.has(childId))
         .map((childId) => (
           <RenderNode
@@ -79,21 +87,28 @@ function RenderNode({ tree, id, onAction, ancestors, depth }: RenderNodeProps): 
           <div
             role="button"
             tabIndex={0}
-            style={{ ...boxStyle(node.style), cursor: "pointer" }}
+            style={{ ...boxStyle(styleOf(node.style)), cursor: "pointer" }}
             onClick={() => onAction?.(action)}
           >
             {children}
           </div>
         );
       }
-      return <div style={boxStyle(node.style)}>{children}</div>;
+      return <div style={boxStyle(styleOf(node.style))}>{children}</div>;
     }
     case "text":
-      return <p style={textStyle(node.style)}>{node.value}</p>;
+      // A non-string value (an object would make React itself throw) is skipped.
+      return typeof node.value === "string" ? (
+        <p style={textStyle(styleOf(node.style))}>{node.value}</p>
+      ) : null;
     case "image":
       // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
-      return isSafeImageSrc(node.src) ? (
-        <img src={node.src} alt={node.alt} style={imageStyle(node.style)} />
+      return typeof node.src === "string" && isSafeImageSrc(node.src) ? (
+        <img
+          src={node.src}
+          alt={typeof node.alt === "string" ? node.alt : ""}
+          style={imageStyle(styleOf(node.style))}
+        />
       ) : null;
     case "field":
       return (
@@ -102,10 +117,10 @@ function RenderNode({ tree, id, onAction, ancestors, depth }: RenderNodeProps): 
             display: "flex",
             flexDirection: "column",
             gap: "4px",
-            ...fieldStyle(node.style),
+            ...fieldStyle(styleOf(node.style)),
           }}
         >
-          {node.label !== undefined ? <span>{node.label}</span> : null}
+          {typeof node.label === "string" ? <span>{node.label}</span> : null}
           <input type={node.input ?? "text"} name={node.name} placeholder={node.placeholder} />
         </label>
       );

@@ -39,14 +39,55 @@ describe("StageRenderer fail-safe boundary", () => {
   it("skips a dangling child reference and renders the rest", () => {
     const out = render(tree({ root: box("root", ["a", "gone"]), a: text("a", "kept") }));
     expect(out).toContain("kept");
-    expect(out).not.toContain("gone");
+    expect(out.match(/<p/g)).toHaveLength(1); // only the resolvable child rendered
   });
 
   it("skips a node of unknown type instead of throwing", () => {
     const alien = { id: "x", type: "script", code: "evil()" } as unknown as FacetNode;
     const out = render(tree({ root: box("root", ["x", "a"]), x: alien, a: text("a", "safe") }));
     expect(out).toContain("safe");
-    expect(out).not.toContain("evil");
+    expect(out.match(/<p/g)).toHaveLength(1); // the alien node produced no output
+  });
+
+  // A raw patch can replace any node FIELD with arbitrary JSON — these exact
+  // shapes made the renderer throw before the guards existed.
+  it("renders a box whose children were patched to a non-array as empty", () => {
+    const broken = { id: "root", type: "box", children: "oops" } as unknown as FacetNode;
+    expect(() => render(tree({ root: broken }))).not.toThrow();
+    expect(render(tree({ root: broken }))).toBe(
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+    );
+  });
+
+  it("skips a text node whose value was patched to an object", () => {
+    const broken = { id: "t", type: "text", value: { evil: true } } as unknown as FacetNode;
+    const out = render(
+      tree({ root: box("root", ["t", "a"]), t: broken, a: text("a", "still up") }),
+    );
+    expect(out).toContain("still up");
+    expect(out.match(/<p/g)).toHaveLength(1);
+  });
+
+  it("skips an image whose src was patched to a non-string", () => {
+    const broken = { id: "i", type: "image", src: 42, alt: "x" } as unknown as FacetNode;
+    const out = render(
+      tree({ root: box("root", ["i", "a"]), i: broken, a: text("a", "still up") }),
+    );
+    expect(out).toContain("still up");
+    expect(out).not.toContain("<img");
+  });
+
+  it("survives a style patched to null on any node", () => {
+    const noisy = {
+      root: { id: "root", type: "box", style: null, children: ["t", "f"] },
+      t: { id: "t", type: "text", value: "ok", style: null },
+      f: { id: "f", type: "field", name: "n", label: { bad: 1 }, style: null },
+    } as unknown as Record<string, FacetNode>;
+    expect(() => render(tree(noisy))).not.toThrow();
+    const out = render(tree(noisy));
+    expect(out).toContain("ok");
+    expect(out).toContain("<input"); // field renders, its non-string label skipped
+    expect(out).not.toContain("<span");
   });
 
   it("breaks a direct cycle (child pointing back at its parent)", () => {
