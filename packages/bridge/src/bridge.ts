@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { chmodSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
@@ -44,6 +44,8 @@ export interface BridgeOptions {
   readonly commandArgs?: readonly string[];
   /** Local port the `facet` CLI posts changes to. Default `5292`. */
   readonly bridgePort?: number;
+  /** Kill a spawned brain CLI after this long (ms) so a hung child can't wedge a visitor. Default 180000. */
+  readonly brainTimeoutMs?: number;
   readonly onStatus?: (status: "connected" | "disconnected") => void;
   readonly onEvent?: (kind: string, visitorId: string, changes: number) => void;
 }
@@ -61,13 +63,15 @@ function makeFacetShim(): string {
   const binPath = join(dirname(pkgPath), binRel);
   const runner = binPath.endsWith(".ts") ? "tsx" : "node";
   const shimDir = mkdtempSync(join(tmpdir(), "facet-bin-"));
-  writeFileSync(join(shimDir, "facet"), `#!/bin/sh\nexec ${runner} ${binPath} "$@"\n`);
+  // Quote the path — an install dir containing a space would otherwise break
+  // every `facet` invocation (the shell would split it into two args).
+  writeFileSync(join(shimDir, "facet"), `#!/bin/sh\nexec ${runner} "${binPath}" "$@"\n`);
   chmodSync(join(shimDir, "facet"), 0o755);
   return shimDir;
 }
 
 const SPEC = `You control a live web page via the \`facet\` command. Change the page by running:
-  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet say <text>
+  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet say <text>
 
 ${STAGE_SPEC}
 
@@ -130,16 +134,19 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
   const command = options.command ?? "claude";
   const bridgePort = options.bridgePort ?? 5292;
   const bridgeUrl = `http://localhost:${String(bridgePort)}`;
+  const brainTimeoutMs = options.brainTimeoutMs ?? 180_000;
 
   const shimDir = makeFacetShim();
   const buffers = new Map<string, ServerMessage[]>();
   const sessionIds = new Map<string, string>();
+  const children = new Set<ReturnType<typeof spawn>>();
   let counter = 0;
 
   const cmdServer = createServer((req, res) => {
     if (req.method === "POST" && req.url === "/cmd") {
       let body = "";
-      req.on("data", (chunk) => (body += String(chunk)));
+      req.setEncoding("utf8"); // decode on the stream — chunk-split multibyte chars corrupt otherwise
+      req.on("data", (chunk: string) => (body += chunk));
       req.on("end", () => {
         try {
           const { token, messages } = JSON.parse(body) as {
@@ -189,9 +196,35 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
       ];
       if (resume !== undefined) args.push("--resume", resume);
       let out = "";
+      let settled = false;
       const child = spawn(command, args, { env });
+      const finish = (): void => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      // Bound the brain: a hung CLI would otherwise wedge this visitor's serial
+      // queue forever. On timeout, kill and move on.
+      const timer = setTimeout(() => {
+        if (!settled) {
+          console.error(`[facet] brain timed out after ${String(brainTimeoutMs)}ms; killing`);
+          child.kill("SIGKILL");
+        }
+      }, brainTimeoutMs);
+      timer.unref?.();
+      children.add(child);
+      child.on("close", () => children.delete(child));
       child.stdout.on("data", (chunk) => (out += String(chunk)));
-      child.on("error", () => resolve());
+      // Drain stderr — an unconsumed pipe backpressures a chatty child into a
+      // permanent wedge (that visitor's queue would never advance).
+      child.stderr.resume();
+      child.on("error", (error) => {
+        // e.g. the brain CLI isn't installed — surface it instead of silently
+        // "succeeding" with 0 changes every event.
+        console.error(`[facet] failed to spawn "${command}":`, error);
+        finish();
+      });
       child.on("close", () => {
         if (method === "session") {
           try {
@@ -201,7 +234,7 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
             /* no session id in output */
           }
         }
-        resolve();
+        finish();
       });
     });
 
@@ -228,6 +261,9 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
     agent,
     close: (): void => {
       cmdServer.close();
+      for (const child of children) child.kill("SIGKILL"); // don't abandon in-flight brains
+      children.clear();
+      rmSync(shimDir, { recursive: true, force: true }); // clean the temp shim dir
     },
   };
 }

@@ -40,7 +40,7 @@ export function GeneratedView(): React.ReactNode {
   }, [load]);
 
   const onAction = (action: FacetAction): void => {
-    setLastAction(action.name);
+    setLastAction(action.name ?? null);
   };
 
   return (

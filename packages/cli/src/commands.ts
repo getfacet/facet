@@ -1,5 +1,5 @@
 import { Stage } from "@facet/agent";
-import type { FacetNode, FacetTree, ServerMessage } from "@facet/core";
+import type { FacetNode, FacetTree, NodeId, ServerMessage } from "@facet/core";
 
 function parseJson<T>(value: string | undefined, what: string): T {
   if (value === undefined) throw new Error(`missing ${what}`);
@@ -35,11 +35,17 @@ export function buildMessages(
       if (rest[0] === undefined) throw new Error("remove needs a node id");
       stage.remove(rest[0]);
       break;
+    case "screens": {
+      const map = parseJson<Record<string, NodeId>>(rest[0], "screens map");
+      if (rest[1] === undefined) throw new Error("screens needs an entry");
+      stage.screens(map, rest[1]);
+      break;
+    }
     case "say":
       stage.say(rest.join(" "));
       break;
     default:
-      throw new Error(`unknown command "${command ?? ""}" (render|set|append|remove|say)`);
+      throw new Error(`unknown command "${command ?? ""}" (render|set|append|remove|screens|say)`);
   }
   return stage.flush();
 }

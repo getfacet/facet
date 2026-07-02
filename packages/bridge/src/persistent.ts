@@ -58,7 +58,11 @@ function userText(event: ClientEvent, stage: FacetTree): string {
   if (event.kind === "message") {
     return `${current}\n\nThe visitor said: "${event.text}". Update their page with the facet tools; optionally say() a short reply.`;
   }
-  return `${current}\n\nThe visitor pressed "${event.action.name}". React by updating their page with the facet tools.`;
+  // Defensive: a malformed action event (no action object) must not throw here —
+  // this runs inside the input() generator, where an uncaught TypeError would
+  // end the SDK query stream and permanently kill the session for ALL visitors.
+  const name = typeof event.action?.name === "string" ? event.action.name : "(unknown)";
+  return `${current}\n\nThe visitor pressed "${name}". React by updating their page with the facet tools.`;
 }
 
 export interface PersistentDriver {
@@ -120,9 +124,22 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
       const turn = pending[0];
       if (turn === undefined) continue;
       current = turn;
+      // Guard the per-turn prompt build: ANY throw inside this generator ends
+      // the SDK query stream and kills the session for all visitors. A turn
+      // whose event can't be rendered settles alone instead.
+      let content: string;
+      try {
+        content = userText(turn.event, turn.session.stage);
+      } catch (error) {
+        console.error("[facet] skipping malformed event:", error);
+        turn.resolve([{ kind: "say", text: "(could not process that interaction)" }]);
+        current = undefined;
+        pending.shift();
+        continue;
+      }
       yield {
         type: "user",
-        message: { role: "user", content: userText(turn.event, turn.session.stage) },
+        message: { role: "user", content },
         parent_tool_use_id: null,
       };
       await new Promise<void>((resolve) => (turnDone = resolve));

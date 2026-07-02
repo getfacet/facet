@@ -94,3 +94,33 @@ describe("FacetRuntime.handle", () => {
     expect(root?.children).toHaveLength(2); // both applied, neither overwrote the other
   });
 });
+
+describe("FacetRuntime.applyToSession fail-soft", () => {
+  it("salvages good ops when one op in a batch is bad (mixed batch)", async () => {
+    const mixed: ServerMessage = {
+      kind: "patch",
+      patches: [
+        { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
+        { op: "add", path: "/nodes/missing/children/-", value: "x" }, // throws
+        { op: "add", path: "/nodes/also", value: { id: "also", type: "text", value: "kept too" } },
+      ],
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(mixed) });
+    await rt.handle(visitor, { kind: "message", text: "hi" });
+    const stage = await rt.stageFor("v");
+    expect(stage?.nodes["good"]).toBeDefined();
+    expect(stage?.nodes["also"]).toBeDefined();
+  });
+
+  it("survives a patch message whose patches field is not an array (turn + chat preserved)", async () => {
+    const broken = { kind: "patch", patches: "not-an-array" } as unknown as ServerMessage;
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(broken, { kind: "say", text: "still here" }),
+    });
+    const messages = await rt.handle(visitor, { kind: "message", text: "hi" });
+    expect(messages.some((m) => m.kind === "say" && m.text === "still here")).toBe(true);
+    const stage = await rt.stageFor("v");
+    expect(stage?.nodes["root"]).toBeDefined(); // stage intact, not wiped
+  });
+});

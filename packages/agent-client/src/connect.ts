@@ -1,9 +1,8 @@
 import {
   EMPTY_TREE,
-  type ClientEvent,
+  type AgentEventFrame,
   type FacetAgent,
   type FacetSession,
-  type FacetTree,
   type ServerMessage,
 } from "@facet/core";
 
@@ -34,18 +33,22 @@ export interface AgentConnection {
   close(): void;
 }
 
-interface EventFrame {
-  readonly type: "event";
-  readonly requestId: number;
-  readonly visitorId: string;
-  readonly event: ClientEvent;
-  /** The visitor's current stage — so the agent can refine, not rebuild. */
-  readonly stage?: FacetTree;
-}
-
-function isEventFrame(value: unknown): value is EventFrame {
+// The wire frame contract lives in @facet/core (AgentEventFrame) so the server
+// (emitter) and this consumer can't drift.
+function isEventFrame(value: unknown): value is AgentEventFrame {
+  if (typeof value !== "object" || value === null) return false;
+  const frame = value as {
+    type?: unknown;
+    requestId?: unknown;
+    visitorId?: unknown;
+    event?: unknown;
+  };
   return (
-    typeof value === "object" && value !== null && (value as { type?: unknown }).type === "event"
+    frame.type === "event" &&
+    typeof frame.requestId === "number" &&
+    typeof frame.visitorId === "string" &&
+    typeof frame.event === "object" &&
+    frame.event !== null
   );
 }
 
@@ -99,7 +102,7 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
     void post("/agent/heartbeat", { agentId });
   };
 
-  const handleEvent = async (frame: EventFrame): Promise<void> => {
+  const handleEvent = async (frame: AgentEventFrame): Promise<void> => {
     const session: FacetSession = {
       agentId,
       visitor: { visitorId: frame.visitorId },

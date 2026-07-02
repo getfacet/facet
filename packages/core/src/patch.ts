@@ -28,6 +28,9 @@ function isContainerValue(value: unknown): value is Container {
   return typeof value === "object" && value !== null;
 }
 
+/** Pointer tokens that would walk into the prototype chain instead of own data. */
+const FORBIDDEN_TOKENS = new Set(["__proto__", "prototype", "constructor"]);
+
 /** RFC 6901 JSON Pointer → tokens, unescaping ~1 → "/" and ~0 → "~". */
 function parsePointer(pointer: string): string[] {
   if (pointer === "") {
@@ -36,10 +39,18 @@ function parsePointer(pointer: string): string[] {
   if (!pointer.startsWith("/")) {
     throw new Error(`invalid JSON pointer: "${pointer}"`);
   }
-  return pointer
+  const tokens = pointer
     .slice(1)
     .split("/")
     .map((token) => token.replace(/~1/g, "/").replace(/~0/g, "~"));
+  for (const token of tokens) {
+    // Security: a "/__proto__/x" pointer would write to Object.prototype —
+    // global prototype pollution on server AND every connected browser. Reject.
+    if (FORBIDDEN_TOKENS.has(token)) {
+      throw new Error(`forbidden pointer token: "${token}"`);
+    }
+  }
+  return tokens;
 }
 
 function lastToken(tokens: string[]): string {
@@ -122,10 +133,16 @@ function applyOperation(root: unknown, operation: JsonPatchOperation): unknown {
     case "add":
     case "replace": {
       const tokens = parsePointer(operation.path);
+      // Clone the inserted value: inserting by reference would alias the
+      // operation object into the tree, so a later op in the same batch (e.g.
+      // append into a just-added node) MUTATES the caller's patch message —
+      // the server would then forward already-applied patches and the client
+      // would apply them twice (visible duplicate children).
+      const value = structuredClone(operation.value);
       if (tokens.length === 0) {
-        return operation.value;
+        return value;
       }
-      setMember(parentContainer(root, tokens), lastToken(tokens), operation.value, operation.op);
+      setMember(parentContainer(root, tokens), lastToken(tokens), value, operation.op);
       return root;
     }
     case "remove": {
@@ -160,6 +177,11 @@ function applyOperation(root: unknown, operation: JsonPatchOperation): unknown {
       }
       return root;
     }
+    default:
+      // RFC 6902: an unrecognized op MUST be an error. Without this, a wire-level
+      // typo (e.g. op:"append") would return undefined and silently wipe the
+      // caller's tree.
+      throw new Error(`unknown patch op: "${String((operation as { op?: unknown }).op)}"`);
   }
 }
 

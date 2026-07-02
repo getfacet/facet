@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
+  type AgentEventFrame,
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
@@ -36,7 +37,7 @@ export interface FacetServerOptions {
   /** How long to wait for a remote agent's control response (default 120s — a
    * persistent session's cold first turn includes model + MCP startup). */
   readonly agentTimeoutMs?: number;
-  /** Shared secret required on the `/agent/*` channel. When set, an agent must present a matching `?token=`. */
+  /** Shared secret required on the `/agent/*` channel. When set, an agent must send a matching `x-facet-token` header. */
   readonly agentToken?: string;
   /** Page shown to a fresh visitor when no agent is connected (the offline face). */
   readonly offlineFace?: FacetTree;
@@ -93,7 +94,10 @@ function sse(res: ServerResponse, data: unknown): void {
 function readJson(req: IncomingMessage): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = "";
-    req.on("data", (chunk) => (body += String(chunk)));
+    // utf8 decoding must happen on the stream (a multibyte char split across
+    // two chunks corrupts under per-chunk String()).
+    req.setEncoding("utf8");
+    req.on("data", (chunk: string) => (body += chunk));
     req.on("end", () => {
       try {
         resolve(JSON.parse(body));
@@ -105,18 +109,37 @@ function readJson(req: IncomingMessage): Promise<unknown> {
   });
 }
 
-/** Shape-check an untrusted browser /event body before trusting it. */
+/** Shape-check an untrusted browser /event body before trusting it — including
+ * the per-kind payload (a kind-only check lets `{kind:"action"}` without an
+ * action object crash downstream consumers, e.g. the persistent bridge). */
 function isEventBody(body: unknown): body is { visitor: VisitorContext; event: ClientEvent } {
   if (typeof body !== "object" || body === null) return false;
   const { visitor, event } = body as { visitor?: unknown; event?: unknown };
   if (typeof visitor !== "object" || visitor === null) return false;
   if (typeof (visitor as { visitorId?: unknown }).visitorId !== "string") return false;
   if (typeof event !== "object" || event === null) return false;
-  const kind = (event as { kind?: unknown }).kind;
-  return kind === "visit" || kind === "message" || kind === "action";
+  const { kind, text, action } = event as { kind?: unknown; text?: unknown; action?: unknown };
+  if (kind === "visit") {
+    const eventVisitor = (event as { visitor?: unknown }).visitor;
+    return (
+      typeof eventVisitor === "object" &&
+      eventVisitor !== null &&
+      typeof (eventVisitor as { visitorId?: unknown }).visitorId === "string"
+    );
+  }
+  if (kind === "message") return typeof text === "string";
+  if (kind === "action") {
+    if (typeof action !== "object" || action === null) return false;
+    if (typeof (action as { name?: unknown }).name !== "string") return false;
+    const payload = (action as { payload?: unknown }).payload;
+    return payload === undefined || (typeof payload === "object" && payload !== null);
+  }
+  return false;
 }
 
-/** Shape-check an /agent/control body before resolving a pending request with it. */
+/** Shape-check an /agent/control body before resolving a pending request with it —
+ * per-kind, so a malformed message can't smuggle a non-array `patches` or a
+ * non-string `text` into the runtime and the browser. */
 function isControlBody(
   body: unknown,
 ): body is { requestId: number; messages: readonly ServerMessage[] } {
@@ -124,10 +147,13 @@ function isControlBody(
   const { requestId, messages } = body as { requestId?: unknown; messages?: unknown };
   if (typeof requestId !== "number") return false;
   if (!Array.isArray(messages)) return false;
-  return messages.every(
-    (m) =>
-      typeof m === "object" && m !== null && typeof (m as { kind?: unknown }).kind === "string",
-  );
+  return messages.every((m) => {
+    if (typeof m !== "object" || m === null) return false;
+    const { kind, text, patches } = m as { kind?: unknown; text?: unknown; patches?: unknown };
+    if (kind === "say") return typeof text === "string";
+    if (kind === "patch") return Array.isArray(patches);
+    return false;
+  });
 }
 
 export function createFacetServer(options: FacetServerOptions): FacetServer {
@@ -142,10 +168,20 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   const offlineFace = options.offlineFace ?? DEFAULT_OFFLINE_FACE;
   const offline = (text: string): readonly ServerMessage[] => [{ kind: "say", text }];
 
-  /** What a visitor gets when no agent is connected: the offline face on a fresh
-   * visit, a short note otherwise. */
-  const offlineFor = (event: ClientEvent): readonly ServerMessage[] =>
-    event.kind === "visit"
+  /** Does this session already hold a real page (beyond an empty root)? */
+  const hasBuiltStage = (session: FacetSession): boolean => {
+    const root = session.stage.nodes[session.stage.root];
+    if (session.stage.screens !== undefined && Object.keys(session.stage.screens).length > 0) {
+      return true;
+    }
+    return root !== undefined && "children" in root && root.children.length > 0;
+  };
+
+  /** What a visitor gets when no agent is connected: the offline face on a FRESH
+   * visit, a short note otherwise. A RETURNING visitor's built page must never be
+   * overwritten (the offline patch would be persisted over their real stage). */
+  const offlineFor = (event: ClientEvent, session?: FacetSession): readonly ServerMessage[] =>
+    event.kind === "visit" && (session === undefined || !hasBuiltStage(session))
       ? [{ kind: "patch", patches: [{ op: "replace", path: "", value: offlineFace }] }]
       : [{ kind: "say", text: "This page's agent is offline right now — check back soon." }];
 
@@ -163,7 +199,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   const remoteAgent: FacetAgent = (event: ClientEvent, session: FacetSession) => {
     const stream = agentStream;
     if (stream === null) {
-      return offlineFor(event);
+      return offlineFor(event, session);
     }
     const requestId = (requestCounter += 1);
     return new Promise<readonly ServerMessage[]>((resolve) => {
@@ -172,13 +208,14 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
         resolve(offline("(agent timed out)"));
       }, timeoutMs);
       pending.set(requestId, { resolve, timer });
-      sse(stream, {
+      const frame: AgentEventFrame = {
         type: "event",
         requestId,
         visitorId: session.visitor.visitorId,
         event,
         stage: session.stage,
-      });
+      };
+      sse(stream, frame);
     });
   };
 
@@ -187,7 +224,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       ? remoteAgent(event, session)
       : options.agent !== undefined
         ? options.agent(event, session)
-        : offlineFor(event);
+        : offlineFor(event, session);
 
   const runtime = new FacetRuntime({
     agentId: options.agentId,
@@ -277,7 +314,13 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
           void runtime
             .handle(visitor, event)
             .then((messages) => pushToBrowser(visitor.visitorId, messages))
-            .catch((error: unknown) => console.error("[facet] handle failed:", error));
+            .catch((error: unknown) => {
+              // Don't leave the visitor staring at a 202 that went nowhere.
+              console.error("[facet] handle failed:", error);
+              pushToBrowser(visitor.visitorId, [
+                { kind: "say", text: "(the agent hit an error — try again)" },
+              ]);
+            });
         })
         .catch(() => {
           res.writeHead(400);

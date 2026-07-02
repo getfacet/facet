@@ -45,6 +45,21 @@ export class Stage {
   }
 
   /**
+   * Set the stage's named screens and entry screen.
+   *
+   * Records top-level `add` ops for `/screens` and `/entry` — per RFC 6902 an
+   * `add` against an existing member of the root document upserts, so this
+   * works whether or not the stage already has screens. The map is replaced
+   * WHOLE: every call sets the complete screens map atomically (per-screen
+   * incremental add is a follow-up if needed).
+   */
+  screens(screens: Readonly<Record<string, NodeId>>, entry: string): this {
+    this.pending.push({ op: "add", path: "/screens", value: screens });
+    this.pending.push({ op: "add", path: "/entry", value: entry });
+    return this;
+  }
+
+  /**
    * Remove a node from the map. Any lingering id reference in a parent's
    * `children` is harmless — the fail-safe renderer skips ids it can't resolve.
    */

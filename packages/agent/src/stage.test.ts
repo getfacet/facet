@@ -34,6 +34,40 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     expect(stage.flush().map((m) => m.kind)).toEqual(["patch", "say"]);
   });
 
+  it("screens records a screens map and entry as patch ops", () => {
+    const stage = new Stage();
+    stage.screens({ home: "home_root", about: "about_root" }, "home");
+    const messages = stage.flush();
+    expect(messages).toHaveLength(1);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([
+      { op: "add", path: "/screens", value: { home: "home_root", about: "about_root" } },
+      { op: "add", path: "/entry", value: "home" },
+    ]);
+  });
+
+  it("screens coalesces with other edits and flushes before say", () => {
+    const stage = new Stage();
+    stage
+      .set({ id: "home_root", type: "box", children: [] })
+      .screens({ home: "home_root" }, "home")
+      .say("screens ready");
+    const messages = stage.flush();
+    expect(messages.map((m) => m.kind)).toEqual(["patch", "say"]);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([
+      {
+        op: "add",
+        path: "/nodes/home_root",
+        value: { id: "home_root", type: "box", children: [] },
+      },
+      { op: "add", path: "/screens", value: { home: "home_root" } },
+      { op: "add", path: "/entry", value: "home" },
+    ]);
+  });
+
   it("escapes ids in JSON pointers", () => {
     const stage = new Stage();
     stage.remove("a/b~c");

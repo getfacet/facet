@@ -38,10 +38,17 @@ export type ClientEvent =
 /**
  * Agent → browser. The agent answers events with stage patches (RFC 6902
  * operations) and/or chat text.
+ *
+ * `reset` is TRANSPORT-synthesized, never sent by an agent: a transport emits it
+ * when a dropped connection reopens, so the client clears accumulated chat
+ * before the server replays the session's history (the stage replay is an
+ * idempotent root-replace; the chat replay is not — without the reset every
+ * reconnect would duplicate the whole conversation).
  */
 export type ServerMessage =
   | { readonly kind: "patch"; readonly patches: readonly JsonPatchOperation[] }
-  | { readonly kind: "say"; readonly text: string };
+  | { readonly kind: "say"; readonly text: string }
+  | { readonly kind: "reset" };
 
 /**
  * The contract a Facet agent implements: given an event and the current session,
@@ -62,4 +69,18 @@ export type FacetAgent = (
 export interface FacetTransport {
   send(event: ClientEvent): void;
   subscribe(onMessage: (message: ServerMessage) => void): () => void;
+}
+
+/**
+ * Server → external agent wire frame (the agent-side channel): one visitor event
+ * awaiting one control response. Single-sourced here so `@facet/server` (emitter)
+ * and `@facet/agent-client` (consumer) can't drift.
+ */
+export interface AgentEventFrame {
+  readonly type: "event";
+  readonly requestId: number;
+  readonly visitorId: string;
+  readonly event: ClientEvent;
+  /** The visitor's current stage — so the agent can refine, not rebuild. */
+  readonly stage?: FacetTree;
 }

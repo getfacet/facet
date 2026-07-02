@@ -40,6 +40,21 @@ describe("LocalTransport", () => {
     expect(b).toHaveLength(1);
   });
 
+  it("turns an agent throw into a chat notice instead of an unhandled rejection", async () => {
+    const throwingAgent: FacetAgent = () => {
+      throw new Error("boom");
+    };
+    const runtime = new FacetRuntime({ agentId: "a", agent: throwingAgent });
+    const transport = new LocalTransport(runtime, visitor);
+    const received: ServerMessage[] = [];
+    transport.subscribe((message) => received.push(message));
+
+    transport.send({ kind: "message", text: "hello" });
+    await flush();
+
+    expect(received).toEqual([{ kind: "say", text: "(the agent hit an error)" }]);
+  });
+
   it("stops delivering after unsubscribe", async () => {
     const runtime = new FacetRuntime({ agentId: "a", agent: agentOf({ kind: "say", text: "hi" }) });
     const transport = new LocalTransport(runtime, visitor);
