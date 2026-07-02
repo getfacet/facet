@@ -37,6 +37,9 @@ export interface ValidationResult {
   readonly issues: readonly string[];
 }
 
+/** Max stage nesting depth — beyond this, children are dropped (fail-safe, no stack overflow). */
+const MAX_DEPTH = 100;
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -71,7 +74,7 @@ function asAction(value: unknown): FacetAction | undefined {
 }
 
 /** Only render images from safe URL schemes — never `javascript:`, `data:text/html`, etc. */
-function isSafeImageSrc(src: string): boolean {
+export function isSafeImageSrc(src: string): boolean {
   const s = src.trim().toLowerCase();
   return (
     s.startsWith("https://") ||
@@ -254,7 +257,7 @@ export function validateTree(input: unknown): ValidationResult {
   // current path (gray) reached again is a back-edge.
   const inPath = new Set<string>();
   const settled = new Set<string>();
-  const breakCycles = (nodeId: string): void => {
+  const breakCycles = (nodeId: string, depth: number): void => {
     const node = nodes[nodeId];
     if (node === undefined || node.type !== "box") {
       settled.add(nodeId);
@@ -267,8 +270,13 @@ export function validateTree(input: unknown): ValidationResult {
         issues.push(`node "${nodeId}": removed cyclic child "${child}"`);
         continue;
       }
+      if (depth >= MAX_DEPTH) {
+        // Fail-safe: cap depth so pathologically deep input can't blow the stack.
+        issues.push(`node "${nodeId}": dropped child "${child}" beyond max depth`);
+        continue;
+      }
       kept.push(child);
-      if (!settled.has(child)) breakCycles(child);
+      if (!settled.has(child)) breakCycles(child, depth + 1);
     }
     if (kept.length !== node.children.length) {
       nodes[nodeId] = { ...node, children: kept };
@@ -276,7 +284,7 @@ export function validateTree(input: unknown): ValidationResult {
     inPath.delete(nodeId);
     settled.add(nodeId);
   };
-  breakCycles(rootId);
+  breakCycles(rootId, 0);
 
   return { tree: { root: rootId, nodes }, issues };
 }

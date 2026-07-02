@@ -1,8 +1,20 @@
 import type { ReactNode } from "react";
-import type { FacetAction, FacetTree, NodeId } from "@facet/core";
+import { isSafeImageSrc, type FacetAction, type FacetTree, type NodeId } from "@facet/core";
 import { boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
 
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
+const MAX_DEPTH = 100;
+
+/** A tree is renderable only if it's an object with a `nodes` map and a resolvable root. */
+function isRenderableTree(tree: FacetTree): boolean {
+  return (
+    typeof tree === "object" &&
+    tree !== null &&
+    typeof (tree as { nodes?: unknown }).nodes === "object" &&
+    (tree as { nodes?: Record<string, unknown> }).nodes !== null &&
+    tree.nodes[tree.root] !== undefined
+  );
+}
 
 export interface StageRendererProps {
   readonly tree: FacetTree;
@@ -19,7 +31,12 @@ export interface StageRendererProps {
  * skipped — so a partial or imperfect stage renders as "plain", never broken.
  */
 export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode {
-  return <RenderNode tree={tree} id={tree.root} onAction={onAction} />;
+  // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
+  // the unvalidated CLI path — renders as nothing, never a crash.
+  if (!isRenderableTree(tree)) {
+    return null;
+  }
+  return <RenderNode tree={tree} id={tree.root} onAction={onAction} depth={0} />;
 }
 
 interface RenderNodeProps {
@@ -28,11 +45,12 @@ interface RenderNodeProps {
   readonly onAction?: ((action: FacetAction) => void) | undefined;
   /** Ids on the path from the root to here — used to break cycles fail-safe. */
   readonly ancestors?: ReadonlySet<NodeId> | undefined;
+  readonly depth: number;
 }
 
-function RenderNode({ tree, id, onAction, ancestors }: RenderNodeProps): ReactNode {
+function RenderNode({ tree, id, onAction, ancestors, depth }: RenderNodeProps): ReactNode {
   const node = tree.nodes[id];
-  if (node === undefined) {
+  if (node === undefined || depth > MAX_DEPTH) {
     return null;
   }
 
@@ -52,6 +70,7 @@ function RenderNode({ tree, id, onAction, ancestors }: RenderNodeProps): ReactNo
             id={childId}
             onAction={onAction}
             ancestors={childAncestors}
+            depth={depth + 1}
           />
         ));
       const action = node.onPress;
@@ -72,7 +91,10 @@ function RenderNode({ tree, id, onAction, ancestors }: RenderNodeProps): ReactNo
     case "text":
       return <p style={textStyle(node.style)}>{node.value}</p>;
     case "image":
-      return <img src={node.src} alt={node.alt} style={imageStyle(node.style)} />;
+      // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
+      return isSafeImageSrc(node.src) ? (
+        <img src={node.src} alt={node.alt} style={imageStyle(node.style)} />
+      ) : null;
     case "field":
       return (
         <label

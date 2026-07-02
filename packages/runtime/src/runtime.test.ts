@@ -8,9 +8,13 @@ const agentOf =
   () =>
     Promise.resolve(messages);
 
+const validTree = {
+  root: "root",
+  nodes: { root: { id: "root", type: "box" as const, children: [] } },
+};
 const renderPatch: ServerMessage = {
   kind: "patch",
-  patches: [{ op: "replace", path: "", value: { root: "root", nodes: {} } }],
+  patches: [{ op: "replace", path: "", value: validTree }],
 };
 
 describe("FacetRuntime.handle", () => {
@@ -20,7 +24,9 @@ describe("FacetRuntime.handle", () => {
       agent: agentOf(renderPatch, { kind: "say", text: "done" }),
     });
     await rt.handle(visitor, { kind: "message", text: "hi" });
-    expect(await rt.stageFor("v")).toEqual({ root: "root", nodes: {} });
+    const stage = await rt.stageFor("v");
+    expect(stage?.root).toBe("root");
+    expect(stage?.nodes["root"]).toMatchObject({ type: "box", children: [] });
   });
 
   it("leaves the stage unchanged for a say-only response", async () => {
@@ -51,6 +57,16 @@ describe("FacetRuntime.handle", () => {
     const out = await rt.handle(visitor, { kind: "message", text: "hi" });
     expect(out.map((m) => m.kind)).toEqual(["patch", "say"]); // both returned, no throw
     expect(await rt.stageFor("v")).toBeDefined(); // stage survived
+  });
+
+  it("sanitizes a bad root replace (render null) so the stored stage stays valid", async () => {
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "patch", patches: [{ op: "replace", path: "", value: null }] }),
+    });
+    await rt.handle(visitor, { kind: "message", text: "hi" });
+    const stage = await rt.stageFor("v");
+    expect(stage?.nodes["root"]).toBeDefined(); // validateTree restored a valid tree, not null
   });
 
   it("serializes concurrent same-visitor events (no lost update)", async () => {

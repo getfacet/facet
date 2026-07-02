@@ -18,10 +18,12 @@ function randomId(): string {
  * `localStorage`, or generated and stored on first visit so the same person maps
  * to the same session (and page) on return.
  *
- * Bring your own id instead when your app already knows who the visitor is — pass
- * a logged-in user id (or an actor id) as `visitorId` and this helper is unused.
- * The random id doubles as a first line of defense against impersonation; add a
- * verified/signed id only when an anonymous page carries sensitive data.
+ * SECURITY: the id IS the session key, and the reference `@facet/server` does not
+ * authenticate it — anyone who presents an id gets that session's stage + chat.
+ * The default here (a 128-bit random UUID) is unguessable, which is the right
+ * choice for anonymous pages. Do NOT pass a *guessable/enumerable* id (a raw
+ * sequential user id) unless your own layer authenticates the request first —
+ * otherwise one visitor can read another's page and history.
  */
 export function browserVisitorId(storageKey: string = DEFAULT_STORAGE_KEY): string {
   if (typeof localStorage === "undefined") {

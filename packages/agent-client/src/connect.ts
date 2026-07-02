@@ -80,13 +80,15 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
   let controller: AbortController | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
-  const tokenQuery =
-    options.token !== undefined ? `token=${encodeURIComponent(options.token)}` : "";
+  // Send the shared secret as a header, not a query param (query params leak into
+  // access logs / referrers).
+  const authHeaders: Record<string, string> =
+    options.token !== undefined ? { "x-facet-token": options.token } : {};
 
   const post = (path: string, body: unknown): Promise<unknown> =>
-    fetch(`${serverUrl}${path}${tokenQuery !== "" ? `?${tokenQuery}` : ""}`, {
+    fetch(`${serverUrl}${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...authHeaders },
       body: JSON.stringify(body),
     }).catch(() => undefined);
 
@@ -121,13 +123,10 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
     controller = new AbortController();
     let response: Response;
     try {
-      response = await fetch(
-        `${serverUrl}/agent/stream?agentId=${encodeURIComponent(agentId)}${tokenQuery !== "" ? `&${tokenQuery}` : ""}`,
-        {
-          headers: { Accept: "text/event-stream" },
-          signal: controller.signal,
-        },
-      );
+      response = await fetch(`${serverUrl}/agent/stream?agentId=${encodeURIComponent(agentId)}`, {
+        headers: { Accept: "text/event-stream", ...authHeaders },
+        signal: controller.signal,
+      });
     } catch {
       return; // server down — the loop will retry
     }

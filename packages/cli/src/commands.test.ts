@@ -35,6 +35,24 @@ describe("buildMessages", () => {
     expect(() => buildMessages("render", ["{not json"])).toThrow(/invalid JSON/);
   });
 
+  it("set → upsert-node patch", () => {
+    const [message] = buildMessages("set", [JSON.stringify({ id: "a", type: "text", value: "x" })]);
+    if (message?.kind !== "patch") throw new Error("expected a patch");
+    expect(message.patches).toEqual([
+      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
+    ]);
+  });
+
+  it("remove → remove-node patch", () => {
+    const [message] = buildMessages("remove", ["a"]);
+    if (message?.kind !== "patch") throw new Error("expected a patch");
+    expect(message.patches).toEqual([{ op: "remove", path: "/nodes/a" }]);
+  });
+
+  it("throws on a missing node id for remove", () => {
+    expect(() => buildMessages("remove", [])).toThrow(/node id/);
+  });
+
   it("throws on an unknown command", () => {
     expect(() => buildMessages("frobnicate", [])).toThrow(/unknown command/);
   });

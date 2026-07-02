@@ -116,4 +116,18 @@ describe("validateTree", () => {
     expect(tree.nodes["bad"]).toBeUndefined();
     expect(tree.nodes["ok"]).toBeDefined();
   });
+
+  it("does not throw or overflow on a pathologically deep tree", () => {
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: ["n0"] },
+    };
+    for (let i = 0; i < 5000; i += 1) {
+      nodes[`n${String(i)}`] = {
+        id: `n${String(i)}`,
+        type: "box",
+        children: i < 4999 ? [`n${String(i + 1)}`] : [],
+      };
+    }
+    expect(() => validateTree({ root: "root", nodes })).not.toThrow();
+  });
 });

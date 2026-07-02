@@ -110,6 +110,20 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
   return kind === "visit" || kind === "message" || kind === "action";
 }
 
+/** Shape-check an /agent/control body before resolving a pending request with it. */
+function isControlBody(
+  body: unknown,
+): body is { requestId: number; messages: readonly ServerMessage[] } {
+  if (typeof body !== "object" || body === null) return false;
+  const { requestId, messages } = body as { requestId?: unknown; messages?: unknown };
+  if (typeof requestId !== "number") return false;
+  if (!Array.isArray(messages)) return false;
+  return messages.every(
+    (m) =>
+      typeof m === "object" && m !== null && typeof (m as { kind?: unknown }).kind === "string",
+  );
+}
+
 export function createFacetServer(options: FacetServerOptions): FacetServer {
   const timeoutMs = options.agentTimeoutMs ?? 120_000;
   const staleMs = 30_000; // reap an agent that hasn't sent a heartbeat this long
@@ -185,13 +199,16 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   };
 
   const server: Server = createServer((req, res) => {
-    setCors(res);
+    const url = new URL(req.url ?? "/", "http://localhost");
+    // CORS only on the browser channel — the /agent/* control channel is a
+    // server-side (bridge) connection, not for cross-origin browser use, so don't
+    // advertise it to arbitrary web origins.
+    if (!url.pathname.startsWith("/agent/")) setCors(res);
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
       return;
     }
-    const url = new URL(req.url ?? "/", "http://localhost");
     const streamHeaders = {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -267,10 +284,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
     // The agent-side channel is a control surface for the link — gate it with the
     // shared token so a third party can't connect or inject control responses.
     if (url.pathname.startsWith("/agent/")) {
-      if (
-        options.agentToken !== undefined &&
-        url.searchParams.get("token") !== options.agentToken
-      ) {
+      if (options.agentToken !== undefined && req.headers["x-facet-token"] !== options.agentToken) {
         res.writeHead(403, { "Content-Type": "text/plain" });
         res.end("forbidden");
         return;
@@ -303,10 +317,12 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
     if (req.method === "POST" && url.pathname === "/agent/control") {
       readJson(req)
         .then((body) => {
-          const { requestId, messages } = body as {
-            requestId: number;
-            messages: readonly ServerMessage[];
-          };
+          if (!isControlBody(body)) {
+            res.writeHead(400);
+            res.end();
+            return;
+          }
+          const { requestId, messages } = body;
           const p = pending.get(requestId);
           if (p !== undefined) {
             clearTimeout(p.timer);

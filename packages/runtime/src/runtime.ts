@@ -1,6 +1,7 @@
 import {
   applyPatch,
   createSerialQueue,
+  validateTree,
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
@@ -97,6 +98,9 @@ export class FacetRuntime {
         }
       }
     }
-    return { ...session, stage };
+    // Keep the stored stage always-valid: a bad root replace (e.g. `render 'null'`
+    // on the unvalidated CLI path) is sanitized here so persistence/rehydrate
+    // never serves a corrupt tree.
+    return { ...session, stage: validateTree(stage).tree };
   }
 }
