@@ -5,31 +5,8 @@
  *   pnpm --filter @facet/playground gen "a portfolio page for a photographer"
  */
 import { mkdirSync, writeFileSync } from "node:fs";
-import type { FacetTree } from "@facet/core";
 import { generatePage } from "./generator.js";
-
-function printTree(tree: FacetTree): void {
-  const walk = (id: string, depth: number): void => {
-    const node = tree.nodes[id];
-    if (node === undefined) return;
-    const pad = "  ".repeat(depth);
-    const detail =
-      node.type === "text"
-        ? `: "${node.value}"`
-        : node.type === "image"
-          ? `: ${node.src}`
-          : node.type === "field"
-            ? `: ${node.name}`
-            : "";
-    const press =
-      node.type === "box" && node.onPress !== undefined ? ` [→ ${node.onPress.name}]` : "";
-    console.log(`${pad}${node.type}${detail}${press}`);
-    if (node.type === "box") {
-      for (const child of node.children) walk(child, depth + 1);
-    }
-  };
-  walk(tree.root, 0);
-}
+import { printTree } from "./print-tree.js";
 
 async function main(): Promise<void> {
   const request =

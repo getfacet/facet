@@ -15,6 +15,7 @@ import {
 } from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
 import { nova } from "./nova.js";
+import { printTree } from "./print-tree.js";
 
 const runtime = new FacetRuntime({ agentId: "nova", agent: nova });
 
@@ -31,18 +32,7 @@ function render(messages: readonly ServerMessage[], base: FacetTree): FacetTree 
 
 function printStage(label: string, tree: FacetTree): void {
   console.log(`\n── ${label} ─────────────────────────────`);
-  const walk = (nodeId: string, depth: number): void => {
-    const node = tree.nodes[nodeId];
-    if (node === undefined) return;
-    const pad = "  ".repeat(depth);
-    const summary = node.type === "text" ? `: "${node.value}"` : "";
-    const pressable = node.type === "box" && node.onPress !== undefined ? " [pressable]" : "";
-    console.log(`${pad}${node.type}${summary}${pressable}`);
-    if (node.type === "box") {
-      for (const child of node.children) walk(child, depth + 1);
-    }
-  };
-  walk(tree.root, 0);
+  printTree(tree);
 }
 
 async function main(): Promise<void> {

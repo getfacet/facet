@@ -13,6 +13,7 @@ import { createFacetServer } from "@facet/server";
 import { FileSink, FileStageStore } from "@facet/runtime/node";
 import { page, text } from "@facet/kit";
 import { generatePage } from "./generator.js";
+import { welcome } from "./ui.js";
 
 // The offline face — built from presets, shown to a fresh visitor when no agent
 // is connected (instead of a blank page).
@@ -36,36 +37,13 @@ const durable = process.env.FACET_STORE === "file";
 const stageStore = durable ? new FileStageStore(".facet-sessions/stage") : undefined;
 const sink = durable ? new FileSink(".facet-sessions/chat") : undefined;
 
-function welcome(): FacetTree {
-  return {
-    root: "root",
-    nodes: {
-      root: {
-        id: "root",
-        type: "box",
-        style: { direction: "col", gap: "md", pad: "2xl", align: "center" },
-        children: ["h", "p"],
-      },
-      h: {
-        id: "h",
-        type: "text",
-        value: "What should this page be?",
-        style: { size: "2xl", weight: "bold" },
-      },
-      p: {
-        id: "p",
-        type: "text",
-        value:
-          'Type a request below — e.g. "a landing page for a bakery" — and I\'ll build it live.',
-        style: { color: "fg-muted", align: "center" },
-      },
-    },
-  };
-}
-
 const agent = defineAgent(async ({ event, session, stage }) => {
   if (event.kind === "visit") {
-    stage.render(welcome());
+    stage.render(
+      welcome(
+        'Type a request below — e.g. "a landing page for a bakery" — and I\'ll build it live.',
+      ),
+    );
     return;
   }
   if (event.kind === "action") {

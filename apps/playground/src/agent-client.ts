@@ -9,42 +9,16 @@
  *
  * FACET_AGENT=echo for a fast no-LLM agent.
  */
-import type { FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { connectAgent } from "@facet/agent-client";
 import { generatePage } from "./generator.js";
+import { welcome } from "./ui.js";
 
 const useLlm = process.env.FACET_AGENT !== "echo";
 
-function welcome(): FacetTree {
-  return {
-    root: "root",
-    nodes: {
-      root: {
-        id: "root",
-        type: "box",
-        style: { direction: "col", gap: "md", pad: "2xl", align: "center" },
-        children: ["h", "p"],
-      },
-      h: {
-        id: "h",
-        type: "text",
-        value: "What should this page be?",
-        style: { size: "2xl", weight: "bold" },
-      },
-      p: {
-        id: "p",
-        type: "text",
-        value: "Type a request — an external agent (this process) will build it.",
-        style: { color: "fg-muted", align: "center" },
-      },
-    },
-  };
-}
-
 const logic = defineAgent(async ({ event, session, stage }) => {
   if (event.kind === "visit") {
-    stage.render(welcome());
+    stage.render(welcome("Type a request — an external agent (this process) will build it."));
     return;
   }
   if (event.kind === "action") {
