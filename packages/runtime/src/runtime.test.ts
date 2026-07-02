@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FacetAgent, ServerMessage } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
+import type { Sink, StoredEvent } from "./sink.js";
 
 const visitor = { visitorId: "v" };
 const agentOf =
@@ -67,6 +68,36 @@ describe("FacetRuntime.handle", () => {
     await rt.handle(visitor, { kind: "message", text: "hi" });
     const stage = await rt.stageFor("v");
     expect(stage?.nodes["root"]).toBeDefined(); // validateTree restored a valid tree, not null
+  });
+
+  it("persists sink records in event order with an async sink", async () => {
+    // The first record resolves after a delay, the second immediately. With a
+    // raw fire-and-forget record the fast second would persist before the slow
+    // first; a per-session serial queue must keep completion order [e1, e2].
+    const persisted: string[] = [];
+    const sink: Sink = {
+      record: (_agentId: string, _visitorId: string, entry: StoredEvent): Promise<void> => {
+        const text = (entry.event as { text?: string }).text;
+        const delay = text === "e1" ? 20 : 0;
+        return new Promise<void>((resolve) => {
+          setTimeout(() => {
+            if (text !== undefined) persisted.push(text);
+            resolve();
+          }, delay);
+        });
+      },
+      history: (): Promise<readonly StoredEvent[]> => Promise.resolve([]),
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "say", text: "ok" }),
+      sink,
+    });
+    await rt.handle(visitor, { kind: "message", text: "e1" });
+    await rt.handle(visitor, { kind: "message", text: "e2" });
+    // Let the delayed first record settle before asserting order.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(persisted).toEqual(["e1", "e2"]);
   });
 
   it("serializes concurrent same-visitor events (no lost update)", async () => {

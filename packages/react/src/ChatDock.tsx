@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { COLOR } from "./theme.js";
 
 export interface ChatMessage {
   /** Who said it — e.g. "You" or the agent's name. */
@@ -66,7 +67,7 @@ export function ChatDock({
 
 const styles: Record<string, CSSProperties> = {
   dock: {
-    border: "1px solid #e2e5ea",
+    border: `1px solid ${COLOR.border}`,
     borderRadius: "12px",
     overflow: "hidden",
     background: "#fbfbfc",
@@ -76,12 +77,17 @@ const styles: Record<string, CSSProperties> = {
     overflowY: "auto",
     padding: "10px 14px",
     fontSize: "13px",
-    color: "#1a1d23",
+    color: COLOR.fg,
   },
   line: { marginBottom: "4px" },
-  who: { fontWeight: 600, color: "#4f46e5" },
-  pending: { color: "#6b7280", fontStyle: "italic" },
-  inputRow: { display: "flex", gap: "8px", padding: "10px 14px", borderTop: "1px solid #eceef1" },
+  who: { fontWeight: 600, color: COLOR.accent },
+  pending: { color: COLOR["fg-muted"], fontStyle: "italic" },
+  inputRow: {
+    display: "flex",
+    gap: "8px",
+    padding: "10px 14px",
+    borderTop: `1px solid ${COLOR["surface-2"]}`,
+  },
   input: {
     flex: 1,
     padding: "8px 10px",
@@ -93,8 +99,8 @@ const styles: Record<string, CSSProperties> = {
     padding: "8px 14px",
     borderRadius: "8px",
     border: "none",
-    background: "#4f46e5",
-    color: "#fff",
+    background: COLOR.accent,
+    color: COLOR["accent-fg"],
     fontWeight: 600,
     cursor: "pointer",
   },

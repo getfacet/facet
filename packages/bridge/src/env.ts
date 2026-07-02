@@ -27,3 +27,20 @@ export function safeEnv(extra: Record<string, string> = {}): Record<string, stri
   }
   return env;
 }
+
+/**
+ * Parse a bridge port from an env var. `undefined` passes through (use the
+ * default); otherwise it must be an integer in 1–65535 or we throw a clear error
+ * naming the offending value — so a typo fails fast instead of `Number("abc")`
+ * silently handing `NaN` to `server.listen`.
+ */
+export function parseBridgePort(value: string | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  const port = Number(value);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(
+      `Invalid FACET_BRIDGE_PORT ${JSON.stringify(value)}: expected an integer 1–65535.`,
+    );
+  }
+  return port;
+}

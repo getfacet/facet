@@ -102,9 +102,170 @@ describe("applyPatch (RFC 6902)", () => {
     expect(() => applyPatch(EMPTY_TREE, [{ op: "test", path: "/root", value: "nope" }])).toThrow();
   });
 
+  it("test op passes on deep-equal values regardless of key order", () => {
+    const seeded = applyPatch(EMPTY_TREE, [
+      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "hi" } },
+    ]);
+    // Same value, keys in a DIFFERENT order. JSON.stringify equality rejects
+    // this (text differs); RFC 6902 compares values, so deep equality accepts.
+    expect(() =>
+      applyPatch(seeded, [
+        { op: "test", path: "/nodes/a", value: { value: "hi", id: "a", type: "text" } },
+      ]),
+    ).not.toThrow();
+  });
+
+  it("test op deep-equals nested arrays and objects (key order aside)", () => {
+    const seeded = applyPatch(EMPTY_TREE, [
+      {
+        op: "add",
+        path: "/nodes/a",
+        value: {
+          id: "a",
+          type: "box",
+          children: ["x", "y"],
+          style: { gap: "md", direction: "col" },
+        },
+      },
+    ]);
+    // Nested object keys reordered — still deep-equal.
+    expect(() =>
+      applyPatch(seeded, [
+        {
+          op: "test",
+          path: "/nodes/a",
+          value: {
+            type: "box",
+            children: ["x", "y"],
+            id: "a",
+            style: { direction: "col", gap: "md" },
+          },
+        },
+      ]),
+    ).not.toThrow();
+    // A genuine array-element difference still fails.
+    expect(() =>
+      applyPatch(seeded, [{ op: "test", path: "/nodes/a/children", value: ["x", "z"] }]),
+    ).toThrow();
+    // A differing array length still fails.
+    expect(() =>
+      applyPatch(seeded, [{ op: "test", path: "/nodes/a/children", value: ["x"] }]),
+    ).toThrow();
+  });
+
   it("throws on an op whose parent path is missing (the documented contract)", () => {
     expect(() =>
       applyPatch(EMPTY_TREE, [{ op: "add", path: "/nodes/missing/children/-", value: "x" }]),
     ).toThrow();
+  });
+});
+
+describe("applyPatch — strict RFC 6901 array indices", () => {
+  const seeded = applyPatch(EMPTY_TREE, [
+    { op: "add", path: "/nodes/root/children/-", value: "a" },
+    { op: "add", path: "/nodes/root/children/-", value: "b" },
+  ]);
+  const childrenOf = (tree: typeof seeded): string[] =>
+    (tree.nodes["root"] as unknown as { children: string[] }).children;
+
+  for (const bad of ["-1", "", "1.5", "01"]) {
+    it(`add rejects a malformed array index "${bad}"`, () => {
+      expect(() =>
+        applyPatch(seeded, [{ op: "add", path: `/nodes/root/children/${bad}`, value: "z" }]),
+      ).toThrow(/invalid array index/);
+    });
+  }
+
+  it("add rejects an out-of-range index (> length)", () => {
+    // length is 2, so index 3 would leave a gap.
+    expect(() =>
+      applyPatch(seeded, [{ op: "add", path: "/nodes/root/children/3", value: "z" }]),
+    ).toThrow(/out of range/);
+  });
+
+  it("add allows index == length (the boundary) and `-` append", () => {
+    const viaIndex = applyPatch(seeded, [
+      { op: "add", path: "/nodes/root/children/2", value: "z" },
+    ]);
+    expect(childrenOf(viaIndex)).toEqual(["a", "b", "z"]);
+    const viaAppend = applyPatch(seeded, [
+      { op: "add", path: "/nodes/root/children/-", value: "z" },
+    ]);
+    expect(childrenOf(viaAppend)).toEqual(["a", "b", "z"]);
+  });
+
+  it("remove/replace require index < length (reject == length and `-`)", () => {
+    expect(() => applyPatch(seeded, [{ op: "remove", path: "/nodes/root/children/2" }])).toThrow(
+      /out of range/,
+    );
+    expect(() =>
+      applyPatch(seeded, [{ op: "replace", path: "/nodes/root/children/2", value: "z" }]),
+    ).toThrow(/out of range/);
+    expect(() => applyPatch(seeded, [{ op: "remove", path: "/nodes/root/children/-" }])).toThrow(
+      /invalid array index/,
+    );
+  });
+
+  it("remove/replace accept a valid in-range index", () => {
+    const removed = applyPatch(seeded, [{ op: "remove", path: "/nodes/root/children/0" }]);
+    expect(childrenOf(removed)).toEqual(["b"]);
+    const replaced = applyPatch(seeded, [
+      { op: "replace", path: "/nodes/root/children/1", value: "z" },
+    ]);
+    expect(childrenOf(replaced)).toEqual(["a", "z"]);
+  });
+
+  it("traversal through a malformed array index throws", () => {
+    const nested = applyPatch(EMPTY_TREE, [
+      { op: "add", path: "/nodes/a", value: { id: "a", type: "box", children: ["x"] } },
+    ]);
+    expect(() =>
+      applyPatch(nested, [{ op: "test", path: "/nodes/a/children/01", value: "x" }]),
+    ).toThrow(/invalid array index/);
+  });
+});
+
+describe("applyPatch — move/copy against array indices", () => {
+  // move/copy are the only ops whose target uses the "add" (insert) mode AND
+  // whose source reads an array element — so their setMember/childOf wiring is
+  // observable only through arrays (with object keys, add vs replace coincide).
+  const seeded = applyPatch(EMPTY_TREE, [
+    { op: "add", path: "/nodes/root/children/-", value: "a" },
+    { op: "add", path: "/nodes/root/children/-", value: "b" },
+    { op: "add", path: "/nodes/root/children/-", value: "c" },
+  ]);
+  const childrenOf = (tree: typeof seeded): string[] =>
+    (tree.nodes["root"] as unknown as { children: string[] }).children;
+
+  it("in-array move reorders children (target inserts, does not overwrite)", () => {
+    // remove index 2 → ["a","b"], then insert "c" at index 0 → ["c","a","b"].
+    // If the target used "replace" mode it would overwrite index 0 → ["c","b"].
+    const out = applyPatch(seeded, [
+      { op: "move", from: "/nodes/root/children/2", path: "/nodes/root/children/0" },
+    ]);
+    expect(childrenOf(out)).toEqual(["c", "a", "b"]);
+  });
+
+  it("copy to `-` appends the copied element", () => {
+    const out = applyPatch(seeded, [
+      { op: "copy", from: "/nodes/root/children/0", path: "/nodes/root/children/-" },
+    ]);
+    expect(childrenOf(out)).toEqual(["a", "b", "c", "a"]);
+  });
+
+  it("move-from an out-of-range index throws", () => {
+    expect(() =>
+      applyPatch(seeded, [
+        { op: "move", from: "/nodes/root/children/5", path: "/nodes/root/children/0" },
+      ]),
+    ).toThrow(/out of range/);
+  });
+
+  it("copy-from `-` throws (access mode rejects the append token)", () => {
+    expect(() =>
+      applyPatch(seeded, [
+        { op: "copy", from: "/nodes/root/children/-", path: "/nodes/root/children/-" },
+      ]),
+    ).toThrow(/invalid array index/);
   });
 });

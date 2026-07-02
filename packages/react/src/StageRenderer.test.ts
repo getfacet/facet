@@ -138,6 +138,57 @@ describe("StageRenderer fail-safe boundary", () => {
   });
 });
 
+// The live patch path can produce a box whose children list repeats an id
+// (validateTree dedupes siblings; the raw path does not). React needs unique
+// keys, so the renderer keeps only the first occurrence.
+describe("StageRenderer sibling dedupe", () => {
+  it("renders a duplicated sibling id only once", () => {
+    const out = render(
+      tree({ root: box("root", ["a", "a", "b"]), a: text("a", "dup"), b: text("b", "other") }),
+    );
+    expect(out.match(/dup/g)).toHaveLength(1);
+    expect(out).toContain("other");
+  });
+});
+
+// The raw live-patch path can put arbitrary JSON in a field's name/placeholder/
+// input. name/placeholder coerce to strings (omitted otherwise) and input is
+// constrained to the FIELD_INPUTS token set (else "text"), mirroring core.
+describe("StageRenderer field coercion", () => {
+  const field = (extra: Record<string, unknown>): FacetTree =>
+    tree({
+      root: box("root", ["f"]),
+      f: { id: "f", type: "field", ...extra } as unknown as FacetNode,
+    });
+
+  it("falls back to type=text for a junk input value", () => {
+    const out = render(field({ input: 999 }));
+    expect(out).toContain('type="text"');
+  });
+
+  it("falls back to type=text for an unknown input token", () => {
+    const out = render(field({ input: "color" }));
+    expect(out).toContain('type="text"');
+  });
+
+  it("keeps a valid input token (email)", () => {
+    const out = render(field({ input: "email" }));
+    expect(out).toContain('type="email"');
+  });
+
+  it("omits a non-string name and placeholder", () => {
+    const out = render(field({ name: 42, placeholder: { bad: 1 } }));
+    expect(out).not.toContain("name=");
+    expect(out).not.toContain("placeholder=");
+  });
+
+  it("keeps string name and placeholder", () => {
+    const out = render(field({ name: "email", placeholder: "you@x.com" }));
+    expect(out).toContain('name="email"');
+    expect(out).toContain('placeholder="you@x.com"');
+  });
+});
+
 describe("StageRenderer happy path", () => {
   it("renders all four bricks", () => {
     const out = render(

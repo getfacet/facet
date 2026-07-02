@@ -58,6 +58,52 @@ describe("StageRenderer interactions (jsdom)", () => {
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "go", payload: { id: "7" } });
   });
 
+  it("filters non-primitive payload values from a raw-path press", () => {
+    const onAction = vi.fn();
+    const rootWithNoisyPayload = {
+      id: "root",
+      type: "box",
+      onPress: { name: "go", payload: { ok: 1, bad: { nested: true }, alsoBad: [1] } },
+      children: ["t"],
+    } as unknown as FacetNode;
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: rootWithNoisyPayload,
+          t: { id: "t", type: "text", value: "press me" },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button"));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    // Only string/number/boolean payload values survive (mirror of core asAction).
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "go", payload: { ok: 1 } });
+  });
+
+  it("emits no payload for an array payload from a raw-path press", () => {
+    const onAction = vi.fn();
+    const rootWithArrayPayload = {
+      id: "root",
+      type: "box",
+      onPress: { name: "go", payload: ["a", 5] },
+      children: ["t"],
+    } as unknown as FacetNode;
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: rootWithArrayPayload,
+          t: { id: "t", type: "text", value: "press me" },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button"));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    // An array is not a payload object (mirror of core asAction/isObject) — omit it entirely.
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "go" });
+  });
+
   it("does not expose a button for a non-pressable box", () => {
     render(
       <StageRenderer

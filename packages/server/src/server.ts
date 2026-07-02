@@ -91,13 +91,30 @@ function sse(res: ServerResponse, data: unknown): void {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 }
 
-function readJson(req: IncomingMessage): Promise<unknown> {
+/** Max accepted request body. A single-operator reference transport still shouldn't
+ * buffer an unbounded upload into memory, so both POST channels (/event and
+ * /agent/control) cap here. Raise it if a legitimate payload (a large stage patch)
+ * grows past this; lower it to tighten the DoS surface. */
+const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MiB
+
+function readJson(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Promise<unknown> {
   return new Promise((resolve, reject) => {
     let body = "";
+    let size = 0;
     // utf8 decoding must happen on the stream (a multibyte char split across
     // two chunks corrupts under per-chunk String()).
     req.setEncoding("utf8");
-    req.on("data", (chunk: string) => (body += chunk));
+    req.on("data", (chunk: string) => {
+      size += Buffer.byteLength(chunk, "utf8");
+      if (size > maxBytes) {
+        // Past the cap: stop buffering, shed the rest of the upload, and reject so
+        // the caller's existing `.catch` answers 400.
+        reject(new Error("request body exceeds size cap"));
+        req.destroy();
+        return;
+      }
+      body += chunk;
+    });
     req.on("end", () => {
       try {
         resolve(JSON.parse(body));
@@ -132,7 +149,14 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
     if (typeof action !== "object" || action === null) return false;
     if (typeof (action as { name?: unknown }).name !== "string") return false;
     const payload = (action as { payload?: unknown }).payload;
-    return payload === undefined || (typeof payload === "object" && payload !== null);
+    if (payload === undefined) return true;
+    // Mirror core's asAction: the payload must be a plain object (its `isObject`
+    // excludes arrays and null), and every value a primitive — otherwise a nested
+    // object or an array would pass a kind-only check and reach the agent.
+    if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return false;
+    return Object.values(payload).every(
+      (v) => typeof v === "string" || typeof v === "number" || typeof v === "boolean",
+    );
   }
   return false;
 }
@@ -274,28 +298,54 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       }
       res.writeHead(200, streamHeaders);
       res.write(": connected\n\n");
-      let set = browserStreams.get(visitorId);
-      if (set === undefined) {
-        set = new Set();
-        browserStreams.set(visitorId, set);
-      }
-      set.add(res);
-      // Re-hydrate a (re)connecting viewer: the current page, then past chat.
+      let closed = false;
+      req.on("close", () => {
+        closed = true;
+        const set = browserStreams.get(visitorId);
+        set?.delete(res);
+        // Prune the empty Set so browserStreams doesn't grow unbounded.
+        if (set?.size === 0) browserStreams.delete(visitorId);
+      });
+      // Re-hydrate a (re)connecting viewer — current page (full replace), then past
+      // chat — and WRITE those frames BEFORE joining the live fan-out set. Joining
+      // first (as before) let a stale full-replace, snapshotted before a concurrent
+      // live patch, resolve afterwards and roll the viewer back to the old stage.
+      //
+      // RESIDUAL (frames landing in the snapshot-read→set-join window below are not
+      // re-sent to this connection): a `say` produced in the window can be LOST here
+      // (historyFor reads the sink directly while handleOne records fire-and-forget,
+      // so the say may not be persisted yet AND arrives before we join); an
+      // incremental patch produced in the window is dropped, and since the client's
+      // applyPatch throws on the now-stale tree the viewer only catches up on the
+      // NEXT reconnect (a fresh full-snapshot replay), not the next event. Accepted
+      // for now; the full fix (version/seq gating on frames) is deferred to a later
+      // round per the recorded waiver.
       void (async () => {
         const stage = await runtime.stageFor(visitorId);
+        if (closed) return;
         if (stage !== undefined) {
           sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] });
         }
         for (const entry of await runtime.historyFor(visitorId)) {
+          if (closed) return;
           for (const message of entry.messages) {
             if (message.kind === "say") sse(res, message);
           }
         }
-      })().catch((error: unknown) => console.error("[facet] rehydrate failed:", error));
-      req.on("close", () => {
-        set?.delete(res);
-        // Prune the empty Set so browserStreams doesn't grow unbounded.
-        if (set?.size === 0) browserStreams.delete(visitorId);
+        if (closed) return;
+        let set = browserStreams.get(visitorId);
+        if (set === undefined) {
+          set = new Set();
+          browserStreams.set(visitorId, set);
+        }
+        set.add(res);
+      })().catch((error: unknown) => {
+        // Rehydrate failed BEFORE the connection joined the fan-out set — logging
+        // alone would strand the viewer on a healthy-looking SSE stream that never
+        // gets patches and never reconnects (the server only pings agent streams).
+        // End the response so EventSource auto-reconnects and retries the rehydrate.
+        console.error("[facet] rehydrate failed:", error);
+        res.end();
       });
       return;
     }

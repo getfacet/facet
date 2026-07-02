@@ -1,9 +1,10 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ForwardSink, MemorySink, NullSink, type Sink, type StoredEvent } from "./sink.js";
 import { FileSink } from "./file-sink.js";
+import { sessionFilePath } from "./session-file.js";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "facet-sink-"));
@@ -45,6 +46,40 @@ describe("FileSink durability", () => {
     expect((await new FileSink(dir).history("agent", "v"))[0]?.event).toMatchObject({
       text: "remember",
     });
+  });
+});
+
+describe("FileSink resilient replay", () => {
+  it("skips a corrupt line but keeps the good lines around it", async () => {
+    const dir = tempDir();
+    writeFileSync(
+      sessionFilePath(dir, "a", "v", "jsonl"),
+      `${JSON.stringify(entry(1, "one"))}\n{ not json\n${JSON.stringify(entry(2, "two"))}\n`,
+    );
+    const history = await new FileSink(dir).history("a", "v");
+    expect(history.map((e) => e.at)).toEqual([1, 2]);
+  });
+
+  it("skips a wrong-shape line but keeps the good lines around it", async () => {
+    const dir = tempDir();
+    writeFileSync(
+      sessionFilePath(dir, "a", "v", "jsonl"),
+      `${JSON.stringify(entry(1, "one"))}\n${JSON.stringify({ foo: "bar" })}\n${JSON.stringify(entry(2, "two"))}\n`,
+    );
+    const history = await new FileSink(dir).history("a", "v");
+    expect(history.map((e) => e.at)).toEqual([1, 2]);
+  });
+
+  it("skips a line whose messages array holds a null element", async () => {
+    const dir = tempDir();
+    // Array.isArray passes but replay's `message.kind` would throw on the null.
+    const badLine = JSON.stringify({ at: 9, event: {}, messages: [null] });
+    writeFileSync(
+      sessionFilePath(dir, "a", "v", "jsonl"),
+      `${JSON.stringify(entry(1, "one"))}\n${badLine}\n${JSON.stringify(entry(2, "two"))}\n`,
+    );
+    const history = await new FileSink(dir).history("a", "v");
+    expect(history.map((e) => e.at)).toEqual([1, 2]);
   });
 });
 
