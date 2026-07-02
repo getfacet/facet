@@ -4,54 +4,18 @@
 > these on their own merits (not under a feature gate): `/spec-bridge` (this file
 > as input) → `/implement`, or fix item-by-item with `/verify` after each.
 >
-> **Sources (fresh, against current `main` 2026-07-02) — sweep COMPLETE:**
-> - code-review: 6 lanes (`wf_4e2fadd0-31d`, 14 confirmed) + `types` lane
->   (`wf_0f294ddd-bb4`, 2 confirmed).
-> - refactor-audit: 5 dimensions (`wf_84bc52dc-f8f`, 6 confirmed) + `hygiene`
->   dimension (`wf_4d26ff5d-8e6`, 2 confirmed).
-> All 7 code-review lanes + all 5 refactor-audit dimensions ran and were
-> adversarially verified. 24 confirmed findings total.
+> **Status:** Hardening campaign 1 (PR #3, merged 2026-07-02) fixed 21 of the 24
+> findings from the original complete sweep (`specs/dev-specs/hardening-1.md` has
+> the finding→fix mapping and recorded waivers). What follows is the REMAINING
+> work: the three deferred scale items, the two deliberately-dropped items, and
+> the residual P3s surfaced by campaign 1's own adversarially-verified review.
 
-## P2 — should-fix
+## P2 — scale / async-delivery (deferred umbrella — design before fixing)
 
-### Correctness
-- **[P2] react/StageRenderer.tsx + core/validate.ts** — Duplicate sibling child
-  ids survive validateTree → two `RenderNode`s with the same React `key` →
-  unstable reconciliation ("rendered broken", violates fail-safe invariant #2).
-  Trigger: `children:["a","a"]` on the raw path or a double `stage.append`.
-  *Fix:* dedupe sibling child ids in validateTree AND in the renderer's child pass.
-- **[P2] react/StageRenderer.tsx:113 (classifyPress)** — the raw-path `onPress`
-  payload is cast to `Record<string, string|number|boolean>` after only a
-  `typeof === "object"` check — nested/non-primitive values are never filtered
-  (drift from validate's `asAction`), so a bad payload reaches `onAction` →
-  transport → agent typed as primitives-only. `server.ts` isEventBody has the same
-  hole. *Fix:* filter payload values to primitives in classifyPress (mirror
-  asAction), and/or in isEventBody.
-- **[P2] server/server.ts:277-294** — `/stream` reconnect rehydrate can overwrite
-  a newer live patch (ordering race): the res is added to the fan-out set before
-  the async `stageFor()` snapshot, so a concurrent `/event` v2 patch can land
-  before the v1 full-replace rehydrate reverts the client. Manifests on
-  File/Postgres stores (I/O gap); `stageFor` also bypasses the per-visitor serial
-  queue. *Fix:* order rehydrate before joining the fan-out set, or carry a stage
-  version/seq and drop stale full-replaces.
+Deferred from campaign 1 by scope pin (`specs/context/hardening-1.md`). These
+need a design round (version/seq on frames, delivery guarantees) before code —
+start with `/feature-intake`.
 
-### Single-source (from refactor-audit)
-- **[P2] core/validate.ts + react/StageRenderer.tsx** — `MAX_DEPTH = 100`
-  duplicated in two packages (raise one → the other silently truncates). *Fix:*
-  `export` it from @facet/core, import in the renderer; reconcile `>=` vs `>`.
-- **[P2] react/ChatDock.tsx + react/theme.ts** — ChatDock re-hardcodes the exact
-  theme hex values; `theme.ts` claims to be "the one place pixels and hex live"
-  but `COLOR` is unexported. *Fix:* export the palette, reference it in ChatDock.
-
-### Test gaps (highest-value coverage)
-- **[P2] bridge/persistent.ts:73-229** — `createPersistentDriver` coordination
-  (pending queue / input() generator / settleAll / dead-guard / malformed-event
-  skip) has ZERO tests. *Fix:* driver tests with a faked `query`. (Prior waiver.)
-- **[P2] client/sse-transport.ts:50-62** — the reconnect `reset` synthesis (drop
-  the `if (opened)` guard and duplicate-chat returns) is untested. *Fix:* a test
-  that fires `onopen` twice and asserts a `reset` on re-open.
-
-### Scale / async-delivery (deferred umbrella — design before fixing)
 - **[P2] server/server.ts** — per-event timeout silently discards a queued
   agent turn's completed result (routine in persistent mode).
 - **[P2] bridge/bridge.ts** — spawn mode: unbounded concurrent brain CLIs keyed
@@ -59,57 +23,80 @@
 - **[P2] server + bridge** — server remote-agent handshake and per-kind `/event`
   validation have no HTTP-level regression tests (needs a small server test
   harness).
+- Folds in two waived residuals from campaign 1 (both documented in code and in
+  RISK-HRD-3/4): the `/stream` rehydrate window can lose a `say` under an
+  *async* sink (in-memory reference unaffected), and the client send chain has
+  no fetch timeout (`AbortSignal.timeout` is the cheap interim fix). A stage
+  version/seq design closes the first properly.
 
-## P3 — nits (track, fix opportunistically)
+## P3 — dropped from campaign 1 with recorded reasons
 
-- **[P3] runtime/file-stage-store.ts + file-sink.ts** — non-atomic `writeFileSync`
-  + swallowed parse errors: a crash/ENOSPC mid-write silently resets the session;
-  a wrong-shape-but-valid-JSON file poisons it. *Fix:* write-temp-then-rename +
-  shape-check on read. (corrupt-input fail-safe branches also untested.)
-- **[P3] core/patch.ts:175** — RFC 6902 `test` op uses `JSON.stringify` equality
-  (key-order sensitive). *Fix:* deep-equal.
-- **[P3] core/patch.ts** — array-index handling: negative / out-of-range / `""` /
-  float indices insert wrong-position or literal `undefined` instead of erroring.
-- **[P3] react/StageRenderer.tsx:285** — field case does not coerce
-  name/placeholder/input on the raw path, and `input` isn't constrained to
-  `FIELD_INPUTS`, unlike every other coerced node. *Fix:* coerce like the others.
-- **[P3] react/theme.ts:111-117** — token maps are prototype-bearing object
-  literals; a `__proto__`/`constructor` token name resolves to a function on the
-  raw path. *Fix:* `Object.create(null)` maps (same class as the validate fix).
-- **[P3] server/server.ts** — reference server: `/agent/*` unauthenticated by
-  default + CORS `*`. Documented trust model (SECURITY.md); revisit if a
-  hardened/multi-tenant deploy path appears. Also: readJson has no body-size cap.
-- **[P3] client/sse-transport.ts:34-43** — visitor events fire as unordered
-  concurrent POSTs; a visitor's messages can be processed out of order.
-- **[P3] agent-client/connect.ts** — retries a terminal 403/409 forever, silently.
-- **[P3] runtime/runtime.ts** — fire-and-forget `sink.record` can persist events
-  out of order in an async sink (misordered history replay).
-- **[P3] bridge/cli.ts + bridge.ts** — default serverURL/port encoded twice
-  (drift risk); non-numeric `FACET_BRIDGE_PORT` crashes with an uncaught error;
-  env-config doc omits `FACET_AGENT_TOKEN`.
-- **[P3] bridge/bridge.ts** — spawn `sessionIds` map grows unbounded (one entry
-  per visitorId ever seen).
-- **[P3] apps/playground/package.json** — declares `@facet/bridge` but never
-  imports it (phantom dependency). *Fix:* remove it.
 - **[P3] naming** — the concept is "visitor" in every identifier but "viewer" in
   ~15 comments across 5 packages; `BridgeOptions.mode` vs `method` are
-  near-synonyms for two levels of one knob. *Fix:* pick one term each.
-- **[P3] runtime/session-file.ts** — filename path-safety encoding has no test.
-- **[P3] core/validate.ts** — `isSafeImageSrc` branch coverage: only
-  `javascript:`/`https:` tested; `data:image/` vs `data:text/html` and `//` vs `/`
-  branches unpinned.
-- **[P3] agent-client/connect.ts** — the agent-error fallback + event routing are
-  untested (only the pure `parseSseFrames` helper is covered).
-- **[P3] packages/*/ (hygiene)** — 9 of 11 publishable `@facet/*` packages have no
-  README (only bridge + client do); all carry `publishConfig.access:public`, so
-  they'd land on npm with a blank page. *Fix:* short README per package before
-  first release (mirror the package.json description + a usage snippet).
-- **[P3] server/server.ts (hygiene)** — `createFacetServer` is a 271-line function
-  (429-line file, largest in the tree): request dispatch + SSE wiring + control
-  handling + lifecycle inline in one closure. *Fix:* extract per-request dispatch
-  into named helpers alongside the existing `setCors`/`sse`/`readJson` helpers.
+  near-synonyms for two levels of one knob. *Fix:* a standalone comment-only
+  sweep commit; decide `mode`/`method` deliberately BEFORE first npm release
+  (renaming after is breaking).
+- **[P3] server/server.ts (hygiene)** — `createFacetServer` is a ~300-line
+  function: request dispatch + SSE wiring + control handling + lifecycle in one
+  closure. *Fix:* dedicated refactor PR (extract per-request dispatch into named
+  helpers); deliberately kept out of campaign 1 so behavior fixes stayed
+  reviewable. Re-run `/refactor-audit` first.
+
+## P3 — residuals from campaign 1's review (track, fix opportunistically)
+
+Found by the campaign's own `/code-review` verification pass; all confirmed
+real but downgraded/non-blocking. Evidence in the PR #3 review record.
+
+- **core/patch.ts + runtime vs react** — server salvages a partially-bad patch
+  batch per-op while the client drops the whole batch (`useFacet` keeps the
+  current tree) and the server forwards the ORIGINAL batch — a mixed batch
+  diverges the live view until reconnect. Pre-existing design asymmetry, no
+  in-repo producer can trigger it today. *Fix (design):* forward the salvaged
+  batch instead of the original, or unify the error policy both sides.
+- **core/patch.ts (deepEqual)** — recurses without a depth bound; a ~50k-deep
+  `test` value blows the stack (absorbed by runtime salvage; agent-supplied
+  input only). *Fix:* depth guard for parity with `MAX_DEPTH`.
+- **server/server.ts (readJson)** — the oversize-body path rejects then
+  `req.destroy()`s, so the client usually sees a connection reset, not the
+  400 the comment claims. Cap works; contract is overstated. *Fix:* respond
+  413/400 before destroying, or fix the comment.
+- **server/server.ts (close)** — a stream mid-rehydrate is in no fan-out set,
+  so shutdown relies solely on `server.closeAllConnections?.()` (absent before
+  Node 18.2) — `close()` can hang on old Node. *Fix:* track pre-join responses
+  or pin engines >= 18.2.
+- **agent-client/connect.ts** — a terminal refusal (403 / exhausted-409) is
+  observable only via `console.error`: `onStatus` never fires and
+  `AgentConnection` exposes no state, so an embedder can't distinguish
+  "retrying" from "gave up". Also `response.body` is never cancelled on non-ok
+  responses (one pinned socket per retry under undici). *Fix:* a
+  `"refused"`-style status or `onError` callback + `void response.body?.cancel()`.
+- **agent-client/connect.test.ts** — the sustained-409 test asserts the error
+  log + loop stop but not the fetch call count, so a regression back to
+  attempt-counted budgeting would pass it. *Fix:* assert the count.
+- **runtime + bridge (LRU duplication)** — the bounded re-insert-on-touch LRU
+  now lives in `FileStageStore.cachePut` AND `bridge` `touchSessionId`, and
+  neither eviction path has a test (silent, user-visible failure: an active
+  visitor's `--resume` id evicted → conversation resets). *Fix:* extract a
+  shared helper (creates the missing unit seam), one test covers both.
+- **bridge/env.test.ts** — the `BRIDGE_DEFAULTS` pin test is a pure
+  change-detector (cli.ts has no test seam); don't count it as drift coverage.
+- **react/ChatDock.tsx** — two near-palette hexes remain (`#fbfbfc` dock
+  background, `#d7dbe0` input border): a COLOR-map reskin restyles the rest of
+  ChatDock but not these. *Fix:* map to nearest tokens or comment them as
+  intentional one-offs.
+- **packages/{react,runtime,server}/README.md** — install lines omit packages
+  their own snippet imports (`@facet/client`, `@facet/agent`); copy-pasting the
+  quickstart fails to resolve. *Fix:* align install lines with the snippets.
+
+## Accepted (documented trust model — revisit on trigger)
+
+- **server/server.ts** — `/agent/*` unauthenticated by default + CORS `*` +
+  `visitorId` trusted as the session key. Documented in SECURITY.md for the
+  local/single-operator reference transport; becomes required work the moment a
+  hosted/multi-tenant deploy path appears.
 
 ---
-_Rebuilt against current `main` from a COMPLETE fresh sweep (all code-review lanes
-+ all refactor-audit dimensions, adversarially verified). Supersedes the prior
-screens-feature-incidental list._
+
+_Campaign 1 source sweeps: code-review 6 lanes (`wf_4e2fadd0-31d`) + types lane
+(`wf_0f294ddd-bb4`), refactor-audit 5 dimensions (`wf_84bc52dc-f8f`) + hygiene
+(`wf_4d26ff5d-8e6`) — 24 confirmed findings, 21 fixed in PR #3._
