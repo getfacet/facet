@@ -68,7 +68,7 @@ pnpm --filter @facet/playground serve   # live server (port 5291)
 - **`/verify`** passes — typecheck, test, lint, format:check, build (or run those
   `pnpm` commands directly). Add/adjust tests for any behavior change; core logic
   (`validateTree`, `applyPatch`, `Stage` op-generation) must stay covered.
-- **`/code-review`** on a non-trivial change — P0–P1 = 0, P2 fixed-or-deferred.
+- **`/code-review`** on a non-trivial change — P0–P2 = 0 (P3 nits non-blocking).
 - New public API is exported through the package's barrel `index.ts`.
 - No new dependency without a clear reason (keep `@facet/core` dependency-free).
 

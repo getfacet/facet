@@ -42,7 +42,8 @@ repo, review all of `packages/**/src` and `apps/**/src`.
 
 ## Verdict
 
-- **PASS** — P0–P1 = 0, every P2 fixed or explicitly deferred with a reason.
+- **PASS** — P0–P2 = 0. P3 are non-blocking nits (track them). A P2 may only ship
+  unfixed with an explicit maintainer waiver recorded in the PR.
 - **FAIL** — fix the findings, then run `/verify`, then **re-run `/code-review`**
   (don't declare PASS on the strength of the fixes alone — re-review).
 

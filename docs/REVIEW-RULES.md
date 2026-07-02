@@ -27,10 +27,12 @@ for a small TypeScript monorepo — rigorous, not bureaucratic.
 | --- | --- | --- |
 | **P0** | Broken build, data loss, security hole, or a claimed invariant is false | must fix |
 | **P1** | Incorrect under realistic conditions (a real bug, race, or wrong result) | must fix |
-| **P2** | Edge case / robustness / missing test for changed behavior / should-fix | fix or explicitly defer |
+| **P2** | Edge case / robustness / missing test for changed behavior / should-fix | must fix |
 | **P3** | Nit, style, naming, doc polish | optional (track, non-blocking) |
 
-**`/code-review` PASS = P0–P1 = 0 and every P2 fixed-or-deferred-with-reason.**
+**`/code-review` PASS = P0–P2 = 0.** P3 are non-blocking nits — track them, don't
+gate on them. (A P2 may only ship unfixed with an explicit maintainer waiver
+recorded in the PR.)
 
 ## Evidence (required for every finding)
 
