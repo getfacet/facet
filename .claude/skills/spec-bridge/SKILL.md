@@ -25,7 +25,7 @@ allowed-tools: Read, Glob, Grep, Agent, AskUserQuestion, Write
   - `specs/dev-specs/<slug>.execution.yaml` (delegation manifest)
 - Includes a light context pass as Stage 0 (no separate scout skill needed).
 
-Use order: `/feature-intake` → `/spec-bridge` → implement (WU + TDD) → `/verify` → `/code-review`.
+Use order: `/context-scout` (optional) → `/feature-intake` → `/spec-bridge` → `/implement` (→ `/update-tests` → `/verify` → `/code-review` → `/update-docs`).
 
 ## Required context
 

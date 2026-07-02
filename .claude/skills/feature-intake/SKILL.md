@@ -23,7 +23,7 @@ A product-intake conversation layer that runs BEFORE technical design.
 - Adds one thing the generic intake doesn't: an **Invariant Fit** check, because
   in Facet the wrong feature can quietly break the whole thesis (see below).
 
-Use order: `/feature-intake` → `/spec-bridge` → implement (WU + TDD) → `/verify` → `/code-review`.
+Use order: `/context-scout` (optional) → `/feature-intake` → `/spec-bridge` → `/implement` (→ `/update-tests` → `/verify` → `/code-review` → `/update-docs`).
 
 ## Required context (read first)
 

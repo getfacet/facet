@@ -83,10 +83,12 @@ For anything bigger than a quick fix, use the skill pipeline instead of coding
 straight away:
 
 ```
+/context-scout    (optional) gather docs + entrypoints + consumer sweep → GO/NO-GO
 /feature-intake   rough idea → structured, testable, invariant-checked brief
 /spec-bridge      brief → dev spec + execution manifest (Work Units, TDD red checks)
 /implement        branch/worktree → run WUs TDD-first → inner-loop gates
    └─ inner loop:  /update-tests → /verify → /code-review → /update-docs
+/refactor-audit   periodic structure audit (owner-run, not per-feature)
 ```
 
 `/feature-intake` and `/spec-bridge` both enforce Facet's invariants as gates
