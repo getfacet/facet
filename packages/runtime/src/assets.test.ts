@@ -1,7 +1,7 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   applyPatch,
   EMPTY_TREE,
@@ -63,10 +63,22 @@ const seedTree: FacetTree = {
 
 const visitor: VisitorContext = { visitorId: "v" };
 
+// Temp dirs created by the FileAssets fixtures, removed after the suite.
+const tempDirs: string[] = [];
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
 // --- Shared contract, run against MemoryAssets AND FileAssets -----------------
 
 function fileMake(docs: AssetDocuments): AssetsStore {
-  const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+  const dir = makeTempDir();
   docs.themes.forEach((t, i) => writeFileSync(join(dir, `t${i}.theme.json`), JSON.stringify(t)));
   docs.stamps.forEach((s, i) => writeFileSync(join(dir, `s${i}.stamp.json`), JSON.stringify(s)));
   if (docs.initialTree !== undefined) {
@@ -133,7 +145,7 @@ describe("loadAssets", () => {
 
 describe("FileAssets", () => {
   it("records an issue for an unparseable file, never throws, and boots", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    const dir = makeTempDir();
     writeFileSync(join(dir, "broken.theme.json"), "{ not json");
     writeFileSync(join(dir, "ok.theme.json"), JSON.stringify(validTheme));
     const loaded = await loadAssets(new FileAssets(dir), "a");
@@ -385,6 +397,49 @@ describe("withInitialStage seed re-arms on a failed turn", () => {
     expect(first?.kind).toBe("patch");
     if (first?.kind === "patch") {
       expect(first.patches[0]).toEqual({ op: "replace", path: "", value: seedTree });
+    }
+    await expectNoDrift(runtime, messages);
+  });
+
+  it("re-emits the CURRENT stage, not the stale seed, after a save that committed then rejected", async () => {
+    const seededStore = withInitialStage(new MemoryStageStore(), seedTree);
+    let failNextSave = true;
+    // The async-store failure class the re-emit must survive: the write COMMITS,
+    // then the acknowledgement is lost (e.g. a connection drop post-COMMIT).
+    const commitThenRejectStore: StageStore = {
+      get: (a, v) => seededStore.get(a, v),
+      open: (a, v) => seededStore.open(a, v),
+      save: async (s) => {
+        await seededStore.save(s);
+        if (failNextSave) {
+          failNextSave = false;
+          throw new Error("post-commit boom");
+        }
+      },
+      takeSeeded: (a, v) => seededStore.takeSeeded?.(a, v) ?? false,
+    };
+    let calls = 0;
+    const agent: FacetAgent = (event, session) => {
+      calls += 1;
+      return calls === 1 ? appendAgent(event, session) : [{ kind: "say", text: "hi" }];
+    };
+    const runtime = new FacetRuntime({ agentId: "a", agent, stageStore: commitThenRejectStore });
+
+    // Turn 1: the edit commits, then save rejects — the turn fails but the
+    // stored stage is already ahead of the original seed.
+    await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
+
+    // Turn 2's re-emitted frame must carry the stage this turn ran against (the
+    // committed seed+edit), never rewind the page to the original seed.
+    const messages = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      const op = first.patches[0];
+      expect(op?.op).toBe("replace");
+      const value = op?.op === "replace" ? op.value : undefined;
+      expect(value).toEqual(await runtime.stageFor("v"));
+      expect(value).not.toEqual(seedTree);
     }
     await expectNoDrift(runtime, messages);
   });

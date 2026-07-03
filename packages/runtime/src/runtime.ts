@@ -12,6 +12,9 @@ import {
 import { MemoryStageStore, sessionKey, type StageStore } from "./stage-store.js";
 import { MemorySink, type Sink, type StoredEvent } from "./sink.js";
 
+/** Hygiene cap on armed-but-undelivered seed keys (see `pendingSeeds`). */
+const MAX_PENDING_SEEDS = 10_000;
+
 export interface FacetRuntimeOptions {
   readonly agentId: string;
   readonly agent: FacetAgent;
@@ -42,12 +45,16 @@ export class FacetRuntime {
   // before a slow earlier one. This queue keeps per-visitor records in event order
   // without the response ever awaiting them. Different visitors stay parallel.
   private readonly serializeRecord = createSerialQueue<void>();
-  // Seeds armed by `takeSeeded` but not yet DELIVERED. `takeSeeded` reports a
-  // fresh seed at most once, so parking the value here lets a turn that failed to
-  // persist (agent throw or save rejection) re-emit the seed on the next turn —
-  // consumed only once a turn actually persists. Keyed per (agent, visitor); the
-  // per-visitor serial queue means no locking is needed.
-  private readonly pendingSeeds = new Map<string, FacetTree>();
+  // Session keys armed by `takeSeeded` but not yet DELIVERED. `takeSeeded`
+  // reports a fresh seed at most once, so parking the KEY here lets a turn that
+  // failed to persist (agent throw or save rejection) re-emit the seed frame on
+  // the next turn — consumed only once a turn actually persists. The frame's
+  // value is always the CURRENT `session.stage` (never a parked tree), so a save
+  // that committed before rejecting can't be rewound by a stale replay. The
+  // per-visitor serial queue means no locking is needed. Entries can only
+  // linger when a seeded visitor's save fails intermittently AND the visitor
+  // never returns, so the insertion-order cap is a hygiene bound, not a hot path.
+  private readonly pendingSeeds = new Set<string>();
 
   constructor(options: FacetRuntimeOptions) {
     this.agentId = options.agentId;
@@ -134,16 +141,24 @@ export class FacetRuntime {
     messages: readonly ServerMessage[],
   ): Promise<readonly ServerMessage[]> {
     const key = sessionKey(this.agentId, visitor.visitorId);
-    // Arm (or re-arm from a previous failed turn): `takeSeeded` fires at most
-    // once, so park the seed value until a turn actually persists.
+    // Arm: `takeSeeded` fires at most once, so park the key until a turn
+    // actually persists (evicting the oldest armed key at the cap).
     if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
-      this.pendingSeeds.set(key, session.stage);
+      if (this.pendingSeeds.size >= MAX_PENDING_SEEDS) {
+        const oldest = this.pendingSeeds.values().next().value;
+        if (oldest !== undefined) this.pendingSeeds.delete(oldest);
+      }
+      this.pendingSeeds.add(key);
     }
-    const seed = this.pendingSeeds.get(key);
-    const delivered: readonly ServerMessage[] =
-      seed === undefined
-        ? messages
-        : [{ kind: "patch", patches: [{ op: "replace", path: "", value: seed }] }, ...messages];
+    // Emit the CURRENT stage, not a parked value: after a save that committed
+    // and then rejected, the reopened session is ahead of the original seed and
+    // this turn's messages were computed against it.
+    const delivered: readonly ServerMessage[] = this.pendingSeeds.has(key)
+      ? [
+          { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] },
+          ...messages,
+        ]
+      : messages;
     const result = await this.persist(visitor, session, event, delivered);
     this.pendingSeeds.delete(key); // consume ONLY after persist resolved
     return result;
