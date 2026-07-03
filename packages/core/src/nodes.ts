@@ -40,6 +40,11 @@ export interface AgentAction {
   readonly name: string;
   /** Optional structured payload carried back to the agent. */
   readonly payload?: Readonly<Record<string, string | number | boolean>>;
+  /**
+   * Node-id reference; at press time the browser snapshots visible field values
+   * in that box's subtree into the event's fields.
+   */
+  readonly collect?: NodeId;
 }
 
 /**

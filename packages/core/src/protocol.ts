@@ -29,11 +29,36 @@ export interface FacetSession {
   readonly stage: FacetTree;
 }
 
+/**
+ * Shared character cap for a collected field, applied to its VALUE, its NAME,
+ * and (server-side) the map KEY — enforced by the renderer at collection time
+ * and by the server at `/event`, so the two sides cannot drift. One constant on
+ * purpose: tuning it moves all three bounds together.
+ */
+export const MAX_FIELD_VALUE_CHARS = 2000;
+
+/**
+ * Shared cap on the NUMBER of collected fields in one action event — enforced
+ * by the renderer at collection and by the server at `/event`, so the renderer
+ * can't emit a fields object the server would reject wholesale (a real form has
+ * a handful; this is a defense-in-depth bound).
+ */
+export const MAX_FIELDS_KEYS = 256;
+
 /** Browser → agent. Everything the visitor does flows in as one of these. */
 export type ClientEvent =
   | { readonly kind: "visit"; readonly visitor: VisitorContext }
   | { readonly kind: "message"; readonly text: string }
-  | { readonly kind: "action"; readonly action: FacetAction };
+  | {
+      readonly kind: "action";
+      readonly action: FacetAction;
+      /**
+       * Visitor-typed field values snapshotted at press time when the action
+       * declares `collect`. Inert data riding the event — never part of the
+       * stage tree, never interpreted or rendered back by Facet.
+       */
+      readonly fields?: Readonly<Record<string, string>>;
+    };
 
 /**
  * Agent → browser. The agent answers events with stage patches (RFC 6902

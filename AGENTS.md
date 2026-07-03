@@ -45,6 +45,7 @@ small set of safe primitives and mutates them live as the conversation goes.
 | `@facet/kit` | Optional presets (`page/hero/card/row/…`) — sugar over the bricks. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres (`pg` peer dep). |
 | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
+| `@facet/quickstart` | Reference LLM brain + zero-setup `facet-quickstart` bin — the `@facet/server` of brains (the brain stays pluggable). |
 | `apps/playground` | Demos (not published). |
 
 `StageStore` and `Sink` methods are **async** (Promise-based) so backends can be
@@ -62,7 +63,15 @@ pnpm test           # vitest run (unit tests live in packages/**/src/*.test.ts)
 pnpm demo           # in-process terminal demo
 pnpm --filter @facet/playground dev     # browser playground (port 5290)
 pnpm --filter @facet/playground serve   # live server (port 5291)
+pnpm --filter @facet/quickstart build   # then: node packages/quickstart/dist/cli.js --stub
+                                        # (published as the facet-quickstart bin, port 5292)
 ```
+
+The `/live-test` tiers are vitest runs: Tier 1a
+`pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts` (twice),
+Tier 1b/2/3 use `--config packages/quickstart/e2e/vitest.config.ts` against
+`e2e/bundle.test.ts` / `e2e/smoke.test.ts` — see
+`.claude/skills/live-test/SKILL.md` for the exact commands and policy.
 
 ## Definition of Done (before you commit)
 
@@ -70,11 +79,16 @@ pnpm --filter @facet/playground serve   # live server (port 5291)
   `pnpm` commands directly). Add/adjust tests for any behavior change; core logic
   (`validateTree`, `applyPatch`, `Stage` op-generation) must stay covered.
 - **`/code-review`** on a non-trivial change — P0–P2 = 0 (P3 nits non-blocking).
+- **`/live-test`** after `/code-review` — the 3-tier live-link gate. Tier 1
+  (deterministic stub E2E + real-bundle run) always blocks; Tier 2 (key-gated
+  provider smoke) **blocks whenever `packages/quickstart/` changed** — a missing
+  key is then a FAIL, not a skip; Tier 3 (both providers) runs pre-merge/release.
 - New public API is exported through the package's barrel `index.ts`.
 - No new dependency without a clear reason (keep `@facet/core` dependency-free).
 
-The gate is right-sized: `/verify` (mechanical) and `/code-review` (evidence-based,
-adversarially verified) per change; `/refactor-audit` for consolidation passes.
+The gate is right-sized: `/verify` (mechanical), `/code-review` (evidence-based,
+adversarially verified), and `/live-test` (a real boot) per change;
+`/refactor-audit` for consolidation passes.
 See [docs/REVIEW-RULES.md](docs/REVIEW-RULES.md) for the rubric and severity.
 
 ## Building a non-trivial feature (the pipeline)
@@ -87,7 +101,7 @@ straight away:
 /feature-intake   rough idea → structured, testable, invariant-checked brief
 /spec-bridge      brief → dev spec + execution manifest (Work Units, TDD red checks)
 /implement        branch/worktree → run WUs TDD-first → inner-loop gates
-   └─ inner loop:  /update-tests → /verify → /code-review → /update-docs
+   └─ inner loop:  /update-tests → /verify → /code-review → /live-test → /update-docs
 /refactor-audit   periodic structure audit (owner-run, not per-feature)
 ```
 

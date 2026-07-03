@@ -132,6 +132,7 @@ importers:
       '@facet/core':
         specifier: workspace:*
         version: link:../core
+    devDependencies:
       '@facet/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -143,6 +144,40 @@ importers:
       '@facet/core':
         specifier: workspace:*
         version: link:../core
+
+  packages/quickstart:
+    dependencies:
+      '@facet/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@facet/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+      '@facet/server':
+        specifier: workspace:*
+        version: link:../server
+    devDependencies:
+      '@facet/client':
+        specifier: workspace:*
+        version: link:../client
+      '@facet/react':
+        specifier: workspace:*
+        version: link:../react
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.0.0
+        version: 19.2.3(@types/react@19.2.17)
+      react:
+        specifier: ^19.0.0
+        version: 19.2.7
+      react-dom:
+        specifier: ^19.0.0
+        version: 19.2.7(react@19.2.7)
 
   packages/react:
     dependencies:

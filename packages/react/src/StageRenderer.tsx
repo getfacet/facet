@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   FIELD_INPUTS,
   isSafeImageSrc,
   isTreeShaped,
   MAX_DEPTH,
+  MAX_FIELD_VALUE_CHARS,
+  MAX_FIELDS_KEYS,
   sanitizeActionPayload,
   type AgentAction,
   type FacetAction,
@@ -75,7 +77,104 @@ function resolveScreenRoot(tree: FacetTree, currentScreen: string | null): NodeI
 type ClassifiedPress =
   | { readonly kind: "navigate"; readonly to: string }
   | { readonly kind: "toggle"; readonly target: NodeId }
-  | { readonly kind: "agent"; readonly action: AgentAction };
+  | { readonly kind: "agent"; readonly action: AgentAction; readonly collect?: NodeId };
+
+/**
+ * Snapshots the visitor-typed values of the MOUNTED field inputs inside the
+ * `collectId` box's subtree (invariant #6: field text is browser view-state —
+ * this read-only, press-time snapshot lives only in the emitted event; nothing
+ * is ever written back into the tree).
+ *
+ * Enumeration is data-side (the tree names the fields, in walk order — first
+ * name wins) and the read is DOM-side, scoped to `root` so two renderers on one
+ * page can never cross-read. Only mounted inputs are readable: a field on a
+ * non-current screen or hidden by toggle simply isn't in the DOM and is omitted.
+ * Every failure mode (unknown/non-box target, zero fields, missing DOM input,
+ * cyclic/too-deep subtree) degrades to omission / `{}` — never a throw (DC-002).
+ */
+function collectFieldValues(
+  tree: FacetTree,
+  collectId: NodeId,
+  root: ParentNode,
+): Readonly<Record<string, string>> {
+  const target = tree.nodes[collectId];
+  if (target == null || target.type !== "box") {
+    return {};
+  }
+
+  // Data-side pass: (name → node ids) for every field in the subtree, in walk
+  // order — mirrors RenderNode's own ancestor-set cycle guard + depth cap so a
+  // cyclic raw-path tree terminates. Keeping ALL ids per name (not just the
+  // first) lets the DOM pass pick a MOUNTED one, so a hidden/off-screen field
+  // can't shadow a visible same-named field and drop its value.
+  const idsByName = new Map<string, NodeId[]>();
+  const gather = (id: NodeId, ancestors: ReadonlySet<NodeId>, depth: number): void => {
+    if (depth > MAX_DEPTH || ancestors.has(id)) {
+      return;
+    }
+    const node = tree.nodes[id];
+    if (node == null) {
+      return;
+    }
+    if (node.type === "field") {
+      // Never harvest secrets: a password field's value is excluded from
+      // collection outright, so it can't ride the action event into an agent
+      // (and, for the reference brain, into a third-party LLM + history replay).
+      if (node.input === "password") {
+        return;
+      }
+      if (typeof node.name === "string") {
+        // Cap the NAME the same way the value is capped below: field names come
+        // from untrusted LLM output, and an over-cap key would make the server's
+        // isFieldsRecord reject the whole submit (a silent no-op). Capping keeps
+        // the two sides from drifting so an over-long name degrades gracefully.
+        const name = node.name.slice(0, MAX_FIELD_VALUE_CHARS);
+        const ids = idsByName.get(name);
+        if (ids === undefined) idsByName.set(name, [id]);
+        else ids.push(id);
+      }
+      return;
+    }
+    if (node.type !== "box") {
+      return; // non-field, non-box nodes contribute nothing (DC-003)
+    }
+    const childIds: readonly NodeId[] = Array.isArray(node.children) ? node.children : [];
+    const childAncestors = new Set(ancestors).add(id);
+    for (const childId of childIds) {
+      gather(childId, childAncestors, depth + 1);
+    }
+  };
+  gather(collectId, EMPTY_ANCESTORS, 0);
+
+  // DOM-side pass: enumerate the stamped inputs ONCE and match by attribute
+  // comparison — no CSS.escape (jsdom exposes no window.CSS, and comparing
+  // sidesteps escaping arbitrary node ids). If a node is mounted more than
+  // once, the FIRST match in DOM order wins (deterministic).
+  const inputByNodeId = new Map<string, Element>();
+  for (const el of Array.from(root.querySelectorAll("input[data-facet-field-id]"))) {
+    const nodeId = el.getAttribute("data-facet-field-id");
+    if (nodeId !== null && !inputByNodeId.has(nodeId)) {
+      inputByNodeId.set(nodeId, el);
+    }
+  }
+
+  const fields: Record<string, string> = {};
+  for (const [name, ids] of idsByName) {
+    // Bound the field COUNT with the same cap the server enforces, so the
+    // renderer can't emit a fields object the server rejects wholesale (400).
+    if (Object.keys(fields).length >= MAX_FIELDS_KEYS) break;
+    // Pick the first MOUNTED input among same-named fields (a hidden earlier
+    // one must not shadow a visible later one).
+    const mountedId = ids.find((id) => inputByNodeId.has(id));
+    const input = mountedId === undefined ? undefined : inputByNodeId.get(mountedId);
+    if (input !== undefined) {
+      // The selector only matches <input> elements, whose .value is a string;
+      // String() is belt-and-braces before the shared cap is applied.
+      fields[name] = String((input as HTMLInputElement).value).slice(0, MAX_FIELD_VALUE_CHARS);
+    }
+  }
+  return fields;
+}
 
 /**
  * Classifies an untrusted `onPress` (the raw live-patch path bypasses
@@ -92,6 +191,7 @@ function classifyPress(onPress: unknown): ClassifiedPress | null {
     readonly target?: unknown;
     readonly name?: unknown;
     readonly payload?: unknown;
+    readonly collect?: unknown;
   };
   if (press.kind === "navigate") {
     return typeof press.to === "string" ? { kind: "navigate", to: press.to } : null;
@@ -104,10 +204,17 @@ function classifyPress(onPress: unknown): ClassifiedPress | null {
     // Reuse core's fail-safe filter: a plain (non-array) object keeps only its
     // primitive values; anything else yields undefined and no payload is emitted.
     const payload = sanitizeActionPayload(press.payload);
-    if (payload !== undefined) {
-      return { kind: "agent", action: { kind: "agent", name: press.name, payload } };
+    const action: AgentAction =
+      payload !== undefined
+        ? { kind: "agent", name: press.name, payload }
+        : { kind: "agent", name: press.name };
+    // A string collect rides the classification (not the emitted action): it is
+    // the renderer's instruction to snapshot fields at press time. Non-string
+    // raw-path junk is dropped — the button still works, just without fields.
+    if (typeof press.collect === "string") {
+      return { kind: "agent", action, collect: press.collect };
     }
-    return { kind: "agent", action: { kind: "agent", name: press.name } };
+    return { kind: "agent", action };
   }
   return null;
 }
@@ -119,8 +226,14 @@ function isHiddenByDefault(node: FacetNode): boolean {
 
 export interface StageRendererProps {
   readonly tree: FacetTree;
-  /** Invoked when an interactive brick fires (a pressed box, a submitted field). */
-  readonly onAction?: (action: FacetAction) => void;
+  /**
+   * Invoked when an interactive brick fires (a pressed box, a submitted field).
+   * When the pressed action declares `collect`, `fields` carries the press-time
+   * snapshot of the mounted field values in that box's subtree (possibly `{}`);
+   * without `collect` it is `undefined` — narrower `(action) => void` handlers
+   * remain assignable, so existing consumers compile unchanged.
+   */
+  readonly onAction?: (action: FacetAction, fields?: Readonly<Record<string, string>>) => void;
 }
 
 /**
@@ -141,6 +254,9 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
   const [visibilityOverrides, setVisibilityOverrides] = useState<Readonly<Record<NodeId, boolean>>>(
     {},
   );
+  // Scope handle for collectFieldValues — reads stay inside THIS renderer
+  // instance so two stages on one page never cross-read each other's inputs.
+  const stageRootRef = useRef<HTMLDivElement>(null);
 
   // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
   // the unvalidated CLI path — renders as nothing, never a crash.
@@ -168,11 +284,22 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
         return;
       }
       case "agent":
-        onAction?.(press.action);
+        if (press.collect === undefined) {
+          onAction?.(press.action); // no collect ⇒ today's exact emission (fields undefined)
+          return;
+        }
+        // Always a fields object when collect is declared — {} on any degrade,
+        // including an unexpectedly null stage root (no document-wide fallback).
+        onAction?.(
+          press.action,
+          stageRootRef.current === null
+            ? {}
+            : collectFieldValues(tree, press.collect, stageRootRef.current),
+        );
     }
   };
 
-  return (
+  const stage = (
     <RenderNode
       tree={tree}
       id={resolveScreenRoot(tree, currentScreen)}
@@ -180,6 +307,19 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
       visibilityOverrides={visibilityOverrides}
       depth={0}
     />
+  );
+  if (onAction === undefined) {
+    // No handler ⇒ no press can emit, so field collection is unreachable and
+    // the scope wrapper is unnecessary — handler-less output stays byte-
+    // identical to the pre-collect renderer (pinned by the static suite).
+    return stage;
+  }
+  // display: contents adds no layout box, so flow layout is unchanged
+  // (invariant #5); the div exists only to scope the press-time field read.
+  return (
+    <div style={{ display: "contents" }} ref={stageRootRef}>
+      {stage}
+    </div>
   );
 }
 
@@ -293,7 +433,9 @@ function RenderNode({
           }}
         >
           {typeof node.label === "string" ? <span>{node.label}</span> : null}
-          <input type={input} name={name} placeholder={placeholder} />
+          {/* Uncontrolled on purpose (invariant #6): the DOM owns the text; the
+              stamp lets a collect press find this input by node id at press time. */}
+          <input type={input} name={name} placeholder={placeholder} data-facet-field-id={id} />
         </label>
       );
     }

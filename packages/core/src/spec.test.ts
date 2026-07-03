@@ -15,4 +15,22 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/instantly in the (visitor'?s )?browser/i);
     expect(STAGE_SPEC).toMatch(/no agent turn/i);
   });
+
+  it("teaches collect and press-time field snapshots", () => {
+    // Agent action shape gains an optional collect box id.
+    expect(STAGE_SPEC).toContain('"collect"?:<boxId>');
+    // Snapshot rule: pressing snapshots VISIBLE fields on the CURRENT screen
+    // within the collect box's subtree into the event's "fields".
+    expect(STAGE_SPEC).toMatch(/visible fields on the current screen/i);
+    expect(STAGE_SPEC).toMatch(/subtree/i);
+    expect(STAGE_SPEC).toContain('"fields"');
+    // Values are keyed by each field's "name" — names must be stable.
+    expect(STAGE_SPEC).toMatch(/keyed by each field's "name"/i);
+    expect(STAGE_SPEC).toMatch(/stable names/i);
+    // Keep a form and its submit button together and visible on one screen;
+    // hidden fields, off-screen fields, and password fields are never captured.
+    expect(STAGE_SPEC).toMatch(/submit button together/i);
+    expect(STAGE_SPEC).toMatch(/never captured/i);
+    expect(STAGE_SPEC).toMatch(/password fields/i);
+  });
 });
