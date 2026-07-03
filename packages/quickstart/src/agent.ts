@@ -42,8 +42,13 @@ export interface QuickstartAgentOptions {
   readonly maxSteps?: number;
 }
 
-/** Safety cap on tool-loop iterations per turn (one provider call each). */
-const MAX_STEPS = 8;
+/**
+ * Runaway-loop backstop, not a working constraint: a turn should end well
+ * before this. It exists only so a model that never stops calling tools can't
+ * burn the deployer's key forever on one visitor turn. Override with
+ * `maxSteps` for a longer (or, set very high, effectively unbounded) budget.
+ */
+const MAX_STEPS = 50;
 
 const FAILURE_SAY =
   "Sorry — I couldn't update the page this time, so I've left it as it was. Please try again.";
@@ -66,31 +71,50 @@ function isRenderable(tree: FacetTree): boolean {
   return root !== undefined && root.type === "box" && root.children.length > 0;
 }
 
-/** Shape-check a node for the incremental tools. Rejects exactly the fields
- * `validateTree` would DROP the node for (text.value, image.src+alt, field.name)
- * so a tool can't report "ok" for a node that silently vanishes on apply —
- * the "success that did nothing" case. Deeper sanitization (tokens, safe src,
+/**
+ * Shape-check a node for the incremental tools, returning a SPECIFIC, actionable
+ * reason on failure so the model can fix it (not a generic "invalid node"). It
+ * rejects exactly the fields `validateTree` would DROP the node for
+ * (text.value, image.src+alt, field.name), so a tool can't report "ok" for a
+ * node that silently vanishes on apply. Deeper sanitization (tokens, safe src,
  * dangling children) still happens at apply time. */
-function asNode(value: unknown): FacetNode | null {
-  if (!isRecord(value)) return null;
-  if (typeof value["id"] !== "string" || value["id"].length === 0) return null;
+function asNode(value: unknown): { node: FacetNode } | { error: string } {
+  if (!isRecord(value)) return { error: 'the "node" argument must be an object' };
+  if (typeof value["id"] !== "string" || value["id"].length === 0) {
+    return { error: 'the node needs a non-empty string "id"' };
+  }
   switch (value["type"]) {
     case "box":
-      break; // validateTree defaults a missing/!array children to []
+      break; // validateTree defaults a missing/non-array children to []
     case "text":
-      if (typeof value["value"] !== "string") return null;
+      if (typeof value["value"] !== "string") {
+        return { error: 'a "text" node needs a string "value"' };
+      }
       break;
     case "image":
-      if (typeof value["src"] !== "string" || typeof value["alt"] !== "string") return null;
+      if (typeof value["src"] !== "string" || typeof value["alt"] !== "string") {
+        return { error: 'an "image" node needs string "src" and "alt"' };
+      }
       break;
     case "field":
-      if (typeof value["name"] !== "string") return null;
+      if (typeof value["name"] !== "string") {
+        return { error: 'a "field" node needs a string "name"' };
+      }
       break;
     default:
-      return null; // unknown/missing type
+      return { error: '"type" must be one of "box" | "text" | "image" | "field"' };
   }
-  return value as unknown as FacetNode;
+  return { node: value as unknown as FacetNode };
 }
+
+/** Join the first few validateTree issues into a compact, model-readable hint. */
+function issueHint(issues: readonly string[]): string {
+  if (issues.length === 0) return "";
+  const shown = issues.slice(0, 5).join("; ");
+  return issues.length > 5 ? `${shown}; …(+${String(issues.length - 5)} more)` : shown;
+}
+
+const TOOL_NAMES = "append_node, set_node, remove_node, render_page, say";
 
 interface ToolOutcome {
   readonly observation: string;
@@ -101,80 +125,66 @@ interface ToolOutcome {
 /** Execute one tool call against the Stage, returning an observation for the
  * model. Never throws — bad arguments become an "error: ..." observation. */
 function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
+  const fail = (observation: string): ToolOutcome => ({ observation, mutated: false, said: false });
   const input: Record<string, unknown> = isRecord(call.input) ? call.input : {};
   switch (call.name) {
     case "render_page": {
       const { tree, issues } = validateTree(input["tree"]);
       if (!isRenderable(tree)) {
-        return {
-          observation: `error: the tree has no renderable root box (${String(issues.length)} validation issue(s))`,
-          mutated: false,
-          said: false,
-        };
+        const hint = issueHint(issues);
+        return fail(
+          `error: render_page needs a full tree { root, nodes } whose "root" is a box with at least one child. ` +
+            (hint.length > 0
+              ? `Fix these and retry: ${hint}`
+              : "Provide a non-empty root box and retry."),
+        );
       }
       stage.render(tree);
-      return { observation: "ok: page replaced", mutated: true, said: false };
+      // Success, but note any nodes validateTree dropped so the model can re-add them.
+      const note =
+        issues.length > 0 ? ` (note: dropped invalid node(s): ${issueHint(issues)})` : "";
+      return { observation: `ok: page replaced${note}`, mutated: true, said: false };
     }
     case "append_node": {
       const parentId = input["parentId"];
-      const node = asNode(input["node"]);
       if (typeof parentId !== "string" || parentId.length === 0) {
-        return {
-          observation: "error: append_node needs a string parentId",
-          mutated: false,
-          said: false,
-        };
+        return fail(
+          'error: append_node needs a non-empty string "parentId" (the box to append into)',
+        );
       }
-      if (node === null) {
-        return {
-          observation:
-            "error: append_node needs a valid node (id + type, with text.value / image.src+alt / field.name)",
-          mutated: false,
-          said: false,
-        };
-      }
-      stage.append(parentId as NodeId, node);
+      const result = asNode(input["node"]);
+      if ("error" in result) return fail(`error: append_node — ${result.error}`);
+      stage.append(parentId as NodeId, result.node);
       return {
-        observation: `ok: appended ${node.id} under ${parentId}`,
+        observation: `ok: appended "${result.node.id}" under "${parentId}"`,
         mutated: true,
         said: false,
       };
     }
     case "set_node": {
-      const node = asNode(input["node"]);
-      if (node === null) {
-        return {
-          observation:
-            "error: set_node needs a valid node (id + type, with text.value / image.src+alt / field.name)",
-          mutated: false,
-          said: false,
-        };
-      }
-      stage.set(node);
-      return { observation: `ok: set ${node.id}`, mutated: true, said: false };
+      const result = asNode(input["node"]);
+      if ("error" in result) return fail(`error: set_node — ${result.error}`);
+      stage.set(result.node);
+      return { observation: `ok: set "${result.node.id}"`, mutated: true, said: false };
     }
     case "remove_node": {
       const nodeId = input["nodeId"];
       if (typeof nodeId !== "string" || nodeId.length === 0) {
-        return {
-          observation: "error: remove_node needs a string nodeId",
-          mutated: false,
-          said: false,
-        };
+        return fail('error: remove_node needs a non-empty string "nodeId"');
       }
       stage.remove(nodeId as NodeId);
-      return { observation: `ok: removed ${nodeId}`, mutated: true, said: false };
+      return { observation: `ok: removed "${nodeId}"`, mutated: true, said: false };
     }
     case "say": {
       const text = input["text"];
       if (typeof text !== "string" || text.length === 0) {
-        return { observation: "error: say needs non-empty text", mutated: false, said: false };
+        return fail('error: say needs a non-empty string "text"');
       }
       stage.say(text);
       return { observation: "ok: said", mutated: false, said: true };
     }
     default:
-      return { observation: `error: unknown tool "${call.name}"`, mutated: false, said: false };
+      return fail(`error: unknown tool "${call.name}". Available tools: ${TOOL_NAMES}`);
   }
 }
 

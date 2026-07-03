@@ -173,6 +173,35 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("gives specific, actionable error observations the model can fix", async () => {
+    // Capture the observation strings fed back to the model across a turn.
+    const provider = providerOf(
+      toolStep(
+        call("append_node", { parentId: "root", node: { id: "t", type: "text" } }), // no value
+        call("frobnicate", {}), // unknown tool
+        call("render_page", {
+          tree: { root: "root", nodes: { root: { id: "root", type: "box", children: [] } } },
+        }), // empty root
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await agent({ kind: "message", text: "go" }, SESSION);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.includes('"text" node needs a string "value"'))).toBe(true);
+      expect(obs.some((o) => o.includes("unknown tool") && o.includes("append_node"))).toBe(true);
+      expect(obs.some((o) => o.includes("render_page") && o.includes("at least one child"))).toBe(
+        true,
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("stops at maxSteps when the model never ends the loop", async () => {
     const provider = providerOf(toolStep(call("say", { text: "again" }))); // repeats forever
     const agent = makeAgent(provider, { maxSteps: 3 });
