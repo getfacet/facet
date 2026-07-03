@@ -70,8 +70,10 @@ function parseFlags(argv: readonly string[]): CliFlags {
       case "--port": {
         const raw = takeValue("--port", argv[++i]);
         const parsed = Number.parseInt(raw, 10);
-        if (!Number.isInteger(parsed) || parsed < 0 || parsed > 65_535 || String(parsed) !== raw) {
-          throw new Error(`--port expects a port number, got "${raw}"`);
+        // Reject 0 too: the CLI prints http://localhost:<port>, and port 0 binds
+        // an OS-chosen ephemeral port the deployer would never learn.
+        if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65_535 || String(parsed) !== raw) {
+          throw new Error(`--port expects a port number 1-65535, got "${raw}"`);
         }
         port = parsed;
         break;

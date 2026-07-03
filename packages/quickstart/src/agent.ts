@@ -48,8 +48,6 @@ const MAX_STEPS = 8;
 const FAILURE_SAY =
   "Sorry — I couldn't update the page this time, so I've left it as it was. Please try again.";
 
-const NODE_TYPES = new Set(["box", "text", "image", "field"]);
-
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -68,12 +66,29 @@ function isRenderable(tree: FacetTree): boolean {
   return root !== undefined && root.type === "box" && root.children.length > 0;
 }
 
-/** Lightweight node shape-check for the incremental tools; deep sanitization
- * still happens at apply time (runtime validateTree) and render time. */
+/** Shape-check a node for the incremental tools. Rejects exactly the fields
+ * `validateTree` would DROP the node for (text.value, image.src+alt, field.name)
+ * so a tool can't report "ok" for a node that silently vanishes on apply —
+ * the "success that did nothing" case. Deeper sanitization (tokens, safe src,
+ * dangling children) still happens at apply time. */
 function asNode(value: unknown): FacetNode | null {
   if (!isRecord(value)) return null;
   if (typeof value["id"] !== "string" || value["id"].length === 0) return null;
-  if (typeof value["type"] !== "string" || !NODE_TYPES.has(value["type"])) return null;
+  switch (value["type"]) {
+    case "box":
+      break; // validateTree defaults a missing/!array children to []
+    case "text":
+      if (typeof value["value"] !== "string") return null;
+      break;
+    case "image":
+      if (typeof value["src"] !== "string" || typeof value["alt"] !== "string") return null;
+      break;
+    case "field":
+      if (typeof value["name"] !== "string") return null;
+      break;
+    default:
+      return null; // unknown/missing type
+  }
   return value as unknown as FacetNode;
 }
 
@@ -112,7 +127,8 @@ function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
       }
       if (node === null) {
         return {
-          observation: "error: append_node needs a valid node (id + box|text|image|field type)",
+          observation:
+            "error: append_node needs a valid node (id + type, with text.value / image.src+alt / field.name)",
           mutated: false,
           said: false,
         };
@@ -128,7 +144,8 @@ function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
       const node = asNode(input["node"]);
       if (node === null) {
         return {
-          observation: "error: set_node needs a valid node (id + box|text|image|field type)",
+          observation:
+            "error: set_node needs a valid node (id + type, with text.value / image.src+alt / field.name)",
           mutated: false,
           said: false,
         };

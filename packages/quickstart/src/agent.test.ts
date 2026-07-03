@@ -149,6 +149,30 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("rejects a node validateTree would drop (text with no value) instead of a false 'ok'", async () => {
+    // A text node missing `value` shallow-passes id+type but validateTree drops
+    // it — the tool must report an error, not "ok: appended" (silent no-op).
+    const provider = providerOf(
+      toolStep(call("append_node", { parentId: "root", node: { id: "bad", type: "text" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "add" }, SESSION);
+      // No successful mutation ⇒ the turn apologizes rather than silently doing nothing.
+      expect(patchesOf(out)).toHaveLength(0);
+      expect(saysOf(out)[0]).toMatch(/sorry/i);
+      // The model saw an error observation for the bad node.
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.startsWith("error:"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("stops at maxSteps when the model never ends the loop", async () => {
     const provider = providerOf(toolStep(call("say", { text: "again" }))); // repeats forever
     const agent = makeAgent(provider, { maxSteps: 3 });

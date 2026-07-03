@@ -84,6 +84,36 @@ describe("runCli — key resolution (DC-005)", () => {
   });
 });
 
+describe("runCli — flag parsing", () => {
+  async function expectExit1(argv: readonly string[]): Promise<string> {
+    const captured = capture();
+    const code = await runCli(
+      argv,
+      { OPENAI_API_KEY: "sk-test" },
+      {
+        log: captured.log,
+        error: captured.error,
+      },
+    );
+    expect(code).toBe(1);
+    return [...captured.err, ...captured.out].join("\n");
+  }
+
+  it("exits 1 on an unknown flag", async () => {
+    expect(await expectExit1(["--bogus"])).toContain('Unknown flag "--bogus"');
+  });
+
+  it("exits 1 when a value-taking flag has no value", async () => {
+    expect(await expectExit1(["--port"])).toContain("--port requires a value");
+  });
+
+  it("exits 1 on invalid --port values (range, non-numeric, port 0, leading zero)", async () => {
+    for (const bad of ["70000", "8080abc", "0x10", "0", "080", "-1"]) {
+      expect(await expectExit1(["--port", bad])).toMatch(/--port expects a port number/);
+    }
+  });
+});
+
 describe("runCli — guide resolution (DC-005)", () => {
   it("exits non-zero naming the path when an explicit --guide file is missing", async () => {
     const captured = capture();
