@@ -191,9 +191,13 @@ Pointers into the `FacetTree`:
 | remove a node         | `remove /nodes/<id>` (dangling child refs are skipped on render)|
 
 `applyPatch(tree, operations)` (in `core/src/patch.ts`) is a small, dependency-free
-implementation of the six standard ops, and it is pure. The exact same function
-runs on the server (to keep the session's authoritative stage) and on the client
-(to update the DOM), so the two can never drift.
+implementation of the six standard ops, and it is pure. One level up,
+`foldPatchIntoStage` (in `core/src/stage-fold.ts`) is the shared fail-safe wrapper
+both sides actually run per delivered batch: a batch-atomic apply, per-op salvage
+on a throwing batch (bounded, capped at `MAX_PATCH_OPS`, RFC 6902 `test` guards
+honored), then `validateTree` on the result. Because the server (to keep the
+session's authoritative stage) and the client (to update the DOM) fold the same
+delivered batches through the same pure function, the two can never drift.
 
 ## The event loop
 

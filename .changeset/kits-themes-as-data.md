@@ -22,6 +22,13 @@ of a bare message array, so transports can tell a real agent edit from the
 prepended seed frame (`@facet/server` gates its late-result staleness bookkeeping
 on `agentMutated`; `@facet/client`'s `LocalTransport` updated).
 
+Convergence by construction: the new `@facet/core` `foldPatchIntoStage`
+(batch-atomic apply → bounded per-op salvage honoring RFC 6902 `test` guards →
+`validateTree`) runs identically in `FacetRuntime` and `useFacet`, so the stored
+and live trees cannot drift; a turn's patch messages coalesce into one folded
+frame, and patch batches are capped at `MAX_PATCH_OPS` at the wire, the fold,
+and the salvage clone.
+
 - `@facet/core`: `FacetTheme` + `validateTheme` — the one safety gate where raw
   CSS enters, as OPERATOR data only (per-group token-name allowlist,
   `url()`/`var()`/`expression()`/`javascript:` denied, dimensions clamped, hostile
