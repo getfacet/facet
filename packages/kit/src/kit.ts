@@ -20,9 +20,17 @@ class Builder {
   readonly nodes: Record<NodeId, FacetNode> = {};
   private count = 0;
 
+  /**
+   * `prefix` namespaces every generated id (`` `${prefix}k${n}` ``) so a
+   * fragment grafted onto an existing tree can never collide with another
+   * prefix's ids — or with the reserved `"root"`. `page()` passes `""`, keeping
+   * its ids byte-identical to today (`k1..kn`, root `"root"`).
+   */
+  constructor(private readonly prefix = "") {}
+
   private next(): NodeId {
     this.count += 1;
-    return `k${String(this.count)}`;
+    return `${this.prefix}k${String(this.count)}`;
   }
 
   box(style: BoxStyle, children: readonly NodeId[], onPress?: FacetAction): NodeId {
@@ -168,4 +176,27 @@ export function page(blocks: readonly Block[], options: PageOptions = {}): Facet
     children,
   };
   return { root: "root", nodes: builder.nodes };
+}
+
+/**
+ * A graftable subtree: a `Block` instantiated on its own prefixed Builder. Every
+ * id is `` `${prefix}k${n}` `` — never `"root"`, never colliding with another
+ * prefix's ids — so `nodes` can be spread into an existing tree's node map and
+ * `root` referenced from a parent's `children`. Unlike a `FacetTree` a fragment
+ * has no root box of its own; `root` is the Block's own returned node.
+ */
+export interface Fragment {
+  readonly root: NodeId;
+  readonly nodes: Readonly<Record<NodeId, FacetNode>>;
+}
+
+/**
+ * Instantiate one `Block` under an explicit id prefix, yielding a graftable
+ * `Fragment`. Callers pass a non-empty prefix; kit does not police it (ids were
+ * never contractual). Two fragments with different prefixes are disjoint.
+ */
+export function fragment(block: Block, prefix: string): Fragment {
+  const builder = new Builder(prefix);
+  const root = block(builder);
+  return { root, nodes: builder.nodes };
 }
