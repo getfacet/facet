@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import {
   createSerialQueue,
   isPrimitiveRecord,
+  MAX_FIELD_VALUE_CHARS,
   type AgentControlFrame,
   type ClientEvent,
   type FacetAgent,
@@ -36,6 +37,10 @@ import { createAgentChannel, type AgentChannel } from "./agent-channel.js";
  */
 export interface FacetServerOptions {
   readonly port: number;
+  /** Bind address passed to `listen` (default: all interfaces, unchanged). Set
+   * `"127.0.0.1"` for a loopback-only server (e.g. an internal instance behind
+   * a wrapper). */
+  readonly host?: string;
   readonly agentId: string;
   /** In-process fallback used when no external agent is connected. */
   readonly agent?: FacetAgent;
@@ -143,6 +148,10 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
   if (kind === "action") {
     if (typeof action !== "object" || action === null) return false;
     if (typeof (action as { name?: unknown }).name !== "string") return false;
+    // Optional visitor-typed field values riding the event: absent is fine;
+    // present must be a string record within the shared cap (see isFieldsRecord).
+    const fields = (event as { fields?: unknown }).fields;
+    if (fields !== undefined && !isFieldsRecord(fields)) return false;
     const payload = (action as { payload?: unknown }).payload;
     if (payload === undefined) return true;
     // Mirror core's asAction: the payload must be a plain (non-array) object whose
@@ -152,6 +161,18 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
     return isPrimitiveRecord(payload);
   }
   return false;
+}
+
+/** The REJECTING form of the action `fields` rule, mirroring `isPrimitiveRecord`:
+ * a plain (non-array) object whose every value is a string of length ≤
+ * `MAX_FIELD_VALUE_CHARS`. The renderer caps values at collection time with the
+ * same core constant, so the two sides cannot drift — and an untrusted
+ * non-renderer client cannot bypass the cap. */
+function isFieldsRecord(value: unknown): value is Readonly<Record<string, string>> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  return Object.values(value).every(
+    (v) => typeof v === "string" && v.length <= MAX_FIELD_VALUE_CHARS,
+  );
 }
 
 /** Shape-check an /agent/control body before resolving a pending request with it —
@@ -588,10 +609,12 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       new Promise((resolve, reject) => {
         const onError = (error: Error): void => reject(error); // e.g. EADDRINUSE
         server.once("error", onError);
-        server.listen(options.port, () => {
+        const onListening = (): void => {
           server.removeListener("error", onError);
           resolve();
-        });
+        };
+        if (options.host !== undefined) server.listen(options.port, options.host, onListening);
+        else server.listen(options.port, onListening);
       }),
     close: () =>
       new Promise((resolve, reject) => {

@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  AgentEventFrame,
-  FacetAgent,
-  FacetSession,
-  FacetTree,
-  ServerMessage,
-  VisitorContext,
+import {
+  MAX_FIELD_VALUE_CHARS,
+  type AgentEventFrame,
+  type ClientEvent,
+  type FacetAgent,
+  type FacetSession,
+  type FacetTree,
+  type ServerMessage,
+  type VisitorContext,
 } from "@facet/core";
 import { MemorySink, MemoryStageStore, type StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "./server.js";
@@ -190,7 +192,7 @@ function postEvent(base: string, visitorId: string, event: ClientEventLike): Pro
 type ClientEventLike =
   | { kind: "message"; text: string }
   | { kind: "visit"; visitor: { visitorId: string } }
-  | { kind: "action"; action: { name: string; payload?: unknown } };
+  | { kind: "action"; action: { name: string; payload?: unknown }; fields?: unknown };
 
 function control(
   base: string,
@@ -1070,6 +1072,99 @@ describe("hardening", () => {
       }),
     });
     expect(response.status).toBe(400);
+  });
+
+  it("rejects an action event whose fields value exceeds the cap", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const response = await postEvent(base, "v", {
+      kind: "action",
+      action: { name: "submit" },
+      fields: { note: "x".repeat(MAX_FIELD_VALUE_CHARS + 1) },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an action event with a non-string fields value", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const response = await postEvent(base, "v", {
+      kind: "action",
+      action: { name: "submit" },
+      fields: { count: 7 },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an action event whose fields is an array", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const response = await postEvent(base, "v", {
+      kind: "action",
+      action: { name: "submit" },
+      fields: ["a", "b"],
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an action event with a nested-object fields value", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const response = await postEvent(base, "v", {
+      kind: "action",
+      action: { name: "submit" },
+      fields: { name: { deep: "nested" } },
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("accepts a valid fields record and delivers it to the agent verbatim", async () => {
+    const captured: ClientEvent[] = [];
+    const capturingAgent: FacetAgent = (event) => {
+      captured.push(event);
+      return [];
+    };
+    const { server, base } = await start({ agentId: "a", agent: capturingAgent });
+    running = server;
+    // A value at exactly the cap is valid — the boundary is inclusive.
+    const fields = { name: "Ada", note: "y".repeat(MAX_FIELD_VALUE_CHARS) };
+    const response = await postEvent(base, "v", {
+      kind: "action",
+      action: { name: "submit", payload: { screen: "form" } },
+      fields,
+    });
+    expect(response.status).toBe(202);
+    await waitFor(async () => captured.length === 1);
+    const event = captured[0];
+    expect(event?.kind).toBe("action");
+    expect(event?.kind === "action" ? event.fields : undefined).toEqual(fields);
+  });
+
+  it("accepts an action without fields exactly as before", async () => {
+    const captured: ClientEvent[] = [];
+    const capturingAgent: FacetAgent = (event) => {
+      captured.push(event);
+      return [];
+    };
+    const { server, base } = await start({ agentId: "a", agent: capturingAgent });
+    running = server;
+    const response = await postEvent(base, "v", {
+      kind: "action",
+      action: { name: "buy", payload: { sku: "s1" } },
+    });
+    expect(response.status).toBe(202);
+    await waitFor(async () => captured.length === 1);
+    const event = captured[0];
+    expect(event?.kind).toBe("action");
+    expect(event?.kind === "action" ? event.fields : undefined).toBeUndefined();
+  });
+
+  it("accepts a host bind option and serves /health on loopback", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, host: "127.0.0.1" });
+    running = server;
+    const response = await fetch(`${base}/health`);
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("ok agent=local");
   });
 
   it("rejects an oversized /event body", async () => {
