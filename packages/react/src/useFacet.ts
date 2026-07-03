@@ -20,13 +20,24 @@ export interface FacetState {
   send(event: ClientEvent): void;
 }
 
+export interface UseFacetOptions {
+  /**
+   * A boot-shipped seed tree the host can hand in so the first paint doesn't
+   * wait for the first server frame (e.g. inlined into the page shell). The
+   * server's seed frame — a root replace with the same validated tree — then
+   * applies idempotently, so the server stays the only writer of stage content;
+   * this only moves the first paint earlier. Absent ⇒ starts from `EMPTY_TREE`.
+   */
+  readonly initialTree?: FacetTree;
+}
+
 /**
  * Subscribes to a transport and keeps the stage in sync by applying patches
  * client-side with the very same `applyPatch` the server uses, so the two
  * views never diverge.
  */
-export function useFacet(transport: FacetTransport): FacetState {
-  const [tree, setTree] = useState<FacetTree>(EMPTY_TREE);
+export function useFacet(transport: FacetTransport, options?: UseFacetOptions): FacetState {
+  const [tree, setTree] = useState<FacetTree>(options?.initialTree ?? EMPTY_TREE);
   const [chat, setChat] = useState<readonly string[]>([]);
 
   useEffect(() => {

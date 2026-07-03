@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import type { FacetTransport, ServerMessage } from "@facet/core";
+import { EMPTY_TREE, type FacetTransport, type ServerMessage } from "@facet/core";
 import { useFacet } from "./useFacet.js";
 
 afterEach(cleanup);
@@ -27,6 +27,13 @@ function fakeTransport() {
 const validTree = {
   root: "root",
   nodes: { root: { id: "root", type: "box" as const, children: [] } },
+};
+
+// A distinct root id (not "root") so "the seed is visible before any frame"
+// can't be satisfied by EMPTY_TREE, which also carries a "root" node.
+const seedTree = {
+  root: "seed",
+  nodes: { seed: { id: "seed", type: "box" as const, children: [] } },
 };
 
 describe("useFacet (jsdom)", () => {
@@ -81,6 +88,31 @@ describe("useFacet (jsdom)", () => {
     const { result } = renderHook(() => useFacet(t.transport));
     t.emit({ kind: "mystery" } as unknown as ServerMessage);
     expect(result.current.chat).toEqual([]);
+  });
+
+  it("renders a boot-shipped initialTree before any transport frame arrives", () => {
+    const t = fakeTransport();
+    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
+    // No frame has been emitted yet — the seed is the very first paint.
+    expect(result.current.tree.root).toBe("seed");
+    expect(result.current.tree.nodes["seed"]).toBeDefined();
+  });
+
+  it("applies the server's matching root-replace seed frame idempotently over the boot seed", () => {
+    const t = fakeTransport();
+    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
+    // The server stays the only writer of stage content: its seed frame is a
+    // root replace with the SAME validated tree, so it lands with no visible change.
+    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: seedTree }] });
+    expect(result.current.tree.root).toBe("seed");
+    expect(result.current.tree.nodes["seed"]).toBeDefined();
+  });
+
+  it("one-arg useFacet still starts from EMPTY_TREE (no boot seed)", () => {
+    const t = fakeTransport();
+    const { result } = renderHook(() => useFacet(t.transport));
+    expect(result.current.tree).toEqual(EMPTY_TREE);
+    expect(result.current.tree.nodes["seed"]).toBeUndefined();
   });
 
   it("unsubscribes from the transport on unmount", () => {

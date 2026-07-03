@@ -72,21 +72,37 @@ export interface RunningQuickstart {
 }
 
 /**
- * The HTML shell. When operator themes are present they ship inline as a
- * `window.__FACET_THEMES__` global (Decision 2 boot seam) — the JSON has `<`
- * escaped to `<` so a hostile `</script>` in a theme description can't break
- * out of the script context (defense in depth; `validateTheme` already refuses
- * `<` in values, but descriptions are freer text). No/empty themes ⇒ no script,
- * byte-identical to the no-assets boot.
+ * Serialize a value for inline `<script>` injection: JSON with every `<`
+ * escaped to `<` so a hostile `</script>` in the data can't break out of
+ * the script context (defense in depth). The escaped form is still valid JSON,
+ * so the browser's `JSON.parse`-free `window.X = …` assignment round-trips it.
  */
-function shellHtml(themes?: readonly FacetTheme[]): string {
-  const themeScript =
-    themes !== undefined && themes.length > 0
-      ? `<script>window.__FACET_THEMES__ = ${JSON.stringify(themes).replace(/</g, "\\u003c")}</script>`
-      : "";
+function escapeForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+/**
+ * The HTML shell. Two optional boot seams ship inline in ONE `<script>` (Decision
+ * 2): operator themes as `window.__FACET_THEMES__`, and a seed stage as
+ * `window.__FACET_INITIAL_STAGE__` so the first paint isn't gated on the first
+ * model turn. Both are `escapeForScript`-escaped (defense in depth; `validateTheme`
+ * already refuses `<` in theme values, but descriptions are freer text and the
+ * seed carries agent-authored node values). Neither present ⇒ no script,
+ * byte-identical to the no-assets boot; a single seam present ⇒ exactly its one
+ * assignment (the join adds no leading/trailing separator).
+ */
+function shellHtml(themes?: readonly FacetTheme[], initialStage?: FacetTree): string {
+  const globals: string[] = [];
+  if (themes !== undefined && themes.length > 0) {
+    globals.push(`window.__FACET_THEMES__ = ${escapeForScript(themes)}`);
+  }
+  if (initialStage !== undefined) {
+    globals.push(`window.__FACET_INITIAL_STAGE__ = ${escapeForScript(initialStage)}`);
+  }
+  const bootScript = globals.length > 0 ? `<script>${globals.join(";")}</script>` : "";
   return `<!doctype html>
 <html>
-<head><meta charset="utf-8" /><title>Facet</title>${themeScript}</head>
+<head><meta charset="utf-8" /><title>Facet</title>${bootScript}</head>
 <body><div id="root"></div><script type="module" src="/app.js"></script></body>
 </html>`;
 }
@@ -264,7 +280,7 @@ function handleRequest(
   }
   if (req.method === "GET" && pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(shellHtml(options.themes));
+    res.end(shellHtml(options.themes, options.initialStage));
     return;
   }
   if (req.method === "GET" && pathname === "/app.js") {

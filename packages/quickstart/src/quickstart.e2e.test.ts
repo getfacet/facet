@@ -424,6 +424,40 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
     }
   });
 
+  it("inlines the seed stage into the shell (escaped) so the first paint isn't model-gated", async () => {
+    // A hostile node value stands in for agent-authored text: the shell's
+    // `<`→< escape is the defense-in-depth that keeps it from closing the
+    // injected <script> — the same posture the theme global gets.
+    const hostileSeed: FacetTree = {
+      root: "seed-root",
+      nodes: {
+        "seed-root": {
+          id: "seed-root",
+          type: "box",
+          style: { direction: "col", gap: "md" },
+          children: ["seed-hero"],
+        },
+        "seed-hero": {
+          id: "seed-hero",
+          type: "text",
+          value: "</script><script>alert(1)</script>",
+        },
+      },
+    };
+    const seeded = await boot({ initialStage: hostileSeed });
+    try {
+      const body = await (await fetch(`${seeded.url}/`)).text();
+      expect(body).toContain("window.__FACET_INITIAL_STAGE__ = ");
+      expect(body).toContain('"seed-root"');
+      expect(body).toContain('"seed-hero"');
+      // Every `<` in the JSON is escaped, so the hostile value is inert data.
+      expect(body).toContain("\\u003c/script>\\u003cscript>alert(1)");
+      expect(body).not.toContain("<script>alert(1)");
+    } finally {
+      await seeded.close();
+    }
+  });
+
   it("inlines the theme map into the shell with the hostile </script> escaped", async () => {
     // `validateTheme` already refuses `<` in values, but a description is freer
     // text — the shell's `<`→< escape is the defense-in-depth that keeps a
@@ -479,6 +513,8 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
     // The shared `running` server booted with no themes and no initialStage.
     const body = await (await fetch(`${base}/`)).text();
     expect(body).not.toContain("__FACET_THEMES__");
+    // ...and no seed global either — byte-identical to the no-assets shell.
+    expect(body).not.toContain("__FACET_INITIAL_STAGE__");
 
     // A brand-new visitor that has not visited: rehydrate finds no stage (nothing
     // seeded, nothing painted), so the connect is a lone unstamped reset —
