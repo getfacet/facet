@@ -182,6 +182,16 @@ stub), and core/runtime/server gain zero LLM awareness — any user brain drops
 into the same slot, so the boundary stays intact while `npx facet-quickstart`
 gives a one-command first run.
 
+The built-in agent is a **tool-calling loop** (not a single completion): each
+turn the model calls tools across a bounded number of steps, observing each
+result before deciding the next. Five tools map 1:1 onto the `Stage` control
+API — `append_node` / `set_node` / `remove_node` (incremental edits),
+`render_page` (a full redraw), and `say` (chat) — via the provider's native
+function-calling (OpenAI) / tool-use (Anthropic). It is fail-safe throughout: a
+bad tool argument becomes an `error:` observation the model recovers from
+(never a throw), a provider failure mid-loop keeps whatever the stage already
+has, and a turn that accomplishes nothing degrades to one apologetic chat line.
+
 Quickstart's flagship interaction is the **field snapshot**: a pressable box's
 agent action may declare `collect: "<box id>"`, and at press time the renderer
 takes a synchronous snapshot of the visible `field` values under that box

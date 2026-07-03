@@ -1,11 +1,17 @@
 # @facet/quickstart
 
 One command from a provider key (or no key at all) to a live Facet page. The
-package ships a **built-in reference brain** — an LLM agent that draws the page
-from your guide markdown and keeps patching it as visitors chat — plus the
-`facet-quickstart` bin that boots it behind a ready-made server. It is to
-brains what `@facet/server` is to transports: a reference implementation of a
+package ships a **built-in reference brain** — a tool-calling LLM agent that
+draws the page from your guide markdown and keeps editing it as visitors chat —
+plus the `facet-quickstart` bin that boots it behind a ready-made server. It is
+to brains what `@facet/server` is to transports: a reference implementation of a
 pluggable seam, not the only brain Facet can run.
+
+Each turn the agent runs a bounded **tool loop**: the model calls
+`append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
+(a full redraw), and `say` (chat) — via the provider's native function-calling
+(OpenAI) / tool-use (Anthropic) — observing each result before deciding the
+next, so it can refine a page in place rather than redrawing it every time.
 
 ```bash
 # with a provider key (env only — see below)
