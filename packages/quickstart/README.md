@@ -25,7 +25,7 @@ On success it prints the link and the resolved brain:
 
 ```
 Facet quickstart running at http://localhost:5292
-Brain: openai (gpt-4o-mini)
+Brain: openai (gpt-5.4-mini)
 ```
 
 In the workspace (dev), build first — the bin serves a prebuilt page bundle:
@@ -54,7 +54,7 @@ facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--
 
 | Provider | Key env var | Model |
 | --- | --- | --- |
-| `openai` (default) | `OPENAI_API_KEY` | `gpt-4o-mini` |
+| `openai` (default) | `OPENAI_API_KEY` | `gpt-5.4-mini` |
 | `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` |
 
 Resolution: an explicit `--provider` wins and requires its own key; otherwise
