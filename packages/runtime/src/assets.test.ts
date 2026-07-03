@@ -9,6 +9,7 @@ import {
   type FacetAgent,
   type FacetSession,
   type FacetTree,
+  type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
 import {
@@ -20,7 +21,7 @@ import {
   type AssetsStore,
 } from "./assets.js";
 import { FileAssets } from "./file-assets.js";
-import { MemoryStageStore } from "./stage-store.js";
+import { MemoryStageStore, type StageStore } from "./stage-store.js";
 import { FacetRuntime } from "./runtime.js";
 
 // --- Fixtures shared by both references ---------------------------------------
@@ -296,6 +297,115 @@ describe("withInitialStage seed frame reaches the client", () => {
     });
     await runtime.handle(visitor, { kind: "message", text: "one" });
     const second = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const hasSeedReplace = second.some(
+      (m) => m.kind === "patch" && m.patches.some((p) => p.op === "replace" && p.path === ""),
+    );
+    expect(hasSeedReplace).toBe(false);
+  });
+});
+
+// --- the seed re-arms when the first turn fails to deliver --------------------
+
+describe("withInitialStage seed re-arms on a failed turn", () => {
+  /** Appends one node under the seed root — the first-turn incremental edit. */
+  const appendAgent: FacetAgent = () => [
+    {
+      kind: "patch",
+      patches: [
+        { op: "add", path: "/nodes/added", value: { id: "added", type: "text", value: "more" } },
+        { op: "add", path: "/nodes/root/children/-", value: "added" },
+      ],
+    },
+  ];
+
+  /** Fold a turn's messages over EMPTY_TREE (the client) and assert it lands on
+   * the server's saved stage — the invariant #2 drift check the seed frame exists
+   * to preserve. */
+  async function expectNoDrift(runtime: FacetRuntime, messages: readonly ServerMessage[]) {
+    let clientStage: FacetTree = EMPTY_TREE;
+    for (const message of messages) {
+      if (message.kind === "patch") clientStage = applyPatch(clientStage, message.patches);
+    }
+    expect(validateTree(clientStage).tree).toEqual(await runtime.stageFor("v"));
+  }
+
+  it("re-emits the seed on the next turn when the agent throws on the first turn", async () => {
+    let calls = 0;
+    const flakyAgent: FacetAgent = (event, session) => {
+      calls += 1;
+      if (calls === 1) throw new Error("first-turn boom");
+      return appendAgent(event, session);
+    };
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: flakyAgent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+
+    // Turn 1 throws — the seed was armed but never delivered (nothing persisted).
+    await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
+
+    // Turn 2 succeeds: the seed leads, then the agent's own patch — no drift.
+    const messages = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      expect(first.patches[0]).toEqual({ op: "replace", path: "", value: seedTree });
+    }
+    expect(messages.length).toBeGreaterThan(1);
+    await expectNoDrift(runtime, messages);
+  });
+
+  it("re-emits the seed on the next turn when the first turn's save rejects", async () => {
+    const seededStore = withInitialStage(new MemoryStageStore(), seedTree);
+    let failNextSave = true;
+    // Wrap ONLY the runtime-facing save so it rejects exactly once. `open` still
+    // seeds through the underlying store (its own save isn't this wrapped one), so
+    // the fresh seeded session IS persisted while the first turn fails to save.
+    const flakyStore: StageStore = {
+      get: (a, v) => seededStore.get(a, v),
+      open: (a, v) => seededStore.open(a, v),
+      save: (s) => {
+        if (failNextSave) {
+          failNextSave = false;
+          return Promise.reject(new Error("save boom"));
+        }
+        return seededStore.save(s);
+      },
+      takeSeeded: (a, v) => seededStore.takeSeeded?.(a, v) ?? false,
+    };
+    const runtime = new FacetRuntime({ agentId: "a", agent: appendAgent, stageStore: flakyStore });
+
+    // Turn 1 arms the seed, then save rejects — the seed frame never reached the
+    // client, and the flag was already consumed. It must survive to re-emit.
+    await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
+
+    const messages = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      expect(first.patches[0]).toEqual({ op: "replace", path: "", value: seedTree });
+    }
+    await expectNoDrift(runtime, messages);
+  });
+
+  it("prepends the seed on the applyMessages path, once", async () => {
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: appendAgent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+    const event = { kind: "message", text: "trigger" } as const;
+
+    const first = await runtime.applyMessages(visitor, event, [{ kind: "say", text: "late" }]);
+    expect(first[0]).toEqual({
+      kind: "patch",
+      patches: [{ op: "replace", path: "", value: seedTree }],
+    });
+    expect(first[1]).toEqual({ kind: "say", text: "late" });
+
+    // A second apply for the same visitor must NOT re-prepend the seed.
+    const second = await runtime.applyMessages(visitor, event, [{ kind: "say", text: "again" }]);
     const hasSeedReplace = second.some(
       (m) => m.kind === "patch" && m.patches.some((p) => p.op === "replace" && p.path === ""),
     );

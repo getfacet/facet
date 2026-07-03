@@ -42,6 +42,12 @@ export class FacetRuntime {
   // before a slow earlier one. This queue keeps per-visitor records in event order
   // without the response ever awaiting them. Different visitors stay parallel.
   private readonly serializeRecord = createSerialQueue<void>();
+  // Seeds armed by `takeSeeded` but not yet DELIVERED. `takeSeeded` reports a
+  // fresh seed at most once, so parking the value here lets a turn that failed to
+  // persist (agent throw or save rejection) re-emit the seed on the next turn —
+  // consumed only once a turn actually persists. Keyed per (agent, visitor); the
+  // per-visitor serial queue means no locking is needed.
+  private readonly pendingSeeds = new Map<string, FacetTree>();
 
   constructor(options: FacetRuntimeOptions) {
     this.agentId = options.agentId;
@@ -91,8 +97,7 @@ export class FacetRuntime {
   ): Promise<readonly ServerMessage[]> {
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       const session = await this.stageStore.open(this.agentId, visitor);
-      const seedFrame = this.takeSeedFrame(visitor, session.stage);
-      return this.persist(visitor, session, event, seedFrame ? [seedFrame, ...messages] : messages);
+      return this.persistWithSeed(visitor, session, event, messages);
     });
   }
 
@@ -101,11 +106,8 @@ export class FacetRuntime {
     event: ClientEvent,
   ): Promise<readonly ServerMessage[]> {
     const session = await this.stageStore.open(this.agentId, visitor);
-    // Capture the seed frame BEFORE the agent runs so its value is the seed, not
-    // any state the turn's tools go on to produce.
-    const seedFrame = this.takeSeedFrame(visitor, session.stage);
     const messages = await this.agent(event, session);
-    return this.persist(visitor, session, event, seedFrame ? [seedFrame, ...messages] : messages);
+    return this.persistWithSeed(visitor, session, event, messages);
   }
 
   /**
@@ -113,15 +115,38 @@ export class FacetRuntime {
    * decorator (`withInitialStage`) reports it via `takeSeeded` — the seed must
    * travel the patch channel: the browser's first connection rehydrated BEFORE
    * this session existed, so its reset carried no snapshot and every later
-   * incremental patch would target seed ids the client never received. Emit the
-   * seed as a root `replace` to PREPEND as the turn's first frame, so it gets a
-   * seq / replay-ring slot and the same ordered list fans out to the client.
-   * Applying `replace ""` with the already-seeded stage is a server-side no-op.
-   * Consumed once (a reconnect gets the seed via the normal rehydrate snapshot).
+   * incremental patch would target seed ids the client never received. Prepend
+   * the seed as a root `replace` first frame so it gets a seq / replay-ring slot
+   * and the same ordered list fans out to the client. Applying `replace ""` with
+   * the already-seeded stage is a server-side no-op.
+   *
+   * The seed is consumed only once a turn PERSISTS: a failed turn (agent throw
+   * before this runs, or a `save` rejection after arming) leaves the seed parked
+   * in `pendingSeeds` so the next turn re-emits it — otherwise a client that
+   * connected before the session existed would drift permanently (the blank-page
+   * bug this mechanism exists to fix). A later reconnect gets the seed the normal
+   * way, through the rehydrate snapshot.
    */
-  private takeSeedFrame(visitor: VisitorContext, stage: FacetTree): ServerMessage | undefined {
-    if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) !== true) return undefined;
-    return { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] };
+  private async persistWithSeed(
+    visitor: VisitorContext,
+    session: FacetSession,
+    event: ClientEvent,
+    messages: readonly ServerMessage[],
+  ): Promise<readonly ServerMessage[]> {
+    const key = sessionKey(this.agentId, visitor.visitorId);
+    // Arm (or re-arm from a previous failed turn): `takeSeeded` fires at most
+    // once, so park the seed value until a turn actually persists.
+    if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
+      this.pendingSeeds.set(key, session.stage);
+    }
+    const seed = this.pendingSeeds.get(key);
+    const delivered: readonly ServerMessage[] =
+      seed === undefined
+        ? messages
+        : [{ kind: "patch", patches: [{ op: "replace", path: "", value: seed }] }, ...messages];
+    const result = await this.persist(visitor, session, event, delivered);
+    this.pendingSeeds.delete(key); // consume ONLY after persist resolved
+    return result;
   }
 
   /**
