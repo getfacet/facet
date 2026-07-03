@@ -8,7 +8,7 @@ import {
   type FacetTheme,
   type FacetTree,
 } from "@facet/core";
-import type { StageStore } from "./stage-store.js";
+import { sessionKey, type StageStore } from "./stage-store.js";
 
 /**
  * The operator's per-agent asset library — themes, stamps, and an optional
@@ -146,8 +146,11 @@ export function isSeedableTree(tree: FacetTree): boolean {
  * delegate. Because every `open()` runs under `FacetRuntime`'s per-(agent,
  * visitor) serial queue and before the first agent turn, the seed is inside the
  * same serialized stage-write path and visible to the agent's first turn (it
- * "refines the seeded stage"); the browser's first snapshot ships via the
- * existing rehydrate path with zero server change.
+ * "refines the seeded stage"). It reaches the browser as the FIRST stamped patch
+ * frame of that turn — `FacetRuntime` prepends a root `replace` when `open()`
+ * reports a fresh seed via `takeSeeded` (the first connection's rehydrate ran
+ * before the session existed, so a bare reset carried no snapshot); a later
+ * reconnect gets the seed the normal way, through the rehydrate snapshot.
  *
  * INTENTIONAL interaction (recorded): a valid seeded tree counts as "built"
  * (`hasBuiltStage`), so the offline face will NOT overwrite it — desired, the
@@ -159,6 +162,10 @@ export function isSeedableTree(tree: FacetTree): boolean {
 export function withInitialStage(store: StageStore, initialStage?: FacetTree): StageStore {
   if (initialStage === undefined || !isSeedableTree(initialStage)) return store;
   const seed = initialStage;
+  // Keys of sessions this decorator just seeded, awaiting a single `takeSeeded`
+  // report to the runtime. Consume-once, so a re-open of the same key never
+  // re-emits the seed frame.
+  const seeded = new Set<string>();
   return {
     get: (agentId, visitorId) => store.get(agentId, visitorId),
     save: (session) => store.save(session),
@@ -170,7 +177,11 @@ export function withInitialStage(store: StageStore, initialStage?: FacetTree): S
       if (existing !== undefined) return existing;
       const session: FacetSession = { agentId, visitor, stage: seed };
       await store.save(session);
+      seeded.add(sessionKey(agentId, visitor.visitorId));
       return session;
+    },
+    takeSeeded(agentId, visitorId) {
+      return seeded.delete(sessionKey(agentId, visitorId));
     },
   };
 }

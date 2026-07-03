@@ -91,7 +91,8 @@ export class FacetRuntime {
   ): Promise<readonly ServerMessage[]> {
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       const session = await this.stageStore.open(this.agentId, visitor);
-      return this.persist(visitor, session, event, messages);
+      const seedFrame = this.takeSeedFrame(visitor, session.stage);
+      return this.persist(visitor, session, event, seedFrame ? [seedFrame, ...messages] : messages);
     });
   }
 
@@ -100,8 +101,27 @@ export class FacetRuntime {
     event: ClientEvent,
   ): Promise<readonly ServerMessage[]> {
     const session = await this.stageStore.open(this.agentId, visitor);
+    // Capture the seed frame BEFORE the agent runs so its value is the seed, not
+    // any state the turn's tools go on to produce.
+    const seedFrame = this.takeSeedFrame(visitor, session.stage);
     const messages = await this.agent(event, session);
-    return this.persist(visitor, session, event, messages);
+    return this.persist(visitor, session, event, seedFrame ? [seedFrame, ...messages] : messages);
+  }
+
+  /**
+   * If `open()` just created a fresh PRE-SEEDED session — a seeding `StageStore`
+   * decorator (`withInitialStage`) reports it via `takeSeeded` — the seed must
+   * travel the patch channel: the browser's first connection rehydrated BEFORE
+   * this session existed, so its reset carried no snapshot and every later
+   * incremental patch would target seed ids the client never received. Emit the
+   * seed as a root `replace` to PREPEND as the turn's first frame, so it gets a
+   * seq / replay-ring slot and the same ordered list fans out to the client.
+   * Applying `replace ""` with the already-seeded stage is a server-side no-op.
+   * Consumed once (a reconnect gets the seed via the normal rehydrate snapshot).
+   */
+  private takeSeedFrame(visitor: VisitorContext, stage: FacetTree): ServerMessage | undefined {
+    if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) !== true) return undefined;
+    return { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] };
   }
 
   /**

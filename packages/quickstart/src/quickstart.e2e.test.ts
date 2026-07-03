@@ -372,10 +372,11 @@ const SEED_TREE: FacetTree = {
 };
 
 describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
-  it("seeds the first visit snapshot from the initial tree before any agent call", async () => {
+  it("ships the seed to the FIRST stream as a stamped patch frame on the visit turn", async () => {
     // A recording NO-OP agent: it MUTATES no stage (paints nothing) — it only
     // records the stage it was handed and emits one `say` as a deterministic
-    // turn-completed signal. So any tree in the snapshot can ONLY be the seed.
+    // turn-completed signal. So any tree that reaches the browser can ONLY be the
+    // seed the runtime shipped, never an agent-authored paint.
     const seen: (FacetTree | undefined)[] = [];
     const recording = defineAgent(({ session, stage }) => {
       seen.push(session.stage);
@@ -386,25 +387,31 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
       const visitorId = "e2e-seed";
       const stream = await openStream(seeded.url, visitorId);
       try {
-        await stream.next(1); // reset (no stage yet — session opens on the visit)
-        // The visit opens+seeds the session; the no-op agent's `say` confirms the
-        // turn (open→seed→save) finished. No patch frame ⇒ no agent paint.
+        // The stream connects BEFORE the session exists, so its reset carries no
+        // snapshot (the bug: this browser would otherwise never see the seed).
+        await stream.next(1); // bare reset
         await postEvent(seeded.url, visitorId, { kind: "visit", visitor: { visitorId } });
-        const [say] = await stream.next(1);
+        // The visit opens+seeds the session; the seed travels the patch channel as
+        // the turn's FIRST stamped frame, ahead of the no-op agent's `say`.
+        const [seedFrame, say] = await stream.next(2); // seed patch, then say
+        expect(kindOf(seedFrame?.data)).toBe("patch");
+        expect(seedFrame?.id).toBeDefined(); // stamped — it got a seq / replay slot
+        const seedText = JSON.stringify(seedFrame?.data);
+        expect(seedText).toContain('"op":"replace"');
+        expect(seedText).toContain('"seed-root"');
+        expect(seedText).toContain('"seed-hero"');
         expect(kindOf(say?.data)).toBe("say");
       } finally {
         await stream.close();
       }
 
-      // A reconnect's rehydrate ships the seeded stage as its snapshot (from
-      // `runtime.stageFor`) — proving the seed reaches the browser with zero
-      // server change, before any agent-authored paint.
+      // Secondary check — a RECONNECT's rehydrate also ships the seeded stage as
+      // its snapshot (from `runtime.stageFor`), so a later tab is consistent too.
       const reconnect = await fetch(`${seeded.url}/stream?visitorId=${visitorId}`);
       const frames = await readEvents(reconnect, 2); // reset + snapshot patch
       expect(kindOf(frames[0]?.data)).toBe("reset");
       expect(kindOf(frames[1]?.data)).toBe("patch");
       const snapshot = JSON.stringify(frames[1]?.data);
-      expect(snapshot).toContain('"op":"replace"');
       expect(snapshot).toContain('"seed-root"');
       expect(snapshot).toContain('"seed-hero"');
 

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, validateTree } from "@facet/core";
-import type { ClientEvent, FacetSession, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
@@ -459,6 +459,40 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     await agent({ kind: "message", text: "hi" }, SESSION);
     expect(provider.turns[0]!.system).toContain(DEFAULT_GUIDE);
+  });
+
+  it("threads operator themes and stamps into the system prompt (names only, no theme CSS)", async () => {
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const theme: FacetTheme = {
+      name: "neon",
+      description: "a bright neon look",
+      color: { bg: "#ff00ff" },
+    };
+    const stamp: FacetStamp = {
+      name: "hero",
+      description: "a hero band",
+      root: "h-root",
+      nodes: {
+        "h-root": { id: "h-root", type: "box", children: ["h-title"] },
+        "h-title": { id: "h-title", type: "text", value: "Welcome" },
+      },
+    };
+    const agent = createQuickstartAgent({
+      provider,
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      themes: [theme],
+      stamps: [stamp],
+    });
+    await agent({ kind: "message", text: "draw" }, SESSION);
+
+    const system = provider.turns[0]!.system;
+    expect(system).toContain("THEMES");
+    expect(system).toContain("neon");
+    expect(system).toContain("STAMPS");
+    expect(system).toContain("hero");
+    // Theme documents reach the model by NAME only — the raw CSS value never does.
+    expect(system).not.toContain("#ff00ff");
   });
 });
 
