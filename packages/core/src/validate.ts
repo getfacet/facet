@@ -24,6 +24,7 @@ import {
   type TextStyle,
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
+import { isValidThemeName } from "./theme.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -496,13 +497,18 @@ export function validateTree(input: unknown): ValidationResult {
     screens?: Record<string, string>;
     entry?: string;
   } = { root: rootId, nodes };
-  // Keep the theme NAME only when it is a string; a non-string is dropped with
-  // an issue (else the save-time re-validate at runtime.ts would strip it
-  // silently). Styles stay tokens — the tree never carries a CSS value.
-  if (typeof input.theme === "string") {
+  // Keep the theme NAME only when it is a string that passes the theme-name rule
+  // (`isValidThemeName`, the same floor `validateTheme` applies to a document's
+  // own name) — otherwise it is dropped with an issue (else the save-time
+  // re-validate at runtime.ts would strip it silently). This caps an untrusted
+  // writer (a prompt-injected model, a visitor) at 64 chars of `[a-zA-Z0-9_-]`
+  // so an unbounded or control-character name can't be stored and re-shipped in
+  // every rehydrate/replay frame. Styles stay tokens — the tree never carries a
+  // CSS value.
+  if (typeof input.theme === "string" && isValidThemeName(input.theme)) {
     tree.theme = input.theme;
   } else if (input.theme !== undefined) {
-    issues.push("theme is not a string; dropped");
+    issues.push("theme is not a valid theme name; dropped");
   }
   if (screens !== undefined && entry !== undefined) {
     tree.screens = screens;

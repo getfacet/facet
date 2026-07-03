@@ -172,6 +172,15 @@ describe("validateTree theme", () => {
     }
   });
 
+  it("drops a string theme that is not a valid theme name (unbounded / control chars)", () => {
+    for (const bad of ["a".repeat(100_000), "brand\u0000ctl", "has space", "x".repeat(65)]) {
+      const { tree, issues } = validateTree({ ...base, theme: bad });
+      expect((tree as { theme?: unknown }).theme).toBeUndefined();
+      expect("theme" in tree).toBe(false);
+      expect(issues.some((issue) => issue.includes("theme is not a valid theme name"))).toBe(true);
+    }
+  });
+
   it("materializes no theme on garbage input (EMPTY_TREE carries none)", () => {
     for (const garbage of [null, 42, "nope", {}, { nodes: {} }]) {
       const { tree } = validateTree(garbage);

@@ -54,6 +54,16 @@ export interface ThemeValidationResult {
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 
 /**
+ * True iff `name` is a valid theme name — a short, filename-safe identifier
+ * (1–64 chars of `[a-zA-Z0-9_-]`, leading char alphanumeric). The single rule
+ * both `validateTheme` (a theme document's own name) and `validateTree` (a
+ * tree's `theme` reference) apply, so the two can never drift apart.
+ */
+export function isValidThemeName(name: string): boolean {
+  return NAME_RE.test(name);
+}
+
+/**
  * Keys that would poison a normal object (assign its [[Prototype]] or shadow a
  * built-in) are dropped outright — mirrors `validate.ts`'s forbidden node ids.
  * Output maps are ALSO built on `Object.create(null)`, so even a key that slips
@@ -312,7 +322,7 @@ export function validateTheme(input: unknown): ThemeValidationResult {
   }
 
   const name = input.name;
-  if (typeof name !== "string" || !NAME_RE.test(name)) {
+  if (typeof name !== "string" || !isValidThemeName(name)) {
     issues.push({ severity: "error", message: "theme name is missing or malformed" });
     return { issues };
   }

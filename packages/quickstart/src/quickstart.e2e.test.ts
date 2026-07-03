@@ -250,6 +250,35 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
     });
     expect(firstLine).toContain("403");
   });
+
+  it("refuses a non-loopback Host on GET / and leaks no seed data to a rebound origin", async () => {
+    // The shell now inlines operator data (`__FACET_INITIAL_STAGE__`), so the
+    // DNS-rebinding guard must front `/` too — a rebound attacker.example must
+    // not read the seed tree out of the boot script.
+    const seeded = await boot({ initialStage: SEED_TREE });
+    try {
+      const port = Number(new URL(seeded.url).port);
+      const raw = await new Promise<string>((resolve, reject) => {
+        const socket = connect(port, "127.0.0.1", () => {
+          socket.write(`GET / HTTP/1.1\r\nHost: attacker.example:${String(port)}\r\n\r\n`);
+        });
+        let buf = "";
+        socket.on("data", (d) => {
+          buf += d.toString();
+        });
+        socket.on("end", () => resolve(buf));
+        socket.on("error", reject);
+        setTimeout(() => socket.end(), 300);
+      });
+      const statusLine = raw.split("\r\n")[0] ?? "";
+      expect(statusLine).toContain("403");
+      // No boot script and no seed content crossed to the rebound origin.
+      expect(raw).not.toContain("__FACET_INITIAL_STAGE__");
+      expect(raw).not.toContain("seed-root");
+    } finally {
+      await seeded.close();
+    }
+  });
 });
 
 describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () => {
@@ -476,6 +505,44 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
       expect(body).not.toContain("<script>alert(1)");
     } finally {
       await themed.close();
+    }
+  });
+
+  it("joint boot: themes AND initialStage ship as one executable script that materializes both globals", async () => {
+    // The flagship `--assets` path — an assets dir with a theme AND a seedable
+    // tree passes BOTH seams. This is the two-entry `globals.join(";")` branch
+    // the shellHtml doc comment claims but no other test exercises: if the join
+    // separator regressed (dropped, or a bare `,`), the inline script would be a
+    // syntax error or clobber the first assignment, silently killing BOTH the
+    // instant paint and the theme map. Executing the body (not string-matching
+    // the `;`) is what catches that.
+    const validTheme: FacetTheme = { name: "brand", description: "operator theme" };
+    const themes: readonly FacetTheme[] = [validTheme];
+    const seeded = await boot({ themes, initialStage: SEED_TREE });
+    try {
+      const body = await (await fetch(`${seeded.url}/`)).text();
+
+      // Exactly one inline boot <script> (no attributes), and it precedes the
+      // /app.js module tag so the globals exist before the bundle reads them.
+      const inlineMatches = body.match(/<script>[\s\S]*?<\/script>/g) ?? [];
+      expect(inlineMatches).toHaveLength(1);
+      const bootTag = inlineMatches[0]!;
+      expect(body.indexOf(bootTag)).toBeLessThan(body.indexOf('src="/app.js"'));
+
+      // Both assignments are present in the one script.
+      expect(bootTag).toContain("window.__FACET_THEMES__ =");
+      expect(bootTag).toContain("window.__FACET_INITIAL_STAGE__ =");
+
+      // The join contract: executing the extracted body as real JS must
+      // materialize BOTH globals (a comma-operator regression would parse but
+      // drop the first assignment; a dropped separator would throw).
+      const scriptBody = bootTag.slice("<script>".length, -"</script>".length);
+      const fakeWindow: Record<string, unknown> = {};
+      new Function("window", scriptBody)(fakeWindow);
+      expect(fakeWindow.__FACET_THEMES__).toEqual(themes);
+      expect(fakeWindow.__FACET_INITIAL_STAGE__).toEqual(SEED_TREE);
+    } finally {
+      await seeded.close();
     }
   });
 

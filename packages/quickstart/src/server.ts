@@ -278,6 +278,19 @@ function handleRequest(
     res.end();
     return;
   }
+  // DNS-rebinding guard, applied to EVERY route including the shell. The shell
+  // now inlines operator data (`__FACET_INITIAL_STAGE__` / `__FACET_THEMES__`),
+  // so a rebound hostile origin (attacker.com → 127.0.0.1, Host still
+  // non-loopback) that fetches `/` could read the operator's seed tree and theme
+  // documents out of the boot script — the shell is no longer the data-free
+  // constant it was when this check only fronted the protocol routes. Top-level
+  // navigations carry no `Origin`, so `isCrossOrigin` stays off the shell/app.js
+  // GETs and only fronts the protocol routes below.
+  if (isDisallowedHost(req, options.host ?? DEFAULT_PUBLIC_HOST)) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    res.end("request refused");
+    return;
+  }
   if (req.method === "GET" && pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
     res.end(shellHtml(options.themes, options.initialStage));
@@ -290,9 +303,9 @@ function handleRequest(
   // The protocol routes (/event, /stream, /health) are unauthenticated and
   // /event spends the deployer's provider key. Reject cross-origin BROWSER
   // requests (a malicious site the deployer visits POSTing here in a loop, or
-  // reading /stream) AND non-loopback Host headers (DNS rebinding) — the served
-  // page is same-origin on a loopback host and unaffected.
-  if (isCrossOrigin(req) || isDisallowedHost(req, options.host ?? DEFAULT_PUBLIC_HOST)) {
+  // reading /stream). The non-loopback Host check (DNS rebinding) already ran
+  // above for every route.
+  if (isCrossOrigin(req)) {
     res.writeHead(403, { "Content-Type": "text/plain" });
     res.end("request refused");
     return;

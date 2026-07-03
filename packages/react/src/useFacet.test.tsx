@@ -98,14 +98,23 @@ describe("useFacet (jsdom)", () => {
     expect(result.current.tree.nodes["seed"]).toBeDefined();
   });
 
-  it("applies the server's matching root-replace seed frame idempotently over the boot seed", () => {
+  it("the server's root-replace frame wins over the boot seed (server stays the only writer)", () => {
     const t = fakeTransport();
     const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
-    // The server stays the only writer of stage content: its seed frame is a
-    // root replace with the SAME validated tree, so it lands with no visible change.
-    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: seedTree }] });
+    // Pre-frame: the boot seed is the first paint.
     expect(result.current.tree.root).toBe("seed");
-    expect(result.current.tree.nodes["seed"]).toBeDefined();
+    // The server is the only writer of stage content: a root-replace frame
+    // carrying a DIFFERENT tree must overwrite the boot seed. A dead
+    // subscription, a rejected patch, or an isTreeShaped rejection would all
+    // leave root === "seed" and fail here.
+    const serverTree = {
+      root: "server",
+      nodes: { server: { id: "server", type: "text" as const, value: "from server" } },
+    };
+    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: serverTree }] });
+    expect(result.current.tree.root).toBe("server");
+    expect(result.current.tree.nodes["server"]).toBeDefined();
+    expect(result.current.tree.nodes["seed"]).toBeUndefined();
   });
 
   it("one-arg useFacet still starts from EMPTY_TREE (no boot seed)", () => {
