@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import type { FacetNode, FacetTree, NodeId } from "@facet/core";
+import { MAX_FIELD_VALUE_CHARS, type FacetNode, type FacetTree, type NodeId } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 
 afterEach(cleanup);
@@ -340,6 +340,382 @@ describe("StageRenderer toggle (jsdom)", () => {
 
     fireEvent.click(screen.getByRole("button"));
     expect(screen.getByText("steady")).toBeTruthy();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
+// Collect (DC-001/002/003): a press whose agent action declares `collect` snapshots
+// the VISIBLE, MOUNTED field values inside that box's subtree into a second
+// onAction argument. Inputs stay uncontrolled (invariant #6): the DOM owns the
+// text, nothing writes values into the tree, and typing alone emits no traffic.
+describe("StageRenderer collect (jsdom)", () => {
+  /** name+email form in box "form"; a submit button collecting it. */
+  const formTree = (): FacetTree =>
+    tree({
+      root: { id: "root", type: "box", children: ["form", "submit"] },
+      form: { id: "form", type: "box", children: ["nameF", "emailF"] },
+      nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+      emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+      submit: {
+        id: "submit",
+        type: "box",
+        onPress: { kind: "agent", name: "submit", collect: "form" },
+        children: ["st"],
+      },
+      st: { id: "st", type: "text", value: "Send" },
+    });
+
+  it("collect press delivers the typed field values alongside the action", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={formTree()} />);
+
+    fireEvent.change(screen.getByPlaceholderText("your name"), { target: { value: "Ada" } });
+    fireEvent.change(screen.getByPlaceholderText("your email"), {
+      target: { value: "ada@lovelace.dev" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith(
+      { kind: "agent", name: "submit" },
+      { name: "Ada", email: "ada@lovelace.dev" },
+    );
+  });
+
+  it("typing alone emits nothing (field text is browser view-state)", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={formTree()} />);
+
+    const input = screen.getByPlaceholderText("your name") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Ada" } });
+
+    expect(input.value).toBe("Ada"); // uncontrolled input keeps the text
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("unknown collect id degrades to empty fields, never a throw", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["submit"] },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "ghost" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, {});
+  });
+
+  it("collect on a target with zero fields delivers {}", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["panel", "submit"] },
+          panel: { id: "panel", type: "box", children: ["p"] },
+          p: { id: "p", type: "text", value: "no inputs here" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "panel" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, {});
+  });
+
+  it("non-field nodes in the collect subtree contribute nothing", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: { id: "form", type: "box", children: ["heading", "pic", "inner"] },
+          heading: { id: "heading", type: "text", value: "Sign up" },
+          pic: { id: "pic", type: "image", src: "https://example.com/a.png", alt: "pic" },
+          inner: { id: "inner", type: "box", children: ["emailF"] },
+          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("your email"), {
+      target: { value: "a@b.dev" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, { email: "a@b.dev" });
+  });
+
+  it("does not collect a same-named field OUTSIDE the collect subtree", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["outsideF", "form", "submit"] },
+          outsideF: { id: "outsideF", type: "field", name: "email", placeholder: "outside" },
+          form: { id: "form", type: "box", children: ["emailF"] },
+          emailF: { id: "emailF", type: "field", name: "email", placeholder: "inside" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("outside"), { target: { value: "evil@x" } });
+    fireEvent.change(screen.getByPlaceholderText("inside"), { target: { value: "good@x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, { email: "good@x" });
+  });
+
+  it("duplicate field names inside the subtree: the first in walk order wins", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: { id: "form", type: "box", children: ["first", "inner"] },
+          first: { id: "first", type: "field", name: "email", placeholder: "first" },
+          inner: { id: "inner", type: "box", children: ["second"] },
+          second: { id: "second", type: "field", name: "email", placeholder: "second" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("first"), { target: { value: "first@x" } });
+    fireEvent.change(screen.getByPlaceholderText("second"), { target: { value: "second@x" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, { email: "first@x" });
+  });
+
+  it(`truncates a value longer than the cap to MAX_FIELD_VALUE_CHARS`, () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={formTree()} />);
+
+    fireEvent.change(screen.getByPlaceholderText("your name"), {
+      target: { value: "x".repeat(MAX_FIELD_VALUE_CHARS + 25) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    const fields = onAction.mock.calls[0]?.[1] as Record<string, string>;
+    expect(fields["name"]).toBe("x".repeat(MAX_FIELD_VALUE_CHARS));
+    expect(fields["email"]).toBe("");
+  });
+
+  it("terminates on a cyclic collect subtree and keeps the fields it reached", () => {
+    const onAction = vi.fn();
+    // form → loop → form (cycle); the raw live-patch path can produce this.
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: { id: "form", type: "box", children: ["nameF", "loop"] },
+          nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+          loop: { id: "loop", type: "box", children: ["form", "extraF"] },
+          extraF: { id: "extraF", type: "field", name: "extra", placeholder: "extra" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("your name"), { target: { value: "Ada" } });
+    fireEvent.change(screen.getByPlaceholderText("extra"), { target: { value: "more" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith(
+      { kind: "agent", name: "submit" },
+      { name: "Ada", extra: "more" },
+    );
+  });
+
+  it("an action without collect passes no fields argument at all", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: { id: "form", type: "box", children: ["nameF"] },
+          nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "go" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("your name"), { target: { value: "Ada" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    // Exactly ONE argument — today's emission, byte-for-byte (fields undefined).
+    expect(onAction.mock.calls[0]).toEqual([{ kind: "agent", name: "go" }]);
+    expect(onAction.mock.calls[0]).toHaveLength(1);
+  });
+
+  it("collect target living on a NON-current screen delivers {} (only mounted fields)", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={{
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: [] },
+            home: { id: "home", type: "box", children: ["submit"] },
+            submit: {
+              id: "submit",
+              type: "box",
+              onPress: { kind: "agent", name: "submit", collect: "aboutForm" },
+              children: ["st"],
+            },
+            st: { id: "st", type: "text", value: "Send" },
+            about: { id: "about", type: "box", children: ["aboutForm"] },
+            aboutForm: { id: "aboutForm", type: "box", children: ["secretF"] },
+            secretF: { id: "secretF", type: "field", name: "secret", placeholder: "secret" },
+          },
+          screens: { home: "home", about: "about" },
+          entry: "home",
+        }}
+      />,
+    );
+
+    // The form's screen is not current, so its input is not in the DOM at all.
+    expect(screen.queryByPlaceholderText("secret")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, {});
+  });
+
+  it("omits a toggled-hidden field inside the collect subtree", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["hideBtn", "form", "submit"] },
+          hideBtn: {
+            id: "hideBtn",
+            type: "box",
+            onPress: { kind: "toggle", target: "emailF" },
+            children: ["ht"],
+          },
+          ht: { id: "ht", type: "text", value: "Hide" },
+          form: { id: "form", type: "box", children: ["nameF", "emailF"] },
+          nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("your name"), { target: { value: "Ada" } });
+    fireEvent.click(screen.getByRole("button", { name: "Hide" })); // unmounts the email input
+    expect(screen.queryByPlaceholderText("your email")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, { name: "Ada" });
+  });
+
+  it("navigate and toggle stay browser-local in a collect-bearing tree (unchanged)", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={{
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: [] },
+            home: { id: "home", type: "box", children: ["toggleBtn", "panel", "form", "goBtn"] },
+            toggleBtn: {
+              id: "toggleBtn",
+              type: "box",
+              onPress: { kind: "toggle", target: "panel" },
+              children: ["tt"],
+            },
+            tt: { id: "tt", type: "text", value: "Toggle" },
+            panel: { id: "panel", type: "box", children: ["pt"] },
+            pt: { id: "pt", type: "text", value: "panel content" },
+            form: { id: "form", type: "box", children: ["nameF"] },
+            nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+            goBtn: {
+              id: "goBtn",
+              type: "box",
+              onPress: { kind: "navigate", to: "about" },
+              children: ["gt"],
+            },
+            gt: { id: "gt", type: "text", value: "Go" },
+            about: { id: "about", type: "box", children: ["at"] },
+            at: { id: "at", type: "text", value: "about content" },
+          },
+          screens: { home: "home", about: "about" },
+          entry: "home",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    expect(screen.queryByText("panel content")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Go" }));
+    expect(screen.getByText("about content")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("your name")).toBeNull();
+
     expect(onAction).not.toHaveBeenCalled();
   });
 });
