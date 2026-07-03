@@ -285,7 +285,7 @@ work_units:
     title: "Prompt assembly (3 layers) + LLM-output salvage parser"
     owner_role: "subagent"
     packages: ["@facet/quickstart"]
-    objective: "Land Decision 5 — buildSystem (layer ① STAGE_SPEC + fixed {\"say\"?,\"tree\"?} output contract; layer ② guide under PAGE BRIEF; DEFAULT_GUIDE) and buildTurnMessages (layer ③: last-20 sink turns + current event incl. action fields + current stage JSON), plus parseReply adapted from the playground salvage (copied, not imported)."
+    objective: 'Land Decision 5 — buildSystem (layer ① STAGE_SPEC + fixed {"say"?,"tree"?} output contract; layer ② guide under PAGE BRIEF; DEFAULT_GUIDE) and buildTurnMessages (layer ③: last-20 sink turns + current event incl. action fields + current stage JSON), plus parseReply adapted from the playground salvage (copied, not imported).'
     files:
       - path: "packages/quickstart/src/prompt.ts"
         change_type: "add"
