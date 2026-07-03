@@ -1,0 +1,600 @@
+# Execution Manifest: Kits & Themes as Data (Bundle B)
+#
+# Keep synchronized with specs/dev-specs/kits-themes-as-data.md
+# (WU ids, files, deps, checks). Final gate source of truth: AGENTS.md +
+# docs/REVIEW-RULES.md.
+
+feature_slug: "kits-themes-as-data"
+spec_path: "specs/dev-specs/kits-themes-as-data.md"
+context_evidence_path: "specs/context/kits-themes-as-data.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; pnpm --filter @facet/quickstart build runnable (WU-10 Tier 1b needs the real bundle); no provider key required for any blocking WU (keys only for the Tier-2/3 smoke at the final gate)"
+    owner: "main-agent"
+    verification: "pnpm install && pnpm --filter @facet/quickstart build"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+
+work_units:
+  - id: "WU-1"
+    title: "Core theme documents — FacetTheme + validateTheme"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Land Decision 1 — the FacetTheme document type and validateTheme (per-group membership over the tokens.ts arrays, value allowlist, url()/var()/expression()/javascript: deny-list as errors, dimension/weight clamps as warnings, null-proto output maps, WCAG contrast warning naming pair + ratio), pure and dependency-free."
+    files:
+      - path: "packages/core/src/theme.ts"
+        change_type: "add"
+        purpose: "FacetTheme, ThemeIssue, ThemeValidationResult, validateTheme, contrast arithmetic (no color lib, no node:*)"
+      - path: "packages/core/src/theme.test.ts"
+        change_type: "add"
+        purpose: "RED-first table test: hostile values refused as errors; __proto__/constructor keys never resolve; dimension clamp with warning; low-contrast warning with pair + ratio, document accepted; junk inputs never throw; valid partial document round-trips"
+      - path: "packages/core/src/index.ts"
+        change_type: "update"
+        purpose: "add export * from './theme.js'"
+    depends_on: []
+    parallel_group: "par-1"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/theme.test.ts -t 'rejects url() and expression() color values as errors'"
+      target: "packages/core/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/theme.test.ts -t 'rejects url() and expression() color values as errors'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/theme.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/theme.test.ts"
+        covers_dc: ["DC-003", "DC-004"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "@facet/core still dependency-free, no node:* imports; validateTheme never throws on any input"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Core tree + stamps — FacetTree.theme, validateTree keep-if-string, validateStamp"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add theme?: string to FacetTree, make validateTree's output construction (validate.ts:465-475) keep a string theme and drop a non-string one with an issue (the one mandatory core change — else the save-time validate at runtime.ts:157 strips it), and add FacetStamp + validateStamp next to validateTree (sharing the module-private sanitizeNode)."
+    files:
+      - path: "packages/core/src/tree.ts"
+        change_type: "update"
+        purpose: "theme?: string on FacetTree with a select-by-name doc comment (isTreeShaped/EMPTY_TREE untouched)"
+      - path: "packages/core/src/validate.ts"
+        change_type: "update"
+        purpose: "output tree keeps theme iff string (issue on non-string drop); FacetStamp/StampValidationResult/validateStamp (brick-shape + token membership + null-proto node map + dangling/cycle discipline; root must resolve, need not be a box; no screens/entry; exports flow through the existing export * barrel)"
+      - path: "packages/core/src/validate.test.ts"
+        change_type: "update"
+        purpose: "RED-first: string theme preserved; non-string dropped with issue; garbage input yields EMPTY_TREE with no theme; validateStamp table (valid fragment kept; dangling root refused; hostile ids dropped; token junk sanitized; single-text-root stamp legal; cyclic fragment a→b→a broken with an issue, no throw; > MAX_DEPTH-deep fragment clamped with an issue, no throw)"
+    depends_on: []
+    parallel_group: "par-1"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/validate.test.ts -t 'keeps a string theme and drops a non-string theme'"
+      target: "packages/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/validate.test.ts -t 'keeps a string theme and drops a non-string theme'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/validate.test.ts packages/core/src/tree.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/validate.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "sanitizeNode stays module-private (shared, not re-derived); existing validateTree suite untouched and green"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "STAGE_SPEC — teach theme select-by-name"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Extend STAGE_SPEC (single prompt source) so the tree-shape line carries theme?: '<theme name>' plus one compact sentence: set it only to a provided theme NAME; never write CSS values; unknown names fall back to the default look — pinned by the content test (embedders inherit verbatim, no code change)."
+    files:
+      - path: "packages/core/src/spec.ts"
+        change_type: "update"
+        purpose: "tree-shape line + select-by-name sentence (spec stays a single compact template string)"
+      - path: "packages/core/src/spec.test.ts"
+        change_type: "update"
+        purpose: "pin that STAGE_SPEC mentions the theme field, name-only selection, and the default fallback"
+    depends_on: ["WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/spec.test.ts -t 'documents theme select-by-name'"
+      target: "packages/core/src/spec.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/spec.test.ts -t 'documents theme select-by-name'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/spec.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/spec.test.ts"
+        covers_dc: ["DC-012"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "STAGE_SPEC documents only what WU-2's validator accepts (a name; no value affordance anywhere in the text)"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "Agent SDK — Stage.theme(name)"
+    owner_role: "subagent"
+    packages: ["@facet/agent"]
+    objective: "Add Stage.theme(name: string) recording {op:'add', path:'/theme', value:name} (the screens() top-level upsert precedent) so any in-process agent — including the quickstart brain and stub — can switch themes with one normal RFC 6902 op."
+    files:
+      - path: "packages/agent/src/stage.ts"
+        change_type: "update"
+        purpose: "theme(name) method + doc comment (select-by-name; unknown names are the renderer's fail-safe problem)"
+      - path: "packages/agent/src/stage.test.ts"
+        change_type: "update"
+        purpose: "RED-first: theme('midnight') records the top-level add op, coalesces with other pending edits into one patch message, and orders correctly around say"
+    depends_on: ["WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/agent/src/stage.test.ts -t 'records a theme selection as a top-level add op'"
+      target: "packages/agent/src/stage.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/agent/src/stage.test.ts -t 'records a theme selection as a top-level add op'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/agent/src/stage.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent/src/stage.test.ts"
+        covers_dc: ["DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "New method flows through the existing barrel; no other Stage semantics change"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "React — DEFAULT_THEME, resolveTheme, theme-parameterized renderer"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Implement Decision 2's react half — export today's values as DEFAULT_THEME, add ResolvedTheme + resolveTheme (own-key/membership/primitive floors onto null-proto maps; unknown/non-string name ⇒ default constant), give the style fns a defaulted trailing theme parameter (zero-arg byte-identical), and thread an optional themes prop through StageRenderer into the style call sites. ChatDock untouched (default palette, decided)."
+    files:
+      - path: "packages/react/src/theme.ts"
+        change_type: "update"
+        purpose: "DEFAULT_THEME document; ResolvedTheme; resolveTheme; internal maps become the default resolved theme; style fns gain theme: ResolvedTheme = DEFAULT_RESOLVED; COLOR export preserved"
+      - path: "packages/react/src/theme.test.ts"
+        change_type: "update"
+        purpose: "zero-extra-arg style outputs byte-identical to current pins; resolveTheme merge/fallback semantics; DEFAULT_THEME passes validateTheme cleanly"
+      - path: "packages/react/src/StageRenderer.tsx"
+        change_type: "update"
+        purpose: "optional themes?: readonly FacetTheme[] prop; memoized resolveTheme((tree as {theme?: unknown}).theme, themes); resolved theme threaded to boxStyle/textStyle/imageStyle/fieldStyle call sites"
+      - path: "packages/react/src/StageRenderer.theme.test.tsx"
+        change_type: "add"
+        purpose: "jsdom RED-first: named theme values render in DOM styles (DC-001); theme patch flip re-renders with new values (DC-010 DOM half); unknown name ⇒ default, no throw (DC-002); fail-safe probe sweep (DC-011); no themes prop ⇒ today's output"
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/react/src/StageRenderer.theme.test.tsx -t 'renders the named theme values from the themes prop'"
+      target: "packages/react/src/StageRenderer.theme.test.tsx"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/react/src/StageRenderer.theme.test.tsx -t 'renders the named theme values from the themes prop'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/react/src"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/react/src/StageRenderer.theme.test.tsx"
+        covers_dc: ["DC-001", "DC-002", "DC-010", "DC-011"]
+        action: "new"
+      - type: "unit"
+        target: "packages/react/src/theme.test.ts"
+        covers_dc: ["DC-001", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "StageRenderer.test.ts static suite passes UNCHANGED (byte-identical default claim); ChatDock.tsx diff is zero"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-6"
+    title: "Runtime — assets registry (AssetsStore, MemoryAssets, FileAssets, loadAssets) + withInitialStage"
+    owner_role: "subagent"
+    packages: ["@facet/runtime"]
+    objective: "Implement Decisions 3+4 — the raw-document AssetsStore interface with memory and file references (StageStore split: browser-safe barrel vs ./node), loadAssets running the core validators with skip+issue semantics, isSeedableTree refusing the EMPTY_TREE trap, and the withInitialStage store decorator that seeds fresh sessions inside the runtime's serialized write path."
+    files:
+      - path: "packages/runtime/src/assets.ts"
+        change_type: "add"
+        purpose: "AssetDocuments/AssetsStore/LoadedAssets, MemoryAssets, loadAssets (validateTheme/validateStamp/validateTree + isSeedableTree; duplicate theme names first-wins + issue), isSeedableTree, withInitialStage (doc comment records the intentional hasBuiltStage interaction)"
+      - path: "packages/runtime/src/file-assets.ts"
+        change_type: "add"
+        purpose: "FileAssets(dir): *.theme.json / *.stamp.json (sorted) / initial.tree.json; unreadable/unparseable file ⇒ issue entry, never a throw (file-stage-store posture)"
+      - path: "packages/runtime/src/assets.test.ts"
+        change_type: "add"
+        purpose: "RED-first shared contract suite against MemoryAssets AND FileAssets (tmp dir): valid docs round-trip; invalid docs skipped with issues; garbage initial tree ⇒ initialTree undefined + issue (EMPTY_TREE trap, DC-009); withInitialStage seed/no-overwrite/delegate; isSeedableTree truth table"
+      - path: "packages/runtime/src/index.ts"
+        change_type: "update"
+        purpose: "add export * from './assets.js' (browser-safe: assets.ts imports no node:*)"
+      - path: "packages/runtime/src/node.ts"
+        change_type: "update"
+        purpose: "add export * from './file-assets.js'"
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/runtime/src/assets.test.ts -t 'skips invalid documents with issues and keeps valid ones'"
+      target: "packages/runtime/src/assets.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/runtime/src/assets.test.ts -t 'skips invalid documents with issues and keeps valid ones'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/runtime/src"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/runtime/src/assets.test.ts"
+        covers_dc: ["DC-007", "DC-009"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "assets.ts has zero node:* imports (browser-safe barrel holds); file-assets.ts only behind ./node; no runtime/package.json change needed"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-7"
+    title: "Kit — Builder prefixes, fragment(), KIT_STAMPS"
+    owner_role: "subagent"
+    packages: ["@facet/kit"]
+    objective: "Implement Decision 7 — per-instantiation id prefixes on Builder, the fragment(block, prefix) graft API (never emits 'root', disjoint across prefixes), page() byte-identical to today, and KIT_STAMPS (hero/card/cta-button as validated FacetStamps)."
+    files:
+      - path: "packages/kit/src/kit.ts"
+        change_type: "update"
+        purpose: "Builder constructor prefix + next() minting <prefix>k<n>; fragment()/Fragment export; page() unchanged behavior (root 'root', unprefixed ids)"
+      - path: "packages/kit/src/stamps.ts"
+        change_type: "add"
+        purpose: "KIT_STAMPS: readonly FacetStamp[] derived from the presets via fragment() (name + one-line description each)"
+      - path: "packages/kit/src/kit.test.ts"
+        change_type: "update"
+        purpose: "RED-first: same preset twice in one page() ⇒ zero collisions; fragments under prefixes 'a'/'b' disjoint, none equal 'root'; grafted fragment passes validateTree with no dropped nodes; page() byte-identical pins"
+      - path: "packages/kit/src/stamps.test.ts"
+        change_type: "add"
+        purpose: "every KIT_STAMPS entry passes validateStamp with zero error issues; ids all carry the stamp's prefix; names unique"
+      - path: "packages/kit/src/index.ts"
+        change_type: "update"
+        purpose: "add export * from './stamps.js'"
+    depends_on: ["WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/kit/src/kit.test.ts -t 'grafts a preset under an explicit prefix without touching root'"
+      target: "packages/kit/src/kit.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/kit/src/kit.test.ts -t 'grafts a preset under an explicit prefix without touching root'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/kit/src"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/kit/src/kit.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+      - type: "unit"
+        target: "packages/kit/src/stamps.test.ts"
+        covers_dc: ["DC-006"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Playground compiles unchanged (uses page() opaquely — RISK-API-3 evidence); no quickstart→kit dependency added"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-8"
+    title: "Quickstart brain — prompt ② assets, set_theme tool, stub theme switch"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Implement Decision 6's quickstart half — buildSystem(guide, assets?) with THEMES (names+descriptions only) and STAMPS (fragments + id-prefix rule; oversized excluded with warn) sections and byte-identical no-assets output; set_theme in TOOLS executed as stage.theme(name) with a fail-safe non-string arm; QuickstartAgentOptions.themes/stamps; the stub's deterministic 'theme <name>' message behavior."
+    files:
+      - path: "packages/quickstart/src/prompt.ts"
+        change_type: "update"
+        purpose: "PromptAssets + buildSystem(guide, assets?) (sections only when non-empty; MAX_STAMP_PROMPT_CHARS = 4000 exclusion policy with console.warn); TOOLS gains set_theme (name argument only)"
+      - path: "packages/quickstart/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "RED-first: themes ⇒ names + descriptions present, NO theme VALUES anywhere; stamps ⇒ fragment JSON + id-prefix rule; oversized stamp excluded with warn (spy); no assets ⇒ byte-identical join (DC-008); STAGE_SPEC-verbatim pin stays green"
+      - path: "packages/quickstart/src/agent.ts"
+        change_type: "update"
+        purpose: "themes/stamps options threaded into buildSystem at creation; set_theme execution arm (string ⇒ stage.theme, else error observation)"
+      - path: "packages/quickstart/src/agent.test.ts"
+        change_type: "update"
+        purpose: "set_theme tool call patches /theme; non-string argument ⇒ error observation, turn survives; stub determinism pin extended (incl. the theme switch)"
+      - path: "packages/quickstart/src/stub.ts"
+        change_type: "update"
+        purpose: "message starting with 'theme ' ⇒ stage.theme(rest) + say('stub: theme <rest>'); everything else byte-identical"
+    depends_on: ["WU-1", "WU-2", "WU-3", "WU-4"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/prompt.test.ts -t 'injects theme names and descriptions never values'"
+      target: "packages/quickstart/src/prompt.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/prompt.test.ts -t 'injects theme names and descriptions never values'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/prompt.test.ts packages/quickstart/src/agent.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/quickstart/src/prompt.test.ts"
+        covers_dc: ["DC-008", "DC-012"]
+        action: "update"
+      - type: "unit"
+        target: "packages/quickstart/src/agent.test.ts"
+        covers_dc: ["DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "buildSystem(guide) (no assets) output byte-identical to pre-change (DC-008); no theme VALUE reaches any prompt or tool schema"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-9"
+    title: "Quickstart boot — --assets flag, shell theme injection, seeded store wiring"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Implement Decisions 2 (seam) + 8 — the --assets <dir> flag (explicit path must exist; issues logged once at boot), QuickstartServerOptions.themes/initialStage, the <-escaped window.__FACET_THEMES__ inline script in the shell, withInitialStage wrapping of the stage store, and the page reading the global into StageRenderer's themes prop."
+    files:
+      - path: "packages/quickstart/src/cli.ts"
+        change_type: "update"
+        purpose: "--assets flag (explicit-must-exist, exit 1 naming the path); FileAssets + loadAssets at boot; one [facet-quickstart] warn line per issue; threads themes/stamps to the agent and themes/initialStage to startQuickstart (works with --stub too)"
+      - path: "packages/quickstart/src/cli.test.ts"
+        change_type: "update"
+        purpose: "RED-first: missing explicit --assets path ⇒ exit 1 naming it; fixture dir with one valid + one invalid theme + invalid initial.tree.json ⇒ boots, logs issues, only valid documents wired and NO initialStage (DC-009 fallback); no --assets ⇒ today's boot exactly"
+      - path: "packages/quickstart/src/server.ts"
+        change_type: "update"
+        purpose: "themes?/initialStage? options; shell becomes shellHtml(themes) with JSON.stringify(themes).replace(/</g, '\\u003c') injection; withInitialStage(options.stageStore ?? new MemoryStageStore(), initialStage) threaded into the internal createFacetServer"
+      - path: "packages/quickstart/src/page/main.tsx"
+        change_type: "update"
+        purpose: "floor-guard window.__FACET_THEMES__ (array of objects with string name, else undefined) and pass as StageRenderer's themes prop"
+    depends_on: ["WU-5", "WU-6", "WU-8"]
+    parallel_group: "serial-c"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/cli.test.ts -t 'exits 1 when an explicit assets path does not exist'"
+      target: "packages/quickstart/src/cli.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/cli.test.ts -t 'exits 1 when an explicit assets path does not exist'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/cli.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/quickstart/src/cli.test.ts"
+        covers_dc: ["DC-009"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "@facet/server and @facet/client diffs are ZERO (RISK-PKG-2 containment); keys/values never logged"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-10"
+    title: "Live gate — Tier-1 E2E for seeding, shell map, and the stub theme switch"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Extend the deterministic Tier-1 E2E (DC-009/DC-010): a seeded boot's first visit snapshot contains the initial tree before any agent-authored paint (inline no-op agent proves seed-visible-to-first-turn); the shell carries the escaped theme map (hostile </script> description pinned); the stub's 'theme midnight' turn emits the /theme add-op patch frame and the rehydrate snapshot persists theme (proving the WU-2 keep through the runtime.ts:157 save path); an unseeded boot stays byte-identical to today."
+    files:
+      - path: "packages/quickstart/src/quickstart.e2e.test.ts"
+        change_type: "update"
+        purpose: "seeded-visit snapshot + first-turn visibility; escaped window.__FACET_THEMES__ in GET / (hostile description fixture); stub theme-switch patch frame + persisted theme on reconnect snapshot; no-assets boot unchanged (offline-face/EMPTY_TREE posture)"
+    depends_on: ["WU-9"]
+    parallel_group: "serial-d"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts -t 'seeds the first visit snapshot from the initial tree before any agent call'"
+      target: "packages/quickstart/src/quickstart.e2e.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts -t 'seeds the first visit snapshot from the initial tree before any agent call'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm --filter @facet/quickstart build && pnpm exec vitest run --config packages/quickstart/e2e/vitest.config.ts packages/quickstart/e2e/bundle.test.ts"
+    test_plan:
+      - type: "e2e"
+        target: "packages/quickstart/src/quickstart.e2e.test.ts"
+        covers_dc: ["DC-009", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Tier 1a run twice with identical results; zero network, zero keys, ephemeral ports"
+      - "Honest seam recorded in handoff: browser DOM restyle proven at unit level (WU-5 jsdom) + Tier 1b real-bundle mount; the E2E proves wire + persistence — same accepted layering as Bundle A"
+      - "No regression: pnpm test + pnpm lint + Tier 1b bundle run"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-11"
+    title: "Docs + changeset"
+    owner_role: "subagent"
+    packages: ["docs", "repo-meta", "@facet/quickstart"]
+    objective: "Document themes/stamps/initial-tree as data (operator how-to: assets directory, document formats, fail-safe behavior), the kit graft API, and the select-by-name model surface; add the changeset."
+    files:
+      - path: "README.md"
+        change_type: "update"
+        purpose: "'reskin with data, not code' section: --assets quickstart example (theme + stamp + initial tree), unknown-name fail-safe, contrast-warning posture"
+      - path: "AGENTS.md"
+        change_type: "update"
+        purpose: "package-map rows gain the assets registry (@facet/runtime) and KIT_STAMPS (@facet/kit) mentions; invariant notes unchanged"
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "theme pipeline (one validator → boot-shipped map → local resolution), registry adapter posture, seeding write path (serialized, pre-first-turn)"
+      - path: "packages/quickstart/README.md"
+        change_type: "update"
+        purpose: "--assets flag, document file formats (*.theme.json, *.stamp.json, initial.tree.json), issue logging, --stub theme demo line"
+      - path: ".changeset/kits-themes-as-data.md"
+        change_type: "add"
+        purpose: "minor: @facet/core, @facet/agent, @facet/react, @facet/runtime, @facet/kit, @facet/quickstart (fixed group carries the rest)"
+    depends_on: ["WU-10"]
+    parallel_group: "serial-e"
+    red_check:
+      command: "N/A"
+      target: "none"
+      justification: "docs/metadata-only WU — no production code path changes; content verified by the final-gate /update-docs diff review"
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm format:check"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      # gate step, not a runnable test — DC-012 is covered by runnable tests in WU-3 + WU-8
+      - type: "integration"
+        target: "/update-docs diff review (final gate)"
+        covers_dc: []
+        action: "new"
+    done_conditions:
+      - "N/A red check acknowledged (justification recorded)"
+      - "Docs state the permanent constraints verbatim: no client-side stamp expansion; the LLM never authors theme values; no new protocol messages"
+      - "Changeset present; no version bump outside the fixed @facet/* group"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
