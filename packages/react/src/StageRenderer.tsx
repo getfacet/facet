@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   FIELD_INPUTS,
@@ -11,10 +11,12 @@ import {
   type AgentAction,
   type FacetAction,
   type FacetNode,
+  type FacetTheme,
   type FacetTree,
   type NodeId,
 } from "@facet/core";
-import { boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
+import { boxStyle, fieldStyle, imageStyle, resolveTheme, textStyle } from "./theme.js";
+import type { ResolvedTheme } from "./theme.js";
 
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
 
@@ -234,6 +236,13 @@ export interface StageRendererProps {
    * remain assignable, so existing consumers compile unchanged.
    */
   readonly onAction?: (action: FacetAction, fields?: Readonly<Record<string, string>>) => void;
+  /**
+   * The operator-authored theme registry. The tree's `theme` NAME is resolved
+   * against it into concrete CSS; an absent prop (or unknown name) renders the
+   * default look. Documents must be `validateTheme`-clean — the host owns that
+   * boundary; `resolveTheme` floor-guards the lookup regardless.
+   */
+  readonly themes?: readonly FacetTheme[];
 }
 
 /**
@@ -249,7 +258,7 @@ export interface StageRendererProps {
  * mutate only this state and NEVER reach `onAction` (the only channel to any
  * transport). Content stays server-owned via the patch flow.
  */
-export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode {
+export function StageRenderer({ tree, onAction, themes }: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
   const [visibilityOverrides, setVisibilityOverrides] = useState<Readonly<Record<NodeId, boolean>>>(
     {},
@@ -257,6 +266,16 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
   // Scope handle for collectFieldValues — reads stay inside THIS renderer
   // instance so two stages on one page never cross-read each other's inputs.
   const stageRootRef = useRef<HTMLDivElement>(null);
+  // Resolve the tree's theme NAME (unknown on the raw patch path) against the
+  // registry ONCE per name/registry change. A live theme flip is just a new
+  // `tree.theme`, so this re-resolves and the stage restyles without a reload.
+  // Guard the read: hooks must run before the renderable check below, but a
+  // null/primitive tree (the unvalidated CLI path) has no `.theme` to dereference.
+  const themeName: unknown =
+    typeof tree === "object" && tree !== null
+      ? (tree as { readonly theme?: unknown }).theme
+      : undefined;
+  const theme = useMemo(() => resolveTheme(themeName, themes), [themeName, themes]);
 
   // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
   // the unvalidated CLI path — renders as nothing, never a crash.
@@ -305,6 +324,7 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
       id={resolveScreenRoot(tree, currentScreen)}
       onPress={handlePress}
       visibilityOverrides={visibilityOverrides}
+      theme={theme}
       depth={0}
     />
   );
@@ -328,6 +348,8 @@ interface RenderNodeProps {
   readonly id: NodeId;
   readonly onPress: (press: ClassifiedPress) => void;
   readonly visibilityOverrides: Readonly<Record<NodeId, boolean>>;
+  /** The resolved theme threaded from StageRenderer to every style call site. */
+  readonly theme: ResolvedTheme;
   /** Ids on the path from the root to here — used to break cycles fail-safe. */
   readonly ancestors?: ReadonlySet<NodeId> | undefined;
   readonly depth: number;
@@ -338,6 +360,7 @@ function RenderNode({
   id,
   onPress,
   visibilityOverrides,
+  theme,
   ancestors,
   depth,
 }: RenderNodeProps): ReactNode {
@@ -379,6 +402,7 @@ function RenderNode({
           id={childId}
           onPress={onPress}
           visibilityOverrides={visibilityOverrides}
+          theme={theme}
           ancestors={childAncestors}
           depth={depth + 1}
         />
@@ -391,19 +415,19 @@ function RenderNode({
           <div
             role="button"
             tabIndex={0}
-            style={{ ...boxStyle(styleOf(node.style)), cursor: "pointer" }}
+            style={{ ...boxStyle(styleOf(node.style), theme), cursor: "pointer" }}
             onClick={() => onPress(press)}
           >
             {children}
           </div>
         );
       }
-      return <div style={boxStyle(styleOf(node.style))}>{children}</div>;
+      return <div style={boxStyle(styleOf(node.style), theme)}>{children}</div>;
     }
     case "text":
       // A non-string value (an object would make React itself throw) is skipped.
       return typeof node.value === "string" ? (
-        <p style={textStyle(styleOf(node.style))}>{node.value}</p>
+        <p style={textStyle(styleOf(node.style), theme)}>{node.value}</p>
       ) : null;
     case "image":
       // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
@@ -411,7 +435,7 @@ function RenderNode({
         <img
           src={node.src}
           alt={typeof node.alt === "string" ? node.alt : ""}
-          style={imageStyle(styleOf(node.style))}
+          style={imageStyle(styleOf(node.style), theme)}
         />
       ) : null;
     case "field": {
@@ -429,7 +453,7 @@ function RenderNode({
             display: "flex",
             flexDirection: "column",
             gap: "4px",
-            ...fieldStyle(styleOf(node.style)),
+            ...fieldStyle(styleOf(node.style), theme),
           }}
         >
           {typeof node.label === "string" ? <span>{node.label}</span> : null}
