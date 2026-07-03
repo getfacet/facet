@@ -16,7 +16,9 @@ import { connect } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startQuickstart, type RunningQuickstart } from "./server.js";
+import type { FacetTheme, FacetTree } from "@facet/core";
+import { defineAgent } from "@facet/agent";
+import { startQuickstart, type QuickstartServerOptions, type RunningQuickstart } from "./server.js";
 import { createStubAgent } from "./stub.js";
 
 const FIXTURE_BUNDLE = `console.log("facet quickstart fixture bundle");\n`;
@@ -129,9 +131,13 @@ function postEvent(base: string, visitorId: string, event: unknown): Promise<Res
   });
 }
 
-/** Boot `startQuickstart` on a random free port, retrying on collisions (the
- * server.test.ts bind-retry pattern). */
-async function boot(pageBundlePath: string): Promise<RunningQuickstart> {
+/**
+ * Boot `startQuickstart` on a random free port, retrying on collisions (the
+ * server.test.ts bind-retry pattern). Defaults to the stub agent + fixture
+ * bundle; `overrides` swaps in a recording agent, `themes`, or an `initialStage`
+ * for the seeding/theme-map tests.
+ */
+async function boot(overrides: Partial<QuickstartServerOptions> = {}): Promise<RunningQuickstart> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     try {
@@ -139,7 +145,8 @@ async function boot(pageBundlePath: string): Promise<RunningQuickstart> {
         port,
         agentId: "quickstart-e2e",
         agent: createStubAgent(),
-        pageBundlePath,
+        pageBundlePath: bundlePath,
+        ...overrides,
       });
     } catch {
       // EADDRINUSE — try another port
@@ -149,14 +156,15 @@ async function boot(pageBundlePath: string): Promise<RunningQuickstart> {
 }
 
 let fixtureDir: string;
+let bundlePath: string;
 let running: RunningQuickstart;
 let base: string;
 
 beforeAll(async () => {
   fixtureDir = await mkdtemp(join(tmpdir(), "facet-quickstart-e2e-"));
-  const bundlePath = join(fixtureDir, "app.js");
+  bundlePath = join(fixtureDir, "app.js");
   await writeFile(bundlePath, FIXTURE_BUNDLE, "utf8");
-  running = await boot(bundlePath);
+  running = await boot();
   base = running.url;
 });
 
@@ -342,6 +350,137 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
       await postEvent(base, visitorId, { kind: "message", text: "second" });
       const frames = await stream.next(4); // (echo patch + say) × 2
       expect(sayTexts(frames)).toEqual(["stub: first", "stub: second"]);
+    } finally {
+      await stream.close();
+    }
+  });
+});
+
+/** A seedable initial tree (Decision 4): a box root with a child — passes
+ * `validateTree` and `isSeedableTree`, so `withInitialStage` installs it. */
+const SEED_TREE: FacetTree = {
+  root: "seed-root",
+  nodes: {
+    "seed-root": {
+      id: "seed-root",
+      type: "box",
+      style: { direction: "col", gap: "md" },
+      children: ["seed-hero"],
+    },
+    "seed-hero": { id: "seed-hero", type: "text", value: "Seeded skeleton" },
+  },
+};
+
+describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
+  it("seeds the first visit snapshot from the initial tree before any agent call", async () => {
+    // A recording NO-OP agent: it MUTATES no stage (paints nothing) — it only
+    // records the stage it was handed and emits one `say` as a deterministic
+    // turn-completed signal. So any tree in the snapshot can ONLY be the seed.
+    const seen: (FacetTree | undefined)[] = [];
+    const recording = defineAgent(({ session, stage }) => {
+      seen.push(session.stage);
+      stage.say("noop");
+    });
+    const seeded = await boot({ agent: recording, initialStage: SEED_TREE });
+    try {
+      const visitorId = "e2e-seed";
+      const stream = await openStream(seeded.url, visitorId);
+      try {
+        await stream.next(1); // reset (no stage yet — session opens on the visit)
+        // The visit opens+seeds the session; the no-op agent's `say` confirms the
+        // turn (open→seed→save) finished. No patch frame ⇒ no agent paint.
+        await postEvent(seeded.url, visitorId, { kind: "visit", visitor: { visitorId } });
+        const [say] = await stream.next(1);
+        expect(kindOf(say?.data)).toBe("say");
+      } finally {
+        await stream.close();
+      }
+
+      // A reconnect's rehydrate ships the seeded stage as its snapshot (from
+      // `runtime.stageFor`) — proving the seed reaches the browser with zero
+      // server change, before any agent-authored paint.
+      const reconnect = await fetch(`${seeded.url}/stream?visitorId=${visitorId}`);
+      const frames = await readEvents(reconnect, 2); // reset + snapshot patch
+      expect(kindOf(frames[0]?.data)).toBe("reset");
+      expect(kindOf(frames[1]?.data)).toBe("patch");
+      const snapshot = JSON.stringify(frames[1]?.data);
+      expect(snapshot).toContain('"op":"replace"');
+      expect(snapshot).toContain('"seed-root"');
+      expect(snapshot).toContain('"seed-hero"');
+
+      // The agent's FIRST turn saw the seeded stage (seed visible pre-paint).
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.root).toBe("seed-root");
+      expect(seen[0]?.nodes["seed-root"]).toBeDefined();
+    } finally {
+      await seeded.close();
+    }
+  });
+
+  it("inlines the theme map into the shell with the hostile </script> escaped", async () => {
+    // `validateTheme` already refuses `<` in values, but a description is freer
+    // text — the shell's `<`→< escape is the defense-in-depth that keeps a
+    // hostile description from closing the injected <script> and running code.
+    const themes: readonly FacetTheme[] = [
+      { name: "midnight", description: "</script><script>alert(1)</script>" },
+    ];
+    const themed = await boot({ themes });
+    try {
+      const body = await (await fetch(`${themed.url}/`)).text();
+      expect(body).toContain("window.__FACET_THEMES__ = ");
+      expect(body).toContain('"midnight"');
+      // Every `<` in the JSON is escaped, so the hostile marker is inert data.
+      expect(body).toContain("\\u003c/script>\\u003cscript>alert(1)");
+      // ...and the live-injection form never appears unescaped in the document.
+      expect(body).not.toContain("<script>alert(1)");
+    } finally {
+      await themed.close();
+    }
+  });
+
+  it("stub theme switch: emits the /theme add-op and persists theme on reconnect", async () => {
+    const visitorId = "e2e-theme";
+    const stream = await openStream(base, visitorId);
+    try {
+      await stream.next(1); // reset
+      await postEvent(base, visitorId, { kind: "visit", visitor: { visitorId } });
+      await stream.next(1); // visit patch (STUB_TREE)
+
+      // "theme <name>" ⇒ the stub runs `stage.theme(name)` + a say (DC-010).
+      await postEvent(base, visitorId, { kind: "message", text: "theme midnight" });
+      const frames = await stream.next(2); // theme patch + say
+      expect(frames.map((f) => kindOf(f.data))).toEqual(["patch", "say"]);
+      const patchText = JSON.stringify(frames[0]?.data);
+      expect(patchText).toContain('"op":"add"');
+      expect(patchText).toContain('"path":"/theme"');
+      expect(patchText).toContain('"value":"midnight"');
+      expect(sayTexts(frames)).toEqual(["stub: theme midnight"]);
+    } finally {
+      await stream.close();
+    }
+
+    // Reconnect: the rehydrate snapshot carries the persisted `theme`, proving a
+    // string `theme` survived the runtime's save-time `validateTree` (WU-2's
+    // keep-if-string — else `runtime.ts` would strip the name on first save).
+    const reconnect = await fetch(`${base}/stream?visitorId=${visitorId}`);
+    const snap = await readEvents(reconnect, 2); // reset + snapshot patch
+    expect(kindOf(snap[1]?.data)).toBe("patch");
+    expect(JSON.stringify(snap[1]?.data)).toContain('"theme":"midnight"');
+  });
+
+  it("no-assets boot: shell carries no theme global and a fresh connect is a bare reset", async () => {
+    // The shared `running` server booted with no themes and no initialStage.
+    const body = await (await fetch(`${base}/`)).text();
+    expect(body).not.toContain("__FACET_THEMES__");
+
+    // A brand-new visitor that has not visited: rehydrate finds no stage (nothing
+    // seeded, nothing painted), so the connect is a lone unstamped reset —
+    // today's EMPTY_TREE / model-first posture, unchanged.
+    const stream = await openStream(base, "e2e-unseeded");
+    try {
+      const [reset] = await stream.next(1);
+      expect(kindOf(reset?.data)).toBe("reset");
+      expect(reset?.id).toBeUndefined();
     } finally {
       await stream.close();
     }
