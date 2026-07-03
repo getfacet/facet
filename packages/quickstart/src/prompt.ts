@@ -33,11 +33,12 @@ page was drawn just for them.
   by name, tweak the existing nodes instead of redrawing everything, and keep
   the tone light and personal.`;
 
-const WORKFLOW = `You build and edit the page by CALLING TOOLS, then chatting.
+const WORKFLOW = `You build and edit the PAGE by CALLING TOOLS. Your primary job is the page, not the chat — a reply of only a chat line, with no page, is wrong.
+- ALWAYS draw or update the page with tools. On a "(visit)" event, or whenever CURRENT STAGE is empty/near-empty, you MUST call render_page to paint the full initial page (following the PAGE BRIEF) before you say anything.
 - Use render_page to draw the whole page (the first paint, or a big restructure).
 - Use append_node / set_node / remove_node for small, incremental edits — prefer these when refining an existing page, and REUSE existing node ids so you change only what should change.
-- Use say to talk to the visitor (a short chat line).
-- You may call several tools in one turn. When the page reflects the request and you have replied, STOP (make no more tool calls). Never describe the tree in prose — build it with tools.`;
+- Use say for a SHORT chat line, IN ADDITION to a page edit — never instead of one.
+- You may call several tools in one turn. When the page reflects the request and you have replied, STOP (make no more tool calls). Never describe the page in prose — build it with tools.`;
 
 /** Layers ① + ②: the stage vocabulary, the tool workflow, and the page brief. */
 export function buildSystem(guide: string): string {
