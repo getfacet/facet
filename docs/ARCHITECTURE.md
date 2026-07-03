@@ -170,6 +170,31 @@ defineAgent(({ event, session, stage }) => {
 ordering relative to `say(...)`. Replace the hand-written branches with an LLM
 call that emits the same operations and nothing else in the stack changes.
 
+## Reference brain: `@facet/quickstart`
+
+The brain is out of scope for Facet — the user brings the LLM/rules — but a
+*reference* brain ships anyway, exactly as a reference transport does:
+`@facet/quickstart` is to brains what `@facet/server` is to transports. Its
+built-in agent is an ordinary `FacetAgent` handed to the existing
+`createFacetServer({ agent })` seam, its LLM calls sit behind a small
+`QuickstartProvider` interface (OpenAI/Anthropic adapters, or a deterministic
+stub), and core/runtime/server gain zero LLM awareness — any user brain drops
+into the same slot, so the boundary stays intact while `npx facet-quickstart`
+gives a one-command first run.
+
+Quickstart's flagship interaction is the **field snapshot**: a pressable box's
+agent action may declare `collect: "<box id>"`, and at press time the renderer
+takes a synchronous snapshot of the visible `field` values under that box
+(string-coerced, capped at `MAX_FIELD_VALUE_CHARS`) and ships them as `fields`
+on the action event — the values ride the event, **never the tree**. Field text
+is browser view-state like screen/toggle state (inputs are uncontrolled; there
+is no value property on a field node to write), and the server re-validates
+`fields` at the boundary, so the two-writers rule holds: the server stays the
+only writer of stage content. The `facet-quickstart` bin serves the page itself
+(HTML shell + prebuilt client bundle) and proxies the protocol routes to an
+internal loopback `createFacetServer` with a random per-boot agent token,
+never exposing `/agent/*`.
+
 ## What we adopt vs build (and why)
 
 A deep prior-art review (2026) found **no single open standard** offers Facet's

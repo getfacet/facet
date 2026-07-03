@@ -14,6 +14,27 @@ without ever emitting unsafe or broken markup.
 > transport (browser + external agents), a browser playground, durable stores,
 > and a Postgres adapter are all in place and tested. APIs may still change.
 
+## Quickstart: one command
+
+```bash
+OPENAI_API_KEY=sk-… npx facet-quickstart --guide ./my-page.md
+```
+
+That boots a live Facet server at `http://localhost:5292` whose page is drawn by
+a **built-in LLM agent**: it reads your guide markdown (what the page is about),
+paints a first stage for each visitor, and keeps patching it as they chat.
+`ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). No key
+handy?
+
+```bash
+npx facet-quickstart --stub
+```
+
+runs the same server with a deterministic stub brain — no key, no network — for
+a keyless look around. Flags and details:
+[`@facet/quickstart`](packages/quickstart/README.md). To plug in *your own*
+model instead, see [Advanced: bring your own brain](#advanced-bring-your-own-brain).
+
 ## Why
 
 Today, when an AI wants to *show* you something, there are three options — and
@@ -109,14 +130,12 @@ convenience without giving up the low-level foundation.
  [ @facet/react ]   renders the brick spec to safe DOM; applies patches live
 ```
 
-**Your model connects in one of three ways** — all the same `Stage` API:
-
-- **in-process** — a JS function inside the server (`@facet/agent`).
-- **local CLI** — a running agent (e.g. Claude Code) calls `facet append/say/…`
-  and a local bridge forwards it (`@facet/cli`).
-- **dial-in** — an external agent connects out over SSE, NAT-safe, and is served
-  events to answer (`@facet/agent-client`). The model (the LLM/rules) is always
-  yours; Facet is the surface it draws on.
+**"Your model" defaults to the built-in one:** `facet-quickstart` ships a
+reference brain (`@facet/quickstart`) that fills the model slot with an
+OpenAI/Anthropic call. It is to brains what `@facet/server` is to transports —
+a reference implementation of a pluggable seam. To connect your own model
+instead, there are three jacks — see
+[Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
 **Persistence is two separate concerns.** The *stage* (the page) is always
 Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
@@ -153,22 +172,26 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/kit`            | Optional presets (`card/hero/row/…`) — sugar over the bricks.                            |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
+| `@facet/quickstart`     | `facet-quickstart` — one-command boot with a built-in reference brain (OpenAI/Anthropic, or a keyless stub). |
 
-## Quickstart
+## Advanced: bring your own brain
+
+The quickstart's built-in agent is just a default. **Your model connects in one
+of three ways** — all the same `Stage` API:
+
+- **in-process** — a JS function inside the server (`@facet/agent`).
+- **local CLI** — a running agent (e.g. Claude Code) calls `facet append/say/…`
+  and a local bridge forwards it (`@facet/cli`).
+- **dial-in** — an external agent connects out over SSE, NAT-safe, and is served
+  events to answer (`@facet/agent-client`). The model (the LLM/rules) is always
+  yours; Facet is the surface it draws on.
+
+To poke at the repo itself:
 
 ```bash
 pnpm install
-pnpm demo
-```
-
-The demo runs entirely in-process (no browser, no LLM): two visitors hit one
-session and you watch their stages diverge, then one of them mutate live after a
-chat message. See [`apps/playground/src/demo.ts`](apps/playground/src/demo.ts).
-
-For the browser playground (a real page + chat dock, live-updating):
-
-```bash
-pnpm --filter @facet/playground dev      # http://localhost:5290
+pnpm demo                                # in-process terminal demo (no browser, no LLM)
+pnpm --filter @facet/playground dev      # browser playground — http://localhost:5290
 pnpm --filter @facet/playground serve    # live server on :5291 (uses your local Claude)
 ```
 
@@ -196,6 +219,7 @@ export const agent = defineAgent(({ event, stage }) => {
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
 - [x] Durable `StageStore`/`Sink` + a Postgres adapter
 - [x] `@facet/kit` presets (card/hero/row as box compositions)
+- [x] One-command quickstart (`facet-quickstart`) with a built-in reference brain
 - [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint
 - [ ] Content-safety / moderation hooks
