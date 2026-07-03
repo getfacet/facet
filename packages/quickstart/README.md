@@ -38,7 +38,7 @@ node packages/quickstart/dist/cli.js --stub
 ## Flags
 
 ```
-facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--stub] [--agent-id <id>]
+facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--stub] [--agent-id <id>] [--assets <dir>]
 ```
 
 | Flag | Default | Meaning |
@@ -48,6 +48,7 @@ facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--
 | `--provider openai\|anthropic` | auto | Force a provider; requires that provider's key. |
 | `--stub` | off | Keyless deterministic brain; skips key resolution entirely. |
 | `--agent-id <id>` | `quickstart` | Agent id the sessions are keyed under. |
+| `--assets <dir>` | none | Directory of theme/stamp/initial-tree documents to reskin and pre-seed the page (see below). An explicit path that doesn't exist ⇒ exit 1 naming it. |
 
 ## Providers & keys
 
@@ -81,6 +82,47 @@ stage vocabulary and output contract are fixed layers above it).
 - An **explicitly passed** `--guide` path that doesn't exist is an error:
   exit 1 with `Guide file not found: <path>`.
 
+## Assets: themes, stamps, initial tree
+
+`--assets <dir>` points at a directory of **operator data** that reskins and
+pre-seeds the page. It's read once at boot — there is no hot reload; a registry
+edit needs a restart. Three file kinds are recognized (any subset; a `.json`
+that doesn't match is ignored):
+
+| File | What it is |
+| --- | --- |
+| `*.theme.json` | A named palette/scale document — token names mapped to CSS values. Offered to the agent by NAME (a `set_theme` tool); **the model never authors the CSS values**. |
+| `*.stamp.json` | A reusable `{ name, description?, root, nodes }` brick fragment the agent may copy into the page. Prompt data only — **no server- or client-side stamp expansion**. |
+| `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
+
+A theme document looks like:
+
+```json
+{
+  "name": "midnight",
+  "description": "Dark, high-contrast",
+  "color": { "bg": "#0b1020", "fg": "#e8ecff", "accent": "#7c9cff" }
+}
+```
+
+Every document passes one `@facet/core` validator at boot — `validateTheme`,
+`validateStamp`, `validateTree` respectively:
+
+- A theme value that smuggles CSS (`url()`, `var()`, `expression()`,
+  `javascript:`) is refused; dimensions are clamped so a theme can't push
+  content off-screen; a low-contrast text/background pair is **flagged as a
+  warning, never rejected** (the WCAG ratio is measured, the policy is yours).
+- An **invalid document is skipped** and boot proceeds — every problem is logged
+  as one concise `[facet-quickstart]` line (never a document value). An initial
+  tree that `validateTree` reduces to empty is refused as a seed, so a bad
+  `initial.tree.json` falls back to today's model-first paint rather than
+  silently seeding a blank page.
+
+The validated theme names + descriptions (never values) and the stamp fragments
+are injected into the agent's prompt; the validated theme map ships inline in the
+served HTML shell for the renderer (no new protocol message). An explicit
+`--assets` path that doesn't exist ⇒ exit 1 naming it.
+
 ## Stub mode
 
 `--stub` wires `createStubAgent()` instead of an LLM: a fixed fixture page
@@ -88,6 +130,11 @@ stage vocabulary and output contract are fixed layers above it).
 navigate-linked screens) with fully deterministic replies — zero network, zero
 randomness. It exists for a keyless look around and as the fixture behind the
 repo's `/live-test` Tier-1 gate.
+
+`--stub` composes with `--assets`: the shell still carries the theme map and the
+initial tree still seeds. A chat message of `theme <name>` makes the stub select
+that theme (`stage.theme(<name>)`), so you can watch a live reskin with no key —
+e.g. `theme midnight` against a `midnight.theme.json`.
 
 ## The served page
 
