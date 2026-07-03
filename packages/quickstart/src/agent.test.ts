@@ -296,6 +296,26 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("set_theme with an invalid theme name is an error observation and emits no /theme op", async () => {
+    // "Ocean Breeze" has a space, so it fails isValidThemeName. It must never
+    // reach the wire (the runtime's save-time re-validate would strip it,
+    // diverging the stored stage from the live clients).
+    const provider = providerOf(toolStep(call("set_theme", { name: "Ocean Breeze" })), END);
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "go" }, SESSION);
+      // No /theme patch was emitted — the invalid name degraded to an observation.
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.startsWith("error:") && o.includes("valid theme name"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("set_theme with a non-string name is an error observation, not a throw", async () => {
     const provider = providerOf(toolStep(call("set_theme", { name: 42 })), END);
     const agent = makeAgent(provider);

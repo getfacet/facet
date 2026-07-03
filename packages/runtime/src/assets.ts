@@ -69,7 +69,18 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   const themes: FacetTheme[] = [];
   const seenThemeNames = new Set<string>();
   for (const raw of docs.themes) {
-    const { theme, issues: themeIssues } = validateTheme(raw);
+    // Skip-and-log at the seam: a live in-process document (a DB adapter, a
+    // proxy) can throw from a property accessor. `validateTheme` already guards
+    // its own reads, but the try/catch keeps this loop's "Never throws" contract
+    // true for any future validator too.
+    let result: ReturnType<typeof validateTheme>;
+    try {
+      result = validateTheme(raw);
+    } catch {
+      issues.push("theme document skipped: validation threw");
+      continue;
+    }
+    const { theme, issues: themeIssues } = result;
     if (theme === undefined) {
       const why = themeIssues
         .filter((i) => i.severity === "error")
@@ -91,7 +102,14 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
 
   const stamps: FacetStamp[] = [];
   for (const raw of docs.stamps) {
-    const { stamp, issues: stampIssues } = validateStamp(raw);
+    let result: ReturnType<typeof validateStamp>;
+    try {
+      result = validateStamp(raw);
+    } catch {
+      issues.push("stamp document skipped: validation threw");
+      continue;
+    }
+    const { stamp, issues: stampIssues } = result;
     if (stamp === undefined) {
       issues.push(`stamp document skipped: ${stampIssues.join("; ") || "invalid"}`);
       continue;

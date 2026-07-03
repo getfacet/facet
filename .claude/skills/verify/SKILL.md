@@ -18,6 +18,7 @@ pnpm test
 pnpm lint
 pnpm format:check
 pnpm build
+git grep -PIl '\x00' -- '*.ts' '*.tsx'   # must print NOTHING
 ```
 
 - `typecheck` — `tsc --noEmit` across all packages.
@@ -28,6 +29,10 @@ pnpm build
 - `format:check` — prettier.
 - `build` — tsup builds every publishable package to `dist` (catches
   publish-time breakage the dev graph hides).
+- **raw-NUL scan** — `git grep -PIl '\x00' -- '*.ts' '*.tsx'` must match nothing.
+  A raw `0x00` byte in tracked source (use the `\x00` string escape instead) makes
+  git treat the file as binary, hiding its whole diff from `/code-review`. This
+  regressed twice; a non-empty result is a FAIL.
 
 ## Verdict
 

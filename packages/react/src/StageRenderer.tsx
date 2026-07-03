@@ -20,6 +20,15 @@ import type { ResolvedTheme } from "./theme.js";
 
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
 
+/**
+ * Fail-safe cap on total nodes visited in ONE render pass / field gather
+ * (invariant #2). Depth alone is not enough: a shared-child DAG reaching the raw
+ * live path (no validateTree) is acyclic and shallow yet has an exponential
+ * number of root-to-node paths, which would hang the tab. This bounds the whole
+ * pass to a linear budget, mirroring how MAX_DEPTH already bounds nesting.
+ */
+const RENDER_BUDGET = 5000;
+
 // Fail-safe (invariant #2): the live path applies raw RFC 6902 patches with no
 // validateTree, so any node FIELD can hold arbitrary JSON (children: "oops",
 // src: 42, style: null). Coerce shapes here instead of trusting the types.
@@ -110,8 +119,12 @@ function collectFieldValues(
   // first) lets the DOM pass pick a MOUNTED one, so a hidden/off-screen field
   // can't shadow a visible same-named field and drop its value.
   const idsByName = new Map<string, NodeId[]>();
+  // Total-visit budget for THIS invocation: `ancestors` breaks cycles but a raw
+  // shared-child DAG (no validateTree on the live path) has an exponential number
+  // of paths, so cap total gather steps the way RenderNode caps total renders.
+  let gatherBudget = RENDER_BUDGET;
   const gather = (id: NodeId, ancestors: ReadonlySet<NodeId>, depth: number): void => {
-    if (depth > MAX_DEPTH || ancestors.has(id)) {
+    if (depth > MAX_DEPTH || ancestors.has(id) || --gatherBudget < 0) {
       return;
     }
     const node = tree.nodes[id];
@@ -318,6 +331,9 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     }
   };
 
+  // One mutable budget per render pass, shared by every RenderNode in this tree
+  // (threaded as a prop). A fresh object each render, so it resets every pass.
+  const budget = { left: RENDER_BUDGET };
   const stage = (
     <RenderNode
       tree={tree}
@@ -325,6 +341,7 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
       onPress={handlePress}
       visibilityOverrides={visibilityOverrides}
       theme={theme}
+      budget={budget}
       depth={0}
     />
   );
@@ -352,6 +369,8 @@ interface RenderNodeProps {
   readonly theme: ResolvedTheme;
   /** Ids on the path from the root to here — used to break cycles fail-safe. */
   readonly ancestors?: ReadonlySet<NodeId> | undefined;
+  /** Shared per-render-pass node budget — bounds total renders (invariant #2). */
+  readonly budget: { left: number };
   readonly depth: number;
 }
 
@@ -362,11 +381,14 @@ function RenderNode({
   visibilityOverrides,
   theme,
   ancestors,
+  budget,
   depth,
 }: RenderNodeProps): ReactNode {
   const node = tree.nodes[id];
-  // == null also skips a node a patch replaced with JSON null (not just missing ids).
-  if (node == null || depth > MAX_DEPTH) {
+  // == null also skips a node a patch replaced with JSON null (not just missing
+  // ids). The budget guard bounds a shared-child DAG's exponential path count the
+  // same way depth bounds nesting — decremented only for a node we actually render.
+  if (node == null || depth > MAX_DEPTH || --budget.left < 0) {
     return null;
   }
   // Effective visibility = browser override ?? content default. A hidden node
@@ -404,6 +426,7 @@ function RenderNode({
           visibilityOverrides={visibilityOverrides}
           theme={theme}
           ancestors={childAncestors}
+          budget={budget}
           depth={depth + 1}
         />
       ));

@@ -24,7 +24,7 @@ import {
   type TextStyle,
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
-import { isValidThemeName } from "./theme.js";
+import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -414,12 +414,22 @@ function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: string[
 }
 
 /**
- * Breaks cycles: drops any child ref that points back to an ancestor, which
- * would otherwise recurse forever in the renderer, and caps depth at MAX_DEPTH
- * (fail-safe — pathologically deep input can't blow the stack). DFS from every
- * root in `roots` (a tree passes its root plus each kept screen root; a stamp
- * passes its single fragment root); the shared `settled` set skips
- * already-verified acyclic subgraphs. Mutates `nodes` in place.
+ * Breaks cycles AND collapses shared children so the sanitized graph is a true
+ * tree (invariant #2): a child ref pointing back to an ancestor is dropped (it
+ * would recurse forever), depth is capped at MAX_DEPTH (a pathologically deep
+ * input can't blow the stack), and — critically — a child already kept under
+ * another parent in the SAME walk is dropped. Without that last rule a
+ * shared-child DAG stays acyclic and validates clean, but has an exponential
+ * number of root-to-node PATHS, so the renderer (which caps depth only)
+ * instantiates 2^depth elements and hangs the tab.
+ *
+ * Single-parent is enforced PER WALK ROOT: `claimed` resets at the start of each
+ * root's DFS (the roots are the tree root plus each kept screen root; a stamp
+ * passes its single fragment root). This is deliberate — two screens legitimately
+ * SHARE a node (a common header/footer), so a global claim would strip the ref
+ * from the second screen and break the pre-drawn-screens feature. Path explosion
+ * only matters within one render pass (one root); across roots a node may still
+ * be kept under multiple different walk roots. Mutates `nodes` in place.
  */
 function breakCycles(
   nodes: Record<string, FacetNode>,
@@ -427,11 +437,13 @@ function breakCycles(
   issues: string[],
 ): void {
   const inPath = new Set<string>();
-  const settled = new Set<string>();
+  // Nodes kept under some parent during the CURRENT root's walk. Reset per root
+  // so cross-screen sharing survives; within one walk, `claimed` also prevents
+  // re-visiting a subtree, keeping validation linear with no separate settled set.
+  let claimed = new Set<string>();
   const visit = (nodeId: string, depth: number): void => {
     const node = nodes[nodeId];
     if (node === undefined || node.type !== "box") {
-      settled.add(nodeId);
       return;
     }
     inPath.add(nodeId);
@@ -445,17 +457,24 @@ function breakCycles(
         issues.push(`node "${nodeId}": dropped child "${child}" beyond max depth`);
         continue;
       }
+      if (claimed.has(child)) {
+        issues.push(
+          `node "${nodeId}": removed shared child "${child}" (already kept under another parent)`,
+        );
+        continue;
+      }
+      claimed.add(child);
       kept.push(child);
-      if (!settled.has(child)) visit(child, depth + 1);
+      visit(child, depth + 1);
     }
     if (kept.length !== node.children.length) {
       nodes[nodeId] = { ...node, children: kept };
     }
     inPath.delete(nodeId);
-    settled.add(nodeId);
   };
   for (const root of roots) {
-    if (!settled.has(root)) visit(root, 0);
+    claimed = new Set<string>();
+    visit(root, 0);
   }
 }
 
@@ -555,6 +574,13 @@ export function validateStamp(input: unknown): StampValidationResult {
     issues.push("stamp has no string name");
     return { issues };
   }
+  // Cap the name with the same rule a theme document's name uses (a short,
+  // filename-safe identifier), so an unbounded or control-character name can't
+  // flow into prompt/issue/log strings.
+  if (!isValidThemeName(name)) {
+    issues.push(`stamp name "${name}" is not a valid name (letters/digits/_/-, max 64); refused`);
+    return { issues };
+  }
 
   const nodes = sanitizeNodeMap(input.nodes, issues);
   pruneDanglingChildren(nodes, issues);
@@ -576,7 +602,14 @@ export function validateStamp(input: unknown): StampValidationResult {
   } = { name, root: rootId, nodes };
   const description = asString(input.description);
   if (description !== undefined) {
-    stamp.description = description;
+    // Truncate at the shared 200-char cap (mirrors validateTheme) so a giant
+    // description can't blow the prompt/context budget it is injected into.
+    if (description.length > MAX_DESCRIPTION_LENGTH) {
+      stamp.description = description.slice(0, MAX_DESCRIPTION_LENGTH);
+      issues.push(`stamp description truncated to ${MAX_DESCRIPTION_LENGTH} characters`);
+    } else {
+      stamp.description = description;
+    }
   }
   return { stamp, issues };
 }

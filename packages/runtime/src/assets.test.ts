@@ -141,6 +141,36 @@ describe("loadAssets", () => {
     );
     expect(loaded.issues).toContain("backend said so");
   });
+
+  it("never throws when a live document's accessor throws — skips it with an issue", async () => {
+    // MemoryAssets / DB adapters hand in live in-process objects, so a document
+    // with a throwing getter must be skipped at the boot seam, never crash boot.
+    const hostileTheme = {
+      name: "x",
+      get color(): unknown {
+        throw new Error("boom");
+      },
+    };
+    const hostileStamp = {
+      name: "s",
+      get nodes(): unknown {
+        throw new Error("boom");
+      },
+    };
+    let loaded: Awaited<ReturnType<typeof loadAssets>> | undefined;
+    await expect(
+      (async () => {
+        loaded = await loadAssets(
+          new MemoryAssets({ themes: [hostileTheme, validTheme], stamps: [hostileStamp] }),
+          "a",
+        );
+      })(),
+    ).resolves.toBeUndefined();
+    // The clean theme still loaded; the hostile documents were skipped + logged.
+    expect(loaded!.themes.map((t) => t.name)).toContain("midnight");
+    expect(loaded!.themes.map((t) => t.name)).not.toContain("x");
+    expect(loaded!.issues.some((i) => i.includes("skipped"))).toBe(true);
+  });
 });
 
 describe("FileAssets", () => {

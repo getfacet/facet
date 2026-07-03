@@ -15,7 +15,7 @@
  * never logs more than one concise error line (never a key — keys live inside
  * the provider's auth header only).
  */
-import { validateTree } from "@facet/core";
+import { isValidThemeName, validateTree } from "@facet/core";
 import type { FacetNode, FacetStamp, FacetTheme, FacetTree, NodeId } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import type { Stage } from "@facet/agent";
@@ -231,6 +231,15 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
       if (typeof name !== "string" || name.length === 0) {
         return fail(
           'error: set_theme needs a non-empty string "name" (a theme from the THEMES list — a name only, never a CSS value)',
+        );
+      }
+      // Gate the name with the same rule validateTree applies at save time. An
+      // invalid name would be stripped from the stored stage while the raw
+      // `add /theme` frame still reached live clients — a stored-vs-live divergence.
+      // Refusing it here stops the frame from ever being emitted.
+      if (!isValidThemeName(name)) {
+        return fail(
+          `error: "${name}" is not a valid theme name (letters/digits/_/-, max 64) — pick a name from the THEMES list`,
         );
       }
       stage.theme(name);

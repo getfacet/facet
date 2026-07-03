@@ -301,6 +301,92 @@ describe("validateStamp", () => {
   });
 });
 
+describe("validateTree shared-child DAG (single-parent per walk root)", () => {
+  it("collapses a 2-boxes-per-level shared-child lattice to a single-parent tree", () => {
+    // Both boxes at level i list both boxes at level i+1: acyclic, depth-bounded,
+    // every child resolves — but the render-path count would be 2^depth. The
+    // sanitized graph must be a true tree (no node kept under two parents), so
+    // the renderer walks it in linear time.
+    const LEVELS = 40;
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: ["L0_a", "L0_b"] },
+    };
+    for (let i = 0; i < LEVELS; i += 1) {
+      const children = i < LEVELS - 1 ? [`L${String(i + 1)}_a`, `L${String(i + 1)}_b`] : [];
+      nodes[`L${String(i)}_a`] = { id: `L${String(i)}_a`, type: "box", children };
+      nodes[`L${String(i)}_b`] = { id: `L${String(i)}_b`, type: "box", children };
+    }
+    const { tree, issues } = validateTree({ root: "root", nodes });
+
+    // No kept node is referenced as a child by more than one parent.
+    const parentCount = new Map<string, number>();
+    for (const node of Object.values(tree.nodes)) {
+      if (node.type === "box") {
+        for (const child of node.children) {
+          parentCount.set(child, (parentCount.get(child) ?? 0) + 1);
+        }
+      }
+    }
+    for (const [id, count] of parentCount) {
+      expect(count, `node "${id}" has ${String(count)} parents`).toBeLessThanOrEqual(1);
+    }
+    expect(issues.some((i) => i.includes("removed shared child"))).toBe(true);
+  });
+
+  it("keeps a node shared across two screens under BOTH (cross-screen sharing survives)", () => {
+    // The legitimate pre-drawn-screens pattern: two screens reference the same
+    // header/footer node. Single-parent is enforced PER WALK ROOT, so a fresh
+    // claim set per screen keeps the shared node in each — it is not stripped
+    // from the second screen.
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [] },
+        s1: { id: "s1", type: "box", children: ["shared"] },
+        s2: { id: "s2", type: "box", children: ["shared"] },
+        shared: { id: "shared", type: "box", children: ["leaf"] },
+        leaf: { id: "leaf", type: "text", value: "hi" },
+      },
+      screens: { one: "s1", two: "s2" },
+      entry: "one",
+    };
+    const { tree, issues } = validateTree(input);
+    const s1 = tree.nodes["s1"] as unknown as { children: string[] };
+    const s2 = tree.nodes["s2"] as unknown as { children: string[] };
+    expect(s1.children).toContain("shared");
+    expect(s2.children).toContain("shared");
+    expect(tree.nodes["shared"]).toBeDefined();
+    expect(tree.nodes["leaf"]).toBeDefined();
+    // Nothing was dropped: each walk root sees "shared" under a single parent.
+    expect(issues.some((i) => i.includes("removed shared child"))).toBe(false);
+  });
+});
+
+describe("validateStamp caps (name + description)", () => {
+  it("rejects a stamp name that is not a valid theme-name (too long / bad chars)", () => {
+    for (const bad of ["x".repeat(65), "has space", "-lead"]) {
+      const { stamp, issues } = validateStamp({
+        name: bad,
+        root: "t",
+        nodes: { t: { id: "t", type: "text", value: "x" } },
+      });
+      expect(stamp, bad).toBeUndefined();
+      expect(issues.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("truncates an over-long stamp description to the shared 200-char cap with an issue", () => {
+    const { stamp, issues } = validateStamp({
+      name: "hero",
+      description: "d".repeat(5000),
+      root: "t",
+      nodes: { t: { id: "t", type: "text", value: "x" } },
+    });
+    expect(stamp?.description).toHaveLength(200);
+    expect(issues.some((i) => i.includes("description truncated"))).toBe(true);
+  });
+});
+
 describe("MAX_DEPTH export", () => {
   it("is exported as the single source of truth with value 100", () => {
     expect(MAX_DEPTH).toBe(100);

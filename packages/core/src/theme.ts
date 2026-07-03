@@ -86,7 +86,8 @@ const KNOWN_KEYS = new Set([
 const DANGEROUS_SUBSTRINGS = ["url(", "var(", "expression(", "javascript:"];
 
 const MAX_VALUE_LENGTH = 64;
-const MAX_DESCRIPTION_LENGTH = 200;
+/** Shared cap for a document's one-line `description` (a theme's and a stamp's). */
+export const MAX_DESCRIPTION_LENGTH = 200;
 
 /** Clamp bounds in px-equivalents (invariant #5: a theme cannot push content off-screen). */
 const SPACE_PX_RANGE = { lo: 0, hi: 512 } as const;
@@ -312,9 +313,12 @@ function contrastRatio(
 
 /**
  * Validate an untrusted operator theme document. Returns a `FacetTheme` (partial
- * override) plus issues, or issues only if any `error` was raised. Never throws.
+ * override) plus issues, or issues only if any `error` was raised. Never throws —
+ * a hostile input whose property accessor throws (a proxy/getter handed in by a
+ * live in-process document) is caught by the `validateTheme` wrapper below and
+ * refused with an error issue, keeping the header's "NEVER throws" contract true.
  */
-export function validateTheme(input: unknown): ThemeValidationResult {
+function validateThemeInner(input: unknown): ThemeValidationResult {
   const issues: ThemeIssue[] = [];
   if (!isPlainObject(input)) {
     issues.push({ severity: "error", message: "theme document is not an object" });
@@ -422,4 +426,17 @@ export function validateTheme(input: unknown): ThemeValidationResult {
 
   if (issues.some((issue) => issue.severity === "error")) return { issues };
   return { theme: theme as FacetTheme, issues };
+}
+
+/**
+ * Public boundary: runs `validateThemeInner` but catches any throw from a hostile
+ * input (e.g. `{ get color() { throw } }`) so the documented "NEVER throws"
+ * contract holds for a live in-process document, not just JSON-shaped input.
+ */
+export function validateTheme(input: unknown): ThemeValidationResult {
+  try {
+    return validateThemeInner(input);
+  } catch {
+    return { issues: [{ severity: "error", message: "theme document threw during validation" }] };
+  }
 }
