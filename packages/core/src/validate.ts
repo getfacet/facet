@@ -119,10 +119,16 @@ function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction
       kind: "agent";
       name: string;
       payload?: Record<string, string | number | boolean>;
+      collect?: string;
     } = { kind: "agent", name };
     const payload = sanitizeActionPayload(value.payload);
     if (payload !== undefined) {
       action.payload = payload;
+    }
+    if (typeof value.collect === "string") {
+      action.collect = value.collect;
+    } else if (value.collect !== undefined) {
+      issues.push(`node "${nodeId}": onPress collect is not a string; dropped`);
     }
     return action;
   }

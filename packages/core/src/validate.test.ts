@@ -231,6 +231,42 @@ describe("validateTree action normalization", () => {
     });
   });
 
+  it("keeps a string collect id on an agent action", () => {
+    const { tree, issues } = validateTree(
+      pressBox({ kind: "agent", name: "submit", collect: "signup" }),
+    );
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toEqual({ kind: "agent", name: "submit", collect: "signup" });
+    expect(issues).toHaveLength(0);
+  });
+
+  it("keeps collect on a legacy bare {name} action alongside the kind stamp", () => {
+    const { tree, issues } = validateTree(pressBox({ name: "submit", collect: "signup" }));
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toEqual({ kind: "agent", name: "submit", collect: "signup" });
+    expect(issues).toHaveLength(0);
+  });
+
+  it("drops a non-string collect with an issue while name and payload survive", () => {
+    for (const collect of [42, { box: "signup" }, null]) {
+      const { tree, issues } = validateTree(
+        pressBox({ kind: "agent", name: "submit", payload: { plan: "pro" }, collect }),
+      );
+      const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+      expect(root.onPress).toEqual({ kind: "agent", name: "submit", payload: { plan: "pro" } });
+      expect(root.onPress).not.toHaveProperty("collect");
+      expect(issues.some((issue) => issue.includes("collect"))).toBe(true);
+    }
+  });
+
+  it("leaves a collect-free agent action without a collect property", () => {
+    const { tree, issues } = validateTree(pressBox({ name: "go", payload: { id: 7 } }));
+    const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
+    expect(root.onPress).toEqual({ kind: "agent", name: "go", payload: { id: 7 } });
+    expect(root.onPress).not.toHaveProperty("collect");
+    expect(issues).toHaveLength(0);
+  });
+
   it("strips an unknown action kind with an issue", () => {
     const { tree, issues } = validateTree(pressBox({ kind: "fetch", url: "https://x" }));
     const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
