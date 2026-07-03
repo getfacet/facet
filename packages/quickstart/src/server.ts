@@ -27,8 +27,8 @@ import {
 import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { FacetAgent } from "@facet/core";
-import type { Sink, StageStore } from "@facet/runtime";
+import type { FacetAgent, FacetTheme, FacetTree } from "@facet/core";
+import { MemoryStageStore, withInitialStage, type Sink, type StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "@facet/server";
 
 export interface QuickstartServerOptions {
@@ -47,6 +47,18 @@ export interface QuickstartServerOptions {
   /** Shared with the built-in agent so prompt layer ③ reads real history. */
   readonly sink?: Sink;
   readonly stageStore?: StageStore;
+  /**
+   * Operator themes (validated by the caller) inlined into the shell as
+   * `window.__FACET_THEMES__` for the page to hand `StageRenderer`. Absent/empty
+   * ⇒ the shell is byte-identical to today's (no injected script).
+   */
+  readonly themes?: readonly FacetTheme[];
+  /**
+   * A seedable initial tree (validated by the caller) — wraps the stage store
+   * with `withInitialStage` so a fresh session opens on it before the first
+   * agent turn. Absent ⇒ today's model-first paint.
+   */
+  readonly initialStage?: FacetTree;
   /** Override where `/app.js` streams from (tests inject a fixture bundle). */
   readonly pageBundlePath?: string;
 }
@@ -59,11 +71,25 @@ export interface RunningQuickstart {
   close(): Promise<void>;
 }
 
-const SHELL_HTML = `<!doctype html>
+/**
+ * The HTML shell. When operator themes are present they ship inline as a
+ * `window.__FACET_THEMES__` global (Decision 2 boot seam) — the JSON has `<`
+ * escaped to `<` so a hostile `</script>` in a theme description can't break
+ * out of the script context (defense in depth; `validateTheme` already refuses
+ * `<` in values, but descriptions are freer text). No/empty themes ⇒ no script,
+ * byte-identical to the no-assets boot.
+ */
+function shellHtml(themes?: readonly FacetTheme[]): string {
+  const themeScript =
+    themes !== undefined && themes.length > 0
+      ? `<script>window.__FACET_THEMES__ = ${JSON.stringify(themes).replace(/</g, "\\u003c")}</script>`
+      : "";
+  return `<!doctype html>
 <html>
-<head><meta charset="utf-8" /><title>Facet</title></head>
+<head><meta charset="utf-8" /><title>Facet</title>${themeScript}</head>
 <body><div id="root"></div><script type="module" src="/app.js"></script></body>
 </html>`;
+}
 
 // Served AS JAVASCRIPT (not HTML) when the bundle is missing: /app.js is loaded
 // via <script type="module">, so a text/html body is refused by the browser's
@@ -238,7 +264,7 @@ function handleRequest(
   }
   if (req.method === "GET" && pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(SHELL_HTML);
+    res.end(shellHtml(options.themes));
     return;
   }
   if (req.method === "GET" && pathname === "/app.js") {
@@ -263,6 +289,13 @@ function handleRequest(
 async function bootInternalServer(
   options: QuickstartServerOptions,
 ): Promise<{ server: FacetServer; port: number }> {
+  // Seed a fresh session from the initial tree (Decision 4) by wrapping the
+  // store with `withInitialStage`. With no initialStage we leave `stageStore`
+  // untouched so the runtime's own default applies — today's boot exactly.
+  const stageStore =
+    options.initialStage !== undefined
+      ? withInitialStage(options.stageStore ?? new MemoryStageStore(), options.initialStage)
+      : options.stageStore;
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     const server = createFacetServer({
@@ -272,7 +305,7 @@ async function bootInternalServer(
       agentId: options.agentId,
       agent: options.agent,
       ...(options.sink !== undefined ? { sink: options.sink } : {}),
-      ...(options.stageStore !== undefined ? { stageStore: options.stageStore } : {}),
+      ...(stageStore !== undefined ? { stageStore } : {}),
     });
     try {
       await server.listen();

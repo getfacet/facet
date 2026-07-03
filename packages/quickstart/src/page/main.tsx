@@ -10,9 +10,32 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import type { FacetAction, VisitorContext } from "@facet/core";
+import type { FacetAction, FacetTheme, VisitorContext } from "@facet/core";
 import { browserVisitorId, SseTransport } from "@facet/client";
 import { ChatDock, StageRenderer, useFacet, type ChatMessage } from "@facet/react";
+
+declare global {
+  interface Window {
+    __FACET_THEMES__?: unknown;
+  }
+}
+
+/**
+ * Read the boot-shipped theme map (Decision 2 seam). Floor-guarded: only an
+ * array of objects carrying a string `name` survives — anything else (absent,
+ * a non-array, JSON junk) becomes `undefined`, so `StageRenderer` falls back to
+ * the default theme. `validateTheme` remains the real security boundary; this is
+ * a shape floor after the JSON round trip.
+ */
+function readThemes(): readonly FacetTheme[] | undefined {
+  const raw = window.__FACET_THEMES__;
+  if (!Array.isArray(raw)) return undefined;
+  const themes = raw.filter(
+    (t): t is FacetTheme =>
+      typeof t === "object" && t !== null && typeof (t as { name?: unknown }).name === "string",
+  );
+  return themes.length > 0 ? themes : undefined;
+}
 
 function makeVisitor(): VisitorContext {
   const referrer = document.referrer;
@@ -26,6 +49,7 @@ function makeVisitor(): VisitorContext {
 
 function Page(): ReactNode {
   const visitor = useMemo(makeVisitor, []);
+  const themes = useMemo(readThemes, []);
   const transport = useMemo(() => new SseTransport("", visitor), [visitor]);
   const { tree, chat, send } = useFacet(transport);
   const [log, setLog] = useState<readonly ChatMessage[]>([]);
@@ -63,7 +87,11 @@ function Page(): ReactNode {
   return (
     <div style={styles.page}>
       <div style={styles.stage}>
-        <StageRenderer tree={tree} onAction={onAction} />
+        <StageRenderer
+          tree={tree}
+          onAction={onAction}
+          {...(themes !== undefined ? { themes } : {})}
+        />
       </div>
       <ChatDock messages={log} onSend={onSend} />
     </div>
