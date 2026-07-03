@@ -59,7 +59,9 @@ export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAge
       const history = await options.sink.history(options.agentId, session.visitor.visitorId);
       const turn = {
         system,
-        messages: buildTurnMessages(event, session, history.slice(-historyTurns)),
+        // buildTurnMessages is the single owner of the history cap (passing the
+        // full history + the resolved limit); slicing here too would double-cap.
+        messages: buildTurnMessages(event, session, history, historyTurns),
       };
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {

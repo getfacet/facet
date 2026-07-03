@@ -1,3 +1,4 @@
+import { connect } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_FIELD_VALUE_CHARS,
@@ -1157,6 +1158,58 @@ describe("hardening", () => {
     const event = captured[0];
     expect(event?.kind).toBe("action");
     expect(event?.kind === "action" ? event.fields : undefined).toBeUndefined();
+  });
+
+  it("rejects an action event with too many field keys", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const fields: Record<string, string> = {};
+    for (let i = 0; i < 300; i += 1) fields[`k${String(i)}`] = "v";
+    const response = await postEvent(base, "v", {
+      kind: "action",
+      action: { name: "submit" },
+      fields,
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a spoofed navigate/toggle action on the transport", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // navigate/toggle are client-local and never sent by the renderer; only an
+    // "agent" (or bare-name) action is legal on /event.
+    const response = await fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        visitor: { visitorId: "v" },
+        event: { kind: "action", action: { kind: "navigate", name: "x", to: "about" } },
+      }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("does not crash on a malformed request-target — returns 400 and stays up", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const port = Number(new URL(base).port);
+    // `new URL("//[")` throws; an unguarded handler throw would crash the process.
+    const firstLine = await new Promise<string>((resolve, reject) => {
+      const socket = connect(port, "127.0.0.1", () => {
+        socket.write("GET //[ HTTP/1.1\r\nHost: x\r\n\r\n");
+      });
+      let buf = "";
+      socket.on("data", (d) => {
+        buf += d.toString();
+      });
+      socket.on("end", () => resolve(buf.split("\r\n")[0] ?? ""));
+      socket.on("error", reject);
+      setTimeout(() => socket.end(), 300);
+    });
+    expect(firstLine).toContain("400");
+    // The server is still alive and serving after the malformed request.
+    const health = await fetch(`${base}/health`);
+    expect(health.status).toBe(200);
   });
 
   it("accepts a host bind option and serves /health on loopback", async () => {

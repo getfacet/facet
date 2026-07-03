@@ -147,6 +147,11 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
   if (kind === "message") return typeof text === "string";
   if (kind === "action") {
     if (typeof action !== "object" || action === null) return false;
+    // Only agent actions travel over the transport — navigate/toggle are
+    // client-local and the renderer never sends them. Reject any other kind so
+    // a spoofed `{kind:"navigate"}` can't reach an agent typed as FacetAction.
+    const actionKind = (action as { kind?: unknown }).kind;
+    if (actionKind !== undefined && actionKind !== "agent") return false;
     if (typeof (action as { name?: unknown }).name !== "string") return false;
     // Optional visitor-typed field values riding the event: absent is fine;
     // present must be a string record within the shared cap (see isFieldsRecord).
@@ -165,15 +170,26 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
 
 /** The REJECTING form of the action `fields` rule, mirroring `isPrimitiveRecord`:
  * a plain (non-array) object whose every value is a string of length ≤
- * `MAX_FIELD_VALUE_CHARS`. The renderer caps values at collection time with the
- * same core constant, so the two sides cannot drift — and an untrusted
- * non-renderer client cannot bypass the cap. */
+ * `MAX_FIELD_VALUE_CHARS`. Keys and their count are bounded too, so a
+ * non-renderer client can't slip megabytes of untrusted fields through the
+ * per-value cap in aggregate (the renderer's output is bounded by tree size).
+ * The renderer caps values at collection time with the same core constant, so
+ * the two sides cannot drift. */
 function isFieldsRecord(value: unknown): value is Readonly<Record<string, string>> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  return Object.values(value).every(
-    (v) => typeof v === "string" && v.length <= MAX_FIELD_VALUE_CHARS,
+  const entries = Object.entries(value);
+  if (entries.length > MAX_FIELDS_KEYS) return false;
+  return entries.every(
+    ([k, v]) =>
+      k.length <= MAX_FIELD_VALUE_CHARS &&
+      typeof v === "string" &&
+      v.length <= MAX_FIELD_VALUE_CHARS,
   );
 }
+
+/** Upper bound on distinct field names in one action event (defense in depth;
+ * a real form has a handful). */
+const MAX_FIELDS_KEYS = 256;
 
 /** Shape-check an /agent/control body before resolving a pending request with it —
  * per-kind, so a malformed message can't smuggle a non-array `patches` or a
@@ -499,7 +515,17 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   const postDeps: PostHandlerDeps = { lane, runtime, frameLog, deliver, handling };
 
   const server: Server = createServer((req, res) => {
-    const url = new URL(req.url ?? "/", "http://localhost");
+    // Node delivers malformed request-targets (e.g. `//[`) verbatim, and
+    // `new URL` throws on them — an unguarded throw in this handler becomes an
+    // uncaughtException that crashes the process. Reject them as 400 instead.
+    let url: URL;
+    try {
+      url = new URL(req.url ?? "/", "http://localhost");
+    } catch {
+      res.writeHead(400);
+      res.end();
+      return;
+    }
     // CORS only on the browser channel — the /agent/* control channel is a
     // server-side (bridge) connection, not for cross-origin browser use, so don't
     // advertise it to arbitrary web origins.

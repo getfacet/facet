@@ -15,6 +15,10 @@ and gains an additive `host` bind option. New `@facet/quickstart`: the
 `facet-quickstart` bin boots a live page owned by a built-in LLM agent
 (OpenAI/Anthropic via raw fetch behind a `QuickstartProvider` interface, or a
 deterministic `--stub`), serving the page shell + bundled client and proxying
-the protocol to an internal loopback server. The repo gate chain gains
-`/live-test`, a 3-tier stub/bundle/provider-smoke E2E. (`@facet/*` are versioned
-together as a fixed group.)
+the protocol to an internal loopback server. The public wrapper binds `127.0.0.1`
+by default (its `/event` is unauthenticated and drives paid provider calls), the
+renderer never collects `password` fields, request handlers reject malformed
+request-targets instead of crashing, and the visitor's session-bearer id is kept
+out of provider prompts. The repo gate chain gains `/live-test`, a 3-tier
+stub/bundle/provider-smoke E2E. (`@facet/*` are versioned together as a fixed
+group.)

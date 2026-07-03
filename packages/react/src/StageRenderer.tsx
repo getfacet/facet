@@ -114,6 +114,12 @@ function collectFieldValues(
       return;
     }
     if (node.type === "field") {
+      // Never harvest secrets: a password field's value is excluded from
+      // collection outright, so it can't ride the action event into an agent
+      // (and, for the reference brain, into a third-party LLM + history replay).
+      if (node.input === "password") {
+        return;
+      }
       if (typeof node.name === "string" && !firstIdByName.has(node.name)) {
         firstIdByName.set(node.name, id);
       }

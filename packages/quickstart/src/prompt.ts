@@ -48,8 +48,15 @@ export function buildSystem(guide: string): string {
 /** One visitor event as a compact user-side line. */
 function describeEvent(event: ClientEvent): string {
   switch (event.kind) {
-    case "visit":
-      return `(visit) visitor=${JSON.stringify(event.visitor)}`;
+    case "visit": {
+      // Only the non-secret context reaches the provider — never `visitorId`,
+      // which is the unauthenticated session bearer key (shipping it to a
+      // third-party API + history replay would leak a session-hijack credential
+      // the model has no use for).
+      const { referrer, locale, relationship } = event.visitor;
+      const context = JSON.stringify({ referrer, locale, relationship });
+      return `(visit) context=${context}`;
+    }
     case "message":
       return event.text;
     case "action": {
@@ -74,18 +81,23 @@ function describeReplies(messages: readonly ServerMessage[]): string {
 }
 
 /**
- * Layer ③: the last `HISTORY_TURNS` stored interactions as alternating
- * user/assistant messages, then the final user message = the current event
- * (action events include `fields`, so form submits are visible) + the current
- * stage JSON (so the model refines instead of rebuilding).
+ * Layer ③: the last `limit` stored interactions as alternating user/assistant
+ * messages, then the final user message = the current event (action events
+ * include `fields`, so form submits are visible) + the current stage JSON (so
+ * the model refines instead of rebuilding).
+ *
+ * `limit` is the SINGLE cap on replayed history (the caller resolves it, e.g.
+ * to `HISTORY_TURNS`); `limit <= 0` replays no history.
  */
 export function buildTurnMessages(
   event: ClientEvent,
   session: FacetSession,
   history: readonly StoredEvent[],
+  limit: number,
 ): readonly ProviderMessage[] {
   const messages: ProviderMessage[] = [];
-  for (const entry of history.slice(-HISTORY_TURNS)) {
+  const replayed = limit > 0 ? history.slice(-limit) : [];
+  for (const entry of replayed) {
     messages.push({ role: "user", content: describeEvent(entry.event) });
     messages.push({ role: "assistant", content: describeReplies(entry.messages) });
   }

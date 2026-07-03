@@ -393,6 +393,41 @@ describe("StageRenderer collect (jsdom)", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("never harvests a password field's value", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: { id: "form", type: "box", children: ["userF", "passF"] },
+          userF: { id: "userF", type: "field", name: "user", placeholder: "user" },
+          passF: {
+            id: "passF",
+            type: "field",
+            name: "password",
+            input: "password",
+            placeholder: "secret",
+          },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "login", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Log in" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("user"), { target: { value: "ada" } });
+    fireEvent.change(screen.getByPlaceholderText("secret"), { target: { value: "hunter2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Log in" }));
+
+    // The password value is excluded outright; only the non-secret field rides.
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "login" }, { user: "ada" });
+  });
+
   it("unknown collect id degrades to empty fields, never a throw", () => {
     const onAction = vi.fn();
     render(

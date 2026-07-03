@@ -181,6 +181,23 @@ describe("createQuickstartAgent", () => {
     }
   });
 
+  it("recovers within one turn: first attempt fails, retry succeeds ⇒ render + say, no apology", async () => {
+    // The whole point of MAX_ATTEMPTS = 2: a bad first reply, a good second one,
+    // all inside ONE turn.
+    const provider = providerOf("$$$ not json $$$", VALID_REPLY);
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "hi" }, SESSION);
+      expect(patchesOf(out)).toHaveLength(1); // the recovered render
+      expect(saysOf(out)).toEqual(["done"]); // the good reply's say, not the apology
+      expect(provider.calls).toHaveLength(2); // exactly one retry
+      expect(errorSpy).not.toHaveBeenCalled(); // no failure line on recovery
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("feeds sink history into the prompt, capped at historyTurns", async () => {
     const sink = new MemorySink();
     await sink.record("quickstart", "v1", {
@@ -202,6 +219,25 @@ describe("createQuickstartAgent", () => {
     expect(all).toContain("newer-line");
     expect(all).toContain("newer-reply");
     expect(all).not.toContain("older-line");
+  });
+
+  it("honors a historyTurns override above the default (single-source cap)", async () => {
+    const sink = new MemorySink();
+    for (let i = 0; i < 25; i += 1) {
+      await sink.record("quickstart", "v1", {
+        at: i,
+        event: { kind: "message", text: `line-${i}` },
+        messages: [{ kind: "say", text: `reply-${i}` }],
+      });
+    }
+    const provider = providerOf(JSON.stringify({ say: "ok" }));
+    const agent = makeAgent(provider, { sink, historyTurns: 25 });
+    await agent({ kind: "message", text: "now" }, SESSION);
+
+    const all = provider.calls[0]?.messages.map((m) => m.content).join("\n") ?? "";
+    // All 25 replayed — the old double-slice silently capped this at 20.
+    expect(all).toContain("line-0");
+    expect(all).toContain("line-24");
   });
 });
 

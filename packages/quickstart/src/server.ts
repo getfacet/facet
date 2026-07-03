@@ -34,6 +34,14 @@ import { createFacetServer, type FacetServer } from "@facet/server";
 export interface QuickstartServerOptions {
   /** Public port the wrapper listens on (the one printed to the deployer). */
   readonly port: number;
+  /**
+   * Bind address for the PUBLIC wrapper. Defaults to `127.0.0.1` (loopback) —
+   * the quickstart is a local first-run tool and its `/event` route is
+   * unauthenticated and drives paid provider calls, so it must not be reachable
+   * from the network by default. Pass `"0.0.0.0"` to opt into LAN/public
+   * exposure (add your own auth + rate limiting first).
+   */
+  readonly host?: string;
   readonly agentId: string;
   readonly agent: FacetAgent;
   /** Shared with the built-in agent so prompt layer ③ reads real history. */
@@ -42,6 +50,9 @@ export interface QuickstartServerOptions {
   /** Override where `/app.js` streams from (tests inject a fixture bundle). */
   readonly pageBundlePath?: string;
 }
+
+/** Loopback default for the public wrapper (see `QuickstartServerOptions.host`). */
+const DEFAULT_PUBLIC_HOST = "127.0.0.1";
 
 export interface RunningQuickstart {
   readonly url: string;
@@ -164,7 +175,17 @@ function handleRequest(
   options: QuickstartServerOptions,
   internalPort: number,
 ): void {
-  const url = new URL(req.url ?? "/", "http://localhost");
+  // Node delivers malformed request-targets (e.g. `//[`) verbatim, and
+  // `new URL` throws on them — an unguarded throw here becomes an
+  // uncaughtException that crashes the process. Reject them as 400.
+  let url: URL;
+  try {
+    url = new URL(req.url ?? "/", "http://localhost");
+  } catch {
+    res.writeHead(400);
+    res.end();
+    return;
+  }
   const { pathname } = url;
   // The agent channel is NOT exposed: quickstart's brain is in-process.
   if (pathname === "/agent" || pathname.startsWith("/agent/")) {
@@ -204,7 +225,9 @@ async function bootInternalServer(
       await server.listen();
       return { server, port };
     } catch {
-      // EADDRINUSE — try another port
+      // EADDRINUSE (or any bind error) — close this server so its agent-channel
+      // reaper interval can't keep the process alive, then try another port.
+      await server.close().catch(() => {});
     }
   }
   throw new Error("could not bind the internal facet server to a loopback port");
@@ -228,7 +251,7 @@ export async function startQuickstart(
         );
       };
       wrapper.once("error", onError);
-      wrapper.listen(options.port, () => {
+      wrapper.listen(options.port, options.host ?? DEFAULT_PUBLIC_HOST, () => {
         wrapper.removeListener("error", onError);
         resolve();
       });

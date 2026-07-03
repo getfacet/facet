@@ -92,6 +92,24 @@ itself, and proxies every protocol route (SSE + POST) to an internal
 The external agent channel (`/agent/*`) is never exposed — quickstart's brain
 is in-process; dial-in is an advanced jack.
 
+## Security posture (local tool, not a hosted server)
+
+The quickstart is a **local first-run tool**. Its `/event` route is
+unauthenticated and each event drives paid provider calls, so:
+
+- The public wrapper **binds `127.0.0.1` (loopback) by default** — not reachable
+  from the network. Pass `host: "0.0.0.0"` to `startQuickstart` only after you
+  add your own auth, rate limiting, and spend caps in front of it.
+- **`password` fields are never collected** — the renderer excludes them, so a
+  typed password can't ride an action event into the LLM or history.
+- Provider keys are read from the environment only, used solely in the request
+  auth header, and never logged.
+
+It is **not** a multi-tenant server: there is no per-visitor rate limit or
+global cap on concurrent turns, and `MemorySink` history is unbounded. Those are
+hosted-product concerns (see the root roadmap), out of scope for the local
+quickstart.
+
 To bring your own brain instead (in-process, local CLI bridge, or dial-in), see
 ["Advanced: bring your own brain"](../../README.md#advanced-bring-your-own-brain)
 in the root README.

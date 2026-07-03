@@ -28,8 +28,9 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/keyed by each field's "name"/i);
     expect(STAGE_SPEC).toMatch(/stable names/i);
     // Keep a form and its submit button together and visible on one screen;
-    // hidden fields or fields on other screens are not captured.
+    // hidden fields, off-screen fields, and password fields are never captured.
     expect(STAGE_SPEC).toMatch(/submit button together/i);
-    expect(STAGE_SPEC).toMatch(/not captured/i);
+    expect(STAGE_SPEC).toMatch(/never captured/i);
+    expect(STAGE_SPEC).toMatch(/password fields/i);
   });
 });

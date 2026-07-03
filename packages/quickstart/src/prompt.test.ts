@@ -35,13 +35,13 @@ describe("buildSystem", () => {
 });
 
 describe("buildTurnMessages", () => {
-  it("caps history at HISTORY_TURNS, dropping the oldest", () => {
+  it("caps history at the given limit, dropping the oldest", () => {
     const history: StoredEvent[] = [];
     for (let i = 0; i < 25; i += 1) {
       history.push(stored(`m${i}`, [{ kind: "say", text: `r${i}` }]));
     }
     const event: ClientEvent = { kind: "message", text: "now" };
-    const messages = buildTurnMessages(event, SESSION, history);
+    const messages = buildTurnMessages(event, SESSION, history, HISTORY_TURNS);
 
     // 20 history turns × (user + assistant) + the final user message
     expect(messages.length).toBe(HISTORY_TURNS * 2 + 1);
@@ -52,6 +52,16 @@ describe("buildTurnMessages", () => {
     expect(all).toContain("r24");
   });
 
+  it("replays no history when the limit is 0 (or negative)", () => {
+    const history = [stored("old", [{ kind: "say", text: "reply" }])];
+    const event: ClientEvent = { kind: "message", text: "now" };
+    for (const limit of [0, -5]) {
+      const messages = buildTurnMessages(event, SESSION, history, limit);
+      expect(messages.length).toBe(1); // only the final user message
+      expect(messages[0]?.content).not.toContain("old");
+    }
+  });
+
   it("alternates user/assistant lines and marks patches as (page updated)", () => {
     const history = [
       stored("hello", [
@@ -60,7 +70,7 @@ describe("buildTurnMessages", () => {
       ]),
     ];
     const event: ClientEvent = { kind: "message", text: "now" };
-    const messages = buildTurnMessages(event, SESSION, history);
+    const messages = buildTurnMessages(event, SESSION, history, HISTORY_TURNS);
     expect(messages[0]?.role).toBe("user");
     expect(messages[0]?.content).toContain("hello");
     expect(messages[1]?.role).toBe("assistant");
@@ -75,7 +85,7 @@ describe("buildTurnMessages", () => {
       action: { kind: "agent", name: "submit", payload: { plan: "pro" }, collect: "signup" },
       fields: { name: "Hoon", email: "hoon@example.com" },
     };
-    const messages = buildTurnMessages(event, SESSION, []);
+    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
     const final = messages[messages.length - 1];
     expect(final?.role).toBe("user");
     expect(final?.content).toContain("submit");
@@ -86,27 +96,29 @@ describe("buildTurnMessages", () => {
 
   it("appends the current stage JSON to the final user message", () => {
     const event: ClientEvent = { kind: "message", text: "make it blue" };
-    const messages = buildTurnMessages(event, SESSION, []);
+    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
     const final = messages[messages.length - 1];
     expect(final?.content).toContain(`CURRENT STAGE: ${JSON.stringify(SESSION.stage)}`);
   });
 
-  it("renders a visit event with the visitor context", () => {
+  it("renders a visit event's non-secret context but never the visitorId bearer key", () => {
     const event: ClientEvent = {
       kind: "visit",
-      visitor: { visitorId: "v1", referrer: "news.ycombinator.com" },
+      visitor: { visitorId: "secret-session-key-123", referrer: "news.ycombinator.com" },
     };
-    const messages = buildTurnMessages(event, SESSION, []);
+    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
     expect(messages.length).toBe(1);
     expect(messages[0]?.role).toBe("user");
     expect(messages[0]?.content).toContain("visit");
-    expect(messages[0]?.content).toContain("v1");
     expect(messages[0]?.content).toContain("news.ycombinator.com");
+    // The visitorId is the unauthenticated session bearer key — it must NOT
+    // reach the provider prompt.
+    expect(messages[0]?.content).not.toContain("secret-session-key-123");
   });
 
   it("renders a message event as its text", () => {
     const event: ClientEvent = { kind: "message", text: "show me the menu" };
-    const messages = buildTurnMessages(event, SESSION, []);
+    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
     expect(messages[0]?.content).toContain("show me the menu");
   });
 });
