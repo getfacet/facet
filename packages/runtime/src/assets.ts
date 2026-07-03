@@ -1,0 +1,176 @@
+import {
+  isContainer,
+  validateStamp,
+  validateTheme,
+  validateTree,
+  type FacetSession,
+  type FacetStamp,
+  type FacetTheme,
+  type FacetTree,
+} from "@facet/core";
+import type { StageStore } from "./stage-store.js";
+
+/**
+ * The operator's per-agent asset library — themes, stamps, and an optional
+ * initial tree — as RAW documents straight from the backend, BEFORE any
+ * `@facet/core` validation. `loadAssets` is the one gate they pass.
+ *
+ * This is the `StageStore` posture exactly: an interface plus a browser-safe
+ * `MemoryAssets` reference here, with the Node/file reference (`FileAssets`)
+ * behind `@facet/runtime/node` so a browser bundle never drags in `node:fs`.
+ */
+export interface AssetDocuments {
+  readonly themes: readonly unknown[];
+  readonly stamps: readonly unknown[];
+  readonly initialTree?: unknown;
+  /** Backend-level problems (unreadable file, bad JSON) — surfaced, never thrown. */
+  readonly issues?: readonly string[];
+}
+
+/** Serves an agent's raw asset documents. `agentId` carries for adapter parity
+ * (a DB adapter keys on it); the memory and file references ignore it and serve
+ * their one constructed document set / directory. */
+export interface AssetsStore {
+  load(agentId: string): Promise<AssetDocuments>;
+}
+
+/** In-memory asset store — the zero-config reference; serves its constructed docs. */
+export class MemoryAssets implements AssetsStore {
+  constructor(private readonly docs: AssetDocuments) {}
+
+  async load(_agentId: string): Promise<AssetDocuments> {
+    return this.docs;
+  }
+}
+
+/** The result of validating an `AssetDocuments` set: only documents that cleared
+ * their core validator survive; everything skipped or fixed is named in `issues`. */
+export interface LoadedAssets {
+  readonly themes: readonly FacetTheme[];
+  readonly stamps: readonly FacetStamp[];
+  readonly initialTree?: FacetTree;
+  readonly issues: readonly string[];
+}
+
+/**
+ * Runs the core validators once, at boot (Decision Lock: no hot reload). Each
+ * theme passes `validateTheme` (error ⇒ skipped + issue; warnings ⇒ kept + issue;
+ * duplicate names ⇒ first wins + issue), each stamp `validateStamp`, and the
+ * initial tree `validateTree` PLUS `isSeedableTree` — the EMPTY_TREE trap: a tree
+ * `validateTree` reduced to empty is refused so it can't silently seed an empty
+ * stage and flip the server's offline face. Invalid documents are skipped with a
+ * logged issue and boot proceeds — the `FileStageStore` skip-and-log posture.
+ * Never throws.
+ */
+export async function loadAssets(store: AssetsStore, agentId: string): Promise<LoadedAssets> {
+  const docs = await store.load(agentId);
+  const issues: string[] = [...(docs.issues ?? [])];
+
+  const themes: FacetTheme[] = [];
+  const seenThemeNames = new Set<string>();
+  for (const raw of docs.themes) {
+    const { theme, issues: themeIssues } = validateTheme(raw);
+    if (theme === undefined) {
+      const why = themeIssues
+        .filter((i) => i.severity === "error")
+        .map((i) => i.message)
+        .join("; ");
+      issues.push(`theme document skipped: ${why || "invalid"}`);
+      continue;
+    }
+    if (seenThemeNames.has(theme.name)) {
+      issues.push(`duplicate theme name "${theme.name}" ignored (first wins)`);
+      continue;
+    }
+    seenThemeNames.add(theme.name);
+    for (const warning of themeIssues) {
+      issues.push(`theme "${theme.name}": ${warning.message}`);
+    }
+    themes.push(theme);
+  }
+
+  const stamps: FacetStamp[] = [];
+  for (const raw of docs.stamps) {
+    const { stamp, issues: stampIssues } = validateStamp(raw);
+    if (stamp === undefined) {
+      issues.push(`stamp document skipped: ${stampIssues.join("; ") || "invalid"}`);
+      continue;
+    }
+    for (const note of stampIssues) {
+      issues.push(`stamp "${stamp.name}": ${note}`);
+    }
+    stamps.push(stamp);
+  }
+
+  let initialTree: FacetTree | undefined;
+  if (docs.initialTree !== undefined) {
+    const { tree, issues: treeIssues } = validateTree(docs.initialTree);
+    for (const note of treeIssues) {
+      issues.push(`initial tree: ${note}`);
+    }
+    if (isSeedableTree(tree)) {
+      initialTree = tree;
+    } else {
+      // The trap: `validateTree(garbage)` returns EMPTY_TREE; seeding it would
+      // silently flip `hasBuiltStage` and change the offline face. Refuse it so
+      // boot falls back to today's model-first paint.
+      issues.push("initial tree is empty or invalid — not seedable; using model-first paint");
+    }
+  }
+
+  const loaded: { -readonly [K in keyof LoadedAssets]: LoadedAssets[K] } = {
+    themes,
+    stamps,
+    issues,
+  };
+  if (initialTree !== undefined) loaded.initialTree = initialTree;
+  return loaded;
+}
+
+/**
+ * A tree worth seeding a fresh session with — it already shows something. Mirrors
+ * the server's `hasBuiltStage`: the render root resolves to a box with ≥ 1 child,
+ * or `screens` is non-empty. An empty root box (EMPTY_TREE, the shape
+ * `validateTree` falls back to on garbage) is NOT seedable — refusing it here is
+ * what closes the EMPTY_TREE trap in `loadAssets`.
+ */
+export function isSeedableTree(tree: FacetTree): boolean {
+  if (tree.screens !== undefined && Object.keys(tree.screens).length > 0) return true;
+  const root = tree.nodes[tree.root];
+  return root !== undefined && isContainer(root) && root.children.length > 0;
+}
+
+/**
+ * Decorates a `StageStore` so a FRESH session opens with `initialStage` instead
+ * of `EMPTY_TREE`; an EXISTING session is returned untouched; `get`/`save`
+ * delegate. Because every `open()` runs under `FacetRuntime`'s per-(agent,
+ * visitor) serial queue and before the first agent turn, the seed is inside the
+ * same serialized stage-write path and visible to the agent's first turn (it
+ * "refines the seeded stage"); the browser's first snapshot ships via the
+ * existing rehydrate path with zero server change.
+ *
+ * INTENTIONAL interaction (recorded): a valid seeded tree counts as "built"
+ * (`hasBuiltStage`), so the offline face will NOT overwrite it — desired, the
+ * seeded skeleton IS the page.
+ *
+ * Pass-through: with no `initialStage`, or one that isn't seedable, the original
+ * store is returned unchanged — today's model-first paint, exactly.
+ */
+export function withInitialStage(store: StageStore, initialStage?: FacetTree): StageStore {
+  if (initialStage === undefined || !isSeedableTree(initialStage)) return store;
+  const seed = initialStage;
+  return {
+    get: (agentId, visitorId) => store.get(agentId, visitorId),
+    save: (session) => store.save(session),
+    async open(agentId, visitor) {
+      // Get-then-create, seeding on miss — the `openSession` shape, but with the
+      // seed in place of EMPTY_TREE. Safe because the runtime serializes opens
+      // per (agent, visitor), so the get→save window can't be raced through it.
+      const existing = await store.get(agentId, visitor.visitorId);
+      if (existing !== undefined) return existing;
+      const session: FacetSession = { agentId, visitor, stage: seed };
+      await store.save(session);
+      return session;
+    },
+  };
+}
