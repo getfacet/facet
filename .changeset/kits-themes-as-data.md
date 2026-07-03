@@ -5,14 +5,22 @@
 "@facet/runtime": minor
 "@facet/kit": minor
 "@facet/quickstart": minor
+"@facet/server": minor
+"@facet/client": minor
 ---
 
 Kits & themes as data — reskin and pre-seed a Facet page without touching code.
 Four additive layers, one flow, and the invariants hold: **the LLM never authors
 theme values** (it selects a theme by NAME), **stamps are never expanded**
 (they reach the model as prompt data and are copied into ordinary patches), and
-**no new protocol messages** are introduced (the theme map ships inline in the
-quickstart shell; `@facet/server`/`@facet/client` are untouched).
+**no new protocol messages** are introduced (the theme map and initial stage
+ship inline in the quickstart shell).
+
+PRE-1.0 BREAKING (in-repo consumers all updated): `FacetRuntime.handle` and
+`applyMessages` now return `TurnResult` (`{ messages, agentMutated }`) instead
+of a bare message array, so transports can tell a real agent edit from the
+prepended seed frame (`@facet/server` gates its late-result staleness bookkeeping
+on `agentMutated`; `@facet/client`'s `LocalTransport` updated).
 
 - `@facet/core`: `FacetTheme` + `validateTheme` — the one safety gate where raw
   CSS enters, as OPERATOR data only (per-group token-name allowlist,
@@ -29,7 +37,9 @@ quickstart shell; `@facet/server`/`@facet/client` are untouched).
   `FileAssets` behind `@facet/runtime/node`), `loadAssets` (runs the core
   validators once at boot, skips invalid documents with logged issues), and
   `withInitialStage` — a `StageStore` decorator that seeds fresh sessions from a
-  validated initial tree inside the runtime's serialized write path.
+  validated initial tree inside the runtime's serialized write path; the seed
+  travels the patch channel as the first stamped frame of the seeding turn (and
+  the quickstart shell also ships it for an instant first paint).
 - `@facet/kit`: per-instantiation id prefixes on `Builder`, a `fragment()` graft
   API, and `KIT_STAMPS` (hero/card/cta-button as validated stamps). `page()`
   output is byte-identical to today.

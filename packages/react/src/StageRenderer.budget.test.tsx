@@ -1,10 +1,26 @@
 // @vitest-environment jsdom
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { FacetNode, FacetTree, NodeId } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 
 afterEach(cleanup);
+
+/** A valid, flat tree: one root box with `count` text-node children. */
+function flatTree(count: number): FacetTree {
+  const nodes: Record<NodeId, FacetNode> = {
+    root: { id: "root", type: "box", children: [] },
+  };
+  const children: NodeId[] = [];
+  for (let i = 0; i < count; i += 1) {
+    const id = `t${String(i)}`;
+    children.push(id);
+    nodes[id] = { id, type: "text", value: `n${String(i)}` };
+  }
+  nodes.root = { id: "root", type: "box", children };
+  return { root: "root", nodes };
+}
 
 /**
  * A hostile shared-child lattice built DIRECTLY (bypassing validateTree, as a raw
@@ -44,6 +60,21 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     }).not.toThrow();
     // Bounded: the budget is 5000, so the DOM can't hold anywhere near 2^40 divs.
     expect(container!.querySelectorAll("div").length).toBeLessThan(6000);
+  });
+
+  it("renders a valid tree in FULL under StrictMode (budget is not shared across renders)", () => {
+    // 3000 text nodes — well under RENDER_BUDGET (5000). React StrictMode
+    // double-invokes each component render; if the budget were a shared render-
+    // phase mutation it would be decremented twice per node and the effective cap
+    // would halve to ~2500 (only 2499 <p> would render). With renderNode a plain
+    // function called from StageRenderer's body, each StrictMode invocation makes
+    // its own fresh budget, so all 3000 nodes render.
+    const { container } = render(
+      <StrictMode>
+        <StageRenderer tree={flatTree(3000)} onAction={vi.fn()} />
+      </StrictMode>,
+    );
+    expect(container.querySelectorAll("p").length).toBe(3000);
   });
 
   it("keeps a collect press bounded on a shared-child subtree (gather budget)", () => {

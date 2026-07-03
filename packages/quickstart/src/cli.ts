@@ -9,7 +9,7 @@
  * from env only and never logged (error messages name the VAR, never a value).
  */
 import { readFile } from "node:fs/promises";
-import { existsSync, realpathSync } from "node:fs";
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { FacetAgent, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
 import { MemorySink, loadAssets } from "@facet/runtime";
@@ -152,8 +152,18 @@ export async function runCli(
   let stamps: readonly FacetStamp[] = [];
   let initialStage: FacetTree | undefined;
   if (flags.assets !== undefined) {
-    if (!existsSync(flags.assets)) {
-      error(`Assets directory not found: ${flags.assets}`);
+    // An EXPLICIT --assets must be a READABLE DIRECTORY (the --guide hard-fail
+    // precedent). existsSync passes for a regular file or a permission-denied
+    // dir; FileAssets would then warn-and-continue with zero assets and boot at
+    // exit 0 — an explicit registry silently doing nothing. Probe for real.
+    try {
+      if (!statSync(flags.assets).isDirectory()) {
+        error(`Assets path is not a directory: ${flags.assets}`);
+        return 1;
+      }
+      readdirSync(flags.assets);
+    } catch (cause) {
+      error(`Assets directory not readable: ${flags.assets} (${String(cause)})`);
       return 1;
     }
     const loaded = await loadAssets(new FileAssets(flags.assets), flags.agentId);

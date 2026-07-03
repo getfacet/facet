@@ -25,6 +25,20 @@ export interface FacetRuntimeOptions {
 }
 
 /**
+ * What one turn yields. `messages` is the list to fan out to the client (the
+ * prepended seed frame included when a fresh session was just seeded).
+ * `agentMutated` is whether the AGENT'S OWN messages contained a stage patch —
+ * computed BEFORE the seed frame is prepended — so a say-only turn that merely
+ * re-emits a parked seed is not mistaken for a real edit. The transport gates
+ * `recordApplied` on it: bumping "last applied" on a non-mutating turn would
+ * falsely stale an older parked late result.
+ */
+export interface TurnResult {
+  readonly messages: readonly ServerMessage[];
+  readonly agentMutated: boolean;
+}
+
+/**
  * Wires a transport's inbound events to the agent and keeps each session's stage
  * up to date. A transport (SSE server, or the in-process demo) calls `handle` for
  * every event from a visitor and ships the returned messages back.
@@ -39,7 +53,7 @@ export class FacetRuntime {
   private readonly sink: Sink;
   // Serialize events per (agent, visitor) so concurrent same-visitor events don't
   // race on the open→apply→save read-modify-write. Different visitors stay parallel.
-  private readonly serialize = createSerialQueue<readonly ServerMessage[]>();
+  private readonly serialize = createSerialQueue<TurnResult>();
   // Serialize sink records per (agent, visitor) too: `record` is fire-and-forget
   // off the response path, so with an async sink a fast later record could persist
   // before a slow earlier one. This queue keeps per-visitor records in event order
@@ -82,7 +96,7 @@ export class FacetRuntime {
    * back. Stage patches are applied to the stored session (server is the source of
    * truth), then the interaction is handed to the sink.
    */
-  handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]> {
+  handle(visitor: VisitorContext, event: ClientEvent): Promise<TurnResult> {
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), () =>
       this.handleOne(visitor, event),
     );
@@ -101,17 +115,14 @@ export class FacetRuntime {
     visitor: VisitorContext,
     event: ClientEvent,
     messages: readonly ServerMessage[],
-  ): Promise<readonly ServerMessage[]> {
+  ): Promise<TurnResult> {
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       const session = await this.stageStore.open(this.agentId, visitor);
       return this.persistWithSeed(visitor, session, event, messages);
     });
   }
 
-  private async handleOne(
-    visitor: VisitorContext,
-    event: ClientEvent,
-  ): Promise<readonly ServerMessage[]> {
+  private async handleOne(visitor: VisitorContext, event: ClientEvent): Promise<TurnResult> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
     return this.persistWithSeed(visitor, session, event, messages);
@@ -139,8 +150,12 @@ export class FacetRuntime {
     session: FacetSession,
     event: ClientEvent,
     messages: readonly ServerMessage[],
-  ): Promise<readonly ServerMessage[]> {
+  ): Promise<TurnResult> {
     const key = sessionKey(this.agentId, visitor.visitorId);
+    // Whether the AGENT'S OWN turn mutated the stage — computed BEFORE the seed
+    // frame is prepended below, so a say-only turn that merely re-emits a parked
+    // seed is NOT counted as an edit. The transport gates `recordApplied` on this.
+    const agentMutated = messages.some((m) => m.kind === "patch");
     // Arm: `takeSeeded` fires at most once, so park the key until a turn
     // actually persists (evicting the oldest armed key at the cap).
     if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
@@ -159,9 +174,13 @@ export class FacetRuntime {
           ...messages,
         ]
       : messages;
-    const result = await this.persist(visitor, session, event, delivered);
+    // Save/deliver the seed-prefixed list, but record ONLY the agent's own
+    // messages into the sink (the seed frame is a delivery mechanism, not a turn
+    // reply — recording it would make history claim "(page updated)" falsely and
+    // store the seed tree JSON per visitor).
+    const result = await this.persist(visitor, session, event, delivered, messages);
     this.pendingSeeds.delete(key); // consume ONLY after persist resolved
-    return result;
+    return { messages: result, agentMutated };
   }
 
   /**
@@ -170,15 +189,21 @@ export class FacetRuntime {
    * (`applyMessages`). The response never awaits the record: the stage is the
    * source of truth for reconnect; the sink is best-effort. Records enqueue per
    * visitor so an async sink persists them in event order.
+   *
+   * `messages` is what gets APPLIED + DELIVERED (seed frame included);
+   * `recordMessages` (defaults to `messages`) is what gets RECORDED into the
+   * sink — persistWithSeed passes the pre-seed list so the synthetic seed frame
+   * never lands in conversation history.
    */
   private async persist(
     visitor: VisitorContext,
     session: FacetSession,
     event: ClientEvent,
     messages: readonly ServerMessage[],
+    recordMessages: readonly ServerMessage[] = messages,
   ): Promise<readonly ServerMessage[]> {
     await this.stageStore.save(this.applyToSession(session, messages));
-    const entry = { at: Date.now(), event, messages };
+    const entry = { at: Date.now(), event, messages: recordMessages };
     void this.serializeRecord(sessionKey(this.agentId, visitor.visitorId), () =>
       this.sink.record(this.agentId, visitor.visitorId, entry),
     ).catch((error: unknown) => console.error("[facet] sink failed:", error));

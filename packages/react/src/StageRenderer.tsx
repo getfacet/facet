@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   FIELD_INPUTS,
@@ -114,14 +114,14 @@ function collectFieldValues(
   }
 
   // Data-side pass: (name → node ids) for every field in the subtree, in walk
-  // order — mirrors RenderNode's own ancestor-set cycle guard + depth cap so a
+  // order — mirrors renderNode's own ancestor-set cycle guard + depth cap so a
   // cyclic raw-path tree terminates. Keeping ALL ids per name (not just the
   // first) lets the DOM pass pick a MOUNTED one, so a hidden/off-screen field
   // can't shadow a visible same-named field and drop its value.
   const idsByName = new Map<string, NodeId[]>();
   // Total-visit budget for THIS invocation: `ancestors` breaks cycles but a raw
   // shared-child DAG (no validateTree on the live path) has an exponential number
-  // of paths, so cap total gather steps the way RenderNode caps total renders.
+  // of paths, so cap total gather steps the way renderNode caps total renders.
   let gatherBudget = RENDER_BUDGET;
   const gather = (id: NodeId, ancestors: ReadonlySet<NodeId>, depth: number): void => {
     if (depth > MAX_DEPTH || ancestors.has(id) || --gatherBudget < 0) {
@@ -331,20 +331,22 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     }
   };
 
-  // One mutable budget per render pass, shared by every RenderNode in this tree
-  // (threaded as a prop). A fresh object each render, so it resets every pass.
+  // One mutable budget per render pass, LOCAL to this StageRenderer render and
+  // threaded down the plain `renderNode` recursion. `renderNode` is a plain
+  // function, not a React component, so the counter is never shared across
+  // separate component invocations — under StrictMode React double-invokes
+  // StageRenderer (each making its own fresh budget) rather than double-decrementing
+  // one shared object per node, so a valid tree renders in full at either cap.
   const budget = { left: RENDER_BUDGET };
-  const stage = (
-    <RenderNode
-      tree={tree}
-      id={resolveScreenRoot(tree, currentScreen)}
-      onPress={handlePress}
-      visibilityOverrides={visibilityOverrides}
-      theme={theme}
-      budget={budget}
-      depth={0}
-    />
-  );
+  const stage = renderNode({
+    tree,
+    id: resolveScreenRoot(tree, currentScreen),
+    onPress: handlePress,
+    visibilityOverrides,
+    theme,
+    budget,
+    depth: 0,
+  });
   if (onAction === undefined) {
     // No handler ⇒ no press can emit, so field collection is unreachable and
     // the scope wrapper is unnecessary — handler-less output stays byte-
@@ -360,7 +362,7 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
   );
 }
 
-interface RenderNodeProps {
+interface RenderArgs {
   readonly tree: FacetTree;
   readonly id: NodeId;
   readonly onPress: (press: ClassifiedPress) => void;
@@ -369,12 +371,20 @@ interface RenderNodeProps {
   readonly theme: ResolvedTheme;
   /** Ids on the path from the root to here — used to break cycles fail-safe. */
   readonly ancestors?: ReadonlySet<NodeId> | undefined;
-  /** Shared per-render-pass node budget — bounds total renders (invariant #2). */
+  /** Per-render-pass node budget — bounds total renders (invariant #2). */
   readonly budget: { left: number };
   readonly depth: number;
 }
 
-function RenderNode({
+/**
+ * Renders one node to a `ReactNode`, recursing into box children. A PLAIN
+ * function (not a React component) invoked from StageRenderer's body: the mutable
+ * `budget` it decrements is therefore local to a single StageRenderer render and
+ * never shared across separate component invocations, so React StrictMode's
+ * double-invoke can't silently halve the effective cap (it re-runs StageRenderer,
+ * which makes a fresh budget each time).
+ */
+function renderNode({
   tree,
   id,
   onPress,
@@ -383,7 +393,7 @@ function RenderNode({
   ancestors,
   budget,
   depth,
-}: RenderNodeProps): ReactNode {
+}: RenderArgs): ReactNode {
   const node = tree.nodes[id];
   // == null also skips a node a patch replaced with JSON null (not just missing
   // ids). The budget guard bounds a shared-child DAG's exponential path count the
@@ -417,18 +427,22 @@ function RenderNode({
         emitted.add(childId);
         return true;
       });
+      // Each child is rendered by a direct recursive call; a keyed Fragment
+      // carries the React list key without adding a DOM node (flow layout and the
+      // byte-identical output are unchanged — a Fragment emits no markup).
       const children = uniqueChildIds.map((childId) => (
-        <RenderNode
-          key={childId}
-          tree={tree}
-          id={childId}
-          onPress={onPress}
-          visibilityOverrides={visibilityOverrides}
-          theme={theme}
-          ancestors={childAncestors}
-          budget={budget}
-          depth={depth + 1}
-        />
+        <Fragment key={childId}>
+          {renderNode({
+            tree,
+            id: childId,
+            onPress,
+            visibilityOverrides,
+            theme,
+            ancestors: childAncestors,
+            budget,
+            depth: depth + 1,
+          })}
+        </Fragment>
       ));
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.

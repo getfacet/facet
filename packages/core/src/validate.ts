@@ -578,7 +578,11 @@ export function validateStamp(input: unknown): StampValidationResult {
   // filename-safe identifier), so an unbounded or control-character name can't
   // flow into prompt/issue/log strings.
   if (!isValidThemeName(name)) {
-    issues.push(`stamp name "${name}" is not a valid name (letters/digits/_/-, max 64); refused`);
+    // Refuse WITHOUT echoing the raw name: an unbounded or terminal-escape name
+    // is exactly what this branch rejects, so interpolating it here would defeat
+    // the cap and inject into the prompt/issue/log strings it flows into (matches
+    // validateTheme's constant "name is missing or malformed" posture).
+    issues.push("stamp name is missing or malformed (letters/digits/_/-, max 64); refused");
     return { issues };
   }
 

@@ -11,7 +11,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { FacetRuntime, type Sink, type StageStore } from "@facet/runtime";
+import { FacetRuntime, type Sink, type StageStore, type TurnResult } from "@facet/runtime";
 import { createFrameLogStore, type FrameLogStore } from "./frame-log.js";
 import { createLateWindow, isStaleLateResult, LATE_WINDOW_LIMIT, type LateWindow } from "./late.js";
 import { DEFAULT_OFFLINE_FACE } from "./offline.js";
@@ -368,21 +368,27 @@ function handleEvent(req: IncomingMessage, res: ServerResponse, deps: PostHandle
         // Tag the in-flight turn so a timed-out park picks up this arrival pair
         // (kept in a server-local map, NOT on the LRU-evictable log entry).
         handling.set(visitor.visitorId, arrival);
-        let delivered: readonly ServerMessage[] = [];
+        let result: TurnResult = { messages: [], agentMutated: false };
         try {
-          delivered = await runtime.handle(visitor, event);
-          deliver(visitor.visitorId, delivered);
+          result = await runtime.handle(visitor, event);
+          deliver(visitor.visitorId, result.messages);
         } catch (error) {
           // Don't leave the visitor staring at a 202 that went nowhere.
           console.error("[facet] handle failed:", error);
-          delivered = [{ kind: "say", text: "(the agent hit an error — try again)" }];
-          deliver(visitor.visitorId, delivered);
+          result = {
+            messages: [{ kind: "say", text: "(the agent hit an error — try again)" }],
+            agentMutated: false,
+          };
+          deliver(visitor.visitorId, result.messages);
         } finally {
-          // Advance lastApplied only if this turn actually MUTATED the stage. A
-          // say-only turn, an interim-timeout note, and a failed handle all leave
-          // the stage untouched, so an older parked patch can still safely apply
-          // after them — bumping lastApplied there would falsely mark it stale.
-          if (delivered.some((m) => m.kind === "patch"))
+          // Advance lastApplied only if the AGENT'S OWN turn mutated the stage. A
+          // say-only turn, an interim-timeout note, a failed handle, and a turn
+          // that merely re-emits a parked seed frame all leave the stage
+          // untouched, so an older parked patch can still safely apply after them
+          // — bumping lastApplied there would falsely mark it stale. (Gate on the
+          // runtime's pre-seed `agentMutated`, not the delivered list, since the
+          // seed frame is a patch that mutated nothing.)
+          if (result.agentMutated)
             frameLog.recordApplied(visitor.visitorId, arrival.index, arrival.era);
           handling.delete(visitor.visitorId);
         }
@@ -433,7 +439,7 @@ function handleControl(
               const stale = isStaleLateResult(parked, frameLog.logFor(late.visitor.visitorId));
               const toApply = stale ? messages.filter((m) => m.kind === "say") : messages;
               const applied = await runtime.applyMessages(late.visitor, late.event, toApply);
-              deliver(late.visitor.visitorId, applied);
+              deliver(late.visitor.visitorId, applied.messages);
               // Record only a real stage mutation (mirrors the live path).
               if (!stale && toApply.some((m) => m.kind === "patch")) {
                 frameLog.recordApplied(late.visitor.visitorId, parked.index, parked.era);

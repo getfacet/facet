@@ -375,6 +375,26 @@ describe("validateStamp caps (name + description)", () => {
     }
   });
 
+  it("refuses a malformed name WITHOUT echoing its raw bytes into the issue string", () => {
+    // The refusal branch must not embed the untrusted name — an unbounded or
+    // terminal-escape name would otherwise inject into prompt/issue/log strings.
+    const huge = "x".repeat(5_000_000);
+    const escape = "\x1b[2Jwipe";
+    for (const bad of [huge, escape]) {
+      const { stamp, issues } = validateStamp({
+        name: bad,
+        root: "t",
+        nodes: { t: { id: "t", type: "text", value: "x" } },
+      });
+      expect(stamp).toBeUndefined();
+      const joined = issues.join("; ");
+      // Contains neither the raw bytes nor a length anywhere near the input.
+      expect(joined.includes(bad)).toBe(false);
+      expect(joined.includes("\x1b")).toBe(false);
+      expect(joined.length).toBeLessThan(200);
+    }
+  });
+
   it("truncates an over-long stamp description to the shared 200-char cap with an issue", () => {
     const { stamp, issues } = validateStamp({
       name: "hero",

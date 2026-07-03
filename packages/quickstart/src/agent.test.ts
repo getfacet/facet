@@ -551,21 +551,23 @@ describe("createStubAgent", () => {
     const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
     const visitor = { visitorId: "v" };
 
-    const onVisit = await rt.handle(visitor, { kind: "visit", visitor });
+    const onVisit = (await rt.handle(visitor, { kind: "visit", visitor })).messages;
     expect(patchesOf(onVisit)).toHaveLength(1);
     const stage = await rt.stageFor("v");
     expect(stage?.nodes["signup"]).toBeDefined();
 
-    const onMessage = await rt.handle(visitor, { kind: "message", text: "hello" });
+    const onMessage = (await rt.handle(visitor, { kind: "message", text: "hello" })).messages;
     expect(saysOf(onMessage)).toEqual(["stub: hello"]);
     const echoed = await rt.stageFor("v");
     expect(echoed?.nodes["stub-echo"]).toMatchObject({ type: "text", value: "echo: hello" });
 
-    const onAction = await rt.handle(visitor, {
-      kind: "action",
-      action: { kind: "agent", name: "submit", collect: "signup" },
-      fields: { name: "Ada", email: "a@b.c" },
-    });
+    const onAction = (
+      await rt.handle(visitor, {
+        kind: "action",
+        action: { kind: "agent", name: "submit", collect: "signup" },
+        fields: { name: "Ada", email: "a@b.c" },
+      })
+    ).messages;
     expect(saysOf(onAction)).toEqual(["submit: email=a@b.c name=Ada"]);
   });
 
@@ -574,14 +576,29 @@ describe("createStubAgent", () => {
     const visitor = { visitorId: "v" };
     await rt.handle(visitor, { kind: "visit", visitor });
 
-    const out = await rt.handle(visitor, { kind: "message", text: "theme midnight" });
+    const out = (await rt.handle(visitor, { kind: "message", text: "theme midnight" })).messages;
     expect(saysOf(out)).toEqual(["stub: theme midnight"]);
     // The theme name lands on the persisted stage (through the runtime save path).
     const stage = await rt.stageFor("v");
     expect((stage as { theme?: unknown } | undefined)?.theme).toBe("midnight");
     // A plain "theme" prefix message still echoes; a non-theme message is untouched.
-    const plain = await rt.handle(visitor, { kind: "message", text: "hello" });
+    const plain = (await rt.handle(visitor, { kind: "message", text: "hello" })).messages;
     expect(saysOf(plain)).toEqual(["stub: hello"]);
+  });
+
+  it("refuses an invalid 'theme <name>' (spaces/punctuation) with a say and no /theme op", async () => {
+    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
+    const visitor = { visitorId: "v" };
+    await rt.handle(visitor, { kind: "visit", visitor });
+
+    // "Dark Mode!" fails isValidThemeName — the stub must refuse it, matching the
+    // real agent's set_theme gate, so no `add /theme` frame reaches live clients
+    // while the stored stage strips it (a stored-vs-live divergence).
+    const out = (await rt.handle(visitor, { kind: "message", text: "theme Dark Mode!" })).messages;
+    expect(saysOf(out)).toEqual(["stub: invalid theme name (letters/digits/_/-, max 64)"]);
+    expect(patchesOf(out)).toHaveLength(0);
+    const stage = await rt.stageFor("v");
+    expect((stage as { theme?: unknown } | undefined)?.theme).toBeUndefined();
   });
 
   it("is deterministic: the same event sequence yields deep-equal message sequences", async () => {
@@ -599,7 +616,7 @@ describe("createStubAgent", () => {
         },
       ];
       const out: ServerMessage[][] = [];
-      for (const event of events) out.push([...(await rt.handle(visitor, event))]);
+      for (const event of events) out.push([...(await rt.handle(visitor, event)).messages]);
       return out;
     }
     expect(await run()).toEqual(await run());

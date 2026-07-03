@@ -134,6 +134,34 @@ describe("loadAssets", () => {
     expect(loaded.issues.some((i) => i.includes("dup"))).toBe(true);
   });
 
+  it("keeps the first of duplicate stamp names and logs an issue", async () => {
+    // Two *.stamp.json can carry the same `name` (name is JSON content, not the
+    // filename), so mirror the theme first-wins guard — else the prompt's STAMPS
+    // section gets two contradictory entries for one name and no warning.
+    const first = {
+      name: "hero",
+      root: "r",
+      nodes: {
+        r: { id: "r", type: "box", children: ["a"] },
+        a: { id: "a", type: "text", value: "first" },
+      },
+    };
+    const second = {
+      name: "hero",
+      root: "r",
+      nodes: {
+        r: { id: "r", type: "box", children: ["b"] },
+        b: { id: "b", type: "text", value: "second" },
+      },
+    };
+    const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [first, second] }), "a");
+    expect(loaded.stamps).toHaveLength(1);
+    expect(loaded.stamps[0]?.nodes["a"]).toBeDefined(); // the first survived
+    expect(
+      loaded.issues.some((i) => i.includes("duplicate stamp name") && i.includes("hero")),
+    ).toBe(true);
+  });
+
   it("surfaces backend-level issues from the store", async () => {
     const loaded = await loadAssets(
       new MemoryAssets({ themes: [], stamps: [], issues: ["backend said so"] }),
@@ -287,6 +315,27 @@ describe("withInitialStage takeSeeded", () => {
   });
 });
 
+// --- the seeded key set is bounded (hygiene cap) -----------------------------
+
+describe("withInitialStage seeded-key cap", () => {
+  it("caps the seeded set at MAX_SEEDED, evicting the oldest armed key (FIFO)", async () => {
+    // A distinct visitor whose first turn never persists (agent throw / save
+    // reject) leaves its key armed forever; without a cap a stream of one-off
+    // broken-agent visitors leaks in-process memory unbounded. Mirror the
+    // runtime's MAX_PENDING_SEEDS bound: the oldest armed key is evicted.
+    const store = withInitialStage(new MemoryStageStore(), seedTree);
+    const CAP = 10_000;
+    for (let i = 0; i <= CAP; i += 1) {
+      // Fresh open per distinct visitor, NO takeSeeded — so every key stays armed.
+      await store.open("a", { visitorId: `v${String(i)}` });
+    }
+    // The first visitor's key was evicted when the cap was exceeded (FIFO)…
+    expect(store.takeSeeded?.("a", "v0")).toBe(false);
+    // …while the newest visitor's key is still armed.
+    expect(store.takeSeeded?.("a", `v${String(CAP)}`)).toBe(true);
+  });
+});
+
 // --- the seed reaches the client as the turn's first patch frame -------------
 
 describe("withInitialStage seed frame reaches the client", () => {
@@ -308,7 +357,7 @@ describe("withInitialStage seed frame reaches the client", () => {
       agent: appendAgent,
       stageStore: withInitialStage(new MemoryStageStore(), seedTree),
     });
-    const messages = await runtime.handle(visitor, { kind: "message", text: "hi" });
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "hi" });
 
     // messages[0] is the seed root-replace; the agent's own patch follows it.
     const first = messages[0];
@@ -338,7 +387,7 @@ describe("withInitialStage seed frame reaches the client", () => {
       stageStore: withInitialStage(new MemoryStageStore(), seedTree),
     });
     await runtime.handle(visitor, { kind: "message", text: "one" });
-    const second = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const { messages: second } = await runtime.handle(visitor, { kind: "message", text: "two" });
     const hasSeedReplace = second.some(
       (m) => m.kind === "patch" && m.patches.some((p) => p.op === "replace" && p.path === ""),
     );
@@ -388,7 +437,7 @@ describe("withInitialStage seed re-arms on a failed turn", () => {
     await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
 
     // Turn 2 succeeds: the seed leads, then the agent's own patch — no drift.
-    const messages = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "two" });
     const first = messages[0];
     expect(first?.kind).toBe("patch");
     if (first?.kind === "patch") {
@@ -422,7 +471,7 @@ describe("withInitialStage seed re-arms on a failed turn", () => {
     // client, and the flag was already consumed. It must survive to re-emit.
     await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
 
-    const messages = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "two" });
     const first = messages[0];
     expect(first?.kind).toBe("patch");
     if (first?.kind === "patch") {
@@ -461,7 +510,7 @@ describe("withInitialStage seed re-arms on a failed turn", () => {
 
     // Turn 2's re-emitted frame must carry the stage this turn ran against (the
     // committed seed+edit), never rewind the page to the original seed.
-    const messages = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "two" });
     const first = messages[0];
     expect(first?.kind).toBe("patch");
     if (first?.kind === "patch") {
@@ -482,7 +531,9 @@ describe("withInitialStage seed re-arms on a failed turn", () => {
     });
     const event = { kind: "message", text: "trigger" } as const;
 
-    const first = await runtime.applyMessages(visitor, event, [{ kind: "say", text: "late" }]);
+    const { messages: first } = await runtime.applyMessages(visitor, event, [
+      { kind: "say", text: "late" },
+    ]);
     expect(first[0]).toEqual({
       kind: "patch",
       patches: [{ op: "replace", path: "", value: seedTree }],
@@ -490,7 +541,9 @@ describe("withInitialStage seed re-arms on a failed turn", () => {
     expect(first[1]).toEqual({ kind: "say", text: "late" });
 
     // A second apply for the same visitor must NOT re-prepend the seed.
-    const second = await runtime.applyMessages(visitor, event, [{ kind: "say", text: "again" }]);
+    const { messages: second } = await runtime.applyMessages(visitor, event, [
+      { kind: "say", text: "again" },
+    ]);
     const hasSeedReplace = second.some(
       (m) => m.kind === "patch" && m.patches.some((p) => p.op === "replace" && p.path === ""),
     );

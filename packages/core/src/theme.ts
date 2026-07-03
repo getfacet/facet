@@ -94,7 +94,32 @@ const SPACE_PX_RANGE = { lo: 0, hi: 512 } as const;
 const RADIUS_PX_RANGE = { lo: 0, hi: 9999 } as const;
 const WEIGHT_RANGE = { lo: 1, hi: 1000 } as const;
 
-/** WCAG contrast is measured for these pairs when both members are present sRGB. */
+/**
+ * The canonical default palette — token NAMES → concrete hex — as the SINGLE
+ * source of truth for the default colors. `@facet/react` (which depends on core)
+ * builds its `COLOR`/`DEFAULT_THEME`/`resolveTheme` on this map, and the contrast
+ * check below overlays a partial override on it so an EFFECTIVE (override ??
+ * default) pair is measured, not just override-vs-override.
+ */
+export const DEFAULT_COLORS: Readonly<Record<Color, string>> = {
+  fg: "#1a1d23",
+  "fg-muted": "#6b7280",
+  bg: "#ffffff",
+  surface: "#f6f7f9",
+  "surface-2": "#eceef1",
+  accent: "#4f46e5",
+  "accent-fg": "#ffffff",
+  border: "#e2e5ea",
+  success: "#16a34a",
+  warning: "#d97706",
+  danger: "#dc2626",
+};
+
+/**
+ * WCAG contrast is measured for these pairs against the EFFECTIVE colors — each
+ * member is the document's override if present, else the `DEFAULT_COLORS` value
+ * it renders on — so a partial override (e.g. `bg` only) is still checked.
+ */
 const CONTRAST_PAIRS: readonly (readonly [Color, Color])[] = [
   ["fg", "bg"],
   ["fg-muted", "bg"],
@@ -406,13 +431,17 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
   }
 
   // Contrast is MEASURED, never enforced: a low ratio is a warning, not a refusal.
+  // Measured against EFFECTIVE colors (override ?? default): resolveTheme overlays
+  // a partial document on the defaults, so a doc that overrides only ONE member of
+  // a pair (the most common low-contrast mistake, e.g. bg #000 on default fg) must
+  // still be checked — skip a pair only when NEITHER member is overridden.
   if (theme.color !== undefined) {
     for (const [a, b] of CONTRAST_PAIRS) {
-      const ca = theme.color[a];
-      const cb = theme.color[b];
-      if (ca === undefined || cb === undefined) continue;
-      const sa = parseSrgb(ca);
-      const sb = parseSrgb(cb);
+      const oa = theme.color[a];
+      const ob = theme.color[b];
+      if (oa === undefined && ob === undefined) continue;
+      const sa = parseSrgb(oa ?? DEFAULT_COLORS[a]);
+      const sb = parseSrgb(ob ?? DEFAULT_COLORS[b]);
       if (sa === undefined || sb === undefined) continue;
       const ratio = contrastRatio(sa, sb);
       if (ratio < MIN_CONTRAST) {

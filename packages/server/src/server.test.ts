@@ -10,7 +10,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { MemorySink, MemoryStageStore, type StageStore } from "@facet/runtime";
+import { MemorySink, MemoryStageStore, withInitialStage, type StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "./server.js";
 import { isStaleLateResult } from "./late.js";
 
@@ -578,6 +578,66 @@ describe("async delivery — late results", () => {
     expect(sayText(frames)).toContain("answer 1"); // the say still lands
     // …and the stored stage is still r2's — no stale rollback.
     expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r2");
+    await link.close();
+  });
+
+  it("applies a parked late patch after a say-only turn merely re-emitted the seed frame", async () => {
+    // Regression (seed frame vs lastApplied): a seeded fresh session parks turn I
+    // (its persist save rejects once, so the seed stays armed). A say-only turn J
+    // then RE-EMITS the still-armed seed frame and persists — but J's own agent
+    // mutated nothing, so it must NOT advance lastApplied. Turn I's real late
+    // patch must then still APPLY, not be dropped as stale behind J.
+    const inner = new MemoryStageStore();
+    const seededStore = withInitialStage(inner, labelTree("seed"));
+    let failNextSave = true;
+    // Reject ONLY the first runtime-facing save (turn I's persist); `open` still
+    // seeds through the underlying store, so the fresh seeded session persists.
+    const flakyStore: StageStore = {
+      get: (a, v) => seededStore.get(a, v),
+      open: (a, v) => seededStore.open(a, v),
+      save: (s) => {
+        if (failNextSave) {
+          failNextSave = false;
+          return Promise.reject(new Error("save boom"));
+        }
+        return seededStore.save(s);
+      },
+      takeSeeded: (a, v) => seededStore.takeSeeded?.(a, v) ?? false,
+    };
+    const sink = new MemorySink();
+    const { server, base } = await start({
+      agentId: "a",
+      agentTimeoutMs: 120,
+      stageStore: flakyStore,
+      sink,
+    });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    // Turn I: fresh visit seeds the session; the agent times out (parks I) and
+    // I's persist save rejects once — the seed stays armed for the next turn.
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+    await new Promise((r) => setTimeout(r, 200)); // let I time out + park (interim)
+
+    // Turn J: a say-only in-time reply. It re-emits the still-armed seed frame and
+    // persists, but its own agent mutated nothing — so lastApplied must stay -1.
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    const evt2 = await link.nextEvent();
+    await control(base, evt2.requestId, [{ kind: "say", text: "answer 2" }]);
+    await waitFor(async () => (await sink.history("a", "v")).length >= 1); // J persisted
+
+    // Turn I's real late result arrives — with the agentMutated gate it is NOT
+    // stale (J did not advance lastApplied), so r1 must land on the stored stage.
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r1");
+    const frames = await collectEvents(stream, 400);
+    expect(sayText(frames)).toContain("answer 1");
     await link.close();
   });
 

@@ -103,21 +103,20 @@ Found by the bundle's 3-round adversarially-verified `/code-review` (all P0–P2
 fixed in-branch; these are the confirmed non-blocking nits). Evidence in the
 Bundle B PR review record.
 
-- **quickstart/cli.ts (--assets guard)** — `existsSync` passes for a plain file
-  or unreadable dir; FileAssets then soft-degrades to zero assets instead of the
-  intended hard fail. *Fix:* `statSync().isDirectory()` check + a cli test.
-- **core/validate.ts (validateStamp bounds)** — stamp `name`/`description` are
-  unbounded, unlike validateTheme (NAME_RE + 200-char truncate); a huge
-  description sails into the prompt. *Fix:* share NAME_RE/MAX_DESCRIPTION_LENGTH
-  across both validators.
+- ~~quickstart/cli.ts (--assets guard)~~ — RESOLVED in-branch (review r6): the
+  explicit path must be a readable directory (statSync + readdirSync probe,
+  exit 1), pinned by a cli test.
+- ~~core/validate.ts (validateStamp bounds)~~ — RESOLVED in-branch (review
+  r5+r6): stamp names share `isValidThemeName`, descriptions truncate at the
+  shared 200-char cap, and the refusal issue never echoes the raw name.
 - **quickstart/prompt.ts (stamp budget)** — the 4000-char cap measures only the
   fragment JSON, not the `- name: description` head, and there is no aggregate
   section cap. *Fix:* measure head+fragment; add `MAX_STAMPS_SECTION_CHARS`.
 - **quickstart/agent.ts (set_theme)** — an unknown theme name returns
   `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
   error observation naming the available themes (append_node precedent).
-- **runtime/assets.ts (stamp dedup)** — duplicate theme names are first-wins
-  with an issue; duplicate stamp names both survive. *Fix:* mirror the guard.
+- ~~runtime/assets.ts (stamp dedup)~~ — RESOLVED in-branch (review r6):
+  first-wins + issue, mirroring themes; pinned by an assets test.
 - **core/validate.ts (sanitizeScreens)** — `kept` is a plain object: a screen
   keyed `__proto__` drops silently and `entry:"constructor"` resolves through
   the prototype chain into the output. *Fix:* null-proto map + own-key check.
@@ -137,11 +136,11 @@ Bundle B PR review record.
 - **tests** — prompt.test.ts: no assertion that an all-oversized stamp set
   suppresses the STAMPS section; theme.test.ts: negative-dimension clamp floor
   (`"-20px"` → `"0px"`) untested.
-- **server/server.ts:385 (stale comment)** — with a seeded store, an
-  interim-timeout first turn now DOES carry a patch (the seed frame), so
-  `recordApplied` fires there; safe only because `late.ts` staleness uses
-  strict `>`. *Fix:* rewrite the comment + reciprocal warning in late.ts; no
-  behavior change.
+- ~~server/server.ts:385 (seed frame vs lastApplied)~~ — RESOLVED in-branch
+  (review r6, upgraded to P2): `FacetRuntime.handle`/`applyMessages` return
+  `TurnResult` with `agentMutated` (computed pre-seed), and the server gates
+  `recordApplied` on it — a say-only turn re-emitting the seed can no longer
+  falsely stale a parked late result; pinned by a server interleaving test.
 - **quickstart prompt — screens/entry authoring quality** (live-browser
   finding, 2026-07-04): the built-in agent sometimes registers only one
   screen and points `entry` at it, so its own navigate buttons target

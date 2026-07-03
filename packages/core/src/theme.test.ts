@@ -105,10 +105,35 @@ describe("validateTheme", () => {
     expect(hasError(issues)).toBe(false);
   });
 
-  it("does not warn on a high-contrast pair", () => {
+  it("warns on a partial override whose EFFECTIVE pair is low-contrast (dark bg only)", () => {
+    // Overriding only `bg` to black leaves the default `fg` (#1a1d23) rendering
+    // on it — an effective ratio far below 4.5. The check overlays the default
+    // for the un-overridden member, so this must warn even though only one of the
+    // pair is present in the document.
+    const { theme, issues } = validateTheme({ name: "dark", color: { bg: "#000000" } });
+    expect(theme).toBeDefined();
+    const warning = issues.find(
+      (i) =>
+        i.severity === "warning" &&
+        i.message.includes("fg") &&
+        i.message.includes("bg") &&
+        i.message.toLowerCase().includes("contrast"),
+    );
+    expect(warning).toBeDefined();
+  });
+
+  it("does not warn when every EFFECTIVE pair is high-contrast", () => {
+    // All pair members are overridden to high-contrast values, so no pair — not
+    // even one measured against a default partner — falls below the floor.
     const { theme, issues } = validateTheme({
       name: "x",
-      color: { fg: "#ffffff", bg: "#000000" },
+      color: {
+        fg: "#ffffff",
+        "fg-muted": "#cccccc",
+        bg: "#000000",
+        accent: "#000000",
+        "accent-fg": "#ffffff",
+      },
     });
     expect(theme).toBeDefined();
     expect(issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(false);

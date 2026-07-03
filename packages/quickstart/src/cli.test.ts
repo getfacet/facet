@@ -155,6 +155,38 @@ describe("runCli — --assets (DC-009)", () => {
     expect([...captured.err, ...captured.out].join("\n")).toContain(missing);
   });
 
+  it("exits 1 when an explicit --assets path is a regular file, not a directory", async () => {
+    // existsSync passes for a regular file; without a directory probe the server
+    // would boot with zero assets and exit 0 — an explicit config silently doing
+    // nothing. An explicit --assets that isn't a readable directory must hard-fail.
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    let running: RunningQuickstart | undefined;
+    try {
+      const file = join(dir, "not-a-dir.txt");
+      writeFileSync(file, "hello");
+      const port = 20_000 + Math.floor(Math.random() * 20_000);
+      const captured = capture();
+      const code = await runCli(
+        ["--stub", "--port", String(port), "--assets", file],
+        {},
+        {
+          log: captured.log,
+          error: captured.error,
+          // Defensive: if the guard failed to fire and the server booted, close it
+          // so the listening handle can't leak past this test.
+          onStarted: (handle) => {
+            running = handle;
+          },
+        },
+      );
+      expect(code).toBe(1);
+      expect([...captured.err, ...captured.out].join("\n")).toContain(file);
+    } finally {
+      await running?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("boots on a valid dir, logs issues, wires only the valid theme and no seed", async () => {
     const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
     try {

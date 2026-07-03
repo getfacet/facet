@@ -10,6 +10,12 @@ import {
 } from "@facet/core";
 import { sessionKey, type StageStore } from "./stage-store.js";
 
+/** Hygiene cap on `withInitialStage`'s armed-but-unconsumed seed keys — mirrors
+ * `FacetRuntime`'s `MAX_PENDING_SEEDS`. A visitor whose first turn never persists
+ * (agent throw / save reject) leaves its key armed until it returns; a stream of
+ * one-off broken-agent visitors would otherwise leak this in-process Set. */
+const MAX_SEEDED = 10_000;
+
 /**
  * The operator's per-agent asset library — themes, stamps, and an optional
  * initial tree — as RAW documents straight from the backend, BEFORE any
@@ -55,7 +61,8 @@ export interface LoadedAssets {
 /**
  * Runs the core validators once, at boot (Decision Lock: no hot reload). Each
  * theme passes `validateTheme` (error ⇒ skipped + issue; warnings ⇒ kept + issue;
- * duplicate names ⇒ first wins + issue), each stamp `validateStamp`, and the
+ * duplicate names ⇒ first wins + issue), each stamp `validateStamp` (same
+ * first-wins posture on duplicate names), and the
  * initial tree `validateTree` PLUS `isSeedableTree` — the EMPTY_TREE trap: a tree
  * `validateTree` reduced to empty is refused so it can't silently seed an empty
  * stage and flip the server's offline face. Invalid documents are skipped with a
@@ -101,6 +108,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   }
 
   const stamps: FacetStamp[] = [];
+  const seenStampNames = new Set<string>();
   for (const raw of docs.stamps) {
     let result: ReturnType<typeof validateStamp>;
     try {
@@ -114,6 +122,14 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
       issues.push(`stamp document skipped: ${stampIssues.join("; ") || "invalid"}`);
       continue;
     }
+    if (seenStampNames.has(stamp.name)) {
+      // First wins, mirroring the theme loop: two same-named stamps would inject
+      // contradictory entries into the prompt's STAMPS section. The name already
+      // passed `validateStamp`'s isValidThemeName gate, so it's safe to echo.
+      issues.push(`duplicate stamp name "${stamp.name}" ignored (first wins)`);
+      continue;
+    }
+    seenStampNames.add(stamp.name);
     for (const note of stampIssues) {
       issues.push(`stamp "${stamp.name}": ${note}`);
     }
@@ -195,6 +211,13 @@ export function withInitialStage(store: StageStore, initialStage?: FacetTree): S
       if (existing !== undefined) return existing;
       const session: FacetSession = { agentId, visitor, stage: seed };
       await store.save(session);
+      // Bound the armed-key set (FIFO): evict the oldest when full, exactly as
+      // the runtime caps its `pendingSeeds`. A lost seed report is benign — it
+      // just skips a no-op root-replace prepend.
+      if (seeded.size >= MAX_SEEDED) {
+        const oldest = seeded.values().next().value;
+        if (oldest !== undefined) seeded.delete(oldest);
+      }
       seeded.add(sessionKey(agentId, visitor.visitorId));
       return session;
     },

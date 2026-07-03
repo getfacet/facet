@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ClientEvent, FacetAgent, ServerMessage } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
+import { MemoryStageStore } from "./stage-store.js";
+import { withInitialStage } from "./assets.js";
 import type { Sink, StoredEvent } from "./sink.js";
 
 const visitor = { visitorId: "v" };
@@ -56,7 +58,7 @@ describe("FacetRuntime.handle", () => {
       agent: agentOf(badPatch, { kind: "say", text: "still here" }),
     });
     const out = await rt.handle(visitor, { kind: "message", text: "hi" });
-    expect(out.map((m) => m.kind)).toEqual(["patch", "say"]); // both returned, no throw
+    expect(out.messages.map((m) => m.kind)).toEqual(["patch", "say"]); // both returned, no throw
     expect(await rt.stageFor("v")).toBeDefined(); // stage survived
   });
 
@@ -100,6 +102,39 @@ describe("FacetRuntime.handle", () => {
     expect(persisted).toEqual(["e1", "e2"]);
   });
 
+  it("records only the agent's own messages into the sink, not the prepended seed frame", async () => {
+    const seedTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box" as const, children: ["s"] },
+        s: { id: "s", type: "text" as const, value: "seed" },
+      },
+    };
+    const records: StoredEvent[] = [];
+    const sink: Sink = {
+      record: (_agentId: string, _visitorId: string, entry: StoredEvent): Promise<void> => {
+        records.push(entry);
+        return Promise.resolve();
+      },
+      history: (): Promise<readonly StoredEvent[]> => Promise.resolve([]),
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "say", text: "hi" }),
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+      sink,
+    });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    // The DELIVERED list leads with the seed frame (needed for client delivery)…
+    expect(out.messages.some((m) => m.kind === "patch")).toBe(true);
+    // …but the SINK entry must record only the agent's own say — no patch-kind
+    // message — so replayed history never claims "(page updated)" on a say-only
+    // seeded first turn, nor stores the seed tree JSON per visitor.
+    await new Promise((resolve) => setTimeout(resolve, 20)); // let the record settle
+    expect(records).toHaveLength(1);
+    expect(records[0]?.messages.some((m) => m.kind === "patch")).toBe(false);
+  });
+
   it("serializes concurrent same-visitor events (no lost update)", async () => {
     let n = 0;
     const agent: FacetAgent = () => {
@@ -135,7 +170,7 @@ describe("FacetRuntime.applyMessages", () => {
     const event: ClientEvent = { kind: "message", text: "late" };
     const messages: ServerMessage[] = [renderPatch, { kind: "say", text: "late reply" }];
     const out = await rt.applyMessages(visitor, event, messages);
-    expect(out).toEqual(messages); // returned so the transport can deliver them
+    expect(out.messages).toEqual(messages); // returned so the transport can deliver them
     const stage = await rt.stageFor("v");
     expect(stage?.root).toBe("root"); // late patch persisted to the stored session
     const history = await rt.historyFor("v");
@@ -196,7 +231,7 @@ describe("FacetRuntime.applyMessages", () => {
       { kind: "say", text: "late" },
     ];
     const out = await rt.applyMessages(visitor, { kind: "message", text: "x" }, messages);
-    expect(out.some((m) => m.kind === "say" && m.text === "late")).toBe(true); // say kept, no throw
+    expect(out.messages.some((m) => m.kind === "say" && m.text === "late")).toBe(true); // say kept
     const stage = await rt.stageFor("v");
     expect(stage?.nodes["good"]).toBeDefined(); // good op salvaged past the stale one
   });
@@ -225,7 +260,7 @@ describe("FacetRuntime.applyToSession fail-soft", () => {
       agentId: "a",
       agent: agentOf(broken, { kind: "say", text: "still here" }),
     });
-    const messages = await rt.handle(visitor, { kind: "message", text: "hi" });
+    const { messages } = await rt.handle(visitor, { kind: "message", text: "hi" });
     expect(messages.some((m) => m.kind === "say" && m.text === "still here")).toBe(true);
     const stage = await rt.stageFor("v");
     expect(stage?.nodes["root"]).toBeDefined(); // stage intact, not wiped

@@ -1,5 +1,13 @@
 import type { CSSProperties } from "react";
-import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADII, RATIOS, SPACES } from "@facet/core";
+import {
+  COLORS,
+  DEFAULT_COLORS,
+  FONT_SIZES,
+  FONT_WEIGHTS,
+  RADII,
+  RATIOS,
+  SPACES,
+} from "@facet/core";
 import type {
   Align,
   BoxStyle,
@@ -72,24 +80,15 @@ const RADIUS: Record<Radius, string> = Object.assign(
 );
 
 /**
- * The palette — token NAMES → hex. Exported as the single source of truth so
- * app chrome (e.g. `ChatDock`) reuses these values instead of re-hardcoding hex.
+ * The palette — token NAMES → hex, on a null prototype (like the other groups).
+ * The VALUES live in `@facet/core`'s `DEFAULT_COLORS` (the single source of truth,
+ * shared with the core contrast check); this map re-homes them null-proto and is
+ * itself re-exported so app chrome (e.g. `ChatDock`) reuses them instead of
+ * re-hardcoding hex.
  */
 export const COLOR: Record<Color, string> = Object.assign(
   Object.create(null) as Record<Color, string>,
-  {
-    fg: "#1a1d23",
-    "fg-muted": "#6b7280",
-    bg: "#ffffff",
-    surface: "#f6f7f9",
-    "surface-2": "#eceef1",
-    accent: "#4f46e5",
-    "accent-fg": "#ffffff",
-    border: "#e2e5ea",
-    success: "#16a34a",
-    warning: "#d97706",
-    danger: "#dc2626",
-  } satisfies Record<Color, string>,
+  DEFAULT_COLORS,
 );
 
 const RATIO: Record<Ratio, string> = Object.assign(Object.create(null) as Record<Ratio, string>, {
