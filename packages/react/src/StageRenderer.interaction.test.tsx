@@ -575,6 +575,36 @@ describe("StageRenderer collect (jsdom)", () => {
     expect(fields["email"]).toBe("");
   });
 
+  it(`caps a field NAME longer than the cap so the server never rejects the submit`, () => {
+    const onAction = vi.fn();
+    const longName = "n".repeat(MAX_FIELD_VALUE_CHARS + 25);
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: { id: "form", type: "box", children: ["f"] },
+          f: { id: "f", type: "field", name: longName, placeholder: "x" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("x"), { target: { value: "v" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    const fields = onAction.mock.calls[0]?.[1] as Record<string, string>;
+    const key = Object.keys(fields)[0] ?? "";
+    expect(key.length).toBe(MAX_FIELD_VALUE_CHARS); // capped, so isFieldsRecord accepts it
+    expect(fields[key]).toBe("v");
+  });
+
   it("terminates on a cyclic collect subtree and keeps the fields it reached", () => {
     const onAction = vi.fn();
     // form → loop → form (cycle); the raw live-patch path can produce this.

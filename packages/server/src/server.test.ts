@@ -1160,6 +1160,20 @@ describe("hardening", () => {
     expect(event?.kind === "action" ? event.fields : undefined).toBeUndefined();
   });
 
+  it("rejects an action event with an ill-typed collect", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const response = await fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        visitor: { visitorId: "v" },
+        event: { kind: "action", action: { name: "submit", collect: { nested: "obj" } } },
+      }),
+    });
+    expect(response.status).toBe(400);
+  });
+
   it("rejects an action event with too many field keys", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;

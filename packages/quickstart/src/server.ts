@@ -109,6 +109,9 @@ function serveBundle(res: ServerResponse, override: string | undefined): void {
     console.error("[facet-quickstart] bundle stream failed:", error);
     res.destroy();
   });
+  // Browser aborted mid-stream (e.g. reload spam) ⇒ destroy the source fd,
+  // mirroring the proxy leg's cleanup (pipe unpipes but never destroys source).
+  res.on("close", () => stream.destroy());
   stream.pipe(res);
 }
 

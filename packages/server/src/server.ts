@@ -153,6 +153,11 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
     const actionKind = (action as { kind?: unknown }).kind;
     if (actionKind !== undefined && actionKind !== "agent") return false;
     if (typeof (action as { name?: unknown }).name !== "string") return false;
+    // `collect` is a NodeId (string) if present — validate the sibling field as
+    // strictly as `payload` below, so a spoofed client can't inject an
+    // ill-typed collect into a FacetAction reaching the agent.
+    const collect = (action as { collect?: unknown }).collect;
+    if (collect !== undefined && typeof collect !== "string") return false;
     // Optional visitor-typed field values riding the event: absent is fine;
     // present must be a string record within the shared cap (see isFieldsRecord).
     const fields = (event as { fields?: unknown }).fields;

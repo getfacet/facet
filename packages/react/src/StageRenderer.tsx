@@ -120,8 +120,15 @@ function collectFieldValues(
       if (node.input === "password") {
         return;
       }
-      if (typeof node.name === "string" && !firstIdByName.has(node.name)) {
-        firstIdByName.set(node.name, id);
+      if (typeof node.name === "string") {
+        // Cap the NAME the same way the value is capped below: field names come
+        // from untrusted LLM output, and an over-cap key would make the server's
+        // isFieldsRecord reject the whole submit (a silent no-op). Capping keeps
+        // the two sides from drifting so an over-long name degrades gracefully.
+        const name = node.name.slice(0, MAX_FIELD_VALUE_CHARS);
+        if (!firstIdByName.has(name)) {
+          firstIdByName.set(name, id);
+        }
       }
       return;
     }
