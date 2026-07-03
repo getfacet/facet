@@ -1,0 +1,583 @@
+# Execution Manifest: Quickstart Built-in Agent (Bundle A)
+#
+# Keep synchronized with specs/dev-specs/quickstart-builtin-agent.md
+# (WU ids, files, deps, checks). Final gate source of truth: AGENTS.md +
+# docs/REVIEW-RULES.md.
+
+feature_slug: "quickstart-builtin-agent"
+spec_path: "specs/dev-specs/quickstart-builtin-agent.md"
+context_evidence_path: "specs/context/quickstart-builtin-agent.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; playground buildable (WU-3 touches its sources); no provider key required for any blocking WU (keys only for the optional Tier-2/3 smoke)"
+    owner: "main-agent"
+    verification: "pnpm install && pnpm --filter @facet/playground typecheck"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+
+work_units:
+  - id: "WU-1"
+    title: "Core contract — collect on agent actions, fields on action events, the cap constant"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Land the additive wire/type contract — AgentAction.collect?: NodeId, the ClientEvent action arm's fields?: Readonly<Record<string, string>>, MAX_FIELD_VALUE_CHARS = 2000 — with asAction keeping a string collect (dropping non-strings with an issue, action kept), leaving the whole repo compiling unchanged."
+    files:
+      - path: "packages/core/src/nodes.ts"
+        change_type: "update"
+        purpose: "AgentAction.collect?: NodeId + doc comment (node-id reference; browser snapshots field values in that box's subtree at press time)"
+      - path: "packages/core/src/protocol.ts"
+        change_type: "update"
+        purpose: "action arm gains fields?: Readonly<Record<string, string>> (on the EVENT, per Decision Lock; AgentEventFrame wraps the event whole); export MAX_FIELD_VALUE_CHARS = 2000 as the shared cap"
+      - path: "packages/core/src/validate.ts"
+        change_type: "update"
+        purpose: "asAction agent branch copies collect when typeof value.collect === 'string'; non-string collect dropped with an issue, action kept (fail-safe)"
+      - path: "packages/core/src/validate.test.ts"
+        change_type: "update"
+        purpose: "RED-first: string collect kept + kind-stamped; non-string collect dropped with issue while name/payload survive; legacy {name}-only actions byte-identical"
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/validate.test.ts -t 'keeps a string collect id on an agent action'"
+      target: "packages/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/validate.test.ts -t 'keeps a string collect id on an agent action'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/validate.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/validate.test.ts"
+        covers_dc: ["DC-001", "DC-002"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "pnpm typecheck green repo-wide (additive claim verified: zero files outside core changed)"
+      - "@facet/core still dependency-free, no node:* imports; new names flow through the existing export * barrel"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "STAGE_SPEC — teach collect + press-time field snapshots"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Extend STAGE_SPEC (single prompt source, spec.ts action line) so every LLM-driving path learns collect: agent action shape gains collect?:<boxId> plus one sentence of press-time snapshot semantics and stable-field-name guidance, pinned by the content test."
+    files:
+      - path: "packages/core/src/spec.ts"
+        change_type: "update"
+        purpose: "action line + collect semantics sentence + field-naming guidance; spec stays a single compact template string (embedders unchanged)"
+      - path: "packages/core/src/spec.test.ts"
+        change_type: "update"
+        purpose: "pin that STAGE_SPEC mentions collect, the field-snapshot rule, and stable field names"
+    depends_on: ["WU-1"]
+    parallel_group: "par-1"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/spec.test.ts -t 'teaches collect and press-time field snapshots'"
+      target: "packages/core/src/spec.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/spec.test.ts -t 'teaches collect and press-time field snapshots'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/core/src/spec.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/spec.test.ts"
+        covers_dc: ["DC-004"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "STAGE_SPEC stays a single template string; documents only what WU-1's validator accepts"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "Renderer field collection + onAction widening + both playground construction sites"
+    owner_role: "subagent"
+    packages: ["@facet/react", "apps/playground"]
+    objective: "Implement Decision 1/2 — stage-root ref (display:contents wrapper), data-facet-field-id stamps, collectFieldValues (data-side enumeration, scoped DOM read, first-name-wins, String() + cap truncation, cycle/depth guards), collect threading in classifyPress, widened onAction(action, fields?), and fields threaded onto the event at both playground send sites."
+    files:
+      - path: "packages/react/src/StageRenderer.tsx"
+        change_type: "update"
+        purpose: "wrapper ref; input stamps; module-internal collectFieldValues; ClassifiedPress agent arm gains collect?: string; handlePress passes fields iff collect declared; onAction prop type widened"
+      - path: "packages/react/src/StageRenderer.interaction.test.tsx"
+        change_type: "update"
+        purpose: "jsdom RED-first: values delivered with action; typing emits nothing (invariant #6 pin); unknown collect ⇒ {}; zero-field target ⇒ {}; non-field ignored; out-of-subtree same-name not collected; duplicate names first-wins; >cap truncated; cyclic subtree terminates; no-collect ⇒ fields undefined; collect target on a non-current screen ⇒ {} (not mounted); toggled-hidden field ⇒ omitted; navigate/toggle unchanged"
+      - path: "apps/playground/src/App.tsx"
+        change_type: "update"
+        purpose: "onAction(action, fields?) threads fields onto {kind:'action', action, fields} (conditional, exactOptionalPropertyTypes-safe)"
+      - path: "apps/playground/src/live.tsx"
+        change_type: "update"
+        purpose: "same fields threading at the second construction site (RISK-API-2: both sites in the renderer WU)"
+    depends_on: ["WU-1"]
+    parallel_group: "par-1"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/react/src/StageRenderer.interaction.test.tsx -t 'collect press delivers the typed field values alongside the action'"
+      target: "packages/react/src/StageRenderer.interaction.test.tsx"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/react/src/StageRenderer.interaction.test.tsx -t 'collect press delivers the typed field values alongside the action'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/react/src"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/react/src/StageRenderer.interaction.test.tsx"
+        covers_dc: ["DC-001", "DC-002", "DC-003"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Inputs remain uncontrolled; nothing writes field values into the tree; no traffic at typing time (invariant #6 pinned by test)"
+      - "Existing StageRenderer.test.ts static suite + useFacet.test.tsx green UNMODIFIED (backward-compat claim)"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "Server guard — validate fields on the untrusted /event boundary"
+    owner_role: "subagent"
+    packages: ["@facet/server"]
+    objective: "Two additive transport-level changes: (1) isEventBody's action branch additionally validates an optional fields: plain non-array object, every value a string of length ≤ MAX_FIELD_VALUE_CHARS (imported from core) — otherwise 400; valid events reach the agent with fields intact. (2) FacetServerOptions gains host?: string, passed to server.listen(port, host) when provided (Decision 3 loopback bind — reviewer P1)."
+    files:
+      - path: "packages/server/src/server.ts"
+        change_type: "update"
+        purpose: "isEventBody fields rule (REJECTING form, mirroring isPrimitiveRecord posture; absent ⇒ fine) + additive host?: string option threaded to listen; route table untouched"
+      - path: "packages/server/src/server.test.ts"
+        change_type: "update"
+        purpose: "RED-first: 400 on over-cap value, non-string value, array/nested-object fields; 200 + agent receives fields verbatim for a valid record; action without fields unchanged; host '127.0.0.1' boot serves /health on loopback (option accepted)"
+    depends_on: ["WU-1"]
+    parallel_group: "par-1"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/server/src/server.test.ts -t 'rejects an action event whose fields value exceeds the cap'"
+      target: "packages/server/src/server.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/server/src/server.test.ts -t 'rejects an action event whose fields value exceeds the cap'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/server/src/server.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "integration"
+        target: "packages/server/src/server.test.ts"
+        covers_dc: ["DC-001", "DC-003"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Route table and every other @facet/server surface untouched (RISK-PKG-3 boundary; diff confined to isEventBody + the additive host? option + tests)"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "@facet/quickstart scaffold + provider interface + OpenAI/Anthropic adapters"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Create the package on the bridge template (Decision 8) and land Decision 4 whole: QuickstartProvider, both raw-fetch adapters (injectable fetchImpl, 60s abort, default model constants), and resolveProvider (explicit flag wins + requires its key; OpenAI default when both present; null when keyless) — proven by one shared contract suite executed against BOTH adapters."
+    files:
+      - path: "packages/quickstart/package.json"
+        change_type: "add"
+        purpose: "bridge template: bin facet-quickstart (./src/cli.ts dev / dist/cli.js publish), src/dist split, files ['dist'], dependencies core/runtime/agent/server, devDependencies client/react/react-dom/@facet/react (bundled-only — Decision 8), scripts typecheck/build"
+      - path: "packages/quickstart/tsconfig.json"
+        change_type: "add"
+        purpose: "mirrors packages/bridge/tsconfig.json + jsx react-jsx + DOM lib (for src/page); include covers src AND e2e so the Tier-1b/2/3 files are typechecked"
+      - path: "packages/quickstart/tsup.config.ts"
+        change_type: "add"
+        purpose: "two configs: node entries (src/index.ts, src/cli.ts, esm + dts) and browser page bundle (src/page/main.tsx → dist/page/app.js, platform browser, iife, noExternal all, define process.env.NODE_ENV='production' — reviewer P1, minify)"
+      - path: "packages/quickstart/src/provider.ts"
+        change_type: "add"
+        purpose: "ProviderTurn/ProviderMessage/QuickstartProvider, createOpenAiProvider, createAnthropicProvider, resolveProvider, DEFAULT_OPENAI_MODEL/DEFAULT_ANTHROPIC_MODEL/TURN_TIMEOUT_MS (raw fetch; keys never logged)"
+      - path: "packages/quickstart/src/provider.test.ts"
+        change_type: "add"
+        purpose: "shared contract suite run against both adapters via mocked fetchImpl (request shape, auth header, model, text extraction, 4xx/5xx rejection, abort-at-timeout); resolveProvider matrix incl. both-keys ⇒ openai and override-without-key error"
+    depends_on: []
+    parallel_group: "par-1"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/provider.test.ts -t 'prefers openai when both keys are present'"
+      target: "packages/quickstart/src/provider.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm install # workspace links for the NEW package — reviewer P2; run right after package.json lands, before the red check"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/provider.test.ts -t 'prefers openai when both keys are present'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/provider.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/quickstart/src/provider.test.ts"
+        covers_dc: ["DC-007"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "No SDK dependency added (raw fetch — Decision 4 justification recorded); keys read from env only, never echoed"
+      - "Known deferral acknowledged in handoff: src/index.ts (barrel, referenced by package.json main) lands in WU-8 — nothing imports @facet/quickstart and pnpm build runs only at the final gate, so typecheck/test/lint stay green throughout"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-6"
+    title: "Prompt assembly (3 layers) + LLM-output salvage parser"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Land Decision 5 — buildSystem (layer ① STAGE_SPEC + fixed {\"say\"?,\"tree\"?} output contract; layer ② guide under PAGE BRIEF; DEFAULT_GUIDE) and buildTurnMessages (layer ③: last-20 sink turns + current event incl. action fields + current stage JSON), plus parseReply adapted from the playground salvage (copied, not imported)."
+    files:
+      - path: "packages/quickstart/src/prompt.ts"
+        change_type: "add"
+        purpose: "buildSystem(guide), buildTurnMessages(event, session, history), DEFAULT_GUIDE, HISTORY_TURNS = 20"
+      - path: "packages/quickstart/src/prompt.test.ts"
+        change_type: "add"
+        purpose: "system contains STAGE_SPEC + guide + output contract; history capped at 20 (oldest dropped); action event renders name/payload/fields into the final user message; current stage JSON present; visit/message shapes"
+      - path: "packages/quickstart/src/parse.ts"
+        change_type: "add"
+        purpose: "parseReply(text) — fence-strip + string/escape-aware balanced scan adapted from apps/playground/src/generator.ts:16-75; accepts {say?,tree?} wrapper or bare tree; throws when nothing usable"
+      - path: "packages/quickstart/src/parse.test.ts"
+        change_type: "add"
+        purpose: "salvages fenced tree with prose preamble/trailer; bare tree ⇒ {tree}; say-only wrapper; escaped-brace strings; truncated/garbage throws; non-tree JSON per acceptance rules"
+    depends_on: ["WU-2", "WU-5"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/parse.test.ts -t 'salvages a fenced tree preceded by prose'"
+      target: "packages/quickstart/src/parse.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/parse.test.ts -t 'salvages a fenced tree preceded by prose'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/parse.test.ts packages/quickstart/src/prompt.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/quickstart/src/parse.test.ts"
+        covers_dc: ["DC-006"]
+        action: "new"
+      - type: "unit"
+        target: "packages/quickstart/src/prompt.test.ts"
+        covers_dc: ["DC-004"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "parseReply never imported from apps/playground (copied + attributed in a comment; refactor-audit note recorded)"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-7"
+    title: "Built-in quickstart agent + deterministic stub brain"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "createQuickstartAgent({provider, guide, sink, agentId, historyTurns?}) — visit/message/action turn loop (≤2 attempts total: provider → parseReply → validateTree → render-if-renderable + say; any failure ⇒ error say with the stage untouched) — and createStubAgent() per Decision 6 (fixture tree with signup form + collect button + screens; deterministic message patch; action say echoing event.fields)."
+    files:
+      - path: "packages/quickstart/src/agent.ts"
+        change_type: "add"
+        purpose: "createQuickstartAgent (defineAgent-based; reads sink.history for layer ③; handles visit/message/action incl. event.fields)"
+      - path: "packages/quickstart/src/agent.test.ts"
+        change_type: "add"
+        purpose: "mocked provider: garbage ⇒ no patch + apologetic say + next call unaffected (DC-006); rejected/aborted provider ⇒ error say, no throw; valid {say,tree} ⇒ render + say; fields appear in prompt; provider called ≤2× (single-retry pin); stub determinism pin (same events ⇒ deep-equal messages twice)"
+      - path: "packages/quickstart/src/stub.ts"
+        change_type: "add"
+        purpose: "createStubAgent + STUB_TREE fixture (signup fields, collect submit, screens/nav); message ⇒ stub-echo patch + say; action ⇒ say echoing sorted fields"
+    depends_on: ["WU-5", "WU-6"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/agent.test.ts -t 'malformed provider output leaves the stage untouched and says an error line'"
+      target: "packages/quickstart/src/agent.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/agent.test.ts -t 'malformed provider output leaves the stage untouched and says an error line'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/agent.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/quickstart/src/agent.test.ts"
+        covers_dc: ["DC-006", "DC-008"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "No domain tools, no non-provider network, no key logging (invariant #1/#7 posture)"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-8"
+    title: "facet-quickstart bin — page serving, proxy boot, CLI flags, barrel"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Land Decisions 3 + 9 — startQuickstart (wrapper server: / shell, /app.js bundle with pageBundlePath override + missing-bundle fallback, piped SSE-safe proxy to a loopback createFacetServer), the browser page entry, runCli (flags, guide/key resolution, exact DC-005 messages, link + provider/model print), and the package barrel."
+    files:
+      - path: "packages/quickstart/src/server.ts"
+        change_type: "add"
+        purpose: "startQuickstart(options): Promise<RunningQuickstart> — internal boot on host 127.0.0.1 + random per-boot agentToken, random-port retry (server.test.ts:21-35 pattern); piped proxy forwarding request method/headers incl. Last-Event-ID; /agent/* ⇒ 404 at the wrapper; static shell/bundle routes; port-busy error naming --port"
+      - path: "packages/quickstart/src/page/main.tsx"
+        change_type: "add"
+        purpose: "browser entry: browserVisitorId + SseTransport (same-origin) + useFacet + StageRenderer + ChatDock; onAction(action, fields?) threads fields onto the event"
+      - path: "packages/quickstart/src/cli.ts"
+        change_type: "add"
+        purpose: "shebang + thin main(); exported runCli(argv, env) — --guide/--port/--provider/--stub/--agent-id per Decision 9; wires MemorySink shared by createFacetServer and createQuickstartAgent"
+      - path: "packages/quickstart/src/cli.test.ts"
+        change_type: "add"
+        purpose: "RED-first: keyless ⇒ exit 1 naming OPENAI_API_KEY, ANTHROPIC_API_KEY, --stub; explicit --guide missing ⇒ exit 1 naming the path; default guide absent ⇒ DEFAULT_GUIDE fallback; --stub boots keyless; provider/model line printed"
+      - path: "packages/quickstart/src/index.ts"
+        change_type: "add"
+        purpose: "barrel: provider surface, createQuickstartAgent, createStubAgent, startQuickstart, constants (written exactly once, in the last code WU)"
+    depends_on: ["WU-3", "WU-7"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/cli.test.ts -t 'exits non-zero naming both env vars and --stub when no key is set'"
+      target: "packages/quickstart/src/cli.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/cli.test.ts -t 'exits non-zero naming both env vars and --stub when no key is set'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/cli.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm --filter @facet/quickstart build"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "unit"
+        target: "packages/quickstart/src/cli.test.ts"
+        covers_dc: ["DC-004", "DC-005"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "pnpm --filter @facet/quickstart build produces dist/index.js, dist/cli.js, dist/page/app.js (browser bundle exists — RISK-PKG-3 evidence)"
+      - "@facet/server diff remains zero in this WU (proxy composition only); public API exported through the barrel"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-9"
+    title: "/live-test gate — Tier-1 stub E2E, Tier-2/3 smoke, skill"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart", "repo-skills"]
+    objective: "Land Decision 7 — the deterministic Tier-1 E2E over the real boot path (1a: stub brain + fixture bundle, full visit→chat→collect flow through the proxy incl. Last-Event-ID resume + /agent/* 404; 1b: the REAL built page bundle executed in jsdom), the key-gated Tier-2/3 smoke with loose assertions under its own vitest config (outside the root glob), and the /live-test skill implementing robust tier detection + the SKIPPED=FAIL rule."
+    files:
+      - path: "packages/quickstart/src/quickstart.e2e.test.ts"
+        change_type: "add"
+        purpose: "Tier 1a: random-port startQuickstart + createStubAgent; asserts / shell, /app.js fixture served, proxied /health, SSE /stream through proxy, reconnect with Last-Event-ID resumes through the proxy, /agent/stream ⇒ 404 at the wrapper, visit snapshot (signup form + screens), message ⇒ stub-echo patch + say, action with fields ⇒ say echoes values, rapid double message answered in order"
+      - path: "packages/quickstart/e2e/bundle.test.ts"
+        change_type: "add"
+        purpose: "Tier 1b (after pnpm --filter @facet/quickstart build): installs a no-op EventSource stub on the jsdom global, then executes the real dist/page/app.js (no throw, #root mounts children); asserts no bare process.env.NODE_ENV token in the bundle text (reviewer P1)"
+      - path: "packages/quickstart/e2e/smoke.test.ts"
+        change_type: "add"
+        purpose: "Tier 2/3: real provider one-turn visit; loose assertions only (patch frame arrives, validateTree passes, renderable, no crash); per-provider describes skipped without that key UNLESS FACET_SMOKE_PROVIDERS=both (then missing key ⇒ explicit failure)"
+      - path: "packages/quickstart/e2e/vitest.config.ts"
+        change_type: "add"
+        purpose: "includes e2e/**/*.test.ts, testTimeout 120000 (root glob excludes e2e/ by construction, so pnpm test never needs keys or a build)"
+      - path: ".claude/skills/live-test/SKILL.md"
+        change_type: "add"
+        purpose: "3-tier procedure: robust diff detection per Decision 7 (origin/main → main → HEAD~1 merge-base fallbacks + working tree; on detection failure assume touched; touched ⇔ packages/quickstart/ prefix), Tier-1 commands (1a + build + 1b, blocking), Tier-2 command + key check + SKIPPED=FAIL-when-touched rule, Tier-3 FACET_SMOKE_PROVIDERS=both, PASS/FAIL report format"
+    depends_on: ["WU-4", "WU-8"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts -t 'stub run: visit snapshot, chat patch, collect press echoes fields'"
+      target: "packages/quickstart/src/quickstart.e2e.test.ts"
+      justification: ""
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts -t 'stub run: visit snapshot, chat patch, collect press echoes fields'"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts # second run — determinism, DC-008"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm --filter @facet/quickstart build && pnpm exec vitest run --config packages/quickstart/e2e/vitest.config.ts packages/quickstart/e2e/bundle.test.ts # Tier 1b — real bundle executes"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "e2e"
+        target: "packages/quickstart/src/quickstart.e2e.test.ts"
+        covers_dc: ["DC-001", "DC-008"]
+        action: "new"
+      - type: "e2e"
+        target: "packages/quickstart/e2e/bundle.test.ts"
+        covers_dc: ["DC-004"]
+        action: "new"
+      - type: "e2e"
+        target: "packages/quickstart/e2e/smoke.test.ts"
+        covers_dc: ["DC-004", "DC-009"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Tier-1 run twice with identical results (DC-008); zero network, zero keys, ephemeral ports (parallel-safe)"
+      - "DC-009 dry runs recorded in handoff: skill decision on a quickstart-touching diff (Tier 2 required; keyless ⇒ FAIL) and a non-touching diff (Tier 2 skipped OK)"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-10"
+    title: "Docs, DoD chain, changeset"
+    owner_role: "subagent"
+    packages: ["docs", "repo-meta", "@facet/quickstart"]
+    objective: "DC-010 — README leads with the one-command quickstart, three brain-jacks under 'advanced'; AGENTS.md gains the @facet/quickstart package-map row and /live-test in the DoD chain; architecture doc notes the reference-brain boundary; package README + changeset."
+    files:
+      - path: "README.md"
+        change_type: "update"
+        purpose: "quickstart-first getting-started (OPENAI_API_KEY=… npx facet-quickstart --guide ./my-page.md); brain-jacks re-ranked 'advanced' (not removed)"
+      - path: "AGENTS.md"
+        change_type: "update"
+        purpose: "package map row; Definition of Done gains /live-test (3-tier, after /code-review); commands section mentions facet-quickstart"
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "reference-brain section: quickstart is to brains what @facet/server is to transports; field-snapshot event flow note"
+      - path: "packages/quickstart/README.md"
+        change_type: "add"
+        purpose: "install/run/flags/providers/guide-file/stub, key handling (env only)"
+      - path: ".changeset/quickstart-builtin-agent.md"
+        change_type: "add"
+        purpose: "minor: @facet/core, @facet/react, @facet/server, @facet/quickstart (fixed group carries the rest)"
+    depends_on: ["WU-9"]
+    parallel_group: "serial-c"
+    red_check:
+      command: "N/A"
+      target: ""
+      justification: "docs/metadata-only WU — no production code path changes; content verified by the final-gate /update-docs diff review"
+    quick_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm format:check"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm typecheck"
+    no_regression_checks:
+      - "cd /Users/hoon/workspace/apps/facet && pnpm test"
+      - "cd /Users/hoon/workspace/apps/facet && pnpm lint"
+    test_plan:
+      - type: "integration"
+        target: "/update-docs diff review (final gate)"
+        covers_dc: ["DC-010"]
+        action: "new"
+    done_conditions:
+      - "N/A red check acknowledged (justification recorded)"
+      - "Brain-jacks documented as 'advanced', none removed (brief constraint)"
+      - "Changeset present; fixed @facet/* group includes the new package"
+      - "No regression: pnpm test + pnpm lint"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+execution_order:
+  - "WU-1"
+  - "WU-2 || WU-3 || WU-4 || WU-5 (par-1; disjoint file sets: core spec / react+playground / server / quickstart scaffold)"
+  - "WU-6"
+  - "WU-7"
+  - "WU-8"
+  - "WU-9"
+  - "WU-10"
+
+final_gate_chain:
+  - "/update-tests"
+  - "/verify"
+  - "/code-review (PASS = P0-P2 = 0)"
+  - "/live-test (Tier 1 blocking; Tier 2 REQUIRED — this change touches packages/quickstart/, so a missing key is a FAIL, not a skip; Tier 3 both providers before merge)"
+  - "/update-docs"
+  - "DC-004 manual first-run check (main-agent): build quickstart, run dist/cli.js with a key, open the link, verify an LLM-authored page + live chat turn; record in PR body"
+  - "Squash → one feature commit; commit/PR on the user's explicit go"
