@@ -16,6 +16,17 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/no agent turn/i);
   });
 
+  it("documents theme select-by-name (a name, never a CSS value)", () => {
+    // The tree-shape line carries an optional theme NAME slot.
+    expect(STAGE_SPEC).toContain('"theme"?: "<theme name>"');
+    // Select-by-name only: set it to a provided theme NAME, never a value.
+    expect(STAGE_SPEC).toMatch(/only to a theme name/i);
+    // The invariant: the model never writes CSS values; styles stay tokens.
+    expect(STAGE_SPEC).toMatch(/never write CSS values/i);
+    // Unknown / missing names fall back to the default look (fail-safe).
+    expect(STAGE_SPEC).toMatch(/unknown[^.]*falls back to the default/i);
+  });
+
   it("teaches collect and press-time field snapshots", () => {
     // Agent action shape gains an optional collect box id.
     expect(STAGE_SPEC).toContain('"collect"?:<boxId>');
