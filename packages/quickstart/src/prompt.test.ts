@@ -93,6 +93,24 @@ describe("buildInitialMessages", () => {
     expect(content).toContain(`CURRENT STAGE: ${JSON.stringify(SESSION.stage)}`);
   });
 
+  it("renders navigate/toggle history events and marks patches as (page updated)", () => {
+    const history: StoredEvent[] = [
+      { at: 0, event: { kind: "action", action: { kind: "navigate", to: "about" } }, messages: [] },
+      {
+        at: 1,
+        event: { kind: "action", action: { kind: "toggle", target: "menu" } },
+        messages: [{ kind: "patch", patches: [] }],
+      },
+    ];
+    const event: ClientEvent = { kind: "message", text: "now" };
+    const messages = buildInitialMessages(event, SESSION, history, HISTORY_TURNS);
+    const all = messages.map((m) => ("content" in m ? m.content : "")).join("\n");
+    expect(all).toContain("navigate to=about");
+    expect(all).toContain("toggle target=menu");
+    expect(all).toContain("(no reply)"); // navigate turn had no messages
+    expect(all).toContain("(page updated)"); // toggle turn had a patch
+  });
+
   it("renders a visit event's non-secret context but never the visitorId bearer key", () => {
     const event: ClientEvent = {
       kind: "visit",

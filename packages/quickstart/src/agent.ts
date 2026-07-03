@@ -169,19 +169,26 @@ export function createQuickstartAgent(
   const maxSteps = options.maxSteps ?? MAX_STEPS;
 
   return defineAgent(async ({ event, session, stage }) => {
-    const history = await options.sink.history(options.agentId, session.visitor.visitorId);
-    const messages: TurnMessage[] = buildInitialMessages(event, session, history, historyTurns);
-
     let mutated = false;
     let said = false;
-    let lastText = "";
+    let finalText = "";
     let failure: unknown;
 
     try {
+      // Inside the try: a throwing sink must degrade like any other turn failure,
+      // not blow up the whole agent.
+      const history = await options.sink.history(options.agentId, session.visitor.visitorId);
+      const messages: TurnMessage[] = buildInitialMessages(event, session, history, historyTurns);
+
       for (let step = 0; step < maxSteps; step += 1) {
         const result = await options.provider.run({ system, messages }, TOOLS);
-        lastText = result.text;
-        if (result.toolCalls.length === 0) break; // the model is done
+        if (result.toolCalls.length === 0) {
+          // Clean exit: the model stopped. Any prose here is its final chat reply
+          // (captured ONLY on a clean stop — intermediate reasoning from a
+          // partial/failed/truncated turn must never surface as the answer).
+          finalText = result.text;
+          break;
+        }
 
         messages.push({ role: "assistant_tools", text: result.text, toolCalls: result.toolCalls });
         for (const call of result.toolCalls) {
@@ -192,14 +199,14 @@ export function createQuickstartAgent(
         }
       }
     } catch (error) {
-      // Provider/network failure mid-loop: keep whatever the stage already has.
+      // Provider/network/sink failure: keep whatever the stage already has.
       failure = error;
     }
 
-    // The model ended with prose and never called say ⇒ surface the prose as a
-    // chat line (a chat answer shouldn't be swallowed).
-    if (!said && lastText.trim().length > 0) {
-      stage.say(lastText.trim());
+    // The model ended cleanly with prose and never called say ⇒ surface the
+    // prose as its chat reply (a chat answer shouldn't be swallowed).
+    if (!said && finalText.trim().length > 0) {
+      stage.say(finalText.trim());
       said = true;
     }
 

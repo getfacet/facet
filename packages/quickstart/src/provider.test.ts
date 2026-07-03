@@ -264,6 +264,95 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
 });
 
 // ---------------------------------------------------------------------------
+// Tool-loop wire translation — the assistant_tools/tool_result mapping that
+// carries the multi-step loop (a field-name or shape regression here silently
+// breaks every multi-turn conversation).
+// ---------------------------------------------------------------------------
+
+const API_KEY = "wire-key";
+
+/** A turn mid-loop: user prompt → the model called two tools → two observations. */
+const TOOL_LOOP_TURN: ProviderTurn = {
+  system: "sys",
+  messages: [
+    { role: "user", content: "make a page" },
+    {
+      role: "assistant_tools",
+      text: "",
+      toolCalls: [
+        { id: "t1", name: "render_page", input: { tree: { root: "root" } } },
+        { id: "t2", name: "say", input: { text: "done" } },
+      ],
+    },
+    { role: "tool_result", callId: "t1", content: "ok: page replaced" },
+    { role: "tool_result", callId: "t2", content: "ok: said" },
+  ],
+};
+
+describe("openai tool-loop wire translation", () => {
+  it("maps assistant_tools to tool_calls and each tool_result to a role:tool message", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(openaiCase.textResponse("")));
+    await createOpenAiProvider(API_KEY, fetchImpl).run(TOOL_LOOP_TURN, TOOLS);
+    const messages = bodyOf(calls[0]!)["messages"] as Array<Record<string, unknown>>;
+
+    const assistant = messages.find((m) => m["role"] === "assistant" && "tool_calls" in m)!;
+    const toolCalls = assistant["tool_calls"] as Array<Record<string, unknown>>;
+    expect(toolCalls.map((c) => c["id"])).toEqual(["t1", "t2"]);
+    expect((toolCalls[0]!["function"] as Record<string, unknown>)["name"]).toBe("render_page");
+
+    const toolMsgs = messages.filter((m) => m["role"] === "tool");
+    expect(toolMsgs.map((m) => m["tool_call_id"])).toEqual(["t1", "t2"]);
+    expect(toolMsgs[0]!["content"]).toBe("ok: page replaced");
+  });
+
+  it("captures an unparseable tool-argument string as a __parseError", async () => {
+    const badArgs = {
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: [
+              { id: "x", type: "function", function: { name: "say", arguments: "{not json" } },
+            ],
+          },
+        },
+      ],
+    };
+    const { fetchImpl } = createCapturingFetch(okJson(badArgs));
+    const step = await createOpenAiProvider(API_KEY, fetchImpl).run(TURN, TOOLS);
+    expect(step.toolCalls[0]!.input).toMatchObject({ __parseError: "{not json" });
+  });
+});
+
+describe("anthropic tool-loop wire translation", () => {
+  it("maps assistant_tools to tool_use blocks and MERGES consecutive tool_results into one user message", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(anthropicCase.textResponse("")));
+    await createAnthropicProvider(API_KEY, fetchImpl).run(TOOL_LOOP_TURN, TOOLS);
+    const messages = bodyOf(calls[0]!)["messages"] as Array<Record<string, unknown>>;
+
+    // assistant turn carries both tool_use blocks
+    const assistant = messages.find((m) => m["role"] === "assistant")!;
+    const blocks = assistant["content"] as Array<Record<string, unknown>>;
+    const uses = blocks.filter((b) => b["type"] === "tool_use");
+    expect(uses.map((b) => b["id"])).toEqual(["t1", "t2"]);
+
+    // both tool_results collapse into ONE user message (Anthropic rejects
+    // consecutive same-role messages)
+    const userMsgs = messages.filter((m) => m["role"] === "user");
+    const resultUser = userMsgs.find((m) => Array.isArray(m["content"]))!;
+    const results = resultUser["content"] as Array<Record<string, unknown>>;
+    expect(results).toHaveLength(2);
+    expect(results.map((r) => r["tool_use_id"])).toEqual(["t1", "t2"]);
+    expect(results[0]!["type"]).toBe("tool_result");
+    // …and no two consecutive user messages exist in the final body.
+    const roles = messages.map((m) => m["role"]);
+    for (let i = 1; i < roles.length; i += 1) {
+      expect(roles[i] === "user" && roles[i - 1] === "user").toBe(false);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
 // resolveProvider matrix
 // ---------------------------------------------------------------------------
 

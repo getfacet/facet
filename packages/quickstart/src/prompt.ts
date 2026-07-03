@@ -127,6 +127,10 @@ function describeEvent(event: ClientEvent): string {
       const fields = JSON.stringify(event.fields ?? {});
       return `(action ${action.name} payload=${payload} fields=${fields})`;
     }
+    default:
+      // A corrupt/unknown history event.kind must still yield a string, never
+      // `undefined` in a prompt message.
+      return "(unknown event)";
   }
 }
 

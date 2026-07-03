@@ -199,6 +199,22 @@ export function createOpenAiProvider(
 
 // ── Anthropic (messages + tool_use) ───────────────────────────────────────────
 
+/** A user message carrying one or more `tool_result` blocks (Anthropic requires
+ * ALL results for one assistant tool_use turn to sit in a SINGLE user message). */
+interface ToolResultUserMessage {
+  readonly role: "user";
+  readonly content: Array<{ type: "tool_result"; tool_use_id: string; content: string }>;
+}
+
+function isToolResultUser(value: unknown): value is ToolResultUserMessage {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { role?: unknown }).role === "user" &&
+    Array.isArray((value as { content?: unknown }).content)
+  );
+}
+
 /** Translate provider-agnostic messages into Anthropic messages. */
 function toAnthropicMessages(messages: readonly TurnMessage[]): unknown[] {
   const out: unknown[] = [];
@@ -215,10 +231,16 @@ function toAnthropicMessages(messages: readonly TurnMessage[]): unknown[] {
       }
       out.push({ role: "assistant", content: blocks });
     } else {
-      out.push({
-        role: "user",
-        content: [{ type: "tool_result", tool_use_id: m.callId, content: m.content }],
-      });
+      // Anthropic rejects consecutive same-role messages: MERGE every
+      // tool_result for one tool_use turn into the SAME user message (a step
+      // with N tool calls produces N tool_results in a row).
+      const block = { type: "tool_result" as const, tool_use_id: m.callId, content: m.content };
+      const last = out[out.length - 1];
+      if (isToolResultUser(last)) {
+        last.content.push(block);
+      } else {
+        out.push({ role: "user", content: [block] } satisfies ToolResultUserMessage);
+      }
     }
   }
   return out;

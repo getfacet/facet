@@ -207,6 +207,27 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("never surfaces intermediate reasoning as the reply after a mid-loop failure", async () => {
+    const provider = providerOf(
+      {
+        text: "Let me update that for you.",
+        toolCalls: [
+          call("append_node", { parentId: "root", node: { id: "x", type: "text", value: "hi" } }),
+        ],
+      },
+      new Error("network blip"),
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "add" }, SESSION);
+      // The append survived, but the model's mid-step preamble must NOT become the reply.
+      expect(saysOf(out)).not.toContain("Let me update that for you.");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("an unrenderable render_page tree is rejected (stage untouched), then recovers", async () => {
     const provider = providerOf(
       toolStep(call("render_page", { tree: { root: "nope", nodes: {} } })), // not renderable
