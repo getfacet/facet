@@ -5,6 +5,7 @@ import {
   type FacetAgent,
   type FacetSession,
   type FacetTree,
+  type JsonPatchOperation,
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
@@ -167,20 +168,21 @@ export class FacetRuntime {
       }
       this.pendingSeeds.add(key);
     }
-    // Emit the CURRENT stage, not a parked value: after a save that committed
-    // and then rejected, the reopened session is ahead of the original seed and
-    // this turn's messages were computed against it.
-    const delivered: readonly ServerMessage[] = this.pendingSeeds.has(key)
-      ? [
-          { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] },
-          ...messages,
-        ]
-      : messages;
-    // Save/deliver the seed-prefixed list, but record ONLY the agent's own
-    // messages into the sink (the seed frame is a delivery mechanism, not a turn
-    // reply — recording it would make history claim "(page updated)" falsely and
-    // store the seed tree JSON per visitor).
-    const result = await this.persist(visitor, session, event, delivered, messages);
+    // The seed is a DELIVERY-only prefix — a full `replace ""` snapshot the client
+    // that connected before this session existed never received. It is prepended
+    // as its OWN frame, NOT fed into `persist`, so `applyToSession`'s per-turn
+    // coalescing never merges it into the agent's patch frame (the client must see
+    // the snapshot as a distinct first frame). On the server it folds to a no-op
+    // (session.stage is already the seeded stage), so the agent's own messages —
+    // what `persist` applies and records — produce the same stored stage the client
+    // reaches by folding [seed, ...agent frames]. Value is the CURRENT stage, not a
+    // parked tree: after a save that committed then rejected, the reopened session
+    // is ahead of the original seed and this turn's messages were computed against it.
+    const seedFrame: ServerMessage | undefined = this.pendingSeeds.has(key)
+      ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
+      : undefined;
+    const applied = await this.persist(visitor, session, event, messages);
+    const result = seedFrame !== undefined ? [seedFrame, ...applied] : applied;
     this.pendingSeeds.delete(key); // consume ONLY after persist resolved
     return { messages: result, agentMutated };
   }
@@ -192,21 +194,24 @@ export class FacetRuntime {
    * source of truth for reconnect; the sink is best-effort. Records enqueue per
    * visitor so an async sink persists them in event order.
    *
-   * `messages` is what gets APPLIED + DELIVERED (seed frame included);
-   * `recordMessages` (defaults to `messages`) is what gets RECORDED into the
-   * sink — persistWithSeed passes the pre-seed list so the synthetic seed frame
-   * never lands in conversation history.
+   * `messages` is the AGENT'S OWN turn (no seed frame — persistWithSeed prepends
+   * that to the delivered result). It gets applied to the stage, recorded verbatim
+   * into the sink, and returned COALESCED (its patch messages folded into one
+   * frame) for delivery — the exact frame the client folds, so no drift.
    */
   private async persist(
     visitor: VisitorContext,
     session: FacetSession,
     event: ClientEvent,
     messages: readonly ServerMessage[],
-    recordMessages: readonly ServerMessage[] = messages,
   ): Promise<readonly ServerMessage[]> {
-    const { session: applied, issues } = this.applyToSession(session, messages);
+    const {
+      session: applied,
+      issues,
+      messages: delivered,
+    } = this.applyToSession(session, messages);
     await this.stageStore.save(applied);
-    const entry = { at: Date.now(), event, messages: recordMessages };
+    const entry = { at: Date.now(), event, messages };
     void this.serializeRecord(sessionKey(this.agentId, visitor.visitorId), () =>
       this.sink.record(this.agentId, visitor.visitorId, entry),
     ).catch((error: unknown) => console.error("[facet] sink failed:", error));
@@ -222,23 +227,32 @@ export class FacetRuntime {
         `[facet] save-time re-validation: +${String(issues.length - MAX_LOGGED_ISSUES)} more suppressed`,
       );
     }
-    // The delivered list is exactly what fanned out to the client. No corrective
-    // frame is ever appended: the client folds each patch with the SAME
-    // foldPatchIntoStage, so its tree already equals this stored stage.
-    return messages;
+    // The delivered list is exactly what fanned out to the client — the turn's
+    // patch messages COALESCED into one frame, the same single fold applied to the
+    // stored stage above. No corrective frame is ever appended: the client folds
+    // that one frame with the SAME foldPatchIntoStage, so its tree already equals
+    // this stored stage.
+    return delivered;
   }
 
   /**
    * Folds a turn's patch messages into the open session with the shared
    * `foldPatchIntoStage` — the SAME pure function the client runs in useFacet —
-   * returning the sanitized session and any issues raised. Because both sides
-   * fold identically, the stored stage this produces equals the client's tree by
-   * construction; there is no separate divergence signal to compute or converge
-   * (invariant #2).
+   * returning the sanitized session, any issues raised, AND the message list to
+   * deliver. Because both sides fold identically, the stored stage this produces
+   * equals the client's tree by construction; there is no separate divergence
+   * signal to compute or converge (invariant #2).
    *
-   * Each patch message is folded in order, threading the validated tree forward
-   * (matching the client, which applies one wire frame at a time). Non-patch
-   * messages don't touch the stage. Never throws.
+   * A single turn can legitimately carry MULTIPLE patch messages (Stage.say()
+   * flushes pending ops mid-turn), and a later message may reference a node an
+   * earlier one only appended a child ref for. Folding each message separately
+   * would run validateTree's dangling-ref pruning on that intermediate state and
+   * orphan the forward reference. So the turn's patch ops are CONCATENATED in
+   * order and folded ONCE, and the delivered list replaces the turn's patch
+   * messages with a single coalesced patch frame at the FIRST patch message's
+   * position (say/other messages keep their relative order). The client folds that
+   * one frame, so it prunes exactly what the server pruned — no drift, and the
+   * final rendered state is the one the operator intended. Never throws.
    */
   private applyToSession(
     session: FacetSession,
@@ -246,16 +260,43 @@ export class FacetRuntime {
   ): {
     readonly session: FacetSession;
     readonly issues: readonly string[];
+    readonly messages: readonly ServerMessage[];
   } {
-    let stage = session.stage;
-    const allIssues: string[] = [];
+    // Concatenate every patch message's ops in order (explicit loop, never
+    // spread-push: a message could carry a huge op array and `push(...ops)` would
+    // blow the call stack). foldPatchIntoStage's own MAX_PATCH_OPS cap then bounds
+    // the coalesced batch.
+    const turnOps: JsonPatchOperation[] = [];
+    let hasPatch = false;
     for (const message of messages) {
       if (message.kind === "patch") {
-        const { tree, issues } = foldPatchIntoStage(stage, message.patches);
-        stage = tree;
-        if (issues.length > 0) allIssues.push(...issues);
+        hasPatch = true;
+        for (const op of message.patches) turnOps.push(op);
       }
     }
-    return { session: { ...session, stage }, issues: allIssues };
+    if (!hasPatch) {
+      return { session, issues: [], messages };
+    }
+
+    const { tree, issues } = foldPatchIntoStage(session.stage, turnOps);
+    const allIssues: string[] = [];
+    for (const issue of issues) allIssues.push(issue);
+
+    const coalescedPatch: ServerMessage = { kind: "patch", patches: turnOps };
+    const delivered: ServerMessage[] = [];
+    let placed = false;
+    for (const message of messages) {
+      if (message.kind === "patch") {
+        // Replace the turn's patch messages with the single coalesced frame,
+        // emitted once at the first patch message's slot.
+        if (!placed) {
+          delivered.push(coalescedPatch);
+          placed = true;
+        }
+      } else {
+        delivered.push(message);
+      }
+    }
+    return { session: { ...session, stage: tree }, issues: allIssues, messages: delivered };
   }
 }

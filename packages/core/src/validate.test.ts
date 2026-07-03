@@ -505,7 +505,51 @@ describe("validateTree node-count cap (MAX_RENDER_NODES)", () => {
       root: "root",
       nodes: { root: { id: "root", type: "box", children: [] } },
     });
-    expect(issues.some((i) => i.includes("renderer will truncate"))).toBe(false);
+    expect(issues.some((i) => i.includes("truncate"))).toBe(false);
+  });
+
+  it("does not warn when each render root stays under the cap, even if the map total exceeds it", () => {
+    // Three 2,000-node screens (6,000+ total nodes) each render fully — the
+    // renderer's budget is per render pass, so no pass truncates. The whole-map
+    // count would falsely warn here.
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const screens: Record<string, string> = {};
+    for (const name of ["a", "b", "c"]) {
+      const children: string[] = [];
+      for (let i = 0; i < 1999; i += 1) {
+        const id = `${name}n${String(i)}`;
+        children.push(id);
+        nodes[id] = { id, type: "text", value: "x" };
+      }
+      const screenRoot = `${name}root`;
+      nodes[screenRoot] = { id: screenRoot, type: "box", children };
+      screens[name] = screenRoot;
+    }
+    const { issues } = validateTree({ root: "root", nodes, screens, entry: "a" });
+    expect(Object.keys(nodes).length).toBeGreaterThan(MAX_RENDER_NODES);
+    expect(issues.some((i) => i.includes("truncate"))).toBe(false);
+  });
+
+  it("warns and names the render root when one screen alone exceeds the cap", () => {
+    const children: string[] = [];
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    for (let i = 0; i < MAX_RENDER_NODES; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      nodes[id] = { id, type: "text", value: "x" };
+    }
+    nodes["big"] = { id: "big", type: "box", children }; // 1 + 5000 = 5001 reachable
+    const { issues } = validateTree({
+      root: "root",
+      nodes,
+      screens: { big: "big" },
+      entry: "big",
+    });
+    expect(issues.some((i) => i.includes("truncate") && i.includes("big"))).toBe(true);
   });
 });
 
@@ -791,6 +835,23 @@ describe("validateTree screens", () => {
     const { tree, issues } = validateTree(input);
     expect(tree.entry).toBe("first");
     expect(issues.some((issue) => issue.includes("entry"))).toBe(true);
+  });
+
+  it("normalizes an OMITTED entry to the first kept screen with ZERO issues", () => {
+    // FacetTree declares `entry?` — a screens map with no entry is a legal shape,
+    // not an operator mistake, so it must not produce a spurious fallback issue.
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [] },
+        home: { id: "home", type: "box", children: [] },
+      },
+      screens: { home: "home" },
+    };
+    const { tree, issues } = validateTree(input);
+    expect(tree.entry).toBe("home");
+    expect(tree.screens).toEqual({ home: "home" });
+    expect(issues).toHaveLength(0);
   });
 
   it("breaks a cycle inside a non-entry screen without throwing", () => {

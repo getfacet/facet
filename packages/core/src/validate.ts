@@ -395,7 +395,14 @@ function sanitizeScreens(
   if (entry !== undefined && kept[entry] !== undefined) {
     return { screens: kept, entry };
   }
-  issues.push(`entry does not name a kept screen; falling back to "${printableKey(firstKey)}"`);
+  // Only report the fallback when an entry was actually SUPPLIED. `entry?` is a
+  // legal optional on FacetTree, so an omitted entry is a valid shape, not a
+  // mistake — silently default it to the first kept screen. Guard on the RAW
+  // input (not `entry`) so a present-but-non-string entry still gets the
+  // diagnostic while the legal omitted-entry case stays quiet.
+  if (rawEntry !== undefined) {
+    issues.push(`entry does not name a kept screen; falling back to "${printableKey(firstKey)}"`);
+  }
   return { screens: kept, entry: firstKey };
 }
 
@@ -485,7 +492,7 @@ function breakCycles(
   nodes: Record<string, FacetNode>,
   roots: readonly string[],
   issues: IssueSink,
-): void {
+): { worstRoot: string; maxReachable: number } {
   const inPath = new Set<string>();
   // Nodes kept under some parent during the CURRENT root's walk. Reset per root
   // so cross-screen sharing survives; within one walk, `claimed` also prevents
@@ -526,10 +533,23 @@ function breakCycles(
     }
     inPath.delete(nodeId);
   };
+  // Track the heaviest render root: the renderer spends a fresh budget per pass on
+  // the CURRENT screen's subtree, so what matters for truncation is the MOST nodes
+  // any single root reaches, not the whole map. Reachable = the root itself plus
+  // every child claimed during its walk (shared nodes counted per root, matching
+  // the renderer, which re-instantiates a shared node in each screen it appears in).
+  let worstRoot = roots[0] ?? "";
+  let maxReachable = 0;
   for (const root of roots) {
     claimed = new Set<string>();
     visit(root, 0);
+    const reachable = claimed.size + (nodes[root] !== undefined ? 1 : 0);
+    if (reachable > maxReachable) {
+      maxReachable = reachable;
+      worstRoot = root;
+    }
   }
+  return { worstRoot, maxReachable };
 }
 
 export function validateTree(input: unknown): ValidationResult {
@@ -580,12 +600,18 @@ export function validateTree(input: unknown): ValidationResult {
   const walkRoots = Array.from(
     new Set([rootId, ...(screens !== undefined ? Object.values(screens) : [])]),
   );
-  breakCycles(nodes, walkRoots, issues);
+  const { worstRoot, maxReachable } = breakCycles(nodes, walkRoots, issues);
 
-  // The renderer truncates a pass at MAX_RENDER_NODES nodes; surface when a
-  // validated (clean) tree crosses that size so a truncated render isn't silent.
-  if (Object.keys(nodes).length > MAX_RENDER_NODES) {
-    issues.push(`tree exceeds ${MAX_RENDER_NODES} nodes; the renderer will truncate the excess`);
+  // The renderer truncates a PASS at MAX_RENDER_NODES nodes, and a pass renders one
+  // render root's subtree — so warn when the heaviest single root crosses the cap,
+  // not when the whole node map does. A multi-screen tree whose total exceeds the
+  // cap but whose every screen fits renders fully; warning on the map total would
+  // be a false diagnostic. This keeps the guarantee bidirectional: a clean verdict
+  // means no screen can render truncated, a warning means one actually will.
+  if (maxReachable > MAX_RENDER_NODES) {
+    issues.push(
+      `render root "${printableKey(worstRoot)}" reaches ${maxReachable} nodes; a render pass will truncate past ${MAX_RENDER_NODES}`,
+    );
   }
 
   const tree: {

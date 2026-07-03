@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
-import type { JsonPatchOperation } from "./patch.js";
+import { MAX_PATCH_OPS, type JsonPatchOperation } from "./patch.js";
 import { foldPatchIntoStage } from "./stage-fold.js";
 
 const rootBox: FacetTree = {
@@ -149,5 +149,84 @@ describe("foldPatchIntoStage — fail-safe posture", () => {
   it("always returns a guaranteed-valid tree even from a root-replace to null", () => {
     const { tree } = foldPatchIntoStage(rootBox, [{ op: "replace", path: "", value: null }]);
     expect(tree).toEqual(EMPTY_TREE);
+  });
+});
+
+describe("foldPatchIntoStage — batch is bounded (DoS belt)", () => {
+  it("rejects a batch over MAX_PATCH_OPS whole, in bounded time, with one cap issue", () => {
+    // A runaway/hostile turn: hundreds of thousands of junk ops. Without the cap,
+    // the salvage loop would build a per-op dropped list and block for seconds.
+    const patches = Array.from({ length: 200_000 }, () => 0) as unknown as JsonPatchOperation[];
+    const started = Date.now();
+    const { tree, issues } = foldPatchIntoStage(rootBox, patches);
+    const elapsed = Date.now() - started;
+    expect(elapsed).toBeLessThan(1000); // whole-batch reject, no O(ops × tree) salvage
+    expect(tree.nodes["root"]).toBeDefined(); // stage preserved unchanged
+    expect(issues.some((i) => i.includes(String(MAX_PATCH_OPS)) && i.includes("cap"))).toBe(true);
+    expect(issues.length).toBeLessThanOrEqual(65); // not one issue per op
+  });
+
+  it("still salvages a batch exactly AT the cap (boundary is inclusive)", () => {
+    const patches: JsonPatchOperation[] = Array.from({ length: MAX_PATCH_OPS }, () => ({
+      op: "add",
+      path: "/nodes/x",
+      value: { id: "x", type: "text", value: "x" },
+    }));
+    const { tree } = foldPatchIntoStage(rootBox, patches);
+    expect(tree.nodes["x"]).toBeDefined(); // applied, not rejected whole
+  });
+});
+
+describe("foldPatchIntoStage — RFC 6902 test-guard semantics", () => {
+  it("a failed `test` drops itself AND every op it guarded (write is NOT applied)", () => {
+    const stage: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: {}, children: ["t"] },
+        t: { id: "t", type: "text", value: "old", style: {} },
+      },
+    };
+    const patches: JsonPatchOperation[] = [
+      { op: "test", path: "/nodes/t/value", value: "expected-but-not-current" }, // fails
+      { op: "replace", path: "/nodes/t/value", value: "GUARDED WRITE" }, // must NOT apply
+    ];
+    const { tree, issues } = foldPatchIntoStage(stage, patches);
+    expect((tree.nodes["t"] as unknown as { value: string }).value).toBe("old");
+    expect(issues.some((i) => i.includes("test") && i.includes("guard"))).toBe(true);
+  });
+
+  it("ops BEFORE a failed guard stay applied; the guard drops only what follows", () => {
+    const stage: FacetTree = {
+      root: "root",
+      nodes: { root: { id: "root", type: "box", style: {}, children: [] } },
+    };
+    const patches: JsonPatchOperation[] = [
+      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "kept" } },
+      { op: "test", path: "/nodes/a/value", value: "wrong" }, // fails
+      { op: "add", path: "/nodes/b", value: { id: "b", type: "text", value: "guarded" } },
+    ];
+    const { tree } = foldPatchIntoStage(stage, patches);
+    expect(tree.nodes["a"]).toBeDefined(); // before the guard → kept
+    expect(tree.nodes["b"]).toBeUndefined(); // after the guard → dropped
+  });
+});
+
+describe("foldPatchIntoStage — dropped-op list is bounded", () => {
+  it("a large all-throwing salvage yields at most a bounded issue list, no throw", () => {
+    // Under the cap so the salvage loop runs (not the whole-batch reject); every
+    // op throws, so the dropped list would be one-per-op without the bound.
+    const patches = Array.from(
+      { length: MAX_PATCH_OPS },
+      () => 0,
+    ) as unknown as JsonPatchOperation[];
+    const run = (): readonly string[] => foldPatchIntoStage(rootBox, patches).issues;
+    expect(run).not.toThrow();
+    const issues = run();
+    expect(issues.length).toBeLessThanOrEqual(65);
+    // Spread-pushing the returned list must not blow the call stack downstream.
+    expect(() => {
+      const sink: string[] = [];
+      sink.push(...issues);
+    }).not.toThrow();
   });
 });

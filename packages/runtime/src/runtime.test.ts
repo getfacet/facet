@@ -65,6 +65,54 @@ describe("FacetRuntime.handle", () => {
     expect(history[0]?.event).toMatchObject({ text: "ask" });
   });
 
+  it("coalesces a turn's patch messages so a forward ref between them is NOT pruned", async () => {
+    // Stage.say() flushes pending ops mid-turn, so one turn can arrive as
+    // [patch(add child ref "x"), say, patch(add node x)]. Folding each message
+    // separately would prune the not-yet-resolvable "x" from root.children; the
+    // whole turn must fold as one so the ref and its node land together.
+    const addChild: ServerMessage = {
+      kind: "patch",
+      patches: [{ op: "add", path: "/nodes/root/children/-", value: "x" }],
+    };
+    const addNode: ServerMessage = {
+      kind: "patch",
+      patches: [{ op: "add", path: "/nodes/x", value: { id: "x", type: "text", value: "hi" } }],
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(addChild, { kind: "say", text: "working" }, addNode),
+    });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    const stage = await rt.stageFor("v");
+    expect((stage?.nodes["root"] as unknown as { children: string[] }).children).toEqual(["x"]);
+    expect(stage?.nodes["x"]).toBeDefined();
+    // Exactly one coalesced patch message is delivered, carrying BOTH ops, at the
+    // first patch position (the say keeps its relative order after it).
+    const patches = out.messages.filter((m) => m.kind === "patch");
+    expect(patches).toHaveLength(1);
+    expect(patches[0]?.kind === "patch" && patches[0].patches).toHaveLength(2);
+    expect(out.messages.map((m) => m.kind)).toEqual(["patch", "say"]);
+    // Client folds exactly the coalesced batch the server folded → no drift.
+    expect(clientFold(out.messages)).toEqual(stage);
+  });
+
+  it("never throws on a turn whose patch message carries a huge junk-op array", async () => {
+    // An in-process agent can hand applyToSession a message the wire cap never
+    // saw. The fold caps its issue list and the runtime pushes issues one at a
+    // time, so an oversize op array can't RangeError the never-throwing turn.
+    const junk: ServerMessage = {
+      kind: "patch",
+      patches: Array.from({ length: 200_000 }, () => 0) as never,
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(junk, { kind: "say", text: "ok" }),
+    });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    expect(out.messages.some((m) => m.kind === "say")).toBe(true);
+    expect(await rt.stageFor("v")).toBeDefined(); // stage survived, no throw
+  });
+
   it("fail-safe: a bad patch op is dropped but the say still returns (no lost turn)", async () => {
     const badPatch: ServerMessage = {
       kind: "patch",

@@ -4,6 +4,7 @@ import {
   isPrimitiveRecord,
   MAX_FIELD_VALUE_CHARS,
   MAX_FIELDS_KEYS,
+  MAX_PATCH_OPS,
   type AgentControlFrame,
   type ClientEvent,
   type FacetAgent,
@@ -205,7 +206,10 @@ function isControlBody(body: unknown): body is AgentControlFrame {
     if (typeof m !== "object" || m === null) return false;
     const { kind, text, patches } = m as { kind?: unknown; text?: unknown; patches?: unknown };
     if (kind === "say") return typeof text === "string";
-    if (kind === "patch") return Array.isArray(patches);
+    // Cap the op count at the wire boundary too: a hostile 5 MiB batch (~1M junk
+    // ops) is 400-rejected here before it can reach the runtime's fold path, which
+    // caps but still has to build a bounded dropped list per oversize batch.
+    if (kind === "patch") return Array.isArray(patches) && patches.length <= MAX_PATCH_OPS;
     return false;
   });
 }

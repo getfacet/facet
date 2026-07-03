@@ -22,6 +22,17 @@ export type JsonPatchOperation =
   | { readonly op: "copy"; readonly from: string; readonly path: string }
   | { readonly op: "test"; readonly path: string; readonly value: unknown };
 
+/**
+ * Hard cap on the number of operations a single patch batch may carry. A batch
+ * past this is rejected WHOLE (never salvaged op-by-op) at the fold and wire
+ * boundaries: salvage clones the stage once and applies in place, but a hostile
+ * or runaway batch of hundreds of thousands of junk ops would still block the
+ * synchronous per-visitor path for seconds building the dropped-op list, so the
+ * count itself must be bounded before the loop runs. 1024 is far above any real
+ * turn (a render is one root `replace`; an incremental edit is a handful of ops).
+ */
+export const MAX_PATCH_OPS = 1024;
+
 type Container = Record<string, unknown> | unknown[];
 
 function isContainerValue(value: unknown): value is Container {
@@ -178,7 +189,22 @@ function removeMember(container: Container, key: string): void {
   }
 }
 
-function applyOperation(root: unknown, operation: JsonPatchOperation): unknown {
+/**
+ * Applies ONE operation to `root`, MUTATING it in place (no clone) and returning
+ * the new root — which is `root` itself for every op except a whole-document
+ * `replace`/`add`/`move`/`copy` at path `""`, where the new document value is
+ * returned. The public, clone-first entry is `applyPatch`; this in-place variant
+ * exists so a caller that already owns a private clone (the stage salvage in
+ * `stage-fold.ts`) can apply a batch op-by-op WITHOUT re-cloning the whole tree
+ * per op — the O(ops × tree_size) blowup a naive per-op `applyPatch` causes.
+ *
+ * ATOMIC per op: an operation that throws leaves `root` byte-identical to its
+ * pre-op state (every op either throws before it mutates, or — for `move`, which
+ * removes its source before it can fail on the destination — restores the source
+ * on the way out). The salvage relies on this: a dropped op never corrupts the
+ * working tree, so no re-clone is needed after a throw.
+ */
+export function applyOpInPlace(root: unknown, operation: JsonPatchOperation): unknown {
   switch (operation.op) {
     case "add":
     case "replace": {
@@ -202,14 +228,26 @@ function applyOperation(root: unknown, operation: JsonPatchOperation): unknown {
     }
     case "move": {
       const fromTokens = parsePointer(operation.from);
+      const fromParent = parentContainer(root, fromTokens);
+      const fromKey = lastToken(fromTokens);
       const value = getAt(root, fromTokens);
-      removeMember(parentContainer(root, fromTokens), lastToken(fromTokens));
-      const toTokens = parsePointer(operation.path);
-      if (toTokens.length === 0) {
-        return value;
+      removeMember(fromParent, fromKey);
+      try {
+        const toTokens = parsePointer(operation.path);
+        if (toTokens.length === 0) {
+          return value;
+        }
+        setMember(parentContainer(root, toTokens), lastToken(toTokens), value, "add");
+        return root;
+      } catch (error) {
+        // `move` is the one op that mutates (removes its source) before a later
+        // step can throw (a bad destination pointer or out-of-range index).
+        // Restore the source so a failed move leaves `root` unchanged, keeping
+        // the op atomic for the in-place salvage. Invisible to `applyPatch`,
+        // whose working clone is discarded on any throw.
+        setMember(fromParent, fromKey, value, "add");
+        throw error;
       }
-      setMember(parentContainer(root, toTokens), lastToken(toTokens), value, "add");
-      return root;
     }
     case "copy": {
       const value = structuredClone(getAt(root, parsePointer(operation.from)));
@@ -238,11 +276,13 @@ function applyOperation(root: unknown, operation: JsonPatchOperation): unknown {
   }
 }
 
-/** Applies an ordered batch of operations to a tree, returning a new tree. */
+/** Applies an ordered batch of operations to a tree, returning a new tree. The
+ * input is cloned once up front, so a throwing op discards the whole working
+ * clone (all-or-nothing) and the caller's `tree` is never mutated. */
 export function applyPatch(tree: FacetTree, operations: readonly JsonPatchOperation[]): FacetTree {
   let root: unknown = structuredClone(tree);
   for (const operation of operations) {
-    root = applyOperation(root, operation);
+    root = applyOpInPlace(root, operation);
   }
   return root as FacetTree;
 }

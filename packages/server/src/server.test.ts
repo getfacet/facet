@@ -2,6 +2,7 @@ import { connect } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_FIELD_VALUE_CHARS,
+  MAX_PATCH_OPS,
   type AgentEventFrame,
   type ClientEvent,
   type FacetAgent,
@@ -1292,6 +1293,41 @@ describe("hardening", () => {
     const response = await fetch(`${base}/health`);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("ok agent=local");
+  });
+
+  it("rejects an /agent/control patch message over the op-count cap with 400", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // A well-shaped control body whose patch carries more than MAX_PATCH_OPS ops:
+    // without the wire cap it would reach the runtime and stall the fold path.
+    const patches = Array.from({ length: MAX_PATCH_OPS + 1 }, () => ({
+      op: "add" as const,
+      path: "/nodes/x",
+      value: { id: "x", type: "text" as const, value: "x" },
+    }));
+    const response = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: 1, messages: [{ kind: "patch", patches }] }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("accepts an /agent/control patch message exactly AT the op-count cap", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const patches = Array.from({ length: MAX_PATCH_OPS }, () => ({
+      op: "add" as const,
+      path: "/nodes/x",
+      value: { id: "x", type: "text" as const, value: "x" },
+    }));
+    const response = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: 999, messages: [{ kind: "patch", patches }] }),
+    });
+    // Shape is valid → 202 (an unknown requestId is a bounded no-op, still 202).
+    expect(response.status).toBe(202);
   });
 
   it("rejects an oversized /event body", async () => {
