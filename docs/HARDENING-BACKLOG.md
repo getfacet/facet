@@ -160,10 +160,20 @@ Bundle B PR review record.
   missing object member restores a ghost `undefined` key, violating per-op
   atomicity. *Fix:* verify source existence before mutating (RFC 6902 "from
   MUST exist").
-- **runtime (effect-based agentMutated, r11)** — `agentMutated` counts patch
-  frames by KIND; an empty/fully-salvage-dropped/over-cap turn still bumps
-  `recordApplied` and can falsely stale a parked late result. *Fix:* gate on
-  the fold's `appliedOps > 0`.
+- ~~runtime (effect-based agentMutated, r11)~~ — RESOLVED in-branch (review
+  r12, upgraded to P2): `StageFoldResult.mutated` (true iff a non-`test` op
+  actually applied) now feeds `TurnResult.agentMutated`; over-cap/empty/
+  non-array/all-salvage-dropped turns no longer bump `recordApplied`.
+- **runtime coalescing vs RFC 6902 `test` document scope (r12)** — a failed
+  `test` guard in one patch message drops the remaining ops of the whole
+  coalesced turn, not just its own document. *Fix:* thread document-boundary
+  offsets through the fold and (optionally) the wire frame; both sides scope
+  identically. No shipped SDK emits `test` ops today.
+- **runtime !hasPatch early return delivers junk patch frames (r12)** — a
+  turn whose every patch message is non-array returns the original messages,
+  shipping the junk frames verbatim to the browser/replay ring (client folds
+  them as no-ops — no drift, just noise). *Fix:* filter patch-kind messages
+  in that early return, mirroring the mixed case.
 - **server/server.ts:311 (stale replay comment, r11)** — the rehydrate-replay
   safety argument still describes the old atomic-drop client; the client now
   folds replayed frames with salvage. *Fix:* rewrite the comment to the

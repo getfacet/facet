@@ -582,6 +582,54 @@ describe("async delivery — late results", () => {
     await link.close();
   });
 
+  it("applies a parked late patch after a live turn whose patch ops ALL failed salvage", async () => {
+    // Effect-based agentMutated: e1 times out and parks (index 0). e2 replies
+    // live with a patch whose every op targets a nonexistent node — the fold
+    // applies nothing, so the turn mutated the stage NOT AT ALL. lastApplied must
+    // therefore stay -1, and e1's real late patch must still APPLY (not be dropped
+    // as stale behind e2). With presence-based agentMutated e2 would falsely bump
+    // lastApplied to 1 and strip e1's r1 to say-only.
+    const inner = new MemoryStageStore();
+    const sink = new MemorySink();
+    const { server, base } = await start({
+      agentId: "a",
+      agentTimeoutMs: 120,
+      stageStore: inner,
+      sink,
+    });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+
+    // e2 queues behind e1; its agent frame arrives after e1's interim timeout.
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    const evt2 = await link.nextEvent();
+    // Every op targets a node id that no longer exists → all fail salvage → the
+    // stored stage is untouched by e2.
+    await control(base, evt2.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "/nodes/ghost/value", value: "nope" }] },
+      { kind: "say", text: "answer 2" },
+    ]);
+    // e1's interim record (timeout) + e2's live record → history reaches 2 once e2 applied.
+    await waitFor(async () => (await sink.history("a", "v")).length >= 2);
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBeUndefined(); // e2 mutated nothing
+
+    // e1's real late result arrives — NOT stale (e2 did not advance lastApplied),
+    // so r1's patch must land on the stored stage rather than be stripped to say-only.
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r1");
+    const frames = await collectEvents(stream, 400);
+    expect(sayText(frames)).toContain("answer 1");
+    await link.close();
+  });
+
   it("applies a parked late patch after a say-only turn merely re-emitted the seed frame", async () => {
     // Regression (seed frame vs lastApplied): a seeded fresh session parks turn I
     // (its persist save rejects once, so the seed stays armed). A say-only turn J

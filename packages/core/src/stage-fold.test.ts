@@ -211,6 +211,52 @@ describe("foldPatchIntoStage — RFC 6902 test-guard semantics", () => {
   });
 });
 
+describe("foldPatchIntoStage — mutated (effect-based edit signal)", () => {
+  // `mutated` is true iff at least one non-`test` op actually applied. The
+  // runtime threads it to TurnResult.agentMutated so a turn whose stage patch
+  // was dropped whole never advances "last applied" and stales a parked late
+  // result.
+  it("is true when a non-`test` op applies", () => {
+    const patches: JsonPatchOperation[] = [
+      { op: "add", path: "/nodes/x", value: { id: "x", type: "text", value: "x" } },
+    ];
+    expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(true);
+  });
+
+  it("is true when a good op is salvaged past a throwing one (salvage path)", () => {
+    const patches: JsonPatchOperation[] = [
+      { op: "remove", path: "/nodes/ghost/children/0" }, // stale → throws, salvaged past
+      { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
+    ];
+    expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(true);
+  });
+
+  it("is false for a batch over MAX_PATCH_OPS (rejected whole)", () => {
+    const patches = Array.from({ length: 200_000 }, () => 0) as unknown as JsonPatchOperation[];
+    expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(false);
+  });
+
+  it("is false for a non-array patches field (rejected whole)", () => {
+    expect(foldPatchIntoStage(rootBox, "nope" as unknown as []).mutated).toBe(false);
+  });
+
+  it("is false when every op fails salvage (nothing applied)", () => {
+    // Both ops traverse INTO a node id that does not exist, so each throws in the
+    // salvage loop and nothing is applied — a `remove` of a missing top-level key
+    // would instead be a successful no-op delete, which correctly counts as applied.
+    const patches: JsonPatchOperation[] = [
+      { op: "remove", path: "/nodes/ghost/children/0" },
+      { op: "replace", path: "/nodes/missing/value", value: "x" },
+    ];
+    expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(false);
+  });
+
+  it("is false for a `test`-only batch (a passing guard changes nothing)", () => {
+    const patches: JsonPatchOperation[] = [{ op: "test", path: "/root", value: "root" }];
+    expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(false);
+  });
+});
+
 describe("foldPatchIntoStage — dropped-op list is bounded", () => {
   it("a large all-throwing salvage yields at most a bounded issue list, no throw", () => {
     // Under the cap so the salvage loop runs (not the whole-batch reject); every

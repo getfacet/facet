@@ -233,6 +233,45 @@ describe("FacetRuntime.handle", () => {
   });
 });
 
+describe("FacetRuntime.handle — agentMutated is effect-based", () => {
+  it("agentMutated is true for a turn that actually edits the stage", async () => {
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(renderPatch, { kind: "say", text: "done" }),
+    });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    expect(out.agentMutated).toBe(true);
+  });
+
+  it("agentMutated is false when every patch op fails salvage (stage untouched)", async () => {
+    // The agent emits a patch, but every op targets a node id that no longer
+    // exists, so the fold applies nothing. The turn carried a patch MESSAGE but
+    // mutated the stage NOT AT ALL — agentMutated must be false so the transport
+    // does not advance lastApplied and stale a parked late result.
+    const allFail: ServerMessage = {
+      kind: "patch",
+      patches: [
+        { op: "remove", path: "/nodes/ghost/children/0" }, // ghost missing → throws
+        { op: "replace", path: "/nodes/missing/value", value: "x" }, // missing → throws
+      ],
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(allFail, { kind: "say", text: "still here" }),
+    });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    expect(out.agentMutated).toBe(false);
+    expect(out.messages.some((m) => m.kind === "say" && m.text === "still here")).toBe(true);
+    expect(await rt.stageFor("v")).toEqual(EMPTY_TREE); // stage byte-identical to pre-turn
+  });
+
+  it("agentMutated is false for a say-only turn", async () => {
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf({ kind: "say", text: "hi" }) });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    expect(out.agentMutated).toBe(false);
+  });
+});
+
 describe("FacetRuntime stored-vs-client convergence (shared fold, no corrective frame)", () => {
   // Each case is a former divergence trigger. The runtime now folds patches with
   // the SAME shared foldPatchIntoStage the client runs, so the stored stage

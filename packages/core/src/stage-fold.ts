@@ -11,6 +11,16 @@ import { BoundedIssues, printableValue } from "./issues.js";
 export interface StageFoldResult {
   readonly tree: FacetTree;
   readonly issues: readonly string[];
+  /**
+   * Whether this fold actually MUTATED the stage: at least one non-`test` op
+   * applied. False for a whole-batch reject (over-cap or non-array), an
+   * all-ops-failed salvage, and a `test`-only batch (a passing guard changes
+   * nothing). The runtime threads this to `TurnResult.agentMutated` so the
+   * transport advances "last applied" ONLY when the agent's own turn changed the
+   * page — a turn whose patch was dropped whole must never stale a parked late
+   * result. This reflects what APPLIED, not what `validateTree` then kept.
+   */
+  readonly mutated: boolean;
 }
 
 /**
@@ -50,6 +60,7 @@ export function foldPatchIntoStage(
     const { tree, issues } = validateTree(stage);
     return {
       tree,
+      mutated: false,
       issues: ["patch message dropped: patches is not an array", ...issues],
     };
   }
@@ -63,6 +74,7 @@ export function foldPatchIntoStage(
     const { tree, issues } = validateTree(stage);
     return {
       tree,
+      mutated: false,
       issues: [
         `patch batch dropped: ${String(patches.length)} ops exceeds the ${String(MAX_PATCH_OPS)}-op cap`,
         ...issues,
@@ -72,8 +84,14 @@ export function foldPatchIntoStage(
 
   const dropped = new BoundedIssues();
   let raw: FacetTree = stage;
+  // True once a non-`test` op actually applies — the effect-based edit signal.
+  let mutated = false;
   try {
     raw = applyPatch(stage, patches);
+    // The atomic apply succeeded, so EVERY op applied: the batch mutated the
+    // stage iff it carried at least one non-`test` op (a `test`-only batch is a
+    // guard check that changes nothing).
+    mutated = patches.some((op) => !isTestOp(op));
   } catch {
     // The client applies this SAME batch atomically and would drop it whole on
     // the throw; salvage the good ops op-by-op so the stored + rendered trees
@@ -85,6 +103,9 @@ export function foldPatchIntoStage(
     for (const [index, op] of patches.entries()) {
       try {
         raw = applyOpInPlace(raw, op) as FacetTree;
+        // A non-`test` op that applied in place is a real mutation; a passing
+        // `test` guard applies without throwing but changes nothing.
+        if (!isTestOp(op)) mutated = true;
       } catch {
         // A failed `test` is a guard, not an independently-bad op: RFC 6902 §5
         // forbids applying the ops it protects, so drop this and everything after
@@ -104,6 +125,7 @@ export function foldPatchIntoStage(
   const droppedList = dropped.list;
   return {
     tree,
+    mutated,
     issues: droppedList.length === 0 ? issues : [...droppedList, ...issues],
   };
 }

@@ -31,11 +31,13 @@ export interface FacetRuntimeOptions {
 /**
  * What one turn yields. `messages` is the list to fan out to the client (the
  * prepended seed frame included when a fresh session was just seeded).
- * `agentMutated` is whether the AGENT'S OWN messages contained a stage patch —
- * computed BEFORE the seed frame is prepended — so a say-only turn that merely
- * re-emits a parked seed is not mistaken for a real edit. The transport gates
- * `recordApplied` on it: bumping "last applied" on a non-mutating turn would
- * falsely stale an older parked late result.
+ * `agentMutated` is whether the AGENT'S OWN turn actually CHANGED the stage —
+ * at least one non-`test` op applied, as reported by the fold (effect-based, not
+ * merely "carried a patch message"). It excludes the prepended seed frame, so a
+ * say-only turn that re-emits a parked seed, and a turn whose patch was dropped
+ * whole (over-cap, non-array, empty, or all-ops-failed salvage), both report
+ * false. The transport gates `recordApplied` on it: bumping "last applied" on a
+ * non-mutating turn would falsely stale an older parked late result.
  */
 export interface TurnResult {
   readonly messages: readonly ServerMessage[];
@@ -156,10 +158,6 @@ export class FacetRuntime {
     messages: readonly ServerMessage[],
   ): Promise<TurnResult> {
     const key = sessionKey(this.agentId, visitor.visitorId);
-    // Whether the AGENT'S OWN turn mutated the stage — computed BEFORE the seed
-    // frame is prepended below, so a say-only turn that merely re-emits a parked
-    // seed is NOT counted as an edit. The transport gates `recordApplied` on this.
-    const agentMutated = messages.some((m) => m.kind === "patch");
     // Arm: `takeSeeded` fires at most once, so park the key until a turn
     // actually persists (evicting the oldest armed key at the cap).
     if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
@@ -182,7 +180,19 @@ export class FacetRuntime {
     const seedFrame: ServerMessage | undefined = this.pendingSeeds.has(key)
       ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
       : undefined;
-    const applied = await this.persist(visitor, session, event, messages);
+    // `agentMutated` is EFFECT-based: whether the AGENT'S OWN turn actually
+    // changed the stage (at least one non-`test` op applied), as reported by the
+    // fold. The seed frame is prepended AFTER and is never fed to `persist`, so a
+    // say-only turn that merely re-emits a parked seed reports false — the
+    // transport must not advance "last applied" and stale a parked late result on
+    // a turn whose patch was dropped whole (over-cap, non-array, empty, or an
+    // all-ops-failed salvage).
+    const { messages: applied, mutated: agentMutated } = await this.persist(
+      visitor,
+      session,
+      event,
+      messages,
+    );
     const result = seedFrame !== undefined ? [seedFrame, ...applied] : applied;
     this.pendingSeeds.delete(key); // consume ONLY after persist resolved
     return { messages: result, agentMutated };
@@ -205,11 +215,12 @@ export class FacetRuntime {
     session: FacetSession,
     event: ClientEvent,
     messages: readonly ServerMessage[],
-  ): Promise<readonly ServerMessage[]> {
+  ): Promise<{ readonly messages: readonly ServerMessage[]; readonly mutated: boolean }> {
     const {
       session: applied,
       issues,
       messages: delivered,
+      mutated,
     } = this.applyToSession(session, messages);
     await this.stageStore.save(applied);
     const entry = { at: Date.now(), event, messages };
@@ -233,7 +244,7 @@ export class FacetRuntime {
     // stored stage above. No corrective frame is ever appended: the client folds
     // that one frame with the SAME foldPatchIntoStage, so its tree already equals
     // this stored stage.
-    return delivered;
+    return { messages: delivered, mutated };
   }
 
   /**
@@ -262,6 +273,10 @@ export class FacetRuntime {
     readonly session: FacetSession;
     readonly issues: readonly string[];
     readonly messages: readonly ServerMessage[];
+    // Whether the fold actually changed the stage (effect-based). False for a
+    // patch-free turn and the over-cap reject, threaded from foldPatchIntoStage
+    // otherwise. persistWithSeed surfaces this as TurnResult.agentMutated.
+    readonly mutated: boolean;
   } {
     // Concatenate every patch message's ops in order (explicit loop, never
     // spread-push: a message could carry a huge op array and `push(...ops)` would
@@ -285,7 +300,7 @@ export class FacetRuntime {
       }
     }
     if (!hasPatch) {
-      return { session, issues: [], messages };
+      return { session, issues: [], messages, mutated: false };
     }
 
     // Enforce the op cap on the per-TURN aggregate, mirroring the wire boundary
@@ -302,10 +317,11 @@ export class FacetRuntime {
           `patch turn dropped: ${String(turnOps.length)} ops exceeds the ${String(MAX_PATCH_OPS)}-op cap`,
         ],
         messages: messages.filter((m) => m.kind !== "patch"),
+        mutated: false,
       };
     }
 
-    const { tree, issues } = foldPatchIntoStage(session.stage, turnOps);
+    const { tree, issues, mutated } = foldPatchIntoStage(session.stage, turnOps);
     const allIssues: string[] = [];
     for (const issue of issues) allIssues.push(issue);
 
@@ -324,6 +340,11 @@ export class FacetRuntime {
         delivered.push(message);
       }
     }
-    return { session: { ...session, stage: tree }, issues: allIssues, messages: delivered };
+    return {
+      session: { ...session, stage: tree },
+      issues: allIssues,
+      messages: delivered,
+      mutated,
+    };
   }
 }
