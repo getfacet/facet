@@ -16,7 +16,7 @@
  * the provider's auth header only).
  */
 import { validateTree } from "@facet/core";
-import type { FacetNode, FacetTree, NodeId } from "@facet/core";
+import type { FacetNode, FacetStamp, FacetTheme, FacetTree, NodeId } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import type { Stage } from "@facet/agent";
 import type { Sink } from "@facet/runtime";
@@ -40,6 +40,12 @@ export interface QuickstartAgentOptions {
   readonly historyTurns?: number;
   /** Max provider calls (tool steps) per turn. Defaults to MAX_STEPS. */
   readonly maxSteps?: number;
+  /** Operator themes offered to the model by NAME in prompt ② (validated by the
+   * caller). The model selects one with `set_theme`; values never reach it. */
+  readonly themes?: readonly FacetTheme[];
+  /** Operator stamps (reusable fragments) injected into prompt ② for the model
+   * to copy under the id-prefix rule (validated by the caller). */
+  readonly stamps?: readonly FacetStamp[];
 }
 
 /**
@@ -220,6 +226,16 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
       stage.say(text);
       return { observation: "ok: said", mutated: false, said: true };
     }
+    case "set_theme": {
+      const name = input["name"];
+      if (typeof name !== "string" || name.length === 0) {
+        return fail(
+          'error: set_theme needs a non-empty string "name" (a theme from the THEMES list — a name only, never a CSS value)',
+        );
+      }
+      stage.theme(name);
+      return { observation: `ok: theme set to "${name}"`, mutated: true, said: false };
+    }
     default:
       return fail(`error: unknown tool "${call.name}". Available tools: ${TOOL_NAMES}`);
   }
@@ -228,7 +244,10 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
 export function createQuickstartAgent(
   options: QuickstartAgentOptions,
 ): ReturnType<typeof defineAgent> {
-  const system = buildSystem(options.guide ?? DEFAULT_GUIDE);
+  const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
+    themes: options.themes ?? [],
+    stamps: options.stamps ?? [],
+  });
   const historyTurns = options.historyTurns ?? HISTORY_TURNS;
   const maxSteps = options.maxSteps ?? MAX_STEPS;
 

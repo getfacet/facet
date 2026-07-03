@@ -284,6 +284,35 @@ describe("createQuickstartAgent tool loop", () => {
     expect(obs.some((o) => o.includes('"field" node needs a string "name"'))).toBe(true);
   });
 
+  it("set_theme records a /theme add op the model can drive", async () => {
+    const provider = providerOf(toolStep(call("set_theme", { name: "midnight" })), END);
+    const agent = makeAgent(provider);
+    const out = await agent({ kind: "message", text: "go dark" }, SESSION);
+
+    const patch = out.find((m) => m.kind === "patch");
+    expect(patch).toBeDefined();
+    if (patch?.kind === "patch") {
+      expect(patch.patches).toContainEqual({ op: "add", path: "/theme", value: "midnight" });
+    }
+  });
+
+  it("set_theme with a non-string name is an error observation, not a throw", async () => {
+    const provider = providerOf(toolStep(call("set_theme", { name: 42 })), END);
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "go" }, SESSION);
+      // Nothing was applied — the bad arg degraded to an observation, the turn survived.
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.startsWith("error:"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("stops at maxSteps when the model never ends the loop", async () => {
     const provider = providerOf(toolStep(call("say", { text: "again" }))); // repeats forever
     const agent = makeAgent(provider, { maxSteps: 3 });
@@ -486,6 +515,21 @@ describe("createStubAgent", () => {
     expect(saysOf(onAction)).toEqual(["submit: email=a@b.c name=Ada"]);
   });
 
+  it("a 'theme <name>' message switches the theme and says stub: theme <name>", async () => {
+    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
+    const visitor = { visitorId: "v" };
+    await rt.handle(visitor, { kind: "visit", visitor });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "theme midnight" });
+    expect(saysOf(out)).toEqual(["stub: theme midnight"]);
+    // The theme name lands on the persisted stage (through the runtime save path).
+    const stage = await rt.stageFor("v");
+    expect((stage as { theme?: unknown } | undefined)?.theme).toBe("midnight");
+    // A plain "theme" prefix message still echoes; a non-theme message is untouched.
+    const plain = await rt.handle(visitor, { kind: "message", text: "hello" });
+    expect(saysOf(plain)).toEqual(["stub: hello"]);
+  });
+
   it("is deterministic: the same event sequence yields deep-equal message sequences", async () => {
     async function run(): Promise<ServerMessage[][]> {
       const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
@@ -493,6 +537,7 @@ describe("createStubAgent", () => {
       const events: ClientEvent[] = [
         { kind: "visit", visitor },
         { kind: "message", text: "hello" },
+        { kind: "message", text: "theme midnight" },
         {
           kind: "action",
           action: { kind: "agent", name: "submit", collect: "signup" },

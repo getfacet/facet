@@ -11,7 +11,7 @@
  * node, render the whole page, say a chat line).
  */
 import { STAGE_SPEC } from "@facet/core";
-import type { ClientEvent, FacetSession, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { ToolSpec, TurnMessage } from "./provider.js";
 
@@ -52,14 +52,80 @@ const WORKFLOW = `You build and edit the PAGE by CALLING TOOLS. Your primary job
 - Use say for a SHORT chat line, IN ADDITION to a page edit — never instead of one.
 - You may call several tools in one turn. When the page reflects the request and you have replied, STOP (make no more tool calls). Never describe the page in prose — build it with tools.`;
 
-/** Layers ① + ②: the stage vocabulary, the tool workflow, and the page brief. */
-export function buildSystem(guide: string): string {
+/** Operator assets injected into prompt layer ② (Decision 6): themes offered
+ * to the model by NAME (never a value) and stamps it may copy into the page. */
+export interface PromptAssets {
+  readonly themes: readonly FacetTheme[];
+  readonly stamps: readonly FacetStamp[];
+}
+
+/**
+ * A stamp whose serialized `{root, nodes}` JSON exceeds this is EXCLUDED from the
+ * prompt (with a `console.warn` naming it) rather than blowing the context budget
+ * — a quickstart POLICY, not a core rule (invariant #2: mechanism vs policy).
+ */
+const MAX_STAMP_PROMPT_CHARS = 4000;
+
+/** Layer ② — theme NAMES + one-line descriptions ONLY (never token values). The
+ * model selects a theme by name via `set_theme`; an unknown name falls back to
+ * the default look. Callers must have validated the documents first. */
+function themesSection(themes: readonly FacetTheme[]): string {
+  const lines = themes.map((theme) =>
+    theme.description !== undefined && theme.description.length > 0
+      ? `- ${theme.name}: ${theme.description}`
+      : `- ${theme.name}`,
+  );
   return [
+    "THEMES",
+    "Themes you may select by NAME with the set_theme tool — never write CSS values (styles stay tokens); pick only a name from this list, and an unknown name simply falls back to the default look.",
+    lines.join("\n"),
+  ].join("\n\n");
+}
+
+/** Layer ② — reusable brick fragments the model copies into the page. Each is a
+ * `{root, nodes}` JSON blob under the mandatory id-prefix copy rule. A fragment
+ * larger than `MAX_STAMP_PROMPT_CHARS` is dropped with a warning. Returns
+ * `undefined` when no stamp survives, so no empty section is emitted. */
+function stampsSection(stamps: readonly FacetStamp[]): string | undefined {
+  const entries: string[] = [];
+  for (const stamp of stamps) {
+    const fragment = JSON.stringify({ root: stamp.root, nodes: stamp.nodes });
+    if (fragment.length > MAX_STAMP_PROMPT_CHARS) {
+      console.warn(
+        `[facet-quickstart] stamp "${stamp.name}" excluded from the prompt: ${String(fragment.length)} chars exceeds MAX_STAMP_PROMPT_CHARS=${String(MAX_STAMP_PROMPT_CHARS)}`,
+      );
+      continue;
+    }
+    const head =
+      stamp.description !== undefined && stamp.description.length > 0
+        ? `- ${stamp.name}: ${stamp.description}`
+        : `- ${stamp.name}`;
+    entries.push(`${head}\n${fragment}`);
+  }
+  if (entries.length === 0) return undefined;
+  return [
+    "STAMPS",
+    "Reusable fragments you can copy into the page. To use one, copy its nodes into your patches and prefix EVERY id — the fragment's root id and every child id reference — with a fresh unique instance prefix (like `p1-`) so repeated uses never collide.",
+    entries.join("\n\n"),
+  ].join("\n\n");
+}
+
+/** Layers ① + ②: the stage vocabulary, the tool workflow, optional operator
+ * assets (themes + stamps), and the page brief. With no assets (or both arrays
+ * empty) the output is byte-identical to the no-assets join (DC-008). */
+export function buildSystem(guide: string, assets?: PromptAssets): string {
+  const sections: string[] = [
     "You are the live agent behind a Facet page: you draw the page and chat with its visitor.",
     STAGE_SPEC,
     WORKFLOW,
-    `PAGE BRIEF\n\n${guide}`,
-  ].join("\n\n");
+  ];
+  const themes = assets?.themes ?? [];
+  const stamps = assets?.stamps ?? [];
+  if (themes.length > 0) sections.push(themesSection(themes));
+  const stampBlock = stamps.length > 0 ? stampsSection(stamps) : undefined;
+  if (stampBlock !== undefined) sections.push(stampBlock);
+  sections.push(`PAGE BRIEF\n\n${guide}`);
+  return sections.join("\n\n");
 }
 
 /** A brick node — validated server-side (validateTree + the fail-safe renderer),
@@ -117,6 +183,16 @@ export const TOOLS: readonly ToolSpec[] = [
       type: "object",
       properties: { text: { type: "string" } },
       required: ["text"],
+    },
+  },
+  {
+    name: "set_theme",
+    description:
+      "Restyle the WHOLE page by selecting a theme by NAME. Argument is a name only — one from the THEMES section; never a CSS value or color. Skip this tool entirely when no THEMES are listed. An unknown name simply falls back to the default look.",
+    parameters: {
+      type: "object",
+      properties: { name: { type: "string", description: "A theme name from the THEMES list." } },
+      required: ["name"],
     },
   },
 ];

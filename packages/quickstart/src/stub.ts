@@ -96,6 +96,15 @@ export function createStubAgent(): FacetAgent {
         return;
       }
       case "message": {
+        // Deterministic theme switch: "theme <name>" selects a theme by name
+        // (the DC-010 live vehicle) instead of echoing. Zero randomness/clock.
+        const THEME_PREFIX = "theme ";
+        if (event.text.startsWith(THEME_PREFIX)) {
+          const name = event.text.slice(THEME_PREFIX.length);
+          stage.theme(name);
+          stage.say(`stub: theme ${name}`);
+          return;
+        }
         const echo = { id: "stub-echo", type: "text", value: `echo: ${event.text}` } as const;
         if (session.stage.nodes["stub-echo"] === undefined) {
           stage.append(session.stage.root, echo);
