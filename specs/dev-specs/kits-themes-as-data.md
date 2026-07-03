@@ -790,6 +790,16 @@ mechanism, which the adversarial review + real-browser testing reshaped:
    `breakCycles` + a renderer render-budget close the pre-existing
    shared-child DAG path explosion (review round 5 P1).
 
+5. **Convergence by construction (review rounds 7-9)**: the save-path
+   sanitize/salvage asymmetry (server salvages per-op + validates; client
+   applied raw batches) was first compensated with a corrective-frame
+   heuristic, then REPLACED by the principled fix — one shared pure
+   `foldPatchIntoStage` (apply + per-op salvage + `validateTree`) in
+   `@facet/core`, executed identically by `FacetRuntime` and `useFacet`, so
+   stored and live trees cannot diverge and the heuristic was deleted
+   (runtime net -146 lines). `TurnResult.agentMutated` lets the transport
+   distinguish real edits from the seed frame.
+
 Tracked non-blocking residuals live in `docs/HARDENING-BACKLOG.md`
 ("Bundle B review residuals" section). ARCHITECTURE.md reflects the as-built
 mechanism; this spec is kept as the historical plan + this addendum.

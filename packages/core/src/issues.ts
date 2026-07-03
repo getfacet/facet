@@ -48,6 +48,23 @@ export function printableKey(key: string): string {
   return key;
 }
 
+/**
+ * A bounded, NEVER-THROWING echo of an untrusted VALUE (not just a key) for an
+ * issue string. A string goes through the same length/control-char cap as
+ * `printableKey` (quoted); a number/boolean/null echoes verbatim (inherently
+ * bounded); everything else — object, array, bigint, function, symbol,
+ * undefined — becomes a constant `<type>` placeholder. Crucially it NEVER calls
+ * `JSON.stringify`, so a cyclic object or a BigInt can't throw (which would
+ * breach the validators' never-throws boundary) and a multi-MB value can't
+ * flood the operator log via the runtime's save-time `console.error`.
+ */
+export function printableValue(v: unknown): string {
+  if (typeof v === "string") return `"${printableKey(v)}"`;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (v === null) return "null";
+  return Array.isArray(v) ? "<array>" : `<${typeof v}>`;
+}
+
 /** The minimal surface `validate.ts`'s helpers need — push a diagnostic string. */
 export interface IssueSink {
   push(issue: string): void;

@@ -7,6 +7,7 @@ import {
   MAX_DEPTH,
   MAX_FIELD_VALUE_CHARS,
   MAX_FIELDS_KEYS,
+  MAX_RENDER_NODES,
   sanitizeActionPayload,
   type AgentAction,
   type FacetAction,
@@ -26,8 +27,10 @@ const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
  * live path (no validateTree) is acyclic and shallow yet has an exponential
  * number of root-to-node paths, which would hang the tab. This bounds the whole
  * pass to a linear budget, mirroring how MAX_DEPTH already bounds nesting.
+ * Sourced from core's MAX_RENDER_NODES so the validator's node-count warning and
+ * the renderer's truncation point are the same number, never drifting.
  */
-const RENDER_BUDGET = 5000;
+const RENDER_BUDGET = MAX_RENDER_NODES;
 
 // Fail-safe (invariant #2): the live path applies raw RFC 6902 patches with no
 // validateTree, so any node FIELD can hold arbitrary JSON (children: "oops",
@@ -281,8 +284,13 @@ export interface StageRendererProps {
  */
 export function StageRenderer({ tree, onAction, themes }: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
-  const [visibilityOverrides, setVisibilityOverrides] = useState<Readonly<Record<NodeId, boolean>>>(
-    {},
+  // A Map, not a plain object: node ids like "toString"/"valueOf" pass
+  // validateTree (only __proto__/prototype/constructor are forbidden), and a
+  // plain-object lookup would resolve those through Object.prototype — a
+  // hidden:true node keyed "toString" would read the inherited function as its
+  // override and render visible. A Map never resolves through the prototype.
+  const [visibilityOverrides, setVisibilityOverrides] = useState<ReadonlyMap<NodeId, boolean>>(
+    () => new Map(),
   );
   // Scope handle for collectFieldValues — reads stay inside THIS renderer
   // instance so two stages on one page never cross-read each other's inputs.
@@ -313,13 +321,21 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
         }
         return;
       case "toggle": {
-        const target = tree.nodes[press.target];
+        // hasOwnProperty guard: on the raw live path `tree.nodes` is ordinary
+        // JSON, so a target named "constructor"/"toString" would otherwise
+        // resolve an inherited Object.prototype member and treat a nonexistent
+        // node as existing (DC-004: an unknown target must no-op).
+        const target = Object.prototype.hasOwnProperty.call(tree.nodes, press.target)
+          ? tree.nodes[press.target]
+          : undefined;
         if (target == null) {
           return; // unknown target no-ops (DC-004)
         }
         setVisibilityOverrides((prev) => {
-          const effective = prev[press.target] ?? !isHiddenByDefault(target);
-          return { ...prev, [press.target]: !effective };
+          const effective = prev.get(press.target) ?? !isHiddenByDefault(target);
+          const next = new Map(prev);
+          next.set(press.target, !effective);
+          return next;
         });
         return;
       }
@@ -345,7 +361,7 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
   // separate component invocations — under StrictMode React double-invokes
   // StageRenderer (each making its own fresh budget) rather than double-decrementing
   // one shared object per node, so a valid tree renders in full at either cap.
-  const budget = { left: RENDER_BUDGET };
+  const budget: { left: number; warned?: boolean } = { left: RENDER_BUDGET };
   const stage = renderNode({
     tree,
     id: resolveScreenRoot(tree, currentScreen),
@@ -374,13 +390,16 @@ interface RenderArgs {
   readonly tree: FacetTree;
   readonly id: NodeId;
   readonly onPress: (press: ClassifiedPress) => void;
-  readonly visibilityOverrides: Readonly<Record<NodeId, boolean>>;
+  readonly visibilityOverrides: ReadonlyMap<NodeId, boolean>;
   /** The resolved theme threaded from StageRenderer to every style call site. */
   readonly theme: ResolvedTheme;
   /** Ids on the path from the root to here — used to break cycles fail-safe. */
   readonly ancestors?: ReadonlySet<NodeId> | undefined;
-  /** Per-render-pass node budget — bounds total renders (invariant #2). */
-  readonly budget: { left: number };
+  /**
+   * Per-render-pass node budget — bounds total renders (invariant #2). `warned`
+   * latches the one-time console.warn when the budget first trips.
+   */
+  readonly budget: { left: number; warned?: boolean };
   readonly depth: number;
 }
 
@@ -404,14 +423,27 @@ function renderNode({
 }: RenderArgs): ReactNode {
   const node = tree.nodes[id];
   // == null also skips a node a patch replaced with JSON null (not just missing
-  // ids). The budget guard bounds a shared-child DAG's exponential path count the
-  // same way depth bounds nesting — decremented only for a node we actually render.
-  if (node == null || depth > MAX_DEPTH || --budget.left < 0) {
+  // ids), and short-circuits BEFORE the budget decrement so a skipped id doesn't
+  // spend budget.
+  if (node == null || depth > MAX_DEPTH) {
+    return null;
+  }
+  // The budget guard bounds a shared-child DAG's exponential path count the same
+  // way depth bounds nesting — decremented only for a node we'd actually render.
+  // Warn ONCE when the budget trips so a truncated render isn't silent (the
+  // validator emits the matching node-count issue at store time).
+  if (--budget.left < 0) {
+    if (budget.warned !== true) {
+      budget.warned = true;
+      console.warn(
+        `[facet] render budget of ${MAX_RENDER_NODES} nodes exceeded; the excess is truncated`,
+      );
+    }
     return null;
   }
   // Effective visibility = browser override ?? content default. A hidden node
   // is skipped (never thrown on), same as an unresolvable id.
-  const visible = visibilityOverrides[id] ?? !isHiddenByDefault(node);
+  const visible = visibilityOverrides.get(id) ?? !isHiddenByDefault(node);
   if (!visible) {
     return null;
   }

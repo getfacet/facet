@@ -1,8 +1,6 @@
 import {
-  applyPatch,
   createSerialQueue,
-  MAX_DEPTH,
-  validateTree,
+  foldPatchIntoStage,
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
@@ -206,15 +204,15 @@ export class FacetRuntime {
     messages: readonly ServerMessage[],
     recordMessages: readonly ServerMessage[] = messages,
   ): Promise<readonly ServerMessage[]> {
-    const { session: applied, issues, diverged } = this.applyToSession(session, messages);
+    const { session: applied, issues } = this.applyToSession(session, messages);
     await this.stageStore.save(applied);
     const entry = { at: Date.now(), event, messages: recordMessages };
     void this.serializeRecord(sessionKey(this.agentId, visitor.visitorId), () =>
       this.sink.record(this.agentId, visitor.visitorId, entry),
     ).catch((error: unknown) => console.error("[facet] sink failed:", error));
-    // Surface (don't drop) whatever the save-time re-validate corrected, so an
-    // operator sees a stripped/clamped patch instead of it vanishing silently.
-    // validateTree already caps its issue list, but slice defensively so an
+    // Surface (don't drop) whatever the fold corrected, so an operator sees a
+    // stripped/clamped/salvaged patch instead of it vanishing silently.
+    // foldPatchIntoStage already caps its issue list, but slice defensively so an
     // issue list from any source can't flood the operator log synchronously.
     for (const issue of issues.slice(0, MAX_LOGGED_ISSUES)) {
       console.error(`[facet] save-time re-validation: ${issue}`);
@@ -224,38 +222,23 @@ export class FacetRuntime {
         `[facet] save-time re-validation: +${String(issues.length - MAX_LOGGED_ISSUES)} more suppressed`,
       );
     }
-    if (!diverged) return messages;
-    // `diverged` means validateTree changed the stored tree in a way the
-    // fail-safe live renderer does NOT reproduce (a cross-parent shared child
-    // collapsed to one parent, a dropped/changed screens|entry, a root fallback)
-    // OR a mixed batch was salvaged op-by-op here while the client applies the
-    // batch atomically and drops it whole — either way live tabs (which applied
-    // the RAW ops) hold content the STORED stage no longer has. The raw ops
-    // already fanned out, so append a corrective root-replace AFTER the agent's
-    // own frames: clients apply/attempt the raw ops, then converge on the stored
-    // sanitized tree. It is delivery-only — NOT recorded into the sink
-    // (recordMessages is the agent's own list), exactly like the seed frame.
-    return [
-      ...messages,
-      { kind: "patch", patches: [{ op: "replace", path: "", value: applied.stage }] },
-    ];
+    // The delivered list is exactly what fanned out to the client. No corrective
+    // frame is ever appended: the client folds each patch with the SAME
+    // foldPatchIntoStage, so its tree already equals this stored stage.
+    return messages;
   }
 
   /**
-   * Applies a turn's patch messages to the open session and RE-VALIDATES the
-   * result, returning the sanitized session, any issues the re-validate raised,
-   * and whether the stored tree DIVERGED from what live tabs will render.
-   * `diverged` is the caller's signal to converge live clients with a corrective
-   * root-replace: the raw ops were already delivered, so without it the
-   * divergence persists on every live tab until it reloads.
+   * Folds a turn's patch messages into the open session with the shared
+   * `foldPatchIntoStage` — the SAME pure function the client runs in useFacet —
+   * returning the sanitized session and any issues raised. Because both sides
+   * fold identically, the stored stage this produces equals the client's tree by
+   * construction; there is no separate divergence signal to compute or converge
+   * (invariant #2).
    *
-   * Two independent divergence sources:
-   *  - SALVAGE: a mixed batch threw, so its good ops were applied op-by-op HERE,
-   *    but the client applies the same batch atomically and drops it whole — any
-   *    op that actually applied is a stored edit live tabs never got. (An
-   *    all-ops-throw batch salvages nothing, so it is not a divergence.)
-   *  - SANITISE: validateTree changed the tree in a way the fail-safe renderer
-   *    does NOT reproduce (see `renderDiverged`).
+   * Each patch message is folded in order, threading the validated tree forward
+   * (matching the client, which applies one wire frame at a time). Non-patch
+   * messages don't touch the stage. Never throws.
    */
   private applyToSession(
     session: FacetSession,
@@ -263,146 +246,16 @@ export class FacetRuntime {
   ): {
     readonly session: FacetSession;
     readonly issues: readonly string[];
-    readonly diverged: boolean;
   } {
     let stage = session.stage;
-    let salvaged = false;
+    const allIssues: string[] = [];
     for (const message of messages) {
       if (message.kind === "patch") {
-        // Fail-safe: a single bad op must not lose the whole turn (incl. chat
-        // replies). Guard the patches FIELD first (a wire message can carry a
-        // non-array), then try the batch atomically; if it throws, salvage the
-        // good ops one-by-one so ONE bad op doesn't silently discard every
-        // edit the agent's tools already reported as applied.
-        if (!Array.isArray(message.patches)) {
-          console.error("[facet] dropped a patch message with non-array patches");
-          continue;
-        }
-        try {
-          stage = applyPatch(stage, message.patches);
-        } catch {
-          // The client (useFacet) applies this SAME batch atomically and drops
-          // it whole on the throw. Salvage the good ops op-by-op; if ANY op
-          // actually applies, the stored stage now holds an edit the client
-          // dropped — a stored-vs-live divergence, so flag it for a corrective
-          // frame. An all-ops-throw batch salvages nothing (stored unchanged),
-          // so it is NOT a divergence.
-          for (const op of message.patches) {
-            try {
-              stage = applyPatch(stage, [op]);
-              salvaged = true;
-            } catch (error) {
-              console.error("[facet] dropped an invalid patch op:", error);
-            }
-          }
-        }
+        const { tree, issues } = foldPatchIntoStage(stage, message.patches);
+        stage = tree;
+        if (issues.length > 0) allIssues.push(...issues);
       }
     }
-    // Keep the stored stage always-valid: a bad root replace (e.g. `render 'null'`
-    // on the unvalidated CLI path) is sanitized here so persistence/rehydrate
-    // never serves a corrupt tree. Issues are surfaced (not dropped) so `persist`
-    // can converge live clients on the sanitized result.
-    const { tree, issues } = validateTree(stage);
-    const diverged = salvaged || renderDiverged(stage, tree);
-    return { session: { ...session, stage: tree }, issues, diverged };
+    return { session: { ...session, stage }, issues: allIssues };
   }
-}
-
-/** A record-shaped view of an unvalidated raw stage, or undefined if not an object. */
-function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-/** Order-insensitive deep-equal for the small screens map / entry (JSON-shaped). */
-function jsonEqual(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
-  if (Array.isArray(a) || Array.isArray(b)) {
-    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
-    return a.every((v, i) => jsonEqual(v, b[i]));
-  }
-  const ao = a as Record<string, unknown>;
-  const bo = b as Record<string, unknown>;
-  const ak = Object.keys(ao);
-  if (ak.length !== Object.keys(bo).length) return false;
-  return ak.every((k) => Object.prototype.hasOwnProperty.call(bo, k) && jsonEqual(ao[k], bo[k]));
-}
-
-/**
- * True iff `validateTree` changed the tree in a way the fail-safe LIVE renderer
- * does NOT reproduce — the only differences that make a live tab (which applied
- * the RAW ops) drift from the stored sanitized tree. The renderer already
- * reproduces style defaults, `onPress` kind-stamping, and dangling/duplicate/
- * cyclic/too-deep child pruning identically, so a plain structural deep-equal
- * would false-positive on those on nearly every turn (a full-tree corrective
- * frame per edit). We compare ONLY the three transforms it does NOT reproduce:
- *   1. root fallback / a non-tree raw stage (validated root differs);
- *   2. a dropped or changed screens|entry (a non-box or dangling screen target);
- *   3. a cross-parent shared child collapsed to a single parent — detected on
- *      the RAW tree PER WALK ROOT (root + each screen root), so a node
- *      legitimately shared ACROSS screens (a common header/footer, which
- *      validateTree keeps) is NOT flagged, only a same-walk collapse is.
- */
-function renderDiverged(raw: FacetTree, validated: FacetTree): boolean {
-  const rawObj = asRecord(raw);
-  // A non-object raw stage (e.g. `replace "" value:null`) can never match the
-  // always-valid validated tree — its root differs from the fallback root.
-  if (rawObj?.["root"] !== validated.root) return true;
-  if (!jsonEqual(rawObj["screens"], validated.screens)) return true;
-  if (!jsonEqual(rawObj["entry"], validated.entry)) return true;
-  const roots = [validated.root, ...(validated.screens ? Object.values(validated.screens) : [])];
-  return collapsedSharedChild(rawObj, roots);
-}
-
-/**
- * Mirrors `validateTree`'s shared-child collapse (`breakCycles`): DFS from each
- * walk root over the RAW nodes, resetting `claimed` per root. A child reached
- * twice WITHIN one walk is the collapse the renderer does not reproduce (it
- * would draw the subtree under both parents). Cyclic, dangling, and too-deep
- * children are skipped exactly as validateTree/the renderer skip them, so they
- * are never counted as a divergence.
- */
-function collapsedSharedChild(rawObj: Record<string, unknown>, roots: readonly string[]): boolean {
-  const nodes = asRecord(rawObj["nodes"]);
-  if (nodes === undefined) return false;
-  const childrenOf = (id: string): readonly string[] => {
-    const node = asRecord(nodes[id]);
-    if (node === undefined || node["type"] !== "box") return [];
-    const children = node["children"];
-    if (!Array.isArray(children)) return [];
-    // Dedupe siblings within ONE parent (first occurrence wins), mirroring
-    // pruneDanglingChildren — a duplicate under the SAME parent is a dedup the
-    // renderer reproduces, NOT a cross-parent shared child.
-    const seen = new Set<string>();
-    const kept: string[] = [];
-    for (const c of children) {
-      if (typeof c !== "string" || seen.has(c)) continue;
-      seen.add(c);
-      kept.push(c);
-    }
-    return kept;
-  };
-  for (const root of roots) {
-    const claimed = new Set<string>();
-    const inPath = new Set<string>();
-    // Recursive DFS keeps the cycle/claim/depth semantics identical to
-    // validateTree's breakCycles, so this flags exactly what it collapses.
-    const visit = (id: string, depth: number): boolean => {
-      inPath.add(id);
-      for (const child of childrenOf(id)) {
-        if (inPath.has(child)) continue; // cyclic — reproduced by the renderer
-        if (depth >= MAX_DEPTH) continue; // too deep — reproduced by the renderer
-        if (nodes[child] === undefined) continue; // dangling — reproduced
-        if (claimed.has(child)) return true; // shared within this walk — NOT reproduced
-        claimed.add(child);
-        if (visit(child, depth + 1)) return true;
-      }
-      inPath.delete(id);
-      return false;
-    };
-    if (visit(root, 0)) return true;
-  }
-  return false;
 }

@@ -5,6 +5,7 @@ export * from "./theme.js";
 export * from "./patch.js";
 export * from "./protocol.js";
 export * from "./validate.js";
+export * from "./stage-fold.js";
 export * from "./serial-queue.js";
 export * from "./semaphore.js";
 export * from "./lru-map.js";

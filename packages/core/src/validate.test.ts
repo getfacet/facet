@@ -3,6 +3,8 @@ import {
   isPrimitiveRecord,
   isSafeImageSrc,
   MAX_DEPTH,
+  MAX_RENDER_NODES,
+  MAX_SCREENS,
   sanitizeActionPayload,
   validateStamp,
   validateTree,
@@ -410,6 +412,156 @@ describe("validateStamp caps (name + description)", () => {
 describe("MAX_DEPTH export", () => {
   it("is exported as the single source of truth with value 100", () => {
     expect(MAX_DEPTH).toBe(100);
+  });
+});
+
+describe("validateTree screens prototype-key safety", () => {
+  const base = {
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", children: [] },
+      home: { id: "home", type: "box", children: [] },
+    },
+    screens: { home: "home" },
+  };
+
+  it("falls back an entry naming an Object.prototype member to the first kept screen", () => {
+    for (const bad of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+      const { tree, issues } = validateTree({ ...base, entry: bad });
+      expect(tree.entry).toBe("home"); // fell back, did not ship the prototype-member entry
+      expect(issues.some((issue) => issue.includes("entry"))).toBe(true);
+    }
+  });
+
+  it("drops a screen keyed __proto__ (JSON own-key) with exactly one issue and no pollution", () => {
+    const input = JSON.parse(
+      '{"root":"root","nodes":{"root":{"id":"root","type":"box","children":[]}},"screens":{"__proto__":"root"},"entry":"__proto__"}',
+    ) as unknown;
+    const { tree, issues } = validateTree(input);
+    expect(tree.screens).toBeUndefined(); // the only screen was forbidden → none kept
+    expect(issues.filter((i) => i.includes("forbidden screen name"))).toHaveLength(1);
+    // No prototype pollution: a fresh object did not gain a polluted key.
+    expect(({} as Record<string, unknown>)["root"]).toBeUndefined();
+  });
+
+  it("keeps valid screens alongside a dropped forbidden-named one", () => {
+    const input = JSON.parse(
+      '{"root":"root","nodes":{"root":{"id":"root","type":"box","children":[]},"home":{"id":"home","type":"box","children":[]}},"screens":{"home":"home","__proto__":"root"},"entry":"home"}',
+    ) as unknown;
+    const { tree, issues } = validateTree(input);
+    expect(tree.screens).toEqual({ home: "home" });
+    expect(tree.entry).toBe("home");
+    expect(issues.some((i) => i.includes("forbidden screen name"))).toBe(true);
+  });
+});
+
+describe("validateTree screens count cap (MAX_SCREENS)", () => {
+  it("caps kept screens beyond MAX_SCREENS with an issue", () => {
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const screens: Record<string, string> = {};
+    for (let i = 0; i < MAX_SCREENS + 25; i += 1) screens[`s${String(i)}`] = "root";
+    const { tree, issues } = validateTree({ root: "root", nodes, screens, entry: "s0" });
+    expect(Object.keys(tree.screens ?? {})).toHaveLength(MAX_SCREENS);
+    expect(issues.some((i) => i.includes("cap"))).toBe(true);
+  });
+
+  it("duplicate screen targets do not multiply the breakCycles walk (same tree out)", () => {
+    // Two screen names targeting the SAME box must yield the same sanitized
+    // nodes as one — the walk roots are deduped, so the shared box is walked once.
+    const nodesFor = (screens: Record<string, string>): Record<string, unknown> =>
+      validateTree({
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: [] },
+          s: { id: "s", type: "box", children: ["a", "a"] }, // dup child collapses to ["a"]
+          a: { id: "a", type: "text", value: "x" },
+        },
+        screens,
+        entry: Object.keys(screens)[0],
+      }).tree.nodes;
+    expect(nodesFor({ one: "s", two: "s" })).toEqual(nodesFor({ one: "s" }));
+  });
+});
+
+describe("validateTree node-count cap (MAX_RENDER_NODES)", () => {
+  it("warns when a validated tree exceeds MAX_RENDER_NODES nodes", () => {
+    const children: string[] = [];
+    const nodes: Record<string, unknown> = {};
+    for (let i = 0; i <= MAX_RENDER_NODES; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      nodes[id] = { id, type: "text", value: "x" };
+    }
+    nodes["root"] = { id: "root", type: "box", children };
+    const { issues } = validateTree({ root: "root", nodes });
+    expect(Object.keys(nodes).length).toBeGreaterThan(MAX_RENDER_NODES);
+    expect(issues.some((i) => i.includes(String(MAX_RENDER_NODES)))).toBe(true);
+  });
+
+  it("does not warn for a tree at or under the cap", () => {
+    const { issues } = validateTree({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+    });
+    expect(issues.some((i) => i.includes("renderer will truncate"))).toBe(false);
+  });
+});
+
+describe("validate issue echo is bounded and never throws", () => {
+  const rootBox = { id: "root", type: "box", children: [] };
+
+  it("root-fallback issue never throws on a non-string / hostile root", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    const throwingToJSON = {
+      toJSON() {
+        throw new Error("nope");
+      },
+    };
+    for (const root of [cyclic, throwingToJSON, 42, null, "x".repeat(10_000_000)]) {
+      const run = (): unknown => validateTree({ root, nodes: { root: rootBox } });
+      expect(run).not.toThrow();
+      const { issues } = validateTree({ root, nodes: { root: rootBox } });
+      const joined = issues.join("\n");
+      expect(joined.includes("fell back to")).toBe(true);
+      expect(joined.length).toBeLessThan(300); // bounded, never a multi-MB echo
+    }
+  });
+
+  it("unknown onPress kind issue never throws and is bounded for any value", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    const pressBox = (kind: unknown): unknown => ({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", onPress: { kind }, children: [] } },
+    });
+    for (const kind of [cyclic, {}, [1, 2], 42, null, "x".repeat(10_000_000)]) {
+      const run = (): unknown => validateTree(pressBox(kind));
+      expect(run).not.toThrow();
+      const { tree, issues } = validateTree(pressBox(kind));
+      const root = tree.nodes["root"] as unknown as { onPress?: unknown };
+      expect(root.onPress).toBeUndefined(); // dropped → non-pressable box
+      expect(issues.some((i) => i.includes("unknown onPress kind"))).toBe(true);
+      expect(issues.join("\n").length).toBeLessThan(300);
+    }
+  });
+});
+
+describe("validateStamp description", () => {
+  it("drops a non-string description WITH an issue (mirrors validateTheme)", () => {
+    for (const bad of [123, {}, null, [1]]) {
+      const { stamp, issues } = validateStamp({
+        name: "hero",
+        description: bad,
+        root: "t",
+        nodes: { t: { id: "t", type: "text", value: "x" } },
+      });
+      expect(stamp).toBeDefined();
+      expect(stamp?.description).toBeUndefined();
+      expect(issues.some((i) => i.includes("description is not a string"))).toBe(true);
+    }
   });
 });
 

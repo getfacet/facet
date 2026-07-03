@@ -341,6 +341,40 @@ describe("StageRenderer toggle (jsdom)", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("keeps a hidden:true node keyed 'toString' hidden until toggled (no prototype-chain leak)", () => {
+    // "toString" passes validateTree (only __proto__/prototype/constructor are
+    // forbidden ids). A plain-object visibility store would read the inherited
+    // Object.prototype.toString as the override and render the hidden node
+    // VISIBLE; a Map never resolves through the prototype.
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["btn", "toString"] },
+          btn: {
+            id: "btn",
+            type: "box",
+            onPress: { kind: "toggle", target: "toString" },
+            children: ["bt"],
+          },
+          bt: { id: "bt", type: "text", value: "Toggle" },
+          // Cast: the literal key "toString" shadows Object.prototype.toString,
+          // so the Record value context doesn't flow to narrow `type` here.
+          toString: { id: "toString", type: "box", hidden: true, children: ["m"] } as FacetNode,
+          m: { id: "m", type: "text", value: "prototype-safe content" },
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("prototype-safe content")).toBeNull(); // hidden on first paint
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    expect(screen.getByText("prototype-safe content")).toBeTruthy(); // first toggle reveals it
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    expect(screen.queryByText("prototype-safe content")).toBeNull(); // and hides again
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it("toggle on an unknown target no-ops (no crash, no emission)", () => {
     const onAction = vi.fn();
     render(

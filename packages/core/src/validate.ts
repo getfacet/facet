@@ -25,7 +25,7 @@ import {
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
-import { BoundedIssues, printableKey, type IssueSink } from "./issues.js";
+import { BoundedIssues, printableKey, printableValue, type IssueSink } from "./issues.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -49,6 +49,25 @@ export interface ValidationResult {
  * recursion at the same bound, so validation and render never disagree.
  */
 export const MAX_DEPTH = 100;
+
+/**
+ * Max total nodes a validated tree may carry before it is flagged. Single source
+ * of truth: the @facet/react renderer imports this to size its per-pass render
+ * budget, so the validator's acceptance and the renderer's budget agree — a tree
+ * the validator declares clean can't then render permanently truncated with no
+ * diagnostic. validateTree does NOT drop nodes past the cap (a patch stream
+ * accumulates them legitimately); it warns so an operator sees the tree crossed
+ * the size the renderer will truncate at.
+ */
+export const MAX_RENDER_NODES = 5000;
+
+/**
+ * Max named screens kept per tree. Beyond this, extra screens are dropped with
+ * an issue: each kept screen is a fresh walk root for `breakCycles`, so an
+ * unbounded screens count would make validateTree O(screens × nodes) — a cheap
+ * CPU-exhaustion input on the synchronous per-visitor save path.
+ */
+export const MAX_SCREENS = 100;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -152,10 +171,12 @@ function asAction(value: unknown, nodeId: string, issues: IssueSink): FacetActio
     }
     return { kind: "toggle", target };
   }
-  // `kind` is untrusted: echo a string kind through the same key cap, and only
-  // JSON.stringify a non-string (bounded shapes — number/boolean/null).
-  const printableKind = typeof kind === "string" ? `"${printableKey(kind)}"` : JSON.stringify(kind);
-  issues.push(`node "${node}": unknown onPress kind ${printableKind} dropped`);
+  // `kind` is untrusted (any property of an isObject-checked onPress): a string
+  // goes through the key cap, primitives echo verbatim, and everything else
+  // becomes a constant placeholder — NEVER JSON.stringify an arbitrary untrusted
+  // value into an issue string (a cyclic object/BigInt would throw, breaching
+  // the never-throws boundary; a huge value would flood the operator log).
+  issues.push(`node "${node}": unknown onPress kind ${printableValue(kind)} dropped`);
   return undefined;
 }
 
@@ -330,9 +351,25 @@ function sanitizeScreens(
     issues.push("screens is not an object map; dropped");
     return {};
   }
-  const kept: Record<string, string> = {};
+  // Null-prototype accumulator, matching sanitizeNodeMap: with a plain literal a
+  // screen keyed "__proto__" would hit the inherited setter (silent no-op) and
+  // an `entry` naming an Object.prototype member ("constructor"/"toString") would
+  // resolve through the chain and ship an entry that names no kept screen.
+  const kept: Record<string, string> = Object.create(null) as Record<string, string>;
+  let keptCount = 0;
+  let capped = false;
   for (const [name, target] of Object.entries(rawScreens)) {
     const screen = printableKey(name);
+    // Forbidden screen names dropped WITH an issue (mirrors sanitizeNodeMap's
+    // forbidden-id policy) rather than silently mutating the accumulator.
+    if (name === "__proto__" || name === "prototype" || name === "constructor") {
+      issues.push(`screen "${screen}": forbidden screen name dropped`);
+      continue;
+    }
+    if (keptCount >= MAX_SCREENS) {
+      capped = true;
+      break;
+    }
     if (typeof target !== "string") {
       issues.push(`screen "${screen}": target is not a node id string; dropped`);
       continue;
@@ -347,6 +384,10 @@ function sanitizeScreens(
       continue;
     }
     kept[name] = target;
+    keptCount += 1;
+  }
+  if (capped) {
+    issues.push(`screens exceeded the ${MAX_SCREENS}-screen cap; extra screens dropped`);
   }
   const firstKey = Object.keys(kept)[0];
   if (firstKey === undefined) return {};
@@ -513,9 +554,12 @@ export function validateTree(input: unknown): ValidationResult {
   // it as an issue instead of falling back silently — the runtime logs it and
   // converges live tabs on this recovered root.
   if (!explicitRoot && rootId === "root" && input.root !== undefined) {
-    const wanted =
-      typeof input.root === "string" ? printableKey(input.root) : JSON.stringify(input.root);
-    issues.push(`root "${wanted}" not found; fell back to "root"`);
+    // `input.root` is untrusted: a bounded, never-throwing echo — a cyclic object
+    // or BigInt handed in via the public API would make JSON.stringify throw
+    // (breaching the never-throws boundary), and a huge value would flood the
+    // runtime's save-time console.error. printableValue quotes a capped string
+    // and collapses anything else to a constant placeholder.
+    issues.push(`root ${printableValue(input.root)} not found; fell back to "root"`);
   }
 
   const rootNode = rootId === undefined ? undefined : nodes[rootId];
@@ -530,7 +574,19 @@ export function validateTree(input: unknown): ValidationResult {
 
   const { screens, entry } = sanitizeScreens(input.screens, input.entry, nodes, issues);
 
-  breakCycles(nodes, [rootId, ...(screens !== undefined ? Object.values(screens) : [])], issues);
+  // Dedupe the walk roots: several screens may target the SAME box, and a screen
+  // may target the tree root — breakCycles resets its claim set per root, so
+  // rewalking a repeated root is redundant work (its subtree is already pruned).
+  const walkRoots = Array.from(
+    new Set([rootId, ...(screens !== undefined ? Object.values(screens) : [])]),
+  );
+  breakCycles(nodes, walkRoots, issues);
+
+  // The renderer truncates a pass at MAX_RENDER_NODES nodes; surface when a
+  // validated (clean) tree crosses that size so a truncated render isn't silent.
+  if (Object.keys(nodes).length > MAX_RENDER_NODES) {
+    issues.push(`tree exceeds ${MAX_RENDER_NODES} nodes; the renderer will truncate the excess`);
+  }
 
   const tree: {
     root: string;
@@ -627,15 +683,19 @@ export function validateStamp(input: unknown): StampValidationResult {
     root: string;
     nodes: Record<string, FacetNode>;
   } = { name, root: rootId, nodes };
-  const description = asString(input.description);
-  if (description !== undefined) {
-    // Truncate at the shared 200-char cap (mirrors validateTheme) so a giant
-    // description can't blow the prompt/context budget it is injected into.
-    if (description.length > MAX_DESCRIPTION_LENGTH) {
-      stamp.description = description.slice(0, MAX_DESCRIPTION_LENGTH);
+  if (input.description !== undefined) {
+    if (typeof input.description !== "string") {
+      // A non-string description is dropped WITH an issue, mirroring
+      // validateTheme — the operator authoring the stamp sees the field was
+      // ignored instead of a silent success that did nothing.
+      issues.push("stamp description is not a string; ignored");
+    } else if (input.description.length > MAX_DESCRIPTION_LENGTH) {
+      // Truncate at the shared 200-char cap (mirrors validateTheme) so a giant
+      // description can't blow the prompt/context budget it is injected into.
+      stamp.description = input.description.slice(0, MAX_DESCRIPTION_LENGTH);
       issues.push(`stamp description truncated to ${MAX_DESCRIPTION_LENGTH} characters`);
     } else {
-      stamp.description = description;
+      stamp.description = input.description;
     }
   }
   return { stamp, issues: issues.list };

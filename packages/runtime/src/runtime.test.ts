@@ -1,12 +1,29 @@
 import { describe, expect, it } from "vitest";
 import type { ClientEvent, FacetAgent, FacetTree, ServerMessage } from "@facet/core";
-import { applyPatch, EMPTY_TREE } from "@facet/core";
+import { EMPTY_TREE, foldPatchIntoStage } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
 import { MemoryStageStore } from "./stage-store.js";
 import { withInitialStage } from "./assets.js";
 import type { Sink, StoredEvent } from "./sink.js";
 
 const visitor = { visitorId: "v" };
+
+/**
+ * Replays the DELIVERED server frames the way a browser client does: each patch
+ * frame folded with the SAME shared `foldPatchIntoStage`, starting from the
+ * client's initial tree. The redesign's invariant is that this equals the
+ * server's stored stage with no corrective frame ever appended.
+ */
+const clientFold = (
+  messages: readonly ServerMessage[],
+  base: FacetTree = EMPTY_TREE,
+): FacetTree => {
+  let tree = base;
+  for (const m of messages) {
+    if (m.kind === "patch") tree = foldPatchIntoStage(tree, m.patches).tree;
+  }
+  return tree;
+};
 const agentOf =
   (...messages: ServerMessage[]): FacetAgent =>
   () =>
@@ -63,22 +80,20 @@ describe("FacetRuntime.handle", () => {
     expect(await rt.stageFor("v")).toBeDefined(); // stage survived
   });
 
-  it("sanitizes a bad root replace (render null) and converges live tabs with a corrective frame", async () => {
-    const rt = new FacetRuntime({
-      agentId: "a",
-      agent: agentOf({ kind: "patch", patches: [{ op: "replace", path: "", value: null }] }),
-    });
+  it("sanitizes a bad root replace (render null); the client fold converges with NO corrective frame", async () => {
+    const nullReplace: ServerMessage = {
+      kind: "patch",
+      patches: [{ op: "replace", path: "", value: null }],
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(nullReplace) });
     const out = await rt.handle(visitor, { kind: "message", text: "hi" });
     const stage = await rt.stageFor("v");
     expect(stage?.nodes["root"]).toBeDefined(); // validateTree restored a valid tree, not null
-    // The raw `replace "" null` fanned out to live tabs, whose applyPatch keeps
-    // the OLD tree (isTreeShaped(null) is false), so the stored empty tree and
-    // the live tree diverge — a corrective root-replace must follow to converge.
-    const last = out.messages[out.messages.length - 1];
-    expect(last).toEqual({
-      kind: "patch",
-      patches: [{ op: "replace", path: "", value: stage }],
-    });
+    // No synthetic frame is appended — the delivered list is exactly the agent's.
+    expect(out.messages).toEqual([nullReplace]);
+    // The client folds the SAME `replace "" null` with foldPatchIntoStage and
+    // lands on the identical sanitized tree — no divergence to correct.
+    expect(clientFold(out.messages)).toEqual(stage);
   });
 
   it("persists sink records in event order with an async sink", async () => {
@@ -170,14 +185,11 @@ describe("FacetRuntime.handle", () => {
   });
 });
 
-describe("FacetRuntime save-time re-validation convergence", () => {
-  // A tree that parents one existing node id under TWO boxes in the same screen.
-  // Since round 5 validateTree keeps the child under the first parent and strips
-  // the second reference (shared-child collapse) with an issue — so the STORED
-  // stage differs from the raw patch fanned out to live tabs, which render the
-  // section under both parents. The turn must append a corrective root-replace
-  // so every client converges on the sanitized stored tree instead of diverging
-  // until reload.
+describe("FacetRuntime stored-vs-client convergence (shared fold, no corrective frame)", () => {
+  // Each case is a former divergence trigger. The runtime now folds patches with
+  // the SAME shared foldPatchIntoStage the client runs, so the stored stage
+  // ALWAYS equals the client's fold of the delivered frames — and NO synthetic
+  // corrective frame is ever appended (the delivered list is exactly the agent's).
   const sharedChildTree = {
     root: "root",
     nodes: {
@@ -187,39 +199,26 @@ describe("FacetRuntime save-time re-validation convergence", () => {
       shared: { id: "shared", type: "text" as const, value: "hi" },
     },
   };
-  const sharedChildPatch: ServerMessage = {
+  const replaceWith = (value: unknown): ServerMessage => ({
     kind: "patch",
-    patches: [{ op: "replace", path: "", value: sharedChildTree }],
-  };
-
-  it("appends a corrective root-replace equal to the stored stage and clients converge to it", async () => {
-    const rt = new FacetRuntime({
-      agentId: "a",
-      agent: agentOf(sharedChildPatch, { kind: "say", text: "done" }),
-    });
-    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
-    const stored = await rt.stageFor("v");
-    // The stored stage lost the second reference to the shared child.
-    const b2 = stored?.nodes["b2"] as { children: string[] } | undefined;
-    expect(b2?.children).toEqual([]);
-    // The DELIVERED list ends with a corrective root-replace whose value
-    // deep-equals the stored stage.
-    const last = out.messages[out.messages.length - 1];
-    expect(last?.kind).toBe("patch");
-    expect(last).toEqual({
-      kind: "patch",
-      patches: [{ op: "replace", path: "", value: stored }],
-    });
-    // Folding the FULL delivered list over EMPTY_TREE (the client's starting
-    // point) converges to the stored stage — no stored-vs-live divergence.
-    let tree: FacetTree = EMPTY_TREE;
-    for (const m of out.messages) {
-      if (m.kind === "patch") tree = applyPatch(tree, m.patches);
-    }
-    expect(tree).toEqual(stored);
+    patches: [{ op: "replace", path: "", value }],
   });
 
-  it("does not record the corrective frame into the sink", async () => {
+  it("cross-parent shared child collapses; delivered frames are the agent's own and the client fold matches", async () => {
+    const patch = replaceWith(sharedChildTree);
+    const say: ServerMessage = { kind: "say", text: "done" };
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(patch, say) });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    const stored = await rt.stageFor("v");
+    // Stored stage lost the second reference to the shared child.
+    expect((stored?.nodes["b2"] as { children: string[] } | undefined)?.children).toEqual([]);
+    // No corrective frame: delivered list is byte-identical to the agent's messages.
+    expect(out.messages).toEqual([patch, say]);
+    // Client fold of the delivered frames equals the stored stage.
+    expect(clientFold(out.messages)).toEqual(stored);
+  });
+
+  it("records only the agent's own messages (no synthetic frame reaches the sink)", async () => {
     const records: StoredEvent[] = [];
     const sink: Sink = {
       record: (_agentId: string, _visitorId: string, entry: StoredEvent): Promise<void> => {
@@ -228,37 +227,28 @@ describe("FacetRuntime save-time re-validation convergence", () => {
       },
       history: (): Promise<readonly StoredEvent[]> => Promise.resolve([]),
     };
-    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(sharedChildPatch), sink });
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(replaceWith(sharedChildTree)),
+      sink,
+    });
     await rt.handle(visitor, { kind: "message", text: "hi" });
-    await new Promise((resolve) => setTimeout(resolve, 20)); // let the record settle
+    await new Promise((resolve) => setTimeout(resolve, 20));
     expect(records).toHaveLength(1);
-    // Only the agent's own single patch is recorded — the corrective convergence
-    // frame is a delivery mechanism, never a turn reply (like the seed frame).
     expect(records[0]?.messages.filter((m) => m.kind === "patch")).toHaveLength(1);
   });
 
-  it("appends no corrective frame on a clean turn (byte-identical delivered messages)", async () => {
+  it("a clean turn delivers the agent's messages byte-identically", async () => {
     const say: ServerMessage = { kind: "say", text: "done" };
     const rt = new FacetRuntime({ agentId: "a", agent: agentOf(renderPatch, say) });
     const out = await rt.handle(visitor, { kind: "message", text: "hi" });
     expect(out.messages).toEqual([renderPatch, say]);
+    expect(clientFold(out.messages)).toEqual(await rt.stageFor("v"));
   });
-});
-
-describe("FacetRuntime principled divergence rule", () => {
-  const lastPatch = (out: { messages: readonly ServerMessage[] }): ServerMessage | undefined =>
-    out.messages[out.messages.length - 1];
-  const isCorrective = (m: ServerMessage | undefined, stored: FacetTree | undefined): boolean =>
-    m?.kind === "patch" &&
-    m.patches.length === 1 &&
-    m.patches[0]?.op === "replace" &&
-    m.patches[0]?.path === "" &&
-    JSON.stringify((m.patches[0] as { value: unknown }).value) === JSON.stringify(stored);
 
   // A header node legitimately parented under TWO SCREEN roots — validateTree
-  // KEEPS this (claimed resets per walk root), so the STORED tree already
-  // contains a globally-shared child. The old hasSharedChild heuristic (one flat
-  // parent map) flagged this on EVERY turn forever; the principled rule must not.
+  // KEEPS this (claimed resets per walk root). The client fold reproduces it
+  // exactly, so no correction is needed and none is sent.
   const crossScreenTree: FacetTree = {
     root: "root",
     nodes: {
@@ -273,39 +263,20 @@ describe("FacetRuntime principled divergence rule", () => {
     entry: "home",
   };
 
-  it("(a) rendering a cross-screen shared node yields NO corrective frame", async () => {
-    const rt = new FacetRuntime({
-      agentId: "a",
-      agent: agentOf({
-        kind: "patch",
-        patches: [{ op: "replace", path: "", value: crossScreenTree }],
-      }),
-    });
+  it("cross-screen shared node: client fold keeps it under both screens, matching stored", async () => {
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(replaceWith(crossScreenTree)) });
     const out = await rt.handle(visitor, { kind: "message", text: "build" });
     const stored = await rt.stageFor("v");
-    // validateTree kept the header under BOTH screen roots (cross-walk sharing).
     expect((stored?.nodes["home"] as unknown as { children: string[] }).children).toContain(
       "header",
     );
     expect((stored?.nodes["about"] as unknown as { children: string[] }).children).toContain(
       "header",
     );
-    // No corrective frame: the live render reproduces this stored tree exactly.
-    expect(isCorrective(lastPatch(out), stored)).toBe(false);
+    expect(clientFold(out.messages)).toEqual(stored);
   });
 
-  it("(a') a say-only turn over a stored cross-screen shared node adds NO corrective frame (no permanent false positive)", async () => {
-    const rt = new FacetRuntime({
-      agentId: "a",
-      agent: agentOf({ kind: "say", text: "hi" }),
-      stageStore: withInitialStage(new MemoryStageStore(), crossScreenTree),
-    });
-    const out = await rt.handle(visitor, { kind: "message", text: "ping" });
-    const stored = await rt.stageFor("v");
-    expect(isCorrective(lastPatch(out), stored)).toBe(false);
-  });
-
-  it("(b) a patch pointing a screen at a TEXT node yields a corrective frame carrying the sanitized tree", async () => {
+  it("a patch pointing a screen at a TEXT node: screen dropped, client fold matches", async () => {
     const tree = {
       root: "root",
       nodes: {
@@ -315,18 +286,14 @@ describe("FacetRuntime principled divergence rule", () => {
       screens: { promo: "txt" },
       entry: "promo",
     };
-    const rt = new FacetRuntime({
-      agentId: "a",
-      agent: agentOf({ kind: "patch", patches: [{ op: "replace", path: "", value: tree }] }),
-    });
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(replaceWith(tree)) });
     const out = await rt.handle(visitor, { kind: "message", text: "hi" });
     const stored = await rt.stageFor("v");
-    // sanitizeScreens dropped the non-box target, so the stored tree has no screens.
     expect(stored?.screens).toBeUndefined();
-    expect(isCorrective(lastPatch(out), stored)).toBe(true);
+    expect(clientFold(out.messages)).toEqual(stored);
   });
 
-  it("(c) a replace /root to a dangling id (a 'root' node exists) yields a corrective frame", async () => {
+  it("a replace /root to a dangling id (a 'root' node exists): client fold matches across both turns", async () => {
     const rt = new FacetRuntime({
       agentId: "a",
       agent: (event) =>
@@ -336,15 +303,15 @@ describe("FacetRuntime principled divergence rule", () => {
             : [{ kind: "patch", patches: [{ op: "replace", path: "/root", value: "ghost" }] }],
         ),
     });
-    await rt.handle(visitor, { kind: "message", text: "build" }); // stores validTree (root exists)
+    const build = await rt.handle(visitor, { kind: "message", text: "build" });
     const out = await rt.handle(visitor, { kind: "message", text: "break" });
     const stored = await rt.stageFor("v");
-    // validateTree fell the dangling root back to the node keyed "root".
-    expect(stored?.root).toBe("root");
-    expect(isCorrective(lastPatch(out), stored)).toBe(true);
+    expect(stored?.root).toBe("root"); // fell back to the node keyed "root"
+    // Fold BOTH turns' delivered frames, exactly as a client that saw both.
+    expect(clientFold([...build.messages, ...out.messages])).toEqual(stored);
   });
 
-  it("(d) a mixed batch (one throwing op + one good op) is salvaged, so a corrective frame follows and clients converge", async () => {
+  it("a mixed batch (one throwing op + one good op) is salvaged identically on both sides", async () => {
     const mixed: ServerMessage = {
       kind: "patch",
       patches: [
@@ -359,20 +326,10 @@ describe("FacetRuntime principled divergence rule", () => {
     const out = await rt.handle(visitor, { kind: "message", text: "hi" });
     const stored = await rt.stageFor("v");
     expect(stored?.nodes["good"]).toBeDefined(); // salvaged op reached the stored stage
-    expect(isCorrective(lastPatch(out), stored)).toBe(true);
-
-    // The client applies each delivered batch ATOMICALLY (useFacet) and drops a
-    // throwing batch whole — folding that way, the corrective frame converges it.
-    let tree: FacetTree = EMPTY_TREE;
-    for (const m of out.messages) {
-      if (m.kind !== "patch") continue;
-      try {
-        tree = applyPatch(tree, m.patches);
-      } catch {
-        // whole batch dropped, exactly like the browser client
-      }
-    }
-    expect(tree).toEqual(stored);
+    // No corrective frame; the client folds the SAME batch with per-op salvage
+    // (foldPatchIntoStage) and lands on the identical stored stage.
+    expect(out.messages).toEqual([mixed, { kind: "say", text: "ok" }]);
+    expect(clientFold(out.messages)).toEqual(stored);
   });
 });
 

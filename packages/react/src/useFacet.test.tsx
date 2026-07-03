@@ -53,24 +53,33 @@ describe("useFacet (jsdom)", () => {
     expect(result.current.chat).toEqual(["hello", "again"]);
   });
 
-  it("keeps the current tree when a malformed patch throws (client fail-safe)", () => {
+  it("salvages good ops in a mixed batch (per-op fold, matching the server)", () => {
     const t = fakeTransport();
     const { result } = renderHook(() => useFacet(t.transport));
     t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
-    // parent path doesn't exist → applyPatch throws → must be swallowed
+    // A batch where one op throws (missing parent) and one applies. The NEW
+    // contract folds per-op: the good op survives, the bad one is dropped — no
+    // whole-batch drop, no crash. This mirrors foldPatchIntoStage on the server.
     t.emit({
       kind: "patch",
-      patches: [{ op: "add", path: "/nodes/missing/children/-", value: "x" }],
+      patches: [
+        { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
+        { op: "add", path: "/nodes/missing/children/-", value: "x" }, // throws
+      ],
     });
-    expect(result.current.tree.nodes["root"]).toBeDefined(); // unchanged, no crash
+    expect(result.current.tree.nodes["good"]).toBeDefined(); // salvaged
+    expect(result.current.tree.nodes["root"]).toBeDefined(); // still valid
   });
 
-  it("ignores a root replace carrying a non-tree (keeps the current tree)", () => {
+  it("normalizes a root replace carrying a non-tree to the validated EMPTY_TREE", () => {
     const t = fakeTransport();
     const { result } = renderHook(() => useFacet(t.transport));
     t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
+    // `replace "" null` is exactly what the server folds too: applyPatch → null,
+    // validateTree(null) → EMPTY_TREE. The client lands on the SAME normalized
+    // tree (not the stale prior tree), so the two views cannot drift.
     t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: null }] });
-    expect(result.current.tree.nodes["root"]).toBeDefined(); // not null
+    expect(result.current.tree).toEqual(EMPTY_TREE);
   });
 
   it("clears chat on a reset message (reconnect), then re-accumulates", () => {
@@ -105,11 +114,12 @@ describe("useFacet (jsdom)", () => {
     expect(result.current.tree.root).toBe("seed");
     // The server is the only writer of stage content: a root-replace frame
     // carrying a DIFFERENT tree must overwrite the boot seed. A dead
-    // subscription, a rejected patch, or an isTreeShaped rejection would all
-    // leave root === "seed" and fail here.
+    // subscription or a rejected patch would leave root === "seed" and fail
+    // here. The tree is a valid box-root so the shared fold keeps it as-is
+    // (a non-box root would normalize to EMPTY_TREE — still an overwrite).
     const serverTree = {
       root: "server",
-      nodes: { server: { id: "server", type: "text" as const, value: "from server" } },
+      nodes: { server: { id: "server", type: "box" as const, children: [] } },
     };
     t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: serverTree }] });
     expect(result.current.tree.root).toBe("server");
