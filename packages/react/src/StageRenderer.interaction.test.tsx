@@ -218,6 +218,27 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("treats a screen whose target is a NON-box node as not live and falls back (matches sanitizeScreens)", () => {
+    // A raw-path patch can point a screen at a text node; sanitizeScreens drops
+    // such a target on the stored tree, so the live fail-safe must NOT render the
+    // text node as the whole screen — it falls back to the plain root instead.
+    const onAction = vi.fn();
+    const badScreen: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["rootText"] },
+        rootText: { id: "rootText", type: "text", value: "plain root content" },
+        txt: { id: "txt", type: "text", value: "text screen content" },
+      },
+      screens: { home: "txt" },
+      entry: "home",
+    };
+    render(<StageRenderer onAction={onAction} tree={badScreen} />);
+
+    expect(screen.getByText("plain root content")).toBeTruthy();
+    expect(screen.queryByText("text screen content")).toBeNull();
+  });
+
   it("falls back to the first live screen when the current screen AND entry are both dead", () => {
     const onAction = vi.fn();
     const { rerender } = render(<StageRenderer onAction={onAction} tree={screensTree()} />);

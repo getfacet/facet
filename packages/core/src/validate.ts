@@ -25,6 +25,7 @@ import {
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
+import { BoundedIssues, printableKey, type IssueSink } from "./issues.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -104,17 +105,18 @@ function asToken<T extends string>(value: unknown, allowed: readonly string[]): 
  * mistake). Malformed or unknown-kind actions are stripped with an issue, so
  * the box degrades to a plain non-pressable box.
  */
-function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction | undefined {
+function asAction(value: unknown, nodeId: string, issues: IssueSink): FacetAction | undefined {
+  const node = printableKey(nodeId);
   if (value === undefined) return undefined;
   if (!isObject(value)) {
-    issues.push(`node "${nodeId}": onPress is not an action object`);
+    issues.push(`node "${node}": onPress is not an action object`);
     return undefined;
   }
   const kind = value.kind;
   if (kind === undefined || kind === "agent") {
     const name = asString(value.name);
     if (name === undefined) {
-      issues.push(`node "${nodeId}": agent action has no string name`);
+      issues.push(`node "${node}": agent action has no string name`);
       return undefined;
     }
     const action: {
@@ -130,14 +132,14 @@ function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction
     if (typeof value.collect === "string") {
       action.collect = value.collect;
     } else if (value.collect !== undefined) {
-      issues.push(`node "${nodeId}": onPress collect is not a string; dropped`);
+      issues.push(`node "${node}": onPress collect is not a string; dropped`);
     }
     return action;
   }
   if (kind === "navigate") {
     const to = asString(value.to);
     if (to === undefined) {
-      issues.push(`node "${nodeId}": navigate action needs a string "to"`);
+      issues.push(`node "${node}": navigate action needs a string "to"`);
       return undefined;
     }
     return { kind: "navigate", to };
@@ -145,12 +147,15 @@ function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction
   if (kind === "toggle") {
     const target = asString(value.target);
     if (target === undefined) {
-      issues.push(`node "${nodeId}": toggle action needs a string "target"`);
+      issues.push(`node "${node}": toggle action needs a string "target"`);
       return undefined;
     }
     return { kind: "toggle", target };
   }
-  issues.push(`node "${nodeId}": unknown onPress kind ${JSON.stringify(kind)} dropped`);
+  // `kind` is untrusted: echo a string kind through the same key cap, and only
+  // JSON.stringify a non-string (bounded shapes — number/boolean/null).
+  const printableKind = typeof kind === "string" ? `"${printableKey(kind)}"` : JSON.stringify(kind);
+  issues.push(`node "${node}": unknown onPress kind ${printableKind} dropped`);
   return undefined;
 }
 
@@ -225,10 +230,11 @@ function fieldStyle(value: unknown): FieldStyle | undefined {
   return width !== undefined ? { width } : undefined;
 }
 
-function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | undefined {
+function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | undefined {
+  const key = printableKey(id);
   const type = isObject(raw) ? asString(raw.type) : undefined;
   if (!isObject(raw) || type === undefined) {
-    issues.push(`node "${id}": not an object with a type`);
+    issues.push(`node "${key}": not an object with a type`);
     return undefined;
   }
   switch (type) {
@@ -255,7 +261,7 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
     case "text": {
       const value = asString(raw.value);
       if (value === undefined) {
-        issues.push(`node "${id}": text has no string value`);
+        issues.push(`node "${key}": text has no string value`);
         return undefined;
       }
       return { id, type: "text", value, style: textStyle(raw.style) };
@@ -264,11 +270,11 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
       const src = asString(raw.src);
       const alt = asString(raw.alt);
       if (src === undefined || alt === undefined) {
-        issues.push(`node "${id}": image needs src and alt`);
+        issues.push(`node "${key}": image needs src and alt`);
         return undefined;
       }
       if (!isSafeImageSrc(src)) {
-        issues.push(`node "${id}": unsafe image src dropped`);
+        issues.push(`node "${key}": unsafe image src dropped`);
         return undefined;
       }
       return { id, type: "image", src, alt, style: imageStyle(raw.style) };
@@ -276,7 +282,7 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
     case "field": {
       const name = asString(raw.name);
       if (name === undefined) {
-        issues.push(`node "${id}": field has no name`);
+        issues.push(`node "${key}": field has no name`);
         return undefined;
       }
       const node: {
@@ -301,7 +307,7 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
       return node;
     }
     default:
-      issues.push(`node "${id}": unknown type "${type}"`);
+      issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
       return undefined;
   }
 }
@@ -317,7 +323,7 @@ function sanitizeScreens(
   rawScreens: unknown,
   rawEntry: unknown,
   nodes: Readonly<Record<string, FacetNode>>,
-  issues: string[],
+  issues: IssueSink,
 ): { screens?: Record<string, string>; entry?: string } {
   if (rawScreens === undefined) return {};
   if (!isObject(rawScreens)) {
@@ -326,17 +332,18 @@ function sanitizeScreens(
   }
   const kept: Record<string, string> = {};
   for (const [name, target] of Object.entries(rawScreens)) {
+    const screen = printableKey(name);
     if (typeof target !== "string") {
-      issues.push(`screen "${name}": target is not a node id string; dropped`);
+      issues.push(`screen "${screen}": target is not a node id string; dropped`);
       continue;
     }
     const node = nodes[target];
     if (node === undefined) {
-      issues.push(`screen "${name}": target "${target}" does not exist; dropped`);
+      issues.push(`screen "${screen}": target "${printableKey(target)}" does not exist; dropped`);
       continue;
     }
     if (node.type !== "box") {
-      issues.push(`screen "${name}": target "${target}" is not a box; dropped`);
+      issues.push(`screen "${screen}": target "${printableKey(target)}" is not a box; dropped`);
       continue;
     }
     kept[name] = target;
@@ -347,7 +354,7 @@ function sanitizeScreens(
   if (entry !== undefined && kept[entry] !== undefined) {
     return { screens: kept, entry };
   }
-  issues.push(`entry does not name a kept screen; falling back to "${firstKey}"`);
+  issues.push(`entry does not name a kept screen; falling back to "${printableKey(firstKey)}"`);
   return { screens: kept, entry: firstKey };
 }
 
@@ -363,12 +370,12 @@ function sanitizeScreens(
  */
 function sanitizeNodeMap(
   rawNodes: Record<string, unknown>,
-  issues: string[],
+  issues: IssueSink,
 ): Record<string, FacetNode> {
   const nodes: Record<string, FacetNode> = Object.create(null) as Record<string, FacetNode>;
   for (const [id, raw] of Object.entries(rawNodes)) {
     if (id === "__proto__" || id === "prototype" || id === "constructor") {
-      issues.push(`node "${id}": forbidden node id dropped`);
+      issues.push(`node "${printableKey(id)}": forbidden node id dropped`);
       continue;
     }
     const node = sanitizeNode(id, raw, issues);
@@ -385,7 +392,7 @@ function sanitizeNodeMap(
  * keep the first occurrence). A dup would otherwise render the same subtree
  * twice and make patch pointers to it ambiguous. Mutates `nodes` in place.
  */
-function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: string[]): void {
+function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: IssueSink): void {
   for (const node of Object.values(nodes)) {
     if (isContainer(node)) {
       const seen = new Set<string>();
@@ -397,14 +404,16 @@ function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: string[
           continue;
         }
         if (seen.has(child)) {
-          issues.push(`node "${node.id}": removed duplicate sibling child "${child}"`);
+          issues.push(
+            `node "${printableKey(node.id)}": removed duplicate sibling child "${printableKey(child)}"`,
+          );
           continue;
         }
         seen.add(child);
         kept.push(child);
       }
       if (dangling) {
-        issues.push(`node "${node.id}": removed dangling child references`);
+        issues.push(`node "${printableKey(node.id)}": removed dangling child references`);
       }
       if (kept.length !== node.children.length) {
         nodes[node.id] = { ...node, children: kept };
@@ -434,7 +443,7 @@ function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: string[
 function breakCycles(
   nodes: Record<string, FacetNode>,
   roots: readonly string[],
-  issues: string[],
+  issues: IssueSink,
 ): void {
   const inPath = new Set<string>();
   // Nodes kept under some parent during the CURRENT root's walk. Reset per root
@@ -450,16 +459,20 @@ function breakCycles(
     const kept: string[] = [];
     for (const child of node.children) {
       if (inPath.has(child)) {
-        issues.push(`node "${nodeId}": removed cyclic child "${child}"`);
+        issues.push(
+          `node "${printableKey(nodeId)}": removed cyclic child "${printableKey(child)}"`,
+        );
         continue;
       }
       if (depth >= MAX_DEPTH) {
-        issues.push(`node "${nodeId}": dropped child "${child}" beyond max depth`);
+        issues.push(
+          `node "${printableKey(nodeId)}": dropped child "${printableKey(child)}" beyond max depth`,
+        );
         continue;
       }
       if (claimed.has(child)) {
         issues.push(
-          `node "${nodeId}": removed shared child "${child}" (already kept under another parent)`,
+          `node "${printableKey(nodeId)}": removed shared child "${printableKey(child)}" (already kept under another parent)`,
         );
         continue;
       }
@@ -479,30 +492,40 @@ function breakCycles(
 }
 
 export function validateTree(input: unknown): ValidationResult {
-  const issues: string[] = [];
+  const issues = new BoundedIssues();
   if (!isObject(input) || !isObject(input.nodes)) {
     issues.push("input is not a tree object with a nodes map");
-    return { tree: EMPTY_TREE, issues };
+    return { tree: EMPTY_TREE, issues: issues.list };
   }
 
   const nodes = sanitizeNodeMap(input.nodes, issues);
   pruneDanglingChildren(nodes, issues);
 
-  const rootId =
-    typeof input.root === "string" && nodes[input.root] !== undefined
-      ? input.root
-      : nodes["root"] !== undefined
-        ? "root"
-        : undefined;
+  const explicitRoot = typeof input.root === "string" && nodes[input.root] !== undefined;
+  const rootId = explicitRoot
+    ? (input.root as string)
+    : nodes["root"] !== undefined
+      ? "root"
+      : undefined;
+  // A dangling/absent `input.root` that we salvaged by falling back to the node
+  // keyed "root" is a stored-vs-live divergence the fail-safe renderer does NOT
+  // reproduce (its isRenderableTree goes blank on the dangling id), so surface
+  // it as an issue instead of falling back silently — the runtime logs it and
+  // converges live tabs on this recovered root.
+  if (!explicitRoot && rootId === "root" && input.root !== undefined) {
+    const wanted =
+      typeof input.root === "string" ? printableKey(input.root) : JSON.stringify(input.root);
+    issues.push(`root "${wanted}" not found; fell back to "root"`);
+  }
 
   const rootNode = rootId === undefined ? undefined : nodes[rootId];
   if (rootId === undefined || rootNode === undefined) {
     issues.push("no valid root node");
-    return { tree: EMPTY_TREE, issues };
+    return { tree: EMPTY_TREE, issues: issues.list };
   }
   if (rootNode.type !== "box") {
     issues.push("root node must be a box");
-    return { tree: EMPTY_TREE, issues };
+    return { tree: EMPTY_TREE, issues: issues.list };
   }
 
   const { screens, entry } = sanitizeScreens(input.screens, input.entry, nodes, issues);
@@ -533,7 +556,7 @@ export function validateTree(input: unknown): ValidationResult {
     tree.screens = screens;
     tree.entry = entry;
   }
-  return { tree, issues };
+  return { tree, issues: issues.list };
 }
 
 /**
@@ -564,15 +587,15 @@ export interface StampValidationResult {
  * root ⇒ `stamp` undefined. Issues report everything that was fixed or refused.
  */
 export function validateStamp(input: unknown): StampValidationResult {
-  const issues: string[] = [];
+  const issues = new BoundedIssues();
   if (!isObject(input) || !isObject(input.nodes)) {
     issues.push("stamp is not an object with a nodes map");
-    return { issues };
+    return { issues: issues.list };
   }
   const name = asString(input.name);
   if (name === undefined || name.trim() === "") {
     issues.push("stamp has no string name");
-    return { issues };
+    return { issues: issues.list };
   }
   // Cap the name with the same rule a theme document's name uses (a short,
   // filename-safe identifier), so an unbounded or control-character name can't
@@ -583,7 +606,7 @@ export function validateStamp(input: unknown): StampValidationResult {
     // the cap and inject into the prompt/issue/log strings it flows into (matches
     // validateTheme's constant "name is missing or malformed" posture).
     issues.push("stamp name is missing or malformed (letters/digits/_/-, max 64); refused");
-    return { issues };
+    return { issues: issues.list };
   }
 
   const nodes = sanitizeNodeMap(input.nodes, issues);
@@ -593,7 +616,7 @@ export function validateStamp(input: unknown): StampValidationResult {
     typeof input.root === "string" && nodes[input.root] !== undefined ? input.root : undefined;
   if (rootId === undefined) {
     issues.push("stamp has no valid root node");
-    return { issues };
+    return { issues: issues.list };
   }
 
   breakCycles(nodes, [rootId], issues);
@@ -615,5 +638,5 @@ export function validateStamp(input: unknown): StampValidationResult {
       stamp.description = description;
     }
   }
-  return { stamp, issues };
+  return { stamp, issues: issues.list };
 }

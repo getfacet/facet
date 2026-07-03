@@ -26,6 +26,13 @@ import {
   type Ratio,
   type Space,
 } from "./tokens.js";
+import {
+  isControlChar,
+  MAX_ISSUES,
+  MAX_VALUE_LENGTH,
+  printableKey,
+  ISSUES_SUPPRESSED,
+} from "./issues.js";
 
 /** A partial override document over the default theme. Every group is optional. */
 export interface FacetTheme {
@@ -85,46 +92,37 @@ const KNOWN_KEYS = new Set([
 /** Substrings that make a CSS value dangerous regardless of context. */
 const DANGEROUS_SUBSTRINGS = ["url(", "var(", "expression(", "javascript:"];
 
-const MAX_VALUE_LENGTH = 64;
 /** Shared cap for a document's one-line `description` (a theme's and a stamp's). */
 export const MAX_DESCRIPTION_LENGTH = 200;
 
-/** Cap on issues collected per document — a junk-key group cannot balloon the list. */
-const MAX_THEME_ISSUES = 64;
-
 /**
- * A document/group KEY safe to interpolate into an issue string. `unsafeValue`
- * caps VALUES, but keys are echoed pre-cap: an untrusted theme file's key can be
- * megabytes long or carry ANSI/control sequences that inject into operator logs.
- * Mirror the value posture — cap length, reject control chars — before echoing.
- */
-function printableKey(key: string): string {
-  if (key.length > MAX_VALUE_LENGTH) return "<key too long>";
-  for (let i = 0; i < key.length; i++) {
-    const code = key.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return "<unprintable key>";
-  }
-  return key;
-}
-
-/**
- * A bounded issue collector. Once `MAX_THEME_ISSUES` real entries are recorded,
- * further pushes are dropped after a single "...further issues suppressed" tail
- * entry — so a 100k-junk-key group cannot balloon the issues list (each junk key
- * would otherwise emit one issue object). `.list` is the plain array to return.
+ * A bounded issue collector. Once `MAX_ISSUES` real entries are recorded,
+ * further pushes are dropped after a single `ISSUES_SUPPRESSED` tail entry — so
+ * a 100k-junk-key group cannot balloon the issues list (each junk key would
+ * otherwise emit one issue object). `everError` is tracked BEFORE the cap check
+ * so the whole-document-refusal decision (`hasError`) never misses an error
+ * issue that the cap suppressed — a document with 64 warnings THEN an error must
+ * still be refused (theme.ts contract "Present iff no error issue was raised").
+ * `.list` is the plain array to return.
  */
 class IssueList {
   private readonly items: ThemeIssue[] = [];
   private suppressed = false;
+  private everError = false;
   push(issue: ThemeIssue): void {
-    if (this.items.length >= MAX_THEME_ISSUES) {
+    if (issue.severity === "error") this.everError = true;
+    if (this.items.length >= MAX_ISSUES) {
       if (!this.suppressed) {
-        this.items.push({ severity: "warning", message: "...further issues suppressed" });
+        this.items.push({ severity: "warning", message: ISSUES_SUPPRESSED });
         this.suppressed = true;
       }
       return;
     }
     this.items.push(issue);
+  }
+  /** True iff any `error` issue was raised — even one dropped past the cap. */
+  get hasError(): boolean {
+    return this.everError;
   }
   get list(): ThemeIssue[] {
     return this.items;
@@ -185,8 +183,7 @@ function nullMap<V>(): Record<string, V> {
 function unsafeValue(value: string): string | undefined {
   if (value.length > MAX_VALUE_LENGTH) return `value exceeds ${MAX_VALUE_LENGTH} characters`;
   for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    if (code < 0x20 || code === 0x7f) return "value contains a control character";
+    if (isControlChar(value.charCodeAt(i))) return "value contains a control character";
   }
   if (/[;{}<>\\`]/.test(value)) return "value contains a disallowed character";
   const collapsed = value.replace(/\s+/g, "").toLowerCase();
@@ -498,7 +495,10 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     }
   }
 
-  if (issues.list.some((issue) => issue.severity === "error")) return { issues: issues.list };
+  // Gate on `hasError` (tracked before the cap) — NOT a scan of the retained
+  // list, which the issue cap can trim an error out of. A document with ≥64
+  // warnings before an error-bearing value must still be refused wholesale.
+  if (issues.hasError) return { issues: issues.list };
   return { theme: theme as FacetTheme, issues: issues.list };
 }
 

@@ -251,4 +251,36 @@ describe("validateTheme", () => {
     expect(t.ratio!.wide).toBe("16 / 9");
     expect(hasError(issues)).toBe(false);
   });
+
+  it("still refuses a document whose error issue is raised AFTER the issue cap fills", () => {
+    // 70 junk keys (each a warning) exceed MAX_ISSUES, so the error issue from
+    // the bad `fg` value is dropped from the retained list — but the refusal must
+    // still fire (tracked by `everError`, not a scan of the capped list).
+    const color: Record<string, unknown> = {};
+    for (let i = 0; i < 70; i++) color[`junk${String(i)}`] = "#fff";
+    color["fg"] = "url(javascript:alert(1))"; // dangerous value → error
+    const result = validateTheme({ name: "x", color });
+    expect(result.theme).toBeUndefined();
+    // The error may not even appear in the retained list — the point is refusal.
+    expect(result.issues.length).toBeLessThanOrEqual(65);
+
+    // Control document: the same error value with NO junk keys is refused too.
+    const control = validateTheme({ name: "x", color: { fg: "url(javascript:alert(1))" } });
+    expect(control.theme).toBeUndefined();
+    expect(hasError(control.issues)).toBe(true);
+  });
+
+  it("treats a C1 control char (single-byte CSI U+009B) in a key as unprintable, in a value as unsafe", () => {
+    const csiKey = "\u009b31mEVIL"; // U+009B single-byte CSI introducer
+    const keyDoc = validateTheme({ name: "x", color: { [csiKey]: "#fff" } });
+    expect(keyDoc.issues.some((i) => i.message.includes("<unprintable key>"))).toBe(true);
+    // The raw C1 byte never reaches the operator-facing issue string.
+    expect(keyDoc.issues.some((i) => i.message.includes(csiKey))).toBe(false);
+
+    // A value carrying a C1 control char (U+0085 NEL) is refused as an error.
+    const valueDoc = validateTheme({ name: "x", color: { fg: "#fff\u0085f" } });
+    expect(valueDoc.theme).toBeUndefined();
+    expect(hasError(valueDoc.issues)).toBe(true);
+    expect(valueDoc.issues.some((i) => i.message.includes("control character"))).toBe(true);
+  });
 });

@@ -809,3 +809,48 @@ describe("isPrimitiveRecord", () => {
     expect(isPrimitiveRecord("x")).toBe(false);
   });
 });
+
+describe("validateTree issue hardening (shared printableKey + bounded list)", () => {
+  it("caps the per-tree issues array so a junk node map cannot balloon it", () => {
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    // Each junk entry is not an object with a type → one issue apiece.
+    for (let i = 0; i < 1000; i++) nodes[`junk${String(i)}`] = { id: `junk${String(i)}` };
+    const { issues } = validateTree({ root: "root", nodes });
+    // 64 real issues + a single suppression tail entry.
+    expect(issues.length).toBeLessThanOrEqual(65);
+    expect(issues[issues.length - 1]).toContain("further issues suppressed");
+  });
+
+  it("never echoes an over-long or control/escape node id verbatim into an issue string", () => {
+    const bigId = "z".repeat(10_000_000);
+    const escId = "\x1b[31mEVIL"; // C0 ESC introducer
+    const c1Id = "\u009b31mEVIL"; // single-byte CSI (C1, 0x9b) - the widened guard must catch it
+    const { issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [] },
+        // "not an object with a type" interpolates the id through printableKey.
+        [bigId]: { id: bigId },
+        [escId]: { id: escId },
+        [c1Id]: { id: c1Id },
+      },
+    });
+    const joined = issues.join("\n");
+    expect(joined).toContain("<key too long>");
+    expect(joined).toContain("<unprintable key>");
+    expect(joined.includes(bigId)).toBe(false);
+    expect(joined.includes(escId)).toBe(false);
+    expect(joined.includes(c1Id)).toBe(false);
+  });
+
+  it("surfaces a dangling /root that fell back to the node keyed 'root' as an issue (not silent)", () => {
+    const { tree, issues } = validateTree({
+      root: "ghost",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+    });
+    expect(tree.root).toBe("root"); // salvaged
+    expect(issues.some((i) => i.includes("fell back to"))).toBe(true);
+  });
+});

@@ -45,7 +45,11 @@ function isRenderableTree(tree: FacetTree): boolean {
 /**
  * Resolves `name` to a screen's live root node id, or null. Defensive against
  * raw-path junk: `screens` may not be an object, its values may not be strings,
- * and a value may name a node that no longer exists.
+ * and a value may name a node that no longer exists. The target must resolve to
+ * a BOX — a screen root is rendered as a root, and `sanitizeScreens` drops a
+ * non-box target on the stored tree, so the live fail-safe must match it (else a
+ * raw-path patch pointing a screen at a text node would render that text as the
+ * whole screen before the corrective frame arrives).
  */
 function liveScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
   const screens: unknown = tree.screens;
@@ -56,7 +60,11 @@ function liveScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
     return null;
   }
   const rootId: unknown = (screens as Record<string, unknown>)[name];
-  return typeof rootId === "string" && tree.nodes[rootId] != null ? rootId : null;
+  if (typeof rootId !== "string") {
+    return null;
+  }
+  const node = tree.nodes[rootId];
+  return node != null && node.type === "box" ? rootId : null;
 }
 
 /**
