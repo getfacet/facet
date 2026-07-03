@@ -27,12 +27,16 @@ Workflow({ name: 'code-review', args: { scope: 'diff', base: 'main' } })
   fan-out to the change.
 - `hint`: free text to narrow/redirect scope (e.g. a PR number or "focus on the
   bridge queue").
+- `votes`: verifier panel size for high-severity findings (default `3`).
+- `thorough`: `true` runs the full vote panel on **every** finding (not just
+  P0/P1).
 
 The workflow itself: **Scope** (git diff → which files, which dimensions) →
-**Find** (one `review-*` agent per dimension) → **Verify** (`review-verifier`
-tries to refute every finding; refuted/uncertain findings are dropped — no false
-alarms) → **Synthesize** (dedup, rank by severity, propose a fix per finding).
-Watch live progress with `/workflows`.
+**Find** (one `review-*` agent per dimension) → **Verify** (a `review-verifier`
+vote panel per finding — 3 independent skeptics for P0/P1, 1 for P2/P3; a finding
+survives only on a strict majority calling it real, so refuted/uncertain ones are
+dropped — no false alarms) → **Synthesize** (dedup, rank by severity, propose a
+fix per finding). Watch live progress with `/workflows`.
 
 ## Present the result
 

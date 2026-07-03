@@ -24,10 +24,12 @@ package manifests).
 
 The workflow: **Audit** (one `audit-structure` agent per dimension —
 duplication, boundaries, dead-code, hygiene, naming — over the whole tree) →
-**Verify** (`review-verifier` challenges each finding: truly dead / truly
-duplicated / truly misplaced? refuted findings dropped) → **Plan** (rank by
+**Verify** (a `review-verifier` vote panel per finding — 3 independent skeptics
+for P0/P1, 1 for P2/P3 — challenging whether it is truly dead / truly duplicated
+/ truly misplaced; only a strict majority survives) → **Plan** (rank by
 impact ÷ effort, recommend an execution order + an explicit do-not-touch list).
-Watch live progress with `/workflows`.
+Watch live progress with `/workflows`. Pass `args.thorough: true` to run the full
+panel on every finding.
 
 ## Present the result
 
