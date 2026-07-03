@@ -202,15 +202,49 @@ export class FacetRuntime {
     messages: readonly ServerMessage[],
     recordMessages: readonly ServerMessage[] = messages,
   ): Promise<readonly ServerMessage[]> {
-    await this.stageStore.save(this.applyToSession(session, messages));
+    const { session: applied, issues, diverged } = this.applyToSession(session, messages);
+    await this.stageStore.save(applied);
     const entry = { at: Date.now(), event, messages: recordMessages };
     void this.serializeRecord(sessionKey(this.agentId, visitor.visitorId), () =>
       this.sink.record(this.agentId, visitor.visitorId, entry),
     ).catch((error: unknown) => console.error("[facet] sink failed:", error));
-    return messages;
+    // Surface (don't drop) whatever the save-time re-validate corrected, so an
+    // operator sees a stripped/clamped patch instead of it vanishing silently.
+    for (const issue of issues) console.error(`[facet] save-time re-validation: ${issue}`);
+    if (!diverged) return messages;
+    // A shared child (one id parented under TWO boxes) is the ONE sanitisation
+    // the fail-safe renderer does NOT reproduce: it renders the node under BOTH
+    // parents while validateTree keeps it under one, so live tabs render content
+    // the STORED stage no longer has — a stored-vs-live divergence until reload.
+    // (Sibling-dedup, cycle-break, depth-cap and dangling/invalid skips are all
+    // reproduced identically by the renderer, so they need no resync.) The raw
+    // ops already fanned out, so append a corrective root-replace AFTER the
+    // agent's own frames: clients apply the raw ops, then converge on the stored
+    // sanitized tree. It is delivery-only — NOT recorded into the sink
+    // (recordMessages is the agent's own list), exactly like the seed frame.
+    return [
+      ...messages,
+      { kind: "patch", patches: [{ op: "replace", path: "", value: applied.stage }] },
+    ];
   }
 
-  private applyToSession(session: FacetSession, messages: readonly ServerMessage[]): FacetSession {
+  /**
+   * Applies a turn's patch messages to the open session and RE-VALIDATES the
+   * result, returning the sanitized session, any issues the re-validate raised,
+   * and whether the raw tree contained a shared child (one id under ≥2 parents).
+   * `diverged` is the caller's signal to converge live clients: the raw ops were
+   * already delivered, but the renderer paints a shared child under both parents
+   * while the stored tree keeps it under one, so without a corrective frame that
+   * divergence persists on every live tab until it reloads.
+   */
+  private applyToSession(
+    session: FacetSession,
+    messages: readonly ServerMessage[],
+  ): {
+    readonly session: FacetSession;
+    readonly issues: readonly string[];
+    readonly diverged: boolean;
+  } {
     let stage = session.stage;
     for (const message of messages) {
       if (message.kind === "patch") {
@@ -236,9 +270,43 @@ export class FacetRuntime {
         }
       }
     }
+    // Detect a shared child (same id under ≥2 distinct parents) in the RAW tree
+    // BEFORE validateTree strips it — the one sanitisation that makes the live
+    // render diverge from the stored tree. Checked structurally, independent of
+    // any issue-string wording.
+    const diverged = hasSharedChild(stage);
     // Keep the stored stage always-valid: a bad root replace (e.g. `render 'null'`
     // on the unvalidated CLI path) is sanitized here so persistence/rehydrate
-    // never serves a corrupt tree.
-    return { ...session, stage: validateTree(stage).tree };
+    // never serves a corrupt tree. Issues are surfaced (not dropped) so `persist`
+    // can converge live clients on the sanitized result.
+    const { tree, issues } = validateTree(stage);
+    return { session: { ...session, stage: tree }, issues, diverged };
   }
+}
+
+/**
+ * True iff any node id appears in the `children` of two DISTINCT parents in the
+ * raw (pre-validation) tree — the shared-child case validateTree collapses to a
+ * single parent, which the live renderer does not reproduce. A duplicate under
+ * ONE parent (same parent id) is NOT a divergence: the renderer dedupes siblings
+ * per-parent exactly as validateTree does. Guards `nodes` and `children` for the
+ * unvalidated stage this runs against (a non-object tree simply has no shared
+ * child).
+ */
+function hasSharedChild(stage: FacetTree): boolean {
+  if (typeof stage !== "object" || stage === null) return false;
+  const nodes = (stage as { nodes?: unknown }).nodes;
+  if (typeof nodes !== "object" || nodes === null) return false;
+  const parentOf = new Map<string, string>();
+  for (const [id, node] of Object.entries(nodes as Record<string, unknown>)) {
+    const children = (node as { children?: unknown } | null)?.children;
+    if (!Array.isArray(children)) continue;
+    for (const child of children) {
+      if (typeof child !== "string") continue;
+      const prev = parentOf.get(child);
+      if (prev !== undefined && prev !== id) return true;
+      parentOf.set(child, id);
+    }
+  }
+  return false;
 }

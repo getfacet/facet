@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { ClientEvent, FacetAgent, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetAgent, FacetTree, ServerMessage } from "@facet/core";
+import { applyPatch, EMPTY_TREE } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
 import { MemoryStageStore } from "./stage-store.js";
 import { withInitialStage } from "./assets.js";
@@ -158,6 +159,81 @@ describe("FacetRuntime.handle", () => {
     const stage = await rt.stageFor("v");
     const root = stage?.nodes["root"] as { children: string[] } | undefined;
     expect(root?.children).toHaveLength(2); // both applied, neither overwrote the other
+  });
+});
+
+describe("FacetRuntime save-time re-validation convergence", () => {
+  // A tree that parents one existing node id under TWO boxes in the same screen.
+  // Since round 5 validateTree keeps the child under the first parent and strips
+  // the second reference (shared-child collapse) with an issue — so the STORED
+  // stage differs from the raw patch fanned out to live tabs, which render the
+  // section under both parents. The turn must append a corrective root-replace
+  // so every client converges on the sanitized stored tree instead of diverging
+  // until reload.
+  const sharedChildTree = {
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box" as const, children: ["b1", "b2"] },
+      b1: { id: "b1", type: "box" as const, children: ["shared"] },
+      b2: { id: "b2", type: "box" as const, children: ["shared"] },
+      shared: { id: "shared", type: "text" as const, value: "hi" },
+    },
+  };
+  const sharedChildPatch: ServerMessage = {
+    kind: "patch",
+    patches: [{ op: "replace", path: "", value: sharedChildTree }],
+  };
+
+  it("appends a corrective root-replace equal to the stored stage and clients converge to it", async () => {
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(sharedChildPatch, { kind: "say", text: "done" }),
+    });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    const stored = await rt.stageFor("v");
+    // The stored stage lost the second reference to the shared child.
+    const b2 = stored?.nodes["b2"] as { children: string[] } | undefined;
+    expect(b2?.children).toEqual([]);
+    // The DELIVERED list ends with a corrective root-replace whose value
+    // deep-equals the stored stage.
+    const last = out.messages[out.messages.length - 1];
+    expect(last?.kind).toBe("patch");
+    expect(last).toEqual({
+      kind: "patch",
+      patches: [{ op: "replace", path: "", value: stored }],
+    });
+    // Folding the FULL delivered list over EMPTY_TREE (the client's starting
+    // point) converges to the stored stage — no stored-vs-live divergence.
+    let tree: FacetTree = EMPTY_TREE;
+    for (const m of out.messages) {
+      if (m.kind === "patch") tree = applyPatch(tree, m.patches);
+    }
+    expect(tree).toEqual(stored);
+  });
+
+  it("does not record the corrective frame into the sink", async () => {
+    const records: StoredEvent[] = [];
+    const sink: Sink = {
+      record: (_agentId: string, _visitorId: string, entry: StoredEvent): Promise<void> => {
+        records.push(entry);
+        return Promise.resolve();
+      },
+      history: (): Promise<readonly StoredEvent[]> => Promise.resolve([]),
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(sharedChildPatch), sink });
+    await rt.handle(visitor, { kind: "message", text: "hi" });
+    await new Promise((resolve) => setTimeout(resolve, 20)); // let the record settle
+    expect(records).toHaveLength(1);
+    // Only the agent's own single patch is recorded — the corrective convergence
+    // frame is a delivery mechanism, never a turn reply (like the seed frame).
+    expect(records[0]?.messages.filter((m) => m.kind === "patch")).toHaveLength(1);
+  });
+
+  it("appends no corrective frame on a clean turn (byte-identical delivered messages)", async () => {
+    const say: ServerMessage = { kind: "say", text: "done" };
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf(renderPatch, say) });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    expect(out.messages).toEqual([renderPatch, say]);
   });
 });
 

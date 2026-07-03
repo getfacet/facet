@@ -154,6 +154,31 @@ describe("validateTheme", () => {
     expect(hasError(issues)).toBe(false);
   });
 
+  it("never echoes an over-long group key into an issue string (caps it)", () => {
+    const bigKey = "z".repeat(10_000_000);
+    const { issues } = validateTheme({ name: "x", color: { [bigKey]: "#fff" } });
+    expect(issues.some((i) => i.message.includes("<key too long>"))).toBe(true);
+    // The raw 10MB key never reaches the issue text (would flood operator logs).
+    expect(issues.some((i) => i.message.includes(bigKey))).toBe(false);
+  });
+
+  it("never echoes a control/escape-sequence group key into an issue string", () => {
+    const escKey = "\x1b[31maccent";
+    const { issues } = validateTheme({ name: "x", color: { [escKey]: "#fff" } });
+    expect(issues.some((i) => i.message.includes("<unprintable key>"))).toBe(true);
+    // The raw escape sequence never reaches operator terminals via the issue.
+    expect(issues.some((i) => i.message.includes(escKey))).toBe(false);
+  });
+
+  it("caps the per-document issues array so a junk-key group cannot balloon it", () => {
+    const group: Record<string, string> = {};
+    for (let i = 0; i < 100_000; i++) group[`k${String(i)}`] = "#fff";
+    const { issues } = validateTheme({ name: "x", color: group });
+    // 64 real issues + a single suppression tail entry.
+    expect(issues.length).toBeLessThanOrEqual(65);
+    expect(issues[issues.length - 1]?.message).toContain("further issues suppressed");
+  });
+
   it("rejects a missing or malformed name as an error", () => {
     for (const doc of [
       {},

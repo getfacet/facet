@@ -89,6 +89,48 @@ const MAX_VALUE_LENGTH = 64;
 /** Shared cap for a document's one-line `description` (a theme's and a stamp's). */
 export const MAX_DESCRIPTION_LENGTH = 200;
 
+/** Cap on issues collected per document — a junk-key group cannot balloon the list. */
+const MAX_THEME_ISSUES = 64;
+
+/**
+ * A document/group KEY safe to interpolate into an issue string. `unsafeValue`
+ * caps VALUES, but keys are echoed pre-cap: an untrusted theme file's key can be
+ * megabytes long or carry ANSI/control sequences that inject into operator logs.
+ * Mirror the value posture — cap length, reject control chars — before echoing.
+ */
+function printableKey(key: string): string {
+  if (key.length > MAX_VALUE_LENGTH) return "<key too long>";
+  for (let i = 0; i < key.length; i++) {
+    const code = key.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) return "<unprintable key>";
+  }
+  return key;
+}
+
+/**
+ * A bounded issue collector. Once `MAX_THEME_ISSUES` real entries are recorded,
+ * further pushes are dropped after a single "...further issues suppressed" tail
+ * entry — so a 100k-junk-key group cannot balloon the issues list (each junk key
+ * would otherwise emit one issue object). `.list` is the plain array to return.
+ */
+class IssueList {
+  private readonly items: ThemeIssue[] = [];
+  private suppressed = false;
+  push(issue: ThemeIssue): void {
+    if (this.items.length >= MAX_THEME_ISSUES) {
+      if (!this.suppressed) {
+        this.items.push({ severity: "warning", message: "...further issues suppressed" });
+        this.suppressed = true;
+      }
+      return;
+    }
+    this.items.push(issue);
+  }
+  get list(): ThemeIssue[] {
+    return this.items;
+  }
+}
+
 /** Clamp bounds in px-equivalents (invariant #5: a theme cannot push content off-screen). */
 const SPACE_PX_RANGE = { lo: 0, hi: 512 } as const;
 const RADIUS_PX_RANGE = { lo: 0, hi: 9999 } as const;
@@ -200,7 +242,7 @@ function validateGroup<V>(
   members: readonly string[],
   group: string,
   handle: (value: unknown) => Handled<V>,
-  issues: ThemeIssue[],
+  issues: IssueList,
 ): Record<string, V> | undefined {
   if (!isPlainObject(raw)) {
     issues.push({
@@ -214,14 +256,14 @@ function validateGroup<V>(
     if (FORBIDDEN_KEYS.has(key)) {
       issues.push({
         severity: "warning",
-        message: `theme "${group}": forbidden key "${key}" dropped`,
+        message: `theme "${group}": forbidden key "${printableKey(key)}" dropped`,
       });
       continue;
     }
     if (!members.includes(key)) {
       issues.push({
         severity: "warning",
-        message: `theme "${group}": unknown token "${key}" dropped`,
+        message: `theme "${group}": unknown token "${printableKey(key)}" dropped`,
       });
       continue;
     }
@@ -229,14 +271,14 @@ function validateGroup<V>(
     if ("error" in result) {
       issues.push({
         severity: "error",
-        message: `theme "${group}" token "${key}": ${result.error}`,
+        message: `theme "${group}" token "${printableKey(key)}": ${result.error}`,
       });
       continue;
     }
     if (result.warning !== undefined) {
       issues.push({
         severity: "warning",
-        message: `theme "${group}" token "${key}": ${result.warning}`,
+        message: `theme "${group}" token "${printableKey(key)}": ${result.warning}`,
       });
     }
     out[key] = result.value;
@@ -344,16 +386,16 @@ function contrastRatio(
  * refused with an error issue, keeping the header's "NEVER throws" contract true.
  */
 function validateThemeInner(input: unknown): ThemeValidationResult {
-  const issues: ThemeIssue[] = [];
+  const issues = new IssueList();
   if (!isPlainObject(input)) {
     issues.push({ severity: "error", message: "theme document is not an object" });
-    return { issues };
+    return { issues: issues.list };
   }
 
   const name = input.name;
   if (typeof name !== "string" || !isValidThemeName(name)) {
     issues.push({ severity: "error", message: "theme name is missing or malformed" });
-    return { issues };
+    return { issues: issues.list };
   }
 
   const theme: {
@@ -383,7 +425,10 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
 
   for (const key of Object.keys(input)) {
     if (!KNOWN_KEYS.has(key)) {
-      issues.push({ severity: "warning", message: `unknown theme key "${key}" dropped` });
+      issues.push({
+        severity: "warning",
+        message: `unknown theme key "${printableKey(key)}" dropped`,
+      });
     }
   }
 
@@ -453,8 +498,8 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     }
   }
 
-  if (issues.some((issue) => issue.severity === "error")) return { issues };
-  return { theme: theme as FacetTheme, issues };
+  if (issues.list.some((issue) => issue.severity === "error")) return { issues: issues.list };
+  return { theme: theme as FacetTheme, issues: issues.list };
 }
 
 /**

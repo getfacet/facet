@@ -141,6 +141,21 @@ Bundle B PR review record.
   `TurnResult` with `agentMutated` (computed pre-seed), and the server gates
   `recordApplied` on it — a say-only turn re-emitting the seed can no longer
   falsely stale a parked late result; pinned by a server interleaving test.
+- **runtime/assets.ts (loadAssets throw guards, r7)** — the theme/stamp loops
+  are try/catch-guarded but `await store.load()` and the initial-tree
+  `validateTree` call are not; a rejecting DB adapter or throwing accessor
+  breaks the documented "never throws" contract. *Fix:* mirror the loop
+  guards at both seams (skip + issue).
+- **runtime/assets.ts (seed arming order + eviction comment, r7)** —
+  `withInitialStage.open()` arms `takeSeeded` only after `store.save`
+  resolves, so a commit-then-reject save loses the seed frame permanently;
+  and the FIFO-eviction comment calls a dropped armed key "benign" when it
+  actually means a failed-first-turn client keeps a blank page until reload.
+  *Fix:* arm before save; correct both comments.
+- **core/theme.ts (contrast parser coverage, r7)** — `parseSrgb` skips
+  keyword and `hsl()` colors that `isAllowedColor` admits, so the WCAG check
+  silently misses them. *Fix:* HSL→RGB conversion + a named-colors table, or
+  narrow the allowlist claim.
 - **quickstart prompt — screens/entry authoring quality** (live-browser
   finding, 2026-07-04): the built-in agent sometimes registers only one
   screen and points `entry` at it, so its own navigate buttons target
