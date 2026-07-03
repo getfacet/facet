@@ -192,6 +192,37 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
     expect(response.status).toBe(404);
     await response.text();
   });
+
+  it("refuses a cross-origin POST /event (CSRF guard) but allows same-origin", async () => {
+    const body = JSON.stringify({
+      visitor: { visitorId: "csrf" },
+      event: { kind: "message", text: "hi" },
+    });
+    // A malicious site the deployer visits ⇒ rejected before any provider call.
+    const cross = await fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: "http://evil.example" },
+      body,
+    });
+    expect(cross.status).toBe(403);
+    await cross.text();
+
+    // The served page (same host) ⇒ allowed.
+    const sameOrigin = new URL(base).host;
+    const same = await fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Origin: `http://${sameOrigin}` },
+      body,
+    });
+    expect(same.status).toBe(202);
+    await same.text();
+  });
+
+  it("does not leak Access-Control-Allow-Origin on proxied responses", async () => {
+    const response = await fetch(`${base}/health`);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    await response.text();
+  });
 });
 
 describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () => {

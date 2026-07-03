@@ -61,14 +61,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function isBoxWithChildren(tree: FacetTree, id: NodeId | undefined): boolean {
+  if (id === undefined) return false;
+  const node = tree.nodes[id];
+  return node !== undefined && node.type === "box" && node.children.length > 0;
+}
+
 /**
- * A tree renders something only if its root box has at least one child. This
- * rejects validateTree's EMPTY_TREE fallback so a render_page of garbage can't
- * wipe the visitor's current stage.
+ * The node the renderer will actually show first — mirrors
+ * `StageRenderer.resolveScreenRoot` (entry screen → first live screen → plain
+ * root). Kept in sync by hand: importing @facet/react would pull the browser
+ * renderer into the node path.
+ */
+function renderRoot(tree: FacetTree): NodeId {
+  const screens = tree.screens;
+  if (screens !== undefined && Object.keys(screens).length > 0) {
+    const entryRoot = typeof tree.entry === "string" ? screens[tree.entry] : undefined;
+    if (entryRoot !== undefined && tree.nodes[entryRoot] !== undefined) return entryRoot;
+    for (const id of Object.values(screens)) if (tree.nodes[id] !== undefined) return id;
+  }
+  return tree.root;
+}
+
+/**
+ * A tree renders something only if the node the renderer WILL show (the entry
+ * screen when there are screens, else the plain root) is a box with at least
+ * one child. This rejects validateTree's EMPTY_TREE fallback so a render_page
+ * of garbage can't wipe the stage — while correctly accepting a screens-only
+ * page whose shell root is empty but whose entry screen has content.
  */
 function isRenderable(tree: FacetTree): boolean {
-  const root = tree.nodes[tree.root];
-  return root !== undefined && root.type === "box" && root.children.length > 0;
+  return isBoxWithChildren(tree, renderRoot(tree));
 }
 
 /**
@@ -114,7 +137,8 @@ function issueHint(issues: readonly string[]): string {
   return issues.length > 5 ? `${shown}; …(+${String(issues.length - 5)} more)` : shown;
 }
 
-const TOOL_NAMES = "append_node, set_node, remove_node, render_page, say";
+/** Derived from the single-source TOOLS so it can't drift from the real set. */
+const TOOL_NAMES = TOOLS.map((t) => t.name).join(", ");
 
 interface ToolOutcome {
   readonly observation: string;
@@ -123,8 +147,11 @@ interface ToolOutcome {
 }
 
 /** Execute one tool call against the Stage, returning an observation for the
- * model. Never throws — bad arguments become an "error: ..." observation. */
-function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
+ * model. Never throws — bad arguments become an "error: ..." observation.
+ * `knownIds` tracks which node ids exist so far this turn (seeded from the
+ * current stage, updated by each tool) so append_node can reject a nonexistent
+ * parent BEFORE it queues a child-link op the runtime would silently drop. */
+function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolOutcome {
   const fail = (observation: string): ToolOutcome => ({ observation, mutated: false, said: false });
   const input: Record<string, unknown> = isRecord(call.input) ? call.input : {};
   switch (call.name) {
@@ -133,14 +160,16 @@ function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
       if (!isRenderable(tree)) {
         const hint = issueHint(issues);
         return fail(
-          `error: render_page needs a full tree { root, nodes } whose "root" is a box with at least one child. ` +
+          `error: render_page needs a full tree { root, nodes } whose entry screen (or root) is a box with at least one child. ` +
             (hint.length > 0
               ? `Fix these and retry: ${hint}`
-              : "Provide a non-empty root box and retry."),
+              : "Provide a non-empty root/entry box and retry."),
         );
       }
       stage.render(tree);
-      // Success, but note any nodes validateTree dropped so the model can re-add them.
+      // The tree replaced everything — reset the known ids to it.
+      knownIds.clear();
+      for (const id of Object.keys(tree.nodes)) knownIds.add(id);
       const note =
         issues.length > 0 ? ` (note: dropped invalid node(s): ${issueHint(issues)})` : "";
       return { observation: `ok: page replaced${note}`, mutated: true, said: false };
@@ -152,9 +181,15 @@ function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
           'error: append_node needs a non-empty string "parentId" (the box to append into)',
         );
       }
+      if (!knownIds.has(parentId)) {
+        return fail(
+          `error: append_node — parent "${parentId}" does not exist yet. Create it first with render_page or set_node, or append into an existing node.`,
+        );
+      }
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: append_node — ${result.error}`);
       stage.append(parentId as NodeId, result.node);
+      knownIds.add(result.node.id);
       return {
         observation: `ok: appended "${result.node.id}" under "${parentId}"`,
         mutated: true,
@@ -165,6 +200,7 @@ function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: set_node — ${result.error}`);
       stage.set(result.node);
+      knownIds.add(result.node.id);
       return { observation: `ok: set "${result.node.id}"`, mutated: true, said: false };
     }
     case "remove_node": {
@@ -173,6 +209,7 @@ function executeTool(call: ToolCall, stage: Stage): ToolOutcome {
         return fail('error: remove_node needs a non-empty string "nodeId"');
       }
       stage.remove(nodeId as NodeId);
+      knownIds.delete(nodeId);
       return { observation: `ok: removed "${nodeId}"`, mutated: true, said: false };
     }
     case "say": {
@@ -206,6 +243,9 @@ export function createQuickstartAgent(
       // not blow up the whole agent.
       const history = await options.sink.history(options.agentId, session.visitor.visitorId);
       const messages: TurnMessage[] = buildInitialMessages(event, session, history, historyTurns);
+      // Ids that exist so far this turn (seeded from the current stage) — lets
+      // append_node reject a nonexistent parent instead of orphaning the node.
+      const knownIds = new Set<string>(Object.keys(session.stage.nodes));
 
       for (let step = 0; step < maxSteps; step += 1) {
         const result = await options.provider.run({ system, messages }, TOOLS);
@@ -219,7 +259,7 @@ export function createQuickstartAgent(
 
         messages.push({ role: "assistant_tools", text: result.text, toolCalls: result.toolCalls });
         for (const call of result.toolCalls) {
-          const outcome = executeTool(call, stage);
+          const outcome = executeTool(call, stage, knownIds);
           mutated = mutated || outcome.mutated;
           said = said || outcome.said;
           messages.push({ role: "tool_result", callId: call.id, content: outcome.observation });

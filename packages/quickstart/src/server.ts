@@ -133,9 +133,32 @@ function filterHeaders(headers: IncomingHttpHeaders, dropHost: boolean): Outgoin
     const lower = name.toLowerCase();
     if (HOP_BY_HOP_HEADERS.has(lower) || lower.startsWith("proxy-")) continue;
     if (dropHost && lower === "host") continue;
+    // Never forward the internal server's `Access-Control-Allow-Origin: *` to
+    // the browser: the served page is same-origin, so it needs no CORS, and a
+    // permissive ACAO would let any site READ a visitor's /stream. Dropping it
+    // (plus the same-origin guard below) closes the cross-origin read.
+    if (!dropHost && lower.startsWith("access-control-")) continue;
     out[name] = value;
   }
   return out;
+}
+
+/**
+ * True if a browser request comes from a DIFFERENT origin than the page it
+ * serves (the `Origin` host ≠ the `Host` it was sent to). No `Origin` header
+ * (a top-level navigation, curl, a server-side client) is treated as same-site
+ * — the threat is specifically a browser on another site POSTing here. Compares
+ * host:port so it works on localhost, a LAN IP, or a custom host alike.
+ */
+function isCrossOrigin(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (typeof origin !== "string" || origin.length === 0) return false;
+  const host = req.headers.host;
+  try {
+    return new URL(origin).host !== host;
+  } catch {
+    return true; // malformed Origin ⇒ reject
+  }
 }
 
 /** Pipe one request through to the internal facet server — both directions
@@ -203,6 +226,16 @@ function handleRequest(
   }
   if (req.method === "GET" && pathname === "/app.js") {
     serveBundle(res, options.pageBundlePath);
+    return;
+  }
+  // The protocol routes (/event, /stream, /health) are unauthenticated and
+  // /event spends the deployer's provider key. Reject cross-origin BROWSER
+  // requests (a malicious site the deployer visits POSTing here in a loop, or
+  // reading /stream) — the served page is same-origin and unaffected; a
+  // cross-origin preflight also lands here and is refused.
+  if (isCrossOrigin(req)) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    res.end("cross-origin request refused");
     return;
   }
   proxy(req, res, internalPort);

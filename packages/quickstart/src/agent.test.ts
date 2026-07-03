@@ -202,6 +202,88 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("rejects append_node to a parent that does not exist (no orphan)", async () => {
+    // EMPTY_TREE has only "root"; "ghost" was never created this turn.
+    const provider = providerOf(
+      toolStep(
+        call("append_node", { parentId: "ghost", node: { id: "n", type: "text", value: "x" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "add" }, SESSION);
+      expect(patchesOf(out)).toHaveLength(0); // nothing mutated ⇒ no orphan op emitted
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.includes("does not exist"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("appends into a parent created earlier in the same turn (render_page then append)", async () => {
+    const provider = providerOf(
+      toolStep(call("render_page", { tree: VALID_TREE })), // creates root + greet
+      toolStep(
+        call("append_node", { parentId: "root", node: { id: "n", type: "text", value: "more" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    await agent({ kind: "message", text: "build" }, SESSION);
+    const obs = provider.turns[2]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    // The append into the freshly-rendered "root" succeeds (root is now known).
+    expect(obs.some((o) => o.startsWith("ok: appended"))).toBe(true);
+  });
+
+  it("accepts a screens-only render_page whose shell root is empty but entry screen has content", async () => {
+    const screensTree = {
+      root: "shell",
+      nodes: {
+        shell: { id: "shell", type: "box", children: [] },
+        home: { id: "home", type: "box", children: ["h"] },
+        h: { id: "h", type: "text", value: "Home" },
+      },
+      screens: { home: "home" },
+      entry: "home",
+    };
+    const provider = providerOf(toolStep(call("render_page", { tree: screensTree })), END);
+    const agent = makeAgent(provider);
+    const out = await agent({ kind: "visit", visitor: { visitorId: "v1" } }, SESSION);
+    // isRenderable must accept it (entry screen "home" is a non-empty box).
+    expect(patchesOf(out)).toHaveLength(1);
+  });
+
+  it("removes a node and rejects image/field nodes missing required fields", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("render_page", { tree: VALID_TREE }),
+        call("remove_node", { nodeId: "greet" }),
+        call("set_node", { node: { id: "i", type: "image", src: "x" } }), // no alt
+        call("set_node", { node: { id: "f", type: "field" } }), // no name
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const out = await agent({ kind: "message", text: "edit" }, SESSION);
+    const patch = out.find((m) => m.kind === "patch");
+    if (patch?.kind === "patch") {
+      expect(
+        patch.patches.some((p) => p.op === "remove" && "path" in p && p.path === "/nodes/greet"),
+      ).toBe(true);
+    }
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs.some((o) => o.includes('"image" node needs string "src" and "alt"'))).toBe(true);
+    expect(obs.some((o) => o.includes('"field" node needs a string "name"'))).toBe(true);
+  });
+
   it("stops at maxSteps when the model never ends the loop", async () => {
     const provider = providerOf(toolStep(call("say", { text: "again" }))); // repeats forever
     const agent = makeAgent(provider, { maxSteps: 3 });

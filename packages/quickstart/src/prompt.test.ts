@@ -111,6 +111,21 @@ describe("buildInitialMessages", () => {
     expect(all).toContain("(page updated)"); // toggle turn had a patch
   });
 
+  it("renders a corrupt/unknown history event as a safe placeholder (never undefined)", () => {
+    const history: StoredEvent[] = [
+      { at: 0, event: { kind: "weird-kind" } as unknown as ClientEvent, messages: [] },
+    ];
+    const messages = buildInitialMessages(
+      { kind: "message", text: "now" },
+      SESSION,
+      history,
+      HISTORY_TURNS,
+    );
+    const all = messages.map((m) => ("content" in m ? m.content : "")).join("\n");
+    expect(all).toContain("(unknown event)");
+    expect(all).not.toContain("undefined");
+  });
+
   it("renders a visit event's non-secret context but never the visitorId bearer key", () => {
     const event: ClientEvent = {
       kind: "visit",
