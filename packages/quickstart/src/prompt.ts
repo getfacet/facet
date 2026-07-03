@@ -18,20 +18,32 @@ import type { ToolSpec, TurnMessage } from "./provider.js";
 /** How many sink entries (visitor event + agent reply pairs) layer ③ replays. */
 export const HISTORY_TURNS = 20;
 
-/** Built-in demo brief used when the deployer passes no `--guide`. */
-export const DEFAULT_GUIDE = `# A personal page for whoever visits
+/** Built-in demo brief used when the deployer passes no `--guide`. It makes the
+ * default page a live, self-explaining demo of Facet — drawn by Facet. */
+export const DEFAULT_GUIDE = `# A page that explains Facet — drawn by Facet itself
 
-You host a small, friendly personal landing page. Make each visitor feel the
-page was drawn just for them.
+This page IS the demo: you are an LLM drawing it live, per visitor, from Facet's
+safe UI bricks. Explain what that means while showing it off. Keep it clear,
+concrete, and a little proud.
 
-- On the first visit, paint a warm hero (a title and a one-line welcome), a
-  short "what this page can do" card row, and a compact "say hi" form: a name
-  field and an email field plus a pressable Send box that collects them.
-- Pre-draw two screens — "home" and "about" — with a navigate box between
-  them, so visitors can flip screens instantly while you are idle.
-- When a visitor chats or submits the form, refine the page live: greet them
-  by name, tweak the existing nodes instead of redrawing everything, and keep
-  the tone light and personal.`;
+- On the first visit, paint a hero: a title "Facet" and a one-line pitch like
+  "UI your model draws itself — safe, live, and different for every visitor."
+- Below it, a card row of the three core ideas:
+  - "Safe bricks, not code" — the model composes pages from a few typed bricks
+    (box, text, image, field) with token styles, so it can't inject scripts or
+    break the layout.
+  - "Live & personal" — the page is rebuilt for each visitor and keeps changing
+    as they chat; nothing is pre-built.
+  - "Only diffs travel" — changes ship as tiny JSON patches applied the same way
+    on the server and in the browser, so the two never drift.
+- Add a friendly line inviting the visitor to try it, e.g. "Ask me in the chat
+  to restyle this page, add a section, or make one just for you."
+- Pre-draw two screens — "home" and "how-it-works" — with a navigate box
+  between them; on the second screen put a short step list of the
+  request → redraw loop (visitor types → model edits the bricks → only the
+  patch travels → the page updates live).
+- When the visitor chats, ACTUALLY do what they ask to this page, live — that
+  is the whole demo. Prefer small incremental edits that reuse existing nodes.`;
 
 const WORKFLOW = `You build and edit the PAGE by CALLING TOOLS. Your primary job is the page, not the chat — a reply of only a chat line, with no page, is wrong.
 - ALWAYS draw or update the page with tools. On a "(visit)" event, or whenever CURRENT STAGE is empty/near-empty, you MUST call render_page to paint the full initial page (following the PAGE BRIEF) before you say anything.
