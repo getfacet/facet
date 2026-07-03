@@ -30,9 +30,10 @@ export interface FacetSession {
 }
 
 /**
- * Shared cap on one collected field value's length — enforced by the renderer
- * at collection time and by the server at `/event`, so the two sides cannot
- * drift.
+ * Shared character cap for a collected field, applied to its VALUE, its NAME,
+ * and (server-side) the map KEY — enforced by the renderer at collection time
+ * and by the server at `/event`, so the two sides cannot drift. One constant on
+ * purpose: tuning it moves all three bounds together.
  */
 export const MAX_FIELD_VALUE_CHARS = 2000;
 
