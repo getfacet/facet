@@ -2,183 +2,88 @@
 name: spec-bridge
 description: >
   Translate an approved Facet feature-intake brief into an executable development
-  spec + execution manifest (Work Units, TDD red checks, test traceability,
-  invariant-fit audit). Use when you need concrete file/API candidates and an
-  implementation sequence before coding. Runs a light context pass, then a
-  writer and an independent reviewer in separate contexts.
+  spec + execution manifest (Work Units, TDD red checks, invariant-fit audit) via
+  a Workflow: context pass + risk probes → writer → independent adversarial
+  reviewer → bounded fix loop. Stops at an approvable plan. Use before coding.
 allowed-tools: Read, Glob, Grep, Agent, AskUserQuestion, Write
 ---
 
 # Spec Bridge (Facet)
 
-> Convert a product brief into technical implementation planning: one human
-> approval spec + one agent-executable manifest. Writer and reviewer run in
-> SEPARATE contexts (the reviewer never sees the writer's reasoning) to avoid
-> self-review blind spots.
+> Convert a product brief into technical implementation planning — one human
+> approval spec + one agent-executable manifest — run as a **Workflow**. Writer
+> and reviewer run in SEPARATE contexts (the reviewer never sees the writer's
+> reasoning) to avoid self-review blind spots. The workflow stops at an
+> approvable plan; **you** (the main agent) own the human-approval step, which a
+> workflow can't do.
 
-## Purpose
+Use order: `/context-scout` (optional) → `/feature-intake` → **`/spec-bridge`** →
+`/implement` (→ `/update-tests` → `/verify` → `/code-review` → `/update-docs`).
 
-- Input: approved intake brief (from `/feature-intake`).
-- Outputs:
-  - `specs/context/<slug>.md` (codebase evidence)
-  - `specs/dev-specs/<slug>.md` (human approval spec)
-  - `specs/dev-specs/<slug>.execution.yaml` (delegation manifest)
-- Includes a light context pass as Stage 0 (no separate scout skill needed).
+## Before you launch — pick the slug
 
-Use order: `/context-scout` (optional) → `/feature-intake` → `/spec-bridge` → `/implement` (→ `/update-tests` → `/verify` → `/code-review` → `/update-docs`).
+The workflow needs the intake-brief slug. Determine it from the approved brief in
+`specs/feature-intake/<slug>.md` (ask the user if ambiguous). This is the one
+decision that must be made before the workflow runs.
 
-## Required context
+## Run it
 
-1. `AGENTS.md` (Facet contract).
-2. Intake brief: `specs/feature-intake/<slug>.md`.
-3. `docs/ARCHITECTURE.md` and `docs/REVIEW-RULES.md`.
-4. Spec template: `.claude/skills/spec-bridge/templates/dev-spec.md`.
-5. Manifest template: `.claude/skills/spec-bridge/references/execution-manifest-template.yaml`.
-6. QA gates: `.claude/skills/spec-bridge/references/spec-qa-gates.md`.
-
-## Facet packages (map the brief to these — there are no "services")
-
-`@facet/core` (bricks/tokens/patch/validate/protocol — browser-safe, node-free),
-`@facet/runtime`, `@facet/agent`, `@facet/agent-client`, `@facet/server`,
-`@facet/react`, `@facet/cli`, `@facet/kit`, `@facet/store-postgres`,
-`@facet/bridge`, and `apps/playground`. Note which package(s) each Work Unit
-touches; respect barrel exports and keep `@facet/core` free of Node-only imports.
-
-## Architecture
+Call the workflow (this skill is your opt-in to `Workflow`):
 
 ```
-Main agent (orchestrator)
-  ├─ Stage 0  Context pass  → evidence map (file:line) → specs/context/<slug>.md
-  ├─ Stage 1  Spec writer (subagent, separate context) → specs/dev-specs/<slug>.md
-  ├─ Stage 1.5 Execution manifest → specs/dev-specs/<slug>.execution.yaml
-  ├─ Stage 2  Spec reviewer (subagent, separate context) → gate report
-  └─ Stage 3  Present → PASS: ask approval / FAIL: fix + re-review
+Workflow({ name: 'spec-bridge', args: { slug: '<slug>' } })
 ```
 
-## Workflow
+The workflow: **Context** (map affected `@facet/*` packages, gather `file:line`
+evidence, run the RISK probes — INV / API / PKG — → `specs/context/<slug>.md`) →
+**Write** (a separate-context writer produces `specs/dev-specs/<slug>.md` **and**
+the `.execution.yaml` manifest together, so WU ids/files/deps/checks stay
+identical) → **Review** (an independent adversarial reviewer that never saw the
+writer evaluates every gate) → **Fix loop** (on P0/P1, a fixer edits the spec and
+the reviewer re-runs, max 3 rounds). Watch live progress with `/workflows`.
 
-### Stage 0 — Context pass
-1. Read the intake brief; from `User Scenario`, `Invariant Fit`, and
-   `Public API / Package Surface`, infer the affected `@facet/*` packages.
-2. Spawn ONE `Explore` (or `general-purpose`) subagent to map, per affected
-   package: the entry files, the existing patterns the feature must follow, and
-   the exact `file:line` anchors the writer should reference. Ask it to return
-   evidence, not prose.
-3. Run the Facet RISK PROBES (only the ones the brief triggers):
-   - **Invariant probe** — REQUIRED if the brief `Invariant Fit` marks any
-     invariant `TOUCHES` (esp. #5 overlay, #6 two-writers, #1 backend). For each,
-     record the concrete code seam + the mitigation the spec must implement as a
-     `RISK-INV-N` item (with `file:line`).
-   - **Public-API probe** — REQUIRED if a published `@facet/*` surface changes.
-     Grep existing consumers (other packages + `apps/playground` + `examples/`)
-     of the changed symbol; record additive vs breaking, and the migration for
-     each consumer, as `RISK-API-N`.
-   - **Cross-package coupling probe** — REQUIRED if the change moves/splits a
-     module or adds an import across packages. Verify `@facet/core` stays
-     node-free, barrel exports hold, and no import cycle is introduced; record
-     as `RISK-PKG-N`.
-   Each `RISK-*` item: detected pattern, `file:line`, proposed resolution. The
-   writer MUST consume these (resolve in-spec or record an explicit waiver).
-4. Save to `specs/context/<slug>.md`. If a probe finds the brief references a
-   package/pattern that doesn't exist, STOP and report before proceeding.
+All the hard gates (DC traceability, ≤5 files/WU, red_check present, Invariant Fit
+Audit real, every RISK resolved, `final_gate_owner: main-agent`, spec/manifest
+consistency) are enforced inside the reviewer per
+`.claude/skills/spec-bridge/references/spec-qa-gates.md`.
 
-### Stage 1 — Spec writer (separate context)
-Spawn a `general-purpose` subagent (model: `fable`):
-```
-Agent(subagent_type="general-purpose", model="fable",
-  prompt="Write a Facet development spec for '<slug>'.
-   - Intake brief: specs/feature-intake/<slug>.md
-   - Context evidence: specs/context/<slug>.md
-   - Spec template: .claude/skills/spec-bridge/templates/dev-spec.md
-   - Write to: specs/dev-specs/<slug>.md
-   Follow the template. Use context evidence for accurate file:line paths.
-   Report RESULT: DONE|FAIL.")
-```
-The writer MUST:
-- preserve intake `DC-00N` ids and map `DC → file/function/test`.
-- decompose into Work Units (**max 5 files each**); assign every file to exactly
-  one WU; no orphan files.
-- per WU: `owner_role`, `packages`, `depends_on`, `parallel_group`, `red_check`
-  (TDD: a vitest command that FAILS before impl, PASSES after — or `N/A` with a
-  justification for deletion/docs/move-only WUs), `quick_checks`,
-  `no_regression_checks`, `test_plan` (type/target/covers_dc/action), and a
-  `handoff_format` including `refactor_decision` + `green_diff_summary`.
-- the union of all WU `test_plan.covers_dc` MUST cover every `DC-*`.
-- include an **Invariant Fit Audit** section: for each invariant the brief marked
-  `TOUCHES`, the concrete design that keeps it safe (esp. #6 two-writers:
-  ordering/version rule; #5 overlay: the constrained brick shape; #3 fail-safe:
-  what the renderer/validator does on bad input).
-- include a `Fail-safe & boundary checklist` (malformed/empty/deep/cyclic input,
-  offline agent, rapid events) and a risk register that resolves every `RISK-*`.
-- include the final gate chain (Facet): `/verify` → `/code-review` (P0–P2=0),
-  with `/refactor-audit` as periodic, and `final_gate_owner = main-agent`.
+## After it returns — Stage 3 (yours, not the workflow's)
 
-### Stage 1.5 — Execution manifest
-Generate `specs/dev-specs/<slug>.execution.yaml` from
-`.claude/skills/spec-bridge/references/execution-manifest-template.yaml`. Keep WU
-ids, files, `depends_on`, `parallel_group`, `red_check`, `quick_checks`,
-`no_regression_checks`, and `handoff_format` IDENTICAL to the Markdown spec. Keep
-`final_gate_owner: main-agent`.
+The workflow returns `{ verdict, awaitingApproval, escalate, contextPath,
+specPath, manifestPath, workUnits, packages, risks, fixRounds, counts, findings,
+gateReport }`. Also handle the early-stop shapes: `stop: 'BRIEF_NOT_FOUND' |
+'CONTEXT_INVALID' | 'WRITER_FAILED' | 'REVIEWER_FAILED'`, and `error` (bad/no
+slug).
 
-### Stage 2 — Spec reviewer (separate context)
-Spawn a second `general-purpose` subagent (model: `fable`) that never saw the
-writer's reasoning:
-```
-Agent(subagent_type="general-purpose", model="fable",
-  prompt="Independently review the Facet dev spec. Be adversarial.
-   - Spec: specs/dev-specs/<slug>.md
-   - Manifest: specs/dev-specs/<slug>.execution.yaml
-   - Brief: specs/feature-intake/<slug>.md
-   - Context: specs/context/<slug>.md
-   - Gates: .claude/skills/spec-bridge/references/spec-qa-gates.md
-   Evaluate every gate. Verify file:line paths against context evidence.
-   Verify spec/manifest consistency. Verify the Invariant Fit Audit is real,
-   not hand-wave. Return a gate report with PASS/FAIL + evidence per gate.")
-```
+- **PASS** (`awaitingApproval: true`) — show the spec path, manifest path, gate
+  summary, any P2/P3 (informational), then ask the user:
+  > Approve this dev spec + manifest? After approval I'll hand off to `/implement`
+  > (WUs TDD-first) and keep the final `/verify` + `/code-review` with the main
+  > agent.
+  On approval, hand off to `/implement` with the slug.
+- **FAIL** (`escalate: true` — 3 fix rounds exhausted) — show the remaining
+  findings + `gateReport` and escalate to the user; do NOT approve or start
+  implementation.
+- **Early stop / error** — report the `stop`/`error` reason (e.g. run
+  `/feature-intake` first if the brief is missing). Do not proceed.
 
-### Stage 2.5 — Codex adversarial review (OPTIONAL)
-If a Codex reviewer is available in this environment, run it against the spec for
-a second independent opinion and merge P1+ findings. If not available, skip with
-a one-line log — this is not a gate violation for Facet.
+## Hard rules (unchanged)
 
-### Stage 3 — Present
-- **PASS** (reviewer P0=0, P1=0): show spec path, manifest path, gate summary,
-  any P2/P3 (informational), then ask:
-  `Approve this dev spec + manifest? After approval I'll execute WUs (TDD-first) and keep the final /verify + /code-review with the main agent.`
-- **FAIL** (any P0/P1): show findings + evidence, then edit the spec directly and
-  re-run ONLY the reviewer (Stage 2). Max 3 rounds, then escalate to the user.
+- Never start implementation without explicit user approval.
+- Never approve on a FAIL verdict.
+- The reviewer's gate list and the P0/P1 = must-fix rule are the source of truth;
+  don't override the workflow verdict — fix (re-run) or escalate.
 
-## Hard failure rules
-- Intake brief not found → FAIL (stop).
-- Context pass finds a referenced package/pattern that doesn't exist → FAIL.
-- Writer returns FAIL, or a required spec section is missing → FAIL.
-- Missing execution manifest, or any spec/manifest mismatch (WU ids/files/deps/checks) → FAIL.
-- No file/function candidates, or any orphan file → FAIL.
-- `DC-*` ids missing or not traceable to a WU `test_plan` → FAIL.
-- Any WU > 5 files → FAIL (split).
-- Any prod-code WU missing `red_check` (or `red_check: N/A` without a valid
-  deletion/docs/move justification) → FAIL.
-- Missing `Invariant Fit Audit`, or any `TOUCHES` invariant without a concrete
-  safe design → FAIL.
-- Any `RISK-*` from Stage 0 dropped without resolution or explicit waiver → FAIL.
-- `final_gate_owner` not `main-agent` → FAIL.
-- Reviewer P0 or P1 → FAIL (fix before approval). 3 FAIL rounds → escalate.
-- Starts implementation without approval → FAIL.
+## Optional — Codex second opinion
+
+The previous inline Stage 2.5 (Codex adversarial review) is not part of the
+workflow. If a Codex reviewer is available and you want a second independent
+opinion, run it against `specs/dev-specs/<slug>.md` after a PASS and merge any
+P1+ findings before asking for approval. Skipping it is not a gate violation.
 
 ## Handoff — implementation
 
-After the user approves the spec + manifest, **execution is `/implement`'s job**
-(branch/worktree setup → Work Units TDD-first from the manifest → inner-loop hard
-gate `/update-tests` → `/verify` → `/code-review` → `/update-docs`). This skill
+After approval, **execution is `/implement`'s job** (branch/worktree → Work Units
+TDD-first from the manifest → inner-loop gates). Pass the slug so it can read
+`specs/dev-specs/<slug>.md` + `specs/dev-specs/<slug>.execution.yaml`. This skill
 stops at an approved, delegatable plan; it does not write production code.
-
-Pass to `/implement` with the slug so it can read
-`specs/dev-specs/<slug>.md` + `specs/dev-specs/<slug>.execution.yaml`.
-
-## Output contract
-1. `Context Evidence Path`
-2. `Spec Path` + `Execution Manifest Path`
-3. `Writer Summary` (packages, DCs mapped, Work Units, risks resolved)
-4. `Reviewer Verdict` (PASS/FAIL) + `Gate Report`
-5. `Findings` (P0–P3 counts)
-6. `Approval Required` (YES)
