@@ -118,6 +118,10 @@ export function createOpenAiProvider(
         { Authorization: `Bearer ${apiKey}` },
         {
           model,
+          // JSON mode: force a syntactically valid JSON object so the model
+          // can't answer a chat turn in bare prose (the contract already says
+          // "ONE JSON object", which json_object mode requires in the prompt).
+          response_format: { type: "json_object" },
           messages: [
             { role: "system", content: turn.system },
             ...turn.messages.map((m) => ({ role: m.role, content: m.content })),

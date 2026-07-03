@@ -115,6 +115,8 @@ const openaiCase: AdapterCase = {
     expect(messages[0]).toEqual({ role: "system", content: turn.system });
     expect(messages.slice(1)).toEqual(turn.messages);
     expect("system" in body).toBe(false);
+    // JSON mode is requested so the model can't answer in bare prose.
+    expect(body["response_format"]).toEqual({ type: "json_object" });
   },
 };
 

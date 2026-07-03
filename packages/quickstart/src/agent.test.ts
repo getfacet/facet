@@ -68,8 +68,9 @@ function patchesOf(messages: readonly ServerMessage[]): readonly ServerMessage[]
 
 describe("createQuickstartAgent", () => {
   it("malformed provider output leaves the stage untouched and says an error line", async () => {
-    // Both attempts of turn 1 get garbage; turn 2 gets a valid reply.
-    const provider = providerOf("$$$ not json $$$", "still)) utter(( garbage", VALID_REPLY);
+    // Both attempts of turn 1 get broken JSON (contains `{`, so not prose);
+    // turn 2 gets a valid reply.
+    const provider = providerOf('{"say": "trunc', "{ nope not valid", VALID_REPLY);
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -87,6 +88,37 @@ describe("createQuickstartAgent", () => {
       const second = await agent({ kind: "message", text: "again" }, SESSION);
       expect(patchesOf(second)).toHaveLength(1);
       expect(saysOf(second)).toEqual(["done"]);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("a bare-prose reply (no JSON) is shown as a chat say, not the apology", async () => {
+    // A chat model that ignores the JSON contract and answers in prose — its
+    // answer should reach the visitor, not a generic apology.
+    const provider = providerOf("I'm your personal page agent — ask me anything!");
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "who are you?" }, SESSION);
+      expect(patchesOf(out)).toHaveLength(0); // no tree, stage untouched
+      expect(saysOf(out)).toEqual(["I'm your personal page agent — ask me anything!"]);
+      expect(saysOf(out)[0]).not.toMatch(/sorry/i);
+      expect(errorSpy).not.toHaveBeenCalled(); // prose is a success path, not a failure
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("a broken JSON attempt (contains '{') still degrades to the apology, never raw markup", async () => {
+    const provider = providerOf('{"say": "half a rep');
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "hi" }, SESSION);
+      expect(patchesOf(out)).toHaveLength(0);
+      expect(saysOf(out)).toHaveLength(1);
+      expect(saysOf(out)[0]).toMatch(/sorry/i); // not the broken fragment
     } finally {
       errorSpy.mockRestore();
     }

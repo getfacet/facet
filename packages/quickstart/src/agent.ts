@@ -55,6 +55,7 @@ export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAge
 
   return defineAgent(async ({ event, session, stage }) => {
     let failure: unknown = new Error("quickstart turn made no attempt");
+    let lastRaw = "";
     try {
       const history = await options.sink.history(options.agentId, session.visitor.visitorId);
       const turn = {
@@ -66,7 +67,9 @@ export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAge
 
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
         try {
-          const reply = parseReply(await options.provider.generate(turn));
+          const raw = await options.provider.generate(turn);
+          lastRaw = raw;
+          const reply = parseReply(raw);
 
           let tree: FacetTree | undefined;
           if (reply.tree !== undefined) {
@@ -89,6 +92,17 @@ export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAge
       }
     } catch (error) {
       failure = error;
+    }
+
+    // Prose fallback: a chat model that answered in bare prose (no JSON object
+    // attempted — no `{`) gets its answer shown as a chat line rather than a
+    // generic apology. Safer than the OpenAI-only json_object mode alone (e.g.
+    // Anthropic has no such flag). A partial/broken JSON attempt (contains `{`)
+    // still falls through to the apology below — never surface broken markup.
+    const prose = lastRaw.trim();
+    if (prose.length > 0 && !prose.includes("{")) {
+      stage.say(prose);
+      return;
     }
 
     // Final failure: stage untouched, one concise line, one apologetic say.
