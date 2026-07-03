@@ -6,6 +6,7 @@ import {
   isTreeShaped,
   MAX_DEPTH,
   MAX_FIELD_VALUE_CHARS,
+  MAX_FIELDS_KEYS,
   sanitizeActionPayload,
   type AgentAction,
   type FacetAction,
@@ -101,10 +102,12 @@ function collectFieldValues(
     return {};
   }
 
-  // Data-side pass: (name → node id) for every field in the subtree, walk
-  // order, first occurrence of a name wins — mirrors RenderNode's own
-  // ancestor-set cycle guard + depth cap so a cyclic raw-path tree terminates.
-  const firstIdByName = new Map<string, NodeId>();
+  // Data-side pass: (name → node ids) for every field in the subtree, in walk
+  // order — mirrors RenderNode's own ancestor-set cycle guard + depth cap so a
+  // cyclic raw-path tree terminates. Keeping ALL ids per name (not just the
+  // first) lets the DOM pass pick a MOUNTED one, so a hidden/off-screen field
+  // can't shadow a visible same-named field and drop its value.
+  const idsByName = new Map<string, NodeId[]>();
   const gather = (id: NodeId, ancestors: ReadonlySet<NodeId>, depth: number): void => {
     if (depth > MAX_DEPTH || ancestors.has(id)) {
       return;
@@ -126,9 +129,9 @@ function collectFieldValues(
         // isFieldsRecord reject the whole submit (a silent no-op). Capping keeps
         // the two sides from drifting so an over-long name degrades gracefully.
         const name = node.name.slice(0, MAX_FIELD_VALUE_CHARS);
-        if (!firstIdByName.has(name)) {
-          firstIdByName.set(name, id);
-        }
+        const ids = idsByName.get(name);
+        if (ids === undefined) idsByName.set(name, [id]);
+        else ids.push(id);
       }
       return;
     }
@@ -156,8 +159,14 @@ function collectFieldValues(
   }
 
   const fields: Record<string, string> = {};
-  for (const [name, id] of firstIdByName) {
-    const input = inputByNodeId.get(id);
+  for (const [name, ids] of idsByName) {
+    // Bound the field COUNT with the same cap the server enforces, so the
+    // renderer can't emit a fields object the server rejects wholesale (400).
+    if (Object.keys(fields).length >= MAX_FIELDS_KEYS) break;
+    // Pick the first MOUNTED input among same-named fields (a hidden earlier
+    // one must not shadow a visible later one).
+    const mountedId = ids.find((id) => inputByNodeId.has(id));
+    const input = mountedId === undefined ? undefined : inputByNodeId.get(mountedId);
     if (input !== undefined) {
       // The selector only matches <input> elements, whose .value is a string;
       // String() is belt-and-braces before the shared cap is applied.

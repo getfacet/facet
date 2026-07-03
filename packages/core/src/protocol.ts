@@ -36,6 +36,14 @@ export interface FacetSession {
  */
 export const MAX_FIELD_VALUE_CHARS = 2000;
 
+/**
+ * Shared cap on the NUMBER of collected fields in one action event — enforced
+ * by the renderer at collection and by the server at `/event`, so the renderer
+ * can't emit a fields object the server would reject wholesale (a real form has
+ * a handful; this is a defense-in-depth bound).
+ */
+export const MAX_FIELDS_KEYS = 256;
+
 /** Browser → agent. Everything the visitor does flows in as one of these. */
 export type ClientEvent =
   | { readonly kind: "visit"; readonly visitor: VisitorContext }

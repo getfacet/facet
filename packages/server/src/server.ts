@@ -3,6 +3,7 @@ import {
   createSerialQueue,
   isPrimitiveRecord,
   MAX_FIELD_VALUE_CHARS,
+  MAX_FIELDS_KEYS,
   type AgentControlFrame,
   type ClientEvent,
   type FacetAgent,
@@ -191,10 +192,6 @@ function isFieldsRecord(value: unknown): value is Readonly<Record<string, string
       v.length <= MAX_FIELD_VALUE_CHARS,
   );
 }
-
-/** Upper bound on distinct field names in one action event (defense in depth;
- * a real form has a handful). */
-const MAX_FIELDS_KEYS = 256;
 
 /** Shape-check an /agent/control body before resolving a pending request with it —
  * per-kind, so a malformed message can't smuggle a non-array `patches` or a

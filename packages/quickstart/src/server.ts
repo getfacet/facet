@@ -65,15 +65,13 @@ const SHELL_HTML = `<!doctype html>
 <body><div id="root"></div><script type="module" src="/app.js"></script></body>
 </html>`;
 
-const MISSING_BUNDLE_HTML = `<!doctype html>
-<html>
-<head><meta charset="utf-8" /><title>Facet</title></head>
-<body>
-<p>The quickstart page bundle has not been built yet. Run
-<code>pnpm --filter @facet/quickstart build</code> and reload — the protocol
-routes are already live.</p>
-</body>
-</html>`;
+// Served AS JAVASCRIPT (not HTML) when the bundle is missing: /app.js is loaded
+// via <script type="module">, so a text/html body is refused by the browser's
+// strict MIME check and the deployer just gets a blank page. This injects the
+// build hint into #root so the fix is actually visible.
+const MISSING_BUNDLE_JS = `document.getElementById("root").textContent =
+  "Facet quickstart: the browser bundle is not built yet. Run  pnpm --filter @facet/quickstart build  and reload (the server is already live).";
+console.error("[facet-quickstart] browser bundle not built — run: pnpm --filter @facet/quickstart build");`;
 
 /**
  * Where the prebuilt browser bundle lives. Explicit override first; otherwise
@@ -97,9 +95,11 @@ function resolveBundlePath(override: string | undefined): string | undefined {
 function serveBundle(res: ServerResponse, override: string | undefined): void {
   const bundlePath = resolveBundlePath(override);
   if (bundlePath === undefined) {
-    // Fail-safe: name the fix instead of 404ing into a blank page.
-    res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(MISSING_BUNDLE_HTML);
+    // Fail-safe: /app.js is a module script — serve the hint AS JS so the
+    // browser runs it and shows the build message (an HTML body would be
+    // MIME-refused, leaving a blank page).
+    res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+    res.end(MISSING_BUNDLE_JS);
     return;
   }
   res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
@@ -159,6 +159,23 @@ function isCrossOrigin(req: IncomingMessage): boolean {
   } catch {
     return true; // malformed Origin ⇒ reject
   }
+}
+
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * When bound to loopback (the default), the `Host` header must be a loopback
+ * name. This defeats DNS rebinding — where `attacker.com` is rebound to
+ * `127.0.0.1` so its origin and the Host match and the Origin check alone would
+ * pass. A deployer who opted into a non-loopback `host` has accepted network
+ * exposure (and is expected to add their own auth), so we don't second-guess it.
+ */
+function isDisallowedHost(req: IncomingMessage, boundHost: string): boolean {
+  if (!LOOPBACK_HOSTNAMES.has(boundHost)) return false; // opt-in exposure, deployer's call
+  const header = req.headers.host;
+  if (typeof header !== "string") return true;
+  const hostname = header.replace(/:\d+$/, "").toLowerCase();
+  return !LOOPBACK_HOSTNAMES.has(hostname);
 }
 
 /** Pipe one request through to the internal facet server — both directions
@@ -231,11 +248,11 @@ function handleRequest(
   // The protocol routes (/event, /stream, /health) are unauthenticated and
   // /event spends the deployer's provider key. Reject cross-origin BROWSER
   // requests (a malicious site the deployer visits POSTing here in a loop, or
-  // reading /stream) — the served page is same-origin and unaffected; a
-  // cross-origin preflight also lands here and is refused.
-  if (isCrossOrigin(req)) {
+  // reading /stream) AND non-loopback Host headers (DNS rebinding) — the served
+  // page is same-origin on a loopback host and unaffected.
+  if (isCrossOrigin(req) || isDisallowedHost(req, options.host ?? DEFAULT_PUBLIC_HOST)) {
     res.writeHead(403, { "Content-Type": "text/plain" });
-    res.end("cross-origin request refused");
+    res.end("request refused");
     return;
   }
   proxy(req, res, internalPort);

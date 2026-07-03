@@ -12,6 +12,7 @@
  * packages from a test.
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { connect } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -222,6 +223,24 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
     const response = await fetch(`${base}/health`);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
     await response.text();
+  });
+
+  it("refuses a non-loopback Host header (DNS rebinding) on a loopback bind", async () => {
+    const port = Number(new URL(base).port);
+    const firstLine = await new Promise<string>((resolve, reject) => {
+      const socket = connect(port, "127.0.0.1", () => {
+        // A rebound attacker domain: origin and Host match, but Host isn't loopback.
+        socket.write(`GET /health HTTP/1.1\r\nHost: attacker.example:${String(port)}\r\n\r\n`);
+      });
+      let buf = "";
+      socket.on("data", (d) => {
+        buf += d.toString();
+      });
+      socket.on("end", () => resolve(buf.split("\r\n")[0] ?? ""));
+      socket.on("error", reject);
+      setTimeout(() => socket.end(), 300);
+    });
+    expect(firstLine).toContain("403");
   });
 });
 

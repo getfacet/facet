@@ -393,6 +393,39 @@ describe("StageRenderer collect (jsdom)", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("captures a visible field's value even when an earlier same-named field is hidden", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["hiddenBox", "visibleF", "submit"] },
+          hiddenBox: { id: "hiddenBox", type: "box", hidden: true, children: ["dupHidden"] },
+          dupHidden: { id: "dupHidden", type: "field", name: "email", placeholder: "hidden dup" },
+          visibleF: { id: "visibleF", type: "field", name: "email", placeholder: "visible email" },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "root" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("visible email"), {
+      target: { value: "typed@x.dev" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    // The earlier (hidden) same-named field must NOT shadow the visible one.
+    expect(onAction).toHaveBeenCalledWith(
+      { kind: "agent", name: "submit" },
+      { email: "typed@x.dev" },
+    );
+  });
+
   it("never harvests a password field's value", () => {
     const onAction = vi.fn();
     render(
