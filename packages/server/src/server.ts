@@ -452,8 +452,11 @@ function handleControl(
               const toApply = stale ? messages.filter((m) => m.kind === "say") : messages;
               const applied = await runtime.applyMessages(late.visitor, late.event, toApply);
               deliver(late.visitor.visitorId, applied.messages);
-              // Record only a real stage mutation (mirrors the live path).
-              if (!stale && toApply.some((m) => m.kind === "patch")) {
+              // Record only a REAL stage mutation (the fold's effect-based flag,
+              // mirroring the live path): a late patch whose ops all failed
+              // salvage (or an empty batch) must not bump lastApplied, or it
+              // would falsely stale an older parked turn's still-valid patch.
+              if (!stale && applied.agentMutated) {
                 frameLog.recordApplied(late.visitor.visitorId, parked.index, parked.era);
               }
             } catch (error) {

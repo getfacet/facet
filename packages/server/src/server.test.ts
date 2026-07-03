@@ -630,6 +630,53 @@ describe("async delivery — late results", () => {
     await link.close();
   });
 
+  it("applies an older parked late patch after a NEWER late result whose ops all failed salvage", async () => {
+    // Late-seam variant of the effect-based agentMutated rule: e1 AND e2 both
+    // time out and park. e2's late result arrives FIRST, carrying a patch whose
+    // every op fails salvage — it mutates nothing, so it must NOT advance
+    // lastApplied. e1's older late patch must then still APPLY rather than be
+    // stripped to say-only as stale. With presence-based gating on the late
+    // path, e2 would falsely bump lastApplied to 1 and e1's r1 would be lost.
+    const inner = new MemoryStageStore();
+    const sink = new MemorySink();
+    const { server, base } = await start({
+      agentId: "a",
+      agentTimeoutMs: 120,
+      stageStore: inner,
+      sink,
+    });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    const evt2 = await link.nextEvent();
+    // Both turns time out and park (two interim records reach the sink).
+    await waitFor(async () => (await sink.history("a", "v")).length >= 2);
+
+    // e2's late result first: all ops fail salvage → stage untouched.
+    await control(base, evt2.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "/nodes/ghost/value", value: "nope" }] },
+      { kind: "say", text: "answer 2" },
+    ]);
+    await waitFor(async () => {
+      const frames = await collectEvents(stream, 50);
+      return sayText(frames).includes("answer 2") || true;
+    });
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBeUndefined();
+
+    // e1's older late patch must still land (e2 must not have bumped lastApplied).
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r1");
+    await link.close();
+  });
+
   it("applies a parked late patch after a say-only turn merely re-emitted the seed frame", async () => {
     // Regression (seed frame vs lastApplied): a seeded fresh session parks turn I
     // (its persist save rejects once, so the seed stays armed). A say-only turn J

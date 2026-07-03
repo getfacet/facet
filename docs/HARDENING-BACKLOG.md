@@ -163,7 +163,13 @@ Bundle B PR review record.
 - ~~runtime (effect-based agentMutated, r11)~~ — RESOLVED in-branch (review
   r12, upgraded to P2): `StageFoldResult.mutated` (true iff a non-`test` op
   actually applied) now feeds `TurnResult.agentMutated`; over-cap/empty/
-  non-array/all-salvage-dropped turns no longer bump `recordApplied`.
+  non-array/all-salvage-dropped turns no longer bump `recordApplied` (r13
+  closed the late-apply seam variant with the same effect-based gate).
+- **core/stage-fold.ts (test-guard pre-guard ops, r13)** — ops applied BEFORE
+  a failed `test` guard stay applied while the in-code RFC 6902 §5 citation
+  promises whole-document abort. *Fix:* roll back to the pre-batch stage on a
+  failed guard (or correct the citation to the deliberate partial-salvage
+  semantics).
 - **runtime coalescing vs RFC 6902 `test` document scope (r12)** — a failed
   `test` guard in one patch message drops the remaining ops of the whole
   coalesced turn, not just its own document. *Fix:* thread document-boundary
