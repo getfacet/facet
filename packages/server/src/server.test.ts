@@ -647,7 +647,6 @@ describe("async delivery — late results", () => {
     });
     running = server;
     const link = await dialAgent(base);
-    const stream = await fetch(`${base}/stream?visitorId=v`);
 
     await postEvent(base, "v", { kind: "message", text: "first" });
     const evt1 = await link.nextEvent();
@@ -661,10 +660,9 @@ describe("async delivery — late results", () => {
       { kind: "patch", patches: [{ op: "replace", path: "/nodes/ghost/value", value: "nope" }] },
       { kind: "say", text: "answer 2" },
     ]);
-    await waitFor(async () => {
-      const frames = await collectEvents(stream, 50);
-      return sayText(frames).includes("answer 2") || true;
-    });
+    // Wait for e2's late lane task to actually run: its "answer 2" say lands in
+    // the sink as the third record (after the two interim-timeout records).
+    await waitFor(async () => (await sink.history("a", "v")).length >= 3);
     expect(nodeValue(await inner.get("a", "v"), "t")).toBeUndefined();
 
     // e1's older late patch must still land (e2 must not have bumped lastApplied).

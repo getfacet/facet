@@ -170,6 +170,15 @@ Bundle B PR review record.
   promises whole-document abort. *Fix:* roll back to the pre-batch stage on a
   failed guard (or correct the citation to the deliberate partial-salvage
   semantics).
+- **server/server.ts:390 (deliver-throw comment precision, r14)** — the
+  "failed handle leaves the stage untouched" comment overclaims for a
+  commit-then-reject durable store; the behavior is the accepted trade-off.
+  *Fix:* reword to the runtime's documented failure model.
+- **over-cap /agent/control 400 observability (r14)** — the 400 is silent
+  server-side and agent-client's `post` swallows the status, so a whole turn
+  (says included) can vanish until the interim timeout. *Fix:* one server
+  log naming the requestId + an `ok` check/onError surface in
+  agent-client's sendControl.
 - **runtime coalescing vs RFC 6902 `test` document scope (r12)** — a failed
   `test` guard in one patch message drops the remaining ops of the whole
   coalesced turn, not just its own document. *Fix:* thread document-boundary
