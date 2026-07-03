@@ -1,16 +1,19 @@
 /**
- * The quickstart built-in agent's 3-layer prompt (spec Decision 5):
+ * The quickstart built-in agent's prompt + tool set (a tool-calling loop, not a
+ * single-shot completion):
  *
- *   ① `STAGE_SPEC` (the single-source stage vocabulary from `@facet/core`) +
- *     a fixed output contract — one `{"say"?, "tree"?}` JSON object, nothing else;
+ *   ① `STAGE_SPEC` (the single-source stage vocabulary from `@facet/core`) + a
+ *     short workflow instruction on how to drive the tools;
  *   ② the deployer's guide markdown under a PAGE BRIEF heading;
- *   ③ per-turn messages — the last `HISTORY_TURNS` sink entries as compact
- *     alternating user/assistant lines, then the current event + current stage.
+ *   ③ per-turn messages — recent history + the current event + the current stage.
+ *
+ * The TOOLS are what the model actually calls each step (append/set/remove a
+ * node, render the whole page, say a chat line).
  */
 import { STAGE_SPEC } from "@facet/core";
 import type { ClientEvent, FacetSession, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
-import type { ProviderMessage } from "./provider.js";
+import type { ToolSpec, TurnMessage } from "./provider.js";
 
 /** How many sink entries (visitor event + agent reply pairs) layer ③ replays. */
 export const HISTORY_TURNS = 20;
@@ -30,32 +33,89 @@ page was drawn just for them.
   by name, tweak the existing nodes instead of redrawing everything, and keep
   the tone light and personal.`;
 
-const OUTPUT_CONTRACT = `HOW TO REPLY
-Reply with exactly ONE JSON object of the shape {"say"?: string, "tree"?: <stage tree>} — no prose, no markdown code fences, nothing outside the object. "say" is a short chat line shown to the visitor; "tree" is the FULL stage tree to show (it replaces the current stage). Omit "tree" to leave the page as it is.
-When refining an existing page, reuse the current node ids and change only what should change — do not rename or rebuild unchanged nodes.
-For anything form-like, use "field" nodes plus a pressable box whose onPress is {"kind":"agent","name":"<action>","collect":"<form box id>"} so the typed values arrive on the action event's "fields".`;
+const WORKFLOW = `You build and edit the page by CALLING TOOLS, then chatting.
+- Use render_page to draw the whole page (the first paint, or a big restructure).
+- Use append_node / set_node / remove_node for small, incremental edits — prefer these when refining an existing page, and REUSE existing node ids so you change only what should change.
+- Use say to talk to the visitor (a short chat line).
+- You may call several tools in one turn. When the page reflects the request and you have replied, STOP (make no more tool calls). Never describe the tree in prose — build it with tools.`;
 
-/** Layers ① + ②: the stage vocabulary, the output contract, and the page brief. */
+/** Layers ① + ②: the stage vocabulary, the tool workflow, and the page brief. */
 export function buildSystem(guide: string): string {
   return [
     "You are the live agent behind a Facet page: you draw the page and chat with its visitor.",
     STAGE_SPEC,
-    OUTPUT_CONTRACT,
+    WORKFLOW,
     `PAGE BRIEF\n\n${guide}`,
   ].join("\n\n");
 }
+
+/** A brick node — validated server-side (validateTree + the fail-safe renderer),
+ * so the schema stays permissive and points the model at STAGE_SPEC. */
+const NODE_SCHEMA = {
+  type: "object",
+  description: "A Facet brick node (box | text | image | field) — see the stage format.",
+} as const;
+
+/** The tools the model drives — each maps 1:1 onto a Stage operation. */
+export const TOOLS: readonly ToolSpec[] = [
+  {
+    name: "render_page",
+    description:
+      "Replace the ENTIRE page with a new stage tree. Use for the first paint or a big restructure. Argument: the full stage tree { root, nodes, screens?, entry? }.",
+    parameters: {
+      type: "object",
+      properties: { tree: { type: "object", description: "The full stage tree." } },
+      required: ["tree"],
+    },
+  },
+  {
+    name: "append_node",
+    description:
+      "Add ONE node as the last child of the box `parentId`. Use for small incremental additions to the current page.",
+    parameters: {
+      type: "object",
+      properties: { parentId: { type: "string" }, node: NODE_SCHEMA },
+      required: ["parentId", "node"],
+    },
+  },
+  {
+    name: "set_node",
+    description:
+      "Insert or replace ONE node by its `id`. Reuse an existing id to tweak that node in place; use a new id to add a standalone node.",
+    parameters: {
+      type: "object",
+      properties: { node: NODE_SCHEMA },
+      required: ["node"],
+    },
+  },
+  {
+    name: "remove_node",
+    description: "Delete ONE node from the page by its id.",
+    parameters: {
+      type: "object",
+      properties: { nodeId: { type: "string" } },
+      required: ["nodeId"],
+    },
+  },
+  {
+    name: "say",
+    description: "Send a short chat message to the visitor.",
+    parameters: {
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+    },
+  },
+];
 
 /** One visitor event as a compact user-side line. */
 function describeEvent(event: ClientEvent): string {
   switch (event.kind) {
     case "visit": {
-      // Only the non-secret context reaches the provider — never `visitorId`,
-      // which is the unauthenticated session bearer key (shipping it to a
-      // third-party API + history replay would leak a session-hijack credential
-      // the model has no use for).
+      // Never the visitorId (the unauthenticated session bearer key) — only the
+      // non-secret context the model can actually use.
       const { referrer, locale, relationship } = event.visitor;
-      const context = JSON.stringify({ referrer, locale, relationship });
-      return `(visit) context=${context}`;
+      return `(visit) context=${JSON.stringify({ referrer, locale, relationship })}`;
     }
     case "message":
       return event.text;
@@ -83,19 +143,16 @@ function describeReplies(messages: readonly ServerMessage[]): string {
 /**
  * Layer ③: the last `limit` stored interactions as alternating user/assistant
  * messages, then the final user message = the current event (action events
- * include `fields`, so form submits are visible) + the current stage JSON (so
- * the model refines instead of rebuilding).
- *
- * `limit` is the SINGLE cap on replayed history (the caller resolves it, e.g.
- * to `HISTORY_TURNS`); `limit <= 0` replays no history.
+ * include `fields`) + the current stage JSON (so the model refines instead of
+ * rebuilding). `limit <= 0` replays no history.
  */
-export function buildTurnMessages(
+export function buildInitialMessages(
   event: ClientEvent,
   session: FacetSession,
   history: readonly StoredEvent[],
   limit: number,
-): readonly ProviderMessage[] {
-  const messages: ProviderMessage[] = [];
+): TurnMessage[] {
+  const messages: TurnMessage[] = [];
   const replayed = limit > 0 ? history.slice(-limit) : [];
   for (const entry of replayed) {
     messages.push({ role: "user", content: describeEvent(entry.event) });

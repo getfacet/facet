@@ -4,7 +4,6 @@
 // one non-barrel entry, per repo convention.
 export * from "./provider.js";
 export * from "./prompt.js";
-export * from "./parse.js";
 export * from "./agent.js";
 export * from "./stub.js";
 export * from "./server.js";

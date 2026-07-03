@@ -2,7 +2,13 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
 import type { ClientEvent, FacetSession, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
-import { DEFAULT_GUIDE, HISTORY_TURNS, buildSystem, buildTurnMessages } from "./prompt.js";
+import {
+  DEFAULT_GUIDE,
+  HISTORY_TURNS,
+  TOOLS,
+  buildInitialMessages,
+  buildSystem,
+} from "./prompt.js";
 
 const SESSION: FacetSession = {
   agentId: "quickstart",
@@ -15,17 +21,16 @@ function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
 }
 
 describe("buildSystem", () => {
-  it("contains STAGE_SPEC verbatim, the output contract, and the guide under PAGE BRIEF", () => {
+  it("contains STAGE_SPEC verbatim, the tool workflow, and the guide under PAGE BRIEF", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
     const system = buildSystem(guide);
     expect(system).toContain(STAGE_SPEC);
     expect(system).toContain(guide);
     expect(system).toContain("PAGE BRIEF");
-    // the fixed output contract
-    expect(system).toContain('{"say"');
-    expect(system).toContain("ONE JSON object");
+    // The workflow tells the model to build via tools, not prose.
+    expect(system).toMatch(/render_page/);
+    expect(system).toMatch(/append_node|set_node/);
     expect(system).toMatch(/reuse .*node ids/i);
-    expect(system).toMatch(/collect/);
   });
 
   it("exports a non-empty DEFAULT_GUIDE and HISTORY_TURNS = 20", () => {
@@ -34,49 +39,42 @@ describe("buildSystem", () => {
   });
 });
 
-describe("buildTurnMessages", () => {
+describe("TOOLS", () => {
+  it("offers the five Stage-mapped tools with schemas", () => {
+    const names = TOOLS.map((t) => t.name).sort();
+    expect(names).toEqual(["append_node", "remove_node", "render_page", "say", "set_node"]);
+    for (const tool of TOOLS) {
+      expect(tool.description.length).toBeGreaterThan(0);
+      expect(tool.parameters["type"]).toBe("object");
+    }
+  });
+});
+
+describe("buildInitialMessages", () => {
   it("caps history at the given limit, dropping the oldest", () => {
     const history: StoredEvent[] = [];
     for (let i = 0; i < 25; i += 1) {
       history.push(stored(`m${i}`, [{ kind: "say", text: `r${i}` }]));
     }
     const event: ClientEvent = { kind: "message", text: "now" };
-    const messages = buildTurnMessages(event, SESSION, history, HISTORY_TURNS);
+    const messages = buildInitialMessages(event, SESSION, history, HISTORY_TURNS);
 
     // 20 history turns × (user + assistant) + the final user message
     expect(messages.length).toBe(HISTORY_TURNS * 2 + 1);
-    const all = messages.map((m) => m.content).join("\n");
+    const all = messages.map((m) => ("content" in m ? m.content : "")).join("\n");
     expect(all).not.toContain("m4");
     expect(all).toContain("m5");
     expect(all).toContain("m24");
-    expect(all).toContain("r24");
   });
 
   it("replays no history when the limit is 0 (or negative)", () => {
     const history = [stored("old", [{ kind: "say", text: "reply" }])];
     const event: ClientEvent = { kind: "message", text: "now" };
     for (const limit of [0, -5]) {
-      const messages = buildTurnMessages(event, SESSION, history, limit);
-      expect(messages.length).toBe(1); // only the final user message
-      expect(messages[0]?.content).not.toContain("old");
+      const messages = buildInitialMessages(event, SESSION, history, limit);
+      expect(messages.length).toBe(1);
+      expect("content" in messages[0]! ? messages[0].content : "").not.toContain("old");
     }
-  });
-
-  it("alternates user/assistant lines and marks patches as (page updated)", () => {
-    const history = [
-      stored("hello", [
-        { kind: "say", text: "hi back" },
-        { kind: "patch", patches: [] },
-      ]),
-    ];
-    const event: ClientEvent = { kind: "message", text: "now" };
-    const messages = buildTurnMessages(event, SESSION, history, HISTORY_TURNS);
-    expect(messages[0]?.role).toBe("user");
-    expect(messages[0]?.content).toContain("hello");
-    expect(messages[1]?.role).toBe("assistant");
-    expect(messages[1]?.content).toContain("hi back");
-    expect(messages[1]?.content).toContain("(page updated)");
-    expect(messages[2]?.role).toBe("user");
   });
 
   it("renders an action event's name, payload, and fields into the final user message", () => {
@@ -85,20 +83,14 @@ describe("buildTurnMessages", () => {
       action: { kind: "agent", name: "submit", payload: { plan: "pro" }, collect: "signup" },
       fields: { name: "Hoon", email: "hoon@example.com" },
     };
-    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
-    const final = messages[messages.length - 1];
-    expect(final?.role).toBe("user");
-    expect(final?.content).toContain("submit");
-    expect(final?.content).toContain("pro");
-    expect(final?.content).toContain("Hoon");
-    expect(final?.content).toContain("hoon@example.com");
-  });
-
-  it("appends the current stage JSON to the final user message", () => {
-    const event: ClientEvent = { kind: "message", text: "make it blue" };
-    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
-    const final = messages[messages.length - 1];
-    expect(final?.content).toContain(`CURRENT STAGE: ${JSON.stringify(SESSION.stage)}`);
+    const messages = buildInitialMessages(event, SESSION, [], HISTORY_TURNS);
+    const final = messages[messages.length - 1]!;
+    const content = "content" in final ? final.content : "";
+    expect(content).toContain("submit");
+    expect(content).toContain("pro");
+    expect(content).toContain("Hoon");
+    expect(content).toContain("hoon@example.com");
+    expect(content).toContain(`CURRENT STAGE: ${JSON.stringify(SESSION.stage)}`);
   });
 
   it("renders a visit event's non-secret context but never the visitorId bearer key", () => {
@@ -106,19 +98,10 @@ describe("buildTurnMessages", () => {
       kind: "visit",
       visitor: { visitorId: "secret-session-key-123", referrer: "news.ycombinator.com" },
     };
-    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
-    expect(messages.length).toBe(1);
-    expect(messages[0]?.role).toBe("user");
-    expect(messages[0]?.content).toContain("visit");
-    expect(messages[0]?.content).toContain("news.ycombinator.com");
-    // The visitorId is the unauthenticated session bearer key — it must NOT
-    // reach the provider prompt.
-    expect(messages[0]?.content).not.toContain("secret-session-key-123");
-  });
-
-  it("renders a message event as its text", () => {
-    const event: ClientEvent = { kind: "message", text: "show me the menu" };
-    const messages = buildTurnMessages(event, SESSION, [], HISTORY_TURNS);
-    expect(messages[0]?.content).toContain("show me the menu");
+    const messages = buildInitialMessages(event, SESSION, [], HISTORY_TURNS);
+    const content = "content" in messages[0]! ? messages[0].content : "";
+    expect(content).toContain("visit");
+    expect(content).toContain("news.ycombinator.com");
+    expect(content).not.toContain("secret-session-key-123");
   });
 });

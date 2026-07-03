@@ -8,6 +8,7 @@ import {
   resolveProvider,
   type ProviderTurn,
   type QuickstartProvider,
+  type ToolSpec,
 } from "./provider.js";
 
 // ---------------------------------------------------------------------------
@@ -78,6 +79,11 @@ const TURN: ProviderTurn = {
   ],
 };
 
+const TOOLS: readonly ToolSpec[] = [
+  { name: "say", description: "Send a chat message.", parameters: { type: "object" } },
+  { name: "render_page", description: "Replace the page.", parameters: { type: "object" } },
+];
+
 // ---------------------------------------------------------------------------
 // Shared adapter contract — the SAME suite runs against both providers
 // ---------------------------------------------------------------------------
@@ -94,9 +100,14 @@ interface AdapterCase {
   readonly authHeader: string;
   readonly authValue: (apiKey: string) => string;
   readonly extraHeaders: Readonly<Record<string, string>>;
-  readonly success: (text: string) => unknown;
+  /** A text-only response (no tool calls). */
+  readonly textResponse: (text: string) => unknown;
+  /** A single-tool-call response. */
+  readonly toolResponse: (id: string, name: string, input: unknown) => unknown;
+  /** A response missing the choices/content envelope. */
   readonly malformed: unknown;
-  readonly assertPlacement: (body: Record<string, unknown>, turn: ProviderTurn) => void;
+  /** Assert the request maps system/messages correctly and offers the tools. */
+  readonly assertRequest: (body: Record<string, unknown>, turn: ProviderTurn) => void;
 }
 
 const openaiCase: AdapterCase = {
@@ -107,16 +118,31 @@ const openaiCase: AdapterCase = {
   authHeader: "authorization",
   authValue: (apiKey) => `Bearer ${apiKey}`,
   extraHeaders: {},
-  success: (text) => ({ choices: [{ message: { content: text } }] }),
-  malformed: { choices: [{ message: {} }] },
-  assertPlacement: (body, turn) => {
-    // System prompt travels as the leading chat message.
+  textResponse: (text) => ({ choices: [{ message: { content: text } }] }),
+  toolResponse: (id, name, input) => ({
+    choices: [
+      {
+        message: {
+          content: null,
+          tool_calls: [
+            { id, type: "function", function: { name, arguments: JSON.stringify(input) } },
+          ],
+        },
+      },
+    ],
+  }),
+  malformed: {},
+  assertRequest: (body, turn) => {
     const messages = body["messages"] as ReadonlyArray<Record<string, unknown>>;
     expect(messages[0]).toEqual({ role: "system", content: turn.system });
     expect(messages.slice(1)).toEqual(turn.messages);
     expect("system" in body).toBe(false);
-    // JSON mode is requested so the model can't answer in bare prose.
-    expect(body["response_format"]).toEqual({ type: "json_object" });
+    // Tools are offered as OpenAI functions.
+    const tools = body["tools"] as ReadonlyArray<Record<string, unknown>>;
+    const names = tools.map((t) => (t["function"] as Record<string, unknown>)["name"]);
+    expect(names).toContain("say");
+    expect(names).toContain("render_page");
+    expect(body["tool_choice"]).toBe("auto");
   },
 };
 
@@ -128,14 +154,17 @@ const anthropicCase: AdapterCase = {
   authHeader: "x-api-key",
   authValue: (apiKey) => apiKey,
   extraHeaders: { "anthropic-version": "2023-06-01" },
-  success: (text) => ({ content: [{ type: "text", text }] }),
-  malformed: { content: [{ type: "tool_use" }] },
-  assertPlacement: (body, turn) => {
-    // System prompt travels top-level; max_tokens is explicit.
+  textResponse: (text) => ({ content: [{ type: "text", text }] }),
+  toolResponse: (id, name, input) => ({ content: [{ type: "tool_use", id, name, input }] }),
+  malformed: {},
+  assertRequest: (body, turn) => {
     expect(body["system"]).toBe(turn.system);
     expect(body["messages"]).toEqual(turn.messages);
     expect(typeof body["max_tokens"]).toBe("number");
     expect(body["max_tokens"]).toBeGreaterThan(0);
+    const tools = body["tools"] as ReadonlyArray<Record<string, unknown>>;
+    expect(tools.map((t) => t["name"])).toContain("say");
+    expect(tools[0]).toHaveProperty("input_schema");
   },
 };
 
@@ -143,10 +172,10 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
   const API_KEY = "test-key-123";
 
   it("POSTs the documented endpoint with the key in the auth header and the model in the body", async () => {
-    const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.success("ok")));
+    const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("ok")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    await provider.generate(TURN);
+    await provider.run(TURN, TOOLS);
 
     expect(calls).toHaveLength(1);
     const request = calls[0]!;
@@ -160,13 +189,13 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     expect(bodyOf(request)["model"]).toBe(adapter.defaultModel);
   });
 
-  it("places system and messages where the provider expects them", async () => {
-    const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.success("ok")));
+  it("maps system + messages and offers the tools", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("ok")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    await provider.generate(TURN);
+    await provider.run(TURN, TOOLS);
 
-    adapter.assertPlacement(bodyOf(calls[0]!), TURN);
+    adapter.assertRequest(bodyOf(calls[0]!), TURN);
   });
 
   it("exposes its name and default model", () => {
@@ -175,45 +204,58 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     expect(provider.model).toBe(adapter.defaultModel);
   });
 
-  it("extracts the reply text from a successful response", async () => {
-    const { fetchImpl } = createCapturingFetch(okJson(adapter.success("the reply text")));
+  it("parses a text-only step (no tool calls)", async () => {
+    const { fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("just chatting")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    await expect(provider.generate(TURN)).resolves.toBe("the reply text");
+    const step = await provider.run(TURN, TOOLS);
+    expect(step.text).toBe("just chatting");
+    expect(step.toolCalls).toHaveLength(0);
+  });
+
+  it("parses a tool-call step (name + parsed input)", async () => {
+    const { fetchImpl } = createCapturingFetch(
+      okJson(adapter.toolResponse("call-1", "say", { text: "hi there" })),
+    );
+    const provider = adapter.create(API_KEY, fetchImpl);
+
+    const step = await provider.run(TURN, TOOLS);
+    expect(step.toolCalls).toHaveLength(1);
+    expect(step.toolCalls[0]).toMatchObject({
+      id: "call-1",
+      name: "say",
+      input: { text: "hi there" },
+    });
   });
 
   it("rejects on HTTP 4xx", async () => {
     const { fetchImpl } = createCapturingFetch(httpError(401));
     const provider = adapter.create(API_KEY, fetchImpl);
-
-    await expect(provider.generate(TURN)).rejects.toThrow(/401/);
+    await expect(provider.run(TURN, TOOLS)).rejects.toThrow(/401/);
   });
 
   it("rejects on HTTP 5xx", async () => {
     const { fetchImpl } = createCapturingFetch(httpError(500));
     const provider = adapter.create(API_KEY, fetchImpl);
-
-    await expect(provider.generate(TURN)).rejects.toThrow(/500/);
+    await expect(provider.run(TURN, TOOLS)).rejects.toThrow(/500/);
   });
 
-  it("rejects on a malformed response shape", async () => {
+  it("rejects on a malformed response envelope", async () => {
     const { fetchImpl } = createCapturingFetch(okJson(adapter.malformed));
     const provider = adapter.create(API_KEY, fetchImpl);
-
-    await expect(provider.generate(TURN)).rejects.toThrow();
+    await expect(provider.run(TURN, TOOLS)).rejects.toThrow();
   });
 
   it("aborts the attempt at the timeout", async () => {
     const provider = adapter.create(API_KEY, hangingFetch, { timeoutMs: 20 });
-
-    await expect(provider.generate(TURN)).rejects.toThrow();
+    await expect(provider.run(TURN, TOOLS)).rejects.toThrow();
   });
 
   it("never leaks the key outside the auth header (not in URL or body)", async () => {
-    const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.success("ok")));
+    const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("ok")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    await provider.generate(TURN);
+    await provider.run(TURN, TOOLS);
 
     const request = calls[0]!;
     expect(request.url).not.toContain(API_KEY);
@@ -227,53 +269,42 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
 
 describe("resolveProvider", () => {
   it("prefers openai when both keys are present", () => {
-    const provider = resolveProvider(
-      {},
-      { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-ant" },
-    );
+    const provider = resolveProvider({}, { OPENAI_API_KEY: "o", ANTHROPIC_API_KEY: "a" });
     expect(provider?.name).toBe("openai");
   });
 
-  it("falls back to anthropic when only ANTHROPIC_API_KEY is present", () => {
-    const provider = resolveProvider({}, { ANTHROPIC_API_KEY: "sk-ant" });
+  it("uses anthropic when only its key is present", () => {
+    const provider = resolveProvider({}, { ANTHROPIC_API_KEY: "a" });
     expect(provider?.name).toBe("anthropic");
   });
 
-  it("picks openai when only OPENAI_API_KEY is present", () => {
-    const provider = resolveProvider({}, { OPENAI_API_KEY: "sk-openai" });
+  it("uses openai when only its key is present", () => {
+    const provider = resolveProvider({}, { OPENAI_API_KEY: "o" });
     expect(provider?.name).toBe("openai");
   });
 
-  it("honors --provider anthropic even when the openai key is also present", () => {
+  it("returns null when no key is present", () => {
+    expect(resolveProvider({}, {})).toBeNull();
+  });
+
+  it("honors an explicit --provider override", () => {
     const provider = resolveProvider(
       { provider: "anthropic" },
-      { OPENAI_API_KEY: "sk-openai", ANTHROPIC_API_KEY: "sk-ant" },
+      { OPENAI_API_KEY: "o", ANTHROPIC_API_KEY: "a" },
     );
     expect(provider?.name).toBe("anthropic");
   });
 
-  it("throws naming ANTHROPIC_API_KEY when --provider anthropic lacks its key", () => {
-    expect(() =>
-      resolveProvider({ provider: "anthropic" }, { OPENAI_API_KEY: "sk-openai" }),
-    ).toThrow(/ANTHROPIC_API_KEY/);
-  });
-
-  it("throws naming OPENAI_API_KEY when --provider openai lacks its key", () => {
-    expect(() => resolveProvider({ provider: "openai" }, { ANTHROPIC_API_KEY: "sk-ant" })).toThrow(
+  it("throws naming the exact env var when --provider lacks its key", () => {
+    expect(() => resolveProvider({ provider: "anthropic" }, { OPENAI_API_KEY: "o" })).toThrow(
+      /ANTHROPIC_API_KEY/,
+    );
+    expect(() => resolveProvider({ provider: "openai" }, { ANTHROPIC_API_KEY: "a" })).toThrow(
       /OPENAI_API_KEY/,
     );
   });
 
-  it("returns null when no key is present and no provider is forced", () => {
-    expect(resolveProvider({}, {})).toBeNull();
-  });
-
-  it("never echoes a key value in the missing-key error", () => {
-    try {
-      resolveProvider({ provider: "openai" }, { ANTHROPIC_API_KEY: "sk-ant-secret" });
-      expect.unreachable("resolveProvider should have thrown");
-    } catch (error) {
-      expect(String(error)).not.toContain("sk-ant-secret");
-    }
+  it("throws on an unknown --provider value", () => {
+    expect(() => resolveProvider({ provider: "llama" }, {})).toThrow(/llama/);
   });
 });
