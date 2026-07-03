@@ -143,7 +143,11 @@ the session existed, so the store reports the fresh seed once (`takeSeeded`) and
 the runtime prepends a root `replace` as that turn's first frame — stamped,
 replayable, and applied by the same `applyPatch` on both sides. The frame is
 consumed only when the turn persists; a failed first turn re-emits it, and a
-reconnect gets the seed the normal way, via the rehydrate snapshot. One
+reconnect gets the seed the normal way, via the rehydrate snapshot. For the
+very first paint the quickstart shell also ships the seed (and the resolved
+theme's canvas colors) with the page itself — `useFacet` can start from a
+boot-shipped tree, so nothing waits on the model; the seed frame then applies
+idempotently. One
 trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
 which would silently seed a blank page and flip the server's offline face, so a
 tree that isn't *seedable* (a render root with at least one child, or a non-empty

@@ -142,6 +142,14 @@ Bundle B PR review record.
   `recordApplied` fires there; safe only because `late.ts` staleness uses
   strict `>`. *Fix:* rewrite the comment + reciprocal warning in late.ts; no
   behavior change.
+- **quickstart prompt — screens/entry authoring quality** (live-browser
+  finding, 2026-07-04): the built-in agent sometimes registers only one
+  screen and points `entry` at it, so its own navigate buttons target
+  non-existent screens (fail-safe no-op — nothing breaks, but navigation
+  dies). *Fix (model-quality, batch with the next quickstart-agent
+  improvement pass):* one WORKFLOW/STAGE_SPEC line — every screen a navigate
+  references must exist in `screens`, and `entry` should be the landing
+  screen; consider a stub-level pin.
 
 ## Accepted (documented trust model — revisit on trigger)
 
