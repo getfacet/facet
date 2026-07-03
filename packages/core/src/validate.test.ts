@@ -4,6 +4,7 @@ import {
   isSafeImageSrc,
   MAX_DEPTH,
   sanitizeActionPayload,
+  validateStamp,
   validateTree,
 } from "./validate.js";
 
@@ -149,6 +150,145 @@ describe("validateTree", () => {
       };
     }
     expect(() => validateTree({ root: "root", nodes })).not.toThrow();
+  });
+});
+
+describe("validateTree theme", () => {
+  const base = {
+    root: "root",
+    nodes: { root: { id: "root", type: "box", children: [] } },
+  };
+
+  it("keeps a string theme and drops a non-string theme", () => {
+    const kept = validateTree({ ...base, theme: "brand" });
+    expect((kept.tree as { theme?: unknown }).theme).toBe("brand");
+    expect(kept.issues).toHaveLength(0);
+
+    for (const bad of [42, {}, null]) {
+      const { tree, issues } = validateTree({ ...base, theme: bad });
+      expect((tree as { theme?: unknown }).theme).toBeUndefined();
+      expect("theme" in tree).toBe(false);
+      expect(issues.some((issue) => issue.includes("theme"))).toBe(true);
+    }
+  });
+
+  it("materializes no theme on garbage input (EMPTY_TREE carries none)", () => {
+    for (const garbage of [null, 42, "nope", {}, { nodes: {} }]) {
+      const { tree } = validateTree(garbage);
+      expect("theme" in tree).toBe(false);
+    }
+  });
+});
+
+describe("validateStamp", () => {
+  it("keeps a valid fragment with a resolving root and one-line description", () => {
+    const { stamp, issues } = validateStamp({
+      name: "hero",
+      description: "a big hero",
+      root: "h",
+      nodes: {
+        h: { id: "h", type: "box", style: { gap: "md" }, children: ["t"] },
+        t: { id: "t", type: "text", value: "hi" },
+      },
+    });
+    expect(issues).toHaveLength(0);
+    expect(stamp).toBeDefined();
+    expect(stamp?.name).toBe("hero");
+    expect(stamp?.description).toBe("a big hero");
+    expect(stamp?.root).toBe("h");
+    expect(stamp?.nodes["t"]).toMatchObject({ type: "text", value: "hi" });
+  });
+
+  it("refuses a fragment whose root does not resolve", () => {
+    const { stamp, issues } = validateStamp({
+      name: "x",
+      root: "ghost",
+      nodes: { a: { id: "a", type: "box", children: [] } },
+    });
+    expect(stamp).toBeUndefined();
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  it("accepts a single text node as the root (the root need not be a box)", () => {
+    const { stamp, issues } = validateStamp({
+      name: "label",
+      root: "t",
+      nodes: { t: { id: "t", type: "text", value: "solo" } },
+    });
+    expect(issues).toHaveLength(0);
+    expect(stamp?.root).toBe("t");
+    expect(stamp?.nodes["t"]).toMatchObject({ type: "text", value: "solo" });
+  });
+
+  it("refuses input with no string name", () => {
+    for (const bad of [
+      { root: "t", nodes: { t: { id: "t", type: "text", value: "x" } } },
+      42,
+      null,
+    ]) {
+      const { stamp, issues } = validateStamp(bad);
+      expect(stamp).toBeUndefined();
+      expect(issues.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("drops hostile node ids without flipping the map prototype", () => {
+    const input = JSON.parse(
+      '{"name":"h","root":"root","nodes":{"root":{"id":"root","type":"box","children":["value"]},"__proto__":{"id":"__proto__","type":"text","value":"x"}}}',
+    ) as unknown;
+    const { stamp, issues } = validateStamp(input);
+    expect(Object.keys(stamp?.nodes ?? {})).toEqual(["root"]);
+    expect(issues.some((issue) => issue.includes("forbidden node id"))).toBe(true);
+    const root = stamp?.nodes["root"] as unknown as { children: string[] };
+    expect(root.children).toEqual([]);
+  });
+
+  it("sanitizes junk style tokens on stamp nodes", () => {
+    const { stamp } = validateStamp({
+      name: "s",
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: { gap: "HUGE", pad: "md" }, children: [] },
+      },
+    });
+    const root = stamp?.nodes["root"] as unknown as { style?: Record<string, unknown> };
+    expect(root.style?.["gap"]).toBeUndefined();
+    expect(root.style?.["pad"]).toBe("md");
+  });
+
+  it("breaks a cyclic fragment a -> b -> a with an issue and no throw", () => {
+    const run = (): ReturnType<typeof validateStamp> =>
+      validateStamp({
+        name: "cyc",
+        root: "a",
+        nodes: {
+          a: { id: "a", type: "box", children: ["b"] },
+          b: { id: "b", type: "box", children: ["a"] },
+        },
+      });
+    expect(run).not.toThrow();
+    const { stamp, issues } = run();
+    const b = stamp?.nodes["b"] as unknown as { children: string[] };
+    expect(b.children).toEqual([]); // the back-edge b -> a is removed
+    expect(issues.some((issue) => issue.includes("cyclic"))).toBe(true);
+  });
+
+  it("clamps a fragment deeper than MAX_DEPTH with an issue and no throw", () => {
+    const nodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: ["n0"] },
+    };
+    for (let i = 0; i < 5000; i += 1) {
+      nodes[`n${String(i)}`] = {
+        id: `n${String(i)}`,
+        type: "box",
+        children: i < 4999 ? [`n${String(i + 1)}`] : [],
+      };
+    }
+    const run = (): ReturnType<typeof validateStamp> =>
+      validateStamp({ name: "deep", root: "root", nodes });
+    expect(run).not.toThrow();
+    const { issues } = run();
+    expect(issues.some((issue) => issue.includes("max depth"))).toBe(true);
   });
 });
 

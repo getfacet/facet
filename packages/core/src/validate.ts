@@ -20,6 +20,7 @@ import {
   type FieldInput,
   type FieldStyle,
   type ImageStyle,
+  type NodeId,
   type TextStyle,
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
@@ -349,20 +350,22 @@ function sanitizeScreens(
   return { screens: kept, entry: firstKey };
 }
 
-export function validateTree(input: unknown): ValidationResult {
-  const issues: string[] = [];
-  if (!isObject(input) || !isObject(input.nodes)) {
-    issues.push("input is not a tree object with a nodes map");
-    return { tree: EMPTY_TREE, issues };
-  }
-
-  // Null-prototype accumulator: with a plain object literal, a node keyed
-  // "__proto__" would ASSIGN the map's [[Prototype]] instead of storing a node
-  // (silently losing it and making dangling-child lookups resolve through the
-  // prototype chain). Also drop such ids outright — patch pointers to them are
-  // forbidden anyway, so they'd be unreachable.
+/**
+ * Sanitizes a raw `nodes` map into a null-prototype accumulator of kept nodes.
+ *
+ * Null-prototype: with a plain object literal, a node keyed "__proto__" would
+ * ASSIGN the map's [[Prototype]] instead of storing a node (silently losing it
+ * and making dangling-child lookups resolve through the prototype chain). Such
+ * ids are also dropped outright — patch pointers to them are forbidden anyway,
+ * so they'd be unreachable. Shared by `validateTree` and `validateStamp` so the
+ * brick-shape + token-membership sanitization is derived once, not twice.
+ */
+function sanitizeNodeMap(
+  rawNodes: Record<string, unknown>,
+  issues: string[],
+): Record<string, FacetNode> {
   const nodes: Record<string, FacetNode> = Object.create(null) as Record<string, FacetNode>;
-  for (const [id, raw] of Object.entries(input.nodes)) {
+  for (const [id, raw] of Object.entries(rawNodes)) {
     if (id === "__proto__" || id === "prototype" || id === "constructor") {
       issues.push(`node "${id}": forbidden node id dropped`);
       continue;
@@ -372,11 +375,16 @@ export function validateTree(input: unknown): ValidationResult {
       nodes[id] = node;
     }
   }
+  return nodes;
+}
 
-  // Drop child references that point at nodes we couldn't keep, and dedupe
-  // duplicate siblings (a child id may appear at most once under one parent —
-  // keep the first occurrence). A dup would otherwise render the same subtree
-  // twice and make patch pointers to it ambiguous.
+/**
+ * Drops child references that point at nodes we couldn't keep, and dedupes
+ * duplicate siblings (a child id may appear at most once under one parent —
+ * keep the first occurrence). A dup would otherwise render the same subtree
+ * twice and make patch pointers to it ambiguous. Mutates `nodes` in place.
+ */
+function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: string[]): void {
   for (const node of Object.values(nodes)) {
     if (isContainer(node)) {
       const seen = new Set<string>();
@@ -402,6 +410,63 @@ export function validateTree(input: unknown): ValidationResult {
       }
     }
   }
+}
+
+/**
+ * Breaks cycles: drops any child ref that points back to an ancestor, which
+ * would otherwise recurse forever in the renderer, and caps depth at MAX_DEPTH
+ * (fail-safe — pathologically deep input can't blow the stack). DFS from every
+ * root in `roots` (a tree passes its root plus each kept screen root; a stamp
+ * passes its single fragment root); the shared `settled` set skips
+ * already-verified acyclic subgraphs. Mutates `nodes` in place.
+ */
+function breakCycles(
+  nodes: Record<string, FacetNode>,
+  roots: readonly string[],
+  issues: string[],
+): void {
+  const inPath = new Set<string>();
+  const settled = new Set<string>();
+  const visit = (nodeId: string, depth: number): void => {
+    const node = nodes[nodeId];
+    if (node === undefined || node.type !== "box") {
+      settled.add(nodeId);
+      return;
+    }
+    inPath.add(nodeId);
+    const kept: string[] = [];
+    for (const child of node.children) {
+      if (inPath.has(child)) {
+        issues.push(`node "${nodeId}": removed cyclic child "${child}"`);
+        continue;
+      }
+      if (depth >= MAX_DEPTH) {
+        issues.push(`node "${nodeId}": dropped child "${child}" beyond max depth`);
+        continue;
+      }
+      kept.push(child);
+      if (!settled.has(child)) visit(child, depth + 1);
+    }
+    if (kept.length !== node.children.length) {
+      nodes[nodeId] = { ...node, children: kept };
+    }
+    inPath.delete(nodeId);
+    settled.add(nodeId);
+  };
+  for (const root of roots) {
+    if (!settled.has(root)) visit(root, 0);
+  }
+}
+
+export function validateTree(input: unknown): ValidationResult {
+  const issues: string[] = [];
+  if (!isObject(input) || !isObject(input.nodes)) {
+    issues.push("input is not a tree object with a nodes map");
+    return { tree: EMPTY_TREE, issues };
+  }
+
+  const nodes = sanitizeNodeMap(input.nodes, issues);
+  pruneDanglingChildren(nodes, issues);
 
   const rootId =
     typeof input.root === "string" && nodes[input.root] !== undefined
@@ -422,55 +487,90 @@ export function validateTree(input: unknown): ValidationResult {
 
   const { screens, entry } = sanitizeScreens(input.screens, input.entry, nodes, issues);
 
-  // Break cycles: drop any child ref that points back to an ancestor, which would
-  // otherwise recurse forever in the renderer. DFS from root AND from every kept
-  // screen root (screens may reach subgraphs the root doesn't); the shared
-  // settled set skips already-verified acyclic subgraphs.
-  const inPath = new Set<string>();
-  const settled = new Set<string>();
-  const breakCycles = (nodeId: string, depth: number): void => {
-    const node = nodes[nodeId];
-    if (node === undefined || node.type !== "box") {
-      settled.add(nodeId);
-      return;
-    }
-    inPath.add(nodeId);
-    const kept: string[] = [];
-    for (const child of node.children) {
-      if (inPath.has(child)) {
-        issues.push(`node "${nodeId}": removed cyclic child "${child}"`);
-        continue;
-      }
-      if (depth >= MAX_DEPTH) {
-        // Fail-safe: cap depth so pathologically deep input can't blow the stack.
-        issues.push(`node "${nodeId}": dropped child "${child}" beyond max depth`);
-        continue;
-      }
-      kept.push(child);
-      if (!settled.has(child)) breakCycles(child, depth + 1);
-    }
-    if (kept.length !== node.children.length) {
-      nodes[nodeId] = { ...node, children: kept };
-    }
-    inPath.delete(nodeId);
-    settled.add(nodeId);
-  };
-  breakCycles(rootId, 0);
-  if (screens !== undefined) {
-    for (const screenRoot of Object.values(screens)) {
-      if (!settled.has(screenRoot)) breakCycles(screenRoot, 0);
-    }
-  }
+  breakCycles(nodes, [rootId, ...(screens !== undefined ? Object.values(screens) : [])], issues);
 
   const tree: {
     root: string;
     nodes: Record<string, FacetNode>;
+    theme?: string;
     screens?: Record<string, string>;
     entry?: string;
   } = { root: rootId, nodes };
+  // Keep the theme NAME only when it is a string; a non-string is dropped with
+  // an issue (else the save-time re-validate at runtime.ts would strip it
+  // silently). Styles stay tokens — the tree never carries a CSS value.
+  if (typeof input.theme === "string") {
+    tree.theme = input.theme;
+  } else if (input.theme !== undefined) {
+    issues.push("theme is not a string; dropped");
+  }
   if (screens !== undefined && entry !== undefined) {
     tree.screens = screens;
     tree.entry = entry;
   }
   return { tree, issues };
+}
+
+/**
+ * A reusable, validated brick fragment — a named `{root, nodes}` subtree the
+ * operator authors and the LLM copies into ordinary patches (Decision 5,
+ * prompt-copy only: stamps are never expanded server-side or client-side). The
+ * `root` need NOT be a box (a single-text stamp is legal), and unlike a tree a
+ * stamp has no `screens`/`entry`.
+ */
+export interface FacetStamp {
+  readonly name: string;
+  readonly description?: string;
+  readonly root: NodeId;
+  readonly nodes: Readonly<Record<NodeId, FacetNode>>;
+}
+
+export interface StampValidationResult {
+  readonly stamp?: FacetStamp;
+  readonly issues: readonly string[];
+}
+
+/**
+ * Fail-safe boundary for an untrusted stamp document, mirroring `validateTree`'s
+ * discipline (shared `sanitizeNodeMap`/`pruneDanglingChildren`/`breakCycles`):
+ * brick-shape + token-membership sanitization, null-proto node map, dangling and
+ * cyclic child refs removed, depth capped. Never throws. A stamp needs a string
+ * `name` and a `root` that resolves to a kept node (any brick type); no usable
+ * root ⇒ `stamp` undefined. Issues report everything that was fixed or refused.
+ */
+export function validateStamp(input: unknown): StampValidationResult {
+  const issues: string[] = [];
+  if (!isObject(input) || !isObject(input.nodes)) {
+    issues.push("stamp is not an object with a nodes map");
+    return { issues };
+  }
+  const name = asString(input.name);
+  if (name === undefined || name.trim() === "") {
+    issues.push("stamp has no string name");
+    return { issues };
+  }
+
+  const nodes = sanitizeNodeMap(input.nodes, issues);
+  pruneDanglingChildren(nodes, issues);
+
+  const rootId =
+    typeof input.root === "string" && nodes[input.root] !== undefined ? input.root : undefined;
+  if (rootId === undefined) {
+    issues.push("stamp has no valid root node");
+    return { issues };
+  }
+
+  breakCycles(nodes, [rootId], issues);
+
+  const stamp: {
+    name: string;
+    description?: string;
+    root: string;
+    nodes: Record<string, FacetNode>;
+  } = { name, root: rootId, nodes };
+  const description = asString(input.description);
+  if (description !== undefined) {
+    stamp.description = description;
+  }
+  return { stamp, issues };
 }

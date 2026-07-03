@@ -23,6 +23,15 @@ export interface FacetTree {
   readonly screens?: Readonly<Record<string, NodeId>>;
   /** Screen shown first (a key of `screens`). Meaningless without `screens`. */
   readonly entry?: string;
+  /**
+   * Optional theme NAME — a select-by-name handle into an operator-authored
+   * theme registry, never a CSS value. The agent sets it to a name it was given
+   * (or leaves it absent); an unknown/absent name simply resolves to the default
+   * look at render time. Kept only when a string: `validateTree` drops a
+   * non-string `theme` with an issue so the two invariants hold — the tree
+   * carries a name, styles stay tokens.
+   */
+  readonly theme?: string;
 }
 
 /**
