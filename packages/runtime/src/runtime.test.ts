@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ClientEvent, FacetAgent, FacetTree, ServerMessage } from "@facet/core";
-import { EMPTY_TREE, foldPatchIntoStage } from "@facet/core";
+import { EMPTY_TREE, foldPatchIntoStage, MAX_PATCH_OPS } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
 import { MemoryStageStore } from "./stage-store.js";
 import { withInitialStage } from "./assets.js";
@@ -474,15 +474,59 @@ describe("FacetRuntime.applyToSession fail-soft", () => {
     expect(stage?.nodes["also"]).toBeDefined();
   });
 
-  it("survives a patch message whose patches field is not an array (turn + chat preserved)", async () => {
-    const broken = { kind: "patch", patches: "not-an-array" } as unknown as ServerMessage;
-    const rt = new FacetRuntime({
-      agentId: "a",
-      agent: agentOf(broken, { kind: "say", text: "still here" }),
+  it("survives a patch message whose patches field is non-iterable (turn + chat preserved)", async () => {
+    // Genuinely non-iterable values — a STRING is the one non-array value that IS
+    // iterable, so it would silently push single-char "ops" and mask the crash the
+    // guard exists to prevent. Each must be dropped fail-soft (rest of the turn,
+    // says included, still applies and delivers) — never throw through the seam.
+    for (const bad of [null, undefined, {}]) {
+      const broken = { kind: "patch", patches: bad } as unknown as ServerMessage;
+      const rt = new FacetRuntime({
+        agentId: "a",
+        agent: agentOf(broken, { kind: "say", text: "still here" }),
+      });
+      const { messages } = await rt.handle(visitor, { kind: "message", text: "hi" });
+      expect(messages.some((m) => m.kind === "say" && m.text === "still here")).toBe(true);
+      const stage = await rt.stageFor("v");
+      expect(stage?.nodes["root"]).toBeDefined(); // stage intact, not wiped
+    }
+  });
+
+  it("drops a turn whose coalesced patch ops exceed MAX_PATCH_OPS (stage unchanged, say survives, issue logged)", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.map((a) => String(a)).join(" "));
     });
-    const { messages } = await rt.handle(visitor, { kind: "message", text: "hi" });
-    expect(messages.some((m) => m.kind === "say" && m.text === "still here")).toBe(true);
-    const stage = await rt.stageFor("v");
-    expect(stage?.nodes["root"]).toBeDefined(); // stage intact, not wiped
+    try {
+      // Two individually wire-valid patch messages (600 ops each) coalesce to 1200
+      // > MAX_PATCH_OPS. The fold would reject the whole batch; the runtime must
+      // skip it, leave the stage untouched, surface the issue, and NOT deliver the
+      // known-rejected coalesced frame — while the turn's say still travels.
+      const mkOps = (prefix: string): { op: "add"; path: string; value: unknown }[] =>
+        Array.from({ length: 600 }, (_, i) => ({
+          op: "add" as const,
+          path: `/nodes/${prefix}${String(i)}`,
+          value: { id: `${prefix}${String(i)}`, type: "text" as const, value: "x" },
+        }));
+      const rt = new FacetRuntime({
+        agentId: "a",
+        agent: agentOf(
+          { kind: "patch", patches: mkOps("a") } as ServerMessage,
+          { kind: "patch", patches: mkOps("b") } as ServerMessage,
+          { kind: "say", text: "still here" },
+        ),
+      });
+      const { messages } = await rt.handle(visitor, { kind: "message", text: "hi" });
+      expect(messages.some((m) => m.kind === "say" && m.text === "still here")).toBe(true);
+      expect(messages.some((m) => m.kind === "patch")).toBe(false); // no patch frame delivered
+      const stage = await rt.stageFor("v");
+      expect(stage?.nodes["a0"]).toBeUndefined(); // none of the 1200 ops applied
+      expect(stage?.nodes["b0"]).toBeUndefined();
+      expect(stage?.nodes["root"]).toBeDefined(); // stage byte-identical to pre-turn
+      expect(errors.some((e) => e.includes("patch turn dropped") && e.includes("1200"))).toBe(true);
+      expect(MAX_PATCH_OPS).toBe(1024); // guards the 600+600 boundary this test relies on
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

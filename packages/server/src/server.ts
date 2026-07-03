@@ -202,14 +202,22 @@ function isControlBody(body: unknown): body is AgentControlFrame {
   const { requestId, messages } = body as { requestId?: unknown; messages?: unknown };
   if (typeof requestId !== "number") return false;
   if (!Array.isArray(messages)) return false;
+  // Cap the op count at the wire boundary on the per-FRAME AGGREGATE (running total
+  // across the frame's patch messages), not per message: the runtime coalesces all
+  // of a turn's patch messages and folds ONCE, so a split body (k messages of
+  // ≤MAX_PATCH_OPS ops each) whose total exceeds the cap would be 202-accepted here
+  // then silently dropped WHOLE at the fold. A hostile 5 MiB batch (~1M junk ops),
+  // split or not, is 400-rejected here before it can reach the runtime's fold path.
+  let totalOps = 0;
   return messages.every((m) => {
     if (typeof m !== "object" || m === null) return false;
     const { kind, text, patches } = m as { kind?: unknown; text?: unknown; patches?: unknown };
     if (kind === "say") return typeof text === "string";
-    // Cap the op count at the wire boundary too: a hostile 5 MiB batch (~1M junk
-    // ops) is 400-rejected here before it can reach the runtime's fold path, which
-    // caps but still has to build a bounded dropped list per oversize batch.
-    if (kind === "patch") return Array.isArray(patches) && patches.length <= MAX_PATCH_OPS;
+    if (kind === "patch") {
+      if (!Array.isArray(patches)) return false;
+      totalOps += patches.length;
+      return totalOps <= MAX_PATCH_OPS;
+    }
     return false;
   });
 }

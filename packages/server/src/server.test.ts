@@ -1313,6 +1313,28 @@ describe("hardening", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects an /agent/control frame whose patch messages AGGREGATE over the op-count cap with 400", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // Two individually-valid patch messages (600 ops each) that coalesce to 1200 >
+    // MAX_PATCH_OPS at the runtime fold. The per-frame aggregate cap must 400 them
+    // at the boundary the agent can observe — not 202 then silently drop every edit.
+    const mkPatch = (): { kind: "patch"; patches: unknown[] } => ({
+      kind: "patch",
+      patches: Array.from({ length: 600 }, () => ({
+        op: "add" as const,
+        path: "/nodes/x",
+        value: { id: "x", type: "text" as const, value: "x" },
+      })),
+    });
+    const response = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: 1, messages: [mkPatch(), mkPatch()] }),
+    });
+    expect(response.status).toBe(400);
+  });
+
   it("accepts an /agent/control patch message exactly AT the op-count cap", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;

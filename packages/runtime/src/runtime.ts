@@ -1,6 +1,7 @@
 import {
   createSerialQueue,
   foldPatchIntoStage,
+  MAX_PATCH_OPS,
   type ClientEvent,
   type FacetAgent,
   type FacetSession,
@@ -270,12 +271,38 @@ export class FacetRuntime {
     let hasPatch = false;
     for (const message of messages) {
       if (message.kind === "patch") {
+        // A wire/in-process patch message can carry a non-array `patches` field
+        // (untyped JS agent, unsafe cast). The concatenation runs BEFORE the fold,
+        // so the fold's own non-array guard is unreachable here — drop the bad
+        // message fail-soft (rest of the turn, says included, still applies and
+        // delivers) instead of letting `for...of` throw through the never-throws seam.
+        if (!Array.isArray(message.patches)) {
+          console.error("[facet] dropped a patch message with non-array patches");
+          continue;
+        }
         hasPatch = true;
         for (const op of message.patches) turnOps.push(op);
       }
     }
     if (!hasPatch) {
       return { session, issues: [], messages };
+    }
+
+    // Enforce the op cap on the per-TURN aggregate, mirroring the wire boundary
+    // (server `isControlBody`) and the fold's own per-batch cap. Individually
+    // wire-valid patch messages can coalesce past MAX_PATCH_OPS; folding that batch
+    // would reject it WHOLE, losing every edit while the multi-megabyte coalesced
+    // frame still fanned out and was stored in the replay ring. Skip the fold, leave
+    // the session unchanged, surface the issue, and OMIT the coalesced patch frame
+    // from the delivered list (deliver only the non-patch messages).
+    if (turnOps.length > MAX_PATCH_OPS) {
+      return {
+        session,
+        issues: [
+          `patch turn dropped: ${String(turnOps.length)} ops exceeds the ${String(MAX_PATCH_OPS)}-op cap`,
+        ],
+        messages: messages.filter((m) => m.kind !== "patch"),
+      };
     }
 
     const { tree, issues } = foldPatchIntoStage(session.stage, turnOps);

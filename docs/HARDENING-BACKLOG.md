@@ -156,6 +156,23 @@ Bundle B PR review record.
   keyword and `hsl()` colors that `isAllowedColor` admits, so the WCAG check
   silently misses them. *Fix:* HSL→RGB conversion + a named-colors table, or
   narrow the allowlist claim.
+- **core/patch.ts (move ghost key, r11)** — a failed `move` whose `from` is a
+  missing object member restores a ghost `undefined` key, violating per-op
+  atomicity. *Fix:* verify source existence before mutating (RFC 6902 "from
+  MUST exist").
+- **runtime (effect-based agentMutated, r11)** — `agentMutated` counts patch
+  frames by KIND; an empty/fully-salvage-dropped/over-cap turn still bumps
+  `recordApplied` and can falsely stale a parked late result. *Fix:* gate on
+  the fold's `appliedOps > 0`.
+- **server/server.ts:311 (stale replay comment, r11)** — the rehydrate-replay
+  safety argument still describes the old atomic-drop client; the client now
+  folds replayed frames with salvage. *Fix:* rewrite the comment to the
+  post-fold semantics (+ assess the partial-double-apply window it papers
+  over).
+- **core/validate.ts (entry-without-screens diagnostic, r11)** — an `entry`
+  supplied without `screens` is silently discarded; every other malformed
+  screens-family field gets an issue. *Fix:* one diagnostic on the early
+  return.
 - **quickstart prompt — screens/entry authoring quality** (live-browser
   finding, 2026-07-04): the built-in agent sometimes registers only one
   screen and points `entry` at it, so its own navigate buttons target
