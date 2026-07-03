@@ -137,8 +137,13 @@ Seeding a page before the first model call is a `StageStore` **decorator**,
 instead of `EMPTY_TREE`. Because every `open()` runs under the runtime's
 per-`(agent, visitor)` serial queue and *before* the agent's first turn, the seed
 is inside the same serialized stage-write path (the server stays the only writer)
-and is visible to that first turn, which then refines it; the browser's first
-snapshot ships through the existing rehydrate path with zero server change. One
+and is visible to that first turn, which then refines it. The seed also
+**travels the patch channel**: the browser's first connection rehydrated before
+the session existed, so the store reports the fresh seed once (`takeSeeded`) and
+the runtime prepends a root `replace` as that turn's first frame — stamped,
+replayable, and applied by the same `applyPatch` on both sides. The frame is
+consumed only when the turn persists; a failed first turn re-emits it, and a
+reconnect gets the seed the normal way, via the rehydrate snapshot. One
 trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
 which would silently seed a blank page and flip the server's offline face, so a
 tree that isn't *seedable* (a render root with at least one child, or a non-empty

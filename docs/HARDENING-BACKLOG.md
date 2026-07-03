@@ -97,6 +97,52 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
   their own snippet imports (`@facet/client`, `@facet/agent`); copy-pasting the
   quickstart fails to resolve. *Fix:* align install lines with the snippets.
 
+## P3 — residuals from Bundle B's review (kits-themes-as-data; track, fix opportunistically)
+
+Found by the bundle's 3-round adversarially-verified `/code-review` (all P0–P2
+fixed in-branch; these are the confirmed non-blocking nits). Evidence in the
+Bundle B PR review record.
+
+- **quickstart/cli.ts (--assets guard)** — `existsSync` passes for a plain file
+  or unreadable dir; FileAssets then soft-degrades to zero assets instead of the
+  intended hard fail. *Fix:* `statSync().isDirectory()` check + a cli test.
+- **core/validate.ts (validateStamp bounds)** — stamp `name`/`description` are
+  unbounded, unlike validateTheme (NAME_RE + 200-char truncate); a huge
+  description sails into the prompt. *Fix:* share NAME_RE/MAX_DESCRIPTION_LENGTH
+  across both validators.
+- **quickstart/prompt.ts (stamp budget)** — the 4000-char cap measures only the
+  fragment JSON, not the `- name: description` head, and there is no aggregate
+  section cap. *Fix:* measure head+fragment; add `MAX_STAMPS_SECTION_CHARS`.
+- **quickstart/agent.ts (set_theme)** — an unknown theme name returns
+  `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
+  error observation naming the available themes (append_node precedent).
+- **runtime/assets.ts (stamp dedup)** — duplicate theme names are first-wins
+  with an issue; duplicate stamp names both survive. *Fix:* mirror the guard.
+- **core/validate.ts (sanitizeScreens)** — `kept` is a plain object: a screen
+  keyed `__proto__` drops silently and `entry:"constructor"` resolves through
+  the prototype chain into the output. *Fix:* null-proto map + own-key check.
+- **runtime/assets.ts vs server/offline.ts** — `isSeedableTree` duplicates
+  `hasBuiltStage` (already divergent: `isContainer` vs `"children" in`). *Fix:*
+  server imports the runtime helper.
+- **cli/commands.ts (surface drift)** — Stage.theme() and set_theme exist but
+  the `facet` CLI has no `theme` command while STAGE_SPEC (embedded in the
+  bridge prompt) now advertises the slot. *Fix:* add the command + bridge
+  prompt line.
+- **core (consolidation ×3)** — `isPlainObject`/`isObject` duplicate guard;
+  the `__proto__/prototype/constructor` blocklist defined thrice (theme.ts,
+  validate.ts, patch.ts); fontSize clamp reuses `SPACE_PX_RANGE`. *Fix:* one
+  shared internal module; a `FONT_SIZE_PX_RANGE` of its own.
+- **core/theme.ts** — redundant `theme as FacetTheme` cast at the return
+  (compiles clean without it).
+- **tests** — prompt.test.ts: no assertion that an all-oversized stamp set
+  suppresses the STAMPS section; theme.test.ts: negative-dimension clamp floor
+  (`"-20px"` → `"0px"`) untested.
+- **server/server.ts:385 (stale comment)** — with a seeded store, an
+  interim-timeout first turn now DOES carry a patch (the seed frame), so
+  `recordApplied` fires there; safe only because `late.ts` staleness uses
+  strict `>`. *Fix:* rewrite the comment + reciprocal warning in late.ts; no
+  behavior change.
+
 ## Accepted (documented trust model — revisit on trigger)
 
 - **server/server.ts** — `/agent/*` unauthenticated by default + CORS `*` +
