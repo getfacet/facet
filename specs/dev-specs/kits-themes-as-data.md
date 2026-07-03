@@ -760,3 +760,36 @@ Every entry maps to a WU test_plan item:
 7. Squash → one feature commit; commit/PR on the user's explicit go.
 
 - final_gate_owner: main-agent
+
+---
+
+## As-built deviations (recorded post-implementation, 2026-07-04)
+
+The implementation matches this spec EXCEPT for the initial-tree delivery
+mechanism, which the adversarial review + real-browser testing reshaped:
+
+1. **Decision "the browser's first snapshot ships via the existing rehydrate
+   path with zero server change" was WRONG** — rehydrate runs at stream-connect
+   time, before the session exists. As built: `withInitialStage` reports a
+   fresh seed once (optional `StageStore.takeSeeded`), and `FacetRuntime`
+   prepends a stamped root-replace patch to that turn's messages
+   (`pendingSeeds`, consumed only after persist succeeds, value = the current
+   session stage). Invariant #2 holds: the seed travels the patch channel,
+   same `applyPatch` both sides, replay-ring/Last-Event-ID safe.
+2. **Instant first paint** (found by opening a real browser): the quickstart
+   shell additionally ships the seed as `window.__FACET_INITIAL_STAGE__`
+   (same escaped seam as `__FACET_THEMES__`) and `useFacet` accepts an
+   optional `initialTree`, so page-open paints without waiting for the model;
+   the wire seed frame then applies idempotently.
+3. **Themed canvas**: `page/main.tsx` paints `document.body` bg/fg from the
+   resolved theme (ChatDock stays default per Decision). Without this a dark
+   theme changed almost nothing visibly.
+4. **Hardening added beyond the spec**: GET / sits behind the DNS-rebinding
+   Host guard (the shell now carries operator data); `tree.theme` enforces the
+   shared `isValidThemeName` rule; single-parent-per-walk-root in
+   `breakCycles` + a renderer render-budget close the pre-existing
+   shared-child DAG path explosion (review round 5 P1).
+
+Tracked non-blocking residuals live in `docs/HARDENING-BACKLOG.md`
+("Bundle B review residuals" section). ARCHITECTURE.md reflects the as-built
+mechanism; this spec is kept as the historical plan + this addendum.
