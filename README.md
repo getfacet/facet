@@ -206,7 +206,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |
 | `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
 | `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
-| `@facet/kit`            | Optional presets (`card/hero/row/…`) — sugar over the bricks.                            |
+| `@facet/assets`         | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 | `@facet/quickstart`     | `facet-quickstart` — one-command boot with a built-in reference brain (OpenAI/Anthropic, or a keyless stub). |
@@ -255,7 +255,7 @@ export const agent = defineAgent(({ event, stage }) => {
 - [x] SSE/POST transport + a browser playground
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
 - [x] Durable `StageStore`/`Sink` + a Postgres adapter
-- [x] `@facet/kit` presets (card/hero/row as box compositions)
+- [x] `@facet/assets` default theme + stamp data (node-free value maps)
 - [x] One-command quickstart (`facet-quickstart`) with a built-in reference brain
 - [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint
