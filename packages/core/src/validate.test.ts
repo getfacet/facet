@@ -740,6 +740,123 @@ describe("validateTree action normalization", () => {
   });
 });
 
+describe("validateTree appear/scroll/onHold vocabulary", () => {
+  it("strips unknown appear scroll tokens and malformed onHold", () => {
+    // Valid new vocabulary is KEPT: appear token, scroll boolean, onHold action
+    // with payload/collect intact — zero issues.
+    const valid = {
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          style: { appear: "fade", scroll: true },
+          onHold: { kind: "agent", name: "peek", payload: { id: 7 }, collect: "form" },
+          children: [],
+        },
+      },
+    };
+    const keptRun = validateTree(valid);
+    expect(keptRun.issues).toHaveLength(0);
+    const keptRoot = keptRun.tree.nodes["root"] as unknown as {
+      style?: Record<string, unknown>;
+      onHold?: Record<string, unknown>;
+    };
+    expect(keptRoot.style?.["appear"]).toBe("fade");
+    expect(keptRoot.style?.["scroll"]).toBe(true);
+    expect(keptRoot.onHold).toEqual({
+      kind: "agent",
+      name: "peek",
+      payload: { id: 7 },
+      collect: "form",
+    });
+
+    // appear:"explode" is not in APPEARS → stripped WITH an issue recorded.
+    const explodeRun = validateTree({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", style: { appear: "explode" }, children: [] } },
+    });
+    const explodeRoot = explodeRun.tree.nodes["root"] as unknown as {
+      style?: Record<string, unknown>;
+    };
+    expect(explodeRoot.style?.["appear"]).toBeUndefined();
+    expect(explodeRun.issues.some((i) => i.includes("appear"))).toBe(true);
+
+    // scroll junk — only a literal boolean survives; strings/numbers are stripped.
+    for (const scroll of ["sideways", 1, "y"]) {
+      const { tree, issues } = validateTree({
+        root: "root",
+        nodes: { root: { id: "root", type: "box", style: { scroll }, children: [] } },
+      });
+      const root = tree.nodes["root"] as unknown as { style?: Record<string, unknown> };
+      expect(root.style?.["scroll"]).toBeUndefined();
+      expect(issues.some((i) => i.includes("scroll"))).toBe(true);
+    }
+
+    // onHold:42 → stripped with an issue that names onHold, NEVER onPress.
+    const holdJunk = validateTree({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", onHold: 42, children: [] } },
+    });
+    const holdRoot = holdJunk.tree.nodes["root"] as unknown as { onHold?: unknown };
+    expect(holdRoot.onHold).toBeUndefined();
+    expect(holdJunk.issues.some((i) => i.includes("onHold"))).toBe(true);
+    expect(holdJunk.issues.some((i) => i.includes("onPress"))).toBe(false);
+
+    // Legacy bare {name} onHold gets the canonical kind:"agent" stamp, silently
+    // (same rule as onPress — it is the same action, not a mistake).
+    const legacy = validateTree({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", onHold: { name: "peek" }, children: [] } },
+    });
+    const legacyRoot = legacy.tree.nodes["root"] as unknown as { onHold?: unknown };
+    expect(legacyRoot.onHold).toEqual({ kind: "agent", name: "peek" });
+    expect(legacy.issues).toHaveLength(0);
+
+    // validateStamp parity: the shared sanitizeNode strips the same junk.
+    const { stamp, issues: stampIssues } = validateStamp({
+      name: "junky",
+      root: "b",
+      nodes: {
+        b: {
+          id: "b",
+          type: "box",
+          style: { appear: "explode", scroll: "sideways" },
+          onHold: 42,
+          children: [],
+        },
+      },
+    });
+    const stampRoot = stamp?.nodes["b"] as unknown as {
+      style?: Record<string, unknown>;
+      onHold?: unknown;
+    };
+    expect(stampRoot.style?.["appear"]).toBeUndefined();
+    expect(stampRoot.style?.["scroll"]).toBeUndefined();
+    expect(stampRoot.onHold).toBeUndefined();
+    expect(stampIssues.some((i) => i.includes("onHold"))).toBe(true);
+    expect(stampIssues.some((i) => i.includes("onPress"))).toBe(false);
+
+    // A pre-D tree (none of the new fields) passes through byte-identical.
+    const preD = {
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          style: { gap: "md" },
+          onPress: { kind: "agent", name: "go" },
+          children: ["t"],
+        },
+        t: { id: "t", type: "text", value: "hi", style: {} },
+      },
+    };
+    const preDRun = validateTree(preD);
+    expect(preDRun.issues).toHaveLength(0);
+    expect(preDRun.tree).toEqual(preD);
+  });
+});
+
 describe("validateTree hidden", () => {
   it("keeps a literal boolean hidden", () => {
     const input = {

@@ -1,5 +1,6 @@
 import {
   ALIGNS,
+  APPEARS,
   COLORS,
   DIRECTIONS,
   FONT_SIZES,
@@ -118,17 +119,23 @@ function asToken<T extends string>(value: unknown, allowed: readonly string[]): 
 }
 
 /**
- * Normalizes an `onPress` value to the FacetAction union. A bare legacy
- * `{name}` (kind absent) or explicit `kind: "agent"` gets the canonical
- * `kind: "agent"` stamp SILENTLY (no issue — it is the same action, not a
- * mistake). Malformed or unknown-kind actions are stripped with an issue, so
- * the box degrades to a plain non-pressable box.
+ * Normalizes an action value (`onPress`/`onHold`) to the FacetAction union. A
+ * bare legacy `{name}` (kind absent) or explicit `kind: "agent"` gets the
+ * canonical `kind: "agent"` stamp SILENTLY (no issue — it is the same action,
+ * not a mistake). Malformed or unknown-kind actions are stripped with an issue
+ * naming `field` (the node property being normalized), so the box degrades to
+ * a plain non-pressable box.
  */
-function asAction(value: unknown, nodeId: string, issues: IssueSink): FacetAction | undefined {
+function asAction(
+  value: unknown,
+  nodeId: string,
+  field: "onPress" | "onHold",
+  issues: IssueSink,
+): FacetAction | undefined {
   const node = printableKey(nodeId);
   if (value === undefined) return undefined;
   if (!isObject(value)) {
-    issues.push(`node "${node}": onPress is not an action object`);
+    issues.push(`node "${node}": ${field} is not an action object`);
     return undefined;
   }
   const kind = value.kind;
@@ -151,7 +158,7 @@ function asAction(value: unknown, nodeId: string, issues: IssueSink): FacetActio
     if (typeof value.collect === "string") {
       action.collect = value.collect;
     } else if (value.collect !== undefined) {
-      issues.push(`node "${node}": onPress collect is not a string; dropped`);
+      issues.push(`node "${node}": ${field} collect is not a string; dropped`);
     }
     return action;
   }
@@ -171,12 +178,12 @@ function asAction(value: unknown, nodeId: string, issues: IssueSink): FacetActio
     }
     return { kind: "toggle", target };
   }
-  // `kind` is untrusted (any property of an isObject-checked onPress): a string
+  // `kind` is untrusted (any property of an isObject-checked action): a string
   // goes through the key cap, primitives echo verbatim, and everything else
   // becomes a constant placeholder — NEVER JSON.stringify an arbitrary untrusted
   // value into an issue string (a cyclic object/BigInt would throw, breaching
   // the never-throws boundary; a huge value would flood the operator log).
-  issues.push(`node "${node}": unknown onPress kind ${printableValue(kind)} dropped`);
+  issues.push(`node "${node}": unknown ${field} kind ${printableValue(kind)} dropped`);
   return undefined;
 }
 
@@ -192,7 +199,7 @@ export function isSafeImageSrc(src: string): boolean {
   );
 }
 
-function boxStyle(value: unknown): BoxStyle {
+function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
   const style: Record<string, unknown> = {};
   if (isObject(value)) {
     const set = <T extends string>(key: string, allowed: readonly string[]): void => {
@@ -207,6 +214,24 @@ function boxStyle(value: unknown): BoxStyle {
     set("bg", COLORS);
     set("radius", RADII);
     set("width", SIZINGS);
+    // appear/scroll junk is stripped WITH an issue (unlike the legacy tokens
+    // above): the words are new, so a wrong value is a teachable agent mistake,
+    // not pre-existing content. Echoes are bounded (printableValue/printableKey)
+    // — never a raw untrusted value in an issue string.
+    const appear = asToken(value.appear, APPEARS);
+    if (appear !== undefined) {
+      style.appear = appear;
+    } else if (value.appear !== undefined) {
+      issues.push(
+        `node "${printableKey(nodeId)}": unknown appear token ${printableValue(value.appear)} dropped`,
+      );
+    }
+    const scroll = asBool(value.scroll);
+    if (scroll !== undefined) {
+      style.scroll = scroll;
+    } else if (value.scroll !== undefined) {
+      issues.push(`node "${printableKey(nodeId)}": scroll is not a boolean; dropped`);
+    }
     const wrap = asBool(value.wrap);
     if (wrap !== undefined) style.wrap = wrap;
     const border = asBool(value.border);
@@ -269,10 +294,13 @@ function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | 
         style: BoxStyle;
         children: string[];
         onPress?: FacetAction;
+        onHold?: FacetAction;
         hidden?: boolean;
-      } = { id, type: "box", style: boxStyle(raw.style), children };
-      const onPress = asAction(raw.onPress, id, issues);
+      } = { id, type: "box", style: boxStyle(raw.style, id, issues), children };
+      const onPress = asAction(raw.onPress, id, "onPress", issues);
       if (onPress !== undefined) node.onPress = onPress;
+      const onHold = asAction(raw.onHold, id, "onHold", issues);
+      if (onHold !== undefined) node.onHold = onHold;
       // Only a literal boolean is a visibility default; anything else is stripped
       // (silent, like invalid style tokens — the box just stays visible).
       const hidden = asBool(raw.hidden);
