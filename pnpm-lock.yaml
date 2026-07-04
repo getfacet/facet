@@ -178,6 +178,9 @@ importers:
 
   packages/react:
     dependencies:
+      '@facet/assets':
+        specifier: workspace:*
+        version: link:../assets
       '@facet/core':
         specifier: workspace:*
         version: link:../core
