@@ -31,7 +31,9 @@ const PER_VISITOR_LENSES = [
 const VOTES_HARD = 3 // adversarial votes for the HARD-ish lenses
 const VOTES_SOFT = 2
 
-const cfg = (args && typeof args === 'object') ? args : {}
+// Tolerate the harness quirk where an object arg can arrive JSON-stringified.
+let cfg = (args && typeof args === 'object') ? args : {}
+if (typeof args === 'string' && args.trim().startsWith('{')) { try { cfg = JSON.parse(args) } catch { cfg = {} } }
 const url = typeof cfg.url === 'string' ? cfg.url : ''
 const artifactsDir = typeof cfg.artifactsDir === 'string' ? cfg.artifactsDir : 'packages/quickstart/e2e/journey/artifacts'
 const nVisitors = Number.isInteger(cfg.visitors) && cfg.visitors > 0 ? cfg.visitors : 3
