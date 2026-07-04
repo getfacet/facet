@@ -86,8 +86,27 @@ export interface LoadedAssets {
  * skip-and-log posture. Never throws.
  */
 export async function loadAssets(store: AssetsStore, agentId: string): Promise<LoadedAssets> {
-  const docs = await store.load(agentId);
+  // The primary I/O fetch is guarded too: a pluggable adapter (a DB/proxy store)
+  // can reject or return a malformed shape, and the "Never throws" contract must
+  // hold for it — not just for the per-document validators below.
+  let docs: AssetDocuments;
+  try {
+    docs = await store.load(agentId);
+  } catch (err) {
+    docs = {
+      themes: [],
+      stamps: [],
+      issues: [`assets load failed: ${err instanceof Error ? err.message : String(err)}`],
+    };
+  }
   const issues: string[] = [...(docs.issues ?? [])];
+  // Coerce the trusted array fields so a malformed `{ themes: null }` from a
+  // custom adapter can't throw at the spread sites below (skip-and-log, never
+  // crash boot). Defaults still seed, so an empty/bad store yields the defaults.
+  const themeDocs = Array.isArray(docs.themes) ? docs.themes : [];
+  if (!Array.isArray(docs.themes)) issues.push("assets `themes` was not an array — ignored");
+  const stampDocs = Array.isArray(docs.stamps) ? docs.stamps : [];
+  if (!Array.isArray(docs.stamps)) issues.push("assets `stamps` was not an array — ignored");
 
   const themes: FacetTheme[] = [];
   const seenThemeNames = new Set<string>();
@@ -96,7 +115,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   // gate — a bad default is dropped with an issue, exactly like a bad custom.
   const themeInputs: readonly { readonly raw: unknown; readonly seeded: boolean }[] = [
     { raw: DEFAULT_THEME, seeded: true },
-    ...docs.themes.map((raw) => ({ raw, seeded: false })),
+    ...themeDocs.map((raw) => ({ raw, seeded: false })),
   ];
   for (const { raw, seeded } of themeInputs) {
     // Skip-and-log at the seam: a live in-process document (a DB adapter, a
@@ -154,7 +173,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   // theme loop uses, through the same validateStamp gate.
   const stampInputs: readonly { readonly raw: unknown; readonly seeded: boolean }[] = [
     ...DEFAULT_STAMPS.map((raw) => ({ raw, seeded: true })),
-    ...docs.stamps.map((raw) => ({ raw, seeded: false })),
+    ...stampDocs.map((raw) => ({ raw, seeded: false })),
   ];
   for (const { raw, seeded } of stampInputs) {
     let result: ReturnType<typeof validateStamp>;

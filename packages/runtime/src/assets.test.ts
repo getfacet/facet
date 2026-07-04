@@ -142,6 +142,33 @@ describe("loadAssets", () => {
     for (const s of DEFAULT_STAMPS) expect(stampNames).toContain(s.name);
   });
 
+  it("never throws when the store's load() rejects — defaults still resolve (P3 hardening)", async () => {
+    // The "Never throws" contract covers the primary I/O too: a pluggable adapter
+    // (a DB/proxy store) that rejects must degrade to the defaults, not crash boot.
+    const throwingStore: AssetsStore = { load: () => Promise.reject(new Error("db down")) };
+    let loaded: Awaited<ReturnType<typeof loadAssets>> | undefined;
+    await expect(
+      (async () => {
+        loaded = await loadAssets(throwingStore, "a");
+      })(),
+    ).resolves.toBeUndefined();
+    expect(loaded?.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const okStamps = loaded?.stamps.map((s) => s.name) ?? [];
+    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    expect(loaded?.issues.some((i) => i.includes("assets load failed"))).toBe(true);
+  });
+
+  it("never throws on a malformed store shape (non-array fields) — defaults survive (P3 hardening)", async () => {
+    const malformedStore: AssetsStore = {
+      load: () => Promise.resolve({ themes: null, stamps: undefined } as unknown as AssetDocuments),
+    };
+    const loaded = await loadAssets(malformedStore, "a");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const stampNames = loaded.stamps.map((s) => s.name);
+    for (const s of DEFAULT_STAMPS) expect(stampNames).toContain(s.name);
+    expect(loaded.issues.some((i) => i.includes("was not an array"))).toBe(true);
+  });
+
   it("a custom stamp shadows a same-named default while other defaults survive (DC-003)", async () => {
     // A custom stamp named `hero` (a seeded default name) REPLACES the default in
     // the list — exactly one `hero`, and it is the custom one; the remaining
