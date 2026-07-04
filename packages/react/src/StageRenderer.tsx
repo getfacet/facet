@@ -271,9 +271,16 @@ function finiteCoord(value: unknown): number {
 
 /**
  * One-shot, WINDOW-level, CAPTURE-phase interceptor for the browser-synthesized
- * click that follows a completed hold (pinned lifecycle unchanged): SET when
- * the hold timer fires, CONSUMED by the next click anywhere (capture phase),
- * RESET on the next pointerdown anywhere — whichever comes first.
+ * click that follows a completed hold. Lifecycle (pinned): SET when the hold
+ * timer fires; then torn down by whichever comes first —
+ * - CONSUMED by the next click anywhere (capture phase),
+ * - RESET by the next PRIMARY pointerdown anywhere (a new gesture),
+ * - EXPIRED by the PRIMARY pointer's pointercancel (its click will never come),
+ * - RELEASED: one macrotask after the PRIMARY pointerup (the synthesized
+ *   click, when the browser produces one, is dispatched synchronously in the
+ *   same input sequence — so a click that never comes cannot leave the
+ *   interceptor lingering to eat a later keyboard/programmatic activation),
+ * - or any keydown (a keyboard user's activation must never be swallowed).
  *
  * Window scope + capture phase is structural, not stylistic. A component-scoped
  * latch consumed in the box's own bubble-phase click handler fails three ways:
@@ -305,6 +312,8 @@ function swallowNextClick(): void {
     window.removeEventListener("click", swallow, true);
     window.removeEventListener("pointerdown", reset, true);
     window.removeEventListener("pointercancel", expire, true);
+    window.removeEventListener("pointerup", release, true);
+    window.removeEventListener("keydown", expire, true);
   };
   // CONSUME: the next click anywhere is the synthesized post-hold click —
   // stop it at window capture (before React's root listeners) and tear down.
@@ -326,15 +335,36 @@ function swallowNextClick(): void {
     }
     teardown();
   };
-  // EXPIRE: after a pointercancel the browser will never synthesize the click
-  // this interceptor waits for — tear down so it cannot linger and swallow an
-  // unrelated later click (keyboard/assistive-tech activation, review r3).
-  const expire = (): void => {
+  // EXPIRE: after the ARMING (primary) pointer's pointercancel the browser
+  // will never synthesize the click this interceptor waits for — tear down so
+  // it cannot linger and swallow an unrelated later click (keyboard /
+  // assistive-tech activation, review r3). Non-primary cancels are ignored
+  // with the same rationale as `reset` (review r5): a second finger's
+  // palm-rejection cancel must not disarm the swallow while the held finger
+  // is still down, or its release would fire the press this interceptor
+  // exists to prevent. Also wired to `keydown` (no primacy concept there): a
+  // keyboard activation must never be eaten.
+  const expire = (event: Event): void => {
+    if ((event as Partial<PointerEvent>).isPrimary === false) {
+      return;
+    }
     teardown();
+  };
+  // RELEASED: the synthesized click (when the browser produces one) arrives
+  // synchronously in the same input sequence as the primary pointerup — so
+  // one macrotask later the interceptor has either been consumed or will
+  // never be. The deferred teardown is idempotent with all other paths.
+  const release = (event: Event): void => {
+    if ((event as Partial<PointerEvent>).isPrimary === false) {
+      return;
+    }
+    setTimeout(teardown, 0);
   };
   window.addEventListener("click", swallow, true);
   window.addEventListener("pointerdown", reset, true);
   window.addEventListener("pointercancel", expire, true);
+  window.addEventListener("pointerup", release, true);
+  window.addEventListener("keydown", expire, true);
 }
 
 interface HoldableBoxProps {

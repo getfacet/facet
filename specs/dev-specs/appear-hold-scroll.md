@@ -84,13 +84,19 @@ interceptor**, then execute the hold through `handlePress`. The subsequent
 browser-synthesized `click` (browsers fire it after pointerup regardless) is
 swallowed at window capture — press and hold NEVER both fire (DC-004,
 RISK-INV-1/RISK-API-4a). **Interceptor lifecycle (pinned, revised in review
-r2):** SET when the hold timer fires; CONSUMED by the next `click` anywhere
-(window capture runs before any target/bubble handler); RESET by the next
-PRIMARY `pointerdown` anywhere (non-primary ignored — review r3: a second
-finger landing mid-hold must not disarm the swallow); EXPIRED by a
-`pointercancel` (review r3: no click ever follows a canceled pointer, so a
-lingering interceptor would eat an unrelated later keyboard/programmatic
-click) — whichever comes first. The stage's appear `<style>` slot rides inside
+r2, refined r3/r5):** SET when the hold timer fires; CONSUMED by the next
+`click` anywhere (window capture runs before any target/bubble handler);
+RESET by the next PRIMARY `pointerdown` anywhere (non-primary ignored —
+review r3: a second finger landing mid-hold must not disarm the swallow);
+EXPIRED by the PRIMARY pointer's `pointercancel` (r3; non-primary cancels
+ignored per r5 — a palm-rejection cancel must not let hold+press both fire)
+or by any `keydown` (r5: keyboard activations are never swallowed); RELEASED
+one macrotask after the PRIMARY `pointerup` (r5: the synthesized click, when
+produced, arrives synchronously before that macrotask — a click that never
+comes cannot leave the interceptor lingering) — whichever comes first. The
+hold gesture itself is scoped to the ARMING pointerId (r4): another
+pointer's move/up/leave is inert, so a second finger can neither disarm the
+hold nor convert its release into a press. The stage's appear `<style>` slot rides inside
 an UNCONDITIONAL Fragment (review r3): flipping `usesAppear` toggles only the
 style child, never the stage child's element type, so the first/last appear
 token arriving by patch cannot remount the stage subtree (which would wipe

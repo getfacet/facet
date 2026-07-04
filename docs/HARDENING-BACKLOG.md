@@ -124,15 +124,24 @@ non-blocking residual).
   release's synthesized click dispatch onPress — the wrong action, not
   fail-closed): `gesturePointerRef` scopes move/up/leave to the arming
   pointer; pinned by two multi-touch tests.
-- **react/StageRenderer.tsx (interceptor release-aware lifecycle, r4)** — the
-  one-shot window interceptor expires on pointercancel and resets on the next
-  primary pointerdown, but a pointerup that yields NO synthesized click (rare:
-  browser suppresses click after some gestures) leaves it armed until the
-  next pointerdown; a keyboard/programmatic click arriving in that window is
-  swallowed once. *Fix candidates (review r4 sketch):* window-capture
-  pointerup listener + one-tick expiry, a releaseSeen gate, an absolute
-  backstop timeout, per-pointerType keying. Needs real-device evidence before
-  adding machinery; revisit with the drag bundle.
+- ~~react/StageRenderer.tsx (interceptor release-aware lifecycle)~~ —
+  RESOLVED in-branch (review r5, escalated to P2 there): `expire` now ignores
+  non-primary pointercancels (mirrors `reset`'s guard — a palm-rejection
+  cancel no longer lets hold+press both fire), the interceptor expires one
+  macrotask after the primary pointerup (a never-synthesized click can't
+  leave it lingering), and any keydown tears it down (keyboard activations
+  are never swallowed). Pinned by three tests. Per-pointerType keying was NOT
+  added (no longer needed under the release expiry).
+- **react/StageRenderer.tsx (hybrid re-entry guard, r5)** — a primary
+  pointerdown from a DIFFERENT pointer (hybrid mouse+touch) while a gesture
+  is live re-arms the timer and overwrites `gesturePointerRef`/origin,
+  orphaning the first pointer's gesture. Obscure hardware interleaving;
+  fail direction is a mis-attributed hold, not a wrong press. *Fix:* ignore a
+  pointerdown when `gesturePointerRef` is set to another id + one test.
+- **react/StageRenderer.tsx (slop boundary exactness, r5)** — no test pins
+  the strict `>` at exactly HOLD_SLOP_PX (an 8.0px move must NOT disarm; the
+  squared comparison flipping to `>=` would pass the suite). *Fix:* one
+  boundary test at dx=8,dy=0 and dx=8.01.
 - **react/StageRenderer.tsx (no keyboard path for hold-only boxes, r4)** — a
   hold-only box (onHold, no onPress) renders role="button" but Enter/Space
   cannot trigger the hold (accepted v1 decision; STAGE_SPEC advises never to

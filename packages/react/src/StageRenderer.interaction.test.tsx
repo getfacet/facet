@@ -1713,6 +1713,70 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
 
     expect(onAction).not.toHaveBeenCalled(); // toggle was local; card press swallowed
   });
+
+  it("a second finger's pointercancel does not disarm the post-hold click swallow (palm rejection)", () => {
+    // `expire` must mirror `reset`'s isPrimary guard: the browser cancelling a
+    // resting palm (non-primary) must not tear the interceptor down while the
+    // held finger is still down — its release's synthesized click would then
+    // dispatch onPress after onHold already fired.
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    }); // hold fires, interceptor armed
+    fireEvent(window, pointerEvent("pointercancel", {}, { pointerId: 2, isPrimary: false }));
+    pointerUp(btn);
+    fireEvent.click(btn); // the held finger's synthesized click — still swallowed
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+    // The guard narrows the expire path, it does not remove it: the PRIMARY
+    // pointer's own cancel still tears the interceptor down (pinned by the
+    // dedicated pointercancel-expiry test above).
+  });
+
+  it("the interceptor expires one tick after the primary release when no click is synthesized", () => {
+    // Some releases never produce a synthesized click. The interceptor must
+    // not linger past the release and eat a later keyboard/programmatic
+    // activation — it expires one macrotask after the primary pointerup (the
+    // real synthesized click, when it comes, is dispatched synchronously
+    // BEFORE that macrotask runs).
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    }); // hold fires, interceptor armed
+    pointerUp(btn); // release seen — expiry scheduled for the next macrotask
+    act(() => {
+      vi.advanceTimersByTime(1);
+    }); // …which runs: no click ever arrived
+    fireEvent.click(btn); // a LATER programmatic/assistive-tech activation
+
+    expect(onAction).toHaveBeenCalledTimes(2); // held, then the later press
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "pressed" }]);
+  });
+
+  it("a keydown tears the interceptor down so a keyboard activation is never swallowed", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    }); // hold fires, interceptor armed
+    fireEvent.keyDown(window, { key: "Enter" }); // keyboard takes over
+    fireEvent.click(btn); // the keyboard-activated click must land
+
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "pressed" }]);
+  });
 });
 
 // View-state coherence (DC-006) + replay-on-mount (Decision 2): an unrelated
