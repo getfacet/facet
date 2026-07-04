@@ -9,10 +9,11 @@
  * from env only and never logged (error messages name the VAR, never a value).
  */
 import { readFile } from "node:fs/promises";
-import { realpathSync } from "node:fs";
+import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import type { FacetAgent } from "@facet/core";
-import { MemorySink } from "@facet/runtime";
+import type { FacetAgent, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
+import { MemorySink, loadAssets } from "@facet/runtime";
+import { FileAssets } from "@facet/runtime/node";
 import { createQuickstartAgent } from "./agent.js";
 import { DEFAULT_GUIDE } from "./prompt.js";
 import { resolveProvider } from "./provider.js";
@@ -38,7 +39,7 @@ const NO_KEY_MESSAGE =
   "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run with --stub for a keyless look around.";
 
 const USAGE =
-  "Usage: facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--stub] [--agent-id <id>]";
+  "Usage: facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--stub] [--agent-id <id>] [--assets <dir>]";
 
 interface CliFlags {
   readonly guide?: string;
@@ -46,6 +47,7 @@ interface CliFlags {
   readonly provider?: string;
   readonly stub: boolean;
   readonly agentId: string;
+  readonly assets?: string;
 }
 
 /** Parse argv into flags; throws with a user-facing message on bad input. */
@@ -55,6 +57,7 @@ function parseFlags(argv: readonly string[]): CliFlags {
   let provider: string | undefined;
   let stub = false;
   let agentId = DEFAULT_AGENT_ID;
+  let assets: string | undefined;
 
   const takeValue = (flag: string, value: string | undefined): string => {
     if (value === undefined) throw new Error(`${flag} requires a value\n${USAGE}`);
@@ -87,6 +90,9 @@ function parseFlags(argv: readonly string[]): CliFlags {
       case "--agent-id":
         agentId = takeValue("--agent-id", argv[++i]);
         break;
+      case "--assets":
+        assets = takeValue("--assets", argv[++i]);
+        break;
       default:
         throw new Error(`Unknown flag "${String(arg)}"\n${USAGE}`);
     }
@@ -98,6 +104,7 @@ function parseFlags(argv: readonly string[]): CliFlags {
     ...(provider !== undefined ? { provider } : {}),
     stub,
     agentId,
+    ...(assets !== undefined ? { assets } : {}),
   };
 }
 
@@ -135,6 +142,37 @@ export async function runCli(
     }
   }
 
+  // Assets registry (Decision 8): an EXPLICIT --assets path must exist (the
+  // --guide precedent); with no flag, no registry and today's boot exactly.
+  // Documents are validated once here at boot; each issue is one concise warn
+  // line (never a document value). Themes go to the agent (names in prompt ②)
+  // AND the server (the shell map); stamps to the agent; a seedable initial tree
+  // to the server (which wraps the stage store).
+  let themes: readonly FacetTheme[] = [];
+  let stamps: readonly FacetStamp[] = [];
+  let initialStage: FacetTree | undefined;
+  if (flags.assets !== undefined) {
+    // An EXPLICIT --assets must be a READABLE DIRECTORY (the --guide hard-fail
+    // precedent). existsSync passes for a regular file or a permission-denied
+    // dir; FileAssets would then warn-and-continue with zero assets and boot at
+    // exit 0 — an explicit registry silently doing nothing. Probe for real.
+    try {
+      if (!statSync(flags.assets).isDirectory()) {
+        error(`Assets path is not a directory: ${flags.assets}`);
+        return 1;
+      }
+      readdirSync(flags.assets);
+    } catch (cause) {
+      error(`Assets directory not readable: ${flags.assets} (${String(cause)})`);
+      return 1;
+    }
+    const loaded = await loadAssets(new FileAssets(flags.assets), flags.agentId);
+    themes = loaded.themes;
+    stamps = loaded.stamps;
+    initialStage = loaded.initialTree;
+    for (const issue of loaded.issues) error(`[facet-quickstart] ${issue}`);
+  }
+
   // One MemorySink shared by the agent (prompt layer ③ reads history) and the
   // facet server (which records into it) — the same conversation, both sides.
   const sink = new MemorySink();
@@ -159,13 +197,27 @@ export async function runCli(
       error(NO_KEY_MESSAGE);
       return 1;
     }
-    agent = createQuickstartAgent({ provider, guide, sink, agentId: flags.agentId });
+    agent = createQuickstartAgent({
+      provider,
+      guide,
+      sink,
+      agentId: flags.agentId,
+      themes,
+      stamps,
+    });
     brain = `${provider.name} (${provider.model})`;
   }
 
   let running: RunningQuickstart;
   try {
-    running = await startQuickstart({ port: flags.port, agentId: flags.agentId, agent, sink });
+    running = await startQuickstart({
+      port: flags.port,
+      agentId: flags.agentId,
+      agent,
+      sink,
+      ...(themes.length > 0 ? { themes } : {}),
+      ...(initialStage !== undefined ? { initialStage } : {}),
+    });
   } catch (cause) {
     error(cause instanceof Error ? cause.message : String(cause));
     return 1;

@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
-import type { ClientEvent, FacetSession, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import {
   DEFAULT_GUIDE,
@@ -37,16 +37,112 @@ describe("buildSystem", () => {
     expect(DEFAULT_GUIDE.length).toBeGreaterThan(0);
     expect(HISTORY_TURNS).toBe(20);
   });
+
+  it("with no assets (or empty arrays) adds no THEMES/STAMPS section (DC-008 byte-identity)", () => {
+    const guide = "# My shop\n\nSell exactly one teapot.";
+    const base = buildSystem(guide);
+    // Empty assets must produce the byte-identical no-assets string.
+    expect(buildSystem(guide, { themes: [], stamps: [] })).toBe(base);
+    // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
+    // list" in prose — we probe for the section intros this WU adds, not the word).
+    expect(base).not.toContain("select by NAME with the set_theme tool");
+    expect(base).not.toContain("Reusable fragments you can copy into the page");
+  });
+
+  it("injects theme names and descriptions never values", () => {
+    const themes: FacetTheme[] = [
+      {
+        name: "midnight",
+        description: "Dark, high-contrast night palette",
+        color: { bg: "#0b1020", fg: "#e8ecff" },
+      },
+      { name: "sunrise", description: "Warm light morning palette", color: { bg: "#fff7ed" } },
+    ];
+    const system = buildSystem(DEFAULT_GUIDE, { themes, stamps: [] });
+
+    expect(system).toContain("THEMES");
+    // Names + one-line descriptions are present.
+    expect(system).toContain("midnight");
+    expect(system).toContain("Dark, high-contrast night palette");
+    expect(system).toContain("sunrise");
+    expect(system).toContain("Warm light morning palette");
+    // NEVER a token value — probe each hex the document carried.
+    expect(system).not.toContain("#0b1020");
+    expect(system).not.toContain("#e8ecff");
+    expect(system).not.toContain("#fff7ed");
+    // Select-by-name rule points the model at set_theme.
+    expect(system).toMatch(/set_theme/);
+  });
+
+  it("injects stamp fragments with the mandatory id-prefix copy rule", () => {
+    const stamps: FacetStamp[] = [
+      {
+        name: "cta",
+        description: "A call-to-action button",
+        root: "cta",
+        nodes: {
+          cta: { id: "cta", type: "box", children: ["cta-label"] },
+          "cta-label": { id: "cta-label", type: "text", value: "Get started" },
+        },
+      },
+    ];
+    const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
+
+    expect(system).toContain("STAMPS");
+    expect(system).toContain("cta");
+    expect(system).toContain("A call-to-action button");
+    // The fragment JSON is embedded (its node content appears).
+    expect(system).toContain("Get started");
+    expect(system).toContain('"root"');
+    expect(system).toContain('"nodes"');
+    // The copy rule tells the model to prefix EVERY id per instance.
+    expect(system).toMatch(/prefix/i);
+  });
+
+  it("excludes an oversized stamp with a console.warn naming it", () => {
+    const big = "x".repeat(5000);
+    const stamps: FacetStamp[] = [
+      { name: "huge", root: "h", nodes: { h: { id: "h", type: "text", value: big } } },
+    ];
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
+      // The oversized fragment never reaches the prompt.
+      expect(system).not.toContain(big);
+      // A warning naming the excluded stamp was emitted.
+      expect(warnSpy).toHaveBeenCalled();
+      const logged = warnSpy.mock.calls.flat().map(String).join(" ");
+      expect(logged).toContain("huge");
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
 
 describe("TOOLS", () => {
-  it("offers the five Stage-mapped tools with schemas", () => {
+  it("offers the Stage-mapped tools with schemas, including set_theme", () => {
     const names = TOOLS.map((t) => t.name).sort();
-    expect(names).toEqual(["append_node", "remove_node", "render_page", "say", "set_node"]);
+    expect(names).toEqual([
+      "append_node",
+      "remove_node",
+      "render_page",
+      "say",
+      "set_node",
+      "set_theme",
+    ]);
     for (const tool of TOOLS) {
       expect(tool.description.length).toBeGreaterThan(0);
       expect(tool.parameters["type"]).toBe("object");
     }
+  });
+
+  it("set_theme takes a single name string argument (never a CSS value)", () => {
+    const setTheme = TOOLS.find((t) => t.name === "set_theme");
+    expect(setTheme).toBeDefined();
+    const props = setTheme!.parameters["properties"] as Record<string, unknown>;
+    // A NAME argument only — no value/color/css field the model could smuggle CSS through.
+    expect(Object.keys(props)).toEqual(["name"]);
+    expect(props["name"]).toMatchObject({ type: "string" });
   });
 });
 

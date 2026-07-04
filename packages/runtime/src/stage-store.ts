@@ -15,6 +15,15 @@ export interface StageStore {
   get(agentId: string, visitorId: string): Promise<FacetSession | undefined>;
   open(agentId: string, visitor: VisitorContext): Promise<FacetSession>;
   save(session: FacetSession): Promise<void>;
+  /**
+   * A seeding decorator (`withInitialStage`) reports — at most once per fresh
+   * session — that `open()` just created this session pre-seeded, so the runtime
+   * can emit the seed as the turn's first patch frame (the browser that connected
+   * before the session existed never saw it via rehydrate). Consume-once: the
+   * first call after a fresh seeded `open()` returns `true`, every later call
+   * `false`. Plain stores never implement it.
+   */
+  takeSeeded?(agentId: string, visitorId: string): boolean;
 }
 
 export function sessionKey(agentId: string, visitorId: string): string {

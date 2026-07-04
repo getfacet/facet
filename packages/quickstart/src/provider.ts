@@ -64,7 +64,7 @@ export interface QuickstartProvider {
   run(turn: ProviderTurn, tools: readonly ToolSpec[]): Promise<ProviderStep>;
 }
 
-export const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+export const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
 export const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5";
 /** Per-attempt abort deadline for one `run` call. */
 export const TURN_TIMEOUT_MS = 60_000;

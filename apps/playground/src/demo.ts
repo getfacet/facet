@@ -46,8 +46,8 @@ async function main(): Promise<void> {
   const aliceVisit = await runtime.handle(alice, { kind: "visit", visitor: alice });
   const bobVisit = await runtime.handle(bob, { kind: "visit", visitor: bob });
 
-  let aliceTree = render(aliceVisit, EMPTY_TREE);
-  const bobTree = render(bobVisit, EMPTY_TREE);
+  let aliceTree = render(aliceVisit.messages, EMPTY_TREE);
+  const bobTree = render(bobVisit.messages, EMPTY_TREE);
 
   printStage("Alice (from Twitter) — first paint", aliceTree);
   printStage("Bob (direct) — first paint", bobTree);
@@ -56,8 +56,8 @@ async function main(): Promise<void> {
     kind: "message",
     text: "what's your pricing?",
   });
-  aliceTree = render(alicePricing, aliceTree);
-  for (const m of alicePricing) {
+  aliceTree = render(alicePricing.messages, aliceTree);
+  for (const m of alicePricing.messages) {
     if (m.kind === "say") console.log(`\nNova → Alice: ${m.text}`);
   }
 

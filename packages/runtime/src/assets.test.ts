@@ -1,0 +1,552 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
+import {
+  applyPatch,
+  EMPTY_TREE,
+  validateTree,
+  type FacetAgent,
+  type FacetSession,
+  type FacetTree,
+  type ServerMessage,
+  type VisitorContext,
+} from "@facet/core";
+import {
+  isSeedableTree,
+  loadAssets,
+  MemoryAssets,
+  withInitialStage,
+  type AssetDocuments,
+  type AssetsStore,
+} from "./assets.js";
+import { FileAssets } from "./file-assets.js";
+import { MemoryStageStore, type StageStore } from "./stage-store.js";
+import { FacetRuntime } from "./runtime.js";
+
+// --- Fixtures shared by both references ---------------------------------------
+
+/** A clean partial theme document (Decision 1). */
+const validTheme = {
+  name: "midnight",
+  description: "a dark theme",
+  color: { bg: "#111111", fg: "#eeeeee" },
+};
+/** A `url(` value ⇒ `validateTheme` refuses it (no theme, error issue). */
+const invalidTheme = { name: "hostile", color: { bg: "url(http://evil)" } };
+
+/** A legal fragment: a box root with one text child. */
+const validStamp = {
+  name: "cta",
+  description: "a call to action",
+  root: "s-root",
+  nodes: {
+    "s-root": { id: "s-root", type: "box", children: ["s-label"] },
+    "s-label": { id: "s-label", type: "text", value: "Go" },
+  },
+};
+/** Root does not resolve ⇒ `validateStamp` refuses it. */
+const invalidStamp = {
+  name: "broken",
+  root: "does-not-exist",
+  nodes: { x: { id: "x", type: "text", value: "orphan" } },
+};
+
+/** A seedable initial tree: a root box with ≥ 1 child. */
+const seedTree: FacetTree = {
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["h"] },
+    h: { id: "h", type: "text", value: "Welcome" },
+  },
+};
+
+const visitor: VisitorContext = { visitorId: "v" };
+
+// Temp dirs created by the FileAssets fixtures, removed after the suite.
+const tempDirs: string[] = [];
+afterAll(() => {
+  for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
+});
+
+function makeTempDir(): string {
+  const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+  tempDirs.push(dir);
+  return dir;
+}
+
+// --- Shared contract, run against MemoryAssets AND FileAssets -----------------
+
+function fileMake(docs: AssetDocuments): AssetsStore {
+  const dir = makeTempDir();
+  docs.themes.forEach((t, i) => writeFileSync(join(dir, `t${i}.theme.json`), JSON.stringify(t)));
+  docs.stamps.forEach((s, i) => writeFileSync(join(dir, `s${i}.stamp.json`), JSON.stringify(s)));
+  if (docs.initialTree !== undefined) {
+    writeFileSync(join(dir, "initial.tree.json"), JSON.stringify(docs.initialTree));
+  }
+  return new FileAssets(dir);
+}
+
+function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): void {
+  describe(name, () => {
+    it("round-trips valid themes, stamps, and a seedable initial tree", async () => {
+      const store = make({ themes: [validTheme], stamps: [validStamp], initialTree: seedTree });
+      const loaded = await loadAssets(store, "agent");
+      expect(loaded.themes.map((t) => t.name)).toEqual(["midnight"]);
+      expect(loaded.stamps.map((s) => s.name)).toEqual(["cta"]);
+      expect(loaded.initialTree).toBeDefined();
+      expect(loaded.initialTree && isSeedableTree(loaded.initialTree)).toBe(true);
+    });
+
+    it("skips invalid documents with issues and keeps valid ones", async () => {
+      const store = make({
+        themes: [validTheme, invalidTheme],
+        stamps: [validStamp, invalidStamp],
+        initialTree: seedTree,
+      });
+      const loaded = await loadAssets(store, "agent");
+      expect(loaded.themes.map((t) => t.name)).toEqual(["midnight"]);
+      expect(loaded.stamps.map((s) => s.name)).toEqual(["cta"]);
+      expect(loaded.issues.length).toBeGreaterThan(0);
+    });
+
+    it("refuses a garbage initial tree (the EMPTY_TREE trap) with no seed + an issue", async () => {
+      const store = make({ themes: [], stamps: [], initialTree: { not: "a tree" } });
+      const loaded = await loadAssets(store, "agent");
+      expect(loaded.initialTree).toBeUndefined();
+      expect(loaded.issues.length).toBeGreaterThan(0);
+    });
+  });
+}
+
+contract("MemoryAssets", (docs) => new MemoryAssets(docs));
+contract("FileAssets", fileMake);
+
+// --- loadAssets specifics -----------------------------------------------------
+
+describe("loadAssets", () => {
+  it("keeps the first of duplicate theme names and logs an issue", async () => {
+    const first = { name: "dup", color: { bg: "#000000" } };
+    const second = { name: "dup", color: { bg: "#ffffff" } };
+    const loaded = await loadAssets(new MemoryAssets({ themes: [first, second], stamps: [] }), "a");
+    expect(loaded.themes).toHaveLength(1);
+    expect(loaded.themes[0]?.color?.bg).toBe("#000000");
+    expect(loaded.issues.some((i) => i.includes("dup"))).toBe(true);
+  });
+
+  it("keeps the first of duplicate stamp names and logs an issue", async () => {
+    // Two *.stamp.json can carry the same `name` (name is JSON content, not the
+    // filename), so mirror the theme first-wins guard — else the prompt's STAMPS
+    // section gets two contradictory entries for one name and no warning.
+    const first = {
+      name: "hero",
+      root: "r",
+      nodes: {
+        r: { id: "r", type: "box", children: ["a"] },
+        a: { id: "a", type: "text", value: "first" },
+      },
+    };
+    const second = {
+      name: "hero",
+      root: "r",
+      nodes: {
+        r: { id: "r", type: "box", children: ["b"] },
+        b: { id: "b", type: "text", value: "second" },
+      },
+    };
+    const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [first, second] }), "a");
+    expect(loaded.stamps).toHaveLength(1);
+    expect(loaded.stamps[0]?.nodes["a"]).toBeDefined(); // the first survived
+    expect(
+      loaded.issues.some((i) => i.includes("duplicate stamp name") && i.includes("hero")),
+    ).toBe(true);
+  });
+
+  it("surfaces backend-level issues from the store", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], stamps: [], issues: ["backend said so"] }),
+      "a",
+    );
+    expect(loaded.issues).toContain("backend said so");
+  });
+
+  it("never throws when a live document's accessor throws — skips it with an issue", async () => {
+    // MemoryAssets / DB adapters hand in live in-process objects, so a document
+    // with a throwing getter must be skipped at the boot seam, never crash boot.
+    const hostileTheme = {
+      name: "x",
+      get color(): unknown {
+        throw new Error("boom");
+      },
+    };
+    const hostileStamp = {
+      name: "s",
+      get nodes(): unknown {
+        throw new Error("boom");
+      },
+    };
+    let loaded: Awaited<ReturnType<typeof loadAssets>> | undefined;
+    await expect(
+      (async () => {
+        loaded = await loadAssets(
+          new MemoryAssets({ themes: [hostileTheme, validTheme], stamps: [hostileStamp] }),
+          "a",
+        );
+      })(),
+    ).resolves.toBeUndefined();
+    // The clean theme still loaded; the hostile documents were skipped + logged.
+    expect(loaded!.themes.map((t) => t.name)).toContain("midnight");
+    expect(loaded!.themes.map((t) => t.name)).not.toContain("x");
+    expect(loaded!.issues.some((i) => i.includes("skipped"))).toBe(true);
+  });
+});
+
+describe("FileAssets", () => {
+  it("records an issue for an unparseable file, never throws, and boots", async () => {
+    const dir = makeTempDir();
+    writeFileSync(join(dir, "broken.theme.json"), "{ not json");
+    writeFileSync(join(dir, "ok.theme.json"), JSON.stringify(validTheme));
+    const loaded = await loadAssets(new FileAssets(dir), "a");
+    expect(loaded.themes.map((t) => t.name)).toEqual(["midnight"]);
+    expect(loaded.issues.length).toBeGreaterThan(0);
+  });
+
+  it("records an issue for an unreadable directory instead of throwing", async () => {
+    const loaded = await loadAssets(
+      new FileAssets(join(tmpdir(), "facet-nope-does-not-exist")),
+      "a",
+    );
+    expect(loaded.themes).toEqual([]);
+    expect(loaded.issues.length).toBeGreaterThan(0);
+  });
+});
+
+// --- isSeedableTree truth table ----------------------------------------------
+
+describe("isSeedableTree", () => {
+  it("is false for an empty root box (EMPTY_TREE)", () => {
+    expect(isSeedableTree(EMPTY_TREE)).toBe(false);
+  });
+
+  it("is true for a child-bearing root box", () => {
+    expect(isSeedableTree(seedTree)).toBe(true);
+  });
+
+  it("is true for a non-empty screens map even with an empty root", () => {
+    const tree: FacetTree = {
+      root: "home",
+      nodes: { home: { id: "home", type: "box", children: [] } },
+      screens: { home: "home" },
+    };
+    expect(isSeedableTree(tree)).toBe(true);
+  });
+
+  it("is false for an empty screens map with an empty root", () => {
+    expect(isSeedableTree({ ...EMPTY_TREE, screens: {} })).toBe(false);
+  });
+});
+
+// --- withInitialStage decorator ----------------------------------------------
+
+describe("withInitialStage", () => {
+  it("seeds a fresh session with the initial stage", async () => {
+    const store = withInitialStage(new MemoryStageStore(), seedTree);
+    const session = await store.open("a", visitor);
+    expect(session.stage).toEqual(seedTree);
+    expect((await store.get("a", "v"))?.stage).toEqual(seedTree);
+  });
+
+  it("leaves an existing session's stage untouched", async () => {
+    const base = new MemoryStageStore();
+    const existing: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["k"] },
+        k: { id: "k", type: "text", value: "kept" },
+      },
+    };
+    await base.save({ agentId: "a", visitor, stage: existing });
+    const store = withInitialStage(base, seedTree);
+    const session = await store.open("a", visitor);
+    expect(session.stage).toEqual(existing);
+  });
+
+  it("delegates get and save to the underlying store", async () => {
+    const base = new MemoryStageStore();
+    const store = withInitialStage(base, seedTree);
+    const opened = await store.open("a", visitor);
+    const next: FacetSession = { ...opened, stage: EMPTY_TREE };
+    await store.save(next);
+    expect((await base.get("a", "v"))?.stage).toEqual(EMPTY_TREE);
+  });
+
+  it("is a pass-through when the initial tree is undefined or not seedable", async () => {
+    const base = new MemoryStageStore();
+    expect(withInitialStage(base, undefined)).toBe(base);
+    expect(withInitialStage(base, EMPTY_TREE)).toBe(base);
+    const session = await withInitialStage(base, undefined).open("a", visitor);
+    expect(session.stage).toEqual(EMPTY_TREE);
+  });
+});
+
+// --- withInitialStage takeSeeded contract ------------------------------------
+
+describe("withInitialStage takeSeeded", () => {
+  it("flags a freshly seeded session exactly once, then never again", async () => {
+    const store = withInitialStage(new MemoryStageStore(), seedTree);
+    await store.open("a", visitor); // creates + seeds
+    expect(store.takeSeeded?.("a", "v")).toBe(true); // consume-once
+    expect(store.takeSeeded?.("a", "v")).toBe(false);
+  });
+
+  it("never flags an already-existing session", async () => {
+    const base = new MemoryStageStore();
+    await base.save({ agentId: "a", visitor, stage: seedTree });
+    const store = withInitialStage(base, seedTree);
+    await store.open("a", visitor); // returns the existing session, no seed
+    expect(store.takeSeeded?.("a", "v")).toBe(false);
+  });
+
+  it("a pass-through store (no/unseedable tree) exposes no takeSeeded", () => {
+    const base = new MemoryStageStore();
+    // Pass-through returns the underlying store unchanged, which never implements it.
+    expect(withInitialStage(base, undefined).takeSeeded).toBeUndefined();
+    expect(withInitialStage(base, EMPTY_TREE).takeSeeded).toBeUndefined();
+  });
+});
+
+// --- the seeded key set is bounded (hygiene cap) -----------------------------
+
+describe("withInitialStage seeded-key cap", () => {
+  it("caps the seeded set at MAX_SEEDED, evicting the oldest armed key (FIFO)", async () => {
+    // A distinct visitor whose first turn never persists (agent throw / save
+    // reject) leaves its key armed forever; without a cap a stream of one-off
+    // broken-agent visitors leaks in-process memory unbounded. Mirror the
+    // runtime's MAX_PENDING_SEEDS bound: the oldest armed key is evicted.
+    const store = withInitialStage(new MemoryStageStore(), seedTree);
+    const CAP = 10_000;
+    for (let i = 0; i <= CAP; i += 1) {
+      // Fresh open per distinct visitor, NO takeSeeded — so every key stays armed.
+      await store.open("a", { visitorId: `v${String(i)}` });
+    }
+    // The first visitor's key was evicted when the cap was exceeded (FIFO)…
+    expect(store.takeSeeded?.("a", "v0")).toBe(false);
+    // …while the newest visitor's key is still armed.
+    expect(store.takeSeeded?.("a", `v${String(CAP)}`)).toBe(true);
+  });
+});
+
+// --- the seed reaches the client as the turn's first patch frame -------------
+
+describe("withInitialStage seed frame reaches the client", () => {
+  /** An agent that appends one node under the seed root (a first-turn incremental
+   * edit — exactly the shape that broke the client when the seed never shipped). */
+  const appendAgent: FacetAgent = () => [
+    {
+      kind: "patch",
+      patches: [
+        { op: "add", path: "/nodes/added", value: { id: "added", type: "text", value: "more" } },
+        { op: "add", path: "/nodes/root/children/-", value: "added" },
+      ],
+    },
+  ];
+
+  it("prepends the seed as the turn's first patch and stays drift-free with the client", async () => {
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: appendAgent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "hi" });
+
+    // messages[0] is the seed root-replace; the agent's own patch follows it.
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      expect(first.patches[0]).toEqual({ op: "replace", path: "", value: seedTree });
+    }
+    expect(messages.length).toBeGreaterThan(1);
+
+    // Simulate the CLIENT: fold the SAME ordered messages over EMPTY_TREE with the
+    // same pure applyPatch. It must land on exactly the server's saved stage — the
+    // drift check (invariant #2) that would have caught the blank-page bug (without
+    // the seed frame the client stays on EMPTY_TREE and loses the seeded nodes).
+    // Normalize through the same save-time validateTree so the comparison is of
+    // structure, not the server's benign `style: {}` fill-in.
+    let clientStage: FacetTree = EMPTY_TREE;
+    for (const message of messages) {
+      if (message.kind === "patch") clientStage = applyPatch(clientStage, message.patches);
+    }
+    expect(validateTree(clientStage).tree).toEqual(await runtime.stageFor("v"));
+  });
+
+  it("does not re-emit the seed on a second event for the same visitor", async () => {
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: appendAgent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+    await runtime.handle(visitor, { kind: "message", text: "one" });
+    const { messages: second } = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const hasSeedReplace = second.some(
+      (m) => m.kind === "patch" && m.patches.some((p) => p.op === "replace" && p.path === ""),
+    );
+    expect(hasSeedReplace).toBe(false);
+  });
+});
+
+// --- the seed re-arms when the first turn fails to deliver --------------------
+
+describe("withInitialStage seed re-arms on a failed turn", () => {
+  /** Appends one node under the seed root — the first-turn incremental edit. */
+  const appendAgent: FacetAgent = () => [
+    {
+      kind: "patch",
+      patches: [
+        { op: "add", path: "/nodes/added", value: { id: "added", type: "text", value: "more" } },
+        { op: "add", path: "/nodes/root/children/-", value: "added" },
+      ],
+    },
+  ];
+
+  /** Fold a turn's messages over EMPTY_TREE (the client) and assert it lands on
+   * the server's saved stage — the invariant #2 drift check the seed frame exists
+   * to preserve. */
+  async function expectNoDrift(runtime: FacetRuntime, messages: readonly ServerMessage[]) {
+    let clientStage: FacetTree = EMPTY_TREE;
+    for (const message of messages) {
+      if (message.kind === "patch") clientStage = applyPatch(clientStage, message.patches);
+    }
+    expect(validateTree(clientStage).tree).toEqual(await runtime.stageFor("v"));
+  }
+
+  it("re-emits the seed on the next turn when the agent throws on the first turn", async () => {
+    let calls = 0;
+    const flakyAgent: FacetAgent = (event, session) => {
+      calls += 1;
+      if (calls === 1) throw new Error("first-turn boom");
+      return appendAgent(event, session);
+    };
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: flakyAgent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+
+    // Turn 1 throws — the seed was armed but never delivered (nothing persisted).
+    await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
+
+    // Turn 2 succeeds: the seed leads, then the agent's own patch — no drift.
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      expect(first.patches[0]).toEqual({ op: "replace", path: "", value: seedTree });
+    }
+    expect(messages.length).toBeGreaterThan(1);
+    await expectNoDrift(runtime, messages);
+  });
+
+  it("re-emits the seed on the next turn when the first turn's save rejects", async () => {
+    const seededStore = withInitialStage(new MemoryStageStore(), seedTree);
+    let failNextSave = true;
+    // Wrap ONLY the runtime-facing save so it rejects exactly once. `open` still
+    // seeds through the underlying store (its own save isn't this wrapped one), so
+    // the fresh seeded session IS persisted while the first turn fails to save.
+    const flakyStore: StageStore = {
+      get: (a, v) => seededStore.get(a, v),
+      open: (a, v) => seededStore.open(a, v),
+      save: (s) => {
+        if (failNextSave) {
+          failNextSave = false;
+          return Promise.reject(new Error("save boom"));
+        }
+        return seededStore.save(s);
+      },
+      takeSeeded: (a, v) => seededStore.takeSeeded?.(a, v) ?? false,
+    };
+    const runtime = new FacetRuntime({ agentId: "a", agent: appendAgent, stageStore: flakyStore });
+
+    // Turn 1 arms the seed, then save rejects — the seed frame never reached the
+    // client, and the flag was already consumed. It must survive to re-emit.
+    await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
+
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      expect(first.patches[0]).toEqual({ op: "replace", path: "", value: seedTree });
+    }
+    await expectNoDrift(runtime, messages);
+  });
+
+  it("re-emits the CURRENT stage, not the stale seed, after a save that committed then rejected", async () => {
+    const seededStore = withInitialStage(new MemoryStageStore(), seedTree);
+    let failNextSave = true;
+    // The async-store failure class the re-emit must survive: the write COMMITS,
+    // then the acknowledgement is lost (e.g. a connection drop post-COMMIT).
+    const commitThenRejectStore: StageStore = {
+      get: (a, v) => seededStore.get(a, v),
+      open: (a, v) => seededStore.open(a, v),
+      save: async (s) => {
+        await seededStore.save(s);
+        if (failNextSave) {
+          failNextSave = false;
+          throw new Error("post-commit boom");
+        }
+      },
+      takeSeeded: (a, v) => seededStore.takeSeeded?.(a, v) ?? false,
+    };
+    let calls = 0;
+    const agent: FacetAgent = (event, session) => {
+      calls += 1;
+      return calls === 1 ? appendAgent(event, session) : [{ kind: "say", text: "hi" }];
+    };
+    const runtime = new FacetRuntime({ agentId: "a", agent, stageStore: commitThenRejectStore });
+
+    // Turn 1: the edit commits, then save rejects — the turn fails but the
+    // stored stage is already ahead of the original seed.
+    await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow();
+
+    // Turn 2's re-emitted frame must carry the stage this turn ran against (the
+    // committed seed+edit), never rewind the page to the original seed.
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      const op = first.patches[0];
+      expect(op?.op).toBe("replace");
+      const value = op?.op === "replace" ? op.value : undefined;
+      expect(value).toEqual(await runtime.stageFor("v"));
+      expect(value).not.toEqual(seedTree);
+    }
+    await expectNoDrift(runtime, messages);
+  });
+
+  it("prepends the seed on the applyMessages path, once", async () => {
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: appendAgent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+    const event = { kind: "message", text: "trigger" } as const;
+
+    const { messages: first } = await runtime.applyMessages(visitor, event, [
+      { kind: "say", text: "late" },
+    ]);
+    expect(first[0]).toEqual({
+      kind: "patch",
+      patches: [{ op: "replace", path: "", value: seedTree }],
+    });
+    expect(first[1]).toEqual({ kind: "say", text: "late" });
+
+    // A second apply for the same visitor must NOT re-prepend the seed.
+    const { messages: second } = await runtime.applyMessages(visitor, event, [
+      { kind: "say", text: "again" },
+    ]);
+    const hasSeedReplace = second.some(
+      (m) => m.kind === "patch" && m.patches.some((p) => p.op === "replace" && p.path === ""),
+    );
+    expect(hasSeedReplace).toBe(false);
+  });
+});

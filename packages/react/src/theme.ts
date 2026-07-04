@@ -1,8 +1,18 @@
 import type { CSSProperties } from "react";
+import {
+  COLORS,
+  DEFAULT_COLORS,
+  FONT_SIZES,
+  FONT_WEIGHTS,
+  RADII,
+  RATIOS,
+  SPACES,
+} from "@facet/core";
 import type {
   Align,
   BoxStyle,
   Color,
+  FacetTheme,
   FieldStyle,
   FontSize,
   FontWeight,
@@ -70,24 +80,15 @@ const RADIUS: Record<Radius, string> = Object.assign(
 );
 
 /**
- * The palette — token NAMES → hex. Exported as the single source of truth so
- * app chrome (e.g. `ChatDock`) reuses these values instead of re-hardcoding hex.
+ * The palette — token NAMES → hex, on a null prototype (like the other groups).
+ * The VALUES live in `@facet/core`'s `DEFAULT_COLORS` (the single source of truth,
+ * shared with the core contrast check); this map re-homes them null-proto and is
+ * itself re-exported so app chrome (e.g. `ChatDock`) reuses them instead of
+ * re-hardcoding hex.
  */
 export const COLOR: Record<Color, string> = Object.assign(
   Object.create(null) as Record<Color, string>,
-  {
-    fg: "#1a1d23",
-    "fg-muted": "#6b7280",
-    bg: "#ffffff",
-    surface: "#f6f7f9",
-    "surface-2": "#eceef1",
-    accent: "#4f46e5",
-    "accent-fg": "#ffffff",
-    border: "#e2e5ea",
-    success: "#16a34a",
-    warning: "#d97706",
-    danger: "#dc2626",
-  } satisfies Record<Color, string>,
+  DEFAULT_COLORS,
 );
 
 const RATIO: Record<Ratio, string> = Object.assign(Object.create(null) as Record<Ratio, string>, {
@@ -95,6 +96,98 @@ const RATIO: Record<Ratio, string> = Object.assign(Object.create(null) as Record
   wide: "16 / 9",
   tall: "3 / 4",
 } satisfies Record<Ratio, string>);
+
+/**
+ * A fully-resolved theme: every token group is a complete null-proto map, so a
+ * style fn can index any token name and either land on the operator's override
+ * or fall through to the default value (never `undefined` for a valid token,
+ * never an inherited prototype value for a hostile one).
+ */
+export interface ResolvedTheme {
+  readonly space: Record<Space, string>;
+  readonly fontSize: Record<FontSize, string>;
+  readonly fontWeight: Record<FontWeight, number>;
+  readonly radius: Record<Radius, string>;
+  readonly color: Record<Color, string>;
+  readonly ratio: Record<Ratio, string>;
+}
+
+/**
+ * The default resolved theme — today's exact values. Every zero-extra-arg style
+ * call defaults to this map, so output stays byte-identical to the pre-theme
+ * renderer. `COLOR` above aliases `DEFAULT_RESOLVED.color`.
+ */
+const DEFAULT_RESOLVED: ResolvedTheme = {
+  space: SPACE,
+  fontSize: FONT_SIZE,
+  fontWeight: FONT_WEIGHT,
+  radius: RADIUS,
+  color: COLOR,
+  ratio: RATIO,
+};
+
+/**
+ * The default theme expressed as an operator DOCUMENT (the `@facet/core`
+ * `FacetTheme` shape): token NAMES → today's concrete values, across all six
+ * groups. It passes `validateTheme` cleanly, so operators can copy it as the
+ * starting point for a reskin, and hosts can register it by name.
+ */
+export const DEFAULT_THEME: FacetTheme = {
+  name: "default",
+  color: COLOR,
+  space: SPACE,
+  fontSize: FONT_SIZE,
+  fontWeight: FONT_WEIGHT,
+  radius: RADIUS,
+  ratio: RATIO,
+};
+
+/**
+ * Overlays one theme group's overrides onto a clone of the default group. Only
+ * OWN keys that are members of the token-group array and hold a primitive of the
+ * expected type are copied — iterating `members` (not the override's own keys)
+ * means a hostile key like `__proto__`/`constructor` is never even looked up,
+ * and the null-proto clone is re-established here because a JSON round trip (the
+ * boot-shipped shell → `JSON.parse`) restores an ordinary prototype (DC-011).
+ */
+function overlayGroup<V>(
+  base: Record<string, V>,
+  override: unknown,
+  members: readonly string[],
+  primitive: "string" | "number",
+): Record<string, V> {
+  const out: Record<string, V> = Object.assign(Object.create(null) as Record<string, V>, base);
+  if (typeof override !== "object" || override === null) return out;
+  for (const key of members) {
+    if (!Object.prototype.hasOwnProperty.call(override, key)) continue;
+    const value = (override as Record<string, unknown>)[key];
+    if (typeof value === primitive) out[key] = value as V;
+  }
+  return out;
+}
+
+/**
+ * Resolves a theme NAME (from `tree.theme`, treated as `unknown` — the live
+ * patch path can put junk there) against an operator-authored `themes` registry
+ * into a full `ResolvedTheme`. A non-string/missing/unknown name returns the
+ * shared default constant (zero allocation on the common path). This is a PURE
+ * lookup — the browser writes no stage state (invariant #6). `validateTheme`
+ * remains the security boundary; hosts validate documents before passing them,
+ * and this fn floor-guards the lookup regardless (DC-002, DC-011).
+ */
+export function resolveTheme(name: unknown, themes?: readonly FacetTheme[]): ResolvedTheme {
+  if (typeof name !== "string" || themes === undefined) return DEFAULT_RESOLVED;
+  const doc = themes.find((t) => (t as { name?: unknown } | null)?.name === name);
+  if (doc === undefined) return DEFAULT_RESOLVED;
+  return {
+    space: overlayGroup(SPACE, doc.space, SPACES, "string"),
+    fontSize: overlayGroup(FONT_SIZE, doc.fontSize, FONT_SIZES, "string"),
+    fontWeight: overlayGroup(FONT_WEIGHT, doc.fontWeight, FONT_WEIGHTS, "number"),
+    radius: overlayGroup(RADIUS, doc.radius, RADII, "string"),
+    color: overlayGroup(COLOR, doc.color, COLORS, "string"),
+    ratio: overlayGroup(RATIO, doc.ratio, RATIOS, "string"),
+  };
+}
 
 function alignValue(align: Align): CSSProperties["alignItems"] {
   switch (align) {
@@ -124,45 +217,60 @@ function justifyValue(justify: Justify): CSSProperties["justifyContent"] {
   }
 }
 
-export function boxStyle(style: BoxStyle = {}): CSSProperties {
+export function boxStyle(
+  style: BoxStyle = {},
+  theme: ResolvedTheme = DEFAULT_RESOLVED,
+): CSSProperties {
   const css: CSSProperties = {
     display: "flex",
     flexDirection: style.direction === "row" ? "row" : "column",
     boxSizing: "border-box",
   };
-  if (style.gap) css.gap = SPACE[style.gap];
-  if (style.pad) css.padding = SPACE[style.pad];
+  if (style.gap) css.gap = theme.space[style.gap];
+  if (style.pad) css.padding = theme.space[style.pad];
   if (style.align) css.alignItems = alignValue(style.align);
   if (style.justify) css.justifyContent = justifyValue(style.justify);
   if (style.wrap) css.flexWrap = "wrap";
-  if (style.bg) css.background = COLOR[style.bg];
-  if (style.radius) css.borderRadius = RADIUS[style.radius];
-  if (style.border) css.border = `1px solid ${COLOR.border}`;
+  if (style.bg) css.background = theme.color[style.bg];
+  if (style.radius) css.borderRadius = theme.radius[style.radius];
+  if (style.border) css.border = `1px solid ${theme.color.border}`;
   if (style.grow) css.flexGrow = 1;
   if (style.width === "full") css.width = "100%";
   return css;
 }
 
-export function textStyle(style: TextStyle = {}): CSSProperties {
+export function textStyle(
+  style: TextStyle = {},
+  theme: ResolvedTheme = DEFAULT_RESOLVED,
+): CSSProperties {
   const css: CSSProperties = { margin: 0 };
-  if (style.size) css.fontSize = FONT_SIZE[style.size];
-  if (style.weight) css.fontWeight = FONT_WEIGHT[style.weight];
-  if (style.color) css.color = COLOR[style.color];
+  if (style.size) css.fontSize = theme.fontSize[style.size];
+  if (style.weight) css.fontWeight = theme.fontWeight[style.weight];
+  if (style.color) css.color = theme.color[style.color];
   if (style.align) {
     css.textAlign = style.align === "start" ? "left" : style.align === "end" ? "right" : "center";
   }
   return css;
 }
 
-export function imageStyle(style: ImageStyle = {}): CSSProperties {
+export function imageStyle(
+  style: ImageStyle = {},
+  theme: ResolvedTheme = DEFAULT_RESOLVED,
+): CSSProperties {
   const css: CSSProperties = { display: "block", objectFit: "cover" };
-  if (style.radius) css.borderRadius = RADIUS[style.radius];
+  if (style.radius) css.borderRadius = theme.radius[style.radius];
   if (style.width === "full") css.width = "100%";
-  if (style.ratio) css.aspectRatio = RATIO[style.ratio];
+  if (style.ratio) css.aspectRatio = theme.ratio[style.ratio];
   return css;
 }
 
-export function fieldStyle(style: FieldStyle = {}): CSSProperties {
+// fieldStyle uses no themed token today (only the width sizing keyword), but
+// keeps the trailing theme parameter for call-site symmetry with the other three
+// and so a future themed field affordance is a non-breaking addition.
+export function fieldStyle(
+  style: FieldStyle = {},
+  _theme: ResolvedTheme = DEFAULT_RESOLVED,
+): CSSProperties {
   const css: CSSProperties = {};
   if (style.width === "full") css.width = "100%";
   return css;

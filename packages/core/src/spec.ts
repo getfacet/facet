@@ -5,7 +5,7 @@
  * it and wraps it with its own action instructions, so the vocabulary never
  * drifts from `nodes.ts` / `tokens.ts`.
  */
-export const STAGE_SPEC = `A Facet stage tree is { "root": "root", "nodes": { "<id>": <node> }, "screens"?: { "<name>": <root node id> }, "entry"?: "<name>" } — a flat map where exactly one node has id "root" and type "box", and every referenced child id exists in nodes. "screens" are named roots into the same flat nodes map (screens may share nodes); "entry" is the screen shown first. No screens ⇒ "root" renders.
+export const STAGE_SPEC = `A Facet stage tree is { "root": "root", "nodes": { "<id>": <node> }, "screens"?: { "<name>": <root node id> }, "entry"?: "<name>", "theme"?: "<theme name>" } — a flat map where exactly one node has id "root" and type "box", and every referenced child id exists in nodes. "screens" are named roots into the same flat nodes map (screens may share nodes); "entry" is the screen shown first. No screens ⇒ "root" renders. Set top-level "theme" only to a theme name you have been given (a THEMES list, if any) — you never write CSS values, styles stay tokens; an unknown or missing name falls back to the default look.
 
 Node types (the ONLY allowed types):
 - box:   { "id", "type":"box", "children":[ids], "style"?:BoxStyle, "hidden"?:bool, "onPress"?:Action } — the only container. A bordered box is a card; a box with onPress is a button; a box with "hidden":true is an initially-collapsed panel (until toggled). Nested boxes make any layout. Flow layout only (no absolute positioning).

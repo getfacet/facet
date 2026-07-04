@@ -2,6 +2,7 @@ import { connect } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   MAX_FIELD_VALUE_CHARS,
+  MAX_PATCH_OPS,
   type AgentEventFrame,
   type ClientEvent,
   type FacetAgent,
@@ -10,7 +11,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { MemorySink, MemoryStageStore, type StageStore } from "@facet/runtime";
+import { MemorySink, MemoryStageStore, withInitialStage, type StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "./server.js";
 import { isStaleLateResult } from "./late.js";
 
@@ -578,6 +579,159 @@ describe("async delivery — late results", () => {
     expect(sayText(frames)).toContain("answer 1"); // the say still lands
     // …and the stored stage is still r2's — no stale rollback.
     expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r2");
+    await link.close();
+  });
+
+  it("applies a parked late patch after a live turn whose patch ops ALL failed salvage", async () => {
+    // Effect-based agentMutated: e1 times out and parks (index 0). e2 replies
+    // live with a patch whose every op targets a nonexistent node — the fold
+    // applies nothing, so the turn mutated the stage NOT AT ALL. lastApplied must
+    // therefore stay -1, and e1's real late patch must still APPLY (not be dropped
+    // as stale behind e2). With presence-based agentMutated e2 would falsely bump
+    // lastApplied to 1 and strip e1's r1 to say-only.
+    const inner = new MemoryStageStore();
+    const sink = new MemorySink();
+    const { server, base } = await start({
+      agentId: "a",
+      agentTimeoutMs: 120,
+      stageStore: inner,
+      sink,
+    });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+
+    // e2 queues behind e1; its agent frame arrives after e1's interim timeout.
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    const evt2 = await link.nextEvent();
+    // Every op targets a node id that no longer exists → all fail salvage → the
+    // stored stage is untouched by e2.
+    await control(base, evt2.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "/nodes/ghost/value", value: "nope" }] },
+      { kind: "say", text: "answer 2" },
+    ]);
+    // e1's interim record (timeout) + e2's live record → history reaches 2 once e2 applied.
+    await waitFor(async () => (await sink.history("a", "v")).length >= 2);
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBeUndefined(); // e2 mutated nothing
+
+    // e1's real late result arrives — NOT stale (e2 did not advance lastApplied),
+    // so r1's patch must land on the stored stage rather than be stripped to say-only.
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r1");
+    const frames = await collectEvents(stream, 400);
+    expect(sayText(frames)).toContain("answer 1");
+    await link.close();
+  });
+
+  it("applies an older parked late patch after a NEWER late result whose ops all failed salvage", async () => {
+    // Late-seam variant of the effect-based agentMutated rule: e1 AND e2 both
+    // time out and park. e2's late result arrives FIRST, carrying a patch whose
+    // every op fails salvage — it mutates nothing, so it must NOT advance
+    // lastApplied. e1's older late patch must then still APPLY rather than be
+    // stripped to say-only as stale. With presence-based gating on the late
+    // path, e2 would falsely bump lastApplied to 1 and e1's r1 would be lost.
+    const inner = new MemoryStageStore();
+    const sink = new MemorySink();
+    const { server, base } = await start({
+      agentId: "a",
+      agentTimeoutMs: 120,
+      stageStore: inner,
+      sink,
+    });
+    running = server;
+    const link = await dialAgent(base);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    const evt2 = await link.nextEvent();
+    // Both turns time out and park (two interim records reach the sink).
+    await waitFor(async () => (await sink.history("a", "v")).length >= 2);
+
+    // e2's late result first: all ops fail salvage → stage untouched.
+    await control(base, evt2.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "/nodes/ghost/value", value: "nope" }] },
+      { kind: "say", text: "answer 2" },
+    ]);
+    // Wait for e2's late lane task to actually run: its "answer 2" say lands in
+    // the sink as the third record (after the two interim-timeout records).
+    await waitFor(async () => (await sink.history("a", "v")).length >= 3);
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBeUndefined();
+
+    // e1's older late patch must still land (e2 must not have bumped lastApplied).
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r1");
+    await link.close();
+  });
+
+  it("applies a parked late patch after a say-only turn merely re-emitted the seed frame", async () => {
+    // Regression (seed frame vs lastApplied): a seeded fresh session parks turn I
+    // (its persist save rejects once, so the seed stays armed). A say-only turn J
+    // then RE-EMITS the still-armed seed frame and persists — but J's own agent
+    // mutated nothing, so it must NOT advance lastApplied. Turn I's real late
+    // patch must then still APPLY, not be dropped as stale behind J.
+    const inner = new MemoryStageStore();
+    const seededStore = withInitialStage(inner, labelTree("seed"));
+    let failNextSave = true;
+    // Reject ONLY the first runtime-facing save (turn I's persist); `open` still
+    // seeds through the underlying store, so the fresh seeded session persists.
+    const flakyStore: StageStore = {
+      get: (a, v) => seededStore.get(a, v),
+      open: (a, v) => seededStore.open(a, v),
+      save: (s) => {
+        if (failNextSave) {
+          failNextSave = false;
+          return Promise.reject(new Error("save boom"));
+        }
+        return seededStore.save(s);
+      },
+      takeSeeded: (a, v) => seededStore.takeSeeded?.(a, v) ?? false,
+    };
+    const sink = new MemorySink();
+    const { server, base } = await start({
+      agentId: "a",
+      agentTimeoutMs: 120,
+      stageStore: flakyStore,
+      sink,
+    });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    // Turn I: fresh visit seeds the session; the agent times out (parks I) and
+    // I's persist save rejects once — the seed stays armed for the next turn.
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+    await new Promise((r) => setTimeout(r, 200)); // let I time out + park (interim)
+
+    // Turn J: a say-only in-time reply. It re-emits the still-armed seed frame and
+    // persists, but its own agent mutated nothing — so lastApplied must stay -1.
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    const evt2 = await link.nextEvent();
+    await control(base, evt2.requestId, [{ kind: "say", text: "answer 2" }]);
+    await waitFor(async () => (await sink.history("a", "v")).length >= 1); // J persisted
+
+    // Turn I's real late result arrives — with the agentMutated gate it is NOT
+    // stale (J did not advance lastApplied), so r1 must land on the stored stage.
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r1");
+    const frames = await collectEvents(stream, 400);
+    expect(sayText(frames)).toContain("answer 1");
     await link.close();
   });
 
@@ -1232,6 +1386,63 @@ describe("hardening", () => {
     const response = await fetch(`${base}/health`);
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("ok agent=local");
+  });
+
+  it("rejects an /agent/control patch message over the op-count cap with 400", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // A well-shaped control body whose patch carries more than MAX_PATCH_OPS ops:
+    // without the wire cap it would reach the runtime and stall the fold path.
+    const patches = Array.from({ length: MAX_PATCH_OPS + 1 }, () => ({
+      op: "add" as const,
+      path: "/nodes/x",
+      value: { id: "x", type: "text" as const, value: "x" },
+    }));
+    const response = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: 1, messages: [{ kind: "patch", patches }] }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an /agent/control frame whose patch messages AGGREGATE over the op-count cap with 400", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // Two individually-valid patch messages (600 ops each) that coalesce to 1200 >
+    // MAX_PATCH_OPS at the runtime fold. The per-frame aggregate cap must 400 them
+    // at the boundary the agent can observe — not 202 then silently drop every edit.
+    const mkPatch = (): { kind: "patch"; patches: unknown[] } => ({
+      kind: "patch",
+      patches: Array.from({ length: 600 }, () => ({
+        op: "add" as const,
+        path: "/nodes/x",
+        value: { id: "x", type: "text" as const, value: "x" },
+      })),
+    });
+    const response = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: 1, messages: [mkPatch(), mkPatch()] }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("accepts an /agent/control patch message exactly AT the op-count cap", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    const patches = Array.from({ length: MAX_PATCH_OPS }, () => ({
+      op: "add" as const,
+      path: "/nodes/x",
+      value: { id: "x", type: "text" as const, value: "x" },
+    }));
+    const response = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId: 999, messages: [{ kind: "patch", patches }] }),
+    });
+    // Shape is valid → 202 (an unknown requestId is a bounded no-op, still 202).
+    expect(response.status).toBe(202);
   });
 
   it("rejects an oversized /event body", async () => {

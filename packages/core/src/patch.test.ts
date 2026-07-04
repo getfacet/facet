@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyPatch } from "./patch.js";
-import { EMPTY_TREE } from "./tree.js";
+import { applyOpInPlace, applyPatch, MAX_PATCH_OPS, type JsonPatchOperation } from "./patch.js";
+import { EMPTY_TREE, type FacetTree } from "./tree.js";
 
 describe("applyPatch (RFC 6902)", () => {
   it("replace at the root path swaps the whole tree", () => {
@@ -267,5 +267,72 @@ describe("applyPatch — move/copy against array indices", () => {
         { op: "copy", from: "/nodes/root/children/-", path: "/nodes/root/children/-" },
       ]),
     ).toThrow(/invalid array index/);
+  });
+});
+
+describe("applyOpInPlace (non-cloning primitive)", () => {
+  const base: FacetTree = {
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", style: {}, children: ["a", "b"] },
+      a: { id: "a", type: "text", value: "A", style: {} },
+      b: { id: "b", type: "text", value: "B", style: {} },
+    },
+  };
+  const childrenOf = (tree: FacetTree): string[] =>
+    (tree.nodes["root"] as unknown as { children: string[] }).children;
+
+  it("mutates the given tree in place and returns the same root for a non-root op", () => {
+    const tree = structuredClone(base);
+    const out = applyOpInPlace(tree, {
+      op: "add",
+      path: "/nodes/x",
+      value: { id: "x", type: "text", value: "X" },
+    });
+    expect(out).toBe(tree); // same reference — no clone
+    expect(tree.nodes["x"]).toBeDefined();
+  });
+
+  it("leaves the tree byte-identical when a move's destination is invalid (atomic)", () => {
+    // The source is removed before the destination pointer is resolved; a failed
+    // destination must NOT strand the tree with the source gone.
+    const tree = structuredClone(base);
+    expect(() =>
+      applyOpInPlace(tree, {
+        op: "move",
+        from: "/nodes/root/children/0",
+        path: "/nodes/ghost/children/0", // parent "ghost" does not exist → throws
+      }),
+    ).toThrow();
+    expect(childrenOf(tree)).toEqual(["a", "b"]); // source "a" restored
+  });
+
+  it("leaves the tree byte-identical when a move's destination index is out of range (atomic)", () => {
+    const tree = structuredClone(base);
+    expect(() =>
+      applyOpInPlace(tree, {
+        op: "move",
+        from: "/nodes/root/children/0",
+        path: "/nodes/root/children/9", // out of range after the source removal
+      }),
+    ).toThrow();
+    expect(childrenOf(tree)).toEqual(["a", "b"]);
+  });
+});
+
+describe("MAX_PATCH_OPS", () => {
+  it("is a positive integer cap", () => {
+    expect(MAX_PATCH_OPS).toBe(1024);
+  });
+
+  it("applyPatch itself imposes no op-count cap (the cap lives at the fold/wire boundary)", () => {
+    // A batch well over MAX_PATCH_OPS still applies through applyPatch; the cap is
+    // a fold/server concern, not applyPatch's contract.
+    const ops: JsonPatchOperation[] = Array.from({ length: MAX_PATCH_OPS + 10 }, () => ({
+      op: "add" as const,
+      path: "/nodes/a",
+      value: { id: "a", type: "text" as const, value: "x" },
+    }));
+    expect(() => applyPatch(EMPTY_TREE, ops)).not.toThrow();
   });
 });

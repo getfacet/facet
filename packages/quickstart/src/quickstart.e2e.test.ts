@@ -16,7 +16,9 @@ import { connect } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { startQuickstart, type RunningQuickstart } from "./server.js";
+import type { FacetTheme, FacetTree } from "@facet/core";
+import { defineAgent } from "@facet/agent";
+import { startQuickstart, type QuickstartServerOptions, type RunningQuickstart } from "./server.js";
 import { createStubAgent } from "./stub.js";
 
 const FIXTURE_BUNDLE = `console.log("facet quickstart fixture bundle");\n`;
@@ -129,9 +131,13 @@ function postEvent(base: string, visitorId: string, event: unknown): Promise<Res
   });
 }
 
-/** Boot `startQuickstart` on a random free port, retrying on collisions (the
- * server.test.ts bind-retry pattern). */
-async function boot(pageBundlePath: string): Promise<RunningQuickstart> {
+/**
+ * Boot `startQuickstart` on a random free port, retrying on collisions (the
+ * server.test.ts bind-retry pattern). Defaults to the stub agent + fixture
+ * bundle; `overrides` swaps in a recording agent, `themes`, or an `initialStage`
+ * for the seeding/theme-map tests.
+ */
+async function boot(overrides: Partial<QuickstartServerOptions> = {}): Promise<RunningQuickstart> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     try {
@@ -139,7 +145,8 @@ async function boot(pageBundlePath: string): Promise<RunningQuickstart> {
         port,
         agentId: "quickstart-e2e",
         agent: createStubAgent(),
-        pageBundlePath,
+        pageBundlePath: bundlePath,
+        ...overrides,
       });
     } catch {
       // EADDRINUSE — try another port
@@ -149,14 +156,15 @@ async function boot(pageBundlePath: string): Promise<RunningQuickstart> {
 }
 
 let fixtureDir: string;
+let bundlePath: string;
 let running: RunningQuickstart;
 let base: string;
 
 beforeAll(async () => {
   fixtureDir = await mkdtemp(join(tmpdir(), "facet-quickstart-e2e-"));
-  const bundlePath = join(fixtureDir, "app.js");
+  bundlePath = join(fixtureDir, "app.js");
   await writeFile(bundlePath, FIXTURE_BUNDLE, "utf8");
-  running = await boot(bundlePath);
+  running = await boot();
   base = running.url;
 });
 
@@ -241,6 +249,35 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
       setTimeout(() => socket.end(), 300);
     });
     expect(firstLine).toContain("403");
+  });
+
+  it("refuses a non-loopback Host on GET / and leaks no seed data to a rebound origin", async () => {
+    // The shell now inlines operator data (`__FACET_INITIAL_STAGE__`), so the
+    // DNS-rebinding guard must front `/` too — a rebound attacker.example must
+    // not read the seed tree out of the boot script.
+    const seeded = await boot({ initialStage: SEED_TREE });
+    try {
+      const port = Number(new URL(seeded.url).port);
+      const raw = await new Promise<string>((resolve, reject) => {
+        const socket = connect(port, "127.0.0.1", () => {
+          socket.write(`GET / HTTP/1.1\r\nHost: attacker.example:${String(port)}\r\n\r\n`);
+        });
+        let buf = "";
+        socket.on("data", (d) => {
+          buf += d.toString();
+        });
+        socket.on("end", () => resolve(buf));
+        socket.on("error", reject);
+        setTimeout(() => socket.end(), 300);
+      });
+      const statusLine = raw.split("\r\n")[0] ?? "";
+      expect(statusLine).toContain("403");
+      // No boot script and no seed content crossed to the rebound origin.
+      expect(raw).not.toContain("__FACET_INITIAL_STAGE__");
+      expect(raw).not.toContain("seed-root");
+    } finally {
+      await seeded.close();
+    }
   });
 });
 
@@ -342,6 +379,218 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
       await postEvent(base, visitorId, { kind: "message", text: "second" });
       const frames = await stream.next(4); // (echo patch + say) × 2
       expect(sayTexts(frames)).toEqual(["stub: first", "stub: second"]);
+    } finally {
+      await stream.close();
+    }
+  });
+});
+
+/** A seedable initial tree (Decision 4): a box root with a child — passes
+ * `validateTree` and `isSeedableTree`, so `withInitialStage` installs it. */
+const SEED_TREE: FacetTree = {
+  root: "seed-root",
+  nodes: {
+    "seed-root": {
+      id: "seed-root",
+      type: "box",
+      style: { direction: "col", gap: "md" },
+      children: ["seed-hero"],
+    },
+    "seed-hero": { id: "seed-hero", type: "text", value: "Seeded skeleton" },
+  },
+};
+
+describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
+  it("ships the seed to the FIRST stream as a stamped patch frame on the visit turn", async () => {
+    // A recording NO-OP agent: it MUTATES no stage (paints nothing) — it only
+    // records the stage it was handed and emits one `say` as a deterministic
+    // turn-completed signal. So any tree that reaches the browser can ONLY be the
+    // seed the runtime shipped, never an agent-authored paint.
+    const seen: (FacetTree | undefined)[] = [];
+    const recording = defineAgent(({ session, stage }) => {
+      seen.push(session.stage);
+      stage.say("noop");
+    });
+    const seeded = await boot({ agent: recording, initialStage: SEED_TREE });
+    try {
+      const visitorId = "e2e-seed";
+      const stream = await openStream(seeded.url, visitorId);
+      try {
+        // The stream connects BEFORE the session exists, so its reset carries no
+        // snapshot (the bug: this browser would otherwise never see the seed).
+        await stream.next(1); // bare reset
+        await postEvent(seeded.url, visitorId, { kind: "visit", visitor: { visitorId } });
+        // The visit opens+seeds the session; the seed travels the patch channel as
+        // the turn's FIRST stamped frame, ahead of the no-op agent's `say`.
+        const [seedFrame, say] = await stream.next(2); // seed patch, then say
+        expect(kindOf(seedFrame?.data)).toBe("patch");
+        expect(seedFrame?.id).toBeDefined(); // stamped — it got a seq / replay slot
+        const seedText = JSON.stringify(seedFrame?.data);
+        expect(seedText).toContain('"op":"replace"');
+        expect(seedText).toContain('"seed-root"');
+        expect(seedText).toContain('"seed-hero"');
+        expect(kindOf(say?.data)).toBe("say");
+      } finally {
+        await stream.close();
+      }
+
+      // Secondary check — a RECONNECT's rehydrate also ships the seeded stage as
+      // its snapshot (from `runtime.stageFor`), so a later tab is consistent too.
+      const reconnect = await fetch(`${seeded.url}/stream?visitorId=${visitorId}`);
+      const frames = await readEvents(reconnect, 2); // reset + snapshot patch
+      expect(kindOf(frames[0]?.data)).toBe("reset");
+      expect(kindOf(frames[1]?.data)).toBe("patch");
+      const snapshot = JSON.stringify(frames[1]?.data);
+      expect(snapshot).toContain('"seed-root"');
+      expect(snapshot).toContain('"seed-hero"');
+
+      // The agent's FIRST turn saw the seeded stage (seed visible pre-paint).
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.root).toBe("seed-root");
+      expect(seen[0]?.nodes["seed-root"]).toBeDefined();
+    } finally {
+      await seeded.close();
+    }
+  });
+
+  it("inlines the seed stage into the shell (escaped) so the first paint isn't model-gated", async () => {
+    // A hostile node value stands in for agent-authored text: the shell's
+    // `<`→< escape is the defense-in-depth that keeps it from closing the
+    // injected <script> — the same posture the theme global gets.
+    const hostileSeed: FacetTree = {
+      root: "seed-root",
+      nodes: {
+        "seed-root": {
+          id: "seed-root",
+          type: "box",
+          style: { direction: "col", gap: "md" },
+          children: ["seed-hero"],
+        },
+        "seed-hero": {
+          id: "seed-hero",
+          type: "text",
+          value: "</script><script>alert(1)</script>",
+        },
+      },
+    };
+    const seeded = await boot({ initialStage: hostileSeed });
+    try {
+      const body = await (await fetch(`${seeded.url}/`)).text();
+      expect(body).toContain("window.__FACET_INITIAL_STAGE__ = ");
+      expect(body).toContain('"seed-root"');
+      expect(body).toContain('"seed-hero"');
+      // Every `<` in the JSON is escaped, so the hostile value is inert data.
+      expect(body).toContain("\\u003c/script>\\u003cscript>alert(1)");
+      expect(body).not.toContain("<script>alert(1)");
+    } finally {
+      await seeded.close();
+    }
+  });
+
+  it("inlines the theme map into the shell with the hostile </script> escaped", async () => {
+    // `validateTheme` already refuses `<` in values, but a description is freer
+    // text — the shell's `<`→< escape is the defense-in-depth that keeps a
+    // hostile description from closing the injected <script> and running code.
+    const themes: readonly FacetTheme[] = [
+      { name: "midnight", description: "</script><script>alert(1)</script>" },
+    ];
+    const themed = await boot({ themes });
+    try {
+      const body = await (await fetch(`${themed.url}/`)).text();
+      expect(body).toContain("window.__FACET_THEMES__ = ");
+      expect(body).toContain('"midnight"');
+      // Every `<` in the JSON is escaped, so the hostile marker is inert data.
+      expect(body).toContain("\\u003c/script>\\u003cscript>alert(1)");
+      // ...and the live-injection form never appears unescaped in the document.
+      expect(body).not.toContain("<script>alert(1)");
+    } finally {
+      await themed.close();
+    }
+  });
+
+  it("joint boot: themes AND initialStage ship as one executable script that materializes both globals", async () => {
+    // The flagship `--assets` path — an assets dir with a theme AND a seedable
+    // tree passes BOTH seams. This is the two-entry `globals.join(";")` branch
+    // the shellHtml doc comment claims but no other test exercises: if the join
+    // separator regressed (dropped, or a bare `,`), the inline script would be a
+    // syntax error or clobber the first assignment, silently killing BOTH the
+    // instant paint and the theme map. Executing the body (not string-matching
+    // the `;`) is what catches that.
+    const validTheme: FacetTheme = { name: "brand", description: "operator theme" };
+    const themes: readonly FacetTheme[] = [validTheme];
+    const seeded = await boot({ themes, initialStage: SEED_TREE });
+    try {
+      const body = await (await fetch(`${seeded.url}/`)).text();
+
+      // Exactly one inline boot <script> (no attributes), and it precedes the
+      // /app.js module tag so the globals exist before the bundle reads them.
+      const inlineMatches = body.match(/<script>[\s\S]*?<\/script>/g) ?? [];
+      expect(inlineMatches).toHaveLength(1);
+      const bootTag = inlineMatches[0]!;
+      expect(body.indexOf(bootTag)).toBeLessThan(body.indexOf('src="/app.js"'));
+
+      // Both assignments are present in the one script.
+      expect(bootTag).toContain("window.__FACET_THEMES__ =");
+      expect(bootTag).toContain("window.__FACET_INITIAL_STAGE__ =");
+
+      // The join contract: executing the extracted body as real JS must
+      // materialize BOTH globals (a comma-operator regression would parse but
+      // drop the first assignment; a dropped separator would throw).
+      const scriptBody = bootTag.slice("<script>".length, -"</script>".length);
+      const fakeWindow: Record<string, unknown> = {};
+      new Function("window", scriptBody)(fakeWindow);
+      expect(fakeWindow.__FACET_THEMES__).toEqual(themes);
+      expect(fakeWindow.__FACET_INITIAL_STAGE__).toEqual(SEED_TREE);
+    } finally {
+      await seeded.close();
+    }
+  });
+
+  it("stub theme switch: emits the /theme add-op and persists theme on reconnect", async () => {
+    const visitorId = "e2e-theme";
+    const stream = await openStream(base, visitorId);
+    try {
+      await stream.next(1); // reset
+      await postEvent(base, visitorId, { kind: "visit", visitor: { visitorId } });
+      await stream.next(1); // visit patch (STUB_TREE)
+
+      // "theme <name>" ⇒ the stub runs `stage.theme(name)` + a say (DC-010).
+      await postEvent(base, visitorId, { kind: "message", text: "theme midnight" });
+      const frames = await stream.next(2); // theme patch + say
+      expect(frames.map((f) => kindOf(f.data))).toEqual(["patch", "say"]);
+      const patchText = JSON.stringify(frames[0]?.data);
+      expect(patchText).toContain('"op":"add"');
+      expect(patchText).toContain('"path":"/theme"');
+      expect(patchText).toContain('"value":"midnight"');
+      expect(sayTexts(frames)).toEqual(["stub: theme midnight"]);
+    } finally {
+      await stream.close();
+    }
+
+    // Reconnect: the rehydrate snapshot carries the persisted `theme`, proving a
+    // string `theme` survived the runtime's save-time `validateTree` (WU-2's
+    // keep-if-string — else `runtime.ts` would strip the name on first save).
+    const reconnect = await fetch(`${base}/stream?visitorId=${visitorId}`);
+    const snap = await readEvents(reconnect, 2); // reset + snapshot patch
+    expect(kindOf(snap[1]?.data)).toBe("patch");
+    expect(JSON.stringify(snap[1]?.data)).toContain('"theme":"midnight"');
+  });
+
+  it("no-assets boot: shell carries no theme global and a fresh connect is a bare reset", async () => {
+    // The shared `running` server booted with no themes and no initialStage.
+    const body = await (await fetch(`${base}/`)).text();
+    expect(body).not.toContain("__FACET_THEMES__");
+    // ...and no seed global either — byte-identical to the no-assets shell.
+    expect(body).not.toContain("__FACET_INITIAL_STAGE__");
+
+    // A brand-new visitor that has not visited: rehydrate finds no stage (nothing
+    // seeded, nothing painted), so the connect is a lone unstamped reset —
+    // today's EMPTY_TREE / model-first posture, unchanged.
+    const stream = await openStream(base, "e2e-unseeded");
+    try {
+      const [reset] = await stream.next(1);
+      expect(kindOf(reset?.data)).toBe("reset");
+      expect(reset?.id).toBeUndefined();
     } finally {
       await stream.close();
     }

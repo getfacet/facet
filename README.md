@@ -101,6 +101,39 @@ Higher-level shapes (`card()`, `hero()`, `row()`) live in an optional preset
 package — they're just functions that emit box compositions, giving one-shot
 convenience without giving up the low-level foundation.
 
+## Reskin with data, not code
+
+A page's look is **operator data, not model output**. Hand `facet-quickstart` an
+assets directory and it reskins and pre-seeds the page — the model still never
+deals in pixels:
+
+```bash
+OPENAI_API_KEY=sk-… npx facet-quickstart --assets ./assets
+```
+
+where `./assets` holds any mix of:
+
+- **`*.theme.json`** — a named palette/scale document mapping token names to CSS
+  values, e.g. `{ "name": "midnight", "color": { "bg": "#0b1020", "fg": "#e8ecff" } }`.
+  The model **selects** a theme by name (via a `set_theme` tool); **it never
+  authors the CSS values** and never writes one into the tree. An unknown or
+  missing name simply falls back to the default look — nothing throws.
+- **`*.stamp.json`** — a reusable `{ root, nodes }` brick fragment (a hero, a
+  card) offered to the model to copy into the page. Stamps are prompt data the
+  model copies into ordinary patches; there is **no client-side stamp
+  expansion**.
+- **`initial.tree.json`** — a starting stage the first visit opens on *before*
+  the model's first turn: a fast, non-blank first paint the agent then refines.
+
+Every document passes one validator at boot (`validateTheme` / `validateStamp` /
+`validateTree`): a value that smuggles CSS (`url()`, `var()`, `expression()`,
+`javascript:`) is refused, dimensions are clamped so a theme can't push content
+off-screen, and a low-contrast text/background pair is **flagged as a warning,
+never rejected** (Facet measures the WCAG ratio; you decide the policy). An
+invalid document is skipped with a logged issue and boot proceeds. Raw CSS enters
+Facet exactly here, as operator data behind one gate — the model-facing surface
+only ever names a theme.
+
 ## What you can build
 
 - **An AI that answers with UI, not text** — "compare these three" → a real

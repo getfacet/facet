@@ -6,6 +6,7 @@
  * and close it immediately.
  */
 import { describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runCli } from "./cli.js";
@@ -135,6 +136,99 @@ describe("runCli — guide resolution (DC-005)", () => {
     const { captured, running } = await bootCli();
     await running.close();
     expect(captured.err).toEqual([]);
+  });
+});
+
+describe("runCli — --assets (DC-009)", () => {
+  it("exits 1 when an explicit assets path does not exist", async () => {
+    const missing = join(
+      tmpdir(),
+      `facet-assets-missing-${String(Date.now())}-${String(Math.random())}`,
+    );
+    const captured = capture();
+    const code = await runCli(
+      ["--stub", "--assets", missing],
+      {},
+      { log: captured.log, error: captured.error },
+    );
+    expect(code).toBe(1);
+    expect([...captured.err, ...captured.out].join("\n")).toContain(missing);
+  });
+
+  it("exits 1 when an explicit --assets path is a regular file, not a directory", async () => {
+    // existsSync passes for a regular file; without a directory probe the server
+    // would boot with zero assets and exit 0 — an explicit config silently doing
+    // nothing. An explicit --assets that isn't a readable directory must hard-fail.
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    let running: RunningQuickstart | undefined;
+    try {
+      const file = join(dir, "not-a-dir.txt");
+      writeFileSync(file, "hello");
+      const port = 20_000 + Math.floor(Math.random() * 20_000);
+      const captured = capture();
+      const code = await runCli(
+        ["--stub", "--port", String(port), "--assets", file],
+        {},
+        {
+          log: captured.log,
+          error: captured.error,
+          // Defensive: if the guard failed to fire and the server booted, close it
+          // so the listening handle can't leak past this test.
+          onStarted: (handle) => {
+            running = handle;
+          },
+        },
+      );
+      expect(code).toBe(1);
+      expect([...captured.err, ...captured.out].join("\n")).toContain(file);
+    } finally {
+      await running?.close();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("boots on a valid dir, logs issues, wires only the valid theme and no seed", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    try {
+      // One valid theme, one invalid theme (non-string name ⇒ skipped), and an
+      // initial tree that validateTree reduces to EMPTY_TREE (empty root box ⇒
+      // not seedable ⇒ DC-009 model-first fallback, no seed wired).
+      writeFileSync(
+        join(dir, "midnight.theme.json"),
+        JSON.stringify({ name: "midnight", color: { bg: "#000000", fg: "#ffffff" } }),
+      );
+      writeFileSync(join(dir, "broken.theme.json"), JSON.stringify({ name: 7 }));
+      writeFileSync(join(dir, "initial.tree.json"), JSON.stringify({ root: "root", nodes: {} }));
+
+      const { captured, running } = await bootCli(["--assets", dir]);
+      try {
+        // Issues surfaced, one concise line each, prefixed and never a value.
+        const issues = captured.err.join("\n");
+        expect(issues).toContain("[facet-quickstart]");
+        expect(issues).toContain("theme document skipped");
+        expect(issues).toContain("not seedable");
+
+        // The valid theme is injected into the shell; the skipped one is absent.
+        const shell = await (await fetch(`${running.url}/`)).text();
+        expect(shell).toContain("window.__FACET_THEMES__");
+        expect(shell).toContain("midnight");
+      } finally {
+        await running.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("injects no theme global and logs nothing when --assets is absent", async () => {
+    const { captured, running } = await bootCli();
+    try {
+      expect(captured.err).toEqual([]);
+      const shell = await (await fetch(`${running.url}/`)).text();
+      expect(shell).not.toContain("window.__FACET_THEMES__");
+    } finally {
+      await running.close();
+    }
   });
 });
 

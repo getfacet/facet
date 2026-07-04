@@ -60,6 +60,19 @@ export class Stage {
   }
 
   /**
+   * Select the stage's theme by name.
+   *
+   * Records a top-level `add` op for `/theme` — the same upsert precedent as
+   * `screens()` — carrying only a theme NAME, never a CSS value. An unknown
+   * name is the renderer's fail-safe problem: `resolveTheme` falls back to the
+   * default look, so a stale or missing name never breaks the page.
+   */
+  theme(name: string): this {
+    this.pending.push({ op: "add", path: "/theme", value: name });
+    return this;
+  }
+
+  /**
    * Remove a node from the map. Any lingering id reference in a parent's
    * `children` is harmless — the fail-safe renderer skips ids it can't resolve.
    */

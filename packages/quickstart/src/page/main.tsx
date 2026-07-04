@@ -10,9 +10,47 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import type { FacetAction, VisitorContext } from "@facet/core";
+import { isTreeShaped } from "@facet/core";
+import type { FacetAction, FacetTheme, FacetTree, VisitorContext } from "@facet/core";
 import { browserVisitorId, SseTransport } from "@facet/client";
-import { ChatDock, StageRenderer, useFacet, type ChatMessage } from "@facet/react";
+import { ChatDock, resolveTheme, StageRenderer, useFacet, type ChatMessage } from "@facet/react";
+
+declare global {
+  interface Window {
+    __FACET_THEMES__?: unknown;
+    __FACET_INITIAL_STAGE__?: unknown;
+  }
+}
+
+/**
+ * Read the boot-shipped theme map (Decision 2 seam). Floor-guarded: only an
+ * array of objects carrying a string `name` survives — anything else (absent,
+ * a non-array, JSON junk) becomes `undefined`, so `StageRenderer` falls back to
+ * the default theme. `validateTheme` remains the real security boundary; this is
+ * a shape floor after the JSON round trip.
+ */
+function readThemes(): readonly FacetTheme[] | undefined {
+  const raw = window.__FACET_THEMES__;
+  if (!Array.isArray(raw)) return undefined;
+  const themes = raw.filter(
+    (t): t is FacetTheme =>
+      typeof t === "object" && t !== null && typeof (t as { name?: unknown }).name === "string",
+  );
+  return themes.length > 0 ? themes : undefined;
+}
+
+/**
+ * Read the boot-shipped seed stage (Decision 4 / Fix A seam) so the first paint
+ * doesn't wait for the first model turn. Floor-guarded with the shared
+ * `isTreeShaped` check — only a `{ root: string, nodes: object }` survives, so
+ * JSON junk becomes `undefined` and `useFacet` falls back to `EMPTY_TREE`. The
+ * host `validateTree`d this tree server-side before inlining it; this is the
+ * shape floor after the JSON round trip (mirrors `readThemes`' posture).
+ */
+function readInitialStage(): FacetTree | undefined {
+  const raw = window.__FACET_INITIAL_STAGE__;
+  return isTreeShaped(raw) ? raw : undefined;
+}
 
 function makeVisitor(): VisitorContext {
   const referrer = document.referrer;
@@ -26,8 +64,15 @@ function makeVisitor(): VisitorContext {
 
 function Page(): ReactNode {
   const visitor = useMemo(makeVisitor, []);
+  const themes = useMemo(readThemes, []);
+  const initialTree = useMemo(readInitialStage, []);
   const transport = useMemo(() => new SseTransport("", visitor), [visitor]);
-  const { tree, chat, send } = useFacet(transport);
+  // Conditional spread: exactOptionalPropertyTypes forbids an explicit
+  // `initialTree: undefined` — an absent seed must keep the EMPTY_TREE default.
+  const { tree, chat, send } = useFacet(
+    transport,
+    initialTree !== undefined ? { initialTree } : {},
+  );
   const [log, setLog] = useState<readonly ChatMessage[]>([]);
   const seen = useRef(0);
 
@@ -35,6 +80,23 @@ function Page(): ReactNode {
   useEffect(() => {
     send({ kind: "visit", visitor });
   }, [send, visitor]);
+
+  // Paint the page CANVAS (document.body, outside the tree) with the resolved
+  // theme's bg/fg so a dark theme actually darkens the whole page, not just the
+  // token-styled bricks. StageRenderer/ChatDock are untouched — the spec keeps
+  // the dock on the default palette. The default theme resolves to white/near-
+  // black, visually identical to today. Guard the tree read the way StageRenderer
+  // does (a raw-path tree can be null/primitive), then let `resolveTheme`
+  // floor-guard the name.
+  useEffect(() => {
+    const themeName: unknown =
+      typeof tree === "object" && tree !== null
+        ? (tree as { readonly theme?: unknown }).theme
+        : undefined;
+    const resolved = resolveTheme(themeName, themes);
+    document.body.style.background = resolved.color.bg;
+    document.body.style.color = resolved.color.fg;
+  }, [tree, themes]);
 
   // Fold new agent says into the conversation log; a server reset shrinks
   // `chat`, in which case rebuild instead of appending duplicates.
@@ -63,7 +125,11 @@ function Page(): ReactNode {
   return (
     <div style={styles.page}>
       <div style={styles.stage}>
-        <StageRenderer tree={tree} onAction={onAction} />
+        <StageRenderer
+          tree={tree}
+          onAction={onAction}
+          {...(themes !== undefined ? { themes } : {})}
+        />
       </div>
       <ChatDock messages={log} onSend={onSend} />
     </div>

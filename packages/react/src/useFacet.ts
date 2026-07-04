@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  applyPatch,
   EMPTY_TREE,
-  isTreeShaped,
+  foldPatchIntoStage,
   type ClientEvent,
   type FacetTransport,
   type FacetTree,
@@ -20,26 +19,39 @@ export interface FacetState {
   send(event: ClientEvent): void;
 }
 
+export interface UseFacetOptions {
+  /**
+   * A boot-shipped seed tree the host can hand in so the first paint doesn't
+   * wait for the first server frame (e.g. inlined into the page shell). The
+   * server's seed frame — a root replace with the same validated tree — then
+   * applies idempotently, so the server stays the only writer of stage content;
+   * this only moves the first paint earlier. Absent ⇒ starts from `EMPTY_TREE`.
+   */
+  readonly initialTree?: FacetTree;
+}
+
 /**
- * Subscribes to a transport and keeps the stage in sync by applying patches
- * client-side with the very same `applyPatch` the server uses, so the two
- * views never diverge.
+ * Subscribes to a transport and keeps the stage in sync by folding patches
+ * client-side with the very same `foldPatchIntoStage` the server uses (apply +
+ * validate), so the rendered tree is the same normalized fold as the server's
+ * stored stage by construction — the two views never diverge (invariant #2).
  */
-export function useFacet(transport: FacetTransport): FacetState {
-  const [tree, setTree] = useState<FacetTree>(EMPTY_TREE);
+export function useFacet(transport: FacetTransport, options?: UseFacetOptions): FacetState {
+  const [tree, setTree] = useState<FacetTree>(options?.initialTree ?? EMPTY_TREE);
   const [chat, setChat] = useState<readonly string[]>([]);
 
   useEffect(() => {
     return transport.subscribe((message: ServerMessage) => {
       if (message.kind === "patch") {
         setTree((current) => {
-          // Fail-safe (invariant #2): a malformed patch must never crash the
-          // render — keep the current tree if applyPatch throws, and never let
-          // a root replace smuggle a non-tree (null/scalar) into `tree`, which
-          // the FacetState type promises is a FacetTree.
+          // Fold with the shared function: it applies the batch atomically,
+          // salvages good ops on a throw, and validateTree-normalizes the
+          // result — the exact steps the server runs, so both hold the SAME
+          // tree. It never throws and always returns a FacetTree; the try/catch
+          // is belt-and-braces so an impossible helper failure keeps the current
+          // tree rather than crashing the render (invariant #2, fail-safe).
           try {
-            const next: unknown = applyPatch(current, message.patches);
-            return isTreeShaped(next) ? next : current;
+            return foldPatchIntoStage(current, message.patches).tree;
           } catch {
             return current;
           }

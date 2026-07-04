@@ -218,6 +218,27 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
+  it("treats a screen whose target is a NON-box node as not live and falls back (matches sanitizeScreens)", () => {
+    // A raw-path patch can point a screen at a text node; sanitizeScreens drops
+    // such a target on the stored tree, so the live fail-safe must NOT render the
+    // text node as the whole screen — it falls back to the plain root instead.
+    const onAction = vi.fn();
+    const badScreen: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["rootText"] },
+        rootText: { id: "rootText", type: "text", value: "plain root content" },
+        txt: { id: "txt", type: "text", value: "text screen content" },
+      },
+      screens: { home: "txt" },
+      entry: "home",
+    };
+    render(<StageRenderer onAction={onAction} tree={badScreen} />);
+
+    expect(screen.getByText("plain root content")).toBeTruthy();
+    expect(screen.queryByText("text screen content")).toBeNull();
+  });
+
   it("falls back to the first live screen when the current screen AND entry are both dead", () => {
     const onAction = vi.fn();
     const { rerender } = render(<StageRenderer onAction={onAction} tree={screensTree()} />);
@@ -317,6 +338,40 @@ describe("StageRenderer toggle (jsdom)", () => {
     expect(screen.getByText("menu content")).toBeTruthy();
     fireEvent.click(screen.getByRole("button"));
     expect(screen.queryByText("menu content")).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("keeps a hidden:true node keyed 'toString' hidden until toggled (no prototype-chain leak)", () => {
+    // "toString" passes validateTree (only __proto__/prototype/constructor are
+    // forbidden ids). A plain-object visibility store would read the inherited
+    // Object.prototype.toString as the override and render the hidden node
+    // VISIBLE; a Map never resolves through the prototype.
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["btn", "toString"] },
+          btn: {
+            id: "btn",
+            type: "box",
+            onPress: { kind: "toggle", target: "toString" },
+            children: ["bt"],
+          },
+          bt: { id: "bt", type: "text", value: "Toggle" },
+          // Cast: the literal key "toString" shadows Object.prototype.toString,
+          // so the Record value context doesn't flow to narrow `type` here.
+          toString: { id: "toString", type: "box", hidden: true, children: ["m"] } as FacetNode,
+          m: { id: "m", type: "text", value: "prototype-safe content" },
+        })}
+      />,
+    );
+
+    expect(screen.queryByText("prototype-safe content")).toBeNull(); // hidden on first paint
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    expect(screen.getByText("prototype-safe content")).toBeTruthy(); // first toggle reveals it
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
+    expect(screen.queryByText("prototype-safe content")).toBeNull(); // and hides again
     expect(onAction).not.toHaveBeenCalled();
   });
 

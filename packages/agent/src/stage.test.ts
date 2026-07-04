@@ -68,6 +68,29 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     ]);
   });
 
+  it("records a theme selection as a top-level add op", () => {
+    const stage = new Stage();
+    stage.theme("midnight");
+    const messages = stage.flush();
+    expect(messages).toHaveLength(1);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([{ op: "add", path: "/theme", value: "midnight" }]);
+  });
+
+  it("theme coalesces with other edits and flushes before say", () => {
+    const stage = new Stage();
+    stage.set({ id: "root", type: "box", children: [] }).theme("midnight").say("theme set");
+    const messages = stage.flush();
+    expect(messages.map((m) => m.kind)).toEqual(["patch", "say"]);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([
+      { op: "add", path: "/nodes/root", value: { id: "root", type: "box", children: [] } },
+      { op: "add", path: "/theme", value: "midnight" },
+    ]);
+  });
+
   it("escapes ids in JSON pointers", () => {
     const stage = new Stage();
     stage.remove("a/b~c");

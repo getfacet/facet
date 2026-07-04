@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   FIELD_INPUTS,
@@ -7,16 +7,30 @@ import {
   MAX_DEPTH,
   MAX_FIELD_VALUE_CHARS,
   MAX_FIELDS_KEYS,
+  MAX_RENDER_NODES,
   sanitizeActionPayload,
   type AgentAction,
   type FacetAction,
   type FacetNode,
+  type FacetTheme,
   type FacetTree,
   type NodeId,
 } from "@facet/core";
-import { boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
+import { boxStyle, fieldStyle, imageStyle, resolveTheme, textStyle } from "./theme.js";
+import type { ResolvedTheme } from "./theme.js";
 
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
+
+/**
+ * Fail-safe cap on total nodes visited in ONE render pass / field gather
+ * (invariant #2). Depth alone is not enough: a shared-child DAG reaching the raw
+ * live path (no validateTree) is acyclic and shallow yet has an exponential
+ * number of root-to-node paths, which would hang the tab. This bounds the whole
+ * pass to a linear budget, mirroring how MAX_DEPTH already bounds nesting.
+ * Sourced from core's MAX_RENDER_NODES so the validator's node-count warning and
+ * the renderer's truncation point are the same number, never drifting.
+ */
+const RENDER_BUDGET = MAX_RENDER_NODES;
 
 // Fail-safe (invariant #2): the live path applies raw RFC 6902 patches with no
 // validateTree, so any node FIELD can hold arbitrary JSON (children: "oops",
@@ -34,7 +48,11 @@ function isRenderableTree(tree: FacetTree): boolean {
 /**
  * Resolves `name` to a screen's live root node id, or null. Defensive against
  * raw-path junk: `screens` may not be an object, its values may not be strings,
- * and a value may name a node that no longer exists.
+ * and a value may name a node that no longer exists. The target must resolve to
+ * a BOX — a screen root is rendered as a root, and `sanitizeScreens` drops a
+ * non-box target on the stored tree, so the live fail-safe must match it (else a
+ * raw-path patch pointing a screen at a text node would render that text as the
+ * whole screen before the corrective frame arrives).
  */
 function liveScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
   const screens: unknown = tree.screens;
@@ -45,7 +63,11 @@ function liveScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
     return null;
   }
   const rootId: unknown = (screens as Record<string, unknown>)[name];
-  return typeof rootId === "string" && tree.nodes[rootId] != null ? rootId : null;
+  if (typeof rootId !== "string") {
+    return null;
+  }
+  const node = tree.nodes[rootId];
+  return node != null && node.type === "box" ? rootId : null;
 }
 
 /**
@@ -103,13 +125,17 @@ function collectFieldValues(
   }
 
   // Data-side pass: (name → node ids) for every field in the subtree, in walk
-  // order — mirrors RenderNode's own ancestor-set cycle guard + depth cap so a
+  // order — mirrors renderNode's own ancestor-set cycle guard + depth cap so a
   // cyclic raw-path tree terminates. Keeping ALL ids per name (not just the
   // first) lets the DOM pass pick a MOUNTED one, so a hidden/off-screen field
   // can't shadow a visible same-named field and drop its value.
   const idsByName = new Map<string, NodeId[]>();
+  // Total-visit budget for THIS invocation: `ancestors` breaks cycles but a raw
+  // shared-child DAG (no validateTree on the live path) has an exponential number
+  // of paths, so cap total gather steps the way renderNode caps total renders.
+  let gatherBudget = RENDER_BUDGET;
   const gather = (id: NodeId, ancestors: ReadonlySet<NodeId>, depth: number): void => {
-    if (depth > MAX_DEPTH || ancestors.has(id)) {
+    if (depth > MAX_DEPTH || ancestors.has(id) || --gatherBudget < 0) {
       return;
     }
     const node = tree.nodes[id];
@@ -234,6 +260,13 @@ export interface StageRendererProps {
    * remain assignable, so existing consumers compile unchanged.
    */
   readonly onAction?: (action: FacetAction, fields?: Readonly<Record<string, string>>) => void;
+  /**
+   * The operator-authored theme registry. The tree's `theme` NAME is resolved
+   * against it into concrete CSS; an absent prop (or unknown name) renders the
+   * default look. Documents must be `validateTheme`-clean — the host owns that
+   * boundary; `resolveTheme` floor-guards the lookup regardless.
+   */
+  readonly themes?: readonly FacetTheme[];
 }
 
 /**
@@ -249,14 +282,29 @@ export interface StageRendererProps {
  * mutate only this state and NEVER reach `onAction` (the only channel to any
  * transport). Content stays server-owned via the patch flow.
  */
-export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode {
+export function StageRenderer({ tree, onAction, themes }: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
-  const [visibilityOverrides, setVisibilityOverrides] = useState<Readonly<Record<NodeId, boolean>>>(
-    {},
+  // A Map, not a plain object: node ids like "toString"/"valueOf" pass
+  // validateTree (only __proto__/prototype/constructor are forbidden), and a
+  // plain-object lookup would resolve those through Object.prototype — a
+  // hidden:true node keyed "toString" would read the inherited function as its
+  // override and render visible. A Map never resolves through the prototype.
+  const [visibilityOverrides, setVisibilityOverrides] = useState<ReadonlyMap<NodeId, boolean>>(
+    () => new Map(),
   );
   // Scope handle for collectFieldValues — reads stay inside THIS renderer
   // instance so two stages on one page never cross-read each other's inputs.
   const stageRootRef = useRef<HTMLDivElement>(null);
+  // Resolve the tree's theme NAME (unknown on the raw patch path) against the
+  // registry ONCE per name/registry change. A live theme flip is just a new
+  // `tree.theme`, so this re-resolves and the stage restyles without a reload.
+  // Guard the read: hooks must run before the renderable check below, but a
+  // null/primitive tree (the unvalidated CLI path) has no `.theme` to dereference.
+  const themeName: unknown =
+    typeof tree === "object" && tree !== null
+      ? (tree as { readonly theme?: unknown }).theme
+      : undefined;
+  const theme = useMemo(() => resolveTheme(themeName, themes), [themeName, themes]);
 
   // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
   // the unvalidated CLI path — renders as nothing, never a crash.
@@ -273,13 +321,21 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
         }
         return;
       case "toggle": {
-        const target = tree.nodes[press.target];
+        // hasOwnProperty guard: on the raw live path `tree.nodes` is ordinary
+        // JSON, so a target named "constructor"/"toString" would otherwise
+        // resolve an inherited Object.prototype member and treat a nonexistent
+        // node as existing (DC-004: an unknown target must no-op).
+        const target = Object.prototype.hasOwnProperty.call(tree.nodes, press.target)
+          ? tree.nodes[press.target]
+          : undefined;
         if (target == null) {
           return; // unknown target no-ops (DC-004)
         }
         setVisibilityOverrides((prev) => {
-          const effective = prev[press.target] ?? !isHiddenByDefault(target);
-          return { ...prev, [press.target]: !effective };
+          const effective = prev.get(press.target) ?? !isHiddenByDefault(target);
+          const next = new Map(prev);
+          next.set(press.target, !effective);
+          return next;
         });
         return;
       }
@@ -299,15 +355,22 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
     }
   };
 
-  const stage = (
-    <RenderNode
-      tree={tree}
-      id={resolveScreenRoot(tree, currentScreen)}
-      onPress={handlePress}
-      visibilityOverrides={visibilityOverrides}
-      depth={0}
-    />
-  );
+  // One mutable budget per render pass, LOCAL to this StageRenderer render and
+  // threaded down the plain `renderNode` recursion. `renderNode` is a plain
+  // function, not a React component, so the counter is never shared across
+  // separate component invocations — under StrictMode React double-invokes
+  // StageRenderer (each making its own fresh budget) rather than double-decrementing
+  // one shared object per node, so a valid tree renders in full at either cap.
+  const budget: { left: number; warned?: boolean } = { left: RENDER_BUDGET };
+  const stage = renderNode({
+    tree,
+    id: resolveScreenRoot(tree, currentScreen),
+    onPress: handlePress,
+    visibilityOverrides,
+    theme,
+    budget,
+    depth: 0,
+  });
   if (onAction === undefined) {
     // No handler ⇒ no press can emit, so field collection is unreachable and
     // the scope wrapper is unnecessary — handler-less output stays byte-
@@ -323,32 +386,64 @@ export function StageRenderer({ tree, onAction }: StageRendererProps): ReactNode
   );
 }
 
-interface RenderNodeProps {
+interface RenderArgs {
   readonly tree: FacetTree;
   readonly id: NodeId;
   readonly onPress: (press: ClassifiedPress) => void;
-  readonly visibilityOverrides: Readonly<Record<NodeId, boolean>>;
+  readonly visibilityOverrides: ReadonlyMap<NodeId, boolean>;
+  /** The resolved theme threaded from StageRenderer to every style call site. */
+  readonly theme: ResolvedTheme;
   /** Ids on the path from the root to here — used to break cycles fail-safe. */
   readonly ancestors?: ReadonlySet<NodeId> | undefined;
+  /**
+   * Per-render-pass node budget — bounds total renders (invariant #2). `warned`
+   * latches the one-time console.warn when the budget first trips.
+   */
+  readonly budget: { left: number; warned?: boolean };
   readonly depth: number;
 }
 
-function RenderNode({
+/**
+ * Renders one node to a `ReactNode`, recursing into box children. A PLAIN
+ * function (not a React component) invoked from StageRenderer's body: the mutable
+ * `budget` it decrements is therefore local to a single StageRenderer render and
+ * never shared across separate component invocations, so React StrictMode's
+ * double-invoke can't silently halve the effective cap (it re-runs StageRenderer,
+ * which makes a fresh budget each time).
+ */
+function renderNode({
   tree,
   id,
   onPress,
   visibilityOverrides,
+  theme,
   ancestors,
+  budget,
   depth,
-}: RenderNodeProps): ReactNode {
+}: RenderArgs): ReactNode {
   const node = tree.nodes[id];
-  // == null also skips a node a patch replaced with JSON null (not just missing ids).
+  // == null also skips a node a patch replaced with JSON null (not just missing
+  // ids), and short-circuits BEFORE the budget decrement so a skipped id doesn't
+  // spend budget.
   if (node == null || depth > MAX_DEPTH) {
+    return null;
+  }
+  // The budget guard bounds a shared-child DAG's exponential path count the same
+  // way depth bounds nesting — decremented only for a node we'd actually render.
+  // Warn ONCE when the budget trips so a truncated render isn't silent (the
+  // validator emits the matching node-count issue at store time).
+  if (--budget.left < 0) {
+    if (budget.warned !== true) {
+      budget.warned = true;
+      console.warn(
+        `[facet] render budget of ${MAX_RENDER_NODES} nodes exceeded; the excess is truncated`,
+      );
+    }
     return null;
   }
   // Effective visibility = browser override ?? content default. A hidden node
   // is skipped (never thrown on), same as an unresolvable id.
-  const visible = visibilityOverrides[id] ?? !isHiddenByDefault(node);
+  const visible = visibilityOverrides.get(id) ?? !isHiddenByDefault(node);
   if (!visible) {
     return null;
   }
@@ -372,16 +467,22 @@ function RenderNode({
         emitted.add(childId);
         return true;
       });
+      // Each child is rendered by a direct recursive call; a keyed Fragment
+      // carries the React list key without adding a DOM node (flow layout and the
+      // byte-identical output are unchanged — a Fragment emits no markup).
       const children = uniqueChildIds.map((childId) => (
-        <RenderNode
-          key={childId}
-          tree={tree}
-          id={childId}
-          onPress={onPress}
-          visibilityOverrides={visibilityOverrides}
-          ancestors={childAncestors}
-          depth={depth + 1}
-        />
+        <Fragment key={childId}>
+          {renderNode({
+            tree,
+            id: childId,
+            onPress,
+            visibilityOverrides,
+            theme,
+            ancestors: childAncestors,
+            budget,
+            depth: depth + 1,
+          })}
+        </Fragment>
       ));
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.
@@ -391,19 +492,19 @@ function RenderNode({
           <div
             role="button"
             tabIndex={0}
-            style={{ ...boxStyle(styleOf(node.style)), cursor: "pointer" }}
+            style={{ ...boxStyle(styleOf(node.style), theme), cursor: "pointer" }}
             onClick={() => onPress(press)}
           >
             {children}
           </div>
         );
       }
-      return <div style={boxStyle(styleOf(node.style))}>{children}</div>;
+      return <div style={boxStyle(styleOf(node.style), theme)}>{children}</div>;
     }
     case "text":
       // A non-string value (an object would make React itself throw) is skipped.
       return typeof node.value === "string" ? (
-        <p style={textStyle(styleOf(node.style))}>{node.value}</p>
+        <p style={textStyle(styleOf(node.style), theme)}>{node.value}</p>
       ) : null;
     case "image":
       // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
@@ -411,7 +512,7 @@ function RenderNode({
         <img
           src={node.src}
           alt={typeof node.alt === "string" ? node.alt : ""}
-          style={imageStyle(styleOf(node.style))}
+          style={imageStyle(styleOf(node.style), theme)}
         />
       ) : null;
     case "field": {
@@ -429,7 +530,7 @@ function RenderNode({
             display: "flex",
             flexDirection: "column",
             gap: "4px",
-            ...fieldStyle(styleOf(node.style)),
+            ...fieldStyle(styleOf(node.style), theme),
           }}
         >
           {typeof node.label === "string" ? <span>{node.label}</span> : null}

@@ -92,6 +92,67 @@ CSS lives only in the renderer's theme (`react/src/theme.ts`), so reskinning
 every page is a one-file change and the agent never deals in pixels. The token
 names are kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
 
+## Themes, stamps, and seeds: reskin as data
+
+The renderer-owns-the-CSS rule above makes a reskin a one-file change; the theme
+layer makes it a **data** change — without moving the pixel boundary into the
+spec. Raw CSS values enter Facet in exactly one place — `validateTheme` in
+`@facet/core` — and only as **operator data**, never as tree content or model
+output. A `FacetTheme` is a partial override document (token name → CSS value),
+and the validator is the single gate it passes: an allowlist per token group, a
+deny-list (`url()`, `var()`, `expression()`, `javascript:` and injection
+characters are refused), dimension clamps so a theme can't push content
+off-screen, and a WCAG contrast check that is *measured as a warning, never a
+rejection* (Facet measures; the caller sets policy). Output maps are built on
+`Object.create(null)` so a hostile key can never resolve. The validator is pure
+and dependency-free, so it runs identically on the server and in the browser.
+
+The stage tree carries only a **name**: `FacetTree.theme?: string`,
+kept-if-string by `validateTree`. `STAGE_SPEC` teaches the agent to set it to a
+theme name it has been given and nothing else — **the LLM never authors theme
+values**; the style functions still index by token name. Resolution is a
+boot-shipped map plus a local lookup: the validated theme documents ship to the
+browser **once**, inline in the quickstart HTML shell as an escaped
+`window.__FACET_THEMES__` global, and `resolveTheme` (`@facet/react`) maps the
+tree's theme name to a resolved token map, falling back to the default for an
+unknown or missing name. This is a pure lookup — the browser writes no stage
+state — and it introduces **no new protocol message**: `@facet/server` and
+`@facet/client` are untouched, and a live theme switch is just a normal `/theme`
+patch re-resolved locally.
+
+The document library itself is a **pluggable adapter, exactly like `StageStore`**:
+`AssetsStore` is an interface with a browser-safe `MemoryAssets` reference in
+`@facet/runtime`'s main barrel and a file-backed `FileAssets` behind
+`@facet/runtime/node` (so a browser bundle never drags in `node:fs`); a database
+adapter would live outside, the `@facet/store-postgres` precedent. `loadAssets`
+runs the core validators once at boot (no hot reload) and skips any invalid
+document with a logged issue — the same skip-and-log posture the file stage store
+already uses. **Stamps** — validated `{ root, nodes }` brick fragments — reach the
+LLM as prompt data only; the model copies their nodes into ordinary patches.
+There is **no client-side stamp expansion** anywhere: `validateTree` and the
+fail-safe renderer see only the copied nodes, exactly as they do today.
+
+Seeding a page before the first model call is a `StageStore` **decorator**,
+`withInitialStage`, that opens a fresh session on a validated initial tree
+instead of `EMPTY_TREE`. Because every `open()` runs under the runtime's
+per-`(agent, visitor)` serial queue and *before* the agent's first turn, the seed
+is inside the same serialized stage-write path (the server stays the only writer)
+and is visible to that first turn, which then refines it. The seed also
+**travels the patch channel**: the browser's first connection rehydrated before
+the session existed, so the store reports the fresh seed once (`takeSeeded`) and
+the runtime prepends a root `replace` as that turn's first frame — stamped,
+replayable, and applied by the same `applyPatch` on both sides. The frame is
+consumed only when the turn persists; a failed first turn re-emits it, and a
+reconnect gets the seed the normal way, via the rehydrate snapshot. For the
+very first paint the quickstart shell also ships the seed (and the resolved
+theme's canvas colors) with the page itself — `useFacet` can start from a
+boot-shipped tree, so nothing waits on the model; the seed frame then applies
+idempotently. One
+trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
+which would silently seed a blank page and flip the server's offline face, so a
+tree that isn't *seedable* (a render root with at least one child, or a non-empty
+`screens`) is refused as a seed and boot falls back to today's model-first paint.
+
 ## The stage tree
 
 A Stage is a `FacetTree`: a flat map of nodes keyed by id, with one node whose id
@@ -130,9 +191,13 @@ Pointers into the `FacetTree`:
 | remove a node         | `remove /nodes/<id>` (dangling child refs are skipped on render)|
 
 `applyPatch(tree, operations)` (in `core/src/patch.ts`) is a small, dependency-free
-implementation of the six standard ops, and it is pure. The exact same function
-runs on the server (to keep the session's authoritative stage) and on the client
-(to update the DOM), so the two can never drift.
+implementation of the six standard ops, and it is pure. One level up,
+`foldPatchIntoStage` (in `core/src/stage-fold.ts`) is the shared fail-safe wrapper
+both sides actually run per delivered batch: a batch-atomic apply, per-op salvage
+on a throwing batch (bounded, capped at `MAX_PATCH_OPS`, RFC 6902 `test` guards
+honored), then `validateTree` on the result. Because the server (to keep the
+session's authoritative stage) and the client (to update the DOM) fold the same
+delivered batches through the same pure function, the two can never drift.
 
 ## The event loop
 

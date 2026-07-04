@@ -6,7 +6,10 @@ import type { ClientEvent, FacetTransport, ServerMessage, VisitorContext } from 
  * dev-only dependency — any object with this method works.
  */
 interface RuntimeLike {
-  handle(visitor: VisitorContext, event: ClientEvent): Promise<readonly ServerMessage[]>;
+  handle(
+    visitor: VisitorContext,
+    event: ClientEvent,
+  ): Promise<{ readonly messages: readonly ServerMessage[] }>;
 }
 
 /**
@@ -25,7 +28,7 @@ export class LocalTransport implements FacetTransport {
   send(event: ClientEvent): void {
     void this.runtime
       .handle(this.visitor, event)
-      .then((messages) => {
+      .then(({ messages }) => {
         for (const message of messages) {
           for (const listener of this.listeners) {
             listener(message);

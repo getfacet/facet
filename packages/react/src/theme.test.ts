@@ -1,6 +1,15 @@
-import type { BoxStyle, TextStyle } from "@facet/core";
+import type { BoxStyle, Color, FacetTheme, Space, TextStyle } from "@facet/core";
+import { validateTheme } from "@facet/core";
 import { describe, expect, it } from "vitest";
-import { COLOR, boxStyle, fieldStyle, imageStyle, textStyle } from "./theme.js";
+import {
+  COLOR,
+  DEFAULT_THEME,
+  boxStyle,
+  fieldStyle,
+  imageStyle,
+  resolveTheme,
+  textStyle,
+} from "./theme.js";
 
 // The theme is where token NAMES become concrete CSS (invariant #1's trusted
 // side): agents only ever emit tokens, so these maps are the single place a
@@ -105,5 +114,78 @@ describe("COLOR", () => {
     expect(COLOR["fg-muted"]).toBe("#6b7280");
     expect(COLOR["surface-2"]).toBe("#eceef1");
     expect(COLOR["accent-fg"]).toBe("#ffffff");
+  });
+});
+
+// DEFAULT_THEME is today's values expressed as an operator FacetTheme document.
+// It must round-trip through core's validator with no errors so operators can
+// copy it as a starting point and hosts can register it by name.
+describe("DEFAULT_THEME", () => {
+  it("passes validateTheme with zero issues", () => {
+    const result = validateTheme(DEFAULT_THEME);
+    expect(result.theme).toBeDefined();
+    expect(result.issues).toEqual([]);
+  });
+
+  it('is named "default" and covers every token group', () => {
+    expect(DEFAULT_THEME.name).toBe("default");
+    expect(DEFAULT_THEME.color?.bg).toBe("#ffffff");
+    expect(DEFAULT_THEME.space?.md).toBe("16px");
+    expect(DEFAULT_THEME.fontSize?.md).toBe("16px");
+    expect(DEFAULT_THEME.fontWeight?.bold).toBe(700);
+    expect(DEFAULT_THEME.radius?.md).toBe("10px");
+    expect(DEFAULT_THEME.ratio?.wide).toBe("16 / 9");
+  });
+});
+
+// resolveTheme is a PURE lookup: a name + the operator registry → a full,
+// null-proto ResolvedTheme. Fallbacks return the default values; a match overlays
+// the document's overrides while every un-overridden token keeps its default.
+describe("resolveTheme", () => {
+  it("returns the default values for a missing, non-string, or unknown name", () => {
+    for (const name of [undefined, null, 42, "", "no-such"] as const) {
+      const resolved = resolveTheme(name as unknown, [{ name: "midnight", space: { md: "99px" } }]);
+      expect(resolved.space.md).toBe("16px");
+      expect(resolved.color.bg).toBe("#ffffff");
+    }
+    // No registry at all is also the default.
+    expect(resolveTheme("midnight").space.md).toBe("16px");
+  });
+
+  it("overlays a matching document's overrides onto the defaults", () => {
+    const midnight: FacetTheme = {
+      name: "midnight",
+      color: { bg: "#010101" },
+      space: { md: "99px" },
+    };
+    const resolved = resolveTheme("midnight", [midnight]);
+    expect(resolved.space.md).toBe("99px"); // overridden
+    expect(resolved.space.sm).toBe("8px"); // default kept within the same group
+    expect(resolved.color.bg).toBe("#010101"); // overridden
+    expect(resolved.color.fg).toBe("#1a1d23"); // untouched group default
+    expect(resolved.fontSize.md).toBe("16px"); // group with no override at all
+  });
+
+  it("ignores forbidden/unknown keys and non-primitive values, and never pollutes", () => {
+    // JSON.parse gives a REAL own "__proto__" key (a literal would set the
+    // prototype) — the exact shape a shell → JSON.parse round trip restores.
+    const hostile = JSON.parse(
+      '{"name":"evil","space":{"__proto__":"5px","constructor":"6px","nonsense":"7px","md":"77px","sm":9}}',
+    ) as FacetTheme;
+    const resolved = resolveTheme("evil", [hostile]);
+    expect(resolved.space.md).toBe("77px"); // valid member + string ⇒ copied
+    expect(resolved.space.sm).toBe("8px"); // non-string 9 ⇒ dropped, default kept
+    // Forbidden/unknown keys were never even looked up.
+    expect(resolved.space["__proto__" as Space]).toBeUndefined();
+    expect(resolved.space["nonsense" as Space]).toBeUndefined();
+    expect((Object.prototype as Record<string, unknown>)["md"]).toBeUndefined();
+  });
+
+  it("returns null-proto group maps so a hostile token name resolves to nothing", () => {
+    const resolved = resolveTheme("default", [DEFAULT_THEME]);
+    expect(resolved.color["constructor" as Color]).toBeUndefined();
+    expect(resolved.color["__proto__" as Color]).toBeUndefined();
+    expect(Object.getPrototypeOf(resolved.color)).toBeNull();
+    expect(Object.getPrototypeOf(resolved.space)).toBeNull();
   });
 });

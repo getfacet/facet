@@ -7,7 +7,7 @@
  * assert exact outputs. One fixture tree exercises collect, screens, and
  * patching in a single boot.
  */
-import type { ClientEvent, FacetAgent, FacetTree } from "@facet/core";
+import { isValidThemeName, type ClientEvent, type FacetAgent, type FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 
 /**
@@ -96,6 +96,22 @@ export function createStubAgent(): FacetAgent {
         return;
       }
       case "message": {
+        // Deterministic theme switch: "theme <name>" selects a theme by name
+        // (the DC-010 live vehicle) instead of echoing. Zero randomness/clock.
+        const THEME_PREFIX = "theme ";
+        if (event.text.startsWith(THEME_PREFIX)) {
+          const name = event.text.slice(THEME_PREFIX.length).trim();
+          // Mirror the real agent's set_theme gate: an invalid name would be
+          // stripped from the stored stage while the raw `add /theme` frame still
+          // reached live clients — a stored-vs-live divergence. Refuse instead.
+          if (!isValidThemeName(name)) {
+            stage.say("stub: invalid theme name (letters/digits/_/-, max 64)");
+            return;
+          }
+          stage.theme(name);
+          stage.say(`stub: theme ${name}`);
+          return;
+        }
         const echo = { id: "stub-echo", type: "text", value: `echo: ${event.text}` } as const;
         if (session.stage.nodes["stub-echo"] === undefined) {
           stage.append(session.stage.root, echo);

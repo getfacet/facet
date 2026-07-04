@@ -27,8 +27,8 @@ import {
 import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { FacetAgent } from "@facet/core";
-import type { Sink, StageStore } from "@facet/runtime";
+import type { FacetAgent, FacetTheme, FacetTree } from "@facet/core";
+import { MemoryStageStore, withInitialStage, type Sink, type StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "@facet/server";
 
 export interface QuickstartServerOptions {
@@ -47,6 +47,18 @@ export interface QuickstartServerOptions {
   /** Shared with the built-in agent so prompt layer ③ reads real history. */
   readonly sink?: Sink;
   readonly stageStore?: StageStore;
+  /**
+   * Operator themes (validated by the caller) inlined into the shell as
+   * `window.__FACET_THEMES__` for the page to hand `StageRenderer`. Absent/empty
+   * ⇒ the shell is byte-identical to today's (no injected script).
+   */
+  readonly themes?: readonly FacetTheme[];
+  /**
+   * A seedable initial tree (validated by the caller) — wraps the stage store
+   * with `withInitialStage` so a fresh session opens on it before the first
+   * agent turn. Absent ⇒ today's model-first paint.
+   */
+  readonly initialStage?: FacetTree;
   /** Override where `/app.js` streams from (tests inject a fixture bundle). */
   readonly pageBundlePath?: string;
 }
@@ -59,11 +71,41 @@ export interface RunningQuickstart {
   close(): Promise<void>;
 }
 
-const SHELL_HTML = `<!doctype html>
+/**
+ * Serialize a value for inline `<script>` injection: JSON with every `<`
+ * escaped to `<` so a hostile `</script>` in the data can't break out of
+ * the script context (defense in depth). The escaped form is still valid JSON,
+ * so the browser's `JSON.parse`-free `window.X = …` assignment round-trips it.
+ */
+function escapeForScript(value: unknown): string {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
+/**
+ * The HTML shell. Two optional boot seams ship inline in ONE `<script>` (Decision
+ * 2): operator themes as `window.__FACET_THEMES__`, and a seed stage as
+ * `window.__FACET_INITIAL_STAGE__` so the first paint isn't gated on the first
+ * model turn. Both are `escapeForScript`-escaped (defense in depth; `validateTheme`
+ * already refuses `<` in theme values, but descriptions are freer text and the
+ * seed carries agent-authored node values). Neither present ⇒ no script,
+ * byte-identical to the no-assets boot; a single seam present ⇒ exactly its one
+ * assignment (the join adds no leading/trailing separator).
+ */
+function shellHtml(themes?: readonly FacetTheme[], initialStage?: FacetTree): string {
+  const globals: string[] = [];
+  if (themes !== undefined && themes.length > 0) {
+    globals.push(`window.__FACET_THEMES__ = ${escapeForScript(themes)}`);
+  }
+  if (initialStage !== undefined) {
+    globals.push(`window.__FACET_INITIAL_STAGE__ = ${escapeForScript(initialStage)}`);
+  }
+  const bootScript = globals.length > 0 ? `<script>${globals.join(";")}</script>` : "";
+  return `<!doctype html>
 <html>
-<head><meta charset="utf-8" /><title>Facet</title></head>
+<head><meta charset="utf-8" /><title>Facet</title>${bootScript}</head>
 <body><div id="root"></div><script type="module" src="/app.js"></script></body>
 </html>`;
+}
 
 // Served AS JAVASCRIPT (not HTML) when the bundle is missing: /app.js is loaded
 // via <script type="module">, so a text/html body is refused by the browser's
@@ -236,9 +278,22 @@ function handleRequest(
     res.end();
     return;
   }
+  // DNS-rebinding guard, applied to EVERY route including the shell. The shell
+  // now inlines operator data (`__FACET_INITIAL_STAGE__` / `__FACET_THEMES__`),
+  // so a rebound hostile origin (attacker.com → 127.0.0.1, Host still
+  // non-loopback) that fetches `/` could read the operator's seed tree and theme
+  // documents out of the boot script — the shell is no longer the data-free
+  // constant it was when this check only fronted the protocol routes. Top-level
+  // navigations carry no `Origin`, so `isCrossOrigin` stays off the shell/app.js
+  // GETs and only fronts the protocol routes below.
+  if (isDisallowedHost(req, options.host ?? DEFAULT_PUBLIC_HOST)) {
+    res.writeHead(403, { "Content-Type": "text/plain" });
+    res.end("request refused");
+    return;
+  }
   if (req.method === "GET" && pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-    res.end(SHELL_HTML);
+    res.end(shellHtml(options.themes, options.initialStage));
     return;
   }
   if (req.method === "GET" && pathname === "/app.js") {
@@ -248,9 +303,9 @@ function handleRequest(
   // The protocol routes (/event, /stream, /health) are unauthenticated and
   // /event spends the deployer's provider key. Reject cross-origin BROWSER
   // requests (a malicious site the deployer visits POSTing here in a loop, or
-  // reading /stream) AND non-loopback Host headers (DNS rebinding) — the served
-  // page is same-origin on a loopback host and unaffected.
-  if (isCrossOrigin(req) || isDisallowedHost(req, options.host ?? DEFAULT_PUBLIC_HOST)) {
+  // reading /stream). The non-loopback Host check (DNS rebinding) already ran
+  // above for every route.
+  if (isCrossOrigin(req)) {
     res.writeHead(403, { "Content-Type": "text/plain" });
     res.end("request refused");
     return;
@@ -263,6 +318,13 @@ function handleRequest(
 async function bootInternalServer(
   options: QuickstartServerOptions,
 ): Promise<{ server: FacetServer; port: number }> {
+  // Seed a fresh session from the initial tree (Decision 4) by wrapping the
+  // store with `withInitialStage`. With no initialStage we leave `stageStore`
+  // untouched so the runtime's own default applies — today's boot exactly.
+  const stageStore =
+    options.initialStage !== undefined
+      ? withInitialStage(options.stageStore ?? new MemoryStageStore(), options.initialStage)
+      : options.stageStore;
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     const server = createFacetServer({
@@ -272,7 +334,7 @@ async function bootInternalServer(
       agentId: options.agentId,
       agent: options.agent,
       ...(options.sink !== undefined ? { sink: options.sink } : {}),
-      ...(options.stageStore !== undefined ? { stageStore: options.stageStore } : {}),
+      ...(stageStore !== undefined ? { stageStore } : {}),
     });
     try {
       await server.listen();

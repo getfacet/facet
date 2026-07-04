@@ -97,6 +97,116 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
   their own snippet imports (`@facet/client`, `@facet/agent`); copy-pasting the
   quickstart fails to resolve. *Fix:* align install lines with the snippets.
 
+## P3 — residuals from Bundle B's review (kits-themes-as-data; track, fix opportunistically)
+
+Found by the bundle's 3-round adversarially-verified `/code-review` (all P0–P2
+fixed in-branch; these are the confirmed non-blocking nits). Evidence in the
+Bundle B PR review record.
+
+- ~~quickstart/cli.ts (--assets guard)~~ — RESOLVED in-branch (review r6): the
+  explicit path must be a readable directory (statSync + readdirSync probe,
+  exit 1), pinned by a cli test.
+- ~~core/validate.ts (validateStamp bounds)~~ — RESOLVED in-branch (review
+  r5+r6): stamp names share `isValidThemeName`, descriptions truncate at the
+  shared 200-char cap, and the refusal issue never echoes the raw name.
+- **quickstart/prompt.ts (stamp budget)** — the 4000-char cap measures only the
+  fragment JSON, not the `- name: description` head, and there is no aggregate
+  section cap. *Fix:* measure head+fragment; add `MAX_STAMPS_SECTION_CHARS`.
+- **quickstart/agent.ts (set_theme)** — an unknown theme name returns
+  `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
+  error observation naming the available themes (append_node precedent).
+- ~~runtime/assets.ts (stamp dedup)~~ — RESOLVED in-branch (review r6):
+  first-wins + issue, mirroring themes; pinned by an assets test.
+- **core/validate.ts (sanitizeScreens)** — `kept` is a plain object: a screen
+  keyed `__proto__` drops silently and `entry:"constructor"` resolves through
+  the prototype chain into the output. *Fix:* null-proto map + own-key check.
+- **runtime/assets.ts vs server/offline.ts** — `isSeedableTree` duplicates
+  `hasBuiltStage` (already divergent: `isContainer` vs `"children" in`). *Fix:*
+  server imports the runtime helper.
+- **cli/commands.ts (surface drift)** — Stage.theme() and set_theme exist but
+  the `facet` CLI has no `theme` command while STAGE_SPEC (embedded in the
+  bridge prompt) now advertises the slot. *Fix:* add the command + bridge
+  prompt line.
+- **core (consolidation ×3)** — `isPlainObject`/`isObject` duplicate guard;
+  the `__proto__/prototype/constructor` blocklist defined thrice (theme.ts,
+  validate.ts, patch.ts); fontSize clamp reuses `SPACE_PX_RANGE`. *Fix:* one
+  shared internal module; a `FONT_SIZE_PX_RANGE` of its own.
+- **core/theme.ts** — redundant `theme as FacetTheme` cast at the return
+  (compiles clean without it).
+- **tests** — prompt.test.ts: no assertion that an all-oversized stamp set
+  suppresses the STAMPS section; theme.test.ts: negative-dimension clamp floor
+  (`"-20px"` → `"0px"`) untested.
+- ~~server/server.ts:385 (seed frame vs lastApplied)~~ — RESOLVED in-branch
+  (review r6, upgraded to P2): `FacetRuntime.handle`/`applyMessages` return
+  `TurnResult` with `agentMutated` (computed pre-seed), and the server gates
+  `recordApplied` on it — a say-only turn re-emitting the seed can no longer
+  falsely stale a parked late result; pinned by a server interleaving test.
+- **runtime/assets.ts (loadAssets throw guards, r7)** — the theme/stamp loops
+  are try/catch-guarded but `await store.load()` and the initial-tree
+  `validateTree` call are not; a rejecting DB adapter or throwing accessor
+  breaks the documented "never throws" contract. *Fix:* mirror the loop
+  guards at both seams (skip + issue).
+- **runtime/assets.ts (seed arming order + eviction comment, r7)** —
+  `withInitialStage.open()` arms `takeSeeded` only after `store.save`
+  resolves, so a commit-then-reject save loses the seed frame permanently;
+  and the FIFO-eviction comment calls a dropped armed key "benign" when it
+  actually means a failed-first-turn client keeps a blank page until reload.
+  *Fix:* arm before save; correct both comments.
+- **core/theme.ts (contrast parser coverage, r7)** — `parseSrgb` skips
+  keyword and `hsl()` colors that `isAllowedColor` admits, so the WCAG check
+  silently misses them. *Fix:* HSL→RGB conversion + a named-colors table, or
+  narrow the allowlist claim.
+- **core/patch.ts (move ghost key, r11)** — a failed `move` whose `from` is a
+  missing object member restores a ghost `undefined` key, violating per-op
+  atomicity. *Fix:* verify source existence before mutating (RFC 6902 "from
+  MUST exist").
+- ~~runtime (effect-based agentMutated, r11)~~ — RESOLVED in-branch (review
+  r12, upgraded to P2): `StageFoldResult.mutated` (true iff a non-`test` op
+  actually applied) now feeds `TurnResult.agentMutated`; over-cap/empty/
+  non-array/all-salvage-dropped turns no longer bump `recordApplied` (r13
+  closed the late-apply seam variant with the same effect-based gate).
+- **core/stage-fold.ts (test-guard pre-guard ops, r13)** — ops applied BEFORE
+  a failed `test` guard stay applied while the in-code RFC 6902 §5 citation
+  promises whole-document abort. *Fix:* roll back to the pre-batch stage on a
+  failed guard (or correct the citation to the deliberate partial-salvage
+  semantics).
+- **server/server.ts:390 (deliver-throw comment precision, r14)** — the
+  "failed handle leaves the stage untouched" comment overclaims for a
+  commit-then-reject durable store; the behavior is the accepted trade-off.
+  *Fix:* reword to the runtime's documented failure model.
+- **over-cap /agent/control 400 observability (r14)** — the 400 is silent
+  server-side and agent-client's `post` swallows the status, so a whole turn
+  (says included) can vanish until the interim timeout. *Fix:* one server
+  log naming the requestId + an `ok` check/onError surface in
+  agent-client's sendControl.
+- **runtime coalescing vs RFC 6902 `test` document scope (r12)** — a failed
+  `test` guard in one patch message drops the remaining ops of the whole
+  coalesced turn, not just its own document. *Fix:* thread document-boundary
+  offsets through the fold and (optionally) the wire frame; both sides scope
+  identically. No shipped SDK emits `test` ops today.
+- **runtime !hasPatch early return delivers junk patch frames (r12)** — a
+  turn whose every patch message is non-array returns the original messages,
+  shipping the junk frames verbatim to the browser/replay ring (client folds
+  them as no-ops — no drift, just noise). *Fix:* filter patch-kind messages
+  in that early return, mirroring the mixed case.
+- **server/server.ts:311 (stale replay comment, r11)** — the rehydrate-replay
+  safety argument still describes the old atomic-drop client; the client now
+  folds replayed frames with salvage. *Fix:* rewrite the comment to the
+  post-fold semantics (+ assess the partial-double-apply window it papers
+  over).
+- **core/validate.ts (entry-without-screens diagnostic, r11)** — an `entry`
+  supplied without `screens` is silently discarded; every other malformed
+  screens-family field gets an issue. *Fix:* one diagnostic on the early
+  return.
+- **quickstart prompt — screens/entry authoring quality** (live-browser
+  finding, 2026-07-04): the built-in agent sometimes registers only one
+  screen and points `entry` at it, so its own navigate buttons target
+  non-existent screens (fail-safe no-op — nothing breaks, but navigation
+  dies). *Fix (model-quality, batch with the next quickstart-agent
+  improvement pass):* one WORKFLOW/STAGE_SPEC line — every screen a navigate
+  references must exist in `screens`, and `entry` should be the landing
+  screen; consider a stub-level pin.
+
 ## Accepted (documented trust model — revisit on trigger)
 
 - **server/server.ts** — `/agent/*` unauthenticated by default + CORS `*` +

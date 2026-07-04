@@ -20,9 +20,12 @@ import {
   type FieldInput,
   type FieldStyle,
   type ImageStyle,
+  type NodeId,
   type TextStyle,
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
+import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
+import { BoundedIssues, printableKey, printableValue, type IssueSink } from "./issues.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -46,6 +49,25 @@ export interface ValidationResult {
  * recursion at the same bound, so validation and render never disagree.
  */
 export const MAX_DEPTH = 100;
+
+/**
+ * Max total nodes a validated tree may carry before it is flagged. Single source
+ * of truth: the @facet/react renderer imports this to size its per-pass render
+ * budget, so the validator's acceptance and the renderer's budget agree — a tree
+ * the validator declares clean can't then render permanently truncated with no
+ * diagnostic. validateTree does NOT drop nodes past the cap (a patch stream
+ * accumulates them legitimately); it warns so an operator sees the tree crossed
+ * the size the renderer will truncate at.
+ */
+export const MAX_RENDER_NODES = 5000;
+
+/**
+ * Max named screens kept per tree. Beyond this, extra screens are dropped with
+ * an issue: each kept screen is a fresh walk root for `breakCycles`, so an
+ * unbounded screens count would make validateTree O(screens × nodes) — a cheap
+ * CPU-exhaustion input on the synchronous per-visitor save path.
+ */
+export const MAX_SCREENS = 100;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -102,17 +124,18 @@ function asToken<T extends string>(value: unknown, allowed: readonly string[]): 
  * mistake). Malformed or unknown-kind actions are stripped with an issue, so
  * the box degrades to a plain non-pressable box.
  */
-function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction | undefined {
+function asAction(value: unknown, nodeId: string, issues: IssueSink): FacetAction | undefined {
+  const node = printableKey(nodeId);
   if (value === undefined) return undefined;
   if (!isObject(value)) {
-    issues.push(`node "${nodeId}": onPress is not an action object`);
+    issues.push(`node "${node}": onPress is not an action object`);
     return undefined;
   }
   const kind = value.kind;
   if (kind === undefined || kind === "agent") {
     const name = asString(value.name);
     if (name === undefined) {
-      issues.push(`node "${nodeId}": agent action has no string name`);
+      issues.push(`node "${node}": agent action has no string name`);
       return undefined;
     }
     const action: {
@@ -128,14 +151,14 @@ function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction
     if (typeof value.collect === "string") {
       action.collect = value.collect;
     } else if (value.collect !== undefined) {
-      issues.push(`node "${nodeId}": onPress collect is not a string; dropped`);
+      issues.push(`node "${node}": onPress collect is not a string; dropped`);
     }
     return action;
   }
   if (kind === "navigate") {
     const to = asString(value.to);
     if (to === undefined) {
-      issues.push(`node "${nodeId}": navigate action needs a string "to"`);
+      issues.push(`node "${node}": navigate action needs a string "to"`);
       return undefined;
     }
     return { kind: "navigate", to };
@@ -143,12 +166,17 @@ function asAction(value: unknown, nodeId: string, issues: string[]): FacetAction
   if (kind === "toggle") {
     const target = asString(value.target);
     if (target === undefined) {
-      issues.push(`node "${nodeId}": toggle action needs a string "target"`);
+      issues.push(`node "${node}": toggle action needs a string "target"`);
       return undefined;
     }
     return { kind: "toggle", target };
   }
-  issues.push(`node "${nodeId}": unknown onPress kind ${JSON.stringify(kind)} dropped`);
+  // `kind` is untrusted (any property of an isObject-checked onPress): a string
+  // goes through the key cap, primitives echo verbatim, and everything else
+  // becomes a constant placeholder — NEVER JSON.stringify an arbitrary untrusted
+  // value into an issue string (a cyclic object/BigInt would throw, breaching
+  // the never-throws boundary; a huge value would flood the operator log).
+  issues.push(`node "${node}": unknown onPress kind ${printableValue(kind)} dropped`);
   return undefined;
 }
 
@@ -223,10 +251,11 @@ function fieldStyle(value: unknown): FieldStyle | undefined {
   return width !== undefined ? { width } : undefined;
 }
 
-function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | undefined {
+function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | undefined {
+  const key = printableKey(id);
   const type = isObject(raw) ? asString(raw.type) : undefined;
   if (!isObject(raw) || type === undefined) {
-    issues.push(`node "${id}": not an object with a type`);
+    issues.push(`node "${key}": not an object with a type`);
     return undefined;
   }
   switch (type) {
@@ -253,7 +282,7 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
     case "text": {
       const value = asString(raw.value);
       if (value === undefined) {
-        issues.push(`node "${id}": text has no string value`);
+        issues.push(`node "${key}": text has no string value`);
         return undefined;
       }
       return { id, type: "text", value, style: textStyle(raw.style) };
@@ -262,11 +291,11 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
       const src = asString(raw.src);
       const alt = asString(raw.alt);
       if (src === undefined || alt === undefined) {
-        issues.push(`node "${id}": image needs src and alt`);
+        issues.push(`node "${key}": image needs src and alt`);
         return undefined;
       }
       if (!isSafeImageSrc(src)) {
-        issues.push(`node "${id}": unsafe image src dropped`);
+        issues.push(`node "${key}": unsafe image src dropped`);
         return undefined;
       }
       return { id, type: "image", src, alt, style: imageStyle(raw.style) };
@@ -274,7 +303,7 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
     case "field": {
       const name = asString(raw.name);
       if (name === undefined) {
-        issues.push(`node "${id}": field has no name`);
+        issues.push(`node "${key}": field has no name`);
         return undefined;
       }
       const node: {
@@ -299,7 +328,7 @@ function sanitizeNode(id: string, raw: unknown, issues: string[]): FacetNode | u
       return node;
     }
     default:
-      issues.push(`node "${id}": unknown type "${type}"`);
+      issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
       return undefined;
   }
 }
@@ -315,29 +344,50 @@ function sanitizeScreens(
   rawScreens: unknown,
   rawEntry: unknown,
   nodes: Readonly<Record<string, FacetNode>>,
-  issues: string[],
+  issues: IssueSink,
 ): { screens?: Record<string, string>; entry?: string } {
   if (rawScreens === undefined) return {};
   if (!isObject(rawScreens)) {
     issues.push("screens is not an object map; dropped");
     return {};
   }
-  const kept: Record<string, string> = {};
+  // Null-prototype accumulator, matching sanitizeNodeMap: with a plain literal a
+  // screen keyed "__proto__" would hit the inherited setter (silent no-op) and
+  // an `entry` naming an Object.prototype member ("constructor"/"toString") would
+  // resolve through the chain and ship an entry that names no kept screen.
+  const kept: Record<string, string> = Object.create(null) as Record<string, string>;
+  let keptCount = 0;
+  let capped = false;
   for (const [name, target] of Object.entries(rawScreens)) {
+    const screen = printableKey(name);
+    // Forbidden screen names dropped WITH an issue (mirrors sanitizeNodeMap's
+    // forbidden-id policy) rather than silently mutating the accumulator.
+    if (name === "__proto__" || name === "prototype" || name === "constructor") {
+      issues.push(`screen "${screen}": forbidden screen name dropped`);
+      continue;
+    }
+    if (keptCount >= MAX_SCREENS) {
+      capped = true;
+      break;
+    }
     if (typeof target !== "string") {
-      issues.push(`screen "${name}": target is not a node id string; dropped`);
+      issues.push(`screen "${screen}": target is not a node id string; dropped`);
       continue;
     }
     const node = nodes[target];
     if (node === undefined) {
-      issues.push(`screen "${name}": target "${target}" does not exist; dropped`);
+      issues.push(`screen "${screen}": target "${printableKey(target)}" does not exist; dropped`);
       continue;
     }
     if (node.type !== "box") {
-      issues.push(`screen "${name}": target "${target}" is not a box; dropped`);
+      issues.push(`screen "${screen}": target "${printableKey(target)}" is not a box; dropped`);
       continue;
     }
     kept[name] = target;
+    keptCount += 1;
+  }
+  if (capped) {
+    issues.push(`screens exceeded the ${MAX_SCREENS}-screen cap; extra screens dropped`);
   }
   const firstKey = Object.keys(kept)[0];
   if (firstKey === undefined) return {};
@@ -345,26 +395,35 @@ function sanitizeScreens(
   if (entry !== undefined && kept[entry] !== undefined) {
     return { screens: kept, entry };
   }
-  issues.push(`entry does not name a kept screen; falling back to "${firstKey}"`);
+  // Only report the fallback when an entry was actually SUPPLIED. `entry?` is a
+  // legal optional on FacetTree, so an omitted entry is a valid shape, not a
+  // mistake — silently default it to the first kept screen. Guard on the RAW
+  // input (not `entry`) so a present-but-non-string entry still gets the
+  // diagnostic while the legal omitted-entry case stays quiet.
+  if (rawEntry !== undefined) {
+    issues.push(`entry does not name a kept screen; falling back to "${printableKey(firstKey)}"`);
+  }
   return { screens: kept, entry: firstKey };
 }
 
-export function validateTree(input: unknown): ValidationResult {
-  const issues: string[] = [];
-  if (!isObject(input) || !isObject(input.nodes)) {
-    issues.push("input is not a tree object with a nodes map");
-    return { tree: EMPTY_TREE, issues };
-  }
-
-  // Null-prototype accumulator: with a plain object literal, a node keyed
-  // "__proto__" would ASSIGN the map's [[Prototype]] instead of storing a node
-  // (silently losing it and making dangling-child lookups resolve through the
-  // prototype chain). Also drop such ids outright — patch pointers to them are
-  // forbidden anyway, so they'd be unreachable.
+/**
+ * Sanitizes a raw `nodes` map into a null-prototype accumulator of kept nodes.
+ *
+ * Null-prototype: with a plain object literal, a node keyed "__proto__" would
+ * ASSIGN the map's [[Prototype]] instead of storing a node (silently losing it
+ * and making dangling-child lookups resolve through the prototype chain). Such
+ * ids are also dropped outright — patch pointers to them are forbidden anyway,
+ * so they'd be unreachable. Shared by `validateTree` and `validateStamp` so the
+ * brick-shape + token-membership sanitization is derived once, not twice.
+ */
+function sanitizeNodeMap(
+  rawNodes: Record<string, unknown>,
+  issues: IssueSink,
+): Record<string, FacetNode> {
   const nodes: Record<string, FacetNode> = Object.create(null) as Record<string, FacetNode>;
-  for (const [id, raw] of Object.entries(input.nodes)) {
+  for (const [id, raw] of Object.entries(rawNodes)) {
     if (id === "__proto__" || id === "prototype" || id === "constructor") {
-      issues.push(`node "${id}": forbidden node id dropped`);
+      issues.push(`node "${printableKey(id)}": forbidden node id dropped`);
       continue;
     }
     const node = sanitizeNode(id, raw, issues);
@@ -372,11 +431,16 @@ export function validateTree(input: unknown): ValidationResult {
       nodes[id] = node;
     }
   }
+  return nodes;
+}
 
-  // Drop child references that point at nodes we couldn't keep, and dedupe
-  // duplicate siblings (a child id may appear at most once under one parent —
-  // keep the first occurrence). A dup would otherwise render the same subtree
-  // twice and make patch pointers to it ambiguous.
+/**
+ * Drops child references that point at nodes we couldn't keep, and dedupes
+ * duplicate siblings (a child id may appear at most once under one parent —
+ * keep the first occurrence). A dup would otherwise render the same subtree
+ * twice and make patch pointers to it ambiguous. Mutates `nodes` in place.
+ */
+function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: IssueSink): void {
   for (const node of Object.values(nodes)) {
     if (isContainer(node)) {
       const seen = new Set<string>();
@@ -388,89 +452,277 @@ export function validateTree(input: unknown): ValidationResult {
           continue;
         }
         if (seen.has(child)) {
-          issues.push(`node "${node.id}": removed duplicate sibling child "${child}"`);
+          issues.push(
+            `node "${printableKey(node.id)}": removed duplicate sibling child "${printableKey(child)}"`,
+          );
           continue;
         }
         seen.add(child);
         kept.push(child);
       }
       if (dangling) {
-        issues.push(`node "${node.id}": removed dangling child references`);
+        issues.push(`node "${printableKey(node.id)}": removed dangling child references`);
       }
       if (kept.length !== node.children.length) {
         nodes[node.id] = { ...node, children: kept };
       }
     }
   }
+}
 
-  const rootId =
-    typeof input.root === "string" && nodes[input.root] !== undefined
-      ? input.root
-      : nodes["root"] !== undefined
-        ? "root"
-        : undefined;
-
-  const rootNode = rootId === undefined ? undefined : nodes[rootId];
-  if (rootId === undefined || rootNode === undefined) {
-    issues.push("no valid root node");
-    return { tree: EMPTY_TREE, issues };
-  }
-  if (rootNode.type !== "box") {
-    issues.push("root node must be a box");
-    return { tree: EMPTY_TREE, issues };
-  }
-
-  const { screens, entry } = sanitizeScreens(input.screens, input.entry, nodes, issues);
-
-  // Break cycles: drop any child ref that points back to an ancestor, which would
-  // otherwise recurse forever in the renderer. DFS from root AND from every kept
-  // screen root (screens may reach subgraphs the root doesn't); the shared
-  // settled set skips already-verified acyclic subgraphs.
+/**
+ * Breaks cycles AND collapses shared children so the sanitized graph is a true
+ * tree (invariant #2): a child ref pointing back to an ancestor is dropped (it
+ * would recurse forever), depth is capped at MAX_DEPTH (a pathologically deep
+ * input can't blow the stack), and — critically — a child already kept under
+ * another parent in the SAME walk is dropped. Without that last rule a
+ * shared-child DAG stays acyclic and validates clean, but has an exponential
+ * number of root-to-node PATHS, so the renderer (which caps depth only)
+ * instantiates 2^depth elements and hangs the tab.
+ *
+ * Single-parent is enforced PER WALK ROOT: `claimed` resets at the start of each
+ * root's DFS (the roots are the tree root plus each kept screen root; a stamp
+ * passes its single fragment root). This is deliberate — two screens legitimately
+ * SHARE a node (a common header/footer), so a global claim would strip the ref
+ * from the second screen and break the pre-drawn-screens feature. Path explosion
+ * only matters within one render pass (one root); across roots a node may still
+ * be kept under multiple different walk roots. Mutates `nodes` in place.
+ */
+function breakCycles(
+  nodes: Record<string, FacetNode>,
+  roots: readonly string[],
+  issues: IssueSink,
+): { worstRoot: string; maxReachable: number } {
   const inPath = new Set<string>();
-  const settled = new Set<string>();
-  const breakCycles = (nodeId: string, depth: number): void => {
+  // Nodes kept under some parent during the CURRENT root's walk. Reset per root
+  // so cross-screen sharing survives; within one walk, `claimed` also prevents
+  // re-visiting a subtree, keeping validation linear with no separate settled set.
+  let claimed = new Set<string>();
+  const visit = (nodeId: string, depth: number): void => {
     const node = nodes[nodeId];
     if (node === undefined || node.type !== "box") {
-      settled.add(nodeId);
       return;
     }
     inPath.add(nodeId);
     const kept: string[] = [];
     for (const child of node.children) {
       if (inPath.has(child)) {
-        issues.push(`node "${nodeId}": removed cyclic child "${child}"`);
+        issues.push(
+          `node "${printableKey(nodeId)}": removed cyclic child "${printableKey(child)}"`,
+        );
         continue;
       }
       if (depth >= MAX_DEPTH) {
-        // Fail-safe: cap depth so pathologically deep input can't blow the stack.
-        issues.push(`node "${nodeId}": dropped child "${child}" beyond max depth`);
+        issues.push(
+          `node "${printableKey(nodeId)}": dropped child "${printableKey(child)}" beyond max depth`,
+        );
         continue;
       }
+      if (claimed.has(child)) {
+        issues.push(
+          `node "${printableKey(nodeId)}": removed shared child "${printableKey(child)}" (already kept under another parent)`,
+        );
+        continue;
+      }
+      claimed.add(child);
       kept.push(child);
-      if (!settled.has(child)) breakCycles(child, depth + 1);
+      visit(child, depth + 1);
     }
     if (kept.length !== node.children.length) {
       nodes[nodeId] = { ...node, children: kept };
     }
     inPath.delete(nodeId);
-    settled.add(nodeId);
   };
-  breakCycles(rootId, 0);
-  if (screens !== undefined) {
-    for (const screenRoot of Object.values(screens)) {
-      if (!settled.has(screenRoot)) breakCycles(screenRoot, 0);
+  // Track the heaviest render root: the renderer spends a fresh budget per pass on
+  // the CURRENT screen's subtree, so what matters for truncation is the MOST nodes
+  // any single root reaches, not the whole map. Reachable = the root itself plus
+  // every child claimed during its walk (shared nodes counted per root, matching
+  // the renderer, which re-instantiates a shared node in each screen it appears in).
+  let worstRoot = roots[0] ?? "";
+  let maxReachable = 0;
+  for (const root of roots) {
+    claimed = new Set<string>();
+    visit(root, 0);
+    const reachable = claimed.size + (nodes[root] !== undefined ? 1 : 0);
+    if (reachable > maxReachable) {
+      maxReachable = reachable;
+      worstRoot = root;
     }
+  }
+  return { worstRoot, maxReachable };
+}
+
+export function validateTree(input: unknown): ValidationResult {
+  const issues = new BoundedIssues();
+  if (!isObject(input) || !isObject(input.nodes)) {
+    issues.push("input is not a tree object with a nodes map");
+    return { tree: EMPTY_TREE, issues: issues.list };
+  }
+
+  const nodes = sanitizeNodeMap(input.nodes, issues);
+  pruneDanglingChildren(nodes, issues);
+
+  const explicitRoot = typeof input.root === "string" && nodes[input.root] !== undefined;
+  const rootId = explicitRoot
+    ? (input.root as string)
+    : nodes["root"] !== undefined
+      ? "root"
+      : undefined;
+  // A dangling/absent `input.root` that we salvaged by falling back to the node
+  // keyed "root" is a stored-vs-live divergence the fail-safe renderer does NOT
+  // reproduce (its isRenderableTree goes blank on the dangling id), so surface
+  // it as an issue instead of falling back silently — the runtime logs it and
+  // converges live tabs on this recovered root.
+  if (!explicitRoot && rootId === "root" && input.root !== undefined) {
+    // `input.root` is untrusted: a bounded, never-throwing echo — a cyclic object
+    // or BigInt handed in via the public API would make JSON.stringify throw
+    // (breaching the never-throws boundary), and a huge value would flood the
+    // runtime's save-time console.error. printableValue quotes a capped string
+    // and collapses anything else to a constant placeholder.
+    issues.push(`root ${printableValue(input.root)} not found; fell back to "root"`);
+  }
+
+  const rootNode = rootId === undefined ? undefined : nodes[rootId];
+  if (rootId === undefined || rootNode === undefined) {
+    issues.push("no valid root node");
+    return { tree: EMPTY_TREE, issues: issues.list };
+  }
+  if (rootNode.type !== "box") {
+    issues.push("root node must be a box");
+    return { tree: EMPTY_TREE, issues: issues.list };
+  }
+
+  const { screens, entry } = sanitizeScreens(input.screens, input.entry, nodes, issues);
+
+  // Dedupe the walk roots: several screens may target the SAME box, and a screen
+  // may target the tree root — breakCycles resets its claim set per root, so
+  // rewalking a repeated root is redundant work (its subtree is already pruned).
+  const walkRoots = Array.from(
+    new Set([rootId, ...(screens !== undefined ? Object.values(screens) : [])]),
+  );
+  const { worstRoot, maxReachable } = breakCycles(nodes, walkRoots, issues);
+
+  // The renderer truncates a PASS at MAX_RENDER_NODES nodes, and a pass renders one
+  // render root's subtree — so warn when the heaviest single root crosses the cap,
+  // not when the whole node map does. A multi-screen tree whose total exceeds the
+  // cap but whose every screen fits renders fully; warning on the map total would
+  // be a false diagnostic. This keeps the guarantee bidirectional: a clean verdict
+  // means no screen can render truncated, a warning means one actually will.
+  if (maxReachable > MAX_RENDER_NODES) {
+    issues.push(
+      `render root "${printableKey(worstRoot)}" reaches ${maxReachable} nodes; a render pass will truncate past ${MAX_RENDER_NODES}`,
+    );
   }
 
   const tree: {
     root: string;
     nodes: Record<string, FacetNode>;
+    theme?: string;
     screens?: Record<string, string>;
     entry?: string;
   } = { root: rootId, nodes };
+  // Keep the theme NAME only when it is a string that passes the theme-name rule
+  // (`isValidThemeName`, the same floor `validateTheme` applies to a document's
+  // own name) — otherwise it is dropped with an issue (else the save-time
+  // re-validate at runtime.ts would strip it silently). This caps an untrusted
+  // writer (a prompt-injected model, a visitor) at 64 chars of `[a-zA-Z0-9_-]`
+  // so an unbounded or control-character name can't be stored and re-shipped in
+  // every rehydrate/replay frame. Styles stay tokens — the tree never carries a
+  // CSS value.
+  if (typeof input.theme === "string" && isValidThemeName(input.theme)) {
+    tree.theme = input.theme;
+  } else if (input.theme !== undefined) {
+    issues.push("theme is not a valid theme name; dropped");
+  }
   if (screens !== undefined && entry !== undefined) {
     tree.screens = screens;
     tree.entry = entry;
   }
-  return { tree, issues };
+  return { tree, issues: issues.list };
+}
+
+/**
+ * A reusable, validated brick fragment — a named `{root, nodes}` subtree the
+ * operator authors and the LLM copies into ordinary patches (Decision 5,
+ * prompt-copy only: stamps are never expanded server-side or client-side). The
+ * `root` need NOT be a box (a single-text stamp is legal), and unlike a tree a
+ * stamp has no `screens`/`entry`.
+ */
+export interface FacetStamp {
+  readonly name: string;
+  readonly description?: string;
+  readonly root: NodeId;
+  readonly nodes: Readonly<Record<NodeId, FacetNode>>;
+}
+
+export interface StampValidationResult {
+  readonly stamp?: FacetStamp;
+  readonly issues: readonly string[];
+}
+
+/**
+ * Fail-safe boundary for an untrusted stamp document, mirroring `validateTree`'s
+ * discipline (shared `sanitizeNodeMap`/`pruneDanglingChildren`/`breakCycles`):
+ * brick-shape + token-membership sanitization, null-proto node map, dangling and
+ * cyclic child refs removed, depth capped. Never throws. A stamp needs a string
+ * `name` and a `root` that resolves to a kept node (any brick type); no usable
+ * root ⇒ `stamp` undefined. Issues report everything that was fixed or refused.
+ */
+export function validateStamp(input: unknown): StampValidationResult {
+  const issues = new BoundedIssues();
+  if (!isObject(input) || !isObject(input.nodes)) {
+    issues.push("stamp is not an object with a nodes map");
+    return { issues: issues.list };
+  }
+  const name = asString(input.name);
+  if (name === undefined || name.trim() === "") {
+    issues.push("stamp has no string name");
+    return { issues: issues.list };
+  }
+  // Cap the name with the same rule a theme document's name uses (a short,
+  // filename-safe identifier), so an unbounded or control-character name can't
+  // flow into prompt/issue/log strings.
+  if (!isValidThemeName(name)) {
+    // Refuse WITHOUT echoing the raw name: an unbounded or terminal-escape name
+    // is exactly what this branch rejects, so interpolating it here would defeat
+    // the cap and inject into the prompt/issue/log strings it flows into (matches
+    // validateTheme's constant "name is missing or malformed" posture).
+    issues.push("stamp name is missing or malformed (letters/digits/_/-, max 64); refused");
+    return { issues: issues.list };
+  }
+
+  const nodes = sanitizeNodeMap(input.nodes, issues);
+  pruneDanglingChildren(nodes, issues);
+
+  const rootId =
+    typeof input.root === "string" && nodes[input.root] !== undefined ? input.root : undefined;
+  if (rootId === undefined) {
+    issues.push("stamp has no valid root node");
+    return { issues: issues.list };
+  }
+
+  breakCycles(nodes, [rootId], issues);
+
+  const stamp: {
+    name: string;
+    description?: string;
+    root: string;
+    nodes: Record<string, FacetNode>;
+  } = { name, root: rootId, nodes };
+  if (input.description !== undefined) {
+    if (typeof input.description !== "string") {
+      // A non-string description is dropped WITH an issue, mirroring
+      // validateTheme — the operator authoring the stamp sees the field was
+      // ignored instead of a silent success that did nothing.
+      issues.push("stamp description is not a string; ignored");
+    } else if (input.description.length > MAX_DESCRIPTION_LENGTH) {
+      // Truncate at the shared 200-char cap (mirrors validateTheme) so a giant
+      // description can't blow the prompt/context budget it is injected into.
+      stamp.description = input.description.slice(0, MAX_DESCRIPTION_LENGTH);
+      issues.push(`stamp description truncated to ${MAX_DESCRIPTION_LENGTH} characters`);
+    } else {
+      stamp.description = input.description;
+    }
+  }
+  return { stamp, issues: issues.list };
 }

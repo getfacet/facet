@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, validateTree } from "@facet/core";
-import type { ClientEvent, FacetSession, ServerMessage } from "@facet/core";
+import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
@@ -284,6 +284,55 @@ describe("createQuickstartAgent tool loop", () => {
     expect(obs.some((o) => o.includes('"field" node needs a string "name"'))).toBe(true);
   });
 
+  it("set_theme records a /theme add op the model can drive", async () => {
+    const provider = providerOf(toolStep(call("set_theme", { name: "midnight" })), END);
+    const agent = makeAgent(provider);
+    const out = await agent({ kind: "message", text: "go dark" }, SESSION);
+
+    const patch = out.find((m) => m.kind === "patch");
+    expect(patch).toBeDefined();
+    if (patch?.kind === "patch") {
+      expect(patch.patches).toContainEqual({ op: "add", path: "/theme", value: "midnight" });
+    }
+  });
+
+  it("set_theme with an invalid theme name is an error observation and emits no /theme op", async () => {
+    // "Ocean Breeze" has a space, so it fails isValidThemeName. It must never
+    // reach the wire (the runtime's save-time re-validate would strip it,
+    // diverging the stored stage from the live clients).
+    const provider = providerOf(toolStep(call("set_theme", { name: "Ocean Breeze" })), END);
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "go" }, SESSION);
+      // No /theme patch was emitted — the invalid name degraded to an observation.
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.startsWith("error:") && o.includes("valid theme name"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("set_theme with a non-string name is an error observation, not a throw", async () => {
+    const provider = providerOf(toolStep(call("set_theme", { name: 42 })), END);
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await agent({ kind: "message", text: "go" }, SESSION);
+      // Nothing was applied — the bad arg degraded to an observation, the turn survived.
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.startsWith("error:"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("stops at maxSteps when the model never ends the loop", async () => {
     const provider = providerOf(toolStep(call("say", { text: "again" }))); // repeats forever
     const agent = makeAgent(provider, { maxSteps: 3 });
@@ -431,6 +480,40 @@ describe("createQuickstartAgent tool loop", () => {
     await agent({ kind: "message", text: "hi" }, SESSION);
     expect(provider.turns[0]!.system).toContain(DEFAULT_GUIDE);
   });
+
+  it("threads operator themes and stamps into the system prompt (names only, no theme CSS)", async () => {
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const theme: FacetTheme = {
+      name: "neon",
+      description: "a bright neon look",
+      color: { bg: "#ff00ff" },
+    };
+    const stamp: FacetStamp = {
+      name: "hero",
+      description: "a hero band",
+      root: "h-root",
+      nodes: {
+        "h-root": { id: "h-root", type: "box", children: ["h-title"] },
+        "h-title": { id: "h-title", type: "text", value: "Welcome" },
+      },
+    };
+    const agent = createQuickstartAgent({
+      provider,
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      themes: [theme],
+      stamps: [stamp],
+    });
+    await agent({ kind: "message", text: "draw" }, SESSION);
+
+    const system = provider.turns[0]!.system;
+    expect(system).toContain("THEMES");
+    expect(system).toContain("neon");
+    expect(system).toContain("STAMPS");
+    expect(system).toContain("hero");
+    // Theme documents reach the model by NAME only — the raw CSS value never does.
+    expect(system).not.toContain("#ff00ff");
+  });
 });
 
 describe("createStubAgent", () => {
@@ -468,22 +551,54 @@ describe("createStubAgent", () => {
     const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
     const visitor = { visitorId: "v" };
 
-    const onVisit = await rt.handle(visitor, { kind: "visit", visitor });
+    const onVisit = (await rt.handle(visitor, { kind: "visit", visitor })).messages;
     expect(patchesOf(onVisit)).toHaveLength(1);
     const stage = await rt.stageFor("v");
     expect(stage?.nodes["signup"]).toBeDefined();
 
-    const onMessage = await rt.handle(visitor, { kind: "message", text: "hello" });
+    const onMessage = (await rt.handle(visitor, { kind: "message", text: "hello" })).messages;
     expect(saysOf(onMessage)).toEqual(["stub: hello"]);
     const echoed = await rt.stageFor("v");
     expect(echoed?.nodes["stub-echo"]).toMatchObject({ type: "text", value: "echo: hello" });
 
-    const onAction = await rt.handle(visitor, {
-      kind: "action",
-      action: { kind: "agent", name: "submit", collect: "signup" },
-      fields: { name: "Ada", email: "a@b.c" },
-    });
+    const onAction = (
+      await rt.handle(visitor, {
+        kind: "action",
+        action: { kind: "agent", name: "submit", collect: "signup" },
+        fields: { name: "Ada", email: "a@b.c" },
+      })
+    ).messages;
     expect(saysOf(onAction)).toEqual(["submit: email=a@b.c name=Ada"]);
+  });
+
+  it("a 'theme <name>' message switches the theme and says stub: theme <name>", async () => {
+    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
+    const visitor = { visitorId: "v" };
+    await rt.handle(visitor, { kind: "visit", visitor });
+
+    const out = (await rt.handle(visitor, { kind: "message", text: "theme midnight" })).messages;
+    expect(saysOf(out)).toEqual(["stub: theme midnight"]);
+    // The theme name lands on the persisted stage (through the runtime save path).
+    const stage = await rt.stageFor("v");
+    expect((stage as { theme?: unknown } | undefined)?.theme).toBe("midnight");
+    // A plain "theme" prefix message still echoes; a non-theme message is untouched.
+    const plain = (await rt.handle(visitor, { kind: "message", text: "hello" })).messages;
+    expect(saysOf(plain)).toEqual(["stub: hello"]);
+  });
+
+  it("refuses an invalid 'theme <name>' (spaces/punctuation) with a say and no /theme op", async () => {
+    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
+    const visitor = { visitorId: "v" };
+    await rt.handle(visitor, { kind: "visit", visitor });
+
+    // "Dark Mode!" fails isValidThemeName — the stub must refuse it, matching the
+    // real agent's set_theme gate, so no `add /theme` frame reaches live clients
+    // while the stored stage strips it (a stored-vs-live divergence).
+    const out = (await rt.handle(visitor, { kind: "message", text: "theme Dark Mode!" })).messages;
+    expect(saysOf(out)).toEqual(["stub: invalid theme name (letters/digits/_/-, max 64)"]);
+    expect(patchesOf(out)).toHaveLength(0);
+    const stage = await rt.stageFor("v");
+    expect((stage as { theme?: unknown } | undefined)?.theme).toBeUndefined();
   });
 
   it("is deterministic: the same event sequence yields deep-equal message sequences", async () => {
@@ -493,6 +608,7 @@ describe("createStubAgent", () => {
       const events: ClientEvent[] = [
         { kind: "visit", visitor },
         { kind: "message", text: "hello" },
+        { kind: "message", text: "theme midnight" },
         {
           kind: "action",
           action: { kind: "agent", name: "submit", collect: "signup" },
@@ -500,7 +616,7 @@ describe("createStubAgent", () => {
         },
       ];
       const out: ServerMessage[][] = [];
-      for (const event of events) out.push([...(await rt.handle(visitor, event))]);
+      for (const event of events) out.push([...(await rt.handle(visitor, event)).messages]);
       return out;
     }
     expect(await run()).toEqual(await run());

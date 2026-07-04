@@ -34,17 +34,20 @@ Call the workflow (this skill is your opt-in to `Workflow`):
 Workflow({ name: 'spec-bridge', args: { slug: '<slug>' } })
 ```
 
-The workflow: **Context** (map affected `@facet/*` packages, gather `file:line`
-evidence, run the RISK probes — INV / API / PKG — → `specs/context/<slug>.md`) →
-**Write** (a separate-context writer produces `specs/dev-specs/<slug>.md` **and**
-the `.execution.yaml` manifest together, so WU ids/files/deps/checks stay
-identical) → **Review** (an independent adversarial reviewer that never saw the
-writer evaluates every gate) → **Fix loop** (on P0/P1, a fixer edits the spec and
-the reviewer re-runs, max 3 rounds). Watch live progress with `/workflows`.
+The workflow fans out discovery and verification and keeps authoring single:
+**Context** (a package-map agent, then **parallel RISK-lens probes** — INV / API /
+PKG, each an independent investigation — then a context writer assembles
+`specs/context/<slug>.md`) → **Write** (a *single* separate-context author
+produces `specs/dev-specs/<slug>.md` **and** the `.execution.yaml` manifest
+together, so WU ids/files/deps/checks stay identical) → **Review** (an independent
+**multi-reviewer panel**, one reviewer per gate-family — traceability /
+decomposition / invariant-fit / risk-consistency — none of whom saw the writer;
+findings unioned) → **Fix loop** (on P0/P1, a fixer edits the spec and the *whole
+panel* re-runs, max 3 rounds). Watch live progress with `/workflows`.
 
 All the hard gates (DC traceability, ≤5 files/WU, red_check present, Invariant Fit
 Audit real, every RISK resolved, `final_gate_owner: main-agent`, spec/manifest
-consistency) are enforced inside the reviewer per
+consistency) are split across the reviewer panel per
 `.claude/skills/spec-bridge/references/spec-qa-gates.md`.
 
 ## After it returns — Stage 3 (yours, not the workflow's)
