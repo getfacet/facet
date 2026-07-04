@@ -11,3 +11,6 @@ generated/
 .turbo/
 .idea/
 .vscode/
+
+# live-journey tier screenshots + GIF (not committed)
+packages/quickstart/e2e/journey/artifacts/

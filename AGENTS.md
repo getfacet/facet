@@ -79,10 +79,13 @@ Tier 1b/2/3 use `--config packages/quickstart/e2e/vitest.config.ts` against
   `pnpm` commands directly). Add/adjust tests for any behavior change; core logic
   (`validateTree`, `applyPatch`, `Stage` op-generation) must stay covered.
 - **`/code-review`** on a non-trivial change — P0–P2 = 0 (P3 nits non-blocking).
-- **`/live-test`** after `/code-review` — the 3-tier live-link gate. Tier 1
-  (deterministic stub E2E + real-bundle run) always blocks; Tier 2 (key-gated
-  provider smoke) **blocks whenever `packages/quickstart/` changed** — a missing
-  key is then a FAIL, not a skip; Tier 3 (both providers) runs pre-merge/release.
+- **`/live-test`** after `/code-review` — the live-link gate. The three fast
+  vitest tiers: Tier 1 (deterministic stub E2E + real-bundle run) always blocks;
+  Tier 2 (key-gated provider smoke) **blocks whenever `packages/quickstart/`
+  changed** — a missing key is then a FAIL, not a skip; Tier 3 (both providers)
+  runs pre-merge/release. Plus an **owner-run "live journey" tier** (real headless
+  browser + real LLM + vision-judged screenshots, pre-merge/on-request, SKIP
+  without a key) that the skill invokes after the vitest tiers.
 - New public API is exported through the package's barrel `index.ts`.
 - No new dependency without a clear reason (keep `@facet/core` dependency-free).
 

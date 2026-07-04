@@ -89,6 +89,33 @@ FACET_SMOKE_PROVIDERS=both pnpm exec vitest run --config packages/quickstart/e2e
 Run this when the change is about to merge to main or ship a release. Missing
 either key ⇒ Tier 3 FAIL.
 
+## Step 5 — Live journey tier (owner-run, pre-merge; real browser + real LLM)
+
+The heaviest tier — it proves the actual EXPERIENCE renders and responds in a
+**real headless browser** driven by a **real LLM**, which the jsdom/stub tiers
+cannot. **Owner-run / on-request only — NOT CI** (real LLM cost + Playwright).
+
+Precondition: a provider key (`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`). With no
+key this tier is **SKIP-with-reason** — this is explicitly NOT the Tier-2
+`SKIPPED=FAIL` rule; the journey tier is owner-run, not a per-change gate.
+
+The skill (main agent, durable bash) owns the SERVER lifecycle; the workflow owns
+the journeys + judging:
+
+1. `pnpm --filter @facet/quickstart build`; once: `pnpm exec playwright install chromium`.
+2. Boot the real-LLM quickstart on a free port in the background and capture the URL:
+   `pnpm exec tsx packages/quickstart/src/cli.ts --provider <p> --port <n>`.
+3. Invoke the workflow with the URL:
+   `Workflow({ name: 'live-journey', args: { url: '<url>', keyPresent: true, artifactsDir: 'packages/quickstart/e2e/journey/artifacts' } })`
+   — 3 fresh-visitor Playwright journeys → per-(visitor × lens) vision judges →
+   synthesized through the tested `verdict.ts` (HARD/SOFT/quorum).
+4. **Tear down the server** (kill the process) regardless of outcome.
+
+It returns `{ verdict: 'PASS'|'FAIL'|'SKIP', warnings, blocking, binSmoke, artifactsDir }`.
+HARD lenses (safety, render, responsiveness) failing ⇒ tier **FAIL**; SOFT lenses
+(request-fidelity, cross-visitor diversity) failing ⇒ **WARNING**, not FAIL.
+Screenshots + an optional GIF land in the gitignored artifacts dir.
+
 ## Output contract
 
 Report a per-tier table, then the overall verdict:
@@ -100,6 +127,7 @@ Report a per-tier table, then the overall verdict:
 | 1b   | real bundle in jsdom          | PASS / FAIL                |
 | 2    | provider smoke (touched=yes)  | PASS / FAIL / SKIPPED(why) |
 | 3    | both providers (pre-merge)    | PASS / FAIL / SKIPPED(why) |
+| journey | live browser + LLM, judged (owner-run) | PASS / FAIL / WARNING / SKIPPED(why) |
 ```
 
 - State the tier-detection decision explicitly (base used, quickstart-touched
