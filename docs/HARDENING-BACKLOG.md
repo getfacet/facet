@@ -114,12 +114,12 @@ non-blocking residual).
   serialized DOM* (a component wrapping the same markup): the static exact-
   markup suite passes unmodified. Pinned by three element-identity survival
   tests (add-onHold / remove-onHold / plain→press+hold).
-- **kit/kit.ts + playground/gallery.tsx (duplicated box builder)** — the same
-  positional box-builder exists in both (edited in lockstep for `onHold`;
-  review r2). Minimal alignment done in-branch (shared API-guard comment +
-  identical conditional-spread spelling). *Fix (structural, next
-  /refactor-audit):* fold the gallery `Sheet` onto `@facet/kit`'s builder or
-  extract one shared helper.
+- **playground/bricks.ts + playground/gallery.tsx (duplicated box builder)** —
+  the same positional box-builder exists in both, now co-located in
+  `apps/playground` after `@facet/kit` was retired (commit 95b948c; the migrated
+  `page`/`text` helper lives in `bricks.ts`). *Fix (structural, next
+  /refactor-audit):* extract one shared box-builder helper in playground (fold
+  the gallery `Sheet` onto `bricks.ts`'s Builder).
 - ~~react/StageRenderer.tsx (hold not scoped to the arming pointerId)~~ —
   RESOLVED in-branch (review r4, escalated to P2 there: the disarm made the
   release's synthesized click dispatch onPress — the wrong action, not

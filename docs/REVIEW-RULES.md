@@ -56,7 +56,7 @@ recorded in the PR.)
   (`publishConfig`/`exports`), barrel usage, naming.
 - **test-gaps** — changed behavior without a test; critical pure logic
   (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
-  coverage; untested testable surface (`@facet/kit`, `@facet/cli`); tautological
+  coverage; untested testable surface (`@facet/cli`); tautological
   tests.
 
 ## `/refactor-audit` dimensions
