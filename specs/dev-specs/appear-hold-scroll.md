@@ -79,16 +79,23 @@ Renderer constants (not tokens, not theme data — confirming the brief's
 assumption): `HOLD_MS = 500`, `HOLD_SLOP_PX = 8`, non-exported in
 `StageRenderer.tsx`. Detection: `pointerdown` arms a timer; `pointermove`
 beyond slop, `pointerup` before threshold, `pointercancel`, or `pointerleave`
-disarms it. Timer fire ⇒ set a suppress-next-click latch, then execute the hold
-through `handlePress`. The subsequent browser-synthesized `click` (browsers
-fire it after pointerup regardless) is swallowed by the latch — press and hold
-NEVER both fire (DC-004, RISK-INV-1/RISK-API-4a). **Latch lifecycle (pinned):**
-the latch is cleared when it is consumed by the next `click` on the box OR on
-the next `pointerdown` on the box (arm-time reset), whichever comes first — a
-hold whose synthesized click never lands on the box (pointer released outside:
-the browser targets the click at the common ancestor) must not poison the
-visitor's NEXT tap. Consecutive gestures are exact: hold-then-tap ⇒ one hold +
-one press; hold-then-hold ⇒ exactly two holds. Below-threshold release ⇒
+disarms it. Timer fire ⇒ arm a one-shot **window-level capture-phase click
+interceptor**, then execute the hold through `handlePress`. The subsequent
+browser-synthesized `click` (browsers fire it after pointerup regardless) is
+swallowed at window capture — press and hold NEVER both fire (DC-004,
+RISK-INV-1/RISK-API-4a). **Interceptor lifecycle (pinned, revised in review
+r2):** SET when the hold timer fires; CONSUMED by the next `click` anywhere
+(window capture runs before any target/bubble handler); RESET by the next
+`pointerdown` anywhere — whichever comes first. Window+capture scope is
+structural, not stylistic: a component-scoped latch provably fails three ways
+— a pressable DESCENDANT's click handler runs target-first (before the held
+box's bubble handler), a release-outside targets the synthesized click at the
+common ancestor (the held box never sees it), and a nested holdable's
+pointerdown `stopPropagation` defeats a per-box arm-time reset. Teardown is
+deliberately NOT tied to component unmount (a hold that unmounts its own box
+must still swallow the click that follows). Consecutive gestures are exact:
+hold-then-tap ⇒ one hold + one press; hold-then-hold ⇒ exactly two holds.
+Below-threshold release ⇒
 timer disarmed, native `click` runs `onPress` as today. Touch disambiguation
 inside scroll regions is free: when the browser claims the gesture for
 scrolling it fires `pointercancel`, which disarms the hold; `contextmenu` is

@@ -29,6 +29,10 @@ class Sheet {
     return `n${this.count}`;
   }
 
+  /**
+   * `onHold` is the LAST positional parameter this signature will take — the
+   * next per-box word means switching to an options object.
+   */
   box(
     style: BoxStyle,
     children: readonly string[],
@@ -41,8 +45,8 @@ class Sheet {
       type: "box",
       style,
       children: [...children],
-      ...(onPress === undefined ? {} : { onPress }),
-      ...(onHold === undefined ? {} : { onHold }),
+      ...(onPress !== undefined ? { onPress } : {}),
+      ...(onHold !== undefined ? { onHold } : {}),
     };
     return id;
   }

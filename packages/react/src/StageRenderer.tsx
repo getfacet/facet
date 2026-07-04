@@ -269,6 +269,58 @@ function finiteCoord(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/**
+ * One-shot, WINDOW-level, CAPTURE-phase interceptor for the browser-synthesized
+ * click that follows a completed hold (pinned lifecycle unchanged): SET when
+ * the hold timer fires, CONSUMED by the next click anywhere (capture phase),
+ * RESET on the next pointerdown anywhere — whichever comes first.
+ *
+ * Window scope + capture phase is structural, not stylistic. A component-scoped
+ * latch consumed in the box's own bubble-phase click handler fails three ways:
+ * - click runs target-first, so a pressable DESCENDANT box inside the held box
+ *   dispatches its onPress from the synthesized click BEFORE the bubble ever
+ *   reaches the holdable box ("press and hold never both fire" is pinned);
+ * - a pointer released OUTSIDE the held box makes the browser target the
+ *   synthesized click at the common ancestor — the held box never sees it and
+ *   an ancestor onPress fires;
+ * - a nested HoldableBox's pointerdown stopPropagation defeats the outer box's
+ *   arm-time latch reset, leaving a stale latch that swallows a later
+ *   legitimate tap. Window CAPTURE runs before any component handler can stop
+ *   propagation, so the reset here cannot be defeated.
+ *
+ * Teardown is deliberately NOT tied to any component unmount: a hold whose
+ * dispatch unmounts its own box (e.g. a toggle that hides it) must STILL
+ * swallow the synthesized click that follows the release. The helper runs only
+ * from the hold-timer callback (browser-only), so touching `window` is safe;
+ * arming while already armed is a no-op (one interceptor, one click).
+ */
+let swallowArmed = false;
+function swallowNextClick(): void {
+  if (swallowArmed) {
+    return;
+  }
+  swallowArmed = true;
+  const teardown = (): void => {
+    swallowArmed = false;
+    window.removeEventListener("click", swallow, true);
+    window.removeEventListener("pointerdown", reset, true);
+  };
+  // CONSUME: the next click anywhere is the synthesized post-hold click —
+  // stop it at window capture (before React's root listeners) and tear down.
+  const swallow = (event: Event): void => {
+    event.stopPropagation();
+    event.preventDefault();
+    teardown();
+  };
+  // RESET: a new pointerdown means a new gesture — tear down WITHOUT touching
+  // the event, so the fresh press proceeds untouched.
+  const reset = (): void => {
+    teardown();
+  };
+  window.addEventListener("click", swallow, true);
+  window.addEventListener("pointerdown", reset, true);
+}
+
 interface HoldableBoxProps {
   /** Classified onPress — null renders a hold-only box (a quick tap no-ops). */
   readonly press: ClassifiedPress | null;
@@ -293,9 +345,9 @@ interface HoldableBoxProps {
  * timer; `pointermove` beyond HOLD_SLOP_PX, `pointerup` before threshold,
  * `pointercancel` (incl. the browser claiming a touch gesture for scrolling —
  * free disambiguation, so no touch-action CSS is set here), or `pointerleave`
- * disarms it. The timer firing executes the hold and latches suppression of the
- * browser-synthesized click that follows pointerup, so press and hold never
- * both fire.
+ * disarms it. The timer firing executes the hold and arms the window-level
+ * `swallowNextClick` interceptor against the browser-synthesized click that
+ * follows pointerup, so press and hold never both fire.
  */
 function HoldableBox({
   press,
@@ -319,15 +371,6 @@ function HoldableBox({
   // Pending hold timer + gesture origin (the slop reference); null = disarmed.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
-  /**
-   * Suppress-next-click latch (pinned lifecycle): SET when the hold timer
-   * fires; cleared when CONSUMED by the next click on this box OR RESET on the
-   * next pointerdown on this box, whichever comes first. The arm-time reset
-   * matters: a hold whose pointer is released OUTSIDE the box makes the browser
-   * target the synthesized click at the common ancestor — this box never sees
-   * it, and the stale latch must NOT swallow the visitor's NEXT quick tap.
-   */
-  const suppressNextClickRef = useRef(false);
   // True from the hold firing until the pointer ends — with the armed timer it
   // scopes contextmenu suppression to the live gesture only.
   const holdingRef = useRef(false);
@@ -365,8 +408,6 @@ function HoldableBox({
     // the innermost HoldableBox arms — primary presses stop here (non-primary
     // presses returned above WITHOUT stopping, leaving ancestors unaffected).
     event.stopPropagation();
-    // Arm-time latch reset — see the latch lifecycle above.
-    suppressNextClickRef.current = false;
     holdingRef.current = false;
     originRef.current = { x: finiteCoord(event.clientX), y: finiteCoord(event.clientY) };
     if (timerRef.current !== null) {
@@ -376,8 +417,9 @@ function HoldableBox({
       timerRef.current = null;
       originRef.current = null;
       holdingRef.current = true;
-      // Swallow the browser-synthesized click that follows the coming pointerup.
-      suppressNextClickRef.current = true;
+      // Swallow the browser-synthesized click that follows the coming pointerup
+      // — at WINDOW capture, wherever the browser targets it (see the helper).
+      swallowNextClick();
       // One press pipeline: the hold rides the same handlePress switch a press
       // does, reading the LATEST classification (see holdRef above).
       dispatchRef.current(holdRef.current);
@@ -404,16 +446,9 @@ function HoldableBox({
     holdingRef.current = false;
   };
 
-  const handleClick = (event: ReactMouseEvent<HTMLDivElement>): void => {
-    if (suppressNextClickRef.current) {
-      suppressNextClickRef.current = false; // consumed by this click
-      // The synthesized post-hold click must not bubble into an ancestor
-      // pressable box's onClick — a completed hold on a nested box would
-      // otherwise ALSO fire the ancestor's onPress ("press and hold never
-      // both fire" is pinned). A normal quick-tap click keeps bubbling below.
-      event.stopPropagation();
-      return;
-    }
+  const handleClick = (): void => {
+    // A synthesized post-hold click never reaches here: swallowNextClick stops
+    // it at window capture, before React's root listeners.
     if (press !== null) {
       dispatch(press);
     }

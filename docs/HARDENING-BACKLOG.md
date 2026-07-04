@@ -113,6 +113,12 @@ non-blocking residual).
   for any interactive box (press OR hold) with a nullable `hold` prop that
   no-ops when null — element type then stays stable across interaction-
   metadata patches; re-pin the static-markup tests accordingly.
+- **kit/kit.ts + playground/gallery.tsx (duplicated box builder)** — the same
+  positional box-builder exists in both (edited in lockstep for `onHold`;
+  review r2). Minimal alignment done in-branch (shared API-guard comment +
+  identical conditional-spread spelling). *Fix (structural, next
+  /refactor-audit):* fold the gallery `Sheet` onto `@facet/kit`'s builder or
+  extract one shared helper.
 
 ## P3 — residuals from Bundle B's review (kits-themes-as-data; track, fix opportunistically)
 

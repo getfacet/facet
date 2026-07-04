@@ -305,6 +305,26 @@ describe("StageRenderer appear (static)", () => {
     expect(out.match(/<style/g)).toHaveLength(1);
   });
 
+  it("renders the appear class on a pressable (role=button) box", () => {
+    // FIX-B: the press-only branch must thread className exactly like the
+    // plain branch — an appear token on an interactive box must not vanish.
+    const out = render(
+      tree({
+        root: {
+          id: "root",
+          type: "box",
+          style: { appear: "slide" },
+          onPress: { kind: "agent", name: "go" },
+          children: ["t"],
+        },
+        t: text("t", "press me"),
+      }),
+    );
+    expect(out).toContain('role="button"');
+    expect(out).toContain('class="facet-appear-slide"');
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
   it("renders an explicit appear:'none' with no class and no style element", () => {
     const out = render(
       tree({

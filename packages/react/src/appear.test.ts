@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { APPEARS } from "@facet/core";
 import { APPEAR_CSS, appearClass } from "./appear.js";
 
 // APPEAR_CSS is the ONE place appear animation CSS lives (framework-owned,
@@ -78,5 +79,20 @@ describe("appearClass", () => {
     expect(appearClass(42)).toBeUndefined();
     expect(appearClass("fade")).toBeUndefined();
     expect(appearClass([])).toBeUndefined();
+  });
+
+  // Drift net derived from core's APPEARS: adding a token to the palette
+  // without teaching appearClass/APPEAR_CSS about it must fail HERE, not
+  // silently render the new token as a no-op class.
+  it("covers every core APPEARS token: class + keyframes for all but 'none'", () => {
+    for (const token of APPEARS) {
+      if (token === "none") {
+        expect(appearClass({ appear: token })).toBeUndefined();
+        continue;
+      }
+      expect(appearClass({ appear: token })).toBe(`facet-appear-${token}`);
+      expect(APPEAR_CSS).toContain(`.facet-appear-${token}`);
+      expect(APPEAR_CSS).toContain(`@keyframes facet-appear-${token}`);
+    }
   });
 });

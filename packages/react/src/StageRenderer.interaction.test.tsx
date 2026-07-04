@@ -883,10 +883,14 @@ describe("StageRenderer collect (jsdom)", () => {
 // Hold gesture (Decision 3): pointerdown arms a HOLD_MS timer; slop / early
 // release / cancel disarm it; the timer fires the onHold action through the ONE
 // existing handlePress switch and swallows the browser-synthesized click via a
-// suppress-next-click latch (cleared on consume-by-click OR next pointerdown).
-// jsdom implements no PointerEvent gestures, so pointer events are dispatched
-// as plain bubbling Events with clientX/clientY assigned (React reads the
-// coordinates off the native event); fake timers drive the hold threshold.
+// one-shot WINDOW-level CAPTURE-phase interceptor (consumed by the next click
+// anywhere OR reset by the next pointerdown anywhere — window scope so neither
+// a descendant press target, a release-outside retarget, nor a nested box's
+// stopPropagation can dodge it). jsdom implements no PointerEvent gestures, so
+// pointer events are dispatched as plain bubbling Events with clientX/clientY
+// assigned (React reads the coordinates off the native event); jsdom DOES
+// propagate dispatched events through the window capture phase, which is what
+// makes the interceptor testable here. Fake timers drive the hold threshold.
 // ---------------------------------------------------------------------------
 
 /** Mirrors the renderer's non-exported HOLD_MS constant. */
@@ -920,9 +924,12 @@ const pointerUp = (el: Element, coords?: { x?: number; y?: number }): void => {
   fireEvent(el, pointerEvent("pointerup", coords));
 };
 
-/** A completed hold: down → HOLD_MS elapses → up → the browser-synthesized click. */
+/** A completed hold: down → within-slop jitter → HOLD_MS elapses → up → the browser-synthesized click. */
 function holdGesture(el: Element): void {
   pointerDown(el);
+  // Within-slop jitter: dx=5, dy=3 (≈5.8px < HOLD_SLOP_PX = 8) — a small
+  // finger tremor must NOT disarm the hold; every holdGesture exercises it.
+  pointerMove(el, { x: 5, y: 3 });
   act(() => {
     vi.advanceTimersByTime(HOLD_MS + 100);
   });
@@ -957,6 +964,11 @@ const pressHoldTree = (): FacetTree =>
 describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    // Between-test isolation for the deliberately GLOBAL one-shot click
+    // interceptor: a prior test's completed hold may have left it armed. A
+    // plain window pointerdown is exactly the RESET the pinned lifecycle
+    // defines, so no test-only backdoor into the renderer is needed.
+    fireEvent(window, pointerEvent("pointerdown"));
   });
   afterEach(() => {
     vi.useRealTimers();
@@ -1135,24 +1147,26 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
     expect(onAction).not.toHaveBeenCalled();
   });
 
-  it("a hold released outside the box does not swallow the next quick tap (latch resets on pointerdown)", () => {
+  it("a hold released outside the box does not swallow the next quick tap", () => {
     const onAction = vi.fn();
     const { container } = render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
     const btn = screen.getByRole("button");
 
     pointerDown(btn);
     act(() => {
-      vi.advanceTimersByTime(HOLD_MS + 100); // the hold fires; the latch is set
+      vi.advanceTimersByTime(HOLD_MS + 100); // the hold fires; the interceptor arms
     });
     // Pointer released OUTSIDE the box ⇒ the browser targets the synthesized
-    // click at the common ancestor, so the box never sees a click and the latch
-    // is NOT consumed here.
+    // click at the common ancestor. The WINDOW-level interceptor still sees it
+    // (capture phase) and CONSUMES it there — the box itself never gets a click.
     pointerUp(container);
     fireEvent.click(container);
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
 
-    // The stale latch must be RESET at the next pointerdown, not poison this tap.
+    // The next quick tap must fire normally — the interceptor was consumed by
+    // the ancestor click above (and the tap's own pointerdown would RESET any
+    // still-armed interceptor at window capture regardless).
     tapGesture(btn);
     expect(onAction).toHaveBeenCalledTimes(2);
     expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "pressed" }]);
@@ -1319,7 +1333,7 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
 
     // After release the gesture is over ⇒ the native menu is back.
     pointerUp(btn);
-    fireEvent.click(btn); // the synthesized click consumes the latch
+    fireEvent.click(btn); // the synthesized click consumes the window interceptor
     expect(fireEvent.contextMenu(btn)).toBe(true);
     expect(onAction).toHaveBeenCalledTimes(1); // the one hold from phase (b)
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
@@ -1379,6 +1393,162 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
 
     expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held-v2" });
+  });
+
+  it("a completed hold never fires a pressable DESCENDANT's onPress from the synthesized click", () => {
+    // click runs TARGET-FIRST: the synthesized post-hold click at the child
+    // would dispatch the child's onClick before any bubble handler on the
+    // holdable box — only the WINDOW-capture interceptor runs earlier still.
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["holdBox"] },
+          holdBox: {
+            id: "holdBox",
+            type: "box",
+            onHold: { kind: "agent", name: "held" },
+            children: ["pressChild"],
+          },
+          pressChild: {
+            id: "pressChild",
+            type: "box",
+            onPress: { kind: "agent", name: "child-pressed" },
+            children: ["ct"],
+          },
+          ct: { id: "ct", type: "text", value: "child target" },
+        })}
+      />,
+    );
+
+    // The whole gesture happens ON THE CHILD: pointerdown bubbles up and arms
+    // the parent's hold; the synthesized click is targeted at the child.
+    const child = screen.getByText("child target").parentElement as HTMLElement;
+    holdGesture(child);
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("a hold released outside never fires a pressable ANCESTOR targeted by the synthesized click", () => {
+    // Releasing the pointer outside the held box makes the browser target the
+    // synthesized click at the common ancestor — a component-scoped latch on
+    // the held box would never see that click; the window interceptor does.
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["ancestor"] },
+          ancestor: {
+            id: "ancestor",
+            type: "box",
+            onPress: { kind: "agent", name: "ancestor-pressed" },
+            children: ["holdChild"],
+          },
+          holdChild: {
+            id: "holdChild",
+            type: "box",
+            onHold: { kind: "agent", name: "child-held" },
+            children: ["ht"],
+          },
+          ht: { id: "ht", type: "text", value: "hold me" },
+        })}
+      />,
+    );
+
+    const holdChild = screen.getByText("hold me").parentElement as HTMLElement;
+    const ancestor = holdChild.parentElement as HTMLElement;
+
+    pointerDown(holdChild);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100); // the hold fires; the interceptor arms
+    });
+    // Release-outside simulation: pointerup + the synthesized click land on
+    // the pressable ANCESTOR, not on the held child.
+    pointerUp(ancestor);
+    fireEvent.click(ancestor);
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "child-held" });
+  });
+
+  it("a nested box's pointerdown stopPropagation cannot leave a stale interceptor that swallows a later tap", () => {
+    // Gesture 1 leaves the interceptor ARMED (release-outside, no click ever
+    // dispatched). Gesture 2 taps the INNER holdable box, whose pointerdown
+    // stopPropagation defeated the old component-scoped arm-time reset — the
+    // WINDOW-capture reset runs before any component handler can stop
+    // propagation, so the tap's click must reach the outer box's onPress.
+    const onAction = vi.fn();
+    const { container } = render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["outer"] },
+          outer: {
+            id: "outer",
+            type: "box",
+            onPress: { kind: "agent", name: "outer-pressed" },
+            onHold: { kind: "agent", name: "outer-held" },
+            children: ["inner"],
+          },
+          inner: {
+            id: "inner",
+            type: "box",
+            onHold: { kind: "agent", name: "inner-held" },
+            children: ["it"],
+          },
+          it: { id: "it", type: "text", value: "inner target" },
+        })}
+      />,
+    );
+
+    const inner = screen.getByText("inner target").parentElement as HTMLElement;
+    const outer = inner.parentElement as HTMLElement;
+
+    // Gesture 1: hold the OUTER box, release outside, and no synthesized click
+    // arrives at all — the interceptor stays armed past the gesture.
+    pointerDown(outer);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(container);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "outer-held" });
+
+    // Gesture 2: quick tap the INNER box. Its pointerdown (which
+    // stopPropagation-s at the React level) must still RESET the interceptor
+    // at window capture, so this legitimate click is NOT swallowed; the inner
+    // box is hold-only, so the click bubbles to the outer box's onPress.
+    tapGesture(inner);
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "outer-pressed" }]);
+  });
+
+  it("a holdable box carries its appear class on the mounted holdable element", () => {
+    // FIX-B: the HoldableBox branch must thread className exactly like the
+    // press-only and plain branches do.
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["btn"] },
+          btn: {
+            id: "btn",
+            type: "box",
+            style: { appear: "fade" },
+            onHold: { kind: "agent", name: "held" },
+            children: ["bt"],
+          },
+          bt: { id: "bt", type: "text", value: "animated hold" },
+        })}
+      />,
+    );
+
+    const btn = screen.getByRole("button");
+    expect(btn.className).toBe("facet-appear-fade");
   });
 });
 
