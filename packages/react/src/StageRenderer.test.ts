@@ -285,10 +285,11 @@ describe("StageRenderer screens + hidden (static)", () => {
 });
 
 // Appear (DC-001/DC-005): a classifiable appear token maps to a class name and
-// gates ONE per-stage <style> element (the flat null-guarded prescan); token-free
-// trees stay byte-identical to today (no style element, no class attribute), and
-// raw-path junk — including cyclic trees and null/scalar node VALUES in the
-// nodes record — renders plain, never throws or hangs.
+// gates ONE per-stage <style> element (detected during the budget-bounded render
+// walk — reachable nodes only); token-free trees stay byte-identical to today
+// (no style element, no class attribute), and raw-path junk — including cyclic
+// trees and null/scalar node VALUES in the nodes record — renders plain, never
+// throws or hangs.
 describe("StageRenderer appear (static)", () => {
   it("renders the appear class and a single style element for appear tokens", () => {
     const out = render(
@@ -458,8 +459,9 @@ describe("StageRenderer appear (static)", () => {
 
   it("renders a raw tree with NULL and SCALAR node values alongside an appear node without throwing", () => {
     // Legal on the live path: a patch can set any node value to JSON null (or a
-    // scalar) — isTreeShaped only checks that `nodes` is an object. The appear
-    // prescan must null-guard every record value before touching `.style`.
+    // scalar) — isTreeShaped only checks that `nodes` is an object. renderNode's
+    // own `node == null` / unknown-type guards skip the junk values; the
+    // reachable appear box still emits the stylesheet.
     const noisy = tree({
       root: box("root", ["x", "n", "s"]),
       x: { id: "x", type: "box", style: { appear: "fade" }, children: ["t"] },
@@ -472,5 +474,22 @@ describe("StageRenderer appear (static)", () => {
     expect(out).toContain("guarded");
     expect(out).toContain('class="facet-appear-fade"');
     expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("does not emit the appear stylesheet for an UNREACHABLE appear node (review r7)", () => {
+    // Appear detection rides the budget-bounded render walk, not a scan of the
+    // whole node map: an appear token on a node that root never reaches renders
+    // nothing and must NOT force a <style> (also the fail-safe against a huge
+    // map of unreachable/dangling nodes re-triggering an O(N) per-render scan).
+    const out = render(
+      tree({
+        root: box("root", ["shown"]),
+        shown: text("shown", "visible"),
+        orphan: { id: "orphan", type: "box", style: { appear: "fade" }, children: [] },
+      }),
+    );
+    expect(out).toContain("visible");
+    expect(out).not.toContain("<style");
+    expect(out).not.toContain("facet-appear");
   });
 });

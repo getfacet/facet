@@ -143,14 +143,36 @@ non-blocking residual).
 - ~~react/StageRenderer.tsx (slop boundary exactness, r5)~~ — RESOLVED
   in-branch (review r6): a boundary test pins the strict `>` (8.0px keeps the
   hold armed, 9px disarms).
-- **react/StageRenderer.tsx (per-gesture click interceptor, r6)** — the
-  post-hold click swallow is a single module-level `swallowArmed` boolean, so
-  two *overlapping* holds on two different boxes (hybrid multi-pointer) share
+- ~~react/StageRenderer.tsx (appear prescan bypassed the render budget, r7)~~
+  — RESOLVED in-branch (review r7): appear detection now rides the
+  budget-bounded render walk (`appearSeen` flag set when a REACHABLE box gets an
+  appear class) instead of an unbounded `Object.values(tree.nodes)` scan on
+  every render — closes the per-render soft-DoS on a huge unreachable-node map
+  and is strictly more correct (an unrendered appear node no longer forces a
+  useless `<style>`). Pinned by an unreachable-appear-node test.
+- ~~docs/ARCHITECTURE.md (brick-palette drift, r7)~~ — RESOLVED in-branch: the
+  `box` bullet now lists `appear`/`scroll` styles and `onHold`.
+- **react/StageRenderer.tsx (per-gesture click interceptor, r6/r7)** —
+  **P2, MAINTAINER-WAIVED for the appear-hold-scroll merge (owner, 2026-07-04;
+  recorded in the PR).** The post-hold click swallow is a single module-level
+  `swallowArmed` boolean, so two *overlapping* holds on two different boxes
+  (two concurrent primary pointers — e.g. a mouse held on box A AND a touch
+  finger held on box B on a hybrid device, both past 500ms, both released) share
   one interceptor: the second hold's `swallowNextClick()` is a no-op, the first
-  release consumes the interceptor, and the second box's synthesized click
-  fires its onPress. Obscure (needs two simultaneous holds); fail is a wrong
-  press. *Fix (structural):* key the interceptor by pointerId/pointerType (a
-  small Map) instead of one boolean.
+  release consumes the interceptor, and the second box's synthesized click fires
+  its onPress — that box dispatches both hold and press. *Waiver rationale:*
+  the trigger is a two-handed mouse+touch gesture no single user performs
+  intentionally; the failure degrades to one spurious, recoverable agent event
+  (no crash / data loss / security); and a correct fix needs click→pointer
+  attribution the DOM does not provide at window-capture scope (every
+  capture-phase click listener sees every click, so a per-gesture registry
+  can't pair a swallow to its own click). A counter ("swallow the next N
+  clicks") handles the concurrent case but entangles with the reset/expire/
+  release lifecycle that already absorbed review rounds r3–r5, each of which
+  spawned the next round's finding. *Fix (structural, deferred to the drag
+  bundle, which reworks pointer handling anyway):* key the interceptor by
+  pointerId/pointerType, or drive the swallow off the browser's own
+  `click`-after-`pointerup` sequencing per pointer.
 - **react/StageRenderer.tsx (no keyboard path for hold-only boxes, r4)** — a
   hold-only box (onHold, no onPress) renders role="button" but Enter/Space
   cannot trigger the hold (accepted v1 decision; STAGE_SPEC advises never to

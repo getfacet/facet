@@ -708,27 +708,15 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     }
   };
 
-  // Appear prescan (Decision 4): ONE flat, NON-recursive pass over the
-  // `tree.nodes` record VALUES decides whether this stage needs the appear
-  // stylesheet at all. It never follows `children` — so a cyclic or over-deep
-  // RAW tree cannot hang it, by construction — and it null-guards every value
-  // (`n != null && typeof n === "object"`) before touching `.style`, mirroring
-  // renderNode's `node == null` guard: the raw live path can hold null/scalar
-  // node values (isTreeShaped only checks that `nodes` is an object, never its
-  // values). Only BOX styles count — appear is BoxStyle-only (Decision 2) and
-  // validateTree strips it from non-box styles, so the raw unvalidated path
-  // must not diverge from the validated one. Reachability is deliberately
-  // ignored: an appear token on an unreachable node costs one harmless
-  // idempotent <style>, while a reachability walk would be a new unguarded
-  // traversal.
-  const nodeValues: readonly unknown[] = Object.values(tree.nodes);
-  const usesAppear = nodeValues.some(
-    (n) =>
-      n != null &&
-      typeof n === "object" &&
-      (n as { readonly type?: unknown }).type === "box" &&
-      appearClass(styleOf((n as { readonly style?: object }).style)) !== undefined,
-  );
+  // Appear detection (Decision 4, folded into the render walk in review r7):
+  // `renderNode` flips `appearSeen.used` when a REACHABLE box renders with an
+  // appear class, so the one-per-stage <style> is gated on the SAME
+  // budget-bounded traversal that renders the tree — never a separate O(N) scan
+  // of the whole `tree.nodes` map, which the raw live path can grow to
+  // arbitrary size with unreachable/dangling entries (a per-render soft-DoS the
+  // budget exists to prevent). Reachable-only is also strictly more correct:
+  // an appear token on an unrendered node no longer forces a useless stylesheet.
+  const appearSeen = { used: false };
 
   // One mutable budget per render pass, LOCAL to this StageRenderer render and
   // threaded down the plain `renderNode` recursion. `renderNode` is a plain
@@ -744,6 +732,7 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     visibilityOverrides,
     theme,
     budget,
+    appearSeen,
     depth: 0,
   });
   // The appear stylesheet rides ONCE per stage, and only when the tree uses
@@ -762,7 +751,7 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
   // deliberately replays its animation.
   const staged = (
     <Fragment>
-      {usesAppear ? <style>{APPEAR_CSS}</style> : null}
+      {appearSeen.used ? <style>{APPEAR_CSS}</style> : null}
       {stage}
     </Fragment>
   );
@@ -795,6 +784,15 @@ interface RenderArgs {
    * latches the one-time console.warn when the budget first trips.
    */
   readonly budget: { left: number; warned?: boolean };
+  /**
+   * Set to `true` the moment a REACHABLE box renders with an appear class, so
+   * the caller can gate the one-per-stage `<style>` on the same budget-bounded
+   * walk that renders the tree — never a separate unbounded scan of the whole
+   * `tree.nodes` map (which the raw live path can grow to arbitrary size with
+   * unreachable/dangling entries). Reachable-only is also MORE correct: an
+   * appear token on an unrendered node no longer forces a useless stylesheet.
+   */
+  readonly appearSeen: { used: boolean };
   readonly depth: number;
 }
 
@@ -814,6 +812,7 @@ function renderNode({
   theme,
   ancestors,
   budget,
+  appearSeen,
   depth,
 }: RenderArgs): ReactNode {
   const node = tree.nodes[id];
@@ -875,6 +874,7 @@ function renderNode({
             theme,
             ancestors: childAncestors,
             budget,
+            appearSeen,
             depth: depth + 1,
           })}
         </Fragment>
@@ -892,6 +892,12 @@ function renderNode({
       // class; undefined adds no attribute, keeping token-free output
       // byte-identical.
       const appear = appearClass(styleOf(node.style));
+      // Record appear use during the budget-bounded walk (review r7): the
+      // one-per-stage <style> is gated on this flag, never a separate O(N) scan
+      // of the whole node map.
+      if (appear !== undefined) {
+        appearSeen.used = true;
+      }
       // ONE element type for every box (review r6): a live patch that adds or
       // removes onPress/onHold changes only BoxElement's props, never the
       // element type at this position — so React updates in place instead of
