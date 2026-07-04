@@ -1,0 +1,439 @@
+# Execution Manifest: Unified Asset Pipeline (themes + stamps, default as base layer)
+#
+# Keep synchronized with specs/dev-specs/unified-asset-pipeline.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "unified-asset-pipeline"
+spec_path: "specs/dev-specs/unified-asset-pipeline.md"
+context_evidence_path: "specs/context/unified-asset-pipeline.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands (branch feat/kits-themes-as-data is currently clean)"
+  - concern: "runtime"
+    requirement: "pnpm install done; playground + quickstart buildable; no live server needed (checks are vitest + build + grep)"
+    owner: "main-agent"
+    verification: "pnpm build"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+
+work_units:
+  - id: "WU-1"
+    title: "Migrate apps/playground off @facet/kit + workspace wiring"
+    owner_role: "subagent"
+    packages: ["apps/playground"]
+    objective: "Replace playground's @facet/kit page/text use with a local brick helper — proven byte-identical by a snapshot test — and own the single tsconfig.base.json alias churn (add the @facet/assets alias, remove the @facet/kit alias). The @facet/kit workspace dependency removal moves to WU-2 (alongside the package deletion + pnpm install relink), keeping this WU disjoint from packages/assets and within the file budget."
+    files:
+      - path: "apps/playground/src/bricks.ts"
+        change_type: "add"
+        purpose: "tiny local page/text brick helper (node-free, no kit dependency) producing byte-identical trees"
+      - path: "apps/playground/src/bricks.test.ts"
+        change_type: "add"
+        purpose: "RED check: imports the page/text helper from ./bricks.js (that import's absence errors the file pre-impl → guaranteed RED, not a false-green off the still-present kit), rebuilds the two faces through it, and asserts they deepEqual frozen literal fixtures capturing the pre-migration kit output of welcome (ui.ts) and OFFLINE_FACE (server.ts). Fixtures inlined (not imported from kit) so the test survives kit's WU-2 deletion."
+      - path: "apps/playground/src/ui.ts"
+        change_type: "update"
+        purpose: "import page/text from ./bricks.js instead of @facet/kit"
+      - path: "apps/playground/src/server.ts"
+        change_type: "update"
+        purpose: "same import swap for OFFLINE_FACE"
+      - path: "tsconfig.base.json"
+        change_type: "update"
+        purpose: "add @facet/assets alias, remove the @facet/kit alias"
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run apps/playground/src/bricks.test.ts"
+      target: "apps/playground/src/bricks.test.ts"
+      justification: "FAILS pre-impl (./bricks.js absent -> import error), PASSES post-impl (the local helper emits welcome/OFFLINE_FACE trees byte-identical to the frozen kit-captured fixtures). This is the byte-identical guarantee the migration hinges on — tsc --noEmit alone would not catch a wrong token value or node shape. Adding the @facet/assets alias before the package exists is inert (tsc resolves it only once an importer appears in WU-5/WU-6); removing the @facet/kit alias is safe with kit still present — kit's own tests import via relative ./kit.js/./stamps.js, not the alias."
+    quick_checks:
+      - "git grep -nE 'from \"@facet/kit\"' apps/playground/src | wc -l   # expect 0 (import-scoped; gallery.tsx prose comments and the yet-unremoved package.json dep are out of scope here)"
+      - "pnpm -C apps/playground exec tsc --noEmit"
+    no_regression_checks:
+      - "pnpm typecheck"
+      - "pnpm test"
+    test_plan:
+      - type: "unit"
+        target: "apps/playground/src/bricks.test.ts"
+        covers_dc: ["DC-005"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported (fixture snapshot FAILs pre-impl, PASSes post-impl)"
+      - "Playground src/ imports no @facet/kit; two faces render byte-identical trees (proven by bricks.test.ts)"
+      - "tsconfig.base.json has the @facet/assets alias and no @facet/kit alias"
+      - "No regression: pnpm typecheck && pnpm test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Delete the @facet/kit package"
+    owner_role: "subagent"
+    packages: ["@facet/kit"]
+    objective: "Remove the orphaned code-factory package entirely (DC-005) now that its only consumer is migrated, and drop playground's now-unused @facet/kit workspace dependency so the workspace relinks cleanly."
+    files:
+      - path: "packages/kit/"
+        change_type: "delete"
+        purpose: "orphan removal (src/kit.ts, src/stamps.ts, src/index.ts, src/kit.test.ts, src/stamps.test.ts, README.md, package.json, tsconfig.json); pure deletion, no review surface. Deleting the dir also removes the from \"@facet/kit\" import example inside packages/kit/README.md."
+      - path: "apps/playground/package.json"
+        change_type: "update"
+        purpose: "remove the now-unused @facet/kit workspace dependency (WU-1 already swapped the imports); pnpm install then regenerates pnpm-lock.yaml without the entry"
+    depends_on: ["WU-1"]
+    parallel_group: "par-kit"
+    red_check:
+      command: "N/A"
+      target: "git grep -nE 'from \"@facet/kit\"' == 0 (code import scope) + test ! -d packages/kit + pnpm build"
+      justification: "deletion: removing an orphan package with zero import consumers (KIT_STAMPS/fragment used only by kit's own tests; playground migrated + proven byte-identical in WU-1). Verified by the code-scope import grep == 0 + package dir gone + pnpm build."
+    quick_checks:
+      - "git grep -nE 'from \"@facet/kit\"' | wc -l   # expect 0 (import scope across the tree; kit/README.md example gone with the dir, ui.ts/server.ts swapped in WU-1; leftover prose mentions in docs/changesets/.claude are handled by WU-8 or intentionally retained)"
+      - "test ! -d packages/kit   # package directory gone"
+      - "pnpm install   # relink workspace + regenerate lockfile after removal"
+    no_regression_checks:
+      - "pnpm build"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "integration"
+        target: "git grep -nE 'from \"@facet/kit\"' == 0 + test ! -d packages/kit + pnpm build"
+        covers_dc: ["DC-005"]
+        action: "new"
+    done_conditions:
+      - "N/A red_check justification acknowledged (deletion)"
+      - "packages/kit/ gone; playground package.json no longer declares @facet/kit; code-scope git grep -nE 'from \"@facet/kit\"' == 0"
+      - "No regression: pnpm build && pnpm typecheck"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "Create @facet/assets + default theme data"
+    owner_role: "subagent"
+    packages: ["@facet/assets"]
+    objective: "Stand up the node-free @facet/assets package (deps = @facet/core only) owning the default value maps + assembled DEFAULT_THEME (moved verbatim from react, no value drift)."
+    files:
+      - path: "packages/assets/package.json"
+        change_type: "add"
+        purpose: "name @facet/assets, dependencies {@facet/core: workspace:*}, barrel main/types = ./src/index.ts, publishConfig mirroring peers"
+      - path: "packages/assets/tsconfig.json"
+        change_type: "add"
+        purpose: "extends base config (mirror packages/react/tsconfig.json)"
+      - path: "packages/assets/src/theme.ts"
+        change_type: "add"
+        purpose: "five null-proto value maps + COLOR (from core DEFAULT_COLORS) + assembled DEFAULT_THEME, moved verbatim from packages/react/src/theme.ts:38-143"
+      - path: "packages/assets/src/theme.test.ts"
+        change_type: "add"
+        purpose: "port react's DEFAULT_THEME/COLOR assertions (validateTheme zero issues; pinned 16px/#ffffff/700/etc.; six-group shape; null-proto)"
+    depends_on: ["WU-1"]
+    parallel_group: "par-assets"
+    red_check:
+      command: "pnpm exec vitest run packages/assets/src/theme.test.ts"
+      target: "packages/assets/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/assets/src/theme.test.ts"
+      - "grep -rE 'node:' packages/assets/src | wc -l   # expect 0"
+      - "node -e \"const p=require('./packages/assets/package.json'); if(Object.keys(p.dependencies||{}).join()!=='@facet/core')process.exit(1)\"   # deps = core only"
+    no_regression_checks:
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/assets/src/theme.test.ts"
+        covers_dc: ["DC-006"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "@facet/assets deps = @facet/core only; zero node: imports; no renderer import"
+      - "DEFAULT_THEME values byte-identical to today's react values"
+      - "No regression: pnpm typecheck"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "@facet/assets default stamps + barrel"
+    owner_role: "subagent"
+    packages: ["@facet/assets"]
+    objective: "Add DEFAULT_STAMPS as literal validated FacetStamp trees (replacing kit-factory KIT_STAMPS) and the package barrel."
+    files:
+      - path: "packages/assets/src/stamps.ts"
+        change_type: "add"
+        purpose: "DEFAULT_STAMPS as three literal {name,description,root,nodes} trees (hero, card, cta-button), name-prefixed, no fragment()/builder dependency; shapes equivalent to retired KIT_STAMPS"
+      - path: "packages/assets/src/stamps.test.ts"
+        change_type: "add"
+        purpose: "port kit's stamps.test.ts: validateStamp zero error issues; ids under the stamp's name prefix, none 'root'; unique names"
+      - path: "packages/assets/src/index.ts"
+        change_type: "add"
+        purpose: "barrel: export * from ./theme.js; export * from ./stamps.js"
+    depends_on: ["WU-3"]
+    parallel_group: "par-assets"
+    red_check:
+      command: "pnpm exec vitest run packages/assets/src/stamps.test.ts"
+      target: "packages/assets/src/stamps.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/assets/src/stamps.test.ts"
+      - "grep -rE 'node:' packages/assets/src | wc -l   # expect 0"
+      - "grep -rn 'fragment\\|@facet/react\\|@facet/kit' packages/assets/src | wc -l   # expect 0"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/assets/src/theme.test.ts packages/assets/src/stamps.test.ts"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/assets/src/stamps.test.ts"
+        covers_dc: ["DC-006"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "DEFAULT_STAMPS pass validateStamp with zero error issues; unique name-prefixed ids"
+      - "Barrel exports theme + stamps; assets still node-free, no renderer/kit import"
+      - "No regression: pnpm typecheck"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "@facet/react consumes @facet/assets (react no longer owns the data)"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Point react's default-theme floor at @facet/assets (single source, no drift) and re-export DEFAULT_THEME/COLOR for back-compat, keeping zero-arg style output byte-identical."
+    files:
+      - path: "packages/react/src/theme.ts"
+        change_type: "update"
+        purpose: "import value maps + COLOR + DEFAULT_THEME from @facet/assets; build DEFAULT_RESOLVED and resolveTheme's overlayGroup floor from them; re-export DEFAULT_THEME + COLOR; remove react-local literal map + DEFAULT_THEME definitions"
+      - path: "packages/react/src/theme.test.ts"
+        change_type: "update"
+        purpose: "keep byte-identical value + resolveTheme overlay (DC-002) assertions; replace DEFAULT_THEME describe with a single-source identity (.toBe) test vs @facet/assets (DC-006)"
+      - path: "packages/react/package.json"
+        change_type: "update"
+        purpose: "add @facet/assets: workspace:* to dependencies"
+    depends_on: ["WU-4"]
+    parallel_group: "par-consume"
+    red_check:
+      command: "pnpm exec vitest run packages/react/src/theme.test.ts -t 'DEFAULT_THEME is re-exported from @facet/assets'"
+      target: "packages/react/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/react/src/theme.test.ts"
+      - "grep -n '@facet/assets' packages/react/package.json   # dep present"
+    no_regression_checks:
+      - "pnpm -C packages/react exec vitest run"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/react/src/theme.test.ts"
+        covers_dc: ["DC-002", "DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Zero-arg boxStyle/textStyle/... output byte-identical (existing value assertions pass)"
+      - "DEFAULT_THEME/COLOR re-exported (barrel intact, no dangling export); react derives its floor from assets, no duplicated values"
+      - "No regression: pnpm -C packages/react test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-6"
+    title: "@facet/runtime loadAssets seeds the default base layer"
+    owner_role: "subagent"
+    packages: ["@facet/runtime"]
+    objective: "Make loadAssets seed @facet/assets defaults (validated through the same gate), layer custom on top with SYMMETRIC collision rules (both loops: defaults-first, a custom colliding with a seeded-default name shadows it, custom-vs-custom first-wins), and return defaults even for an empty/absent store — never throwing."
+    files:
+      - path: "packages/runtime/src/assets.ts"
+        change_type: "update"
+        purpose: "import DEFAULT_THEME + DEFAULT_STAMPS from @facet/assets; seed at the head of the theme/stamp validation loops (run seeded defaults through validateTheme/validateStamp too), tracking which names are seeded defaults; change BOTH loops from first-wins to custom-shadows-on-a-seeded-default-name — a custom doc whose name equals a seeded default REPLACES the seeded entry in the list (drop seeded, append custom, recorded issue) so the list holds exactly one entry for that name (the custom). For stamps this is the DC-003 shadow; for themes resolveTheme('default').find then returns the shadowing custom doc and overlays it onto the imported default floor (DC-007) — a load-time list swap, NOT a merge, so render stays the single merge site. Custom-vs-custom (neither a seeded default) stays first-wins in both loops; keep the try/catch never-throws contract"
+      - path: "packages/runtime/src/assets.test.ts"
+        change_type: "update"
+        purpose: "add DC-001 (empty MemoryAssets → themes include default, stamps include default library), DC-003 (custom stamp named hero shadows the default hero; defaults + valid customs coexist), DC-004 (malformed doc among good ones dropped with issue; defaults survive; never throws), DC-007 (custom theme named 'default' naming only e.g. color.bg shadows the seeded default: themes list has exactly one 'default' entry = the custom, resolveTheme('default', themes) reflects custom bg with default values elsewhere, a shadow issue is recorded); update first-wins theme+stamp expectations to custom-shadows-on-default text"
+      - path: "packages/runtime/package.json"
+        change_type: "update"
+        purpose: "add @facet/assets: workspace:* to dependencies"
+    depends_on: ["WU-4"]
+    parallel_group: "par-consume"
+    red_check:
+      command: "pnpm exec vitest run packages/runtime/src/assets.test.ts -t 'seeds the default base layer'"
+      target: "packages/runtime/src/assets.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/runtime/src/assets.test.ts"
+      - "grep -n '@facet/assets' packages/runtime/package.json   # dep present"
+      - "grep -rn '@facet/react' packages/runtime/src | wc -l   # expect 0 (no react edge)"
+    no_regression_checks:
+      - "pnpm -C packages/runtime exec vitest run"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/runtime/src/assets.test.ts"
+        covers_dc: ["DC-001", "DC-003", "DC-004", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Empty/absent store → default theme + full default stamp library resolve (DC-001)"
+      - "Custom stamp shadows a same-named default; bad-among-good survives; never throws (DC-003/DC-004)"
+      - "Custom theme named 'default' shadows the seeded default — themes list holds one 'default' (the custom) and resolveTheme('default') reflects custom fields, defaults fill the rest (DC-007); themes and stamps are symmetric"
+      - "runtime→assets→core DAG only (no react/back-edge); no double theme-merge (render stays the single merge site)"
+      - "No regression: pnpm -C packages/runtime test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-7"
+    title: "@facet/quickstart calls loadAssets on every boot"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Ensure the default stamp/theme library reaches the agent + shell even with no --assets, by always resolving through loadAssets."
+    files:
+      - path: "packages/quickstart/src/cli.ts"
+        change_type: "update"
+        purpose: "call loadAssets unconditionally: keep the --assets FileAssets path, and when absent use new MemoryAssets({themes:[],stamps:[]}) so defaults still seed; feed themes/stamps to createQuickstartAgent + the shell on every boot"
+      - path: "packages/quickstart/src/cli.test.ts"
+        change_type: "update"
+        purpose: "add a no---assets stub-boot test asserting resolved stamps/themes are non-empty (default library reaches the agent); keep the --assets contract tests green"
+    depends_on: ["WU-6"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "pnpm exec vitest run packages/quickstart/src/cli.test.ts -t 'default asset library reaches the agent with no --assets'"
+      target: "packages/quickstart/src/cli.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/quickstart/src/cli.test.ts"
+    no_regression_checks:
+      - "pnpm -C packages/quickstart exec vitest run"
+      - "pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts   # Tier-1a stub E2E — shell now inlines the default theme; assert still boots/renders"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "integration"
+        target: "packages/quickstart/src/cli.test.ts"
+        covers_dc: ["DC-001"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "No---assets boot resolves non-empty default stamps/themes into agent + shell"
+      - "--assets contract tests + stub E2E still green"
+      - "No regression: pnpm -C packages/quickstart test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-8"
+    title: "De-reference the removed @facet/kit in docs + package map"
+    owner_role: "subagent"
+    packages: ["docs"]
+    objective: "Complete DC-005 by removing/rewriting every non-historical @facet/kit reference now that the package is gone: the authoritative package maps gain @facet/assets and drop @facet/kit, and the stale playground prose comment is corrected. Changesets (.changeset/*.md) are release history and intentionally retain the name; the code-import invariant is owned by WU-2's grep."
+    files:
+      - path: "AGENTS.md"
+        change_type: "update"
+        purpose: "package-map table (~line 45): drop the @facet/kit row, add an @facet/assets row (node-free default theme/stamp data package, deps = core only)"
+      - path: "README.md"
+        change_type: "update"
+        purpose: "package table (~line 209) and roadmap checklist (~line 258): replace the @facet/kit preset entries with the @facet/assets reality (kit removed, defaults now data)"
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "presets/package mention (~line 306): retitle from the @facet/kit preset package to @facet/assets default-asset data"
+      - path: "apps/playground/src/gallery.tsx"
+        change_type: "update"
+        purpose: "the two prose comments (~lines 17,19) describing @facet/kit presets as a future thing; reword to reference the local bricks.ts helper / @facet/assets so no stale forward-reference to a deleted package remains"
+      - path: "docs/comparisons/a2ui.md"
+        change_type: "update"
+        purpose: "item referencing a 'Versioned preset registry for @facet/kit' (~line 145): rephrase against @facet/assets (or drop the kit-specific framing)"
+    depends_on: ["WU-2"]
+    parallel_group: "par-docs"
+    red_check:
+      command: "N/A"
+      target: "git grep -nE '@facet/kit' -- AGENTS.md README.md docs/ARCHITECTURE.md apps/playground/src/gallery.tsx docs/comparisons/a2ui.md == 0"
+      justification: "docs: prose/package-map edits with no shipped code and no test obligation; the only executable check is a grep of the assigned files (quick_checks). Secondary prose mentions (docs/HARDENING-BACKLOG.md, docs/REVIEW-RULES.md, .claude/* tooling examples) are swept by the /update-docs final-gate backstop and are non-load-bearing / out of feature DoD scope."
+    quick_checks:
+      - "git grep -nE '@facet/kit' -- AGENTS.md README.md docs/ARCHITECTURE.md apps/playground/src/gallery.tsx docs/comparisons/a2ui.md | wc -l   # expect 0"
+      - "git grep -n '@facet/assets' AGENTS.md README.md   # expect >=1 (package maps now name the new package)"
+    no_regression_checks:
+      - "pnpm typecheck"
+    test_plan:
+      - type: "docs"
+        target: "AGENTS.md + README.md + docs/ARCHITECTURE.md package maps"
+        covers_dc: ["DC-005"]
+        action: "new"
+    done_conditions:
+      - "N/A red_check justification acknowledged (docs)"
+      - "Assigned files carry zero @facet/kit; AGENTS.md/README.md/docs/ARCHITECTURE.md package maps name @facet/assets"
+      - "No regression: pnpm typecheck"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+execution_order: "WU-1 → (WU-2 ∥ WU-3); WU-3 → WU-4 → (WU-5 ∥ WU-6) → WU-7; WU-2 → WU-8 (docs; disjoint from all code WUs, may run in parallel with the WU-3→WU-7 chain)"
+
+final_gate_chain:
+  - "/verify (typecheck, test, lint, format:check, build)"
+  - "/code-review (PASS = P0-P2 = 0; P3 nits non-blocking)"
+  - "/live-test (3-tier; Tier 2 blocks — packages/quickstart changed in WU-7, missing key = FAIL)"
+  - "/update-docs (backstop sweep for remaining kit-removal doc drift: docs/HARDENING-BACKLOG.md, docs/REVIEW-RULES.md, .claude/* tooling examples not enumerated in WU-8)"
+  - "/refactor-audit (periodic; owner-run)"
+  - "squash → one feature commit; commit/PR on the user's explicit go"
