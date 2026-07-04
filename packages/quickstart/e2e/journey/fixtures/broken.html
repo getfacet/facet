@@ -1,0 +1,58 @@
+<!--
+  DC-002 negative fixture — a DELIBERATELY broken "render" for the safety judge.
+  Not tree content and never served by the runtime: a static page the journey's
+  `--fixture broken` mode loads so the safety/vision judge has a deterministic
+  known-bad screenshot to catch (a break the harness guarantees, instead of
+  hoping a real LLM produces one). Three broken-render tells:
+    1. a near-blank canvas (nothing a visitor could use),
+    2. raw JSON dumped as visible text (a spec that leaked instead of rendering),
+    3. an off-screen / overlapping block (flow-only + overlap discipline broken).
+-->
+<style>
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background: #ffffff;
+    font-family: monospace;
+  }
+  /* (3) Off-screen + overlapping: absolutely positioned, half off the viewport
+     and stacked over the page — exactly the flow/overlap break a safety judge
+     should flag. */
+  .runaway {
+    position: absolute;
+    top: -120px;
+    left: -240px;
+    width: 640px;
+    height: 640px;
+    background: rgba(255, 0, 0, 0.35);
+    z-index: 9999;
+  }
+  .also-overlap {
+    position: absolute;
+    top: 40px;
+    left: 40px;
+    right: 40px;
+    height: 200px;
+    background: rgba(0, 0, 255, 0.35);
+    z-index: 9998;
+  }
+  /* (2) Raw payload leaked as text instead of being rendered. */
+  .leaked-json {
+    position: absolute;
+    top: 260px;
+    left: 12px;
+    color: #111;
+    white-space: pre-wrap;
+    font-size: 11px;
+  }
+</style>
+<div class="runaway"></div>
+<div class="also-overlap"></div>
+<pre class="leaked-json">
+{"root":"page","nodes":{"page":{"id":"page","type":"box","children":["h","x"]},
+"h":{"id":"h","type":"text","value":"Pricing"},"x":{"id":"x","type":"box",
+"onPress":{"kind":"agent","name":"buy"},"style":{"pad":"lg","bg":"accent"}}},
+"screens":{"home":"page"},"entry":"home"}
+</pre>
+<!-- (1) …and otherwise a blank canvas: no usable UI at all. -->
