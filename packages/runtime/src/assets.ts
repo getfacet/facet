@@ -8,6 +8,7 @@ import {
   type FacetTheme,
   type FacetTree,
 } from "@facet/core";
+import { DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
 import { sessionKey, type StageStore } from "./stage-store.js";
 
 /** Hygiene cap on `withInitialStage`'s armed-but-unconsumed seed keys — mirrors
@@ -59,23 +60,64 @@ export interface LoadedAssets {
 }
 
 /**
- * Runs the core validators once, at boot (Decision Lock: no hot reload). Each
- * theme passes `validateTheme` (error ⇒ skipped + issue; warnings ⇒ kept + issue;
- * duplicate names ⇒ first wins + issue), each stamp `validateStamp` (same
- * first-wins posture on duplicate names), and the
- * initial tree `validateTree` PLUS `isSeedableTree` — the EMPTY_TREE trap: a tree
- * `validateTree` reduced to empty is refused so it can't silently seed an empty
- * stage and flip the server's offline face. Invalid documents are skipped with a
- * logged issue and boot proceeds — the `FileStageStore` skip-and-log posture.
- * Never throws.
+ * Runs the core validators once, at boot (Decision Lock: no hot reload).
+ *
+ * The `@facet/assets` defaults are seeded as the BASE LAYER at the head of both
+ * the theme and the stamp loop and run through the SAME `validateTheme` /
+ * `validateStamp` gate as custom docs (never trusted-in): a bad default is dropped
+ * with a recorded issue while the remaining defaults + customs survive. With an
+ * empty/absent store the default base layer still resolves (DC-001).
+ *
+ * Collision rules are SYMMETRIC across both kinds:
+ *  - defaults-first, then custom docs;
+ *  - a custom doc whose name equals a SEEDED DEFAULT shadows it — the seeded entry
+ *    is dropped and the custom appended (defaults-first, custom-last), with a
+ *    recorded issue, so the list holds exactly one entry for that name (the
+ *    custom). This is a load-time LIST swap, NOT a merge: for themes, render's
+ *    `resolveTheme` stays the single merge site that overlays the shadowing custom
+ *    onto the imported default value-map floor (DC-007); for stamps the custom
+ *    simply replaces the default (DC-003);
+ *  - custom-vs-custom (neither a seeded default) stays first-wins + issue.
+ *
+ * The initial tree passes `validateTree` PLUS `isSeedableTree` — the EMPTY_TREE
+ * trap: a tree `validateTree` reduced to empty is refused so it can't silently
+ * seed an empty stage and flip the server's offline face. Invalid documents are
+ * skipped with a logged issue and boot proceeds — the `FileStageStore`
+ * skip-and-log posture. Never throws.
  */
 export async function loadAssets(store: AssetsStore, agentId: string): Promise<LoadedAssets> {
-  const docs = await store.load(agentId);
+  // The primary I/O fetch is guarded too: a pluggable adapter (a DB/proxy store)
+  // can reject or return a malformed shape, and the "Never throws" contract must
+  // hold for it — not just for the per-document validators below.
+  let docs: AssetDocuments;
+  try {
+    docs = await store.load(agentId);
+  } catch (err) {
+    docs = {
+      themes: [],
+      stamps: [],
+      issues: [`assets load failed: ${err instanceof Error ? err.message : String(err)}`],
+    };
+  }
   const issues: string[] = [...(docs.issues ?? [])];
+  // Coerce the trusted array fields so a malformed `{ themes: null }` from a
+  // custom adapter can't throw at the spread sites below (skip-and-log, never
+  // crash boot). Defaults still seed, so an empty/bad store yields the defaults.
+  const themeDocs = Array.isArray(docs.themes) ? docs.themes : [];
+  if (!Array.isArray(docs.themes)) issues.push("assets `themes` was not an array — ignored");
+  const stampDocs = Array.isArray(docs.stamps) ? docs.stamps : [];
+  if (!Array.isArray(docs.stamps)) issues.push("assets `stamps` was not an array — ignored");
 
   const themes: FacetTheme[] = [];
   const seenThemeNames = new Set<string>();
-  for (const raw of docs.themes) {
+  const seededThemeNames = new Set<string>();
+  // Defaults first (seeded), then custom docs. Both run the SAME validateTheme
+  // gate — a bad default is dropped with an issue, exactly like a bad custom.
+  const themeInputs: readonly { readonly raw: unknown; readonly seeded: boolean }[] = [
+    { raw: DEFAULT_THEME, seeded: true },
+    ...themeDocs.map((raw) => ({ raw, seeded: false })),
+  ];
+  for (const { raw, seeded } of themeInputs) {
     // Skip-and-log at the seam: a live in-process document (a DB adapter, a
     // proxy) can throw from a property accessor. `validateTheme` already guards
     // its own reads, but the try/catch keeps this loop's "Never throws" contract
@@ -84,7 +126,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
     try {
       result = validateTheme(raw);
     } catch {
-      issues.push("theme document skipped: validation threw");
+      issues.push(`${seeded ? "default " : ""}theme document skipped: validation threw`);
       continue;
     }
     const { theme, issues: themeIssues } = result;
@@ -93,14 +135,31 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
         .filter((i) => i.severity === "error")
         .map((i) => i.message)
         .join("; ");
-      issues.push(`theme document skipped: ${why || "invalid"}`);
+      issues.push(`${seeded ? "default " : ""}theme document skipped: ${why || "invalid"}`);
       continue;
     }
     if (seenThemeNames.has(theme.name)) {
+      if (!seeded && seededThemeNames.has(theme.name)) {
+        // Custom shadows a seeded default: drop the seeded entry and append the
+        // custom (defaults-first, custom-last) so the list holds exactly one entry
+        // for the name — the custom. A load-time LIST swap, never a merge: render's
+        // `resolveTheme` stays the single merge site (overlays custom onto floor).
+        const at = themes.findIndex((t) => t.name === theme.name);
+        if (at !== -1) themes.splice(at, 1);
+        seededThemeNames.delete(theme.name);
+        issues.push(`custom theme "${theme.name}" shadows the seeded default`);
+        for (const warning of themeIssues) {
+          issues.push(`theme "${theme.name}": ${warning.message}`);
+        }
+        themes.push(theme);
+        continue;
+      }
+      // Custom-vs-custom (or a duplicate default): first wins.
       issues.push(`duplicate theme name "${theme.name}" ignored (first wins)`);
       continue;
     }
     seenThemeNames.add(theme.name);
+    if (seeded) seededThemeNames.add(theme.name);
     for (const warning of themeIssues) {
       issues.push(`theme "${theme.name}": ${warning.message}`);
     }
@@ -109,27 +168,50 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
 
   const stamps: FacetStamp[] = [];
   const seenStampNames = new Set<string>();
-  for (const raw of docs.stamps) {
+  const seededStampNames = new Set<string>();
+  // Defaults first (seeded), then custom docs — the same symmetric layering the
+  // theme loop uses, through the same validateStamp gate.
+  const stampInputs: readonly { readonly raw: unknown; readonly seeded: boolean }[] = [
+    ...DEFAULT_STAMPS.map((raw) => ({ raw, seeded: true })),
+    ...stampDocs.map((raw) => ({ raw, seeded: false })),
+  ];
+  for (const { raw, seeded } of stampInputs) {
     let result: ReturnType<typeof validateStamp>;
     try {
       result = validateStamp(raw);
     } catch {
-      issues.push("stamp document skipped: validation threw");
+      issues.push(`${seeded ? "default " : ""}stamp document skipped: validation threw`);
       continue;
     }
     const { stamp, issues: stampIssues } = result;
     if (stamp === undefined) {
-      issues.push(`stamp document skipped: ${stampIssues.join("; ") || "invalid"}`);
+      issues.push(
+        `${seeded ? "default " : ""}stamp document skipped: ${stampIssues.join("; ") || "invalid"}`,
+      );
       continue;
     }
     if (seenStampNames.has(stamp.name)) {
-      // First wins, mirroring the theme loop: two same-named stamps would inject
-      // contradictory entries into the prompt's STAMPS section. The name already
-      // passed `validateStamp`'s isValidThemeName gate, so it's safe to echo.
+      if (!seeded && seededStampNames.has(stamp.name)) {
+        // Custom shadows a seeded default: drop the seeded entry, append the custom
+        // (symmetric with the theme loop). The name already passed validateStamp's
+        // isValidThemeName gate, so it's safe to echo.
+        const at = stamps.findIndex((s) => s.name === stamp.name);
+        if (at !== -1) stamps.splice(at, 1);
+        seededStampNames.delete(stamp.name);
+        issues.push(`custom stamp "${stamp.name}" shadows the seeded default`);
+        for (const note of stampIssues) {
+          issues.push(`stamp "${stamp.name}": ${note}`);
+        }
+        stamps.push(stamp);
+        continue;
+      }
+      // Custom-vs-custom (or a duplicate default): first wins. Two same-named
+      // stamps would inject contradictory entries into the prompt's STAMPS section.
       issues.push(`duplicate stamp name "${stamp.name}" ignored (first wins)`);
       continue;
     }
     seenStampNames.add(stamp.name);
+    if (seeded) seededStampNames.add(stamp.name);
     for (const note of stampIssues) {
       issues.push(`stamp "${stamp.name}": ${note}`);
     }

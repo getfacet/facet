@@ -1,13 +1,5 @@
 import type { CSSProperties } from "react";
-import {
-  COLORS,
-  DEFAULT_COLORS,
-  FONT_SIZES,
-  FONT_WEIGHTS,
-  RADII,
-  RATIOS,
-  SPACES,
-} from "@facet/core";
+import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADII, RATIOS, SPACES } from "@facet/core";
 import type {
   Align,
   BoxStyle,
@@ -23,79 +15,13 @@ import type {
   Space,
   TextStyle,
 } from "@facet/core";
+// The default token VALUES live in `@facet/assets` (node-free, deps = core) — the
+// SINGLE source of default-theme truth. react imports them as its render floor and
+// re-exports `DEFAULT_THEME` + `COLOR` for back-compat, but owns no second copy
+// that could drift (RISK-INV-1 / RISK-API-2).
+import { COLOR, DEFAULT_THEME, FONT_SIZE, FONT_WEIGHT, RADIUS, RATIO, SPACE } from "@facet/assets";
 
-/**
- * The default theme — where token NAMES become concrete CSS values. This is the
- * one place pixels and hex codes live; the agent never sees them. Swap this map
- * to reskin every Facet page without touching a single agent.
- */
-// Agents emit token NAMES that index straight into these maps, so the maps are
-// built on a null prototype: a hostile token like "constructor" or "__proto__"
-// then resolves to `undefined` instead of an inherited prototype value that
-// would land in the CSS. The `satisfies Record<...>` on each source literal
-// keeps the exhaustiveness check (a missing or typo'd key is a compile error);
-// the outer `Object.assign` return type would otherwise erase it.
-const SPACE: Record<Space, string> = Object.assign(Object.create(null) as Record<Space, string>, {
-  none: "0",
-  xs: "4px",
-  sm: "8px",
-  md: "16px",
-  lg: "24px",
-  xl: "40px",
-  "2xl": "64px",
-} satisfies Record<Space, string>);
-
-const FONT_SIZE: Record<FontSize, string> = Object.assign(
-  Object.create(null) as Record<FontSize, string>,
-  {
-    xs: "12px",
-    sm: "14px",
-    md: "16px",
-    lg: "20px",
-    xl: "28px",
-    "2xl": "36px",
-    "3xl": "48px",
-  } satisfies Record<FontSize, string>,
-);
-
-const FONT_WEIGHT: Record<FontWeight, number> = Object.assign(
-  Object.create(null) as Record<FontWeight, number>,
-  {
-    regular: 400,
-    medium: 500,
-    semibold: 600,
-    bold: 700,
-  } satisfies Record<FontWeight, number>,
-);
-
-const RADIUS: Record<Radius, string> = Object.assign(
-  Object.create(null) as Record<Radius, string>,
-  {
-    none: "0",
-    sm: "6px",
-    md: "10px",
-    lg: "16px",
-    full: "9999px",
-  } satisfies Record<Radius, string>,
-);
-
-/**
- * The palette — token NAMES → hex, on a null prototype (like the other groups).
- * The VALUES live in `@facet/core`'s `DEFAULT_COLORS` (the single source of truth,
- * shared with the core contrast check); this map re-homes them null-proto and is
- * itself re-exported so app chrome (e.g. `ChatDock`) reuses them instead of
- * re-hardcoding hex.
- */
-export const COLOR: Record<Color, string> = Object.assign(
-  Object.create(null) as Record<Color, string>,
-  DEFAULT_COLORS,
-);
-
-const RATIO: Record<Ratio, string> = Object.assign(Object.create(null) as Record<Ratio, string>, {
-  square: "1 / 1",
-  wide: "16 / 9",
-  tall: "3 / 4",
-} satisfies Record<Ratio, string>);
+export { COLOR, DEFAULT_THEME };
 
 /**
  * A fully-resolved theme: every token group is a complete null-proto map, so a
@@ -123,22 +49,6 @@ const DEFAULT_RESOLVED: ResolvedTheme = {
   fontWeight: FONT_WEIGHT,
   radius: RADIUS,
   color: COLOR,
-  ratio: RATIO,
-};
-
-/**
- * The default theme expressed as an operator DOCUMENT (the `@facet/core`
- * `FacetTheme` shape): token NAMES → today's concrete values, across all six
- * groups. It passes `validateTheme` cleanly, so operators can copy it as the
- * starting point for a reskin, and hosts can register it by name.
- */
-export const DEFAULT_THEME: FacetTheme = {
-  name: "default",
-  color: COLOR,
-  space: SPACE,
-  fontSize: FONT_SIZE,
-  fontWeight: FONT_WEIGHT,
-  radius: RADIUS,
   ratio: RATIO,
 };
 

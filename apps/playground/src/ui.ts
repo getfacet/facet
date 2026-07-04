@@ -1,5 +1,5 @@
 import type { FacetTree } from "@facet/core";
-import { page, text } from "@facet/kit";
+import { page, text } from "./bricks.js";
 
 /** The "blank page" face every live entry point opens with — one source. */
 export function welcome(subtitle: string): FacetTree {

@@ -1,2 +1,2 @@
-export * from "./kit.js";
+export * from "./theme.js";
 export * from "./stamps.js";

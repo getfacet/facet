@@ -1,5 +1,5 @@
 import type { BoxStyle, Color, FacetTheme, Space, TextStyle } from "@facet/core";
-import { validateTheme } from "@facet/core";
+import { DEFAULT_THEME as ASSETS_DEFAULT_THEME } from "@facet/assets";
 import { describe, expect, it } from "vitest";
 import {
   COLOR,
@@ -156,32 +156,13 @@ describe("COLOR", () => {
   });
 });
 
-// DEFAULT_THEME is today's values expressed as an operator FacetTheme document.
-// It must round-trip through core's validator with no errors so operators can
-// copy it as a starting point and hosts can register it by name.
-describe("DEFAULT_THEME", () => {
-  it("passes validateTheme with zero issues", () => {
-    const result = validateTheme(DEFAULT_THEME);
-    expect(result.theme).toBeDefined();
-    expect(result.issues).toEqual([]);
-  });
-
-  // Pinned shape (RISK-API-5): the scroll/appear feature adds NO theme surface —
-  // exactly the name + the six token groups, nothing animation- or scroll-shaped.
-  it("keeps exactly the name + six token groups (no new theme surface)", () => {
-    expect(Object.keys(DEFAULT_THEME).sort()).toEqual(
-      ["color", "fontSize", "fontWeight", "name", "radius", "ratio", "space"].sort(),
-    );
-  });
-
-  it('is named "default" and covers every token group', () => {
-    expect(DEFAULT_THEME.name).toBe("default");
-    expect(DEFAULT_THEME.color?.bg).toBe("#ffffff");
-    expect(DEFAULT_THEME.space?.md).toBe("16px");
-    expect(DEFAULT_THEME.fontSize?.md).toBe("16px");
-    expect(DEFAULT_THEME.fontWeight?.bold).toBe(700);
-    expect(DEFAULT_THEME.radius?.md).toBe("10px");
-    expect(DEFAULT_THEME.ratio?.wide).toBe("16 / 9");
+// DEFAULT_THEME is no longer owned by react: it re-exports the SINGLE source of
+// default-theme truth from @facet/assets (RISK-INV-1 — no second copy to drift).
+// The re-export keeps it on the react barrel for back-compat (RISK-API-2); the
+// document's shape/validity is pinned by @facet/assets' own tests.
+describe("DEFAULT_THEME is re-exported from @facet/assets", () => {
+  it("is the very same object as the @facet/assets DEFAULT_THEME", () => {
+    expect(DEFAULT_THEME).toBe(ASSETS_DEFAULT_THEME);
   });
 });
 

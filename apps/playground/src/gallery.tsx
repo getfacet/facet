@@ -13,10 +13,11 @@ import { StageRenderer } from "@facet/react";
 /**
  * A gallery of very different pages — all built from the SAME four bricks
  * (box/text/image/field) and token styles. No LLM: these are hand-authored to
- * show the *expressive range* of the low-level spec. A real agent (or the future
- * @facet/kit presets) would emit trees exactly like these.
+ * show the *expressive range* of the low-level spec. A real agent (composing via
+ * the local `bricks.ts` helper, or seeding from `@facet/assets` defaults) would
+ * emit trees exactly like these.
  *
- * `Sheet` is a tiny authoring helper (a preview of what @facet/kit will do): it
+ * `Sheet` is a tiny authoring helper (the same idea as `bricks.ts`): it
  * accumulates nodes into the flat map and returns their ids, so pages read like
  * nested composition instead of a hand-written adjacency list.
  */

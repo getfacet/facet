@@ -303,7 +303,8 @@ patches, sessions, the event loop, a React renderer, and an in-process demo.
 Deliberately deferred:
 
 - **Transport** — a WebSocket/SSE server and a browser playground.
-- **Presets** — the `@facet/kit` preset package.
+- **Default assets** — the `@facet/assets` package (node-free `DEFAULT_THEME` +
+  `DEFAULT_STAMPS` data).
 - **Cost & latency** — caching and a static skeleton so the first paint isn't
   gated on a model call.
 - **Durability & scale** — a database `StageStore`/`Sink` backend beyond the

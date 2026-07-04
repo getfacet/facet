@@ -1,12 +1,12 @@
 {
-  "name": "@facet/kit",
+  "name": "@facet/assets",
   "version": "0.0.0",
-  "description": "Optional presets — card/hero/row/… that compose the four low-level bricks. One call for a common shape, raw bricks when you need something custom.",
+  "description": "Facet default asset data — the node-free default theme + stamp value maps (deps = @facet/core only).",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/getfacet/facet.git",
-    "directory": "packages/kit"
+    "directory": "packages/assets"
   },
   "homepage": "https://github.com/getfacet/facet#readme",
   "bugs": "https://github.com/getfacet/facet/issues",

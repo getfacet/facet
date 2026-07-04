@@ -25,6 +25,7 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean"
   },
   "dependencies": {
+    "@facet/assets": "workspace:*",
     "@facet/core": "workspace:*"
   },
   "peerDependencies": {

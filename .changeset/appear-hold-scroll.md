@@ -3,7 +3,6 @@
 "@facet/agent": minor
 "@facet/react": minor
 "@facet/runtime": minor
-"@facet/kit": minor
 "@facet/quickstart": minor
 "@facet/server": minor
 "@facet/client": minor
@@ -40,7 +39,6 @@ unknown `appear`/`scroll` tokens and malformed `onHold` on both the stored
   (`fade`/`slide` keyframes + a `prefers-reduced-motion` gate) rides once per
   stage, gated on the budget-bounded render walk. Token-free trees stay
   byte-identical.
-- `@facet/kit`: `Builder.box` gains an optional final `onHold` parameter.
 
 Real-browser verified (DC-009): animate-in, bounded inner scroll, and the
 press-vs-hold split. One exotic multi-pointer edge (two simultaneous holds on two

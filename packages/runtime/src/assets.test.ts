@@ -12,6 +12,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
+import { DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
 import {
   isSeedableTree,
   loadAssets,
@@ -89,24 +90,31 @@ function fileMake(docs: AssetDocuments): AssetsStore {
 
 function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): void {
   describe(name, () => {
-    it("round-trips valid themes, stamps, and a seedable initial tree", async () => {
+    it("round-trips valid themes, stamps, and a seedable initial tree (atop the defaults)", async () => {
       const store = make({ themes: [validTheme], stamps: [validStamp], initialTree: seedTree });
       const loaded = await loadAssets(store, "agent");
-      expect(loaded.themes.map((t) => t.name)).toEqual(["midnight"]);
-      expect(loaded.stamps.map((s) => s.name)).toEqual(["cta"]);
+      // The custom docs coexist with the seeded default base layer.
+      expect(loaded.themes.map((t) => t.name)).toContain("midnight");
+      expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+      expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+      for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
       expect(loaded.initialTree).toBeDefined();
       expect(loaded.initialTree && isSeedableTree(loaded.initialTree)).toBe(true);
     });
 
-    it("skips invalid documents with issues and keeps valid ones", async () => {
+    it("skips invalid documents with issues and keeps valid ones (plus the defaults)", async () => {
       const store = make({
         themes: [validTheme, invalidTheme],
         stamps: [validStamp, invalidStamp],
         initialTree: seedTree,
       });
       const loaded = await loadAssets(store, "agent");
-      expect(loaded.themes.map((t) => t.name)).toEqual(["midnight"]);
-      expect(loaded.stamps.map((s) => s.name)).toEqual(["cta"]);
+      expect(loaded.themes.map((t) => t.name)).toContain("midnight");
+      expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+      expect(loaded.themes.map((t) => t.name)).not.toContain("hostile");
+      expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+      expect(loaded.stamps.map((s) => s.name)).not.toContain("broken");
+      for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
       expect(loaded.issues.length).toBeGreaterThan(0);
     });
 
@@ -125,19 +133,125 @@ contract("FileAssets", fileMake);
 // --- loadAssets specifics -----------------------------------------------------
 
 describe("loadAssets", () => {
-  it("keeps the first of duplicate theme names and logs an issue", async () => {
+  it("seeds the default base layer", async () => {
+    // DC-001: an empty/absent operator store still resolves the bundled defaults —
+    // the default theme document plus the whole default stamp library.
+    const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const stampNames = loaded.stamps.map((s) => s.name);
+    for (const s of DEFAULT_STAMPS) expect(stampNames).toContain(s.name);
+  });
+
+  it("never throws when the store's load() rejects — defaults still resolve (P3 hardening)", async () => {
+    // The "Never throws" contract covers the primary I/O too: a pluggable adapter
+    // (a DB/proxy store) that rejects must degrade to the defaults, not crash boot.
+    const throwingStore: AssetsStore = { load: () => Promise.reject(new Error("db down")) };
+    let loaded: Awaited<ReturnType<typeof loadAssets>> | undefined;
+    await expect(
+      (async () => {
+        loaded = await loadAssets(throwingStore, "a");
+      })(),
+    ).resolves.toBeUndefined();
+    expect(loaded?.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const okStamps = loaded?.stamps.map((s) => s.name) ?? [];
+    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    expect(loaded?.issues.some((i) => i.includes("assets load failed"))).toBe(true);
+  });
+
+  it("never throws on a malformed store shape (non-array fields) — defaults survive (P3 hardening)", async () => {
+    const malformedStore: AssetsStore = {
+      load: () => Promise.resolve({ themes: null, stamps: undefined } as unknown as AssetDocuments),
+    };
+    const loaded = await loadAssets(malformedStore, "a");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const stampNames = loaded.stamps.map((s) => s.name);
+    for (const s of DEFAULT_STAMPS) expect(stampNames).toContain(s.name);
+    expect(loaded.issues.some((i) => i.includes("was not an array"))).toBe(true);
+  });
+
+  it("a custom stamp shadows a same-named default while other defaults survive (DC-003)", async () => {
+    // A custom stamp named `hero` (a seeded default name) REPLACES the default in
+    // the list — exactly one `hero`, and it is the custom one; the remaining
+    // defaults and unrelated valid customs coexist.
+    const customHero = {
+      name: "hero",
+      root: "r",
+      nodes: {
+        r: { id: "r", type: "box", children: ["mine"] },
+        mine: { id: "mine", type: "text", value: "custom hero" },
+      },
+    };
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], stamps: [customHero, validStamp] }),
+      "a",
+    );
+    const heroes = loaded.stamps.filter((s) => s.name === "hero");
+    expect(heroes).toHaveLength(1);
+    expect(heroes[0]?.nodes["mine"]).toBeDefined(); // the custom
+    expect(heroes[0]?.nodes["hero.title"]).toBeUndefined(); // NOT the default
+    // Other defaults + the unrelated valid custom coexist.
+    expect(loaded.stamps.map((s) => s.name)).toContain("card");
+    expect(loaded.stamps.map((s) => s.name)).toContain("cta-button");
+    expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+    // A shadow issue is recorded.
+    expect(loaded.issues.some((i) => i.includes("hero") && i.includes("shadow"))).toBe(true);
+  });
+
+  it("a custom theme named 'default' shadows the seeded default (DC-007)", async () => {
+    // Symmetric with stamps: a custom theme named `default` naming only `color.bg`
+    // REPLACES the seeded default document in the themes list (a load-time LIST
+    // swap, NOT a field merge). The single `default` entry is the raw custom doc —
+    // custom `bg`, and no `space` map (proof loadAssets did not merge; render's
+    // `resolveTheme` stays the only merge site, overlaying it onto the floor).
+    const customDefault = { name: "default", color: { bg: "#abcdef" } };
+    const loaded = await loadAssets(new MemoryAssets({ themes: [customDefault], stamps: [] }), "a");
+    const defaults = loaded.themes.filter((t) => t.name === "default");
+    expect(defaults).toHaveLength(1);
+    expect(defaults[0]?.color?.bg).toBe("#abcdef"); // the custom field
+    expect(defaults[0]?.space).toBeUndefined(); // NOT merged with the default floor
+    expect(loaded.issues.some((i) => i.includes("default") && i.includes("shadow"))).toBe(true);
+  });
+
+  it("drops a malformed doc among good ones while defaults survive, never throwing (DC-004)", async () => {
+    let loaded: Awaited<ReturnType<typeof loadAssets>> | undefined;
+    await expect(
+      (async () => {
+        loaded = await loadAssets(
+          new MemoryAssets({
+            themes: [invalidTheme, validTheme],
+            stamps: [invalidStamp, validStamp],
+          }),
+          "a",
+        );
+      })(),
+    ).resolves.toBeUndefined();
+    // Defaults + the valid customs survive; the malformed docs are dropped.
+    expect(loaded!.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    expect(loaded!.themes.map((t) => t.name)).toContain("midnight");
+    expect(loaded!.themes.map((t) => t.name)).not.toContain("hostile");
+    for (const s of DEFAULT_STAMPS) expect(loaded!.stamps.map((x) => x.name)).toContain(s.name);
+    expect(loaded!.stamps.map((s) => s.name)).toContain("cta");
+    expect(loaded!.stamps.map((s) => s.name)).not.toContain("broken");
+    expect(loaded!.issues.length).toBeGreaterThan(0);
+  });
+
+  it("keeps the first of two same-named custom themes and logs an issue", async () => {
+    // Custom-vs-custom (neither name is a seeded default) stays first-wins.
     const first = { name: "dup", color: { bg: "#000000" } };
     const second = { name: "dup", color: { bg: "#ffffff" } };
     const loaded = await loadAssets(new MemoryAssets({ themes: [first, second], stamps: [] }), "a");
-    expect(loaded.themes).toHaveLength(1);
-    expect(loaded.themes[0]?.color?.bg).toBe("#000000");
-    expect(loaded.issues.some((i) => i.includes("dup"))).toBe(true);
+    const dups = loaded.themes.filter((t) => t.name === "dup");
+    expect(dups).toHaveLength(1);
+    expect(dups[0]?.color?.bg).toBe("#000000"); // the first survived
+    expect(loaded.issues.some((i) => i.includes("dup") && i.includes("first wins"))).toBe(true);
+    // The seeded default base layer coexists.
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
   });
 
-  it("keeps the first of duplicate stamp names and logs an issue", async () => {
+  it("keeps the first of two same-named custom stamps and logs an issue", async () => {
     // Two *.stamp.json can carry the same `name` (name is JSON content, not the
-    // filename), so mirror the theme first-wins guard — else the prompt's STAMPS
-    // section gets two contradictory entries for one name and no warning.
+    // filename). The name `hero` is a seeded default: the FIRST custom shadows the
+    // default, and the SECOND custom (now custom-vs-custom) is dropped first-wins.
     const first = {
       name: "hero",
       root: "r",
@@ -155,11 +269,14 @@ describe("loadAssets", () => {
       },
     };
     const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [first, second] }), "a");
-    expect(loaded.stamps).toHaveLength(1);
-    expect(loaded.stamps[0]?.nodes["a"]).toBeDefined(); // the first survived
+    const heroes = loaded.stamps.filter((s) => s.name === "hero");
+    expect(heroes).toHaveLength(1);
+    expect(heroes[0]?.nodes["a"]).toBeDefined(); // the first custom survived
     expect(
       loaded.issues.some((i) => i.includes("duplicate stamp name") && i.includes("hero")),
     ).toBe(true);
+    // Unrelated defaults still coexist.
+    expect(loaded.stamps.map((s) => s.name)).toContain("card");
   });
 
   it("surfaces backend-level issues from the store", async () => {
@@ -207,7 +324,8 @@ describe("FileAssets", () => {
     writeFileSync(join(dir, "broken.theme.json"), "{ not json");
     writeFileSync(join(dir, "ok.theme.json"), JSON.stringify(validTheme));
     const loaded = await loadAssets(new FileAssets(dir), "a");
-    expect(loaded.themes.map((t) => t.name)).toEqual(["midnight"]);
+    expect(loaded.themes.map((t) => t.name)).toContain("midnight");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
     expect(loaded.issues.length).toBeGreaterThan(0);
   });
 
@@ -216,7 +334,9 @@ describe("FileAssets", () => {
       new FileAssets(join(tmpdir(), "facet-nope-does-not-exist")),
       "a",
     );
-    expect(loaded.themes).toEqual([]);
+    // The backend failed, but the seeded default base layer still resolves.
+    expect(loaded.themes.map((t) => t.name)).toEqual([DEFAULT_THEME.name]);
+    for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
     expect(loaded.issues.length).toBeGreaterThan(0);
   });
 });

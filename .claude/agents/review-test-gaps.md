@@ -15,7 +15,7 @@ For a library, the tests ARE the contract. Check that behavior is protected:
   op-generation, the stores (durability), `createSerialQueue` (serial/parallel).
   A gap here is P1–P2.
 - **Untested testable surface** — packages with pure, easily-testable logic and no
-  tests: `@facet/kit` (page/hero/card/grid builders), `@facet/cli` (op building),
+  tests: `@facet/cli` (op building),
   the persistent driver's coordination. Flag the specific untested function.
 - **Bad tests** — tautological assertions, tests that don't exercise the claimed
   behavior, snapshot-only where logic should be asserted.

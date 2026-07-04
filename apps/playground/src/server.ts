@@ -10,7 +10,7 @@
 import type { FacetTree } from "@facet/core";
 import { createFacetServer } from "@facet/server";
 import { FileSink, FileStageStore } from "@facet/runtime/node";
-import { page, text } from "@facet/kit";
+import { page, text } from "./bricks.js";
 import { makeLiveAgent } from "./live-agent.js";
 
 // The offline face — built from presets, shown to a fresh visitor when no agent

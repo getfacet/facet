@@ -142,11 +142,12 @@ is flagged. These are candidates, not commitments.
    without abandoning the self-contained default. *Must translate RFC-6902 patches
    onto the channel's events and NOT introduce A2UI-style JSON-Pointer data upserts
    as a second update grammar; drop two-way data-model sync rather than bolt it on.*
-4. **Versioned preset registry for `@facet/kit`.** `[effort M · risk MODERATE — care]`
-   Capture the ergonomics of an extensible catalog at the *preset* layer.
-   *VIOLATES 4-brick minimalism if a preset introduces a new node type or admits
-   raw markup. Safe only if every preset provably reduces to `box/text/image/field`
-   before it hits the wire.*
+4. **Versioned registry for default-asset data (`@facet/assets`).** `[effort M · risk MODERATE — care]`
+   Capture the ergonomics of an extensible catalog at the *asset-data* layer —
+   themes and stamps as versioned value maps, not code.
+   *VIOLATES 4-brick minimalism the moment an entry introduces a new node type or
+   admits raw markup. Safe only while every stamp provably reduces to
+   `box/text/image/field` before it hits the wire.*
 5. **First-class execution-boundary annotation on actions** (A2UI's `callableFrom`
    concept). `[effort S · risk LOW-MODERATE]` Facet already seeds this: `FacetAction`
    is `agent | navigate | toggle`, where `navigate`/`toggle` are client-only.

@@ -3,7 +3,6 @@
 "@facet/agent": minor
 "@facet/react": minor
 "@facet/runtime": minor
-"@facet/kit": minor
 "@facet/quickstart": minor
 "@facet/server": minor
 "@facet/client": minor
@@ -47,9 +46,10 @@ and the salvage clone.
   validated initial tree inside the runtime's serialized write path; the seed
   travels the patch channel as the first stamped frame of the seeding turn (and
   the quickstart shell also ships it for an instant first paint).
-- `@facet/kit`: per-instantiation id prefixes on `Builder`, a `fragment()` graft
-  API, and `KIT_STAMPS` (hero/card/cta-button as validated stamps). `page()`
-  output is byte-identical to today.
+- `@facet/assets`: node-free default-asset DATA (deps = `@facet/core` only) —
+  `DEFAULT_THEME` and `DEFAULT_STAMPS` (hero/card/cta-button as validated stamps),
+  the single source of default-theme truth (`@facet/react` derives its floor from
+  it; `loadAssets` seeds it as the base layer).
 - `@facet/quickstart`: `--assets <dir>` (reads `*.theme.json`, `*.stamp.json`,
   `initial.tree.json`), theme names + descriptions and stamp fragments injected
   into the prompt, a `set_theme` tool (a NAME argument only), and the escaped
