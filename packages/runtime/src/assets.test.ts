@@ -167,9 +167,7 @@ describe("loadAssets", () => {
     expect(loaded.stamps.map((s) => s.name)).toContain("cta-button");
     expect(loaded.stamps.map((s) => s.name)).toContain("cta");
     // A shadow issue is recorded.
-    expect(
-      loaded.issues.some((i) => i.includes("hero") && i.includes("shadow")),
-    ).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("hero") && i.includes("shadow"))).toBe(true);
   });
 
   it("a custom theme named 'default' shadows the seeded default (DC-007)", async () => {
@@ -179,17 +177,12 @@ describe("loadAssets", () => {
     // custom `bg`, and no `space` map (proof loadAssets did not merge; render's
     // `resolveTheme` stays the only merge site, overlaying it onto the floor).
     const customDefault = { name: "default", color: { bg: "#abcdef" } };
-    const loaded = await loadAssets(
-      new MemoryAssets({ themes: [customDefault], stamps: [] }),
-      "a",
-    );
+    const loaded = await loadAssets(new MemoryAssets({ themes: [customDefault], stamps: [] }), "a");
     const defaults = loaded.themes.filter((t) => t.name === "default");
     expect(defaults).toHaveLength(1);
     expect(defaults[0]?.color?.bg).toBe("#abcdef"); // the custom field
     expect(defaults[0]?.space).toBeUndefined(); // NOT merged with the default floor
-    expect(
-      loaded.issues.some((i) => i.includes("default") && i.includes("shadow")),
-    ).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("default") && i.includes("shadow"))).toBe(true);
   });
 
   it("drops a malformed doc among good ones while defaults survive, never throwing (DC-004)", async () => {

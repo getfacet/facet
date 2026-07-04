@@ -53,7 +53,7 @@ work_units:
       target: "apps/playground/src/bricks.test.ts"
       justification: "FAILS pre-impl (./bricks.js absent -> import error), PASSES post-impl (the local helper emits welcome/OFFLINE_FACE trees byte-identical to the frozen kit-captured fixtures). This is the byte-identical guarantee the migration hinges on — tsc --noEmit alone would not catch a wrong token value or node shape. Adding the @facet/assets alias before the package exists is inert (tsc resolves it only once an importer appears in WU-5/WU-6); removing the @facet/kit alias is safe with kit still present — kit's own tests import via relative ./kit.js/./stamps.js, not the alias."
     quick_checks:
-      - "git grep -nE 'from \"@facet/kit\"' apps/playground/src | wc -l   # expect 0 (import-scoped; gallery.tsx prose comments and the yet-unremoved package.json dep are out of scope here)"
+      - 'git grep -nE ''from "@facet/kit"'' apps/playground/src | wc -l   # expect 0 (import-scoped; gallery.tsx prose comments and the yet-unremoved package.json dep are out of scope here)'
       - "pnpm -C apps/playground exec tsc --noEmit"
     no_regression_checks:
       - "pnpm typecheck"
@@ -88,7 +88,7 @@ work_units:
     files:
       - path: "packages/kit/"
         change_type: "delete"
-        purpose: "orphan removal (src/kit.ts, src/stamps.ts, src/index.ts, src/kit.test.ts, src/stamps.test.ts, README.md, package.json, tsconfig.json); pure deletion, no review surface. Deleting the dir also removes the from \"@facet/kit\" import example inside packages/kit/README.md."
+        purpose: 'orphan removal (src/kit.ts, src/stamps.ts, src/index.ts, src/kit.test.ts, src/stamps.test.ts, README.md, package.json, tsconfig.json); pure deletion, no review surface. Deleting the dir also removes the from "@facet/kit" import example inside packages/kit/README.md.'
       - path: "apps/playground/package.json"
         change_type: "update"
         purpose: "remove the now-unused @facet/kit workspace dependency (WU-1 already swapped the imports); pnpm install then regenerates pnpm-lock.yaml without the entry"
@@ -96,10 +96,10 @@ work_units:
     parallel_group: "par-kit"
     red_check:
       command: "N/A"
-      target: "git grep -nE 'from \"@facet/kit\"' == 0 (code import scope) + test ! -d packages/kit + pnpm build"
+      target: 'git grep -nE ''from "@facet/kit"'' == 0 (code import scope) + test ! -d packages/kit + pnpm build'
       justification: "deletion: removing an orphan package with zero import consumers (KIT_STAMPS/fragment used only by kit's own tests; playground migrated + proven byte-identical in WU-1). Verified by the code-scope import grep == 0 + package dir gone + pnpm build."
     quick_checks:
-      - "git grep -nE 'from \"@facet/kit\"' | wc -l   # expect 0 (import scope across the tree; kit/README.md example gone with the dir, ui.ts/server.ts swapped in WU-1; leftover prose mentions in docs/changesets/.claude are handled by WU-8 or intentionally retained)"
+      - 'git grep -nE ''from "@facet/kit"'' | wc -l   # expect 0 (import scope across the tree; kit/README.md example gone with the dir, ui.ts/server.ts swapped in WU-1; leftover prose mentions in docs/changesets/.claude are handled by WU-8 or intentionally retained)'
       - "test ! -d packages/kit   # package directory gone"
       - "pnpm install   # relink workspace + regenerate lockfile after removal"
     no_regression_checks:
@@ -107,12 +107,12 @@ work_units:
       - "pnpm typecheck"
     test_plan:
       - type: "integration"
-        target: "git grep -nE 'from \"@facet/kit\"' == 0 + test ! -d packages/kit + pnpm build"
+        target: 'git grep -nE ''from "@facet/kit"'' == 0 + test ! -d packages/kit + pnpm build'
         covers_dc: ["DC-005"]
         action: "new"
     done_conditions:
       - "N/A red_check justification acknowledged (deletion)"
-      - "packages/kit/ gone; playground package.json no longer declares @facet/kit; code-scope git grep -nE 'from \"@facet/kit\"' == 0"
+      - 'packages/kit/ gone; playground package.json no longer declares @facet/kit; code-scope git grep -nE ''from "@facet/kit"'' == 0'
       - "No regression: pnpm build && pnpm typecheck"
     handoff_format:
       - "changed_files"
@@ -153,7 +153,7 @@ work_units:
     quick_checks:
       - "pnpm exec vitest run packages/assets/src/theme.test.ts"
       - "grep -rE 'node:' packages/assets/src | wc -l   # expect 0"
-      - "node -e \"const p=require('./packages/assets/package.json'); if(Object.keys(p.dependencies||{}).join()!=='@facet/core')process.exit(1)\"   # deps = core only"
+      - 'node -e "const p=require(''./packages/assets/package.json''); if(Object.keys(p.dependencies||{}).join()!==''@facet/core'')process.exit(1)"   # deps = core only'
     no_regression_checks:
       - "pnpm typecheck"
     test_plan:

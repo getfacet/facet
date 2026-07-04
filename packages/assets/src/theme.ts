@@ -1,13 +1,5 @@
 import { DEFAULT_COLORS } from "@facet/core";
-import type {
-  Color,
-  FacetTheme,
-  FontSize,
-  FontWeight,
-  Radius,
-  Ratio,
-  Space,
-} from "@facet/core";
+import type { Color, FacetTheme, FontSize, FontWeight, Radius, Ratio, Space } from "@facet/core";
 
 /**
  * The default theme data — where token NAMES become concrete CSS values. This is

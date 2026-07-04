@@ -19,15 +19,7 @@ import type {
 // SINGLE source of default-theme truth. react imports them as its render floor and
 // re-exports `DEFAULT_THEME` + `COLOR` for back-compat, but owns no second copy
 // that could drift (RISK-INV-1 / RISK-API-2).
-import {
-  COLOR,
-  DEFAULT_THEME,
-  FONT_SIZE,
-  FONT_WEIGHT,
-  RADIUS,
-  RATIO,
-  SPACE,
-} from "@facet/assets";
+import { COLOR, DEFAULT_THEME, FONT_SIZE, FONT_WEIGHT, RADIUS, RATIO, SPACE } from "@facet/assets";
 
 export { COLOR, DEFAULT_THEME };
 
