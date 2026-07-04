@@ -9,7 +9,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { runCli } from "./cli.js";
+import { runCli, type RunCliHooks } from "./cli.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 import { createStubAgent } from "./stub.js";
 
@@ -33,6 +33,7 @@ function capture(): Captured {
  * server.test.ts bind-retry pattern, one level up). */
 async function bootCli(
   extraArgs: readonly string[] = [],
+  extraHooks: Partial<RunCliHooks> = {},
 ): Promise<{ captured: Captured; running: RunningQuickstart }> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
@@ -42,6 +43,7 @@ async function bootCli(
       ["--stub", "--port", String(port), ...extraArgs],
       {},
       {
+        ...extraHooks,
         log: captured.log,
         error: captured.error,
         onStarted: (handle) => {
@@ -220,12 +222,36 @@ describe("runCli — --assets (DC-009)", () => {
     }
   });
 
-  it("injects no theme global and logs nothing when --assets is absent", async () => {
+  it("default asset library reaches the agent with no --assets", async () => {
+    // WU-7: with no --assets the CLI still resolves through `loadAssets` (an
+    // empty `MemoryAssets`), so the `@facet/assets` default theme + stamp
+    // library seeds and reaches BOTH the agent and the shell on every boot.
+    // `onResolvedAssets` is the observable seam for what was handed downstream.
+    let resolvedThemes = 0;
+    let resolvedStamps = 0;
+    const { running } = await bootCli([], {
+      onResolvedAssets: ({ themes, stamps }) => {
+        resolvedThemes = themes.length;
+        resolvedStamps = stamps.length;
+      },
+    });
+    try {
+      expect(resolvedThemes).toBeGreaterThan(0);
+      expect(resolvedStamps).toBeGreaterThan(0);
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("injects the default theme library and logs nothing when --assets is absent", async () => {
+    // WU-7: the default library now seeds on every boot, so the shell carries
+    // the default theme global even with no --assets; the defaults are valid, so
+    // nothing is logged.
     const { captured, running } = await bootCli();
     try {
       expect(captured.err).toEqual([]);
       const shell = await (await fetch(`${running.url}/`)).text();
-      expect(shell).not.toContain("window.__FACET_THEMES__");
+      expect(shell).toContain("window.__FACET_THEMES__");
     } finally {
       await running.close();
     }
