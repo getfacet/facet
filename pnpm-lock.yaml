@@ -94,6 +94,12 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/assets:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+
   packages/bridge:
     dependencies:
       '@anthropic-ai/claude-agent-sdk':
