@@ -31,12 +31,13 @@ describe("STAGE_SPEC", () => {
     // BoxStyle gains the two new tokens.
     expect(STAGE_SPEC).toMatch(/appear\(none\|fade\|slide\)/);
     expect(STAGE_SPEC).toMatch(/scroll\(bool\)/);
-    // appear = enter animation: replays on each re-show; theme honors reduced motion.
+    // appear = enter animation: replays on each re-show; renderer honors reduced motion.
     expect(STAGE_SPEC).toMatch(/replays on each re-show/i);
     expect(STAGE_SPEC).toMatch(/reduced motion/i);
-    // scroll = bounded, internally-scrollable region; the theme owns the height.
+    // scroll = bounded, internally-scrollable region; the renderer owns the height
+    // (a framework constant — no FacetTheme surface exists for it, RISK-API-5).
     expect(STAGE_SPEC).toMatch(/bounded, internally-scroll/i);
-    expect(STAGE_SPEC).toMatch(/theme owns the max height/i);
+    expect(STAGE_SPEC).toMatch(/renderer owns the max height/i);
     // Box gains onHold — the secondary long-press gesture, same Action union as onPress.
     expect(STAGE_SPEC).toContain('"onHold"?:Action');
     expect(STAGE_SPEC).toMatch(/long-press/i);

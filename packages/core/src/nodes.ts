@@ -92,13 +92,13 @@ export interface BoxStyle {
   readonly width?: Sizing;
   /**
    * Enter animation, replayed on each mount/re-show of the node (first paint,
-   * node re-add, toggle re-show, screen navigation). The theme owns the
-   * duration/curve — this token names the motion only.
+   * node re-add, toggle re-show, screen navigation). The renderer owns the
+   * duration/curve as framework constants — this token names the motion only.
    */
   readonly appear?: Appear;
   /**
    * Literal `true` makes the box a bounded, internally-scrollable region
-   * (vertical only). The theme owns the max height.
+   * (vertical only). The renderer owns the max height as a framework constant.
    */
   readonly scroll?: boolean;
 }

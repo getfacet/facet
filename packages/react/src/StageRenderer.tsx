@@ -352,6 +352,19 @@ function HoldableBox({
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    // Only the PRIMARY pointer's PRIMARY button can arm a hold — and the guard
+    // runs before ANY state change: a right/middle-button press must neither
+    // dispatch a 500ms "hold" the visitor never meant (incl. collect field
+    // snapshots) nor leave an armed timer that makes handleContextMenu suppress
+    // every native right-click menu over this box.
+    if (!event.isPrimary || event.button !== 0) {
+      return;
+    }
+    // pointerdown bubbles: a holdable box nested in another holdable box would
+    // arm BOTH timers and one long press would dispatch two hold actions. Only
+    // the innermost HoldableBox arms — primary presses stop here (non-primary
+    // presses returned above WITHOUT stopping, leaving ancestors unaffected).
+    event.stopPropagation();
     // Arm-time latch reset — see the latch lifecycle above.
     suppressNextClickRef.current = false;
     holdingRef.current = false;
@@ -391,9 +404,14 @@ function HoldableBox({
     holdingRef.current = false;
   };
 
-  const handleClick = (): void => {
+  const handleClick = (event: ReactMouseEvent<HTMLDivElement>): void => {
     if (suppressNextClickRef.current) {
       suppressNextClickRef.current = false; // consumed by this click
+      // The synthesized post-hold click must not bubble into an ancestor
+      // pressable box's onClick — a completed hold on a nested box would
+      // otherwise ALSO fire the ancestor's onPress ("press and hold never
+      // both fire" is pinned). A normal quick-tap click keeps bubbling below.
+      event.stopPropagation();
       return;
     }
     if (press !== null) {
@@ -542,14 +560,18 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
   // (`n != null && typeof n === "object"`) before touching `.style`, mirroring
   // renderNode's `node == null` guard: the raw live path can hold null/scalar
   // node values (isTreeShaped only checks that `nodes` is an object, never its
-  // values). Reachability is deliberately ignored: an appear token on an
-  // unreachable node costs one harmless idempotent <style>, while a
-  // reachability walk would be a new unguarded traversal.
+  // values). Only BOX styles count — appear is BoxStyle-only (Decision 2) and
+  // validateTree strips it from non-box styles, so the raw unvalidated path
+  // must not diverge from the validated one. Reachability is deliberately
+  // ignored: an appear token on an unreachable node costs one harmless
+  // idempotent <style>, while a reachability walk would be a new unguarded
+  // traversal.
   const nodeValues: readonly unknown[] = Object.values(tree.nodes);
   const usesAppear = nodeValues.some(
     (n) =>
       n != null &&
       typeof n === "object" &&
+      (n as { readonly type?: unknown }).type === "box" &&
       appearClass(styleOf((n as { readonly style?: object }).style)) !== undefined,
   );
 
@@ -745,13 +767,10 @@ function renderNode({
     }
     case "text":
       // A non-string value (an object would make React itself throw) is skipped.
+      // No appear class here: appear is BoxStyle-only (Decision 2) — validateTree
+      // strips it from non-box styles, so the raw path must render it as absent.
       return typeof node.value === "string" ? (
-        <p
-          className={appearClass(styleOf(node.style))}
-          style={textStyle(styleOf(node.style), theme)}
-        >
-          {node.value}
-        </p>
+        <p style={textStyle(styleOf(node.style), theme)}>{node.value}</p>
       ) : null;
     case "image":
       // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
@@ -759,7 +778,6 @@ function renderNode({
         <img
           src={node.src}
           alt={typeof node.alt === "string" ? node.alt : ""}
-          className={appearClass(styleOf(node.style))}
           style={imageStyle(styleOf(node.style), theme)}
         />
       ) : null;
@@ -774,7 +792,6 @@ function renderNode({
       const placeholder = typeof node.placeholder === "string" ? node.placeholder : undefined;
       return (
         <label
-          className={appearClass(styleOf(node.style))}
           style={{
             display: "flex",
             flexDirection: "column",

@@ -363,6 +363,41 @@ describe("StageRenderer appear (static)", () => {
     expect(out.match(/<style/g)).toHaveLength(1);
   });
 
+  it("ignores appear on raw-path text/image/field styles (appear is BoxStyle-only)", () => {
+    // validateTree strips appear from non-box styles, so the raw unvalidated
+    // path must render identically: no class on <p>/<img>/<label> and no
+    // appear <style> element for a tree whose only appear tokens sit on
+    // non-box nodes.
+    const noisy = {
+      root: box("root", ["t", "i", "f"]),
+      t: { id: "t", type: "text", value: "plain text", style: { appear: "fade" } },
+      i: {
+        id: "i",
+        type: "image",
+        src: "https://example.com/a.png",
+        alt: "pic",
+        style: { appear: "fade" },
+      },
+      f: { id: "f", type: "field", name: "n", placeholder: "p", style: { appear: "fade" } },
+    } as unknown as Record<NodeId, FacetNode>;
+    const out = render(tree(noisy));
+    expect(out).toContain("plain text");
+    expect(out).toContain("<img");
+    expect(out).toContain("<input");
+    expect(out).not.toContain("facet-appear");
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("<style");
+
+    // Positive control: the same token on a BOX still gets class + stylesheet.
+    const withBox = render(
+      tree({
+        root: { id: "root", type: "box", style: { appear: "fade" }, children: [] },
+      }),
+    );
+    expect(withBox).toContain('class="facet-appear-fade"');
+    expect(withBox.match(/<style/g)).toHaveLength(1);
+  });
+
   it("renders a raw tree with NULL and SCALAR node values alongside an appear node without throwing", () => {
     // Legal on the live path: a patch can set any node value to JSON null (or a
     // scalar) — isTreeShaped only checks that `nodes` is an object. The appear

@@ -15,7 +15,7 @@ Node types (the ONLY allowed types):
 - field: { "id", "type":"field", "name":string, "label"?, "placeholder"?, "input"?:("text"|"number"|"email"|"password"|"search"), "style"?:{"width"?} }
 
 Style values MUST be tokens (never pixels or hex):
-- BoxStyle: direction(row|col), gap/pad(none|xs|sm|md|lg|xl|2xl), align(start|center|end|stretch), justify(start|center|end|between|around), wrap(bool), bg(color), radius(none|sm|md|lg|full), border(bool), grow(bool), width(auto|full), appear(none|fade|slide), scroll(bool) — appear animates the node's entry and replays on each re-show (toggle, navigation, re-add); the theme owns the timing and honors reduced motion. scroll:true makes the box a bounded, internally-scrolling region for long lists (the theme owns the max height).
+- BoxStyle: direction(row|col), gap/pad(none|xs|sm|md|lg|xl|2xl), align(start|center|end|stretch), justify(start|center|end|between|around), wrap(bool), bg(color), radius(none|sm|md|lg|full), border(bool), grow(bool), width(auto|full), appear(none|fade|slide), scroll(bool) — appear animates the node's entry and replays on each re-show (toggle, navigation, re-add); the renderer owns the timing and honors reduced motion. scroll:true makes the box a bounded, internally-scrolling region for long lists (the renderer owns the max height).
 - TextStyle: size(xs|sm|md|lg|xl|2xl|3xl), weight(regular|medium|semibold|bold), color(color), align(start|center|end)
 - ImageStyle: radius(none|sm|md|lg|full), width(auto|full), ratio(square|wide|tall)
 - color tokens: fg, fg-muted, bg, surface, surface-2, accent, accent-fg, border, success, warning, danger

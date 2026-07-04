@@ -97,6 +97,23 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
   their own snippet imports (`@facet/client`, `@facet/agent`); copy-pasting the
   quickstart fails to resolve. *Fix:* align install lines with the snippets.
 
+## P3 — residuals from Bundle D's review (appear-hold-scroll; track, fix opportunistically)
+
+Found by the bundle's adversarially-verified `/code-review` (P1 + all P2 and
+the spec-alignment/doc P3s fixed in-branch; this is the one confirmed
+non-blocking residual).
+
+- **react/StageRenderer.tsx (onHold add/remove remount)** — a live patch that
+  ADDS or REMOVES `onHold` on a box flips that position between the inline
+  `<div>` and the `HoldableBox` component; React treats it as an element-type
+  change and remounts the subtree, wiping uncontrolled field text and
+  scrollTop inside. In tension with the pinned WU-3 done-condition
+  ("press-only/plain boxes keep today's exact inline elements"), so it needs
+  an owner decision, not a drive-by fix. *Fix candidate:* mount `HoldableBox`
+  for any interactive box (press OR hold) with a nullable `hold` prop that
+  no-ops when null — element type then stays stable across interaction-
+  metadata patches; re-pin the static-markup tests accordingly.
+
 ## P3 — residuals from Bundle B's review (kits-themes-as-data; track, fix opportunistically)
 
 Found by the bundle's 3-round adversarially-verified `/code-review` (all P0–P2

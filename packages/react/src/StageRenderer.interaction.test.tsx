@@ -892,9 +892,21 @@ describe("StageRenderer collect (jsdom)", () => {
 /** Mirrors the renderer's non-exported HOLD_MS constant. */
 const HOLD_MS = 500;
 
-function pointerEvent(type: string, coords: { x?: number; y?: number } = {}): Event {
+function pointerEvent(
+  type: string,
+  coords: { x?: number; y?: number } = {},
+  options: { button?: number; isPrimary?: boolean } = {},
+): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
-  Object.assign(event, { clientX: coords.x ?? 0, clientY: coords.y ?? 0, pointerId: 1 });
+  Object.assign(event, {
+    clientX: coords.x ?? 0,
+    clientY: coords.y ?? 0,
+    pointerId: 1,
+    // Defaults mirror a real primary-button touch/left-click press; tests for
+    // the pointer-button guard override them explicitly.
+    button: options.button ?? 0,
+    isPrimary: options.isPrimary ?? true,
+  });
   return event;
 }
 
@@ -1157,6 +1169,216 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
     expect(onAction).toHaveBeenCalledTimes(2);
     expect(onAction.mock.calls[0]).toEqual([{ kind: "agent", name: "held" }]);
     expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "held" }]);
+  });
+
+  it("a right-button press never arms the hold and keeps the native context menu", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    // Right-button (button: 2) pointerdown must not arm the timer…
+    fireEvent(btn, pointerEvent("pointerdown", {}, { button: 2 }));
+    // …so the contextmenu that follows a right-click is NOT suppressed
+    // (fireEvent returns false iff preventDefault was called).
+    expect(fireEvent.contextMenu(btn)).toBe(true);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 200);
+    });
+    expect(onAction).not.toHaveBeenCalled();
+
+    // A non-primary pointer (a second touch) never arms either.
+    fireEvent(btn, pointerEvent("pointerdown", {}, { isPrimary: false }));
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 200);
+    });
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("a right-button hold on a collect action never snapshots or emits fields", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "btn"] },
+          form: { id: "form", type: "box", children: ["emailF"] },
+          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          btn: {
+            id: "btn",
+            type: "box",
+            onHold: { kind: "agent", name: "submit", collect: "form" },
+            children: ["bt"],
+          },
+          bt: { id: "bt", type: "text", value: "hold to send" },
+        })}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("your email"), {
+      target: { value: "a@b.dev" },
+    });
+    const btn = screen.getByRole("button");
+
+    fireEvent(btn, pointerEvent("pointerdown", {}, { button: 2 }));
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 200);
+    });
+    fireEvent(btn, pointerEvent("pointerup", {}, { button: 2 }));
+
+    // No field snapshot ever leaves the page on a non-primary-button hold.
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("a long press on a nested holdable box fires only the INNER hold action", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["outer"] },
+          outer: {
+            id: "outer",
+            type: "box",
+            onHold: { kind: "agent", name: "held-outer" },
+            children: ["inner"],
+          },
+          inner: {
+            id: "inner",
+            type: "box",
+            onHold: { kind: "agent", name: "held-inner" },
+            children: ["it"],
+          },
+          it: { id: "it", type: "text", value: "inner target" },
+        })}
+      />,
+    );
+
+    // pointerdown bubbles — without stopPropagation BOTH timers would arm and
+    // one long press would dispatch two hold actions.
+    holdGesture(screen.getByText("inner target").parentElement as HTMLElement);
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held-inner" });
+  });
+
+  it("a completed hold on a nested box never fires the ancestor's onPress (tap bubbling unchanged)", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["ancestor"] },
+          ancestor: {
+            id: "ancestor",
+            type: "box",
+            onPress: { kind: "agent", name: "ancestor-pressed" },
+            children: ["holdChild", "plainChild"],
+          },
+          holdChild: {
+            id: "holdChild",
+            type: "box",
+            onHold: { kind: "agent", name: "child-held" },
+            children: ["ht"],
+          },
+          ht: { id: "ht", type: "text", value: "hold me" },
+          plainChild: { id: "plainChild", type: "text", value: "plain tap target" },
+        })}
+      />,
+    );
+
+    // A completed hold — including the browser-synthesized bubbling click —
+    // fires ONLY the hold; the ancestor's onPress must not also fire ("press
+    // and hold never both fire" is pinned).
+    holdGesture(screen.getByText("hold me").parentElement as HTMLElement);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "child-held" });
+
+    // Control: a plain quick tap on a NON-holdable child still bubbles to and
+    // activates the ancestor exactly as today.
+    fireEvent.click(screen.getByText("plain tap target"));
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "ancestor-pressed" }]);
+  });
+
+  it("suppresses the context menu only while a hold gesture is live", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    // (c) No gesture in flight ⇒ the native menu is preserved.
+    expect(fireEvent.contextMenu(btn)).toBe(true);
+
+    // (a) Timer armed (primary press, pre-threshold) ⇒ suppressed.
+    pointerDown(btn);
+    expect(fireEvent.contextMenu(btn)).toBe(false);
+
+    // (b) Hold fired but the pointer not yet released ⇒ still suppressed.
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    expect(fireEvent.contextMenu(btn)).toBe(false);
+
+    // After release the gesture is over ⇒ the native menu is back.
+    pointerUp(btn);
+    fireEvent.click(btn); // the synthesized click consumes the latch
+    expect(fireEvent.contextMenu(btn)).toBe(true);
+    expect(onAction).toHaveBeenCalledTimes(1); // the one hold from phase (b)
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("pointercancel and pointerleave disarm the hold, and the box is not wedged after", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    // (a) pointercancel (e.g. the browser claims the touch for scrolling).
+    pointerDown(btn);
+    fireEvent(btn, pointerEvent("pointercancel"));
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 200);
+    });
+    expect(onAction).not.toHaveBeenCalled();
+
+    // (b) pointerleave (pointer slides off the box). React synthesizes
+    // onPointerLeave from a native pointerout whose relatedTarget is outside
+    // the element, so that is what a real leave delivers to the root listener.
+    pointerDown(btn);
+    const out = pointerEvent("pointerout");
+    Object.assign(out, { relatedTarget: document.body });
+    fireEvent(btn, out);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 200);
+    });
+    expect(onAction).not.toHaveBeenCalled();
+
+    // (c) After the disarms a fresh hold still fires exactly once.
+    holdGesture(btn);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("a mid-press onHold change dispatches the LATEST classification exactly once", () => {
+    const onAction = vi.fn();
+    const holdTree = (name: string): FacetTree =>
+      tree({
+        root: { id: "root", type: "box", children: ["btn"] },
+        btn: { id: "btn", type: "box", onHold: { kind: "agent", name }, children: ["bt"] },
+        bt: { id: "bt", type: "text", value: "target" },
+      });
+    const { rerender } = render(<StageRenderer onAction={onAction} tree={holdTree("held-v1")} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    // A live patch changes onHold WHILE the timer is pending: the fire must
+    // read the current classification, not the one captured at pointerdown.
+    rerender(<StageRenderer onAction={onAction} tree={holdTree("held-v2")} />);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btn);
+    fireEvent.click(btn);
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held-v2" });
   });
 });
 
