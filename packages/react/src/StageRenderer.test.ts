@@ -383,6 +383,29 @@ describe("StageRenderer appear (static)", () => {
     const out = render(held);
     expect(out).toContain("hold me");
     expect(out).toContain('role="button"'); // holdable ⇒ interactive markup
+    // iOS long-press affordances: a holdable box disables text selection and
+    // the native long-press callout so the gesture runs the hold, not a
+    // selection / share sheet (review r6). Press-only and plain boxes must NOT
+    // carry these (asserted below).
+    expect(out).toContain("user-select:none");
+    expect(out).toContain("-webkit-touch-callout:none");
+  });
+
+  it("does not add hold-only CSS to press-only or plain boxes (byte-identical to today)", () => {
+    const pressOnly = tree({
+      root: { id: "root", type: "box", children: ["b"] },
+      b: { id: "b", type: "box", onPress: { kind: "agent", name: "open" }, children: ["t"] },
+      t: text("t", "press me"),
+    });
+    const pressOut = render(pressOnly);
+    expect(pressOut).toContain('role="button"');
+    expect(pressOut).not.toContain("user-select:none");
+    expect(pressOut).not.toContain("-webkit-touch-callout");
+    // A plain box carries no interactivity CSS at all.
+    const plain = render(tree({ root: { id: "root", type: "box", children: [] } }));
+    expect(plain).toBe(
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+    );
   });
 
   it("renders a CYCLIC raw tree containing an appear token without hanging or throwing", () => {

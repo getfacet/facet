@@ -23,8 +23,10 @@ export function printTree(tree: FacetTree): void {
             : "";
     const press =
       node.type === "box" && node.onPress !== undefined ? ` [${pressLabel(node.onPress)}]` : "";
+    const hold =
+      node.type === "box" && node.onHold !== undefined ? ` [hold ${pressLabel(node.onHold)}]` : "";
     const hidden = node.type === "box" && node.hidden === true ? " (hidden)" : "";
-    console.log(`${pad}${node.type}${detail}${press}${hidden}`);
+    console.log(`${pad}${node.type}${detail}${press}${hold}${hidden}`);
     if (node.type === "box") {
       for (const child of node.children) walk(child, depth + 1);
     }

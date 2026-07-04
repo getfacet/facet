@@ -367,11 +367,11 @@ function swallowNextClick(): void {
   window.addEventListener("keydown", expire, true);
 }
 
-interface HoldableBoxProps {
-  /** Classified onPress — null renders a hold-only box (a quick tap no-ops). */
+interface BoxElementProps {
+  /** Classified onPress — null means a quick tap dispatches nothing. */
   readonly press: ClassifiedPress | null;
-  /** Classified onHold — non-null by construction: renderNode mounts this component ONLY then. */
-  readonly hold: ClassifiedPress;
+  /** Classified onHold — null means no long-press gesture is detected. */
+  readonly hold: ClassifiedPress | null;
   /**
    * The ONE existing view-state switch (StageRenderer's handlePress) — press
    * and hold both route through it (one classifier, one switch, RISK-INV-1), so
@@ -385,31 +385,40 @@ interface HoldableBoxProps {
 }
 
 /**
- * A pressable box that ALSO detects a long press (Decision 3). Used exclusively
- * for boxes whose `onHold` classifies — press-only and plain boxes keep today's
- * exact inline elements (byte-identical DOM). `pointerdown` arms a HOLD_MS
- * timer; `pointermove` beyond HOLD_SLOP_PX, `pointerup` before threshold,
- * `pointercancel` (incl. the browser claiming a touch gesture for scrolling —
- * free disambiguation, so no touch-action CSS is set here), or `pointerleave`
- * disarms it. The timer firing executes the hold and arms the window-level
- * `swallowNextClick` interceptor against the browser-synthesized click that
- * follows pointerup, so press and hold never both fire.
+ * The ONE element type EVERY box renders through (review r6). Three arms, all
+ * the same always-mounted component so a live patch that adds or removes
+ * onPress/onHold never flips the React element type at that position — a flip
+ * would remount the entire subtree and wipe visitor-typed uncontrolled field
+ * text and scroll offsets:
+ * - `hold` non-null: a long-pressable box (Decision 3). `pointerdown` arms a
+ *   HOLD_MS timer; `pointermove` beyond HOLD_SLOP_PX, `pointerup` before
+ *   threshold, `pointercancel` (incl. the browser claiming a touch gesture for
+ *   scrolling — free disambiguation, so no touch-action CSS is set here), or
+ *   `pointerleave` disarms it. The timer firing executes the hold and arms the
+ *   window-level `swallowNextClick` interceptor against the browser-synthesized
+ *   click that follows pointerup, so press and hold never both fire.
+ * - `hold` null, `press` non-null: today's exact pressable div — role/tabIndex
+ *   and a click dispatch, NO pointer/contextmenu listeners attached.
+ * - both null: today's exact plain div — no role, no tabIndex, no handlers.
+ * The static markup of all three arms is byte-identical to the previous
+ * three-element structure (undefined props add no attributes; handlers never
+ * serialize), pinned by the exact-markup tests.
  */
-function HoldableBox({
+function BoxElement({
   press,
   hold,
   dispatch,
   style,
   className,
   children,
-}: HoldableBoxProps): ReactNode {
+}: BoxElementProps): ReactNode {
   // Latest-classification refs, updated each render: the timer callback must
   // act on the CURRENT content, not the content captured at pointerdown. A
-  // patch that CHANGES onHold mid-press lands here
-  // before the timer fires; a patch that REMOVES onHold unmounts this component
-  // entirely (renderNode only mounts it for a classifiable onHold) and the
-  // unmount cleanup below clears the pending timer — either way the stale hold
-  // no-ops.
+  // patch that CHANGES onHold mid-press lands here before the timer fires; a
+  // patch that REMOVES onHold keeps this component mounted (stable element
+  // type) with a null `hold` — the effect below clears the pending timer and
+  // the timer callback's own null check backstops it — either way the stale
+  // hold no-ops.
   const holdRef = useRef(hold);
   holdRef.current = hold;
   const dispatchRef = useRef(dispatch);
@@ -427,8 +436,10 @@ function HoldableBox({
   // scopes contextmenu suppression to the live gesture only.
   const holdingRef = useRef(false);
 
-  // Unmount cleanup: a patch that removes onHold (or the whole node) mid-press
-  // swaps this component out; the pending timer must die with it.
+  const holdable = hold !== null;
+
+  // Unmount cleanup: a patch that removes the whole node mid-press unmounts
+  // this component; the pending timer must die with it.
   useEffect(
     () => () => {
       if (timerRef.current !== null) {
@@ -437,6 +448,20 @@ function HoldableBox({
     },
     [],
   );
+
+  // Mid-press onHold REMOVAL disarm: the component stays mounted when a patch
+  // strips onHold (that is the point of the stable element type), so the
+  // pending timer dies on the prop flip instead of on unmount. Also drops the
+  // gesture bookkeeping so contextmenu suppression can't outlive the hold.
+  useEffect(() => {
+    if (!holdable && timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      originRef.current = null;
+      gesturePointerRef.current = null;
+      holdingRef.current = false;
+    }
+  }, [holdable]);
 
   const disarm = (): void => {
     if (timerRef.current !== null) {
@@ -456,6 +481,14 @@ function HoldableBox({
     if (!event.isPrimary || event.button !== 0) {
       return;
     }
+    // Hybrid re-entry guard (review r6): a hybrid mouse+touch device can have
+    // TWO concurrent pointers that are each "primary" for their own pointer
+    // type. A second primary pointer landing mid-gesture must not overwrite
+    // the live gesture (re-basing the origin and restarting the timer) — the
+    // first pointer keeps ownership until it ends.
+    if (gesturePointerRef.current !== null && gesturePointerRef.current !== event.pointerId) {
+      return;
+    }
     // pointerdown bubbles: a holdable box nested in another holdable box would
     // arm BOTH timers and one long press would dispatch two hold actions. Only
     // the innermost HoldableBox arms — primary presses stop here (non-primary
@@ -470,13 +503,21 @@ function HoldableBox({
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
       originRef.current = null;
+      // Belt-and-braces for the mid-press onHold removal (the disarm effect
+      // above already clears the timer on the prop flip): a stale hold whose
+      // classification is now null must neither dispatch nor arm the swallow.
+      const currentHold = holdRef.current;
+      if (currentHold === null) {
+        gesturePointerRef.current = null;
+        return;
+      }
       holdingRef.current = true;
       // Swallow the browser-synthesized click that follows the coming pointerup
       // — at WINDOW capture, wherever the browser targets it (see the helper).
       swallowNextClick();
       // One press pipeline: the hold rides the same handlePress switch a press
       // does, reading the LATEST classification (see holdRef above).
-      dispatchRef.current(holdRef.current);
+      dispatchRef.current(currentHold);
     }, HOLD_MS);
   };
 
@@ -521,25 +562,41 @@ function HoldableBox({
   const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>): void => {
     // Suppressed ONLY while a hold gesture is live (armed, or fired and not yet
     // released) — so a touch long-press context menu can't race the hold.
-    // Boxes without onHold never mount this component and keep the native menu.
+    // Boxes without onHold never attach this listener and keep the native menu.
     if (timerRef.current !== null || holdingRef.current) {
       event.preventDefault();
     }
   };
 
+  const interactive = holdable || press !== null;
+  // Style composition per arm, byte-identical to the previous three-element
+  // structure: plain boxes pass the base style through UNTOUCHED; interactive
+  // boxes add cursor:pointer; a holdable box additionally disables text
+  // selection and the iOS long-press callout so a real-device long press runs
+  // the hold instead of starting a selection / the share sheet (review r6).
+  const finalStyle: CSSProperties = holdable
+    ? { ...style, cursor: "pointer", userSelect: "none", WebkitTouchCallout: "none" }
+    : interactive
+      ? { ...style, cursor: "pointer" }
+      : style;
+
+  // Conditionally ATTACHED props: undefined adds no attribute to the static
+  // markup (the exact-markup pins stay byte-identical) and attaches no
+  // listener — a press-only or plain box carries zero pointer/contextmenu
+  // handlers, exactly like the inline divs it replaces.
   return (
     <div
-      role="button"
-      tabIndex={0}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
       className={className}
-      style={style}
-      onClick={handleClick}
-      onPointerDown={handlePointerDown}
-      onPointerMove={handlePointerMove}
-      onPointerUp={handlePointerEnd}
-      onPointerCancel={handlePointerEnd}
-      onPointerLeave={handlePointerEnd}
-      onContextMenu={handleContextMenu}
+      style={finalStyle}
+      onClick={interactive ? handleClick : undefined}
+      onPointerDown={holdable ? handlePointerDown : undefined}
+      onPointerMove={holdable ? handlePointerMove : undefined}
+      onPointerUp={holdable ? handlePointerEnd : undefined}
+      onPointerCancel={holdable ? handlePointerEnd : undefined}
+      onPointerLeave={holdable ? handlePointerEnd : undefined}
+      onContextMenu={holdable ? handleContextMenu : undefined}
     >
       {children}
     </div>
@@ -827,44 +884,29 @@ function renderNode({
       const press = classifyPress(node.onPress);
       // onHold is untrusted the same way, classified by the SAME classifier
       // (one classifier, one switch — RISK-INV-1): junk (`onHold: 42`)
-      // classifies null and the box keeps today's exact press-only or plain
-      // element below (byte-identical DOM). Only a classifiable onHold mounts
-      // the gesture-detecting HoldableBox.
+      // classifies null and the box renders today's exact press-only or plain
+      // markup (byte-identical DOM). Only a classifiable onHold attaches the
+      // gesture-detecting pointer handlers.
       const hold = classifyPress(node.onHold);
       // appearClass is TOTAL on raw-path junk: only "fade"/"slide" yield a
       // class; undefined adds no attribute, keeping token-free output
       // byte-identical.
       const appear = appearClass(styleOf(node.style));
-      if (hold !== null) {
-        return (
-          <HoldableBox
-            press={press}
-            hold={hold}
-            dispatch={onPress}
-            className={appear}
-            style={{ ...boxStyle(styleOf(node.style), theme), cursor: "pointer" }}
-          >
-            {children}
-          </HoldableBox>
-        );
-      }
-      if (press !== null) {
-        return (
-          <div
-            role="button"
-            tabIndex={0}
-            className={appear}
-            style={{ ...boxStyle(styleOf(node.style), theme), cursor: "pointer" }}
-            onClick={() => onPress(press)}
-          >
-            {children}
-          </div>
-        );
-      }
+      // ONE element type for every box (review r6): a live patch that adds or
+      // removes onPress/onHold changes only BoxElement's props, never the
+      // element type at this position — so React updates in place instead of
+      // remounting the subtree (which would wipe visitor-typed field text and
+      // scroll offsets).
       return (
-        <div className={appear} style={boxStyle(styleOf(node.style), theme)}>
+        <BoxElement
+          press={press}
+          hold={hold}
+          dispatch={onPress}
+          className={appear}
+          style={boxStyle(styleOf(node.style), theme)}
+        >
           {children}
-        </div>
+        </BoxElement>
       );
     }
     case "text":

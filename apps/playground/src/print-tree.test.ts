@@ -19,7 +19,7 @@ const tree: FacetTree = {
     root: {
       id: "root",
       type: "box",
-      children: ["agent-btn", "legacy-btn", "nav-btn", "toggle-btn", "menu"],
+      children: ["agent-btn", "legacy-btn", "nav-btn", "toggle-btn", "menu", "hold-btn"],
     },
     "agent-btn": {
       id: "agent-btn",
@@ -46,6 +46,13 @@ const tree: FacetTree = {
       children: [],
     },
     menu: { id: "menu", type: "box", hidden: true, children: [] },
+    "hold-btn": {
+      id: "hold-btn",
+      type: "box",
+      onPress: { kind: "agent", name: "open_card" },
+      onHold: { kind: "toggle", target: "menu" },
+      children: [],
+    },
   },
 };
 
@@ -65,5 +72,10 @@ describe("printTree", () => {
   it("marks hidden nodes", () => {
     const out = lines(tree);
     expect(out).toContain("  box (hidden)");
+  });
+
+  it("labels the onHold gesture alongside onPress", () => {
+    const out = lines(tree);
+    expect(out).toContain("  box [→ open_card] [hold ⇄ menu]");
   });
 });

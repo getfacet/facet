@@ -119,9 +119,17 @@ without `onHold` keep native behavior). Mid-press `onHold` removal no-ops: the
 gesture state lives in a small internal `HoldableBox` component whose timer
 callback reads the LATEST classification via a ref updated each render — a
 patch that removes `onHold` re-renders with a null classification before the
-timer fires. `HoldableBox` is used ONLY when `classifyPress(node.onHold)` is
-non-null; press-only and plain boxes keep today's exact inline elements
-(byte-identical DOM, DC-007). Keyboard: hold has NO keyboard path in v1 —
+timer fires. **Revised in review r6:** every box renders through ONE
+always-mounted internal `BoxElement` (nullable `press`/`hold` props) rather
+than swapping element types by interaction shape — a `<div>`↔component flip on
+an onHold add/remove patch would remount the subtree and wipe uncontrolled
+field text and scrollTop. The WU-3 "press-only/plain boxes keep today's exact
+inline elements" done-condition is superseded and re-pinned as **byte-identical
+serialized DOM** (`BoxElement` wraps the same markup; undefined props add no
+attributes and attach no listeners — a press-only or plain box carries zero
+pointer/contextmenu handlers, exactly like the inline `<div>`s it replaces),
+so the static exact-markup suite passes unmodified (DC-007). Keyboard: hold has
+NO keyboard path in v1 —
 recorded as accepted, mitigated by STAGE_SPEC policy guidance ("hold is a
 secondary gesture; never make it the only path to critical content" — prompt
 advice, not framework enforcement, per invariant #2). A hold-only box (no

@@ -142,7 +142,7 @@ function asAction(
   if (kind === undefined || kind === "agent") {
     const name = asString(value.name);
     if (name === undefined) {
-      issues.push(`node "${node}": agent action has no string name`);
+      issues.push(`node "${node}": ${field} agent action has no string name`);
       return undefined;
     }
     const action: {
@@ -165,7 +165,7 @@ function asAction(
   if (kind === "navigate") {
     const to = asString(value.to);
     if (to === undefined) {
-      issues.push(`node "${node}": navigate action needs a string "to"`);
+      issues.push(`node "${node}": ${field} navigate action needs a string "to"`);
       return undefined;
     }
     return { kind: "navigate", to };
@@ -173,7 +173,7 @@ function asAction(
   if (kind === "toggle") {
     const target = asString(value.target);
     if (target === undefined) {
-      issues.push(`node "${node}": toggle action needs a string "target"`);
+      issues.push(`node "${node}": ${field} toggle action needs a string "target"`);
       return undefined;
     }
     return { kind: "toggle", target };

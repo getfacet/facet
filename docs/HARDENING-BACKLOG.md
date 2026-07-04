@@ -103,16 +103,17 @@ Found by the bundle's adversarially-verified `/code-review` (P1 + all P2 and
 the spec-alignment/doc P3s fixed in-branch; this is the one confirmed
 non-blocking residual).
 
-- **react/StageRenderer.tsx (onHold add/remove remount)** — a live patch that
-  ADDS or REMOVES `onHold` on a box flips that position between the inline
-  `<div>` and the `HoldableBox` component; React treats it as an element-type
-  change and remounts the subtree, wiping uncontrolled field text and
-  scrollTop inside. In tension with the pinned WU-3 done-condition
-  ("press-only/plain boxes keep today's exact inline elements"), so it needs
-  an owner decision, not a drive-by fix. *Fix candidate:* mount `HoldableBox`
-  for any interactive box (press OR hold) with a nullable `hold` prop that
-  no-ops when null — element type then stays stable across interaction-
-  metadata patches; re-pin the static-markup tests accordingly.
+- ~~react/StageRenderer.tsx (onHold add/remove remount)~~ — RESOLVED in-branch
+  (review r6, escalated to P2 there — P2 can't ship without a waiver, so it was
+  fixed rather than deferred): every box now renders through ONE always-mounted
+  internal component (`BoxElement`) with nullable `press`/`hold` props, so a
+  live patch adding/removing onPress/onHold changes only props, never the React
+  element type at that position — no remount, so uncontrolled field text and
+  scrollTop survive. The WU-3 "press-only/plain boxes keep today's exact inline
+  elements" done-condition is superseded and re-pinned as *byte-identical
+  serialized DOM* (a component wrapping the same markup): the static exact-
+  markup suite passes unmodified. Pinned by three element-identity survival
+  tests (add-onHold / remove-onHold / plain→press+hold).
 - **kit/kit.ts + playground/gallery.tsx (duplicated box builder)** — the same
   positional box-builder exists in both (edited in lockstep for `onHold`;
   review r2). Minimal alignment done in-branch (shared API-guard comment +
@@ -132,16 +133,24 @@ non-blocking residual).
   leave it lingering), and any keydown tears it down (keyboard activations
   are never swallowed). Pinned by three tests. Per-pointerType keying was NOT
   added (no longer needed under the release expiry).
-- **react/StageRenderer.tsx (hybrid re-entry guard, r5)** — a primary
-  pointerdown from a DIFFERENT pointer (hybrid mouse+touch) while a gesture
-  is live re-arms the timer and overwrites `gesturePointerRef`/origin,
-  orphaning the first pointer's gesture. Obscure hardware interleaving;
-  fail direction is a mis-attributed hold, not a wrong press. *Fix:* ignore a
-  pointerdown when `gesturePointerRef` is set to another id + one test.
-- **react/StageRenderer.tsx (slop boundary exactness, r5)** — no test pins
-  the strict `>` at exactly HOLD_SLOP_PX (an 8.0px move must NOT disarm; the
-  squared comparison flipping to `>=` would pass the suite). *Fix:* one
-  boundary test at dx=8,dy=0 and dx=8.01.
+- ~~react/StageRenderer.tsx (hybrid re-entry guard, r5)~~ — RESOLVED in-branch
+  (review r6): handlePointerDown ignores a pointerdown whose id differs from
+  the live gesture's arming pointer, so a second concurrent primary pointer
+  (hybrid mouse+touch) cannot overwrite the origin/timer. Pinned by one test.
+  NOTE: the deeper two-overlapping-holds-on-two-boxes starvation (the single
+  module-level interceptor serves one click) remains — see the per-gesture
+  interceptor map entry below.
+- ~~react/StageRenderer.tsx (slop boundary exactness, r5)~~ — RESOLVED
+  in-branch (review r6): a boundary test pins the strict `>` (8.0px keeps the
+  hold armed, 9px disarms).
+- **react/StageRenderer.tsx (per-gesture click interceptor, r6)** — the
+  post-hold click swallow is a single module-level `swallowArmed` boolean, so
+  two *overlapping* holds on two different boxes (hybrid multi-pointer) share
+  one interceptor: the second hold's `swallowNextClick()` is a no-op, the first
+  release consumes the interceptor, and the second box's synthesized click
+  fires its onPress. Obscure (needs two simultaneous holds); fail is a wrong
+  press. *Fix (structural):* key the interceptor by pointerId/pointerType (a
+  small Map) instead of one boolean.
 - **react/StageRenderer.tsx (no keyboard path for hold-only boxes, r4)** — a
   hold-only box (onHold, no onPress) renders role="button" but Enter/Space
   cannot trigger the hold (accepted v1 decision; STAGE_SPEC advises never to
@@ -152,14 +161,12 @@ non-blocking residual).
   text-selection long-press behavior inside the box (e.g. over a field) can
   still race the hold on some platforms. Revisit with real-device evidence;
   STAGE_SPEC already advises against hold-only critical paths.
-- **core/validate.ts (asAction secondary messages omit the field label, r3)**
-  — the nameless-agent / navigate-`to` / toggle-`target` issue strings don't
-  say whether the bad action sat on `onPress` or `onHold` (the three primary
-  strings do). *Fix:* interpolate the `field` param into the remaining three
-  messages + pin with one test.
-- **playground/print-tree.ts (outline blind to onHold, r3)** — the debug
-  outline prints `onPress`/`hidden` but not `onHold`, so holdable boxes are
-  invisible in dumps. *Fix:* one line in the outline printer.
+- ~~core/validate.ts (asAction secondary messages omit the field label)~~ —
+  RESOLVED in-branch (review r6): the nameless-agent / navigate-`to` /
+  toggle-`target` messages now interpolate the `field` param, so onHold junk
+  of those shapes reports "onHold".
+- ~~playground/print-tree.ts (outline blind to onHold)~~ — RESOLVED in-branch
+  (review r6): the outline prints a `[hold …]` marker; pinned by a test.
 
 ## P3 — residuals from Bundle B's review (kits-themes-as-data; track, fix opportunistically)
 

@@ -1777,6 +1777,58 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
     expect(onAction).toHaveBeenCalledTimes(2);
     expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "pressed" }]);
   });
+
+  it("a second concurrent primary pointer (hybrid mouse+touch) cannot hijack a live hold", () => {
+    // isPrimary is per pointer TYPE, so a touch and a mouse can both be
+    // "primary" at once. A second primary pointerdown mid-gesture must NOT
+    // overwrite the arming pointer's origin/timer (review r6), or it would
+    // orphan the first gesture and mis-fire.
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn); // arming pointer: id 1
+    fireEvent(btn, pointerEvent("pointerdown", { x: 40, y: 40 }, { pointerId: 7 })); // 2nd primary, ignored
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btn);
+    fireEvent.click(btn); // synthesized click swallowed
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("a move exactly at the slop radius does not disarm; one past it does (strict >)", () => {
+    // The slop test is `dx²+dy² > HOLD_SLOP_PX²` — a move to exactly 8px must
+    // KEEP the hold armed (64 > 64 is false); a move to 9px disarms it.
+    const onActionA = vi.fn();
+    const { unmount } = render(<StageRenderer onAction={onActionA} tree={pressHoldTree()} />);
+    const btnA = screen.getByRole("button");
+    pointerDown(btnA, { x: 0, y: 0 });
+    pointerMove(btnA, { x: 8, y: 0 }); // exactly HOLD_SLOP_PX ⇒ still armed
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btnA);
+    fireEvent.click(btnA);
+    expect(onActionA).toHaveBeenCalledTimes(1);
+    expect(onActionA).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+    unmount();
+
+    const onActionB = vi.fn();
+    render(<StageRenderer onAction={onActionB} tree={pressHoldTree()} />);
+    const btnB = screen.getByRole("button");
+    pointerDown(btnB, { x: 0, y: 0 });
+    pointerMove(btnB, { x: 9, y: 0 }); // past the radius ⇒ disarm ⇒ tap presses
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btnB);
+    fireEvent.click(btnB);
+    expect(onActionB).toHaveBeenCalledTimes(1);
+    expect(onActionB).toHaveBeenCalledWith({ kind: "agent", name: "pressed" });
+  });
 });
 
 // View-state coherence (DC-006) + replay-on-mount (Decision 2): an unrelated
@@ -1784,6 +1836,16 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
 // scrollTop), while a toggle re-show REMOUNTS the node — the accepted semantic
 // under which the appear animation replays per mount.
 describe("StageRenderer view-state coherence (jsdom)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // Reset the global one-shot click interceptor between tests (see the hold
+    // suite's beforeEach for the rationale).
+    fireEvent(window, pointerEvent("pointerdown"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("scroll-container element identity and scrollTop survive an unrelated sibling patch", () => {
     const onAction = vi.fn();
     const scrollTree = (label: string): FacetTree =>
@@ -1870,5 +1932,104 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
     expect(container.querySelector("style")).toBeNull();
     expect(screen.getByText("row content").parentElement).toBe(listEl);
     expect(listEl.scrollTop).toBe(kept);
+  });
+
+  it("adding onHold to a pressable box does not remount it — typed field text and scrollTop survive (review r6)", () => {
+    const onAction = vi.fn();
+    // A pressable box holding an uncontrolled field and a scroll region.
+    const cardTree = (withHold: boolean): FacetTree =>
+      tree({
+        root: { id: "root", type: "box", children: ["card"] },
+        card: {
+          id: "card",
+          type: "box",
+          onPress: { kind: "agent", name: "open" },
+          ...(withHold ? { onHold: { kind: "agent", name: "peek" } } : {}),
+          children: ["list", "f"],
+        },
+        list: { id: "list", type: "box", style: { scroll: true }, children: ["row"] },
+        row: { id: "row", type: "text", value: "row content" },
+        f: { id: "f", type: "field", name: "email", label: "Email" },
+      });
+    const { rerender } = render(<StageRenderer onAction={onAction} tree={cardTree(false)} />);
+
+    const input = screen.getByLabelText("Email") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "typed@example.com" } });
+    const listEl = screen.getByText("row content").parentElement as HTMLElement;
+    listEl.scrollTop = 90;
+    const keptScroll = listEl.scrollTop;
+
+    // A live patch merely ADDS a secondary gesture. Element type must be stable
+    // (BoxElement → BoxElement), so React updates props in place: no remount.
+    rerender(<StageRenderer onAction={onAction} tree={cardTree(true)} />);
+
+    expect(screen.getByLabelText("Email")).toBe(input); // same element…
+    expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("typed@example.com");
+    expect(screen.getByText("row content").parentElement).toBe(listEl);
+    expect(listEl.scrollTop).toBe(keptScroll);
+  });
+
+  it("removing onHold from a box does not remount it and the box still presses (review r6)", () => {
+    const onAction = vi.fn();
+    const cardTree = (withHold: boolean): FacetTree =>
+      tree({
+        root: { id: "root", type: "box", children: ["card"] },
+        card: {
+          id: "card",
+          type: "box",
+          onPress: { kind: "agent", name: "open" },
+          ...(withHold ? { onHold: { kind: "agent", name: "peek" } } : {}),
+          children: ["f"],
+        },
+        f: { id: "f", type: "field", name: "email", label: "Email" },
+      });
+    const { rerender } = render(<StageRenderer onAction={onAction} tree={cardTree(true)} />);
+    const input = screen.getByLabelText("Email") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "kept" } });
+
+    rerender(<StageRenderer onAction={onAction} tree={cardTree(false)} />); // onHold removed
+
+    expect(screen.getByLabelText("Email")).toBe(input);
+    expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("kept");
+    // Still pressable after losing the hold gesture.
+    fireEvent.click(screen.getByRole("button"));
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "open" });
+  });
+
+  it("adding onPress+onHold to a plain box does not remount it and it becomes holdable (review r6)", () => {
+    const onAction = vi.fn();
+    const boxTree = (interactive: boolean): FacetTree =>
+      tree({
+        root: { id: "root", type: "box", children: ["b"] },
+        b: {
+          id: "b",
+          type: "box",
+          ...(interactive
+            ? {
+                onPress: { kind: "agent", name: "open" },
+                onHold: { kind: "agent", name: "peek" },
+              }
+            : {}),
+          children: ["f"],
+        },
+        f: { id: "f", type: "field", name: "email", label: "Email" },
+      });
+    const { rerender } = render(<StageRenderer onAction={onAction} tree={boxTree(false)} />);
+    const input = screen.getByLabelText("Email") as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "stays" } });
+
+    rerender(<StageRenderer onAction={onAction} tree={boxTree(true)} />); // plain → press+hold
+
+    expect(screen.getByLabelText("Email")).toBe(input);
+    expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("stays");
+    // The box is now holdable: a long press fires onHold.
+    const btn = screen.getByRole("button");
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btn);
+    fireEvent.click(btn);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "peek" });
   });
 });

@@ -855,6 +855,35 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     expect(preDRun.issues).toHaveLength(0);
     expect(preDRun.tree).toEqual(preD);
   });
+
+  it("strips appear/scroll from non-box styles — the new style tokens are BoxStyle-only", () => {
+    // appear and scroll live on BoxStyle only; text/image/field styles never
+    // carry them, so validateTree must drop them there (the renderer's
+    // BoxStyle-only raw path then matches the validated path — no divergence).
+    const run = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["t", "f"] },
+        t: {
+          id: "t",
+          type: "text",
+          value: "hi",
+          style: { appear: "fade", size: "lg" },
+        },
+        f: {
+          id: "f",
+          type: "field",
+          name: "email",
+          style: { scroll: true },
+        },
+      },
+    });
+    const t = run.tree.nodes["t"] as unknown as { style?: Record<string, unknown> };
+    const f = run.tree.nodes["f"] as unknown as { style?: Record<string, unknown> };
+    expect(t.style?.["appear"]).toBeUndefined(); // stripped from a text style
+    expect(t.style?.["size"]).toBe("lg"); // a real text token survives
+    expect(f.style?.["scroll"]).toBeUndefined(); // stripped from a field style
+  });
 });
 
 describe("validateTree hidden", () => {
