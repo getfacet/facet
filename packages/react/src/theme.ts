@@ -217,6 +217,16 @@ function justifyValue(justify: Justify): CSSProperties["justifyContent"] {
   }
 }
 
+// The one concrete scroll-region height — a renderer constant, not a theme
+// token (RISK-API-5): agents say `scroll: true`, never a number.
+const SCROLL_MAX_HEIGHT = "20rem";
+
+/**
+ * Note: `appear` is renderer-bound — the class name and the once-per-stage
+ * `<style>` element live in `StageRenderer` (via the internal `appear.ts`),
+ * not in this token→CSS map, so direct `boxStyle` consumers see no
+ * animation CSS here (RISK-API-2).
+ */
 export function boxStyle(
   style: BoxStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,
@@ -236,6 +246,17 @@ export function boxStyle(
   if (style.border) css.border = `1px solid ${theme.color.border}`;
   if (style.grow) css.flexGrow = 1;
   if (style.width === "full") css.width = "100%";
+  // Literal `true` only (total-function pattern on the raw live path — any
+  // other value maps to no CSS): a bounded, vertically scrollable region.
+  // Never overflow-x (RISK-INV-6a); the `minHeight: 0` is load-bearing — a
+  // flex child defaults to `min-height: auto` and would silently refuse to
+  // clip inside a `grow` column without it.
+  if (style.scroll === true) {
+    css.overflowY = "auto";
+    css.overflowX = "hidden";
+    css.maxHeight = SCROLL_MAX_HEIGHT;
+    css.minHeight = 0;
+  }
   return css;
 }
 
