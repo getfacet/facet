@@ -86,7 +86,15 @@ swallowed at window capture — press and hold NEVER both fire (DC-004,
 RISK-INV-1/RISK-API-4a). **Interceptor lifecycle (pinned, revised in review
 r2):** SET when the hold timer fires; CONSUMED by the next `click` anywhere
 (window capture runs before any target/bubble handler); RESET by the next
-`pointerdown` anywhere — whichever comes first. Window+capture scope is
+PRIMARY `pointerdown` anywhere (non-primary ignored — review r3: a second
+finger landing mid-hold must not disarm the swallow); EXPIRED by a
+`pointercancel` (review r3: no click ever follows a canceled pointer, so a
+lingering interceptor would eat an unrelated later keyboard/programmatic
+click) — whichever comes first. The stage's appear `<style>` slot rides inside
+an UNCONDITIONAL Fragment (review r3): flipping `usesAppear` toggles only the
+style child, never the stage child's element type, so the first/last appear
+token arriving by patch cannot remount the stage subtree (which would wipe
+field text and scroll offsets). Window+capture scope is
 structural, not stylistic: a component-scoped latch provably fails three ways
 — a pressable DESCENDANT's click handler runs target-first (before the held
 box's bubble handler), a release-outside targets the synthesized click at the

@@ -1550,6 +1550,84 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
     const btn = screen.getByRole("button");
     expect(btn.className).toBe("facet-appear-fade");
   });
+
+  it("a second finger's pointerdown does not defeat the post-hold click swallow (multi-touch)", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    }); // hold fires, interceptor armed
+    // A second (non-primary) finger lands elsewhere while the held finger is
+    // still down — the RESET listener must ignore it.
+    fireEvent(window, pointerEvent("pointerdown", {}, { isPrimary: false }));
+    pointerUp(btn);
+    fireEvent.click(btn); // the held finger's synthesized click — still swallowed
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("pointercancel expires the interceptor so a later unrelated click is not swallowed", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    }); // hold fires, interceptor armed
+    fireEvent(btn, pointerEvent("pointercancel")); // no click will ever follow this gesture
+    fireEvent.click(btn); // a LATER keyboard/programmatic activation must not be eaten
+
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "pressed" }]);
+  });
+
+  it("a pointerdown without coordinates degrades to origin 0,0 (finiteCoord — never NaN-arms)", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    // A synthetic/assistive-tech pointerdown can lack clientX/clientY entirely.
+    // Without finiteCoord the origin would be NaN and the slop check
+    // (NaN > slop² === false) could never disarm — the drag below would still
+    // fire the hold and swallow the click.
+    const bare = new Event("pointerdown", { bubbles: true, cancelable: true });
+    Object.assign(bare, { pointerId: 1, button: 0, isPrimary: true });
+    fireEvent(btn, bare);
+    pointerMove(btn, { x: 100, y: 0 }); // far from the degraded 0,0 origin ⇒ disarms
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btn);
+    fireEvent.click(btn); // plain tap path — nothing suppressed
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "pressed" });
+  });
+
+  it("a re-press while a hold timer is already armed fires exactly one hold", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(200);
+    });
+    pointerDown(btn); // pointer-capture loss / event replay: no pointerup between
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btn);
+    fireEvent.click(btn);
+
+    expect(onAction).toHaveBeenCalledTimes(1); // two live timers would dispatch twice
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
 });
 
 // View-state coherence (DC-006) + replay-on-mount (Decision 2): an unrelated
@@ -1610,5 +1688,38 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
     const second = screen.getByText("peek content").parentElement as HTMLElement;
     expect(second).not.toBe(first); // a fresh element ⇒ the CSS animation replays
     expect(second.className).toBe("facet-appear-fade");
+  });
+
+  it("adding the first / removing the last appear token never remounts the stage (review r3)", () => {
+    // The <style> slot toggling must not change the stage child's element type:
+    // `usesAppear ? <Fragment>…</Fragment> : stage` would remount EVERYTHING on
+    // the flip, wiping scrollTop and visitor-typed field text.
+    const onAction = vi.fn();
+    const flipTree = (appear: boolean): FacetTree =>
+      tree({
+        root: { id: "root", type: "box", children: ["list", "badge"] },
+        list: { id: "list", type: "box", style: { scroll: true }, children: ["row"] },
+        row: { id: "row", type: "text", value: "row content" },
+        badge: appear
+          ? { id: "badge", type: "box", style: { appear: "fade" }, children: [] }
+          : { id: "badge", type: "box", children: [] },
+      });
+    const { rerender, container } = render(
+      <StageRenderer onAction={onAction} tree={flipTree(false)} />,
+    );
+    expect(container.querySelector("style")).toBeNull();
+    const listEl = screen.getByText("row content").parentElement as HTMLElement;
+    listEl.scrollTop = 120;
+    const kept = listEl.scrollTop;
+
+    rerender(<StageRenderer onAction={onAction} tree={flipTree(true)} />); // first appear token arrives
+    expect(container.querySelector("style")).not.toBeNull();
+    expect(screen.getByText("row content").parentElement).toBe(listEl); // NO remount
+    expect(listEl.scrollTop).toBe(kept);
+
+    rerender(<StageRenderer onAction={onAction} tree={flipTree(false)} />); // last appear token leaves
+    expect(container.querySelector("style")).toBeNull();
+    expect(screen.getByText("row content").parentElement).toBe(listEl);
+    expect(listEl.scrollTop).toBe(kept);
   });
 });

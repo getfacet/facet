@@ -370,6 +370,21 @@ describe("StageRenderer appear (static)", () => {
     expect(out).not.toContain('role="button"'); // junk onHold never makes a button
   });
 
+  it("server-renders a valid onHold box (HoldableBox) without touching window", () => {
+    // The static suite is the SSR contract: HoldableBox's render body must stay
+    // free of window/document access (the interceptor arms only inside the
+    // hold-timer callback), or every server render of an onHold tree throws.
+    const held = tree({
+      root: { id: "root", type: "box", children: ["h"] },
+      h: { id: "h", type: "box", onHold: { kind: "agent", name: "peek" }, children: ["t"] },
+      t: text("t", "hold me"),
+    });
+    expect(() => render(held)).not.toThrow();
+    const out = render(held);
+    expect(out).toContain("hold me");
+    expect(out).toContain('role="button"'); // holdable ⇒ interactive markup
+  });
+
   it("renders a CYCLIC raw tree containing an appear token without hanging or throwing", () => {
     const cyclic = tree({
       root: box("root", ["a"]),

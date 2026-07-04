@@ -304,6 +304,7 @@ function swallowNextClick(): void {
     swallowArmed = false;
     window.removeEventListener("click", swallow, true);
     window.removeEventListener("pointerdown", reset, true);
+    window.removeEventListener("pointercancel", expire, true);
   };
   // CONSUME: the next click anywhere is the synthesized post-hold click —
   // stop it at window capture (before React's root listeners) and tear down.
@@ -312,13 +313,28 @@ function swallowNextClick(): void {
     event.preventDefault();
     teardown();
   };
-  // RESET: a new pointerdown means a new gesture — tear down WITHOUT touching
-  // the event, so the fresh press proceeds untouched.
-  const reset = (): void => {
+  // RESET: a new PRIMARY pointerdown means a new gesture — tear down WITHOUT
+  // touching the event, so the fresh press proceeds untouched. Non-primary
+  // pointers are ignored: a second finger landing while the held finger is
+  // still down (multi-touch) must not disarm the swallow, or the held
+  // finger's release would fire the press the interceptor exists to prevent
+  // (review r3). A plain Event without `isPrimary` (keyboard/programmatic,
+  // jsdom) counts as primary.
+  const reset = (event: Event): void => {
+    if ((event as Partial<PointerEvent>).isPrimary === false) {
+      return;
+    }
+    teardown();
+  };
+  // EXPIRE: after a pointercancel the browser will never synthesize the click
+  // this interceptor waits for — tear down so it cannot linger and swallow an
+  // unrelated later click (keyboard/assistive-tech activation, review r3).
+  const expire = (): void => {
     teardown();
   };
   window.addEventListener("click", swallow, true);
   window.addEventListener("pointerdown", reset, true);
+  window.addEventListener("pointercancel", expire, true);
 }
 
 interface HoldableBoxProps {
@@ -627,20 +643,24 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     depth: 0,
   });
   // The appear stylesheet rides ONCE per stage, and only when the tree uses
-  // appear — appear-free trees stay byte-identical to today. Two stages on one
-  // page each emit the identical namespaced constant (idempotent). Replay
+  // appear — appear-free trees stay byte-identical to today (Fragment and null
+  // emit no markup). Two stages on one page each emit the identical namespaced
+  // constant (idempotent). The Fragment wrapper is UNCONDITIONAL on purpose:
+  // `usesAppear ? <Fragment>…</Fragment> : stage` would change the root child's
+  // element TYPE when a patch adds the first (or removes the last) appear token,
+  // and React would remount the entire stage subtree — wiping visitor-typed
+  // field text and scroll offsets (review r3). With the stable Fragment, `stage`
+  // keeps its child position and only the <style> slot toggles. Replay
   // semantics are pinned as replay-on-MOUNT (Decision 2): the animation is pure
   // CSS on the class, so it runs whenever the element mounts — first paint,
   // node re-add, toggle re-show, screen navigation (hidden/off-screen nodes are
   // unmounted) — with no JS played-state bookkeeping; a remounted node
   // deliberately replays its animation.
-  const staged = usesAppear ? (
+  const staged = (
     <Fragment>
-      <style>{APPEAR_CSS}</style>
+      {usesAppear ? <style>{APPEAR_CSS}</style> : null}
       {stage}
     </Fragment>
-  ) : (
-    stage
   );
   if (onAction === undefined) {
     // No handler ⇒ no press can emit, so field collection is unreachable and

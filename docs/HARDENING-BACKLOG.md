@@ -119,6 +119,23 @@ non-blocking residual).
   identical conditional-spread spelling). *Fix (structural, next
   /refactor-audit):* fold the gallery `Sheet` onto `@facet/kit`'s builder or
   extract one shared helper.
+- **react/StageRenderer.tsx (hold not scoped to the arming pointerId, r3)** —
+  `pointermove`/`pointerup` from a SECOND finger disarm the primary finger's
+  hold (fail-closed: the hold just doesn't fire; no spurious action). *Fix:*
+  record `pointerId` at arm time and ignore other pointers' move/up/leave.
+- **react/StageRenderer.tsx (long-press over selectable content, r3)** — a
+  hold on a box suppresses the touch context menu while armed, but native
+  text-selection long-press behavior inside the box (e.g. over a field) can
+  still race the hold on some platforms. Revisit with real-device evidence;
+  STAGE_SPEC already advises against hold-only critical paths.
+- **core/validate.ts (asAction secondary messages omit the field label, r3)**
+  — the nameless-agent / navigate-`to` / toggle-`target` issue strings don't
+  say whether the bad action sat on `onPress` or `onHold` (the three primary
+  strings do). *Fix:* interpolate the `field` param into the remaining three
+  messages + pin with one test.
+- **playground/print-tree.ts (outline blind to onHold, r3)** — the debug
+  outline prints `onPress`/`hidden` but not `onHold`, so holdable boxes are
+  invisible in dumps. *Fix:* one line in the outline printer.
 
 ## P3 — residuals from Bundle B's review (kits-themes-as-data; track, fix opportunistically)
 
