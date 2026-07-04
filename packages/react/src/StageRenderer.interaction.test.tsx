@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { MAX_FIELD_VALUE_CHARS, type FacetNode, type FacetTree, type NodeId } from "@facet/core";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  MAX_FIELD_VALUE_CHARS,
+  type FacetAction,
+  type FacetNode,
+  type FacetTree,
+  type NodeId,
+} from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 
 afterEach(cleanup);
@@ -870,5 +876,347 @@ describe("StageRenderer collect (jsdom)", () => {
     expect(screen.queryByPlaceholderText("your name")).toBeNull();
 
     expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hold gesture (Decision 3): pointerdown arms a HOLD_MS timer; slop / early
+// release / cancel disarm it; the timer fires the onHold action through the ONE
+// existing handlePress switch and swallows the browser-synthesized click via a
+// suppress-next-click latch (cleared on consume-by-click OR next pointerdown).
+// jsdom implements no PointerEvent gestures, so pointer events are dispatched
+// as plain bubbling Events with clientX/clientY assigned (React reads the
+// coordinates off the native event); fake timers drive the hold threshold.
+// ---------------------------------------------------------------------------
+
+/** Mirrors the renderer's non-exported HOLD_MS constant. */
+const HOLD_MS = 500;
+
+function pointerEvent(type: string, coords: { x?: number; y?: number } = {}): Event {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { clientX: coords.x ?? 0, clientY: coords.y ?? 0, pointerId: 1 });
+  return event;
+}
+
+const pointerDown = (el: Element, coords?: { x?: number; y?: number }): void => {
+  fireEvent(el, pointerEvent("pointerdown", coords));
+};
+const pointerMove = (el: Element, coords?: { x?: number; y?: number }): void => {
+  fireEvent(el, pointerEvent("pointermove", coords));
+};
+const pointerUp = (el: Element, coords?: { x?: number; y?: number }): void => {
+  fireEvent(el, pointerEvent("pointerup", coords));
+};
+
+/** A completed hold: down → HOLD_MS elapses → up → the browser-synthesized click. */
+function holdGesture(el: Element): void {
+  pointerDown(el);
+  act(() => {
+    vi.advanceTimersByTime(HOLD_MS + 100);
+  });
+  pointerUp(el);
+  fireEvent.click(el);
+}
+
+/** A quick tap: down → a sub-threshold dwell → up → the native click. */
+function tapGesture(el: Element, dwellMs = 100): void {
+  pointerDown(el);
+  act(() => {
+    vi.advanceTimersByTime(dwellMs);
+  });
+  pointerUp(el);
+  fireEvent.click(el);
+}
+
+/** A box carrying BOTH gestures: quick tap ⇒ "pressed", long press ⇒ "held". */
+const pressHoldTree = (): FacetTree =>
+  tree({
+    root: { id: "root", type: "box", children: ["btn"] },
+    btn: {
+      id: "btn",
+      type: "box",
+      onPress: { kind: "agent", name: "pressed" },
+      onHold: { kind: "agent", name: "held" },
+      children: ["bt"],
+    },
+    bt: { id: "bt", type: "text", value: "target" },
+  });
+
+describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("long press fires onHold only and quick tap fires onPress only", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    holdGesture(btn); // the post-hold synthesized click must be swallowed
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+
+    tapGesture(btn);
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "pressed" }]);
+  });
+
+  it("hold with a toggle kind hides the panel browser-locally with zero transport calls", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["btn", "panel"] },
+          btn: {
+            id: "btn",
+            type: "box",
+            onHold: { kind: "toggle", target: "panel" },
+            children: ["bt"],
+          },
+          bt: { id: "bt", type: "text", value: "hold me" },
+          panel: { id: "panel", type: "box", children: ["p"] },
+          p: { id: "p", type: "text", value: "panel content" },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("panel content")).toBeTruthy();
+    holdGesture(screen.getByRole("button"));
+    expect(screen.queryByText("panel content")).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("hold with a navigate kind switches the screen browser-locally with zero transport calls", () => {
+    const onAction = vi.fn();
+    const base = screensTree();
+    const withHoldNav: FacetTree = {
+      ...base,
+      nodes: {
+        ...base.nodes,
+        goAbout: {
+          id: "goAbout",
+          type: "box",
+          onHold: { kind: "navigate", to: "about" },
+          children: [],
+        },
+      },
+    };
+    render(<StageRenderer onAction={onAction} tree={withHoldNav} />);
+
+    expect(screen.getByText("home content")).toBeTruthy();
+    holdGesture(screen.getByRole("button"));
+    expect(screen.getByText("about content")).toBeTruthy();
+    expect(screen.queryByText("home content")).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("a hold-emitted agent event is byte-identical in shape to a press-emitted one (payload/collect intact)", () => {
+    const onAction = vi.fn();
+    // The SAME action on both gestures (RISK-INV-5): the two emissions must be
+    // deep-equal — same name, same payload, same collected fields, and no
+    // gesture discriminator field anywhere.
+    const action: FacetAction = {
+      kind: "agent",
+      name: "same",
+      payload: { id: "7" },
+      collect: "form",
+    };
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "btn"] },
+          form: { id: "form", type: "box", children: ["emailF"] },
+          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          btn: { id: "btn", type: "box", onPress: action, onHold: action, children: ["bt"] },
+          bt: { id: "bt", type: "text", value: "dual" },
+        })}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("your email"), {
+      target: { value: "a@b.dev" },
+    });
+    const btn = screen.getByRole("button");
+
+    tapGesture(btn); // the press-emitted reference event
+    holdGesture(btn); // exactly ONE hold-emitted event
+
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[0]).toEqual([
+      { kind: "agent", name: "same", payload: { id: "7" } },
+      { email: "a@b.dev" },
+    ]);
+    expect(onAction.mock.calls[1]).toEqual(onAction.mock.calls[0]);
+  });
+
+  it("a 300ms below-threshold release runs onPress as a plain press", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+
+    tapGesture(screen.getByRole("button"), 300);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "pressed" });
+  });
+
+  it("pointer movement beyond the slop cancels the hold", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn, { x: 10, y: 10 });
+    pointerMove(btn, { x: 30, y: 10 }); // 20px > HOLD_SLOP_PX (8)
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 200);
+    });
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("removing onHold mid-press no-ops the pending hold", () => {
+    const onAction = vi.fn();
+    const withoutHold = tree({
+      root: { id: "root", type: "box", children: ["btn"] },
+      btn: { id: "btn", type: "box", children: ["bt"] },
+      bt: { id: "bt", type: "text", value: "target" },
+    });
+    const withHold = tree({
+      root: { id: "root", type: "box", children: ["btn"] },
+      btn: { id: "btn", type: "box", onHold: { kind: "agent", name: "held" }, children: ["bt"] },
+      bt: { id: "bt", type: "text", value: "target" },
+    });
+    const { rerender } = render(<StageRenderer onAction={onAction} tree={withHold} />);
+
+    pointerDown(screen.getByRole("button"));
+    // A live patch removes onHold BEFORE the timer fires: the re-render leaves a
+    // null classification, so the pending hold must do nothing.
+    rerender(<StageRenderer onAction={onAction} tree={withoutHold} />);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 200);
+    });
+    fireEvent.click(screen.getByText("target"));
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("a quick tap on a hold-only box no-ops (the box stays pressable-styled)", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["btn"] },
+          btn: {
+            id: "btn",
+            type: "box",
+            onHold: { kind: "agent", name: "held" },
+            children: ["bt"],
+          },
+          bt: { id: "bt", type: "text", value: "hold only" },
+        })}
+      />,
+    );
+
+    // Focusable/pressable-styled (Decision 3), but a quick tap emits nothing.
+    tapGesture(screen.getByRole("button"));
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("a hold released outside the box does not swallow the next quick tap (latch resets on pointerdown)", () => {
+    const onAction = vi.fn();
+    const { container } = render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100); // the hold fires; the latch is set
+    });
+    // Pointer released OUTSIDE the box ⇒ the browser targets the synthesized
+    // click at the common ancestor, so the box never sees a click and the latch
+    // is NOT consumed here.
+    pointerUp(container);
+    fireEvent.click(container);
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+
+    // The stale latch must be RESET at the next pointerdown, not poison this tap.
+    tapGesture(btn);
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "pressed" }]);
+  });
+
+  it("hold-then-hold fires exactly two onHold actions", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    holdGesture(btn);
+    holdGesture(btn);
+
+    expect(onAction).toHaveBeenCalledTimes(2);
+    expect(onAction.mock.calls[0]).toEqual([{ kind: "agent", name: "held" }]);
+    expect(onAction.mock.calls[1]).toEqual([{ kind: "agent", name: "held" }]);
+  });
+});
+
+// View-state coherence (DC-006) + replay-on-mount (Decision 2): an unrelated
+// content patch must keep the scroll container's DOM identity (the proxy for
+// scrollTop), while a toggle re-show REMOUNTS the node — the accepted semantic
+// under which the appear animation replays per mount.
+describe("StageRenderer view-state coherence (jsdom)", () => {
+  it("scroll-container element identity and scrollTop survive an unrelated sibling patch", () => {
+    const onAction = vi.fn();
+    const scrollTree = (label: string): FacetTree =>
+      tree({
+        root: { id: "root", type: "box", children: ["list", "status"] },
+        list: { id: "list", type: "box", style: { scroll: true }, children: ["row"] },
+        row: { id: "row", type: "text", value: "row content" },
+        status: { id: "status", type: "text", value: label },
+      });
+    const { rerender } = render(<StageRenderer onAction={onAction} tree={scrollTree("before")} />);
+
+    const listEl = screen.getByText("row content").parentElement as HTMLElement;
+    expect(listEl.style.overflowY).toBe("auto"); // it IS the scroll container
+    listEl.scrollTop = 120;
+    const kept = listEl.scrollTop; // read back (jsdom clamps without layout)
+
+    rerender(<StageRenderer onAction={onAction} tree={scrollTree("after")} />);
+
+    expect(screen.getByText("after")).toBeTruthy();
+    expect(screen.getByText("row content").parentElement).toBe(listEl);
+    expect(listEl.scrollTop).toBe(kept);
+  });
+
+  it("a toggle re-shown appear box remounts (appear replays per mount — pinned semantics)", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["btn", "peek"] },
+          btn: {
+            id: "btn",
+            type: "box",
+            onPress: { kind: "toggle", target: "peek" },
+            children: ["bt"],
+          },
+          bt: { id: "bt", type: "text", value: "Toggle" },
+          peek: { id: "peek", type: "box", style: { appear: "fade" }, children: ["pt"] },
+          pt: { id: "pt", type: "text", value: "peek content" },
+        })}
+      />,
+    );
+
+    const first = screen.getByText("peek content").parentElement as HTMLElement;
+    expect(first.className).toBe("facet-appear-fade");
+
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" })); // hide ⇒ unmount
+    expect(screen.queryByText("peek content")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Toggle" })); // re-show ⇒ REMOUNT
+
+    const second = screen.getByText("peek content").parentElement as HTMLElement;
+    expect(second).not.toBe(first); // a fresh element ⇒ the CSS animation replays
+    expect(second.className).toBe("facet-appear-fade");
   });
 });

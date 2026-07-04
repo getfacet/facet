@@ -1,5 +1,10 @@
-import { Fragment, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import type {
+  CSSProperties,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import {
   FIELD_INPUTS,
   isSafeImageSrc,
@@ -18,8 +23,17 @@ import {
 } from "@facet/core";
 import { boxStyle, fieldStyle, imageStyle, resolveTheme, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
+import { APPEAR_CSS, appearClass } from "./appear.js";
 
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
+
+/**
+ * Long-press gesture thresholds — renderer constants, never tokens or theme
+ * data (RISK-API-5): agents author `onHold`, not durations. A press held for
+ * HOLD_MS fires the hold; pointer travel beyond HOLD_SLOP_PX disarms it.
+ */
+const HOLD_MS = 500;
+const HOLD_SLOP_PX = 8;
 
 /**
  * Fail-safe cap on total nodes visited in ONE render pass / field gather
@@ -250,6 +264,172 @@ function isHiddenByDefault(node: FacetNode): boolean {
   return (node as { readonly hidden?: unknown }).hidden === true;
 }
 
+/** Pointer coordinates on the raw event path can be missing (synthetic events); degrade to 0. */
+function finiteCoord(value: unknown): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+interface HoldableBoxProps {
+  /** Classified onPress — null renders a hold-only box (a quick tap no-ops). */
+  readonly press: ClassifiedPress | null;
+  /** Classified onHold — non-null by construction: renderNode mounts this component ONLY then. */
+  readonly hold: ClassifiedPress;
+  /**
+   * The ONE existing view-state switch (StageRenderer's handlePress) — press
+   * and hold both route through it (one classifier, one switch, RISK-INV-1), so
+   * a hold-emitted agent event is byte-identical IN SHAPE to a press-emitted
+   * one: no gesture discriminator field exists anywhere (RISK-INV-5).
+   */
+  readonly dispatch: (press: ClassifiedPress) => void;
+  readonly style: CSSProperties;
+  readonly className: string | undefined;
+  readonly children: ReactNode;
+}
+
+/**
+ * A pressable box that ALSO detects a long press (Decision 3). Used exclusively
+ * for boxes whose `onHold` classifies — press-only and plain boxes keep today's
+ * exact inline elements (byte-identical DOM). `pointerdown` arms a HOLD_MS
+ * timer; `pointermove` beyond HOLD_SLOP_PX, `pointerup` before threshold,
+ * `pointercancel` (incl. the browser claiming a touch gesture for scrolling —
+ * free disambiguation, so no touch-action CSS is set here), or `pointerleave`
+ * disarms it. The timer firing executes the hold and latches suppression of the
+ * browser-synthesized click that follows pointerup, so press and hold never
+ * both fire.
+ */
+function HoldableBox({
+  press,
+  hold,
+  dispatch,
+  style,
+  className,
+  children,
+}: HoldableBoxProps): ReactNode {
+  // Latest-classification refs, updated each render: the timer callback must
+  // act on the CURRENT content, not the content captured at pointerdown. A
+  // patch that CHANGES onHold mid-press lands here
+  // before the timer fires; a patch that REMOVES onHold unmounts this component
+  // entirely (renderNode only mounts it for a classifiable onHold) and the
+  // unmount cleanup below clears the pending timer — either way the stale hold
+  // no-ops.
+  const holdRef = useRef(hold);
+  holdRef.current = hold;
+  const dispatchRef = useRef(dispatch);
+  dispatchRef.current = dispatch;
+  // Pending hold timer + gesture origin (the slop reference); null = disarmed.
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const originRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  /**
+   * Suppress-next-click latch (pinned lifecycle): SET when the hold timer
+   * fires; cleared when CONSUMED by the next click on this box OR RESET on the
+   * next pointerdown on this box, whichever comes first. The arm-time reset
+   * matters: a hold whose pointer is released OUTSIDE the box makes the browser
+   * target the synthesized click at the common ancestor — this box never sees
+   * it, and the stale latch must NOT swallow the visitor's NEXT quick tap.
+   */
+  const suppressNextClickRef = useRef(false);
+  // True from the hold firing until the pointer ends — with the armed timer it
+  // scopes contextmenu suppression to the live gesture only.
+  const holdingRef = useRef(false);
+
+  // Unmount cleanup: a patch that removes onHold (or the whole node) mid-press
+  // swaps this component out; the pending timer must die with it.
+  useEffect(
+    () => () => {
+      if (timerRef.current !== null) {
+        clearTimeout(timerRef.current);
+      }
+    },
+    [],
+  );
+
+  const disarm = (): void => {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    originRef.current = null;
+  };
+
+  const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    // Arm-time latch reset — see the latch lifecycle above.
+    suppressNextClickRef.current = false;
+    holdingRef.current = false;
+    originRef.current = { x: finiteCoord(event.clientX), y: finiteCoord(event.clientY) };
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      timerRef.current = null;
+      originRef.current = null;
+      holdingRef.current = true;
+      // Swallow the browser-synthesized click that follows the coming pointerup.
+      suppressNextClickRef.current = true;
+      // One press pipeline: the hold rides the same handlePress switch a press
+      // does, reading the LATEST classification (see holdRef above).
+      dispatchRef.current(holdRef.current);
+    }, HOLD_MS);
+  };
+
+  const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    const origin = originRef.current;
+    if (timerRef.current === null || origin === null) {
+      return;
+    }
+    const dx = finiteCoord(event.clientX) - origin.x;
+    const dy = finiteCoord(event.clientY) - origin.y;
+    if (dx * dx + dy * dy > HOLD_SLOP_PX * HOLD_SLOP_PX) {
+      disarm();
+    }
+  };
+
+  const handlePointerEnd = (): void => {
+    // pointerup before the threshold, pointercancel, or pointerleave: the hold
+    // disarms; a below-threshold release lets the native click run onPress as
+    // today.
+    disarm();
+    holdingRef.current = false;
+  };
+
+  const handleClick = (): void => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false; // consumed by this click
+      return;
+    }
+    if (press !== null) {
+      dispatch(press);
+    }
+    // Hold-only box (press === null): a quick tap deliberately no-ops.
+  };
+
+  const handleContextMenu = (event: ReactMouseEvent<HTMLDivElement>): void => {
+    // Suppressed ONLY while a hold gesture is live (armed, or fired and not yet
+    // released) — so a touch long-press context menu can't race the hold.
+    // Boxes without onHold never mount this component and keep the native menu.
+    if (timerRef.current !== null || holdingRef.current) {
+      event.preventDefault();
+    }
+  };
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      className={className}
+      style={style}
+      onClick={handleClick}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerEnd}
+      onPointerCancel={handlePointerEnd}
+      onPointerLeave={handlePointerEnd}
+      onContextMenu={handleContextMenu}
+    >
+      {children}
+    </div>
+  );
+}
+
 export interface StageRendererProps {
   readonly tree: FacetTree;
   /**
@@ -355,6 +535,24 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     }
   };
 
+  // Appear prescan (Decision 4): ONE flat, NON-recursive pass over the
+  // `tree.nodes` record VALUES decides whether this stage needs the appear
+  // stylesheet at all. It never follows `children` — so a cyclic or over-deep
+  // RAW tree cannot hang it, by construction — and it null-guards every value
+  // (`n != null && typeof n === "object"`) before touching `.style`, mirroring
+  // renderNode's `node == null` guard: the raw live path can hold null/scalar
+  // node values (isTreeShaped only checks that `nodes` is an object, never its
+  // values). Reachability is deliberately ignored: an appear token on an
+  // unreachable node costs one harmless idempotent <style>, while a
+  // reachability walk would be a new unguarded traversal.
+  const nodeValues: readonly unknown[] = Object.values(tree.nodes);
+  const usesAppear = nodeValues.some(
+    (n) =>
+      n != null &&
+      typeof n === "object" &&
+      appearClass(styleOf((n as { readonly style?: object }).style)) !== undefined,
+  );
+
   // One mutable budget per render pass, LOCAL to this StageRenderer render and
   // threaded down the plain `renderNode` recursion. `renderNode` is a plain
   // function, not a React component, so the counter is never shared across
@@ -371,17 +569,33 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     budget,
     depth: 0,
   });
+  // The appear stylesheet rides ONCE per stage, and only when the tree uses
+  // appear — appear-free trees stay byte-identical to today. Two stages on one
+  // page each emit the identical namespaced constant (idempotent). Replay
+  // semantics are pinned as replay-on-MOUNT (Decision 2): the animation is pure
+  // CSS on the class, so it runs whenever the element mounts — first paint,
+  // node re-add, toggle re-show, screen navigation (hidden/off-screen nodes are
+  // unmounted) — with no JS played-state bookkeeping; a remounted node
+  // deliberately replays its animation.
+  const staged = usesAppear ? (
+    <Fragment>
+      <style>{APPEAR_CSS}</style>
+      {stage}
+    </Fragment>
+  ) : (
+    stage
+  );
   if (onAction === undefined) {
     // No handler ⇒ no press can emit, so field collection is unreachable and
     // the scope wrapper is unnecessary — handler-less output stays byte-
     // identical to the pre-collect renderer (pinned by the static suite).
-    return stage;
+    return staged;
   }
   // display: contents adds no layout box, so flow layout is unchanged
   // (invariant #5); the div exists only to scope the press-time field read.
   return (
     <div style={{ display: "contents" }} ref={stageRootRef}>
-      {stage}
+      {staged}
     </div>
   );
 }
@@ -487,11 +701,35 @@ function renderNode({
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.
       const press = classifyPress(node.onPress);
+      // onHold is untrusted the same way, classified by the SAME classifier
+      // (one classifier, one switch — RISK-INV-1): junk (`onHold: 42`)
+      // classifies null and the box keeps today's exact press-only or plain
+      // element below (byte-identical DOM). Only a classifiable onHold mounts
+      // the gesture-detecting HoldableBox.
+      const hold = classifyPress(node.onHold);
+      // appearClass is TOTAL on raw-path junk: only "fade"/"slide" yield a
+      // class; undefined adds no attribute, keeping token-free output
+      // byte-identical.
+      const appear = appearClass(styleOf(node.style));
+      if (hold !== null) {
+        return (
+          <HoldableBox
+            press={press}
+            hold={hold}
+            dispatch={onPress}
+            className={appear}
+            style={{ ...boxStyle(styleOf(node.style), theme), cursor: "pointer" }}
+          >
+            {children}
+          </HoldableBox>
+        );
+      }
       if (press !== null) {
         return (
           <div
             role="button"
             tabIndex={0}
+            className={appear}
             style={{ ...boxStyle(styleOf(node.style), theme), cursor: "pointer" }}
             onClick={() => onPress(press)}
           >
@@ -499,12 +737,21 @@ function renderNode({
           </div>
         );
       }
-      return <div style={boxStyle(styleOf(node.style), theme)}>{children}</div>;
+      return (
+        <div className={appear} style={boxStyle(styleOf(node.style), theme)}>
+          {children}
+        </div>
+      );
     }
     case "text":
       // A non-string value (an object would make React itself throw) is skipped.
       return typeof node.value === "string" ? (
-        <p style={textStyle(styleOf(node.style), theme)}>{node.value}</p>
+        <p
+          className={appearClass(styleOf(node.style))}
+          style={textStyle(styleOf(node.style), theme)}
+        >
+          {node.value}
+        </p>
       ) : null;
     case "image":
       // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
@@ -512,6 +759,7 @@ function renderNode({
         <img
           src={node.src}
           alt={typeof node.alt === "string" ? node.alt : ""}
+          className={appearClass(styleOf(node.style))}
           style={imageStyle(styleOf(node.style), theme)}
         />
       ) : null;
@@ -526,6 +774,7 @@ function renderNode({
       const placeholder = typeof node.placeholder === "string" ? node.placeholder : undefined;
       return (
         <label
+          className={appearClass(styleOf(node.style))}
           style={{
             display: "flex",
             flexDirection: "column",

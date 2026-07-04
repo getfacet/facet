@@ -283,3 +283,101 @@ describe("StageRenderer screens + hidden (static)", () => {
     }
   });
 });
+
+// Appear (DC-001/DC-005): a classifiable appear token maps to a class name and
+// gates ONE per-stage <style> element (the flat null-guarded prescan); token-free
+// trees stay byte-identical to today (no style element, no class attribute), and
+// raw-path junk — including cyclic trees and null/scalar node VALUES in the
+// nodes record — renders plain, never throws or hangs.
+describe("StageRenderer appear (static)", () => {
+  it("renders the appear class and a single style element for appear tokens", () => {
+    const out = render(
+      tree({
+        root: { id: "root", type: "box", style: { appear: "fade" }, children: ["s", "t"] },
+        s: { id: "s", type: "box", style: { appear: "slide" }, children: [] },
+        t: text("t", "animated"),
+      }),
+    );
+    expect(out).toContain('class="facet-appear-fade"');
+    expect(out).toContain('class="facet-appear-slide"');
+    expect(out).toContain("@keyframes facet-appear-fade");
+    // Once per stage, no matter how many nodes use appear.
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("renders an explicit appear:'none' with no class and no style element", () => {
+    const out = render(
+      tree({
+        root: { id: "root", type: "box", style: { appear: "none" }, children: ["t"] },
+        t: text("t", "instant"),
+      }),
+    );
+    expect(out).toContain("instant");
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("<style");
+  });
+
+  it("keeps a token-free tree byte-identical to today (no style element, no class attribute)", () => {
+    const plain = tree({
+      root: { id: "root", type: "box", children: ["t", "f"] },
+      t: text("t", "hello"),
+      f: { id: "f", type: "field", name: "email", label: "Email" },
+    });
+    const out = render(plain);
+    expect(out).not.toContain("<style");
+    expect(out).not.toContain("class=");
+    // The exact-markup pin for a plain box (same string the pre-appear renderer
+    // emitted) — className={undefined} must add nothing.
+    expect(render(tree({ root: { id: "root", type: "box", children: [] } }))).toBe(
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+    );
+  });
+
+  it("renders raw-path junk (appear:'explode', onHold:42, scroll:'sideways') plain, never throws", () => {
+    const junkRoot = {
+      id: "root",
+      type: "box",
+      style: { appear: "explode", scroll: "sideways" },
+      onHold: 42,
+      children: ["t"],
+    } as unknown as FacetNode;
+    const junkTree = tree({ root: junkRoot, t: text("t", "still up") });
+    expect(() => render(junkTree)).not.toThrow();
+    const out = render(junkTree);
+    expect(out).toContain("still up");
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("<style");
+    expect(out).not.toContain('role="button"'); // junk onHold never makes a button
+  });
+
+  it("renders a CYCLIC raw tree containing an appear token without hanging or throwing", () => {
+    const cyclic = tree({
+      root: box("root", ["a"]),
+      a: { id: "a", type: "box", style: { appear: "slide" }, children: ["root", "t"] },
+      t: text("t", "cycled once"),
+    });
+    expect(() => render(cyclic)).not.toThrow();
+    const out = render(cyclic);
+    expect(out).toContain("cycled once");
+    expect(out).toContain('class="facet-appear-slide"');
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("renders a raw tree with NULL and SCALAR node values alongside an appear node without throwing", () => {
+    // Legal on the live path: a patch can set any node value to JSON null (or a
+    // scalar) — isTreeShaped only checks that `nodes` is an object. The appear
+    // prescan must null-guard every record value before touching `.style`.
+    const noisy = tree({
+      root: box("root", ["x", "n", "s"]),
+      x: { id: "x", type: "box", style: { appear: "fade" }, children: ["t"] },
+      t: text("t", "guarded"),
+      n: null as unknown as FacetNode,
+      s: 42 as unknown as FacetNode,
+    });
+    expect(() => render(noisy)).not.toThrow();
+    const out = render(noisy);
+    expect(out).toContain("guarded");
+    expect(out).toContain('class="facet-appear-fade"');
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+});
