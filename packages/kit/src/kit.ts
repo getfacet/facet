@@ -33,12 +33,25 @@ class Builder {
     return `${this.prefix}k${String(this.count)}`;
   }
 
-  box(style: BoxStyle, children: readonly NodeId[], onPress?: FacetAction): NodeId {
+  /**
+   * `onHold` is the LAST positional parameter this signature will take — the
+   * next per-box word means switching to an options object.
+   */
+  box(
+    style: BoxStyle,
+    children: readonly NodeId[],
+    onPress?: FacetAction,
+    onHold?: FacetAction,
+  ): NodeId {
     const id = this.next();
-    this.nodes[id] =
-      onPress === undefined
-        ? { id, type: "box", style, children: [...children] }
-        : { id, type: "box", style, children: [...children], onPress };
+    this.nodes[id] = {
+      id,
+      type: "box",
+      style,
+      children: [...children],
+      ...(onPress !== undefined ? { onPress } : {}),
+      ...(onHold !== undefined ? { onHold } : {}),
+    };
     return id;
   }
 
