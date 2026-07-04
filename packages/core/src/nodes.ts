@@ -13,6 +13,7 @@
  */
 import type {
   Align,
+  Appear,
   Color,
   Direction,
   FontSize,
@@ -89,6 +90,17 @@ export interface BoxStyle {
   readonly border?: boolean;
   readonly grow?: boolean;
   readonly width?: Sizing;
+  /**
+   * Enter animation, replayed on each mount/re-show of the node (first paint,
+   * node re-add, toggle re-show, screen navigation). The renderer owns the
+   * duration/curve as framework constants — this token names the motion only.
+   */
+  readonly appear?: Appear;
+  /**
+   * Literal `true` makes the box a bounded, internally-scrollable region
+   * (vertical only). The renderer owns the max height as a framework constant.
+   */
+  readonly scroll?: boolean;
 }
 
 export interface TextStyle {
@@ -120,6 +132,11 @@ export interface BoxNode {
   readonly style?: BoxStyle;
   /** Makes the box pressable. Any box can be a button — or a clickable card. */
   readonly onPress?: FacetAction;
+  /**
+   * Secondary long-press gesture — the same action union as `onPress`. Advice:
+   * hold is a secondary path; never make it the only way to critical content.
+   */
+  readonly onHold?: FacetAction;
   /**
    * Content-declared default visibility (server-written). The browser's toggle
    * override wins after first interaction; only literal `true` hides.

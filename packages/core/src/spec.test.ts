@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STAGE_SPEC } from "./spec.js";
+import { APPEARS } from "./tokens.js";
 
 describe("STAGE_SPEC", () => {
   it("teaches screens entry navigate toggle and hidden", () => {
@@ -25,6 +26,28 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/never write CSS values/i);
     // Unknown / missing names fall back to the default look (fail-safe).
     expect(STAGE_SPEC).toMatch(/unknown[^.]*falls back to the default/i);
+  });
+
+  it("teaches appear onHold and scroll", () => {
+    // BoxStyle gains the two new tokens. The appear assertion is BUILT from
+    // core's APPEARS so the spec teaches every current token — extending the
+    // palette without updating STAGE_SPEC fails here, not silently.
+    expect(STAGE_SPEC).toContain(`appear(${APPEARS.join("|")})`);
+    expect(STAGE_SPEC).toMatch(/scroll\(bool\)/);
+    // appear = enter animation: replays on each re-show; renderer honors reduced motion.
+    expect(STAGE_SPEC).toMatch(/replays on each re-show/i);
+    expect(STAGE_SPEC).toMatch(/reduced motion/i);
+    // scroll = bounded, internally-scrollable region; the renderer owns the height
+    // (a framework constant — no FacetTheme surface exists for it, RISK-API-5).
+    expect(STAGE_SPEC).toMatch(/bounded, internally-scroll/i);
+    expect(STAGE_SPEC).toMatch(/renderer owns the max height/i);
+    // Box gains onHold — the secondary long-press gesture, same Action union as onPress.
+    expect(STAGE_SPEC).toContain('"onHold"?:Action');
+    expect(STAGE_SPEC).toMatch(/long-press/i);
+    expect(STAGE_SPEC).toMatch(/secondary/i);
+    expect(STAGE_SPEC).toMatch(/same Action union as onPress/i);
+    // The advice (guidance, not enforcement — invariant #2): never hold-only content.
+    expect(STAGE_SPEC).toMatch(/never make hold the only path/i);
   });
 
   it("teaches collect and press-time field snapshots", () => {

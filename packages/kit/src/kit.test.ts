@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { validateTree, type BoxNode, type FacetTree } from "@facet/core";
-import { button, card, fragment, heading, hero, page, row, text } from "./kit.js";
+import { validateTree, type BoxNode, type FacetAction, type FacetTree } from "@facet/core";
+import { button, card, fragment, heading, hero, page, row, text, type Block } from "./kit.js";
 
 describe("@facet/kit", () => {
   it("a page composed of presets round-trips clean through validateTree", () => {
@@ -30,6 +30,46 @@ describe("@facet/kit", () => {
     );
     expect(pressable).toBeDefined();
     expect(pressable?.onPress).toEqual({ kind: "agent", name: "act" });
+  });
+
+  it("box accepts an optional onHold action", () => {
+    const onPress: FacetAction = { kind: "agent", name: "press" };
+    const onHold: FacetAction = { kind: "agent", name: "hold" };
+
+    // with onHold: the emitted box carries it
+    const withHold: Block = (b) => b.box({ pad: "md" }, [], onPress, onHold);
+    const heldTree = page([withHold]);
+    const held = Object.values(heldTree.nodes).find(
+      (node): node is BoxNode => node.type === "box" && node.onHold !== undefined,
+    );
+    expect(held).toBeDefined();
+    expect(held?.onHold).toEqual({ kind: "agent", name: "hold" });
+    expect(held?.onPress).toEqual({ kind: "agent", name: "press" });
+
+    // without onHold: byte-identical to today — no onHold key present at all
+    const withoutHold: Block = (b) => b.box({ pad: "md" }, [], onPress);
+    const plainTree = page([withoutHold]);
+    const plain = Object.values(plainTree.nodes).find(
+      (node): node is BoxNode => node.type === "box" && node.onPress !== undefined,
+    );
+    expect(plain).toBeDefined();
+    expect(plain !== undefined && "onHold" in plain).toBe(false);
+    expect(plain).toEqual({
+      id: plain?.id,
+      type: "box",
+      style: { pad: "md" },
+      children: [],
+      onPress: { kind: "agent", name: "press" },
+    });
+
+    // presets' output is unchanged: nothing they emit carries onHold
+    const presetTree = page([
+      hero({ title: "T", subtitle: "S", cta: { label: "C", action: "c" } }),
+      card([heading("H"), text("body")]),
+      row([button("Go", "act")]),
+    ]);
+    expect(Object.values(presetTree.nodes).some((node) => "onHold" in node)).toBe(false);
+    expect(validateTree(presetTree).issues).toEqual([]);
   });
 
   it("hero() includes the cta only when given", () => {

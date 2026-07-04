@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { MAX_PATCH_OPS, type JsonPatchOperation } from "./patch.js";
 import { foldPatchIntoStage } from "./stage-fold.js";
+import { validateTree } from "./validate.js";
 
 const rootBox: FacetTree = {
   root: "root",
@@ -254,6 +255,71 @@ describe("foldPatchIntoStage — mutated (effect-based edit signal)", () => {
   it("is false for a `test`-only batch (a passing guard changes nothing)", () => {
     const patches: JsonPatchOperation[] = [{ op: "test", path: "/root", value: "root" }];
     expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(false);
+  });
+});
+
+describe("foldPatchIntoStage — appear/scroll/onHold junk parity with validateTree", () => {
+  it("strips junk appear/scroll/onHold written by a live patch, identically to validateTree", () => {
+    const junkyNode = {
+      id: "junky",
+      type: "box",
+      style: { appear: "explode", scroll: "sideways" },
+      onHold: 42,
+      children: [],
+    };
+    const patches: JsonPatchOperation[] = [
+      { op: "add", path: "/nodes/junky", value: junkyNode },
+      { op: "add", path: "/nodes/root/children/0", value: "junky" },
+    ];
+    const folded = foldPatchIntoStage(rootBox, patches);
+    const junky = folded.tree.nodes["junky"] as unknown as {
+      style?: Record<string, unknown>;
+      onHold?: unknown;
+    };
+    expect(junky).toBeDefined();
+    expect(junky.style?.["appear"]).toBeUndefined();
+    expect(junky.style?.["scroll"]).toBeUndefined();
+    expect(junky.onHold).toBeUndefined();
+    expect(folded.issues.some((i) => i.includes("onHold"))).toBe(true);
+    expect(folded.issues.some((i) => i.includes("onPress"))).toBe(false);
+
+    // Client re-fold parity: the SAME junk pushed through validateTree directly
+    // yields the exact same sanitized node — fold and tree paths never drift.
+    const { tree } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: {}, children: ["junky"] },
+        junky: junkyNode,
+      },
+    });
+    expect(folded.tree.nodes["junky"]).toEqual(tree.nodes["junky"]);
+  });
+
+  it("folds valid appear/scroll/onHold through intact (kept vocabulary, no issues)", () => {
+    const patches: JsonPatchOperation[] = [
+      {
+        op: "add",
+        path: "/nodes/panel",
+        value: {
+          id: "panel",
+          type: "box",
+          style: { appear: "slide", scroll: true },
+          onHold: { name: "peek" },
+          children: [],
+        },
+      },
+      { op: "add", path: "/nodes/root/children/0", value: "panel" },
+    ];
+    const { tree, issues } = foldPatchIntoStage(rootBox, patches);
+    expect(issues).toHaveLength(0);
+    const panel = tree.nodes["panel"] as unknown as {
+      style?: Record<string, unknown>;
+      onHold?: unknown;
+    };
+    expect(panel.style?.["appear"]).toBe("slide");
+    expect(panel.style?.["scroll"]).toBe(true);
+    // legacy bare {name} is stamped kind:"agent" by the shared normalization
+    expect(panel.onHold).toEqual({ kind: "agent", name: "peek" });
   });
 });
 

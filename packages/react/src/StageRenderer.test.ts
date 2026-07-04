@@ -283,3 +283,213 @@ describe("StageRenderer screens + hidden (static)", () => {
     }
   });
 });
+
+// Appear (DC-001/DC-005): a classifiable appear token maps to a class name and
+// gates ONE per-stage <style> element (detected during the budget-bounded render
+// walk — reachable nodes only); token-free trees stay byte-identical to today
+// (no style element, no class attribute), and raw-path junk — including cyclic
+// trees and null/scalar node VALUES in the nodes record — renders plain, never
+// throws or hangs.
+describe("StageRenderer appear (static)", () => {
+  it("renders the appear class and a single style element for appear tokens", () => {
+    const out = render(
+      tree({
+        root: { id: "root", type: "box", style: { appear: "fade" }, children: ["s", "t"] },
+        s: { id: "s", type: "box", style: { appear: "slide" }, children: [] },
+        t: text("t", "animated"),
+      }),
+    );
+    expect(out).toContain('class="facet-appear-fade"');
+    expect(out).toContain('class="facet-appear-slide"');
+    expect(out).toContain("@keyframes facet-appear-fade");
+    // Once per stage, no matter how many nodes use appear.
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("renders the appear class on a pressable (role=button) box", () => {
+    // FIX-B: the press-only branch must thread className exactly like the
+    // plain branch — an appear token on an interactive box must not vanish.
+    const out = render(
+      tree({
+        root: {
+          id: "root",
+          type: "box",
+          style: { appear: "slide" },
+          onPress: { kind: "agent", name: "go" },
+          children: ["t"],
+        },
+        t: text("t", "press me"),
+      }),
+    );
+    expect(out).toContain('role="button"');
+    expect(out).toContain('class="facet-appear-slide"');
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("renders an explicit appear:'none' with no class and no style element", () => {
+    const out = render(
+      tree({
+        root: { id: "root", type: "box", style: { appear: "none" }, children: ["t"] },
+        t: text("t", "instant"),
+      }),
+    );
+    expect(out).toContain("instant");
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("<style");
+  });
+
+  it("keeps a token-free tree byte-identical to today (no style element, no class attribute)", () => {
+    const plain = tree({
+      root: { id: "root", type: "box", children: ["t", "f"] },
+      t: text("t", "hello"),
+      f: { id: "f", type: "field", name: "email", label: "Email" },
+    });
+    const out = render(plain);
+    expect(out).not.toContain("<style");
+    expect(out).not.toContain("class=");
+    // The exact-markup pin for a plain box (same string the pre-appear renderer
+    // emitted) — className={undefined} must add nothing.
+    expect(render(tree({ root: { id: "root", type: "box", children: [] } }))).toBe(
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+    );
+  });
+
+  it("renders raw-path junk (appear:'explode', onHold:42, scroll:'sideways') plain, never throws", () => {
+    const junkRoot = {
+      id: "root",
+      type: "box",
+      style: { appear: "explode", scroll: "sideways" },
+      onHold: 42,
+      children: ["t"],
+    } as unknown as FacetNode;
+    const junkTree = tree({ root: junkRoot, t: text("t", "still up") });
+    expect(() => render(junkTree)).not.toThrow();
+    const out = render(junkTree);
+    expect(out).toContain("still up");
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("<style");
+    expect(out).not.toContain('role="button"'); // junk onHold never makes a button
+  });
+
+  it("server-renders a valid onHold box (HoldableBox) without touching window", () => {
+    // The static suite is the SSR contract: HoldableBox's render body must stay
+    // free of window/document access (the interceptor arms only inside the
+    // hold-timer callback), or every server render of an onHold tree throws.
+    const held = tree({
+      root: { id: "root", type: "box", children: ["h"] },
+      h: { id: "h", type: "box", onHold: { kind: "agent", name: "peek" }, children: ["t"] },
+      t: text("t", "hold me"),
+    });
+    expect(() => render(held)).not.toThrow();
+    const out = render(held);
+    expect(out).toContain("hold me");
+    expect(out).toContain('role="button"'); // holdable ⇒ interactive markup
+    // iOS long-press affordances: a holdable box disables text selection and
+    // the native long-press callout so the gesture runs the hold, not a
+    // selection / share sheet (review r6). Press-only and plain boxes must NOT
+    // carry these (asserted below).
+    expect(out).toContain("user-select:none");
+    expect(out).toContain("-webkit-touch-callout:none");
+  });
+
+  it("does not add hold-only CSS to press-only or plain boxes (byte-identical to today)", () => {
+    const pressOnly = tree({
+      root: { id: "root", type: "box", children: ["b"] },
+      b: { id: "b", type: "box", onPress: { kind: "agent", name: "open" }, children: ["t"] },
+      t: text("t", "press me"),
+    });
+    const pressOut = render(pressOnly);
+    expect(pressOut).toContain('role="button"');
+    expect(pressOut).not.toContain("user-select:none");
+    expect(pressOut).not.toContain("-webkit-touch-callout");
+    // A plain box carries no interactivity CSS at all.
+    const plain = render(tree({ root: { id: "root", type: "box", children: [] } }));
+    expect(plain).toBe(
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+    );
+  });
+
+  it("renders a CYCLIC raw tree containing an appear token without hanging or throwing", () => {
+    const cyclic = tree({
+      root: box("root", ["a"]),
+      a: { id: "a", type: "box", style: { appear: "slide" }, children: ["root", "t"] },
+      t: text("t", "cycled once"),
+    });
+    expect(() => render(cyclic)).not.toThrow();
+    const out = render(cyclic);
+    expect(out).toContain("cycled once");
+    expect(out).toContain('class="facet-appear-slide"');
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("ignores appear on raw-path text/image/field styles (appear is BoxStyle-only)", () => {
+    // validateTree strips appear from non-box styles, so the raw unvalidated
+    // path must render identically: no class on <p>/<img>/<label> and no
+    // appear <style> element for a tree whose only appear tokens sit on
+    // non-box nodes.
+    const noisy = {
+      root: box("root", ["t", "i", "f"]),
+      t: { id: "t", type: "text", value: "plain text", style: { appear: "fade" } },
+      i: {
+        id: "i",
+        type: "image",
+        src: "https://example.com/a.png",
+        alt: "pic",
+        style: { appear: "fade" },
+      },
+      f: { id: "f", type: "field", name: "n", placeholder: "p", style: { appear: "fade" } },
+    } as unknown as Record<NodeId, FacetNode>;
+    const out = render(tree(noisy));
+    expect(out).toContain("plain text");
+    expect(out).toContain("<img");
+    expect(out).toContain("<input");
+    expect(out).not.toContain("facet-appear");
+    expect(out).not.toContain("class=");
+    expect(out).not.toContain("<style");
+
+    // Positive control: the same token on a BOX still gets class + stylesheet.
+    const withBox = render(
+      tree({
+        root: { id: "root", type: "box", style: { appear: "fade" }, children: [] },
+      }),
+    );
+    expect(withBox).toContain('class="facet-appear-fade"');
+    expect(withBox.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("renders a raw tree with NULL and SCALAR node values alongside an appear node without throwing", () => {
+    // Legal on the live path: a patch can set any node value to JSON null (or a
+    // scalar) — isTreeShaped only checks that `nodes` is an object. renderNode's
+    // own `node == null` / unknown-type guards skip the junk values; the
+    // reachable appear box still emits the stylesheet.
+    const noisy = tree({
+      root: box("root", ["x", "n", "s"]),
+      x: { id: "x", type: "box", style: { appear: "fade" }, children: ["t"] },
+      t: text("t", "guarded"),
+      n: null as unknown as FacetNode,
+      s: 42 as unknown as FacetNode,
+    });
+    expect(() => render(noisy)).not.toThrow();
+    const out = render(noisy);
+    expect(out).toContain("guarded");
+    expect(out).toContain('class="facet-appear-fade"');
+    expect(out.match(/<style/g)).toHaveLength(1);
+  });
+
+  it("does not emit the appear stylesheet for an UNREACHABLE appear node (review r7)", () => {
+    // Appear detection rides the budget-bounded render walk, not a scan of the
+    // whole node map: an appear token on a node that root never reaches renders
+    // nothing and must NOT force a <style> (also the fail-safe against a huge
+    // map of unreachable/dangling nodes re-triggering an O(N) per-render scan).
+    const out = render(
+      tree({
+        root: box("root", ["shown"]),
+        shown: text("shown", "visible"),
+        orphan: { id: "orphan", type: "box", style: { appear: "fade" }, children: [] },
+      }),
+    );
+    expect(out).toContain("visible");
+    expect(out).not.toContain("<style");
+    expect(out).not.toContain("facet-appear");
+  });
+});

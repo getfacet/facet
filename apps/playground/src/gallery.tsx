@@ -29,12 +29,25 @@ class Sheet {
     return `n${this.count}`;
   }
 
-  box(style: BoxStyle, children: readonly string[], onPress?: FacetAction): string {
+  /**
+   * `onHold` is the LAST positional parameter this signature will take — the
+   * next per-box word means switching to an options object.
+   */
+  box(
+    style: BoxStyle,
+    children: readonly string[],
+    onPress?: FacetAction,
+    onHold?: FacetAction,
+  ): string {
     const id = this.next();
-    this.nodes[id] =
-      onPress === undefined
-        ? { id, type: "box", style, children: [...children] }
-        : { id, type: "box", style, children: [...children], onPress };
+    this.nodes[id] = {
+      id,
+      type: "box",
+      style,
+      children: [...children],
+      ...(onPress !== undefined ? { onPress } : {}),
+      ...(onHold !== undefined ? { onHold } : {}),
+    };
     return id;
   }
 
@@ -280,6 +293,59 @@ function screensAndToggle(): FacetTree {
   return s.screensTree({ main, about }, "main");
 }
 
+/**
+ * "Appear, hold & scroll" — the deterministic manual surface for the DC-009
+ * real-browser check: a fade-in hero, a bounded scroll:true product list of 20
+ * slide-in cards, and a press/hold pair on every card (press = agent action,
+ * hold = browser-local toggle of a pre-drawn, initially-hidden peek panel).
+ * Exported so the gallery test can assert on the exact tree.
+ */
+export function appearHoldScroll(): FacetTree {
+  const s = new Sheet();
+  // Pre-drawn peek panel, hidden on first paint — every card's hold target.
+  const peek = s.hiddenBox(
+    { direction: "col", gap: "xs", pad: "md", bg: "surface-2", radius: "md", appear: "fade" },
+    [
+      s.text("Quick peek", { size: "sm", weight: "semibold" }),
+      s.text("Hold any card to toggle this panel; press one to view it.", {
+        size: "sm",
+        color: "fg-muted",
+      }),
+    ],
+  );
+  const card = (i: number): string =>
+    s.box(
+      { direction: "row", gap: "md", pad: "md", border: true, radius: "md", appear: "slide" },
+      [
+        s.image(`https://picsum.photos/seed/prod${i}/120/120`, `Product ${i}`, {
+          ratio: "square",
+          radius: "sm",
+        }),
+        s.box({ direction: "col", gap: "xs", grow: true }, [
+          s.text(`Product ${i}`, { weight: "semibold" }),
+          s.text(`$${10 + i}`, { size: "sm", color: "fg-muted" }),
+        ]),
+      ],
+      { kind: "agent", name: "view_product", payload: { sku: `prod${i}` } },
+      { kind: "toggle", target: peek },
+    );
+  const hero = s.box(
+    { direction: "col", gap: "xs", pad: "lg", bg: "accent", radius: "lg", appear: "fade" },
+    [
+      s.text("New arrivals", { size: "2xl", weight: "bold", color: "accent-fg" }),
+      s.text("Press a card for details — hold it for a quick peek.", {
+        size: "sm",
+        color: "accent-fg",
+      }),
+    ],
+  );
+  const list = s.box(
+    { direction: "col", gap: "sm", scroll: true },
+    Array.from({ length: 20 }, (_, i) => card(i + 1)),
+  );
+  return s.tree({ direction: "col", gap: "md", pad: "xl" }, [hero, peek, list]);
+}
+
 const PAGES: readonly { readonly title: string; readonly tree: FacetTree }[] = [
   { title: "Hero / landing", tree: hero() },
   { title: "Product grid", tree: productGrid() },
@@ -288,6 +354,7 @@ const PAGES: readonly { readonly title: string; readonly tree: FacetTree }[] = [
   { title: "Pricing tiers", tree: pricing() },
   { title: "Image gallery", tree: imageGallery() },
   { title: "Screens & toggle", tree: screensAndToggle() },
+  { title: "Appear, hold & scroll", tree: appearHoldScroll() },
 ];
 
 export function Gallery(): React.ReactNode {

@@ -47,6 +47,45 @@ describe("boxStyle", () => {
     expect(css.flexGrow).toBe(1);
     expect(css.width).toBe("100%");
   });
+
+  // scroll:true is the ONE bounded-region mapping (RISK-INV-6a): vertical
+  // auto-scroll only (never a horizontal scrollbar), a fixed max-height, and
+  // the load-bearing minHeight:0 — a flex child defaults to min-height:auto
+  // and would silently refuse to clip inside a `grow` column without it.
+  it("maps literal scroll:true to a bounded vertical scroll region", () => {
+    const css = boxStyle({ scroll: true });
+    expect(css.overflowY).toBe("auto");
+    expect(css.overflowX).toBe("hidden");
+    expect(css.maxHeight).toBe("20rem");
+    expect(css.minHeight).toBe(0);
+  });
+
+  it("never produces a scrollable overflow-x", () => {
+    expect(boxStyle({ scroll: true }).overflowX).not.toBe("auto");
+    expect(boxStyle({ scroll: true }).overflowX).not.toBe("scroll");
+  });
+
+  // Total-function pattern on the raw live path: anything but literal `true`
+  // (scroll:false, junk strings, numbers) yields NONE of the four properties.
+  it("maps scroll:false and junk scroll values to no scroll CSS", () => {
+    for (const scroll of [false, "sideways", 1, "true", {}] as const) {
+      const css = boxStyle({ scroll } as unknown as BoxStyle);
+      expect(css.overflowY).toBeUndefined();
+      expect(css.overflowX).toBeUndefined();
+      expect(css.maxHeight).toBeUndefined();
+      expect(css.minHeight).toBeUndefined();
+    }
+  });
+
+  // appear is renderer-bound (class + <style> in StageRenderer, not this
+  // token→CSS map) and a token-free box must stay byte-identical to today.
+  it("leaves token-free output unchanged (appear adds nothing here)", () => {
+    expect(boxStyle({ appear: "fade" } as BoxStyle)).toEqual({
+      display: "flex",
+      flexDirection: "column",
+      boxSizing: "border-box",
+    });
+  });
 });
 
 describe("textStyle", () => {
@@ -125,6 +164,14 @@ describe("DEFAULT_THEME", () => {
     const result = validateTheme(DEFAULT_THEME);
     expect(result.theme).toBeDefined();
     expect(result.issues).toEqual([]);
+  });
+
+  // Pinned shape (RISK-API-5): the scroll/appear feature adds NO theme surface —
+  // exactly the name + the six token groups, nothing animation- or scroll-shaped.
+  it("keeps exactly the name + six token groups (no new theme surface)", () => {
+    expect(Object.keys(DEFAULT_THEME).sort()).toEqual(
+      ["color", "fontSize", "fontWeight", "name", "radius", "ratio", "space"].sort(),
+    );
   });
 
   it('is named "default" and covers every token group', () => {

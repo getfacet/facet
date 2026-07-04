@@ -63,3 +63,11 @@ export type Sizing = (typeof SIZINGS)[number];
 
 export const RATIOS = ["square", "wide", "tall"] as const;
 export type Ratio = (typeof RATIOS)[number];
+
+/**
+ * Enter animation for a box, replayed on each mount/re-show of the node. The
+ * token names the motion only — the renderer owns duration and curve as
+ * framework constants.
+ */
+export const APPEARS = ["none", "fade", "slide"] as const;
+export type Appear = (typeof APPEARS)[number];

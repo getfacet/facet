@@ -63,8 +63,11 @@ package whose helpers are themselves just box compositions.
 
 `FacetNode` is a closed union of four bricks (see `core/src/nodes.ts`):
 
-- `box` — the only container. Flow layout (`direction: row|col`), token styles,
-  an optional `onPress` action (a pressable box is the button primitive), and an
+- `box` — the only container. Flow layout (`direction: row|col`), token styles
+  (including `appear` — a bounded enter-animation token — and `scroll` — a
+  bounded internally-scrollable region), an optional `onPress` action (a
+  pressable box is the button primitive), an optional `onHold` action (the same
+  behavior-language union, fired by a long press — a secondary gesture), and an
   optional `hidden` flag (a content-declared initial-collapsed default).
 - `text` — a string with token text styles.
 - `image` — `src` + `alt` + token styles.

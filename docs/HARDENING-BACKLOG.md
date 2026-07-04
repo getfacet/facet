@@ -97,6 +97,99 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
   their own snippet imports (`@facet/client`, `@facet/agent`); copy-pasting the
   quickstart fails to resolve. *Fix:* align install lines with the snippets.
 
+## P3 — residuals from Bundle D's review (appear-hold-scroll; track, fix opportunistically)
+
+Found by the bundle's adversarially-verified `/code-review` (P1 + all P2 and
+the spec-alignment/doc P3s fixed in-branch; this is the one confirmed
+non-blocking residual).
+
+- ~~react/StageRenderer.tsx (onHold add/remove remount)~~ — RESOLVED in-branch
+  (review r6, escalated to P2 there — P2 can't ship without a waiver, so it was
+  fixed rather than deferred): every box now renders through ONE always-mounted
+  internal component (`BoxElement`) with nullable `press`/`hold` props, so a
+  live patch adding/removing onPress/onHold changes only props, never the React
+  element type at that position — no remount, so uncontrolled field text and
+  scrollTop survive. The WU-3 "press-only/plain boxes keep today's exact inline
+  elements" done-condition is superseded and re-pinned as *byte-identical
+  serialized DOM* (a component wrapping the same markup): the static exact-
+  markup suite passes unmodified. Pinned by three element-identity survival
+  tests (add-onHold / remove-onHold / plain→press+hold).
+- **kit/kit.ts + playground/gallery.tsx (duplicated box builder)** — the same
+  positional box-builder exists in both (edited in lockstep for `onHold`;
+  review r2). Minimal alignment done in-branch (shared API-guard comment +
+  identical conditional-spread spelling). *Fix (structural, next
+  /refactor-audit):* fold the gallery `Sheet` onto `@facet/kit`'s builder or
+  extract one shared helper.
+- ~~react/StageRenderer.tsx (hold not scoped to the arming pointerId)~~ —
+  RESOLVED in-branch (review r4, escalated to P2 there: the disarm made the
+  release's synthesized click dispatch onPress — the wrong action, not
+  fail-closed): `gesturePointerRef` scopes move/up/leave to the arming
+  pointer; pinned by two multi-touch tests.
+- ~~react/StageRenderer.tsx (interceptor release-aware lifecycle)~~ —
+  RESOLVED in-branch (review r5, escalated to P2 there): `expire` now ignores
+  non-primary pointercancels (mirrors `reset`'s guard — a palm-rejection
+  cancel no longer lets hold+press both fire), the interceptor expires one
+  macrotask after the primary pointerup (a never-synthesized click can't
+  leave it lingering), and any keydown tears it down (keyboard activations
+  are never swallowed). Pinned by three tests. Per-pointerType keying was NOT
+  added (no longer needed under the release expiry).
+- ~~react/StageRenderer.tsx (hybrid re-entry guard, r5)~~ — RESOLVED in-branch
+  (review r6): handlePointerDown ignores a pointerdown whose id differs from
+  the live gesture's arming pointer, so a second concurrent primary pointer
+  (hybrid mouse+touch) cannot overwrite the origin/timer. Pinned by one test.
+  NOTE: the deeper two-overlapping-holds-on-two-boxes starvation (the single
+  module-level interceptor serves one click) remains — see the per-gesture
+  interceptor map entry below.
+- ~~react/StageRenderer.tsx (slop boundary exactness, r5)~~ — RESOLVED
+  in-branch (review r6): a boundary test pins the strict `>` (8.0px keeps the
+  hold armed, 9px disarms).
+- ~~react/StageRenderer.tsx (appear prescan bypassed the render budget, r7)~~
+  — RESOLVED in-branch (review r7): appear detection now rides the
+  budget-bounded render walk (`appearSeen` flag set when a REACHABLE box gets an
+  appear class) instead of an unbounded `Object.values(tree.nodes)` scan on
+  every render — closes the per-render soft-DoS on a huge unreachable-node map
+  and is strictly more correct (an unrendered appear node no longer forces a
+  useless `<style>`). Pinned by an unreachable-appear-node test.
+- ~~docs/ARCHITECTURE.md (brick-palette drift, r7)~~ — RESOLVED in-branch: the
+  `box` bullet now lists `appear`/`scroll` styles and `onHold`.
+- **react/StageRenderer.tsx (per-gesture click interceptor, r6/r7)** —
+  **P2, MAINTAINER-WAIVED for the appear-hold-scroll merge (owner, 2026-07-04;
+  recorded in the PR).** The post-hold click swallow is a single module-level
+  `swallowArmed` boolean, so two *overlapping* holds on two different boxes
+  (two concurrent primary pointers — e.g. a mouse held on box A AND a touch
+  finger held on box B on a hybrid device, both past 500ms, both released) share
+  one interceptor: the second hold's `swallowNextClick()` is a no-op, the first
+  release consumes the interceptor, and the second box's synthesized click fires
+  its onPress — that box dispatches both hold and press. *Waiver rationale:*
+  the trigger is a two-handed mouse+touch gesture no single user performs
+  intentionally; the failure degrades to one spurious, recoverable agent event
+  (no crash / data loss / security); and a correct fix needs click→pointer
+  attribution the DOM does not provide at window-capture scope (every
+  capture-phase click listener sees every click, so a per-gesture registry
+  can't pair a swallow to its own click). A counter ("swallow the next N
+  clicks") handles the concurrent case but entangles with the reset/expire/
+  release lifecycle that already absorbed review rounds r3–r5, each of which
+  spawned the next round's finding. *Fix (structural, deferred to the drag
+  bundle, which reworks pointer handling anyway):* key the interceptor by
+  pointerId/pointerType, or drive the swallow off the browser's own
+  `click`-after-`pointerup` sequencing per pointer.
+- **react/StageRenderer.tsx (no keyboard path for hold-only boxes, r4)** — a
+  hold-only box (onHold, no onPress) renders role="button" but Enter/Space
+  cannot trigger the hold (accepted v1 decision; STAGE_SPEC advises never to
+  gate critical content hold-only). Revisit alongside a broader keyboard
+  interaction pass.
+- **react/StageRenderer.tsx (long-press over selectable content, r3)** — a
+  hold on a box suppresses the touch context menu while armed, but native
+  text-selection long-press behavior inside the box (e.g. over a field) can
+  still race the hold on some platforms. Revisit with real-device evidence;
+  STAGE_SPEC already advises against hold-only critical paths.
+- ~~core/validate.ts (asAction secondary messages omit the field label)~~ —
+  RESOLVED in-branch (review r6): the nameless-agent / navigate-`to` /
+  toggle-`target` messages now interpolate the `field` param, so onHold junk
+  of those shapes reports "onHold".
+- ~~playground/print-tree.ts (outline blind to onHold)~~ — RESOLVED in-branch
+  (review r6): the outline prints a `[hold …]` marker; pinned by a test.
+
 ## P3 — residuals from Bundle B's review (kits-themes-as-data; track, fix opportunistically)
 
 Found by the bundle's 3-round adversarially-verified `/code-review` (all P0–P2
