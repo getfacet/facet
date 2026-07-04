@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 import type { LensPolicy, Vote } from "./verdict.js";
-import { aggregateVerdict, DEFAULT_LENS_POLICY, expectedMatrix } from "./verdict.js";
+import { aggregateVerdict, DEFAULT_LENS_POLICY, expectedMatrix, isVote } from "./verdict.js";
 
 /** N identical votes for one (lens, visitor). */
 function votes(lens: Vote["lens"], visitor: string, verdict: Vote["verdict"], count = 1): Vote[] {
@@ -157,5 +157,39 @@ describe("expectedMatrix", () => {
   it("defaults to DEFAULT_LENS_POLICY when no policy is passed", () => {
     const rows = expectedMatrix(["only"]);
     expect(rows.length).toBe(DEFAULT_LENS_POLICY.length);
+  });
+});
+
+describe("aggregateVerdict — multiple visitors", () => {
+  it("PASSes only when every visitor's HARD lenses pass", () => {
+    const all = ["v1", "v2", "v3"].flatMap((v) => [...hardPass(v), ...softPass(v)]);
+    expect(aggregateVerdict(all).result).toBe("PASS");
+  });
+
+  it("one visitor's HARD lens failing fails the whole tier", () => {
+    const good = ["v1", "v2"].flatMap((v) => [...hardPass(v), ...softPass(v)]);
+    const bad = [
+      ...votes("safety", "v3", "fail", 2), // v3 safety fails
+      ...votes("render", "v3", "pass", 2),
+      ...votes("responsiveness", "v3", "pass", 2),
+      ...softPass("v3"),
+    ];
+    const result = aggregateVerdict([...good, ...bad]);
+    expect(result.result).toBe("FAIL");
+    expect(result.blocking.some((b) => b.includes("safety"))).toBe(true);
+    expect(result.perLens).toContainEqual({ lens: "safety", visitor: "v3", outcome: "fail" });
+  });
+});
+
+describe("isVote — fail-closed element guard", () => {
+  it("accepts a well-formed vote", () => {
+    expect(isVote({ lens: "safety", visitor: "v1", verdict: "pass" })).toBe(true);
+  });
+
+  it("rejects stray elements so they can't be scored as a HARD pass", () => {
+    expect(isVote({ lens: "safety", visitor: "v1", verdict: "FAIL" })).toBe(false); // wrong casing
+    expect(isVote({ lens: "typo", visitor: "v1", verdict: "pass" })).toBe(false); // unknown lens
+    expect(isVote({ lens: "safety", visitor: 42, verdict: "pass" })).toBe(false); // non-string visitor
+    expect(isVote(null)).toBe(false);
   });
 });

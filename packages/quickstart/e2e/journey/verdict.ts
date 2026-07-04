@@ -66,11 +66,27 @@ export interface ExpectedRow {
  */
 export const DEFAULT_LENS_POLICY: readonly LensPolicy[] = [
   { lens: "safety", severity: "hard", quorum: 2 }, // 3 adversarial votes, need ≥2 valid
-  { lens: "render", severity: "hard", quorum: 2 }, // 2 functional votes
-  { lens: "responsiveness", severity: "hard", quorum: 2 }, // 2 functional votes
-  { lens: "fidelity", severity: "soft", quorum: 2 }, // 2 votes
+  { lens: "render", severity: "hard", quorum: 2 }, // 3 functional votes (VOTES_HARD), need ≥2 valid
+  { lens: "responsiveness", severity: "hard", quorum: 2 }, // 3 functional votes (VOTES_HARD), need ≥2 valid
+  { lens: "fidelity", severity: "soft", quorum: 2 }, // 2 votes (VOTES_SOFT)
   { lens: "diversity", severity: "soft", quorum: 1 }, // 1 cross-visitor vote
 ];
+
+const LENS_IDS: readonly LensId[] = ["safety", "render", "responsiveness", "fidelity", "diversity"];
+const VOTE_VERDICTS: readonly VoteVerdict[] = ["pass", "fail", "abstain"];
+
+/** Fail-closed element guard for main()'s external votes JSON — a stray element
+ * (e.g. a `verdict` of "FAIL" instead of "fail") is DROPPED, never scored as a
+ * pass on a HARD lens. */
+export function isVote(x: unknown): x is Vote {
+  if (typeof x !== "object" || x === null) return false;
+  const v = x as Record<string, unknown>;
+  return (
+    (LENS_IDS as readonly string[]).includes(v.lens as string) &&
+    typeof v.visitor === "string" &&
+    (VOTE_VERDICTS as readonly string[]).includes(v.verdict as string)
+  );
+}
 
 /**
  * The expected (lens × visitor) rows for a run — the cartesian product of every
@@ -191,7 +207,7 @@ async function main(argv: readonly string[]): Promise<void> {
     const candidate = Array.isArray(parsed)
       ? parsed
       : (parsed as { votes?: unknown } | null)?.votes;
-    votes = Array.isArray(candidate) ? (candidate as readonly Vote[]) : [];
+    votes = Array.isArray(candidate) ? candidate.filter(isVote) : [];
   } catch {
     process.stderr.write("verdict: could not parse votes JSON — failing closed\n");
     process.exit(1);

@@ -100,7 +100,8 @@ const runs = await parallel(visitors.map(v => () =>
   ).then(r => ({ visitor: v, ...(r || { ok: false, shots: [] }) }))
 ))
 const goodRuns = runs.filter(r => r && r.ok && Array.isArray(r.shots) && r.shots.length >= 4)
-log('Journeys: ' + goodRuns.length + '/' + nVisitors + ' produced ≥4 shots')
+const droppedVisitors = runs.filter(r => !goodRuns.includes(r)).map(r => r.visitor + ' (' + ((r && r.shots ? r.shots.length : 0)) + ' shots)')
+log('Journeys: ' + goodRuns.length + '/' + nVisitors + ' produced ≥4 shots' + (droppedVisitors.length ? ' — dropped: ' + droppedVisitors.join(', ') : ''))
 
 // ─── Judge: per (visitor × lens) adversarial vision votes, + a cross-visitor diversity judge ───
 phase('Judge')
@@ -161,11 +162,19 @@ const synth = await agent(
   { label: 'synthesize', phase: 'Synthesize', schema: SYNTH_SCHEMA }
 )
 
-const verdict = (synth && synth.verdict) || 'FAIL'
+// Fail-closed on partial visitor loss: a dropped visitor is never judged, so the
+// judge panel could report PASS on the survivors alone — but DC-001 requires ALL
+// requested visitors to render. Any drop ⇒ tier FAIL (never a silent pass).
+const synthVerdict = (synth && synth.verdict) || 'FAIL'
+const verdict = droppedVisitors.length > 0 ? 'FAIL' : synthVerdict
+const blocking = [
+  ...((synth && synth.blocking) || (synthVerdict === 'FAIL' ? ['verdict.ts reported FAIL — see raw'] : [])),
+  ...(droppedVisitors.length > 0 ? ['visitor journey(s) dropped (crashed / <4 shots): ' + droppedVisitors.join(', ')] : []),
+]
 return {
   verdict, // PASS | FAIL (SKIP handled earlier)
   warnings: (synth && synth.warnings) || [],
-  blocking: (synth && synth.blocking) || (verdict === 'FAIL' ? ['verdict.ts reported FAIL — see raw'] : []),
+  blocking,
   binSmoke: smoke ? { ok: smoke.ok, detail: smoke.detail } : { ok: false, detail: 'no result' },
   visitors: runs.map(r => ({ visitor: r.visitor, ok: r.ok, shots: (r.shots || []).length })),
   artifactsDir,
