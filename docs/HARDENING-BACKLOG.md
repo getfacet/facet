@@ -119,10 +119,25 @@ non-blocking residual).
   identical conditional-spread spelling). *Fix (structural, next
   /refactor-audit):* fold the gallery `Sheet` onto `@facet/kit`'s builder or
   extract one shared helper.
-- **react/StageRenderer.tsx (hold not scoped to the arming pointerId, r3)** —
-  `pointermove`/`pointerup` from a SECOND finger disarm the primary finger's
-  hold (fail-closed: the hold just doesn't fire; no spurious action). *Fix:*
-  record `pointerId` at arm time and ignore other pointers' move/up/leave.
+- ~~react/StageRenderer.tsx (hold not scoped to the arming pointerId)~~ —
+  RESOLVED in-branch (review r4, escalated to P2 there: the disarm made the
+  release's synthesized click dispatch onPress — the wrong action, not
+  fail-closed): `gesturePointerRef` scopes move/up/leave to the arming
+  pointer; pinned by two multi-touch tests.
+- **react/StageRenderer.tsx (interceptor release-aware lifecycle, r4)** — the
+  one-shot window interceptor expires on pointercancel and resets on the next
+  primary pointerdown, but a pointerup that yields NO synthesized click (rare:
+  browser suppresses click after some gestures) leaves it armed until the
+  next pointerdown; a keyboard/programmatic click arriving in that window is
+  swallowed once. *Fix candidates (review r4 sketch):* window-capture
+  pointerup listener + one-tick expiry, a releaseSeen gate, an absolute
+  backstop timeout, per-pointerType keying. Needs real-device evidence before
+  adding machinery; revisit with the drag bundle.
+- **react/StageRenderer.tsx (no keyboard path for hold-only boxes, r4)** — a
+  hold-only box (onHold, no onPress) renders role="button" but Enter/Space
+  cannot trigger the hold (accepted v1 decision; STAGE_SPEC advises never to
+  gate critical content hold-only). Revisit alongside a broader keyboard
+  interaction pass.
 - **react/StageRenderer.tsx (long-press over selectable content, r3)** — a
   hold on a box suppresses the touch context menu while armed, but native
   text-selection long-press behavior inside the box (e.g. over a field) can

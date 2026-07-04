@@ -387,6 +387,12 @@ function HoldableBox({
   // Pending hold timer + gesture origin (the slop reference); null = disarmed.
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const originRef = useRef<{ readonly x: number; readonly y: number } | null>(null);
+  // The ARMING pointer's id: move/up/leave from any OTHER pointer (a second
+  // finger, a resting palm) must be inert — without this, the second finger's
+  // move measures against the FIRST finger's origin and disarms, and the
+  // primary release's synthesized click then dispatches onPress: the WRONG
+  // action from a gesture the visitor meant as a hold (review r4).
+  const gesturePointerRef = useRef<number | null>(null);
   // True from the hold firing until the pointer ends — with the armed timer it
   // scopes contextmenu suppression to the live gesture only.
   const holdingRef = useRef(false);
@@ -408,6 +414,7 @@ function HoldableBox({
       timerRef.current = null;
     }
     originRef.current = null;
+    gesturePointerRef.current = null;
   };
 
   const handlePointerDown = (event: ReactPointerEvent<HTMLDivElement>): void => {
@@ -425,6 +432,7 @@ function HoldableBox({
     // presses returned above WITHOUT stopping, leaving ancestors unaffected).
     event.stopPropagation();
     holdingRef.current = false;
+    gesturePointerRef.current = event.pointerId;
     originRef.current = { x: finiteCoord(event.clientX), y: finiteCoord(event.clientY) };
     if (timerRef.current !== null) {
       clearTimeout(timerRef.current);
@@ -443,6 +451,10 @@ function HoldableBox({
   };
 
   const handlePointerMove = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    // Gesture-scoped: only the arming pointer's movement measures slop.
+    if (gesturePointerRef.current === null || event.pointerId !== gesturePointerRef.current) {
+      return;
+    }
     const origin = originRef.current;
     if (timerRef.current === null || origin === null) {
       return;
@@ -454,7 +466,12 @@ function HoldableBox({
     }
   };
 
-  const handlePointerEnd = (): void => {
+  const handlePointerEnd = (event: ReactPointerEvent<HTMLDivElement>): void => {
+    // Gesture-scoped: a second finger's up/cancel/leave must not end the
+    // primary hold (review r4).
+    if (gesturePointerRef.current === null || event.pointerId !== gesturePointerRef.current) {
+      return;
+    }
     // pointerup before the threshold, pointercancel, or pointerleave: the hold
     // disarms; a below-threshold release lets the native click run onPress as
     // today.

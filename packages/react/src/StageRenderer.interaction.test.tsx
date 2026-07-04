@@ -899,15 +899,15 @@ const HOLD_MS = 500;
 function pointerEvent(
   type: string,
   coords: { x?: number; y?: number } = {},
-  options: { button?: number; isPrimary?: boolean } = {},
+  options: { button?: number; isPrimary?: boolean; pointerId?: number } = {},
 ): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.assign(event, {
     clientX: coords.x ?? 0,
     clientY: coords.y ?? 0,
-    pointerId: 1,
     // Defaults mirror a real primary-button touch/left-click press; tests for
-    // the pointer-button guard override them explicitly.
+    // the pointer-button / pointer-identity guards override them explicitly.
+    pointerId: options.pointerId ?? 1,
     button: options.button ?? 0,
     isPrimary: options.isPrimary ?? true,
   });
@@ -1627,6 +1627,91 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
 
     expect(onAction).toHaveBeenCalledTimes(1); // two live timers would dispatch twice
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("a second finger's far pointermove does not disarm the primary hold (gesture-scoped slop)", () => {
+    // Without pointer-identity scoping the second finger's coords measure
+    // against the FIRST finger's origin, disarm the hold, and the primary
+    // release's synthesized click dispatches onPress — the WRONG action.
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn); // arming pointer: id 1
+    fireEvent(
+      btn,
+      pointerEvent("pointermove", { x: 200, y: 200 }, { pointerId: 2, isPrimary: false }),
+    );
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btn); // primary release
+    fireEvent.click(btn); // synthesized click — swallowed by the interceptor
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("a second finger's pointerup does not end the primary hold (gesture-scoped release)", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={pressHoldTree()} />);
+    const btn = screen.getByRole("button");
+
+    pointerDown(btn); // arming pointer: id 1
+    fireEvent(btn, pointerEvent("pointerup", {}, { pointerId: 2, isPrimary: false })); // palm lifts
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    });
+    pointerUp(btn);
+    fireEvent.click(btn);
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "held" });
+  });
+
+  it("a hold that unmounts its own box still swallows the synthesized click — module-level interceptor, not lifecycle-tied", () => {
+    // Pins the comment on swallowNextClick: teardown is deliberately NOT tied
+    // to component unmount. The tempting useEffect-cleanup refactor would pass
+    // every other test while regressing exactly this: a self-hiding hold's
+    // synthesized click lands on the pressable ancestor and fires its onPress.
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["card"] },
+          card: {
+            id: "card",
+            type: "box",
+            onPress: { kind: "agent", name: "card-pressed" },
+            children: ["peek", "ct"],
+          },
+          ct: { id: "ct", type: "text", value: "card body" },
+          peek: {
+            id: "peek",
+            type: "box",
+            onHold: { kind: "toggle", target: "peek" }, // hold hides ITSELF
+            children: ["pt"],
+          },
+          pt: { id: "pt", type: "text", value: "hold me away" },
+        })}
+      />,
+    );
+    const peekEl = screen.getByText("hold me away").parentElement as HTMLElement;
+    const cardEl = screen.getByText("card body").parentElement as HTMLElement;
+
+    pointerDown(peekEl);
+    act(() => {
+      vi.advanceTimersByTime(HOLD_MS + 100);
+    }); // hold fires ⇒ toggle unmounts the held box itself
+    expect(screen.queryByText("hold me away")).toBeNull();
+
+    // The release now happens over the ancestor card: the browser targets the
+    // synthesized click there. It must still be swallowed.
+    fireEvent(cardEl, pointerEvent("pointerup"));
+    fireEvent.click(cardEl);
+
+    expect(onAction).not.toHaveBeenCalled(); // toggle was local; card press swallowed
   });
 });
 
