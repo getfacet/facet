@@ -33,6 +33,17 @@ describe("buildSystem", () => {
     expect(system).toMatch(/reuse .*node ids/i);
   });
 
+  it("teaches appear/scroll/onHold through the embedded STAGE_SPEC (drift net)", () => {
+    // Not a tautology on STAGE_SPEC inclusion: pins that the COMPOSED system
+    // prompt actually carries the three new words, so quickstart notices if the
+    // vocabulary ever drops out of the spec (and this bundle touches
+    // packages/quickstart/ so the /live-test Tier-2 path heuristic fires).
+    const system = buildSystem(DEFAULT_GUIDE);
+    expect(system).toContain('"onHold"');
+    expect(system).toMatch(/appear\(none\|fade\|slide\)/);
+    expect(system).toMatch(/scroll\(bool\)/);
+  });
+
   it("exports a non-empty DEFAULT_GUIDE and HISTORY_TURNS = 20", () => {
     expect(DEFAULT_GUIDE.length).toBeGreaterThan(0);
     expect(HISTORY_TURNS).toBe(20);

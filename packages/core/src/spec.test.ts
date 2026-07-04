@@ -27,6 +27,25 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/unknown[^.]*falls back to the default/i);
   });
 
+  it("teaches appear onHold and scroll", () => {
+    // BoxStyle gains the two new tokens.
+    expect(STAGE_SPEC).toMatch(/appear\(none\|fade\|slide\)/);
+    expect(STAGE_SPEC).toMatch(/scroll\(bool\)/);
+    // appear = enter animation: replays on each re-show; theme honors reduced motion.
+    expect(STAGE_SPEC).toMatch(/replays on each re-show/i);
+    expect(STAGE_SPEC).toMatch(/reduced motion/i);
+    // scroll = bounded, internally-scrollable region; the theme owns the height.
+    expect(STAGE_SPEC).toMatch(/bounded, internally-scroll/i);
+    expect(STAGE_SPEC).toMatch(/theme owns the max height/i);
+    // Box gains onHold — the secondary long-press gesture, same Action union as onPress.
+    expect(STAGE_SPEC).toContain('"onHold"?:Action');
+    expect(STAGE_SPEC).toMatch(/long-press/i);
+    expect(STAGE_SPEC).toMatch(/secondary/i);
+    expect(STAGE_SPEC).toMatch(/same Action union as onPress/i);
+    // The advice (guidance, not enforcement — invariant #2): never hold-only content.
+    expect(STAGE_SPEC).toMatch(/never make hold the only path/i);
+  });
+
   it("teaches collect and press-time field snapshots", () => {
     // Agent action shape gains an optional collect box id.
     expect(STAGE_SPEC).toContain('"collect"?:<boxId>');
