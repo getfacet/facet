@@ -20,7 +20,6 @@
     "@facet/agent-client": "workspace:*",
     "@facet/client": "workspace:*",
     "@facet/core": "workspace:*",
-    "@facet/kit": "workspace:*",
     "@facet/react": "workspace:*",
     "@facet/runtime": "workspace:*",
     "@facet/server": "workspace:*",

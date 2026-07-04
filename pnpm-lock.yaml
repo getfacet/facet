@@ -53,9 +53,6 @@ importers:
       '@facet/core':
         specifier: workspace:*
         version: link:../../packages/core
-      '@facet/kit':
-        specifier: workspace:*
-        version: link:../../packages/kit
       '@facet/react':
         specifier: workspace:*
         version: link:../../packages/react
@@ -138,12 +135,6 @@ importers:
         version: link:../runtime
 
   packages/core: {}
-
-  packages/kit:
-    dependencies:
-      '@facet/core':
-        specifier: workspace:*
-        version: link:../core
 
   packages/quickstart:
     dependencies:
