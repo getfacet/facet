@@ -12,12 +12,7 @@ import type { LensPolicy, Vote } from "./verdict.js";
 import { aggregateVerdict, DEFAULT_LENS_POLICY, expectedMatrix } from "./verdict.js";
 
 /** N identical votes for one (lens, visitor). */
-function votes(
-  lens: Vote["lens"],
-  visitor: string,
-  verdict: Vote["verdict"],
-  count = 1,
-): Vote[] {
+function votes(lens: Vote["lens"], visitor: string, verdict: Vote["verdict"], count = 1): Vote[] {
   return Array.from({ length: count }, () => ({ lens, visitor, verdict }));
 }
 
