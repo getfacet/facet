@@ -72,12 +72,12 @@ locale, prior context) is enough to make the first paint different.
 The model builds the Stage from **four low-level bricks** — not a catalog of
 pre-made components:
 
-| Brick   | It is…                                                                  |
-| ------- | ----------------------------------------------------------------------- |
-| `box`   | the universal container. Flow layout, token styles, optional `onPress`. |
-| `text`  | text with token styles (size/weight/color).                             |
-| `image` | an image.                                                               |
-| `field` | an input.                                                               |
+| Brick   | It is…                                                                             |
+| ------- | ---------------------------------------------------------------------------------- |
+| `box`   | the universal container. Flow layout, token styles, optional `onPress`/`onHold`.   |
+| `text`  | text with token styles (size/weight/color).                                        |
+| `image` | an image.                                                                          |
+| `field` | an input.                                                                          |
 
 A *card* is a `box` with a border. A *button* is a `box` with `onPress`. A
 *heading* is a big `text`. Everything is composed from these four, so the set of
@@ -86,7 +86,11 @@ producible interfaces is unbounded — yet it stays safe and unbreakable because
 An `onPress` can also be declarative — `{kind:"navigate", to}` to switch between
 pre-drawn **screens** or `{kind:"toggle", target}` to show/hide a node — and the
 browser runs those **instantly with no round-trip to the model**; `{kind:"agent"}`
-is the path back to the model for anything open-ended.
+is the path back to the model for anything open-ended. A box can also declare an
+`onHold` (a long-press secondary gesture, same action union), an `appear` token
+(a bounded enter animation — `fade`/`slide`, the theme owns the timing), and a
+`scroll` token (a bounded internally-scrollable region) — all still tokens, never
+raw values.
 
 1. **Bricks are typed data, never raw HTML/JS** → nothing can be injected.
 2. **Style values are tokens, not raw scalars** (`gap: "md"`, not `gap: 23`) →
