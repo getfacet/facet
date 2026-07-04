@@ -33,7 +33,7 @@ work_units:
     files:
       - path: "packages/core/src/tokens.ts"
         change_type: "update"
-        purpose: "APPEARS = [\"none\",\"fade\",\"slide\"] as const + Appear type (existing const-array pattern)"
+        purpose: 'APPEARS = ["none","fade","slide"] as const + Appear type (existing const-array pattern)'
       - path: "packages/core/src/nodes.ts"
         change_type: "update"
         purpose: "BoxStyle.appear?, BoxStyle.scroll?, BoxNode.onHold? (mirrors onPress optional-field pattern) + doc comments incl. replay-on-mount and hold-secondary semantics"
@@ -201,7 +201,7 @@ work_units:
     files:
       - path: "packages/react/src/theme.ts"
         change_type: "update"
-        purpose: "SCROLL_MAX_HEIGHT = \"20rem\" (non-exported); boxStyle maps literal scroll === true to overflowY:auto, overflowX:hidden, maxHeight:SCROLL_MAX_HEIGHT, minHeight:0; doc notes appear is renderer-bound (RISK-API-2)"
+        purpose: 'SCROLL_MAX_HEIGHT = "20rem" (non-exported); boxStyle maps literal scroll === true to overflowY:auto, overflowX:hidden, maxHeight:SCROLL_MAX_HEIGHT, minHeight:0; doc notes appear is renderer-bound (RISK-API-2)'
       - path: "packages/react/src/appear.ts"
         change_type: "add"
         purpose: "package-internal (NOT barrel-exported): APPEAR_CSS static string (fade 160ms ease-out opacity; slide 200ms ease-out translateY(6px)+opacity; prefers-reduced-motion gate scoped to the appear classes); appearClass(style: unknown) total function"
@@ -305,10 +305,10 @@ work_units:
     files:
       - path: "apps/playground/src/gallery.tsx"
         change_type: "update"
-        purpose: "new \"Appear, hold & scroll\" demo page (scroll:true list, appear:\"slide\" cards, appear:\"fade\" hero, press/hold pair, hidden peek panel); the demo's tree builder (appearHoldScroll(): FacetTree) is exported so the deterministic gallery test can assert on the exact tree"
+        purpose: 'new "Appear, hold & scroll" demo page (scroll:true list, appear:"slide" cards, appear:"fade" hero, press/hold pair, hidden peek panel); the demo''s tree builder (appearHoldScroll(): FacetTree) is exported so the deterministic gallery test can assert on the exact tree'
       - path: "apps/playground/src/gallery.test.ts"
         change_type: "add"
-        purpose: "RED-first unit test (root vitest config already includes apps/**/src/**/*.test.ts — playground has test infrastructure: generator.test.ts, print-tree.test.ts): appearHoldScroll() tree contains a scroll:true box; nodes with appear:\"slide\" and appear:\"fade\"; a press/hold pair (one box carrying BOTH onPress and onHold); tree passes validateTree with zero issues"
+        purpose: 'RED-first unit test (root vitest config already includes apps/**/src/**/*.test.ts — playground has test infrastructure: generator.test.ts, print-tree.test.ts): appearHoldScroll() tree contains a scroll:true box; nodes with appear:"slide" and appear:"fade"; a press/hold pair (one box carrying BOTH onPress and onHold); tree passes validateTree with zero issues'
     depends_on: ["WU-3", "WU-4"]
     parallel_group: "par-2"
     red_check:
@@ -328,7 +328,7 @@ work_units:
         covers_dc: ["DC-009"]
         action: "new"
       - type: "e2e"
-        target: "manual: pnpm --filter @facet/playground dev → gallery \"Appear, hold & scroll\" page (animate-in, press vs hold, inner scroll, reduced-motion OS toggle)"
+        target: 'manual: pnpm --filter @facet/playground dev → gallery "Appear, hold & scroll" page (animate-in, press vs hold, inner scroll, reduced-motion OS toggle)'
         covers_dc: ["DC-009"]
         action: "new"
     done_conditions:
