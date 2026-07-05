@@ -1568,3 +1568,71 @@ describe("record channel (WU-5)", () => {
     expect(history[2]?.event.kind === "message" ? history[2]?.event.text : undefined).toBe("C");
   });
 });
+
+describe("record validation hardening", () => {
+  it("POST /record rejects a non-number seq and an over-long effect/target string", async () => {
+    const sink = new MemorySink();
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, sink });
+    running = server;
+
+    // A non-number `seq` must be rejected: the guard narrows the body to a
+    // CollectedEvent whose `seq?: number`, so a `"x"` (or `{}`) would be
+    // persisted as a non-number while TS believes it's `number | undefined`.
+    const badSeq = await postRecord(base, "v", {
+      kind: "tap",
+      target: "cta",
+      effect: { navigate: "about" },
+      seq: "x",
+    });
+    expect(badSeq.status).toBe(400);
+
+    // An over-long navigate string (past the shared field cap) must be rejected
+    // so a ~5 MiB effect can't be persisted into the unbounded Sink.
+    const longNav = await postRecord(base, "v", {
+      kind: "tap",
+      effect: { navigate: "x".repeat(MAX_FIELD_VALUE_CHARS + 1) },
+    });
+    expect(longNav.status).toBe(400);
+
+    // An over-long `target` string must be rejected too (same cap as fields).
+    const longTarget = await postRecord(base, "v", {
+      kind: "tap",
+      target: "t".repeat(MAX_FIELD_VALUE_CHARS + 1),
+      effect: { toggle: "n" },
+    });
+    expect(longTarget.status).toBe(400);
+
+    // No Sink write for any rejected body.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await sink.history("a", "v")).toHaveLength(0);
+
+    // A valid small effect (with a numeric seq) still 202s and persists.
+    const ok = await postRecord(base, "v", {
+      kind: "tap",
+      target: "cta",
+      effect: { navigate: "about" },
+      seq: 3,
+    });
+    expect(ok.status).toBe(202);
+    await waitFor(async () => (await sink.history("a", "v")).length >= 1);
+  });
+
+  it("isTapEffect rejects malformed /record effects", async () => {
+    const sink = new MemorySink();
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, sink });
+    running = server;
+
+    // effect present but not an object → rejected.
+    expect((await postRecord(base, "v", { kind: "tap", effect: "nope" })).status).toBe(400);
+    // navigate present but not a string → rejected.
+    expect((await postRecord(base, "v", { kind: "tap", effect: { navigate: 7 } })).status).toBe(400);
+    // toggle present but not a string → rejected.
+    expect((await postRecord(base, "v", { kind: "tap", effect: { toggle: {} } })).status).toBe(400);
+    // neither key present → isTapEffect defines this invalid.
+    expect((await postRecord(base, "v", { kind: "tap", effect: {} })).status).toBe(400);
+
+    // None of these wrote to the Sink.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await sink.history("a", "v")).toHaveLength(0);
+  });
+});

@@ -139,6 +139,11 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
   if (typeof visitor !== "object" || visitor === null) return false;
   if (typeof (visitor as { visitorId?: unknown }).visitorId !== "string") return false;
   if (typeof event !== "object" || event === null) return false;
+  // `seq` is a forward-compatible wire field on every event variant (declared
+  // `seq?: number`). Validate it here so a non-number can't be persisted while
+  // the narrowed type claims `number | undefined` (unsound).
+  const seq = (event as { seq?: unknown }).seq;
+  if (seq !== undefined && typeof seq !== "number") return false;
   const { kind, text, action } = event as { kind?: unknown; text?: unknown; action?: unknown };
   if (kind === "visit") {
     const eventVisitor = (event as { visitor?: unknown }).visitor;
@@ -183,8 +188,13 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
 function isTapEffect(value: unknown): value is TapEffect {
   if (typeof value !== "object" || value === null) return false;
   const { navigate, toggle } = value as { navigate?: unknown; toggle?: unknown };
-  if (navigate !== undefined) return typeof navigate === "string";
-  if (toggle !== undefined) return typeof toggle === "string";
+  // Bound the effect string with the same cap as `fields` values so a ~5 MiB
+  // navigate/toggle can't be persisted into the (unbounded) Sink and later
+  // replayed into the LLM prompt.
+  if (navigate !== undefined)
+    return typeof navigate === "string" && navigate.length <= MAX_FIELD_VALUE_CHARS;
+  if (toggle !== undefined)
+    return typeof toggle === "string" && toggle.length <= MAX_FIELD_VALUE_CHARS;
   return false;
 }
 
@@ -205,12 +215,18 @@ function isRecordBody(body: unknown): body is { visitor: VisitorContext; event: 
   // that ride /event, never the record-only channel.
   if ((event as { kind?: unknown }).kind !== "tap") return false;
   const target = (event as { target?: unknown }).target;
-  if (target !== undefined && typeof target !== "string") return false;
+  // Cap `target` with the same bound as `fields`/effect strings so an over-long
+  // node id can't be persisted into the (unbounded) Sink.
+  if (target !== undefined && (typeof target !== "string" || target.length > MAX_FIELD_VALUE_CHARS))
+    return false;
   const effect = (event as { effect?: unknown }).effect;
   if (effect !== undefined && !isTapEffect(effect)) return false;
   const fields = (event as { fields?: unknown }).fields;
   if (fields !== undefined && !isFieldsRecord(fields)) return false;
-  // `seq` is a forward-compatible wire field — tolerated, not required.
+  // `seq` is a forward-compatible wire field (declared `seq?: number`) — tolerated,
+  // not required, but validated so a non-number can't be persisted unsoundly.
+  const seq = (event as { seq?: unknown }).seq;
+  if (seq !== undefined && typeof seq !== "number") return false;
   return true;
 }
 
