@@ -79,7 +79,7 @@ export const STUB_TREE: FacetTree = {
 };
 
 /** `event.fields ?? {}` as sorted `key=value` pairs after the action name. */
-function describeAction(event: Extract<ClientEvent, { kind: "action" }>): string {
+function describeAction(event: Extract<ClientEvent, { kind: "tap" }>): string {
   const name = event.action.name ?? event.action.kind;
   const fields = event.fields ?? {};
   const pairs = Object.keys(fields)
@@ -121,7 +121,7 @@ export function createStubAgent(): FacetAgent {
         stage.say(`stub: ${event.text}`);
         return;
       }
-      case "action": {
+      case "tap": {
         stage.say(describeAction(event));
         return;
       }

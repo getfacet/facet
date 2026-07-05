@@ -11,7 +11,15 @@
  * node, render the whole page, say a chat line).
  */
 import { STAGE_SPEC } from "@facet/core";
-import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
+import type {
+  ClientEvent,
+  CollectedEvent,
+  FacetAction,
+  FacetSession,
+  FacetStamp,
+  FacetTheme,
+  ServerMessage,
+} from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { ToolSpec, TurnMessage } from "./provider.js";
 
@@ -197,8 +205,31 @@ export const TOOLS: readonly ToolSpec[] = [
   },
 ];
 
-/** One visitor event as a compact user-side line. */
-function describeEvent(event: ClientEvent): string {
+/**
+ * A durable row persisted BEFORE the `action`→`tap` envelope rename still carries
+ * `kind:"action"` on disk. Coerce such a legacy row into the equivalent `tap`
+ * (its `action`/`fields` carry over) so a historical interaction still replays
+ * instead of degrading to `(unknown event)` (RISK-API-2). A non-legacy event
+ * passes through untouched.
+ */
+function normalizeLegacyEvent(event: CollectedEvent): CollectedEvent {
+  if ((event as { readonly kind: string }).kind !== "action") return event;
+  const legacy = event as {
+    readonly action?: FacetAction;
+    readonly fields?: Readonly<Record<string, string>>;
+  };
+  return {
+    kind: "tap",
+    ...(legacy.action !== undefined ? { action: legacy.action } : {}),
+    ...(legacy.fields !== undefined ? { fields: legacy.fields } : {}),
+  };
+}
+
+/** One visitor event as a compact user-side line. Accepts the log currency
+ * (`CollectedEvent`), so it replays both forwarded agent taps and locally-
+ * recorded navigate/toggle taps; `ClientEvent` is assignable to it. */
+function describeEvent(raw: CollectedEvent): string {
+  const event = normalizeLegacyEvent(raw);
   switch (event.kind) {
     case "visit": {
       // Never the visitorId (the unauthenticated session bearer key) — only the
@@ -208,13 +239,23 @@ function describeEvent(event: ClientEvent): string {
     }
     case "message":
       return event.text;
-    case "action": {
+    case "tap": {
+      // A local tap carries the renderer-resolved `effect`; a forwarded agent tap
+      // carries `action`. Render whichever is present.
+      const { effect } = event;
+      if (effect !== undefined) {
+        if ("navigate" in effect) return `(action navigate to=${effect.navigate})`;
+        return `(action toggle target=${effect.toggle})`;
+      }
       const action = event.action;
-      if (action.kind === "navigate") return `(action navigate to=${action.to})`;
-      if (action.kind === "toggle") return `(action toggle target=${action.target})`;
-      const payload = JSON.stringify(action.payload ?? {});
-      const fields = JSON.stringify(event.fields ?? {});
-      return `(action ${action.name} payload=${payload} fields=${fields})`;
+      if (action !== undefined) {
+        if (action.kind === "navigate") return `(action navigate to=${action.to})`;
+        if (action.kind === "toggle") return `(action toggle target=${action.target})`;
+        const payload = JSON.stringify(action.payload ?? {});
+        const fields = JSON.stringify(event.fields ?? {});
+        return `(action ${action.name} payload=${payload} fields=${fields})`;
+      }
+      return "(unknown event)";
     }
     default:
       // A corrupt/unknown history event.kind must still yield a string, never

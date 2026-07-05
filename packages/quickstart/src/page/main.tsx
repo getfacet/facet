@@ -69,7 +69,7 @@ function Page(): ReactNode {
   const transport = useMemo(() => new SseTransport("", visitor), [visitor]);
   // Conditional spread: exactOptionalPropertyTypes forbids an explicit
   // `initialTree: undefined` — an absent seed must keep the EMPTY_TREE default.
-  const { tree, chat, send } = useFacet(
+  const { tree, chat, send, record } = useFacet(
     transport,
     initialTree !== undefined ? { initialTree } : {},
   );
@@ -114,7 +114,7 @@ function Page(): ReactNode {
   const onAction = (action: FacetAction, fields?: Readonly<Record<string, string>>): void => {
     // Conditional construction: exactOptionalPropertyTypes forbids an explicit
     // `fields: undefined` on the event (the Decision-2 shape).
-    send(fields === undefined ? { kind: "action", action } : { kind: "action", action, fields });
+    send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });
   };
 
   const onSend = (text: string): void => {
@@ -131,6 +131,7 @@ function Page(): ReactNode {
         <StageRenderer
           tree={tree}
           onAction={onAction}
+          onRecord={record}
           {...(themes !== undefined ? { themes } : {})}
         />
       </div>
