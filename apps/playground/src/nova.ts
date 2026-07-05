@@ -88,7 +88,7 @@ export const nova = defineAgent(({ event, stage }) => {
       }
       break;
     }
-    case "action": {
+    case "tap": {
       stage.say(`(you pressed: ${event.action.name})`);
       break;
     }

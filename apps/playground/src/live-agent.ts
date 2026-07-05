@@ -24,7 +24,7 @@ export function makeLiveAgent({ useLlm, welcomeSubtitle }: LiveAgentOptions) {
       stage.render(welcome(welcomeSubtitle));
       return;
     }
-    if (event.kind === "action") {
+    if (event.kind === "tap") {
       stage.say(`(you pressed: ${event.action.name})`);
       return;
     }
