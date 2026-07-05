@@ -60,8 +60,8 @@ describe("SseTransport", () => {
     await flush();
 
     expect(sentEvents()).toEqual([
-      { kind: "visit", visitor },
-      { kind: "message", text: "first" },
+      { kind: "visit", visitor, seq: 1 },
+      { kind: "message", text: "first", seq: 2 },
     ]);
   });
 
@@ -77,7 +77,7 @@ describe("SseTransport", () => {
     expect(url).toBe("http://s/event");
     expect(JSON.parse(init.body)).toEqual({
       visitor,
-      event: { kind: "message", text: "hi" },
+      event: { kind: "message", text: "hi", seq: 1 },
     });
   });
 
@@ -139,7 +139,7 @@ describe("SseTransport", () => {
 
     const events = sentEvents() as { kind: string; text?: string }[];
     expect(events).toHaveLength(100);
-    expect(events[0]).toEqual({ kind: "visit", visitor }); // still first
+    expect(events[0]).toEqual({ kind: "visit", visitor, seq: 1 }); // still first
     expect(events[99]?.text).toBe("m149");
   });
 
@@ -235,8 +235,8 @@ describe("SseTransport", () => {
     // The abort frees the chain head → the next queued event is issued.
     expect(blackHoleFetch).toHaveBeenCalledTimes(2);
     expect(eventsOf(blackHoleFetch)).toEqual([
-      { kind: "message", text: "a" },
-      { kind: "message", text: "b" },
+      { kind: "message", text: "a", seq: 1 },
+      { kind: "message", text: "b", seq: 2 },
     ]);
 
     errorSpy.mockRestore();
@@ -277,5 +277,54 @@ describe("SseTransport", () => {
     source?.emit(JSON.stringify({ kind: "reset" }));
 
     expect(received).toEqual([{ kind: "reset" }]);
+  });
+
+  it("record rides the shared chain with a monotonic seq and drops on failure", async () => {
+    // A fetch that records each (url, event) and rejects ONLY the /record POST,
+    // so we can prove the record path is best-effort without wedging the chain.
+    const calls: Array<{ url: string; event: { kind: string; seq?: number } }> = [];
+    const recordingFetch = vi.fn((url: string, init?: { body?: string }) => {
+      const body = JSON.parse(init?.body ?? "{}") as { event: { kind: string; seq?: number } };
+      calls.push({ url, event: body.event });
+      return url.endsWith("/record")
+        ? Promise.reject(new Error("record boom"))
+        : Promise.resolve(new Response(null, { status: 202 }));
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.stubGlobal("fetch", recordingFetch);
+
+    const transport = new SseTransport("http://s", visitor);
+    transport.subscribe(() => {});
+    FakeEventSource.instances[0]?.onopen?.();
+
+    // A forwarded event over /event, then a locally-resolved tap over /record.
+    transport.send({ kind: "message", text: "hi" });
+    expect(() =>
+      transport.record({ kind: "tap", target: "n1", effect: { navigate: "home" } }),
+    ).not.toThrow();
+
+    await flush();
+    await flush();
+
+    // Both POST on the SHARED chain, in send order; record targets ONLY the
+    // reference /record path (never an arbitrary/domain URL).
+    expect(calls.map((c) => c.url)).toEqual(["http://s/event", "http://s/record"]);
+    expect(calls[1]?.url).toBe("http://s/record");
+
+    // seq is stamped once at the single serialization point, strictly increasing
+    // across the /event send and the /record record.
+    const seqs = calls.map((c) => c.event.seq);
+    expect(seqs).toEqual([1, 2]);
+    expect((seqs[0] as number) < (seqs[1] as number)).toBe(true);
+
+    // The rejected /record logged + dropped (no throw, no retry) and left the
+    // chain intact: a following send still fires with the next monotonic seq.
+    expect(errorSpy).toHaveBeenCalled();
+    transport.send({ kind: "message", text: "after" });
+    await flush();
+    expect(calls[2]?.url).toBe("http://s/event");
+    expect(calls[2]?.event.seq).toBe(3);
+
+    errorSpy.mockRestore();
   });
 });
