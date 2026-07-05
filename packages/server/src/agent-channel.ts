@@ -9,6 +9,7 @@ import type {
 } from "@facet/core";
 import type { LateWindow } from "./late.js";
 import { offlineFor } from "./offline.js";
+import { writeSse } from "./sse.js";
 
 /** The non-terminal note delivered when a turn outlives `agentTimeoutMs`: it must
  * NOT read as terminal, because the turn is parked and its real result will still
@@ -145,8 +146,8 @@ export function createAgentChannel(deps: AgentChannelDeps): AgentChannel {
         stage: session.stage,
       };
       // A no-id SSE frame (the agent channel never carries a Last-Event-ID) — same
-      // wire shape as the browser channel's `sse` helper.
-      stream.write(`data: ${JSON.stringify(frame)}\n\n`);
+      // shared `writeSse` writer as the browser channel, so the wire shape can't drift.
+      writeSse(stream, { data: frame });
     });
   };
 
