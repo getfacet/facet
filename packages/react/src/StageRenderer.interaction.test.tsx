@@ -405,6 +405,92 @@ describe("StageRenderer toggle (jsdom)", () => {
   });
 });
 
+// onRecord (WU-4, DC-001/DC-003): a locally-resolved navigate/toggle tap applies
+// its optimistic view-state mutation FIRST/unconditionally, THEN fires the
+// record-only `onRecord` channel with the resolved effect + the pressed box's
+// id as `target` — distinct from `onAction` (the agent-routed channel), and
+// fire-and-forget so a record failure can never unwind the view-state.
+describe("StageRenderer onRecord (jsdom)", () => {
+  it("a local navigate tap applies optimistically then fires onRecord with the resolved effect", () => {
+    const onAction = vi.fn();
+    const onRecord = vi.fn();
+    render(<StageRenderer onAction={onAction} onRecord={onRecord} tree={screensTree()} />);
+
+    fireEvent.click(screen.getByRole("button"));
+
+    // Optimistic effect applied FIRST: the screen switched synchronously.
+    expect(screen.getByText("about content")).toBeTruthy();
+    expect(screen.queryByText("home content")).toBeNull();
+    // The record-only channel fired AFTER, carrying the resolved effect + the
+    // pressed box's node id as `target` (the effect is captured here, never
+    // re-derived). navigate/toggle never reach the agent-routed onAction.
+    expect(onRecord).toHaveBeenCalledTimes(1);
+    expect(onRecord).toHaveBeenCalledWith({
+      kind: "tap",
+      target: "goAbout",
+      effect: { navigate: "about" },
+    });
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
+  it("a local toggle tap applies optimistically then fires onRecord with the resolved toggle effect", () => {
+    const onRecord = vi.fn();
+    render(
+      <StageRenderer
+        onRecord={onRecord}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["btn", "panel"] },
+          btn: {
+            id: "btn",
+            type: "box",
+            onPress: { kind: "toggle", target: "panel" },
+            children: [],
+          },
+          panel: { id: "panel", type: "box", children: ["p"] },
+          p: { id: "p", type: "text", value: "panel content" },
+        })}
+      />,
+    );
+
+    expect(screen.getByText("panel content")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button"));
+    expect(screen.queryByText("panel content")).toBeNull(); // optimistic hide
+
+    expect(onRecord).toHaveBeenCalledTimes(1);
+    expect(onRecord).toHaveBeenCalledWith({
+      kind: "tap",
+      target: "btn",
+      effect: { toggle: "panel" },
+    });
+  });
+
+  it("an onRecord failure leaves the optimistic view-state unchanged (DC-003)", () => {
+    const onRecord = vi.fn(() => {
+      throw new Error("record channel down");
+    });
+    render(<StageRenderer onRecord={onRecord} tree={screensTree()} />);
+
+    // A record-channel throw must be swallowed (fire-and-forget): the click
+    // itself does not throw, and the optimistic navigate stands — the failure
+    // never unwinds currentScreen.
+    expect(() => fireEvent.click(screen.getByRole("button"))).not.toThrow();
+    expect(onRecord).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("about content")).toBeTruthy();
+    expect(screen.queryByText("home content")).toBeNull();
+  });
+
+  it("navigate/toggle with onRecord omitted stay browser-local (no throw, no emission)", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={screensTree()} />);
+
+    // The record channel is optional: absent it, a navigate is exactly today's
+    // browser-local screen switch with no transport traffic.
+    expect(() => fireEvent.click(screen.getByRole("button"))).not.toThrow();
+    expect(screen.getByText("about content")).toBeTruthy();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
 // Collect (DC-001/002/003): a press whose agent action declares `collect` snapshots
 // the VISIBLE, MOUNTED field values inside that box's subtree into a second
 // onAction argument. Inputs stay uncontrolled (invariant #6): the DOM owns the
