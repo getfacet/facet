@@ -17,13 +17,8 @@
  * the Facet server over the agent connection. FACET_EVENT ties the command to
  * the visitor event currently being handled.
  */
-import type { ServerMessage } from "@facet/core";
-import type { CmdFrame } from "./commands.js";
+import type { CmdFrame, ServerMessage } from "@facet/core";
 import { buildMessages } from "./commands.js";
-
-// Re-export the cli→bridge wire contract so the bridge can import it via the
-// bare `@facet/cli` specifier (the sanctioned bin entry) rather than a deep path.
-export type { CmdFrame } from "./commands.js";
 
 const bridgeUrl = process.env.FACET_BRIDGE_URL;
 const eventToken = process.env.FACET_EVENT ?? "";

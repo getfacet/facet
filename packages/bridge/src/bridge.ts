@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
 import { createLruMap, createSemaphore, createSerialQueue, STAGE_SPEC } from "@facet/core";
-import type { CmdFrame } from "@facet/cli";
+import type { CmdFrame } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";

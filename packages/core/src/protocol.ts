@@ -127,3 +127,16 @@ export interface AgentControlFrame {
   readonly requestId: number;
   readonly messages: readonly ServerMessage[];
 }
+
+/**
+ * The private cli→bridge wire contract: the JSON body the `facet` command POSTs
+ * to the local bridge's `/cmd` endpoint. The bridge imports this type so a field
+ * rename here can't drift silently on the parsing side. Not a published surface —
+ * both ends live in this monorepo.
+ */
+export interface CmdFrame {
+  /** The visitor event this batch of messages belongs to (`FACET_EVENT`). */
+  readonly token: string;
+  /** The stage messages produced by the command. */
+  readonly messages: readonly ServerMessage[];
+}
