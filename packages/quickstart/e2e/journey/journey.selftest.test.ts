@@ -3,15 +3,17 @@
  * Playwright journey. Runs ONLY under the e2e vitest config (the root glob never
  * touches `e2e/`), no key, no network beyond the local stub server.
  *
- * The stub does NOT respond to arbitrary chat like a real LLM, so this asserts
- * MECHANICS that hold under the stub, NOT LLM-driven content (that is WU-4's
- * real-tier + vision-judge job):
+ * The stub does NOT respond to arbitrary chat like a real LLM, but it DOES
+ * append/update an `echo:` text node in the STAGE on each message — so this
+ * asserts MECHANICS that hold under the stub, NOT LLM-driven content (that is
+ * WU-4's real-tier + vision-judge job):
  * - `runJourney` captures ≥4 screenshots (files exist, non-empty).
  * - `settleDom` RUNS within its bounded timeout and NEVER throws for every
- *   post-action step (returns `{changed, timedOut}` booleans). A chat step's
- *   `changed` is NOT asserted (the real chat-driven change is a WU-4 concern).
- * - the click step dispatched AND the stub DOM changed (the stub's press echoes
- *   a chat line — a reliable, deterministic DOM change).
+ *   post-action step (returns `{changed, timedOut}` booleans).
+ * - the chat steps CHANGED the stage (the stub's echo node) — this exercises the
+ *   stage-scoped, change-gated settle (a ChatDock-only change would NOT count).
+ * - the click step dispatched (the stub's submit press `say`s to the dock, so its
+ *   stage effect is not asserted here — real-LLM click effects are WU-4's job).
  * - `runJourney({ fixture: 'broken' })` captures the broken page WITHOUT throwing.
  *
  * Needs (shared preflight): `pnpm install` (playwright devDep) +
@@ -55,7 +57,14 @@ describe("journey self-test (stub, headless chromium)", () => {
     const context = await browser.newContext();
     try {
       const page = await context.newPage();
-      const result = await runJourney(page, { url: running.url, outDir });
+      // Short bounded settle: the stub renders/echoes instantly, so a real change
+      // is seen in well under a second; the small timeout keeps the stub click
+      // step (which only `say`s, no stage change) from waiting the full default.
+      const result = await runJourney(page, {
+        url: running.url,
+        outDir,
+        settle: { timeoutMs: 5000, quietMs: 300 },
+      });
 
       // ≥4 screenshots, every file present + non-empty (no secrets: the page
       // never renders the key; the stub needs none).
@@ -73,10 +82,19 @@ describe("journey self-test (stub, headless chromium)", () => {
         expect(typeof step.settle?.timedOut).toBe("boolean");
       }
 
-      // The click step dispatched AND the stub DOM changed (press → chat echo).
+      // The chat steps CHANGED the stage (the stub appends/updates its echo node
+      // in the stage root) — this proves the stage-scoped, change-gated settle
+      // detects a real stage edit, not a ChatDock-only change.
+      const chatSteps = result.steps.filter(
+        (s) => s.label === "add-section" || s.label === "restyle",
+      );
+      expect(chatSteps.length).toBe(2);
+      for (const step of chatSteps) expect(step.settle?.changed).toBe(true);
+
+      // The click step dispatched (its stub stage effect is a dock `say`, not
+      // asserted here — real-LLM click effects are WU-4's vision-judged concern).
       const click = result.steps[result.steps.length - 1];
       expect(click?.clicked).toBe(true);
-      expect(click?.settle?.changed).toBe(true);
     } finally {
       await context.close();
     }

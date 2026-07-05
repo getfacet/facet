@@ -50,9 +50,10 @@ export const DEFAULT_MESSAGES: JourneyMessages = {
 
 /** Quiet-window + bounded-timeout knobs for {@link settleDom} (OQ-1). */
 export interface SettleOptions {
-  /** No DOM change for this long ⇒ settled. Default 400ms. */
+  /** No stage change for this long ⇒ settled. Default 800ms. */
   readonly quietMs?: number;
-  /** Hard upper bound; on elapse capture + flag, never throw. Default 15000ms. */
+  /** Hard upper bound; on elapse capture + flag, never throw. Default 45000ms
+   * (a real LLM first paint / edit takes seconds). */
   readonly timeoutMs?: number;
   /** Poll cadence. Default 50ms. */
   readonly pollMs?: number;
@@ -61,6 +62,13 @@ export interface SettleOptions {
    * first poll is still detected. Omit to baseline at the first poll.
    */
   readonly baseline?: string;
+  /**
+   * When true (default), the quiet window only ends the wait AFTER a real stage
+   * change is observed — so a still-blank stage keeps waiting for the agent's
+   * paint until the timeout, instead of settling on emptiness. Set false to
+   * settle on any quiet window (e.g. a page expected not to change).
+   */
+  readonly requireChange?: boolean;
 }
 
 /** The recorded outcome of a settle wait — never a thrown error. */
@@ -115,11 +123,9 @@ export interface JourneyResult {
   readonly fixture?: "broken";
 }
 
-const DEFAULT_QUIET_MS = 400;
-const DEFAULT_TIMEOUT_MS = 15_000;
+const DEFAULT_QUIET_MS = 800;
+const DEFAULT_TIMEOUT_MS = 45_000;
 const DEFAULT_POLL_MS = 50;
-/** Bounded wait for the stage to mount after load — degrade, don't hang. */
-const STAGE_MOUNT_TIMEOUT_MS = 15_000;
 /** Bounded wait for the press target — no pressable is recorded, not thrown. */
 const CLICK_TIMEOUT_MS = 5_000;
 
@@ -135,9 +141,15 @@ function sleep(ms: number): Promise<void> {
  */
 function domFingerprint(page: Page): Promise<string> {
   return page.evaluate(() => {
-    const root = document.getElementById("root");
-    if (root === null) return "0:0";
-    return `${String(root.innerHTML.length)}:${String(root.querySelectorAll("*").length)}`;
+    // Fingerprint the agent-drawn STAGE (not #root) so a ChatDock change — the
+    // echoed "You: …" line — is NOT mistaken for a page render. An empty or
+    // not-yet-mounted stage ⇒ "0:0", so the shell mounting an empty stage is not
+    // a "change"; only a real paint/edit is. Fall back to #root if the marker is
+    // absent (older bundle).
+    const stage =
+      document.querySelector("[data-facet-stage]") ?? document.getElementById("root");
+    if (stage === null) return "0:0";
+    return `${String(stage.innerHTML.length)}:${String(stage.querySelectorAll("*").length)}`;
   });
 }
 
@@ -152,6 +164,7 @@ export async function settleDom(page: Page, options: SettleOptions = {}): Promis
   const quietMs = options.quietMs ?? DEFAULT_QUIET_MS;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;
+  const requireChange = options.requireChange ?? true;
 
   let last = options.baseline ?? (await domFingerprint(page));
   let changed = false;
@@ -172,7 +185,10 @@ export async function settleDom(page: Page, options: SettleOptions = {}): Promis
       changed = true;
       last = current;
       lastActivity = Date.now();
-    } else if (Date.now() - lastActivity >= quietMs) {
+    } else if ((changed || !requireChange) && Date.now() - lastActivity >= quietMs) {
+      // Under requireChange (default), a quiet window ends the wait only after a
+      // real stage change — so a blank stage keeps waiting for the agent's paint
+      // until the (generous) timeout, rather than settling on emptiness.
       return { changed, timedOut: false };
     }
   }
@@ -295,18 +311,14 @@ export async function runJourney(page: Page, opts: JourneyOptions): Promise<Jour
   // settle so the first-visit render lands before the shot; a mount timeout
   // degrades that visitor (flagged) instead of throwing.
   await page.goto(url, { waitUntil: "domcontentloaded" });
-  let loadFailed = false;
-  try {
-    await page.waitForFunction(
-      () => (document.getElementById("root")?.children.length ?? 0) > 0,
-      undefined,
-      { timeout: STAGE_MOUNT_TIMEOUT_MS },
-    );
-  } catch {
-    loadFailed = true;
-  }
-  // Let the initial visit-driven render settle before the load shot.
-  await settleDom(page, settle);
+  // Baseline the (still-empty) stage BEFORE the visit render lands, then wait for
+  // the agent's FIRST PAINT — the stage going non-empty — to settle before the
+  // shot. A real LLM first paint takes seconds; requireChange means we wait for
+  // it (bounded) rather than screenshot the blank shell. No paint within the
+  // timeout ⇒ that visitor is flagged (loadFailed), never thrown.
+  const loadBaseline = await domFingerprint(page);
+  const loadSettle = await settleDom(page, { ...settle, baseline: loadBaseline });
+  const loadFailed = !loadSettle.changed;
   const loadShot = await capture(page, opts.outDir, 1, "load");
   steps.push(
     loadFailed
