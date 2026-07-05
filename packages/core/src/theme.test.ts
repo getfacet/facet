@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isValidThemeName, validateTheme } from "./theme.js";
+import { isValidThemeName, MAX_DESCRIPTION_LENGTH, validateTheme } from "./theme.js";
 import type { FacetTheme } from "./theme.js";
 
 /** Every issue carrying severity "error" refuses the whole document. */
@@ -282,5 +282,27 @@ describe("validateTheme", () => {
     expect(valueDoc.theme).toBeUndefined();
     expect(hasError(valueDoc.issues)).toBe(true);
     expect(valueDoc.issues.some((i) => i.message.includes("control character"))).toBe(true);
+  });
+
+  // Pins the theme\u2192boundedDescription wiring (label "theme" + MAX_DESCRIPTION_LENGTH
+  // cap); the shared truncate/reject logic is also covered on the stamp path, but
+  // that coverage is label-agnostic and wouldn't catch a wrong label/cap here.
+  it("drops a non-string description with a labelled warning", () => {
+    const { theme, issues } = validateTheme({ name: "x", description: 123 });
+    expect(theme?.description).toBeUndefined();
+    expect(issues.some((i) => i.message === "theme description is not a string; ignored")).toBe(
+      true,
+    );
+  });
+
+  it("truncates an over-cap description to MAX_DESCRIPTION_LENGTH with a labelled warning", () => {
+    const { theme, issues } = validateTheme({
+      name: "x",
+      description: "x".repeat(MAX_DESCRIPTION_LENGTH + 1),
+    });
+    expect(theme?.description?.length).toBe(MAX_DESCRIPTION_LENGTH);
+    expect(issues.some((i) => i.message === "theme description truncated to 200 characters")).toBe(
+      true,
+    );
   });
 });

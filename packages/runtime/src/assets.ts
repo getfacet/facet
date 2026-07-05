@@ -1,5 +1,5 @@
 import {
-  isContainer,
+  treeHasContent,
   validateStamp,
   validateTheme,
   validateTree,
@@ -244,16 +244,15 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
 }
 
 /**
- * A tree worth seeding a fresh session with — it already shows something. Mirrors
- * the server's `hasBuiltStage`: the render root resolves to a box with ≥ 1 child,
- * or `screens` is non-empty. An empty root box (EMPTY_TREE, the shape
- * `validateTree` falls back to on garbage) is NOT seedable — refusing it here is
- * what closes the EMPTY_TREE trap in `loadAssets`.
+ * A tree worth seeding a fresh session with — it already shows something.
+ * Delegates to core's `treeHasContent`, the single canonical "shows something"
+ * predicate (the render root resolves to a box with ≥ 1 child, or `screens` is
+ * non-empty). An empty root box (EMPTY_TREE, the shape `validateTree` falls back
+ * to on garbage) is NOT seedable — refusing it here is what closes the
+ * EMPTY_TREE trap in `loadAssets`.
  */
 export function isSeedableTree(tree: FacetTree): boolean {
-  if (tree.screens !== undefined && Object.keys(tree.screens).length > 0) return true;
-  const root = tree.nodes[tree.root];
-  return root !== undefined && isContainer(root) && root.children.length > 0;
+  return treeHasContent(tree);
 }
 
 /**

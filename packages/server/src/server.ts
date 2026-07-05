@@ -14,6 +14,7 @@ import {
 } from "@facet/core";
 import { FacetRuntime, type Sink, type StageStore, type TurnResult } from "@facet/runtime";
 import { createFrameLogStore, type FrameLogStore } from "./frame-log.js";
+import { writeSse } from "./sse.js";
 import { createLateWindow, isStaleLateResult, LATE_WINDOW_LIMIT, type LateWindow } from "./late.js";
 import { DEFAULT_OFFLINE_FACE } from "./offline.js";
 import { createAgentChannel, type AgentChannel } from "./agent-channel.js";
@@ -83,14 +84,13 @@ function setCors(res: ServerResponse): void {
  * browser channel to carry `<era>:<seq>` for `Last-Event-ID` resume; agent-channel
  * frames pass no id. */
 function sse(res: ServerResponse, data: unknown, id?: string): void {
-  const payload = `data: ${JSON.stringify(data)}\n\n`;
-  res.write(id !== undefined ? `id: ${id}\n${payload}` : payload);
+  writeSse(res, { data }, id);
 }
 
 /** Write a pre-serialized browser frame with its stamped id — the replay path,
  * which re-emits a logged frame's exact JSON. */
 function writeFrame(res: ServerResponse, json: string, id: string): void {
-  res.write(`id: ${id}\ndata: ${json}\n\n`);
+  writeSse(res, { json }, id);
 }
 
 /** Max accepted request body. A single-operator reference transport still shouldn't

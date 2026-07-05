@@ -1,4 +1,4 @@
-import type { FacetNode, NodeId } from "./nodes.js";
+import { isContainer, type FacetNode, type NodeId } from "./nodes.js";
 
 /**
  * A stage is the dynamic surface of a Facet page — everything except the
@@ -52,6 +52,32 @@ export function isTreeShaped(value: unknown): value is FacetTree {
   if (typeof t["root"] !== "string") return false;
   const nodes = t["nodes"];
   return typeof nodes === "object" && nodes !== null && !Array.isArray(nodes);
+}
+
+/**
+ * Does this tree "show something real"? True iff it has a non-empty `screens`
+ * map, or its render root resolves to a container box with ≥ 1 child. An empty
+ * root box (EMPTY_TREE, the shape `validateTree` falls back to on garbage) is
+ * NOT content.
+ *
+ * The single canonical form: the server's offline path (`hasBuiltStage` — should
+ * the offline face overwrite this page?) and the runtime's seed gate
+ * (`isSeedableTree` — is this initial tree worth seeding?) both delegate here so
+ * the "shows something" definition can never silently drift between them.
+ */
+export function treeHasContent(tree: FacetTree): boolean {
+  if (tree.screens !== undefined && Object.keys(tree.screens).length > 0) return true;
+  const root = tree.nodes[tree.root];
+  // A persisted/foreign FileStageStore tree can carry a `{type:"box"}` root with
+  // NO children array (isTreeShaped admits it — it only rejects a *present*
+  // non-array children). Guard the array so a childless container root fails safe
+  // (offline face) instead of throwing on `.length` on a live offline-visit path.
+  return (
+    root !== undefined &&
+    isContainer(root) &&
+    Array.isArray((root as { children?: unknown }).children) &&
+    root.children.length > 0
+  );
 }
 
 /** A fresh, empty stage: a single vertical root box with no children. */

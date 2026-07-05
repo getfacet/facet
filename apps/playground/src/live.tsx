@@ -83,7 +83,9 @@ export function LiveView(): React.ReactNode {
   );
 }
 
-const styles: Record<string, CSSProperties> = {
+// Only wrap/status/stage are read — the dock/log/input keys were leftovers from a
+// hand-rolled dock replaced by <ChatDock />. Keyed union so future drift is caught.
+const styles: Record<"wrap" | "status" | "stage", CSSProperties> = {
   wrap: {
     maxWidth: "760px",
     margin: "0 auto",
@@ -99,34 +101,5 @@ const styles: Record<string, CSSProperties> = {
     borderRadius: "14px",
     overflow: "auto",
     minHeight: "300px",
-  },
-  dock: {
-    border: "1px solid #2a2e37",
-    borderRadius: "14px",
-    overflow: "hidden",
-    background: "#fbfbfc",
-    color: "#1a1d23",
-  },
-  log: { maxHeight: "140px", overflowY: "auto", padding: "10px 14px", fontSize: "13px" },
-  logLine: { marginBottom: "4px" },
-  thinking: { color: "#6b7280", fontStyle: "italic" },
-  you: { fontWeight: 600, color: "#4f46e5" },
-  nova: { fontWeight: 600, color: "#16a34a" },
-  inputRow: { display: "flex", gap: "8px", padding: "10px 14px", borderTop: "1px solid #eceef1" },
-  input: {
-    flex: 1,
-    padding: "8px 10px",
-    borderRadius: "8px",
-    border: "1px solid #d7dbe0",
-    fontSize: "14px",
-  },
-  send: {
-    padding: "8px 14px",
-    borderRadius: "8px",
-    border: "none",
-    background: "#4f46e5",
-    color: "#fff",
-    fontWeight: 600,
-    cursor: "pointer",
   },
 };

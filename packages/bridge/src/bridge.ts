@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
 import { createLruMap, createSemaphore, createSerialQueue, STAGE_SPEC } from "@facet/core";
-import type { CmdFrame } from "@facet/cli";
+import type { CmdFrame } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";
@@ -189,7 +189,10 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
     // A port conflict (etc.) must not crash the whole bridge process.
     console.error(`[facet] bridge cmd server error on :${String(bridgePort)}:`, error);
   });
-  cmdServer.listen(bridgePort);
+  // Loopback only — the sole legitimate client (the `facet` cli) always POSTs to
+  // http://localhost, so binding 127.0.0.1 closes the all-interfaces LAN exposure
+  // (a co-host could otherwise inject stage messages into a live turn via /cmd).
+  cmdServer.listen(bridgePort, "127.0.0.1");
 
   const runBrain = (prompt: string, visitorId: string, token: string): Promise<void> =>
     new Promise((resolve) => {

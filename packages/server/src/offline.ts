@@ -1,3 +1,4 @@
+import { treeHasContent } from "@facet/core";
 import type { ClientEvent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
 
 /** The page shown to a fresh visitor when no agent is connected. */
@@ -25,13 +26,10 @@ export const DEFAULT_OFFLINE_FACE: FacetTree = {
   },
 };
 
-/** Does this session already hold a real page (beyond an empty root)? */
-export function hasBuiltStage(session: FacetSession): boolean {
-  const root = session.stage.nodes[session.stage.root];
-  if (session.stage.screens !== undefined && Object.keys(session.stage.screens).length > 0) {
-    return true;
-  }
-  return root !== undefined && "children" in root && root.children.length > 0;
+/** Does this session already hold a real page (beyond an empty root)? Delegates
+ * to core's `treeHasContent` — the one canonical "shows something" predicate. */
+function hasBuiltStage(session: FacetSession): boolean {
+  return treeHasContent(session.stage);
 }
 
 /** What a visitor gets when no agent is connected: the offline face on a FRESH

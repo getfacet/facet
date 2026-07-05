@@ -65,6 +65,69 @@ export function printableValue(v: unknown): string {
   return Array.isArray(v) ? "<array>" : `<${typeof v}>`;
 }
 
+/**
+ * Pointer/key tokens that would walk into or poison the prototype chain instead
+ * of own data. Shared by both untrusted-document boundaries (the tree/theme node
+ * & token maps) AND the JSON-Pointer patch parser — a single spelling so the
+ * SECURITY-CRITICAL set can never drift between the sites that reject it.
+ */
+export const FORBIDDEN_KEYS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+]);
+
+/** True for a key/token that must be dropped or rejected (see `FORBIDDEN_KEYS`). */
+export function isForbiddenKey(k: string): boolean {
+  return FORBIDDEN_KEYS.has(k);
+}
+
+/**
+ * True for a plain (non-array) object — the shape both validators treat as a
+ * traversable map. Rejects arrays and null so callers can safely index string
+ * keys. (patch.ts deliberately uses a WEAKER container check that admits arrays;
+ * that one is NOT this predicate.)
+ */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * A fresh null-prototype map. Output maps for untrusted documents are built on
+ * `Object.create(null)` so a key that slips a forbidden-key guard still resolves
+ * to `undefined` (no inherited setter, no prototype-chain lookup).
+ */
+export function nullMap<V>(): Record<string, V> {
+  return Object.create(null) as Record<string, V>;
+}
+
+/**
+ * The shared validate/truncate policy for a document's one-line `description`
+ * (a theme's and a stamp's). Returns the value to keep (if any) and a single
+ * warning MESSAGE (if any) — each caller pushes it in its own issue shape. The
+ * `label` ("theme"/"stamp") and `cap` (`MAX_DESCRIPTION_LENGTH`, single-sourced
+ * in `theme.ts`) parameterize the ONLY differences between the two call sites;
+ * the message wording is otherwise byte-identical. Callers gate on
+ * `input.description !== undefined` before calling, so a non-string reaching
+ * here is a supplied-but-wrong value.
+ */
+export function boundedDescription(
+  raw: unknown,
+  label: string,
+  cap: number,
+): { description?: string; warning?: string } {
+  if (typeof raw !== "string") {
+    return { warning: `${label} description is not a string; ignored` };
+  }
+  if (raw.length > cap) {
+    return {
+      description: raw.slice(0, cap),
+      warning: `${label} description truncated to ${cap} characters`,
+    };
+  }
+  return { description: raw };
+}
+
 /** The minimal surface `validate.ts`'s helpers need — push a diagnostic string. */
 export interface IssueSink {
   push(issue: string): void;

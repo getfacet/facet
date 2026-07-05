@@ -66,7 +66,7 @@ recorded in the PR.)
   core, reusable code stuck in `apps/playground`), leaky abstractions.
 - **dead code** — unused exports/files/branches; orphans after a refactor.
 - **hygiene** — package.json uniformity (`publishConfig`/`exports`/`sideEffects`),
-  test-coverage gaps on pure logic, doc drift vs the 11 published packages (+
+  test-coverage gaps on pure logic, doc drift vs every published package (+
   the unpublished playground app).
 - **naming** — misleading names, inconsistent conventions.
 

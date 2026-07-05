@@ -26,7 +26,16 @@ import {
 } from "./nodes.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
-import { BoundedIssues, printableKey, printableValue, type IssueSink } from "./issues.js";
+import {
+  BoundedIssues,
+  boundedDescription,
+  isForbiddenKey,
+  isPlainObject as isObject,
+  nullMap,
+  printableKey,
+  printableValue,
+  type IssueSink,
+} from "./issues.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -69,10 +78,6 @@ export const MAX_RENDER_NODES = 5000;
  * CPU-exhaustion input on the synchronous per-visitor save path.
  */
 export const MAX_SCREENS = 100;
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isPrimitive(value: unknown): value is string | number | boolean {
   return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
@@ -383,14 +388,14 @@ function sanitizeScreens(
   // screen keyed "__proto__" would hit the inherited setter (silent no-op) and
   // an `entry` naming an Object.prototype member ("constructor"/"toString") would
   // resolve through the chain and ship an entry that names no kept screen.
-  const kept: Record<string, string> = Object.create(null) as Record<string, string>;
+  const kept: Record<string, string> = nullMap<string>();
   let keptCount = 0;
   let capped = false;
   for (const [name, target] of Object.entries(rawScreens)) {
     const screen = printableKey(name);
     // Forbidden screen names dropped WITH an issue (mirrors sanitizeNodeMap's
     // forbidden-id policy) rather than silently mutating the accumulator.
-    if (name === "__proto__" || name === "prototype" || name === "constructor") {
+    if (isForbiddenKey(name)) {
       issues.push(`screen "${screen}": forbidden screen name dropped`);
       continue;
     }
@@ -448,9 +453,9 @@ function sanitizeNodeMap(
   rawNodes: Record<string, unknown>,
   issues: IssueSink,
 ): Record<string, FacetNode> {
-  const nodes: Record<string, FacetNode> = Object.create(null) as Record<string, FacetNode>;
+  const nodes: Record<string, FacetNode> = nullMap<FacetNode>();
   for (const [id, raw] of Object.entries(rawNodes)) {
-    if (id === "__proto__" || id === "prototype" || id === "constructor") {
+    if (isForbiddenKey(id)) {
       issues.push(`node "${printableKey(id)}": forbidden node id dropped`);
       continue;
     }
@@ -738,19 +743,17 @@ export function validateStamp(input: unknown): StampValidationResult {
     nodes: Record<string, FacetNode>;
   } = { name, root: rootId, nodes };
   if (input.description !== undefined) {
-    if (typeof input.description !== "string") {
-      // A non-string description is dropped WITH an issue, mirroring
-      // validateTheme — the operator authoring the stamp sees the field was
-      // ignored instead of a silent success that did nothing.
-      issues.push("stamp description is not a string; ignored");
-    } else if (input.description.length > MAX_DESCRIPTION_LENGTH) {
-      // Truncate at the shared 200-char cap (mirrors validateTheme) so a giant
-      // description can't blow the prompt/context budget it is injected into.
-      stamp.description = input.description.slice(0, MAX_DESCRIPTION_LENGTH);
-      issues.push(`stamp description truncated to ${MAX_DESCRIPTION_LENGTH} characters`);
-    } else {
-      stamp.description = input.description;
-    }
+    // Same validate/truncate policy validateTheme applies (shared helper): a
+    // non-string is dropped WITH an issue so the operator sees the field was
+    // ignored; an over-cap string is truncated at the shared 200-char cap so a
+    // giant description can't blow the prompt/context budget it is injected into.
+    const { description, warning } = boundedDescription(
+      input.description,
+      "stamp",
+      MAX_DESCRIPTION_LENGTH,
+    );
+    if (description !== undefined) stamp.description = description;
+    if (warning !== undefined) issues.push(warning);
   }
   return { stamp, issues: issues.list };
 }
