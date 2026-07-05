@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import type { ClientEvent, FacetSession, ServerMessage, VisitorContext } from "@facet/core";
+import type { CollectedEvent, FacetSession, ServerMessage, VisitorContext } from "@facet/core";
 import { openSession, type Sink, type StageStore, type StoredEvent } from "@facet/runtime";
 
 /**
@@ -78,7 +78,7 @@ export class PostgresSink implements Sink {
   async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
     const result = await this.pool.query<{
       at: string;
-      event: ClientEvent;
+      event: CollectedEvent;
       messages: ServerMessage[];
     }>(
       `select at, event, messages from facet_event
