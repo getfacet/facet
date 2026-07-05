@@ -1,4 +1,4 @@
-import type { FacetAction } from "./nodes.js";
+import type { FacetAction, NodeId } from "./nodes.js";
 import type { JsonPatchOperation } from "./patch.js";
 import type { FacetTree } from "./tree.js";
 
@@ -45,12 +45,59 @@ export const MAX_FIELD_VALUE_CHARS = 2000;
  */
 export const MAX_FIELDS_KEYS = 256;
 
-/** Browser → agent. Everything the visitor does flows in as one of these. */
-export type ClientEvent =
-  | { readonly kind: "visit"; readonly visitor: VisitorContext }
-  | { readonly kind: "message"; readonly text: string }
+/**
+ * The renderer-resolved LOCAL effect of a tap — mirrors the navigate/toggle
+ * branches of a `ClassifiedPress`. A local tap changes only view-state in the
+ * browser (no agent turn); it is logged (not forwarded) so replay can reproduce
+ * what the visitor saw. `navigate` names a screen; `toggle` names a node id.
+ */
+export type TapEffect =
+  | { readonly navigate: string }
+  | { readonly toggle: NodeId };
+
+/**
+ * The log currency: every visitor action the runtime records, whether it was
+ * forwarded to the agent or resolved locally. `ClientEvent` (the forward subset
+ * the agent sees) is structurally **assignable to** this, so a `StoredEvent` can
+ * hold both a forwarded agent tap and a purely-local tap.
+ *
+ * A `tap` unifies both shapes: a **local** tap carries `effect` (+ the pressed
+ * box's `target`); a **forwarded agent** tap carries `action` (its `name`/
+ * `payload` are read off `action`). Every variant may carry an optional
+ * per-session monotonic `seq` — a forward-compatible wire field for gap
+ * detection during replay.
+ */
+export type CollectedEvent =
+  | { readonly kind: "visit"; readonly visitor: VisitorContext; readonly seq?: number }
+  | { readonly kind: "message"; readonly text: string; readonly seq?: number }
   | {
-      readonly kind: "action";
+      readonly kind: "tap";
+      /** The pressed box's node id (present on a local tap). */
+      readonly target?: NodeId;
+      /** The renderer-resolved local effect (present on a local tap). */
+      readonly effect?: TapEffect;
+      /** The agent-routed action (present on a forwarded tap). */
+      readonly action?: FacetAction;
+      /**
+       * Visitor-typed field values snapshotted at press time when the action
+       * declares `collect`. Inert data riding the event — never part of the
+       * stage tree, never interpreted or rendered back by Facet.
+       */
+      readonly fields?: Readonly<Record<string, string>>;
+      readonly seq?: number;
+    };
+
+/**
+ * Browser → agent. The FORWARD subset of `CollectedEvent` — everything the
+ * visitor does that the agent actually sees flows in as one of these. It is
+ * structurally assignable to `CollectedEvent` (forward ⊆ collected), so the same
+ * value can be both forwarded to the agent and recorded to the log.
+ */
+export type ClientEvent =
+  | { readonly kind: "visit"; readonly visitor: VisitorContext; readonly seq?: number }
+  | { readonly kind: "message"; readonly text: string; readonly seq?: number }
+  | {
+      readonly kind: "tap";
       readonly action: FacetAction;
       /**
        * Visitor-typed field values snapshotted at press time when the action
@@ -58,6 +105,7 @@ export type ClientEvent =
        * stage tree, never interpreted or rendered back by Facet.
        */
       readonly fields?: Readonly<Record<string, string>>;
+      readonly seq?: number;
     };
 
 /**
@@ -97,6 +145,14 @@ export type FacetAgent = (
 export interface FacetTransport {
   send(event: ClientEvent): void;
   subscribe(onMessage: (message: ServerMessage) => void): () => void;
+  /**
+   * Best-effort record of a `CollectedEvent` to the runtime's log — used for
+   * locally-resolved taps that never reach the agent (navigate/toggle), so
+   * replay can reproduce what the visitor saw. Optional and additive: existing
+   * transports/test doubles that don't implement it still satisfy this contract,
+   * and callers must treat it as fire-and-forget (`transport.record?.(event)`).
+   */
+  record?(event: CollectedEvent): void;
 }
 
 /**
