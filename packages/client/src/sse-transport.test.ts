@@ -327,4 +327,41 @@ describe("SseTransport", () => {
 
     errorSpy.mockRestore();
   });
+
+  it("a record() queued before connect flushes to POST /record with a send-order seq", async () => {
+    const calls: Array<{ url: string; event: { kind: string; seq?: number } }> = [];
+    const recordingFetch = vi.fn((url: string, init?: { body?: string }) => {
+      const body = JSON.parse(init?.body ?? "{}") as { event: { kind: string; seq?: number } };
+      calls.push({ url, event: body.event });
+      return Promise.resolve(new Response(null, { status: 202 }));
+    });
+    vi.stubGlobal("fetch", recordingFetch);
+
+    const transport = new SseTransport("http://s", visitor);
+    transport.subscribe(() => {});
+
+    // Queue BEFORE the stream opens: a locally-resolved tap over /record and a
+    // forwarded event over /event, interleaved so send-order (record→send) can
+    // be distinguished from any per-endpoint bucketing.
+    transport.record({ kind: "tap", target: "n1", effect: { navigate: "home" } });
+    transport.send({ kind: "message", text: "hi" });
+    // Nothing leaves the client until the stream is open.
+    expect(recordingFetch).not.toHaveBeenCalled();
+
+    // Flush on connect: the queue drains through `commit`, stamping seq now.
+    FakeEventSource.instances[0]?.onopen?.();
+    await flush();
+    await flush();
+
+    // The queued /record targets ONLY the reference /record path (never a
+    // domain/arbitrary URL), and preserves send order relative to the /event.
+    expect(calls.map((c) => c.url)).toEqual(["http://s/record", "http://s/event"]);
+    expect(calls[0]?.url).toBe("http://s/record");
+
+    // seq is stamped at flush/commit time (not in userland), monotonic across
+    // the two endpoints in send order.
+    expect(calls.map((c) => c.event.seq)).toEqual([1, 2]);
+    expect(calls[0]?.event.kind).toBe("tap");
+    expect(calls[0]?.event.seq).toBe(1);
+  });
 });
