@@ -83,18 +83,22 @@ describe("journey self-test (stub, headless chromium)", () => {
       }
 
       // The chat steps CHANGED the stage (the stub appends/updates its echo node
-      // in the stage root) — this proves the stage-scoped, change-gated settle
-      // detects a real stage edit, not a ChatDock-only change.
+      // in the stage root). Paired with the dock-only click case below, this
+      // shows the change-gated settle tracks STAGE edits specifically.
       const chatSteps = result.steps.filter(
         (s) => s.label === "add-section" || s.label === "restyle",
       );
       expect(chatSteps.length).toBe(2);
       for (const step of chatSteps) expect(step.settle?.changed).toBe(true);
 
-      // The click step dispatched (its stub stage effect is a dock `say`, not
-      // asserted here — real-LLM click effects are WU-4's vision-judged concern).
+      // The click step dispatched. The stub's submit press only `say`s to the
+      // ChatDock (no stage-root node), so the STAGE does NOT change: with the
+      // [data-facet-stage]-scoped fingerprint `changed` is FALSE. This is the
+      // DISCRIMINATING test for the marker — if domFingerprint regressed to the
+      // #root fallback, the dock `say` would flip `changed` to true and fail here.
       const click = result.steps[result.steps.length - 1];
       expect(click?.clicked).toBe(true);
+      expect(click?.settle?.changed).toBe(false);
     } finally {
       await context.close();
     }

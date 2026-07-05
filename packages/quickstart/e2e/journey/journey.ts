@@ -390,13 +390,16 @@ async function main(argv: readonly string[]): Promise<void> {
       };
       const result = await runJourney(page, opts);
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      process.exit(0);
+      // Return (do NOT process.exit) so both finally blocks run and stdout flushes
+      // fully — the workflow's visitor agent reads this JSON for the shot paths, so
+      // a synchronous exit could truncate a piped write and skip browser teardown.
     } finally {
       await context.close();
     }
   } catch (error) {
     process.stderr.write(`journey: failed (${String(error)})\n`);
-    process.exit(1);
+    // Signal failure without a synchronous exit that would skip browser.close().
+    process.exitCode = 1;
   } finally {
     await browser.close();
   }
