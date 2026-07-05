@@ -146,8 +146,7 @@ function domFingerprint(page: Page): Promise<string> {
     // not-yet-mounted stage ⇒ "0:0", so the shell mounting an empty stage is not
     // a "change"; only a real paint/edit is. Fall back to #root if the marker is
     // absent (older bundle).
-    const stage =
-      document.querySelector("[data-facet-stage]") ?? document.getElementById("root");
+    const stage = document.querySelector("[data-facet-stage]") ?? document.getElementById("root");
     if (stage === null) return "0:0";
     return `${String(stage.innerHTML.length)}:${String(stage.querySelectorAll("*").length)}`;
   });
