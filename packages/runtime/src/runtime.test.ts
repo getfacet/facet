@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ClientEvent, FacetAgent, FacetTree, ServerMessage } from "@facet/core";
+import type {
+  ClientEvent,
+  CollectedEvent,
+  FacetAgent,
+  FacetTree,
+  ServerMessage,
+} from "@facet/core";
 import { EMPTY_TREE, foldPatchIntoStage, MAX_PATCH_OPS } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
 import { MemoryStageStore } from "./stage-store.js";
@@ -417,6 +423,61 @@ describe("FacetRuntime stored-vs-client convergence (shared fold, no corrective 
     // (foldPatchIntoStage) and lands on the identical stored stage.
     expect(out.messages).toEqual([mixed, { kind: "say", text: "ok" }]);
     expect(clientFold(out.messages)).toEqual(stored);
+  });
+});
+
+describe("FacetRuntime.record", () => {
+  it("record persists a collected tap without invoking the agent", async () => {
+    // A local navigate/toggle tap is resolved entirely in the renderer (no agent
+    // turn) but must still land in the log so replay reproduces what the visitor
+    // saw. `record` persists the CollectedEvent with `messages: []` and NEVER
+    // calls the agent (DC-001 / DC-005).
+    const agent = vi.fn(agentOf({ kind: "say", text: "unused" }));
+    const rt = new FacetRuntime({ agentId: "a", agent });
+    const tap: CollectedEvent = { kind: "tap", target: "x", effect: { navigate: "pricing" } };
+    await rt.record(visitor, tap);
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event).toEqual(tap);
+    expect(history[0]?.messages).toEqual([]); // record carries no agent messages
+    expect(agent).not.toHaveBeenCalled(); // the brain is never invoked
+  });
+
+  it("two records and one turn persist in append order (send order, not sink latency)", async () => {
+    // DC-002 at the runtime level: `record` rides the SAME per-visitor
+    // `serializeRecord` queue as `persist`, so append order == send order even
+    // when the FIRST record's sink write is the slowest. history() order is the
+    // gap-detection join key, so it must be send order, never `at`.
+    const persisted: string[] = [];
+    const sink: Sink = {
+      record: (_agentId: string, _visitorId: string, entry: StoredEvent): Promise<void> => {
+        const label =
+          entry.event.kind === "tap"
+            ? entry.event.target
+            : (entry.event as { text?: string }).text;
+        const delay = label === "a" ? 20 : 0; // first record's write is the slowest
+        return new Promise<void>((resolve) => {
+          setTimeout(() => {
+            if (label !== undefined) persisted.push(label);
+            resolve();
+          }, delay);
+        });
+      },
+      history: (): Promise<readonly StoredEvent[]> => Promise.resolve([]),
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "say", text: "c" }),
+      sink,
+    });
+    const p1 = rt.record(visitor, { kind: "tap", target: "a", effect: { navigate: "a" } });
+    const p2 = rt.record(visitor, { kind: "tap", target: "b", effect: { navigate: "b" } });
+    const p3 = rt.handle(visitor, { kind: "message", text: "c" });
+    await Promise.all([p1, p2, p3]);
+    // handle's record is fire-and-forget off the response path — let the slow
+    // first record (and the trailing turn record) settle before asserting order.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(persisted).toEqual(["a", "b", "c"]);
   });
 });
 

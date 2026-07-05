@@ -3,6 +3,7 @@ import {
   foldPatchIntoStage,
   MAX_PATCH_OPS,
   type ClientEvent,
+  type CollectedEvent,
   type FacetAgent,
   type FacetSession,
   type FacetTree,
@@ -106,6 +107,36 @@ export class FacetRuntime {
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), () =>
       this.handleOne(visitor, event),
     );
+  }
+
+  /**
+   * Records a purely-local visitor interaction (a navigate/toggle `tap` the
+   * renderer resolved on its own) to the `Sink` WITHOUT invoking the agent — the
+   * UI-IN capture path for events that never become an agent turn. It persists
+   * the `CollectedEvent` with `messages: []` (no agent reply, no stage patch, no
+   * `stageStore.save`), so `history()` is one durable, append-ordered timeline of
+   * both forwarded turns and local taps.
+   *
+   * The write rides the SAME per-visitor `serializeRecord` queue that `persist`
+   * uses, so append order == send order regardless of async sink latency (a slow
+   * earlier record can't be overtaken by a fast later one). Returns the queue's
+   * promise so a caller MAY await the write settle, but the response path need
+   * not: like `persist`, a failed sink write is logged, never thrown.
+   */
+  record(visitor: VisitorContext, event: CollectedEvent): Promise<void> {
+    return this.enqueueRecord(visitor.visitorId, { at: Date.now(), event, messages: [] });
+  }
+
+  /**
+   * Enqueues a Sink write on the per-visitor `serializeRecord` queue, logging
+   * (never throwing) a failure. The SINGLE enqueue point shared by `persist` (a
+   * forwarded turn) and `record` (a local tap), so both ride the SAME queue and
+   * append order == send order regardless of async sink latency.
+   */
+  private enqueueRecord(visitorId: string, entry: StoredEvent): Promise<void> {
+    return this.serializeRecord(sessionKey(this.agentId, visitorId), () =>
+      this.sink.record(this.agentId, visitorId, entry),
+    ).catch((error: unknown) => console.error("[facet] sink failed:", error));
   }
 
   /**
@@ -223,10 +254,7 @@ export class FacetRuntime {
       mutated,
     } = this.applyToSession(session, messages);
     await this.stageStore.save(applied);
-    const entry = { at: Date.now(), event, messages };
-    void this.serializeRecord(sessionKey(this.agentId, visitor.visitorId), () =>
-      this.sink.record(this.agentId, visitor.visitorId, entry),
-    ).catch((error: unknown) => console.error("[facet] sink failed:", error));
+    void this.enqueueRecord(visitor.visitorId, { at: Date.now(), event, messages });
     // Surface (don't drop) whatever the fold corrected, so an operator sees a
     // stripped/clamped/salvaged patch instead of it vanishing silently.
     // foldPatchIntoStage already caps its issue list, but slice defensively so an

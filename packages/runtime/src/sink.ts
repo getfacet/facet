@@ -1,11 +1,21 @@
-import type { ClientEvent, ServerMessage } from "@facet/core";
+import type { CollectedEvent, ServerMessage } from "@facet/core";
 import { sessionKey } from "./stage-store.js";
 
-/** One recorded interaction: a visitor event and the messages the agent answered with. */
+/**
+ * One recorded interaction: a visitor event and the messages the agent answered
+ * with. `event` is a `CollectedEvent` — the log currency — so a row holds both a
+ * forwarded turn (`messages` = the agent's reply) and a purely-local `record`
+ * (a navigate/toggle tap with `messages: []`, no agent turn).
+ *
+ * Sinks MUST preserve append order: `record()` is called in send order and
+ * `history()` returns oldest-first in that SAME order. Append order (never
+ * `at`) is the join key for gap detection — a dropped record leaves a `seq` gap
+ * in an otherwise contiguous history.
+ */
 export interface StoredEvent {
   /** Epoch milliseconds when it was recorded. */
   readonly at: number;
-  readonly event: ClientEvent;
+  readonly event: CollectedEvent;
   readonly messages: readonly ServerMessage[];
 }
 
