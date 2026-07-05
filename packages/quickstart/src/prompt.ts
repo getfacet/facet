@@ -228,7 +228,7 @@ function normalizeLegacyEvent(event: CollectedEvent): CollectedEvent {
 /** One visitor event as a compact user-side line. Accepts the log currency
  * (`CollectedEvent`), so it replays both forwarded agent taps and locally-
  * recorded navigate/toggle taps; `ClientEvent` is assignable to it. */
-function describeEvent(raw: CollectedEvent): string {
+export function describeEvent(raw: CollectedEvent): string {
   const event = normalizeLegacyEvent(raw);
   switch (event.kind) {
     case "visit": {
@@ -242,15 +242,17 @@ function describeEvent(raw: CollectedEvent): string {
     case "tap": {
       // A local tap carries the renderer-resolved `effect`; a forwarded agent tap
       // carries `action`. Render whichever is present.
+      const navLine = (to: string) => `(action navigate to=${to})`;
+      const toggleLine = (target: string) => `(action toggle target=${target})`;
       const { effect } = event;
       if (effect !== undefined) {
-        if ("navigate" in effect) return `(action navigate to=${effect.navigate})`;
-        return `(action toggle target=${effect.toggle})`;
+        if ("navigate" in effect) return navLine(effect.navigate);
+        return toggleLine(effect.toggle);
       }
       const action = event.action;
-      if (action !== undefined) {
-        if (action.kind === "navigate") return `(action navigate to=${action.to})`;
-        if (action.kind === "toggle") return `(action toggle target=${action.target})`;
+      if (action !== undefined && action !== null) {
+        if (action.kind === "navigate") return navLine(action.to);
+        if (action.kind === "toggle") return toggleLine(action.target);
         const payload = JSON.stringify(action.payload ?? {});
         const fields = JSON.stringify(event.fields ?? {});
         return `(action ${action.name} payload=${payload} fields=${fields})`;

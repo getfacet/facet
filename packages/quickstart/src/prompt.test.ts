@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
 import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
+import type { CollectedEvent } from "@facet/core";
 import {
   DEFAULT_GUIDE,
   HISTORY_TURNS,
   TOOLS,
   buildInitialMessages,
   buildSystem,
+  describeEvent,
 } from "./prompt.js";
 
 const SESSION: FacetSession = {
@@ -254,6 +256,16 @@ describe("buildInitialMessages", () => {
     const legacyLine = "content" in messages[0]! ? messages[0].content : "";
     expect(legacyLine).toContain("legacy-cta");
     expect(legacyLine).not.toContain("(unknown event)");
+  });
+
+  it("describeEvent returns a fallback (never throws) for a stored tap with a null action", () => {
+    // A poisoned Sink row (or a legacy {kind:"action", action:null} forwarded via
+    // normalizeLegacyEvent) yields a tap whose `action` is null. `null !== undefined`,
+    // so a guard that only checks `!== undefined` would reach `null.kind` → TypeError.
+    // describeEvent is contractually fail-safe: it must return a string, never throw.
+    const poisoned = { kind: "tap", action: null } as unknown as CollectedEvent;
+    expect(() => describeEvent(poisoned)).not.toThrow();
+    expect(describeEvent(poisoned)).toBe("(unknown event)");
   });
 
   it("renders a corrupt/unknown history event as a safe placeholder (never undefined)", () => {
