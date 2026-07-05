@@ -1,3 +1,4 @@
+import { FORBIDDEN_KEYS } from "./issues.js";
 import type { FacetTree } from "./tree.js";
 
 /**
@@ -68,9 +69,6 @@ function deepEqual(a: unknown, b: unknown): boolean {
   );
 }
 
-/** Pointer tokens that would walk into the prototype chain instead of own data. */
-const FORBIDDEN_TOKENS = new Set(["__proto__", "prototype", "constructor"]);
-
 /** RFC 6901 JSON Pointer → tokens, unescaping ~1 → "/" and ~0 → "~". */
 function parsePointer(pointer: string): string[] {
   if (pointer === "") {
@@ -86,7 +84,7 @@ function parsePointer(pointer: string): string[] {
   for (const token of tokens) {
     // Security: a "/__proto__/x" pointer would write to Object.prototype —
     // global prototype pollution on server AND every connected browser. Reject.
-    if (FORBIDDEN_TOKENS.has(token)) {
+    if (FORBIDDEN_KEYS.has(token)) {
       throw new Error(`forbidden pointer token: "${token}"`);
     }
   }

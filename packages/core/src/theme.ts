@@ -27,9 +27,13 @@ import {
   type Space,
 } from "./tokens.js";
 import {
+  boundedDescription,
+  FORBIDDEN_KEYS,
   isControlChar,
+  isPlainObject,
   MAX_ISSUES,
   MAX_VALUE_LENGTH,
+  nullMap,
   printableKey,
   ISSUES_SUPPRESSED,
 } from "./issues.js";
@@ -69,14 +73,6 @@ const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
 export function isValidThemeName(name: string): boolean {
   return NAME_RE.test(name);
 }
-
-/**
- * Keys that would poison a normal object (assign its [[Prototype]] or shadow a
- * built-in) are dropped outright — mirrors `validate.ts`'s forbidden node ids.
- * Output maps are ALSO built on `Object.create(null)`, so even a key that slips
- * through resolves to `undefined` rather than an inherited value.
- */
-const FORBIDDEN_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 
 const KNOWN_KEYS = new Set([
   "name",
@@ -166,14 +162,6 @@ const CONTRAST_PAIRS: readonly (readonly [Color, Color])[] = [
   ["accent-fg", "accent"],
 ];
 const MIN_CONTRAST = 4.5;
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function nullMap<V>(): Record<string, V> {
-  return Object.create(null) as Record<string, V>;
-}
 
 /**
  * Rejects a raw CSS string that is too long, contains a control/injection
@@ -407,17 +395,13 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
   } = { name };
 
   if (input.description !== undefined) {
-    if (typeof input.description !== "string") {
-      issues.push({ severity: "warning", message: "theme description is not a string; ignored" });
-    } else if (input.description.length > MAX_DESCRIPTION_LENGTH) {
-      theme.description = input.description.slice(0, MAX_DESCRIPTION_LENGTH);
-      issues.push({
-        severity: "warning",
-        message: `theme description truncated to ${MAX_DESCRIPTION_LENGTH} characters`,
-      });
-    } else {
-      theme.description = input.description;
-    }
+    const { description, warning } = boundedDescription(
+      input.description,
+      "theme",
+      MAX_DESCRIPTION_LENGTH,
+    );
+    if (description !== undefined) theme.description = description;
+    if (warning !== undefined) issues.push({ severity: "warning", message: warning });
   }
 
   for (const key of Object.keys(input)) {
