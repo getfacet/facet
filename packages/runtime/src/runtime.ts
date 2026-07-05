@@ -104,9 +104,20 @@ export class FacetRuntime {
    * truth), then the interaction is handed to the sink.
    */
   handle(visitor: VisitorContext, event: ClientEvent): Promise<TurnResult> {
-    return this.serialize(sessionKey(this.agentId, visitor.visitorId), () =>
-      this.handleOne(visitor, event),
-    );
+    // Reserve this turn's Sink-write slot on serializeRecord NOW, in call order,
+    // BEFORE the (async) turn runs — otherwise a record() called during the turn
+    // would enqueue its write first and the append log would reverse (see
+    // reserveRecordSlot). persist() fills the slot; a turn that throws resolves it
+    // to null so it records nothing (prior behavior).
+    const resolveRecord = this.reserveRecordSlot(visitor.visitorId);
+    return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
+      try {
+        return await this.handleOne(visitor, event, resolveRecord);
+      } catch (error) {
+        resolveRecord(null);
+        throw error;
+      }
+    });
   }
 
   /**
@@ -117,11 +128,16 @@ export class FacetRuntime {
    * `stageStore.save`), so `history()` is one durable, append-ordered timeline of
    * both forwarded turns and local taps.
    *
-   * The write rides the SAME per-visitor `serializeRecord` queue that `persist`
-   * uses, so append order == send order regardless of async sink latency (a slow
-   * earlier record can't be overtaken by a fast later one). Returns the queue's
-   * promise so a caller MAY await the write settle, but the response path need
-   * not: like `persist`, a failed sink write is logged, never thrown.
+   * The write rides the SAME per-visitor `serializeRecord` queue that a forwarded
+   * turn uses, so append order == send order regardless of async sink latency (a
+   * slow earlier write can't be overtaken by a fast later one). This holds even
+   * against a still-in-flight `handle`: that turn RESERVES its slot on the queue
+   * synchronously at call time (`reserveRecordSlot`), so a `record` called after
+   * it can never enqueue its write first. The runtime provides this ordering
+   * itself — it does NOT depend on an outer per-visitor lane (only `@facet/server`
+   * has one; the in-process transports don't). Returns the queue's promise so a
+   * caller MAY await the write settle, but the response path need not: like a
+   * forwarded turn, a failed sink write is logged, never thrown.
    */
   record(visitor: VisitorContext, event: CollectedEvent): Promise<void> {
     return this.enqueueRecord(visitor.visitorId, { at: Date.now(), event, messages: [] });
@@ -129,14 +145,35 @@ export class FacetRuntime {
 
   /**
    * Enqueues a Sink write on the per-visitor `serializeRecord` queue, logging
-   * (never throwing) a failure. The SINGLE enqueue point shared by `persist` (a
-   * forwarded turn) and `record` (a local tap), so both ride the SAME queue and
+   * (never throwing) a failure. Used by `record` (a local tap) to enqueue its
+   * write synchronously at call time. A forwarded turn (`handle`/`applyMessages`)
+   * instead RESERVES its slot up front via `reserveRecordSlot` and fills it in
+   * `persist`; both paths chain onto the SAME per-visitor queue in CALL order, so
    * append order == send order regardless of async sink latency.
    */
   private enqueueRecord(visitorId: string, entry: StoredEvent): Promise<void> {
     return this.serializeRecord(sessionKey(this.agentId, visitorId), () =>
       this.sink.record(this.agentId, visitorId, entry),
     ).catch((error: unknown) => console.error("[facet] sink failed:", error));
+  }
+
+  /**
+   * Reserves this turn's Sink-write slot on serializeRecord NOW, in call order,
+   * so a record() called after this returns can't enqueue its write first (the
+   * in-process transports have no outer lane; @facet/server does). The slot awaits
+   * the turn's entry; a turn that never persists resolves it to null (records
+   * nothing, matching prior behavior).
+   */
+  private reserveRecordSlot(visitorId: string): (entry: StoredEvent | null) => void {
+    let resolve!: (entry: StoredEvent | null) => void;
+    const ready = new Promise<StoredEvent | null>((r) => {
+      resolve = r;
+    });
+    void this.serializeRecord(sessionKey(this.agentId, visitorId), async () => {
+      const entry = await ready;
+      if (entry !== null) await this.sink.record(this.agentId, visitorId, entry);
+    }).catch((error: unknown) => console.error("[facet] sink failed:", error));
+    return resolve;
   }
 
   /**
@@ -153,16 +190,28 @@ export class FacetRuntime {
     event: ClientEvent,
     messages: readonly ServerMessage[],
   ): Promise<TurnResult> {
+    // Reserve the Sink-write slot synchronously (same reason as `handle`): this
+    // path also persists, so a later `record` must not overtake its write.
+    const resolveRecord = this.reserveRecordSlot(visitor.visitorId);
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
-      const session = await this.stageStore.open(this.agentId, visitor);
-      return this.persistWithSeed(visitor, session, event, messages);
+      try {
+        const session = await this.stageStore.open(this.agentId, visitor);
+        return await this.persistWithSeed(visitor, session, event, messages, resolveRecord);
+      } catch (error) {
+        resolveRecord(null);
+        throw error;
+      }
     });
   }
 
-  private async handleOne(visitor: VisitorContext, event: ClientEvent): Promise<TurnResult> {
+  private async handleOne(
+    visitor: VisitorContext,
+    event: ClientEvent,
+    resolveRecord: (entry: StoredEvent | null) => void,
+  ): Promise<TurnResult> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const messages = await this.agent(event, session);
-    return this.persistWithSeed(visitor, session, event, messages);
+    return this.persistWithSeed(visitor, session, event, messages, resolveRecord);
   }
 
   /**
@@ -187,6 +236,7 @@ export class FacetRuntime {
     session: FacetSession,
     event: ClientEvent,
     messages: readonly ServerMessage[],
+    resolveRecord: (entry: StoredEvent | null) => void,
   ): Promise<TurnResult> {
     const key = sessionKey(this.agentId, visitor.visitorId);
     // Arm: `takeSeeded` fires at most once, so park the key until a turn
@@ -219,10 +269,10 @@ export class FacetRuntime {
     // a turn whose patch was dropped whole (over-cap, non-array, empty, or an
     // all-ops-failed salvage).
     const { messages: applied, mutated: agentMutated } = await this.persist(
-      visitor,
       session,
       event,
       messages,
+      resolveRecord,
     );
     const result = seedFrame !== undefined ? [seedFrame, ...applied] : applied;
     this.pendingSeeds.delete(key); // consume ONLY after persist resolved
@@ -233,8 +283,14 @@ export class FacetRuntime {
    * Applies a turn's messages to the open session, saves, and fire-and-forget
    * records it — the shared tail of a live turn (`handleOne`) and a late apply
    * (`applyMessages`). The response never awaits the record: the stage is the
-   * source of truth for reconnect; the sink is best-effort. Records enqueue per
-   * visitor so an async sink persists them in event order.
+   * source of truth for reconnect; the sink is best-effort.
+   *
+   * The Sink write does NOT enqueue here — `handle`/`applyMessages` already
+   * RESERVED this turn's slot on serializeRecord synchronously at call time
+   * (`reserveRecordSlot`); this only FILLS it, after `save`, so a `record` called
+   * during the turn can't overtake this write and append order == send order per
+   * visitor. Filling after `save` also means a save-reject records nothing
+   * (the reserved slot resolves to null via the caller's catch) — unchanged.
    *
    * `messages` is the AGENT'S OWN turn (no seed frame — persistWithSeed prepends
    * that to the delivered result). It gets applied to the stage, recorded verbatim
@@ -242,10 +298,10 @@ export class FacetRuntime {
    * frame) for delivery — the exact frame the client folds, so no drift.
    */
   private async persist(
-    visitor: VisitorContext,
     session: FacetSession,
     event: ClientEvent,
     messages: readonly ServerMessage[],
+    resolveRecord: (entry: StoredEvent | null) => void,
   ): Promise<{ readonly messages: readonly ServerMessage[]; readonly mutated: boolean }> {
     const {
       session: applied,
@@ -254,7 +310,7 @@ export class FacetRuntime {
       mutated,
     } = this.applyToSession(session, messages);
     await this.stageStore.save(applied);
-    void this.enqueueRecord(visitor.visitorId, { at: Date.now(), event, messages });
+    resolveRecord({ at: Date.now(), event, messages });
     // Surface (don't drop) whatever the fold corrected, so an operator sees a
     // stripped/clamped/salvaged patch instead of it vanishing silently.
     // foldPatchIntoStage already caps its issue list, but slice defensively so an

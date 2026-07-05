@@ -477,6 +477,34 @@ describe("FacetRuntime.record", () => {
     await new Promise((resolve) => setTimeout(resolve, 40));
     expect(persisted).toEqual(["a", "b", "c"]);
   });
+
+  it("record enqueued after a slow handle still persists in send order (no external lane)", async () => {
+    // The in-process transports have NO outer per-visitor lane (only @facet/server
+    // does). A visitor sends an agent tap (→ handle, SLOW turn) then a local
+    // navigate tap (→ record). handle must RESERVE its Sink-write slot on
+    // serializeRecord synchronously at call time so the later record can't enqueue
+    // its write first. Without that reservation the fast record settles before the
+    // still-in-flight handle even enqueues, reversing the append log (the ordered
+    // replay/join key). Expected send order is [E1, R1], never [R1, E1].
+    let releaseAgent!: () => void;
+    const agentGate = new Promise<void>((resolve) => {
+      releaseAgent = resolve;
+    });
+    const slowAgent: FacetAgent = async () => {
+      await agentGate; // the turn stays in flight until released
+      return [{ kind: "say", text: "E1" }];
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent: slowAgent });
+    const handled = rt.handle(visitor, { kind: "message", text: "E1" }); // agent tap → handle
+    const recorded = rt.record(visitor, { kind: "tap", target: "R1", effect: { navigate: "R1" } }); // local tap → record
+    releaseAgent(); // now let the slow handle finish and persist its record
+    await Promise.all([handled, recorded]);
+    const history = await rt.historyFor("v");
+    const labels = history.map((e) =>
+      e.event.kind === "tap" ? e.event.target : (e.event as { text?: string }).text,
+    );
+    expect(labels).toEqual(["E1", "R1"]); // send order, NOT [R1, E1]
+  });
 });
 
 describe("FacetRuntime.applyMessages", () => {
