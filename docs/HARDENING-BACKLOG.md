@@ -318,8 +318,6 @@ and were tracked rather than fixed to keep the feature diff focused:
   visitor-side tap-envelope construction (`send(fields === undefined ? {kind:"tap",
   action} : {kind:"tap", action, fields})`, the `exactOptionalPropertyTypes`
   conditional-spread) is copy-pasted in 3 consumers. Consider one shared helper.
-- **quickstart/src/prompt.ts** — the navigate/toggle render strings are duplicated
-  between the `effect` and `action` branches of `describeEvent`; single-source them.
 - **playground/src/live.tsx** — the live demo does not wire the new renderer
   `onRecord`→`record` channel that quickstart adopts (WU-8 left it optional).
 
