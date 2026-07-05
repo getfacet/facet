@@ -307,6 +307,22 @@ Bundle B PR review record.
   local/single-operator reference transport; becomes required work the moment a
   hosted/multi-tenant deploy path appears.
 
+## P3 — event-layer-v1 review nits (deferred, cosmetic — 2026-07-06)
+
+Non-blocking consistency nits from the event-layer-v1 `/code-review` (P0-P1=0;
+the P2 runtime-ordering bug and the two server input-validation + two
+test-coverage P3s were FIXED in the feature PR). These three are style/dedup only
+and were tracked rather than fixed to keep the feature diff focused:
+
+- **quickstart/src/page/main.tsx + playground/src/App.tsx + live.tsx** — the
+  visitor-side tap-envelope construction (`send(fields === undefined ? {kind:"tap",
+  action} : {kind:"tap", action, fields})`, the `exactOptionalPropertyTypes`
+  conditional-spread) is copy-pasted in 3 consumers. Consider one shared helper.
+- **quickstart/src/prompt.ts** — the navigate/toggle render strings are duplicated
+  between the `effect` and `action` branches of `describeEvent`; single-source them.
+- **playground/src/live.tsx** — the live demo does not wire the new renderer
+  `onRecord`→`record` channel that quickstart adopts (WU-8 left it optional).
+
 ---
 
 _Campaign 1 source sweeps: code-review 6 lanes (`wf_4e2fadd0-31d`) + types lane
