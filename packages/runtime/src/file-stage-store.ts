@@ -27,8 +27,9 @@ function isSession(value: unknown): value is FacetSession {
 }
 
 /** The stage must be a real tree that survives the server's offline visit path
- * (`offline.ts` `hasBuiltStage`), which does `nodes[root]` then `"children" in
- * root`, and `Object.keys(screens)` when `screens !== undefined`. We start from
+ * (`offline.ts` `hasBuiltStage` → core's `treeHasContent`), which reads
+ * `nodes[root]`, checks it is a container with an array `children`, and
+ * `Object.keys(screens)` when `screens !== undefined`. We start from
  * `@facet/core`'s base `isTreeShaped` (the shared root/nodes floor), then add the
  * stricter checks the persist path needs: the root node itself must exist as a
  * non-null object, and any `screens` must be a non-null non-array object —

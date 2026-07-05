@@ -68,7 +68,16 @@ export function isTreeShaped(value: unknown): value is FacetTree {
 export function treeHasContent(tree: FacetTree): boolean {
   if (tree.screens !== undefined && Object.keys(tree.screens).length > 0) return true;
   const root = tree.nodes[tree.root];
-  return root !== undefined && isContainer(root) && root.children.length > 0;
+  // A persisted/foreign FileStageStore tree can carry a `{type:"box"}` root with
+  // NO children array (isTreeShaped admits it — it only rejects a *present*
+  // non-array children). Guard the array so a childless container root fails safe
+  // (offline face) instead of throwing on `.length` on a live offline-visit path.
+  return (
+    root !== undefined &&
+    isContainer(root) &&
+    Array.isArray((root as { children?: unknown }).children) &&
+    root.children.length > 0
+  );
 }
 
 /** A fresh, empty stage: a single vertical root box with no children. */

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { EMPTY_TREE, isTreeShaped } from "./tree.js";
+import { EMPTY_TREE, isTreeShaped, treeHasContent } from "./tree.js";
+import type { FacetTree } from "./tree.js";
 
 describe("isTreeShaped", () => {
   it("accepts a well-formed tree (including EMPTY_TREE)", () => {
@@ -31,5 +32,39 @@ describe("isTreeShaped", () => {
     // The stricter layers (root-node existence, box-ness, child resolution)
     // belong to callers — this base guard only checks the outer shape.
     expect(isTreeShaped({ root: "missing", nodes: {} })).toBe(true);
+  });
+});
+
+describe("treeHasContent", () => {
+  const tree = (nodes: unknown, screens?: unknown): FacetTree =>
+    ({ root: "r", nodes, ...(screens !== undefined ? { screens } : {}) }) as unknown as FacetTree;
+
+  it("true when the root box has children", () => {
+    expect(treeHasContent(tree({ r: { id: "r", type: "box", children: ["a"] } }))).toBe(true);
+  });
+
+  it("false for an empty children array", () => {
+    expect(treeHasContent(tree({ r: { id: "r", type: "box", children: [] } }))).toBe(false);
+  });
+
+  it("false — and does NOT throw — for a foreign box root with no children field", () => {
+    // Exactly the shape FileStageStore's isTreeShaped admits; must fail safe.
+    const t = tree({ r: { id: "r", type: "box" } });
+    expect(() => treeHasContent(t)).not.toThrow();
+    expect(treeHasContent(t)).toBe(false);
+  });
+
+  it("false for a non-container (text) root", () => {
+    expect(treeHasContent(tree({ r: { id: "r", type: "text", value: "x" } }))).toBe(false);
+  });
+
+  it("false when the root node is missing", () => {
+    expect(treeHasContent(tree({}))).toBe(false);
+  });
+
+  it("true when screens is non-empty even with an empty root box", () => {
+    expect(treeHasContent(tree({ r: { id: "r", type: "box", children: [] } }, { home: "r" }))).toBe(
+      true,
+    );
   });
 });
