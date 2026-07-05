@@ -124,7 +124,10 @@ function Page(): ReactNode {
 
   return (
     <div style={styles.page}>
-      <div style={styles.stage}>
+      {/* data-facet-stage marks the agent-drawn stage region (excludes the
+          ChatDock) so the live-journey e2e tier can wait for a real stage
+          paint/edit rather than a chat-dock change. Inert marker, no behavior. */}
+      <div style={styles.stage} data-facet-stage>
         <StageRenderer
           tree={tree}
           onAction={onAction}
