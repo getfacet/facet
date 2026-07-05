@@ -651,12 +651,7 @@ export interface StageRendererProps {
  * replay; a record failure can never unwind the view-state. Content stays
  * server-owned via the patch flow.
  */
-export function StageRenderer({
-  tree,
-  onAction,
-  onRecord,
-  themes,
-}: StageRendererProps): ReactNode {
+export function StageRenderer({ tree, onAction, onRecord, themes }: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
   // A Map, not a plain object: node ids like "toString"/"valueOf" pass
   // validateTree (only __proto__/prototype/constructor are forbidden), and a

@@ -51,9 +51,7 @@ export const MAX_FIELDS_KEYS = 256;
  * browser (no agent turn); it is logged (not forwarded) so replay can reproduce
  * what the visitor saw. `navigate` names a screen; `toggle` names a node id.
  */
-export type TapEffect =
-  | { readonly navigate: string }
-  | { readonly toggle: NodeId };
+export type TapEffect = { readonly navigate: string } | { readonly toggle: NodeId };
 
 /**
  * The log currency: every visitor action the runtime records, whether it was

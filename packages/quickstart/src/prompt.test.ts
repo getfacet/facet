@@ -204,7 +204,11 @@ describe("buildInitialMessages", () => {
     // Local navigate/toggle taps are recorded as `tap` rows carrying the
     // renderer-resolved `effect` (the 3-layer log currency).
     const history: StoredEvent[] = [
-      { at: 0, event: { kind: "tap", target: "go-about", effect: { navigate: "about" } }, messages: [] },
+      {
+        at: 0,
+        event: { kind: "tap", target: "go-about", effect: { navigate: "about" } },
+        messages: [],
+      },
       {
         at: 1,
         event: { kind: "tap", target: "menu", effect: { toggle: "menu" } },

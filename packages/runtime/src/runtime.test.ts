@@ -452,9 +452,7 @@ describe("FacetRuntime.record", () => {
     const sink: Sink = {
       record: (_agentId: string, _visitorId: string, entry: StoredEvent): Promise<void> => {
         const label =
-          entry.event.kind === "tap"
-            ? entry.event.target
-            : (entry.event as { text?: string }).text;
+          entry.event.kind === "tap" ? entry.event.target : (entry.event as { text?: string }).text;
         const delay = label === "a" ? 20 : 0; // first record's write is the slowest
         return new Promise<void>((resolve) => {
           setTimeout(() => {

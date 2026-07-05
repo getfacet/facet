@@ -80,10 +80,7 @@ export function useFacet(transport: FacetTransport, options?: UseFacetOptions): 
   // `transport.record` is optional (additive protocol method): absent it, the
   // optional-chained call is a safe no-op, so the renderer can wire `onRecord`
   // to this unconditionally.
-  const record = useCallback(
-    (event: CollectedEvent) => transport.record?.(event),
-    [transport],
-  );
+  const record = useCallback((event: CollectedEvent) => transport.record?.(event), [transport]);
 
   return { tree, chat, send, record };
 }

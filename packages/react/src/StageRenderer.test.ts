@@ -244,9 +244,7 @@ describe("StageRenderer onRecord is render-inert (static)", () => {
     });
 
   it("markup is byte-identical whether onRecord is omitted or supplied", () => {
-    const without = renderToStaticMarkup(
-      createElement(StageRenderer, { tree: navToggleTree() }),
-    );
+    const without = renderToStaticMarkup(createElement(StageRenderer, { tree: navToggleTree() }));
     const withRecord = renderToStaticMarkup(
       createElement(StageRenderer, { tree: navToggleTree(), onRecord: () => {} }),
     );
