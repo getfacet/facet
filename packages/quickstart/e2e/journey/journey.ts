@@ -14,11 +14,12 @@
  * three visitors are isolated (per-visitor).
  *
  * OQ-1 — DOM-settle, NOT a fixed sleep: after each send/click, `settleDom` polls
- * the `#root` subtree fingerprint and resolves when it is unchanged across a
- * quiet window (default 400ms) OR a bounded max timeout (default 15s) elapses. A
- * timeout is NOT a harness failure: the shot is captured anyway and the
- * `{changed, timedOut}` result is recorded — a visitor whose UI never updated is
- * a judge signal, never a throw.
+ * the agent-drawn STAGE fingerprint (not `#root`, which includes the ChatDock)
+ * and resolves when it is unchanged across a quiet window (default 800ms) AFTER a
+ * real change, OR a bounded max timeout (default 45s, a real LLM paint takes
+ * seconds) elapses. A timeout is NOT a harness failure: the shot is captured
+ * anyway and the `{changed, timedOut}` result is recorded — a visitor whose UI
+ * never updated is a judge signal, never a throw.
  *
  * No-secrets: screenshots capture the rendered page only; the page never renders
  * the provider key, and the ephemeral `visitorId` is the only identifier.
@@ -73,7 +74,7 @@ export interface SettleOptions {
 
 /** The recorded outcome of a settle wait — never a thrown error. */
 export interface SettleResult {
-  /** True iff the `#root` fingerprint differed from the baseline at any poll. */
+  /** True iff the stage fingerprint differed from the baseline at any poll. */
   readonly changed: boolean;
   /** True iff the bounded timeout elapsed before a quiet window was observed. */
   readonly timedOut: boolean;
@@ -134,10 +135,10 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * A cheap, stable fingerprint of the rendered `#root` subtree: `innerHTML`
- * length + total element count. Two different renders almost always differ in
- * one of the two; identical fingerprints mean "no visible change", which is all
- * the quiet-window needs.
+ * A cheap, stable fingerprint of the rendered STAGE subtree: `innerHTML` length +
+ * total element count. Two different renders almost always differ in one of the
+ * two; identical fingerprints mean "no visible stage change", which is all the
+ * quiet-window needs.
  */
 function domFingerprint(page: Page): Promise<string> {
   return page.evaluate(() => {
@@ -153,11 +154,12 @@ function domFingerprint(page: Page): Promise<string> {
 }
 
 /**
- * Poll the `#root` fingerprint until it is unchanged across a quiet window OR a
- * bounded timeout elapses (OQ-1). NEVER throws: a timeout returns
- * `{ changed, timedOut: true }` so the caller still captures the shot and a
- * dead/frozen UI becomes a judge signal, not a crash. The poll cadence is the
- * settle MECHANISM, not a fixed "wait N ms then screenshot" sleep.
+ * Poll the stage fingerprint until it is unchanged across a quiet window (only
+ * AFTER a real change, when `requireChange`) OR a bounded timeout elapses (OQ-1).
+ * NEVER throws: a timeout returns `{ changed, timedOut: true }` so the caller
+ * still captures the shot and a dead/frozen UI becomes a judge signal, not a
+ * crash. The poll cadence is the settle MECHANISM, not a fixed "wait N ms then
+ * screenshot" sleep.
  */
 export async function settleDom(page: Page, options: SettleOptions = {}): Promise<SettleResult> {
   const quietMs = options.quietMs ?? DEFAULT_QUIET_MS;
