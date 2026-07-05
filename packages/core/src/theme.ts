@@ -28,7 +28,7 @@ import {
 } from "./tokens.js";
 import {
   boundedDescription,
-  FORBIDDEN_KEYS,
+  isForbiddenKey,
   isControlChar,
   isPlainObject,
   MAX_ISSUES,
@@ -238,7 +238,7 @@ function validateGroup<V>(
   }
   const out = nullMap<V>();
   for (const key of Object.keys(raw)) {
-    if (FORBIDDEN_KEYS.has(key)) {
+    if (isForbiddenKey(key)) {
       issues.push({
         severity: "warning",
         message: `theme "${group}": forbidden key "${printableKey(key)}" dropped`,

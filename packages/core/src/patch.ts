@@ -1,4 +1,4 @@
-import { FORBIDDEN_KEYS } from "./issues.js";
+import { isForbiddenKey } from "./issues.js";
 import type { FacetTree } from "./tree.js";
 
 /**
@@ -84,7 +84,7 @@ function parsePointer(pointer: string): string[] {
   for (const token of tokens) {
     // Security: a "/__proto__/x" pointer would write to Object.prototype —
     // global prototype pollution on server AND every connected browser. Reject.
-    if (FORBIDDEN_KEYS.has(token)) {
+    if (isForbiddenKey(token)) {
       throw new Error(`forbidden pointer token: "${token}"`);
     }
   }
