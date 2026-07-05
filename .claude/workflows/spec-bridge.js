@@ -3,10 +3,10 @@ export const meta = {
   description: 'Facet spec bridge — fanned-out context (package map + parallel risk-lens probes) → single writer → an independent multi-reviewer gate panel → bounded fix loop. Stops at an approvable plan.',
   whenToUse: 'After a feature-intake brief is approved. Pass args.slug. Produces specs/context, specs/dev-specs (+ execution manifest), and a panel verdict. The calling agent asks the human for approval — this workflow never starts implementation.',
   phases: [
-    { title: 'Context', detail: 'map affected packages + gather evidence, then parallel RISK-lens probes (INV / API / PKG), then write the context file', model: 'fable' },
-    { title: 'Write', detail: 'single spec writer (separate context) → dev-spec + execution manifest', model: 'fable' },
-    { title: 'Review', detail: 'independent multi-reviewer panel, one per gate-family, unioned (none saw the writer)', model: 'fable' },
-    { title: 'Fix loop', detail: 'if P0/P1: fixer edits the spec, re-run the whole review panel (max 3 rounds)', model: 'fable' },
+    { title: 'Context', detail: 'map affected packages + gather evidence, then parallel RISK-lens probes (INV / API / PKG), then write the context file', model: 'opus' },
+    { title: 'Write', detail: 'single spec writer (separate context) → dev-spec + execution manifest', model: 'opus' },
+    { title: 'Review', detail: 'independent multi-reviewer panel, one per gate-family, unioned (none saw the writer)', model: 'opus' },
+    { title: 'Fix loop', detail: 'if P0/P1: fixer edits the spec, re-run the whole review panel (max 3 rounds)', model: 'opus' },
   ],
 }
 
@@ -18,11 +18,15 @@ export const meta = {
 // Workflow({name:'spec-bridge', args:{slug:'<slug>'}}).
 
 const MAX_ROUNDS = 3
-const M = 'fable'
+const M = 'opus'
 
-const slug = (args && typeof args === 'object' && typeof args.slug === 'string' && args.slug.trim())
-  ? args.slug.trim()
-  : (typeof args === 'string' && args.trim() ? args.trim() : '')
+// Tolerate args arriving JSON-stringified (the harness sometimes stringifies an
+// object arg) so the slug never becomes the literal `{"slug":"..."}` string.
+let a = args
+if (typeof a === 'string' && a.trim().startsWith('{')) { try { a = JSON.parse(a) } catch {} }
+const slug = (a && typeof a === 'object' && typeof a.slug === 'string' && a.slug.trim())
+  ? a.slug.trim()
+  : (typeof a === 'string' && a.trim() ? a.trim() : '')
 if (!slug) return { error: "No slug provided. Pass it as args: Workflow({name:'spec-bridge', args:{slug:'<slug>'}})." }
 
 const briefPath = 'specs/feature-intake/' + slug + '.md'
