@@ -11,7 +11,14 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { MemorySink, MemoryStageStore, withInitialStage, type StageStore } from "@facet/runtime";
+import {
+  MemorySink,
+  MemoryStageStore,
+  withInitialStage,
+  type Sink,
+  type StageStore,
+  type StoredEvent,
+} from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "./server.js";
 import { isStaleLateResult } from "./late.js";
 
@@ -1636,5 +1643,101 @@ describe("record validation hardening", () => {
     // None of these wrote to the Sink.
     await new Promise((r) => setTimeout(r, 50));
     expect(await sink.history("a", "v")).toHaveLength(0);
+  });
+});
+
+/** A Sink whose `record` for a collected LOCAL tap (kind "tap", no messages) hangs
+ * until `release()` — modelling a slow/hung durable Sink under load. Message/agent
+ * turns record through untouched. Used to prove /record's write is fire-and-forget
+ * on the shared per-visitor lane and can't wedge a later /event turn. */
+class GatedSink implements Sink {
+  private readonly inner = new MemorySink();
+  gateTapRecord = false;
+  private releaseHeld: () => void = () => {};
+  private readonly held = new Promise<void>((r) => {
+    this.releaseHeld = r;
+  });
+  release(): void {
+    this.releaseHeld();
+  }
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    if (this.gateTapRecord && entry.event.kind === "tap" && entry.messages.length === 0) {
+      await this.held;
+    }
+    return this.inner.record(agentId, visitorId, entry);
+  }
+  history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    return this.inner.history(agentId, visitorId);
+  }
+}
+
+describe("record + event validation hardening (round 2)", () => {
+  const postRawEvent = (base: string, event: unknown): Promise<Response> =>
+    fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitor: { visitorId: "v" }, event }),
+    });
+
+  it("POST /record rejects a tap carrying an action (null or object)", async () => {
+    const sink = new MemorySink();
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, sink });
+    running = server;
+
+    // A local navigate/toggle tap only ever carries `effect` — never `action`. An
+    // `action` (even null) must 400 at the boundary so it can't be persisted verbatim
+    // to the Sink (poisoning the durable log / bypassing the field cap).
+    expect((await postRecord(base, "v", { kind: "tap", action: null })).status).toBe(400);
+    expect(
+      (await postRecord(base, "v", { kind: "tap", action: { kind: "agent", name: "x" } })).status,
+    ).toBe(400);
+
+    // No Sink write for either rejected body.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await sink.history("a", "v")).toHaveLength(0);
+  });
+
+  it("POST /record does not block a later /event on a slow sink", async () => {
+    const sink = new GatedSink();
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, sink });
+    running = server;
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    // The /record's Sink write hangs. On the shared per-visitor lane an `await`ed
+    // record would wedge the visitor's later /event (head-of-line blocking). With
+    // fire-and-forget, the lane frees after the synchronous slot reservation.
+    sink.gateTapRecord = true;
+    expect(
+      (await postRecord(base, "v", { kind: "tap", target: "t", effect: { toggle: "n" } })).status,
+    ).toBe(202);
+    expect((await postEvent(base, "v", { kind: "message", text: "hi" })).status).toBe(202);
+
+    // The /event turn's say must arrive WITHOUT the hung sink write ever settling.
+    const frames = await collectEvents(stream, 800);
+    expect(sayText(frames)).toContain("hello from agent");
+    sink.release(); // let the parked writes drain so close() doesn't hang
+  });
+
+  it("POST /event rejects a tap carrying effect or target", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // effect/target are LOCAL-tap fields; an /event agent tap carries `action` only.
+    expect(
+      (await postRawEvent(base, { kind: "tap", action: { name: "x" }, effect: { navigate: "a" } }))
+        .status,
+    ).toBe(400);
+    expect(
+      (await postRawEvent(base, { kind: "tap", action: { name: "x" }, target: "cta" })).status,
+    ).toBe(400);
+  });
+
+  it("POST /event rejects a non-number seq", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // `seq` narrows to `number | undefined`; a non-number must 400 (not persist unsoundly).
+    expect((await postRawEvent(base, { kind: "message", text: "hi", seq: "x" })).status).toBe(400);
+    expect(
+      (await postRawEvent(base, { kind: "tap", action: { name: "x" }, seq: "x" })).status,
+    ).toBe(400);
   });
 });
