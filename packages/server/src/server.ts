@@ -7,9 +7,11 @@ import {
   MAX_PATCH_OPS,
   type AgentControlFrame,
   type ClientEvent,
+  type CollectedEvent,
   type FacetAgent,
   type FacetTree,
   type ServerMessage,
+  type TapEffect,
   type VisitorContext,
 } from "@facet/core";
 import { FacetRuntime, type Sink, type StageStore, type TurnResult } from "@facet/runtime";
@@ -129,7 +131,7 @@ function readJson(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Prom
 }
 
 /** Shape-check an untrusted browser /event body before trusting it — including
- * the per-kind payload (a kind-only check lets `{kind:"action"}` without an
+ * the per-kind payload (a kind-only check lets `{kind:"tap"}` without an
  * action object crash downstream consumers, e.g. the persistent bridge). */
 function isEventBody(body: unknown): body is { visitor: VisitorContext; event: ClientEvent } {
   if (typeof body !== "object" || body === null) return false;
@@ -147,7 +149,7 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
     );
   }
   if (kind === "message") return typeof text === "string";
-  if (kind === "action") {
+  if (kind === "tap") {
     if (typeof action !== "object" || action === null) return false;
     // Only agent actions travel over the transport — navigate/toggle are
     // client-local and the renderer never sends them. Reject any other kind so
@@ -173,6 +175,43 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
     return isPrimitiveRecord(payload);
   }
   return false;
+}
+
+/** Shape-check a renderer-resolved `TapEffect` on a collected /record tap: an object
+ * carrying EITHER a string `navigate` (a screen name) or a string `toggle` (a node
+ * id). Anything else is rejected so a malformed effect can't reach the Sink. */
+function isTapEffect(value: unknown): value is TapEffect {
+  if (typeof value !== "object" || value === null) return false;
+  const { navigate, toggle } = value as { navigate?: unknown; toggle?: unknown };
+  if (navigate !== undefined) return typeof navigate === "string";
+  if (toggle !== undefined) return typeof toggle === "string";
+  return false;
+}
+
+/** Shape-check an untrusted /record body: a collected LOCAL tap (a navigate/toggle
+ * the renderer already resolved) that the runtime persists to the Sink WITHOUT
+ * invoking the agent. Mirrors `isEventBody`'s per-kind rigor but for the local tap
+ * shape — `target`/`effect`/`fields`/`seq` are all optional and, when present,
+ * strictly typed (reusing the shared field caps via `isFieldsRecord`). Unlike
+ * `isEventBody` there is no `action` to guard: a local tap never reaches the agent.
+ * A malformed or empty body is rejected so nothing ill-shaped reaches the Sink. */
+function isRecordBody(body: unknown): body is { visitor: VisitorContext; event: CollectedEvent } {
+  if (typeof body !== "object" || body === null) return false;
+  const { visitor, event } = body as { visitor?: unknown; event?: unknown };
+  if (typeof visitor !== "object" || visitor === null) return false;
+  if (typeof (visitor as { visitorId?: unknown }).visitorId !== "string") return false;
+  if (typeof event !== "object" || event === null) return false;
+  // /record carries only locally-resolved taps — visit/message are forward events
+  // that ride /event, never the record-only channel.
+  if ((event as { kind?: unknown }).kind !== "tap") return false;
+  const target = (event as { target?: unknown }).target;
+  if (target !== undefined && typeof target !== "string") return false;
+  const effect = (event as { effect?: unknown }).effect;
+  if (effect !== undefined && !isTapEffect(effect)) return false;
+  const fields = (event as { fields?: unknown }).fields;
+  if (fields !== undefined && !isFieldsRecord(fields)) return false;
+  // `seq` is a forward-compatible wire field — tolerated, not required.
+  return true;
 }
 
 /** The REJECTING form of the action `fields` rule, mirroring `isPrimitiveRecord`:
@@ -412,6 +451,41 @@ function handleEvent(req: IncomingMessage, res: ServerResponse, deps: PostHandle
     });
 }
 
+/** POST /record: shape-check the untrusted body, ack 202, then persist the collected
+ * LOCAL tap on the visitor's SAME serial lane as /event — via `runtime.record`, which
+ * writes to the Sink WITHOUT invoking the agent and WITHOUT producing a stage patch.
+ * Riding the shared lane keeps a record's Sink append order behind any in-flight
+ * /event turn for that visitor (send order == append order). A malformed body is
+ * 400'd with NO Sink write. Deliberately NEVER calls `runtime.handle`/`deliver`. */
+function handleRecord(req: IncomingMessage, res: ServerResponse, deps: PostHandlerDeps): void {
+  const { lane, runtime } = deps;
+  readJson(req)
+    .then((body) => {
+      if (!isRecordBody(body)) {
+        res.writeHead(400);
+        res.end();
+        return;
+      }
+      const { visitor, event } = body;
+      res.writeHead(202);
+      res.end();
+      // Same per-visitor lane as /event so a record can't jump ahead of an in-flight
+      // turn. `runtime.record` is best-effort (it logs a sink failure rather than
+      // throwing); the extra guard keeps a lane task from ever rejecting unhandled.
+      void lane(visitor.visitorId, async () => {
+        try {
+          await runtime.record(visitor, event);
+        } catch (error) {
+          console.error("[facet] record failed:", error);
+        }
+      });
+    })
+    .catch(() => {
+      res.writeHead(400);
+      res.end();
+    });
+}
+
 /** POST /agent/control: shape-check the body, then settle the still-waiting turn
  * in-time via the channel, or re-inject a parked (timed-out/dropped) turn on its
  * lane. Always answers 202 — a miss (evicted/unknown requestId) is a bounded no-op. */
@@ -610,6 +684,11 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
 
     if (req.method === "POST" && url.pathname === "/event") {
       handleEvent(req, res, postDeps);
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/record") {
+      handleRecord(req, res, postDeps);
       return;
     }
 

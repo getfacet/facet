@@ -194,7 +194,17 @@ function postEvent(base: string, visitorId: string, event: ClientEventLike): Pro
 type ClientEventLike =
   | { kind: "message"; text: string }
   | { kind: "visit"; visitor: { visitorId: string } }
-  | { kind: "action"; action: { name: string; payload?: unknown }; fields?: unknown };
+  | { kind: "tap"; action: { name: string; payload?: unknown }; fields?: unknown };
+
+/** POST a collected local tap to /record. `event` is `unknown` so a test can send a
+ * deliberately malformed body (DC-007). */
+function postRecord(base: string, visitorId: string, event: unknown): Promise<Response> {
+  return fetch(`${base}/record`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visitor: { visitorId }, event }),
+  });
+}
 
 function control(
   base: string,
@@ -1209,7 +1219,7 @@ describe("hardening", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         visitor: { visitorId: "v" },
-        event: { kind: "action", action: { name: "buy", payload: ["a", "b"] } },
+        event: { kind: "tap", action: { name: "buy", payload: ["a", "b"] } },
       }),
     });
     expect(response.status).toBe(400);
@@ -1223,7 +1233,7 @@ describe("hardening", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         visitor: { visitorId: "v" },
-        event: { kind: "action", action: { name: "buy", payload: { nested: { deep: 1 } } } },
+        event: { kind: "tap", action: { name: "buy", payload: { nested: { deep: 1 } } } },
       }),
     });
     expect(response.status).toBe(400);
@@ -1233,7 +1243,7 @@ describe("hardening", () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
     const response = await postEvent(base, "v", {
-      kind: "action",
+      kind: "tap",
       action: { name: "submit" },
       fields: { note: "x".repeat(MAX_FIELD_VALUE_CHARS + 1) },
     });
@@ -1244,7 +1254,7 @@ describe("hardening", () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
     const response = await postEvent(base, "v", {
-      kind: "action",
+      kind: "tap",
       action: { name: "submit" },
       fields: { count: 7 },
     });
@@ -1255,7 +1265,7 @@ describe("hardening", () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
     const response = await postEvent(base, "v", {
-      kind: "action",
+      kind: "tap",
       action: { name: "submit" },
       fields: ["a", "b"],
     });
@@ -1266,7 +1276,7 @@ describe("hardening", () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
     const response = await postEvent(base, "v", {
-      kind: "action",
+      kind: "tap",
       action: { name: "submit" },
       fields: { name: { deep: "nested" } },
     });
@@ -1284,15 +1294,15 @@ describe("hardening", () => {
     // A value at exactly the cap is valid — the boundary is inclusive.
     const fields = { name: "Ada", note: "y".repeat(MAX_FIELD_VALUE_CHARS) };
     const response = await postEvent(base, "v", {
-      kind: "action",
+      kind: "tap",
       action: { name: "submit", payload: { screen: "form" } },
       fields,
     });
     expect(response.status).toBe(202);
     await waitFor(async () => captured.length === 1);
     const event = captured[0];
-    expect(event?.kind).toBe("action");
-    expect(event?.kind === "action" ? event.fields : undefined).toEqual(fields);
+    expect(event?.kind).toBe("tap");
+    expect(event?.kind === "tap" ? event.fields : undefined).toEqual(fields);
   });
 
   it("accepts an action without fields exactly as before", async () => {
@@ -1304,14 +1314,14 @@ describe("hardening", () => {
     const { server, base } = await start({ agentId: "a", agent: capturingAgent });
     running = server;
     const response = await postEvent(base, "v", {
-      kind: "action",
+      kind: "tap",
       action: { name: "buy", payload: { sku: "s1" } },
     });
     expect(response.status).toBe(202);
     await waitFor(async () => captured.length === 1);
     const event = captured[0];
-    expect(event?.kind).toBe("action");
-    expect(event?.kind === "action" ? event.fields : undefined).toBeUndefined();
+    expect(event?.kind).toBe("tap");
+    expect(event?.kind === "tap" ? event.fields : undefined).toBeUndefined();
   });
 
   it("rejects an action event with an ill-typed collect", async () => {
@@ -1322,7 +1332,7 @@ describe("hardening", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         visitor: { visitorId: "v" },
-        event: { kind: "action", action: { name: "submit", collect: { nested: "obj" } } },
+        event: { kind: "tap", action: { name: "submit", collect: { nested: "obj" } } },
       }),
     });
     expect(response.status).toBe(400);
@@ -1334,7 +1344,7 @@ describe("hardening", () => {
     const fields: Record<string, string> = {};
     for (let i = 0; i < 300; i += 1) fields[`k${String(i)}`] = "v";
     const response = await postEvent(base, "v", {
-      kind: "action",
+      kind: "tap",
       action: { name: "submit" },
       fields,
     });
@@ -1351,7 +1361,7 @@ describe("hardening", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         visitor: { visitorId: "v" },
-        event: { kind: "action", action: { kind: "navigate", name: "x", to: "about" } },
+        event: { kind: "tap", action: { kind: "navigate", name: "x", to: "about" } },
       }),
     });
     expect(response.status).toBe(400);
@@ -1466,5 +1476,95 @@ describe("hardening", () => {
       status = 400;
     }
     expect(status).toBe(400);
+  });
+});
+
+describe("record channel (WU-5)", () => {
+  it("POST /record persists a collected tap without invoking the agent and rejects malformed bodies", async () => {
+    const sink = new MemorySink();
+    let agentCalls = 0;
+    const countingAgent: FacetAgent = () => {
+      agentCalls += 1;
+      return [];
+    };
+    const { server, base } = await start({ agentId: "a", agent: countingAgent, sink });
+    running = server;
+
+    // A valid collected local tap (a renderer-resolved navigate) persists to the Sink…
+    const ok = await postRecord(base, "v", {
+      kind: "tap",
+      target: "cta",
+      effect: { navigate: "about" },
+    });
+    expect(ok.status).toBe(202);
+    await waitFor(async () => (await sink.history("a", "v")).length >= 1);
+    const history = await sink.history("a", "v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event.kind).toBe("tap");
+    expect(history[0]?.event.kind === "tap" ? history[0]?.event.effect : undefined).toEqual({
+      navigate: "about",
+    });
+    // …with NO agent turn and NO stage patch (a local tap never reaches the brain — DC-005).
+    expect(history[0]?.messages).toEqual([]);
+    expect(agentCalls).toBe(0);
+
+    // A malformed /record body → 400 with no Sink write (DC-007).
+    const bad = await postRecord(base, "v", { kind: "nope" });
+    expect(bad.status).toBe(400);
+    // Give any (erroneous) lane task a chance to run, then assert history is unchanged.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await sink.history("a", "v")).toHaveLength(1);
+    expect(agentCalls).toBe(0);
+  });
+
+  it("400-rejects a /event tap whose action.kind is not agent (RISK-INV-4)", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+    // A spoofed local-effect tap must never reach the agent over the forward /event
+    // channel — only an "agent" (or bare-name) action is legal there.
+    const response = await fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        visitor: { visitorId: "v" },
+        event: { kind: "tap", action: { kind: "toggle", name: "x", node: "n" } },
+      }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("appends interleaved /event, /record, /event in send order (DC-002)", async () => {
+    const sink = new MemorySink();
+    let release = (): void => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    // The first message turn (A) parks on the gate so B(/record) and C(/event)
+    // enqueue behind it on the SAME per-visitor lane.
+    const slowAgent: FacetAgent = async (event) => {
+      if (event.kind === "message" && event.text === "A") {
+        await gate;
+        return [{ kind: "say", text: "A-done" }];
+      }
+      return [];
+    };
+    const { server, base } = await start({ agentId: "a", agent: slowAgent, sink });
+    running = server;
+
+    // Await each 202 so its lane enqueue has committed (the handler enqueues
+    // synchronously right after res.end()) before the next request is sent.
+    expect((await postEvent(base, "v", { kind: "message", text: "A" })).status).toBe(202);
+    expect(
+      (await postRecord(base, "v", { kind: "tap", target: "t", effect: { toggle: "n" } })).status,
+    ).toBe(202);
+    expect((await postEvent(base, "v", { kind: "message", text: "C" })).status).toBe(202);
+
+    release();
+    await waitFor(async () => (await sink.history("a", "v")).length >= 3);
+    const history = await sink.history("a", "v");
+    // Append order == send order, independent of async sink latency or `at`.
+    expect(history.map((e) => e.event.kind)).toEqual(["message", "tap", "message"]);
+    expect(history[0]?.event.kind === "message" ? history[0]?.event.text : undefined).toBe("A");
+    expect(history[2]?.event.kind === "message" ? history[2]?.event.text : undefined).toBe("C");
   });
 });
