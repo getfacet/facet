@@ -1625,7 +1625,9 @@ describe("record validation hardening", () => {
     // effect present but not an object → rejected.
     expect((await postRecord(base, "v", { kind: "tap", effect: "nope" })).status).toBe(400);
     // navigate present but not a string → rejected.
-    expect((await postRecord(base, "v", { kind: "tap", effect: { navigate: 7 } })).status).toBe(400);
+    expect((await postRecord(base, "v", { kind: "tap", effect: { navigate: 7 } })).status).toBe(
+      400,
+    );
     // toggle present but not a string → rejected.
     expect((await postRecord(base, "v", { kind: "tap", effect: { toggle: {} } })).status).toBe(400);
     // neither key present → isTapEffect defines this invalid.
