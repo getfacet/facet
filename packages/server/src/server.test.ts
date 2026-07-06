@@ -561,6 +561,67 @@ describe("browser channel", () => {
     expect(sayText(rehydrated)).toEqual(["one", "two"]);
   });
 
+  it("full rehydrate keeps an older same-text history say when an active retained say matches it", async () => {
+    const sink = new MemorySink();
+    let sameTurns = 0;
+    let patchId = 0;
+    let releaseSecondSame!: () => void;
+    const secondSameGate = new Promise<void>((resolve) => {
+      releaseSecondSame = resolve;
+    });
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind !== "message") return;
+      if (event.text === "same") {
+        sameTurns += 1;
+        yield [{ kind: "say", text: "same" }];
+        if (sameTurns === 2) await secondSameGate;
+        return;
+      }
+      const id = `p${String(patchId)}`;
+      patchId += 1;
+      yield [
+        {
+          kind: "patch",
+          patches: [{ op: "add", path: `/nodes/${id}`, value: { id, type: "text", value: id } }],
+        },
+      ];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+
+    await postEvent(base, "v", { kind: "message", text: "same" });
+    for (let i = 0; i < 205; i += 1) {
+      await postEvent(base, "v", { kind: "message", text: "patch" });
+    }
+    await waitFor(async () => (await sink.history("a", "v")).length >= 206);
+
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+    try {
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toMatchObject({ kind: "patch" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "same" });
+
+      await postEvent(base, "v", { kind: "message", text: "same" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "same" });
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+      const frames = [
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+      ].filter((frame): frame is SseFrame => frame !== undefined);
+      expect(sayText(frames)).toEqual(["same", "same"]);
+    } finally {
+      releaseSecondSame();
+      await liveReader.close();
+      await rehydrateReader?.close();
+    }
+  });
+
   it("advertises Last-Event-ID in CORS so cross-origin resume works", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;

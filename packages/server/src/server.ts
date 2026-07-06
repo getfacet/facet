@@ -355,37 +355,24 @@ function parseLoggedServerMessage(frame: LoggedFrame): ServerMessage | undefined
   }
 }
 
-function retainedSayFrames(frames: readonly LoggedFrame[], maxSeq: number): ServerMessage[] {
+function retainedSayFrames(
+  frames: readonly LoggedFrame[],
+  minSeq: number,
+  maxSeq: number,
+): ServerMessage[] {
   const says: ServerMessage[] = [];
   for (const frame of frames) {
-    if (frame.seq > maxSeq) continue;
+    if (frame.seq < minSeq || frame.seq > maxSeq) continue;
     const message = parseLoggedServerMessage(frame);
     if (message?.kind === "say") says.push(message);
   }
   return says;
 }
 
-function sameSay(a: ServerMessage, b: ServerMessage): boolean {
-  return a.kind === "say" && b.kind === "say" && a.text === b.text;
-}
-
-function historyPrefixBeforeRetainedOverlap(
-  historySays: readonly ServerMessage[],
-  retainedSays: readonly ServerMessage[],
-): readonly ServerMessage[] {
-  const max = Math.min(historySays.length, retainedSays.length);
-  let overlap = 0;
-  for (let n = 1; n <= max; n += 1) {
-    let matches = true;
-    for (let i = 0; i < n; i += 1) {
-      if (!sameSay(historySays[historySays.length - n + i]!, retainedSays[i]!)) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) overlap = n;
-  }
-  return overlap === 0 ? historySays : historySays.slice(0, historySays.length - overlap);
+interface HandlingTurn {
+  readonly index: number;
+  readonly era: string;
+  readonly streamStartSeq: number;
 }
 
 // ── browser stream: full rehydrate (out of the lane) ────────────────
@@ -415,6 +402,7 @@ async function rehydrate(
   visitorId: string,
   frameLog: FrameLogStore,
   runtime: FacetRuntime,
+  handling: ReadonlyMap<string, HandlingTurn>,
   isClosed: () => boolean,
   join: () => void,
 ): Promise<void> {
@@ -449,11 +437,15 @@ async function rehydrate(
         if (message.kind === "say") historySays.push(message);
       }
     }
-    const retainedSays = retainedSayFrames(current.frames, n0);
-    for (const message of historyPrefixBeforeRetainedOverlap(historySays, retainedSays)) {
+    for (const message of historySays) {
       sse(res, message, stampId);
     }
-    for (const message of retainedSays) {
+    const active = handling.get(visitorId);
+    const activeStartSeq =
+      active !== undefined && active.era === capturedEra ? active.streamStartSeq : undefined;
+    const activeSays =
+      activeStartSeq === undefined ? [] : retainedSayFrames(current.frames, activeStartSeq, n0);
+    for (const message of activeSays) {
       sse(res, message, stampId);
     }
     // Replay frames delivered during the reads (seq > N0) so nothing in the
@@ -490,7 +482,7 @@ interface PostHandlerDeps {
   /** The arrival {index, era} of the turn each visitor's lane is currently
    * handling — server-local so an LRU eviction of the frame log can't detach it
    * mid-turn. One entry per in-flight visitor turn; deleted when the turn ends. */
-  readonly handling: Map<string, { readonly index: number; readonly era: string }>;
+  readonly handling: Map<string, HandlingTurn>;
 }
 
 /** POST /event: shape-check the untrusted body, ack 202, then run the turn on the
@@ -519,7 +511,10 @@ function handleEvent(req: IncomingMessage, res: ServerResponse, deps: PostHandle
       void lane(visitor.visitorId, async () => {
         // Tag the in-flight turn so a timed-out park picks up this arrival pair
         // (kept in a server-local map, NOT on the LRU-evictable log entry).
-        handling.set(visitor.visitorId, arrival);
+        handling.set(visitor.visitorId, {
+          ...arrival,
+          streamStartSeq: frameLog.logFor(visitor.visitorId).nextSeq,
+        });
         let result: TurnResult = { messages: [], agentMutated: false };
         try {
           result = await runtime.handle(visitor, event, (messages) =>
@@ -668,7 +663,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   // The arrival {index, era} of the turn each visitor's lane is currently
   // handling — server-local so an LRU eviction of the frame log can't detach it
   // mid-turn. One entry per in-flight visitor turn; deleted when the turn ends.
-  const handling = new Map<string, { readonly index: number; readonly era: string }>();
+  const handling = new Map<string, HandlingTurn>();
   const lateWindow = createLateWindow(LATE_WINDOW_LIMIT);
   // Per-visitor delivery lane: serializes {apply → seq-assign → log → fan-out} so
   // apply-order equals delivery-order by construction. Live turns and late applies
@@ -781,7 +776,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       ) {
         return;
       }
-      void rehydrate(res, visitorId, frameLog, runtime, () => closed, join);
+      void rehydrate(res, visitorId, frameLog, runtime, handling, () => closed, join);
       return;
     }
 
