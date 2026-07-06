@@ -17,7 +17,7 @@
  */
 import { isValidThemeName, validateTree } from "@facet/core";
 import type { FacetNode, FacetStamp, FacetTheme, FacetTree, NodeId } from "@facet/core";
-import { defineAgent } from "@facet/agent";
+import { defineStreamingAgent } from "@facet/agent";
 import type { Stage } from "@facet/agent";
 import type { Sink } from "@facet/runtime";
 import {
@@ -146,6 +146,62 @@ function issueHint(issues: readonly string[]): string {
 /** Derived from the single-source TOOLS so it can't drift from the real set. */
 const TOOL_NAMES = TOOLS.map((t) => t.name).join(", ");
 
+interface ClosureBuffer {
+  render(tree: FacetTree): void;
+  set(node: FacetNode): void;
+  noteKnown(id: NodeId): void;
+  remove(id: NodeId): void;
+}
+
+function childRefs(node: FacetNode): readonly NodeId[] {
+  return node.type === "box" ? node.children : [];
+}
+
+function isClosed(node: FacetNode, knownIds: ReadonlySet<string>): boolean {
+  return childRefs(node).every((id) => knownIds.has(id));
+}
+
+function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer {
+  const pending = new Map<NodeId, FacetNode>();
+
+  const flushReady = (): void => {
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (const [id, node] of pending) {
+        if (!isClosed(node, knownIds)) continue;
+        stage.set(node);
+        pending.delete(id);
+        knownIds.add(id);
+        progressed = true;
+      }
+    }
+  };
+
+  return {
+    render(tree) {
+      pending.clear();
+      stage.render(tree);
+      knownIds.clear();
+      for (const id of Object.keys(tree.nodes)) knownIds.add(id);
+    },
+    set(node) {
+      knownIds.add(node.id);
+      if (isClosed(node, knownIds)) stage.set(node);
+      else pending.set(node.id, node);
+      flushReady();
+    },
+    noteKnown(id) {
+      knownIds.add(id);
+      flushReady();
+    },
+    remove(id) {
+      pending.delete(id);
+      knownIds.delete(id);
+    },
+  };
+}
+
 interface ToolOutcome {
   readonly observation: string;
   readonly mutated: boolean;
@@ -157,7 +213,12 @@ interface ToolOutcome {
  * `knownIds` tracks which node ids exist so far this turn (seeded from the
  * current stage, updated by each tool) so append_node can reject a nonexistent
  * parent BEFORE it queues a child-link op the runtime would silently drop. */
-function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolOutcome {
+function executeTool(
+  call: ToolCall,
+  stage: Stage,
+  knownIds: Set<string>,
+  closure: ClosureBuffer,
+): ToolOutcome {
   const fail = (observation: string): ToolOutcome => ({ observation, mutated: false, said: false });
   const input: Record<string, unknown> = isRecord(call.input) ? call.input : {};
   switch (call.name) {
@@ -172,10 +233,7 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
               : "Provide a non-empty root/entry box and retry."),
         );
       }
-      stage.render(tree);
-      // The tree replaced everything — reset the known ids to it.
-      knownIds.clear();
-      for (const id of Object.keys(tree.nodes)) knownIds.add(id);
+      closure.render(tree);
       const note =
         issues.length > 0 ? ` (note: dropped invalid node(s): ${issueHint(issues)})` : "";
       return { observation: `ok: page replaced${note}`, mutated: true, said: false };
@@ -195,7 +253,7 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: append_node — ${result.error}`);
       stage.append(parentId as NodeId, result.node);
-      knownIds.add(result.node.id);
+      closure.noteKnown(result.node.id);
       return {
         observation: `ok: appended "${result.node.id}" under "${parentId}"`,
         mutated: true,
@@ -205,8 +263,7 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
     case "set_node": {
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: set_node — ${result.error}`);
-      stage.set(result.node);
-      knownIds.add(result.node.id);
+      closure.set(result.node);
       return { observation: `ok: set "${result.node.id}"`, mutated: true, said: false };
     }
     case "remove_node": {
@@ -215,7 +272,7 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
         return fail('error: remove_node needs a non-empty string "nodeId"');
       }
       stage.remove(nodeId as NodeId);
-      knownIds.delete(nodeId);
+      closure.remove(nodeId as NodeId);
       return { observation: `ok: removed "${nodeId}"`, mutated: true, said: false };
     }
     case "say": {
@@ -252,7 +309,7 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
 
 export function createQuickstartAgent(
   options: QuickstartAgentOptions,
-): ReturnType<typeof defineAgent> {
+): ReturnType<typeof defineStreamingAgent> {
   const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
     themes: options.themes ?? [],
     stamps: options.stamps ?? [],
@@ -260,7 +317,7 @@ export function createQuickstartAgent(
   const historyTurns = options.historyTurns ?? HISTORY_TURNS;
   const maxSteps = options.maxSteps ?? MAX_STEPS;
 
-  return defineAgent(async ({ event, session, stage }) => {
+  return defineStreamingAgent(async function* ({ event, session, stage }) {
     let mutated = false;
     let said = false;
     let finalText = "";
@@ -274,6 +331,7 @@ export function createQuickstartAgent(
       // Ids that exist so far this turn (seeded from the current stage) — lets
       // append_node reject a nonexistent parent instead of orphaning the node.
       const knownIds = new Set<string>(Object.keys(session.stage.nodes));
+      const closure = createClosureBuffer(stage, knownIds);
 
       for (let step = 0; step < maxSteps; step += 1) {
         const result = await options.provider.run({ system, messages }, TOOLS);
@@ -287,11 +345,12 @@ export function createQuickstartAgent(
 
         messages.push({ role: "assistant_tools", text: result.text, toolCalls: result.toolCalls });
         for (const call of result.toolCalls) {
-          const outcome = executeTool(call, stage, knownIds);
+          const outcome = executeTool(call, stage, knownIds, closure);
           mutated = mutated || outcome.mutated;
           said = said || outcome.said;
           messages.push({ role: "tool_result", callId: call.id, content: outcome.observation });
         }
+        yield;
       }
     } catch (error) {
       // Provider/network/sink failure: keep whatever the stage already has.
