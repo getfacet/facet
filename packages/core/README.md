@@ -1,7 +1,7 @@
 # @facet/core
 
 The Facet contract: the declarative stage spec (`box` / `text` / `media` /
-`field` bricks + style tokens), the
+`field` bricks + style tokens), reusable stamp expansion, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
 `applyPatch`, `validateTree`, and the session/event types. It depends on nothing
 — every other Facet package builds on it.
@@ -10,12 +10,14 @@ The Facet contract: the declarative stage spec (`box` / `text` / `media` /
 npm install @facet/core
 ```
 
-Two pure functions do the heavy lifting: `validateTree` turns arbitrary input
-(e.g. an LLM's JSON) into a guaranteed-renderable tree, and `applyPatch` is the
-one patch function that runs identically on server and client.
+Three pure functions do the heavy lifting: `validateTree` turns arbitrary input
+(e.g. an LLM's JSON) into a guaranteed-renderable tree, `expandStamp` fills
+validated stamp slots and remaps ids before a caller emits ordinary patches, and
+`applyPatch` is the one patch function that runs identically on server and
+client.
 
 ```ts
-import { applyPatch, EMPTY_TREE, validateTree } from "@facet/core";
+import { applyPatch, EMPTY_TREE, expandStamp, validateTree } from "@facet/core";
 
 // Fail-safe: unknown nodes / bad tokens are stripped, never thrown on.
 const { tree, issues } = validateTree(EMPTY_TREE);
@@ -29,6 +31,21 @@ const next = applyPatch(tree, [
   },
   { op: "add", path: "/nodes/root/children/-", value: "hello" },
 ]);
+
+const expanded = expandStamp(
+  {
+    name: "card",
+    slots: { title: "Card title" },
+    root: "card.root",
+    nodes: {
+      "card.root": { id: "card.root", type: "box", children: ["card.title"] },
+      "card.title": { id: "card.title", type: "text", value: "{{title}}" },
+    },
+  },
+  { title: "Hello" },
+  { parent: "root" },
+  { existingIds: new Set(Object.keys(tree.nodes)) },
+);
 ```
 
 Also exported: small dependency-free async primitives the other packages build
