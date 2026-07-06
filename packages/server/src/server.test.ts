@@ -554,7 +554,7 @@ describe("browser channel", () => {
     await waitFor(async () => (await sink.history("a", "v")).length === 1);
 
     const stream2 = await fetch(`${base}/stream?visitorId=v`);
-    const rehydrated = await readEvents(stream2, 4);
+    const rehydrated = await collectEvents(stream2, 250);
 
     expect(rehydrated[0]?.data).toEqual({ kind: "reset" });
     expect(rehydrated[1]?.data).toMatchObject({ kind: "patch" });
