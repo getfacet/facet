@@ -44,6 +44,16 @@ const renderPatch: ServerMessage = {
   patches: [{ op: "replace", path: "", value: validTree }],
 };
 
+const appendTextBatch = (id: string, value = id): readonly ServerMessage[] => [
+  {
+    kind: "patch",
+    patches: [
+      { op: "add", path: "/nodes/root/children/-", value: id },
+      { op: "add", path: `/nodes/${id}`, value: { id, type: "text", value } },
+    ],
+  },
+];
+
 describe("FacetRuntime.handle", () => {
   it("applies patch messages to the stored stage", async () => {
     const rt = new FacetRuntime({
@@ -236,6 +246,101 @@ describe("FacetRuntime.handle", () => {
     const stage = await rt.stageFor("v");
     const root = stage?.nodes["root"] as { children: string[] } | undefined;
     expect(root?.children).toHaveLength(2); // both applied, neither overwrote the other
+  });
+});
+
+describe("FacetRuntime.handle — stream batches", () => {
+  it("streams yielded batches in order, saves each batch, and records one accumulated event", async () => {
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield appendTextBatch("one");
+      yield [{ kind: "say", text: "halfway" }, ...appendTextBatch("two")];
+    }
+    const frames: ServerMessage[][] = [];
+    const rt = new FacetRuntime({ agentId: "a", agent });
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" }, (messages) => {
+      frames.push([...messages]);
+    });
+
+    expect(out.messages).toEqual([]);
+    expect(frames).toHaveLength(2);
+    expect(frames[0]).toEqual(appendTextBatch("one"));
+    expect(frames[1]?.map((m) => m.kind)).toEqual(["say", "patch"]);
+
+    const stage = await rt.stageFor("v");
+    expect((stage?.nodes["root"] as { children: string[] } | undefined)?.children).toEqual([
+      "one",
+      "two",
+    ]);
+    expect(clientFold(frames.flat())).toEqual(stage);
+
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.messages).toEqual([...appendTextBatch("one"), ...frames[1]!]);
+  });
+
+  it("records accumulated batches and keeps the partial stage when a stream throws mid-turn", async () => {
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield appendTextBatch("one");
+      yield appendTextBatch("two");
+      throw new Error("provider failed");
+    }
+    const frames: ServerMessage[][] = [];
+    const rt = new FacetRuntime({ agentId: "a", agent });
+
+    await expect(
+      rt.handle(visitor, { kind: "message", text: "hi" }, (messages) => {
+        frames.push([...messages]);
+      }),
+    ).resolves.toMatchObject({ messages: [], agentMutated: true });
+
+    expect(frames).toEqual([appendTextBatch("one"), appendTextBatch("two")]);
+    const stage = await rt.stageFor("v");
+    expect((stage?.nodes["root"] as { children: string[] } | undefined)?.children).toEqual([
+      "one",
+      "two",
+    ]);
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.messages).toEqual([...appendTextBatch("one"), ...appendTextBatch("two")]);
+  });
+
+  it("prepends a seed frame to the first non-empty streamed batch only", async () => {
+    const seedTree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["seed"] },
+        seed: { id: "seed", type: "text", value: "seed" },
+      },
+    };
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield [];
+      yield [{ kind: "say", text: "first" }];
+      yield [{ kind: "say", text: "second" }];
+    }
+    const frames: ServerMessage[][] = [];
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+
+    await rt.handle(visitor, { kind: "message", text: "hi" }, (messages) => {
+      frames.push([...messages]);
+    });
+
+    expect(frames).toHaveLength(2);
+    expect(frames[0]?.map((m) => m.kind)).toEqual(["patch", "say"]);
+    expect(frames[0]?.[0]).toEqual({
+      kind: "patch",
+      patches: [{ op: "replace", path: "", value: seedTree }],
+    });
+    expect(frames[1]).toEqual([{ kind: "say", text: "second" }]);
+
+    const secondTurnFrames: ServerMessage[][] = [];
+    await rt.handle(visitor, { kind: "message", text: "again" }, (messages) => {
+      secondTurnFrames.push([...messages]);
+    });
+    expect(secondTurnFrames.flat().some((m) => m.kind === "patch")).toBe(false);
   });
 });
 
