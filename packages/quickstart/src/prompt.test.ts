@@ -43,7 +43,24 @@ describe("buildSystem", () => {
     const system = buildSystem(DEFAULT_GUIDE);
     expect(system).toContain('"onHold"');
     expect(system).toMatch(/appear\(none\|fade\|slide\)/);
-    expect(system).toMatch(/scroll\(bool\)/);
+    expect(system).toMatch(/scroll\(x\|y\)/);
+    expect(system).not.toMatch(/scroll\(bool\)/);
+  });
+
+  it("brick-vocab v1 prompt teaches media, field options, columns, and scroll axes", () => {
+    const system = buildSystem(DEFAULT_GUIDE);
+    expect(system).toContain('"type":"media"');
+    expect(system).toMatch(/"image"\|"video"/);
+    expect(system).toMatch(/"select"/);
+    expect(system).toMatch(/"checkbox"/);
+    expect(system).toContain('"options"?:[strings]');
+    expect(system).toContain("columns(2|3|4)");
+    expect(system).toContain("scroll(x|y)");
+    expect(system).not.toContain("(box, text, image, field)");
+
+    const tools = JSON.stringify(TOOLS);
+    expect(tools).toContain("box | text | media | field");
+    expect(tools).not.toContain("box | text | image | field");
   });
 
   it("exports a non-empty DEFAULT_GUIDE and HISTORY_TURNS = 20", () => {

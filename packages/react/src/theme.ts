@@ -8,8 +8,8 @@ import type {
   FieldStyle,
   FontSize,
   FontWeight,
-  ImageStyle,
   Justify,
+  MediaStyle,
   Radius,
   Ratio,
   Space,
@@ -128,7 +128,7 @@ function justifyValue(justify: Justify): CSSProperties["justifyContent"] {
 }
 
 // The one concrete scroll-region height — a renderer constant, not a theme
-// token (RISK-API-5): agents say `scroll: true`, never a number.
+// token (RISK-API-5): agents say `scroll`, never a number.
 const SCROLL_MAX_HEIGHT = "20rem";
 
 /**
@@ -141,27 +141,37 @@ export function boxStyle(
   style: BoxStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
-  const css: CSSProperties = {
-    display: "flex",
-    flexDirection: style.direction === "row" ? "row" : "column",
-    boxSizing: "border-box",
-  };
+  const isGrid = style.columns === 2 || style.columns === 3 || style.columns === 4;
+  const css: CSSProperties = isGrid
+    ? {
+        display: "grid",
+        boxSizing: "border-box",
+        gridTemplateColumns: `repeat(${String(style.columns)},minmax(0,1fr))`,
+      }
+    : {
+        display: "flex",
+        flexDirection: style.direction === "row" ? "row" : "column",
+        boxSizing: "border-box",
+      };
   if (style.gap) css.gap = theme.space[style.gap];
   if (style.pad) css.padding = theme.space[style.pad];
   if (style.align) css.alignItems = alignValue(style.align);
   if (style.justify) css.justifyContent = justifyValue(style.justify);
-  if (style.wrap) css.flexWrap = "wrap";
+  if (!isGrid && style.wrap) css.flexWrap = "wrap";
   if (style.bg) css.background = theme.color[style.bg];
   if (style.radius) css.borderRadius = theme.radius[style.radius];
   if (style.border) css.border = `1px solid ${theme.color.border}`;
   if (style.grow) css.flexGrow = 1;
   if (style.width === "full") css.width = "100%";
-  // Literal `true` only (total-function pattern on the raw live path — any
-  // other value maps to no CSS): a bounded, vertically scrollable region.
-  // Never overflow-x (RISK-INV-6a); the `minHeight: 0` is load-bearing — a
-  // flex child defaults to `min-height: auto` and would silently refuse to
-  // clip inside a `grow` column without it.
-  if (style.scroll === true) {
+  // `scroll:"x"` deliberately supersedes the old "never overflow-x" guard, but
+  // only as a bounded internal region: maxWidth/minWidth keep the page from
+  // widening while children clip inside the box. `true` is legacy vertical.
+  if (style.scroll === "x") {
+    css.overflowX = "auto";
+    css.overflowY = "hidden";
+    css.maxWidth = "100%";
+    css.minWidth = 0;
+  } else if (style.scroll === "y" || style.scroll === true) {
     css.overflowY = "auto";
     css.overflowX = "hidden";
     css.maxHeight = SCROLL_MAX_HEIGHT;
@@ -184,8 +194,8 @@ export function textStyle(
   return css;
 }
 
-export function imageStyle(
-  style: ImageStyle = {},
+export function mediaStyle(
+  style: MediaStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
   const css: CSSProperties = { display: "block", objectFit: "cover" };

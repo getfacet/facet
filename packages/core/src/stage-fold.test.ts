@@ -317,9 +317,127 @@ describe("foldPatchIntoStage — appear/scroll/onHold junk parity with validateT
       onHold?: unknown;
     };
     expect(panel.style?.["appear"]).toBe("slide");
-    expect(panel.style?.["scroll"]).toBe(true);
+    expect(panel.style?.["scroll"]).toBe("y");
     // legacy bare {name} is stamped kind:"agent" by the shared normalization
     expect(panel.onHold).toEqual({ kind: "agent", name: "peek" });
+  });
+});
+
+describe("foldPatchIntoStage — brick-vocab v1 validation parity", () => {
+  it("folds media, scroll axes, and columns through the shared sanitizer", () => {
+    const patches: JsonPatchOperation[] = [
+      {
+        op: "add",
+        path: "/nodes/carousel",
+        value: {
+          id: "carousel",
+          type: "box",
+          style: { scroll: "x", columns: 3 },
+          children: ["clip", "legacy"],
+        },
+      },
+      {
+        op: "add",
+        path: "/nodes/clip",
+        value: {
+          id: "clip",
+          type: "media",
+          kind: "video",
+          src: "https://cdn.example.com/clip.mp4",
+          poster: "/poster.png",
+          controls: true,
+        },
+      },
+      {
+        op: "add",
+        path: "/nodes/legacy",
+        value: {
+          id: "legacy",
+          type: "image",
+          src: "https://picsum.photos/seed/legacy/600/400",
+          alt: "legacy",
+        },
+      },
+      { op: "add", path: "/nodes/root/children/0", value: "carousel" },
+    ];
+
+    const folded = foldPatchIntoStage(rootBox, patches);
+    expect(folded.issues).toHaveLength(0);
+    expect(folded.tree.nodes["carousel"]).toMatchObject({
+      type: "box",
+      style: { scroll: "x", columns: 3 },
+    });
+    expect(folded.tree.nodes["clip"]).toMatchObject({
+      type: "media",
+      kind: "video",
+      poster: "/poster.png",
+      controls: true,
+    });
+    expect(folded.tree.nodes["legacy"]).toMatchObject({ type: "media", kind: "image" });
+
+    const direct = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: {}, children: ["carousel"] },
+        carousel: {
+          id: "carousel",
+          type: "box",
+          style: { scroll: "x", columns: 3 },
+          children: ["clip", "legacy"],
+        },
+        clip: {
+          id: "clip",
+          type: "media",
+          kind: "video",
+          src: "https://cdn.example.com/clip.mp4",
+          poster: "/poster.png",
+          controls: true,
+        },
+        legacy: {
+          id: "legacy",
+          type: "image",
+          src: "https://picsum.photos/seed/legacy/600/400",
+          alt: "legacy",
+        },
+      },
+    });
+    expect(folded.tree).toEqual(direct.tree);
+  });
+
+  it("strips junk media kind, scroll axis, and columns with bounded issues", () => {
+    const patches: JsonPatchOperation[] = [
+      {
+        op: "add",
+        path: "/nodes/junky",
+        value: {
+          id: "junky",
+          type: "box",
+          style: { scroll: "sideways", columns: "lots" },
+          children: ["badMedia"],
+        },
+      },
+      {
+        op: "add",
+        path: "/nodes/badMedia",
+        value: {
+          id: "badMedia",
+          type: "media",
+          kind: "gif3d",
+          src: "https://cdn.example.com/bad.gif",
+        },
+      },
+      { op: "add", path: "/nodes/root/children/0", value: "junky" },
+    ];
+
+    const { tree, issues } = foldPatchIntoStage(rootBox, patches);
+    expect(tree.nodes["badMedia"]).toBeUndefined();
+    const junky = tree.nodes["junky"] as unknown as { style?: Record<string, unknown> };
+    expect(junky.style?.["scroll"]).toBeUndefined();
+    expect(junky.style?.["columns"]).toBeUndefined();
+    expect(issues.some((issue) => issue.includes("media"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("scroll"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("columns"))).toBe(true);
+    expect(issues.join("\n").length).toBeLessThan(500);
   });
 });
 

@@ -128,10 +128,10 @@ served HTML shell for the renderer (no new protocol message). An explicit
 ## Stub mode
 
 `--stub` wires `createStubAgent()` instead of an LLM: a fixed fixture page
-(hero, a name+email form whose submit collects the fields, and two
-navigate-linked screens) with fully deterministic replies — zero network, zero
-randomness. It exists for a keyless look around and as the fixture behind the
-repo's `/live-test` Tier-1 gate.
+(hero, a native form whose submit collects fields, and two navigate-linked
+screens) with fully deterministic replies — zero network, zero randomness. It
+exists for a keyless look around and as the fixture behind the repo's
+`/live-test` Tier-1 gate.
 
 `--stub` composes with `--assets`: the shell still carries the theme map and the
 initial tree still seeds. A chat message of `theme <name>` makes the stub select

@@ -1904,7 +1904,7 @@ describe("hardening", () => {
     expect(response.status).toBe(400);
   });
 
-  it("rejects an action event with a non-string fields value", async () => {
+  it("rejects an action event with a non-string/non-boolean fields value", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
     const response = await postEvent(base, "v", {
@@ -1946,7 +1946,7 @@ describe("hardening", () => {
     const { server, base } = await start({ agentId: "a", agent: capturingAgent });
     running = server;
     // A value at exactly the cap is valid — the boundary is inclusive.
-    const fields = { name: "Ada", note: "y".repeat(MAX_FIELD_VALUE_CHARS) };
+    const fields = { name: "Ada", note: "y".repeat(MAX_FIELD_VALUE_CHARS), agree: true };
     const response = await postEvent(base, "v", {
       kind: "tap",
       action: { name: "submit", payload: { screen: "form" } },

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isPrimitiveRecord,
-  isSafeImageSrc,
+  isSafeMediaSrc,
   MAX_DEPTH,
   MAX_RENDER_NODES,
   MAX_SCREENS,
@@ -609,40 +609,215 @@ describe("validateStamp description", () => {
   });
 });
 
-describe("isSafeImageSrc", () => {
+describe("isSafeMediaSrc", () => {
   it("accepts data:image/ URLs", () => {
-    expect(isSafeImageSrc("data:image/png;base64,AAAA")).toBe(true);
+    expect(isSafeMediaSrc("data:image/png;base64,AAAA")).toBe(true);
   });
 
   it("rejects data:text/html URLs", () => {
-    expect(isSafeImageSrc("data:text/html,<script>alert(1)</script>")).toBe(false);
+    expect(isSafeMediaSrc("data:text/html,<script>alert(1)</script>")).toBe(false);
   });
 
   it("accepts protocol-relative //cdn URLs", () => {
-    expect(isSafeImageSrc("//cdn.example.com/x.png")).toBe(true);
+    expect(isSafeMediaSrc("//cdn.example.com/x.png")).toBe(true);
   });
 
   it("accepts absolute /local paths", () => {
-    expect(isSafeImageSrc("/local/x.png")).toBe(true);
+    expect(isSafeMediaSrc("/local/x.png")).toBe(true);
   });
 
   it("accepts http:// and https:// URLs", () => {
-    expect(isSafeImageSrc("https://example.com/x.png")).toBe(true);
-    expect(isSafeImageSrc("http://example.com/x.png")).toBe(true);
+    expect(isSafeMediaSrc("https://example.com/x.png")).toBe(true);
+    expect(isSafeMediaSrc("http://example.com/x.png")).toBe(true);
   });
 
   it("rejects javascript: URLs", () => {
-    expect(isSafeImageSrc("javascript:alert(1)")).toBe(false);
+    expect(isSafeMediaSrc("javascript:alert(1)")).toBe(false);
   });
 
   it("rejects a bare relative path (no leading slash or scheme)", () => {
-    expect(isSafeImageSrc("images/x.png")).toBe(false);
+    expect(isSafeMediaSrc("images/x.png")).toBe(false);
   });
 
   it("ignores case and surrounding whitespace", () => {
-    expect(isSafeImageSrc("  HTTPS://example.com/x.png  ")).toBe(true);
-    expect(isSafeImageSrc("  DATA:IMAGE/PNG;base64,AAAA")).toBe(true);
-    expect(isSafeImageSrc("  JavaScript:alert(1)")).toBe(false);
+    expect(isSafeMediaSrc("  HTTPS://example.com/x.png  ")).toBe(true);
+    expect(isSafeMediaSrc("  DATA:IMAGE/PNG;base64,AAAA")).toBe(true);
+    expect(isSafeMediaSrc("  JavaScript:alert(1)")).toBe(false);
+  });
+});
+
+describe("brick-vocab v1 core validation", () => {
+  const rootWith = (nodes: Record<string, unknown>): unknown => ({
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", children: Object.keys(nodes) },
+      ...nodes,
+    },
+  });
+
+  it("keeps media video nodes and normalizes legacy image nodes to media image", () => {
+    const { tree, issues } = validateTree(
+      rootWith({
+        clip: {
+          id: "clip",
+          type: "media",
+          kind: "video",
+          src: "https://cdn.example.com/clip.mp4",
+          alt: "Launch",
+          poster: "/posters/launch.png",
+          controls: true,
+          style: { radius: "md", width: "full", ratio: "wide" },
+        },
+        legacy: {
+          id: "legacy",
+          type: "image",
+          src: "https://picsum.photos/seed/legacy/600/400",
+          alt: "legacy",
+        },
+        legacyNoisy: {
+          id: "legacyNoisy",
+          type: "image",
+          kind: "gif3d",
+          src: "https://picsum.photos/seed/noisy/600/400",
+          alt: "legacy noisy",
+        },
+      }),
+    );
+
+    expect(issues).toHaveLength(0);
+    expect(tree.nodes["clip"]).toEqual({
+      id: "clip",
+      type: "media",
+      kind: "video",
+      src: "https://cdn.example.com/clip.mp4",
+      alt: "Launch",
+      poster: "/posters/launch.png",
+      controls: true,
+      style: { radius: "md", width: "full", ratio: "wide" },
+    });
+    expect(tree.nodes["legacy"]).toMatchObject({
+      id: "legacy",
+      type: "media",
+      kind: "image",
+      src: "https://picsum.photos/seed/legacy/600/400",
+      alt: "legacy",
+    });
+    expect(tree.nodes["legacyNoisy"]).toMatchObject({
+      id: "legacyNoisy",
+      type: "media",
+      kind: "image",
+      src: "https://picsum.photos/seed/noisy/600/400",
+      alt: "legacy noisy",
+    });
+  });
+
+  it("drops malformed media with bounded issues and gates src and poster schemes", () => {
+    const { tree, issues } = validateTree(
+      rootWith({
+        missing: { id: "missing", type: "media", kind: "image", alt: "no src" },
+        weird: {
+          id: "weird",
+          type: "media",
+          kind: "gif3d",
+          src: "https://cdn.example.com/weird.gif",
+        },
+        unsafe: {
+          id: "unsafe",
+          type: "media",
+          kind: "video",
+          src: "javascript:alert(1)",
+        },
+        poster: {
+          id: "poster",
+          type: "media",
+          kind: "video",
+          src: "https://cdn.example.com/movie.mp4",
+          poster: "data:text/html,<script>alert(1)</script>",
+        },
+      }),
+    );
+
+    expect(tree.nodes["missing"]).toBeUndefined();
+    expect(tree.nodes["weird"]).toBeUndefined();
+    expect(tree.nodes["unsafe"]).toBeUndefined();
+    expect(tree.nodes["poster"]).toMatchObject({ type: "media", kind: "video" });
+    expect(tree.nodes["poster"]).not.toHaveProperty("poster");
+    expect(issues.some((issue) => issue.includes("media") || issue.includes("src"))).toBe(true);
+    expect(issues.join("\n").length).toBeLessThan(500);
+  });
+
+  it("sanitizes field inputs and options", () => {
+    const long = "x".repeat(5000);
+    const { tree, issues } = validateTree(
+      rootWith({
+        select: {
+          id: "select",
+          type: "field",
+          name: "plan",
+          input: "select",
+          options: ["Free", 7, "Pro", long],
+        },
+        checkbox: { id: "checkbox", type: "field", name: "tos", input: "checkbox" },
+        radio: { id: "radio", type: "field", name: "size", input: "radio", options: [] },
+        emptySelect: { id: "emptySelect", type: "field", name: "empty", input: "select" },
+        switcher: { id: "switcher", type: "field", name: "alerts", input: "switch" },
+        unknown: { id: "unknown", type: "field", name: "mystery", input: "colorwheel" },
+      }),
+    );
+
+    expect(issues).toEqual([
+      'node "radio": "radio" field has no valid options — rendered control will be empty',
+      'node "emptySelect": "select" field has no valid options — rendered control will be empty',
+    ]);
+    expect(tree.nodes["select"]).toMatchObject({
+      type: "field",
+      input: "select",
+      options: ["Free", "Pro", "x".repeat(2000)],
+    });
+    expect(tree.nodes["checkbox"]).toMatchObject({ type: "field", input: "checkbox" });
+    expect(tree.nodes["radio"]).not.toHaveProperty("options");
+    expect(tree.nodes["emptySelect"]).toMatchObject({ type: "field", input: "select" });
+    expect(tree.nodes["emptySelect"]).not.toHaveProperty("options");
+    expect(tree.nodes["switcher"]).toMatchObject({ type: "field", input: "switch" });
+    expect(tree.nodes["unknown"]).not.toHaveProperty("input");
+  });
+
+  it("keeps scroll axes and columns tokens while stripping unknown values with issues", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: ["x", "y", "legacy", "grid", "badScroll", "badColumns"],
+        },
+        x: { id: "x", type: "box", style: { scroll: "x" }, children: [] },
+        y: { id: "y", type: "box", style: { scroll: "y" }, children: [] },
+        legacy: { id: "legacy", type: "box", style: { scroll: true }, children: [] },
+        grid: { id: "grid", type: "box", style: { columns: 3 }, children: [] },
+        badScroll: { id: "badScroll", type: "box", style: { scroll: "sideways" }, children: [] },
+        badColumns: { id: "badColumns", type: "box", style: { columns: 9 }, children: [] },
+      },
+    });
+
+    const styleOf = (id: string): Record<string, unknown> | undefined =>
+      (tree.nodes[id] as unknown as { style?: Record<string, unknown> }).style;
+    expect(styleOf("x")?.["scroll"]).toBe("x");
+    expect(styleOf("y")?.["scroll"]).toBe("y");
+    expect(styleOf("legacy")?.["scroll"]).toBe("y");
+    expect(styleOf("grid")?.["columns"]).toBe(3);
+    expect(styleOf("badScroll")?.["scroll"]).toBeUndefined();
+    expect(styleOf("badColumns")?.["columns"]).toBeUndefined();
+    expect(issues.some((issue) => issue.includes("scroll"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("columns"))).toBe(true);
+  });
+
+  it("renames the URL gate to isSafeMediaSrc without relaxing unsafe schemes", () => {
+    expect(isSafeMediaSrc("data:image/png;base64,AAAA")).toBe(true);
+    expect(isSafeMediaSrc("https://example.com/video.mp4")).toBe(true);
+    expect(isSafeMediaSrc("/static/movie.mp4")).toBe(true);
+    expect(isSafeMediaSrc("data:text/html,<script>alert(1)</script>")).toBe(false);
+    expect(isSafeMediaSrc("javascript:alert(1)")).toBe(false);
   });
 });
 
@@ -763,7 +938,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
       onHold?: Record<string, unknown>;
     };
     expect(keptRoot.style?.["appear"]).toBe("fade");
-    expect(keptRoot.style?.["scroll"]).toBe(true);
+    expect(keptRoot.style?.["scroll"]).toBe("y");
     expect(keptRoot.onHold).toEqual({
       kind: "agent",
       name: "peek",
@@ -782,8 +957,8 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     expect(explodeRoot.style?.["appear"]).toBeUndefined();
     expect(explodeRun.issues.some((i) => i.includes("appear"))).toBe(true);
 
-    // scroll junk — only a literal boolean survives; strings/numbers are stripped.
-    for (const scroll of ["sideways", 1, "y"]) {
+    // scroll junk — only axes or legacy true survive; other strings/numbers are stripped.
+    for (const scroll of ["sideways", 1]) {
       const { tree, issues } = validateTree({
         root: "root",
         nodes: { root: { id: "root", type: "box", style: { scroll }, children: [] } },
@@ -857,7 +1032,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
   });
 
   it("strips appear/scroll from non-box styles — the new style tokens are BoxStyle-only", () => {
-    // appear and scroll live on BoxStyle only; text/image/field styles never
+    // appear and scroll live on BoxStyle only; text/media/field styles never
     // carry them, so validateTree must drop them there (the renderer's
     // BoxStyle-only raw path then matches the validated path — no divergence).
     const run = validateTree({

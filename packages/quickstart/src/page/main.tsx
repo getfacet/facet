@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { isTreeShaped } from "@facet/core";
-import type { FacetAction, FacetTheme, FacetTree, VisitorContext } from "@facet/core";
+import type { FacetAction, FacetTheme, FacetTree, FieldValues, VisitorContext } from "@facet/core";
 import { browserVisitorId, SseTransport } from "@facet/client";
 import { ChatDock, resolveTheme, StageRenderer, useFacet, type ChatMessage } from "@facet/react";
 
@@ -111,7 +111,7 @@ function Page(): ReactNode {
     }
   }, [chat]);
 
-  const onAction = (action: FacetAction, fields?: Readonly<Record<string, string>>): void => {
+  const onAction = (action: FacetAction, fields?: FieldValues): void => {
     // Conditional construction: exactOptionalPropertyTypes forbids an explicit
     // `fields: undefined` on the event (the Decision-2 shape).
     send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });
