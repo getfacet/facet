@@ -609,6 +609,31 @@ describe("browser channel", () => {
     }
   });
 
+  it("does not block later same-visitor events while a streamed turn sink record is pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "one" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      await postEvent(base, "v", { kind: "message", text: "two" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "two" });
+    } finally {
+      sink.release();
+      await liveReader.close();
+    }
+  });
+
   it("full rehydrate ends instead of silently dropping active says that fell out of the ring", async () => {
     let yielded = 0;
     let release!: () => void;

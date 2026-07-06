@@ -47,6 +47,7 @@ export interface TurnResult {
 }
 
 export type RuntimeFrameSink = (messages: readonly ServerMessage[]) => void;
+export type RuntimeRecordSink = (settled: Promise<void>) => void;
 
 interface RecordSlot {
   readonly resolve: (entry: StoredEvent | null) => void;
@@ -69,10 +70,10 @@ export class FacetRuntime {
   // Serialize events per (agent, visitor) so concurrent same-visitor events don't
   // race on the open→apply→save read-modify-write. Different visitors stay parallel.
   private readonly serialize = createSerialQueue<TurnResult>();
-  // Serialize sink records per (agent, visitor) too. Local `record()` calls can be
-  // fire-and-forget, while agent turns await their reserved slot at turn end so a
-  // fresh rehydrate can see the just-delivered turn in history before the server
-  // drops its in-flight frame fallback. Different visitors stay parallel.
+  // Serialize sink records per (agent, visitor) too. Writes are fire-and-forget from
+  // the turn lane, but a transport can observe the reserved slot's settle promise
+  // and keep its own replay fallback alive until history sees the turn. Different
+  // visitors stay parallel.
   private readonly serializeRecord = createSerialQueue<void>();
   // Session keys armed by `takeSeeded` but not yet DELIVERED. `takeSeeded`
   // reports a fresh seed at most once, so parking the KEY here lets a turn that
@@ -115,6 +116,7 @@ export class FacetRuntime {
     visitor: VisitorContext,
     event: ClientEvent,
     onFrame?: RuntimeFrameSink,
+    onRecordSettled?: RuntimeRecordSink,
   ): Promise<TurnResult> {
     // Reserve this turn's Sink-write slot on serializeRecord NOW, in call order,
     // BEFORE the (async) turn runs — otherwise a record() called during the turn
@@ -124,10 +126,9 @@ export class FacetRuntime {
     const recordSlot = this.reserveRecordSlot(visitor.visitorId);
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       try {
-        return await this.handleOne(visitor, event, recordSlot, onFrame);
+        return await this.handleOne(visitor, event, recordSlot, onFrame, onRecordSettled);
       } catch (error) {
         recordSlot.resolve(null);
-        await recordSlot.settled;
         throw error;
       }
     });
@@ -175,8 +176,8 @@ export class FacetRuntime {
    * so a record() called after this returns can't enqueue its write first (the
    * in-process transports have no outer lane; @facet/server does). The slot awaits
    * the turn's entry; a turn that never persists resolves it to null (records
-   * nothing, matching prior behavior). Agent turns await `settled` before they
-   * finish so the server's rehydrate fallback does not outlive the sink history.
+   * nothing, matching prior behavior). Agent turns can expose `settled` to their
+   * transport, but they do not await it on the stage/delivery lane.
    */
   private reserveRecordSlot(visitorId: string): RecordSlot {
     let resolve!: (entry: StoredEvent | null) => void;
@@ -203,6 +204,7 @@ export class FacetRuntime {
     visitor: VisitorContext,
     event: ClientEvent,
     messages: readonly ServerMessage[],
+    onRecordSettled?: RuntimeRecordSink,
   ): Promise<TurnResult> {
     // Reserve the Sink-write slot synchronously (same reason as `handle`): this
     // path also persists, so a later `record` must not overtake its write.
@@ -210,10 +212,17 @@ export class FacetRuntime {
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       try {
         const session = await this.stageStore.open(this.agentId, visitor);
-        return await this.streamTurn(visitor, session, event, messages, recordSlot);
+        return await this.streamTurn(
+          visitor,
+          session,
+          event,
+          messages,
+          recordSlot,
+          undefined,
+          onRecordSettled,
+        );
       } catch (error) {
         recordSlot.resolve(null);
-        await recordSlot.settled;
         throw error;
       }
     });
@@ -224,10 +233,11 @@ export class FacetRuntime {
     event: ClientEvent,
     recordSlot: RecordSlot,
     onFrame: RuntimeFrameSink | undefined,
+    onRecordSettled: RuntimeRecordSink | undefined,
   ): Promise<TurnResult> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const result = this.agent(event, session);
-    return this.streamTurn(visitor, session, event, result, recordSlot, onFrame);
+    return this.streamTurn(visitor, session, event, result, recordSlot, onFrame, onRecordSettled);
   }
 
   /**
@@ -235,8 +245,8 @@ export class FacetRuntime {
    * batch is folded once, saved, then delivered synchronously before the next
    * batch is pulled. The Sink record stays turn-scoped: raw agent messages are
    * accumulated and written exactly once after the stream finishes, or after a
-   * mid-stream producer throw with already-persisted batches. The write is awaited
-   * before the turn leaves the lane, after any saved batches have been delivered.
+   * mid-stream producer throw with already-persisted batches. The write is resolved
+   * after saved batches have been delivered, without blocking the next lane task.
    */
   private async streamTurn(
     visitor: VisitorContext,
@@ -245,6 +255,7 @@ export class FacetRuntime {
     result: Parameters<typeof iterateAgentResult>[0],
     recordSlot: RecordSlot,
     onFrame?: RuntimeFrameSink,
+    onRecordSettled?: RuntimeRecordSink,
   ): Promise<TurnResult> {
     const key = sessionKey(this.agentId, visitor.visitorId);
     if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
@@ -283,13 +294,13 @@ export class FacetRuntime {
       else returned.push(...frame);
     };
 
-    const settleRecord = async (entry: StoredEvent): Promise<void> => {
+    const settleRecord = (entry: StoredEvent): void => {
       recordSlot.resolve(entry);
-      await recordSlot.settled;
+      onRecordSettled?.(recordSlot.settled);
     };
 
-    const finishPartial = async (): Promise<TurnResult> => {
-      await settleRecord({ at: Date.now(), event, messages: accumulated });
+    const finishPartial = (): TurnResult => {
+      settleRecord({ at: Date.now(), event, messages: accumulated });
       if (seedPrepended) this.pendingSeeds.delete(key);
       return { messages: onFrame === undefined ? returned : [], agentMutated };
     };
@@ -354,7 +365,7 @@ export class FacetRuntime {
       }
       seedPrepended = true;
     }
-    await settleRecord({ at: Date.now(), event, messages: accumulated });
+    settleRecord({ at: Date.now(), event, messages: accumulated });
     if (persistedAnyBatch || seedPrepended) this.pendingSeeds.delete(key);
     return { messages: onFrame === undefined ? returned : [], agentMutated };
   }
