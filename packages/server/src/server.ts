@@ -427,6 +427,35 @@ function pendingSayFramesForRehydrate(
   return pendingSayFrames;
 }
 
+function pendingTurnsForLog(
+  handling: Map<string, HandlingTurn[]>,
+  visitorId: string,
+  log: FrameLog,
+): readonly HandlingTurn[] {
+  return handling.get(visitorId)?.filter((turn) => turn.era === log.era) ?? [];
+}
+
+function lostPendingTurn(before: readonly HandlingTurn[], after: readonly HandlingTurn[]): boolean {
+  return before.some((turn) => !after.includes(turn));
+}
+
+async function historyForRehydrate(
+  runtime: FacetRuntime,
+  visitorId: string,
+  handling: Map<string, HandlingTurn[]>,
+  log: FrameLog,
+): Promise<readonly StoredEvent[]> {
+  let pendingBefore = pendingTurnsForLog(handling, visitorId, log);
+  let history = await runtime.historyFor(visitorId);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const pendingAfter = pendingTurnsForLog(handling, visitorId, log);
+    if (!lostPendingTurn(pendingBefore, pendingAfter)) return history;
+    pendingBefore = pendingAfter;
+    history = await runtime.historyFor(visitorId);
+  }
+  return history;
+}
+
 function writeFullRehydrate(
   res: ServerResponse,
   stage: FacetTree | undefined,
@@ -462,9 +491,9 @@ async function rehydrateFromLane(
 ): Promise<void> {
   const stage = await runtime.stageFor(visitorId);
   if (isClosed()) return;
-  const history = await runtime.historyFor(visitorId);
-  if (isClosed()) return;
   const log = frameLog.logFor(visitorId);
+  const history = await historyForRehydrate(runtime, visitorId, handling, log);
+  if (isClosed()) return;
   const pendingSayFrames = pendingSayFramesForRehydrate(handling, visitorId, log, log.nextSeq - 1);
   writeFullRehydrate(res, stage, history, pendingSayFrames);
   join();
@@ -503,7 +532,7 @@ async function rehydrate(
   try {
     const stage = await runtime.stageFor(visitorId);
     if (isClosed()) return;
-    const history = await runtime.historyFor(visitorId);
+    const history = await historyForRehydrate(runtime, visitorId, handling, log);
     if (isClosed()) return;
     const current = frameLog.peek(visitorId);
     if (current !== log || current.era !== capturedEra) {

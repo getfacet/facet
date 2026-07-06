@@ -325,6 +325,7 @@ class GatedMessageSink implements Sink {
   private readonly inner = new MemorySink();
   gateMessageRecord = false;
   gateMessageText: string | undefined;
+  releaseOnNextHistory = false;
   messageRecordStarted = false;
   private releaseHeld: () => void = () => {};
   private readonly held = new Promise<void>((r) => {
@@ -350,8 +351,14 @@ class GatedMessageSink implements Sink {
     }
     return this.inner.record(agentId, visitorId, entry);
   }
-  history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
-    return this.inner.history(agentId, visitorId);
+  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    const entries = await this.inner.history(agentId, visitorId);
+    if (this.releaseOnNextHistory) {
+      this.releaseOnNextHistory = false;
+      this.release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return entries;
   }
 }
 
@@ -612,6 +619,36 @@ describe("browser channel", () => {
       sink.release();
       await liveReader.close();
       await rehydrateReader?.close();
+    }
+  });
+
+  it("full rehydrate keeps a streamed say whose sink record settles during the history read", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      sink.releaseOnNextHistory = true;
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 500);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
     }
   });
 
