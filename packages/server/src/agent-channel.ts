@@ -116,7 +116,8 @@ export function createAgentChannel(deps: AgentChannelDeps): AgentChannel {
     }
   };
 
-  /** The remote agent, presented to the runtime as a normal FacetAgent. */
+  /** The remote agent, presented to the runtime as a normal FacetAgent.
+   * V1 streaming is in-process only: this boundary resolves one control batch. */
   const remoteAgent: FacetAgent = (event: ClientEvent, session: FacetSession) => {
     const stream = agentStream;
     if (stream === null) {

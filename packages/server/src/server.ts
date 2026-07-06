@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
+  asAgentServerMessage,
   createSerialQueue,
   isPrimitiveRecord,
   MAX_FIELD_VALUE_CHARS,
@@ -15,12 +16,25 @@ import {
   type TapEffect,
   type VisitorContext,
 } from "@facet/core";
-import { FacetRuntime, type Sink, type StageStore, type TurnResult } from "@facet/runtime";
-import { createFrameLogStore, type FrameLogStore } from "./frame-log.js";
+import {
+  FacetRuntime,
+  type Sink,
+  type StageStore,
+  type StoredEvent,
+  type TurnResult,
+} from "@facet/runtime";
+import {
+  createFrameLogStore,
+  type FrameLog,
+  type FrameLogStore,
+  type LoggedFrame,
+} from "./frame-log.js";
 import { writeSse } from "./sse.js";
 import { createLateWindow, isStaleLateResult, LATE_WINDOW_LIMIT, type LateWindow } from "./late.js";
 import { DEFAULT_OFFLINE_FACE } from "./offline.js";
 import { createAgentChannel, type AgentChannel } from "./agent-channel.js";
+
+const MAX_REHYDRATE_REREADS = 4;
 
 /**
  * The reference Facet transport: a tiny Node server carrying events to an agent
@@ -83,9 +97,9 @@ function setCors(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
 }
 
-/** Write one SSE frame. An optional `id` becomes the `id:` line — used ONLY on the
- * browser channel to carry `<era>:<seq>` for `Last-Event-ID` resume; agent-channel
- * frames pass no id. */
+/** Write one SSE frame. An optional `id` becomes the `id:` line — browser live
+ * frames carry `<era>:<seq>` for resume, while full rehydrate uses an empty id to
+ * clear stale resume state; agent-channel frames pass no id. */
 function sse(res: ServerResponse, data: unknown, id?: string): void {
   writeSse(res, { data }, id);
 }
@@ -95,6 +109,8 @@ function sse(res: ServerResponse, data: unknown, id?: string): void {
 function writeFrame(res: ServerResponse, json: string, id: string): void {
   writeSse(res, { json }, id);
 }
+
+const CLEAR_RESUME_ID = "";
 
 /** Max accepted request body. A single-operator reference transport still shouldn't
  * buffer an unbounded upload into memory, so both POST channels (/event and
@@ -292,15 +308,13 @@ function isControlBody(body: unknown): body is AgentControlFrame {
   // split or not, is 400-rejected here before it can reach the runtime's fold path.
   let totalOps = 0;
   return messages.every((m) => {
-    if (typeof m !== "object" || m === null) return false;
-    const { kind, text, patches } = m as { kind?: unknown; text?: unknown; patches?: unknown };
-    if (kind === "say") return typeof text === "string";
-    if (kind === "patch") {
-      if (!Array.isArray(patches)) return false;
-      totalOps += patches.length;
+    const message = asAgentServerMessage(m);
+    if (message === undefined) return false;
+    if (message.kind === "patch") {
+      totalOps += message.patches.length;
       return totalOps <= MAX_PATCH_OPS;
     }
-    return false;
+    return true;
   });
 }
 
@@ -338,6 +352,205 @@ function resumeStream(
   return true;
 }
 
+function parseLoggedServerMessage(frame: LoggedFrame): ServerMessage | undefined {
+  try {
+    return asAgentServerMessage(JSON.parse(frame.json));
+  } catch {
+    return undefined;
+  }
+}
+
+function retainedSayFrames(
+  frames: readonly LoggedFrame[],
+  minSeq: number,
+  maxSeq: number,
+): LoggedFrame[] {
+  const says: LoggedFrame[] = [];
+  for (const frame of frames) {
+    if (frame.seq < minSeq || frame.seq > maxSeq) continue;
+    const message = parseLoggedServerMessage(frame);
+    if (message?.kind === "say") says.push(frame);
+  }
+  return says;
+}
+
+interface HandlingTurn {
+  readonly index: number;
+  readonly era: string;
+  readonly streamStartSeq: number;
+  streamEndSeq?: number;
+}
+
+/** Runs a single visitor's turns serially (different visitors stay concurrent). */
+type Lane = (key: string, task: () => Promise<void>) => Promise<void>;
+
+function pruneUnrecoverableHandlingTurns(
+  handling: Map<string, HandlingTurn[]>,
+  visitorId: string,
+  log: FrameLog,
+): void {
+  const turns = handling.get(visitorId);
+  if (turns === undefined) return;
+  const oldest = log.frames[0];
+  const remaining = turns.filter(
+    (turn) => turn.era === log.era && (oldest === undefined || turn.streamStartSeq >= oldest.seq),
+  );
+  if (remaining.length === turns.length) return;
+  if (remaining.length === 0) handling.delete(visitorId);
+  else handling.set(visitorId, remaining);
+}
+
+function pendingSayFramesForRehydrate(
+  handling: Map<string, HandlingTurn[]>,
+  visitorId: string,
+  log: FrameLog,
+  history: readonly StoredEvent[],
+  maxSeq: number,
+): LoggedFrame[] {
+  pruneUnrecoverableHandlingTurns(handling, visitorId, log);
+  const pendingTurns = handling.get(visitorId)?.filter((turn) => turn.era === log.era) ?? [];
+  const visibleForwardedTurns = visibleForwardedRecordCountForCurrentEra(history, log);
+  const historySayCounts = sayCountsForHistory(history);
+  const pendingSayFrames: LoggedFrame[] = [];
+  for (const turn of pendingTurns) {
+    if (turn.streamStartSeq > maxSeq) continue;
+    const turnMaxSeq = Math.min(turn.streamEndSeq ?? maxSeq, maxSeq);
+    const frames = retainedSayFrames(log.frames, turn.streamStartSeq, turnMaxSeq);
+    if (visibleForwardedTurns > turn.index && historyContainsSayFrames(historySayCounts, frames)) {
+      continue;
+    }
+    for (const frame of frames) {
+      pendingSayFrames.push(frame);
+    }
+  }
+  return pendingSayFrames;
+}
+
+function sayCountsForHistory(history: readonly StoredEvent[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of history) {
+    for (const message of entry.messages) {
+      if (message.kind !== "say") continue;
+      counts.set(message.text, (counts.get(message.text) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function historyContainsSayFrames(
+  historySayCounts: ReadonlyMap<string, number>,
+  frames: readonly LoggedFrame[],
+): boolean {
+  const needed = new Map<string, number>();
+  for (const frame of frames) {
+    const message = parseLoggedServerMessage(frame);
+    if (message?.kind !== "say") continue;
+    needed.set(message.text, (needed.get(message.text) ?? 0) + 1);
+  }
+  if (needed.size === 0) return false;
+  for (const [text, count] of needed) {
+    if ((historySayCounts.get(text) ?? 0) < count) return false;
+  }
+  return true;
+}
+
+function isForwardedHistoryRecord(entry: StoredEvent): boolean {
+  if (entry.event.kind === "message" || entry.event.kind === "visit") return true;
+  return entry.event.kind === "tap" && entry.event.action !== undefined;
+}
+
+function visibleForwardedRecordCountForCurrentEra(
+  history: readonly StoredEvent[],
+  log: FrameLog,
+): number {
+  const count = history.filter(isForwardedHistoryRecord).length;
+  // The frame log's event counter resets when its era is re-minted, while durable
+  // Sink history does not. In that case the old history cannot identify a pending
+  // turn in the new event-counter space, so keep pending frames rather than risk
+  // dropping a live say.
+  return count <= log.eventCounter ? count : 0;
+}
+
+function pendingTurnsForLog(
+  handling: Map<string, HandlingTurn[]>,
+  visitorId: string,
+  log: FrameLog,
+): readonly HandlingTurn[] {
+  return handling.get(visitorId)?.filter((turn) => turn.era === log.era) ?? [];
+}
+
+function lostPendingTurn(before: readonly HandlingTurn[], after: readonly HandlingTurn[]): boolean {
+  return before.some((turn) => !after.includes(turn));
+}
+
+async function historyForRehydrate(
+  runtime: FacetRuntime,
+  visitorId: string,
+  handling: Map<string, HandlingTurn[]>,
+  log: FrameLog,
+  isClosed: () => boolean,
+): Promise<readonly StoredEvent[]> {
+  let pendingBefore = pendingTurnsForLog(handling, visitorId, log);
+  let history = await runtime.historyFor(visitorId);
+  for (let rereads = 0; rereads < MAX_REHYDRATE_REREADS; rereads += 1) {
+    if (isClosed()) return history;
+    const pendingAfter = pendingTurnsForLog(handling, visitorId, log);
+    if (!lostPendingTurn(pendingBefore, pendingAfter)) return history;
+    pendingBefore = pendingAfter;
+    history = await runtime.historyFor(visitorId);
+  }
+  return history;
+}
+
+function writeFullRehydrate(
+  res: ServerResponse,
+  stage: FacetTree | undefined,
+  history: readonly StoredEvent[],
+  pendingSayFrames: readonly LoggedFrame[],
+): void {
+  sse(res, { kind: "reset" }, CLEAR_RESUME_ID);
+  if (stage !== undefined) {
+    sse(
+      res,
+      { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] },
+      CLEAR_RESUME_ID,
+    );
+  }
+  for (const entry of history) {
+    for (const message of entry.messages) {
+      if (message.kind === "say") sse(res, message, CLEAR_RESUME_ID);
+    }
+  }
+  for (const frame of pendingSayFrames) {
+    writeFrame(res, frame.json, CLEAR_RESUME_ID);
+  }
+}
+
+async function rehydrateFromLane(
+  res: ServerResponse,
+  visitorId: string,
+  frameLog: FrameLogStore,
+  runtime: FacetRuntime,
+  handling: Map<string, HandlingTurn[]>,
+  isClosed: () => boolean,
+  join: () => void,
+): Promise<void> {
+  const stage = await runtime.stageFor(visitorId);
+  if (isClosed()) return;
+  const log = frameLog.logFor(visitorId);
+  const history = await historyForRehydrate(runtime, visitorId, handling, log, isClosed);
+  if (isClosed()) return;
+  const pendingSayFrames = pendingSayFramesForRehydrate(
+    handling,
+    visitorId,
+    log,
+    history,
+    log.nextSeq - 1,
+  );
+  writeFullRehydrate(res, stage, history, pendingSayFrames);
+  join();
+}
+
 // ── browser stream: full rehydrate (out of the lane) ────────────────
 // A token-less new tab (or an unresumable token) gets a full snapshot. This runs
 // OUTSIDE the per-visitor lane so it paints immediately instead of blocking behind
@@ -346,25 +559,22 @@ function resumeStream(
 //   1. capture the watermark (era, N0 = last assigned seq) synchronously, BEFORE
 //      any await;
 //   2. read the stage + history (may await);
-//   3. one synchronous finalization block that FIRST re-checks watermark continuity
-//      — the log entry/era is unchanged AND the ring still retains everything past
-//      N0 (else the captured snapshot can no longer be stitched to the live stream,
-//      so we write nothing and end, the same fail-safe the store-error path uses) —
-//      then writes: unstamped {kind:"reset"} → snapshot stamped `era:N0` → history
-//      says stamped `era:N0` → replay ring frames with seq > N0 (their own ids) →
-//      join.
-// `deliver` and this block are both synchronous, so they cannot interleave; anything
-// delivered during step 2 has seq > N0, lives in the ring, and is replayed before
-// the join — nothing is lost in the snapshot-read→join window. Stamping starts at
-// the SNAPSHOT, never the reset, so a resume token can only exist in a client that
-// received a stage base: if step 2 fails, continuity fails, or the connection drops
-// before step 3, no stamped frame was written, the client holds no token, and its
-// retry performs a full rehydrate.
+//   3. one synchronous finalization block that re-checks whether a same-visitor
+//      frame landed during the read. If not, it writes reset/snapshot/history with
+//      an EMPTY id (clearing any stale Last-Event-ID) and joins. If a frame did
+//      land, it falls back to a visitor-lane rehydrate barrier: the lane prevents
+//      another same-visitor frame from interleaving with the replacement snapshot,
+//      avoiding both double-apply and endless EventSource retry under steady traffic.
+// Full-rehydrate frames deliberately clear the resume token instead of minting one
+// from non-logged snapshot/history data; if step 2 fails, the response ends so the
+// retry performs another full rehydrate.
 async function rehydrate(
   res: ServerResponse,
   visitorId: string,
   frameLog: FrameLogStore,
   runtime: FacetRuntime,
+  handling: Map<string, HandlingTurn[]>,
+  lane: Lane,
   isClosed: () => boolean,
   join: () => void,
 ): Promise<void> {
@@ -374,39 +584,39 @@ async function rehydrate(
   try {
     const stage = await runtime.stageFor(visitorId);
     if (isClosed()) return;
-    const history = await runtime.historyFor(visitorId);
+    const history = await historyForRehydrate(runtime, visitorId, handling, log, isClosed);
     if (isClosed()) return;
     const current = frameLog.peek(visitorId);
     if (current !== log || current.era !== capturedEra) {
-      // The entry was LRU-evicted and re-minted during the reads: unstitchable.
-      res.end();
+      // The entry was LRU-evicted and re-minted during the reads. Fall back to
+      // the lane, which re-reads from a stable point and joins with the new era.
+      await lane(visitorId, async () => {
+        if (!isClosed()) {
+          await rehydrateFromLane(res, visitorId, frameLog, runtime, handling, isClosed, join);
+        }
+      });
       return;
     }
-    const oldest = current.frames[0];
-    if (oldest !== undefined && oldest.seq > n0 + 1) {
-      // The head of the gap fell off the ring during a slow read: unstitchable.
-      res.end();
+    if (current.nextSeq - 1 > n0) {
+      // A frame landed while the stage/history reads were in flight. The returned
+      // snapshot may or may not include that frame's patch effects; joining now
+      // would either miss it or double-apply it. Re-read inside the visitor lane
+      // instead of ending and relying on retry quietness.
+      await lane(visitorId, async () => {
+        if (!isClosed()) {
+          await rehydrateFromLane(res, visitorId, frameLog, runtime, handling, isClosed, join);
+        }
+      });
       return;
     }
-    const stampId = `${current.era}:${n0}`;
-    sse(res, { kind: "reset" });
-    if (stage !== undefined) {
-      sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] }, stampId);
-    }
-    for (const entry of history) {
-      for (const message of entry.messages) {
-        if (message.kind === "say") sse(res, message, stampId);
-      }
-    }
-    // Replay frames delivered during the reads (seq > N0) so nothing in the
-    // snapshot-read→join window is lost. A replayed frame may describe a change the
-    // snapshot already holds; that is safe not because ops are idempotent (an array
-    // append like `children/-` is NOT — it would double-apply) but because the
-    // renderer de-dupes sibling ids and the client's fail-safe drops any batch that
-    // no longer applies cleanly to its (already-current) tree.
-    for (const frame of current.frames) {
-      if (frame.seq > n0) writeFrame(res, frame.json, `${current.era}:${frame.seq}`);
-    }
+    const pendingSayFrames = pendingSayFramesForRehydrate(
+      handling,
+      visitorId,
+      current,
+      history,
+      n0,
+    );
+    writeFullRehydrate(res, stage, history, pendingSayFrames);
     join();
   } catch (error: unknown) {
     // Rehydrate failed BEFORE the connection joined the fan-out set — logging alone
@@ -418,8 +628,27 @@ async function rehydrate(
   }
 }
 
-/** Runs a single visitor's turns serially (different visitors stay concurrent). */
-type Lane = (key: string, task: () => Promise<void>) => Promise<void>;
+function addHandlingTurn(
+  handling: Map<string, HandlingTurn[]>,
+  visitorId: string,
+  turn: HandlingTurn,
+): void {
+  const turns = handling.get(visitorId) ?? [];
+  turns.push(turn);
+  handling.set(visitorId, turns);
+}
+
+function removeHandlingTurn(
+  handling: Map<string, HandlingTurn[]>,
+  visitorId: string,
+  turn: HandlingTurn,
+): void {
+  const current = handling.get(visitorId);
+  if (current === undefined) return;
+  const remaining = current.filter((candidate) => candidate !== turn);
+  if (remaining.length === 0) handling.delete(visitorId);
+  else handling.set(visitorId, remaining);
+}
 
 /** The runtime-facing wiring the two POST handlers share: the delivery lane, the
  * runtime, the frame log, and the synchronous fan-out (`deliver`, which stays in
@@ -432,7 +661,7 @@ interface PostHandlerDeps {
   /** The arrival {index, era} of the turn each visitor's lane is currently
    * handling — server-local so an LRU eviction of the frame log can't detach it
    * mid-turn. One entry per in-flight visitor turn; deleted when the turn ends. */
-  readonly handling: Map<string, { readonly index: number; readonly era: string }>;
+  readonly handling: Map<string, HandlingTurn[]>;
 }
 
 /** POST /event: shape-check the untrusted body, ack 202, then run the turn on the
@@ -461,11 +690,22 @@ function handleEvent(req: IncomingMessage, res: ServerResponse, deps: PostHandle
       void lane(visitor.visitorId, async () => {
         // Tag the in-flight turn so a timed-out park picks up this arrival pair
         // (kept in a server-local map, NOT on the LRU-evictable log entry).
-        handling.set(visitor.visitorId, arrival);
+        const turn: HandlingTurn = {
+          ...arrival,
+          streamStartSeq: frameLog.logFor(visitor.visitorId).nextSeq,
+        };
+        addHandlingTurn(handling, visitor.visitorId, turn);
+        let recordSettled: Promise<void> | undefined;
         let result: TurnResult = { messages: [], agentMutated: false };
         try {
-          result = await runtime.handle(visitor, event);
-          deliver(visitor.visitorId, result.messages);
+          result = await runtime.handle(
+            visitor,
+            event,
+            (messages) => deliver(visitor.visitorId, messages),
+            (settled) => {
+              recordSettled = settled;
+            },
+          );
         } catch (error) {
           // Don't leave the visitor staring at a 202 that went nowhere.
           console.error("[facet] handle failed:", error);
@@ -484,7 +724,13 @@ function handleEvent(req: IncomingMessage, res: ServerResponse, deps: PostHandle
           // seed frame is a patch that mutated nothing.)
           if (result.agentMutated)
             frameLog.recordApplied(visitor.visitorId, arrival.index, arrival.era);
-          handling.delete(visitor.visitorId);
+          turn.streamEndSeq = frameLog.logFor(visitor.visitorId).nextSeq - 1;
+          const removeTurn = (): void => removeHandlingTurn(handling, visitor.visitorId, turn);
+          if (recordSettled === undefined) {
+            removeTurn();
+          } else {
+            void recordSettled.finally(removeTurn);
+          }
         }
       });
     })
@@ -540,7 +786,7 @@ function handleControl(
   lateWindow: LateWindow,
   deps: PostHandlerDeps,
 ): void {
-  const { lane, runtime, frameLog, deliver } = deps;
+  const { lane, runtime, frameLog, deliver, handling } = deps;
   readJson(req)
     .then((body) => {
       if (!isControlBody(body)) {
@@ -559,6 +805,12 @@ function handleControl(
           // lane as live turns so it can't race one for that visitor.
           const parked = { era: late.era, index: late.index };
           void lane(late.visitor.visitorId, async () => {
+            const turn: HandlingTurn = {
+              ...parked,
+              streamStartSeq: frameLog.logFor(late.visitor.visitorId).nextSeq,
+            };
+            addHandlingTurn(handling, late.visitor.visitorId, turn);
+            let recordSettled: Promise<void> | undefined;
             try {
               // If a NEWER turn already mutated this visitor's stage (or the frame
               // log was re-minted since the park), this late result's stage
@@ -568,7 +820,14 @@ function handleControl(
               // honors the interim promise without rolling the stage back.
               const stale = isStaleLateResult(parked, frameLog.logFor(late.visitor.visitorId));
               const toApply = stale ? messages.filter((m) => m.kind === "say") : messages;
-              const applied = await runtime.applyMessages(late.visitor, late.event, toApply);
+              const applied = await runtime.applyMessages(
+                late.visitor,
+                late.event,
+                toApply,
+                (settled) => {
+                  recordSettled = settled;
+                },
+              );
               deliver(late.visitor.visitorId, applied.messages);
               // Record only a REAL stage mutation (the fold's effect-based flag,
               // mirroring the live path): a late patch whose ops all failed
@@ -584,6 +843,15 @@ function handleControl(
               deliver(late.visitor.visitorId, [
                 { kind: "say", text: "(the agent hit an error — try again)" },
               ]);
+            } finally {
+              turn.streamEndSeq = frameLog.logFor(late.visitor.visitorId).nextSeq - 1;
+              const removeTurn = (): void =>
+                removeHandlingTurn(handling, late.visitor.visitorId, turn);
+              if (recordSettled === undefined) {
+                removeTurn();
+              } else {
+                void recordSettled.finally(removeTurn);
+              }
             }
           });
         }
@@ -606,10 +874,11 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   // Per-session replay log (server-local — the Sink is NOT the replay store) and the
   // bounded late-delivery window for parked timed-out/dropped turns.
   const frameLog: FrameLogStore = createFrameLogStore();
-  // The arrival {index, era} of the turn each visitor's lane is currently
-  // handling — server-local so an LRU eviction of the frame log can't detach it
-  // mid-turn. One entry per in-flight visitor turn; deleted when the turn ends.
-  const handling = new Map<string, { readonly index: number; readonly era: string }>();
+  // Arrival + frame ranges for turns whose Sink record may not be visible to
+  // rehydrate history yet — server-local so an LRU eviction of the frame log can't
+  // detach them mid-turn. Multiple same-visitor turns can be pending when a durable
+  // Sink is slow; each is removed once its reserved record slot settles.
+  const handling = new Map<string, HandlingTurn[]>();
   const lateWindow = createLateWindow(LATE_WINDOW_LIMIT);
   // Per-visitor delivery lane: serializes {apply → seq-assign → log → fan-out} so
   // apply-order equals delivery-order by construction. Live turns and late applies
@@ -624,11 +893,13 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
     fallbackAgent: options.agent,
     offlineFace,
     lateWindow,
-    // The in-flight turn's arrival pair, from the server-local map (an entry
-    // exists exactly while a lane task is handling that visitor's turn). The
-    // empty-era fallback can never match a real era, so an unknown context
+    // The active lane turn's arrival pair, from the last server-local pending range.
+    // The empty-era fallback can never match a real era, so an unknown context
     // degrades toward falsely-stale — never false-fresh.
-    handlingContext: (visitorId) => handling.get(visitorId) ?? { index: -1, era: "" },
+    handlingContext: (visitorId) => {
+      const turns = handling.get(visitorId);
+      return turns?.[turns.length - 1] ?? { index: -1, era: "" };
+    },
   });
 
   const runtime = new FacetRuntime({
@@ -646,6 +917,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   const deliver = (visitorId: string, messages: readonly ServerMessage[]): void => {
     if (messages.length === 0) return;
     const stamped = frameLog.append(visitorId, messages);
+    pruneUnrecoverableHandlingTurns(handling, visitorId, frameLog.logFor(visitorId));
     const connections = browserStreams.get(visitorId);
     if (connections === undefined) return;
     for (const { id, json } of stamped) {
@@ -722,7 +994,7 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       ) {
         return;
       }
-      void rehydrate(res, visitorId, frameLog, runtime, () => closed, join);
+      void rehydrate(res, visitorId, frameLog, runtime, handling, lane, () => closed, join);
       return;
     }
 

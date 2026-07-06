@@ -1,6 +1,9 @@
 import {
   createSerialQueue,
+  asAgentServerMessage,
   foldPatchIntoStage,
+  isTestOnlyServerMessageBatch,
+  iterateAgentResult,
   MAX_PATCH_OPS,
   type ClientEvent,
   type CollectedEvent,
@@ -45,6 +48,14 @@ export interface TurnResult {
   readonly agentMutated: boolean;
 }
 
+export type RuntimeFrameSink = (messages: readonly ServerMessage[]) => void;
+export type RuntimeRecordSink = (settled: Promise<void>) => void;
+
+interface RecordSlot {
+  readonly resolve: (entry: StoredEvent | null) => void;
+  readonly settled: Promise<void>;
+}
+
 /**
  * Wires a transport's inbound events to the agent and keeps each session's stage
  * up to date. A transport (SSE server, or the in-process demo) calls `handle` for
@@ -61,10 +72,10 @@ export class FacetRuntime {
   // Serialize events per (agent, visitor) so concurrent same-visitor events don't
   // race on the open→apply→save read-modify-write. Different visitors stay parallel.
   private readonly serialize = createSerialQueue<TurnResult>();
-  // Serialize sink records per (agent, visitor) too: `record` is fire-and-forget
-  // off the response path, so with an async sink a fast later record could persist
-  // before a slow earlier one. This queue keeps per-visitor records in event order
-  // without the response ever awaiting them. Different visitors stay parallel.
+  // Serialize sink records per (agent, visitor) too. Writes are fire-and-forget from
+  // the turn lane, but a transport can observe the reserved slot's settle promise
+  // and keep its own replay fallback alive until history sees the turn. Different
+  // visitors stay parallel.
   private readonly serializeRecord = createSerialQueue<void>();
   // Session keys armed by `takeSeeded` but not yet DELIVERED. `takeSeeded`
   // reports a fresh seed at most once, so parking the KEY here lets a turn that
@@ -103,18 +114,23 @@ export class FacetRuntime {
    * back. Stage patches are applied to the stored session (server is the source of
    * truth), then the interaction is handed to the sink.
    */
-  handle(visitor: VisitorContext, event: ClientEvent): Promise<TurnResult> {
+  handle(
+    visitor: VisitorContext,
+    event: ClientEvent,
+    onFrame?: RuntimeFrameSink,
+    onRecordSettled?: RuntimeRecordSink,
+  ): Promise<TurnResult> {
     // Reserve this turn's Sink-write slot on serializeRecord NOW, in call order,
     // BEFORE the (async) turn runs — otherwise a record() called during the turn
     // would enqueue its write first and the append log would reverse (see
     // reserveRecordSlot). persist() fills the slot; a turn that throws resolves it
     // to null so it records nothing (prior behavior).
-    const resolveRecord = this.reserveRecordSlot(visitor.visitorId);
+    const recordSlot = this.reserveRecordSlot(visitor.visitorId);
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       try {
-        return await this.handleOne(visitor, event, resolveRecord);
+        return await this.handleOne(visitor, event, recordSlot, onFrame, onRecordSettled);
       } catch (error) {
-        resolveRecord(null);
+        recordSlot.resolve(null);
         throw error;
       }
     });
@@ -136,8 +152,8 @@ export class FacetRuntime {
    * it can never enqueue its write first. The runtime provides this ordering
    * itself — it does NOT depend on an outer per-visitor lane (only `@facet/server`
    * has one; the in-process transports don't). Returns the queue's promise so a
-   * caller MAY await the write settle, but the response path need not: like a
-   * forwarded turn, a failed sink write is logged, never thrown.
+   * caller MAY await the local write settle, but the `/record` response path need
+   * not; a failed sink write is logged, never thrown.
    */
   record(visitor: VisitorContext, event: CollectedEvent): Promise<void> {
     return this.enqueueRecord(visitor.visitorId, { at: Date.now(), event, messages: [] });
@@ -162,18 +178,19 @@ export class FacetRuntime {
    * so a record() called after this returns can't enqueue its write first (the
    * in-process transports have no outer lane; @facet/server does). The slot awaits
    * the turn's entry; a turn that never persists resolves it to null (records
-   * nothing, matching prior behavior).
+   * nothing, matching prior behavior). Agent turns can expose `settled` to their
+   * transport, but they do not await it on the stage/delivery lane.
    */
-  private reserveRecordSlot(visitorId: string): (entry: StoredEvent | null) => void {
+  private reserveRecordSlot(visitorId: string): RecordSlot {
     let resolve!: (entry: StoredEvent | null) => void;
     const ready = new Promise<StoredEvent | null>((r) => {
       resolve = r;
     });
-    void this.serializeRecord(sessionKey(this.agentId, visitorId), async () => {
+    const settled = this.serializeRecord(sessionKey(this.agentId, visitorId), async () => {
       const entry = await ready;
       if (entry !== null) await this.sink.record(this.agentId, visitorId, entry);
     }).catch((error: unknown) => console.error("[facet] sink failed:", error));
-    return resolve;
+    return { resolve, settled };
   }
 
   /**
@@ -189,16 +206,25 @@ export class FacetRuntime {
     visitor: VisitorContext,
     event: ClientEvent,
     messages: readonly ServerMessage[],
+    onRecordSettled?: RuntimeRecordSink,
   ): Promise<TurnResult> {
     // Reserve the Sink-write slot synchronously (same reason as `handle`): this
     // path also persists, so a later `record` must not overtake its write.
-    const resolveRecord = this.reserveRecordSlot(visitor.visitorId);
+    const recordSlot = this.reserveRecordSlot(visitor.visitorId);
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       try {
         const session = await this.stageStore.open(this.agentId, visitor);
-        return await this.persistWithSeed(visitor, session, event, messages, resolveRecord);
+        return await this.streamTurn(
+          visitor,
+          session,
+          event,
+          messages,
+          recordSlot,
+          undefined,
+          onRecordSettled,
+        );
       } catch (error) {
-        resolveRecord(null);
+        recordSlot.resolve(null);
         throw error;
       }
     });
@@ -207,40 +233,33 @@ export class FacetRuntime {
   private async handleOne(
     visitor: VisitorContext,
     event: ClientEvent,
-    resolveRecord: (entry: StoredEvent | null) => void,
+    recordSlot: RecordSlot,
+    onFrame: RuntimeFrameSink | undefined,
+    onRecordSettled: RuntimeRecordSink | undefined,
   ): Promise<TurnResult> {
     const session = await this.stageStore.open(this.agentId, visitor);
-    const messages = await this.agent(event, session);
-    return this.persistWithSeed(visitor, session, event, messages, resolveRecord);
+    const result = this.agent(event, session);
+    return this.streamTurn(visitor, session, event, result, recordSlot, onFrame, onRecordSettled);
   }
 
   /**
-   * If `open()` just created a fresh PRE-SEEDED session — a seeding `StageStore`
-   * decorator (`withInitialStage`) reports it via `takeSeeded` — the seed must
-   * travel the patch channel: the browser's first connection rehydrated BEFORE
-   * this session existed, so its reset carried no snapshot and every later
-   * incremental patch would target seed ids the client never received. Prepend
-   * the seed as a root `replace` first frame so it gets a seq / replay-ring slot
-   * and the same ordered list fans out to the client. Applying `replace ""` with
-   * the already-seeded stage is a server-side no-op.
-   *
-   * The seed is consumed only once a turn PERSISTS: a failed turn (agent throw
-   * before this runs, or a `save` rejection after arming) leaves the seed parked
-   * in `pendingSeeds` so the next turn re-emits it — otherwise a client that
-   * connected before the session existed would drift permanently (the blank-page
-   * bug this mechanism exists to fix). A later reconnect gets the seed the normal
-   * way, through the rehydrate snapshot.
+   * Drives one turn's result batches inside the per-visitor serial queue. Each
+   * batch is folded once, saved, then delivered synchronously before the next
+   * batch is pulled. The Sink record stays turn-scoped: raw agent messages are
+   * accumulated and written exactly once after the stream finishes, or after a
+   * mid-stream producer throw with already-persisted batches. The write is resolved
+   * after saved batches have been delivered, without blocking the next lane task.
    */
-  private async persistWithSeed(
+  private async streamTurn(
     visitor: VisitorContext,
-    session: FacetSession,
+    initialSession: FacetSession,
     event: ClientEvent,
-    messages: readonly ServerMessage[],
-    resolveRecord: (entry: StoredEvent | null) => void,
+    result: Parameters<typeof iterateAgentResult>[0],
+    recordSlot: RecordSlot,
+    onFrame?: RuntimeFrameSink,
+    onRecordSettled?: RuntimeRecordSink,
   ): Promise<TurnResult> {
     const key = sessionKey(this.agentId, visitor.visitorId);
-    // Arm: `takeSeeded` fires at most once, so park the key until a turn
-    // actually persists (evicting the oldest armed key at the cap).
     if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
       if (this.pendingSeeds.size >= MAX_PENDING_SEEDS) {
         const oldest = this.pendingSeeds.values().next().value;
@@ -248,73 +267,138 @@ export class FacetRuntime {
       }
       this.pendingSeeds.add(key);
     }
-    // The seed is a DELIVERY-only prefix — a full `replace ""` snapshot the client
-    // that connected before this session existed never received. It is prepended
-    // as its OWN frame, NOT fed into `persist`, so `applyToSession`'s per-turn
-    // coalescing never merges it into the agent's patch frame (the client must see
-    // the snapshot as a distinct first frame). On the server it folds to a no-op
-    // (session.stage is already the seeded stage), so the agent's own messages —
-    // what `persist` applies and records — produce the same stored stage the client
-    // reaches by folding [seed, ...agent frames]. Value is the CURRENT stage, not a
-    // parked tree: after a save that committed then rejected, the reopened session
-    // is ahead of the original seed and this turn's messages were computed against it.
-    const seedFrame: ServerMessage | undefined = this.pendingSeeds.has(key)
-      ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
-      : undefined;
-    // `agentMutated` is EFFECT-based: whether the AGENT'S OWN turn actually
-    // changed the stage (at least one non-`test` op applied), as reported by the
-    // fold. The seed frame is prepended AFTER and is never fed to `persist`, so a
-    // say-only turn that merely re-emits a parked seed reports false — the
-    // transport must not advance "last applied" and stale a parked late result on
-    // a turn whose patch was dropped whole (over-cap, non-array, empty, or an
-    // all-ops-failed salvage).
-    const { messages: applied, mutated: agentMutated } = await this.persist(
-      session,
-      event,
-      messages,
-      resolveRecord,
-    );
-    const result = seedFrame !== undefined ? [seedFrame, ...applied] : applied;
-    this.pendingSeeds.delete(key); // consume ONLY after persist resolved
-    return { messages: result, agentMutated };
+
+    let session = initialSession;
+    const accumulated: ServerMessage[] = [];
+    const returned: ServerMessage[] = [];
+    let agentMutated = false;
+    let persistedAnyBatch = false;
+    let seedPrepended = false;
+    const iterator = iterateAgentResult(result)[Symbol.asyncIterator]();
+    let completedNaturally = false;
+
+    const closeIterator = async (): Promise<void> => {
+      try {
+        await iterator.return?.();
+      } catch (error: unknown) {
+        console.error("[facet] stream cleanup failed:", error);
+      }
+    };
+
+    const seedFrame = (): ServerMessage | undefined =>
+      !seedPrepended && this.pendingSeeds.has(key)
+        ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
+        : undefined;
+
+    const appendMessages = (target: ServerMessage[], source: readonly ServerMessage[]): void => {
+      for (const message of source) target.push(message);
+    };
+
+    const deliverFrame = (frame: readonly ServerMessage[]): void => {
+      if (frame.length === 0) return;
+      if (onFrame !== undefined) onFrame(frame);
+      else appendMessages(returned, frame);
+    };
+
+    const settleRecord = (entry: StoredEvent): void => {
+      recordSlot.resolve(entry);
+      onRecordSettled?.(recordSlot.settled);
+    };
+
+    const finishPartial = (): TurnResult => {
+      settleRecord({ at: Date.now(), event, messages: accumulated });
+      if (seedPrepended) this.pendingSeeds.delete(key);
+      return { messages: onFrame === undefined ? returned : [], agentMutated };
+    };
+
+    try {
+      while (true) {
+        let next: IteratorResult<readonly ServerMessage[]>;
+        try {
+          next = await iterator.next();
+        } catch (error) {
+          if (!persistedAnyBatch) throw error;
+          return finishPartial();
+        }
+        if (next.done === true) {
+          completedNaturally = true;
+          break;
+        }
+
+        const batch = this.asMessageBatch(next.value);
+        if (batch.length === 0 || isTestOnlyServerMessageBatch(batch)) continue;
+
+        const seed = seedFrame();
+        const {
+          session: applied,
+          issues,
+          messages: delivered,
+          recordMessages,
+          mutated,
+        } = this.applyToSession(session, batch);
+        try {
+          await this.stageStore.save(applied);
+        } catch (error) {
+          if (!persistedAnyBatch) throw error;
+          return finishPartial();
+        }
+        session = applied;
+        persistedAnyBatch = true;
+        appendMessages(accumulated, recordMessages);
+        agentMutated = agentMutated || mutated;
+        this.logIssues(issues);
+
+        let frame = delivered;
+        if (seed !== undefined) {
+          const seededFrame: ServerMessage[] = [seed];
+          appendMessages(seededFrame, delivered);
+          frame = seededFrame;
+        }
+        if (frame.length > 0) {
+          try {
+            deliverFrame(frame);
+          } catch {
+            return finishPartial();
+          }
+          if (seed !== undefined) seedPrepended = true;
+        }
+      }
+    } finally {
+      if (!completedNaturally) await closeIterator();
+    }
+
+    const seed = seedFrame();
+    if (seed !== undefined) {
+      try {
+        deliverFrame([seed]);
+      } catch {
+        return finishPartial();
+      }
+      seedPrepended = true;
+    }
+    settleRecord({ at: Date.now(), event, messages: accumulated });
+    if (persistedAnyBatch || seedPrepended) this.pendingSeeds.delete(key);
+    return { messages: onFrame === undefined ? returned : [], agentMutated };
   }
 
-  /**
-   * Applies a turn's messages to the open session, saves, and fire-and-forget
-   * records it — the shared tail of a live turn (`handleOne`) and a late apply
-   * (`applyMessages`). The response never awaits the record: the stage is the
-   * source of truth for reconnect; the sink is best-effort.
-   *
-   * The Sink write does NOT enqueue here — `handle`/`applyMessages` already
-   * RESERVED this turn's slot on serializeRecord synchronously at call time
-   * (`reserveRecordSlot`); this only FILLS it, after `save`, so a `record` called
-   * during the turn can't overtake this write and append order == send order per
-   * visitor. Filling after `save` also means a save-reject records nothing
-   * (the reserved slot resolves to null via the caller's catch) — unchanged.
-   *
-   * `messages` is the AGENT'S OWN turn (no seed frame — persistWithSeed prepends
-   * that to the delivered result). It gets applied to the stage, recorded verbatim
-   * into the sink, and returned COALESCED (its patch messages folded into one
-   * frame) for delivery — the exact frame the client folds, so no drift.
-   */
-  private async persist(
-    session: FacetSession,
-    event: ClientEvent,
-    messages: readonly ServerMessage[],
-    resolveRecord: (entry: StoredEvent | null) => void,
-  ): Promise<{ readonly messages: readonly ServerMessage[]; readonly mutated: boolean }> {
-    const {
-      session: applied,
-      issues,
-      messages: delivered,
-      mutated,
-    } = this.applyToSession(session, messages);
-    await this.stageStore.save(applied);
-    resolveRecord({ at: Date.now(), event, messages });
-    // Surface (don't drop) whatever the fold corrected, so an operator sees a
-    // stripped/clamped/salvaged patch instead of it vanishing silently.
-    // foldPatchIntoStage already caps its issue list, but slice defensively so an
-    // issue list from any source can't flood the operator log synchronously.
+  private asMessageBatch(value: unknown): readonly ServerMessage[] {
+    if (!Array.isArray(value)) {
+      console.error("[facet] dropped a streamed batch that was not an array");
+      return [];
+    }
+    const messages: ServerMessage[] = [];
+    for (const message of value) {
+      const normalized = asAgentServerMessage(message);
+      if (normalized !== undefined) {
+        messages.push(normalized);
+      } else {
+        console.error("[facet] dropped a malformed server message");
+      }
+    }
+    return messages;
+  }
+
+  private logIssues(issues: readonly string[]): void {
     for (const issue of issues.slice(0, MAX_LOGGED_ISSUES)) {
       console.error(`[facet] save-time re-validation: ${issue}`);
     }
@@ -323,12 +407,6 @@ export class FacetRuntime {
         `[facet] save-time re-validation: +${String(issues.length - MAX_LOGGED_ISSUES)} more suppressed`,
       );
     }
-    // The delivered list is exactly what fanned out to the client — the turn's
-    // patch messages COALESCED into one frame, the same single fold applied to the
-    // stored stage above. No corrective frame is ever appended: the client folds
-    // that one frame with the SAME foldPatchIntoStage, so its tree already equals
-    // this stored stage.
-    return { messages: delivered, mutated };
   }
 
   /**
@@ -357,6 +435,7 @@ export class FacetRuntime {
     readonly session: FacetSession;
     readonly issues: readonly string[];
     readonly messages: readonly ServerMessage[];
+    readonly recordMessages: readonly ServerMessage[];
     // Whether the fold actually changed the stage (effect-based). False for a
     // patch-free turn and the over-cap reject, threaded from foldPatchIntoStage
     // otherwise. persistWithSeed surfaces this as TurnResult.agentMutated.
@@ -367,9 +446,12 @@ export class FacetRuntime {
     // blow the call stack). foldPatchIntoStage's own MAX_PATCH_OPS cap then bounds
     // the coalesced batch.
     const turnOps: JsonPatchOperation[] = [];
+    let sawPatchMessage = false;
+    let droppedPatchMessage = false;
     let hasPatch = false;
     for (const message of messages) {
       if (message.kind === "patch") {
+        sawPatchMessage = true;
         // A wire/in-process patch message can carry a non-array `patches` field
         // (untyped JS agent, unsafe cast). The concatenation runs BEFORE the fold,
         // so the fold's own non-array guard is unreachable here — drop the bad
@@ -377,6 +459,7 @@ export class FacetRuntime {
         // delivers) instead of letting `for...of` throw through the never-throws seam.
         if (!Array.isArray(message.patches)) {
           console.error("[facet] dropped a patch message with non-array patches");
+          droppedPatchMessage = true;
           continue;
         }
         hasPatch = true;
@@ -384,7 +467,14 @@ export class FacetRuntime {
       }
     }
     if (!hasPatch) {
-      return { session, issues: [], messages, mutated: false };
+      const cleanMessages = sawPatchMessage ? messages.filter((m) => m.kind !== "patch") : messages;
+      return {
+        session,
+        issues: [],
+        messages: cleanMessages,
+        recordMessages: cleanMessages,
+        mutated: false,
+      };
     }
 
     // Enforce the op cap on the per-TURN aggregate, mirroring the wire boundary
@@ -401,6 +491,7 @@ export class FacetRuntime {
           `patch turn dropped: ${String(turnOps.length)} ops exceeds the ${String(MAX_PATCH_OPS)}-op cap`,
         ],
         messages: messages.filter((m) => m.kind !== "patch"),
+        recordMessages: messages.filter((m) => m.kind !== "patch"),
         mutated: false,
       };
     }
@@ -411,9 +502,11 @@ export class FacetRuntime {
 
     const coalescedPatch: ServerMessage = { kind: "patch", patches: turnOps };
     const delivered: ServerMessage[] = [];
+    const recordMessages: ServerMessage[] = [];
     let placed = false;
     for (const message of messages) {
       if (message.kind === "patch") {
+        if (!Array.isArray(message.patches)) continue;
         // Replace the turn's patch messages with the single coalesced frame,
         // emitted once at the first patch message's slot.
         if (!placed) {
@@ -423,11 +516,13 @@ export class FacetRuntime {
       } else {
         delivered.push(message);
       }
+      recordMessages.push(message);
     }
     return {
       session: { ...session, stage: tree },
       issues: allIssues,
       messages: delivered,
+      recordMessages: droppedPatchMessage ? recordMessages : messages,
       mutated,
     };
   }

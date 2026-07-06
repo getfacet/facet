@@ -159,7 +159,7 @@ only ever names a theme.
  [ @facet/server ]    reference SSE/POST transport (browser side + model side)
         │
  [ @facet/runtime ]   one isolated session per (agent, visitor)
-        │  calls your model, applies the resulting patches, persists the session
+        │  calls your model, applies streamed batches, persists the session
         ▼
  [ your model ]   drives the Stage via @facet/agent + your LLM
         │  ServerMessage: stage patches (RFC 6902) + chat replies
@@ -195,6 +195,10 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
   `applyPatch` runs on server and client so they never drift.
 - **The tree is a flat map of nodes with a `root` id** (the A2UI shape), so the
   model can stream and patch one node at a time.
+- **Agent results may stream as batches.** A normal agent returns one
+  `ServerMessage[]`; a streaming agent returns `AsyncIterable<ServerMessage[]>`.
+  The runtime folds, saves, and delivers each batch before pulling the next one,
+  while the conversation record is still written once for the whole turn.
 
 ## Packages
 
@@ -250,6 +254,10 @@ export const agent = defineAgent(({ event, stage }) => {
   }
 });
 ```
+
+For live construction, use `defineStreamingAgent` and yield whenever the current
+batch should reach the browser; `defineAgent` remains the one-flush-at-the-end
+back-compatible helper.
 
 ## Roadmap
 

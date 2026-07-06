@@ -31,12 +31,19 @@ await server.listen();
 Browser SSE frames carry a per-session sequence in the standard `id:` field, so
 an `EventSource` reconnect resumes exactly where it left off (`Last-Event-ID`
 replays only the missed frames; a full rehydrate is always preceded by an
-explicit `reset` message). An agent turn that outlives the per-event timeout is
-NOT discarded: the visitor gets an interim note and the finished result is
-applied and delivered when it arrives — unless a newer turn has already changed
-the page, in which case only the late reply text is shown (a stale result never
-overwrites a newer stage). Tune `agentTimeoutMs` (interim-note threshold) and
-`agentStaleMs` (dead-agent reaper) via `FacetServerOptions`.
+explicit `reset` message). Streaming `FacetAgent` batches are delivered to
+`/stream` as soon as the runtime saves them; the `/event` POST still acknowledges
+immediately with `202`.
+
+An agent turn that outlives the per-event timeout is NOT discarded: the visitor
+gets an interim note and the finished result is applied and delivered when it
+arrives — unless a newer turn has already changed the page, in which case only
+the late reply text is shown (a stale result never overwrites a newer stage).
+During full rehydrate, if the frame log changes while the server is reading the
+snapshot/history, the server falls back to the visitor's serial lane and
+re-reads from a stable point instead of replaying over a stale snapshot. Tune
+`agentTimeoutMs` (interim-note threshold) and `agentStaleMs` (dead-agent reaper)
+via `FacetServerOptions`.
 
 ## Trust model (read before hosting)
 

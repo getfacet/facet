@@ -1,6 +1,7 @@
 import type { FacetAction, NodeId } from "./nodes.js";
 import type { JsonPatchOperation } from "./patch.js";
 import type { FacetTree } from "./tree.js";
+import type { FacetAgentResult } from "./agent-result.js";
 
 /**
  * Who is viewing. This is the context an agent uses to diverge the very first
@@ -134,16 +135,75 @@ export type ServerMessage =
   | { readonly kind: "say"; readonly text: string }
   | { readonly kind: "reset" };
 
+/** True for an RFC 6902 `test` op guard: a plain object whose `op` is "test". */
+export function isJsonPatchTestOperation(op: unknown): boolean {
+  return typeof op === "object" && op !== null && (op as Record<string, unknown>)["op"] === "test";
+}
+
+/**
+ * Narrows the agent-emitted subset of `ServerMessage`. `reset` is deliberately
+ * excluded: it is a server rehydrate control frame, never an agent reply.
+ *
+ * The returned value is JSON-normalized so in-process agents cannot deliver or
+ * persist values the wire transport could not have represented.
+ */
+export function asAgentServerMessage(value: unknown): ServerMessage | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { kind, text, patches } = value as {
+    kind?: unknown;
+    text?: unknown;
+    patches?: unknown;
+  };
+  const message =
+    kind === "say" && typeof text === "string"
+      ? ({ kind, text } satisfies ServerMessage)
+      : kind === "patch" && Array.isArray(patches)
+        ? ({ kind, patches } as ServerMessage)
+        : undefined;
+  if (message === undefined) return undefined;
+
+  let normalized: unknown;
+  try {
+    normalized = JSON.parse(JSON.stringify(message));
+  } catch {
+    return undefined;
+  }
+  if (typeof normalized !== "object" || normalized === null) return undefined;
+  const {
+    kind: normalizedKind,
+    text: normalizedText,
+    patches: normalizedPatches,
+  } = normalized as { kind?: unknown; text?: unknown; patches?: unknown };
+  if (normalizedKind === "say" && typeof normalizedText === "string") {
+    return { kind: normalizedKind, text: normalizedText };
+  }
+  if (normalizedKind === "patch" && Array.isArray(normalizedPatches)) {
+    return normalized as ServerMessage;
+  }
+  return undefined;
+}
+
+/** True when a streamed batch is only RFC 6902 `test` guards and carries no edit. */
+export function isTestOnlyServerMessageBatch(messages: readonly ServerMessage[]): boolean {
+  let sawTest = false;
+  for (const message of messages) {
+    if (message.kind !== "patch") return false;
+    if (!Array.isArray(message.patches)) return false;
+    for (const op of message.patches) {
+      if (!isJsonPatchTestOperation(op)) return false;
+      sawTest = true;
+    }
+  }
+  return sawTest;
+}
+
 /**
  * The contract a Facet agent implements: given an event and the current session,
  * return the messages to send back to that one visitor. The runtime owns calling
  * this and persisting the resulting stage; `@facet/agent` provides an ergonomic
  * way to author it.
  */
-export type FacetAgent = (
-  event: ClientEvent,
-  session: FacetSession,
-) => Promise<readonly ServerMessage[]> | readonly ServerMessage[];
+export type FacetAgent = (event: ClientEvent, session: FacetSession) => FacetAgentResult;
 
 /**
  * The wire between a visitor (browser) and the runtime. A concrete transport wraps

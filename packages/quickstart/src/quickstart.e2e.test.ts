@@ -584,13 +584,13 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
     expect(body).not.toContain("__FACET_INITIAL_STAGE__");
 
     // A brand-new visitor that has not visited: rehydrate finds no stage (nothing
-    // seeded, nothing painted), so the connect is a lone unstamped reset —
-    // today's EMPTY_TREE / model-first posture, unchanged.
+    // seeded, nothing painted), so the connect is a lone reset that clears stale
+    // resume state without minting a frame-log token.
     const stream = await openStream(base, "e2e-unseeded");
     try {
       const [reset] = await stream.next(1);
       expect(kindOf(reset?.data)).toBe("reset");
-      expect(reset?.id).toBeUndefined();
+      expect(reset?.id).toBe("");
     } finally {
       await stream.close();
     }

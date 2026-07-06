@@ -11,7 +11,10 @@ npm install @facet/agent @facet/core
 ```
 
 You write a function that reacts to an event by driving `stage`; the recorded
-commands are flushed into the messages sent back to the visitor.
+commands are flushed into the messages sent back to the visitor. `defineAgent`
+flushes once at the end of the turn. `defineStreamingAgent` accepts generator
+logic and flushes on each `yield`, so a long-running model loop can let the page
+build live.
 
 ```ts
 import { defineAgent } from "@facet/agent";
@@ -31,6 +34,18 @@ export const agent = defineAgent(({ event, stage }) => {
       .append("root", { id: "price", type: "text", value: "$20/mo" })
       .say("Added it below.");
   }
+});
+```
+
+```ts
+import { defineStreamingAgent } from "@facet/agent";
+
+export const streamingAgent = defineStreamingAgent(async function* ({ event, stage }) {
+  if (event.kind !== "message") return;
+  stage.say("Starting...");
+  yield;
+  stage.append("root", { id: "answer", type: "text", value: "First result" });
+  yield;
 });
 ```
 

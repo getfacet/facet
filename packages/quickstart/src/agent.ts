@@ -17,7 +17,7 @@
  */
 import { isSafeMediaSrc, isValidThemeName, MEDIA_KINDS, validateTree } from "@facet/core";
 import type { FacetNode, FacetStamp, FacetTheme, FacetTree, NodeId } from "@facet/core";
-import { defineAgent } from "@facet/agent";
+import { defineStreamingAgent } from "@facet/agent";
 import type { Stage } from "@facet/agent";
 import type { Sink } from "@facet/runtime";
 import {
@@ -70,7 +70,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isBoxWithChildren(tree: FacetTree, id: NodeId | undefined): boolean {
   if (id === undefined) return false;
   const node = tree.nodes[id];
-  return node !== undefined && node.type === "box" && node.children.length > 0;
+  return (
+    node !== undefined &&
+    node.type === "box" &&
+    Array.isArray((node as { children?: unknown }).children) &&
+    node.children.length > 0
+  );
 }
 
 /**
@@ -114,7 +119,22 @@ function asNode(value: unknown): { node: FacetNode } | { error: string } {
   }
   switch (value["type"]) {
     case "box":
-      break; // validateTree defaults a missing/non-array children to []
+      if (value["children"] !== undefined) {
+        if (
+          !Array.isArray(value["children"]) ||
+          !value["children"].every((child): child is string => typeof child === "string")
+        ) {
+          return { error: 'a "box" node needs "children" as an array of string ids' };
+        }
+      }
+      return {
+        node: {
+          ...value,
+          id: value["id"],
+          type: "box",
+          children: value["children"] ?? [],
+        } as unknown as FacetNode,
+      };
     case "text":
       if (typeof value["value"] !== "string") {
         return { error: 'a "text" node needs a string "value"' };
@@ -156,6 +176,115 @@ function issueHint(issues: readonly string[]): string {
 /** Derived from the single-source TOOLS so it can't drift from the real set. */
 const TOOL_NAMES = TOOLS.map((t) => t.name).join(", ");
 
+interface ClosureBuffer {
+  render(tree: FacetTree): number;
+  set(node: FacetNode): number;
+  append(parentId: NodeId, node: FacetNode): number;
+  remove(id: NodeId): number;
+  pendingMissing(id: NodeId): readonly NodeId[] | undefined;
+  drainUnresolved(): readonly string[];
+}
+
+type PendingOp =
+  | { readonly kind: "set"; readonly node: FacetNode }
+  | { readonly kind: "append"; readonly parentId: NodeId; readonly node: FacetNode };
+
+function childRefs(node: FacetNode): readonly NodeId[] {
+  return node.type === "box" && Array.isArray((node as { children?: unknown }).children)
+    ? node.children
+    : [];
+}
+
+function missingChildRefs(node: FacetNode, knownIds: ReadonlySet<string>): readonly NodeId[] {
+  return childRefs(node).filter((id) => !knownIds.has(id));
+}
+
+function isClosed(node: FacetNode, knownIds: ReadonlySet<string>): boolean {
+  return missingChildRefs(node, knownIds).length === 0;
+}
+
+function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer {
+  const pending = new Map<NodeId, PendingOp>();
+
+  const emit = (op: PendingOp): void => {
+    if (op.kind === "set") stage.set(op.node);
+    else stage.append(op.parentId, op.node);
+    knownIds.add(op.node.id);
+  };
+
+  const flushReady = (): number => {
+    let emitted = 0;
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      for (const [id, op] of pending) {
+        if (op.kind === "append" && !knownIds.has(op.parentId)) continue;
+        if (!isClosed(op.node, knownIds)) continue;
+        emit(op);
+        pending.delete(id);
+        emitted += 1;
+        progressed = true;
+      }
+    }
+    return emitted;
+  };
+  const unresolvedObservation = (op: PendingOp): string => {
+    const missing = missingChildRefs(op.node, knownIds);
+    return `"${op.node.id}" still waits for child node(s): ${missing.join(", ")}`;
+  };
+
+  return {
+    render(tree) {
+      pending.clear();
+      stage.render(tree);
+      knownIds.clear();
+      for (const id of Object.keys(tree.nodes)) knownIds.add(id);
+      return 1;
+    },
+    set(node) {
+      let emitted = 0;
+      if (isClosed(node, knownIds)) {
+        pending.delete(node.id);
+        emit({ kind: "set", node });
+        emitted += 1;
+      } else {
+        pending.set(node.id, { kind: "set", node });
+      }
+      return emitted + flushReady();
+    },
+    append(parentId, node) {
+      let emitted = 0;
+      if (knownIds.has(parentId) && isClosed(node, knownIds)) {
+        pending.delete(node.id);
+        emit({ kind: "append", parentId, node });
+        emitted += 1;
+      } else {
+        pending.set(node.id, { kind: "append", parentId, node });
+      }
+      return emitted + flushReady();
+    },
+    remove(id) {
+      pending.delete(id);
+      knownIds.delete(id);
+      stage.remove(id);
+      return 1;
+    },
+    pendingMissing(id) {
+      const op = pending.get(id);
+      return op === undefined ? undefined : missingChildRefs(op.node, knownIds);
+    },
+    drainUnresolved() {
+      const unresolved = Array.from(pending.values(), unresolvedObservation);
+      pending.clear();
+      return unresolved;
+    },
+  };
+}
+
+function queuedObservation(id: NodeId, missing: readonly NodeId[]): string {
+  return `queued: "${id}" waits for child node(s): ${missing.join(", ")}`;
+}
+
 interface ToolOutcome {
   readonly observation: string;
   readonly mutated: boolean;
@@ -167,7 +296,12 @@ interface ToolOutcome {
  * `knownIds` tracks which node ids exist so far this turn (seeded from the
  * current stage, updated by each tool) so append_node can reject a nonexistent
  * parent BEFORE it queues a child-link op the runtime would silently drop. */
-function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolOutcome {
+function executeTool(
+  call: ToolCall,
+  stage: Stage,
+  knownIds: Set<string>,
+  closure: ClosureBuffer,
+): ToolOutcome {
   const fail = (observation: string): ToolOutcome => ({ observation, mutated: false, said: false });
   const input: Record<string, unknown> = isRecord(call.input) ? call.input : {};
   switch (call.name) {
@@ -182,13 +316,10 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
               : "Provide a non-empty root/entry box and retry."),
         );
       }
-      stage.render(tree);
-      // The tree replaced everything — reset the known ids to it.
-      knownIds.clear();
-      for (const id of Object.keys(tree.nodes)) knownIds.add(id);
+      const emitted = closure.render(tree);
       const note =
         issues.length > 0 ? ` (note: dropped invalid node(s): ${issueHint(issues)})` : "";
-      return { observation: `ok: page replaced${note}`, mutated: true, said: false };
+      return { observation: `ok: page replaced${note}`, mutated: emitted > 0, said: false };
     }
     case "append_node": {
       const parentId = input["parentId"];
@@ -198,14 +329,26 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
         );
       }
       if (!knownIds.has(parentId)) {
+        const pendingMissing = closure.pendingMissing(parentId as NodeId);
+        if (pendingMissing !== undefined) {
+          return fail(
+            `error: append_node — parent "${parentId}" was created this turn but is still waiting for child node(s): ${pendingMissing.join(", ")}. Define those child nodes before appending into it.`,
+          );
+        }
         return fail(
           `error: append_node — parent "${parentId}" does not exist yet. Create it first with render_page or set_node, or append into an existing node.`,
         );
       }
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: append_node — ${result.error}`);
-      stage.append(parentId as NodeId, result.node);
-      knownIds.add(result.node.id);
+      const emitted = closure.append(parentId as NodeId, result.node);
+      if (emitted === 0) {
+        return {
+          observation: queuedObservation(result.node.id, missingChildRefs(result.node, knownIds)),
+          mutated: false,
+          said: false,
+        };
+      }
       return {
         observation: `ok: appended "${result.node.id}" under "${parentId}"`,
         mutated: true,
@@ -215,8 +358,14 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
     case "set_node": {
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: set_node — ${result.error}`);
-      stage.set(result.node);
-      knownIds.add(result.node.id);
+      const emitted = closure.set(result.node);
+      if (emitted === 0) {
+        return {
+          observation: queuedObservation(result.node.id, missingChildRefs(result.node, knownIds)),
+          mutated: false,
+          said: false,
+        };
+      }
       return { observation: `ok: set "${result.node.id}"`, mutated: true, said: false };
     }
     case "remove_node": {
@@ -224,9 +373,8 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
       if (typeof nodeId !== "string" || nodeId.length === 0) {
         return fail('error: remove_node needs a non-empty string "nodeId"');
       }
-      stage.remove(nodeId as NodeId);
-      knownIds.delete(nodeId);
-      return { observation: `ok: removed "${nodeId}"`, mutated: true, said: false };
+      const emitted = closure.remove(nodeId as NodeId);
+      return { observation: `ok: removed "${nodeId}"`, mutated: emitted > 0, said: false };
     }
     case "say": {
       const text = input["text"];
@@ -262,7 +410,7 @@ function executeTool(call: ToolCall, stage: Stage, knownIds: Set<string>): ToolO
 
 export function createQuickstartAgent(
   options: QuickstartAgentOptions,
-): ReturnType<typeof defineAgent> {
+): ReturnType<typeof defineStreamingAgent> {
   const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
     themes: options.themes ?? [],
     stamps: options.stamps ?? [],
@@ -270,11 +418,12 @@ export function createQuickstartAgent(
   const historyTurns = options.historyTurns ?? HISTORY_TURNS;
   const maxSteps = options.maxSteps ?? MAX_STEPS;
 
-  return defineAgent(async ({ event, session, stage }) => {
+  return defineStreamingAgent(async function* ({ event, session, stage }) {
     let mutated = false;
     let said = false;
     let finalText = "";
     let failure: unknown;
+    let closure: ClosureBuffer | undefined;
 
     try {
       // Inside the try: a throwing sink must degrade like any other turn failure,
@@ -284,6 +433,7 @@ export function createQuickstartAgent(
       // Ids that exist so far this turn (seeded from the current stage) — lets
       // append_node reject a nonexistent parent instead of orphaning the node.
       const knownIds = new Set<string>(Object.keys(session.stage.nodes));
+      closure = createClosureBuffer(stage, knownIds);
 
       for (let step = 0; step < maxSteps; step += 1) {
         const result = await options.provider.run({ system, messages }, TOOLS);
@@ -297,15 +447,24 @@ export function createQuickstartAgent(
 
         messages.push({ role: "assistant_tools", text: result.text, toolCalls: result.toolCalls });
         for (const call of result.toolCalls) {
-          const outcome = executeTool(call, stage, knownIds);
+          const outcome = executeTool(call, stage, knownIds, closure);
           mutated = mutated || outcome.mutated;
           said = said || outcome.said;
           messages.push({ role: "tool_result", callId: call.id, content: outcome.observation });
         }
+        yield;
       }
     } catch (error) {
       // Provider/network/sink failure: keep whatever the stage already has.
       failure = error;
+    }
+
+    const unresolved = closure?.drainUnresolved() ?? [];
+    if (unresolved.length > 0) {
+      console.error("[facet-quickstart] unresolved buffered edits:", unresolved.join("; "));
+      stage.say(FAILURE_SAY);
+      said = true;
+      finalText = "";
     }
 
     // The model ended cleanly with prose and never called say ⇒ surface the

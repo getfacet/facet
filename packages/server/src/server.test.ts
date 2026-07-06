@@ -21,6 +21,7 @@ import {
 } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "./server.js";
 import { isStaleLateResult } from "./late.js";
+import { MAX_FRAME_SESSIONS } from "./frame-log.js";
 
 const sayAgent: FacetAgent = () => [{ kind: "say", text: "hello from agent" }];
 
@@ -132,9 +133,39 @@ async function collectEvents(response: Response, ms: number): Promise<SseFrame[]
   return frames;
 }
 
-/** Collect SSE data payloads for a bounded window. */
-async function collectFrames(response: Response, ms: number): Promise<unknown[]> {
-  return (await collectEvents(response, ms)).map((f) => f.data);
+function eventReader(response: Response): {
+  next(ms: number): Promise<SseFrame | undefined>;
+  close(): Promise<void>;
+} {
+  const reader = response.body?.getReader();
+  if (reader === undefined) throw new Error("no body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const next = async (ms: number): Promise<SseFrame | undefined> => {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+      const drained = drainFrames(buffer);
+      buffer = drained.rest;
+      for (const [i, block] of drained.blocks.entries()) {
+        const frame = parseBlock(block);
+        if (frame !== undefined) {
+          buffer =
+            drained.blocks
+              .slice(i + 1)
+              .map((b) => `${b}\n\n`)
+              .join("") + buffer;
+          return frame;
+        }
+      }
+      const timeoutMs = Math.max(0, deadline - Date.now());
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
+      const chunk = await Promise.race([reader.read(), timeout]);
+      if (chunk === null || chunk.done) return undefined;
+      buffer += decoder.decode(chunk.value, { stream: true });
+    }
+    return undefined;
+  };
+  return { next, close: () => reader.cancel() };
 }
 
 /** Poll `predicate` until it's true or the window elapses. */
@@ -288,6 +319,122 @@ class ToggleOpenFailStore implements StageStore {
   }
 }
 
+/** A Sink whose agent-turn records can be held after the frame has already streamed.
+ * This models a durable Sink that has not made the just-finished turn visible to
+ * history yet. */
+class GatedMessageSink implements Sink {
+  private readonly inner = new MemorySink();
+  gateMessageRecord = false;
+  gateMessageText: string | undefined;
+  releaseOnNextHistory = false;
+  messageRecordStarted = false;
+  private releaseHeld: () => void = () => {};
+  private readonly held = new Promise<void>((r) => {
+    this.releaseHeld = r;
+  });
+  release(): void {
+    this.releaseHeld();
+  }
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    const textMatches =
+      this.gateMessageText === undefined ||
+      entry.messages.some(
+        (message) => message.kind === "say" && message.text === this.gateMessageText,
+      );
+    if (
+      this.gateMessageRecord &&
+      entry.event.kind === "message" &&
+      entry.messages.length > 0 &&
+      textMatches
+    ) {
+      this.messageRecordStarted = true;
+      await this.held;
+    }
+    return this.inner.record(agentId, visitorId, entry);
+  }
+  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    const entries = await this.inner.history(agentId, visitorId);
+    if (this.releaseOnNextHistory) {
+      this.releaseOnNextHistory = false;
+      this.release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return entries;
+  }
+}
+
+/** A Sink that makes a record visible to history before its `record()` promise
+ * settles, modelling an async backend whose write is committed but the lane has
+ * not yet observed settlement. */
+class VisibleBeforeSettledSink implements Sink {
+  private readonly inner = new MemorySink();
+  recordStarted = false;
+  private releaseHeld: () => void = () => {};
+  private readonly held = new Promise<void>((resolve) => {
+    this.releaseHeld = resolve;
+  });
+
+  release(): void {
+    this.releaseHeld();
+  }
+
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    await this.inner.record(agentId, visitorId, entry);
+    if (entry.event.kind === "message" && entry.messages.length > 0) {
+      this.recordStarted = true;
+      await this.held;
+    }
+  }
+
+  history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    return this.inner.history(agentId, visitorId);
+  }
+}
+
+class HistoryReleaseSink implements Sink {
+  private readonly inner = new MemorySink();
+  private readonly releaseHeld: (() => void)[] = [];
+  releaseOnHistoryReads = 0;
+  historyCalls = 0;
+  startedRecords = 0;
+
+  private async releaseNextStartedRecord(): Promise<void> {
+    const deadline = Date.now() + 1_000;
+    while (this.releaseHeld.length === 0) {
+      if (Date.now() >= deadline) throw new Error("no held record to release");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    this.releaseHeld.shift()?.();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  async releaseAvailableRecords(): Promise<void> {
+    while (this.releaseHeld.length > 0) {
+      await this.releaseNextStartedRecord();
+    }
+  }
+
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    if (entry.event.kind === "message" && entry.messages.length > 0) {
+      this.startedRecords += 1;
+      await new Promise<void>((resolve) => {
+        this.releaseHeld.push(resolve);
+      });
+    }
+    return this.inner.record(agentId, visitorId, entry);
+  }
+
+  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    this.historyCalls += 1;
+    const entries = await this.inner.history(agentId, visitorId);
+    if (this.releaseOnHistoryReads > 0) {
+      this.releaseOnHistoryReads -= 1;
+      await this.releaseNextStartedRecord();
+    }
+    return entries;
+  }
+}
+
 /** The text field of a stored node, if present (nodes are a union — box has no value). */
 const nodeValue = (session: FacetSession | undefined, id: string): string | undefined =>
   (session?.stage.nodes[id] as { value?: string } | undefined)?.value;
@@ -368,6 +515,524 @@ describe("browser channel", () => {
     const frames = await readFrames(stream, 2);
     expect(frames[0]).toEqual({ kind: "reset" });
     expect(frames[1]).toEqual({ kind: "say", text: "hello from agent" });
+  });
+
+  it("streams yielded batches to /stream before the turn finishes, in seq order", async () => {
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+      await secondGate;
+      yield [{ kind: "say", text: "two" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    const reader = eventReader(stream);
+    try {
+      const accepted = await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect(accepted.status).toBe(202);
+
+      const first = await reader.next(500);
+      expect(first?.data).toEqual({ kind: "reset" });
+      const streamed = await reader.next(500);
+      expect(streamed?.data).toEqual({ kind: "say", text: "one" });
+
+      releaseSecond();
+      const second = await reader.next(500);
+      expect(second?.data).toEqual({ kind: "say", text: "two" });
+      const seqs = [streamed?.id, second?.id].map((id) => Number(id!.slice(id!.indexOf(":") + 1)));
+      expect(seqs[1]).toBe(seqs[0]! + 1);
+    } finally {
+      await reader.close();
+    }
+  });
+
+  it("keeps later same-visitor events behind an unfinished streamed turn", async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind !== "message") return;
+      yield [{ kind: "say", text: `${event.text}:one` }];
+      if (event.text === "first") await firstGate;
+      yield [{ kind: "say", text: `${event.text}:two` }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    const reader = eventReader(stream);
+    try {
+      await postEvent(base, "v", { kind: "message", text: "first" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "first:one" });
+
+      await postEvent(base, "v", { kind: "message", text: "second" });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      releaseFirst();
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "first:two" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "second:one" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "second:two" });
+    } finally {
+      await reader.close();
+    }
+  });
+
+  it("streams different visitors in parallel while one visitor is mid-turn", async () => {
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const agent: FacetAgent = async function* (_event, session) {
+      const id = session.visitor.visitorId;
+      yield [{ kind: "say", text: `${id}:one` }];
+      if (id === "a") await gateA;
+      yield [{ kind: "say", text: `${id}:two` }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const streamA = await fetch(`${base}/stream?visitorId=a`);
+    const streamB = await fetch(`${base}/stream?visitorId=b`);
+    const readerA = eventReader(streamA);
+    const readerB = eventReader(streamB);
+    try {
+      await postEvent(base, "a", { kind: "message", text: "go" });
+      expect((await readerA.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await readerA.next(500))?.data).toEqual({ kind: "say", text: "a:one" });
+
+      await postEvent(base, "b", { kind: "message", text: "go" });
+      expect((await readerB.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await readerB.next(500))?.data).toEqual({ kind: "say", text: "b:one" });
+
+      releaseA();
+      expect((await readerA.next(500))?.data).toEqual({ kind: "say", text: "a:two" });
+    } finally {
+      await readerA.close();
+      await readerB.close();
+    }
+  });
+
+  it("full rehydrate includes streamed says delivered before the turn-final sink record", async () => {
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+      await secondGate;
+      yield [{ kind: "say", text: "two" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const stream1 = await fetch(`${base}/stream?visitorId=v`);
+    const reader1 = eventReader(stream1);
+    let reader2: ReturnType<typeof eventReader> | undefined;
+    let reader3: ReturnType<typeof eventReader> | undefined;
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await reader1.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await reader1.next(500))?.data).toEqual({ kind: "say", text: "one" });
+
+      const stream2 = await fetch(`${base}/stream?visitorId=v`);
+      reader2 = eventReader(stream2);
+      expect((await reader2.next(500))?.data).toEqual({ kind: "reset" });
+      const snapshot = await reader2.next(500);
+      expect(snapshot?.data).toMatchObject({ kind: "patch" });
+      expect(snapshot?.id).toBe("");
+      await reader2.close();
+      reader2 = undefined;
+
+      const stream3 = await fetch(`${base}/stream?visitorId=v`, {
+        headers: { "Last-Event-ID": snapshot!.id ?? "" },
+      });
+      reader3 = eventReader(stream3);
+      expect((await reader3.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await reader3.next(500))?.data).toMatchObject({ kind: "patch" });
+      expect((await reader3.next(500))?.data).toEqual({ kind: "say", text: "one" });
+
+      releaseSecond();
+      expect((await reader3.next(500))?.data).toEqual({ kind: "say", text: "two" });
+    } finally {
+      releaseSecond();
+      await reader1.close();
+      await reader2?.close();
+      await reader3?.close();
+    }
+  });
+
+  it("fresh full rehydrate includes a just-finished streamed say while its sink record is pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await rehydrateReader.next(500))?.data).toMatchObject({ kind: "patch" });
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+    } finally {
+      sink.release();
+      await liveReader.close();
+      await rehydrateReader?.close();
+    }
+  });
+
+  it("full rehydrate keeps a streamed say whose sink record settles during the history read", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      sink.releaseOnNextHistory = true;
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 500);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate does not duplicate a streamed say already visible in history while its record is settling", async () => {
+    const sink = new VisibleBeforeSettledSink();
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.recordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 500);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate keeps streamed says when multiple sink records settle across history rereads", async () => {
+    const sink = new HistoryReleaseSink();
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "one" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await postEvent(base, "v", { kind: "message", text: "two" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "two" });
+      await postEvent(base, "v", { kind: "message", text: "three" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "three" });
+      await waitFor(async () => sink.startedRecords === 1);
+
+      sink.releaseOnHistoryReads = 3;
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 1_000);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one", "two", "three"]);
+    } finally {
+      sink.releaseOnHistoryReads = 0;
+      await sink.releaseAvailableRecords();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate caps history rereads instead of waiting for every settling pending record", async () => {
+    const sink = new HistoryReleaseSink();
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      for (const text of ["one", "two", "three", "four", "five", "six"]) {
+        await postEvent(base, "v", { kind: "message", text });
+        if (text === "one") expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+        expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text });
+      }
+      await waitFor(async () => sink.startedRecords === 1);
+
+      sink.releaseOnHistoryReads = 6;
+      const baselineHistoryCalls = sink.historyCalls;
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 1_000);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one", "two", "three", "four", "five", "six"]);
+      expect(sink.historyCalls - baselineHistoryCalls).toBeLessThan(6);
+    } finally {
+      sink.releaseOnHistoryReads = 0;
+      await sink.releaseAvailableRecords();
+      await liveReader.close();
+    }
+  });
+
+  it("does not block later same-visitor events while a streamed turn sink record is pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "one" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      await postEvent(base, "v", { kind: "message", text: "two" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "two" });
+    } finally {
+      sink.release();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate includes multiple same-visitor turns whose sink records are pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "one" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      await postEvent(base, "v", { kind: "message", text: "two" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "two" });
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 250);
+      expect(sayText(frames)).toEqual(["one", "two"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate joins after active says fall out of the bounded replay ring", async () => {
+    let yielded = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const agent: FacetAgent = async function* () {
+      for (let i = 0; i < 205; i += 1) {
+        yielded = i + 1;
+        yield [{ kind: "say", text: `s${String(i)}` }];
+      }
+      await gate;
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "flood" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      await waitFor(async () => yielded === 205);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const rehydrated = await readEvents(rehydrating, 2);
+      expect(rehydrated[0]?.data).toEqual({ kind: "reset" });
+      expect(rehydrated[1]?.data).toMatchObject({ kind: "patch" });
+    } finally {
+      release();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate joins after a hung sink lets pending turn ranges age out of the ring", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    let yielded = 0;
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind !== "message") return;
+      if (event.text === "flood") {
+        for (let i = 0; i < 205; i += 1) {
+          yielded = i + 1;
+          yield [{ kind: "say", text: `s${String(i)}` }];
+        }
+        return;
+      }
+      if (event.text === "after") yield [{ kind: "say", text: "after" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "flood" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      await waitFor(async () => yielded === 205 && sink.messageRecordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await rehydrateReader.next(500))?.data).toMatchObject({ kind: "patch" });
+
+      await postEvent(base, "v", { kind: "message", text: "after" });
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "say", text: "after" });
+    } finally {
+      sink.release();
+      await liveReader.close();
+      await rehydrateReader?.close();
+    }
+  });
+
+  it("full rehydrate does not duplicate completed streamed says retained in the frame log", async () => {
+    const sink = new MemorySink();
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+      yield [{ kind: "say", text: "two" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const stream1 = await fetch(`${base}/stream?visitorId=v`);
+    await postEvent(base, "v", { kind: "message", text: "hi" });
+    const first = await readEvents(stream1, 3);
+    expect(sayText(first)).toEqual(["one", "two"]);
+    await waitFor(async () => (await sink.history("a", "v")).length === 1);
+
+    const stream2 = await fetch(`${base}/stream?visitorId=v`);
+    const rehydrated = await collectEvents(stream2, 250);
+
+    expect(rehydrated[0]?.data).toEqual({ kind: "reset" });
+    expect(rehydrated[1]?.data).toMatchObject({ kind: "patch" });
+    expect(sayText(rehydrated)).toEqual(["one", "two"]);
+  });
+
+  it("full rehydrate keeps an older same-text history say when an active retained say matches it", async () => {
+    const sink = new MemorySink();
+    let sameTurns = 0;
+    let patchId = 0;
+    let releaseSecondSame!: () => void;
+    const secondSameGate = new Promise<void>((resolve) => {
+      releaseSecondSame = resolve;
+    });
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind !== "message") return;
+      if (event.text === "same") {
+        sameTurns += 1;
+        yield [{ kind: "say", text: "same" }];
+        if (sameTurns === 2) await secondSameGate;
+        return;
+      }
+      if (event.text === "flood") {
+        for (let i = 0; i < 205; i += 1) {
+          const id = `p${String(patchId)}`;
+          patchId += 1;
+          yield [
+            {
+              kind: "patch",
+              patches: [
+                { op: "add", path: `/nodes/${id}`, value: { id, type: "text", value: id } },
+              ],
+            },
+          ];
+        }
+      }
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+
+    await postEvent(base, "v", { kind: "message", text: "same" });
+    await postEvent(base, "v", { kind: "message", text: "flood" });
+    await waitFor(async () => (await sink.history("a", "v")).length >= 2);
+
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+    try {
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toMatchObject({ kind: "patch" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "same" });
+
+      await postEvent(base, "v", { kind: "message", text: "same" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "same" });
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+      const frames = [
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+      ].filter((frame): frame is SseFrame => frame !== undefined);
+      expect(sayText(frames)).toEqual(["same", "same"]);
+    } finally {
+      releaseSecondSame();
+      await liveReader.close();
+      await rehydrateReader?.close();
+    }
   });
 
   it("advertises Last-Event-ID in CORS so cross-origin resume works", async () => {
@@ -476,6 +1141,38 @@ describe("async delivery — late results", () => {
     await link.close();
   });
 
+  it("full rehydrate includes a late-applied say while its sink record is pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    sink.gateMessageText = "late answer";
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 50, sink });
+    running = server;
+    const link = await dialAgent(base);
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "slow please" });
+      const evt = await link.nextEvent();
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(1_000))?.data).toEqual({ kind: "say", text: INTERIM_SAY });
+
+      expect(
+        (await control(base, evt.requestId, [{ kind: "say", text: "late answer" }])).status,
+      ).toBe(202);
+      expect((await liveReader.next(1_000))?.data).toEqual({ kind: "say", text: "late answer" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 250);
+      expect(sayText(frames)).toEqual([INTERIM_SAY, "late answer"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
+      await link.close();
+    }
+  });
+
   it("applies an in-time result exactly once with no interim note", async () => {
     const { server, base } = await start({ agentId: "a", agentTimeoutMs: 5_000 });
     running = server;
@@ -562,6 +1259,43 @@ describe("async delivery — late results", () => {
       root: { id: "root", type: "box", style: { direction: "col" }, children: ["t"] },
       t: { id: "t", type: "text", value: label },
     },
+  });
+
+  it("marks a mutating streamed turn applied once so an older parked late patch is stale", async () => {
+    const inner = new MemoryStageStore();
+    const fallback: FacetAgent = async function* (event) {
+      if (event.kind === "message" && event.text === "second") {
+        yield [{ kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r2") }] }];
+        yield [{ kind: "say", text: "answer 2" }];
+      }
+    };
+    const { server, base } = await start({
+      agentId: "a",
+      agent: fallback,
+      agentTimeoutMs: 120,
+      stageStore: inner,
+    });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+    await new Promise((r) => setTimeout(r, 180)); // e1 parks
+    await link.close();
+    await waitFor(async () => (await (await fetch(`${base}/health`)).text()) === "ok agent=local");
+
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r2");
+
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+
+    const frames = await collectEvents(stream, 800);
+    expect(sayText(frames)).toContain("answer 1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r2");
   });
 
   it("drops a stale late result's patch but keeps its say when a newer turn applied", async () => {
@@ -916,32 +1650,33 @@ describe("async delivery — resume & rehydrate", () => {
     }
   });
 
-  it("accepts era:-1 as a valid resume base (no reset, no re-rehydrate loop)", async () => {
-    // A pre-populated stage with NO delivered frames stamps its snapshot id era:-1;
-    // resuming from that base must join without a reset (else an idle tab that only
-    // ever received the snapshot would full-rehydrate on every reconnect).
+  it("full rehydrate clears resume state instead of minting a resume token from a snapshot", async () => {
+    // A pre-populated stage with NO delivered frames has no frame-log replay point.
+    // Full rehydrate frames clear Last-Event-ID with an empty id, so reconnecting
+    // from that value performs a fresh full rehydrate instead of a false resume.
     const inner = new MemoryStageStore();
     await inner.save({ agentId: "a", visitor: { visitorId: "v" }, stage: seededTree });
     const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
     running = server;
 
     const s1 = await fetch(`${base}/stream?visitorId=v`);
-    const first = await readEvents(s1, 2); // reset + snapshot stamped era:-1
+    const first = await readEvents(s1, 2); // reset + snapshot, both clearing id
     const snap = first.find((f) => f.id !== undefined);
-    expect(snap?.id?.endsWith(":-1")).toBe(true); // stamped at N0 = -1
-    const era = snap!.id!.slice(0, snap!.id!.indexOf(":"));
+    expect(snap?.id).toBe("");
 
     const s2 = await fetch(`${base}/stream?visitorId=v`, {
-      headers: { "Last-Event-ID": `${era}:-1` },
+      headers: { "Last-Event-ID": snap?.id ?? "" },
     });
-    // Valid resume: no reset frame (not a full rehydrate).
-    const frames = await collectEvents(s2, 250);
-    expect(frames.every((f) => (f.data as { kind?: string }).kind !== "reset")).toBe(true);
+    const frames = await readEvents(s2, 2);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(frames[1]?.data).toMatchObject({ kind: "patch" });
   });
 
-  it("ends the stream when the ring overflows during a rehydrate read", async () => {
-    // The gap's head falls off the 200-frame ring mid-read → unstitchable → the
-    // finalization writes nothing and ends, and the retry full-rehydrates.
+  it("falls back to the visitor lane when the ring overflows during a rehydrate read", async () => {
+    // If frames land while the out-of-lane snapshot is reading, rehydrate must not
+    // replay over a potentially stale snapshot or require endless EventSource
+    // retries. It falls back to the visitor lane, where no same-visitor frame can
+    // interleave with the snapshot/history reads.
     const RING_OVERFLOW = 201; // > FRAME_LOG_LIMIT (200) in server.ts
     const flood: FacetAgent = (event) =>
       event.kind === "message" && event.text === "flood"
@@ -959,15 +1694,41 @@ describe("async delivery — resume & rehydrate", () => {
     const first = await fetch(`${base}/stream?visitorId=v`);
     // During the 200ms delayed read, one event floods >FRAME_LOG_LIMIT frames.
     await postEvent(base, "v", { kind: "message", text: "flood" });
-    expect(await streamEnded(first, 1_500)).toBe(true);
-
-    // The retry (no token) full-rehydrates cleanly and stays open.
-    const second = await fetch(`${base}/stream?visitorId=v`);
-    const frames = await readEvents(second, 1);
+    const frames = await readEvents(first, 2);
     expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(frames[1]?.data).toMatchObject({ kind: "patch" });
   });
 
-  it("leads a full rehydrate with an unstamped reset and stamps from the snapshot", async () => {
+  it("falls back to the visitor lane when the captured frame log is LRU re-minted during a rehydrate read", async () => {
+    const agent: FacetAgent = (event) =>
+      event.kind === "message" && event.text === "seed"
+        ? [{ kind: "patch", patches: [{ op: "replace", path: "", value: seededTree }] }]
+        : [];
+    const inner = new MemoryStageStore();
+    const stageStore = new DelayedGetStore(inner, 1_000);
+    const { server, base } = await start({ agentId: "a", agent, stageStore });
+    running = server;
+
+    await postEvent(base, "v", { kind: "message", text: "seed" });
+    await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["s1"] !== undefined);
+
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    const reader = eventReader(stream);
+    try {
+      await Promise.all(
+        Array.from({ length: MAX_FRAME_SESSIONS + 1 }, (_item, index) =>
+          postEvent(base, `evict-${String(index)}`, { kind: "message", text: "evict" }),
+        ),
+      );
+
+      expect((await reader.next(2_000))?.data).toEqual({ kind: "reset" });
+      expect((await reader.next(2_000))?.data).toMatchObject({ kind: "patch" });
+    } finally {
+      await reader.close();
+    }
+  });
+
+  it("leads a full rehydrate with reset and snapshot frames that clear resume state", async () => {
     const inner = new MemoryStageStore();
     const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
     running = server;
@@ -979,14 +1740,12 @@ describe("async delivery — resume & rehydrate", () => {
 
     const stream = await fetch(`${base}/stream?visitorId=v`);
     const frames = await readEvents(stream, 2);
-    // The reset frame carries NO id:.
+    // Full rehydrate frames carry an empty id: to clear any stale Last-Event-ID.
     expect(frames[0]?.data).toEqual({ kind: "reset" });
-    expect(frames[0]?.id).toBeUndefined();
-    // Stamping starts at the snapshot (the full-replace patch).
+    expect(frames[0]?.id).toBe("");
     const snapshot = frames[1];
     expect((snapshot?.data as { kind?: string }).kind).toBe("patch");
-    expect(snapshot?.id).toBeDefined();
-    expect(snapshot?.id).toContain(":");
+    expect(snapshot?.id).toBe("");
   });
 
   it("paints a token-less tab promptly during a mid-flight slow turn", async () => {
@@ -1032,7 +1791,7 @@ describe("async delivery — resume & rehydrate", () => {
     await link.close();
   });
 
-  it("replays a frame delivered during the rehydrate read (loss-free window)", async () => {
+  it("falls back to the visitor lane when a frame lands during the rehydrate read", async () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
@@ -1059,22 +1818,14 @@ describe("async delivery — resume & rehydrate", () => {
     await postEvent(base, "v", { kind: "message", text: "seed" });
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
-    // Open the (re)connecting visitor, then fire a bump whose frame is delivered
-    // DURING the delayed rehydrate read — it must be replayed before live flow.
-    const stream = await fetch(`${base}/stream?visitorId=v`);
+    // Open the (re)connecting visitor, then fire a bump during the delayed read.
+    // The same stream must fall back to the visitor lane, where it can snapshot
+    // the bump without racing or replaying the already-applied frame.
+    const first = await fetch(`${base}/stream?visitorId=v`);
     await postEvent(base, "v", { kind: "message", text: "bump" });
-
-    const frames = (await collectFrames(stream, 600)) as {
-      kind?: string;
-      patches?: { path?: string }[];
-    }[];
-    const fullIdx = frames.findIndex((f) => f.kind === "patch" && f.patches?.[0]?.path === "");
-    const liveIdx = frames.findIndex(
-      (f) => f.kind === "patch" && f.patches?.[0]?.path === "/nodes/t1/value",
-    );
-    expect(fullIdx).toBeGreaterThanOrEqual(0); // the full-replace rehydrate arrived
-    expect(liveIdx).toBeGreaterThanOrEqual(0); // the bump was NOT lost in the window
-    expect(fullIdx).toBeLessThan(liveIdx); // …and arrived before the live patch
+    const frames = await readEvents(first, 2);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(JSON.stringify(frames[1]?.data)).toContain("bumped");
   });
 });
 
@@ -1145,7 +1896,7 @@ describe("agent handshake (DC-009)", () => {
 });
 
 describe("hardening", () => {
-  it("rehydrate cannot overwrite a newer live patch", async () => {
+  it("rehydrate falls back to the visitor lane instead of racing a newer live patch over its snapshot", async () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
@@ -1177,26 +1928,14 @@ describe("hardening", () => {
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
     // Open the (re)connecting visitor, then immediately fire a newer live patch. The
-    // stale rehydrate snapshot (delayed 150ms) resolves AFTER the bump has shipped.
+    // rehydrate read resolves after the bump, so the server must switch to the
+    // visitor lane before sending a replacement snapshot.
     const stream = await fetch(`${base}/stream?visitorId=v`);
     expect(stream.status).toBe(200);
     await post("bump");
-
-    const frames = (await collectFrames(stream, 500)) as {
-      kind?: string;
-      patches?: { path?: string }[];
-    }[];
-    const isFullReplace = (f: (typeof frames)[number]): boolean =>
-      f.kind === "patch" && f.patches?.[0]?.path === "";
-    const isLivePatch = (f: (typeof frames)[number]): boolean =>
-      f.kind === "patch" && f.patches?.[0]?.path === "/nodes/t1/value";
-    const fullIdx = frames.findIndex(isFullReplace);
-    const liveIdx = frames.findIndex(isLivePatch);
-
-    expect(fullIdx).toBeGreaterThanOrEqual(0); // the full-replace rehydrate must arrive
-    // …and it must precede any live patch (a stale full-replace after a newer patch
-    // would silently roll the visitor back).
-    expect(liveIdx === -1 || fullIdx < liveIdx).toBe(true);
+    const frames = await readEvents(stream, 2);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(JSON.stringify(frames[1]?.data)).toContain("bumped");
   });
 
   it("ends the stream when rehydrate fails, so the visitor can reconnect", async () => {

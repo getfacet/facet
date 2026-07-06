@@ -7,11 +7,13 @@ plus the `facet-quickstart` bin that boots it behind a ready-made server. It is
 to brains what `@facet/server` is to transports: a reference implementation of a
 pluggable seam, not the only brain Facet can run.
 
-Each turn the agent runs a bounded **tool loop**: the model calls
+Each turn the agent runs a bounded **streaming tool loop**: the model calls
 `append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
 (a full redraw), and `say` (chat) — via the provider's native function-calling
 (OpenAI) / tool-use (Anthropic) — observing each result before deciding the
-next, so it can refine a page in place rather than redrawing it every time.
+next. After every provider step, quickstart yields the closed batch it produced,
+so the browser can see the page build live instead of waiting for the whole turn
+to finish.
 
 ```bash
 # with a provider key (env only — see below)

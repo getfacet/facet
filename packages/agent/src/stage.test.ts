@@ -34,6 +34,16 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     expect(stage.flush().map((m) => m.kind)).toEqual(["patch", "say"]);
   });
 
+  it("flush drains recorded output so repeated flushes return deltas only", () => {
+    const stage = new Stage();
+    stage.say("one");
+    expect(stage.flush()).toEqual([{ kind: "say", text: "one" }]);
+    expect(stage.flush()).toEqual([]);
+
+    stage.say("two");
+    expect(stage.flush()).toEqual([{ kind: "say", text: "two" }]);
+  });
+
   it("screens records a screens map and entry as patch ops", () => {
     const stage = new Stage();
     stage.screens({ home: "home_root", about: "about_root" }, "home");

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { EMPTY_TREE, validateTree } from "@facet/core";
+import { collectMessages, EMPTY_TREE, iterateAgentResult, validateTree } from "@facet/core";
 import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
@@ -80,7 +80,230 @@ function patchesOf(messages: readonly ServerMessage[]): readonly ServerMessage[]
   return messages.filter((m) => m.kind === "patch");
 }
 
+async function runAgent(
+  agent: ReturnType<typeof createQuickstartAgent>,
+  event: ClientEvent,
+  session: FacetSession = SESSION,
+): Promise<readonly ServerMessage[]> {
+  return collectMessages(agent(event, session));
+}
+
+async function batchesOf(
+  agent: ReturnType<typeof createQuickstartAgent>,
+  event: ClientEvent,
+  session: FacetSession = SESSION,
+): Promise<readonly (readonly ServerMessage[])[]> {
+  const batches: ServerMessage[][] = [];
+  for await (const batch of iterateAgentResult(agent(event, session))) {
+    batches.push([...batch]);
+  }
+  return batches;
+}
+
 describe("createQuickstartAgent tool loop", () => {
+  it("per-step streaming yields one batch for each provider step that changed output", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", { parentId: "root", node: { id: "one", type: "text", value: "1" } }),
+      ),
+      toolStep(call("set_node", { node: { id: "two", type: "text", value: "2" } })),
+      toolStep(call("say", { text: "done" })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(3);
+    expect(batches[0]?.map((m) => m.kind)).toEqual(["patch"]);
+    expect(batches[1]?.map((m) => m.kind)).toEqual(["patch"]);
+    expect(batches[2]).toEqual([{ kind: "say", text: "done" }]);
+  });
+
+  it("defers a set_node forward child ref until the target node exists in the same streamed batch", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["child"] } })),
+      toolStep(call("set_node", { node: { id: "child", type: "text", value: "ready" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind === "patch") {
+      const paths = patch.patches.map((p) => ("path" in p ? p.path : ""));
+      expect(paths).toEqual(["/nodes/child", "/nodes/panel"]);
+      expect(patch.patches).toContainEqual({
+        op: "add",
+        path: "/nodes/panel",
+        value: { id: "panel", type: "box", children: ["child"] },
+      });
+    }
+  });
+
+  it("keeps chained set_node forward refs buffered until the full target chain is closed", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["child"] } })),
+      toolStep(call("set_node", { node: { id: "child", type: "box", children: ["grandchild"] } })),
+      toolStep(call("set_node", { node: { id: "grandchild", type: "text", value: "ready" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind === "patch") {
+      const paths = patch.patches.map((p) => ("path" in p ? p.path : ""));
+      expect(paths).toEqual(["/nodes/grandchild", "/nodes/child", "/nodes/panel"]);
+    }
+  });
+
+  it("defers an append_node box with a forward child ref until the target node exists", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "root",
+          node: { id: "panel", type: "box", children: ["child"] },
+        }),
+      ),
+      toolStep(call("set_node", { node: { id: "child", type: "text", value: "ready" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind === "patch") {
+      const paths = patch.patches.map((p) => ("path" in p ? p.path : ""));
+      expect(paths).toEqual(["/nodes/child", "/nodes/panel", "/nodes/root/children/-"]);
+    }
+  });
+
+  it("drops a stale pending op when the same node id is replaced before closure", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "root",
+          node: { id: "panel", type: "box", children: ["child"] },
+        }),
+      ),
+      toolStep(call("set_node", { node: { id: "panel", type: "text", value: "replacement" } })),
+      toolStep(call("set_node", { node: { id: "child", type: "text", value: "late child" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(2);
+    const paths = batches
+      .flatMap((batch) => batch.flatMap((m) => (m.kind === "patch" ? m.patches : [])))
+      .map((p) => ("path" in p ? p.path : ""));
+    expect(paths).toContain("/nodes/panel");
+    expect(paths).toContain("/nodes/child");
+    expect(paths).not.toContain("/nodes/root/children/-");
+  });
+
+  it("normalizes a box without children instead of throwing from the closure buffer", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind === "patch") {
+      expect(patch.patches).toContainEqual({
+        op: "add",
+        path: "/nodes/panel",
+        value: { id: "panel", type: "box", children: [] },
+      });
+    }
+  });
+
+  it("does not report a permanently buffered set_node as a completed mutation", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["missing"] } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "build" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      expect(saysOf(out)[0]).toMatch(/sorry/i);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain('queued: "panel" waits for child node(s): missing');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("forces the failure fallback when a turn has emitted edits but still has unresolved buffered nodes", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["missing"] } })),
+      toolStep(
+        call("append_node", { parentId: "root", node: { id: "ok", type: "text", value: "done" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "build" });
+
+      expect(patchesOf(out)).toHaveLength(1);
+      expect(saysOf(out)[0]).toMatch(/sorry/i);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[facet-quickstart] unresolved buffered edits:",
+        '"panel" still waits for child node(s): missing',
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("reports an append parent that exists only as a pending buffered node", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["missing"] } })),
+      toolStep(
+        call("append_node", { parentId: "panel", node: { id: "leaf", type: "text", value: "x" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await runAgent(agent, { kind: "message", text: "build" });
+
+      const obs = provider.turns[2]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain(
+        'error: append_node — parent "panel" was created this turn but is still waiting for child node(s): missing. Define those child nodes before appending into it.',
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("renders a full page then says, across a multi-step tool loop", async () => {
     const provider = providerOf(
       toolStep(call("render_page", { tree: VALID_TREE })),
@@ -88,7 +311,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "draw it" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "draw it" }, SESSION);
 
     const patch = out.find((m) => m.kind === "patch");
     expect(patch).toBeDefined();
@@ -108,7 +331,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "tweak it" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "tweak it" }, SESSION);
 
     const patch = out.find((m) => m.kind === "patch");
     expect(patch).toBeDefined();
@@ -131,7 +354,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "add" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "add" }, SESSION);
 
     // The 2nd turn's messages carry the error observation from the failed call.
     const secondTurn = provider.turns[1]!;
@@ -159,7 +382,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "add" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "add" }, SESSION);
       // No successful mutation ⇒ the turn apologizes rather than silently doing nothing.
       expect(patchesOf(out)).toHaveLength(0);
       expect(saysOf(out)[0]).toMatch(/sorry/i);
@@ -188,7 +411,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      await agent({ kind: "message", text: "go" }, SESSION);
+      await runAgent(agent, { kind: "message", text: "go" }, SESSION);
       const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
         m.role === "tool_result" ? m.content : "",
       );
@@ -213,7 +436,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "add" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "add" }, SESSION);
       expect(patchesOf(out)).toHaveLength(0); // nothing mutated ⇒ no orphan op emitted
       const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
         m.role === "tool_result" ? m.content : "",
@@ -233,7 +456,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    await agent({ kind: "message", text: "build" }, SESSION);
+    await runAgent(agent, { kind: "message", text: "build" }, SESSION);
     const obs = provider.turns[2]!.messages.filter((m) => m.role === "tool_result").map((m) =>
       m.role === "tool_result" ? m.content : "",
     );
@@ -254,7 +477,7 @@ describe("createQuickstartAgent tool loop", () => {
     };
     const provider = providerOf(toolStep(call("render_page", { tree: screensTree })), END);
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "visit", visitor: { visitorId: "v1" } }, SESSION);
+    const out = await runAgent(agent, { kind: "visit", visitor: { visitorId: "v1" } }, SESSION);
     // isRenderable must accept it (entry screen "home" is a non-empty box).
     expect(patchesOf(out)).toHaveLength(1);
   });
@@ -270,7 +493,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "edit" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "edit" }, SESSION);
     const patch = out.find((m) => m.kind === "patch");
     if (patch?.kind === "patch") {
       expect(
@@ -325,7 +548,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "edit" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "edit" }, SESSION);
     const patch = out.find((m) => m.kind === "patch");
     if (patch?.kind === "patch") {
       expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/clip")).toBe(true);
@@ -346,7 +569,7 @@ describe("createQuickstartAgent tool loop", () => {
   it("set_theme records a /theme add op the model can drive", async () => {
     const provider = providerOf(toolStep(call("set_theme", { name: "midnight" })), END);
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "go dark" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "go dark" }, SESSION);
 
     const patch = out.find((m) => m.kind === "patch");
     expect(patch).toBeDefined();
@@ -363,7 +586,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "go" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "go" }, SESSION);
       // No /theme patch was emitted — the invalid name degraded to an observation.
       expect(patchesOf(out)).toHaveLength(0);
       const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
@@ -380,7 +603,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "go" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "go" }, SESSION);
       // Nothing was applied — the bad arg degraded to an observation, the turn survived.
       expect(patchesOf(out)).toHaveLength(0);
       const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
@@ -395,7 +618,7 @@ describe("createQuickstartAgent tool loop", () => {
   it("stops at maxSteps when the model never ends the loop", async () => {
     const provider = providerOf(toolStep(call("say", { text: "again" }))); // repeats forever
     const agent = makeAgent(provider, { maxSteps: 3 });
-    await agent({ kind: "message", text: "loop" }, SESSION);
+    await runAgent(agent, { kind: "message", text: "loop" }, SESSION);
     expect(provider.turns).toHaveLength(3);
   });
 
@@ -404,7 +627,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "who are you?" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "who are you?" }, SESSION);
       expect(patchesOf(out)).toHaveLength(0);
       expect(saysOf(out)).toEqual(["I'm your personal page agent — ask me anything!"]);
       expect(errorSpy).not.toHaveBeenCalled();
@@ -418,7 +641,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "hi" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "hi" }, SESSION);
       expect(patchesOf(out)).toHaveLength(0);
       expect(saysOf(out)).toHaveLength(1);
       expect(saysOf(out)[0]).toMatch(/sorry/i);
@@ -438,7 +661,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "add" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "add" }, SESSION);
       // The append survived (mutated) so no apology is issued.
       const patch = out.find((m) => m.kind === "patch");
       expect(patch).toBeDefined();
@@ -463,7 +686,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await agent({ kind: "message", text: "add" }, SESSION);
+      const out = await runAgent(agent, { kind: "message", text: "add" }, SESSION);
       // The append survived, but the model's mid-step preamble must NOT become the reply.
       expect(saysOf(out)).not.toContain("Let me update that for you.");
     } finally {
@@ -478,7 +701,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "draw" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "draw" }, SESSION);
 
     const firstTurnObs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map(
       (m) => (m.role === "tool_result" ? m.content : ""),
@@ -492,7 +715,8 @@ describe("createQuickstartAgent tool loop", () => {
   it("an action event's fields appear in the first turn's final user message", async () => {
     const provider = providerOf(toolStep(call("say", { text: "noted" })), END);
     const agent = makeAgent(provider, { guide: "MY CUSTOM GUIDE" });
-    await agent(
+    await runAgent(
+      agent,
       {
         kind: "tap",
         action: { kind: "agent", name: "submit", collect: "signup" },
@@ -524,7 +748,7 @@ describe("createQuickstartAgent tool loop", () => {
 
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
     const agent = makeAgent(provider, { sink, historyTurns: 1 });
-    await agent({ kind: "message", text: "now" }, SESSION);
+    await runAgent(agent, { kind: "message", text: "now" }, SESSION);
 
     const all = provider.turns[0]!.messages.map((m) => ("content" in m ? m.content : "")).join(
       "\n",
@@ -536,7 +760,7 @@ describe("createQuickstartAgent tool loop", () => {
   it("uses DEFAULT_GUIDE when no guide is given", async () => {
     const provider = providerOf(toolStep(call("say", { text: "hi" })), END);
     const agent = makeAgent(provider);
-    await agent({ kind: "message", text: "hi" }, SESSION);
+    await runAgent(agent, { kind: "message", text: "hi" }, SESSION);
     expect(provider.turns[0]!.system).toContain(DEFAULT_GUIDE);
   });
 
@@ -563,7 +787,7 @@ describe("createQuickstartAgent tool loop", () => {
       themes: [theme],
       stamps: [stamp],
     });
-    await agent({ kind: "message", text: "draw" }, SESSION);
+    await runAgent(agent, { kind: "message", text: "draw" }, SESSION);
 
     const system = provider.turns[0]!.system;
     expect(system).toContain("THEMES");
