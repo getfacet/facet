@@ -137,6 +137,34 @@ async function collectFrames(response: Response, ms: number): Promise<unknown[]>
   return (await collectEvents(response, ms)).map((f) => f.data);
 }
 
+function eventReader(response: Response): {
+  next(ms: number): Promise<SseFrame | undefined>;
+  close(): Promise<void>;
+} {
+  const reader = response.body?.getReader();
+  if (reader === undefined) throw new Error("no body");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const next = async (ms: number): Promise<SseFrame | undefined> => {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+      const drained = drainFrames(buffer);
+      buffer = drained.rest;
+      for (const block of drained.blocks) {
+        const frame = parseBlock(block);
+        if (frame !== undefined) return frame;
+      }
+      const timeoutMs = Math.max(0, deadline - Date.now());
+      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
+      const chunk = await Promise.race([reader.read(), timeout]);
+      if (chunk === null || chunk.done) return undefined;
+      buffer += decoder.decode(chunk.value, { stream: true });
+    }
+    return undefined;
+  };
+  return { next, close: () => reader.cancel() };
+}
+
 /** Poll `predicate` until it's true or the window elapses. */
 async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 2_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
@@ -368,6 +396,39 @@ describe("browser channel", () => {
     const frames = await readFrames(stream, 2);
     expect(frames[0]).toEqual({ kind: "reset" });
     expect(frames[1]).toEqual({ kind: "say", text: "hello from agent" });
+  });
+
+  it("streams yielded batches to /stream before the turn finishes, in seq order", async () => {
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+      await secondGate;
+      yield [{ kind: "say", text: "two" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    const reader = eventReader(stream);
+    try {
+      const accepted = await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect(accepted.status).toBe(202);
+
+      const first = await reader.next(500);
+      expect(first?.data).toEqual({ kind: "reset" });
+      const streamed = await reader.next(500);
+      expect(streamed?.data).toEqual({ kind: "say", text: "one" });
+
+      releaseSecond();
+      const second = await reader.next(500);
+      expect(second?.data).toEqual({ kind: "say", text: "two" });
+      const seqs = [streamed?.id, second?.id].map((id) => Number(id!.slice(id!.indexOf(":") + 1)));
+      expect(seqs[1]).toBe(seqs[0]! + 1);
+    } finally {
+      await reader.close();
+    }
   });
 
   it("advertises Last-Event-ID in CORS so cross-origin resume works", async () => {

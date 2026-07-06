@@ -464,8 +464,9 @@ function handleEvent(req: IncomingMessage, res: ServerResponse, deps: PostHandle
         handling.set(visitor.visitorId, arrival);
         let result: TurnResult = { messages: [], agentMutated: false };
         try {
-          result = await runtime.handle(visitor, event);
-          deliver(visitor.visitorId, result.messages);
+          result = await runtime.handle(visitor, event, (messages) =>
+            deliver(visitor.visitorId, messages),
+          );
         } catch (error) {
           // Don't leave the visitor staring at a 202 that went nowhere.
           console.error("[facet] handle failed:", error);
