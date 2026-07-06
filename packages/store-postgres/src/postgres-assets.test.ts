@@ -52,6 +52,10 @@ function roundTripPool(): Pool {
   } as unknown as Pool;
 }
 
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 const validTheme = {
   name: "midnight",
   description: "a dark theme",
@@ -139,10 +143,47 @@ describe("PostgresAssets", () => {
       stamps: [validStamp],
       initialTree: seedTree,
     };
+    const replacement: AssetDocuments = {
+      themes: [{ ...validTheme, name: "dawn", color: { bg: "#ffffff", fg: "#111111" } }],
+      stamps: [],
+    };
 
     await store.putAssets("agent", docs);
+    await store.putAssets("agent", replacement);
 
-    await expect(store.load("agent")).resolves.toEqual(docs);
+    await expect(store.load("agent")).resolves.toEqual(replacement);
+  });
+
+  it("keeps assets isolated by agent id", async () => {
+    const store = new PostgresAssets(roundTripPool());
+    const agentA: AssetDocuments = { themes: [validTheme], stamps: [] };
+    const agentB: AssetDocuments = {
+      themes: [],
+      stamps: [validStamp],
+      initialTree: seedTree,
+    };
+
+    await store.putAssets("agent-a", agentA);
+    await store.putAssets("agent-b", agentB);
+
+    await expect(store.load("agent-a")).resolves.toEqual(agentA);
+    await expect(store.load("agent-b")).resolves.toEqual(agentB);
+    await expect(store.load("agent-c")).resolves.toEqual({ themes: [], stamps: [] });
+  });
+
+  it("putAssets emits an agent_id upsert that replaces all jsonb fields", async () => {
+    const { pool, calls } = fakePool();
+    await new PostgresAssets(pool).putAssets("agent", { themes: [], stamps: [] });
+
+    const call = calls[0];
+    expect(call?.values).toEqual(["agent", "[]", "[]", null]);
+    const sql = normalizeSql(call?.text ?? "");
+    expect(sql).toContain("on conflict (agent_id)");
+    expect(sql).toContain("do update set");
+    expect(sql).toContain("themes = excluded.themes");
+    expect(sql).toContain("stamps = excluded.stamps");
+    expect(sql).toContain("initial_tree = excluded.initial_tree");
+    expect(sql).toContain("updated_at = now()");
   });
 
   it("loadAssets drops malformed raw docs from PostgresAssets without throwing", async () => {

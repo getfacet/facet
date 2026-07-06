@@ -78,7 +78,7 @@ server boots (or an admin path writes a new custom stamp).
 
 | Scenario Step | Failure Policy | Boundary/Validation | Concurrency |
 |---|---|---|---|
-| `load(agentId)` | no row → empty docs; DB error → propagates (boot-time, operator-visible) | agent_id text key | read-only, idempotent |
+| `load(agentId)` | no row → empty docs; DB error → caught by `loadAssets` as an issue, defaults still resolve | agent_id text key | read-only, idempotent |
 | write custom docs | invalid input rejected before write (shape check) OR left to loadAssets on read | jsonb size (DB-bounded) | upsert per agent |
 | malformed stored jsonb | `loadAssets` validator drops the bad doc, records an issue | per-doc validation in runtime | n/a |
 | `initSchema` | idempotent (`create table if not exists`) | — | safe to run repeatedly |

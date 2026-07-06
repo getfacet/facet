@@ -52,6 +52,10 @@ function roundTripPool(): Pool {
   } as unknown as Pool;
 }
 
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 const session: FacetSession = {
   agentId: "a",
   visitor: { visitorId: "v" },
@@ -63,9 +67,14 @@ describe("initSchema", () => {
     const { pool, calls } = fakePool();
     await initSchema(pool);
 
-    expect(calls.some((call) => /create table if not exists facet_assets/i.test(call.text))).toBe(
-      true,
-    );
+    const ddl = calls.find((call) => /create table if not exists facet_assets/i.test(call.text));
+    expect(ddl).toBeDefined();
+    const sql = normalizeSql(ddl?.text ?? "");
+    expect(sql).toContain("agent_id text primary key");
+    expect(sql).toContain("themes jsonb");
+    expect(sql).toContain("stamps jsonb");
+    expect(sql).toContain("initial_tree jsonb");
+    expect(sql).toContain("updated_at timestamptz not null default now()");
   });
 });
 
