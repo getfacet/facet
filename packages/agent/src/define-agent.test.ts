@@ -31,10 +31,7 @@ describe("defineAgent", () => {
     await expect(collectBatches(agent(event, session))).resolves.toEqual([
       [say("one"), say("two")],
     ]);
-    await expect(collectMessages(agent(event, session))).resolves.toEqual([
-      say("one"),
-      say("two"),
-    ]);
+    await expect(collectMessages(agent(event, session))).resolves.toEqual([say("one"), say("two")]);
   });
 });
 

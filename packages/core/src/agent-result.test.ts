@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { collectMessages, iterateAgentResult } from "./agent-result.js";
 import type { FacetAgentResult } from "./agent-result.js";
-import type {
-  ClientEvent,
-  FacetAgent,
-  FacetSession,
-  ServerMessage,
-} from "./protocol.js";
+import type { ClientEvent, FacetAgent, FacetSession, ServerMessage } from "./protocol.js";
 
 const say = (text: string): ServerMessage => ({ kind: "say", text });
 
@@ -54,8 +49,7 @@ describe("agent result normalization", () => {
   });
 
   it("allows FacetAgent producers to return an async iterable", () => {
-    const agent: FacetAgent = (_event: ClientEvent, _session: FacetSession) =>
-      streamingResult();
+    const agent: FacetAgent = (_event: ClientEvent, _session: FacetSession) => streamingResult();
 
     expect(typeof agent).toBe("function");
   });

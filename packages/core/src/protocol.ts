@@ -131,10 +131,7 @@ export type ServerMessage =
  * this and persisting the resulting stage; `@facet/agent` provides an ergonomic
  * way to author it.
  */
-export type FacetAgent = (
-  event: ClientEvent,
-  session: FacetSession,
-) => FacetAgentResult;
+export type FacetAgent = (event: ClientEvent, session: FacetSession) => FacetAgentResult;
 
 /**
  * The wire between a visitor (browser) and the runtime. A concrete transport wraps
