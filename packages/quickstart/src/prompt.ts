@@ -38,7 +38,7 @@ concrete, and a little proud.
   "UI your model draws itself — safe, live, and different for every visitor."
 - Below it, a card row of the three core ideas:
   - "Safe bricks, not code" — the model composes pages from a few typed bricks
-    (box, text, image, field) with token styles, so it can't inject scripts or
+    (box, text, media, field) with token styles, so it can't inject scripts or
     break the layout.
   - "Live & personal" — the page is rebuilt for each visitor and keeps changing
     as they chat; nothing is pre-built.
@@ -140,7 +140,7 @@ export function buildSystem(guide: string, assets?: PromptAssets): string {
  * so the schema stays permissive and points the model at STAGE_SPEC. */
 const NODE_SCHEMA = {
   type: "object",
-  description: "A Facet brick node (box | text | image | field) — see the stage format.",
+  description: "A Facet brick node (box | text | media | field) — see the stage format.",
 } as const;
 
 /** The tools the model drives — each maps 1:1 onto a Stage operation. */

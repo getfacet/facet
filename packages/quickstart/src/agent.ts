@@ -104,7 +104,7 @@ function isRenderable(tree: FacetTree): boolean {
  * Shape-check a node for the incremental tools, returning a SPECIFIC, actionable
  * reason on failure so the model can fix it (not a generic "invalid node"). It
  * rejects exactly the fields `validateTree` would DROP the node for
- * (text.value, image.src+alt, field.name), so a tool can't report "ok" for a
+ * (text.value, media.src, field.name), so a tool can't report "ok" for a
  * node that silently vanishes on apply. Deeper sanitization (tokens, safe src,
  * dangling children) still happens at apply time. */
 function asNode(value: unknown): { node: FacetNode } | { error: string } {
@@ -120,9 +120,9 @@ function asNode(value: unknown): { node: FacetNode } | { error: string } {
         return { error: 'a "text" node needs a string "value"' };
       }
       break;
-    case "image":
-      if (typeof value["src"] !== "string" || typeof value["alt"] !== "string") {
-        return { error: 'an "image" node needs string "src" and "alt"' };
+    case "media":
+      if (typeof value["src"] !== "string") {
+        return { error: 'a "media" node needs string "src"' };
       }
       break;
     case "field":
@@ -131,7 +131,7 @@ function asNode(value: unknown): { node: FacetNode } | { error: string } {
       }
       break;
     default:
-      return { error: '"type" must be one of "box" | "text" | "image" | "field"' };
+      return { error: '"type" must be one of "box" | "text" | "media" | "field"' };
   }
   return { node: value as unknown as FacetNode };
 }
