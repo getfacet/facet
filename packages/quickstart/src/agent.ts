@@ -221,6 +221,7 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
     set(node) {
       let emitted = 0;
       if (isClosed(node, knownIds)) {
+        pending.delete(node.id);
         emit({ kind: "set", node });
         emitted += 1;
       } else {
@@ -231,6 +232,7 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
     append(parentId, node) {
       let emitted = 0;
       if (knownIds.has(parentId) && isClosed(node, knownIds)) {
+        pending.delete(node.id);
         emit({ kind: "append", parentId, node });
         emitted += 1;
       } else {

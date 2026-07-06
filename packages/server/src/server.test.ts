@@ -519,6 +519,7 @@ describe("browser channel", () => {
     const stream1 = await fetch(`${base}/stream?visitorId=v`);
     const reader1 = eventReader(stream1);
     let reader2: ReturnType<typeof eventReader> | undefined;
+    let reader3: ReturnType<typeof eventReader> | undefined;
     try {
       await postEvent(base, "v", { kind: "message", text: "hi" });
       expect((await reader1.next(500))?.data).toEqual({ kind: "reset" });
@@ -527,15 +528,25 @@ describe("browser channel", () => {
       const stream2 = await fetch(`${base}/stream?visitorId=v`);
       reader2 = eventReader(stream2);
       expect((await reader2.next(500))?.data).toEqual({ kind: "reset" });
-      expect((await reader2.next(500))?.data).toMatchObject({ kind: "patch" });
-      expect((await reader2.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      const snapshot = await reader2.next(500);
+      expect(snapshot?.data).toMatchObject({ kind: "patch" });
+      expect(snapshot?.id).toBeDefined();
+      await reader2.close();
+      reader2 = undefined;
+
+      const stream3 = await fetch(`${base}/stream?visitorId=v`, {
+        headers: { "Last-Event-ID": snapshot!.id! },
+      });
+      reader3 = eventReader(stream3);
+      expect((await reader3.next(500))?.data).toEqual({ kind: "say", text: "one" });
 
       releaseSecond();
-      expect((await reader2.next(500))?.data).toEqual({ kind: "say", text: "two" });
+      expect((await reader3.next(500))?.data).toEqual({ kind: "say", text: "two" });
     } finally {
       releaseSecond();
       await reader1.close();
       await reader2?.close();
+      await reader3?.close();
     }
   });
 

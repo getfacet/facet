@@ -188,6 +188,31 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("drops a stale pending op when the same node id is replaced before closure", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "root",
+          node: { id: "panel", type: "box", children: ["child"] },
+        }),
+      ),
+      toolStep(call("set_node", { node: { id: "panel", type: "text", value: "replacement" } })),
+      toolStep(call("set_node", { node: { id: "child", type: "text", value: "late child" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(2);
+    const paths = batches
+      .flatMap((batch) => batch.flatMap((m) => (m.kind === "patch" ? m.patches : [])))
+      .map((p) => ("path" in p ? p.path : ""));
+    expect(paths).toContain("/nodes/panel");
+    expect(paths).toContain("/nodes/child");
+    expect(paths).not.toContain("/nodes/root/children/-");
+  });
+
   it("normalizes a box without children instead of throwing from the closure buffer", async () => {
     const provider = providerOf(
       toolStep(call("set_node", { node: { id: "panel", type: "box" } })),

@@ -359,12 +359,12 @@ function retainedSayFrames(
   frames: readonly LoggedFrame[],
   minSeq: number,
   maxSeq: number,
-): ServerMessage[] {
-  const says: ServerMessage[] = [];
+): LoggedFrame[] {
+  const says: LoggedFrame[] = [];
   for (const frame of frames) {
     if (frame.seq < minSeq || frame.seq > maxSeq) continue;
     const message = parseLoggedServerMessage(frame);
-    if (message?.kind === "say") says.push(message);
+    if (message?.kind === "say") says.push(frame);
   }
   return says;
 }
@@ -426,7 +426,14 @@ async function rehydrate(
       res.end();
       return;
     }
-    const stampId = `${current.era}:${n0}`;
+    const active = handling.get(visitorId);
+    const activeStartSeq =
+      active !== undefined && active.era === capturedEra ? active.streamStartSeq : undefined;
+    const activeSayFrames =
+      activeStartSeq === undefined ? [] : retainedSayFrames(current.frames, activeStartSeq, n0);
+    const baseSeq =
+      activeSayFrames.length > 0 && activeStartSeq !== undefined ? activeStartSeq - 1 : n0;
+    const stampId = `${current.era}:${baseSeq}`;
     sse(res, { kind: "reset" });
     if (stage !== undefined) {
       sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] }, stampId);
@@ -440,13 +447,8 @@ async function rehydrate(
     for (const message of historySays) {
       sse(res, message, stampId);
     }
-    const active = handling.get(visitorId);
-    const activeStartSeq =
-      active !== undefined && active.era === capturedEra ? active.streamStartSeq : undefined;
-    const activeSays =
-      activeStartSeq === undefined ? [] : retainedSayFrames(current.frames, activeStartSeq, n0);
-    for (const message of activeSays) {
-      sse(res, message, stampId);
+    for (const frame of activeSayFrames) {
+      writeFrame(res, frame.json, `${current.era}:${frame.seq}`);
     }
     // Replay frames delivered during the reads (seq > N0) so nothing in the
     // snapshot-read→join window is lost. A replayed frame may describe a change the
