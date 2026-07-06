@@ -174,10 +174,12 @@ a reference implementation of a pluggable seam. To connect your own model
 instead, there are three jacks — see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
-**Persistence is two separate concerns.** The *stage* (the page) is always
+**Persistence has three pluggable seams.** The *stage* (the page) is always
 Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
 *conversation* is a `Sink` you choose: store it for replay, forward it to your
-own system (e.g. a chat platform that already keeps it), or drop it.
+own system (e.g. a chat platform that already keeps it), or drop it. The
+per-agent asset library (themes, stamps, and an optional initial tree) is an
+`AssetsStore` (memory, file, or Postgres).
 
 **Each visitor is a `visitorId`, and you decide where it comes from.** For an
 anonymous page, `browserVisitorId()` stores an unguessable id in the browser so a
@@ -199,7 +201,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | Package                 | Role                                                                                     |
 | ----------------------- | ---------------------------------------------------------------------------------------- |
 | `@facet/core`           | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, session/event types. |
-| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation). File-backed Node references via `@facet/runtime/node`. |
+| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
 | `@facet/agent`          | In-process agent SDK — the `Stage` control API + `defineAgent`.                           |
 | `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect).                          |
 | `@facet/client`         | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`.               |
@@ -207,7 +209,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
 | `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
 | `@facet/assets`         | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
-| `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
+| `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres.                             |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 | `@facet/quickstart`     | `facet-quickstart` — one-command boot with a built-in reference brain (OpenAI/Anthropic, or a keyless stub). |
 
@@ -254,7 +256,7 @@ export const agent = defineAgent(({ event, stage }) => {
 - [x] Core spec (low-level bricks + tokens) + RFC 6902 patches + in-process demo
 - [x] SSE/POST transport + a browser playground
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
-- [x] Durable `StageStore`/`Sink` + a Postgres adapter
+- [x] Durable `StageStore`/`Sink`/`AssetsStore` + a Postgres adapter
 - [x] `@facet/assets` default theme + stamp data (node-free value maps)
 - [x] One-command quickstart (`facet-quickstart`) with a built-in reference brain
 - [ ] Docs site + examples

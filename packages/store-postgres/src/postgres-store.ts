@@ -6,8 +6,9 @@ import { openSession, type Sink, type StageStore, type StoredEvent } from "@face
  * Postgres adapter for Facet's persistence seams — a durable `StageStore` and
  * `Sink` backed by Postgres (Supabase works too). You bring the `pg.Pool`; Facet
  * only ever calls the interface methods, so the runtime/server don't know it's a
- * database. Two tables: `facet_stage` (current page, one row per session) and
- * `facet_event` (append-only conversation).
+ * database. Three tables: `facet_stage` (current page, one row per session),
+ * `facet_event` (append-only conversation), and `facet_assets` (per-agent raw
+ * asset documents).
  *
  * Run `initSchema(pool)` once at startup, or manage the tables with your own
  * migrations.
@@ -36,6 +37,15 @@ export async function initSchema(pool: Pool): Promise<void> {
   await pool.query(
     "create index if not exists facet_event_session on facet_event (agent_id, visitor_id, id)",
   );
+  await pool.query(`
+    create table if not exists facet_assets (
+      agent_id text primary key,
+      themes jsonb,
+      stamps jsonb,
+      initial_tree jsonb,
+      updated_at timestamptz not null default now()
+    )
+  `);
 }
 
 export class PostgresStageStore implements StageStore {

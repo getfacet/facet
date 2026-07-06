@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Pool } from "pg";
 import type { CollectedEvent, FacetSession } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
-import { PostgresSink, PostgresStageStore } from "./postgres-store.js";
+import { initSchema, PostgresSink, PostgresStageStore } from "./postgres-store.js";
 
 interface Call {
   readonly text: string;
@@ -16,7 +16,7 @@ interface Call {
 function fakePool(rows: readonly unknown[] = []): { pool: Pool; calls: Call[] } {
   const calls: Call[] = [];
   const pool = {
-    query: (text: string, values: readonly unknown[]) => {
+    query: (text: string, values: readonly unknown[] = []) => {
       calls.push({ text, values });
       return Promise.resolve({ rows });
     },
@@ -52,11 +52,31 @@ function roundTripPool(): Pool {
   } as unknown as Pool;
 }
 
+function normalizeSql(sql: string): string {
+  return sql.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 const session: FacetSession = {
   agentId: "a",
   visitor: { visitorId: "v" },
   stage: { root: "root", nodes: {} },
 };
+
+describe("initSchema", () => {
+  it("initSchema creates the facet_assets table", async () => {
+    const { pool, calls } = fakePool();
+    await initSchema(pool);
+
+    const ddl = calls.find((call) => /create table if not exists facet_assets/i.test(call.text));
+    expect(ddl).toBeDefined();
+    const sql = normalizeSql(ddl?.text ?? "");
+    expect(sql).toContain("agent_id text primary key");
+    expect(sql).toContain("themes jsonb");
+    expect(sql).toContain("stamps jsonb");
+    expect(sql).toContain("initial_tree jsonb");
+    expect(sql).toContain("updated_at timestamptz not null default now()");
+  });
+});
 
 describe("PostgresStageStore", () => {
   it("save upserts the session as a jsonb param", async () => {

@@ -1,0 +1,148 @@
+# Execution Manifest: PostgresAssets — DB backend for AssetsStore
+#
+# Keep synchronized with specs/dev-specs/postgres-assets-v1.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "postgres-assets-v1"
+spec_path: "specs/dev-specs/postgres-assets-v1.md"
+context_evidence_path: "specs/context/postgres-assets-v1.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; @facet/store-postgres + @facet/runtime build; pg types present (dev @types/pg + fake-pool doubles — no live DB needed)"
+    owner: "main-agent"
+    verification: "pnpm --filter @facet/store-postgres typecheck && pnpm exec vitest run packages/store-postgres"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+
+final_gate_chain:
+  - "/verify (typecheck, test, lint, format:check, build, raw-NUL scan)"
+  - "/code-review (PASS = P0-P2 = 0; P3 nits non-blocking)"
+  - "/live-test (Tier 1 live-link gate still runs; Tier 2 blocks only when packages/quickstart changed)"
+  - "/refactor-audit (periodic; owner-run)"
+  - "squash → one feature commit; commit/PR on the user's explicit go"
+
+work_units:
+  - id: "WU-1"
+    title: "Extend initSchema with the facet_assets table"
+    owner_role: "subagent"
+    packages: ["@facet/store-postgres"]
+    objective: "Add an idempotent `create table if not exists facet_assets` to the shared initSchema so the assets backend has a durable per-agent row (DC-005, RISK-API-1)."
+    files:
+      - path: "packages/store-postgres/src/postgres-store.ts"
+        change_type: "update"
+        purpose: "Add the facet_assets DDL inside initSchema (mirror facet_stage/facet_event create-table-if-not-exists blocks); update module doc comment two→three tables."
+      - path: "packages/store-postgres/src/postgres-store.test.ts"
+        change_type: "update"
+        purpose: "Add a test that initSchema issues a `create table if not exists facet_assets` statement (DC-005)."
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run packages/store-postgres/src/postgres-store.test.ts -t 'initSchema creates the facet_assets table'"
+      target: "packages/store-postgres/src/postgres-store.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/store-postgres/src/postgres-store.test.ts -t 'initSchema creates the facet_assets table'"
+      - "pnpm exec vitest run packages/store-postgres/src/postgres-store.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/store-postgres typecheck"
+      - "pnpm exec vitest run packages/store-postgres"
+    test_plan:
+      - type: "unit"
+        target: "packages/store-postgres/src/postgres-store.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "initSchema creates facet_assets via `create table if not exists` (idempotent); module doc comment updated to three tables"
+      - "No regression: pnpm exec vitest run packages/store-postgres"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "PostgresAssets adapter (load + putAssets), barrel export, README"
+    owner_role: "subagent"
+    packages: ["@facet/store-postgres"]
+    objective: "Add `PostgresAssets implements AssetsStore` with a RAW load(agentId) and a concrete putAssets(agentId, docs) upsert, export it through the barrel, and update the README — DC-001/002/003/004/006, RISK-INV-1/2/3/4, API-2/3."
+    files:
+      - path: "packages/store-postgres/src/postgres-assets.ts"
+        change_type: "add"
+        purpose: "PostgresAssets class: pool ctor; load selects themes/stamps/initial_tree and returns RAW {themes,stamps,initialTree?} (no-row/null → [], initialTree only when non-null, no validators); putAssets upserts on conflict (agent_id)."
+      - path: "packages/store-postgres/src/index.ts"
+        change_type: "update"
+        purpose: 'Add `export * from "./postgres-assets.js"` to the barrel (DC-006, RISK-API-3).'
+      - path: "packages/store-postgres/src/postgres-assets.test.ts"
+        change_type: "add"
+        purpose: "DC-001 load round-trip; DC-002 no-row + null-column empty (+ loadAssets resolves defaults); DC-003 putAssets→load round-trip (roundTripPool); DC-004 malformed doc dropped by loadAssets (integration); DC-006 import-presence + compile-time implements + Memory/File still valid; RISK-INV-4 rejecting-pool swallow."
+      - path: "packages/store-postgres/README.md"
+        change_type: "update"
+        purpose: "Document initSchema now creates three tables and show PostgresAssets (load/putAssets) usage (RISK-API-1c)."
+    depends_on: ["WU-1"]
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run packages/store-postgres/src/postgres-assets.test.ts"
+      target: "packages/store-postgres/src/postgres-assets.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/store-postgres/src/postgres-assets.test.ts"
+      - "pnpm --filter @facet/store-postgres typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/store-postgres"
+      - "pnpm --filter @facet/runtime typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/store-postgres/src/postgres-assets.test.ts"
+        covers_dc: ["DC-001"]
+        action: "new"
+      - type: "unit"
+        target: "packages/store-postgres/src/postgres-assets.test.ts"
+        covers_dc: ["DC-002"]
+        action: "new"
+      - type: "unit"
+        target: "packages/store-postgres/src/postgres-assets.test.ts"
+        covers_dc: ["DC-003"]
+        action: "new"
+      - type: "integration"
+        target: "packages/store-postgres/src/postgres-assets.test.ts"
+        covers_dc: ["DC-004"]
+        action: "new"
+      - type: "unit"
+        target: "packages/store-postgres/src/postgres-assets.test.ts"
+        covers_dc: ["DC-006"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "load returns RAW docs (no validators), normalizes no-row/null → [], sets initialTree only when non-null"
+      - "putAssets upserts per agent; putAssets→load round-trips (roundTripPool)"
+      - "AssetsStore interface unchanged; PostgresAssets/MemoryAssets/FileAssets all valid implementers; barrel re-exports PostgresAssets"
+      - "README documents three tables + PostgresAssets usage"
+      - "No regression: pnpm exec vitest run packages/store-postgres and pnpm --filter @facet/runtime typecheck"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
