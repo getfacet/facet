@@ -150,6 +150,17 @@ describe("createQuickstartAgent tool loop", () => {
       const childId = rootNode.children?.[0];
       expect(childId).toBeDefined();
       expect(nodeAdds.some((op) => op.path === `/nodes/${String(childId)}`)).toBe(true);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      )[0]!;
+      const idsJson = JSON.parse(obs.slice(obs.indexOf("{"))) as {
+        readonly root: string;
+        readonly slots: Readonly<Record<string, string>>;
+        readonly ids: Readonly<Record<string, string>>;
+      };
+      expect(idsJson.root).toBe(rootId);
+      expect(idsJson.slots["title"]).toBe(childId);
+      expect(idsJson.ids["card"]).toBe(rootId);
     }
   });
 

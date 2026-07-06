@@ -429,7 +429,11 @@ function executeTool(
         return fail(`error: use_stamp — expanded "${name}" but the subtree did not close`);
       }
       return {
-        observation: `ok: used stamp "${name}" as "${expanded.root}"`,
+        observation: `ok: used stamp "${name}" ${JSON.stringify({
+          root: expanded.root,
+          slots: expanded.slots,
+          ids: expanded.ids,
+        })}`,
         mutated: true,
         said: false,
       };
@@ -477,7 +481,7 @@ function executeTool(
 export function createQuickstartAgent(
   options: QuickstartAgentOptions,
 ): ReturnType<typeof defineStreamingAgent> {
-  const stamps = [...(options.stamps ?? [])];
+  const stamps = (options.stamps ?? []).map((stamp) => structuredClone(stamp));
   const stampMap = new Map(stamps.map((stamp) => [stamp.name, stamp]));
   const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
     themes: options.themes ?? [],
