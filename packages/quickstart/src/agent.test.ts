@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { collectMessages, EMPTY_TREE, iterateAgentResult, validateTree } from "@facet/core";
+import {
+  MAX_PATCH_OPS,
+  collectMessages,
+  EMPTY_TREE,
+  iterateAgentResult,
+  validateTree,
+} from "@facet/core";
 import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
@@ -242,6 +248,139 @@ describe("createQuickstartAgent tool loop", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+
+  it("use_stamp rejects a parent that exists but is not a box", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "Inside" } },
+    };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "label", params: {}, at: { parent: "title" } })),
+      END,
+    );
+    const sessionWithTextParent: FacetSession = {
+      agentId: "quickstart",
+      visitor: { visitorId: "v1" },
+      stage: {
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["title"] },
+          title: { id: "title", type: "text", value: "Title" },
+        },
+      },
+    };
+    const agent = makeAgent(provider, { stamps: [stamp] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(
+        agent,
+        { kind: "message", text: "bad parent" },
+        sessionWithTextParent,
+      );
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain('error: use_stamp — parent "title" is not a box');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("append_node rejects a parent that exists but is not a box", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "title",
+          node: { id: "child", type: "text", value: "Child" },
+        }),
+      ),
+      END,
+    );
+    const sessionWithTextParent: FacetSession = {
+      agentId: "quickstart",
+      visitor: { visitorId: "v1" },
+      stage: {
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["title"] },
+          title: { id: "title", type: "text", value: "Title" },
+        },
+      },
+    };
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(
+        agent,
+        { kind: "message", text: "bad parent" },
+        sessionWithTextParent,
+      );
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain('error: append_node — parent "title" is not a box');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("use_stamp rejects expansions that would exceed the current patch batch cap", async () => {
+    const nodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      nodes[id] = { id, type: "text", value: id };
+    }
+    nodes["root"] = { id: "root", type: "box", children };
+    const stamp: FacetStamp = { name: "huge", root: "root", nodes };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "huge", params: {}, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "huge" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs[0]).toContain("would exceed the patch op cap");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("use_stamp reports non-fatal expansion issues in a successful observation", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      slots: { title: "Fallback" },
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
+    };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "label", params: 42, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+
+    await runAgent(agent, { kind: "message", text: "bad params" });
+
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs[0]).toContain("note:");
+    expect(obs[0]).toContain("params is not an object map");
   });
 
   it("per-step streaming yields one batch for each provider step that changed output", async () => {

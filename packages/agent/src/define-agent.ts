@@ -20,7 +20,7 @@ export type StreamingFacetLogic = (
  */
 export function defineAgent(logic: FacetLogic): FacetAgent {
   return async (event: ClientEvent, session: FacetSession): Promise<readonly ServerMessage[]> => {
-    const stage = new Stage();
+    const stage = new Stage(session.stage);
     await logic({ event, session, stage });
     return stage.flush();
   };
@@ -43,7 +43,7 @@ export function defineStreamingAgent(logic: StreamingFacetLogic): FacetAgent {
     event: ClientEvent,
     session: FacetSession,
   ): AsyncIterable<readonly ServerMessage[]> {
-    const stage = new Stage();
+    const stage = new Stage(session.stage);
     const steps = await logic({ event, session, stage });
     for await (const step of steps) {
       void step;

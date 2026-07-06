@@ -30,7 +30,7 @@ const MAX_MINT_ATTEMPTS_PER_NODE = 1024;
 
 export function expandStamp(
   stamp: unknown,
-  params: StampParams,
+  params: unknown,
   at: ExpandAt,
   options: ExpandStampOptions = {},
 ): ExpandStampResult {
@@ -47,7 +47,7 @@ export function expandStamp(
 
 function expandStampInner(
   stamp: unknown,
-  params: StampParams,
+  params: unknown,
   at: ExpandAt,
   options: ExpandStampOptions,
   issues: string[],
@@ -69,20 +69,22 @@ function expandStampInner(
     return noOp(issues);
   }
 
+  const initialStamp = reachableStamp(initial.stamp, issues);
   const safeParams = paramMap(params, issues);
-  const slotSources = collectSlotSources(initial.stamp);
-  const filled = fillStamp(initial.stamp, safeParams, issues);
+  const slotSources = collectSlotSources(initialStamp);
+  const filled = fillStamp(initialStamp, safeParams, issues);
   const sanitized = validateStamp(filled);
   issues.push(...sanitized.issues);
   if (sanitized.stamp === undefined) {
     return noOp(issues);
   }
 
-  const ids = mintIds(Object.keys(sanitized.stamp.nodes), existingIds, options.mintId, issues);
+  const finalStamp = reachableStamp(sanitized.stamp, issues);
+  const ids = mintIds(Object.keys(finalStamp.nodes), existingIds, options.mintId, issues);
   if (ids === undefined) return noOp(issues);
 
-  const nodes = remapNodes(sanitized.stamp.nodes, ids);
-  const root = ids[sanitized.stamp.root];
+  const nodes = remapNodes(finalStamp.nodes, ids);
+  const root = ids[finalStamp.root];
   if (root === undefined) {
     issues.push("stamp expansion root was not remapped");
     return noOp(issues);
@@ -114,10 +116,52 @@ function existingIdSet(raw: Iterable<NodeId> | undefined, issues: string[]): Set
   return ids;
 }
 
-function paramMap(params: StampParams, issues: string[]): Readonly<Record<string, unknown>> {
-  if (typeof params === "object" && params !== null && !Array.isArray(params)) return params;
+function paramMap(params: unknown, issues: string[]): Readonly<Record<string, unknown>> {
+  if (isParamRecord(params)) return params;
   issues.push("stamp expansion params is not an object map; ignored");
   return {};
+}
+
+function isParamRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function reachableStamp(stamp: FacetStamp, issues: string[]): FacetStamp {
+  const reachable = new Set<NodeId>();
+  const visit = (id: NodeId): void => {
+    if (reachable.has(id)) return;
+    const node = stamp.nodes[id];
+    if (node === undefined) return;
+    reachable.add(id);
+    if (node.type === "box") {
+      for (const child of node.children) visit(child);
+    }
+  };
+  visit(stamp.root);
+
+  const allIds = Object.keys(stamp.nodes);
+  const dropped = allIds.filter((id) => !reachable.has(id));
+  if (dropped.length === 0) return stamp;
+
+  const nodes: Record<NodeId, FacetNode> = {};
+  for (const id of allIds) {
+    if (reachable.has(id)) {
+      const node = stamp.nodes[id];
+      if (node !== undefined) nodes[id] = node;
+    }
+  }
+  issues.push(`stamp expansion dropped unreachable node(s): ${dropped.slice(0, 5).join(", ")}`);
+
+  const next: {
+    name: string;
+    description?: string;
+    slots?: Readonly<Record<string, string>>;
+    root: NodeId;
+    nodes: Record<NodeId, FacetNode>;
+  } = { name: stamp.name, root: stamp.root, nodes };
+  if (stamp.description !== undefined) next.description = stamp.description;
+  if (stamp.slots !== undefined) next.slots = stamp.slots;
+  return next;
 }
 
 function fillStamp(stamp: FacetStamp, params: Readonly<Record<string, unknown>>, issues: string[]) {
@@ -296,8 +340,12 @@ function remapNode(node: FacetNode, id: NodeId, ids: Readonly<Record<NodeId, Nod
           .map((child) => ids[child])
           .filter((child): child is string => child !== undefined),
       };
-      if (node.onPress !== undefined) next.onPress = remapAction(node.onPress, ids);
-      if (node.onHold !== undefined) next.onHold = remapAction(node.onHold, ids);
+      const onPress = node.onPress === undefined ? undefined : remapAction(node.onPress, ids);
+      if (onPress !== undefined) next.onPress = onPress;
+      else delete next.onPress;
+      const onHold = node.onHold === undefined ? undefined : remapAction(node.onHold, ids);
+      if (onHold !== undefined) next.onHold = onHold;
+      else delete next.onHold;
       return next;
     }
     case "text":
@@ -309,15 +357,21 @@ function remapNode(node: FacetNode, id: NodeId, ids: Readonly<Record<NodeId, Nod
   }
 }
 
-function remapAction(action: FacetAction, ids: Readonly<Record<NodeId, NodeId>>): FacetAction {
+function remapAction(
+  action: FacetAction,
+  ids: Readonly<Record<NodeId, NodeId>>,
+): FacetAction | undefined {
   if (action.kind === "toggle") {
     const target = ids[action.target];
-    return target !== undefined ? { ...action, target } : action;
+    return target !== undefined ? { ...action, target } : undefined;
   }
   if (action.kind === "navigate") return action;
   if (action.collect !== undefined) {
     const collect = ids[action.collect];
     if (collect !== undefined) return { ...action, collect };
+    const { collect: droppedCollect, ...rest } = action;
+    void droppedCollect;
+    return rest;
   }
   return action;
 }

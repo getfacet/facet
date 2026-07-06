@@ -125,7 +125,8 @@ where `./assets` holds any mix of:
 - **`*.stamp.json`** — a reusable `{ root, nodes, slots? }` brick fragment (a
   hero, a card) offered to the model by name. The quickstart model calls
   `use_stamp` with string slot params and the server expands the stamp into
-  ordinary patches with fresh ids; there is **no client-side stamp expansion**.
+  ordinary patches with fresh ids, under a known box parent and within the patch
+  batch cap; there is **no client-side stamp expansion**.
 - **`initial.tree.json`** — a starting stage the first visit opens on *before*
   the model's first turn: a fast, non-blank first paint the agent then refines.
 

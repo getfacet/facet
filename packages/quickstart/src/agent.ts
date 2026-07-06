@@ -16,6 +16,7 @@
  * the provider's auth header only).
  */
 import {
+  MAX_PATCH_OPS,
   expandStamp,
   isSafeMediaSrc,
   isValidThemeName,
@@ -190,6 +191,9 @@ interface ClosureBuffer {
   set(node: FacetNode): number;
   append(parentId: NodeId, node: FacetNode): number;
   remove(id: NodeId): number;
+  recordPatchOps(count: number): void;
+  emittedPatchOps(): number;
+  resetEmittedPatchOps(): void;
   pendingMissing(id: NodeId): readonly NodeId[] | undefined;
   drainUnresolved(): readonly string[];
 }
@@ -212,13 +216,27 @@ function isClosed(node: FacetNode, knownIds: ReadonlySet<string>): boolean {
   return missingChildRefs(node, knownIds).length === 0;
 }
 
-function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer {
+function createClosureBuffer(
+  stage: Stage,
+  knownIds: Set<string>,
+  knownBoxIds: Set<string>,
+): ClosureBuffer {
   const pending = new Map<NodeId, PendingOp>();
+  let emittedPatchOps = 0;
 
-  const emit = (op: PendingOp): void => {
+  const rememberNode = (node: FacetNode): void => {
+    knownIds.add(node.id);
+    if (node.type === "box") knownBoxIds.add(node.id);
+    else knownBoxIds.delete(node.id);
+  };
+
+  const emit = (op: PendingOp): number => {
+    const patchOps = op.kind === "set" ? 1 : 2;
     if (op.kind === "set") stage.set(op.node);
     else stage.append(op.parentId, op.node);
-    knownIds.add(op.node.id);
+    rememberNode(op.node);
+    emittedPatchOps += patchOps;
+    return patchOps;
   };
 
   const flushReady = (): number => {
@@ -227,11 +245,10 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
     while (progressed) {
       progressed = false;
       for (const [id, op] of pending) {
-        if (op.kind === "append" && !knownIds.has(op.parentId)) continue;
+        if (op.kind === "append" && !knownBoxIds.has(op.parentId)) continue;
         if (!isClosed(op.node, knownIds)) continue;
-        emit(op);
+        emitted += emit(op);
         pending.delete(id);
-        emitted += 1;
         progressed = true;
       }
     }
@@ -247,15 +264,19 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
       pending.clear();
       stage.render(tree);
       knownIds.clear();
+      knownBoxIds.clear();
       for (const id of Object.keys(tree.nodes)) knownIds.add(id);
+      for (const node of Object.values(tree.nodes)) {
+        if (node.type === "box") knownBoxIds.add(node.id);
+      }
+      emittedPatchOps += 1;
       return 1;
     },
     set(node) {
       let emitted = 0;
       if (isClosed(node, knownIds)) {
         pending.delete(node.id);
-        emit({ kind: "set", node });
-        emitted += 1;
+        emitted += emit({ kind: "set", node });
       } else {
         pending.set(node.id, { kind: "set", node });
       }
@@ -263,10 +284,9 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
     },
     append(parentId, node) {
       let emitted = 0;
-      if (knownIds.has(parentId) && isClosed(node, knownIds)) {
+      if (knownBoxIds.has(parentId) && isClosed(node, knownIds)) {
         pending.delete(node.id);
-        emit({ kind: "append", parentId, node });
-        emitted += 1;
+        emitted += emit({ kind: "append", parentId, node });
       } else {
         pending.set(node.id, { kind: "append", parentId, node });
       }
@@ -275,8 +295,19 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
     remove(id) {
       pending.delete(id);
       knownIds.delete(id);
+      knownBoxIds.delete(id);
       stage.remove(id);
+      emittedPatchOps += 1;
       return 1;
+    },
+    recordPatchOps(count) {
+      emittedPatchOps += count;
+    },
+    emittedPatchOps() {
+      return emittedPatchOps;
+    },
+    resetEmittedPatchOps() {
+      emittedPatchOps = 0;
     },
     pendingMissing(id) {
       const op = pending.get(id);
@@ -324,6 +355,7 @@ function executeTool(
   call: ToolCall,
   stage: Stage,
   knownIds: Set<string>,
+  knownBoxIds: Set<string>,
   closure: ClosureBuffer,
   stamps: ReadonlyMap<string, FacetStamp>,
 ): ToolOutcome {
@@ -363,6 +395,9 @@ function executeTool(
         return fail(
           `error: append_node — parent "${parentId}" does not exist yet. Create it first with render_page or set_node, or append into an existing node.`,
         );
+      }
+      if (!knownBoxIds.has(parentId)) {
+        return fail(`error: append_node — parent "${parentId}" is not a box`);
       }
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: append_node — ${result.error}`);
@@ -412,11 +447,14 @@ function executeTool(
         }
         return fail(`error: use_stamp — parent "${parent}" does not exist yet`);
       }
+      if (!knownBoxIds.has(parent)) {
+        return fail(`error: use_stamp — parent "${parent}" is not a box`);
+      }
       const stamp = stamps.get(name);
       if (stamp === undefined) {
         return fail(`error: use_stamp — unknown stamp "${name}". Pick a name from STAMPS.`);
       }
-      const params = isObjectMap(input["params"]) ? input["params"] : {};
+      const params = input["params"] ?? {};
       const expanded = expandStamp(stamp, params, { parent }, { existingIds: knownIds });
       if (expanded.root === undefined) {
         const hint = issueHint(expanded.issues);
@@ -424,12 +462,19 @@ function executeTool(
           `error: use_stamp — could not expand "${name}"` + (hint.length > 0 ? `: ${hint}` : ""),
         );
       }
+      const expansionPatchOps = Object.keys(expanded.nodes).length + 1;
+      if (closure.emittedPatchOps() + expansionPatchOps > MAX_PATCH_OPS) {
+        return fail(
+          `error: use_stamp — expanded "${name}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`,
+        );
+      }
       const emitted = emitExpandedStamp(closure, parent, expanded.root, expanded.nodes);
       if (emitted === 0) {
         return fail(`error: use_stamp — expanded "${name}" but the subtree did not close`);
       }
+      const note = expanded.issues.length > 0 ? ` note: ${issueHint(expanded.issues)}` : "";
       return {
-        observation: `ok: used stamp "${name}" ${JSON.stringify({
+        observation: `ok: used stamp "${name}"${note} ${JSON.stringify({
           root: expanded.root,
           slots: expanded.slots,
           ids: expanded.ids,
@@ -452,6 +497,7 @@ function executeTool(
         return fail('error: say needs a non-empty string "text"');
       }
       stage.say(text);
+      closure.resetEmittedPatchOps();
       return { observation: "ok: said", mutated: false, said: true };
     }
     case "set_theme": {
@@ -471,6 +517,7 @@ function executeTool(
         );
       }
       stage.theme(name);
+      closure.recordPatchOps(1);
       return { observation: `ok: theme set to "${name}"`, mutated: true, said: false };
     }
     default:
@@ -505,7 +552,12 @@ export function createQuickstartAgent(
       // Ids that exist so far this turn (seeded from the current stage) — lets
       // append_node reject a nonexistent parent instead of orphaning the node.
       const knownIds = new Set<string>(Object.keys(session.stage.nodes));
-      closure = createClosureBuffer(stage, knownIds);
+      const knownBoxIds = new Set<string>(
+        Object.values(session.stage.nodes)
+          .filter((node) => node.type === "box")
+          .map((node) => node.id),
+      );
+      closure = createClosureBuffer(stage, knownIds, knownBoxIds);
 
       for (let step = 0; step < maxSteps; step += 1) {
         const result = await options.provider.run({ system, messages }, TOOLS);
@@ -519,12 +571,13 @@ export function createQuickstartAgent(
 
         messages.push({ role: "assistant_tools", text: result.text, toolCalls: result.toolCalls });
         for (const call of result.toolCalls) {
-          const outcome = executeTool(call, stage, knownIds, closure, stampMap);
+          const outcome = executeTool(call, stage, knownIds, knownBoxIds, closure, stampMap);
           mutated = mutated || outcome.mutated;
           said = said || outcome.said;
           messages.push({ role: "tool_result", callId: call.id, content: outcome.observation });
         }
         yield;
+        closure.resetEmittedPatchOps();
       }
     } catch (error) {
       // Provider/network/sink failure: keep whatever the stage already has.

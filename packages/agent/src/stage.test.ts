@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PATCH_OPS, type FacetStamp } from "@facet/core";
 import { Stage } from "./stage.js";
 
 describe("Stage — ergonomic CLI over RFC 6902", () => {
@@ -196,6 +197,48 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     expect(badStamp.ids).toEqual({});
     expect(unknownParent.root).toBeUndefined();
     expect(unknownParent.ids).toEqual({});
+    expect(stage.flush()).toEqual([]);
+  });
+
+  it("useStamp rejects non-box parents from the current session", () => {
+    const stage = new Stage({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["title"] },
+        title: { id: "title", type: "text", value: "Title" },
+      },
+    });
+
+    const result = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "title" },
+    );
+
+    expect(result.root).toBeUndefined();
+    expect(stage.flush()).toEqual([]);
+  });
+
+  it("useStamp refuses an expansion that would exceed one patch batch", () => {
+    const nodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      nodes[id] = { id, type: "text", value: id };
+    }
+    nodes["root"] = { id: "root", type: "box", children };
+    const stage = new Stage();
+
+    const result = stage.useStamp({ name: "huge", root: "root", nodes }, {}, { parent: "root" });
+
+    expect(result.root).toBeUndefined();
     expect(stage.flush()).toEqual([]);
   });
 });

@@ -131,6 +131,88 @@ describe("expandStamp", () => {
     expect(result.issues.some((issue) => issue.includes("unsafe media src"))).toBe(true);
   });
 
+  it("fills media poster slots after validating the marker", () => {
+    const result = expandStamp(
+      {
+        name: "video",
+        slots: { poster: "https://example.com/default.jpg" },
+        root: "video",
+        nodes: {
+          video: {
+            id: "video",
+            type: "media",
+            kind: "video",
+            src: "https://example.com/movie.mp4",
+            poster: "{{poster}}",
+          },
+        },
+      },
+      { poster: "https://example.com/custom.jpg" },
+      { parent: "root" },
+      { existingIds: new Set(["root"]), mintId: mintFrom(["fresh-video"]) },
+    );
+
+    expect(result.root).toBe("fresh-video");
+    expect(result.slots).toEqual({ poster: "fresh-video" });
+    expect(result.nodes["fresh-video"]).toMatchObject({
+      type: "media",
+      poster: "https://example.com/custom.jpg",
+    });
+  });
+
+  it("drops unreachable stamp nodes before remapping or emitting", () => {
+    const result = expandStamp(
+      {
+        name: "clean",
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["visible"] },
+          visible: { id: "visible", type: "text", value: "Visible" },
+          orphan: { id: "orphan", type: "box", children: ["orphan-child"] },
+          "orphan-child": { id: "orphan-child", type: "text", value: "Hidden" },
+        },
+      },
+      {},
+      { parent: "page" },
+      { existingIds: new Set(["page"]), mintId: mintFrom(["fresh-root", "fresh-visible"]) },
+    );
+
+    expect(result.root).toBe("fresh-root");
+    expect(Object.keys(result.nodes).sort()).toEqual(["fresh-root", "fresh-visible"]);
+    expect(result.ids).toEqual({ root: "fresh-root", visible: "fresh-visible" });
+    expect(result.issues.some((issue) => issue.includes("unreachable"))).toBe(true);
+  });
+
+  it("drops actions that target nodes outside the stamped subtree", () => {
+    const result = expandStamp(
+      {
+        name: "button",
+        root: "button",
+        nodes: {
+          button: {
+            id: "button",
+            type: "box",
+            children: [],
+            onPress: { kind: "toggle", target: "root" },
+            onHold: { kind: "agent", name: "submit", collect: "root" },
+          },
+        },
+      },
+      {},
+      { parent: "root" },
+      { existingIds: new Set(["root"]), mintId: mintFrom(["fresh-button"]) },
+    );
+
+    expect(result.root).toBe("fresh-button");
+    expect(result.nodes["fresh-button"]).toEqual({
+      id: "fresh-button",
+      type: "box",
+      style: {},
+      children: [],
+      onHold: { kind: "agent", name: "submit" },
+    });
+  });
+
   it("returns a no-op result for malformed input or an unknown parent", () => {
     const malformed = expandStamp(
       { name: "bad", root: "missing", nodes: { x: { id: "x", type: "text", value: "x" } } },

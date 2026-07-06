@@ -94,7 +94,7 @@ that doesn't match is ignored):
 | File | What it is |
 | --- | --- |
 | `*.theme.json` | A named palette/scale document — token names mapped to CSS values. Offered to the agent by NAME (a `set_theme` tool); **the model never authors the CSS values**. |
-| `*.stamp.json` | A reusable `{ name, description?, slots?, root, nodes }` brick fragment the agent may add with `use_stamp`. The prompt advertises names/slots/descriptions only; the server expands stamps into ordinary patches with fresh ids. |
+| `*.stamp.json` | A reusable `{ name, description?, slots?, root, nodes }` brick fragment the agent may add with `use_stamp`. The prompt advertises names/slots/descriptions only; the server expands the root-reachable stamp subtree into ordinary patches with fresh ids. |
 | `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
 
 A theme document looks like:
@@ -122,9 +122,12 @@ Every document passes one `@facet/core` validator at boot — `validateTheme`,
 
 The validated theme names + descriptions (never values) and stamp names + slot
 names + descriptions are injected into the agent's prompt; full stamp JSON stays
-server-side and is expanded only when the model calls `use_stamp`. The validated
-theme map ships inline in the served HTML shell for the renderer (no new protocol
-message). An explicit `--assets` path that doesn't exist ⇒ exit 1 naming it.
+server-side and is expanded only when the model calls `use_stamp`. Stamp
+expansion only targets an existing box parent, reports non-fatal sanitization
+issues back to the model, and refuses an expansion that would overflow one patch
+batch. The validated theme map ships inline in the served HTML shell for the
+renderer (no new protocol message). An explicit `--assets` path that doesn't
+exist ⇒ exit 1 naming it.
 
 ## Stub mode
 

@@ -409,7 +409,10 @@ function sanitizeNode(
       const alt = asString(raw.alt);
       node.alt = alt ?? "";
       const poster = asString(raw.poster);
-      if (poster !== undefined && isSafeMediaSrc(poster)) {
+      if (
+        poster !== undefined &&
+        (isSafeMediaSrc(poster) || (options.allowSlotMarkers === true && isSlotMarker(poster)))
+      ) {
         node.poster = poster;
       }
       const controls = asBool(raw.controls);

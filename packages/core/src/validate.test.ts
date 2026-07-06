@@ -643,12 +643,24 @@ describe("validateStamp stamp slots", () => {
   it("accepts whole-value stamp slot markers in stamp string leaves only", () => {
     const { stamp, issues } = validateStamp({
       name: "card",
-      slots: { title: "Title", image: "https://example.com/card.png", label: "Email" },
+      slots: {
+        title: "Title",
+        image: "https://example.com/card.png",
+        poster: "https://example.com/poster.jpg",
+        label: "Email",
+      },
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["title", "image", "field"] },
         title: { id: "title", type: "text", value: "{{title}}" },
-        image: { id: "image", type: "media", src: "{{image}}", alt: "{{title}}" },
+        image: {
+          id: "image",
+          type: "media",
+          kind: "video",
+          src: "{{image}}",
+          alt: "{{title}}",
+          poster: "{{poster}}",
+        },
         field: {
           id: "field",
           type: "field",
@@ -665,6 +677,7 @@ describe("validateStamp stamp slots", () => {
       type: "media",
       src: "{{image}}",
       alt: "{{title}}",
+      poster: "{{poster}}",
     });
     expect(stamp?.nodes["field"]).toMatchObject({
       type: "field",

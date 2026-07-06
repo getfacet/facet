@@ -12,9 +12,10 @@ npm install @facet/core
 
 Three pure functions do the heavy lifting: `validateTree` turns arbitrary input
 (e.g. an LLM's JSON) into a guaranteed-renderable tree, `expandStamp` fills
-validated stamp slots and remaps ids before a caller emits ordinary patches, and
-`applyPatch` is the one patch function that runs identically on server and
-client.
+validated stamp slots, prunes the root-reachable subtree, drops stamped actions
+that point outside that subtree, and remaps ids before a caller emits ordinary
+patches. `applyPatch` is the one patch function that runs identically on server
+and client.
 
 ```ts
 import { applyPatch, EMPTY_TREE, expandStamp, validateTree } from "@facet/core";
@@ -47,6 +48,10 @@ const expanded = expandStamp(
   { existingIds: new Set(Object.keys(tree.nodes)) },
 );
 ```
+
+`expandStamp` is fail-safe: malformed params become issues and defaults, unknown
+parents return no ops, and the returned ids are fresh only for the nodes that
+will actually be emitted.
 
 Also exported: small dependency-free async primitives the other packages build
 on — `createSerialQueue` (per-key ordering) and `createSemaphore` (FIFO

@@ -39,8 +39,11 @@ export const agent = defineAgent(({ event, stage }) => {
 
 `Stage.useStamp(stamp, params, { parent })` accepts an already-resolved
 `FacetStamp`, fills its declared `{{slot}}` markers, mints fresh ids, appends
-the expanded root under `parent`, and returns the new `root`, `slots`, and full
-old-to-new `ids` map for follow-up edits.
+the expanded root under a known box parent, and returns the new `root`, `slots`,
+and full old-to-new `ids` map for follow-up edits. `defineAgent` and
+`defineStreamingAgent` seed `Stage` with the current session tree, so stamps can
+target boxes that existed before the current turn; malformed stamps, non-box
+parents, and expansions that would exceed one patch batch are no-ops.
 
 ```ts
 import { defineStreamingAgent } from "@facet/agent";

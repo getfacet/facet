@@ -137,9 +137,12 @@ already uses. **Stamps** — validated `{ root, nodes, slots? }` brick fragments
 reach the quickstart LLM as names, slot names, and descriptions. The model calls
 `use_stamp`; the server resolves the name from the immutable per-agent stamp
 snapshot, fills whole-value `{{slot}}` markers, remaps every internal id to a
-fresh id, and emits ordinary JSON Patch ops through the same closure buffer as
-hand-authored nodes. There is **no client-side stamp expansion** anywhere:
-`validateTree` and the fail-safe renderer see only normal bricks.
+fresh id, drops unreachable nodes and stamped actions that point outside the
+expanded subtree, and emits ordinary JSON Patch ops through the same closure
+buffer as hand-authored nodes. The parent must be a known box, and an expansion
+that would overflow one patch batch is refused before any partial patch is
+emitted. There is **no client-side stamp expansion** anywhere: `validateTree`
+and the fail-safe renderer see only normal bricks.
 
 Seeding a page before the first model call is a `StageStore` **decorator**,
 `withInitialStage`, that opens a fresh session on a validated initial tree
