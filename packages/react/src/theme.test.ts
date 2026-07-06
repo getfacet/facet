@@ -6,7 +6,7 @@ import {
   DEFAULT_THEME,
   boxStyle,
   fieldStyle,
-  imageStyle,
+  mediaStyle,
   resolveTheme,
   textStyle,
 } from "./theme.js";
@@ -48,26 +48,40 @@ describe("boxStyle", () => {
     expect(css.width).toBe("100%");
   });
 
-  // scroll:true is the ONE bounded-region mapping (RISK-INV-6a): vertical
-  // auto-scroll only (never a horizontal scrollbar), a fixed max-height, and
-  // the load-bearing minHeight:0 — a flex child defaults to min-height:auto
-  // and would silently refuse to clip inside a `grow` column without it.
-  it("maps literal scroll:true to a bounded vertical scroll region", () => {
+  it("maps scroll:y and legacy scroll:true to a bounded vertical scroll region", () => {
+    for (const scroll of ["y", true] as const) {
+      const css = boxStyle({ scroll });
+      expect(css.overflowY).toBe("auto");
+      expect(css.overflowX).toBe("hidden");
+      expect(css.maxHeight).toBe("20rem");
+      expect(css.minHeight).toBe(0);
+    }
+  });
+
+  it("maps scroll:x to a bounded horizontal scroll region", () => {
+    const css = boxStyle({ scroll: "x" });
+    expect(css.overflowX).toBe("auto");
+    expect(css.overflowY).toBe("hidden");
+    expect(css.maxWidth).toBe("100%");
+    expect(css.minWidth).toBe(0);
+    expect(css.width).toBeUndefined();
+  });
+
+  it("maps columns to a flow grid", () => {
+    const css = boxStyle({ columns: 3, direction: "row", wrap: true });
+    expect(css.display).toBe("grid");
+    expect(css.gridTemplateColumns).toBe("repeat(3,minmax(0,1fr))");
+    expect(css.flexDirection).toBeUndefined();
+    expect(css.flexWrap).toBeUndefined();
+  });
+
+  it("keeps legacy scroll:true vertical and not horizontally scrollable", () => {
     const css = boxStyle({ scroll: true });
     expect(css.overflowY).toBe("auto");
     expect(css.overflowX).toBe("hidden");
-    expect(css.maxHeight).toBe("20rem");
-    expect(css.minHeight).toBe(0);
   });
 
-  it("never produces a scrollable overflow-x", () => {
-    expect(boxStyle({ scroll: true }).overflowX).not.toBe("auto");
-    expect(boxStyle({ scroll: true }).overflowX).not.toBe("scroll");
-  });
-
-  // Total-function pattern on the raw live path: anything but literal `true`
-  // (scroll:false, junk strings, numbers) yields NONE of the four properties.
-  it("maps scroll:false and junk scroll values to no scroll CSS", () => {
+  it("maps scroll:false and junk scroll/columns values to no scroll or grid CSS", () => {
     for (const scroll of [false, "sideways", 1, "true", {}] as const) {
       const css = boxStyle({ scroll } as unknown as BoxStyle);
       expect(css.overflowY).toBeUndefined();
@@ -75,6 +89,9 @@ describe("boxStyle", () => {
       expect(css.maxHeight).toBeUndefined();
       expect(css.minHeight).toBeUndefined();
     }
+    const css = boxStyle({ columns: "lots" } as unknown as BoxStyle);
+    expect(css.display).toBe("flex");
+    expect(css.gridTemplateColumns).toBeUndefined();
   });
 
   // appear is renderer-bound (class + <style> in StageRenderer, not this
@@ -107,13 +124,13 @@ describe("textStyle", () => {
   });
 });
 
-describe("imageStyle", () => {
+describe("mediaStyle", () => {
   it("defaults to a cover block", () => {
-    expect(imageStyle()).toEqual({ display: "block", objectFit: "cover" });
+    expect(mediaStyle()).toEqual({ display: "block", objectFit: "cover" });
   });
 
   it("maps radius, width, and ratio tokens", () => {
-    const css = imageStyle({ radius: "md", width: "full", ratio: "wide" });
+    const css = mediaStyle({ radius: "md", width: "full", ratio: "wide" });
     expect(css.borderRadius).toBe("10px");
     expect(css.width).toBe("100%");
     expect(css.aspectRatio).toBe("16 / 9");
