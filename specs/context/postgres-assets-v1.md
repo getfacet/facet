@@ -110,24 +110,20 @@ jsonb RAW only; it never seeds/writes the stage and never calls
 trap are preserved because all seed validation stays in `loadAssets`. With that
 held, INV #6 stays N/A (no second writer).
 
-### RISK-INV-4 (INV) — INV #1/#3 fail-safe boundary: brief-vs-code discrepancy the spec must reconcile
+### RISK-INV-4 (INV) — INV #1/#3 fail-safe boundary: DB errors stop at `loadAssets`
 
-The brief's policy table says `load(agentId): DB error → propagates (boot-time,
-operator-visible)` (`specs/feature-intake/postgres-assets-v1.md` line 81), but
-the actual gate SWALLOWS the throw: `loadAssets` wraps `store.load` in try/catch
-and converts a rejection into `{ themes: [], stamps: [], issues: [...] }` so
-defaults still resolve (`assets.ts:92-101`), and the quickstart caller only logs
-issues then continues boot (`packages/quickstart/src/cli.ts:182-187`). So a
-Postgres-down boot does NOT propagate — it silently falls back to the default
-asset layer.
+The intake brief and dev spec now agree with the runtime gate: `loadAssets` wraps
+`store.load` in try/catch and converts a rejection into
+`{ themes: [], stamps: [], issues: [...] }` so defaults still resolve
+(`assets.ts:92-101`), and the quickstart caller only logs issues then continues
+boot (`packages/quickstart/src/cli.ts:182-187`). So a Postgres-down boot does
+NOT propagate past `loadAssets` — it falls back to the default asset layer with
+an operator-visible issue.
 
-Resolution the spec MUST choose explicitly:
-- (a) accept the fail-safe swallow and correct the brief's *propagates* claim
-  (recommended — matches the existing single-gate `Never throws` contract at
-  `assets.ts:89-91`); or
-- (b) if operators need loud boot failure on DB-down, surface it at the caller
-  by inspecting `loaded.issues`, NOT by making `PostgresAssets.load` throw past
-  `loadAssets`' guard.
+Resolution the spec MUST preserve: accept the fail-safe swallow (matches the
+existing single-gate `Never throws` contract at `assets.ts:89-91`). Operators who
+need a loud boot failure should inspect `loaded.issues` at the caller, NOT make
+`PostgresAssets.load` throw past `loadAssets`' guard.
 
 ### RISK-API-1 (API) — CHANGED PUBLISHED SURFACE (behavior): initSchema now provisions a third table
 

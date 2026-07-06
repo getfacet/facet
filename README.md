@@ -207,7 +207,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
 | `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
 | `@facet/assets`         | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
-| `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
+| `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres.                             |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 | `@facet/quickstart`     | `facet-quickstart` — one-command boot with a built-in reference brain (OpenAI/Anthropic, or a keyless stub). |
 
@@ -254,7 +254,7 @@ export const agent = defineAgent(({ event, stage }) => {
 - [x] Core spec (low-level bricks + tokens) + RFC 6902 patches + in-process demo
 - [x] SSE/POST transport + a browser playground
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
-- [x] Durable `StageStore`/`Sink` + a Postgres adapter
+- [x] Durable `StageStore`/`Sink`/`AssetsStore` + a Postgres adapter
 - [x] `@facet/assets` default theme + stamp data (node-free value maps)
 - [x] One-command quickstart (`facet-quickstart`) with a built-in reference brain
 - [ ] Docs site + examples

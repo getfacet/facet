@@ -43,7 +43,7 @@ small set of safe primitives and mutates them live as the conversation goes.
 | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
 | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
-| `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres (`pg` peer dep). |
+| `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres (`pg` peer dep). |
 | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
 | `@facet/quickstart` | Reference LLM brain + zero-setup `facet-quickstart` bin — the `@facet/server` of brains (the brain stays pluggable). |
 | `apps/playground` | Demos (not published). |
