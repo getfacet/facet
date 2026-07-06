@@ -588,23 +588,27 @@ describe("browser channel", () => {
         if (sameTurns === 2) await secondSameGate;
         return;
       }
-      const id = `p${String(patchId)}`;
-      patchId += 1;
-      yield [
-        {
-          kind: "patch",
-          patches: [{ op: "add", path: `/nodes/${id}`, value: { id, type: "text", value: id } }],
-        },
-      ];
+      if (event.text === "flood") {
+        for (let i = 0; i < 205; i += 1) {
+          const id = `p${String(patchId)}`;
+          patchId += 1;
+          yield [
+            {
+              kind: "patch",
+              patches: [
+                { op: "add", path: `/nodes/${id}`, value: { id, type: "text", value: id } },
+              ],
+            },
+          ];
+        }
+      }
     };
     const { server, base } = await start({ agentId: "a", agent, sink });
     running = server;
 
     await postEvent(base, "v", { kind: "message", text: "same" });
-    for (let i = 0; i < 205; i += 1) {
-      await postEvent(base, "v", { kind: "message", text: "patch" });
-    }
-    await waitFor(async () => (await sink.history("a", "v")).length >= 206);
+    await postEvent(base, "v", { kind: "message", text: "flood" });
+    await waitFor(async () => (await sink.history("a", "v")).length >= 2);
 
     const live = await fetch(`${base}/stream?visitorId=v`);
     const liveReader = eventReader(live);
