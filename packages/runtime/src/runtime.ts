@@ -1,6 +1,8 @@
 import {
   createSerialQueue,
+  asAgentServerMessage,
   foldPatchIntoStage,
+  isTestOnlyServerMessageBatch,
   iterateAgentResult,
   MAX_PATCH_OPS,
   type ClientEvent,
@@ -324,7 +326,7 @@ export class FacetRuntime {
         }
 
         const batch = this.asMessageBatch(next.value);
-        if (batch.length === 0 || this.isTestOnlyBatch(batch)) continue;
+        if (batch.length === 0 || isTestOnlyServerMessageBatch(batch)) continue;
 
         const seed = seedFrame();
         const {
@@ -379,21 +381,6 @@ export class FacetRuntime {
     return { messages: onFrame === undefined ? returned : [], agentMutated };
   }
 
-  private isTestOnlyBatch(messages: readonly ServerMessage[]): boolean {
-    let sawTest = false;
-    for (const message of messages) {
-      if (message.kind !== "patch") return false;
-      if (!Array.isArray(message.patches)) return false;
-      for (const op of message.patches) {
-        if (typeof op !== "object" || op === null || (op as { op?: unknown }).op !== "test") {
-          return false;
-        }
-        sawTest = true;
-      }
-    }
-    return sawTest;
-  }
-
   private asMessageBatch(value: unknown): readonly ServerMessage[] {
     if (!Array.isArray(value)) {
       console.error("[facet] dropped a streamed batch that was not an array");
@@ -401,56 +388,14 @@ export class FacetRuntime {
     }
     const messages: ServerMessage[] = [];
     for (const message of value) {
-      const normalized = this.asServerMessage(message);
-      if (normalized !== undefined) messages.push(normalized);
+      const normalized = asAgentServerMessage(message);
+      if (normalized !== undefined) {
+        messages.push(normalized);
+      } else {
+        console.error("[facet] dropped a malformed server message");
+      }
     }
     return messages;
-  }
-
-  private asServerMessage(value: unknown): ServerMessage | undefined {
-    if (typeof value !== "object" || value === null) {
-      console.error("[facet] dropped a non-object server message");
-      return undefined;
-    }
-    const { kind, text, patches } = value as {
-      kind?: unknown;
-      text?: unknown;
-      patches?: unknown;
-    };
-    const message =
-      kind === "say" && typeof text === "string"
-        ? ({ kind, text } satisfies ServerMessage)
-        : kind === "patch" && Array.isArray(patches)
-          ? ({ kind, patches } as ServerMessage)
-          : undefined;
-    if (message === undefined) {
-      console.error("[facet] dropped a malformed server message");
-      return undefined;
-    }
-    let normalized: unknown;
-    try {
-      normalized = JSON.parse(JSON.stringify(message));
-    } catch {
-      console.error("[facet] dropped a non-JSON-serializable server message");
-      return undefined;
-    }
-    if (typeof normalized !== "object" || normalized === null) {
-      console.error("[facet] dropped a malformed server message");
-      return undefined;
-    }
-    const {
-      kind: normalizedKind,
-      text: normalizedText,
-      patches: normalizedPatches,
-    } = normalized as { kind?: unknown; text?: unknown; patches?: unknown };
-    if (normalizedKind === "say" && typeof normalizedText === "string") {
-      return { kind: normalizedKind, text: normalizedText };
-    }
-    if (normalizedKind === "patch" && Array.isArray(normalizedPatches)) {
-      return normalized as ServerMessage;
-    }
-    console.error("[facet] dropped a malformed server message");
-    return undefined;
   }
 
   private logIssues(issues: readonly string[]): void {

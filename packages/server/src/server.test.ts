@@ -363,10 +363,39 @@ class GatedMessageSink implements Sink {
   }
 }
 
+/** A Sink that makes a record visible to history before its `record()` promise
+ * settles, modelling an async backend whose write is committed but the lane has
+ * not yet observed settlement. */
+class VisibleBeforeSettledSink implements Sink {
+  private readonly inner = new MemorySink();
+  recordStarted = false;
+  private releaseHeld: () => void = () => {};
+  private readonly held = new Promise<void>((resolve) => {
+    this.releaseHeld = resolve;
+  });
+
+  release(): void {
+    this.releaseHeld();
+  }
+
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    await this.inner.record(agentId, visitorId, entry);
+    if (entry.event.kind === "message" && entry.messages.length > 0) {
+      this.recordStarted = true;
+      await this.held;
+    }
+  }
+
+  history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    return this.inner.history(agentId, visitorId);
+  }
+}
+
 class HistoryReleaseSink implements Sink {
   private readonly inner = new MemorySink();
   private readonly releaseHeld: (() => void)[] = [];
   releaseOnHistoryReads = 0;
+  historyCalls = 0;
   startedRecords = 0;
 
   private async releaseNextStartedRecord(): Promise<void> {
@@ -396,6 +425,7 @@ class HistoryReleaseSink implements Sink {
   }
 
   async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    this.historyCalls += 1;
     const entries = await this.inner.history(agentId, visitorId);
     if (this.releaseOnHistoryReads > 0) {
       this.releaseOnHistoryReads -= 1;
@@ -695,6 +725,34 @@ describe("browser channel", () => {
     }
   });
 
+  it("full rehydrate does not duplicate a streamed say already visible in history while its record is settling", async () => {
+    const sink = new VisibleBeforeSettledSink();
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.recordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 500);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
+    }
+  });
+
   it("full rehydrate keeps streamed says when multiple sink records settle across history rereads", async () => {
     const sink = new HistoryReleaseSink();
     const agent: FacetAgent = async function* (event) {
@@ -722,6 +780,40 @@ describe("browser channel", () => {
       expect(frames[0]?.data).toEqual({ kind: "reset" });
       expect(frames[1]?.data).toMatchObject({ kind: "patch" });
       expect(sayText(frames)).toEqual(["one", "two", "three"]);
+    } finally {
+      sink.releaseOnHistoryReads = 0;
+      await sink.releaseAvailableRecords();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate caps history rereads instead of waiting for every settling pending record", async () => {
+    const sink = new HistoryReleaseSink();
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      for (const text of ["one", "two", "three", "four", "five", "six"]) {
+        await postEvent(base, "v", { kind: "message", text });
+        if (text === "one") expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+        expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text });
+      }
+      await waitFor(async () => sink.startedRecords === 1);
+
+      sink.releaseOnHistoryReads = 6;
+      const baselineHistoryCalls = sink.historyCalls;
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 1_000);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one", "two", "three", "four", "five", "six"]);
+      expect(sink.historyCalls - baselineHistoryCalls).toBeLessThan(6);
     } finally {
       sink.releaseOnHistoryReads = 0;
       await sink.releaseAvailableRecords();

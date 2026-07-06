@@ -70,7 +70,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function isBoxWithChildren(tree: FacetTree, id: NodeId | undefined): boolean {
   if (id === undefined) return false;
   const node = tree.nodes[id];
-  return node !== undefined && node.type === "box" && node.children.length > 0;
+  return (
+    node !== undefined &&
+    node.type === "box" &&
+    Array.isArray((node as { children?: unknown }).children) &&
+    node.children.length > 0
+  );
 }
 
 /**
@@ -176,6 +181,8 @@ interface ClosureBuffer {
   set(node: FacetNode): number;
   append(parentId: NodeId, node: FacetNode): number;
   remove(id: NodeId): number;
+  pendingMissing(id: NodeId): readonly NodeId[] | undefined;
+  drainUnresolved(): readonly string[];
 }
 
 type PendingOp =
@@ -183,7 +190,9 @@ type PendingOp =
   | { readonly kind: "append"; readonly parentId: NodeId; readonly node: FacetNode };
 
 function childRefs(node: FacetNode): readonly NodeId[] {
-  return node.type === "box" ? node.children : [];
+  return node.type === "box" && Array.isArray((node as { children?: unknown }).children)
+    ? node.children
+    : [];
 }
 
 function missingChildRefs(node: FacetNode, knownIds: ReadonlySet<string>): readonly NodeId[] {
@@ -218,6 +227,10 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
       }
     }
     return emitted;
+  };
+  const unresolvedObservation = (op: PendingOp): string => {
+    const missing = missingChildRefs(op.node, knownIds);
+    return `"${op.node.id}" still waits for child node(s): ${missing.join(", ")}`;
   };
 
   return {
@@ -255,6 +268,15 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
       knownIds.delete(id);
       stage.remove(id);
       return 1;
+    },
+    pendingMissing(id) {
+      const op = pending.get(id);
+      return op === undefined ? undefined : missingChildRefs(op.node, knownIds);
+    },
+    drainUnresolved() {
+      const unresolved = Array.from(pending.values(), unresolvedObservation);
+      pending.clear();
+      return unresolved;
     },
   };
 }
@@ -307,6 +329,12 @@ function executeTool(
         );
       }
       if (!knownIds.has(parentId)) {
+        const pendingMissing = closure.pendingMissing(parentId as NodeId);
+        if (pendingMissing !== undefined) {
+          return fail(
+            `error: append_node — parent "${parentId}" was created this turn but is still waiting for child node(s): ${pendingMissing.join(", ")}. Define those child nodes before appending into it.`,
+          );
+        }
         return fail(
           `error: append_node — parent "${parentId}" does not exist yet. Create it first with render_page or set_node, or append into an existing node.`,
         );
@@ -395,6 +423,7 @@ export function createQuickstartAgent(
     let said = false;
     let finalText = "";
     let failure: unknown;
+    let closure: ClosureBuffer | undefined;
 
     try {
       // Inside the try: a throwing sink must degrade like any other turn failure,
@@ -404,7 +433,7 @@ export function createQuickstartAgent(
       // Ids that exist so far this turn (seeded from the current stage) — lets
       // append_node reject a nonexistent parent instead of orphaning the node.
       const knownIds = new Set<string>(Object.keys(session.stage.nodes));
-      const closure = createClosureBuffer(stage, knownIds);
+      closure = createClosureBuffer(stage, knownIds);
 
       for (let step = 0; step < maxSteps; step += 1) {
         const result = await options.provider.run({ system, messages }, TOOLS);
@@ -428,6 +457,14 @@ export function createQuickstartAgent(
     } catch (error) {
       // Provider/network/sink failure: keep whatever the stage already has.
       failure = error;
+    }
+
+    const unresolved = closure?.drainUnresolved() ?? [];
+    if (unresolved.length > 0) {
+      console.error("[facet-quickstart] unresolved buffered edits:", unresolved.join("; "));
+      stage.say(FAILURE_SAY);
+      said = true;
+      finalText = "";
     }
 
     // The model ended cleanly with prose and never called say ⇒ surface the

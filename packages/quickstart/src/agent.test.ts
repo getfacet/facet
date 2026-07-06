@@ -255,6 +255,55 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("forces the failure fallback when a turn has emitted edits but still has unresolved buffered nodes", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["missing"] } })),
+      toolStep(
+        call("append_node", { parentId: "root", node: { id: "ok", type: "text", value: "done" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "build" });
+
+      expect(patchesOf(out)).toHaveLength(1);
+      expect(saysOf(out)[0]).toMatch(/sorry/i);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[facet-quickstart] unresolved buffered edits:",
+        '"panel" still waits for child node(s): missing',
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("reports an append parent that exists only as a pending buffered node", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["missing"] } })),
+      toolStep(
+        call("append_node", { parentId: "panel", node: { id: "leaf", type: "text", value: "x" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await runAgent(agent, { kind: "message", text: "build" });
+
+      const obs = provider.turns[2]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain(
+        'error: append_node — parent "panel" was created this turn but is still waiting for child node(s): missing. Define those child nodes before appending into it.',
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("renders a full page then says, across a multi-step tool loop", async () => {
     const provider = providerOf(
       toolStep(call("render_page", { tree: VALID_TREE })),
@@ -499,7 +548,7 @@ describe("createQuickstartAgent tool loop", () => {
       END,
     );
     const agent = makeAgent(provider);
-    const out = await agent({ kind: "message", text: "edit" }, SESSION);
+    const out = await runAgent(agent, { kind: "message", text: "edit" }, SESSION);
     const patch = out.find((m) => m.kind === "patch");
     if (patch?.kind === "patch") {
       expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/clip")).toBe(true);

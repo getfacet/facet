@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { FacetAction } from "./nodes.js";
-import { MAX_FIELD_OPTIONS } from "./protocol.js";
+import {
+  asAgentServerMessage,
+  isJsonPatchTestOperation,
+  isTestOnlyServerMessageBatch,
+  MAX_FIELD_OPTIONS,
+} from "./protocol.js";
 import type {
   AgentEventFrame,
   ClientEvent,
@@ -104,5 +109,42 @@ describe("protocol event contract (type-level)", () => {
 
   it("exports the shared field options cap", () => {
     expect(MAX_FIELD_OPTIONS).toBe(64);
+  });
+});
+
+describe("agent server-message helpers", () => {
+  it("narrows and JSON-normalizes the agent-emitted server-message subset", () => {
+    expect(asAgentServerMessage({ kind: "say", text: "hi", extra: "drop" })).toEqual({
+      kind: "say",
+      text: "hi",
+    });
+    expect(
+      asAgentServerMessage({
+        kind: "patch",
+        patches: [{ op: "test", path: "/root", value: "root" }],
+        extra: "drop",
+      }),
+    ).toEqual({ kind: "patch", patches: [{ op: "test", path: "/root", value: "root" }] });
+  });
+
+  it("rejects reset as an agent-emitted server message", () => {
+    expect(asAgentServerMessage({ kind: "reset" })).toBeUndefined();
+  });
+
+  it("single-sources RFC 6902 test-op detection and test-only batch detection", () => {
+    expect(isJsonPatchTestOperation({ op: "test", path: "/root", value: "root" })).toBe(true);
+    expect(isJsonPatchTestOperation({ op: "replace", path: "/root", value: "root" })).toBe(false);
+    expect(isJsonPatchTestOperation(null)).toBe(false);
+    expect(
+      isTestOnlyServerMessageBatch([
+        { kind: "patch", patches: [{ op: "test", path: "/root", value: "root" }] },
+      ]),
+    ).toBe(true);
+    expect(
+      isTestOnlyServerMessageBatch([
+        { kind: "patch", patches: [{ op: "test", path: "/root", value: "root" }] },
+        { kind: "say", text: "not a guard" },
+      ]),
+    ).toBe(false);
   });
 });

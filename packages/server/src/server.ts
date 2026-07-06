@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import {
+  asAgentServerMessage,
   createSerialQueue,
   isPrimitiveRecord,
   MAX_FIELD_VALUE_CHARS,
@@ -32,6 +33,8 @@ import { writeSse } from "./sse.js";
 import { createLateWindow, isStaleLateResult, LATE_WINDOW_LIMIT, type LateWindow } from "./late.js";
 import { DEFAULT_OFFLINE_FACE } from "./offline.js";
 import { createAgentChannel, type AgentChannel } from "./agent-channel.js";
+
+const MAX_REHYDRATE_REREADS = 4;
 
 /**
  * The reference Facet transport: a tiny Node server carrying events to an agent
@@ -305,15 +308,13 @@ function isControlBody(body: unknown): body is AgentControlFrame {
   // split or not, is 400-rejected here before it can reach the runtime's fold path.
   let totalOps = 0;
   return messages.every((m) => {
-    if (typeof m !== "object" || m === null) return false;
-    const { kind, text, patches } = m as { kind?: unknown; text?: unknown; patches?: unknown };
-    if (kind === "say") return typeof text === "string";
-    if (kind === "patch") {
-      if (!Array.isArray(patches)) return false;
-      totalOps += patches.length;
+    const message = asAgentServerMessage(m);
+    if (message === undefined) return false;
+    if (message.kind === "patch") {
+      totalOps += message.patches.length;
       return totalOps <= MAX_PATCH_OPS;
     }
-    return false;
+    return true;
   });
 }
 
@@ -353,16 +354,7 @@ function resumeStream(
 
 function parseLoggedServerMessage(frame: LoggedFrame): ServerMessage | undefined {
   try {
-    const value: unknown = JSON.parse(frame.json);
-    if (typeof value !== "object" || value === null) return undefined;
-    const { kind, text, patches } = value as {
-      kind?: unknown;
-      text?: unknown;
-      patches?: unknown;
-    };
-    if (kind === "say" && typeof text === "string") return { kind, text };
-    if (kind === "patch" && Array.isArray(patches)) return value as ServerMessage;
-    return undefined;
+    return asAgentServerMessage(JSON.parse(frame.json));
   } catch {
     return undefined;
   }
@@ -412,19 +404,71 @@ function pendingSayFramesForRehydrate(
   handling: Map<string, HandlingTurn[]>,
   visitorId: string,
   log: FrameLog,
+  history: readonly StoredEvent[],
   maxSeq: number,
 ): LoggedFrame[] {
   pruneUnrecoverableHandlingTurns(handling, visitorId, log);
   const pendingTurns = handling.get(visitorId)?.filter((turn) => turn.era === log.era) ?? [];
+  const visibleForwardedTurns = visibleForwardedRecordCountForCurrentEra(history, log);
+  const historySayCounts = sayCountsForHistory(history);
   const pendingSayFrames: LoggedFrame[] = [];
   for (const turn of pendingTurns) {
     if (turn.streamStartSeq > maxSeq) continue;
     const turnMaxSeq = Math.min(turn.streamEndSeq ?? maxSeq, maxSeq);
-    for (const frame of retainedSayFrames(log.frames, turn.streamStartSeq, turnMaxSeq)) {
+    const frames = retainedSayFrames(log.frames, turn.streamStartSeq, turnMaxSeq);
+    if (visibleForwardedTurns > turn.index && historyContainsSayFrames(historySayCounts, frames)) {
+      continue;
+    }
+    for (const frame of frames) {
       pendingSayFrames.push(frame);
     }
   }
   return pendingSayFrames;
+}
+
+function sayCountsForHistory(history: readonly StoredEvent[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const entry of history) {
+    for (const message of entry.messages) {
+      if (message.kind !== "say") continue;
+      counts.set(message.text, (counts.get(message.text) ?? 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function historyContainsSayFrames(
+  historySayCounts: ReadonlyMap<string, number>,
+  frames: readonly LoggedFrame[],
+): boolean {
+  const needed = new Map<string, number>();
+  for (const frame of frames) {
+    const message = parseLoggedServerMessage(frame);
+    if (message?.kind !== "say") continue;
+    needed.set(message.text, (needed.get(message.text) ?? 0) + 1);
+  }
+  if (needed.size === 0) return false;
+  for (const [text, count] of needed) {
+    if ((historySayCounts.get(text) ?? 0) < count) return false;
+  }
+  return true;
+}
+
+function isForwardedHistoryRecord(entry: StoredEvent): boolean {
+  if (entry.event.kind === "message" || entry.event.kind === "visit") return true;
+  return entry.event.kind === "tap" && entry.event.action !== undefined;
+}
+
+function visibleForwardedRecordCountForCurrentEra(
+  history: readonly StoredEvent[],
+  log: FrameLog,
+): number {
+  const count = history.filter(isForwardedHistoryRecord).length;
+  // The frame log's event counter resets when its era is re-minted, while durable
+  // Sink history does not. In that case the old history cannot identify a pending
+  // turn in the new event-counter space, so keep pending frames rather than risk
+  // dropping a live say.
+  return count <= log.eventCounter ? count : 0;
 }
 
 function pendingTurnsForLog(
@@ -444,15 +488,18 @@ async function historyForRehydrate(
   visitorId: string,
   handling: Map<string, HandlingTurn[]>,
   log: FrameLog,
+  isClosed: () => boolean,
 ): Promise<readonly StoredEvent[]> {
   let pendingBefore = pendingTurnsForLog(handling, visitorId, log);
   let history = await runtime.historyFor(visitorId);
-  for (;;) {
+  for (let rereads = 0; rereads < MAX_REHYDRATE_REREADS; rereads += 1) {
+    if (isClosed()) return history;
     const pendingAfter = pendingTurnsForLog(handling, visitorId, log);
     if (!lostPendingTurn(pendingBefore, pendingAfter)) return history;
     pendingBefore = pendingAfter;
     history = await runtime.historyFor(visitorId);
   }
+  return history;
 }
 
 function writeFullRehydrate(
@@ -491,9 +538,15 @@ async function rehydrateFromLane(
   const stage = await runtime.stageFor(visitorId);
   if (isClosed()) return;
   const log = frameLog.logFor(visitorId);
-  const history = await historyForRehydrate(runtime, visitorId, handling, log);
+  const history = await historyForRehydrate(runtime, visitorId, handling, log, isClosed);
   if (isClosed()) return;
-  const pendingSayFrames = pendingSayFramesForRehydrate(handling, visitorId, log, log.nextSeq - 1);
+  const pendingSayFrames = pendingSayFramesForRehydrate(
+    handling,
+    visitorId,
+    log,
+    history,
+    log.nextSeq - 1,
+  );
   writeFullRehydrate(res, stage, history, pendingSayFrames);
   join();
 }
@@ -531,7 +584,7 @@ async function rehydrate(
   try {
     const stage = await runtime.stageFor(visitorId);
     if (isClosed()) return;
-    const history = await historyForRehydrate(runtime, visitorId, handling, log);
+    const history = await historyForRehydrate(runtime, visitorId, handling, log, isClosed);
     if (isClosed()) return;
     const current = frameLog.peek(visitorId);
     if (current !== log || current.era !== capturedEra) {
@@ -556,7 +609,13 @@ async function rehydrate(
       });
       return;
     }
-    const pendingSayFrames = pendingSayFramesForRehydrate(handling, visitorId, current, n0);
+    const pendingSayFrames = pendingSayFramesForRehydrate(
+      handling,
+      visitorId,
+      current,
+      history,
+      n0,
+    );
     writeFullRehydrate(res, stage, history, pendingSayFrames);
     join();
   } catch (error: unknown) {

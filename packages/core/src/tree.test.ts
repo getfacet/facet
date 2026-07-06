@@ -54,6 +54,12 @@ describe("treeHasContent", () => {
     expect(treeHasContent(t)).toBe(false);
   });
 
+  it("false — and does NOT throw — for a foreign box root with non-array children", () => {
+    const t = tree({ r: { id: "r", type: "box", children: "not-array" } });
+    expect(() => treeHasContent(t)).not.toThrow();
+    expect(treeHasContent(t)).toBe(false);
+  });
+
   it("false for a non-container (text) root", () => {
     expect(treeHasContent(tree({ r: { id: "r", type: "text", value: "x" } }))).toBe(false);
   });

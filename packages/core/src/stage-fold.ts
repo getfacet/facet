@@ -1,4 +1,5 @@
 import { applyOpInPlace, applyPatch, MAX_PATCH_OPS, type JsonPatchOperation } from "./patch.js";
+import { isJsonPatchTestOperation } from "./protocol.js";
 import type { FacetTree } from "./tree.js";
 import { validateTree } from "./validate.js";
 import { BoundedIssues, printableValue } from "./issues.js";
@@ -91,7 +92,7 @@ export function foldPatchIntoStage(
     // The atomic apply succeeded, so EVERY op applied: the batch mutated the
     // stage iff it carried at least one non-`test` op (a `test`-only batch is a
     // guard check that changes nothing).
-    mutated = patches.some((op) => !isTestOp(op));
+    mutated = patches.some((op) => !isJsonPatchTestOperation(op));
   } catch {
     // The client applies this SAME batch atomically and would drop it whole on
     // the throw; salvage the good ops op-by-op so the stored + rendered trees
@@ -105,12 +106,12 @@ export function foldPatchIntoStage(
         raw = applyOpInPlace(raw, op) as FacetTree;
         // A non-`test` op that applied in place is a real mutation; a passing
         // `test` guard applies without throwing but changes nothing.
-        if (!isTestOp(op)) mutated = true;
+        if (!isJsonPatchTestOperation(op)) mutated = true;
       } catch {
         // A failed `test` is a guard, not an independently-bad op: RFC 6902 §5
         // forbids applying the ops it protects, so drop this and everything after
         // it. (An independently-bad op is dropped alone and salvage continues.)
-        if (isTestOp(op)) {
+        if (isJsonPatchTestOperation(op)) {
           const remaining = patches.length - index - 1;
           dropped.push(
             `failed \`test\` guard at ${describeOpPath(op)}; dropped it and the ${String(remaining)} following op(s) it guarded`,
@@ -128,11 +129,6 @@ export function foldPatchIntoStage(
     mutated,
     issues: droppedList.length === 0 ? issues : [...droppedList, ...issues],
   };
-}
-
-/** True for a `test` op (RFC 6902 guard) — a plain object whose `op` is "test". */
-function isTestOp(op: unknown): boolean {
-  return typeof op === "object" && op !== null && (op as Record<string, unknown>)["op"] === "test";
 }
 
 /** The bounded, never-throwing `path` echo for a dropped op's issue string. */
