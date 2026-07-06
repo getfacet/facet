@@ -1644,6 +1644,38 @@ describe("record validation hardening", () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(await sink.history("a", "v")).toHaveLength(0);
   });
+
+  it("POST /record rejects a semantically-empty tap (no effect or target)", async () => {
+    const sink = new MemorySink();
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, sink });
+    running = server;
+
+    // A bare `{kind:"tap"}` carries no actionable local-tap payload: no effect and
+    // no target. The renderer ALWAYS attaches a navigate/toggle effect (+ target) to
+    // a local tap, so an effect/target-less tap can only be a hand-crafted body. It
+    // must 400 so no inert no-content StoredEvent is persisted (which would later
+    // replay as an `(unknown event)` prompt line).
+    const empty = await postRecord(base, "v", { kind: "tap" });
+    expect(empty.status).toBe(400);
+
+    // Fields-only (still no effect and no target) is just as inert → rejected.
+    const fieldsOnly = await postRecord(base, "v", { kind: "tap", fields: { a: "b" } });
+    expect(fieldsOnly.status).toBe(400);
+
+    // Neither wrote to the Sink.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await sink.history("a", "v")).toHaveLength(0);
+
+    // A valid tap that carries a target + effect still 202s and persists.
+    const ok = await postRecord(base, "v", {
+      kind: "tap",
+      target: "box1",
+      effect: { navigate: "pricing" },
+    });
+    expect(ok.status).toBe(202);
+    await waitFor(async () => (await sink.history("a", "v")).length >= 1);
+    expect(await sink.history("a", "v")).toHaveLength(1);
+  });
 });
 
 /** A Sink whose `record` for a collected LOCAL tap (kind "tap", no messages) hangs

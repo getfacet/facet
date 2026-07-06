@@ -245,6 +245,14 @@ function isRecordBody(body: unknown): body is { visitor: VisitorContext; event: 
   if (effect !== undefined && !isTapEffect(effect)) return false;
   const fields = (event as { fields?: unknown }).fields;
   if (fields !== undefined && !isFieldsRecord(fields)) return false;
+  // A local tap must carry at least one actionable field. The renderer always
+  // attaches a navigate/toggle `effect` (+ `target`) to a local tap, so a valid
+  // /record tap ALWAYS carries `effect` (and `target`). With `action` already
+  // rejected above, a body lacking BOTH `effect` and `target` is semantically
+  // empty (`{kind:"tap"}` or a fields-only tap) — drop it here so no inert
+  // no-content StoredEvent is persisted (which would later replay as an
+  // `(unknown event)` prompt line).
+  if (effect === undefined && target === undefined) return false;
   return isValidSeq(event);
 }
 
