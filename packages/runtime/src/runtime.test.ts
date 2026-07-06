@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ClientEvent, FacetAgent, FacetTree, ServerMessage } from "@facet/core";
+import type {
+  ClientEvent,
+  CollectedEvent,
+  FacetAgent,
+  FacetTree,
+  ServerMessage,
+} from "@facet/core";
 import { EMPTY_TREE, foldPatchIntoStage, MAX_PATCH_OPS } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
-import { MemoryStageStore } from "./stage-store.js";
+import { MemoryStageStore, type StageStore } from "./stage-store.js";
 import { withInitialStage } from "./assets.js";
 import type { Sink, StoredEvent } from "./sink.js";
 
@@ -417,6 +423,134 @@ describe("FacetRuntime stored-vs-client convergence (shared fold, no corrective 
     // (foldPatchIntoStage) and lands on the identical stored stage.
     expect(out.messages).toEqual([mixed, { kind: "say", text: "ok" }]);
     expect(clientFold(out.messages)).toEqual(stored);
+  });
+});
+
+describe("FacetRuntime.record", () => {
+  it("record persists a collected tap without invoking the agent", async () => {
+    // A local navigate/toggle tap is resolved entirely in the renderer (no agent
+    // turn) but must still land in the log so replay reproduces what the visitor
+    // saw. `record` persists the CollectedEvent with `messages: []` and NEVER
+    // calls the agent (DC-001 / DC-005).
+    const agent = vi.fn(agentOf({ kind: "say", text: "unused" }));
+    const rt = new FacetRuntime({ agentId: "a", agent });
+    const tap: CollectedEvent = { kind: "tap", target: "x", effect: { navigate: "pricing" } };
+    await rt.record(visitor, tap);
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event).toEqual(tap);
+    expect(history[0]?.messages).toEqual([]); // record carries no agent messages
+    expect(agent).not.toHaveBeenCalled(); // the brain is never invoked
+  });
+
+  it("two records and one turn persist in append order (send order, not sink latency)", async () => {
+    // DC-002 at the runtime level: `record` rides the SAME per-visitor
+    // `serializeRecord` queue as `persist`, so append order == send order even
+    // when the FIRST record's sink write is the slowest. history() order is the
+    // gap-detection join key, so it must be send order, never `at`.
+    const persisted: string[] = [];
+    const sink: Sink = {
+      record: (_agentId: string, _visitorId: string, entry: StoredEvent): Promise<void> => {
+        const label =
+          entry.event.kind === "tap" ? entry.event.target : (entry.event as { text?: string }).text;
+        const delay = label === "a" ? 20 : 0; // first record's write is the slowest
+        return new Promise<void>((resolve) => {
+          setTimeout(() => {
+            if (label !== undefined) persisted.push(label);
+            resolve();
+          }, delay);
+        });
+      },
+      history: (): Promise<readonly StoredEvent[]> => Promise.resolve([]),
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "say", text: "c" }),
+      sink,
+    });
+    const p1 = rt.record(visitor, { kind: "tap", target: "a", effect: { navigate: "a" } });
+    const p2 = rt.record(visitor, { kind: "tap", target: "b", effect: { navigate: "b" } });
+    const p3 = rt.handle(visitor, { kind: "message", text: "c" });
+    await Promise.all([p1, p2, p3]);
+    // handle's record is fire-and-forget off the response path — let the slow
+    // first record (and the trailing turn record) settle before asserting order.
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(persisted).toEqual(["a", "b", "c"]);
+  });
+
+  it("record enqueued after a slow handle still persists in send order (no external lane)", async () => {
+    // The in-process transports have NO outer per-visitor lane (only @facet/server
+    // does). A visitor sends an agent tap (→ handle, SLOW turn) then a local
+    // navigate tap (→ record). handle must RESERVE its Sink-write slot on
+    // serializeRecord synchronously at call time so the later record can't enqueue
+    // its write first. Without that reservation the fast record settles before the
+    // still-in-flight handle even enqueues, reversing the append log (the ordered
+    // replay/join key). Expected send order is [E1, R1], never [R1, E1].
+    let releaseAgent!: () => void;
+    const agentGate = new Promise<void>((resolve) => {
+      releaseAgent = resolve;
+    });
+    const slowAgent: FacetAgent = async () => {
+      await agentGate; // the turn stays in flight until released
+      return [{ kind: "say", text: "E1" }];
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent: slowAgent });
+    const handled = rt.handle(visitor, { kind: "message", text: "E1" }); // agent tap → handle
+    const recorded = rt.record(visitor, { kind: "tap", target: "R1", effect: { navigate: "R1" } }); // local tap → record
+    releaseAgent(); // now let the slow handle finish and persist its record
+    await Promise.all([handled, recorded]);
+    const history = await rt.historyFor("v");
+    const labels = history.map((e) =>
+      e.event.kind === "tap" ? e.event.target : (e.event as { text?: string }).text,
+    );
+    expect(labels).toEqual(["E1", "R1"]); // send order, NOT [R1, E1]
+  });
+
+  it("a throwing agent turn records nothing and does not wedge the visitor's record queue", async () => {
+    // The reserved Sink-write slot (reserveRecordSlot) blocks on `await ready`;
+    // only the caller's catch resolving it to null drains it. A turn whose AGENT
+    // THROWS must resolve that slot (records nothing) so the visitor's
+    // serializeRecord queue is not permanently wedged — a later record must still
+    // drain. AWAIT the later record to completion so a deadlock TIMES OUT here.
+    const throwingAgent: FacetAgent = () => {
+      throw new Error("boom");
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent: throwingAgent });
+    await expect(rt.handle(visitor, { kind: "message", text: "E" })).rejects.toThrow("boom");
+    expect(await rt.historyFor("v")).toHaveLength(0); // the throwing turn recorded nothing
+
+    // SAME visitor: a later local tap must still drain (the slot was released by
+    // resolveRecord(null), not stuck on `await ready`).
+    const tap: CollectedEvent = { kind: "tap", target: "R", effect: { navigate: "R" } };
+    await rt.record(visitor, tap); // AWAIT to completion — a wedged queue would never settle
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event).toEqual(tap); // R drained after the throwing turn
+  });
+
+  it("a save-rejecting turn resolves the record slot to null and a later record still drains", async () => {
+    // `save` rejecting AFTER the agent ran: handle's catch must resolveRecord(null)
+    // so the reserved slot drains (records nothing) instead of blocking the queue.
+    // open() returns a session WITHOUT saving, so the turn reaches persist()'s save.
+    const saveRejectStore: StageStore = {
+      get: () => Promise.resolve(undefined),
+      open: (agentId, visitor) => Promise.resolve({ agentId, visitor, stage: EMPTY_TREE }),
+      save: () => Promise.reject(new Error("save failed")),
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(renderPatch, { kind: "say", text: "hi" }),
+      stageStore: saveRejectStore,
+    });
+    await expect(rt.handle(visitor, { kind: "message", text: "E" })).rejects.toThrow("save failed");
+    expect(await rt.historyFor("v")).toHaveLength(0); // nothing persisted for the failed turn
+
+    // SAME visitor: a later record must still drain (catch's resolveRecord(null) fired).
+    const tap: CollectedEvent = { kind: "tap", target: "R2", effect: { navigate: "R2" } };
+    await rt.record(visitor, tap); // AWAIT to completion — a deadlocked queue would hang
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event).toEqual(tap); // R2 drained after the save-rejecting turn
   });
 });
 

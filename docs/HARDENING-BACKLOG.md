@@ -307,6 +307,48 @@ Bundle B PR review record.
   local/single-operator reference transport; becomes required work the moment a
   hosted/multi-tenant deploy path appears.
 
+## P3 — event-layer-v1 review nits (deferred, cosmetic — 2026-07-06)
+
+Non-blocking consistency nits from the event-layer-v1 `/code-review` (P0-P1=0;
+the P2 runtime-ordering bug and the two server input-validation + two
+test-coverage P3s were FIXED in the feature PR). These three are style/dedup only
+and were tracked rather than fixed to keep the feature diff focused:
+
+- **quickstart/src/page/main.tsx + playground/src/App.tsx + live.tsx** — the
+  visitor-side tap-envelope construction (`send(fields === undefined ? {kind:"tap",
+  action} : {kind:"tap", action, fields})`, the `exactOptionalPropertyTypes`
+  conditional-spread) is copy-pasted in 3 consumers. Consider one shared helper.
+- **playground/src/live.tsx** — the live demo does not wire the new renderer
+  `onRecord`→`record` channel that quickstart adopts (WU-8 left it optional).
+- **runtime/src/runtime.ts** — `applyMessages`'s `reserveRecordSlot` deadlock-
+  prevention branch (`resolveRecord(null)` on a save-reject) has no dedicated test.
+  Low risk: it is the SAME reserveRecordSlot + catch mechanism `handle` uses, and
+  `handle`'s throw + save-reject paths ARE covered (runtime.test.ts). Add a mirror
+  case if the late-apply path grows.
+
+### Pre-existing (surfaced by the event-layer-v1 review/live-test, NOT introduced by it)
+
+- **quickstart restyle can drop card text (real-LLM output)** — the event-layer-v1
+  live-journey (owner-run) FAILed `safety×v3`: on the "cat restyle" turn, gpt-5.4-mini
+  emitted the six content cards (3 feature + 3 pricing) as boxes WITHOUT their text
+  children — empty rounded boxes, header/heading/button intact (artifact
+  `packages/quickstart/e2e/journey/artifacts/v3/03-restyle.png`). Unrelated to
+  event-layer-v1 (restyle is a `message` turn; the rename/record change touches no
+  rendering or stage-generation). A real-LLM robustness gap in the restyle prompt
+  (the model should never re-emit a card box without re-including its text). Consider
+  a STAGE_SPEC nudge ("a card box must keep its text children on restyle") or a
+  post-turn validator warning when a previously-texted box loses all text.
+
+- **bridge/src/persistent.ts:146** (P3, concurrency) — the persistent driver's
+  single always-on session drains one shared `pending` queue with NO per-turn
+  timeout and NO cap on `pending`. Because `@facet/agent-client` dispatches event
+  frames concurrently (`connect.ts` `void handleEvent`), a slow/hung model turn at
+  `pending[0]` parks `input()` on `await turnDone` forever — every other visitor's
+  turn is blocked and `pending` grows unbounded; the server's `agentTimeoutMs`
+  frees only the server lane, not the wedged session. Fix: race the `turnDone`
+  await against a per-turn timeout + bound `pending`. Owner-run (opt-in bridge
+  runner); out of scope for event-layer-v1.
+
 ---
 
 _Campaign 1 source sweeps: code-review 6 lanes (`wf_4e2fadd0-31d`) + types lane

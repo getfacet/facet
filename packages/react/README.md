@@ -24,9 +24,13 @@ const transport = new SseTransport("http://localhost:5291", {
 });
 
 export function App() {
-  const { tree, send } = useFacet(transport);
+  const { tree, send, record } = useFacet(transport);
   return (
-    <StageRenderer tree={tree} onAction={(action) => send({ kind: "action", action })} />
+    <StageRenderer
+      tree={tree}
+      onAction={(action) => send({ kind: "tap", action })}
+      onRecord={record}
+    />
   );
 }
 ```

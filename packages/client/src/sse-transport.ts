@@ -1,8 +1,26 @@
-import type { ClientEvent, FacetTransport, ServerMessage, VisitorContext } from "@facet/core";
+import type {
+  ClientEvent,
+  CollectedEvent,
+  FacetTransport,
+  ServerMessage,
+  VisitorContext,
+} from "@facet/core";
 
 /** Pre-connect sends are held until the stream opens; bound the buffer so a
  * transport that never (re)connects can't accumulate events forever. */
 const MAX_QUEUE = 100;
+
+/** The reference server's client→server endpoints. `/event` forwards to the
+ * agent; `/record` only appends to the log (a locally-resolved tap). Both ride
+ * the SAME serialized chain so append order == send order across the two. */
+type Endpoint = "/event" | "/record";
+
+/** A pre-connect send held until the stream opens, tagged with the endpoint it
+ * must POST to so a queued `/record` doesn't lose its lane on flush. */
+interface QueuedSend {
+  readonly endpoint: Endpoint;
+  readonly event: CollectedEvent;
+}
 
 /** Pure network headroom — the POST is answered 202 before the turn runs, so a
  * healthy request settles fast. The abort exists only so a black-holed POST
@@ -19,11 +37,14 @@ const POST_TIMEOUT_MS = 10_000;
  */
 export class SseTransport implements FacetTransport {
   private ready = false;
-  private readonly queue: ClientEvent[] = [];
+  private readonly queue: QueuedSend[] = [];
   /** Serializes client→server POSTs: each starts only after the previous one
    * settles, so events arrive in the order they were sent (the queue flush
-   * routes through `send`, so ordering holds from pre-connect through live). */
+   * routes through `commit`, so ordering holds from pre-connect through live). */
   private sendChain: Promise<void> = Promise.resolve();
+  /** Per-session monotonic counter, stamped onto every event at the single
+   * serialization point (`commit`). A dropped event leaves a detectable gap. */
+  private seq = 0;
 
   constructor(
     private readonly baseUrl: string,
@@ -31,28 +52,54 @@ export class SseTransport implements FacetTransport {
   ) {}
 
   send(event: ClientEvent): void {
+    this.enqueueOrCommit("/event", event);
+  }
+
+  /**
+   * Best-effort record of a locally-resolved tap over `POST /record` — it rides
+   * the SAME pre-connect queue + `sendChain` as `send`, so its append order
+   * relative to `/event`s is preserved. A failed `/record` POST is dropped (log,
+   * no throw, no retry, no renderer callback) so it can never wedge the chain.
+   */
+  record(event: CollectedEvent): void {
+    this.enqueueOrCommit("/record", event);
+  }
+
+  private enqueueOrCommit(endpoint: Endpoint, event: CollectedEvent): void {
     if (!this.ready) {
       if (this.queue.length >= MAX_QUEUE) {
         // Drop the oldest — but spare a leading "visit": it's the event the
         // queue exists to protect (it opens the session on the server).
-        this.queue.splice(this.queue[0]?.kind === "visit" ? 1 : 0, 1);
+        this.queue.splice(this.queue[0]?.event.kind === "visit" ? 1 : 0, 1);
       }
-      this.queue.push(event);
+      this.queue.push({ endpoint, event });
       return;
     }
+    this.commit(endpoint, event);
+  }
+
+  /** The single serialization point: stamp the send-order `seq` and append the
+   * POST to `sendChain`. `seq` is assigned HERE (never in userland), so a
+   * queued-then-flushed event gets its seq in flush order, monotonic across both
+   * endpoints and every caller. */
+  private commit(endpoint: Endpoint, event: CollectedEvent): void {
+    this.seq += 1;
+    const stamped: CollectedEvent = { ...event, seq: this.seq };
     this.sendChain = this.sendChain
       .then(() =>
-        fetch(`${this.baseUrl}/event`, {
+        fetch(`${this.baseUrl}${endpoint}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ visitor: this.visitor, event }),
+          body: JSON.stringify({ visitor: this.visitor, event: stamped }),
           signal: AbortSignal.timeout(POST_TIMEOUT_MS),
         }).then(() => undefined),
       )
       .catch((error: unknown) => {
         // A failed POST must not become an unhandled rejection or wedge the
         // chain; the event is lost, so at least leave a trace for the operator.
-        console.error("[facet] event send failed:", error);
+        // `/record` is best-effort by design — same log+drop, no throw, no retry.
+        const label = endpoint === "/record" ? "record" : "event";
+        console.error(`[facet] ${label} send failed:`, error);
       });
   }
 
@@ -67,7 +114,7 @@ export class SseTransport implements FacetTransport {
       // the two apart, so it never synthesizes a reset — it just relays frames.
       this.ready = true;
       const pending = this.queue.splice(0, this.queue.length);
-      for (const event of pending) this.send(event);
+      for (const { endpoint, event } of pending) this.commit(endpoint, event);
     };
     source.onmessage = (message: MessageEvent<string>) => {
       try {

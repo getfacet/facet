@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import type { FacetAgent, ServerMessage } from "@facet/core";
+import { describe, expect, it, vi } from "vitest";
+import type { CollectedEvent, FacetAgent, ServerMessage, VisitorContext } from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
 import { LocalTransport } from "./local-transport.js";
 
@@ -53,6 +53,39 @@ describe("LocalTransport", () => {
     await flush();
 
     expect(received).toEqual([{ kind: "say", text: "(the agent hit an error)" }]);
+  });
+
+  it("routes record() to runtime.record and is best-effort on throw", () => {
+    const recorded: Array<[VisitorContext, CollectedEvent]> = [];
+    const runtime = {
+      handle: () => Promise.resolve({ messages: [] as ServerMessage[] }),
+      record: (v: VisitorContext, e: CollectedEvent) => {
+        recorded.push([v, e]);
+        return Promise.resolve();
+      },
+    };
+    const transport = new LocalTransport(runtime, visitor);
+    const tap: CollectedEvent = { kind: "tap", target: "n1", effect: { navigate: "home" } };
+
+    transport.record(tap);
+    expect(recorded).toEqual([[visitor, tap]]);
+
+    // A runtime whose record throws synchronously must not propagate.
+    const throwing = {
+      handle: () => Promise.resolve({ messages: [] as ServerMessage[] }),
+      record: () => {
+        throw new Error("boom");
+      },
+    };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const t2 = new LocalTransport(throwing, visitor);
+    expect(() => t2.record(tap)).not.toThrow();
+    expect(errorSpy).toHaveBeenCalledWith("[facet] record failed:", expect.any(Error));
+    errorSpy.mockRestore();
+
+    // A runtime without record() at all is a safe no-op.
+    const bare = { handle: () => Promise.resolve({ messages: [] as ServerMessage[] }) };
+    expect(() => new LocalTransport(bare, visitor).record(tap)).not.toThrow();
   });
 
   it("stops delivering after unsubscribe", async () => {

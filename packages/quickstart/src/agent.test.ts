@@ -435,7 +435,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider, { guide: "MY CUSTOM GUIDE" });
     await agent(
       {
-        kind: "action",
+        kind: "tap",
         action: { kind: "agent", name: "submit", collect: "signup" },
         fields: { email: "a@b.c", name: "Ada" },
       },
@@ -563,7 +563,7 @@ describe("createStubAgent", () => {
 
     const onAction = (
       await rt.handle(visitor, {
-        kind: "action",
+        kind: "tap",
         action: { kind: "agent", name: "submit", collect: "signup" },
         fields: { name: "Ada", email: "a@b.c" },
       })
@@ -610,7 +610,7 @@ describe("createStubAgent", () => {
         { kind: "message", text: "hello" },
         { kind: "message", text: "theme midnight" },
         {
-          kind: "action",
+          kind: "tap",
           action: { kind: "agent", name: "submit", collect: "signup" },
           fields: { name: "Ada", email: "a@b.c" },
         },

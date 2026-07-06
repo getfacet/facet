@@ -15,6 +15,7 @@ import {
   MAX_RENDER_NODES,
   sanitizeActionPayload,
   type AgentAction,
+  type CollectedEvent,
   type FacetAction,
   type FacetNode,
   type FacetTheme,
@@ -614,6 +615,17 @@ export interface StageRendererProps {
    */
   readonly onAction?: (action: FacetAction, fields?: Readonly<Record<string, string>>) => void;
   /**
+   * Optional record-only channel for locally-resolved taps (navigate/toggle).
+   * Fired AFTER the optimistic view-state mutation with a `CollectedEvent` tap
+   * carrying the resolved effect (`{navigate}`/`{toggle}`, captured here and
+   * NEVER re-derived) and the pressed box's node id as `target`. Distinct from
+   * `onAction`: this tap is LOGGED for replay, never forwarded to the agent.
+   * Fire-and-forget — the renderer swallows any throw so a record failure can
+   * never unwind `currentScreen`/`visibilityOverrides` (DC-003). Omitted ⇒
+   * navigate/toggle behave exactly as today and the output is byte-identical.
+   */
+  readonly onRecord?: (tap: CollectedEvent) => void;
+  /**
    * The operator-authored theme registry. The tree's `theme` NAME is resolved
    * against it into concrete CSS; an absent prop (or unknown name) renders the
    * default look. Documents must be `validateTheme`-clean — the host owns that
@@ -631,11 +643,15 @@ export interface StageRendererProps {
  * skipped — so a partial or imperfect stage renders as "plain", never broken.
  *
  * It also owns the browser's VIEW-STATE (invariant #6): `currentScreen` and
- * `visibilityOverrides` live here as React state; navigate/toggle presses
- * mutate only this state and NEVER reach `onAction` (the only channel to any
- * transport). Content stays server-owned via the patch flow.
+ * `visibilityOverrides` live here as React state. A navigate/toggle press
+ * mutates only this state — that optimistic effect runs FIRST and
+ * unconditionally and NEVER reaches `onAction` (the agent-routed channel). It
+ * then fires the OPTIONAL, fire-and-forget `onRecord` channel with the resolved
+ * effect + the pressed box's id, so the tap is LOGGED (not forwarded) for
+ * replay; a record failure can never unwind the view-state. Content stays
+ * server-owned via the patch flow.
  */
-export function StageRenderer({ tree, onAction, themes }: StageRendererProps): ReactNode {
+export function StageRenderer({ tree, onAction, onRecord, themes }: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
   // A Map, not a plain object: node ids like "toString"/"valueOf" pass
   // validateTree (only __proto__/prototype/constructor are forbidden), and a
@@ -665,12 +681,31 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
     return null;
   }
 
-  const handlePress = (press: ClassifiedPress): void => {
+  // Fire-and-forget record of a locally-resolved tap: the optimistic setState
+  // has ALREADY run when this is called, so a throw here is swallowed and can
+  // never unwind currentScreen/visibilityOverrides (DC-003). No-op when the
+  // host wires no record channel — navigate/toggle then stay exactly as today.
+  const recordLocalTap = (tap: CollectedEvent): void => {
+    if (onRecord === undefined) {
+      return;
+    }
+    try {
+      onRecord(tap);
+    } catch {
+      // Best-effort: a record-channel failure must not unwind the optimistic
+      // view-state or throw out of the press handler (DC-003).
+    }
+  };
+
+  const handlePress = (press: ClassifiedPress, sourceId: NodeId): void => {
     switch (press.kind) {
       case "navigate":
         // Only a live screen is navigable; unknown targets no-op (DC-004).
         if (liveScreenRoot(tree, press.to) !== null) {
           setCurrentScreen(press.to);
+          // Record AFTER the optimistic mutation, carrying the resolved effect
+          // (captured here, never re-derived) + the pressed box's id.
+          recordLocalTap({ kind: "tap", target: sourceId, effect: { navigate: press.to } });
         }
         return;
       case "toggle": {
@@ -690,6 +725,8 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
           next.set(press.target, !effective);
           return next;
         });
+        // Record AFTER the optimistic mutation with the resolved toggle effect.
+        recordLocalTap({ kind: "tap", target: sourceId, effect: { toggle: press.target } });
         return;
       }
       case "agent":
@@ -773,7 +810,13 @@ export function StageRenderer({ tree, onAction, themes }: StageRendererProps): R
 interface RenderArgs {
   readonly tree: FacetTree;
   readonly id: NodeId;
-  readonly onPress: (press: ClassifiedPress) => void;
+  /**
+   * StageRenderer's `handlePress` — receives the classified press AND the
+   * pressed box's node id (`sourceId`), so a locally-resolved navigate/toggle
+   * can be recorded with its source `target`. Bound to this node's id at the
+   * `BoxElement` call site below.
+   */
+  readonly onPress: (press: ClassifiedPress, sourceId: NodeId) => void;
   readonly visibilityOverrides: ReadonlyMap<NodeId, boolean>;
   /** The resolved theme threaded from StageRenderer to every style call site. */
   readonly theme: ResolvedTheme;
@@ -903,11 +946,14 @@ function renderNode({
       // element type at this position — so React updates in place instead of
       // remounting the subtree (which would wipe visitor-typed field text and
       // scroll offsets).
+      // Bind the pressed box's id so press AND hold (both route through the ONE
+      // dispatch) record a local navigate/toggle with this box as `target`.
+      const dispatch = (classified: ClassifiedPress): void => onPress(classified, id);
       return (
         <BoxElement
           press={press}
           hold={hold}
-          dispatch={onPress}
+          dispatch={dispatch}
           className={appear}
           style={boxStyle(styleOf(node.style), theme)}
         >

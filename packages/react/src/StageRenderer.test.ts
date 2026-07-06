@@ -217,6 +217,45 @@ describe("StageRenderer happy path", () => {
   });
 });
 
+// onRecord (WU-4, RISK-API-3): the record-only channel is an INTERACTION channel
+// — it never fires during render, so supplying or omitting it must not change a
+// single byte of the rendered markup. This pins the "handler-less output stays
+// byte-identical" invariant and confirms the agent-tap path is untouched.
+describe("StageRenderer onRecord is render-inert (static)", () => {
+  const navToggleTree = (): FacetTree =>
+    tree({
+      root: box("root", ["go", "toggleBtn", "agentBtn"]),
+      go: { id: "go", type: "box", onPress: { kind: "navigate", to: "about" }, children: ["gt"] },
+      gt: text("gt", "Go"),
+      toggleBtn: {
+        id: "toggleBtn",
+        type: "box",
+        onPress: { kind: "toggle", target: "go" },
+        children: ["tt"],
+      },
+      tt: text("tt", "Toggle"),
+      agentBtn: {
+        id: "agentBtn",
+        type: "box",
+        onPress: { kind: "agent", name: "go" },
+        children: ["at"],
+      },
+      at: text("at", "Agent"),
+    });
+
+  it("markup is byte-identical whether onRecord is omitted or supplied", () => {
+    const without = renderToStaticMarkup(createElement(StageRenderer, { tree: navToggleTree() }));
+    const withRecord = renderToStaticMarkup(
+      createElement(StageRenderer, { tree: navToggleTree(), onRecord: () => {} }),
+    );
+    expect(withRecord).toBe(without);
+    // The agent-tap box still renders exactly as before (a button) — onRecord
+    // does not touch the agent-routed path.
+    expect(withRecord).toContain('role="button"');
+    expect(withRecord).toContain("Agent");
+  });
+});
+
 // Screens are named roots into the same flat nodes map; a screenless tree is the
 // single-screen form. The raw live-patch path bypasses validateTree, so garbage
 // screens/entry/hidden must degrade to a plain render — never throw.

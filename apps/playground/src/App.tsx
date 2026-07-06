@@ -126,7 +126,7 @@ function VisitorPane({
   const onAction = (action: FacetAction, fields?: Readonly<Record<string, string>>): void => {
     // Conditional spread-free construction: exactOptionalPropertyTypes forbids
     // an explicit `fields: undefined` on the event.
-    send(fields === undefined ? { kind: "action", action } : { kind: "action", action, fields });
+    send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });
   };
 
   const submit = (): void => {

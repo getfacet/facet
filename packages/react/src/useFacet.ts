@@ -3,6 +3,7 @@ import {
   EMPTY_TREE,
   foldPatchIntoStage,
   type ClientEvent,
+  type CollectedEvent,
   type FacetTransport,
   type FacetTree,
   type ServerMessage,
@@ -17,6 +18,13 @@ export interface FacetState {
   readonly tree: FacetTree;
   readonly chat: readonly string[];
   send(event: ClientEvent): void;
+  /**
+   * Best-effort record of a locally-resolved tap (navigate/toggle) to the
+   * runtime log — wired to the transport's optional `record`. When the transport
+   * doesn't implement `record` (e.g. an in-process/test double), this is a safe
+   * no-op, so the renderer's fire-and-forget `onRecord` can call it either way.
+   */
+  record(event: CollectedEvent): void;
 }
 
 export interface UseFacetOptions {
@@ -69,6 +77,10 @@ export function useFacet(transport: FacetTransport, options?: UseFacetOptions): 
   }, [transport]);
 
   const send = useCallback((event: ClientEvent) => transport.send(event), [transport]);
+  // `transport.record` is optional (additive protocol method): absent it, the
+  // optional-chained call is a safe no-op, so the renderer can wire `onRecord`
+  // to this unconditionally.
+  const record = useCallback((event: CollectedEvent) => transport.record?.(event), [transport]);
 
-  return { tree, chat, send };
+  return { tree, chat, send, record };
 }

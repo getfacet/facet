@@ -320,7 +320,7 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
       // (the honest-seam note: the renderer's PRODUCTION of fields is proven
       // at unit level in WU-3; `collect` on the action is ignored server-side).
       const pressPost = await postEvent(base, visitorId, {
-        kind: "action",
+        kind: "tap",
         action: { kind: "agent", name: "submit", collect: "signup" },
         fields: { name: "Ada", email: "a@b.c" },
       });

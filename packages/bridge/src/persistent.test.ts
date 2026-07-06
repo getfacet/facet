@@ -241,7 +241,7 @@ describe("createPersistentDriver", () => {
     const driver = createPersistentDriver();
 
     // An `action` event whose `action` accessor throws when read.
-    const malformed = { kind: "action" } as ClientEvent;
+    const malformed = { kind: "tap" } as ClientEvent;
     Object.defineProperty(malformed, "action", {
       get() {
         throw new Error("boom");

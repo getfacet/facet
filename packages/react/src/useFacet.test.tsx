@@ -141,4 +141,25 @@ describe("useFacet (jsdom)", () => {
     unmount();
     expect(t.subscribed()).toBe(false);
   });
+
+  it("record forwards a collected tap to the transport's record method", () => {
+    const record = vi.fn();
+    const transport: FacetTransport = { send: vi.fn(), subscribe: () => () => {}, record };
+    const { result } = renderHook(() => useFacet(transport));
+    const tap = { kind: "tap", target: "goAbout", effect: { navigate: "about" } } as const;
+    result.current.record(tap);
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(record).toHaveBeenCalledWith(tap);
+  });
+
+  it("record is a safe no-op when the transport does not implement record", () => {
+    // `FacetTransport.record` is optional (additive protocol method): a transport
+    // without it must not make `record` throw — the renderer wires onRecord to
+    // this unconditionally.
+    const transport: FacetTransport = { send: vi.fn(), subscribe: () => () => {} };
+    const { result } = renderHook(() => useFacet(transport));
+    expect(() =>
+      result.current.record({ kind: "tap", target: "btn", effect: { toggle: "panel" } }),
+    ).not.toThrow();
+  });
 });

@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
 import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
+import type { CollectedEvent } from "@facet/core";
 import {
   DEFAULT_GUIDE,
   HISTORY_TURNS,
   TOOLS,
   buildInitialMessages,
   buildSystem,
+  describeEvent,
 } from "./prompt.js";
 
 const SESSION: FacetSession = {
@@ -186,7 +188,7 @@ describe("buildInitialMessages", () => {
 
   it("renders an action event's name, payload, and fields into the final user message", () => {
     const event: ClientEvent = {
-      kind: "action",
+      kind: "tap",
       action: { kind: "agent", name: "submit", payload: { plan: "pro" }, collect: "signup" },
       fields: { name: "Hoon", email: "hoon@example.com" },
     };
@@ -201,11 +203,17 @@ describe("buildInitialMessages", () => {
   });
 
   it("renders navigate/toggle history events and marks patches as (page updated)", () => {
+    // Local navigate/toggle taps are recorded as `tap` rows carrying the
+    // renderer-resolved `effect` (the 3-layer log currency).
     const history: StoredEvent[] = [
-      { at: 0, event: { kind: "action", action: { kind: "navigate", to: "about" } }, messages: [] },
+      {
+        at: 0,
+        event: { kind: "tap", target: "go-about", effect: { navigate: "about" } },
+        messages: [],
+      },
       {
         at: 1,
-        event: { kind: "action", action: { kind: "toggle", target: "menu" } },
+        event: { kind: "tap", target: "menu", effect: { toggle: "menu" } },
         messages: [{ kind: "patch", patches: [] }],
       },
     ];
@@ -216,6 +224,48 @@ describe("buildInitialMessages", () => {
     expect(all).toContain("toggle target=menu");
     expect(all).toContain("(no reply)"); // navigate turn had no messages
     expect(all).toContain("(page updated)"); // toggle turn had a patch
+  });
+
+  it("describeEvent renders a tap and still replays a legacy action row", () => {
+    // A current forward tap renders its agent action name, payload, and fields.
+    const tap: ClientEvent = {
+      kind: "tap",
+      action: { kind: "agent", name: "submit", payload: { plan: "pro" }, collect: "signup" },
+      fields: { name: "Hoon" },
+    };
+    // A legacy durable row persisted BEFORE the action→tap rename still carries
+    // `kind:"action"` on disk. The reader normalizes it to a tap so a historical
+    // interaction replays instead of degrading to "(unknown event)" (RISK-API-2).
+    const legacyRow: StoredEvent = {
+      at: 0,
+      event: {
+        kind: "action",
+        action: { kind: "agent", name: "legacy-cta", payload: { id: "7" } },
+      } as unknown as StoredEvent["event"],
+      messages: [],
+    };
+    const messages = buildInitialMessages(tap, SESSION, [legacyRow], HISTORY_TURNS);
+    const all = messages.map((m) => ("content" in m ? m.content : "")).join("\n");
+
+    // The current tap rendered its name/payload/fields.
+    expect(all).toContain("submit");
+    expect(all).toContain("pro");
+    expect(all).toContain("Hoon");
+
+    // The legacy {kind:"action"} row replays as a tap, NOT "(unknown event)".
+    const legacyLine = "content" in messages[0]! ? messages[0].content : "";
+    expect(legacyLine).toContain("legacy-cta");
+    expect(legacyLine).not.toContain("(unknown event)");
+  });
+
+  it("describeEvent returns a fallback (never throws) for a stored tap with a null action", () => {
+    // A poisoned Sink row (or a legacy {kind:"action", action:null} forwarded via
+    // normalizeLegacyEvent) yields a tap whose `action` is null. `null !== undefined`,
+    // so a guard that only checks `!== undefined` would reach `null.kind` → TypeError.
+    // describeEvent is contractually fail-safe: it must return a string, never throw.
+    const poisoned = { kind: "tap", action: null } as unknown as CollectedEvent;
+    expect(() => describeEvent(poisoned)).not.toThrow();
+    expect(describeEvent(poisoned)).toBe("(unknown event)");
   });
 
   it("renders a corrupt/unknown history event as a safe placeholder (never undefined)", () => {
