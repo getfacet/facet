@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { FIELD_INPUTS } from "./nodes.js";
 import { STAGE_SPEC } from "./spec.js";
-import { APPEARS } from "./tokens.js";
+import { APPEARS, COLUMNS, SCROLL_AXES } from "./tokens.js";
 
 describe("STAGE_SPEC", () => {
   it("teaches screens entry navigate toggle and hidden", () => {
@@ -33,7 +34,8 @@ describe("STAGE_SPEC", () => {
     // core's APPEARS so the spec teaches every current token — extending the
     // palette without updating STAGE_SPEC fails here, not silently.
     expect(STAGE_SPEC).toContain(`appear(${APPEARS.join("|")})`);
-    expect(STAGE_SPEC).toMatch(/scroll\(bool\)/);
+    expect(STAGE_SPEC).toContain(`scroll(${SCROLL_AXES.join("|")})`);
+    expect(STAGE_SPEC).not.toMatch(/scroll\(bool\)/);
     // appear = enter animation: replays on each re-show; renderer honors reduced motion.
     expect(STAGE_SPEC).toMatch(/replays on each re-show/i);
     expect(STAGE_SPEC).toMatch(/reduced motion/i);
@@ -48,6 +50,29 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/same Action union as onPress/i);
     // The advice (guidance, not enforcement — invariant #2): never hold-only content.
     expect(STAGE_SPEC).toMatch(/never make hold the only path/i);
+  });
+
+  it("brick-vocab v1 teaches media, native field inputs, columns, and scroll axes", () => {
+    expect(STAGE_SPEC).toContain('"type":"media"');
+    expect(STAGE_SPEC).toContain('"kind"');
+    expect(STAGE_SPEC).toMatch(/"image"\|"video"/);
+    expect(STAGE_SPEC).toContain('"poster"?');
+    expect(STAGE_SPEC).toContain('"controls"?');
+    expect(STAGE_SPEC).toMatch(/MediaStyle/);
+
+    for (const input of FIELD_INPUTS) {
+      expect(STAGE_SPEC).toContain(`"${input}"`);
+    }
+    expect(STAGE_SPEC).toContain('"options"?');
+    expect(STAGE_SPEC).toMatch(/select/i);
+    expect(STAGE_SPEC).toMatch(/checkbox/i);
+    expect(STAGE_SPEC).toMatch(/radio/i);
+    expect(STAGE_SPEC).toMatch(/switch/i);
+
+    expect(STAGE_SPEC).toContain(`columns(${COLUMNS.join("|")})`);
+    expect(STAGE_SPEC).toContain(`scroll(${SCROLL_AXES.join("|")})`);
+    expect(STAGE_SPEC).not.toMatch(/ImageStyle/);
+    expect(STAGE_SPEC).not.toContain('"type":"image"');
   });
 
   it("teaches collect and press-time field snapshots", () => {
