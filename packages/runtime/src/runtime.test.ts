@@ -8,7 +8,7 @@ import type {
 } from "@facet/core";
 import { EMPTY_TREE, foldPatchIntoStage, MAX_PATCH_OPS } from "@facet/core";
 import { FacetRuntime } from "./runtime.js";
-import { MemoryStageStore } from "./stage-store.js";
+import { MemoryStageStore, type StageStore } from "./stage-store.js";
 import { withInitialStage } from "./assets.js";
 import type { Sink, StoredEvent } from "./sink.js";
 
@@ -504,6 +504,53 @@ describe("FacetRuntime.record", () => {
       e.event.kind === "tap" ? e.event.target : (e.event as { text?: string }).text,
     );
     expect(labels).toEqual(["E1", "R1"]); // send order, NOT [R1, E1]
+  });
+
+  it("a throwing agent turn records nothing and does not wedge the visitor's record queue", async () => {
+    // The reserved Sink-write slot (reserveRecordSlot) blocks on `await ready`;
+    // only the caller's catch resolving it to null drains it. A turn whose AGENT
+    // THROWS must resolve that slot (records nothing) so the visitor's
+    // serializeRecord queue is not permanently wedged — a later record must still
+    // drain. AWAIT the later record to completion so a deadlock TIMES OUT here.
+    const throwingAgent: FacetAgent = () => {
+      throw new Error("boom");
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent: throwingAgent });
+    await expect(rt.handle(visitor, { kind: "message", text: "E" })).rejects.toThrow("boom");
+    expect(await rt.historyFor("v")).toHaveLength(0); // the throwing turn recorded nothing
+
+    // SAME visitor: a later local tap must still drain (the slot was released by
+    // resolveRecord(null), not stuck on `await ready`).
+    const tap: CollectedEvent = { kind: "tap", target: "R", effect: { navigate: "R" } };
+    await rt.record(visitor, tap); // AWAIT to completion — a wedged queue would never settle
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event).toEqual(tap); // R drained after the throwing turn
+  });
+
+  it("a save-rejecting turn resolves the record slot to null and a later record still drains", async () => {
+    // `save` rejecting AFTER the agent ran: handle's catch must resolveRecord(null)
+    // so the reserved slot drains (records nothing) instead of blocking the queue.
+    // open() returns a session WITHOUT saving, so the turn reaches persist()'s save.
+    const saveRejectStore: StageStore = {
+      get: () => Promise.resolve(undefined),
+      open: (agentId, visitor) => Promise.resolve({ agentId, visitor, stage: EMPTY_TREE }),
+      save: () => Promise.reject(new Error("save failed")),
+    };
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(renderPatch, { kind: "say", text: "hi" }),
+      stageStore: saveRejectStore,
+    });
+    await expect(rt.handle(visitor, { kind: "message", text: "E" })).rejects.toThrow("save failed");
+    expect(await rt.historyFor("v")).toHaveLength(0); // nothing persisted for the failed turn
+
+    // SAME visitor: a later record must still drain (catch's resolveRecord(null) fired).
+    const tap: CollectedEvent = { kind: "tap", target: "R2", effect: { navigate: "R2" } };
+    await rt.record(visitor, tap); // AWAIT to completion — a deadlocked queue would hang
+    const history = await rt.historyFor("v");
+    expect(history).toHaveLength(1);
+    expect(history[0]?.event).toEqual(tap); // R2 drained after the save-rejecting turn
   });
 });
 
