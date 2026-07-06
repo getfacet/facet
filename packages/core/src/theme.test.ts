@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH, validateTheme } from "./theme.js";
 import type { FacetTheme } from "./theme.js";
@@ -22,6 +23,17 @@ describe("isValidThemeName", () => {
     ]) {
       expect(isValidThemeName(bad)).toBe(false);
     }
+  });
+});
+
+describe("theme clamp constant names", () => {
+  it("keeps spacing and font-size clamp bounds separately named", () => {
+    const source = readFileSync(new URL("./theme.ts", import.meta.url), "utf8");
+    expect(source).toMatch(/const SPACE_PX_RANGE/);
+    expect(source).toMatch(/const FONT_SIZE_PX_RANGE/);
+    expect(source).toMatch(
+      /"fontSize"[\s\S]*dimensionHandler\(FONT_SIZE_PX_RANGE\.lo, FONT_SIZE_PX_RANGE\.hi\)/,
+    );
   });
 });
 

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import type { FacetTree } from "@facet/core";
 import { describe, expect, it } from "vitest";
 import { page, text } from "./bricks.js";
@@ -95,5 +96,14 @@ describe("playground local bricks (page/text)", () => {
 
   it("rebuilds OFFLINE_FACE byte-identical to the frozen kit fixture", () => {
     expect(buildOffline()).toEqual(OFFLINE_FIXTURE);
+  });
+
+  it("shares one flat-map authoring helper with the gallery", () => {
+    const bricksSource = readFileSync(new URL("./bricks.ts", import.meta.url), "utf8");
+    const gallerySource = readFileSync(new URL("./gallery.tsx", import.meta.url), "utf8");
+    expect(bricksSource).toContain('from "./tree-builder.js"');
+    expect(gallerySource).toContain('from "./tree-builder.js"');
+    expect(bricksSource).not.toMatch(/class Builder/);
+    expect(gallerySource).not.toMatch(/class Sheet/);
   });
 });

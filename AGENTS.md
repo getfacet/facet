@@ -70,8 +70,9 @@ pnpm --filter @facet/quickstart build   # then: node packages/quickstart/dist/cl
 The `/live-test` tiers are vitest runs: Tier 1a
 `pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts` (twice),
 Tier 1b/2/3 use `--config packages/quickstart/e2e/vitest.config.ts` against
-`e2e/bundle.test.ts` / `e2e/smoke.test.ts` — see
-`.claude/skills/live-test/SKILL.md` for the exact commands and policy.
+`e2e/bundle.test.ts` / `e2e/smoke.test.ts` — see the active agent skill for the
+exact commands and policy (`.agents/skills/live-test/SKILL.md` for Codex,
+`.claude/skills/live-test/SKILL.md` for Claude Code).
 
 ## Definition of Done (before you commit)
 

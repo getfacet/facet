@@ -224,8 +224,8 @@ The quickstart's built-in agent is just a default. **Your model connects in one
 of three ways** — all the same `Stage` API:
 
 - **in-process** — a JS function inside the server (`@facet/agent`).
-- **local CLI** — a running agent (e.g. Claude Code) calls `facet append/say/…`
-  and a local bridge forwards it (`@facet/cli`).
+- **local CLI** — a running agent (e.g. Claude Code or Codex) calls
+  `facet append/theme/say/…` and a local bridge forwards it (`@facet/cli`).
 - **dial-in** — an external agent connects out over SSE, NAT-safe, and is served
   events to answer (`@facet/agent-client`). The model (the LLM/rules) is always
   yours; Facet is the surface it draws on.

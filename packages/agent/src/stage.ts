@@ -29,9 +29,10 @@ function childrenPath(parent: NodeId): string {
  * The agent's control surface for its page — the "CLI" the agent drives to build
  * and mutate the stage as a conversation unfolds.
  *
- * The method names stay ergonomic (render / set / append / remove / say), but
- * each records standard RFC 6902 operations underneath. Stage edits are coalesced
- * into a single `patch` message and ordered correctly relative to `say(...)`.
+ * The method names stay ergonomic (render / set / append / remove / screens /
+ * theme / say), but each records standard RFC 6902 operations underneath. Stage
+ * edits are coalesced into a single `patch` message and ordered correctly
+ * relative to `say(...)`.
  */
 export class Stage {
   private out: ServerMessage[] = [];

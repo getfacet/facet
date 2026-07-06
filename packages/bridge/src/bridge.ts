@@ -28,7 +28,7 @@ const DEFAULT_MAX_CONCURRENT = 4;
  * The local bridge lets a coding agent on your machine (Claude Code, Codex, …)
  * OWN a Facet link. It dials into a Facet server (SSE + POST, NAT-safe), and for
  * each visitor event it runs your local agent, exposing a `facet` command the
- * agent calls to change the page (`facet render/append/set/remove/say`).
+ * agent calls to change the page (`facet render/append/set/remove/theme/say`).
  *
  * Two shipped runners: `spawn` runs the agent per event (with `continuity`
  * `oneshot` for a stateless child each time, or `resume` which `--resume`s the
@@ -92,7 +92,7 @@ function makeFacetShim(): string {
 }
 
 const SPEC = `You control a live web page via the \`facet\` command. Change the page by running:
-  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet say <text>
+  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet theme <name>   facet say <text>
 
 ${STAGE_SPEC}
 

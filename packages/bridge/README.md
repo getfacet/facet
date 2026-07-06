@@ -3,7 +3,7 @@
 Point a local coding agent (Claude Code, Codex, …) at a Facet link. The bridge
 dials into a Facet server (SSE + POST, NAT-safe) and, for each visitor event,
 runs your local agent — exposing a `facet` command the agent calls to change the
-page (`facet render/append/set/remove/say`).
+page (`facet render/append/set/remove/screens/theme/say`).
 
 ```bash
 # it's a bin package — install globally or run with npx
@@ -58,11 +58,16 @@ bridge.close();
 ## How it works
 
 The bridge never lets the brain talk to the server directly. With the **spawn**
-runner the brain runs `facet …` (from `@facet/cli`), which the bridge collects and
-returns over the connection. With the **persistent** runner the always-on session calls
-in-process `facet_*` tools (via the Agent SDK's MCP tools) whose handlers write
-to the current event's stage — events are processed serially so each turn's
-changes are attributed to that event.
+runner the brain runs `facet …` (from `@facet/cli`), which the bridge collects
+and returns over the connection. With the **persistent** runner the always-on
+session calls in-process `facet_*` tools (via the Agent SDK's MCP tools) whose
+handlers write to the current event's stage — events are processed serially so
+each turn's changes are attributed to that event.
+
+Both runners expose the same stage action surface: render, append, set, remove,
+screens, theme by name, and say. In spawn mode, theme selection uses
+`facet theme <name>`. Theme selection is name-only; invalid names are rejected
+before any stage patch is emitted.
 
 `createBridge({ runner, serverUrl, agentId, … })` is also exported for programmatic
 use, alongside `createPersistentDriver(...)`.

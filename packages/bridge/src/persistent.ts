@@ -9,6 +9,7 @@ import { Stage } from "@facet/agent";
 import { safeEnv } from "./env.js";
 import {
   STAGE_SPEC,
+  isValidThemeName,
   validateTree,
   type ClientEvent,
   type FacetAgent,
@@ -32,6 +33,7 @@ const SYSTEM = `You own a live web page and update it as visitors interact. Use 
 - append(parentId, node): add a node under a parent
 - set(node): add or replace a node by id
 - remove(id): delete a node
+- theme(name): select a validated theme name
 - say(text): send a short chat reply
 
 ${STAGE_SPEC}
@@ -109,6 +111,20 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
         current?.stage.remove(args.id);
         return { content: [{ type: "text", text: "removed" }] };
       }),
+      tool("theme", "Select a stage theme by name.", { name: z.string() }, async (args) => {
+        if (!isValidThemeName(args.name)) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: "error: invalid theme name (letters/digits/_/-, max 64)",
+              },
+            ],
+          };
+        }
+        current?.stage.theme(args.name);
+        return { content: [{ type: "text", text: `theme set to "${args.name}"` }] };
+      }),
       tool("say", "Send a short chat reply to the visitor.", { text: z.string() }, async (args) => {
         current?.stage.say(args.text);
         return { content: [{ type: "text", text: "said" }] };
@@ -180,6 +196,7 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
             "mcp__facet__append",
             "mcp__facet__set",
             "mcp__facet__remove",
+            "mcp__facet__theme",
             "mcp__facet__say",
           ],
           permissionMode: "bypassPermissions",

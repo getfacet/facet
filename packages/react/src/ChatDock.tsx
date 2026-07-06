@@ -70,7 +70,7 @@ const styles: Record<string, CSSProperties> = {
     border: `1px solid ${COLOR.border}`,
     borderRadius: "12px",
     overflow: "hidden",
-    background: "#fbfbfc",
+    background: COLOR.surface,
   },
   log: {
     maxHeight: "140px",
@@ -92,7 +92,7 @@ const styles: Record<string, CSSProperties> = {
     flex: 1,
     padding: "8px 10px",
     borderRadius: "8px",
-    border: "1px solid #d7dbe0",
+    border: `1px solid ${COLOR.border}`,
     fontSize: "14px",
   },
   send: {

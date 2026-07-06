@@ -61,15 +61,16 @@ optional in-process `agent` (if provided) or replies with a single
 The agent controls the stage by sending `ServerMessage[]` — the **same** output
 an in-process agent returns: `patch` (RFC 6902 ops) and `say`. This is the wire
 form of `@facet/agent`'s Stage operations (`render` / `append` / `remove` /
-`say`).
+`screens` / `theme` / `say`).
 
 How an external agent PRODUCES those messages (the agent-facing surface):
 
 - **(a) TS bridge** using `@facet/agent`'s `Stage` — implemented first (the demo
   agent client builds messages with the SDK and POSTs them).
-- **(b) `facet` shell CLI** (`facet append …`, `facet say …`) a terminal agent
-  invokes — a thin wrapper over (a). Next layer.
-- **(c) MCP tools** (`render` / `append` / `say`) the agent calls — next layer.
+- **(b) `facet` shell CLI** (`facet append …`, `facet theme …`, `facet say …`) a
+  terminal agent invokes — a thin wrapper over (a). Next layer.
+- **(c) MCP tools** (`render` / `append` / `theme` / `say`) the agent calls —
+  next layer.
 
 v0 implements the wire protocol + (a). (b)/(c) are thin clients over the same
 wire and come with the local bridge (A3).

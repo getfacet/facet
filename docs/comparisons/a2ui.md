@@ -73,7 +73,7 @@ whether the stack is *integrated or layered*.
 | A2UI layer | What it does | Facet counterpart |
 | --- | --- | --- |
 | Protocol / message layer (JSONL, 4 message types) | Wire format between agent and client | `@facet/core` `protocol.ts` (`ServerMessage`: `patch`/`say`/`reset`) |
-| Component model (flat ID adjacency list + catalog) | The declarative UI representation | `@facet/core` `nodes.ts` (nested 4-brick tree) |
+| Component model (flat ID adjacency list + catalog) | The declarative UI representation | `@facet/core` `tree.ts` + `nodes.ts` (flat node map with four brick node types) |
 | Data model + JSON-Pointer binding | App state decoupled from UI structure | *(no direct analogue — Facet embeds display data in the brick: `text.value`, `image.src`, `field`)* |
 | Rendering runtime (`@a2ui/web_core`) + per-platform renderers | Turn wire format into native UI | `@facet/runtime` (framework-agnostic) + `@facet/react` (single renderer) |
 | Safety / validation (catalog typing, Zod) | Constrain what the agent can render | `@facet/core` `validateTree` + fail-safe renderer |

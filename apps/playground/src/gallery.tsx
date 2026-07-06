@@ -1,15 +1,7 @@
 import type { CSSProperties } from "react";
-import type {
-  BoxStyle,
-  Color,
-  FacetAction,
-  FacetNode,
-  FacetTree,
-  FieldInput,
-  MediaStyle,
-  TextStyle,
-} from "@facet/core";
+import type { Color, FacetTree } from "@facet/core";
 import { StageRenderer } from "@facet/react";
+import { TreeBuilder } from "./tree-builder.js";
 
 /**
  * A gallery of very different pages — all built from the SAME four bricks
@@ -18,120 +10,11 @@ import { StageRenderer } from "@facet/react";
  * the local `bricks.ts` helper, or seeding from `@facet/assets` defaults) would
  * emit trees exactly like these.
  *
- * `Sheet` is a tiny authoring helper (the same idea as `bricks.ts`): it
- * accumulates nodes into the flat map and returns their ids, so pages read like
- * nested composition instead of a hand-written adjacency list.
+ * `TreeBuilder` accumulates nodes into the flat map and returns their ids, so
+ * pages read like nested composition instead of a hand-written adjacency list.
  */
-class Sheet {
-  private readonly nodes: Record<string, FacetNode> = {};
-  private count = 0;
-
-  private next(): string {
-    this.count += 1;
-    return `n${this.count}`;
-  }
-
-  /**
-   * `onHold` is the LAST positional parameter this signature will take — the
-   * next per-box word means switching to an options object.
-   */
-  box(
-    style: BoxStyle,
-    children: readonly string[],
-    onPress?: FacetAction,
-    onHold?: FacetAction,
-  ): string {
-    const id = this.next();
-    this.nodes[id] = {
-      id,
-      type: "box",
-      style,
-      children: [...children],
-      ...(onPress !== undefined ? { onPress } : {}),
-      ...(onHold !== undefined ? { onHold } : {}),
-    };
-    return id;
-  }
-
-  /** A box that starts hidden (content-declared default) — a toggle target. */
-  hiddenBox(style: BoxStyle, children: readonly string[]): string {
-    const id = this.next();
-    this.nodes[id] = { id, type: "box", style, children: [...children], hidden: true };
-    return id;
-  }
-
-  text(value: string, style?: TextStyle): string {
-    const id = this.next();
-    this.nodes[id] =
-      style === undefined ? { id, type: "text", value } : { id, type: "text", value, style };
-    return id;
-  }
-
-  media(
-    src: string,
-    alt: string,
-    style?: MediaStyle,
-    kind: "image" | "video" = "image",
-    extra?: { readonly poster?: string; readonly controls?: boolean },
-  ): string {
-    const id = this.next();
-    this.nodes[id] = {
-      id,
-      type: "media",
-      kind,
-      src,
-      alt,
-      ...(style !== undefined ? { style } : {}),
-      ...(extra?.poster !== undefined ? { poster: extra.poster } : {}),
-      ...(extra?.controls !== undefined ? { controls: extra.controls } : {}),
-    };
-    return id;
-  }
-
-  field(
-    name: string,
-    label: string,
-    placeholder: string,
-    input?: FieldInput,
-    options?: readonly string[],
-  ): string {
-    const id = this.next();
-    this.nodes[id] = {
-      id,
-      type: "field",
-      name,
-      label,
-      placeholder,
-      style: { width: "full" },
-      ...(input !== undefined ? { input } : {}),
-      ...(options !== undefined ? { options } : {}),
-    };
-    return id;
-  }
-
-  tree(rootStyle: BoxStyle, children: readonly string[]): FacetTree {
-    this.nodes["root"] = { id: "root", type: "box", style: rootStyle, children: [...children] };
-    return { root: "root", nodes: this.nodes };
-  }
-
-  /**
-   * A multi-screen tree: `screens` maps name → screen root box id (named roots
-   * into the same flat map). `root` keeps every screen as a child so a
-   * screens-unaware renderer still shows all content (plain fallback).
-   */
-  screensTree(screens: Readonly<Record<string, string>>, entry: string): FacetTree {
-    this.nodes["root"] = {
-      id: "root",
-      type: "box",
-      style: { direction: "col" },
-      children: Object.values(screens),
-    };
-    return { root: "root", nodes: this.nodes, screens, entry };
-  }
-}
-
 function hero(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   const button = (label: string, name: string, primary: boolean): string =>
     s.box(
       primary
@@ -155,7 +38,7 @@ function hero(): FacetTree {
 }
 
 function productGrid(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   const card = (seed: string, name: string, price: string): string =>
     s.box({ direction: "col", gap: "sm", border: true, radius: "lg", pad: "md", grow: true }, [
       s.media(`https://picsum.photos/seed/${seed}/400/300`, name, {
@@ -182,7 +65,7 @@ function productGrid(): FacetTree {
 }
 
 function signupForm(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   return s.tree({ direction: "col", gap: "md", pad: "xl", align: "stretch" }, [
     s.text("Join the beta", { size: "2xl", weight: "bold" }),
     s.text("We'll email you an invite.", { color: "fg-muted", size: "sm" }),
@@ -197,7 +80,7 @@ function signupForm(): FacetTree {
 }
 
 function stats(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   const stat = (num: string, label: string, bg: Color, fg: Color, labelColor: Color): string =>
     s.box({ direction: "col", gap: "xs", pad: "lg", bg, radius: "lg", grow: true }, [
       s.text(num, { size: "3xl", weight: "bold", color: fg }),
@@ -214,7 +97,7 @@ function stats(): FacetTree {
 }
 
 function pricing(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   const tier = (
     name: string,
     price: string,
@@ -258,7 +141,7 @@ function pricing(): FacetTree {
 }
 
 function imageGallery(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   const cell = (seed: string, caption: string): string =>
     s.box({ direction: "col", gap: "xs", grow: true }, [
       s.media(`https://picsum.photos/seed/${seed}/300/300`, caption, {
@@ -280,7 +163,7 @@ function imageGallery(): FacetTree {
 }
 
 function screensAndToggle(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   const navButton = (label: string, to: string): string =>
     s.box(
       { bg: "surface", radius: "md", pad: "sm", border: true, align: "center" },
@@ -330,7 +213,7 @@ function screensAndToggle(): FacetTree {
  * Exported so the gallery test can assert on the exact tree.
  */
 export function appearHoldScroll(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   // Pre-drawn peek panel, hidden on first paint — every card's hold target.
   const peek = s.hiddenBox(
     { direction: "col", gap: "xs", pad: "md", bg: "surface-2", radius: "md", appear: "fade" },
@@ -376,7 +259,7 @@ export function appearHoldScroll(): FacetTree {
 }
 
 export function brickVocabV1Demo(): FacetTree {
-  const s = new Sheet();
+  const s = new TreeBuilder("n");
   const video = s.media(
     "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     "Flower video",

@@ -323,20 +323,25 @@ itself, so its surface is guarded. Beyond the protocol types, it may carry
 other common home** need them. A helper used by a single package, or one that
 would pull in a dependency or Node built-in, lives in that package instead.
 
-## Boundaries and what's deferred
+## Boundaries and what's still out of scope
 
-The current scaffold implements the **core model**: bricks, tokens, RFC 6902
-patches, sessions, the event loop, a React renderer, and an in-process demo.
-Deliberately deferred:
+The current repo implements the **core model** (bricks, tokens, RFC 6902
+patches), sessions and the event loop, a React renderer, reference SSE+POST
+transports, browser-side transports, local agent surfaces (CLI/bridge), default
+asset data, file/in-memory asset references, a Postgres store adapter, the
+playground, and the quickstart reference brain.
 
-- **Transport** — a WebSocket/SSE server and a browser playground.
-- **Default assets** — the `@facet/assets` package (node-free `DEFAULT_THEME` +
-  `DEFAULT_STAMPS` data).
-- **Cost & latency** — caching and a static skeleton so the first paint isn't
-  gated on a model call.
-- **Durability & scale** — a database `StageStore`/`Sink` backend beyond the
-  in-memory and file references (e.g. Postgres for a hosted SaaS).
-- **Safety** — content moderation for public, agent-authored pages.
-- **SEO/crawlers** — a stable default face for non-interactive clients.
+Deliberately still out of scope:
+
+- **Hosted scale infrastructure** — Redis fan-out, multi-region delivery, queues,
+  and durable orchestration beyond pluggable `StageStore`/`Sink`/`AssetsStore`
+  adapters.
+- **Domain/backend work** — fetching data, taking payments, placing orders, or
+  calling business APIs; those stay in the agent/operator's own tools.
+- **Safety operations** — content moderation and abuse workflows for public,
+  agent-authored pages.
+- **SEO/crawlers** — production crawler rendering and indexing strategy.
+- **Hosted product UI** — dashboards, asset editors, tenant management, and
+  deployment operations.
 
 These are tracked in the README roadmap.

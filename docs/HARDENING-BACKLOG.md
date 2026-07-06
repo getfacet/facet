@@ -89,10 +89,9 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
   shared helper (creates the missing unit seam), one test covers both.
 - **bridge/env.test.ts** — the `BRIDGE_DEFAULTS` pin test is a pure
   change-detector (cli.ts has no test seam); don't count it as drift coverage.
-- **react/ChatDock.tsx** — two near-palette hexes remain (`#fbfbfc` dock
-  background, `#d7dbe0` input border): a COLOR-map reskin restyles the rest of
-  ChatDock but not these. *Fix:* map to nearest tokens or comment them as
-  intentional one-offs.
+- ~~chat dock palette drift~~ — RESOLVED by refactor-audit-cleanup-1: the dock
+  background and input border now use the shared COLOR map, so a palette reskin
+  reaches the whole component.
 - **packages/{react,runtime,server}/README.md** — install lines omit packages
   their own snippet imports (`@facet/client`, `@facet/agent`); copy-pasting the
   quickstart fails to resolve. *Fix:* align install lines with the snippets.
@@ -114,12 +113,9 @@ non-blocking residual).
   serialized DOM* (a component wrapping the same markup): the static exact-
   markup suite passes unmodified. Pinned by three element-identity survival
   tests (add-onHold / remove-onHold / plain→press+hold).
-- **playground/bricks.ts + playground/gallery.tsx (duplicated box builder)** —
-  the same positional box-builder exists in both, now co-located in
-  `apps/playground` after `@facet/kit` was retired (commit 95b948c; the migrated
-  `page`/`text` helper lives in `bricks.ts`). *Fix (structural, next
-  /refactor-audit):* extract one shared box-builder helper in playground (fold
-  the gallery `Sheet` onto `bricks.ts`'s Builder).
+- ~~playground dual builder helper~~ — RESOLVED by refactor-audit-cleanup-1:
+  the bricks and gallery authoring helpers now share one local flat-map tree
+  builder in `apps/playground`.
 - ~~react/StageRenderer.tsx (hold not scoped to the arming pointerId)~~ —
   RESOLVED in-branch (review r4, escalated to P2 there: the disarm made the
   release's synthesized click dispatch onPress — the wrong action, not
@@ -216,14 +212,11 @@ Bundle B PR review record.
 - **runtime/assets.ts vs server/offline.ts** — `isSeedableTree` duplicates
   `hasBuiltStage` (already divergent: `isContainer` vs `"children" in`). *Fix:*
   server imports the runtime helper.
-- **cli/commands.ts (surface drift)** — Stage.theme() and set_theme exist but
-  the `facet` CLI has no `theme` command while STAGE_SPEC (embedded in the
-  bridge prompt) now advertises the slot. *Fix:* add the command + bridge
-  prompt line.
-- **core (consolidation ×3)** — `isPlainObject`/`isObject` duplicate guard;
-  the `__proto__/prototype/constructor` blocklist defined thrice (theme.ts,
-  validate.ts, patch.ts); fontSize clamp reuses `SPACE_PX_RANGE`. *Fix:* one
-  shared internal module; a `FONT_SIZE_PX_RANGE` of its own.
+- ~~local theme action surface drift~~ — RESOLVED by refactor-audit-cleanup-1:
+  the CLI and bridge now expose validated, name-only theme selection.
+- ~~core font-size clamp naming~~ — RESOLVED by refactor-audit-cleanup-1:
+  font-size clamping now has a distinct range constant instead of borrowing the
+  spacing range name.
 - **core/theme.ts** — redundant `theme as FacetTheme` cast at the return
   (compiles clean without it).
 - **tests** — prompt.test.ts: no assertion that an all-oversized stamp set

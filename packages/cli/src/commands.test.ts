@@ -73,6 +73,19 @@ describe("buildMessages", () => {
     expect(() => buildMessages("screens", ["{not json", "home"])).toThrow(/invalid JSON/);
   });
 
+  it("theme → add theme patch", () => {
+    const [message] = buildMessages("theme", ["midnight"]);
+    if (message?.kind !== "patch") throw new Error("expected a patch");
+    expect(message.patches).toEqual([{ op: "add", path: "/theme", value: "midnight" }]);
+  });
+
+  it("theme rejects missing or malformed names before emitting a patch", () => {
+    expect(() => buildMessages("theme", [])).toThrow(/theme name/);
+    expect(() => buildMessages("theme", ["Dark", "Mode!"])).toThrow(/one theme name/);
+    expect(() => buildMessages("theme", ["Dark Mode!"])).toThrow(/valid theme name/);
+    expect(() => buildMessages("theme", ["#000000"])).toThrow(/valid theme name/);
+  });
+
   it("throws on an unknown command", () => {
     expect(() => buildMessages("frobnicate", [])).toThrow(/unknown command/);
   });

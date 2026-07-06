@@ -125,6 +125,7 @@ class IssueList {
 
 /** Clamp bounds in px-equivalents (invariant #5: a theme cannot push content off-screen). */
 const SPACE_PX_RANGE = { lo: 0, hi: 512 } as const;
+const FONT_SIZE_PX_RANGE = { lo: 0, hi: 512 } as const;
 const RADIUS_PX_RANGE = { lo: 0, hi: 9999 } as const;
 const WEIGHT_RANGE = { lo: 1, hi: 1000 } as const;
 
@@ -430,7 +431,7 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
       input.fontSize,
       FONT_SIZES,
       "fontSize",
-      dimensionHandler(SPACE_PX_RANGE.lo, SPACE_PX_RANGE.hi),
+      dimensionHandler(FONT_SIZE_PX_RANGE.lo, FONT_SIZE_PX_RANGE.hi),
       issues,
     );
     if (group !== undefined) theme.fontSize = group;

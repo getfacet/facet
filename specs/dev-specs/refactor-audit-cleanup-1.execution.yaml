@@ -1,0 +1,397 @@
+# Execution Manifest: Refactor Audit Cleanup 1
+#
+# Keep synchronized with specs/dev-specs/refactor-audit-cleanup-1.md
+# (WU ids, files, deps, checks). Final gate source of truth: AGENTS.md +
+# docs/REVIEW-RULES.md.
+
+feature_slug: "refactor-audit-cleanup-1"
+spec_path: "specs/dev-specs/refactor-audit-cleanup-1.md"
+context_evidence_path: "specs/context/refactor-audit-cleanup-1.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "branch"
+    requirement: "work happens on codex/refactor-audit-cleanup-1, branched from up-to-date main"
+    owner: "main-agent"
+    verification: "git status --short --branch"
+  - concern: "runtime"
+    requirement: "no new dependency; workspace install already present"
+    owner: "main-agent"
+    verification: "package.json and pnpm lock remain dependency-stable"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Main agent applies scoped fixes + quick checks, then re-runs /verify + /code-review once per batch."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+
+work_units:
+  - id: "WU-1"
+    title: "CLI Theme Command"
+    owner_role: "main-agent"
+    packages: ["@facet/cli"]
+    objective: "Add facet theme <name> with valid-name gating and CLI docs."
+    files:
+      - path: "packages/cli/src/commands.test.ts"
+        change_type: "update"
+        purpose: "add RED tests for theme happy path and invalid-name errors"
+      - path: "packages/cli/src/commands.ts"
+        change_type: "update"
+        purpose: "add theme case using isValidThemeName"
+      - path: "packages/cli/README.md"
+        change_type: "update"
+        purpose: "document facet theme <name>"
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/cli/src/commands.test.ts -t "theme"'
+      target: "packages/cli/src/commands.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/cli/src/commands.test.ts -t "theme"'
+      - "pnpm exec vitest run packages/cli/src/commands.test.ts"
+      - "pnpm --filter @facet/cli typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/cli/src/commands.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/cli/src/commands.test.ts"
+        covers_dc: ["DC-001", "DC-002"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported."
+      - "Valid name emits exactly one /theme add op."
+      - "Missing/invalid name emits no patch and throws a descriptive error."
+      - "No regression: CLI command test file passes."
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Bridge Theme Surface"
+    owner_role: "main-agent"
+    packages: ["@facet/bridge"]
+    objective: "Expose the same name-only theme action in spawn prompt, persistent tool, and bridge docs."
+    files:
+      - path: "packages/bridge/src/persistent.test.ts"
+        change_type: "update"
+        purpose: "add RED tests for persistent theme tool"
+      - path: "packages/bridge/src/persistent.ts"
+        change_type: "update"
+        purpose: "add theme(name) tool with isValidThemeName gating"
+      - path: "packages/bridge/src/bridge.ts"
+        change_type: "update"
+        purpose: "add facet theme <name> to spawn prompt/action docs"
+      - path: "packages/bridge/README.md"
+        change_type: "update"
+        purpose: "document the full action surface including theme"
+    depends_on: ["WU-1"]
+    parallel_group: "serial-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/bridge/src/persistent.test.ts -t "theme"'
+      target: "packages/bridge/src/persistent.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/bridge/src/persistent.test.ts -t "theme"'
+      - "pnpm exec vitest run packages/bridge/src/persistent.test.ts packages/bridge/src/bridge.spawn.test.ts"
+      - "rg -n \"facet theme|theme\\(name\\)|mcp__facet__theme\" packages/bridge/src packages/bridge/README.md"
+      - "pnpm --filter @facet/bridge typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/bridge/src/persistent.test.ts packages/bridge/src/bridge.spawn.test.ts packages/bridge/src/bridge.collect.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/bridge/src/persistent.test.ts"
+        covers_dc: ["DC-002", "DC-003"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported."
+      - "Persistent theme tool emits /theme only for valid names."
+      - "Spawn prompt and bridge README mention facet theme <name>."
+      - "No regression: bridge persistent/spawn/collect tests pass."
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "Source Hygiene"
+    owner_role: "main-agent"
+    packages: ["@facet/react", "@facet/core"]
+    objective: "Remove confirmed palette/naming drift without changing runtime semantics."
+    files:
+      - path: "packages/react/src/ChatDock.test.tsx"
+        change_type: "add"
+        purpose: "assert ChatDock no longer uses the two stale literal hex values"
+      - path: "packages/react/src/ChatDock.tsx"
+        change_type: "update"
+        purpose: "replace literal dock/input colors with shared COLOR values"
+      - path: "packages/core/src/theme.test.ts"
+        change_type: "update"
+        purpose: "add static regression that spacing and font-size clamp bounds have distinct names"
+      - path: "packages/core/src/theme.ts"
+        change_type: "update"
+        purpose: "introduce FONT_SIZE_PX_RANGE and use it for font-size validation"
+    depends_on: []
+    parallel_group: "serial-b"
+    red_check:
+      command: 'pnpm exec vitest run packages/react/src/ChatDock.test.tsx packages/core/src/theme.test.ts -t "ChatDock uses shared palette|spacing and font-size"'
+      target: "packages/react/src/ChatDock.test.tsx, packages/core/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/react/src/ChatDock.test.tsx packages/core/src/theme.test.ts -t "ChatDock uses shared palette|spacing and font-size"'
+      - "pnpm exec vitest run packages/react/src/theme.test.ts packages/core/src/theme.test.ts"
+      - "pnpm --filter @facet/react typecheck"
+      - "pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/react/src/StageRenderer.theme.test.tsx packages/react/src/theme.test.ts packages/core/src/theme.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/react/src/ChatDock.test.tsx"
+        covers_dc: ["DC-005"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/src/theme.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported."
+      - "ChatDock has no #fbfbfc or #d7dbe0 literals."
+      - "theme.ts contains distinct SPACE_PX_RANGE and FONT_SIZE_PX_RANGE constants."
+      - "No regression: core/react theme tests pass."
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "Playground Flat-Map Builder Consolidation"
+    owner_role: "main-agent"
+    packages: ["apps/playground"]
+    objective: "Replace duplicated local flat-map authoring classes with one playground-local helper."
+    files:
+      - path: "apps/playground/src/tree-builder.ts"
+        change_type: "add"
+        purpose: "shared playground-local tree builder"
+      - path: "apps/playground/src/bricks.ts"
+        change_type: "update"
+        purpose: "use shared builder with k ids for frozen fixtures"
+      - path: "apps/playground/src/gallery.tsx"
+        change_type: "update"
+        purpose: "use shared builder with n ids for gallery pages"
+      - path: "apps/playground/src/bricks.test.ts"
+        change_type: "update"
+        purpose: "add RED source-level consolidation assertion"
+    depends_on: []
+    parallel_group: "serial-b"
+    red_check:
+      command: 'pnpm exec vitest run apps/playground/src/bricks.test.ts -t "shares one flat-map"'
+      target: "apps/playground/src/bricks.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run apps/playground/src/bricks.test.ts -t "shares one flat-map"'
+      - "pnpm exec vitest run apps/playground/src/bricks.test.ts apps/playground/src/gallery.test.ts"
+      - "pnpm --filter @facet/playground typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run apps/playground/src/bricks.test.ts apps/playground/src/gallery.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "apps/playground/src/bricks.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported."
+      - "Frozen k1..kn fixture output remains byte-identical."
+      - "Gallery demo trees remain valid."
+      - "No regression: playground bricks/gallery tests pass."
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "Repo And Process Docs Drift"
+    owner_role: "main-agent"
+    packages: ["docs/process"]
+    objective: "Update stale package/process wording from the audit."
+    files:
+      - path: ".agents/skills/context-scout/SKILL.md"
+        change_type: "update"
+        purpose: "remove retired packages/kit/** package mapping"
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "replace outdated deferred transport/assets scaffold text with current state"
+      - path: "docs/comparisons/a2ui.md"
+        change_type: "update"
+        purpose: "correct nested-tree wording to flat node map"
+      - path: "AGENTS.md"
+        change_type: "update"
+        purpose: "point live-test policy at Codex and Claude skill locations"
+      - path: "packages/agent/README.md"
+        change_type: "update"
+        purpose: "list existing Stage.theme() in the public control surface"
+    depends_on: []
+    parallel_group: "serial-c"
+    red_check:
+      command: "N/A"
+      target: "docs/process files"
+      justification: "documentation/process-only WU"
+    quick_checks:
+      - "! rg -n \"packages/kit/\\*\\*|nested 4-brick tree|Transport\\*\\* — a WebSocket/SSE server and a browser playground|Default assets\\*\\* — the `@facet/assets` package|\\.claude/skills/live-test/SKILL.md` for the exact commands\" .agents/skills/context-scout/SKILL.md docs/ARCHITECTURE.md docs/comparisons/a2ui.md AGENTS.md packages/agent/README.md"
+      - "pnpm exec prettier --check .agents/skills/context-scout/SKILL.md docs/ARCHITECTURE.md docs/comparisons/a2ui.md AGENTS.md packages/agent/README.md"
+    no_regression_checks:
+      - "pnpm exec prettier --check .agents/skills/context-scout/SKILL.md docs/ARCHITECTURE.md docs/comparisons/a2ui.md AGENTS.md packages/agent/README.md"
+    test_plan:
+      - type: "static"
+        target: "docs/process rg checks"
+        covers_dc: ["DC-004", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "N/A red check justification recorded."
+      - "No stale packages/kit/** Codex mapping remains."
+      - "Docs describe current flat-tree/package/live-test state."
+      - "Prettier passes for changed docs/process files."
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-6"
+    title: "Hardening Backlog Cleanup"
+    owner_role: "main-agent"
+    packages: ["docs"]
+    objective: "Mark or remove audit backlog items resolved by this branch so future audits do not rediscover them."
+    files:
+      - path: "docs/HARDENING-BACKLOG.md"
+        change_type: "update"
+        purpose: "mark resolved entries for CLI theme surface, ChatDock, playground builder duplication, and core font-size range naming"
+    depends_on: ["WU-1", "WU-2", "WU-3", "WU-4"]
+    parallel_group: "serial-d"
+    red_check:
+      command: "N/A"
+      target: "docs/HARDENING-BACKLOG.md"
+      justification: "documentation-only WU"
+    quick_checks:
+      - "! rg -n \"cli/commands.ts \\(surface drift\\)|react/ChatDock.tsx|playground/bricks.ts \\+ playground/gallery.tsx|fontSize clamp reuses SPACE_PX_RANGE\" docs/HARDENING-BACKLOG.md"
+      - "pnpm exec prettier --check docs/HARDENING-BACKLOG.md"
+    no_regression_checks:
+      - "pnpm exec prettier --check docs/HARDENING-BACKLOG.md"
+    test_plan:
+      - type: "static"
+        target: "docs/HARDENING-BACKLOG.md"
+        covers_dc: ["DC-004"]
+        action: "update"
+    done_conditions:
+      - "N/A red check justification recorded."
+      - "Backlog no longer lists this branch's resolved items as open."
+      - "Prettier passes for the changed backlog file."
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-7"
+    title: "Changeset"
+    owner_role: "main-agent"
+    packages: ["release metadata"]
+    objective: "Record additive published surface changes for release."
+    files:
+      - path: ".changeset/refactor-audit-cleanup-1.md"
+        change_type: "add"
+        purpose: "patch changeset for @facet/cli and @facet/bridge"
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "serial-d"
+    red_check:
+      command: "N/A"
+      target: ".changeset/refactor-audit-cleanup-1.md"
+      justification: "release-metadata-only WU"
+    quick_checks:
+      - "pnpm changeset status --since HEAD~1 || true"
+      - "pnpm exec prettier --check .changeset/refactor-audit-cleanup-1.md"
+    no_regression_checks:
+      - "pnpm exec prettier --check .changeset/refactor-audit-cleanup-1.md"
+    test_plan:
+      - type: "static"
+        target: ".changeset/refactor-audit-cleanup-1.md"
+        covers_dc: ["DC-004"]
+        action: "new"
+    done_conditions:
+      - "N/A red check justification recorded."
+      - "Changeset names @facet/cli and @facet/bridge with patch bumps."
+      - "Prettier passes for the changeset file."
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+execution_order:
+  - "baseline preflight"
+  - "WU-1"
+  - "WU-2"
+  - "WU-3"
+  - "WU-4"
+  - "WU-5"
+  - "WU-6"
+  - "WU-7"
+
+final_gate_chain:
+  - "/update-tests"
+  - "/verify"
+  - "/code-review"
+  - "/live-test"
+  - "/update-docs"
+  - "re-run /verify if /update-docs changes tracked files"
+  - "squash to one feature commit; commit/push only on explicit user go"

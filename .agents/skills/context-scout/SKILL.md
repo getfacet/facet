@@ -45,7 +45,6 @@ Merge into one changed-files list.
 | `packages/server/**` | `@facet/server` |
 | `packages/react/**` | `@facet/react` |
 | `packages/cli/**` | `@facet/cli` |
-| `packages/kit/**` | `@facet/kit` |
 | `packages/store-postgres/**` | `@facet/store-postgres` |
 | `packages/bridge/**` | `@facet/bridge` |
 | `apps/playground/**` | playground (integration surface) |

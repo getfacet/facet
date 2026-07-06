@@ -2,9 +2,9 @@
 
 The in-process agent SDK for Facet: `defineAgent` wraps your logic into an agent
 the runtime can call, and `Stage` is the control surface it drives —
-`render` / `set` / `append` / `useStamp` / `remove` / `screens` / `say` — to
-compose and mutate a visitor's page. Each method records standard RFC 6902
-operations underneath.
+`render` / `set` / `append` / `useStamp` / `remove` / `screens` / `theme` /
+`say` — to compose and mutate a visitor's page. Each method records standard RFC
+6902 operations underneath.
 
 ```bash
 npm install @facet/agent @facet/core
