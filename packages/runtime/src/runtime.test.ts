@@ -655,6 +655,37 @@ describe("FacetRuntime.handle — stream batches", () => {
     expect(out.messages).toHaveLength(hugeBatchSize);
     expect((await rt.historyFor("v"))[0]?.messages).toHaveLength(hugeBatchSize);
   });
+
+  it("prepends a seed to a large streamed say batch without spreading it onto the call stack", async () => {
+    const hugeBatchSize = 200_000;
+    const seedTree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["seed"] },
+        seed: { id: "seed", type: "text", value: "seed" },
+      },
+    };
+    const sayMessage = { kind: "say", text: "bulk" } satisfies ServerMessage;
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield Array.from({ length: hugeBatchSize }, () => sayMessage);
+    }
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+
+    expect(out.agentMutated).toBe(false);
+    expect(out.messages).toHaveLength(hugeBatchSize + 1);
+    expect(out.messages[0]).toEqual({
+      kind: "patch",
+      patches: [{ op: "replace", path: "", value: seedTree }],
+    });
+    expect(out.messages.at(-1)).toEqual(sayMessage);
+    expect((await rt.historyFor("v"))[0]?.messages).toHaveLength(hugeBatchSize);
+  });
 });
 
 describe("FacetRuntime.handle — agentMutated is effect-based", () => {

@@ -21,6 +21,7 @@ import {
 } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "./server.js";
 import { isStaleLateResult } from "./late.js";
+import { MAX_FRAME_SESSIONS } from "./frame-log.js";
 
 const sayAgent: FacetAgent = () => [{ kind: "say", text: "hello from agent" }];
 
@@ -1528,6 +1529,35 @@ describe("async delivery — resume & rehydrate", () => {
     const frames = await readEvents(first, 2);
     expect(frames[0]?.data).toEqual({ kind: "reset" });
     expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+  });
+
+  it("falls back to the visitor lane when the captured frame log is LRU re-minted during a rehydrate read", async () => {
+    const agent: FacetAgent = (event) =>
+      event.kind === "message" && event.text === "seed"
+        ? [{ kind: "patch", patches: [{ op: "replace", path: "", value: seededTree }] }]
+        : [];
+    const inner = new MemoryStageStore();
+    const stageStore = new DelayedGetStore(inner, 1_000);
+    const { server, base } = await start({ agentId: "a", agent, stageStore });
+    running = server;
+
+    await postEvent(base, "v", { kind: "message", text: "seed" });
+    await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["s1"] !== undefined);
+
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    const reader = eventReader(stream);
+    try {
+      await Promise.all(
+        Array.from({ length: MAX_FRAME_SESSIONS + 1 }, (_item, index) =>
+          postEvent(base, `evict-${String(index)}`, { kind: "message", text: "evict" }),
+        ),
+      );
+
+      expect((await reader.next(2_000))?.data).toEqual({ kind: "reset" });
+      expect((await reader.next(2_000))?.data).toMatchObject({ kind: "patch" });
+    } finally {
+      await reader.close();
+    }
   });
 
   it("leads a full rehydrate with reset and snapshot frames that clear resume state", async () => {
