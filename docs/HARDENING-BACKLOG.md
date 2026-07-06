@@ -321,6 +321,18 @@ and were tracked rather than fixed to keep the feature diff focused:
 - **playground/src/live.tsx** — the live demo does not wire the new renderer
   `onRecord`→`record` channel that quickstart adopts (WU-8 left it optional).
 
+### Pre-existing (surfaced by the event-layer-v1 review, NOT introduced by it)
+
+- **bridge/src/persistent.ts:146** (P3, concurrency) — the persistent driver's
+  single always-on session drains one shared `pending` queue with NO per-turn
+  timeout and NO cap on `pending`. Because `@facet/agent-client` dispatches event
+  frames concurrently (`connect.ts` `void handleEvent`), a slow/hung model turn at
+  `pending[0]` parks `input()` on `await turnDone` forever — every other visitor's
+  turn is blocked and `pending` grows unbounded; the server's `agentTimeoutMs`
+  frees only the server lane, not the wedged session. Fix: race the `turnDone`
+  await against a per-turn timeout + bound `pending`. Owner-run (opt-in bridge
+  runner); out of scope for event-layer-v1.
+
 ---
 
 _Campaign 1 source sweeps: code-review 6 lanes (`wf_4e2fadd0-31d`) + types lane

@@ -278,7 +278,7 @@ function describeReplies(messages: readonly ServerMessage[]): string {
 
 /**
  * Layer ③: the last `limit` stored interactions as alternating user/assistant
- * messages, then the final user message = the current event (action events
+ * messages, then the final user message = the current event (tap events
  * include `fields`) + the current stage JSON (so the model refines instead of
  * rebuilding). `limit <= 0` replays no history.
  */
