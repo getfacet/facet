@@ -616,6 +616,45 @@ describe("FacetRuntime.handle — stream batches", () => {
       errorSpy.mockRestore();
     }
   });
+
+  it("salvages a streamed patch message whose patches array contains malformed ops", async () => {
+    const malformedPatch = {
+      kind: "patch",
+      patches: [null],
+    } as unknown as ServerMessage;
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield [malformedPatch, { kind: "say", text: "after" }];
+    }
+    const rt = new FacetRuntime({ agentId: "a", agent });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+
+      expect(out.agentMutated).toBe(false);
+      expect(out.messages.at(-1)).toEqual({ kind: "say", text: "after" });
+      expect((await rt.historyFor("v"))[0]?.messages.at(-1)).toEqual({
+        kind: "say",
+        text: "after",
+      });
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("records and returns a large streamed say batch without spreading it onto the call stack", async () => {
+    const hugeBatchSize = 200_000;
+    const sayMessage = { kind: "say", text: "bulk" } satisfies ServerMessage;
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield Array.from({ length: hugeBatchSize }, () => sayMessage);
+    }
+    const rt = new FacetRuntime({ agentId: "a", agent });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+
+    expect(out.agentMutated).toBe(false);
+    expect(out.messages).toHaveLength(hugeBatchSize);
+    expect((await rt.historyFor("v"))[0]?.messages).toHaveLength(hugeBatchSize);
+  });
 });
 
 describe("FacetRuntime.handle — agentMutated is effect-based", () => {

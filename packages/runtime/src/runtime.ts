@@ -288,10 +288,14 @@ export class FacetRuntime {
         ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
         : undefined;
 
+    const appendMessages = (target: ServerMessage[], source: readonly ServerMessage[]): void => {
+      for (const message of source) target.push(message);
+    };
+
     const deliverFrame = (frame: readonly ServerMessage[]): void => {
       if (frame.length === 0) return;
       if (onFrame !== undefined) onFrame(frame);
-      else returned.push(...frame);
+      else appendMessages(returned, frame);
     };
 
     const settleRecord = (entry: StoredEvent): void => {
@@ -338,11 +342,16 @@ export class FacetRuntime {
         }
         session = applied;
         persistedAnyBatch = true;
-        accumulated.push(...recordMessages);
+        appendMessages(accumulated, recordMessages);
         agentMutated = agentMutated || mutated;
         this.logIssues(issues);
 
-        const frame = seed !== undefined ? [seed, ...delivered] : delivered;
+        let frame = delivered;
+        if (seed !== undefined) {
+          const seededFrame: ServerMessage[] = [seed];
+          appendMessages(seededFrame, delivered);
+          frame = seededFrame;
+        }
         if (frame.length > 0) {
           try {
             deliverFrame(frame);
@@ -376,7 +385,9 @@ export class FacetRuntime {
       if (message.kind !== "patch") return false;
       if (!Array.isArray(message.patches)) return false;
       for (const op of message.patches) {
-        if (op.op !== "test") return false;
+        if (typeof op !== "object" || op === null || (op as { op?: unknown }).op !== "test") {
+          return false;
+        }
         sawTest = true;
       }
     }

@@ -48,6 +48,22 @@ describe("agent result normalization", () => {
     ]);
   });
 
+  it("collects a large streaming batch without spreading it onto the call stack", async () => {
+    const hugeBatchSize = 200_000;
+    const hugeBatch = Array.from({ length: hugeBatchSize }, (_item, index) =>
+      say(`item-${String(index)}`),
+    );
+    async function* hugeResult(): AsyncIterable<readonly ServerMessage[]> {
+      yield hugeBatch;
+    }
+
+    const messages = await collectMessages(hugeResult());
+
+    expect(messages).toHaveLength(hugeBatchSize);
+    expect(messages[0]).toEqual(say("item-0"));
+    expect(messages[hugeBatchSize - 1]).toEqual(say(`item-${String(hugeBatchSize - 1)}`));
+  });
+
   it("allows FacetAgent producers to return an async iterable", () => {
     const agent: FacetAgent = (_event: ClientEvent, _session: FacetSession) => streamingResult();
 

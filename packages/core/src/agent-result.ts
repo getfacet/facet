@@ -27,7 +27,7 @@ export async function* iterateAgentResult(
 export async function collectMessages(result: FacetAgentResult): Promise<readonly ServerMessage[]> {
   const messages: ServerMessage[] = [];
   for await (const batch of iterateAgentResult(result)) {
-    messages.push(...batch);
+    for (const message of batch) messages.push(message);
   }
   return messages;
 }
