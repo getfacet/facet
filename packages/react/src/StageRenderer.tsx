@@ -20,6 +20,8 @@ import {
   type FacetNode,
   type FacetTheme,
   type FacetTree,
+  type FieldValue,
+  type FieldValues,
   type NodeId,
 } from "@facet/core";
 import { boxStyle, fieldStyle, mediaStyle, resolveTheme, textStyle } from "./theme.js";
@@ -147,11 +149,7 @@ type ClassifiedPress =
  * Every failure mode (unknown/non-box target, zero fields, missing DOM input,
  * cyclic/too-deep subtree) degrades to omission / `{}` — never a throw (DC-002).
  */
-function collectFieldValues(
-  tree: FacetTree,
-  collectId: NodeId,
-  root: ParentNode,
-): Readonly<Record<string, string>> {
+function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode): FieldValues {
   const target = tree.nodes[collectId];
   if (target == null || target.type !== "box") {
     return {};
@@ -219,7 +217,7 @@ function collectFieldValues(
     }
   }
 
-  const readMountedValue = (elements: readonly Element[]): string | undefined => {
+  const readMountedValue = (elements: readonly Element[]): FieldValue | undefined => {
     const first = elements[0];
     if (first === undefined) {
       return undefined;
@@ -240,12 +238,12 @@ function collectFieldValues(
       return undefined;
     }
     if (input.type === "checkbox") {
-      return input.checked ? "true" : undefined;
+      return input.checked ? true : undefined;
     }
     return String(input.value).slice(0, MAX_FIELD_VALUE_CHARS);
   };
 
-  const fields: Record<string, string> = {};
+  const fields: Record<string, FieldValue> = {};
   for (const [name, ids] of idsByName) {
     // Bound the field COUNT with the same cap the server enforces, so the
     // renderer can't emit a fields object the server rejects wholesale (400).
@@ -661,7 +659,7 @@ export interface StageRendererProps {
    * without `collect` it is `undefined` — narrower `(action) => void` handlers
    * remain assignable, so existing consumers compile unchanged.
    */
-  readonly onAction?: (action: FacetAction, fields?: Readonly<Record<string, string>>) => void;
+  readonly onAction?: (action: FacetAction, fields?: FieldValues) => void;
   /**
    * Optional record-only channel for locally-resolved taps (navigate/toggle).
    * Fired AFTER the optimistic view-state mutation with a `CollectedEvent` tap

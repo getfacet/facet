@@ -1,9 +1,10 @@
 # @facet/core
 
-The Facet contract: the declarative stage spec (`box` / `text` / `image` /
-`field` bricks + style tokens), the [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)
-JSON Patch `applyPatch`, `validateTree`, and the session/event types. It depends
-on nothing — every other Facet package builds on it.
+The Facet contract: the declarative stage spec (`box` / `text` / `media` /
+`field` bricks + style tokens), the
+[RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
+`applyPatch`, `validateTree`, and the session/event types. It depends on nothing
+— every other Facet package builds on it.
 
 ```bash
 npm install @facet/core

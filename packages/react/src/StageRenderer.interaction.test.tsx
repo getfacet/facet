@@ -738,7 +738,7 @@ describe("StageRenderer collect (jsdom)", () => {
 
     expect(onAction).toHaveBeenCalledWith(
       { kind: "agent", name: "submit" },
-      { plan: "Pro", agree: "true", alerts: "true", size: "Large" },
+      { plan: "Pro", agree: true, alerts: true, size: "Large" },
     );
   });
 

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FacetAction, VisitorContext } from "@facet/core";
+import type { FacetAction, FieldValues, VisitorContext } from "@facet/core";
 import { ChatDock, StageRenderer, useFacet } from "@facet/react";
 import { browserVisitorId, SseTransport } from "@facet/client";
 
@@ -58,7 +58,7 @@ export function LiveView(): React.ReactNode {
     send({ kind: "message", text });
   };
 
-  const onAction = (action: FacetAction, fields?: Readonly<Record<string, string>>): void => {
+  const onAction = (action: FacetAction, fields?: FieldValues): void => {
     // Conditional construction: exactOptionalPropertyTypes forbids an explicit
     // `fields: undefined` on the event.
     send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });

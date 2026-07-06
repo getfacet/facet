@@ -10,6 +10,7 @@ import {
   type CollectedEvent,
   type FacetAgent,
   type FacetTree,
+  type FieldValues,
   type ServerMessage,
   type TapEffect,
   type VisitorContext,
@@ -181,7 +182,7 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
     const collect = (action as { collect?: unknown }).collect;
     if (collect !== undefined && typeof collect !== "string") return false;
     // Optional visitor-typed field values riding the event: absent is fine;
-    // present must be a string record within the shared cap (see isFieldsRecord).
+    // present must be a string/boolean record within the shared cap (see isFieldsRecord).
     const fields = (event as { fields?: unknown }).fields;
     if (fields !== undefined && !isFieldsRecord(fields)) return false;
     // `effect`/`target` are LOCAL-tap fields (a renderer-resolved navigate/toggle
@@ -257,22 +258,21 @@ function isRecordBody(body: unknown): body is { visitor: VisitorContext; event: 
   return isValidSeq(event);
 }
 
-/** The REJECTING form of the action `fields` rule, mirroring `isPrimitiveRecord`:
- * a plain (non-array) object whose every value is a string of length ≤
- * `MAX_FIELD_VALUE_CHARS`. Keys and their count are bounded too, so a
+/** The REJECTING form of the action `fields` rule: a plain (non-array) object
+ * whose every value is either a boolean (checkbox/switch) or a string of length
+ * ≤ `MAX_FIELD_VALUE_CHARS`. Keys and their count are bounded too, so a
  * non-renderer client can't slip megabytes of untrusted fields through the
  * per-value cap in aggregate (the renderer's output is bounded by tree size).
  * The renderer caps values at collection time with the same core constant, so
  * the two sides cannot drift. */
-function isFieldsRecord(value: unknown): value is Readonly<Record<string, string>> {
+function isFieldsRecord(value: unknown): value is FieldValues {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const entries = Object.entries(value);
   if (entries.length > MAX_FIELDS_KEYS) return false;
   return entries.every(
     ([k, v]) =>
       k.length <= MAX_FIELD_VALUE_CHARS &&
-      typeof v === "string" &&
-      v.length <= MAX_FIELD_VALUE_CHARS,
+      (typeof v === "boolean" || (typeof v === "string" && v.length <= MAX_FIELD_VALUE_CHARS)),
   );
 }
 

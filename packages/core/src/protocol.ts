@@ -45,6 +45,9 @@ export const MAX_FIELD_VALUE_CHARS = 2000;
  */
 export const MAX_FIELDS_KEYS = 256;
 
+export type FieldValue = string | boolean;
+export type FieldValues = Readonly<Record<string, FieldValue>>;
+
 /**
  * The renderer-resolved LOCAL effect of a tap — mirrors the navigate/toggle
  * branches of a `ClassifiedPress`. A local tap changes only view-state in the
@@ -81,7 +84,7 @@ export type CollectedEvent =
        * declares `collect`. Inert data riding the event — never part of the
        * stage tree, never interpreted or rendered back by Facet.
        */
-      readonly fields?: Readonly<Record<string, string>>;
+      readonly fields?: FieldValues;
       readonly seq?: number;
     };
 
@@ -102,7 +105,7 @@ export type ClientEvent =
        * declares `collect`. Inert data riding the event — never part of the
        * stage tree, never interpreted or rendered back by Facet.
        */
-      readonly fields?: Readonly<Record<string, string>>;
+      readonly fields?: FieldValues;
       readonly seq?: number;
     };
 

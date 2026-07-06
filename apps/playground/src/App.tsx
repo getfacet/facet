@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FacetAction, VisitorContext } from "@facet/core";
+import type { FacetAction, FieldValues, VisitorContext } from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
 import { StageRenderer, useFacet } from "@facet/react";
 import { LocalTransport } from "@facet/client";
@@ -123,7 +123,7 @@ function VisitorPane({
     }
   }, [chat]);
 
-  const onAction = (action: FacetAction, fields?: Readonly<Record<string, string>>): void => {
+  const onAction = (action: FacetAction, fields?: FieldValues): void => {
     // Conditional spread-free construction: exactOptionalPropertyTypes forbids
     // an explicit `fields: undefined` on the event.
     send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });

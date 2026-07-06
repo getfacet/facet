@@ -1,9 +1,12 @@
 # @facet/react
 
 The Facet React renderer: `StageRenderer` turns the declarative stage spec into a
-sandboxed component tree built from the four bricks, and `useFacet(transport)`
-keeps that tree in sync by applying patches live. It also ships the token→CSS
-theme (`boxStyle`/`textStyle`/…), `ChatDock`, and `useFacet`. (`browserVisitorId` lives in `@facet/client`, next to the transport that needs it.)
+sandboxed component tree built from the four bricks (`box`, `text`, `media`,
+`field`), and `useFacet(transport)` keeps that tree in sync by applying patches
+live. It also ships the token→CSS theme
+(`boxStyle`/`textStyle`/`mediaStyle`/…), `ChatDock`, and `useFacet`.
+(`browserVisitorId` lives in `@facet/client`, next to the transport that needs
+it.)
 
 ```bash
 npm install @facet/react @facet/client @facet/core react

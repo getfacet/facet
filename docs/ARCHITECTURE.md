@@ -46,7 +46,7 @@ Facet takes the empty middle: **low-level bricks** the agent composes freely.
 The trick that makes this safe *and* one-shot-reliable is that freedom and
 fragility are separated onto different axes:
 
-- Freedom comes from **composition** — four bricks (`box`, `text`, `image`,
+- Freedom comes from **composition** — four bricks (`box`, `text`, `media`,
   `field`) stack into anything.
 - Safety comes from **constraining the bricks, not the composition**: bricks are
   typed data (no raw HTML/JS), style values are **tokens** not scalars, layout is
@@ -65,13 +65,16 @@ package whose helpers are themselves just box compositions.
 
 - `box` — the only container. Flow layout (`direction: row|col`), token styles
   (including `appear` — a bounded enter-animation token — and `scroll` — a
-  bounded internally-scrollable region), an optional `onPress` action (a
-  pressable box is the button primitive), an optional `onHold` action (the same
-  behavior-language union, fired by a long press — a secondary gesture), and an
-  optional `hidden` flag (a content-declared initial-collapsed default).
+  bounded internally-scrollable axis, plus `columns` for a bounded responsive
+  grid), an optional `onPress` action (a pressable box is the button primitive),
+  an optional `onHold` action (the same behavior-language union, fired by a long
+  press — a secondary gesture), and an optional `hidden` flag (a
+  content-declared initial-collapsed default).
 - `text` — a string with token text styles.
-- `image` — `src` + `alt` + token styles.
-- `field` — an input (`name`, `input` kind, token styles).
+- `media` — a static safe `src`, optional `alt`, `kind: "image" | "video"`,
+  and token styles. Legacy stored `image` nodes normalize to media images.
+- `field` — a native input (`name`, `input` kind, capped `options` for
+  select/radio, token styles).
 
 `onPress` is a small **behavior language** — a discriminated union so the agent
 can pre-declare what an interaction does:
@@ -269,16 +272,21 @@ has, and a turn that accomplishes nothing degrades to one apologetic chat line.
 
 Quickstart's flagship interaction is the **field snapshot**: a pressable box's
 agent action may declare `collect: "<box id>"`, and at press time the renderer
-takes a synchronous snapshot of the visible `field` values under that box
-(string-coerced, capped at `MAX_FIELD_VALUE_CHARS`) and ships them as `fields`
-on the tap event — the values ride the event, **never the tree**. Field text
-is browser view-state like screen/toggle state (inputs are uncontrolled; there
-is no value property on a field node to write), and the server re-validates
-`fields` at the boundary, so the two-writers rule holds: the server stays the
-only writer of stage content. The `facet-quickstart` bin serves the page itself
-(HTML shell + prebuilt client bundle) and proxies the protocol routes to an
-internal loopback `createFacetServer` with a random per-boot agent token,
-never exposing `/agent/*`.
+takes a synchronous snapshot of the visible `field` controls under that box and
+ships them as `fields` on the tap event — the values ride the event, **never the
+tree**. Text-like fields and selects contribute their current string value, a
+radio group contributes only its checked member's string value, checked
+checkbox/switch controls contribute boolean `true`, unchecked checkbox/switch
+controls are omitted, password fields are excluded, and all keys/string values
+stay capped (`MAX_FIELDS_KEYS`, `MAX_FIELD_VALUE_CHARS`). Field state is browser
+view-state like screen/toggle state (inputs are uncontrolled; there is no value
+property on a field node to write), and the server re-validates `fields` at the
+boundary, so the two-writers rule holds: the server stays the only writer of
+stage content.
+The `facet-quickstart` bin serves the page itself (HTML shell + prebuilt client
+bundle) and proxies the protocol routes to an internal loopback
+`createFacetServer` with a random per-boot agent token, never exposing
+`/agent/*`.
 
 ## What we adopt vs build (and why)
 

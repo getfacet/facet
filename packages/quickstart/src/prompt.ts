@@ -18,6 +18,7 @@ import type {
   FacetSession,
   FacetStamp,
   FacetTheme,
+  FieldValues,
   ServerMessage,
 } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
@@ -216,7 +217,7 @@ function normalizeLegacyEvent(event: CollectedEvent): CollectedEvent {
   if ((event as { readonly kind: string }).kind !== "action") return event;
   const legacy = event as {
     readonly action?: FacetAction;
-    readonly fields?: Readonly<Record<string, string>>;
+    readonly fields?: FieldValues;
   };
   return {
     kind: "tap",

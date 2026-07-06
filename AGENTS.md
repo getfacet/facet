@@ -12,7 +12,7 @@ small set of safe primitives and mutates them live as the conversation goes.
 ## Two invariants (do not break)
 
 1. **Agents emit a declarative brick spec, never raw HTML/JS.** The only node
-   types are `box`, `text`, `image`, `field` (`packages/core/src/nodes.ts`).
+   types are `box`, `text`, `media`, `field` (`packages/core/src/nodes.ts`).
    Style values are **tokens**, not raw scalars. Layout is **flow-only** (no
    absolute positioning). Adding a capability means adding a node type or token
    *on purpose* — never letting a model emit arbitrary code.
@@ -41,7 +41,7 @@ small set of safe primitives and mutates them live as the conversation goes.
 | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
 | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
 | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
-| `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
+| `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
 | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres (`pg` peer dep). |
 | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |

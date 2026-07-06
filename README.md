@@ -72,12 +72,12 @@ locale, prior context) is enough to make the first paint different.
 The model builds the Stage from **four low-level bricks** — not a catalog of
 pre-made components:
 
-| Brick   | It is…                                                                             |
-| ------- | ---------------------------------------------------------------------------------- |
-| `box`   | the universal container. Flow layout, token styles, optional `onPress`/`onHold`.   |
-| `text`  | text with token styles (size/weight/color).                                        |
-| `image` | an image.                                                                          |
-| `field` | an input.                                                                          |
+| Brick   | It is…                                                                           |
+| ------- | -------------------------------------------------------------------------------- |
+| `box`   | the universal container. Flow layout, token styles, optional `onPress`/`onHold`. |
+| `text`  | text with token styles (size/weight/color).                                      |
+| `media` | image or video media with a static, safe URL.                                    |
+| `field` | a native text/select/checkbox/radio/switch input.                                |
 
 A *card* is a `box` with a border. A *button* is a `box` with `onPress`. A
 *heading* is a big `text`. Everything is composed from these four, so the set of
@@ -88,9 +88,9 @@ pre-drawn **screens** or `{kind:"toggle", target}` to show/hide a node — and t
 browser runs those **instantly with no round-trip to the model**; `{kind:"agent"}`
 is the path back to the model for anything open-ended. A box can also declare an
 `onHold` (a long-press secondary gesture, same action union), an `appear` token
-(a bounded enter animation — `fade`/`slide`, the theme owns the timing), and a
-`scroll` token (a bounded internally-scrollable region) — all still tokens, never
-raw values.
+(a bounded enter animation — `fade`/`slide`, the theme owns the timing), a
+`scroll` axis (`x`/`y`, with legacy `true` normalized to `y`), and a `columns`
+token (`2`/`3`/`4`) — all still tokens, never raw values.
 
 1. **Bricks are typed data, never raw HTML/JS** → nothing can be injected.
 2. **Style values are tokens, not raw scalars** (`gap: "md"`, not `gap: 23`) →
@@ -205,7 +205,7 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/client`         | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`.               |
 | `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |
 | `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
-| `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/…), `useFacet`, `ChatDock`. |
+| `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
 | `@facet/assets`         | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink` backed by Postgres.                                           |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
