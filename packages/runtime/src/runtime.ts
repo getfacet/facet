@@ -48,6 +48,11 @@ export interface TurnResult {
 
 export type RuntimeFrameSink = (messages: readonly ServerMessage[]) => void;
 
+interface RecordSlot {
+  readonly resolve: (entry: StoredEvent | null) => void;
+  readonly settled: Promise<void>;
+}
+
 /**
  * Wires a transport's inbound events to the agent and keeps each session's stage
  * up to date. A transport (SSE server, or the in-process demo) calls `handle` for
@@ -64,10 +69,10 @@ export class FacetRuntime {
   // Serialize events per (agent, visitor) so concurrent same-visitor events don't
   // race on the open→apply→save read-modify-write. Different visitors stay parallel.
   private readonly serialize = createSerialQueue<TurnResult>();
-  // Serialize sink records per (agent, visitor) too: `record` is fire-and-forget
-  // off the response path, so with an async sink a fast later record could persist
-  // before a slow earlier one. This queue keeps per-visitor records in event order
-  // without the response ever awaiting them. Different visitors stay parallel.
+  // Serialize sink records per (agent, visitor) too. Local `record()` calls can be
+  // fire-and-forget, while agent turns await their reserved slot at turn end so a
+  // fresh rehydrate can see the just-delivered turn in history before the server
+  // drops its in-flight frame fallback. Different visitors stay parallel.
   private readonly serializeRecord = createSerialQueue<void>();
   // Session keys armed by `takeSeeded` but not yet DELIVERED. `takeSeeded`
   // reports a fresh seed at most once, so parking the KEY here lets a turn that
@@ -116,12 +121,13 @@ export class FacetRuntime {
     // would enqueue its write first and the append log would reverse (see
     // reserveRecordSlot). persist() fills the slot; a turn that throws resolves it
     // to null so it records nothing (prior behavior).
-    const resolveRecord = this.reserveRecordSlot(visitor.visitorId);
+    const recordSlot = this.reserveRecordSlot(visitor.visitorId);
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       try {
-        return await this.handleOne(visitor, event, resolveRecord, onFrame);
+        return await this.handleOne(visitor, event, recordSlot, onFrame);
       } catch (error) {
-        resolveRecord(null);
+        recordSlot.resolve(null);
+        await recordSlot.settled;
         throw error;
       }
     });
@@ -143,8 +149,8 @@ export class FacetRuntime {
    * it can never enqueue its write first. The runtime provides this ordering
    * itself — it does NOT depend on an outer per-visitor lane (only `@facet/server`
    * has one; the in-process transports don't). Returns the queue's promise so a
-   * caller MAY await the write settle, but the response path need not: like a
-   * forwarded turn, a failed sink write is logged, never thrown.
+   * caller MAY await the local write settle, but the `/record` response path need
+   * not; a failed sink write is logged, never thrown.
    */
   record(visitor: VisitorContext, event: CollectedEvent): Promise<void> {
     return this.enqueueRecord(visitor.visitorId, { at: Date.now(), event, messages: [] });
@@ -169,18 +175,19 @@ export class FacetRuntime {
    * so a record() called after this returns can't enqueue its write first (the
    * in-process transports have no outer lane; @facet/server does). The slot awaits
    * the turn's entry; a turn that never persists resolves it to null (records
-   * nothing, matching prior behavior).
+   * nothing, matching prior behavior). Agent turns await `settled` before they
+   * finish so the server's rehydrate fallback does not outlive the sink history.
    */
-  private reserveRecordSlot(visitorId: string): (entry: StoredEvent | null) => void {
+  private reserveRecordSlot(visitorId: string): RecordSlot {
     let resolve!: (entry: StoredEvent | null) => void;
     const ready = new Promise<StoredEvent | null>((r) => {
       resolve = r;
     });
-    void this.serializeRecord(sessionKey(this.agentId, visitorId), async () => {
+    const settled = this.serializeRecord(sessionKey(this.agentId, visitorId), async () => {
       const entry = await ready;
       if (entry !== null) await this.sink.record(this.agentId, visitorId, entry);
     }).catch((error: unknown) => console.error("[facet] sink failed:", error));
-    return resolve;
+    return { resolve, settled };
   }
 
   /**
@@ -199,13 +206,14 @@ export class FacetRuntime {
   ): Promise<TurnResult> {
     // Reserve the Sink-write slot synchronously (same reason as `handle`): this
     // path also persists, so a later `record` must not overtake its write.
-    const resolveRecord = this.reserveRecordSlot(visitor.visitorId);
+    const recordSlot = this.reserveRecordSlot(visitor.visitorId);
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       try {
         const session = await this.stageStore.open(this.agentId, visitor);
-        return await this.streamTurn(visitor, session, event, messages, resolveRecord);
+        return await this.streamTurn(visitor, session, event, messages, recordSlot);
       } catch (error) {
-        resolveRecord(null);
+        recordSlot.resolve(null);
+        await recordSlot.settled;
         throw error;
       }
     });
@@ -214,12 +222,12 @@ export class FacetRuntime {
   private async handleOne(
     visitor: VisitorContext,
     event: ClientEvent,
-    resolveRecord: (entry: StoredEvent | null) => void,
+    recordSlot: RecordSlot,
     onFrame: RuntimeFrameSink | undefined,
   ): Promise<TurnResult> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const result = this.agent(event, session);
-    return this.streamTurn(visitor, session, event, result, resolveRecord, onFrame);
+    return this.streamTurn(visitor, session, event, result, recordSlot, onFrame);
   }
 
   /**
@@ -227,14 +235,15 @@ export class FacetRuntime {
    * batch is folded once, saved, then delivered synchronously before the next
    * batch is pulled. The Sink record stays turn-scoped: raw agent messages are
    * accumulated and written exactly once after the stream finishes, or after a
-   * mid-stream producer throw with already-persisted batches.
+   * mid-stream producer throw with already-persisted batches. The write is awaited
+   * before the turn leaves the lane, after any saved batches have been delivered.
    */
   private async streamTurn(
     visitor: VisitorContext,
     initialSession: FacetSession,
     event: ClientEvent,
     result: Parameters<typeof iterateAgentResult>[0],
-    resolveRecord: (entry: StoredEvent | null) => void,
+    recordSlot: RecordSlot,
     onFrame?: RuntimeFrameSink,
   ): Promise<TurnResult> {
     const key = sessionKey(this.agentId, visitor.visitorId);
@@ -274,8 +283,13 @@ export class FacetRuntime {
       else returned.push(...frame);
     };
 
-    const finishPartial = (): TurnResult => {
-      resolveRecord({ at: Date.now(), event, messages: accumulated });
+    const settleRecord = async (entry: StoredEvent): Promise<void> => {
+      recordSlot.resolve(entry);
+      await recordSlot.settled;
+    };
+
+    const finishPartial = async (): Promise<TurnResult> => {
+      await settleRecord({ at: Date.now(), event, messages: accumulated });
       if (seedPrepended) this.pendingSeeds.delete(key);
       return { messages: onFrame === undefined ? returned : [], agentMutated };
     };
@@ -333,10 +347,14 @@ export class FacetRuntime {
 
     const seed = seedFrame();
     if (seed !== undefined) {
-      deliverFrame([seed]);
+      try {
+        deliverFrame([seed]);
+      } catch {
+        return finishPartial();
+      }
       seedPrepended = true;
     }
-    resolveRecord({ at: Date.now(), event, messages: accumulated });
+    await settleRecord({ at: Date.now(), event, messages: accumulated });
     if (persistedAnyBatch || seedPrepended) this.pendingSeeds.delete(key);
     return { messages: onFrame === undefined ? returned : [], agentMutated };
   }
@@ -381,19 +399,36 @@ export class FacetRuntime {
       kind === "say" && typeof text === "string"
         ? ({ kind, text } satisfies ServerMessage)
         : kind === "patch" && Array.isArray(patches)
-          ? (value as ServerMessage)
+          ? ({ kind, patches } as ServerMessage)
           : undefined;
     if (message === undefined) {
       console.error("[facet] dropped a malformed server message");
       return undefined;
     }
+    let normalized: unknown;
     try {
-      JSON.stringify(message);
+      normalized = JSON.parse(JSON.stringify(message));
     } catch {
       console.error("[facet] dropped a non-JSON-serializable server message");
       return undefined;
     }
-    return message;
+    if (typeof normalized !== "object" || normalized === null) {
+      console.error("[facet] dropped a malformed server message");
+      return undefined;
+    }
+    const {
+      kind: normalizedKind,
+      text: normalizedText,
+      patches: normalizedPatches,
+    } = normalized as { kind?: unknown; text?: unknown; patches?: unknown };
+    if (normalizedKind === "say" && typeof normalizedText === "string") {
+      return { kind: normalizedKind, text: normalizedText };
+    }
+    if (normalizedKind === "patch" && Array.isArray(normalizedPatches)) {
+      return normalized as ServerMessage;
+    }
+    console.error("[facet] dropped a malformed server message");
+    return undefined;
   }
 
   private logIssues(issues: readonly string[]): void {

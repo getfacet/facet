@@ -172,6 +172,43 @@ describe("FacetRuntime.handle", () => {
     }
   });
 
+  it("normalizes JSON-lossy patch messages before folding or delivering them", async () => {
+    const lossyPatch = {
+      kind: "patch",
+      patches: [
+        {
+          op: "add",
+          path: "/nodes/json",
+          value: { id: "json", type: "text", value: "json", dropped: () => undefined },
+        },
+        { op: "add", path: "/nodes/root/children/-", value: "json" },
+      ],
+    } as unknown as ServerMessage;
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(lossyPatch),
+    });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+    const stage = await rt.stageFor("v");
+
+    expect(out.messages).toEqual([
+      {
+        kind: "patch",
+        patches: [
+          {
+            op: "add",
+            path: "/nodes/json",
+            value: { id: "json", type: "text", value: "json" },
+          },
+          { op: "add", path: "/nodes/root/children/-", value: "json" },
+        ],
+      },
+    ]);
+    expect(stage?.nodes["json"]).toMatchObject({ type: "text", value: "json" });
+    expect(clientFold(out.messages)).toEqual(stage);
+  });
+
   it("fail-safe: a bad patch op is dropped but the say still returns (no lost turn)", async () => {
     const badPatch: ServerMessage = {
       kind: "patch",
@@ -458,6 +495,40 @@ describe("FacetRuntime.handle — stream batches", () => {
       [{ kind: "patch", patches: [{ op: "replace", path: "", value: seedTree }] }],
     ]);
     expect((await rt.historyFor("v"))[0]?.messages).toEqual([]);
+  });
+
+  it("keeps a pending seed armed when the seed-only frame sink throws", async () => {
+    const seedTree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["seed"] },
+        seed: { id: "seed", type: "text", value: "seed" },
+      },
+    };
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield [];
+      yield [{ kind: "patch", patches: [{ op: "test", path: "/root", value: "root" }] }];
+    }
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+
+    await expect(
+      rt.handle(visitor, { kind: "message", text: "hi" }, () => {
+        throw new Error("closed");
+      }),
+    ).resolves.toMatchObject({ messages: [], agentMutated: false });
+    expect((await rt.historyFor("v"))[0]?.messages).toEqual([]);
+
+    const frames: ServerMessage[][] = [];
+    await rt.handle(visitor, { kind: "message", text: "again" }, (messages) => {
+      frames.push([...messages]);
+    });
+    expect(frames).toEqual([
+      [{ kind: "patch", patches: [{ op: "replace", path: "", value: seedTree }] }],
+    ]);
   });
 
   it("records persisted streamed batches and closes the iterator after a later save failure", async () => {

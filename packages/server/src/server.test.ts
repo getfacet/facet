@@ -323,6 +323,32 @@ class ToggleOpenFailStore implements StageStore {
   }
 }
 
+/** A Sink whose agent-turn records can be held after the frame has already streamed.
+ * This models a durable Sink that has not made the just-finished turn visible to
+ * history yet. */
+class GatedMessageSink implements Sink {
+  private readonly inner = new MemorySink();
+  gateMessageRecord = false;
+  messageRecordStarted = false;
+  private releaseHeld: () => void = () => {};
+  private readonly held = new Promise<void>((r) => {
+    this.releaseHeld = r;
+  });
+  release(): void {
+    this.releaseHeld();
+  }
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    if (this.gateMessageRecord && entry.event.kind === "message" && entry.messages.length > 0) {
+      this.messageRecordStarted = true;
+      await this.held;
+    }
+    return this.inner.record(agentId, visitorId, entry);
+  }
+  history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    return this.inner.history(agentId, visitorId);
+  }
+}
+
 /** The text field of a stored node, if present (nodes are a union — box has no value). */
 const nodeValue = (session: FacetSession | undefined, id: string): string | undefined =>
   (session?.stage.nodes[id] as { value?: string } | undefined)?.value;
@@ -530,14 +556,16 @@ describe("browser channel", () => {
       expect((await reader2.next(500))?.data).toEqual({ kind: "reset" });
       const snapshot = await reader2.next(500);
       expect(snapshot?.data).toMatchObject({ kind: "patch" });
-      expect(snapshot?.id).toBeDefined();
+      expect(snapshot?.id).toBe("");
       await reader2.close();
       reader2 = undefined;
 
       const stream3 = await fetch(`${base}/stream?visitorId=v`, {
-        headers: { "Last-Event-ID": snapshot!.id! },
+        headers: { "Last-Event-ID": snapshot!.id ?? "" },
       });
       reader3 = eventReader(stream3);
+      expect((await reader3.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await reader3.next(500))?.data).toMatchObject({ kind: "patch" });
       expect((await reader3.next(500))?.data).toEqual({ kind: "say", text: "one" });
 
       releaseSecond();
@@ -547,6 +575,68 @@ describe("browser channel", () => {
       await reader1.close();
       await reader2?.close();
       await reader3?.close();
+    }
+  });
+
+  it("fresh full rehydrate includes a just-finished streamed say while its sink record is pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await rehydrateReader.next(500))?.data).toMatchObject({ kind: "patch" });
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+    } finally {
+      sink.release();
+      await liveReader.close();
+      await rehydrateReader?.close();
+    }
+  });
+
+  it("full rehydrate ends instead of silently dropping active says that fell out of the ring", async () => {
+    let yielded = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const agent: FacetAgent = async function* () {
+      for (let i = 0; i < 205; i += 1) {
+        yielded = i + 1;
+        yield [{ kind: "say", text: `s${String(i)}` }];
+      }
+      await gate;
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "flood" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      await waitFor(async () => yielded === 205);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      expect(await streamEnded(rehydrating, 1_000)).toBe(true);
+    } finally {
+      release();
+      await liveReader.close();
     }
   });
 
@@ -1220,27 +1310,26 @@ describe("async delivery — resume & rehydrate", () => {
     }
   });
 
-  it("accepts era:-1 as a valid resume base (no reset, no re-rehydrate loop)", async () => {
-    // A pre-populated stage with NO delivered frames stamps its snapshot id era:-1;
-    // resuming from that base must join without a reset (else an idle tab that only
-    // ever received the snapshot would full-rehydrate on every reconnect).
+  it("full rehydrate clears resume state instead of minting a resume token from a snapshot", async () => {
+    // A pre-populated stage with NO delivered frames has no frame-log replay point.
+    // Full rehydrate frames clear Last-Event-ID with an empty id, so reconnecting
+    // from that value performs a fresh full rehydrate instead of a false resume.
     const inner = new MemoryStageStore();
     await inner.save({ agentId: "a", visitor: { visitorId: "v" }, stage: seededTree });
     const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
     running = server;
 
     const s1 = await fetch(`${base}/stream?visitorId=v`);
-    const first = await readEvents(s1, 2); // reset + snapshot stamped era:-1
+    const first = await readEvents(s1, 2); // reset + snapshot, both clearing id
     const snap = first.find((f) => f.id !== undefined);
-    expect(snap?.id?.endsWith(":-1")).toBe(true); // stamped at N0 = -1
-    const era = snap!.id!.slice(0, snap!.id!.indexOf(":"));
+    expect(snap?.id).toBe("");
 
     const s2 = await fetch(`${base}/stream?visitorId=v`, {
-      headers: { "Last-Event-ID": `${era}:-1` },
+      headers: { "Last-Event-ID": snap?.id ?? "" },
     });
-    // Valid resume: no reset frame (not a full rehydrate).
-    const frames = await collectEvents(s2, 250);
-    expect(frames.every((f) => (f.data as { kind?: string }).kind !== "reset")).toBe(true);
+    const frames = await readEvents(s2, 2);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(frames[1]?.data).toMatchObject({ kind: "patch" });
   });
 
   it("ends the stream when the ring overflows during a rehydrate read", async () => {
@@ -1271,7 +1360,7 @@ describe("async delivery — resume & rehydrate", () => {
     expect(frames[0]?.data).toEqual({ kind: "reset" });
   });
 
-  it("leads a full rehydrate with an unstamped reset and stamps from the snapshot", async () => {
+  it("leads a full rehydrate with reset and snapshot frames that clear resume state", async () => {
     const inner = new MemoryStageStore();
     const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
     running = server;
@@ -1283,14 +1372,12 @@ describe("async delivery — resume & rehydrate", () => {
 
     const stream = await fetch(`${base}/stream?visitorId=v`);
     const frames = await readEvents(stream, 2);
-    // The reset frame carries NO id:.
+    // Full rehydrate frames carry an empty id: to clear any stale Last-Event-ID.
     expect(frames[0]?.data).toEqual({ kind: "reset" });
-    expect(frames[0]?.id).toBeUndefined();
-    // Stamping starts at the snapshot (the full-replace patch).
+    expect(frames[0]?.id).toBe("");
     const snapshot = frames[1];
     expect((snapshot?.data as { kind?: string }).kind).toBe("patch");
-    expect(snapshot?.id).toBeDefined();
-    expect(snapshot?.id).toContain(":");
+    expect(snapshot?.id).toBe("");
   });
 
   it("paints a token-less tab promptly during a mid-flight slow turn", async () => {

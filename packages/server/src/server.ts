@@ -82,9 +82,9 @@ function setCors(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
 }
 
-/** Write one SSE frame. An optional `id` becomes the `id:` line — used ONLY on the
- * browser channel to carry `<era>:<seq>` for `Last-Event-ID` resume; agent-channel
- * frames pass no id. */
+/** Write one SSE frame. An optional `id` becomes the `id:` line — browser live
+ * frames carry `<era>:<seq>` for resume, while full rehydrate uses an empty id to
+ * clear stale resume state; agent-channel frames pass no id. */
 function sse(res: ServerResponse, data: unknown, id?: string): void {
   writeSse(res, { data }, id);
 }
@@ -94,6 +94,8 @@ function sse(res: ServerResponse, data: unknown, id?: string): void {
 function writeFrame(res: ServerResponse, json: string, id: string): void {
   writeSse(res, { json }, id);
 }
+
+const CLEAR_RESUME_ID = "";
 
 /** Max accepted request body. A single-operator reference transport still shouldn't
  * buffer an unbounded upload into memory, so both POST channels (/event and
@@ -387,16 +389,14 @@ interface HandlingTurn {
 //      — the log entry/era is unchanged AND the ring still retains everything past
 //      N0 (else the captured snapshot can no longer be stitched to the live stream,
 //      so we write nothing and end, the same fail-safe the store-error path uses) —
-//      then writes: unstamped {kind:"reset"} → snapshot stamped `era:N0` → history
-//      says stamped `era:N0` → replay ring frames with seq > N0 (their own ids) →
-//      join.
+//      then writes: reset/snapshot/history with an EMPTY id (clearing any stale
+//      Last-Event-ID) → replay ring frames with seq > N0 (their own ids) → join.
 // `deliver` and this block are both synchronous, so they cannot interleave; anything
 // delivered during step 2 has seq > N0, lives in the ring, and is replayed before
-// the join — nothing is lost in the snapshot-read→join window. Stamping starts at
-// the SNAPSHOT, never the reset, so a resume token can only exist in a client that
-// received a stage base: if step 2 fails, continuity fails, or the connection drops
-// before step 3, no stamped frame was written, the client holds no token, and its
-// retry performs a full rehydrate.
+// the join — nothing is lost in the snapshot-read→join window. Full-rehydrate frames
+// deliberately clear the resume token instead of minting one from non-logged
+// snapshot/history data; if step 2 fails, continuity fails, or the connection drops
+// before step 3, the retry performs another full rehydrate.
 async function rehydrate(
   res: ServerResponse,
   visitorId: string,
@@ -429,14 +429,27 @@ async function rehydrate(
     const active = handling.get(visitorId);
     const activeStartSeq =
       active !== undefined && active.era === capturedEra ? active.streamStartSeq : undefined;
+    if (
+      activeStartSeq !== undefined &&
+      activeStartSeq <= n0 &&
+      oldest !== undefined &&
+      oldest.seq > activeStartSeq
+    ) {
+      // Pre-capture active frames fell out of the ring before the turn reached its
+      // Sink record. We cannot reconstruct the full active say set from history
+      // yet, so fail closed and let the visitor retry.
+      res.end();
+      return;
+    }
     const activeSayFrames =
       activeStartSeq === undefined ? [] : retainedSayFrames(current.frames, activeStartSeq, n0);
-    const baseSeq =
-      activeSayFrames.length > 0 && activeStartSeq !== undefined ? activeStartSeq - 1 : n0;
-    const stampId = `${current.era}:${baseSeq}`;
-    sse(res, { kind: "reset" });
+    sse(res, { kind: "reset" }, CLEAR_RESUME_ID);
     if (stage !== undefined) {
-      sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] }, stampId);
+      sse(
+        res,
+        { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] },
+        CLEAR_RESUME_ID,
+      );
     }
     const historySays: ServerMessage[] = [];
     for (const entry of history) {
@@ -445,10 +458,10 @@ async function rehydrate(
       }
     }
     for (const message of historySays) {
-      sse(res, message, stampId);
+      sse(res, message, CLEAR_RESUME_ID);
     }
     for (const frame of activeSayFrames) {
-      writeFrame(res, frame.json, `${current.era}:${frame.seq}`);
+      writeFrame(res, frame.json, CLEAR_RESUME_ID);
     }
     // Replay frames delivered during the reads (seq > N0) so nothing in the
     // snapshot-read→join window is lost. A replayed frame may describe a change the
