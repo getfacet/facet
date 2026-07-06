@@ -655,7 +655,6 @@ describe("browser channel", () => {
     running = server;
     const live = await fetch(`${base}/stream?visitorId=v`);
     const liveReader = eventReader(live);
-    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
 
     try {
       await postEvent(base, "v", { kind: "message", text: "one" });
@@ -667,18 +666,11 @@ describe("browser channel", () => {
       expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "two" });
 
       const rehydrating = await fetch(`${base}/stream?visitorId=v`);
-      rehydrateReader = eventReader(rehydrating);
-      const frames = [
-        await rehydrateReader.next(500),
-        await rehydrateReader.next(500),
-        await rehydrateReader.next(500),
-        await rehydrateReader.next(500),
-      ].filter((frame): frame is SseFrame => frame !== undefined);
+      const frames = await collectEvents(rehydrating, 250);
       expect(sayText(frames)).toEqual(["one", "two"]);
     } finally {
       sink.release();
       await liveReader.close();
-      await rehydrateReader?.close();
     }
   });
 
@@ -915,7 +907,6 @@ describe("async delivery — late results", () => {
     const link = await dialAgent(base);
     const live = await fetch(`${base}/stream?visitorId=v`);
     const liveReader = eventReader(live);
-    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
 
     try {
       await postEvent(base, "v", { kind: "message", text: "slow please" });
@@ -930,18 +921,11 @@ describe("async delivery — late results", () => {
       await waitFor(async () => sink.messageRecordStarted);
 
       const rehydrating = await fetch(`${base}/stream?visitorId=v`);
-      rehydrateReader = eventReader(rehydrating);
-      const frames = [
-        await rehydrateReader.next(500),
-        await rehydrateReader.next(500),
-        await rehydrateReader.next(500),
-        await rehydrateReader.next(500),
-      ].filter((frame): frame is SseFrame => frame !== undefined);
+      const frames = await collectEvents(rehydrating, 250);
       expect(sayText(frames)).toEqual([INTERIM_SAY, "late answer"]);
     } finally {
       sink.release();
       await liveReader.close();
-      await rehydrateReader?.close();
       await link.close();
     }
   });
