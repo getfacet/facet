@@ -144,6 +144,26 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("keeps chained set_node forward refs buffered until the full target chain is closed", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["child"] } })),
+      toolStep(call("set_node", { node: { id: "child", type: "box", children: ["grandchild"] } })),
+      toolStep(call("set_node", { node: { id: "grandchild", type: "text", value: "ready" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind === "patch") {
+      const paths = patch.patches.map((p) => ("path" in p ? p.path : ""));
+      expect(paths).toEqual(["/nodes/grandchild", "/nodes/child", "/nodes/panel"]);
+    }
+  });
+
   it("renders a full page then says, across a multi-step tool loop", async () => {
     const provider = providerOf(
       toolStep(call("render_page", { tree: VALID_TREE })),

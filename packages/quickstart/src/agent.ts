@@ -186,9 +186,12 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
       for (const id of Object.keys(tree.nodes)) knownIds.add(id);
     },
     set(node) {
-      knownIds.add(node.id);
-      if (isClosed(node, knownIds)) stage.set(node);
-      else pending.set(node.id, node);
+      if (isClosed(node, knownIds)) {
+        stage.set(node);
+        knownIds.add(node.id);
+      } else {
+        pending.set(node.id, node);
+      }
       flushReady();
     },
     noteKnown(id) {
