@@ -1,0 +1,273 @@
+# Execution Manifest: Stamp Reference-Expand v1 (use_stamp + slot fill)
+#
+# Keep synchronized with specs/dev-specs/stamp-expand-v1.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "stamp-expand-v1"
+spec_path: "specs/dev-specs/stamp-expand-v1.md"
+context_evidence_path: "specs/context/stamp-expand-v1.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; workspace builds. No live server/bridge needed — all WU checks are vitest units."
+    owner: "main-agent"
+    verification: "pnpm install && pnpm typecheck"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+
+work_units:
+  - id: "WU-1"
+    title: "core FacetStamp.slots + validateStamp slot handling"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add the OPTIONAL slots declaration to FacetStamp and teach validateStamp to sanitize it (bounded string defaults, whole-value marker awareness) without any new FacetNode field."
+    files:
+      - path: "packages/core/src/validate.ts"
+        change_type: "update"
+        purpose: "Add slots?: Record<string,string> to FacetStamp; validate/cap the slots map in validateStamp (drop non-string defaults with an issue; cap via MAX_FIELD_VALUE_CHARS); keep 4-brick output only."
+      - path: "packages/core/src/validate.test.ts"
+        change_type: "update"
+        purpose: "New cases for slot-declaration validation + marker-bearing stamp acceptance."
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/src/validate.test.ts -t 'stamp slots'"
+      target: "packages/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/src/validate.test.ts -t 'stamp slots'"
+      - "pnpm exec vitest run packages/core/src/validate.test.ts"
+    no_regression_checks:
+      - "pnpm -C packages/core test"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/validate.test.ts"
+        covers_dc: ["DC-002", "DC-005", "DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "FacetStamp.slots is OPTIONAL; no new FacetNode field (RISK-API-1)"
+      - "Non-string / over-cap slot defaults dropped/truncated with an issue; never throws"
+      - "No regression: pnpm -C packages/core test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "core expandStamp helper + types + barrel"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add the pure, never-throwing expandStamp primitive (slot-fill + fresh-id remap + validate -> {root,nodes,slots,ids,issues}) plus its param/result types, exported through the barrel."
+    files:
+      - path: "packages/core/src/expand-stamp.ts"
+        change_type: "add"
+        purpose: "expandStamp(stamp, params, at, options?); StampParams, ExpandAt, UseStampResult types; injectable mintId (default globalThis.crypto.randomUUID); reuse sanitizeNodeMap/pruneDanglingChildren/breakCycles."
+      - path: "packages/core/src/expand-stamp.test.ts"
+        change_type: "add"
+        purpose: "Expand, slot-fill + defaults, disjoint-id remap (two calls), malformed/no-op fail-safe, only-4-bricks output, returned id map."
+      - path: "packages/core/src/index.ts"
+        change_type: "update"
+        purpose: "Barrel-export expandStamp + new types."
+    depends_on: ["WU-1"]
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/core/src/expand-stamp.test.ts"
+      target: "packages/core/src/expand-stamp.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/src/expand-stamp.test.ts"
+      - "pnpm exec vitest run packages/core/src/validate.test.ts"
+    no_regression_checks:
+      - "pnpm -C packages/core test"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/expand-stamp.test.ts"
+        covers_dc: ["DC-001", "DC-002", "DC-004", "DC-005", "DC-006", "DC-007"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Two calls yield disjoint id-sets (DC-004); ids disjoint from any provided existingIds"
+      - "Malformed stamp / bad params -> no-op result + issues, never throws (DC-005); output has only the 4 brick types (DC-006)"
+      - "No node: import; globalThis.crypto only (RISK-PKG-3); new API through barrel"
+      - "No regression: pnpm -C packages/core test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "agent Stage.useStamp"
+    owner_role: "subagent"
+    packages: ["@facet/agent"]
+    objective: "Add Stage.useStamp(stamp, params, at) — expands a resolved FacetStamp via the core helper, records ops into the single pending batch, returns {root,slots,ids}; degrades to no-op on a bad/undefined stamp or unknown parent."
+    files:
+      - path: "packages/agent/src/stage.ts"
+        change_type: "update"
+        purpose: "Add useStamp calling expandStamp; append the fresh root under at.parent, set each expanded node; return the id map; guard fail-safe."
+      - path: "packages/agent/src/stage.test.ts"
+        change_type: "update"
+        purpose: "useStamp emits one coalesced patch, returns ids, no-op on undefined/malformed stamp."
+    depends_on: ["WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "pnpm exec vitest run packages/agent/src/stage.test.ts -t 'useStamp'"
+      target: "packages/agent/src/stage.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent/src/stage.test.ts -t 'useStamp'"
+      - "pnpm exec vitest run packages/agent/src/stage.test.ts"
+    no_regression_checks:
+      - "pnpm -C packages/agent test"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent/src/stage.test.ts"
+        covers_dc: ["DC-001", "DC-003", "DC-005", "DC-007", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "@facet/agent deps stay @facet/core-only; no Stage constructor change (RISK-PKG-1/-2)"
+      - "All ops flush in ONE patch message (DC-010); returns {root,slots,ids} (DC-007)"
+      - "Undefined/malformed stamp -> no-op, never throws (DC-005); unknown parent -> no-op (DC-003)"
+      - "No regression: pnpm -C packages/agent test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "quickstart use_stamp tool + prompt advertisement"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Wire the use_stamp tool into the agent loop (resolve name from the turn snapshot, expand via the core helper, emit through the closure) and replace the prompt-copy stampsSection with a names+slots+desc advertisement."
+    files:
+      - path: "packages/quickstart/src/agent.ts"
+        change_type: "update"
+        purpose: "Thread the stamps snapshot into executeTool; add the use_stamp case (unknown->no-op DC-003; expand via expandStamp; register minted ids into knownIds; emit through createClosureBuffer with no interleaved yield; validate at.parent)."
+      - path: "packages/quickstart/src/prompt.ts"
+        change_type: "update"
+        purpose: "Rewrite stampsSection to name+slots+description; remove MAX_STAMP_PROMPT_CHARS; add the use_stamp ToolSpec to TOOLS."
+      - path: "packages/quickstart/src/agent.test.ts"
+        change_type: "update"
+        purpose: "use_stamp expands, unknown->no-op, twice->disjoint ids, referentially-closed batch, malformed->no-op."
+      - path: "packages/quickstart/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "STAMPS section advertises names+slots+desc (not full JSON); use_stamp in TOOLS; STAGE_SPEC still verbatim-embedded/unchanged."
+    depends_on: ["WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "pnpm exec vitest run packages/quickstart/src/agent.test.ts -t 'use_stamp'"
+      target: "packages/quickstart/src/agent.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/quickstart/src/agent.test.ts -t 'use_stamp'"
+      - "pnpm exec vitest run packages/quickstart/src/agent.test.ts packages/quickstart/src/prompt.test.ts"
+    no_regression_checks:
+      - "pnpm -C packages/quickstart test"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/quickstart/src/agent.test.ts"
+        covers_dc: ["DC-001", "DC-003", "DC-004", "DC-005", "DC-010"]
+        action: "update"
+      - type: "unit"
+        target: "packages/quickstart/src/prompt.test.ts"
+        covers_dc: ["DC-009"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Whole subtree emitted through createClosureBuffer, no direct stage.append bypass, no interleaved yield (RISK-INV-1, DC-010)"
+      - "Minted ids registered into knownIds; unknown at.parent/name -> no-op observation (RISK-INV-2, DC-003)"
+      - "Stamp resolved ONLY from the turn snapshot, no AssetsStore re-read (RISK-INV-4); no new @facet/quickstart->@facet/assets import (RISK-PKG-4)"
+      - "Prompt advertises names+slots+desc, MAX_STAMP_PROMPT_CHARS gone, STAGE_SPEC/spec.ts unchanged (RISK-API-2/-5, DC-009)"
+      - "No regression: pnpm -C packages/quickstart test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "seed DEFAULT_STAMPS slots"
+    owner_role: "subagent"
+    packages: ["@facet/assets"]
+    objective: "Add slots declarations + {{marker}} values to the default hero/card/cta-button stamps so they are usable via use_stamp out of the box, keeping every tree validateStamp-clean."
+    files:
+      - path: "packages/assets/src/stamps.ts"
+        change_type: "update"
+        purpose: "Add slots + whole-value markers (e.g. hero title/subtitle, card title/body), preserving the id-prefix convention."
+      - path: "packages/assets/src/stamps.test.ts"
+        change_type: "update"
+        purpose: "Each default stamp declares slots, passes validateStamp with zero error issues, and expandStamp fills its slots."
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "pnpm exec vitest run packages/assets/src/stamps.test.ts -t 'slots'"
+      target: "packages/assets/src/stamps.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/assets/src/stamps.test.ts -t 'slots'"
+      - "pnpm exec vitest run packages/assets/src/stamps.test.ts"
+    no_regression_checks:
+      - "pnpm -C packages/assets test"
+      - "pnpm typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/assets/src/stamps.test.ts"
+        covers_dc: ["DC-008", "DC-002"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Each default stamp declares slots + markers, passes validateStamp (zero error issues), and is fillable by expandStamp (DC-008)"
+      - "@facet/assets stays node-free (deps = @facet/core only)"
+      - "No regression: pnpm -C packages/assets test"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
