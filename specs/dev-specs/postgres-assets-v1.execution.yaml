@@ -81,7 +81,7 @@ work_units:
         purpose: "PostgresAssets class: pool ctor; load selects themes/stamps/initial_tree and returns RAW {themes,stamps,initialTree?} (no-row/null → [], initialTree only when non-null, no validators); putAssets upserts on conflict (agent_id)."
       - path: "packages/store-postgres/src/index.ts"
         change_type: "update"
-        purpose: "Add `export * from \"./postgres-assets.js\"` to the barrel (DC-006, RISK-API-3)."
+        purpose: 'Add `export * from "./postgres-assets.js"` to the barrel (DC-006, RISK-API-3).'
       - path: "packages/store-postgres/src/postgres-assets.test.ts"
         change_type: "add"
         purpose: "DC-001 load round-trip; DC-002 no-row + null-column empty (+ loadAssets resolves defaults); DC-003 putAssets→load round-trip (roundTripPool); DC-004 malformed doc dropped by loadAssets (integration); DC-006 import-presence + compile-time implements + Memory/File still valid; RISK-INV-4 rejecting-pool swallow."
