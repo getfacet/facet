@@ -1,4 +1,16 @@
-import type { FacetNode, FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
+import {
+  MAX_PATCH_OPS,
+  expandStamp,
+  type ExpandAt,
+  type FacetStamp,
+  type FacetNode,
+  type FacetTree,
+  type JsonPatchOperation,
+  type NodeId,
+  type ServerMessage,
+  type StampParams,
+  type UseStampResult,
+} from "@facet/core";
 
 /** Escapes a token for use in an RFC 6901 JSON Pointer. */
 function escape(token: string): string {
@@ -24,16 +36,27 @@ function childrenPath(parent: NodeId): string {
 export class Stage {
   private out: ServerMessage[] = [];
   private pending: JsonPatchOperation[] = [];
+  private emittedPatchOps = 0;
+  private knownIds: Set<NodeId>;
+  private knownBoxIds: Set<NodeId>;
+
+  constructor(initialStage?: FacetTree) {
+    this.knownIds = new Set(["root"]);
+    this.knownBoxIds = new Set(["root"]);
+    if (initialStage !== undefined) this.seedKnown(initialStage);
+  }
 
   /** Replace the entire stage with a new tree. */
   render(tree: FacetTree): this {
     this.pending.push({ op: "replace", path: "", value: tree });
+    this.seedKnown(tree);
     return this;
   }
 
   /** Insert or replace a single node by id (RFC 6902 `add` upserts). */
   set(node: FacetNode): this {
     this.pending.push({ op: "add", path: nodePath(node.id), value: node });
+    this.rememberNode(node);
     return this;
   }
 
@@ -41,7 +64,27 @@ export class Stage {
   append(parent: NodeId, node: FacetNode): this {
     this.pending.push({ op: "add", path: nodePath(node.id), value: node });
     this.pending.push({ op: "add", path: childrenPath(parent), value: node.id });
+    this.rememberNode(node);
     return this;
+  }
+
+  /** Expand a resolved stamp under a known parent as ordinary patch ops. */
+  useStamp(stamp: FacetStamp | undefined, params: StampParams, at: ExpandAt): UseStampResult {
+    if (!this.knownBoxIds.has(at.parent)) return { slots: {}, ids: {} };
+    const expanded = expandStamp(stamp, params, at, { existingIds: this.knownIds });
+    if (expanded.root === undefined) return { slots: expanded.slots, ids: expanded.ids };
+
+    const patchOps = Object.keys(expanded.nodes).length + 1;
+    if (this.emittedPatchOps + this.pending.length + patchOps > MAX_PATCH_OPS) {
+      return { slots: {}, ids: {} };
+    }
+
+    for (const node of Object.values(expanded.nodes)) {
+      this.pending.push({ op: "add", path: nodePath(node.id), value: node });
+      this.rememberNode(node);
+    }
+    this.pending.push({ op: "add", path: childrenPath(at.parent), value: expanded.root });
+    return { root: expanded.root, slots: expanded.slots, ids: expanded.ids };
   }
 
   /**
@@ -78,6 +121,8 @@ export class Stage {
    */
   remove(id: NodeId): this {
     this.pending.push({ op: "remove", path: nodePath(id) });
+    this.knownIds.delete(id);
+    this.knownBoxIds.delete(id);
     return this;
   }
 
@@ -93,13 +138,30 @@ export class Stage {
     this.flushPending();
     const out = this.out;
     this.out = [];
+    this.emittedPatchOps = 0;
     return out;
   }
 
   private flushPending(): void {
     if (this.pending.length > 0) {
       this.out.push({ kind: "patch", patches: this.pending });
+      this.emittedPatchOps += this.pending.length;
       this.pending = [];
     }
+  }
+
+  private seedKnown(tree: FacetTree): void {
+    this.knownIds = new Set(Object.keys(tree.nodes));
+    this.knownBoxIds = new Set(
+      Object.values(tree.nodes)
+        .filter((node) => node != null && node.type === "box")
+        .map((node) => node.id),
+    );
+  }
+
+  private rememberNode(node: FacetNode): void {
+    this.knownIds.add(node.id);
+    if (node.type === "box") this.knownBoxIds.add(node.id);
+    else this.knownBoxIds.delete(node.id);
   }
 }

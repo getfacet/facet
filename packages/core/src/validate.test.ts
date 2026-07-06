@@ -9,6 +9,7 @@ import {
   validateStamp,
   validateTree,
 } from "./validate.js";
+import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 
 describe("validateTree", () => {
   it("keeps a valid tree unchanged", () => {
@@ -606,6 +607,84 @@ describe("validateStamp description", () => {
       expect(stamp?.description).toBeUndefined();
       expect(issues.some((i) => i.includes("description is not a string"))).toBe(true);
     }
+  });
+});
+
+describe("validateStamp stamp slots", () => {
+  it("sanitizes optional stamp slots with bounded string defaults", () => {
+    const { stamp, issues } = validateStamp({
+      name: "hero",
+      slots: {
+        title: "Hello",
+        empty: "",
+        body: "b".repeat(MAX_FIELD_VALUE_CHARS + 5),
+        bad: 42,
+      },
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["title"] },
+        title: { id: "title", type: "text", value: "{{title}}" },
+      },
+    });
+
+    expect(stamp?.slots).toEqual({
+      title: "Hello",
+      empty: "",
+      body: "b".repeat(MAX_FIELD_VALUE_CHARS),
+    });
+    expect(issues.some((issue) => issue.includes("slot") && issue.includes("not a string"))).toBe(
+      true,
+    );
+    expect(issues.some((issue) => issue.includes("slot") && issue.includes("truncated"))).toBe(
+      true,
+    );
+  });
+
+  it("accepts whole-value stamp slot markers in stamp string leaves only", () => {
+    const { stamp, issues } = validateStamp({
+      name: "card",
+      slots: {
+        title: "Title",
+        image: "https://example.com/card.png",
+        poster: "https://example.com/poster.jpg",
+        label: "Email",
+      },
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["title", "image", "field"] },
+        title: { id: "title", type: "text", value: "{{title}}" },
+        image: {
+          id: "image",
+          type: "media",
+          kind: "video",
+          src: "{{image}}",
+          alt: "{{title}}",
+          poster: "{{poster}}",
+        },
+        field: {
+          id: "field",
+          type: "field",
+          name: "email",
+          label: "{{label}}",
+          placeholder: "{{title}}",
+        },
+      },
+    });
+
+    expect(stamp).toBeDefined();
+    expect(stamp?.nodes["title"]).toMatchObject({ type: "text", value: "{{title}}" });
+    expect(stamp?.nodes["image"]).toMatchObject({
+      type: "media",
+      src: "{{image}}",
+      alt: "{{title}}",
+      poster: "{{poster}}",
+    });
+    expect(stamp?.nodes["field"]).toMatchObject({
+      type: "field",
+      label: "{{label}}",
+      placeholder: "{{title}}",
+    });
+    expect(issues).toHaveLength(0);
   });
 });
 

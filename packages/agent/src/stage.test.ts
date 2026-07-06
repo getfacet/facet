@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PATCH_OPS, type FacetStamp, type FacetTree } from "@facet/core";
 import { Stage } from "./stage.js";
 
 describe("Stage — ergonomic CLI over RFC 6902", () => {
@@ -107,5 +108,205 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     const message = stage.flush()[0];
     if (message?.kind !== "patch") throw new Error("expected patch");
     expect(message.patches[0]).toEqual({ op: "remove", path: "/nodes/a~1b~0c" });
+  });
+
+  it("useStamp expands a stamp into one coalesced patch and returns fresh ids", () => {
+    const stage = new Stage();
+    const result = stage.useStamp(
+      {
+        name: "card",
+        slots: { title: "Default" },
+        root: "card",
+        nodes: {
+          card: { id: "card", type: "box", children: ["title"] },
+          title: { id: "title", type: "text", value: "{{title}}" },
+        },
+      },
+      { title: "Hello" },
+      { parent: "root" },
+    );
+
+    expect(result.root).toBeDefined();
+    expect(result.slots["title"]).toBeDefined();
+    expect(result.ids["card"]).toBe(result.root);
+    expect(result.ids["title"]).toBe(result.slots["title"]);
+
+    const messages = stage.flush();
+    expect(messages).toHaveLength(1);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([
+      {
+        op: "add",
+        path: `/nodes/${result.root}`,
+        value: { id: result.root, type: "box", style: {}, children: [result.slots["title"]] },
+      },
+      {
+        op: "add",
+        path: `/nodes/${result.slots["title"]}`,
+        value: { id: result.slots["title"], type: "text", value: "Hello", style: {} },
+      },
+      { op: "add", path: "/nodes/root/children/-", value: result.root },
+    ]);
+  });
+
+  it("useStamp coalesces with pending edits and flushes before say", () => {
+    const stage = new Stage();
+    stage.set({ id: "panel", type: "box", children: [] });
+    const result = stage.useStamp(
+      {
+        name: "label",
+        root: "text",
+        nodes: { text: { id: "text", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "panel" },
+    );
+    stage.say("done");
+
+    const messages = stage.flush();
+    expect(messages.map((message) => message.kind)).toEqual(["patch", "say"]);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([
+      { op: "add", path: "/nodes/panel", value: { id: "panel", type: "box", children: [] } },
+      {
+        op: "add",
+        path: `/nodes/${result.root}`,
+        value: { id: result.root, type: "text", value: "Inside", style: {} },
+      },
+      { op: "add", path: "/nodes/panel/children/-", value: result.root },
+    ]);
+  });
+
+  it("useStamp is a no-op for malformed stamps or unknown parents", () => {
+    const stage = new Stage();
+
+    const badStamp = stage.useStamp(undefined, {}, { parent: "root" });
+    const unknownParent = stage.useStamp(
+      {
+        name: "label",
+        root: "text",
+        nodes: { text: { id: "text", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "ghost" },
+    );
+
+    expect(badStamp.root).toBeUndefined();
+    expect(badStamp.ids).toEqual({});
+    expect(unknownParent.root).toBeUndefined();
+    expect(unknownParent.ids).toEqual({});
+    expect(stage.flush()).toEqual([]);
+  });
+
+  it("useStamp rejects non-box parents from the current session", () => {
+    const stage = new Stage({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["title"] },
+        title: { id: "title", type: "text", value: "Title" },
+      },
+    });
+
+    const result = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "title" },
+    );
+
+    expect(result.root).toBeUndefined();
+    expect(stage.flush()).toEqual([]);
+  });
+
+  it("seeds known ids fail-safe from a session stage with null nodes", () => {
+    const sessionStage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["x"] },
+        x: null,
+      },
+    } as unknown as FacetTree;
+
+    expect(() => new Stage(sessionStage)).not.toThrow();
+    const stage = new Stage(sessionStage);
+    const underRoot = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "root" },
+    );
+    const underNull = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "x" },
+    );
+
+    expect(underRoot.root).toBeDefined();
+    expect(underNull.root).toBeUndefined();
+  });
+
+  it("useStamp refuses an expansion that would exceed one patch batch", () => {
+    const nodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      nodes[id] = { id, type: "text", value: id };
+    }
+    nodes["root"] = { id: "root", type: "box", children };
+    const stage = new Stage();
+
+    const result = stage.useStamp({ name: "huge", root: "root", nodes }, {}, { parent: "root" });
+
+    expect(result.root).toBeUndefined();
+    expect(stage.flush()).toEqual([]);
+  });
+
+  it("useStamp counts patch ops already flushed by say in the same turn", () => {
+    const largeNodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS - 2; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      largeNodes[id] = { id, type: "text", value: id };
+    }
+    largeNodes["root"] = { id: "root", type: "box", children };
+    const stage = new Stage();
+
+    const first = stage.useStamp(
+      { name: "large", root: "root", nodes: largeNodes },
+      {},
+      { parent: "root" },
+    );
+    stage.say("between");
+    const second = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Too much" } },
+      },
+      {},
+      { parent: "root" },
+    );
+
+    expect(first.root).toBeDefined();
+    expect(second.root).toBeUndefined();
+    expect(stage.flush().filter((message) => message.kind === "patch")).toHaveLength(1);
   });
 });

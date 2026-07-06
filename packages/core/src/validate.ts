@@ -41,6 +41,8 @@ import {
   printableValue,
   type IssueSink,
 } from "./issues.js";
+import { SLOT_MARKER_RE, SLOT_NAME_RE } from "./slot-marker.js";
+export { SLOT_MARKER_RE, SLOT_NAME_RE } from "./slot-marker.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -132,6 +134,14 @@ function asNumberToken<T extends number>(value: unknown, allowed: readonly T[]):
   const numeric =
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isInteger(numeric) && allowed.includes(numeric as T) ? (numeric as T) : undefined;
+}
+
+function isValidSlotName(name: string): boolean {
+  return SLOT_NAME_RE.test(name);
+}
+
+function isSlotMarker(value: string): boolean {
+  return SLOT_MARKER_RE.test(value);
 }
 
 /**
@@ -316,7 +326,16 @@ function fieldOptions(value: unknown): readonly string[] | undefined {
   return options.length > 0 ? options : undefined;
 }
 
-function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | undefined {
+interface SanitizeNodeOptions {
+  readonly allowSlotMarkers?: boolean;
+}
+
+function sanitizeNode(
+  id: string,
+  raw: unknown,
+  issues: IssueSink,
+  options: SanitizeNodeOptions = {},
+): FacetNode | undefined {
   const key = printableKey(id);
   const type = isObject(raw) ? asString(raw.type) : undefined;
   if (!isObject(raw) || type === undefined) {
@@ -362,7 +381,7 @@ function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | 
         issues.push(`node "${key}": media needs a string src`);
         return undefined;
       }
-      if (!isSafeMediaSrc(src)) {
+      if (!isSafeMediaSrc(src) && !(options.allowSlotMarkers === true && isSlotMarker(src))) {
         issues.push(`node "${key}": unsafe media src dropped`);
         return undefined;
       }
@@ -389,7 +408,10 @@ function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | 
       const alt = asString(raw.alt);
       node.alt = alt ?? "";
       const poster = asString(raw.poster);
-      if (poster !== undefined && isSafeMediaSrc(poster)) {
+      if (
+        poster !== undefined &&
+        (isSafeMediaSrc(poster) || (options.allowSlotMarkers === true && isSlotMarker(poster)))
+      ) {
         node.poster = poster;
       }
       const controls = asBool(raw.controls);
@@ -523,6 +545,7 @@ function sanitizeScreens(
 function sanitizeNodeMap(
   rawNodes: Record<string, unknown>,
   issues: IssueSink,
+  options: SanitizeNodeOptions = {},
 ): Record<string, FacetNode> {
   const nodes: Record<string, FacetNode> = nullMap<FacetNode>();
   for (const [id, raw] of Object.entries(rawNodes)) {
@@ -530,7 +553,7 @@ function sanitizeNodeMap(
       issues.push(`node "${printableKey(id)}": forbidden node id dropped`);
       continue;
     }
-    const node = sanitizeNode(id, raw, issues);
+    const node = sanitizeNode(id, raw, issues, options);
     if (node !== undefined) {
       nodes[id] = node;
     }
@@ -747,14 +770,14 @@ export function validateTree(input: unknown): ValidationResult {
 
 /**
  * A reusable, validated brick fragment — a named `{root, nodes}` subtree the
- * operator authors and the LLM copies into ordinary patches (Decision 5,
- * prompt-copy only: stamps are never expanded server-side or client-side). The
- * `root` need NOT be a box (a single-text stamp is legal), and unlike a tree a
- * stamp has no `screens`/`entry`.
+ * operator authors and an agent can expand into ordinary patches. The `root`
+ * need NOT be a box (a single-text stamp is legal), and unlike a tree a stamp
+ * has no `screens`/`entry`.
  */
 export interface FacetStamp {
   readonly name: string;
   readonly description?: string;
+  readonly slots?: Readonly<Record<string, string>>;
   readonly root: NodeId;
   readonly nodes: Readonly<Record<NodeId, FacetNode>>;
 }
@@ -769,8 +792,9 @@ export interface StampValidationResult {
  * discipline (shared `sanitizeNodeMap`/`pruneDanglingChildren`/`breakCycles`):
  * brick-shape + token-membership sanitization, null-proto node map, dangling and
  * cyclic child refs removed, depth capped. Never throws. A stamp needs a string
- * `name` and a `root` that resolves to a kept node (any brick type); no usable
- * root ⇒ `stamp` undefined. Issues report everything that was fixed or refused.
+ * `name` and a `root` that resolves to a kept node (any brick type); optional
+ * `slots` are bounded string defaults; no usable root ⇒ `stamp` undefined.
+ * Issues report everything that was fixed or refused.
  */
 export function validateStamp(input: unknown): StampValidationResult {
   const issues = new BoundedIssues();
@@ -795,7 +819,7 @@ export function validateStamp(input: unknown): StampValidationResult {
     return { issues: issues.list };
   }
 
-  const nodes = sanitizeNodeMap(input.nodes, issues);
+  const nodes = sanitizeNodeMap(input.nodes, issues, { allowSlotMarkers: true });
   pruneDanglingChildren(nodes, issues);
 
   const rootId =
@@ -810,6 +834,7 @@ export function validateStamp(input: unknown): StampValidationResult {
   const stamp: {
     name: string;
     description?: string;
+    slots?: Record<string, string>;
     root: string;
     nodes: Record<string, FacetNode>;
   } = { name, root: rootId, nodes };
@@ -826,5 +851,38 @@ export function validateStamp(input: unknown): StampValidationResult {
     if (description !== undefined) stamp.description = description;
     if (warning !== undefined) issues.push(warning);
   }
+  const slots = sanitizeStampSlots(input.slots, issues);
+  if (slots !== undefined) stamp.slots = slots;
   return { stamp, issues: issues.list };
+}
+
+function sanitizeStampSlots(raw: unknown, issues: IssueSink): Record<string, string> | undefined {
+  if (raw === undefined) return undefined;
+  if (!isObject(raw)) {
+    issues.push("stamp slots is not an object map; dropped");
+    return undefined;
+  }
+  const slots = nullMap<string>();
+  for (const [name, value] of Object.entries(raw)) {
+    const key = printableKey(name);
+    if (isForbiddenKey(name)) {
+      issues.push(`stamp slot "${key}": forbidden slot name dropped`);
+      continue;
+    }
+    if (!isValidSlotName(name)) {
+      issues.push(`stamp slot "${key}": invalid slot name dropped`);
+      continue;
+    }
+    if (typeof value !== "string") {
+      issues.push(`stamp slot "${key}": default is not a string; dropped`);
+      continue;
+    }
+    if (value.length > MAX_FIELD_VALUE_CHARS) {
+      slots[name] = value.slice(0, MAX_FIELD_VALUE_CHARS);
+      issues.push(`stamp slot "${key}": default truncated to ${MAX_FIELD_VALUE_CHARS} characters`);
+      continue;
+    }
+    slots[name] = value;
+  }
+  return Object.keys(slots).length > 0 ? slots : undefined;
 }

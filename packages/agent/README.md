@@ -2,9 +2,9 @@
 
 The in-process agent SDK for Facet: `defineAgent` wraps your logic into an agent
 the runtime can call, and `Stage` is the control surface it drives —
-`render` / `set` / `append` / `remove` / `screens` / `say` — to compose and
-mutate a visitor's page. Each method records standard RFC 6902 operations
-underneath.
+`render` / `set` / `append` / `useStamp` / `remove` / `screens` / `say` — to
+compose and mutate a visitor's page. Each method records standard RFC 6902
+operations underneath.
 
 ```bash
 npm install @facet/agent @facet/core
@@ -36,6 +36,14 @@ export const agent = defineAgent(({ event, stage }) => {
   }
 });
 ```
+
+`Stage.useStamp(stamp, params, { parent })` accepts an already-resolved
+`FacetStamp`, fills its declared `{{slot}}` markers, mints fresh ids, appends
+the expanded root under a known box parent, and returns the new `root`, `slots`,
+and full old-to-new `ids` map for follow-up edits. `defineAgent` and
+`defineStreamingAgent` seed `Stage` with the current session tree, so stamps can
+target boxes that existed before the current turn; malformed stamps, non-box
+parents, and expansions that would exceed one patch batch are no-ops.
 
 ```ts
 import { defineStreamingAgent } from "@facet/agent";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { validateStamp } from "@facet/core";
+import { expandStamp, validateStamp } from "@facet/core";
 import { DEFAULT_STAMPS } from "./stamps.js";
 
 describe("DEFAULT_STAMPS", () => {
@@ -26,5 +26,37 @@ describe("DEFAULT_STAMPS", () => {
   it("has unique stamp names", () => {
     const names = DEFAULT_STAMPS.map((s) => s.name);
     expect(new Set(names).size).toBe(names.length);
+  });
+
+  it("declares slots with whole-value markers and each stamp is fillable", () => {
+    for (const stamp of DEFAULT_STAMPS) {
+      expect(Object.keys(stamp.slots ?? {}), stamp.name).not.toEqual([]);
+      const serialized = JSON.stringify(stamp.nodes);
+      for (const slot of Object.keys(stamp.slots ?? {})) {
+        expect(serialized, `${stamp.name}:${slot}`).toContain(`{{${slot}}}`);
+      }
+
+      const params = Object.fromEntries(
+        Object.keys(stamp.slots ?? {}).map((slot) => [slot, `filled:${slot}`]),
+      );
+      let i = 0;
+      const expanded = expandStamp(
+        stamp,
+        params,
+        { parent: "root" },
+        {
+          existingIds: new Set(["root"]),
+          mintId: () => `${stamp.name}.fresh.${String(i++)}`,
+        },
+      );
+
+      expect(expanded.root, stamp.name).toBeDefined();
+      expect(expanded.issues, stamp.name).toEqual([]);
+      const filled = JSON.stringify(expanded.nodes);
+      for (const slot of Object.keys(stamp.slots ?? {})) {
+        expect(filled, `${stamp.name}:${slot}`).toContain(`filled:${slot}`);
+        expect(filled, `${stamp.name}:${slot}`).not.toContain(`{{${slot}}}`);
+      }
+    }
   });
 });

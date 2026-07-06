@@ -1,4 +1,11 @@
-import { collectMessages, EMPTY_TREE, iterateAgentResult, type ServerMessage } from "@facet/core";
+import {
+  collectMessages,
+  EMPTY_TREE,
+  iterateAgentResult,
+  type FacetSession,
+  type FacetStamp,
+  type ServerMessage,
+} from "@facet/core";
 import { describe, expect, it } from "vitest";
 import { defineAgent, defineStreamingAgent } from "./define-agent.js";
 
@@ -7,6 +14,22 @@ const session = {
   agentId: "agent",
   visitor: { visitorId: "visitor" },
   stage: EMPTY_TREE,
+};
+const sessionWithPanel: FacetSession = {
+  agentId: "agent",
+  visitor: { visitorId: "visitor" },
+  stage: {
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", children: ["panel"] },
+      panel: { id: "panel", type: "box", children: [] },
+    },
+  },
+};
+const labelStamp: FacetStamp = {
+  name: "label",
+  root: "label",
+  nodes: { label: { id: "label", type: "text", value: "Inside" } },
 };
 
 const say = (text: string): ServerMessage => ({ kind: "say", text });
@@ -33,6 +56,19 @@ describe("defineAgent", () => {
     ]);
     await expect(collectMessages(agent(event, session))).resolves.toEqual([say("one"), say("two")]);
   });
+
+  it("seeds Stage.useStamp with ids from the current session", async () => {
+    const agent = defineAgent(({ stage }) => {
+      stage.useStamp(labelStamp, {}, { parent: "panel" });
+    });
+
+    const messages = await collectMessages(agent(event, sessionWithPanel));
+
+    const patch = messages.find((message) => message.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    expect(patch.patches.some((op) => op.path === "/nodes/panel/children/-")).toBe(true);
+  });
 });
 
 describe("defineStreamingAgent", () => {
@@ -51,6 +87,20 @@ describe("defineStreamingAgent", () => {
       [say("two")],
       [say("tail")],
     ]);
+  });
+
+  it("seeds streaming Stage.useStamp with ids from the current session", async () => {
+    const agent = defineStreamingAgent(async function* ({ stage }) {
+      stage.useStamp(labelStamp, {}, { parent: "panel" });
+      yield;
+    });
+
+    const batches = await collectBatches(agent(event, sessionWithPanel));
+
+    const patch = batches[0]?.find((message) => message.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    expect(patch.patches.some((op) => op.path === "/nodes/panel/children/-")).toBe(true);
   });
 
   it("types yielded values as flush boundaries, not message payloads", () => {

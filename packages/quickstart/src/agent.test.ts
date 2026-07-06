@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { collectMessages, EMPTY_TREE, iterateAgentResult, validateTree } from "@facet/core";
+import {
+  MAX_PATCH_OPS,
+  collectMessages,
+  EMPTY_TREE,
+  iterateAgentResult,
+  validateTree,
+} from "@facet/core";
 import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
@@ -61,7 +67,13 @@ function providerOf(...steps: ReadonlyArray<ProviderStep | Error>): MockProvider
 
 function makeAgent(
   provider: QuickstartProvider,
-  extra: { guide?: string; sink?: MemorySink; historyTurns?: number; maxSteps?: number } = {},
+  extra: {
+    guide?: string;
+    sink?: MemorySink;
+    historyTurns?: number;
+    maxSteps?: number;
+    stamps?: readonly FacetStamp[];
+  } = {},
 ): ReturnType<typeof createQuickstartAgent> {
   return createQuickstartAgent({
     provider,
@@ -70,6 +82,7 @@ function makeAgent(
     ...(extra.guide !== undefined ? { guide: extra.guide } : {}),
     ...(extra.historyTurns !== undefined ? { historyTurns: extra.historyTurns } : {}),
     ...(extra.maxSteps !== undefined ? { maxSteps: extra.maxSteps } : {}),
+    ...(extra.stamps !== undefined ? { stamps: extra.stamps } : {}),
   });
 }
 
@@ -101,6 +114,342 @@ async function batchesOf(
 }
 
 describe("createQuickstartAgent tool loop", () => {
+  it("use_stamp expands a stamp through the closure into one referentially closed batch", async () => {
+    const stamp: FacetStamp = {
+      name: "card",
+      description: "A reusable card",
+      slots: { title: "Default title" },
+      root: "card",
+      nodes: {
+        card: { id: "card", type: "box", children: ["title"] },
+        title: { id: "title", type: "text", value: "{{title}}" },
+      },
+    };
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "card", params: { title: "Hello" }, at: { parent: "root" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+
+    const batches = await batchesOf(agent, { kind: "message", text: "use card" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    const nodeAdds = patch.patches.filter((op) => op.op === "add" && op.path.startsWith("/nodes/"));
+    const append = patch.patches.find(
+      (op) => op.op === "add" && op.path === "/nodes/root/children/-",
+    );
+    expect(append).toBeDefined();
+    const rootId = append?.op === "add" && typeof append.value === "string" ? append.value : "";
+    const rootAdd = nodeAdds.find((op) => op.path === `/nodes/${rootId}`);
+    expect(rootAdd).toBeDefined();
+    expect(rootId).not.toBe("card");
+    expect(patch.patches.some((op) => "path" in op && op.path === "/nodes/card")).toBe(false);
+    expect(patch.patches.some((op) => "path" in op && op.path === "/nodes/title")).toBe(false);
+    expect(JSON.stringify(patch.patches)).toContain("Hello");
+    if (rootAdd?.op === "add") {
+      const rootNode = rootAdd.value as { readonly children?: readonly string[] };
+      const childId = rootNode.children?.[0];
+      expect(childId).toBeDefined();
+      expect(nodeAdds.some((op) => op.path === `/nodes/${String(childId)}`)).toBe(true);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      )[0]!;
+      const idsJson = JSON.parse(obs.slice(obs.indexOf("{"))) as {
+        readonly root: string;
+        readonly slots: Readonly<Record<string, string>>;
+        readonly ids: Readonly<Record<string, string>>;
+      };
+      expect(idsJson.root).toBe(rootId);
+      expect(idsJson.slots["title"]).toBe(childId);
+      expect(idsJson.ids["card"]).toBe(rootId);
+    }
+  });
+
+  it("use_stamp reports an unknown stamp name as a no-op observation", async () => {
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "missing", params: {}, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "use missing" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.includes("unknown stamp") && o.includes("missing"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("use_stamp twice remaps ids disjointly in the same turn", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "Badge" } },
+    };
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+
+    const out = await runAgent(agent, { kind: "message", text: "twice" });
+    const patch = out.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    const appended = patch.patches.flatMap((op) =>
+      op.op === "add" && op.path === "/nodes/root/children/-" && typeof op.value === "string"
+        ? [op.value]
+        : [],
+    );
+    expect(appended).toHaveLength(2);
+    expect(new Set(appended).size).toBe(2);
+    for (const id of appended) {
+      expect(patch.patches.some((op) => op.op === "add" && op.path === `/nodes/${id}`)).toBe(true);
+    }
+  });
+
+  it("use_stamp resolves from the immutable stamp snapshot captured at agent creation", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      slots: { title: "Original" },
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
+    };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "label", params: {}, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+    const mutableStamp = stamp as {
+      slots?: FacetStamp["slots"];
+      nodes: Record<string, FacetStamp["nodes"][string]>;
+    };
+    mutableStamp.slots = { title: "Mutated" };
+    mutableStamp.nodes["label"] = { id: "label", type: "text", value: "Mutated" };
+
+    const out = await runAgent(agent, { kind: "message", text: "snapshot" });
+
+    const patch = out.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    expect(JSON.stringify(patch.patches)).toContain("Original");
+    expect(JSON.stringify(patch.patches)).not.toContain("Mutated");
+  });
+
+  it("use_stamp is a no-op for malformed stamps and unknown parents", async () => {
+    const malformed = {
+      name: "broken",
+      root: "missing",
+      nodes: { text: { id: "text", type: "text", value: "x" } },
+    } as unknown as FacetStamp;
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "broken", params: {}, at: { parent: "root" } }),
+        call("use_stamp", { name: "broken", params: {}, at: { parent: "ghost" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [malformed] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "broken" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.includes("could not expand"))).toBe(true);
+      expect(obs.some((o) => o.includes("parent") && o.includes("ghost"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("use_stamp rejects a parent that exists but is not a box", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "Inside" } },
+    };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "label", params: {}, at: { parent: "title" } })),
+      END,
+    );
+    const sessionWithTextParent: FacetSession = {
+      agentId: "quickstart",
+      visitor: { visitorId: "v1" },
+      stage: {
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["title"] },
+          title: { id: "title", type: "text", value: "Title" },
+        },
+      },
+    };
+    const agent = makeAgent(provider, { stamps: [stamp] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(
+        agent,
+        { kind: "message", text: "bad parent" },
+        sessionWithTextParent,
+      );
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain('error: use_stamp — parent "title" is not a box');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("append_node rejects a parent that exists but is not a box", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "title",
+          node: { id: "child", type: "text", value: "Child" },
+        }),
+      ),
+      END,
+    );
+    const sessionWithTextParent: FacetSession = {
+      agentId: "quickstart",
+      visitor: { visitorId: "v1" },
+      stage: {
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["title"] },
+          title: { id: "title", type: "text", value: "Title" },
+        },
+      },
+    };
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(
+        agent,
+        { kind: "message", text: "bad parent" },
+        sessionWithTextParent,
+      );
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain('error: append_node — parent "title" is not a box');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("use_stamp rejects expansions that would exceed the current patch batch cap", async () => {
+    const nodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      nodes[id] = { id, type: "text", value: id };
+    }
+    nodes["root"] = { id: "root", type: "box", children };
+    const stamp: FacetStamp = { name: "huge", root: "root", nodes };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "huge", params: {}, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "huge" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs[0]).toContain("would exceed the patch op cap");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("use_stamp counts patch ops already flushed before say in the same provider step", async () => {
+    const largeNodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS - 2; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      largeNodes[id] = { id, type: "text", value: id };
+    }
+    largeNodes["root"] = { id: "root", type: "box", children };
+    const stamps: FacetStamp[] = [
+      { name: "large", root: "root", nodes: largeNodes },
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Too much" } },
+      },
+    ];
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "large", params: {}, at: { parent: "root" } }),
+        call("say", { text: "between" }),
+        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps });
+
+    const out = await runAgent(agent, { kind: "message", text: "mixed" });
+
+    expect(patchesOf(out)).toHaveLength(1);
+    expect(saysOf(out)).toEqual(["between"]);
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs[2]).toContain("would exceed the patch op cap");
+  });
+
+  it("use_stamp reports non-fatal expansion issues in a successful observation", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      slots: { title: "Fallback" },
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
+    };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "label", params: 42, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+
+    await runAgent(agent, { kind: "message", text: "bad params" });
+
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs[0]).toContain("note:");
+    expect(obs[0]).toContain("params is not an object map");
+  });
+
   it("per-step streaming yields one batch for each provider step that changed output", async () => {
     const provider = providerOf(
       toolStep(

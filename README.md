@@ -122,10 +122,11 @@ where `./assets` holds any mix of:
   The model **selects** a theme by name (via a `set_theme` tool); **it never
   authors the CSS values** and never writes one into the tree. An unknown or
   missing name simply falls back to the default look — nothing throws.
-- **`*.stamp.json`** — a reusable `{ root, nodes }` brick fragment (a hero, a
-  card) offered to the model to copy into the page. Stamps are prompt data the
-  model copies into ordinary patches; there is **no client-side stamp
-  expansion**.
+- **`*.stamp.json`** — a reusable `{ root, nodes, slots? }` brick fragment (a
+  hero, a card) offered to the model by name. The quickstart model calls
+  `use_stamp` with string slot params and the server expands the stamp into
+  ordinary patches with fresh ids, under a known box parent and within the patch
+  batch cap; there is **no client-side stamp expansion**.
 - **`initial.tree.json`** — a starting stage the first visit opens on *before*
   the model's first turn: a fast, non-blank first paint the agent then refines.
 
@@ -204,9 +205,9 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 
 | Package                 | Role                                                                                     |
 | ----------------------- | ---------------------------------------------------------------------------------------- |
-| `@facet/core`           | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, session/event types. |
+| `@facet/core`           | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, `expandStamp`, session/event types. |
 | `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
-| `@facet/agent`          | In-process agent SDK — the `Stage` control API + `defineAgent`.                           |
+| `@facet/agent`          | In-process agent SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`. |
 | `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect).                          |
 | `@facet/client`         | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`.               |
 | `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |

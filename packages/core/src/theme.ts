@@ -26,6 +26,7 @@ import {
   type Ratio,
   type Space,
 } from "./tokens.js";
+import { SLOT_NAME_RE } from "./slot-marker.js";
 import {
   boundedDescription,
   isForbiddenKey,
@@ -61,9 +62,6 @@ export interface ThemeValidationResult {
   readonly issues: readonly ThemeIssue[];
 }
 
-/** A theme name must be a short, filename-safe identifier. */
-const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
-
 /**
  * True iff `name` is a valid theme name — a short, filename-safe identifier
  * (1–64 chars of `[a-zA-Z0-9_-]`, leading char alphanumeric). The single rule
@@ -71,7 +69,7 @@ const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
  * tree's `theme` reference) apply, so the two can never drift apart.
  */
 export function isValidThemeName(name: string): boolean {
-  return NAME_RE.test(name);
+  return SLOT_NAME_RE.test(name);
 }
 
 const KNOWN_KEYS = new Set([
