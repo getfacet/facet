@@ -3,7 +3,7 @@ import type { FacetStamp } from "@facet/core";
 /**
  * `DEFAULT_STAMPS` — the default stamp library as literal, validated
  * `FacetStamp` trees. A stamp is a named `{root, nodes}` subtree an operator
- * hands to the assets registry; the LLM copies it into ordinary patches.
+ * hands to the assets registry; the LLM expands it by name through `use_stamp`.
  *
  * These replace the retired kit-factory `KIT_STAMPS`, which captured the same
  * three shapes (hero, card, cta-button) by running the kit presets through a
@@ -20,6 +20,11 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
     name: "hero",
     description:
       "A centered hero banner: large title, optional subtitle, and a call-to-action button.",
+    slots: {
+      title: "Your headline",
+      subtitle: "A short supporting line.",
+      cta: "Get started",
+    },
     root: "hero.root",
     nodes: {
       "hero.root": {
@@ -31,13 +36,13 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
       "hero.title": {
         id: "hero.title",
         type: "text",
-        value: "Your headline",
+        value: "{{title}}",
         style: { size: "3xl", weight: "bold", align: "center" },
       },
       "hero.subtitle": {
         id: "hero.subtitle",
         type: "text",
-        value: "A short supporting line.",
+        value: "{{subtitle}}",
         style: { size: "md", color: "fg-muted", align: "center" },
       },
       "hero.cta": {
@@ -50,7 +55,7 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
       "hero.cta-label": {
         id: "hero.cta-label",
         type: "text",
-        value: "Get started",
+        value: "{{cta}}",
         style: { color: "accent-fg", weight: "semibold" },
       },
     },
@@ -58,6 +63,10 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
   {
     name: "card",
     description: "A bordered, padded content card stacking a heading over body copy.",
+    slots: {
+      title: "Card title",
+      body: "Card body copy.",
+    },
     root: "card.root",
     nodes: {
       "card.root": {
@@ -69,19 +78,22 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
       "card.title": {
         id: "card.title",
         type: "text",
-        value: "Card title",
+        value: "{{title}}",
         style: { size: "3xl", weight: "bold" },
       },
       "card.body": {
         id: "card.body",
         type: "text",
-        value: "Card body copy.",
+        value: "{{body}}",
       },
     },
   },
   {
     name: "cta-button",
     description: "A single accent call-to-action button that fires an agent action.",
+    slots: {
+      label: "Get started",
+    },
     root: "cta-button.root",
     nodes: {
       "cta-button.root": {
@@ -94,7 +106,7 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
       "cta-button.label": {
         id: "cta-button.label",
         type: "text",
-        value: "Get started",
+        value: "{{label}}",
         style: { color: "accent-fg", weight: "semibold" },
       },
     },
