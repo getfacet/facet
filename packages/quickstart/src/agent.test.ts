@@ -164,6 +164,72 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("defers an append_node box with a forward child ref until the target node exists", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "root",
+          node: { id: "panel", type: "box", children: ["child"] },
+        }),
+      ),
+      toolStep(call("set_node", { node: { id: "child", type: "text", value: "ready" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind === "patch") {
+      const paths = patch.patches.map((p) => ("path" in p ? p.path : ""));
+      expect(paths).toEqual(["/nodes/child", "/nodes/panel", "/nodes/root/children/-"]);
+    }
+  });
+
+  it("normalizes a box without children instead of throwing from the closure buffer", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box" } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    const batches = await batchesOf(agent, { kind: "message", text: "build" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind === "patch") {
+      expect(patch.patches).toContainEqual({
+        op: "add",
+        path: "/nodes/panel",
+        value: { id: "panel", type: "box", children: [] },
+      });
+    }
+  });
+
+  it("does not report a permanently buffered set_node as a completed mutation", async () => {
+    const provider = providerOf(
+      toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["missing"] } })),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "build" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      expect(saysOf(out)[0]).toMatch(/sorry/i);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs).toContain('queued: "panel" waits for child node(s): missing');
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("renders a full page then says, across a multi-step tool loop", async () => {
     const provider = providerOf(
       toolStep(call("render_page", { tree: VALID_TREE })),

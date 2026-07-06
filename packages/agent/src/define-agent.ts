@@ -12,8 +12,7 @@ export interface FacetContext {
 export type FacetLogic = (ctx: FacetContext) => void | Promise<void>;
 export type StreamingFacetLogic = (
   ctx: FacetContext,
-) =>
-  Iterable<unknown> | AsyncIterable<unknown> | Promise<Iterable<unknown> | AsyncIterable<unknown>>;
+) => Iterable<void> | AsyncIterable<void> | Promise<Iterable<void> | AsyncIterable<void>>;
 
 /**
  * Wraps your logic into a `FacetAgent` the runtime can call. You drive `stage`;

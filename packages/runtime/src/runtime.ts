@@ -253,49 +253,91 @@ export class FacetRuntime {
     let persistedAnyBatch = false;
     let seedPrepended = false;
     const iterator = iterateAgentResult(result)[Symbol.asyncIterator]();
+    let completedNaturally = false;
 
-    while (true) {
-      let next: IteratorResult<readonly ServerMessage[]>;
+    const closeIterator = async (): Promise<void> => {
       try {
-        next = await iterator.next();
-      } catch (error) {
-        if (!persistedAnyBatch) throw error;
-        resolveRecord({ at: Date.now(), event, messages: accumulated });
-        this.pendingSeeds.delete(key);
-        return { messages: onFrame === undefined ? returned : [], agentMutated };
+        await iterator.return?.();
+      } catch (error: unknown) {
+        console.error("[facet] stream cleanup failed:", error);
       }
-      if (next.done === true) break;
+    };
 
-      const batch = next.value;
-      if (batch.length === 0 || this.isTestOnlyBatch(batch)) continue;
+    const seedFrame = (): ServerMessage | undefined =>
+      !seedPrepended && this.pendingSeeds.has(key)
+        ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
+        : undefined;
 
-      const seedFrame: ServerMessage | undefined =
-        !seedPrepended && this.pendingSeeds.has(key)
-          ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
-          : undefined;
-      const {
-        session: applied,
-        issues,
-        messages: delivered,
-        mutated,
-      } = this.applyToSession(session, batch);
-      await this.stageStore.save(applied);
-      session = applied;
-      persistedAnyBatch = true;
-      accumulated.push(...batch);
-      agentMutated = agentMutated || mutated;
-      this.logIssues(issues);
+    const deliverFrame = (frame: readonly ServerMessage[]): void => {
+      if (frame.length === 0) return;
+      if (onFrame !== undefined) onFrame(frame);
+      else returned.push(...frame);
+    };
 
-      const frame = seedFrame !== undefined ? [seedFrame, ...delivered] : delivered;
-      if (frame.length > 0) {
-        if (seedFrame !== undefined) seedPrepended = true;
-        if (onFrame !== undefined) onFrame(frame);
-        else returned.push(...frame);
+    const finishPartial = (): TurnResult => {
+      resolveRecord({ at: Date.now(), event, messages: accumulated });
+      if (seedPrepended) this.pendingSeeds.delete(key);
+      return { messages: onFrame === undefined ? returned : [], agentMutated };
+    };
+
+    try {
+      while (true) {
+        let next: IteratorResult<readonly ServerMessage[]>;
+        try {
+          next = await iterator.next();
+        } catch (error) {
+          if (!persistedAnyBatch) throw error;
+          return finishPartial();
+        }
+        if (next.done === true) {
+          completedNaturally = true;
+          break;
+        }
+
+        const batch = next.value;
+        if (batch.length === 0 || this.isTestOnlyBatch(batch)) continue;
+
+        const seed = seedFrame();
+        const {
+          session: applied,
+          issues,
+          messages: delivered,
+          recordMessages,
+          mutated,
+        } = this.applyToSession(session, batch);
+        try {
+          await this.stageStore.save(applied);
+        } catch (error) {
+          if (!persistedAnyBatch) throw error;
+          return finishPartial();
+        }
+        session = applied;
+        persistedAnyBatch = true;
+        accumulated.push(...recordMessages);
+        agentMutated = agentMutated || mutated;
+        this.logIssues(issues);
+
+        const frame = seed !== undefined ? [seed, ...delivered] : delivered;
+        if (frame.length > 0) {
+          try {
+            deliverFrame(frame);
+          } catch {
+            return finishPartial();
+          }
+          if (seed !== undefined) seedPrepended = true;
+        }
       }
+    } finally {
+      if (!completedNaturally) await closeIterator();
     }
 
+    const seed = seedFrame();
+    if (seed !== undefined) {
+      deliverFrame([seed]);
+      seedPrepended = true;
+    }
     resolveRecord({ at: Date.now(), event, messages: accumulated });
-    if (persistedAnyBatch) this.pendingSeeds.delete(key);
+    if (persistedAnyBatch || seedPrepended) this.pendingSeeds.delete(key);
     return { messages: onFrame === undefined ? returned : [], agentMutated };
   }
 
@@ -349,6 +391,7 @@ export class FacetRuntime {
     readonly session: FacetSession;
     readonly issues: readonly string[];
     readonly messages: readonly ServerMessage[];
+    readonly recordMessages: readonly ServerMessage[];
     // Whether the fold actually changed the stage (effect-based). False for a
     // patch-free turn and the over-cap reject, threaded from foldPatchIntoStage
     // otherwise. persistWithSeed surfaces this as TurnResult.agentMutated.
@@ -359,9 +402,12 @@ export class FacetRuntime {
     // blow the call stack). foldPatchIntoStage's own MAX_PATCH_OPS cap then bounds
     // the coalesced batch.
     const turnOps: JsonPatchOperation[] = [];
+    let sawPatchMessage = false;
+    let droppedPatchMessage = false;
     let hasPatch = false;
     for (const message of messages) {
       if (message.kind === "patch") {
+        sawPatchMessage = true;
         // A wire/in-process patch message can carry a non-array `patches` field
         // (untyped JS agent, unsafe cast). The concatenation runs BEFORE the fold,
         // so the fold's own non-array guard is unreachable here — drop the bad
@@ -369,6 +415,7 @@ export class FacetRuntime {
         // delivers) instead of letting `for...of` throw through the never-throws seam.
         if (!Array.isArray(message.patches)) {
           console.error("[facet] dropped a patch message with non-array patches");
+          droppedPatchMessage = true;
           continue;
         }
         hasPatch = true;
@@ -376,7 +423,14 @@ export class FacetRuntime {
       }
     }
     if (!hasPatch) {
-      return { session, issues: [], messages, mutated: false };
+      const cleanMessages = sawPatchMessage ? messages.filter((m) => m.kind !== "patch") : messages;
+      return {
+        session,
+        issues: [],
+        messages: cleanMessages,
+        recordMessages: cleanMessages,
+        mutated: false,
+      };
     }
 
     // Enforce the op cap on the per-TURN aggregate, mirroring the wire boundary
@@ -393,6 +447,7 @@ export class FacetRuntime {
           `patch turn dropped: ${String(turnOps.length)} ops exceeds the ${String(MAX_PATCH_OPS)}-op cap`,
         ],
         messages: messages.filter((m) => m.kind !== "patch"),
+        recordMessages: messages.filter((m) => m.kind !== "patch"),
         mutated: false,
       };
     }
@@ -403,9 +458,11 @@ export class FacetRuntime {
 
     const coalescedPatch: ServerMessage = { kind: "patch", patches: turnOps };
     const delivered: ServerMessage[] = [];
+    const recordMessages: ServerMessage[] = [];
     let placed = false;
     for (const message of messages) {
       if (message.kind === "patch") {
+        if (!Array.isArray(message.patches)) continue;
         // Replace the turn's patch messages with the single coalesced frame,
         // emitted once at the first patch message's slot.
         if (!placed) {
@@ -415,11 +472,13 @@ export class FacetRuntime {
       } else {
         delivered.push(message);
       }
+      recordMessages.push(message);
     }
     return {
       session: { ...session, stage: tree },
       issues: allIssues,
       messages: delivered,
+      recordMessages: droppedPatchMessage ? recordMessages : messages,
       mutated,
     };
   }

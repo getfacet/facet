@@ -150,9 +150,16 @@ function eventReader(response: Response): {
     while (Date.now() < deadline) {
       const drained = drainFrames(buffer);
       buffer = drained.rest;
-      for (const block of drained.blocks) {
+      for (const [i, block] of drained.blocks.entries()) {
         const frame = parseBlock(block);
-        if (frame !== undefined) return frame;
+        if (frame !== undefined) {
+          buffer =
+            drained.blocks
+              .slice(i + 1)
+              .map((b) => `${b}\n\n`)
+              .join("") + buffer;
+          return frame;
+        }
       }
       const timeoutMs = Math.max(0, deadline - Date.now());
       const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
@@ -431,6 +438,107 @@ describe("browser channel", () => {
     }
   });
 
+  it("keeps later same-visitor events behind an unfinished streamed turn", async () => {
+    let releaseFirst!: () => void;
+    const firstGate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind !== "message") return;
+      yield [{ kind: "say", text: `${event.text}:one` }];
+      if (event.text === "first") await firstGate;
+      yield [{ kind: "say", text: `${event.text}:two` }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+    const reader = eventReader(stream);
+    try {
+      await postEvent(base, "v", { kind: "message", text: "first" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "first:one" });
+
+      await postEvent(base, "v", { kind: "message", text: "second" });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+
+      releaseFirst();
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "first:two" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "second:one" });
+      expect((await reader.next(500))?.data).toEqual({ kind: "say", text: "second:two" });
+    } finally {
+      await reader.close();
+    }
+  });
+
+  it("streams different visitors in parallel while one visitor is mid-turn", async () => {
+    let releaseA!: () => void;
+    const gateA = new Promise<void>((resolve) => {
+      releaseA = resolve;
+    });
+    const agent: FacetAgent = async function* (_event, session) {
+      const id = session.visitor.visitorId;
+      yield [{ kind: "say", text: `${id}:one` }];
+      if (id === "a") await gateA;
+      yield [{ kind: "say", text: `${id}:two` }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const streamA = await fetch(`${base}/stream?visitorId=a`);
+    const streamB = await fetch(`${base}/stream?visitorId=b`);
+    const readerA = eventReader(streamA);
+    const readerB = eventReader(streamB);
+    try {
+      await postEvent(base, "a", { kind: "message", text: "go" });
+      expect((await readerA.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await readerA.next(500))?.data).toEqual({ kind: "say", text: "a:one" });
+
+      await postEvent(base, "b", { kind: "message", text: "go" });
+      expect((await readerB.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await readerB.next(500))?.data).toEqual({ kind: "say", text: "b:one" });
+
+      releaseA();
+      expect((await readerA.next(500))?.data).toEqual({ kind: "say", text: "a:two" });
+    } finally {
+      await readerA.close();
+      await readerB.close();
+    }
+  });
+
+  it("full rehydrate includes streamed says delivered before the turn-final sink record", async () => {
+    let releaseSecond!: () => void;
+    const secondGate = new Promise<void>((resolve) => {
+      releaseSecond = resolve;
+    });
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+      await secondGate;
+      yield [{ kind: "say", text: "two" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent });
+    running = server;
+    const stream1 = await fetch(`${base}/stream?visitorId=v`);
+    const reader1 = eventReader(stream1);
+    let reader2: ReturnType<typeof eventReader> | undefined;
+    try {
+      await postEvent(base, "v", { kind: "message", text: "hi" });
+      expect((await reader1.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await reader1.next(500))?.data).toEqual({ kind: "say", text: "one" });
+
+      const stream2 = await fetch(`${base}/stream?visitorId=v`);
+      reader2 = eventReader(stream2);
+      expect((await reader2.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await reader2.next(500))?.data).toMatchObject({ kind: "patch" });
+      expect((await reader2.next(500))?.data).toEqual({ kind: "say", text: "one" });
+
+      releaseSecond();
+      expect((await reader2.next(500))?.data).toEqual({ kind: "say", text: "two" });
+    } finally {
+      releaseSecond();
+      await reader1.close();
+      await reader2?.close();
+    }
+  });
+
   it("advertises Last-Event-ID in CORS so cross-origin resume works", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
@@ -623,6 +731,43 @@ describe("async delivery — late results", () => {
       root: { id: "root", type: "box", style: { direction: "col" }, children: ["t"] },
       t: { id: "t", type: "text", value: label },
     },
+  });
+
+  it("marks a mutating streamed turn applied once so an older parked late patch is stale", async () => {
+    const inner = new MemoryStageStore();
+    const fallback: FacetAgent = async function* (event) {
+      if (event.kind === "message" && event.text === "second") {
+        yield [{ kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r2") }] }];
+        yield [{ kind: "say", text: "answer 2" }];
+      }
+    };
+    const { server, base } = await start({
+      agentId: "a",
+      agent: fallback,
+      agentTimeoutMs: 120,
+      stageStore: inner,
+    });
+    running = server;
+    const link = await dialAgent(base);
+    const stream = await fetch(`${base}/stream?visitorId=v`);
+
+    await postEvent(base, "v", { kind: "message", text: "first" });
+    const evt1 = await link.nextEvent();
+    await new Promise((r) => setTimeout(r, 180)); // e1 parks
+    await link.close();
+    await waitFor(async () => (await (await fetch(`${base}/health`)).text()) === "ok agent=local");
+
+    await postEvent(base, "v", { kind: "message", text: "second" });
+    await waitFor(async () => nodeValue(await inner.get("a", "v"), "t") === "r2");
+
+    await control(base, evt1.requestId, [
+      { kind: "patch", patches: [{ op: "replace", path: "", value: labelTree("r1") }] },
+      { kind: "say", text: "answer 1" },
+    ]);
+
+    const frames = await collectEvents(stream, 800);
+    expect(sayText(frames)).toContain("answer 1");
+    expect(nodeValue(await inner.get("a", "v"), "t")).toBe("r2");
   });
 
   it("drops a stale late result's patch but keeps its say when a newer turn applied", async () => {

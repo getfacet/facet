@@ -15,7 +15,7 @@ import {
   type VisitorContext,
 } from "@facet/core";
 import { FacetRuntime, type Sink, type StageStore, type TurnResult } from "@facet/runtime";
-import { createFrameLogStore, type FrameLogStore } from "./frame-log.js";
+import { createFrameLogStore, type FrameLogStore, type LoggedFrame } from "./frame-log.js";
 import { writeSse } from "./sse.js";
 import { createLateWindow, isStaleLateResult, LATE_WINDOW_LIMIT, type LateWindow } from "./late.js";
 import { DEFAULT_OFFLINE_FACE } from "./offline.js";
@@ -338,6 +338,56 @@ function resumeStream(
   return true;
 }
 
+function parseLoggedServerMessage(frame: LoggedFrame): ServerMessage | undefined {
+  try {
+    const value: unknown = JSON.parse(frame.json);
+    if (typeof value !== "object" || value === null) return undefined;
+    const { kind, text, patches } = value as {
+      kind?: unknown;
+      text?: unknown;
+      patches?: unknown;
+    };
+    if (kind === "say" && typeof text === "string") return { kind, text };
+    if (kind === "patch" && Array.isArray(patches)) return value as ServerMessage;
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function retainedSayFrames(frames: readonly LoggedFrame[], maxSeq: number): ServerMessage[] {
+  const says: ServerMessage[] = [];
+  for (const frame of frames) {
+    if (frame.seq > maxSeq) continue;
+    const message = parseLoggedServerMessage(frame);
+    if (message?.kind === "say") says.push(message);
+  }
+  return says;
+}
+
+function sameSay(a: ServerMessage, b: ServerMessage): boolean {
+  return a.kind === "say" && b.kind === "say" && a.text === b.text;
+}
+
+function historyPrefixBeforeRetainedOverlap(
+  historySays: readonly ServerMessage[],
+  retainedSays: readonly ServerMessage[],
+): readonly ServerMessage[] {
+  const max = Math.min(historySays.length, retainedSays.length);
+  let overlap = 0;
+  for (let n = 1; n <= max; n += 1) {
+    let matches = true;
+    for (let i = 0; i < n; i += 1) {
+      if (!sameSay(historySays[historySays.length - n + i]!, retainedSays[i]!)) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) overlap = n;
+  }
+  return overlap === 0 ? historySays : historySays.slice(0, historySays.length - overlap);
+}
+
 // ── browser stream: full rehydrate (out of the lane) ────────────────
 // A token-less new tab (or an unresumable token) gets a full snapshot. This runs
 // OUTSIDE the per-visitor lane so it paints immediately instead of blocking behind
@@ -393,10 +443,18 @@ async function rehydrate(
     if (stage !== undefined) {
       sse(res, { kind: "patch", patches: [{ op: "replace", path: "", value: stage }] }, stampId);
     }
+    const historySays: ServerMessage[] = [];
     for (const entry of history) {
       for (const message of entry.messages) {
-        if (message.kind === "say") sse(res, message, stampId);
+        if (message.kind === "say") historySays.push(message);
       }
+    }
+    const retainedSays = retainedSayFrames(current.frames, n0);
+    for (const message of historyPrefixBeforeRetainedOverlap(historySays, retainedSays)) {
+      sse(res, message, stampId);
+    }
+    for (const message of retainedSays) {
+      sse(res, message, stampId);
     }
     // Replay frames delivered during the reads (seq > N0) so nothing in the
     // snapshot-read→join window is lost. A replayed frame may describe a change the

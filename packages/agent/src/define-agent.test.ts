@@ -52,4 +52,11 @@ describe("defineStreamingAgent", () => {
       [say("tail")],
     ]);
   });
+
+  it("types yielded values as flush boundaries, not message payloads", () => {
+    // @ts-expect-error yielded values are ignored; use stage commands, then `yield`.
+    defineStreamingAgent(async function* () {
+      yield [say("ignored")];
+    });
+  });
 });

@@ -129,6 +129,23 @@ describe("FacetRuntime.handle", () => {
     expect(await rt.stageFor("v")).toBeDefined(); // stage survived, no throw
   });
 
+  it("drops malformed non-array patch messages instead of delivering them", async () => {
+    const badPatch = { kind: "patch", patches: null } as unknown as ServerMessage;
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(badPatch, { kind: "say", text: "still" }),
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+
+      expect(out.messages).toEqual([{ kind: "say", text: "still" }]);
+      expect(await rt.stageFor("v")).toEqual(EMPTY_TREE);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("fail-safe: a bad patch op is dropped but the say still returns (no lost turn)", async () => {
     const badPatch: ServerMessage = {
       kind: "patch",
@@ -341,6 +358,118 @@ describe("FacetRuntime.handle — stream batches", () => {
       secondTurnFrames.push([...messages]);
     });
     expect(secondTurnFrames.flat().some((m) => m.kind === "patch")).toBe(false);
+  });
+
+  it("skips all-test batches without consuming the seed before the next non-empty batch", async () => {
+    const seedTree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["seed"] },
+        seed: { id: "seed", type: "text", value: "seed" },
+      },
+    };
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield [{ kind: "patch", patches: [{ op: "test", path: "/root", value: "root" }] }];
+      yield [{ kind: "say", text: "ready" }];
+    }
+    const frames: ServerMessage[][] = [];
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+
+    await rt.handle(visitor, { kind: "message", text: "hi" }, (messages) => {
+      frames.push([...messages]);
+    });
+
+    expect(frames).toHaveLength(1);
+    expect(frames[0]?.map((m) => m.kind)).toEqual(["patch", "say"]);
+    expect(frames[0]?.[0]).toEqual({
+      kind: "patch",
+      patches: [{ op: "replace", path: "", value: seedTree }],
+    });
+  });
+
+  it("returns streamed batches in order when no frame sink is provided", async () => {
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield appendTextBatch("one");
+      yield [{ kind: "say", text: "two" }];
+    }
+    const rt = new FacetRuntime({ agentId: "a", agent });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+
+    expect(out.messages).toEqual([...appendTextBatch("one"), { kind: "say", text: "two" }]);
+    expect((await rt.historyFor("v"))[0]?.messages).toEqual(out.messages);
+  });
+
+  it("delivers a pending seed even when a seeded streamed turn produces no agent batch", async () => {
+    const seedTree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["seed"] },
+        seed: { id: "seed", type: "text", value: "seed" },
+      },
+    };
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield [];
+      yield [{ kind: "patch", patches: [{ op: "test", path: "/root", value: "root" }] }];
+    }
+    const frames: ServerMessage[][] = [];
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent,
+      stageStore: withInitialStage(new MemoryStageStore(), seedTree),
+    });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" }, (messages) => {
+      frames.push([...messages]);
+    });
+
+    expect(out.agentMutated).toBe(false);
+    expect(frames).toEqual([
+      [{ kind: "patch", patches: [{ op: "replace", path: "", value: seedTree }] }],
+    ]);
+    expect((await rt.historyFor("v"))[0]?.messages).toEqual([]);
+  });
+
+  it("records persisted streamed batches and closes the iterator after a later save failure", async () => {
+    let session = { agentId: "a", visitor, stage: EMPTY_TREE };
+    let saveCalls = 0;
+    const store: StageStore = {
+      get: () => Promise.resolve(session),
+      open: () => Promise.resolve(session),
+      save: (next) => {
+        saveCalls += 1;
+        if (saveCalls === 2) return Promise.reject(new Error("save failed"));
+        session = next;
+        return Promise.resolve();
+      },
+    };
+    let cleanedUp = false;
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      try {
+        yield appendTextBatch("one");
+        yield appendTextBatch("two");
+      } finally {
+        cleanedUp = true;
+      }
+    }
+    const frames: ServerMessage[][] = [];
+    const rt = new FacetRuntime({ agentId: "a", agent, stageStore: store });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" }, (messages) => {
+      frames.push([...messages]);
+    });
+
+    expect(out.agentMutated).toBe(true);
+    expect(frames).toEqual([appendTextBatch("one")]);
+    expect((session.stage.nodes["root"] as unknown as { children: string[] }).children).toEqual([
+      "one",
+    ]);
+    expect((await rt.historyFor("v"))[0]?.messages).toEqual(appendTextBatch("one"));
+    expect(cleanedUp).toBe(true);
   });
 });
 

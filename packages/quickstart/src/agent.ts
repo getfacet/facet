@@ -114,7 +114,22 @@ function asNode(value: unknown): { node: FacetNode } | { error: string } {
   }
   switch (value["type"]) {
     case "box":
-      break; // validateTree defaults a missing/non-array children to []
+      if (value["children"] !== undefined) {
+        if (
+          !Array.isArray(value["children"]) ||
+          !value["children"].every((child): child is string => typeof child === "string")
+        ) {
+          return { error: 'a "box" node needs "children" as an array of string ids' };
+        }
+      }
+      return {
+        node: {
+          ...value,
+          id: value["id"],
+          type: "box",
+          children: value["children"] ?? [],
+        } as unknown as FacetNode,
+      };
     case "text":
       if (typeof value["value"] !== "string") {
         return { error: 'a "text" node needs a string "value"' };
@@ -147,35 +162,52 @@ function issueHint(issues: readonly string[]): string {
 const TOOL_NAMES = TOOLS.map((t) => t.name).join(", ");
 
 interface ClosureBuffer {
-  render(tree: FacetTree): void;
-  set(node: FacetNode): void;
-  noteKnown(id: NodeId): void;
-  remove(id: NodeId): void;
+  render(tree: FacetTree): number;
+  set(node: FacetNode): number;
+  append(parentId: NodeId, node: FacetNode): number;
+  remove(id: NodeId): number;
 }
+
+type PendingOp =
+  | { readonly kind: "set"; readonly node: FacetNode }
+  | { readonly kind: "append"; readonly parentId: NodeId; readonly node: FacetNode };
 
 function childRefs(node: FacetNode): readonly NodeId[] {
   return node.type === "box" ? node.children : [];
 }
 
+function missingChildRefs(node: FacetNode, knownIds: ReadonlySet<string>): readonly NodeId[] {
+  return childRefs(node).filter((id) => !knownIds.has(id));
+}
+
 function isClosed(node: FacetNode, knownIds: ReadonlySet<string>): boolean {
-  return childRefs(node).every((id) => knownIds.has(id));
+  return missingChildRefs(node, knownIds).length === 0;
 }
 
 function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer {
-  const pending = new Map<NodeId, FacetNode>();
+  const pending = new Map<NodeId, PendingOp>();
 
-  const flushReady = (): void => {
+  const emit = (op: PendingOp): void => {
+    if (op.kind === "set") stage.set(op.node);
+    else stage.append(op.parentId, op.node);
+    knownIds.add(op.node.id);
+  };
+
+  const flushReady = (): number => {
+    let emitted = 0;
     let progressed = true;
     while (progressed) {
       progressed = false;
-      for (const [id, node] of pending) {
-        if (!isClosed(node, knownIds)) continue;
-        stage.set(node);
+      for (const [id, op] of pending) {
+        if (op.kind === "append" && !knownIds.has(op.parentId)) continue;
+        if (!isClosed(op.node, knownIds)) continue;
+        emit(op);
         pending.delete(id);
-        knownIds.add(id);
+        emitted += 1;
         progressed = true;
       }
     }
+    return emitted;
   };
 
   return {
@@ -184,25 +216,39 @@ function createClosureBuffer(stage: Stage, knownIds: Set<string>): ClosureBuffer
       stage.render(tree);
       knownIds.clear();
       for (const id of Object.keys(tree.nodes)) knownIds.add(id);
+      return 1;
     },
     set(node) {
+      let emitted = 0;
       if (isClosed(node, knownIds)) {
-        stage.set(node);
-        knownIds.add(node.id);
+        emit({ kind: "set", node });
+        emitted += 1;
       } else {
-        pending.set(node.id, node);
+        pending.set(node.id, { kind: "set", node });
       }
-      flushReady();
+      return emitted + flushReady();
     },
-    noteKnown(id) {
-      knownIds.add(id);
-      flushReady();
+    append(parentId, node) {
+      let emitted = 0;
+      if (knownIds.has(parentId) && isClosed(node, knownIds)) {
+        emit({ kind: "append", parentId, node });
+        emitted += 1;
+      } else {
+        pending.set(node.id, { kind: "append", parentId, node });
+      }
+      return emitted + flushReady();
     },
     remove(id) {
       pending.delete(id);
       knownIds.delete(id);
+      stage.remove(id);
+      return 1;
     },
   };
+}
+
+function queuedObservation(id: NodeId, missing: readonly NodeId[]): string {
+  return `queued: "${id}" waits for child node(s): ${missing.join(", ")}`;
 }
 
 interface ToolOutcome {
@@ -236,10 +282,10 @@ function executeTool(
               : "Provide a non-empty root/entry box and retry."),
         );
       }
-      closure.render(tree);
+      const emitted = closure.render(tree);
       const note =
         issues.length > 0 ? ` (note: dropped invalid node(s): ${issueHint(issues)})` : "";
-      return { observation: `ok: page replaced${note}`, mutated: true, said: false };
+      return { observation: `ok: page replaced${note}`, mutated: emitted > 0, said: false };
     }
     case "append_node": {
       const parentId = input["parentId"];
@@ -255,8 +301,14 @@ function executeTool(
       }
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: append_node — ${result.error}`);
-      stage.append(parentId as NodeId, result.node);
-      closure.noteKnown(result.node.id);
+      const emitted = closure.append(parentId as NodeId, result.node);
+      if (emitted === 0) {
+        return {
+          observation: queuedObservation(result.node.id, missingChildRefs(result.node, knownIds)),
+          mutated: false,
+          said: false,
+        };
+      }
       return {
         observation: `ok: appended "${result.node.id}" under "${parentId}"`,
         mutated: true,
@@ -266,7 +318,14 @@ function executeTool(
     case "set_node": {
       const result = asNode(input["node"]);
       if ("error" in result) return fail(`error: set_node — ${result.error}`);
-      closure.set(result.node);
+      const emitted = closure.set(result.node);
+      if (emitted === 0) {
+        return {
+          observation: queuedObservation(result.node.id, missingChildRefs(result.node, knownIds)),
+          mutated: false,
+          said: false,
+        };
+      }
       return { observation: `ok: set "${result.node.id}"`, mutated: true, said: false };
     }
     case "remove_node": {
@@ -274,9 +333,8 @@ function executeTool(
       if (typeof nodeId !== "string" || nodeId.length === 0) {
         return fail('error: remove_node needs a non-empty string "nodeId"');
       }
-      stage.remove(nodeId as NodeId);
-      closure.remove(nodeId as NodeId);
-      return { observation: `ok: removed "${nodeId}"`, mutated: true, said: false };
+      const emitted = closure.remove(nodeId as NodeId);
+      return { observation: `ok: removed "${nodeId}"`, mutated: emitted > 0, said: false };
     }
     case "say": {
       const text = input["text"];
