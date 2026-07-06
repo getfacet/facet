@@ -326,7 +326,18 @@ and were tracked rather than fixed to keep the feature diff focused:
   `handle`'s throw + save-reject paths ARE covered (runtime.test.ts). Add a mirror
   case if the late-apply path grows.
 
-### Pre-existing (surfaced by the event-layer-v1 review, NOT introduced by it)
+### Pre-existing (surfaced by the event-layer-v1 review/live-test, NOT introduced by it)
+
+- **quickstart restyle can drop card text (real-LLM output)** — the event-layer-v1
+  live-journey (owner-run) FAILed `safety×v3`: on the "cat restyle" turn, gpt-5.4-mini
+  emitted the six content cards (3 feature + 3 pricing) as boxes WITHOUT their text
+  children — empty rounded boxes, header/heading/button intact (artifact
+  `packages/quickstart/e2e/journey/artifacts/v3/03-restyle.png`). Unrelated to
+  event-layer-v1 (restyle is a `message` turn; the rename/record change touches no
+  rendering or stage-generation). A real-LLM robustness gap in the restyle prompt
+  (the model should never re-emit a card box without re-including its text). Consider
+  a STAGE_SPEC nudge ("a card box must keep its text children on restyle") or a
+  post-turn validator warning when a previously-texted box loses all text.
 
 - **bridge/src/persistent.ts:146** (P3, concurrency) — the persistent driver's
   single always-on session drains one shared `pending` queue with NO per-turn
