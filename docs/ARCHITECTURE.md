@@ -205,7 +205,7 @@ delivered batches through the same pure function, the two can never drift.
 ## The event loop
 
 ```
-ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[]
+ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[] | AsyncIterable<ServerMessage[]>
                     │                                  │
                     └── applies patches to the session ┘
 ```
@@ -219,9 +219,9 @@ ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[]
   no agent turn), which `runtime.record` appends to the `Sink` on the same
   per-visitor order as forwarded turns (append order = the join key).
 - `FacetRuntime.handle(visitor, event)` opens (or finds) the session for that
-  `(agent, visitor)` pair, runs the agent, applies any returned patches to the
-  stored stage, and returns the messages to ship back over that visitor's
-  connection.
+  `(agent, visitor)` pair, runs the agent, applies each returned batch to the
+  stored stage, and ships that batch over the visitor's connection before
+  pulling the next one. A non-streaming agent is just a one-batch agent.
 - `ServerMessage` is what the agent answers with: `patch` (RFC 6902 operations)
   and/or `say` (chat text).
 
@@ -242,8 +242,13 @@ defineAgent(({ event, session, stage }) => {
 ```
 
 `Stage` coalesces consecutive stage edits into one `patch` message and preserves
-ordering relative to `say(...)`. Replace the hand-written branches with an LLM
-call that emits the same operations and nothing else in the stack changes.
+ordering relative to `say(...)`. `defineAgent` flushes once at the end of the
+turn; `defineStreamingAgent` lets generator logic yield producer-chosen
+boundaries, flushing the commands recorded since the previous yield as the next
+batch. Each batch is closed over its child references before it is delivered, so
+the shared fail-safe fold never permanently prunes content that arrives in a
+later batch. Replace the hand-written branches with an LLM call that emits the
+same operations and nothing else in the stack changes.
 
 ## Reference brain: `@facet/quickstart`
 
@@ -257,9 +262,10 @@ stub), and core/runtime/server gain zero LLM awareness — any user brain drops
 into the same slot, so the boundary stays intact while `npx facet-quickstart`
 gives a one-command first run.
 
-The built-in agent is a **tool-calling loop** (not a single completion): each
-turn the model calls tools across a bounded number of steps, observing each
-result before deciding the next. Five tools map 1:1 onto the `Stage` control
+The built-in agent is a **streaming tool-calling loop** (not a single completion):
+each provider step yields the stage/chat batch produced so far, so the browser
+can watch the page build while the model continues deciding the next tool. Five
+tools map 1:1 onto the `Stage` control
 API — `append_node` / `set_node` / `remove_node` (incremental edits),
 `render_page` (a full redraw), and `say` (chat) — via the provider's native
 function-calling (OpenAI) / tool-use (Anthropic). It is fail-safe throughout: a

@@ -34,5 +34,10 @@ Also exported: small dependency-free async primitives the other packages build
 on — `createSerialQueue` (per-key ordering) and `createSemaphore` (FIFO
 concurrency cap).
 
+The agent contract is `FacetAgent`: given a `ClientEvent` and `FacetSession`, it
+returns either one `ServerMessage[]` or an `AsyncIterable<ServerMessage[]>`.
+Streaming agents yield closed batches; the runtime applies and delivers each
+batch before pulling the next.
+
 See the [Facet docs](https://github.com/getfacet/facet) and
 [ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).

@@ -10,8 +10,10 @@ npm install @facet/runtime @facet/agent @facet/core
 ```
 
 `FacetRuntime.handle` processes one inbound event per visitor, calls your agent,
-applies the resulting patches to the stored session, and returns the messages to
-ship back. Sessions are isolated and serialized per `(agent, visitor)`.
+and accepts either one result array or an async stream of result batches. Each
+batch is folded into the stored session, saved, and delivered before the next
+batch is pulled; the `Sink` record is still written once for the whole turn.
+Sessions are isolated and serialized per `(agent, visitor)`.
 `FacetRuntime.applyMessages` applies an already-produced result (e.g. one that
 arrived after the transport's wait ended) through the same queue and salvage.
 
