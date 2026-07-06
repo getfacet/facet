@@ -294,7 +294,7 @@ export class FacetRuntime {
           break;
         }
 
-        const batch = next.value;
+        const batch = this.asMessageBatch(next.value);
         if (batch.length === 0 || this.isTestOnlyBatch(batch)) continue;
 
         const seed = seedFrame();
@@ -352,6 +352,48 @@ export class FacetRuntime {
       }
     }
     return sawTest;
+  }
+
+  private asMessageBatch(value: unknown): readonly ServerMessage[] {
+    if (!Array.isArray(value)) {
+      console.error("[facet] dropped a streamed batch that was not an array");
+      return [];
+    }
+    const messages: ServerMessage[] = [];
+    for (const message of value) {
+      const normalized = this.asServerMessage(message);
+      if (normalized !== undefined) messages.push(normalized);
+    }
+    return messages;
+  }
+
+  private asServerMessage(value: unknown): ServerMessage | undefined {
+    if (typeof value !== "object" || value === null) {
+      console.error("[facet] dropped a non-object server message");
+      return undefined;
+    }
+    const { kind, text, patches } = value as {
+      kind?: unknown;
+      text?: unknown;
+      patches?: unknown;
+    };
+    const message =
+      kind === "say" && typeof text === "string"
+        ? ({ kind, text } satisfies ServerMessage)
+        : kind === "patch" && Array.isArray(patches)
+          ? (value as ServerMessage)
+          : undefined;
+    if (message === undefined) {
+      console.error("[facet] dropped a malformed server message");
+      return undefined;
+    }
+    try {
+      JSON.stringify(message);
+    } catch {
+      console.error("[facet] dropped a non-JSON-serializable server message");
+      return undefined;
+    }
+    return message;
   }
 
   private logIssues(issues: readonly string[]): void {

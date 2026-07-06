@@ -146,6 +146,32 @@ describe("FacetRuntime.handle", () => {
     }
   });
 
+  it("drops non-JSON-serializable messages before saving or delivering them", async () => {
+    const badPatch = {
+      kind: "patch",
+      patches: [
+        {
+          op: "add",
+          path: "/nodes/big",
+          value: { id: "big", type: "text", value: 1n },
+        },
+      ],
+    } as unknown as ServerMessage;
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(badPatch, { kind: "say", text: "still" }),
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await rt.handle(visitor, { kind: "message", text: "hi" });
+
+      expect(out.messages).toEqual([{ kind: "say", text: "still" }]);
+      expect(await rt.stageFor("v")).toEqual(EMPTY_TREE);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("fail-safe: a bad patch op is dropped but the say still returns (no lost turn)", async () => {
     const badPatch: ServerMessage = {
       kind: "patch",
@@ -497,6 +523,27 @@ describe("FacetRuntime.handle — stream batches", () => {
       ((await rt.stageFor("v"))?.nodes["root"] as unknown as { children: string[] }).children,
     ).toEqual(["one"]);
     expect((await rt.historyFor("v"))[0]?.messages).toEqual(appendTextBatch("one"));
+  });
+
+  it("drops malformed streamed batch values without losing already-persisted batches", async () => {
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      yield appendTextBatch("one");
+      yield {} as never;
+    }
+    const frames: ServerMessage[][] = [];
+    const rt = new FacetRuntime({ agentId: "a", agent });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await rt.handle(visitor, { kind: "message", text: "hi" }, (messages) => {
+        frames.push([...messages]);
+      });
+
+      expect(out).toEqual({ messages: [], agentMutated: true });
+      expect(frames).toEqual([appendTextBatch("one")]);
+      expect((await rt.historyFor("v"))[0]?.messages).toEqual(appendTextBatch("one"));
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 
