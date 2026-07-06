@@ -664,7 +664,13 @@ describe("StageRenderer collect (jsdom)", () => {
           root: { id: "root", type: "box", children: ["form", "submit"] },
           form: { id: "form", type: "box", children: ["heading", "pic", "inner"] },
           heading: { id: "heading", type: "text", value: "Sign up" },
-          pic: { id: "pic", type: "image", src: "https://example.com/a.png", alt: "pic" },
+          pic: {
+            id: "pic",
+            type: "media",
+            kind: "image",
+            src: "https://example.com/a.png",
+            alt: "pic",
+          },
           inner: { id: "inner", type: "box", children: ["emailF"] },
           emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
           submit: {
@@ -683,6 +689,100 @@ describe("StageRenderer collect (jsdom)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, { email: "a@b.dev" });
+  });
+
+  it("brick-vocab v1 collects select, checkbox, switch, and the checked radio member", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: {
+            id: "form",
+            type: "box",
+            children: ["plan", "agree", "alerts", "size"],
+          },
+          plan: {
+            id: "plan",
+            type: "field",
+            name: "plan",
+            input: "select",
+            options: ["Free", "Pro"],
+          },
+          agree: { id: "agree", type: "field", name: "agree", input: "checkbox" },
+          alerts: { id: "alerts", type: "field", name: "alerts", input: "switch" },
+          size: {
+            id: "size",
+            type: "field",
+            name: "size",
+            input: "radio",
+            options: ["Small", "Large"],
+          },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "Pro" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "" }));
+    fireEvent.click(screen.getByRole("switch"));
+    fireEvent.click(screen.getByDisplayValue("Large"));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledWith(
+      { kind: "agent", name: "submit" },
+      { plan: "Pro", agree: true, alerts: true, size: "Large" },
+    );
+  });
+
+  it("collects the first defined same-name radio value when an earlier radio group is unchecked", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: {
+            id: "form",
+            type: "box",
+            children: ["emptySize", "chosenSize"],
+          },
+          emptySize: {
+            id: "emptySize",
+            type: "field",
+            name: "size",
+            input: "radio",
+            options: ["Small", "Medium"],
+          },
+          chosenSize: {
+            id: "chosenSize",
+            type: "field",
+            name: "size",
+            input: "radio",
+            options: ["Large", "XL"],
+          },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByDisplayValue("XL"));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, { size: "XL" });
   });
 
   it("does not collect a same-named field OUTSIDE the collect subtree", () => {

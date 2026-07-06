@@ -46,6 +46,16 @@ export const MAX_FIELD_VALUE_CHARS = 2000;
 export const MAX_FIELDS_KEYS = 256;
 
 /**
+ * Shared cap on the NUMBER of options a select/radio field may carry. Core
+ * validation and the raw renderer path both enforce it so prompt-authored trees
+ * and live-patched trees cannot drift.
+ */
+export const MAX_FIELD_OPTIONS = 64;
+
+export type FieldValue = string | boolean;
+export type FieldValues = Readonly<Record<string, FieldValue>>;
+
+/**
  * The renderer-resolved LOCAL effect of a tap — mirrors the navigate/toggle
  * branches of a `ClassifiedPress`. A local tap changes only view-state in the
  * browser (no agent turn); it is logged (not forwarded) so replay can reproduce
@@ -81,7 +91,7 @@ export type CollectedEvent =
        * declares `collect`. Inert data riding the event — never part of the
        * stage tree, never interpreted or rendered back by Facet.
        */
-      readonly fields?: Readonly<Record<string, string>>;
+      readonly fields?: FieldValues;
       readonly seq?: number;
     };
 
@@ -102,7 +112,7 @@ export type ClientEvent =
        * declares `collect`. Inert data riding the event — never part of the
        * stage tree, never interpreted or rendered back by Facet.
        */
-      readonly fields?: Readonly<Record<string, string>>;
+      readonly fields?: FieldValues;
       readonly seq?: number;
     };
 

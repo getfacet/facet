@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FacetAction } from "./nodes.js";
+import { MAX_FIELD_OPTIONS } from "./protocol.js";
 import type {
   AgentEventFrame,
   ClientEvent,
@@ -99,5 +100,9 @@ describe("protocol event contract (type-level)", () => {
     // omitting record still satisfies FacetTransport (optional method).
     const minimal: FacetTransport = { send: () => {}, subscribe: () => () => {} };
     expect([typeof transport.record, minimal.record]).toEqual(["function", undefined]);
+  });
+
+  it("exports the shared field options cap", () => {
+    expect(MAX_FIELD_OPTIONS).toBe(64);
   });
 });

@@ -64,6 +64,14 @@ export type Sizing = (typeof SIZINGS)[number];
 export const RATIOS = ["square", "wide", "tall"] as const;
 export type Ratio = (typeof RATIOS)[number];
 
+/** Scroll axes for bounded internal scroll regions. */
+export const SCROLL_AXES = ["x", "y"] as const;
+export type ScrollAxis = (typeof SCROLL_AXES)[number];
+
+/** Numeric column-count tokens for flow-safe grids. */
+export const COLUMNS = [2, 3, 4] as const;
+export type Columns = (typeof COLUMNS)[number];
+
 /**
  * Enter animation for a box, replayed on each mount/re-show of the node. The
  * token names the motion only — the renderer owns duration and curve as

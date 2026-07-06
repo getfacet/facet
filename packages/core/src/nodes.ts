@@ -1,6 +1,6 @@
 /**
  * The low-level brick palette — the entire vocabulary an agent uses to build a
- * stage. There are only four bricks: `box`, `text`, `image`, `field`.
+ * stage. There are only four bricks: `box`, `text`, `media`, `field`.
  *
  * These are Lego bricks, not finished furniture. A "card" is a `box` with a
  * border; a "button" is a `box` with `onPress`; a "heading" is a big `text`. The
@@ -14,6 +14,7 @@
 import type {
   Align,
   Appear,
+  Columns,
   Color,
   Direction,
   FontSize,
@@ -21,6 +22,7 @@ import type {
   Justify,
   Radius,
   Ratio,
+  ScrollAxis,
   Sizing,
   Space,
   TextAlign,
@@ -97,10 +99,15 @@ export interface BoxStyle {
    */
   readonly appear?: Appear;
   /**
-   * Literal `true` makes the box a bounded, internally-scrollable region
-   * (vertical only). The renderer owns the max height as a framework constant.
+   * Bounded, internally-scrollable region. Legacy `true` normalizes to vertical
+   * (`"y"`). Horizontal scroll remains bounded by the renderer.
    */
-  readonly scroll?: boolean;
+  readonly scroll?: ScrollAxis | true;
+  /**
+   * Flow-safe grid columns. When present, the renderer uses grid layout and
+   * ignores direction/wrap because the grid owns the axis.
+   */
+  readonly columns?: Columns;
 }
 
 export interface TextStyle {
@@ -110,7 +117,7 @@ export interface TextStyle {
   readonly align?: TextAlign;
 }
 
-export interface ImageStyle {
+export interface MediaStyle {
   readonly radius?: Radius;
   readonly width?: Sizing;
   readonly ratio?: Ratio;
@@ -152,16 +159,32 @@ export interface TextNode {
   readonly style?: TextStyle;
 }
 
-export interface ImageNode {
+export const MEDIA_KINDS = ["image", "video"] as const;
+export type MediaKind = (typeof MEDIA_KINDS)[number];
+
+export interface MediaNode {
   readonly id: NodeId;
-  readonly type: "image";
+  readonly type: "media";
+  readonly kind: MediaKind;
   readonly src: string;
-  readonly alt: string;
-  readonly style?: ImageStyle;
+  readonly alt?: string;
+  readonly poster?: string;
+  readonly controls?: boolean;
+  readonly style?: MediaStyle;
 }
 
 /** Allowed field input types — single source (validator derives its check from this). */
-export const FIELD_INPUTS = ["text", "number", "email", "password", "search"] as const;
+export const FIELD_INPUTS = [
+  "text",
+  "number",
+  "email",
+  "password",
+  "search",
+  "checkbox",
+  "radio",
+  "select",
+  "switch",
+] as const;
 export type FieldInput = (typeof FIELD_INPUTS)[number];
 
 /** The input primitive. */
@@ -170,13 +193,14 @@ export interface FieldNode {
   readonly type: "field";
   readonly name: string;
   readonly input?: FieldInput;
+  readonly options?: readonly string[];
   readonly label?: string;
   readonly placeholder?: string;
   readonly style?: FieldStyle;
 }
 
 /** Any brick the agent may place on a stage. */
-export type FacetNode = BoxNode | TextNode | ImageNode | FieldNode;
+export type FacetNode = BoxNode | TextNode | MediaNode | FieldNode;
 
 /** Narrows a node to the one brick that can hold children. */
 export function isContainer(node: FacetNode): node is BoxNode {

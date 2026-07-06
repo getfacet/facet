@@ -68,8 +68,14 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(out.match(/<p/g)).toHaveLength(1);
   });
 
-  it("skips an image whose src was patched to a non-string", () => {
-    const broken = { id: "i", type: "image", src: 42, alt: "x" } as unknown as FacetNode;
+  it("skips media whose src was patched to a non-string", () => {
+    const broken = {
+      id: "i",
+      type: "media",
+      kind: "image",
+      src: 42,
+      alt: "x",
+    } as unknown as FacetNode;
     const out = render(
       tree({ root: box("root", ["i", "a"]), i: broken, a: text("a", "still up") }),
     );
@@ -126,15 +132,120 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(out).not.toContain("too deep");
   });
 
-  it("drops an image with an unsafe URL scheme", () => {
+  it("drops media with an unsafe URL scheme", () => {
     const out = render(
       tree({
         root: box("root", ["i"]),
-        i: { id: "i", type: "image", src: "javascript:alert(1)", alt: "x" },
+        i: { id: "i", type: "media", kind: "image", src: "javascript:alert(1)", alt: "x" },
       }),
     );
     expect(out).not.toContain("javascript:");
     expect(out).not.toContain("<img");
+  });
+});
+
+describe("StageRenderer brick-vocab v1", () => {
+  it("renders media image/video and native form controls", () => {
+    const out = render(
+      tree({
+        root: box("root", ["hero", "clip", "plan", "agree", "size", "alerts"]),
+        hero: {
+          id: "hero",
+          type: "media",
+          kind: "image",
+          src: "https://example.com/hero.png",
+          alt: "Hero",
+        },
+        clip: {
+          id: "clip",
+          type: "media",
+          kind: "video",
+          src: "https://example.com/clip.mp4",
+          poster: "/poster.png",
+          controls: true,
+        },
+        plan: {
+          id: "plan",
+          type: "field",
+          name: "plan",
+          input: "select",
+          options: ["Free", "Pro"],
+        },
+        agree: { id: "agree", type: "field", name: "agree", input: "checkbox" },
+        size: { id: "size", type: "field", name: "size", input: "radio", options: ["S", "M"] },
+        alerts: { id: "alerts", type: "field", name: "alerts", input: "switch" },
+      }),
+    );
+
+    expect(out).toContain("<img");
+    expect(out).toContain('src="https://example.com/hero.png"');
+    expect(out).toContain("<video");
+    expect(out).toContain('src="https://example.com/clip.mp4"');
+    expect(out).toContain('poster="/poster.png"');
+    expect(out).toContain("controls");
+    expect(out).toContain("<select");
+    expect(out).toContain("<option");
+    expect(out).toContain('type="checkbox"');
+    expect(out).toContain('type="radio"');
+    expect(out).toContain('role="switch"');
+  });
+
+  it("skips malformed media and keeps a raw legacy image alias", () => {
+    const legacy = {
+      id: "legacy",
+      type: "image",
+      src: "https://example.com/legacy.png",
+      alt: "Legacy",
+    } as unknown as FacetNode;
+    const out = render(
+      tree({
+        root: box("root", ["missing", "unknown", "unsafe", "legacy", "t"]),
+        missing: { id: "missing", type: "media", kind: "image" } as unknown as FacetNode,
+        unknown: {
+          id: "unknown",
+          type: "media",
+          kind: "gif3d",
+          src: "https://example.com/unknown.gif",
+        } as unknown as FacetNode,
+        unsafe: {
+          id: "unsafe",
+          type: "media",
+          kind: "video",
+          src: "javascript:alert(1)",
+        } as unknown as FacetNode,
+        legacy,
+        t: text("t", "still here"),
+      }),
+    );
+
+    expect(out).toContain("still here");
+    expect(out).toContain('src="https://example.com/legacy.png"');
+    expect(out).not.toContain("unknown.gif");
+    expect(out).not.toContain("javascript:");
+  });
+
+  it("renders columns and scroll-axis styles while raw junk stays plain", () => {
+    const out = render(
+      tree({
+        root: box("root", ["grid", "x", "y", "junk"]),
+        grid: { id: "grid", type: "box", style: { columns: 3 }, children: [] },
+        x: { id: "x", type: "box", style: { scroll: "x" }, children: [] },
+        y: { id: "y", type: "box", style: { scroll: true }, children: [] },
+        junk: {
+          id: "junk",
+          type: "box",
+          style: { columns: "lots", scroll: "sideways" },
+          children: [],
+        } as unknown as FacetNode,
+      }),
+    );
+
+    expect(out).toContain("display:grid");
+    expect(out).toContain("grid-template-columns:repeat(3,minmax(0,1fr))");
+    expect(out).toContain("overflow-x:auto");
+    expect(out).toContain("max-width:100%");
+    expect(out).toContain("overflow-y:auto");
+    expect(out).toContain("max-height:20rem");
   });
 });
 
@@ -195,7 +306,13 @@ describe("StageRenderer happy path", () => {
       tree({
         root: box("root", ["t", "i", "f"]),
         t: text("t", "hello"),
-        i: { id: "i", type: "image", src: "https://example.com/a.png", alt: "pic" },
+        i: {
+          id: "i",
+          type: "media",
+          kind: "image",
+          src: "https://example.com/a.png",
+          alt: "pic",
+        },
         f: { id: "f", type: "field", name: "email", input: "email", label: "Email" },
       }),
     );
@@ -461,7 +578,7 @@ describe("StageRenderer appear (static)", () => {
     expect(out.match(/<style/g)).toHaveLength(1);
   });
 
-  it("ignores appear on raw-path text/image/field styles (appear is BoxStyle-only)", () => {
+  it("ignores appear on raw-path text/media/field styles (appear is BoxStyle-only)", () => {
     // validateTree strips appear from non-box styles, so the raw unvalidated
     // path must render identically: no class on <p>/<img>/<label> and no
     // appear <style> element for a tree whose only appear tokens sit on
@@ -471,7 +588,8 @@ describe("StageRenderer appear (static)", () => {
       t: { id: "t", type: "text", value: "plain text", style: { appear: "fade" } },
       i: {
         id: "i",
-        type: "image",
+        type: "media",
+        kind: "image",
         src: "https://example.com/a.png",
         alt: "pic",
         style: { appear: "fade" },

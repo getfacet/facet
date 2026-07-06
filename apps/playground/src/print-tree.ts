@@ -16,8 +16,8 @@ export function printTree(tree: FacetTree): void {
     const detail =
       node.type === "text"
         ? `: "${node.value}"`
-        : node.type === "image"
-          ? `: ${node.src}`
+        : node.type === "media"
+          ? `(${node.kind}): ${node.src}`
           : node.type === "field"
             ? `: ${node.name}`
             : "";

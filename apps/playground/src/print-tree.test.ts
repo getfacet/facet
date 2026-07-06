@@ -46,6 +46,13 @@ const tree: FacetTree = {
       children: [],
     },
     menu: { id: "menu", type: "box", hidden: true, children: [] },
+    clip: {
+      id: "clip",
+      type: "media",
+      kind: "video",
+      src: "https://example.com/clip.mp4",
+      controls: true,
+    },
     "hold-btn": {
       id: "hold-btn",
       type: "box",
@@ -77,5 +84,16 @@ describe("printTree", () => {
   it("labels the onHold gesture alongside onPress", () => {
     const out = lines(tree);
     expect(out).toContain("  box [→ open_card] [hold ⇄ menu]");
+  });
+
+  it("prints media kind and src", () => {
+    const out = lines({
+      ...tree,
+      nodes: {
+        ...tree.nodes,
+        root: { id: "root", type: "box", children: ["clip"] },
+      },
+    });
+    expect(out).toContain("  media(video): https://example.com/clip.mp4");
   });
 });

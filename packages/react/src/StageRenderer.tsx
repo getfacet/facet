@@ -7,9 +7,10 @@ import type {
 } from "react";
 import {
   FIELD_INPUTS,
-  isSafeImageSrc,
+  isSafeMediaSrc,
   isTreeShaped,
   MAX_DEPTH,
+  MAX_FIELD_OPTIONS,
   MAX_FIELD_VALUE_CHARS,
   MAX_FIELDS_KEYS,
   MAX_RENDER_NODES,
@@ -20,9 +21,11 @@ import {
   type FacetNode,
   type FacetTheme,
   type FacetTree,
+  type FieldValue,
+  type FieldValues,
   type NodeId,
 } from "@facet/core";
-import { boxStyle, fieldStyle, imageStyle, resolveTheme, textStyle } from "./theme.js";
+import { boxStyle, fieldStyle, mediaStyle, resolveTheme, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { APPEAR_CSS, appearClass } from "./appear.js";
 
@@ -52,6 +55,22 @@ const RENDER_BUDGET = MAX_RENDER_NODES;
 // src: 42, style: null). Coerce shapes here instead of trusting the types.
 function styleOf<T extends object>(style: T | undefined): T | undefined {
   return typeof style === "object" && style !== null ? style : undefined;
+}
+
+function optionsOf(options: unknown): readonly string[] {
+  if (!Array.isArray(options)) return [];
+  const kept: string[] = [];
+  for (const option of options) {
+    if (kept.length >= MAX_FIELD_OPTIONS) break;
+    if (typeof option === "string") {
+      kept.push(option.slice(0, MAX_FIELD_VALUE_CHARS));
+    }
+  }
+  return kept;
+}
+
+function isFieldInput(input: unknown): input is (typeof FIELD_INPUTS)[number] {
+  return typeof input === "string" && (FIELD_INPUTS as readonly string[]).includes(input);
 }
 
 /** A tree is renderable only if it's tree-shaped (core floor) AND its root resolves. */
@@ -129,11 +148,7 @@ type ClassifiedPress =
  * Every failure mode (unknown/non-box target, zero fields, missing DOM input,
  * cyclic/too-deep subtree) degrades to omission / `{}` — never a throw (DC-002).
  */
-function collectFieldValues(
-  tree: FacetTree,
-  collectId: NodeId,
-  root: ParentNode,
-): Readonly<Record<string, string>> {
+function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode): FieldValues {
   const target = tree.nodes[collectId];
   if (target == null || target.type !== "box") {
     return {};
@@ -187,31 +202,61 @@ function collectFieldValues(
   };
   gather(collectId, EMPTY_ANCESTORS, 0);
 
-  // DOM-side pass: enumerate the stamped inputs ONCE and match by attribute
+  // DOM-side pass: enumerate the stamped controls ONCE and match by attribute
   // comparison — no CSS.escape (jsdom exposes no window.CSS, and comparing
-  // sidesteps escaping arbitrary node ids). If a node is mounted more than
-  // once, the FIRST match in DOM order wins (deterministic).
-  const inputByNodeId = new Map<string, Element>();
-  for (const el of Array.from(root.querySelectorAll("input[data-facet-field-id]"))) {
+  // sidesteps escaping arbitrary node ids). Radio groups stamp several inputs
+  // with ONE node id, so keep all matches in DOM order.
+  const elementsByNodeId = new Map<string, Element[]>();
+  for (const el of Array.from(root.querySelectorAll("[data-facet-field-id]"))) {
     const nodeId = el.getAttribute("data-facet-field-id");
-    if (nodeId !== null && !inputByNodeId.has(nodeId)) {
-      inputByNodeId.set(nodeId, el);
+    if (nodeId !== null) {
+      const elements = elementsByNodeId.get(nodeId);
+      if (elements === undefined) elementsByNodeId.set(nodeId, [el]);
+      else elements.push(el);
     }
   }
 
-  const fields: Record<string, string> = {};
+  const readMountedValue = (elements: readonly Element[]): FieldValue | undefined => {
+    const first = elements[0];
+    if (first === undefined) {
+      return undefined;
+    }
+    if (first instanceof HTMLSelectElement) {
+      return first.value.slice(0, MAX_FIELD_VALUE_CHARS);
+    }
+    const inputs = elements.filter((el): el is HTMLInputElement => el instanceof HTMLInputElement);
+    if (inputs.length === 0) {
+      return undefined;
+    }
+    if (inputs.some((input) => input.type === "radio")) {
+      const checked = inputs.find((input) => input.type === "radio" && input.checked);
+      return checked === undefined ? undefined : checked.value.slice(0, MAX_FIELD_VALUE_CHARS);
+    }
+    const input = inputs[0];
+    if (input === undefined) {
+      return undefined;
+    }
+    if (input.type === "checkbox") {
+      return input.checked ? true : undefined;
+    }
+    return String(input.value).slice(0, MAX_FIELD_VALUE_CHARS);
+  };
+
+  const fields: Record<string, FieldValue> = {};
   for (const [name, ids] of idsByName) {
     // Bound the field COUNT with the same cap the server enforces, so the
     // renderer can't emit a fields object the server rejects wholesale (400).
     if (Object.keys(fields).length >= MAX_FIELDS_KEYS) break;
-    // Pick the first MOUNTED input among same-named fields (a hidden earlier
-    // one must not shadow a visible later one).
-    const mountedId = ids.find((id) => inputByNodeId.has(id));
-    const input = mountedId === undefined ? undefined : inputByNodeId.get(mountedId);
-    if (input !== undefined) {
-      // The selector only matches <input> elements, whose .value is a string;
-      // String() is belt-and-braces before the shared cap is applied.
-      fields[name] = String((input as HTMLInputElement).value).slice(0, MAX_FIELD_VALUE_CHARS);
+    // Pick the first MOUNTED control among same-named fields that has a defined
+    // value (an earlier unchecked radio group must not shadow a checked later one).
+    for (const id of ids) {
+      const elements = elementsByNodeId.get(id);
+      if (elements === undefined) continue;
+      const value = readMountedValue(elements);
+      if (value !== undefined) {
+        fields[name] = value;
+        break;
+      }
     }
   }
   return fields;
@@ -613,7 +658,7 @@ export interface StageRendererProps {
    * without `collect` it is `undefined` — narrower `(action) => void` handlers
    * remain assignable, so existing consumers compile unchanged.
    */
-  readonly onAction?: (action: FacetAction, fields?: Readonly<Record<string, string>>) => void;
+  readonly onAction?: (action: FacetAction, fields?: FieldValues) => void;
   /**
    * Optional record-only channel for locally-resolved taps (navigate/toggle).
    * Fired AFTER the optimistic view-state mutation with a `CollectedEvent` tap
@@ -839,6 +884,49 @@ interface RenderArgs {
   readonly depth: number;
 }
 
+function renderMediaNode(raw: unknown, theme: ResolvedTheme): ReactNode {
+  const rawMedia = raw as {
+    readonly type?: unknown;
+    readonly kind?: unknown;
+    readonly src?: unknown;
+    readonly alt?: unknown;
+    readonly poster?: unknown;
+    readonly controls?: unknown;
+    readonly style?: object;
+  };
+  // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
+  if (typeof rawMedia.src !== "string" || !isSafeMediaSrc(rawMedia.src)) {
+    return null;
+  }
+  const kind =
+    rawMedia.type === "image" ? "image" : rawMedia.kind === undefined ? "image" : rawMedia.kind;
+  if (kind !== "image" && kind !== "video") {
+    return null;
+  }
+  const style = mediaStyle(styleOf(rawMedia.style), theme);
+  if (kind === "video") {
+    const poster =
+      typeof rawMedia.poster === "string" && isSafeMediaSrc(rawMedia.poster)
+        ? rawMedia.poster
+        : undefined;
+    return (
+      <video
+        src={rawMedia.src}
+        poster={poster}
+        controls={rawMedia.controls === true ? true : undefined}
+        style={style}
+      />
+    );
+  }
+  return (
+    <img
+      src={rawMedia.src}
+      alt={typeof rawMedia.alt === "string" ? rawMedia.alt : ""}
+      style={style}
+    />
+  );
+}
+
 /**
  * Renders one node to a `ReactNode`, recursing into box children. A PLAIN
  * function (not a React component) invoked from StageRenderer's body: the mutable
@@ -883,6 +971,9 @@ function renderNode({
   const visible = visibilityOverrides.get(id) ?? !isHiddenByDefault(node);
   if (!visible) {
     return null;
+  }
+  if ((node as { readonly type?: unknown }).type === "image") {
+    return renderMediaNode(node, theme);
   }
 
   switch (node.type) {
@@ -968,36 +1059,70 @@ function renderNode({
       return typeof node.value === "string" ? (
         <p style={textStyle(styleOf(node.style), theme)}>{node.value}</p>
       ) : null;
-    case "image":
-      // Fail-safe/security: never put an unsafe URL scheme (javascript:, …) in the DOM.
-      return typeof node.src === "string" && isSafeImageSrc(node.src) ? (
-        <img
-          src={node.src}
-          alt={typeof node.alt === "string" ? node.alt : ""}
-          style={imageStyle(styleOf(node.style), theme)}
-        />
-      ) : null;
+    case "media":
+      return renderMediaNode(node, theme);
     case "field": {
       // Raw-path junk: constrain `input` to the token set (else "text") and
       // omit non-string name/placeholder, mirroring core's field coercion.
-      const input =
-        typeof node.input === "string" && (FIELD_INPUTS as readonly string[]).includes(node.input)
-          ? node.input
-          : "text";
+      const input = isFieldInput(node.input) ? node.input : "text";
       const name = typeof node.name === "string" ? node.name : undefined;
       const placeholder = typeof node.placeholder === "string" ? node.placeholder : undefined;
+      const options = optionsOf((node as { readonly options?: unknown }).options);
+      const wrapperStyle: CSSProperties = {
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+        ...fieldStyle(styleOf(node.style), theme),
+      };
+      const label = typeof node.label === "string" ? <span>{node.label}</span> : null;
+      // Uncontrolled on purpose (invariant #6): the DOM owns values; the stamp
+      // lets a collect press find these controls by node id at press time.
+      if (input === "select") {
+        return (
+          <label style={wrapperStyle}>
+            {label}
+            <select name={name} data-facet-field-id={id}>
+              {options.map((option, index) => (
+                <option key={`${String(index)}:${option}`} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+        );
+      }
+      if (input === "radio") {
+        return (
+          <div style={wrapperStyle}>
+            {label}
+            {options.map((option, index) => (
+              <label key={`${String(index)}:${option}`}>
+                <input type="radio" name={name} value={option} data-facet-field-id={id} />
+                {option}
+              </label>
+            ))}
+          </div>
+        );
+      }
+      if (input === "checkbox") {
+        return (
+          <label style={wrapperStyle}>
+            {label}
+            <input type="checkbox" name={name} data-facet-field-id={id} />
+          </label>
+        );
+      }
+      if (input === "switch") {
+        return (
+          <label style={wrapperStyle}>
+            {label}
+            <input type="checkbox" role="switch" name={name} data-facet-field-id={id} />
+          </label>
+        );
+      }
       return (
-        <label
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-            ...fieldStyle(styleOf(node.style), theme),
-          }}
-        >
-          {typeof node.label === "string" ? <span>{node.label}</span> : null}
-          {/* Uncontrolled on purpose (invariant #6): the DOM owns the text; the
-              stamp lets a collect press find this input by node id at press time. */}
+        <label style={wrapperStyle}>
+          {label}
           <input type={input} name={name} placeholder={placeholder} data-facet-field-id={id} />
         </label>
       );

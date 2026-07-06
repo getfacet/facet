@@ -5,7 +5,7 @@ for a small TypeScript monorepo — rigorous, not bureaucratic.
 
 ## Invariants (a violation is at least P1)
 
-1. **Declarative bricks only.** Agents/consumers emit `box`/`text`/`image`/`field`
+1. **Declarative bricks only.** Agents/consumers emit `box`/`text`/`media`/`field`
    nodes with **token** style values — never raw HTML/JS, never raw scalars, never
    absolute positioning. New capability = a new node type or token added *on
    purpose*, in `@facet/core`.

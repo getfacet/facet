@@ -259,12 +259,12 @@ describe("createQuickstartAgent tool loop", () => {
     expect(patchesOf(out)).toHaveLength(1);
   });
 
-  it("removes a node and rejects image/field nodes missing required fields", async () => {
+  it("removes a node and rejects media/field nodes missing required fields", async () => {
     const provider = providerOf(
       toolStep(
         call("render_page", { tree: VALID_TREE }),
         call("remove_node", { nodeId: "greet" }),
-        call("set_node", { node: { id: "i", type: "image", src: "x" } }), // no alt
+        call("set_node", { node: { id: "i", type: "media", kind: "image" } }), // no src
         call("set_node", { node: { id: "f", type: "field" } }), // no name
       ),
       END,
@@ -280,8 +280,67 @@ describe("createQuickstartAgent tool loop", () => {
     const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
       m.role === "tool_result" ? m.content : "",
     );
-    expect(obs.some((o) => o.includes('"image" node needs string "src" and "alt"'))).toBe(true);
+    expect(obs.some((o) => o.includes('"media" node needs string "src"'))).toBe(true);
     expect(obs.some((o) => o.includes('"field" node needs a string "name"'))).toBe(true);
+  });
+
+  it("brick-vocab v1 accepts media nodes and rejects old image nodes", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("render_page", { tree: VALID_TREE }),
+        call("set_node", {
+          node: {
+            id: "clip",
+            type: "media",
+            kind: "video",
+            src: "https://example.com/clip.mp4",
+            controls: true,
+          },
+        }),
+        call("set_node", {
+          node: {
+            id: "old",
+            type: "image",
+            src: "https://example.com/old.png",
+            alt: "old",
+          },
+        }),
+        call("set_node", {
+          node: {
+            id: "badKind",
+            type: "media",
+            kind: "gif3d",
+            src: "https://example.com/bad.gif",
+          },
+        }),
+        call("set_node", {
+          node: {
+            id: "badSrc",
+            type: "media",
+            kind: "image",
+            src: "javascript:alert(1)",
+          },
+        }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+    const out = await agent({ kind: "message", text: "edit" }, SESSION);
+    const patch = out.find((m) => m.kind === "patch");
+    if (patch?.kind === "patch") {
+      expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/clip")).toBe(true);
+      expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/old")).toBe(false);
+      expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/badKind")).toBe(false);
+      expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/badSrc")).toBe(false);
+    }
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs.some((o) => o.includes("ok: set") && o.includes("clip"))).toBe(true);
+    expect(obs.some((o) => o.includes('"type" must be one of'))).toBe(true);
+    expect(obs.some((o) => o.includes("media"))).toBe(true);
+    expect(obs.some((o) => o.includes('kind must be "image" or "video"'))).toBe(true);
+    expect(obs.some((o) => o.includes('safe static "src"'))).toBe(true);
   });
 
   it("set_theme records a /theme add op the model can drive", async () => {

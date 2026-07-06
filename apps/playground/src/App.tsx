@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FacetAction, VisitorContext } from "@facet/core";
+import type { FacetAction, FieldValues, VisitorContext } from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
 import { StageRenderer, useFacet } from "@facet/react";
 import { LocalTransport } from "@facet/client";
@@ -13,7 +13,7 @@ type View = "gallery" | "generated" | "live" | "visitors";
 
 const SUBTITLES: Record<View, string> = {
   gallery:
-    "Six very different pages — all from four bricks (box/text/image/field) + tokens. No LLM.",
+    "Six very different pages — all from four bricks (box/text/media/field) + tokens. No LLM.",
   generated:
     "The page an LLM just built from the four bricks via the CLI generator, validated and rendered.",
   live: "Talk to a real @facet/server: type a request and the LLM agent builds the page live over SSE.",
@@ -123,7 +123,7 @@ function VisitorPane({
     }
   }, [chat]);
 
-  const onAction = (action: FacetAction, fields?: Readonly<Record<string, string>>): void => {
+  const onAction = (action: FacetAction, fields?: FieldValues): void => {
     // Conditional spread-free construction: exactOptionalPropertyTypes forbids
     // an explicit `fields: undefined` on the event.
     send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });

@@ -28,7 +28,7 @@ where Facet is deliberately **stricter and simpler**:
    A2UI has two update grammars (ID-based `updateComponents` + JSON-Pointer
    `updateDataModel`) with no stated shared-reducer guarantee.
 2. **A fixed 4-brick palette vs an extensible catalog.** Facet fixes
-   `box/text/image/field` in a dependency-free core and its renderer is
+   `box/text/media/field` in a dependency-free core and its renderer is
    **fail-safe (skips unknown/dangling nodes, never throws)**. A2UI uses a
    developer-extensible client catalog and **rejects** unknown types.
 3. **One integrated contract vs a three-spec stack.** Facet bundles the UI spec,
@@ -147,7 +147,7 @@ is flagged. These are candidates, not commitments.
    themes and stamps as versioned value maps, not code.
    *VIOLATES 4-brick minimalism the moment an entry introduces a new node type or
    admits raw markup. Safe only while every stamp provably reduces to
-   `box/text/image/field` before it hits the wire.*
+   `box/text/media/field` before it hits the wire.*
 5. **First-class execution-boundary annotation on actions** (A2UI's `callableFrom`
    concept). `[effort S · risk LOW-MODERATE]` Facet already seeds this: `FacetAction`
    is `agent | navigate | toggle`, where `navigate`/`toggle` are client-only.
