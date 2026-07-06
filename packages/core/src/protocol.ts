@@ -1,6 +1,7 @@
 import type { FacetAction, NodeId } from "./nodes.js";
 import type { JsonPatchOperation } from "./patch.js";
 import type { FacetTree } from "./tree.js";
+import type { FacetAgentResult } from "./agent-result.js";
 
 /**
  * Who is viewing. This is the context an agent uses to diverge the very first
@@ -133,7 +134,7 @@ export type ServerMessage =
 export type FacetAgent = (
   event: ClientEvent,
   session: FacetSession,
-) => Promise<readonly ServerMessage[]> | readonly ServerMessage[];
+) => FacetAgentResult;
 
 /**
  * The wire between a visitor (browser) and the runtime. A concrete transport wraps

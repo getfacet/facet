@@ -4,6 +4,7 @@ export * from "./tree.js";
 export * from "./theme.js";
 export * from "./patch.js";
 export * from "./protocol.js";
+export * from "./agent-result.js";
 export * from "./validate.js";
 export * from "./stage-fold.js";
 export * from "./serial-queue.js";
