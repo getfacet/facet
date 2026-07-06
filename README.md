@@ -174,10 +174,12 @@ a reference implementation of a pluggable seam. To connect your own model
 instead, there are three jacks — see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
-**Persistence is two separate concerns.** The *stage* (the page) is always
+**Persistence has three pluggable seams.** The *stage* (the page) is always
 Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
 *conversation* is a `Sink` you choose: store it for replay, forward it to your
-own system (e.g. a chat platform that already keeps it), or drop it.
+own system (e.g. a chat platform that already keeps it), or drop it. The
+per-agent asset library (themes, stamps, and an optional initial tree) is an
+`AssetsStore` (memory, file, or Postgres).
 
 **Each visitor is a `visitorId`, and you decide where it comes from.** For an
 anonymous page, `browserVisitorId()` stores an unguessable id in the browser so a
