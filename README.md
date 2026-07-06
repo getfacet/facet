@@ -154,7 +154,7 @@ only ever names a theme.
 ```
  [ user's browser ]
    Stage (dynamic)  +  Chat dock (persistent)
-        │  ClientEvent: visit / message / action
+        │  ClientEvent: visit / message / tap
         ▼
  [ @facet/server ]    reference SSE/POST transport (browser side + model side)
         │

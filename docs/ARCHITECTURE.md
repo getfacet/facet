@@ -210,7 +210,14 @@ ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[]
                     └── applies patches to the session ┘
 ```
 
-- `ClientEvent` is everything a visitor can do: `visit`, `message`, `action`.
+- `ClientEvent` is what a visitor does that the agent answers: `visit`, `message`,
+  `tap` (a pressed box's agent action). It is the **forward** subset — a subtype of
+  `CollectedEvent`, the log currency (`visit | message | tap`, where a local
+  navigate/toggle `tap` carries a resolved `effect` instead of an `action`).
+- Local `navigate`/`toggle` taps never reach the agent, but they are still recorded
+  for an **ordered replay log**: the browser fires them at `POST /record` (log-only,
+  no agent turn), which `runtime.record` appends to the `Sink` on the same
+  per-visitor order as forwarded turns (append order = the join key).
 - `FacetRuntime.handle(visitor, event)` opens (or finds) the session for that
   `(agent, visitor)` pair, runs the agent, applies any returned patches to the
   stored stage, and returns the messages to ship back over that visitor's
@@ -264,7 +271,7 @@ Quickstart's flagship interaction is the **field snapshot**: a pressable box's
 agent action may declare `collect: "<box id>"`, and at press time the renderer
 takes a synchronous snapshot of the visible `field` values under that box
 (string-coerced, capped at `MAX_FIELD_VALUE_CHARS`) and ships them as `fields`
-on the action event — the values ride the event, **never the tree**. Field text
+on the tap event — the values ride the event, **never the tree**. Field text
 is browser view-state like screen/toggle state (inputs are uncontrolled; there
 is no value property on a field node to write), and the server re-validates
 `fields` at the boundary, so the two-writers rule holds: the server stays the
