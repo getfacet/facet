@@ -7,8 +7,8 @@
  *   ② the deployer's guide markdown under a PAGE BRIEF heading;
  *   ③ per-turn messages — recent history + the current event + the current stage.
  *
- * The TOOLS are what the model actually calls each step (append/set/remove a
- * node, render the whole page, say a chat line).
+ * The TOOLS are what the model actually calls each step (use a stamp,
+ * append/set/remove a node, render the whole page, say a chat line).
  */
 import { STAGE_SPEC } from "@facet/core";
 import type {
@@ -57,23 +57,17 @@ concrete, and a little proud.
 const WORKFLOW = `You build and edit the PAGE by CALLING TOOLS. Your primary job is the page, not the chat — a reply of only a chat line, with no page, is wrong.
 - ALWAYS draw or update the page with tools. On a "(visit)" event, or whenever CURRENT STAGE is empty/near-empty, you MUST call render_page to paint the full initial page (following the PAGE BRIEF) before you say anything.
 - Use render_page to draw the whole page (the first paint, or a big restructure).
+- Use use_stamp to add an advertised reusable stamp by name; pass params for its slots and at.parent for where it should land.
 - Use append_node / set_node / remove_node for small, incremental edits — prefer these when refining an existing page, and REUSE existing node ids so you change only what should change.
 - Use say for a SHORT chat line, IN ADDITION to a page edit — never instead of one.
 - You may call several tools in one turn. When the page reflects the request and you have replied, STOP (make no more tool calls). Never describe the page in prose — build it with tools.`;
 
 /** Operator assets injected into prompt layer ② (Decision 6): themes offered
- * to the model by NAME (never a value) and stamps it may copy into the page. */
+ * to the model by NAME (never a value) and stamps it may expand by name. */
 export interface PromptAssets {
   readonly themes: readonly FacetTheme[];
   readonly stamps: readonly FacetStamp[];
 }
-
-/**
- * A stamp whose serialized `{root, nodes}` JSON exceeds this is EXCLUDED from the
- * prompt (with a `console.warn` naming it) rather than blowing the context budget
- * — a quickstart POLICY, not a core rule (invariant #2: mechanism vs policy).
- */
-const MAX_STAMP_PROMPT_CHARS = 4000;
 
 /** Layer ② — theme NAMES + one-line descriptions ONLY (never token values). The
  * model selects a theme by name via `set_theme`; an unknown name falls back to
@@ -91,30 +85,23 @@ function themesSection(themes: readonly FacetTheme[]): string {
   ].join("\n\n");
 }
 
-/** Layer ② — reusable brick fragments the model copies into the page. Each is a
- * `{root, nodes}` JSON blob under the mandatory id-prefix copy rule. A fragment
- * larger than `MAX_STAMP_PROMPT_CHARS` is dropped with a warning. Returns
- * `undefined` when no stamp survives, so no empty section is emitted. */
+/** Layer ② — reusable brick fragments the model expands by name via use_stamp.
+ * Only names, slot names, and descriptions are advertised; the server owns
+ * expansion from the immutable stamp snapshot. */
 function stampsSection(stamps: readonly FacetStamp[]): string | undefined {
-  const entries: string[] = [];
-  for (const stamp of stamps) {
-    const fragment = JSON.stringify({ root: stamp.root, nodes: stamp.nodes });
-    if (fragment.length > MAX_STAMP_PROMPT_CHARS) {
-      console.warn(
-        `[facet-quickstart] stamp "${stamp.name}" excluded from the prompt: ${String(fragment.length)} chars exceeds MAX_STAMP_PROMPT_CHARS=${String(MAX_STAMP_PROMPT_CHARS)}`,
-      );
-      continue;
-    }
+  const entries = stamps.map((stamp) => {
     const head =
       stamp.description !== undefined && stamp.description.length > 0
         ? `- ${stamp.name}: ${stamp.description}`
         : `- ${stamp.name}`;
-    entries.push(`${head}\n${fragment}`);
-  }
+    const slotNames = Object.keys(stamp.slots ?? {});
+    const slots = slotNames.length > 0 ? slotNames.join(", ") : "(none)";
+    return `${head}\n  slots: ${slots}`;
+  });
   if (entries.length === 0) return undefined;
   return [
     "STAMPS",
-    "Reusable fragments you can copy into the page. To use one, copy its nodes into your patches and prefix EVERY id — the fragment's root id and every child id reference — with a fresh unique instance prefix (like `p1-`) so repeated uses never collide.",
+    "Reusable stamps you may expand with the use_stamp tool. Pick a listed name, pass string params for its slots, and choose at.parent; do not copy stamp JSON or invent stamp ids.",
     entries.join("\n\n"),
   ].join("\n\n");
 }
@@ -164,6 +151,27 @@ export const TOOLS: readonly ToolSpec[] = [
       type: "object",
       properties: { parentId: { type: "string" }, node: NODE_SCHEMA },
       required: ["parentId", "node"],
+    },
+  },
+  {
+    name: "use_stamp",
+    description:
+      "Expand a reusable stamp from the STAMPS section under `at.parent`. Pass the stamp `name` and string `params` for its slots; the server mints fresh ids.",
+    parameters: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "A stamp name from the STAMPS list." },
+        params: {
+          type: "object",
+          description: "Slot values as strings. Omit a slot to use its default or empty value.",
+        },
+        at: {
+          type: "object",
+          properties: { parent: { type: "string" } },
+          required: ["parent"],
+        },
+      },
+      required: ["name", "params", "at"],
     },
   },
   {

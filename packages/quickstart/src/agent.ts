@@ -15,7 +15,13 @@
  * never logs more than one concise error line (never a key — keys live inside
  * the provider's auth header only).
  */
-import { isSafeMediaSrc, isValidThemeName, MEDIA_KINDS, validateTree } from "@facet/core";
+import {
+  expandStamp,
+  isSafeMediaSrc,
+  isValidThemeName,
+  MEDIA_KINDS,
+  validateTree,
+} from "@facet/core";
 import type { FacetNode, FacetStamp, FacetTheme, FacetTree, NodeId } from "@facet/core";
 import { defineStreamingAgent } from "@facet/agent";
 import type { Stage } from "@facet/agent";
@@ -43,8 +49,7 @@ export interface QuickstartAgentOptions {
   /** Operator themes offered to the model by NAME in prompt ② (validated by the
    * caller). The model selects one with `set_theme`; values never reach it. */
   readonly themes?: readonly FacetTheme[];
-  /** Operator stamps (reusable fragments) injected into prompt ② for the model
-   * to copy under the id-prefix rule (validated by the caller). */
+  /** Operator stamps (reusable fragments) advertised by name for server-side expansion. */
   readonly stamps?: readonly FacetStamp[];
 }
 
@@ -65,6 +70,10 @@ function errMsg(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isObjectMap(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && !Array.isArray(value);
 }
 
 function isBoxWithChildren(tree: FacetTree, id: NodeId | undefined): boolean {
@@ -285,6 +294,21 @@ function queuedObservation(id: NodeId, missing: readonly NodeId[]): string {
   return `queued: "${id}" waits for child node(s): ${missing.join(", ")}`;
 }
 
+function emitExpandedStamp(
+  closure: ClosureBuffer,
+  parentId: NodeId,
+  rootId: NodeId,
+  nodes: Readonly<Record<NodeId, FacetNode>>,
+): number {
+  const root = nodes[rootId];
+  if (root === undefined) return 0;
+  let emitted = closure.append(parentId, root);
+  for (const node of Object.values(nodes)) {
+    if (node.id !== rootId) emitted += closure.set(node);
+  }
+  return emitted;
+}
+
 interface ToolOutcome {
   readonly observation: string;
   readonly mutated: boolean;
@@ -301,6 +325,7 @@ function executeTool(
   stage: Stage,
   knownIds: Set<string>,
   closure: ClosureBuffer,
+  stamps: ReadonlyMap<string, FacetStamp>,
 ): ToolOutcome {
   const fail = (observation: string): ToolOutcome => ({ observation, mutated: false, said: false });
   const input: Record<string, unknown> = isRecord(call.input) ? call.input : {};
@@ -368,6 +393,47 @@ function executeTool(
       }
       return { observation: `ok: set "${result.node.id}"`, mutated: true, said: false };
     }
+    case "use_stamp": {
+      const name = input["name"];
+      if (typeof name !== "string" || name.length === 0) {
+        return fail('error: use_stamp needs a non-empty string "name" from the STAMPS list');
+      }
+      const at = input["at"];
+      if (!isObjectMap(at) || typeof at["parent"] !== "string" || at["parent"].length === 0) {
+        return fail('error: use_stamp needs at={ "parent": "<box node id>" }');
+      }
+      const parent = at["parent"];
+      if (!knownIds.has(parent)) {
+        const pendingMissing = closure.pendingMissing(parent as NodeId);
+        if (pendingMissing !== undefined) {
+          return fail(
+            `error: use_stamp — parent "${parent}" was created this turn but is still waiting for child node(s): ${pendingMissing.join(", ")}. Define those child nodes before using a stamp inside it.`,
+          );
+        }
+        return fail(`error: use_stamp — parent "${parent}" does not exist yet`);
+      }
+      const stamp = stamps.get(name);
+      if (stamp === undefined) {
+        return fail(`error: use_stamp — unknown stamp "${name}". Pick a name from STAMPS.`);
+      }
+      const params = isObjectMap(input["params"]) ? input["params"] : {};
+      const expanded = expandStamp(stamp, params, { parent }, { existingIds: knownIds });
+      if (expanded.root === undefined) {
+        const hint = issueHint(expanded.issues);
+        return fail(
+          `error: use_stamp — could not expand "${name}"` + (hint.length > 0 ? `: ${hint}` : ""),
+        );
+      }
+      const emitted = emitExpandedStamp(closure, parent, expanded.root, expanded.nodes);
+      if (emitted === 0) {
+        return fail(`error: use_stamp — expanded "${name}" but the subtree did not close`);
+      }
+      return {
+        observation: `ok: used stamp "${name}" as "${expanded.root}"`,
+        mutated: true,
+        said: false,
+      };
+    }
     case "remove_node": {
       const nodeId = input["nodeId"];
       if (typeof nodeId !== "string" || nodeId.length === 0) {
@@ -411,9 +477,11 @@ function executeTool(
 export function createQuickstartAgent(
   options: QuickstartAgentOptions,
 ): ReturnType<typeof defineStreamingAgent> {
+  const stamps = [...(options.stamps ?? [])];
+  const stampMap = new Map(stamps.map((stamp) => [stamp.name, stamp]));
   const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
     themes: options.themes ?? [],
-    stamps: options.stamps ?? [],
+    stamps,
   });
   const historyTurns = options.historyTurns ?? HISTORY_TURNS;
   const maxSteps = options.maxSteps ?? MAX_STEPS;
@@ -447,7 +515,7 @@ export function createQuickstartAgent(
 
         messages.push({ role: "assistant_tools", text: result.text, toolCalls: result.toolCalls });
         for (const call of result.toolCalls) {
-          const outcome = executeTool(call, stage, knownIds, closure);
+          const outcome = executeTool(call, stage, knownIds, closure, stampMap);
           mutated = mutated || outcome.mutated;
           said = said || outcome.said;
           messages.push({ role: "tool_result", callId: call.id, content: outcome.observation });

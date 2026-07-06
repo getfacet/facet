@@ -61,7 +61,13 @@ function providerOf(...steps: ReadonlyArray<ProviderStep | Error>): MockProvider
 
 function makeAgent(
   provider: QuickstartProvider,
-  extra: { guide?: string; sink?: MemorySink; historyTurns?: number; maxSteps?: number } = {},
+  extra: {
+    guide?: string;
+    sink?: MemorySink;
+    historyTurns?: number;
+    maxSteps?: number;
+    stamps?: readonly FacetStamp[];
+  } = {},
 ): ReturnType<typeof createQuickstartAgent> {
   return createQuickstartAgent({
     provider,
@@ -70,6 +76,7 @@ function makeAgent(
     ...(extra.guide !== undefined ? { guide: extra.guide } : {}),
     ...(extra.historyTurns !== undefined ? { historyTurns: extra.historyTurns } : {}),
     ...(extra.maxSteps !== undefined ? { maxSteps: extra.maxSteps } : {}),
+    ...(extra.stamps !== undefined ? { stamps: extra.stamps } : {}),
   });
 }
 
@@ -101,6 +108,131 @@ async function batchesOf(
 }
 
 describe("createQuickstartAgent tool loop", () => {
+  it("use_stamp expands a stamp through the closure into one referentially closed batch", async () => {
+    const stamp: FacetStamp = {
+      name: "card",
+      description: "A reusable card",
+      slots: { title: "Default title" },
+      root: "card",
+      nodes: {
+        card: { id: "card", type: "box", children: ["title"] },
+        title: { id: "title", type: "text", value: "{{title}}" },
+      },
+    };
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "card", params: { title: "Hello" }, at: { parent: "root" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+
+    const batches = await batchesOf(agent, { kind: "message", text: "use card" });
+
+    expect(batches).toHaveLength(1);
+    const patch = batches[0]?.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    const nodeAdds = patch.patches.filter((op) => op.op === "add" && op.path.startsWith("/nodes/"));
+    const append = patch.patches.find(
+      (op) => op.op === "add" && op.path === "/nodes/root/children/-",
+    );
+    expect(append).toBeDefined();
+    const rootId = append?.op === "add" && typeof append.value === "string" ? append.value : "";
+    const rootAdd = nodeAdds.find((op) => op.path === `/nodes/${rootId}`);
+    expect(rootAdd).toBeDefined();
+    expect(rootId).not.toBe("card");
+    expect(patch.patches.some((op) => "path" in op && op.path === "/nodes/card")).toBe(false);
+    expect(patch.patches.some((op) => "path" in op && op.path === "/nodes/title")).toBe(false);
+    expect(JSON.stringify(patch.patches)).toContain("Hello");
+    if (rootAdd?.op === "add") {
+      const rootNode = rootAdd.value as { readonly children?: readonly string[] };
+      const childId = rootNode.children?.[0];
+      expect(childId).toBeDefined();
+      expect(nodeAdds.some((op) => op.path === `/nodes/${String(childId)}`)).toBe(true);
+    }
+  });
+
+  it("use_stamp reports an unknown stamp name as a no-op observation", async () => {
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "missing", params: {}, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "use missing" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.includes("unknown stamp") && o.includes("missing"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("use_stamp twice remaps ids disjointly in the same turn", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "Badge" } },
+    };
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+
+    const out = await runAgent(agent, { kind: "message", text: "twice" });
+    const patch = out.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    const appended = patch.patches.flatMap((op) =>
+      op.op === "add" && op.path === "/nodes/root/children/-" && typeof op.value === "string"
+        ? [op.value]
+        : [],
+    );
+    expect(appended).toHaveLength(2);
+    expect(new Set(appended).size).toBe(2);
+    for (const id of appended) {
+      expect(patch.patches.some((op) => op.op === "add" && op.path === `/nodes/${id}`)).toBe(true);
+    }
+  });
+
+  it("use_stamp is a no-op for malformed stamps and unknown parents", async () => {
+    const malformed = {
+      name: "broken",
+      root: "missing",
+      nodes: { text: { id: "text", type: "text", value: "x" } },
+    } as unknown as FacetStamp;
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "broken", params: {}, at: { parent: "root" } }),
+        call("use_stamp", { name: "broken", params: {}, at: { parent: "ghost" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [malformed] });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "broken" });
+
+      expect(patchesOf(out)).toHaveLength(0);
+      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+        m.role === "tool_result" ? m.content : "",
+      );
+      expect(obs.some((o) => o.includes("could not expand"))).toBe(true);
+      expect(obs.some((o) => o.includes("parent") && o.includes("ghost"))).toBe(true);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("per-step streaming yields one batch for each provider step that changed output", async () => {
     const provider = providerOf(
       toolStep(

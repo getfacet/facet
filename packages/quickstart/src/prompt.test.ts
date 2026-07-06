@@ -22,6 +22,12 @@ function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
   return { at: 0, event: { kind: "message", text }, messages };
 }
 
+function stampSectionOf(system: string): string {
+  const start = system.indexOf("STAMPS");
+  const end = system.lastIndexOf("PAGE BRIEF");
+  return start >= 0 && end > start ? system.slice(start, end) : "";
+}
+
 describe("buildSystem", () => {
   it("contains STAGE_SPEC verbatim, the tool workflow, and the guide under PAGE BRIEF", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
@@ -76,7 +82,7 @@ describe("buildSystem", () => {
     // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
     // list" in prose — we probe for the section intros this WU adds, not the word).
     expect(base).not.toContain("select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reusable fragments you can copy into the page");
+    expect(base).not.toContain("Reusable stamps you may expand");
   });
 
   it("injects theme names and descriptions never values", () => {
@@ -104,32 +110,34 @@ describe("buildSystem", () => {
     expect(system).toMatch(/set_theme/);
   });
 
-  it("injects stamp fragments with the mandatory id-prefix copy rule", () => {
+  it("advertises stamp names, slots, and descriptions without embedding fragment JSON", () => {
     const stamps: FacetStamp[] = [
       {
         name: "cta",
         description: "A call-to-action button",
+        slots: { label: "Get started", href: "/signup" },
         root: "cta",
         nodes: {
           cta: { id: "cta", type: "box", children: ["cta-label"] },
-          "cta-label": { id: "cta-label", type: "text", value: "Get started" },
+          "cta-label": { id: "cta-label", type: "text", value: "{{label}}" },
         },
       },
     ];
     const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
+    const stampSection = stampSectionOf(system);
 
     expect(system).toContain("STAMPS");
-    expect(system).toContain("cta");
-    expect(system).toContain("A call-to-action button");
-    // The fragment JSON is embedded (its node content appears).
-    expect(system).toContain("Get started");
-    expect(system).toContain('"root"');
-    expect(system).toContain('"nodes"');
-    // The copy rule tells the model to prefix EVERY id per instance.
-    expect(system).toMatch(/prefix/i);
+    expect(stampSection).toContain("cta");
+    expect(stampSection).toContain("A call-to-action button");
+    expect(stampSection).toContain("label");
+    expect(stampSection).toContain("href");
+    expect(stampSection).toContain("use_stamp");
+    expect(stampSection).not.toContain("cta-label");
+    expect(stampSection).not.toContain('"nodes"');
+    expect(stampSection).not.toContain("Get started");
   });
 
-  it("excludes an oversized stamp with a console.warn naming it", () => {
+  it("advertises oversized stamps by name without copying their large JSON", () => {
     const big = "x".repeat(5000);
     const stamps: FacetStamp[] = [
       { name: "huge", root: "h", nodes: { h: { id: "h", type: "text", value: big } } },
@@ -137,12 +145,10 @@ describe("buildSystem", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
       const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
-      // The oversized fragment never reaches the prompt.
-      expect(system).not.toContain(big);
-      // A warning naming the excluded stamp was emitted.
-      expect(warnSpy).toHaveBeenCalled();
-      const logged = warnSpy.mock.calls.flat().map(String).join(" ");
-      expect(logged).toContain("huge");
+      const stampSection = stampSectionOf(system);
+      expect(stampSection).toContain("huge");
+      expect(stampSection).not.toContain(big);
+      expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
     }
@@ -159,6 +165,7 @@ describe("TOOLS", () => {
       "say",
       "set_node",
       "set_theme",
+      "use_stamp",
     ]);
     for (const tool of TOOLS) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -173,6 +180,16 @@ describe("TOOLS", () => {
     // A NAME argument only — no value/color/css field the model could smuggle CSS through.
     expect(Object.keys(props)).toEqual(["name"]);
     expect(props["name"]).toMatchObject({ type: "string" });
+  });
+
+  it("use_stamp takes a stamp name, params map, and parent location", () => {
+    const useStamp = TOOLS.find((t) => t.name === "use_stamp");
+    expect(useStamp).toBeDefined();
+    const props = useStamp!.parameters["properties"] as Record<string, unknown>;
+    expect(Object.keys(props)).toEqual(["name", "params", "at"]);
+    expect(props["name"]).toMatchObject({ type: "string" });
+    expect(props["params"]).toMatchObject({ type: "object" });
+    expect(props["at"]).toMatchObject({ type: "object" });
   });
 });
 
