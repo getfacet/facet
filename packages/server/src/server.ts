@@ -447,13 +447,12 @@ async function historyForRehydrate(
 ): Promise<readonly StoredEvent[]> {
   let pendingBefore = pendingTurnsForLog(handling, visitorId, log);
   let history = await runtime.historyFor(visitorId);
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (;;) {
     const pendingAfter = pendingTurnsForLog(handling, visitorId, log);
     if (!lostPendingTurn(pendingBefore, pendingAfter)) return history;
     pendingBefore = pendingAfter;
     history = await runtime.historyFor(visitorId);
   }
-  return history;
 }
 
 function writeFullRehydrate(

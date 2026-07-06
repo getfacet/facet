@@ -363,6 +363,48 @@ class GatedMessageSink implements Sink {
   }
 }
 
+class HistoryReleaseSink implements Sink {
+  private readonly inner = new MemorySink();
+  private readonly releaseHeld: (() => void)[] = [];
+  releaseOnHistoryReads = 0;
+  startedRecords = 0;
+
+  private async releaseNextStartedRecord(): Promise<void> {
+    const deadline = Date.now() + 1_000;
+    while (this.releaseHeld.length === 0) {
+      if (Date.now() >= deadline) throw new Error("no held record to release");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    this.releaseHeld.shift()?.();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+
+  async releaseAvailableRecords(): Promise<void> {
+    while (this.releaseHeld.length > 0) {
+      await this.releaseNextStartedRecord();
+    }
+  }
+
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    if (entry.event.kind === "message" && entry.messages.length > 0) {
+      this.startedRecords += 1;
+      await new Promise<void>((resolve) => {
+        this.releaseHeld.push(resolve);
+      });
+    }
+    return this.inner.record(agentId, visitorId, entry);
+  }
+
+  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    const entries = await this.inner.history(agentId, visitorId);
+    if (this.releaseOnHistoryReads > 0) {
+      this.releaseOnHistoryReads -= 1;
+      await this.releaseNextStartedRecord();
+    }
+    return entries;
+  }
+}
+
 /** The text field of a stored node, if present (nodes are a union — box has no value). */
 const nodeValue = (session: FacetSession | undefined, id: string): string | undefined =>
   (session?.stage.nodes[id] as { value?: string } | undefined)?.value;
@@ -649,6 +691,40 @@ describe("browser channel", () => {
       expect(sayText(frames)).toEqual(["one"]);
     } finally {
       sink.release();
+      await liveReader.close();
+    }
+  });
+
+  it("full rehydrate keeps streamed says when multiple sink records settle across history rereads", async () => {
+    const sink = new HistoryReleaseSink();
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "one" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await postEvent(base, "v", { kind: "message", text: "two" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "two" });
+      await postEvent(base, "v", { kind: "message", text: "three" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "three" });
+      await waitFor(async () => sink.startedRecords === 1);
+
+      sink.releaseOnHistoryReads = 3;
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await collectEvents(rehydrating, 1_000);
+
+      expect(frames[0]?.data).toEqual({ kind: "reset" });
+      expect(frames[1]?.data).toMatchObject({ kind: "patch" });
+      expect(sayText(frames)).toEqual(["one", "two", "three"]);
+    } finally {
+      sink.releaseOnHistoryReads = 0;
+      await sink.releaseAvailableRecords();
       await liveReader.close();
     }
   });
