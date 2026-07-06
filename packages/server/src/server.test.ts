@@ -1676,6 +1676,24 @@ describe("record validation hardening", () => {
     await waitFor(async () => (await sink.history("a", "v")).length >= 1);
     expect(await sink.history("a", "v")).toHaveLength(1);
   });
+
+  it("POST /record rejects a target-only tap with no renderable effect", async () => {
+    const sink = new MemorySink();
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, sink });
+    running = server;
+
+    // A hand-crafted `{kind:"tap", target:"x"}` carries a `target` but NO renderable
+    // payload: `describeEvent` renders a tap from its `effect` (or `action`), never
+    // from `target`, so this would replay as the very `(unknown event)` prompt line
+    // the drop guard exists to prevent. `action` is already rejected on /record, so a
+    // local tap can only render via `effect` — a target-only tap must 400.
+    const targetOnly = await postRecord(base, "v", { kind: "tap", target: "x" });
+    expect(targetOnly.status).toBe(400);
+
+    // No Sink write for the rejected body.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await sink.history("a", "v")).toHaveLength(0);
+  });
 });
 
 /** A Sink whose `record` for a collected LOCAL tap (kind "tap", no messages) hangs
