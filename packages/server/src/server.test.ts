@@ -329,6 +329,7 @@ class ToggleOpenFailStore implements StageStore {
 class GatedMessageSink implements Sink {
   private readonly inner = new MemorySink();
   gateMessageRecord = false;
+  gateMessageText: string | undefined;
   messageRecordStarted = false;
   private releaseHeld: () => void = () => {};
   private readonly held = new Promise<void>((r) => {
@@ -338,7 +339,17 @@ class GatedMessageSink implements Sink {
     this.releaseHeld();
   }
   async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
-    if (this.gateMessageRecord && entry.event.kind === "message" && entry.messages.length > 0) {
+    const textMatches =
+      this.gateMessageText === undefined ||
+      entry.messages.some(
+        (message) => message.kind === "say" && message.text === this.gateMessageText,
+      );
+    if (
+      this.gateMessageRecord &&
+      entry.event.kind === "message" &&
+      entry.messages.length > 0 &&
+      textMatches
+    ) {
       this.messageRecordStarted = true;
       await this.held;
     }
@@ -634,6 +645,43 @@ describe("browser channel", () => {
     }
   });
 
+  it("full rehydrate includes multiple same-visitor turns whose sink records are pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind === "message") yield [{ kind: "say", text: event.text }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "one" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "one" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      await postEvent(base, "v", { kind: "message", text: "two" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "say", text: "two" });
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+      const frames = [
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+      ].filter((frame): frame is SseFrame => frame !== undefined);
+      expect(sayText(frames)).toEqual(["one", "two"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
+      await rehydrateReader?.close();
+    }
+  });
+
   it("full rehydrate ends instead of silently dropping active says that fell out of the ring", async () => {
     let yielded = 0;
     let release!: () => void;
@@ -856,6 +904,46 @@ describe("async delivery — late results", () => {
     // …and applied to the stored session.
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
     await link.close();
+  });
+
+  it("full rehydrate includes a late-applied say while its sink record is pending", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    sink.gateMessageText = "late answer";
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 50, sink });
+    running = server;
+    const link = await dialAgent(base);
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "slow please" });
+      const evt = await link.nextEvent();
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await liveReader.next(1_000))?.data).toEqual({ kind: "say", text: INTERIM_SAY });
+
+      expect(
+        (await control(base, evt.requestId, [{ kind: "say", text: "late answer" }])).status,
+      ).toBe(202);
+      expect((await liveReader.next(1_000))?.data).toEqual({ kind: "say", text: "late answer" });
+      await waitFor(async () => sink.messageRecordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+      const frames = [
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+        await rehydrateReader.next(500),
+      ].filter((frame): frame is SseFrame => frame !== undefined);
+      expect(sayText(frames)).toEqual([INTERIM_SAY, "late answer"]);
+    } finally {
+      sink.release();
+      await liveReader.close();
+      await rehydrateReader?.close();
+      await link.close();
+    }
   });
 
   it("applies an in-time result exactly once with no interim note", async () => {
