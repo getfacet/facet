@@ -669,7 +669,7 @@ describe("browser channel", () => {
     }
   });
 
-  it("full rehydrate ends instead of silently dropping active says that fell out of the ring", async () => {
+  it("full rehydrate joins after active says fall out of the bounded replay ring", async () => {
     let yielded = 0;
     let release!: () => void;
     const gate = new Promise<void>((resolve) => {
@@ -693,10 +693,52 @@ describe("browser channel", () => {
       await waitFor(async () => yielded === 205);
 
       const rehydrating = await fetch(`${base}/stream?visitorId=v`);
-      expect(await streamEnded(rehydrating, 1_000)).toBe(true);
+      const rehydrated = await readEvents(rehydrating, 2);
+      expect(rehydrated[0]?.data).toEqual({ kind: "reset" });
+      expect(rehydrated[1]?.data).toMatchObject({ kind: "patch" });
     } finally {
       release();
       await liveReader.close();
+    }
+  });
+
+  it("full rehydrate joins after a hung sink lets pending turn ranges age out of the ring", async () => {
+    const sink = new GatedMessageSink();
+    sink.gateMessageRecord = true;
+    let yielded = 0;
+    const agent: FacetAgent = async function* (event) {
+      if (event.kind !== "message") return;
+      if (event.text === "flood") {
+        for (let i = 0; i < 205; i += 1) {
+          yielded = i + 1;
+          yield [{ kind: "say", text: `s${String(i)}` }];
+        }
+        return;
+      }
+      if (event.text === "after") yield [{ kind: "say", text: "after" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const live = await fetch(`${base}/stream?visitorId=v`);
+    const liveReader = eventReader(live);
+    let rehydrateReader: ReturnType<typeof eventReader> | undefined;
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "flood" });
+      expect((await liveReader.next(500))?.data).toEqual({ kind: "reset" });
+      await waitFor(async () => yielded === 205 && sink.messageRecordStarted);
+
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      rehydrateReader = eventReader(rehydrating);
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "reset" });
+      expect((await rehydrateReader.next(500))?.data).toMatchObject({ kind: "patch" });
+
+      await postEvent(base, "v", { kind: "message", text: "after" });
+      expect((await rehydrateReader.next(500))?.data).toEqual({ kind: "say", text: "after" });
+    } finally {
+      sink.release();
+      await liveReader.close();
+      await rehydrateReader?.close();
     }
   });
 
@@ -1424,9 +1466,11 @@ describe("async delivery — resume & rehydrate", () => {
     expect(frames[1]?.data).toMatchObject({ kind: "patch" });
   });
 
-  it("ends the stream when the ring overflows during a rehydrate read", async () => {
-    // The gap's head falls off the 200-frame ring mid-read → unstitchable → the
-    // finalization writes nothing and ends, and the retry full-rehydrates.
+  it("falls back to the visitor lane when the ring overflows during a rehydrate read", async () => {
+    // If frames land while the out-of-lane snapshot is reading, rehydrate must not
+    // replay over a potentially stale snapshot or require endless EventSource
+    // retries. It falls back to the visitor lane, where no same-visitor frame can
+    // interleave with the snapshot/history reads.
     const RING_OVERFLOW = 201; // > FRAME_LOG_LIMIT (200) in server.ts
     const flood: FacetAgent = (event) =>
       event.kind === "message" && event.text === "flood"
@@ -1444,12 +1488,9 @@ describe("async delivery — resume & rehydrate", () => {
     const first = await fetch(`${base}/stream?visitorId=v`);
     // During the 200ms delayed read, one event floods >FRAME_LOG_LIMIT frames.
     await postEvent(base, "v", { kind: "message", text: "flood" });
-    expect(await streamEnded(first, 1_500)).toBe(true);
-
-    // The retry (no token) full-rehydrates cleanly and stays open.
-    const second = await fetch(`${base}/stream?visitorId=v`);
-    const frames = await readEvents(second, 1);
+    const frames = await readEvents(first, 2);
     expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(frames[1]?.data).toMatchObject({ kind: "patch" });
   });
 
   it("leads a full rehydrate with reset and snapshot frames that clear resume state", async () => {
@@ -1515,7 +1556,7 @@ describe("async delivery — resume & rehydrate", () => {
     await link.close();
   });
 
-  it("ends when a frame lands during the rehydrate read, then retry snapshots the latest stage", async () => {
+  it("falls back to the visitor lane when a frame lands during the rehydrate read", async () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
@@ -1543,14 +1584,11 @@ describe("async delivery — resume & rehydrate", () => {
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
     // Open the (re)connecting visitor, then fire a bump during the delayed read.
-    // The first stream must end rather than replay a frame that the snapshot may
-    // already include; the retry takes a fresh watermark and snapshots the bump.
+    // The same stream must fall back to the visitor lane, where it can snapshot
+    // the bump without racing or replaying the already-applied frame.
     const first = await fetch(`${base}/stream?visitorId=v`);
     await postEvent(base, "v", { kind: "message", text: "bump" });
-    expect(await streamEnded(first, 1_000)).toBe(true);
-
-    const retry = await fetch(`${base}/stream?visitorId=v`);
-    const frames = await readEvents(retry, 2);
+    const frames = await readEvents(first, 2);
     expect(frames[0]?.data).toEqual({ kind: "reset" });
     expect(JSON.stringify(frames[1]?.data)).toContain("bumped");
   });
@@ -1623,7 +1661,7 @@ describe("agent handshake (DC-009)", () => {
 });
 
 describe("hardening", () => {
-  it("rehydrate ends instead of racing a newer live patch over its snapshot", async () => {
+  it("rehydrate falls back to the visitor lane instead of racing a newer live patch over its snapshot", async () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
@@ -1655,15 +1693,12 @@ describe("hardening", () => {
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
     // Open the (re)connecting visitor, then immediately fire a newer live patch. The
-    // rehydrate read resolves after the bump, so the server must end instead of
-    // sending a snapshot/replay pair that could double-apply the patch.
+    // rehydrate read resolves after the bump, so the server must switch to the
+    // visitor lane before sending a replacement snapshot.
     const stream = await fetch(`${base}/stream?visitorId=v`);
     expect(stream.status).toBe(200);
     await post("bump");
-    expect(await streamEnded(stream, 1_000)).toBe(true);
-
-    const retry = await fetch(`${base}/stream?visitorId=v`);
-    const frames = await readEvents(retry, 2);
+    const frames = await readEvents(stream, 2);
     expect(frames[0]?.data).toEqual({ kind: "reset" });
     expect(JSON.stringify(frames[1]?.data)).toContain("bumped");
   });
