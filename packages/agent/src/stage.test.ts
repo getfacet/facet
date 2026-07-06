@@ -241,4 +241,38 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     expect(result.root).toBeUndefined();
     expect(stage.flush()).toEqual([]);
   });
+
+  it("useStamp counts patch ops already flushed by say in the same turn", () => {
+    const largeNodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS - 2; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      largeNodes[id] = { id, type: "text", value: id };
+    }
+    largeNodes["root"] = { id: "root", type: "box", children };
+    const stage = new Stage();
+
+    const first = stage.useStamp(
+      { name: "large", root: "root", nodes: largeNodes },
+      {},
+      { parent: "root" },
+    );
+    stage.say("between");
+    const second = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Too much" } },
+      },
+      {},
+      { parent: "root" },
+    );
+
+    expect(first.root).toBeDefined();
+    expect(second.root).toBeUndefined();
+    expect(stage.flush().filter((message) => message.kind === "patch")).toHaveLength(1);
+  });
 });

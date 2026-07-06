@@ -497,7 +497,6 @@ function executeTool(
         return fail('error: say needs a non-empty string "text"');
       }
       stage.say(text);
-      closure.resetEmittedPatchOps();
       return { observation: "ok: said", mutated: false, said: true };
     }
     case "set_theme": {

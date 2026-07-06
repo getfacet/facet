@@ -36,6 +36,7 @@ function childrenPath(parent: NodeId): string {
 export class Stage {
   private out: ServerMessage[] = [];
   private pending: JsonPatchOperation[] = [];
+  private emittedPatchOps = 0;
   private knownIds: Set<NodeId>;
   private knownBoxIds: Set<NodeId>;
 
@@ -74,7 +75,9 @@ export class Stage {
     if (expanded.root === undefined) return { slots: expanded.slots, ids: expanded.ids };
 
     const patchOps = Object.keys(expanded.nodes).length + 1;
-    if (this.pending.length + patchOps > MAX_PATCH_OPS) return { slots: {}, ids: {} };
+    if (this.emittedPatchOps + this.pending.length + patchOps > MAX_PATCH_OPS) {
+      return { slots: {}, ids: {} };
+    }
 
     for (const node of Object.values(expanded.nodes)) {
       this.pending.push({ op: "add", path: nodePath(node.id), value: node });
@@ -135,12 +138,14 @@ export class Stage {
     this.flushPending();
     const out = this.out;
     this.out = [];
+    this.emittedPatchOps = 0;
     return out;
   }
 
   private flushPending(): void {
     if (this.pending.length > 0) {
       this.out.push({ kind: "patch", patches: this.pending });
+      this.emittedPatchOps += this.pending.length;
       this.pending = [];
     }
   }

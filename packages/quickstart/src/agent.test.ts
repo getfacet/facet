@@ -221,6 +221,34 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("use_stamp resolves from the immutable stamp snapshot captured at agent creation", async () => {
+    const stamp: FacetStamp = {
+      name: "label",
+      slots: { title: "Original" },
+      root: "label",
+      nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
+    };
+    const provider = providerOf(
+      toolStep(call("use_stamp", { name: "label", params: {}, at: { parent: "root" } })),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps: [stamp] });
+    const mutableStamp = stamp as {
+      slots?: FacetStamp["slots"];
+      nodes: Record<string, FacetStamp["nodes"][string]>;
+    };
+    mutableStamp.slots = { title: "Mutated" };
+    mutableStamp.nodes["label"] = { id: "label", type: "text", value: "Mutated" };
+
+    const out = await runAgent(agent, { kind: "message", text: "snapshot" });
+
+    const patch = out.find((m) => m.kind === "patch");
+    expect(patch?.kind).toBe("patch");
+    if (patch?.kind !== "patch") throw new Error("expected patch");
+    expect(JSON.stringify(patch.patches)).toContain("Original");
+    expect(JSON.stringify(patch.patches)).not.toContain("Mutated");
+  });
+
   it("use_stamp is a no-op for malformed stamps and unknown parents", async () => {
     const malformed = {
       name: "broken",
@@ -359,6 +387,45 @@ describe("createQuickstartAgent tool loop", () => {
     } finally {
       errorSpy.mockRestore();
     }
+  });
+
+  it("use_stamp counts patch ops already flushed before say in the same provider step", async () => {
+    const largeNodes: Record<string, FacetStamp["nodes"][string]> = {
+      root: { id: "root", type: "box", children: [] },
+    };
+    const children: string[] = [];
+    for (let i = 0; i < MAX_PATCH_OPS - 2; i += 1) {
+      const id = `n${String(i)}`;
+      children.push(id);
+      largeNodes[id] = { id, type: "text", value: id };
+    }
+    largeNodes["root"] = { id: "root", type: "box", children };
+    const stamps: FacetStamp[] = [
+      { name: "large", root: "root", nodes: largeNodes },
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Too much" } },
+      },
+    ];
+    const provider = providerOf(
+      toolStep(
+        call("use_stamp", { name: "large", params: {}, at: { parent: "root" } }),
+        call("say", { text: "between" }),
+        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { stamps });
+
+    const out = await runAgent(agent, { kind: "message", text: "mixed" });
+
+    expect(patchesOf(out)).toHaveLength(1);
+    expect(saysOf(out)).toEqual(["between"]);
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs[2]).toContain("would exceed the patch op cap");
   });
 
   it("use_stamp reports non-fatal expansion issues in a successful observation", async () => {
