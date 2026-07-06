@@ -320,6 +320,11 @@ and were tracked rather than fixed to keep the feature diff focused:
   conditional-spread) is copy-pasted in 3 consumers. Consider one shared helper.
 - **playground/src/live.tsx** — the live demo does not wire the new renderer
   `onRecord`→`record` channel that quickstart adopts (WU-8 left it optional).
+- **runtime/src/runtime.ts** — `applyMessages`'s `reserveRecordSlot` deadlock-
+  prevention branch (`resolveRecord(null)` on a save-reject) has no dedicated test.
+  Low risk: it is the SAME reserveRecordSlot + catch mechanism `handle` uses, and
+  `handle`'s throw + save-reject paths ARE covered (runtime.test.ts). Add a mirror
+  case if the late-apply path grows.
 
 ### Pre-existing (surfaced by the event-layer-v1 review, NOT introduced by it)
 
