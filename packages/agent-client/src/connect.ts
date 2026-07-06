@@ -1,4 +1,5 @@
 import {
+  collectMessages,
   EMPTY_TREE,
   type AgentControlFrame,
   type AgentEventFrame,
@@ -140,7 +141,7 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
     };
     let messages: readonly ServerMessage[];
     try {
-      messages = await agent(frame.event, session);
+      messages = await collectMessages(agent(frame.event, session));
     } catch (error) {
       messages = [
         {

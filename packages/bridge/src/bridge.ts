@@ -5,7 +5,13 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
-import { createLruMap, createSemaphore, createSerialQueue, STAGE_SPEC } from "@facet/core";
+import {
+  collectMessages,
+  createLruMap,
+  createSemaphore,
+  createSerialQueue,
+  STAGE_SPEC,
+} from "@facet/core";
 import type { CmdFrame } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
@@ -120,7 +126,7 @@ export function createBridge(options: BridgeOptions = {}): Bridge {
       options.model !== undefined ? { model: options.model } : {},
     );
     agent = async (event, session) => {
-      const messages = await driver.agent(event, session);
+      const messages = await collectMessages(driver.agent(event, session));
       options.onEvent?.(event.kind, session.visitor.visitorId, messages.length);
       return messages;
     };

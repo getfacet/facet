@@ -311,4 +311,46 @@ describe("connectAgent — event routing", () => {
     expect(control[0]?.requestId).toBe(7);
     expect(control[0]?.messages).toEqual([{ kind: "say", text: "(agent error: boom)" }]);
   });
+
+  it("collects an async iterable agent result into one control batch", async () => {
+    const control: Array<{ requestId: number; messages: ServerMessage[] }> = [];
+    const frame: AgentEventFrame = {
+      type: "event",
+      requestId: 9,
+      visitorId: "v/stream",
+      event: { kind: "message", text: "hi" },
+    };
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+      yield [{ kind: "say", text: "two" }];
+    };
+
+    const fetchMock = vi.fn((url: string, init?: { body?: string }) => {
+      if (url.includes("/agent/stream")) {
+        return Promise.resolve(sseStreamResponse([sseFrame(frame)]));
+      }
+      if (url.includes("/agent/control") && init?.body !== undefined) {
+        control.push(JSON.parse(init.body) as { requestId: number; messages: ServerMessage[] });
+      }
+      return Promise.resolve(stubResponse(true, 202));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const connection = connectAgent({
+      serverUrl: "http://s",
+      agentId: "a/1",
+      agent,
+      reconnectMs: 1_000,
+    });
+
+    await tick();
+    connection.close();
+
+    expect(control).toHaveLength(1);
+    expect(control[0]?.requestId).toBe(9);
+    expect(control[0]?.messages).toEqual([
+      { kind: "say", text: "one" },
+      { kind: "say", text: "two" },
+    ]);
+  });
 });
