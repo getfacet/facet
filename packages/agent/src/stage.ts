@@ -154,7 +154,7 @@ export class Stage {
     this.knownIds = new Set(Object.keys(tree.nodes));
     this.knownBoxIds = new Set(
       Object.values(tree.nodes)
-        .filter((node) => node.type === "box")
+        .filter((node) => node != null && node.type === "box")
         .map((node) => node.id),
     );
   }

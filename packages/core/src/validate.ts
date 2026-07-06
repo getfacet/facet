@@ -41,6 +41,8 @@ import {
   printableValue,
   type IssueSink,
 } from "./issues.js";
+import { SLOT_MARKER_RE, SLOT_NAME_RE } from "./slot-marker.js";
+export { SLOT_MARKER_RE, SLOT_NAME_RE } from "./slot-marker.js";
 
 /**
  * Turns arbitrary input (e.g. an LLM's JSON, which may be malformed, use unknown
@@ -133,9 +135,6 @@ function asNumberToken<T extends number>(value: unknown, allowed: readonly T[]):
     typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
   return Number.isInteger(numeric) && allowed.includes(numeric as T) ? (numeric as T) : undefined;
 }
-
-const SLOT_NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,63}$/;
-const SLOT_MARKER_RE = /^\{\{([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\}\}$/;
 
 function isValidSlotName(name: string): boolean {
   return SLOT_NAME_RE.test(name);

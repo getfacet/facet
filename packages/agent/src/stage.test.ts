@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PATCH_OPS, type FacetStamp } from "@facet/core";
+import { MAX_PATCH_OPS, type FacetStamp, type FacetTree } from "@facet/core";
 import { Stage } from "./stage.js";
 
 describe("Stage — ergonomic CLI over RFC 6902", () => {
@@ -221,6 +221,40 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
 
     expect(result.root).toBeUndefined();
     expect(stage.flush()).toEqual([]);
+  });
+
+  it("seeds known ids fail-safe from a session stage with null nodes", () => {
+    const sessionStage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["x"] },
+        x: null,
+      },
+    } as unknown as FacetTree;
+
+    expect(() => new Stage(sessionStage)).not.toThrow();
+    const stage = new Stage(sessionStage);
+    const underRoot = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "root" },
+    );
+    const underNull = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "x" },
+    );
+
+    expect(underRoot.root).toBeDefined();
+    expect(underNull.root).toBeUndefined();
   });
 
   it("useStamp refuses an expansion that would exceed one patch batch", () => {

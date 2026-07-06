@@ -1,7 +1,7 @@
-import { isForbiddenKey } from "./issues.js";
+import { isForbiddenKey, printableKey } from "./issues.js";
 import type { FacetAction, FacetNode, NodeId } from "./nodes.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
-import { validateStamp, type FacetStamp } from "./validate.js";
+import { SLOT_MARKER_RE, validateStamp, type FacetStamp } from "./validate.js";
 
 export type StampParams = Readonly<Record<string, unknown>>;
 
@@ -25,7 +25,6 @@ export interface ExpandStampOptions {
   readonly mintId?: () => string;
 }
 
-const SLOT_MARKER_RE = /^\{\{([a-zA-Z0-9][a-zA-Z0-9_-]{0,63})\}\}$/;
 const MAX_MINT_ATTEMPTS_PER_NODE = 1024;
 
 export function expandStamp(
@@ -150,7 +149,12 @@ function reachableStamp(stamp: FacetStamp, issues: string[]): FacetStamp {
       if (node !== undefined) nodes[id] = node;
     }
   }
-  issues.push(`stamp expansion dropped unreachable node(s): ${dropped.slice(0, 5).join(", ")}`);
+  issues.push(
+    `stamp expansion dropped unreachable node(s): ${dropped
+      .slice(0, 5)
+      .map(printableKey)
+      .join(", ")}`,
+  );
 
   const next: {
     name: string;
@@ -284,7 +288,7 @@ function mintIds(
       }
     }
     if (fresh === undefined) {
-      issues.push(`stamp expansion could not mint a fresh id for "${oldId}"`);
+      issues.push(`stamp expansion could not mint a fresh id for "${printableKey(oldId)}"`);
       return undefined;
     }
     ids[oldId] = fresh;

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { expandStamp } from "./expand-stamp.js";
 import { expandStamp as barrelExpandStamp } from "./index.js";
+import { SLOT_MARKER_RE } from "./validate.js";
 
 function mintFrom(ids: readonly string[]): () => string {
   let index = 0;
@@ -181,6 +182,45 @@ describe("expandStamp", () => {
     expect(Object.keys(result.nodes).sort()).toEqual(["fresh-root", "fresh-visible"]);
     expect(result.ids).toEqual({ root: "fresh-root", visible: "fresh-visible" });
     expect(result.issues.some((issue) => issue.includes("unreachable"))).toBe(true);
+  });
+
+  it("bounds untrusted node ids echoed in expansion issues", () => {
+    const longId = "x".repeat(80);
+    const unreachable = expandStamp(
+      {
+        name: "clean",
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: [] },
+          [longId]: { id: longId, type: "text", value: "Hidden" },
+        },
+      },
+      {},
+      { parent: "page" },
+      { existingIds: new Set(["page"]), mintId: mintFrom(["fresh-root"]) },
+    );
+    const mintFailed = expandStamp(
+      {
+        name: "clean",
+        root: longId,
+        nodes: {
+          [longId]: { id: longId, type: "text", value: "Visible" },
+        },
+      },
+      {},
+      { parent: "page" },
+      { existingIds: new Set(["page"]), mintId: () => "page" },
+    );
+
+    expect(unreachable.issues.join("\n")).toContain("<key too long>");
+    expect(unreachable.issues.join("\n")).not.toContain(longId);
+    expect(mintFailed.issues.join("\n")).toContain("<key too long>");
+    expect(mintFailed.issues.join("\n")).not.toContain(longId);
+  });
+
+  it("uses validateStamp's exported slot marker rule", () => {
+    expect(SLOT_MARKER_RE.exec("{{title}}")?.[1]).toBe("title");
+    expect(SLOT_MARKER_RE.test("{{bad space}}")).toBe(false);
   });
 
   it("drops actions that target nodes outside the stamped subtree", () => {
