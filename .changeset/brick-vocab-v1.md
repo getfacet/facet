@@ -2,6 +2,7 @@
 "@facet/core": minor
 "@facet/react": minor
 "@facet/quickstart": minor
+"@facet/server": minor
 ---
 
 Brick/token vocabulary v1: `image` becomes `media` (`kind:"image"|"video"`) with

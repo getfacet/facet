@@ -674,6 +674,13 @@ describe("brick-vocab v1 core validation", () => {
           src: "https://picsum.photos/seed/legacy/600/400",
           alt: "legacy",
         },
+        legacyNoisy: {
+          id: "legacyNoisy",
+          type: "image",
+          kind: "gif3d",
+          src: "https://picsum.photos/seed/noisy/600/400",
+          alt: "legacy noisy",
+        },
       }),
     );
 
@@ -694,6 +701,13 @@ describe("brick-vocab v1 core validation", () => {
       kind: "image",
       src: "https://picsum.photos/seed/legacy/600/400",
       alt: "legacy",
+    });
+    expect(tree.nodes["legacyNoisy"]).toMatchObject({
+      id: "legacyNoisy",
+      type: "media",
+      kind: "image",
+      src: "https://picsum.photos/seed/noisy/600/400",
+      alt: "legacy noisy",
     });
   });
 
@@ -1012,7 +1026,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
   });
 
   it("strips appear/scroll from non-box styles — the new style tokens are BoxStyle-only", () => {
-    // appear and scroll live on BoxStyle only; text/image/field styles never
+    // appear and scroll live on BoxStyle only; text/media/field styles never
     // carry them, so validateTree must drop them there (the renderer's
     // BoxStyle-only raw path then matches the validated path — no divergence).
     const run = validateTree({

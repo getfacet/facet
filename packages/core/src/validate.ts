@@ -369,7 +369,7 @@ function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | 
         return undefined;
       }
       const kind =
-        type === "image" && raw.kind === undefined
+        type === "image"
           ? "image"
           : raw.kind === undefined
             ? "image"

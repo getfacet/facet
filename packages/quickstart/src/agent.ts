@@ -15,7 +15,7 @@
  * never logs more than one concise error line (never a key — keys live inside
  * the provider's auth header only).
  */
-import { isValidThemeName, validateTree } from "@facet/core";
+import { isSafeMediaSrc, isValidThemeName, MEDIA_KINDS, validateTree } from "@facet/core";
 import type { FacetNode, FacetStamp, FacetTheme, FacetTree, NodeId } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import type { Stage } from "@facet/agent";
@@ -104,8 +104,8 @@ function isRenderable(tree: FacetTree): boolean {
  * Shape-check a node for the incremental tools, returning a SPECIFIC, actionable
  * reason on failure so the model can fix it (not a generic "invalid node"). It
  * rejects exactly the fields `validateTree` would DROP the node for
- * (text.value, media.src, field.name), so a tool can't report "ok" for a
- * node that silently vanishes on apply. Deeper sanitization (tokens, safe src,
+ * (text.value, media.src/kind, field.name), so a tool can't report "ok" for a
+ * node that silently vanishes on apply. Deeper sanitization (tokens, poster,
  * dangling children) still happens at apply time. */
 function asNode(value: unknown): { node: FacetNode } | { error: string } {
   if (!isRecord(value)) return { error: 'the "node" argument must be an object' };
@@ -123,6 +123,16 @@ function asNode(value: unknown): { node: FacetNode } | { error: string } {
     case "media":
       if (typeof value["src"] !== "string") {
         return { error: 'a "media" node needs string "src"' };
+      }
+      if (!isSafeMediaSrc(value["src"])) {
+        return { error: 'a "media" node needs a safe static "src"' };
+      }
+      if (
+        value["kind"] !== undefined &&
+        (typeof value["kind"] !== "string" ||
+          !(MEDIA_KINDS as readonly string[]).includes(value["kind"]))
+      ) {
+        return { error: 'a "media" node kind must be "image" or "video"' };
       }
       break;
     case "field":

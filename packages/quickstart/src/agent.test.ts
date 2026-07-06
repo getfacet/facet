@@ -305,6 +305,22 @@ describe("createQuickstartAgent tool loop", () => {
             alt: "old",
           },
         }),
+        call("set_node", {
+          node: {
+            id: "badKind",
+            type: "media",
+            kind: "gif3d",
+            src: "https://example.com/bad.gif",
+          },
+        }),
+        call("set_node", {
+          node: {
+            id: "badSrc",
+            type: "media",
+            kind: "image",
+            src: "javascript:alert(1)",
+          },
+        }),
       ),
       END,
     );
@@ -314,6 +330,8 @@ describe("createQuickstartAgent tool loop", () => {
     if (patch?.kind === "patch") {
       expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/clip")).toBe(true);
       expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/old")).toBe(false);
+      expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/badKind")).toBe(false);
+      expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/badSrc")).toBe(false);
     }
     const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
       m.role === "tool_result" ? m.content : "",
@@ -321,6 +339,8 @@ describe("createQuickstartAgent tool loop", () => {
     expect(obs.some((o) => o.includes("ok: set") && o.includes("clip"))).toBe(true);
     expect(obs.some((o) => o.includes('"type" must be one of'))).toBe(true);
     expect(obs.some((o) => o.includes("media"))).toBe(true);
+    expect(obs.some((o) => o.includes('kind must be "image" or "video"'))).toBe(true);
+    expect(obs.some((o) => o.includes('safe static "src"'))).toBe(true);
   });
 
   it("set_theme records a /theme add op the model can drive", async () => {

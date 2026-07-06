@@ -8,8 +8,8 @@
 - Feature slug: `brick-vocab-v1`
 - Intake brief: `specs/feature-intake/brick-vocab-v1.md`
 - Context evidence: `specs/context/brick-vocab-v1.md`
-- Affected `@facet/*` packages: `@facet/core`, `@facet/react`, `@facet/quickstart`
-  (+ `apps/playground` demo/consumer)
+- Affected `@facet/*` packages: `@facet/core`, `@facet/react`, `@facet/server`,
+  `@facet/quickstart` (+ `apps/playground` demo/consumer)
 - One-paragraph technical approach: Grow the drawing vocabulary **without growing
   the brick count** (stays 4) by mirroring how `field` already discriminates on
   `input`. **`image` becomes `media`** — one node typed by
@@ -29,9 +29,10 @@
   the select popup, so **no overlay/z-index brick** is introduced and flow-only
   holds (invariant #5). The collect READER is broadened from
   `input[data-facet-field-id]` to `[data-facet-field-id]` and reads **per control
-  kind** — `<select>.value`, checkbox/switch `.checked`, and the **checked**
-  member of a radio group (not first-mounted) — preserving the collect-at-press,
-  uncontrolled-DOM model (invariant #6). Two style tokens land on `BoxStyle`:
+  kind** — `<select>.value`, checkbox/switch `.checked` as boolean `true`, and
+  the **checked** member of a radio group (not first-mounted) — preserving the
+  collect-at-press, uncontrolled-DOM model (invariant #6). Two style tokens land
+  on `BoxStyle`:
   **`scroll`** widens `boolean`→`ScrollAxis|true` (`SCROLL_AXES=["x","y"]`, legacy
   `true`=`"y"`) with the theme branching `x`→a **bounded** horizontal carousel and
   `y`/`true`→today's vertical region; and a new **`columns`** numeric token group
@@ -98,8 +99,8 @@ selector broadens from `root.querySelectorAll("input[data-facet-field-id]")` to
 `elementsByNodeId: Map<string, Element[]>` — a radio group stamps N elements onto
 ONE node id, and the reader must see all of them. (c) The value read at
 `:202-216` special-cases by element/control kind: `<select>` → `.value`;
-`checkbox`/`switch` → `.checked` ⇒ `"true"` (or omit the key when unchecked —
-locked below); a **radio group** (multiple elements for the same node id) →
+`checkbox`/`switch` → `.checked` ⇒ boolean `true` (or omit the key when unchecked
+— locked below); a **radio group** (multiple elements for the same node id) →
 the value of the **checked** member (skip unchecked; none checked ⇒ omit),
 NEVER first-mounted-wins (RISK-INV-4); text-family `<input>` → `.value` as
 today. The password exclusion (`:164-166`), the `MAX_FIELD_VALUE_CHARS`
@@ -228,7 +229,7 @@ DC-010}, WU-4 {DC-009, DC-010}, WU-5 {DC-010} ⇒ **covers DC-001…DC-010**.
 | RISK-API-1 | `packages/core/src/nodes.ts:113` (`ImageStyle`), `:155-160` (`ImageNode`), `:179` (union); consumers a–f in context | RESOLVED (Decision 1, WU-1/WU-3/WU-4/WU-5): rename to `MediaNode`/`MediaStyle` (`type:"media"`+`kind`+poster/controls), swap the `FacetNode` union (barrel `export *` flows it), and migrate ALL proven consumers: `validate.ts` (`imageStyle`→`mediaStyle`, media arm), `theme.ts`/`StageRenderer.tsx` (react), `quickstart/agent.ts`+`prompt.ts`, `playground/gallery.tsx`+`print-tree.ts`+`App.tsx`. `validateTree` normalizes a legacy `{type:"image"}` blob; the raw renderer keeps a `case "image"` alias (DC-010). |
 | RISK-API-2 | `packages/core/src/nodes.ts:100-103` (`scroll:boolean`); `validate.ts:234-238` (`asBool`); `theme.ts:164-173`; `validate.test.ts:786`; `spec.ts:18`; `spec.test.ts:36`; `prompt.test.ts:46`; `stage-fold.test.ts:261-320` | RESOLVED (Decision 4, WU-1/WU-3): widen `BoxStyle.scroll` to `ScrollAxis|true`; add `SCROLL_AXES`; replace `asBool` with axis-membership (legacy `true`→`y`); branch `theme.ts` (`x`→overflowX bounded, `y`/`true`→overflowY). The consumer test at `validate.test.ts:786` (`for scroll of ["sideways",1,"y"]` all-stripped) is **inverted** — `"y"` now KEPT, an `"x"` keep-case added; `spec.ts:18`/`spec.test.ts:36`/`prompt.test.ts:46` (`/scroll\(bool\)/`) and `stage-fold.test.ts` scroll-parity updated in lockstep (WU-1/WU-2/WU-4). |
 | RISK-API-3 | `packages/core/src/nodes.ts:164-165` (`FIELD_INPUTS`), `:172` (`input?`); `validate.ts:346-351`; `StageRenderer.tsx:982-1001`; `StageRenderer.test.ts:156` | RESOLVED (Decision 2, WU-1/WU-3): widen `FIELD_INPUTS` (+checkbox/radio/select/switch — type-additive, `asToken` auto-picks); add `FieldNode.options?: readonly string[]` + validate sanitizer; branch the react field arm to native controls (unknown → `text` fallback kept). New-control render + `options` coverage added to `StageRenderer.test.ts`. |
-| RISK-API-4 | `packages/react/src/StageRenderer.tsx:195` (`input[...]` selector), `:212-214` (`.value`) | RESOLVED (Decision 3, WU-3): selector broadened to `[data-facet-field-id]` and stamped onto every control; `collectFieldValues` reads per-kind (`<select>.value`, checkbox/switch `.checked`, radio checked-member); caps kept. A DC-004 collect test presses a `collect` box over a select + checkbox + radio group and asserts the captured `fields`. `fields` protocol payload shape (string map) unchanged. |
+| RISK-API-4 | `packages/react/src/StageRenderer.tsx:195` (`input[...]` selector), `:212-214` (`.value`) | RESOLVED (Decision 3, WU-3): selector broadened to `[data-facet-field-id]` and stamped onto every control; `collectFieldValues` reads per-kind (`<select>.value`, checkbox/switch `.checked` as boolean `true`, radio checked-member); caps kept. A DC-004 collect test presses a `collect` box over a select + checkbox + radio group and asserts the captured `fields`. The `fields` value type widens to `string | boolean` so boolean controls do not stringify state. |
 | RISK-API-5 | new `BoxStyle.columns?` + `COLUMNS` const; `validate.ts:222-238`; `theme.ts:140-171` (`display:flex`); `spec.ts:18` | RESOLVED (Decision 5, WU-1/WU-3): add `COLUMNS=[2,3,4]` (exported via `export *`), a numeric-membership strip in `boxStyle` validate (DC-008), and a `theme.boxStyle` grid branch (`display:grid`+`repeat(N,minmax(0,1fr))`, `direction`/`wrap` ignored in grid mode). `Sizing` intentionally NOT widened. STAGE_SPEC teaches `columns` (WU-2). |
 | RISK-API-6 | `packages/core/src/spec.ts:14`/`:18`/`:20` (image line, `scroll(bool)`, ImageStyle); `spec.test.ts:31-42`; `quickstart/src/prompt.test.ts:38-46` | RESOLVED (WU-2/WU-4, DC-009): rewrite `spec.ts` `image` line as `media` (kind image|video, poster/controls), replace `scroll(bool)` with the axis wording, add the expanded `field.input` set + `options`, add `columns`, rename the `ImageStyle` line to `MediaStyle`; update `spec.test.ts` and `quickstart/prompt.test.ts` regexes in lockstep (the `scroll(bool)` assertions in BOTH files are inverted). |
 
@@ -238,9 +239,10 @@ DC-010}, WU-4 {DC-009, DC-010}, WU-5 {DC-010} ⇒ **covers DC-001…DC-010**.
 |---|---|---|---|
 | `@facet/core` | `ImageNode`/`ImageStyle`→`MediaNode`/`MediaStyle` (`type:"media"`+`kind`+poster/controls); `MEDIA_KINDS` const; `FieldNode.options?`; `FIELD_INPUTS` +4 members; `BoxStyle.scroll:boolean`→`ScrollAxis\|true`; new `BoxStyle.columns?` + `COLUMNS`/`SCROLL_AXES` consts; `isSafeImageSrc`→`isSafeMediaSrc`; `STAGE_SPEC`. New names flow through `export *` barrels. | **Breaking** (pre-1.0, no published consumers) + additive | Internal only — all consumers migrated in WU-1/3/4/5; legacy `{type:"image"}` trees normalize (DC-010). |
 | `@facet/react` | `imageStyle`→`mediaStyle`; `StageRenderer` media/`<video>` arm, native field controls, extended collect reader; `boxStyle` scroll-axis + grid branches. New names flow through `export *`. | Additive (renderer) + rename | None external; barrel auto-flows the `mediaStyle` rename. |
+| `@facet/server` | `/event` and `/record` field validation accepts `string | boolean` field values, preserving the existing key/count/string-length caps. | Additive wire-contract widening | Required so checked checkbox/switch values emitted by `@facet/react` are accepted. |
 | `@facet/quickstart` | `agent.ts` `asNode` `case "image"`→`"media"` + error strings; `prompt.ts` prose image→media; embedded `STAGE_SPEC` teaches the new vocab. | **Breaking** consumer update | Internal (WU-4); rebuilt bundle carries the new fields (see Final Gate). |
 | `apps/playground` | `gallery.tsx` `image()`→`media()` builder (+ video demo, field `options`, `columns` grid, `scroll:"x"` carousel); `print-tree.ts` media branch; `App.tsx` brick-list text. | **Breaking** consumer update | Internal (WU-5). |
-| runtime / server / client / agent / agent-client / cli / bridge / store-postgres / assets | Pass-through — no protocol/endpoint/API change; the `fields` collect payload stays a `string` map. | No change | None. |
+| runtime / client / agent / agent-client / cli / bridge / store-postgres / assets | Pass-through — no endpoint or package API changes beyond the core `FieldValues` type flowing through existing event shapes. | No change | None. |
 
 ## Shared Preflight (once, main agent)
 
@@ -401,11 +403,10 @@ DC-010}, WU-4 {DC-009, DC-010}, WU-5 {DC-010} ⇒ **covers DC-001…DC-010**.
   per-WU `no_regression` is package-scoped; full `pnpm typecheck && pnpm test &&
   pnpm build` green is the final-gate check after WU-5.
 - Deliberately UNCHANGED (any diff here during review is out of spec):
-  `packages/runtime/`, `packages/server/`, `packages/client/`, `packages/agent/`,
+  `packages/runtime/`, `packages/client/`, `packages/agent/`,
   `packages/agent-client/`, `packages/cli/`, `packages/bridge/`,
   `packages/store-postgres/`, `packages/assets/`, `packages/react/src/useFacet.ts`,
-  the `index.ts` barrels (rename flows via `export *`), and the `fields` collect
-  protocol payload shape.
+  and the `index.ts` barrels (rename flows via `export *`).
 
 ## Final Gate Chain (main agent)
 
