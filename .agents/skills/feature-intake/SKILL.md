@@ -5,7 +5,6 @@ description: >
   guided conversation — before any technical design. Use when the user describes
   a feature in plain language and you need a complete, internally-consistent brief
   that also fits Facet's architecture invariants.
-allowed-tools: Read, Write, AskUserQuestion, Glob, Grep
 ---
 
 # Feature Intake (Facet)
@@ -27,11 +26,11 @@ Use order: `/context-scout` (optional) → `/feature-intake` → `/spec-bridge` 
 
 ## Required context (read first)
 
-1. `AGENTS.md` (repo root — the Facet contract; `AGENTS.md` is a symlink to it).
+1. `AGENTS.md` (repo root — the Facet contract and source of truth).
 2. `docs/ARCHITECTURE.md`.
 3. `docs/REVIEW-RULES.md` (the P0–P2 severity model).
-4. Template: `.Codex/skills/feature-intake/templates/feature-intake-template.md`.
-5. Consistency checklist: `.Codex/skills/feature-intake/references/consistency-checklist.md`.
+4. Template: `.agents/skills/feature-intake/templates/feature-intake-template.md`.
+5. Consistency checklist: `.agents/skills/feature-intake/references/consistency-checklist.md`.
 
 ## Facet's invariants (the brief MUST respect these)
 
@@ -61,7 +60,7 @@ always the wrong feature — surface the conflict, don't design around it silent
 ## Output
 
 One brief file: `specs/feature-intake/<feature-slug>.md`
-(template: `.Codex/skills/feature-intake/templates/feature-intake-template.md`).
+(template: `.agents/skills/feature-intake/templates/feature-intake-template.md`).
 
 ## Required sections (must capture)
 

@@ -1,60 +1,83 @@
 ---
 name: refactor-audit
-description: Structural audit of the Facet codebase — duplication, module boundaries, dead code, package hygiene, naming — producing a ranked, evidence-backed cleanup plan. Runs as a Workflow. Owner-run consolidation pass, not per-change.
+description: Codex structural audit of the Facet codebase for duplication, module boundaries, dead code, package hygiene, and naming. Produces a ranked, evidence-backed cleanup plan without applying changes. Use for owner-run consolidation passes, not per-change review. Do not invoke Claude Workflow().
 ---
 
 # /refactor-audit
 
-A whole-codebase structural review, run as a **Workflow** (parallel audit per
-dimension → voted adversarial verify → completeness-critic re-sweep → dedup →
-ranked plan). Unlike `/code-review` (correctness of a change), this looks at the
-*shape* of the code and what should be consolidated. The audit logic lives in the
-`audit-structure` subagent and `docs/REVIEW-RULES.md`.
+Run the structural audit directly in Codex. The output is a plan, not applied
+changes. Do not call `Workflow(...)`, and do not edit code during the audit.
 
-## Run it
+## Read First
 
-Call the workflow (this skill is your opt-in to `Workflow`):
+1. `AGENTS.md` — package map, invariants, and boundaries.
+2. `docs/ARCHITECTURE.md` — architectural intent.
+3. `docs/REVIEW-RULES.md` — audit dimensions and severity.
+4. Optional Codex audit guides, if present:
+   - `.codex/agents/audit-structure.toml`
+   - `.codex/agents/review-verifier.toml`
 
-```
-Workflow({ name: 'refactor-audit' })
-```
+Do not read or invoke `.claude/workflows/**`; those are Claude-only
+orchestrators.
 
-No args — scope is always the whole repo (`packages/**/src`, `apps/**/src`, and
-package manifests).
+## Scope
 
-The workflow: **Audit** (one `audit-structure` agent per dimension —
-duplication, boundaries, dead-code, hygiene, naming — over the whole tree) →
-**Verify** (a `review-verifier` vote panel per finding — 3 independent skeptics
-for P0/P1, 1 for P2/P3 — challenging whether it is truly dead / truly duplicated
-/ truly misplaced; only a strict majority survives) → **Sweep** (a completeness
-critic names up to 6 under-audited `(dimension, area)` slices — since one agent
-per dimension over the whole repo is shallow — and each is re-audited + verified)
-→ **Plan** (dedup the same issue reached from multiple lenses, rank by
-impact ÷ effort, recommend an execution order + an explicit do-not-touch list).
-Watch live progress with `/workflows`.
+Audit the whole repo shape, with emphasis on:
 
-`args` (all optional): `thorough: true` runs the full vote panel on every
-finding; `votes` sets the high-severity panel size (default 3); `skipCritic: true`
-skips the Sweep phase for a faster, shallower pass.
+- `packages/**/src`
+- `packages/*/package.json`
+- root package/config files
+- `apps/playground/**`
+- `docs/**`, `AGENTS.md`, `.agents/**`, and `.codex/**` when process drift is
+  relevant
 
-## Present the result
+## Audit Passes
 
-The workflow returns `{ summary, counts, findings: [{severity, title, files,
-dimension, effort, score, votes, evidence, fix, verifierReason}], executionOrder,
-doNotTouch }` (`dimension` may be a `+`-joined list when the same issue was found
-by multiple lenses). Render:
+Run one pass for each dimension from `docs/REVIEW-RULES.md`:
 
-- a ranked table (severity · files · issue · suggested fix · effort · score),
-- the recommended `executionOrder`,
-- `doNotTouch` — explicitly what NOT to touch and why (avoid churn for its own
-  sake).
+- `duplication` — same logic, prompt, spec, helper, or process text in multiple
+  places.
+- `boundaries` — misplaced modules, wrong dependency direction, protocol types
+  outside `@facet/core`, browser entries importing Node-only code.
+- `dead-code` — unused exports, files, branches, scripts, or stale docs. Prove
+  with `rg`/`git grep`.
+- `hygiene` — package manifest drift, missing test coverage on pure logic,
+  docs/package-map drift.
+- `naming` — misleading or inconsistent names that create maintenance risk.
 
-## Output is a plan, not applied changes
+If Codex subagents are available, you may delegate one dimension at a time using
+`.codex/agents/audit-structure.toml`. If they are unavailable, run the passes
+inline. The main agent must still verify and rank all findings.
 
-The maintainer approves scope; then execute item by item, running `/verify` after
-each and `/code-review` if a change is non-trivial. Bias toward a few high-value
-consolidations (real duplication, a misplaced module, a dead file) over cosmetic
-churn — every proposed move must reduce drift or clarify a boundary.
+## Verify Findings
 
-`/refactor-audit` is periodic and owner-run — not part of the per-feature gate
-chain.
+For every candidate:
+
+1. Try to refute it by reading callers and running `rg`/`git grep`.
+2. Confirm the issue is structural, not just taste.
+3. Confirm the suggested fix reduces drift, clarifies a boundary, or removes real
+   dead code.
+4. Drop cosmetic churn unless it prevents recurring confusion.
+
+Use `.codex/agents/review-verifier.toml` as the verifier checklist when present.
+
+## Rank
+
+Rank confirmed findings by impact divided by effort:
+
+- Impact: correctness risk, invariant risk, future drift avoided, API clarity.
+- Effort: S, M, or L.
+- Prefer a few high-value consolidations over broad churn.
+
+## Output Contract
+
+Report:
+
+1. Scope audited.
+2. Ranked findings table: severity, files, dimension, issue, evidence, suggested
+   fix, effort, score.
+3. Recommended execution order.
+4. `Do not touch` list with reasons.
+5. Residual risks or areas intentionally left unaudited.
+
+End with: `Plan only — no changes applied`.

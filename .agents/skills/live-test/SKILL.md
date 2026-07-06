@@ -89,6 +89,33 @@ FACET_SMOKE_PROVIDERS=both pnpm exec vitest run --config packages/quickstart/e2e
 Run this when the change is about to merge to main or ship a release. Missing
 either key ⇒ Tier 3 FAIL.
 
+## Step 5 — Live journey tier (owner-run / on request)
+
+This is not a CI gate. Run it only for pre-merge, release, or explicit owner
+requests, and only when `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is present.
+
+Codex runs this directly; do not invoke `.claude/workflows/live-journey.js`.
+
+1. Build quickstart:
+   ```bash
+   pnpm --filter @facet/quickstart build
+   ```
+2. Start the real-provider quickstart on a free port:
+   ```bash
+   pnpm exec tsx packages/quickstart/src/cli.ts --provider <openai|anthropic> --port <port>
+   ```
+3. Use Playwright or the in-app browser to open the page, send at least three
+   fresh-visitor messages, and capture screenshots.
+4. Judge the screenshots and interaction logs for blocking failures:
+   - render failure or blank page
+   - unsafe/broken UI
+   - no response to user input
+   - agent/provider crash
+5. Tear down the server even on failure.
+
+Report `PASS`, `FAIL`, `WARNING`, or `SKIPPED(why)`. Missing provider key is
+`SKIPPED`, not a Tier-2-style failure, because this tier is owner-run.
+
 ## Output contract
 
 Report a per-tier table, then the overall verdict:
@@ -100,6 +127,7 @@ Report a per-tier table, then the overall verdict:
 | 1b   | real bundle in jsdom          | PASS / FAIL                |
 | 2    | provider smoke (touched=yes)  | PASS / FAIL / SKIPPED(why) |
 | 3    | both providers (pre-merge)    | PASS / FAIL / SKIPPED(why) |
+| journey | live browser + LLM (owner-run) | PASS / FAIL / WARNING / SKIPPED(why) |
 ```
 
 - State the tier-detection decision explicitly (base used, quickstart-touched

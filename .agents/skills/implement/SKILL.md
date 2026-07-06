@@ -1,11 +1,10 @@
 ---
 name: implement
 description: >
-  Execute an approved Facet dev spec: set up a branch/worktree, run the Work
+  Execute an approved Facet dev spec in Codex: set up a branch/worktree, run the Work
   Units TDD-first from the execution manifest, then run the hard-gate chain
   (/update-tests → /verify → /code-review → /update-docs). Use after /spec-bridge
   is approved, or when the user says "implement the spec / build it".
-allowed-tools: Read, Edit, Write, Glob, Grep, Bash, Agent, AskUserQuestion, Skill
 ---
 
 # Implement (Facet)
@@ -28,15 +27,15 @@ The manifest is the delegation source of truth — delegate from it, not from me
   other agents' uncommitted work; never git stash/switch without being asked.
 
 ## Stage 0 — Branch / worktree
-Default (simple, sequential): a feature branch off an up-to-date `main`:
+Default (simple, sequential): a Codex feature branch off an up-to-date `main`:
 ```
 git checkout main && git pull --rebase
-git checkout -b feat/<slug>
+git checkout -b codex/<slug>
 ```
 Optional (parallel isolation / long-running work): a git worktree so this feature
 lives in its own directory without disturbing the current checkout:
 ```
-git worktree add ../facet-wt/<slug> -b feat/<slug>
+git worktree add ../facet-wt/<slug> -b codex/<slug>
 cd ../facet-wt/<slug> && pnpm install
 ```
 Ask the user which they want if it's ambiguous; default to a branch for a single
@@ -48,7 +47,8 @@ pnpm typecheck && pnpm test && pnpm lint
 ## Stage 1 — Work Unit execution (TDD-first)
 Read the manifest. Reuse `shared_preflight` once. Execute WUs in the spec's
 `Execution Order` — parallel ONLY where a `parallel_group` marks disjoint file
-sets. For each WU, spawn a `general-purpose` subagent with this work order
+sets. Codex may use subagents when they are available and useful; otherwise the
+main agent executes the WU directly. In either mode, follow this work order
 (deviation = WU rejected):
 
 - **STEP 1 RED** — run the WU's `red_check` BEFORE touching production code (only
@@ -64,15 +64,18 @@ sets. For each WU, spawn a `general-purpose` subagent with this work order
 - **STEP 4 Report** (`handoff_format`): `changed_files`, `executed_commands`,
   `red_check_output_before` (FAIL), `red_check_output_after` (PASS),
   `green_diff_summary`, `refactor_decision`, `pass_fail`, `next_action`.
-- Subagents do NOT run the final gate chain and do NOT modify files outside the WU.
+- Helpers/subagents do NOT run the final gate chain and do NOT modify files
+  outside the WU.
 
 ### DoD verification (main agent, per WU)
 - Only the WU's listed files changed.
 - `red_check_output_before` shows FAIL, `_after` shows PASS (or `N/A` justified).
 - `refactor_decision` present + concrete; `green_diff_summary` not disproportionate.
-- On pass: `git commit -m "wu-N: <title>"` (on the feature branch).
+- On pass: record the WU result. Create `wu-N` commits only if the user approved
+  WU-by-WU commits for this implementation run.
 
-### Retry policy (max 3): re-delegate with error context → main agent fixes directly → escalate to the user.
+### Retry policy (max 3): retry with tighter error context → main agent fixes
+directly → escalate to the user.
 
 ## Stage 2 — Inner loop (HARD GATE)
 Run in order; on any FAIL, fix and restart the inner loop from the top:

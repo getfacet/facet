@@ -5,7 +5,6 @@ description: >
   changes. Detects changed files, maps them to triggered docs, updates each, and
   requires evidence for anything left unchanged. Use after code changes, before
   commit, or when the user says "update docs".
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git ls-files:*), Read, Edit, Glob, Grep, Agent
 ---
 
 # Update Docs (Facet)
@@ -43,7 +42,7 @@ Merge the three lists.
 | New / renamed / removed `@facet/*` package | root `README.md` (package list) + `AGENTS.md` (package list) + a Changeset |
 | `packages/cli` / `packages/bridge` commands or env vars | `README.md` / `CONTRIBUTING.md` usage + the package `README.md` + the CLI `--help` text |
 | `packages/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + `packages/server` docstring |
-| `.Codex/skills/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
+| `.agents/skills/**`, `.codex/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
 | Release/versioning setup | `CONTRIBUTING.md`, `CHANGELOG.md` |
 
 ## Workflow

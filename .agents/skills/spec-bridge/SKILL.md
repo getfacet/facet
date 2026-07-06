@@ -2,91 +2,163 @@
 name: spec-bridge
 description: >
   Translate an approved Facet feature-intake brief into an executable development
-  spec + execution manifest (Work Units, TDD red checks, invariant-fit audit) via
-  a Workflow: context pass + risk probes → writer → independent adversarial
-  reviewer → bounded fix loop. Stops at an approvable plan. Use before coding.
-allowed-tools: Read, Glob, Grep, Agent, AskUserQuestion, Write
+  spec and execution manifest using Codex steps: context pass, risk probes, spec
+  writing, gate review, and bounded fix loop. Stops at an approvable plan before
+  implementation. Use before coding, after /feature-intake approval, or when the
+  user asks for /spec-bridge. Do not invoke Claude Workflow().
 ---
 
 # Spec Bridge (Facet)
 
-> Convert a product brief into technical implementation planning — one human
-> approval spec + one agent-executable manifest — run as a **Workflow**. Writer
-> and reviewer run in SEPARATE contexts (the reviewer never sees the writer's
-> reasoning) to avoid self-review blind spots. The workflow stops at an
-> approvable plan; **you** (the main agent) own the human-approval step, which a
-> workflow can't do.
+Convert an approved product brief into two files:
 
-Use order: `/context-scout` (optional) → `/feature-intake` → **`/spec-bridge`** →
-`/implement` (→ `/update-tests` → `/verify` → `/code-review` → `/update-docs`).
+- `specs/dev-specs/<slug>.md`
+- `specs/dev-specs/<slug>.execution.yaml`
 
-## Before you launch — pick the slug
+Codex runs this directly. Do not call `Workflow(...)`; do not use
+`.claude/workflows/**`; do not start implementation.
 
-The workflow needs the intake-brief slug. Determine it from the approved brief in
-`specs/feature-intake/<slug>.md` (ask the user if ambiguous). This is the one
-decision that must be made before the workflow runs.
+## Required Context
 
-## Run it
+Read these before writing:
 
-Call the workflow (this skill is your opt-in to `Workflow`):
+1. `AGENTS.md`
+2. `docs/ARCHITECTURE.md`
+3. `docs/REVIEW-RULES.md`
+4. `specs/feature-intake/<slug>.md`
+5. `.agents/skills/spec-bridge/templates/dev-spec.md`
+6. `.agents/skills/spec-bridge/references/execution-manifest-template.yaml`
+7. `.agents/skills/spec-bridge/references/spec-qa-gates.md`
 
-```
-Workflow({ name: 'spec-bridge', args: { slug: '<slug>' } })
-```
+## Pick The Slug
 
-The workflow fans out discovery and verification and keeps authoring single:
-**Context** (a package-map agent, then **parallel RISK-lens probes** — INV / API /
-PKG, each an independent investigation — then a context writer assembles
-`specs/context/<slug>.md`) → **Write** (a *single* separate-context author
-produces `specs/dev-specs/<slug>.md` **and** the `.execution.yaml` manifest
-together, so WU ids/files/deps/checks stay identical) → **Review** (an independent
-**multi-reviewer panel**, one reviewer per gate-family — traceability /
-decomposition / invariant-fit / risk-consistency — none of whom saw the writer;
-findings unioned) → **Fix loop** (on P0/P1, a fixer edits the spec and the *whole
-panel* re-runs, max 3 rounds). Watch live progress with `/workflows`.
+Determine `<slug>` from the approved intake brief in
+`specs/feature-intake/<slug>.md`. If multiple briefs match and the user did not
+name one, ask a concise question before proceeding.
 
-All the hard gates (DC traceability, ≤5 files/WU, red_check present, Invariant Fit
-Audit real, every RISK resolved, `final_gate_owner: main-agent`, spec/manifest
-consistency) are split across the reviewer panel per
-`.Codex/skills/spec-bridge/references/spec-qa-gates.md`.
+Stop if the brief is missing or not approved; run `/feature-intake` first.
 
-## After it returns — Stage 3 (yours, not the workflow's)
+## Stage 0 — Context And Risk Evidence
 
-The workflow returns `{ verdict, awaitingApproval, escalate, contextPath,
-specPath, manifestPath, workUnits, packages, risks, fixRounds, counts, findings,
-gateReport }`. Also handle the early-stop shapes: `stop: 'BRIEF_NOT_FOUND' |
-'CONTEXT_INVALID' | 'WRITER_FAILED' | 'REVIEWER_FAILED'`, and `error` (bad/no
-slug).
+Create or update `specs/context/<slug>.md` with evidence, not guesses.
 
-- **PASS** (`awaitingApproval: true`) — show the spec path, manifest path, gate
-  summary, any P2/P3 (informational), then ask the user:
-  > Approve this dev spec + manifest? After approval I'll hand off to `/implement`
-  > (WUs TDD-first) and keep the final `/verify` + `/code-review` with the main
-  > agent.
-  On approval, hand off to `/implement` with the slug.
-- **FAIL** (`escalate: true` — 3 fix rounds exhausted) — show the remaining
-  findings + `gateReport` and escalate to the user; do NOT approve or start
-  implementation.
-- **Early stop / error** — report the `stop`/`error` reason (e.g. run
-  `/feature-intake` first if the brief is missing). Do not proceed.
+Gather:
 
-## Hard rules (unchanged)
+- affected packages and entrypoints
+- package READMEs when present
+- existing tests near the planned behavior
+- current public API exports if a published surface may change
+- consumers via `rg`/`git grep` for changed symbols or strings
 
-- Never start implementation without explicit user approval.
-- Never approve on a FAIL verdict.
-- The reviewer's gate list and the P0/P1 = must-fix rule are the source of truth;
-  don't override the workflow verdict — fix (re-run) or escalate.
+Record risks with stable IDs:
 
-## Optional — Codex second opinion
+- `RISK-INV-*` — Facet invariant risks
+- `RISK-API-*` — public API or consumer migration risks
+- `RISK-PKG-*` — package boundary, dependency, build, or publish risks
 
-The previous inline Stage 2.5 (Codex adversarial review) is not part of the
-workflow. If a Codex reviewer is available and you want a second independent
-opinion, run it against `specs/dev-specs/<slug>.md` after a PASS and merge any
-P1+ findings before asking for approval. Skipping it is not a gate violation.
+If Codex subagents are available, you may run separate risk-probe passes for INV,
+API, and PKG. If unavailable, do the probes inline. The main agent owns the final
+context file.
 
-## Handoff — implementation
+## Stage 1 — Write Spec And Manifest Together
 
-After approval, **execution is `/implement`'s job** (branch/worktree → Work Units
-TDD-first from the manifest → inner-loop gates). Pass the slug so it can read
-`specs/dev-specs/<slug>.md` + `specs/dev-specs/<slug>.execution.yaml`. This skill
-stops at an approved, delegatable plan; it does not write production code.
+Use the templates. Keep the spec and manifest synchronized.
+
+The spec must include:
+
+- overview and affected packages
+- Done Criteria mapping from every `DC-*`
+- Invariant Fit Audit for every touched invariant
+- fail-safe and boundary checklist
+- Risk Register resolving every `RISK-*`
+- Public API Impact
+- Shared Preflight
+- Work Units
+- Execution Order
+- Final Gate Chain with `final_gate_owner: main-agent`
+
+The execution manifest must mirror the Work Units exactly:
+
+- same WU IDs and titles
+- same files
+- same dependencies and parallel groups
+- same `red_check`, quick checks, no-regression checks, and test plan
+
+Work Unit rules:
+
+- each WU touches at most 5 files
+- each file belongs to exactly one WU
+- production-code WUs need a real `red_check` that fails before implementation
+  and passes after implementation
+- `red_check: N/A` is allowed only for docs, deletion-only, or move-only WUs with
+  a concrete justification
+- parallel WUs must have disjoint writable files
+
+## Stage 2 — Gate Review
+
+Review the draft against
+`.agents/skills/spec-bridge/references/spec-qa-gates.md`.
+
+Produce a gate table:
+
+`gate | status | evidence | blocking`
+
+Any blocking FAIL means the spec is not approvable.
+
+Review specifically for:
+
+- all `DC-*` traced to implementation and tests
+- spec/manifest consistency
+- concrete invariant mitigations
+- fail-safe and boundary test coverage
+- public API consumer migration evidence
+- WU decomposition quality
+- TDD-first enforcement
+- all `RISK-*` resolved or explicitly waived
+
+## Stage 3 — Bounded Fix Loop
+
+If the gate review finds P0/P1 or blocking failures:
+
+1. Fix the spec and manifest together.
+2. Re-run the full gate review.
+3. Repeat at most 3 rounds.
+
+If blocking failures remain after 3 rounds, stop and escalate to the user with
+the remaining gate failures. Do not approve and do not implement.
+
+P2/P3 issues may be shown as informational only if no gate marks them blocking.
+
+## Stage 4 — Approval
+
+When the gate review passes:
+
+1. Show the spec path and manifest path.
+2. Summarize affected packages, WUs, risks resolved, and any residual P2/P3 notes.
+3. Ask the user:
+
+   `Approve this dev spec + manifest? After approval I'll hand off to /implement.`
+
+Only after explicit approval should `/implement` run.
+
+## Hard Rules
+
+- No implementation in `/spec-bridge`.
+- No approval on a blocking gate failure.
+- No silent placeholder content in the spec or manifest.
+- No spec/manifest divergence.
+- No unresolved invariant conflict.
+
+## Output Contract
+
+Report:
+
+1. `Context Path`
+2. `Spec Path`
+3. `Manifest Path`
+4. `Affected Packages`
+5. `Risk Register Summary`
+6. `Work Units`
+7. `Gate Review` PASS/FAIL table
+8. `Fix Rounds`
+9. `Ready For Approval` YES/NO

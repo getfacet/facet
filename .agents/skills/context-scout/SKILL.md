@@ -7,7 +7,6 @@ description: >
   returns a GO/NO-GO with evidence. Use before coding a non-trivial change (or
   when the user says "context-scout"). For the /spec-bridge flow this is already
   done inline as its Stage 0 — run this standalone for direct implementation.
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git ls-files:*), Bash(git grep:*), Read, Glob, Grep, Agent
 ---
 
 # Context Scout (Facet)
@@ -50,7 +49,7 @@ Merge into one changed-files list.
 | `packages/store-postgres/**` | `@facet/store-postgres` |
 | `packages/bridge/**` | `@facet/bridge` |
 | `apps/playground/**` | playground (integration surface) |
-| `.Codex/**`, root `*.md`, `docs/**` | infra/docs |
+| `.agents/**`, `.codex/**`, root `*.md`, `docs/**` | infra/docs |
 
 ### Step 3 — Gather evidence per affected package
 For each affected package, collect (as `file:line`):

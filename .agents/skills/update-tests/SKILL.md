@@ -5,7 +5,6 @@ description: >
   each changed production file to a test obligation, adds/updates the covering
   vitest test, and runs the affected package suites. Use after code changes,
   before /verify, or when the user says "update tests".
-allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git ls-files:*), Bash(pnpm:*), Read, Edit, Write, Glob, Grep, Agent
 ---
 
 # Update Tests (Facet)
@@ -37,7 +36,7 @@ Any `packages/*/src/**` (non-test) or config/build change → do NOT skip.
 
 ## Workflow
 1. **Map to packages.** `packages/<pkg>/src/**` → that package. `apps/playground/**`
-   → playground (integration/manual — note if no unit suite). `.Codex/**`,
+   → playground (integration/manual — note if no unit suite). `.agents/**`, `.codex/**`,
    root `*.md` → infra/docs (skip unit tests).
 2. **Build an obligation ledger** — one row per changed non-test source file:
    `{ package, source_file, test_target, behavior, status: PENDING }`.
