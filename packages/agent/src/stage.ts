@@ -22,7 +22,7 @@ function childrenPath(parent: NodeId): string {
  * into a single `patch` message and ordered correctly relative to `say(...)`.
  */
 export class Stage {
-  private readonly out: ServerMessage[] = [];
+  private out: ServerMessage[] = [];
   private pending: JsonPatchOperation[] = [];
 
   /** Replace the entire stage with a new tree. */
@@ -91,7 +91,9 @@ export class Stage {
   /** Drain all recorded commands into the messages to return to the runtime. */
   flush(): ServerMessage[] {
     this.flushPending();
-    return this.out;
+    const out = this.out;
+    this.out = [];
+    return out;
   }
 
   private flushPending(): void {
