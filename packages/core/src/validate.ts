@@ -1,6 +1,7 @@
 import {
   ALIGNS,
   APPEARS,
+  COLUMNS,
   COLORS,
   DIRECTIONS,
   FONT_SIZES,
@@ -8,22 +9,26 @@ import {
   JUSTIFIES,
   RADII,
   RATIOS,
+  SCROLL_AXES,
   SIZINGS,
   SPACES,
   TEXT_ALIGNS,
 } from "./tokens.js";
 import {
   FIELD_INPUTS,
+  MEDIA_KINDS,
   isContainer,
   type BoxStyle,
   type FacetAction,
   type FacetNode,
   type FieldInput,
   type FieldStyle,
-  type ImageStyle,
+  type MediaKind,
+  type MediaStyle,
   type NodeId,
   type TextStyle,
 } from "./nodes.js";
+import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
 import {
@@ -123,6 +128,12 @@ function asToken<T extends string>(value: unknown, allowed: readonly string[]): 
   return typeof value === "string" && allowed.includes(value) ? (value as T) : undefined;
 }
 
+function asNumberToken<T extends number>(value: unknown, allowed: readonly T[]): T | undefined {
+  const numeric =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isInteger(numeric) && allowed.includes(numeric as T) ? (numeric as T) : undefined;
+}
+
 /**
  * Normalizes an action value (`onPress`/`onHold`) to the FacetAction union. A
  * bare legacy `{name}` (kind absent) or explicit `kind: "agent"` gets the
@@ -192,8 +203,8 @@ function asAction(
   return undefined;
 }
 
-/** Only render images from safe URL schemes — never `javascript:`, `data:text/html`, etc. */
-export function isSafeImageSrc(src: string): boolean {
+/** Only render media from safe URL schemes — never `javascript:`, `data:text/html`, etc. */
+export function isSafeMediaSrc(src: string): boolean {
   const s = src.trim().toLowerCase();
   return (
     s.startsWith("https://") ||
@@ -203,6 +214,8 @@ export function isSafeImageSrc(src: string): boolean {
     (s.startsWith("/") && !s.startsWith("//"))
   );
 }
+
+const MAX_FIELD_OPTIONS = 64;
 
 function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
   const style: Record<string, unknown> = {};
@@ -231,11 +244,23 @@ function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
         `node "${printableKey(nodeId)}": unknown appear token ${printableValue(value.appear)} dropped`,
       );
     }
-    const scroll = asBool(value.scroll);
+    const scroll = asToken(value.scroll, SCROLL_AXES);
     if (scroll !== undefined) {
       style.scroll = scroll;
+    } else if (value.scroll === true) {
+      style.scroll = "y";
     } else if (value.scroll !== undefined) {
-      issues.push(`node "${printableKey(nodeId)}": scroll is not a boolean; dropped`);
+      issues.push(
+        `node "${printableKey(nodeId)}": unknown scroll axis ${printableValue(value.scroll)} dropped`,
+      );
+    }
+    const columns = asNumberToken(value.columns, COLUMNS);
+    if (columns !== undefined) {
+      style.columns = columns;
+    } else if (value.columns !== undefined) {
+      issues.push(
+        `node "${printableKey(nodeId)}": unknown columns token ${printableValue(value.columns)} dropped`,
+      );
     }
     const wrap = asBool(value.wrap);
     if (wrap !== undefined) style.wrap = wrap;
@@ -262,7 +287,7 @@ function textStyle(value: unknown): TextStyle {
   return style as TextStyle;
 }
 
-function imageStyle(value: unknown): ImageStyle {
+function mediaStyle(value: unknown): MediaStyle {
   const style: Record<string, unknown> = {};
   if (isObject(value)) {
     const radius = asToken(value.radius, RADII);
@@ -272,13 +297,25 @@ function imageStyle(value: unknown): ImageStyle {
     const ratio = asToken(value.ratio, RATIOS);
     if (ratio !== undefined) style.ratio = ratio;
   }
-  return style as ImageStyle;
+  return style as MediaStyle;
 }
 
 function fieldStyle(value: unknown): FieldStyle | undefined {
   if (!isObject(value)) return undefined;
   const width = asToken<(typeof SIZINGS)[number]>(value.width, SIZINGS);
   return width !== undefined ? { width } : undefined;
+}
+
+function fieldOptions(value: unknown): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const options: string[] = [];
+  for (const option of value) {
+    if (options.length >= MAX_FIELD_OPTIONS) break;
+    if (typeof option === "string") {
+      options.push(option.slice(0, MAX_FIELD_VALUE_CHARS));
+    }
+  }
+  return options.length > 0 ? options : undefined;
 }
 
 function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | undefined {
@@ -320,18 +357,46 @@ function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | 
       }
       return { id, type: "text", value, style: textStyle(raw.style) };
     }
-    case "image": {
+    case "image":
+    case "media": {
       const src = asString(raw.src);
+      if (src === undefined) {
+        issues.push(`node "${key}": media needs a string src`);
+        return undefined;
+      }
+      if (!isSafeMediaSrc(src)) {
+        issues.push(`node "${key}": unsafe media src dropped`);
+        return undefined;
+      }
+      const kind =
+        type === "image" && raw.kind === undefined
+          ? "image"
+          : raw.kind === undefined
+            ? "image"
+            : asToken<MediaKind>(raw.kind, MEDIA_KINDS);
+      if (kind === undefined) {
+        issues.push(`node "${key}": unknown media kind ${printableValue(raw.kind)} dropped`);
+        return undefined;
+      }
+      const node: {
+        id: string;
+        type: "media";
+        kind: MediaKind;
+        src: string;
+        alt?: string;
+        poster?: string;
+        controls?: boolean;
+        style: MediaStyle;
+      } = { id, type: "media", kind, src, style: mediaStyle(raw.style) };
       const alt = asString(raw.alt);
-      if (src === undefined || alt === undefined) {
-        issues.push(`node "${key}": image needs src and alt`);
-        return undefined;
+      node.alt = alt ?? "";
+      const poster = asString(raw.poster);
+      if (poster !== undefined && isSafeMediaSrc(poster)) {
+        node.poster = poster;
       }
-      if (!isSafeImageSrc(src)) {
-        issues.push(`node "${key}": unsafe image src dropped`);
-        return undefined;
-      }
-      return { id, type: "image", src, alt, style: imageStyle(raw.style) };
+      const controls = asBool(raw.controls);
+      if (controls !== undefined) node.controls = controls;
+      return node;
     }
     case "field": {
       const name = asString(raw.name);
@@ -346,10 +411,13 @@ function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | 
         input?: FieldInput;
         label?: string;
         placeholder?: string;
+        options?: readonly string[];
         style?: FieldStyle;
       } = { id, type: "field", name };
       const input = asToken<FieldInput>(raw.input, FIELD_INPUTS);
       if (input !== undefined) node.input = input;
+      const options = fieldOptions(raw.options);
+      if (options !== undefined) node.options = options;
       const label = asString(raw.label);
       if (label !== undefined) node.label = label;
       const placeholder = asString(raw.placeholder);
