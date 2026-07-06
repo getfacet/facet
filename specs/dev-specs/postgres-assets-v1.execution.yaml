@@ -24,6 +24,13 @@ review_fix_policy:
 
 final_gate_owner: "main-agent"
 
+final_gate_chain:
+  - "/verify (typecheck, test, lint, format:check, build, raw-NUL scan)"
+  - "/code-review (PASS = P0-P2 = 0; P3 nits non-blocking)"
+  - "/live-test (Tier 1 live-link gate still runs; Tier 2 blocks only when packages/quickstart changed)"
+  - "/refactor-audit (periodic; owner-run)"
+  - "squash → one feature commit; commit/PR on the user's explicit go"
+
 work_units:
   - id: "WU-1"
     title: "Extend initSchema with the facet_assets table"

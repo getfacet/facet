@@ -1,9 +1,13 @@
 # @facet/runtime
 
-The Facet runtime: the event loop that drives stage patches, plus the two
-persistence seams — a `StageStore` for the page (always Facet's) and a `Sink`
-for the conversation (store, forward, or drop). Both default to in-memory;
-file-backed Node references live in `@facet/runtime/node`.
+The Facet runtime: the event loop that drives stage patches, plus the three
+persistence seams — a `StageStore` for the page (always Facet's), a `Sink` for
+the conversation (store, forward, or drop), and an `AssetsStore` for per-agent
+themes, stamps, and an optional initial tree. The default references are
+in-memory (`MemoryStageStore`, `MemorySink`, `MemoryAssets`); file-backed Node
+references live in `@facet/runtime/node`. Load asset documents through
+`loadAssets`, then use `withInitialStage` when a validated initial tree should
+seed fresh sessions.
 
 ```bash
 npm install @facet/runtime @facet/agent @facet/core
