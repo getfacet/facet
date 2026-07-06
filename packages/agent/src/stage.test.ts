@@ -108,4 +108,94 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     if (message?.kind !== "patch") throw new Error("expected patch");
     expect(message.patches[0]).toEqual({ op: "remove", path: "/nodes/a~1b~0c" });
   });
+
+  it("useStamp expands a stamp into one coalesced patch and returns fresh ids", () => {
+    const stage = new Stage();
+    const result = stage.useStamp(
+      {
+        name: "card",
+        slots: { title: "Default" },
+        root: "card",
+        nodes: {
+          card: { id: "card", type: "box", children: ["title"] },
+          title: { id: "title", type: "text", value: "{{title}}" },
+        },
+      },
+      { title: "Hello" },
+      { parent: "root" },
+    );
+
+    expect(result.root).toBeDefined();
+    expect(result.slots["title"]).toBeDefined();
+    expect(result.ids["card"]).toBe(result.root);
+    expect(result.ids["title"]).toBe(result.slots["title"]);
+
+    const messages = stage.flush();
+    expect(messages).toHaveLength(1);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([
+      {
+        op: "add",
+        path: `/nodes/${result.root}`,
+        value: { id: result.root, type: "box", style: {}, children: [result.slots["title"]] },
+      },
+      {
+        op: "add",
+        path: `/nodes/${result.slots["title"]}`,
+        value: { id: result.slots["title"], type: "text", value: "Hello", style: {} },
+      },
+      { op: "add", path: "/nodes/root/children/-", value: result.root },
+    ]);
+  });
+
+  it("useStamp coalesces with pending edits and flushes before say", () => {
+    const stage = new Stage();
+    stage.set({ id: "panel", type: "box", children: [] });
+    const result = stage.useStamp(
+      {
+        name: "label",
+        root: "text",
+        nodes: { text: { id: "text", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "panel" },
+    );
+    stage.say("done");
+
+    const messages = stage.flush();
+    expect(messages.map((message) => message.kind)).toEqual(["patch", "say"]);
+    const message = messages[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toEqual([
+      { op: "add", path: "/nodes/panel", value: { id: "panel", type: "box", children: [] } },
+      {
+        op: "add",
+        path: `/nodes/${result.root}`,
+        value: { id: result.root, type: "text", value: "Inside", style: {} },
+      },
+      { op: "add", path: "/nodes/panel/children/-", value: result.root },
+    ]);
+  });
+
+  it("useStamp is a no-op for malformed stamps or unknown parents", () => {
+    const stage = new Stage();
+
+    const badStamp = stage.useStamp(undefined, {}, { parent: "root" });
+    const unknownParent = stage.useStamp(
+      {
+        name: "label",
+        root: "text",
+        nodes: { text: { id: "text", type: "text", value: "Inside" } },
+      },
+      {},
+      { parent: "ghost" },
+    );
+
+    expect(badStamp.root).toBeUndefined();
+    expect(badStamp.ids).toEqual({});
+    expect(unknownParent.root).toBeUndefined();
+    expect(unknownParent.ids).toEqual({});
+    expect(stage.flush()).toEqual([]);
+  });
 });

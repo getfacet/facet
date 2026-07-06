@@ -1,4 +1,14 @@
-import type { FacetNode, FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
+import {
+  expandStamp,
+  type ExpandAt,
+  type FacetNode,
+  type FacetTree,
+  type JsonPatchOperation,
+  type NodeId,
+  type ServerMessage,
+  type StampParams,
+  type UseStampResult,
+} from "@facet/core";
 
 /** Escapes a token for use in an RFC 6901 JSON Pointer. */
 function escape(token: string): string {
@@ -24,16 +34,19 @@ function childrenPath(parent: NodeId): string {
 export class Stage {
   private out: ServerMessage[] = [];
   private pending: JsonPatchOperation[] = [];
+  private knownIds = new Set<NodeId>(["root"]);
 
   /** Replace the entire stage with a new tree. */
   render(tree: FacetTree): this {
     this.pending.push({ op: "replace", path: "", value: tree });
+    this.knownIds = new Set(Object.keys(tree.nodes));
     return this;
   }
 
   /** Insert or replace a single node by id (RFC 6902 `add` upserts). */
   set(node: FacetNode): this {
     this.pending.push({ op: "add", path: nodePath(node.id), value: node });
+    this.knownIds.add(node.id);
     return this;
   }
 
@@ -41,7 +54,27 @@ export class Stage {
   append(parent: NodeId, node: FacetNode): this {
     this.pending.push({ op: "add", path: nodePath(node.id), value: node });
     this.pending.push({ op: "add", path: childrenPath(parent), value: node.id });
+    this.knownIds.add(node.id);
     return this;
+  }
+
+  /** Expand a resolved stamp under a known parent as ordinary patch ops. */
+  useStamp(stamp: unknown, params: StampParams, at: ExpandAt): UseStampResult {
+    const expanded = expandStamp(stamp, params, at, { existingIds: this.knownIds });
+    const result: {
+      root?: NodeId;
+      slots: UseStampResult["slots"];
+      ids: UseStampResult["ids"];
+    } = { slots: expanded.slots, ids: expanded.ids };
+    if (expanded.root === undefined) return result;
+
+    for (const node of Object.values(expanded.nodes)) {
+      this.pending.push({ op: "add", path: nodePath(node.id), value: node });
+      this.knownIds.add(node.id);
+    }
+    this.pending.push({ op: "add", path: childrenPath(at.parent), value: expanded.root });
+    result.root = expanded.root;
+    return result;
   }
 
   /**
@@ -78,6 +111,7 @@ export class Stage {
    */
   remove(id: NodeId): this {
     this.pending.push({ op: "remove", path: nodePath(id) });
+    this.knownIds.delete(id);
     return this;
   }
 
