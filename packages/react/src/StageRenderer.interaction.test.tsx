@@ -742,6 +742,49 @@ describe("StageRenderer collect (jsdom)", () => {
     );
   });
 
+  it("collects the first defined same-name radio value when an earlier radio group is unchecked", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "box", children: ["form", "submit"] },
+          form: {
+            id: "form",
+            type: "box",
+            children: ["emptySize", "chosenSize"],
+          },
+          emptySize: {
+            id: "emptySize",
+            type: "field",
+            name: "size",
+            input: "radio",
+            options: ["Small", "Medium"],
+          },
+          chosenSize: {
+            id: "chosenSize",
+            type: "field",
+            name: "size",
+            input: "radio",
+            options: ["Large", "XL"],
+          },
+          submit: {
+            id: "submit",
+            type: "box",
+            onPress: { kind: "agent", name: "submit", collect: "form" },
+            children: ["st"],
+          },
+          st: { id: "st", type: "text", value: "Send" },
+        })}
+      />,
+    );
+
+    fireEvent.click(screen.getByDisplayValue("XL"));
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, { size: "XL" });
+  });
+
   it("does not collect a same-named field OUTSIDE the collect subtree", () => {
     const onAction = vi.fn();
     render(

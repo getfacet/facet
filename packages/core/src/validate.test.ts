@@ -759,12 +759,16 @@ describe("brick-vocab v1 core validation", () => {
         },
         checkbox: { id: "checkbox", type: "field", name: "tos", input: "checkbox" },
         radio: { id: "radio", type: "field", name: "size", input: "radio", options: [] },
+        emptySelect: { id: "emptySelect", type: "field", name: "empty", input: "select" },
         switcher: { id: "switcher", type: "field", name: "alerts", input: "switch" },
         unknown: { id: "unknown", type: "field", name: "mystery", input: "colorwheel" },
       }),
     );
 
-    expect(issues).toHaveLength(0);
+    expect(issues).toEqual([
+      'node "radio": "radio" field has no valid options — rendered control will be empty',
+      'node "emptySelect": "select" field has no valid options — rendered control will be empty',
+    ]);
     expect(tree.nodes["select"]).toMatchObject({
       type: "field",
       input: "select",
@@ -772,6 +776,8 @@ describe("brick-vocab v1 core validation", () => {
     });
     expect(tree.nodes["checkbox"]).toMatchObject({ type: "field", input: "checkbox" });
     expect(tree.nodes["radio"]).not.toHaveProperty("options");
+    expect(tree.nodes["emptySelect"]).toMatchObject({ type: "field", input: "select" });
+    expect(tree.nodes["emptySelect"]).not.toHaveProperty("options");
     expect(tree.nodes["switcher"]).toMatchObject({ type: "field", input: "switch" });
     expect(tree.nodes["unknown"]).not.toHaveProperty("input");
   });

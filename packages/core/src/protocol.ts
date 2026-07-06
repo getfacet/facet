@@ -45,6 +45,13 @@ export const MAX_FIELD_VALUE_CHARS = 2000;
  */
 export const MAX_FIELDS_KEYS = 256;
 
+/**
+ * Shared cap on the NUMBER of options a select/radio field may carry. Core
+ * validation and the raw renderer path both enforce it so prompt-authored trees
+ * and live-patched trees cannot drift.
+ */
+export const MAX_FIELD_OPTIONS = 64;
+
 export type FieldValue = string | boolean;
 export type FieldValues = Readonly<Record<string, FieldValue>>;
 

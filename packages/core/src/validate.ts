@@ -28,7 +28,7 @@ import {
   type NodeId,
   type TextStyle,
 } from "./nodes.js";
-import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
+import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
 import {
@@ -214,8 +214,6 @@ export function isSafeMediaSrc(src: string): boolean {
     (s.startsWith("/") && !s.startsWith("//"))
   );
 }
-
-const MAX_FIELD_OPTIONS = 64;
 
 function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
   const style: Record<string, unknown> = {};
@@ -418,6 +416,11 @@ function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | 
       if (input !== undefined) node.input = input;
       const options = fieldOptions(raw.options);
       if (options !== undefined) node.options = options;
+      if ((input === "select" || input === "radio") && options === undefined) {
+        issues.push(
+          `node "${printableKey(id)}": ${printableValue(input)} field has no valid options — rendered control will be empty`,
+        );
+      }
       const label = asString(raw.label);
       if (label !== undefined) node.label = label;
       const placeholder = asString(raw.placeholder);

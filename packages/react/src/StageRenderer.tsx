@@ -10,6 +10,7 @@ import {
   isSafeMediaSrc,
   isTreeShaped,
   MAX_DEPTH,
+  MAX_FIELD_OPTIONS,
   MAX_FIELD_VALUE_CHARS,
   MAX_FIELDS_KEYS,
   MAX_RENDER_NODES,
@@ -55,8 +56,6 @@ const RENDER_BUDGET = MAX_RENDER_NODES;
 function styleOf<T extends object>(style: T | undefined): T | undefined {
   return typeof style === "object" && style !== null ? style : undefined;
 }
-
-const MAX_FIELD_OPTIONS = 64;
 
 function optionsOf(options: unknown): readonly string[] {
   if (!Array.isArray(options)) return [];
@@ -248,16 +247,16 @@ function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode
     // Bound the field COUNT with the same cap the server enforces, so the
     // renderer can't emit a fields object the server rejects wholesale (400).
     if (Object.keys(fields).length >= MAX_FIELDS_KEYS) break;
-    // Pick the first MOUNTED control among same-named fields (a hidden earlier
-    // one must not shadow a visible later one).
+    // Pick the first MOUNTED control among same-named fields that has a defined
+    // value (an earlier unchecked radio group must not shadow a checked later one).
     for (const id of ids) {
       const elements = elementsByNodeId.get(id);
       if (elements === undefined) continue;
       const value = readMountedValue(elements);
       if (value !== undefined) {
         fields[name] = value;
+        break;
       }
-      break;
     }
   }
   return fields;
