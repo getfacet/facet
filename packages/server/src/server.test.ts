@@ -539,6 +539,28 @@ describe("browser channel", () => {
     }
   });
 
+  it("full rehydrate does not duplicate completed streamed says retained in the frame log", async () => {
+    const sink = new MemorySink();
+    const agent: FacetAgent = async function* () {
+      yield [{ kind: "say", text: "one" }];
+      yield [{ kind: "say", text: "two" }];
+    };
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+    const stream1 = await fetch(`${base}/stream?visitorId=v`);
+    await postEvent(base, "v", { kind: "message", text: "hi" });
+    const first = await readEvents(stream1, 3);
+    expect(sayText(first)).toEqual(["one", "two"]);
+    await waitFor(async () => (await sink.history("a", "v")).length === 1);
+
+    const stream2 = await fetch(`${base}/stream?visitorId=v`);
+    const rehydrated = await readEvents(stream2, 4);
+
+    expect(rehydrated[0]?.data).toEqual({ kind: "reset" });
+    expect(rehydrated[1]?.data).toMatchObject({ kind: "patch" });
+    expect(sayText(rehydrated)).toEqual(["one", "two"]);
+  });
+
   it("advertises Last-Event-ID in CORS so cross-origin resume works", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;

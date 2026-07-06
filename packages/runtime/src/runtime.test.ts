@@ -471,6 +471,33 @@ describe("FacetRuntime.handle — stream batches", () => {
     expect((await rt.historyFor("v"))[0]?.messages).toEqual(appendTextBatch("one"));
     expect(cleanedUp).toBe(true);
   });
+
+  it("records persisted streamed batches and closes the iterator when the frame sink throws", async () => {
+    let pulledSecond = false;
+    let cleanedUp = false;
+    async function* agent(): AsyncIterable<readonly ServerMessage[]> {
+      try {
+        yield appendTextBatch("one");
+        pulledSecond = true;
+        yield appendTextBatch("two");
+      } finally {
+        cleanedUp = true;
+      }
+    }
+    const rt = new FacetRuntime({ agentId: "a", agent });
+
+    const out = await rt.handle(visitor, { kind: "message", text: "hi" }, () => {
+      throw new Error("delivery failed");
+    });
+
+    expect(out).toEqual({ messages: [], agentMutated: true });
+    expect(pulledSecond).toBe(false);
+    expect(cleanedUp).toBe(true);
+    expect(
+      ((await rt.stageFor("v"))?.nodes["root"] as unknown as { children: string[] }).children,
+    ).toEqual(["one"]);
+    expect((await rt.historyFor("v"))[0]?.messages).toEqual(appendTextBatch("one"));
+  });
 });
 
 describe("FacetRuntime.handle — agentMutated is effect-based", () => {
