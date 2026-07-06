@@ -132,11 +132,6 @@ async function collectEvents(response: Response, ms: number): Promise<SseFrame[]
   return frames;
 }
 
-/** Collect SSE data payloads for a bounded window. */
-async function collectFrames(response: Response, ms: number): Promise<unknown[]> {
-  return (await collectEvents(response, ms)).map((f) => f.data);
-}
-
 function eventReader(response: Response): {
   next(ms: number): Promise<SseFrame | undefined>;
   close(): Promise<void>;
@@ -1520,7 +1515,7 @@ describe("async delivery — resume & rehydrate", () => {
     await link.close();
   });
 
-  it("replays a frame delivered during the rehydrate read (loss-free window)", async () => {
+  it("ends when a frame lands during the rehydrate read, then retry snapshots the latest stage", async () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
@@ -1547,22 +1542,17 @@ describe("async delivery — resume & rehydrate", () => {
     await postEvent(base, "v", { kind: "message", text: "seed" });
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
-    // Open the (re)connecting visitor, then fire a bump whose frame is delivered
-    // DURING the delayed rehydrate read — it must be replayed before live flow.
-    const stream = await fetch(`${base}/stream?visitorId=v`);
+    // Open the (re)connecting visitor, then fire a bump during the delayed read.
+    // The first stream must end rather than replay a frame that the snapshot may
+    // already include; the retry takes a fresh watermark and snapshots the bump.
+    const first = await fetch(`${base}/stream?visitorId=v`);
     await postEvent(base, "v", { kind: "message", text: "bump" });
+    expect(await streamEnded(first, 1_000)).toBe(true);
 
-    const frames = (await collectFrames(stream, 600)) as {
-      kind?: string;
-      patches?: { path?: string }[];
-    }[];
-    const fullIdx = frames.findIndex((f) => f.kind === "patch" && f.patches?.[0]?.path === "");
-    const liveIdx = frames.findIndex(
-      (f) => f.kind === "patch" && f.patches?.[0]?.path === "/nodes/t1/value",
-    );
-    expect(fullIdx).toBeGreaterThanOrEqual(0); // the full-replace rehydrate arrived
-    expect(liveIdx).toBeGreaterThanOrEqual(0); // the bump was NOT lost in the window
-    expect(fullIdx).toBeLessThan(liveIdx); // …and arrived before the live patch
+    const retry = await fetch(`${base}/stream?visitorId=v`);
+    const frames = await readEvents(retry, 2);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(JSON.stringify(frames[1]?.data)).toContain("bumped");
   });
 });
 
@@ -1633,7 +1623,7 @@ describe("agent handshake (DC-009)", () => {
 });
 
 describe("hardening", () => {
-  it("rehydrate cannot overwrite a newer live patch", async () => {
+  it("rehydrate ends instead of racing a newer live patch over its snapshot", async () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
@@ -1665,26 +1655,17 @@ describe("hardening", () => {
     await waitFor(async () => (await inner.get("a", "v"))?.stage.nodes["t1"] !== undefined);
 
     // Open the (re)connecting visitor, then immediately fire a newer live patch. The
-    // stale rehydrate snapshot (delayed 150ms) resolves AFTER the bump has shipped.
+    // rehydrate read resolves after the bump, so the server must end instead of
+    // sending a snapshot/replay pair that could double-apply the patch.
     const stream = await fetch(`${base}/stream?visitorId=v`);
     expect(stream.status).toBe(200);
     await post("bump");
+    expect(await streamEnded(stream, 1_000)).toBe(true);
 
-    const frames = (await collectFrames(stream, 500)) as {
-      kind?: string;
-      patches?: { path?: string }[];
-    }[];
-    const isFullReplace = (f: (typeof frames)[number]): boolean =>
-      f.kind === "patch" && f.patches?.[0]?.path === "";
-    const isLivePatch = (f: (typeof frames)[number]): boolean =>
-      f.kind === "patch" && f.patches?.[0]?.path === "/nodes/t1/value";
-    const fullIdx = frames.findIndex(isFullReplace);
-    const liveIdx = frames.findIndex(isLivePatch);
-
-    expect(fullIdx).toBeGreaterThanOrEqual(0); // the full-replace rehydrate must arrive
-    // …and it must precede any live patch (a stale full-replace after a newer patch
-    // would silently roll the visitor back).
-    expect(liveIdx === -1 || fullIdx < liveIdx).toBe(true);
+    const retry = await fetch(`${base}/stream?visitorId=v`);
+    const frames = await readEvents(retry, 2);
+    expect(frames[0]?.data).toEqual({ kind: "reset" });
+    expect(JSON.stringify(frames[1]?.data)).toContain("bumped");
   });
 
   it("ends the stream when rehydrate fails, so the visitor can reconnect", async () => {

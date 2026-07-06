@@ -387,17 +387,15 @@ interface HandlingTurn {
 //      any await;
 //   2. read the stage + history (may await);
 //   3. one synchronous finalization block that FIRST re-checks watermark continuity
-//      — the log entry/era is unchanged AND the ring still retains everything past
-//      N0 (else the captured snapshot can no longer be stitched to the live stream,
-//      so we write nothing and end, the same fail-safe the store-error path uses) —
-//      then writes: reset/snapshot/history with an EMPTY id (clearing any stale
-//      Last-Event-ID) → replay ring frames with seq > N0 (their own ids) → join.
-// `deliver` and this block are both synchronous, so they cannot interleave; anything
-// delivered during step 2 has seq > N0, lives in the ring, and is replayed before
-// the join — nothing is lost in the snapshot-read→join window. Full-rehydrate frames
-// deliberately clear the resume token instead of minting one from non-logged
-// snapshot/history data; if step 2 fails, continuity fails, or the connection drops
-// before step 3, the retry performs another full rehydrate.
+//      — the log entry/era is unchanged AND no new frame landed after N0 (else the
+//      captured snapshot may already include non-idempotent patch effects we would
+//      otherwise replay, so we write nothing and end) — then writes reset/snapshot/
+//      history with an EMPTY id (clearing any stale Last-Event-ID) and joins.
+// `deliver` and this block are both synchronous, so they cannot interleave after
+// the continuity check. Full-rehydrate frames deliberately clear the resume token
+// instead of minting one from non-logged snapshot/history data; if step 2 fails,
+// continuity fails, or the connection drops before step 3, the retry performs
+// another full rehydrate.
 async function rehydrate(
   res: ServerResponse,
   visitorId: string,
@@ -422,6 +420,14 @@ async function rehydrate(
       return;
     }
     const oldest = current.frames[0];
+    if (current.nextSeq - 1 > n0) {
+      // A frame landed while the stage/history reads were in flight. The returned
+      // snapshot may already include that frame's patch effects, and replaying the
+      // frame could double-apply non-idempotent ops. End and let EventSource retry
+      // against a fresh watermark.
+      res.end();
+      return;
+    }
     if (oldest !== undefined && oldest.seq > n0 + 1) {
       // The head of the gap fell off the ring during a slow read: unstitchable.
       res.end();
@@ -460,15 +466,6 @@ async function rehydrate(
     }
     for (const frame of pendingSayFrames) {
       writeFrame(res, frame.json, CLEAR_RESUME_ID);
-    }
-    // Replay frames delivered during the reads (seq > N0) so nothing in the
-    // snapshot-read→join window is lost. A replayed frame may describe a change the
-    // snapshot already holds; that is safe not because ops are idempotent (an array
-    // append like `children/-` is NOT — it would double-apply) but because the
-    // renderer de-dupes sibling ids and the client's fail-safe drops any batch that
-    // no longer applies cleanly to its (already-current) tree.
-    for (const frame of current.frames) {
-      if (frame.seq > n0) writeFrame(res, frame.json, `${current.era}:${frame.seq}`);
     }
     join();
   } catch (error: unknown) {
