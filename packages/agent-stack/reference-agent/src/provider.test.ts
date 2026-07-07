@@ -322,9 +322,110 @@ describe("openai tool-loop wire translation", () => {
     const step = await createOpenAiProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
     expect(step.toolCalls[0]!.input).toMatchObject({ __parseError: "{not json" });
   });
+
+  it("rejects malformed tool_calls fields that are present but not arrays", async () => {
+    const malformed = {
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: { id: "call_1" },
+          },
+        },
+      ],
+    };
+    const { fetchImpl } = createCapturingFetch(okJson(malformed));
+
+    await expect(
+      createOpenAiProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS),
+    ).rejects.toThrow(/malformed tool_calls/);
+  });
+
+  it("rejects malformed tool calls that lack a usable id or name", async () => {
+    for (const toolCall of [
+      { id: "", type: "function", function: { name: "say", arguments: "{}" } },
+      { id: "call_1", type: "function", function: { name: "", arguments: "{}" } },
+      { id: "call_1", type: "function" },
+    ]) {
+      const malformed = {
+        choices: [
+          {
+            message: {
+              content: null,
+              tool_calls: [toolCall],
+            },
+          },
+        ],
+      };
+      const { fetchImpl } = createCapturingFetch(okJson(malformed));
+
+      await expect(
+        createOpenAiProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS),
+      ).rejects.toThrow(/malformed tool_call/);
+    }
+  });
 });
 
 describe("anthropic tool-loop wire translation", () => {
+  it("merges consecutive user text messages before sending the Anthropic request", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(anthropicCase.textResponse("")));
+    await createAnthropicProvider(API_KEY, fetchImpl).run(
+      {
+        system: "sys",
+        messages: [
+          { role: "assistant", content: "[history compacted: dropped 1 older turn(s)]" },
+          { role: "user", content: "kept history user" },
+          { role: "user", content: "current request" },
+        ],
+      },
+      PROVIDER_TOOLS,
+    );
+    const messages = bodyOf(calls[0]!)["messages"] as Array<Record<string, unknown>>;
+    const roles = messages.map((m) => m["role"]);
+
+    for (let i = 1; i < roles.length; i += 1) {
+      expect(roles[i] === "user" && roles[i - 1] === "user").toBe(false);
+    }
+    expect(messages.at(-1)).toEqual({
+      role: "user",
+      content: "kept history user\n\ncurrent request",
+    });
+  });
+
+  it("keeps a compacted Anthropic turn starting with user content", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(anthropicCase.textResponse("")));
+    await createAnthropicProvider(API_KEY, fetchImpl).run(
+      {
+        system: "sys",
+        messages: [
+          { role: "user", content: "[history compacted: dropped 4 older turn(s)]" },
+          { role: "user", content: "current request" },
+        ],
+      },
+      PROVIDER_TOOLS,
+    );
+    const messages = bodyOf(calls[0]!)["messages"] as Array<Record<string, unknown>>;
+
+    expect(messages[0]).toEqual({
+      role: "user",
+      content: "[history compacted: dropped 4 older turn(s)]\n\ncurrent request",
+    });
+  });
+
+  it("rejects malformed tool_use blocks that lack a usable id or name", async () => {
+    for (const block of [
+      { type: "tool_use", id: "", name: "say", input: { text: "hello" } },
+      { type: "tool_use", id: "tool_1", name: "", input: { text: "hello" } },
+    ]) {
+      const malformed = { content: [block] };
+      const { fetchImpl } = createCapturingFetch(okJson(malformed));
+
+      await expect(
+        createAnthropicProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS),
+      ).rejects.toThrow(/malformed tool_use/);
+    }
+  });
+
   it("maps assistant_tools to tool_use blocks and MERGES consecutive tool_results into one user message", async () => {
     const { calls, fetchImpl } = createCapturingFetch(okJson(anthropicCase.textResponse("")));
     await createAnthropicProvider(API_KEY, fetchImpl).run(TOOL_LOOP_TURN, PROVIDER_TOOLS);

@@ -2,6 +2,11 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import * as reference from "./index.js";
 import type {
+  ReferenceAgentBudget,
+  ReferenceAgentBudgetOptions,
+  ReferenceAgentBudgetOverrides,
+  ReferenceAgentBudgetPreset,
+  ReferenceAgentLoopSummary,
   ProviderOptions,
   ProviderStep,
   ProviderTurn,
@@ -9,6 +14,10 @@ import type {
   QuickstartAgentOptions,
   QuickstartProvider,
   ReferenceAgentOptions,
+  ReferenceAgentStopReason,
+  ReferenceAgentTrace,
+  ReferenceAgentTraceEvent,
+  ReferenceAgentTraceEventType,
   ReferenceProvider,
   ResolveProviderFlags,
   ToolCall,
@@ -81,6 +90,92 @@ describe("reference-agent barrel", () => {
     expectTypeOf<PromptAssets>().toMatchTypeOf<{
       readonly themes: readonly unknown[];
       readonly stamps: readonly unknown[];
+    }>();
+  });
+
+  it("exports the reference harness compatibility surface", () => {
+    const harnessRuntimeExports = [
+      "DEFAULT_REFERENCE_AGENT_BUDGET_PRESET",
+      "REFERENCE_AGENT_BUDGET_PRESETS",
+      "REFERENCE_AGENT_STOP_REASONS",
+      "REFERENCE_AGENT_RETRYABLE_HTTP_STATUSES",
+      "REFERENCE_AGENT_NON_RETRYABLE_HTTP_STATUSES",
+      "normalizeBudget",
+      "classifyProviderFailure",
+      "isRetryableProviderFailure",
+      "REFERENCE_AGENT_TRACE_EVENT_TYPES",
+      "emitReferenceAgentTrace",
+      "sanitizeReferenceAgentTraceEvent",
+      "REFERENCE_AGENT_FAILURE_SAY",
+      "FACET_STAGE_TOOL_NAMES",
+      "FACET_STAGE_TOOL_SPECS",
+      "getStageToolSpec",
+    ] as const;
+
+    for (const name of harnessRuntimeExports) {
+      expect(reference).toHaveProperty(name);
+    }
+
+    expect(reference).not.toHaveProperty("executeStageTool");
+
+    expectTypeOf<QuickstartAgentOptions>().toMatchTypeOf<{
+      readonly budgetPreset?: ReferenceAgentBudgetPreset;
+      readonly budget?: ReferenceAgentBudgetOverrides;
+      readonly trace?: ReferenceAgentTrace;
+    }>();
+    expectTypeOf<ReferenceAgentOptions>().toMatchTypeOf<{
+      readonly budgetPreset?: ReferenceAgentBudgetPreset;
+      readonly budget?: ReferenceAgentBudgetOverrides;
+      readonly trace?: ReferenceAgentTrace;
+    }>();
+    expectTypeOf<ReferenceAgentBudgetOptions>().toMatchTypeOf<{
+      readonly budgetPreset?: ReferenceAgentBudgetPreset;
+      readonly budget?: ReferenceAgentBudgetOverrides;
+      readonly maxSteps?: number;
+      readonly historyTurns?: number;
+    }>();
+    expectTypeOf<ReferenceAgentBudget>().toMatchTypeOf<{
+      readonly maxSteps: number;
+      readonly maxToolCallsPerStep: number;
+      readonly maxContextChars: number;
+      readonly maxHistoryTurns: number;
+      readonly maxHistoryChars: number;
+      readonly maxStageJsonChars: number;
+      readonly maxStageSummaryNodes: number;
+      readonly maxObservationChars: number;
+      readonly maxFinalTextChars: number;
+      readonly maxProviderRetries: number;
+      readonly retryBackoffMs: number;
+    }>();
+    expectTypeOf<ReferenceAgentStopReason>().toEqualTypeOf<
+      | "provider_stop"
+      | "max_steps"
+      | "tool_call_limit"
+      | "context_limit"
+      | "provider_error"
+      | "retry_exhausted"
+      | "sink_error"
+      | "unresolved_buffer"
+      | "empty_turn"
+    >();
+    expectTypeOf<ReferenceAgentTraceEventType>().toEqualTypeOf<
+      | "turn_start"
+      | "context_compacted"
+      | "provider_attempt"
+      | "provider_retry"
+      | "provider_step"
+      | "tool_result"
+      | "batch_yield"
+      | "stop"
+      | "turn_error"
+    >();
+    expectTypeOf<ReferenceAgentTraceEvent>().toMatchTypeOf<{
+      readonly type: ReferenceAgentTraceEventType;
+    }>();
+    expectTypeOf<ReferenceAgentLoopSummary>().toMatchTypeOf<{
+      readonly stopReason: ReferenceAgentStopReason;
+      readonly stepCount: number;
+      readonly toolCallCount: number;
     }>();
   });
 });

@@ -8,10 +8,11 @@ import {
 } from "@facet/core";
 import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
-import { createQuickstartAgent } from "./agent.js";
+import { createQuickstartAgent, type QuickstartAgentOptions } from "./agent.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
 import { DEFAULT_GUIDE } from "./prompt.js";
 import type { ProviderStep, ProviderTurn, QuickstartProvider, ToolCall } from "./provider.js";
+import type { ReferenceAgentTraceEvent } from "./harness/trace.js";
 
 const SESSION: FacetSession = {
   agentId: "quickstart",
@@ -72,6 +73,9 @@ function makeAgent(
     sink?: MemorySink;
     historyTurns?: number;
     maxSteps?: number;
+    budgetPreset?: QuickstartAgentOptions["budgetPreset"];
+    budget?: QuickstartAgentOptions["budget"];
+    trace?: QuickstartAgentOptions["trace"];
     stamps?: readonly FacetStamp[];
   } = {},
 ): ReturnType<typeof createQuickstartAgent> {
@@ -80,6 +84,9 @@ function makeAgent(
     sink: extra.sink ?? new MemorySink(),
     agentId: "quickstart",
     ...(extra.guide !== undefined ? { guide: extra.guide } : {}),
+    ...(extra.budgetPreset !== undefined ? { budgetPreset: extra.budgetPreset } : {}),
+    ...(extra.budget !== undefined ? { budget: extra.budget } : {}),
+    ...(extra.trace !== undefined ? { trace: extra.trace } : {}),
     ...(extra.historyTurns !== undefined ? { historyTurns: extra.historyTurns } : {}),
     ...(extra.maxSteps !== undefined ? { maxSteps: extra.maxSteps } : {}),
     ...(extra.stamps !== undefined ? { stamps: extra.stamps } : {}),
@@ -91,6 +98,20 @@ function saysOf(messages: readonly ServerMessage[]): string[] {
 }
 function patchesOf(messages: readonly ServerMessage[]): readonly ServerMessage[] {
   return messages.filter((m) => m.kind === "patch");
+}
+
+async function recordHistory(sink: MemorySink, labels: readonly string[]): Promise<void> {
+  for (const [index, label] of labels.entries()) {
+    await sink.record("quickstart", "v1", {
+      at: index,
+      event: { kind: "message", text: `event-${label}` },
+      messages: [{ kind: "say", text: `reply-${label}` }],
+    });
+  }
+}
+
+function providerTurnText(turn: ProviderTurn): string {
+  return turn.messages.map((message) => ("content" in message ? message.content : "")).join("\n");
 }
 
 async function runAgent(
@@ -621,8 +642,9 @@ describe("createQuickstartAgent tool loop", () => {
       expect(saysOf(out)[0]).toMatch(/sorry/i);
       expect(errorSpy).toHaveBeenCalledWith(
         "[facet-quickstart] unresolved buffered edits:",
-        '"panel" still waits for child node(s): missing',
+        "1 unresolved edit(s)",
       );
+      expect(errorSpy).toHaveBeenCalledTimes(1);
     } finally {
       errorSpy.mockRestore();
     }
@@ -717,6 +739,33 @@ describe("createQuickstartAgent tool loop", () => {
     expect(obs[0]).toContain("summary=2 patch ops");
   });
 
+  it("passes tool observations into the next provider step through the harness", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "root",
+          node: { id: "observed", type: "text", value: "metadata" },
+        }),
+      ),
+      END,
+    );
+    const agent = createQuickstartAgent({
+      provider,
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      budget: { maxObservationChars: 40 },
+    });
+
+    await runAgent(agent, { kind: "message", text: "add observed" }, SESSION);
+
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs).toHaveLength(1);
+    expect(obs[0]!.length).toBeLessThanOrEqual(40);
+    expect(obs[0]).toContain("[truncated:");
+  });
+
   it("reports an error before a provider step exceeds the aggregate patch cap", async () => {
     const appendCalls = Array.from({ length: Math.floor(MAX_PATCH_OPS / 2) + 1 }, (_, index) =>
       call("append_node", {
@@ -725,7 +774,9 @@ describe("createQuickstartAgent tool loop", () => {
       }),
     );
     const provider = providerOf(toolStep(...appendCalls), END);
-    const agent = makeAgent(provider);
+    const agent = makeAgent(provider, {
+      budget: { maxToolCallsPerStep: appendCalls.length, maxContextChars: 1_000_000 },
+    });
 
     const out = await runAgent(agent, { kind: "message", text: "add many" }, SESSION);
 
@@ -1014,8 +1065,37 @@ describe("createQuickstartAgent tool loop", () => {
   it("stops at maxSteps when the model never ends the loop", async () => {
     const provider = providerOf(toolStep(call("say", { text: "again" }))); // repeats forever
     const agent = makeAgent(provider, { maxSteps: 3 });
-    await runAgent(agent, { kind: "message", text: "loop" }, SESSION);
-    expect(provider.turns).toHaveLength(3);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await runAgent(agent, { kind: "message", text: "loop" }, SESSION);
+      expect(provider.turns).toHaveLength(3);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("budget.maxSteps overrides legacy maxSteps while legacy maxSteps still works", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const legacyProvider = providerOf(toolStep(call("say", { text: "legacy" })));
+      const legacyAgent = makeAgent(legacyProvider, { maxSteps: 2 });
+
+      await runAgent(legacyAgent, { kind: "message", text: "legacy loop" }, SESSION);
+
+      expect(legacyProvider.turns).toHaveLength(2);
+
+      const overrideProvider = providerOf(toolStep(call("say", { text: "override" })));
+      const overrideAgent = makeAgent(overrideProvider, {
+        maxSteps: 1,
+        budget: { maxSteps: 3 },
+      });
+
+      await runAgent(overrideAgent, { kind: "message", text: "override loop" }, SESSION);
+
+      expect(overrideProvider.turns).toHaveLength(3);
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("a bare-prose step (no tool calls) becomes a chat say, not an apology", async () => {
@@ -1151,6 +1231,89 @@ describe("createQuickstartAgent tool loop", () => {
     );
     expect(all).toContain("newer-line");
     expect(all).not.toContain("older-line");
+  });
+
+  it("budget.maxHistoryTurns overrides legacy historyTurns while legacy historyTurns still works", async () => {
+    const sink = new MemorySink();
+    await recordHistory(sink, ["older", "middle", "newer"]);
+
+    const legacyProvider = providerOf(toolStep(call("say", { text: "legacy" })), END);
+    const legacyAgent = makeAgent(legacyProvider, { sink, historyTurns: 1 });
+
+    await runAgent(legacyAgent, { kind: "message", text: "now" }, SESSION);
+
+    const legacyText = providerTurnText(legacyProvider.turns[0]!);
+    expect(legacyText).toContain("event-newer");
+    expect(legacyText).not.toContain("event-middle");
+    expect(legacyText).not.toContain("event-older");
+
+    const overrideProvider = providerOf(toolStep(call("say", { text: "override" })), END);
+    const overrideAgent = makeAgent(overrideProvider, {
+      sink,
+      historyTurns: 1,
+      budget: { maxHistoryTurns: 2 },
+    });
+
+    await runAgent(overrideAgent, { kind: "message", text: "now" }, SESSION);
+
+    const overrideText = providerTurnText(overrideProvider.turns[0]!);
+    expect(overrideText).toContain("event-newer");
+    expect(overrideText).toContain("event-middle");
+    expect(overrideText).not.toContain("event-older");
+  });
+
+  it('budgetPreset "hosted" and "local-dev" wire larger history budgets', async () => {
+    const labels = Array.from({ length: 60 }, (_, index) => `h${String(index)}`);
+    const sink = new MemorySink();
+    await recordHistory(sink, labels);
+
+    const hostedProvider = providerOf(toolStep(call("say", { text: "hosted" })), END);
+    const hostedAgent = makeAgent(hostedProvider, { sink, budgetPreset: "hosted" });
+
+    await runAgent(hostedAgent, { kind: "message", text: "hosted" }, SESSION);
+
+    const hostedText = providerTurnText(hostedProvider.turns[0]!);
+    expect(hostedText).toContain("event-h59");
+    expect(hostedText).toContain("event-h20");
+    expect(hostedText).not.toContain("event-h19");
+
+    const localDevProvider = providerOf(toolStep(call("say", { text: "local" })), END);
+    const localDevAgent = makeAgent(localDevProvider, { sink, budgetPreset: "local-dev" });
+
+    await runAgent(localDevAgent, { kind: "message", text: "local" }, SESSION);
+
+    const localDevText = providerTurnText(localDevProvider.turns[0]!);
+    expect(localDevText).toContain("event-h59");
+    expect(localDevText).toContain("event-h0");
+  });
+
+  it("trace receives stop/tool/provider events and callback failures do not break the turn", async () => {
+    const events: ReferenceAgentTraceEvent[] = [];
+    const trace: QuickstartAgentOptions["trace"] = (event) => {
+      events.push(event);
+      if (event.type === "provider_attempt") throw new Error("trace sync failure");
+      if (event.type === "tool_result") return Promise.reject(new Error("trace async failure"));
+      return undefined;
+    };
+    const provider = providerOf(toolStep(call("say", { text: "traced" })), END);
+    const agent = makeAgent(provider, { trace });
+
+    const out = await runAgent(agent, { kind: "message", text: "trace" }, SESSION);
+
+    expect(saysOf(out)).toEqual(["traced"]);
+    expect(events.map((event) => event.type)).toEqual(
+      expect.arrayContaining([
+        "turn_start",
+        "provider_attempt",
+        "provider_step",
+        "tool_result",
+        "batch_yield",
+        "stop",
+      ]),
+    );
+    expect(events.filter((event) => event.type === "stop")).toContainEqual(
+      expect.objectContaining({ reason: "provider_stop" }),
+    );
   });
 
   it("uses DEFAULT_GUIDE when no guide is given", async () => {

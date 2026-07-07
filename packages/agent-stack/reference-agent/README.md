@@ -1,13 +1,14 @@
 # @facet/reference-agent
 
-Reference Facet brain: provider adapters, prompt policy, the streaming tool-loop
-agent, and the deterministic keyless stub.
+Reference Facet brain: provider adapters, prompt policy, a bounded streaming
+harness, and the deterministic keyless stub.
 
 The reusable Facet stage tool layer lives in `@facet/agent-tools`. That package
 owns the canonical tool specs, `executeStageTool`, inspection helpers, result
 types, and local stage-shadow helpers without choosing a provider or reference
-policy. `@facet/reference-agent` consumes those shared tools and adds the
-OpenAI/Anthropic adapters, system prompt, bounded tool loop, and stub.
+policy. Use `@facet/agent-tools` directly for custom agent loops. This package
+consumes that layer and adds the OpenAI/Anthropic adapters, system prompt,
+bounded harness loop, and stub.
 
 `@facet/quickstart` composes this package for `facet-quickstart` provider and
 `--stub` modes. You can import it directly when you want the reference agent
@@ -25,8 +26,56 @@ const agent = createReferenceAgent({
   sink: new MemorySink(),
   agentId: "reference",
   guide: "# My Facet page",
+  budgetPreset: "quickstart",
+  trace: (event) => console.debug("[facet-reference-agent]", event),
 });
 ```
+
+## Package layout
+
+- `provider/`: provider turn/tool types, OpenAI and Anthropic adapters, and env
+  resolution. The top-level `provider.ts` remains a compatibility barrel.
+- `prompt/`: system prompt, event/history transcript messages, and bounded
+  current-stage summaries. The package root keeps the prompt helpers used by
+  quickstart, including `TOOLS`, without exporting the raw agent-tools executor.
+- `harness/`: context assembly, deterministic compaction, budget normalization,
+  retry/stop classification, transcript observations, trace events, and the
+  streaming loop.
+- `stub.ts`: deterministic keyless agent for local tests and quickstart `--stub`.
+
+The harness is bounded by default. It compacts sink history, includes full stage
+JSON only after a bounded length check says it can fit, falls back to
+deterministic stage summaries for large pages, retries only classified retryable
+provider failures, and emits one fallback chat line when a turn otherwise
+produces no useful output. Corrupt sink history rows and malformed stage
+metadata degrade to placeholders/summaries instead of aborting prompt assembly.
+
+## Budgets and tracing
+
+`createReferenceAgent` accepts additive budget options:
+
+- `budgetPreset`: `"quickstart"` (default), `"hosted"`, or `"local-dev"`.
+- `budget`: field-level overrides for steps, tool calls, context/history/stage
+  character limits, observation/final-text caps, provider retries, and retry
+  backoff.
+- Legacy `maxSteps` and `historyTurns` still work when the corresponding
+  explicit budget override is absent.
+
+Preset intent:
+
+| Preset | Intended use |
+| --- | --- |
+| `quickstart` | Conservative default for public demos and npx-first hosted entrypoints. |
+| `hosted` | Opt-in production profile with larger per-turn context and retry limits. |
+| `local-dev` | Generous but still bounded local experimentation profile. |
+
+Pass `trace(event)` to observe bounded, sanitized harness events such as
+`turn_start`, `context_compacted`, `provider_attempt`, `provider_retry`,
+`provider_step`, `tool_result`, `batch_yield`, `stop`, and `turn_error`.
+Trace callback failures are ignored so observability cannot break a visitor turn.
+Async trace callbacks are serialized per callback with a bounded pending queue;
+when the queue is saturated, terminal `stop`/`turn_error` events are preserved
+over ordinary trace events.
 
 ## Tool Layer
 
@@ -37,15 +86,17 @@ and only need the safe Facet stage tool surface:
 import { FACET_STAGE_TOOL_SPECS, executeStageTool } from "@facet/agent-tools";
 ```
 
-Use `@facet/reference-agent` when you want Facet's runnable reference brain. For
-compatibility, this package re-exports the stage tool specs and related types
-from `@facet/agent-tools` through its prompt module.
+Use `@facet/reference-agent` when you want Facet's runnable reference brain.
 
 ## Exports
 
 - `createReferenceAgent` plus compatibility alias `createQuickstartAgent`.
 - `ReferenceAgentOptions` plus compatibility alias `QuickstartAgentOptions`.
 - `ReferenceProvider` plus compatibility alias `QuickstartProvider`.
+- Harness budget and trace helpers: `REFERENCE_AGENT_BUDGET_PRESETS`,
+  `normalizeBudget`, stop reason constants/types, retry classification helpers,
+  `REFERENCE_AGENT_TRACE_EVENT_TYPES`, trace emitter/sanitizer types, and
+  `ReferenceAgentLoopSummary`.
 - Provider helpers: `resolveProvider`, `createOpenAiProvider`,
   `createAnthropicProvider`, model constants, and provider turn/tool types.
 - Prompt/tool compatibility: `DEFAULT_GUIDE`, `buildSystem`, `TOOLS`,

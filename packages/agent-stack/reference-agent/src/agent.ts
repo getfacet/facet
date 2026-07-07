@@ -1,34 +1,28 @@
-/**
- * The Facet reference agent (a tool-calling loop):
- *
- *   sink.history → buildInitialMessages → [ provider.run(tools) →
- *   execute each tool with @facet/agent-tools → observe ]* → flush.
- *
- * Each turn the model calls tools across up to MAX_STEPS steps — appending /
- * setting / removing a node for incremental edits, render_page for a full
- * redraw, say to chat — observing the result of each before deciding the next.
- *
- * Fail-safe posture (DC-006): a bad tool argument becomes an "error" observation
- * the model can recover from, never a throw; a provider/network failure ends the
- * loop keeping whatever the stage already has; and a turn that accomplished
- * nothing gets one apologetic say. The agent never throws out of a turn and
- * never logs more than one concise error line (never a key — keys live inside
- * the provider's auth header only).
- */
-import { createStageToolBuffer } from "@facet/agent-tools";
+import type { StageToolAssets } from "@facet/agent-tools";
 import type { FacetAgent, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
-import type { JsonPatchOperation } from "@facet/core";
-import type { StageToolAssets, StageToolBuffer } from "@facet/agent-tools";
 import type { Sink } from "@facet/runtime";
 import {
-  DEFAULT_GUIDE,
-  HISTORY_TURNS,
-  TOOLS,
-  buildInitialMessages,
-  buildSystem,
-} from "./prompt.js";
-import type { QuickstartProvider, TurnMessage } from "./provider.js";
+  normalizeBudget,
+  type ReferenceAgentBudgetOverrides,
+  type ReferenceAgentBudgetPreset,
+  type ReferenceAgentStopReason,
+} from "./harness/budget.js";
+import {
+  REFERENCE_AGENT_FAILURE_SAY,
+  runReferenceAgentLoop,
+  type ReferenceAgentLoopSummary,
+} from "./harness/loop.js";
+import type { ReferenceAgentTrace } from "./harness/trace.js";
+import { DEFAULT_GUIDE, buildSystem } from "./prompt.js";
+import type { QuickstartProvider } from "./provider.js";
 
+/**
+ * Public factory for the Facet reference agent.
+ *
+ * The factory owns deployer-facing configuration: guide/assets, compatibility
+ * budget aliases, explicit budget overrides, and optional tracing. Turn
+ * execution lives in the harness loop.
+ */
 export interface QuickstartAgentOptions {
   readonly provider: QuickstartProvider;
   /** Deployer's page brief (layer ②). Defaults to the built-in DEFAULT_GUIDE. */
@@ -36,9 +30,15 @@ export interface QuickstartAgentOptions {
   /** Conversation history source for prompt layer ③ (shared with the runtime). */
   readonly sink: Sink;
   readonly agentId: string;
-  /** How many stored interactions layer ③ replays. Defaults to HISTORY_TURNS. */
+  /** Budget profile. Defaults to the quickstart safety profile. */
+  readonly budgetPreset?: ReferenceAgentBudgetPreset;
+  /** Explicit budget overrides. These win over legacy aliases and preset values. */
+  readonly budget?: ReferenceAgentBudgetOverrides;
+  /** Optional bounded trace callback. Failures are ignored by the harness. */
+  readonly trace?: ReferenceAgentTrace;
+  /** Legacy alias for budget.maxHistoryTurns. Ignored when budget.maxHistoryTurns is set. */
   readonly historyTurns?: number;
-  /** Max provider calls (tool steps) per turn. Defaults to MAX_STEPS. */
+  /** Legacy alias for budget.maxSteps. Ignored when budget.maxSteps is set. */
   readonly maxSteps?: number;
   /** Operator themes offered to the model by NAME in prompt ② (validated by the
    * caller). The model selects one with `set_theme`; values never reach it. */
@@ -47,45 +47,8 @@ export interface QuickstartAgentOptions {
   readonly stamps?: readonly FacetStamp[];
 }
 
-/**
- * Runaway-loop backstop, not a working constraint: a turn should end well
- * before this. It exists only so a model that never stops calling tools can't
- * burn the deployer's key forever on one visitor turn. Override with
- * `maxSteps` for a longer (or, set very high, effectively unbounded) budget.
- */
-const MAX_STEPS = 50;
-
-const FAILURE_SAY =
-  "Sorry — I couldn't update the page this time, so I've left it as it was. Please try again.";
-
-function errMsg(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function appendMessages(target: ServerMessage[], messages: readonly ServerMessage[]): void {
-  for (const message of messages) target.push(message);
-}
-
 function sayBatch(text: string): readonly ServerMessage[] {
   return [{ kind: "say", text }];
-}
-
-function coalescePatchMessages(messages: readonly ServerMessage[]): readonly ServerMessage[] {
-  const patches: JsonPatchOperation[] = [];
-  const out: ServerMessage[] = [];
-  let placed = false;
-  for (const message of messages) {
-    if (message.kind !== "patch") {
-      out.push(message);
-      continue;
-    }
-    if (!placed) {
-      out.push({ kind: "patch", patches });
-      placed = true;
-    }
-    for (const patch of message.patches) patches.push(patch);
-  }
-  return out;
 }
 
 export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAgent {
@@ -95,72 +58,51 @@ export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAge
     themes: options.themes ?? [],
     stamps,
   });
-  const historyTurns = options.historyTurns ?? HISTORY_TURNS;
-  const maxSteps = options.maxSteps ?? MAX_STEPS;
+  const budget = normalizeBudget({
+    ...(options.budgetPreset !== undefined ? { budgetPreset: options.budgetPreset } : {}),
+    ...(options.budget !== undefined ? { budget: options.budget } : {}),
+    ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+    ...(options.historyTurns !== undefined ? { historyTurns: options.historyTurns } : {}),
+  });
 
   return async function* (event, session) {
-    let mutated = false;
-    let said = false;
-    let finalText = "";
-    let failure: unknown;
-    let buffer: StageToolBuffer | undefined;
-
     try {
-      // Inside the try: a throwing sink must degrade like any other turn failure,
-      // not blow up the whole agent.
-      const history = await options.sink.history(options.agentId, session.visitor.visitorId);
-      const messages: TurnMessage[] = buildInitialMessages(event, session, history, historyTurns);
-      buffer = createStageToolBuffer(session.stage, assets);
-
-      for (let step = 0; step < maxSteps; step += 1) {
-        const result = await options.provider.run({ system, messages }, TOOLS);
-        if (result.toolCalls.length === 0) {
-          // Clean exit: the model stopped. Any prose here is its final chat reply
-          // (captured ONLY on a clean stop — intermediate reasoning from a
-          // partial/failed/truncated turn must never surface as the answer).
-          finalText = result.text;
-          break;
-        }
-
-        messages.push({ role: "assistant_tools", text: result.text, toolCalls: result.toolCalls });
-        const batch: ServerMessage[] = [];
-        for (const call of result.toolCalls) {
-          const outcome = buffer.run(call);
-          mutated = mutated || outcome.mutated;
-          said = said || outcome.said;
-          appendMessages(batch, outcome.messages);
-          messages.push({ role: "tool_result", callId: call.id, content: outcome.observation });
-        }
-        if (batch.length > 0) yield coalescePatchMessages(batch);
-        buffer.resetEmittedPatchOps();
-      }
+      const summary = yield* runReferenceAgentLoop({
+        provider: options.provider,
+        system,
+        event,
+        session,
+        sink: options.sink,
+        agentId: options.agentId,
+        budget,
+        assets,
+        ...(options.trace !== undefined ? { trace: options.trace } : {}),
+        fallbackSay: REFERENCE_AGENT_FAILURE_SAY,
+      });
+      logStopSummary(summary);
     } catch (error) {
-      // Provider/network/sink failure: keep whatever the stage already has.
-      failure = error;
-    }
-
-    const unresolved = buffer?.drainUnresolved() ?? [];
-    if (unresolved.length > 0) {
-      console.error("[facet-quickstart] unresolved buffered edits:", unresolved.join("; "));
-      yield sayBatch(FAILURE_SAY);
-      said = true;
-      finalText = "";
-    }
-
-    // The model ended cleanly with prose and never called say ⇒ surface the
-    // prose as its chat reply (a chat answer shouldn't be swallowed).
-    if (!said && finalText.trim().length > 0) {
-      yield sayBatch(finalText.trim());
-      said = true;
-    }
-
-    // Nothing happened at all (no edits, no reply) ⇒ one concise line + apology.
-    if (!mutated && !said) {
-      console.error(
-        "[facet-quickstart] turn produced nothing:",
-        failure !== undefined ? errMsg(failure) : "no tool calls",
-      );
-      yield sayBatch(FAILURE_SAY);
+      console.error("[facet-quickstart] turn failed:", errMsg(error));
+      yield sayBatch(REFERENCE_AGENT_FAILURE_SAY);
     }
   };
+}
+
+function logStopSummary(summary: ReferenceAgentLoopSummary): void {
+  if (summary.stopReason === "provider_stop") return;
+  if (summary.stopReason === "unresolved_buffer" && summary.unresolved !== undefined) {
+    console.error(
+      "[facet-quickstart] unresolved buffered edits:",
+      `${String(summary.unresolved.length)} unresolved edit(s)`,
+    );
+    return;
+  }
+  console.error("[facet-quickstart] turn stopped:", stopReasonMessage(summary.stopReason));
+}
+
+function stopReasonMessage(stopReason: ReferenceAgentStopReason): string {
+  return stopReason;
+}
+
+function errMsg(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

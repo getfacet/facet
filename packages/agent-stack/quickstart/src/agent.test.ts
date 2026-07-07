@@ -621,7 +621,7 @@ describe("createQuickstartAgent tool loop", () => {
       expect(saysOf(out)[0]).toMatch(/sorry/i);
       expect(errorSpy).toHaveBeenCalledWith(
         "[facet-quickstart] unresolved buffered edits:",
-        '"panel" still waits for child node(s): missing',
+        "1 unresolved edit(s)",
       );
     } finally {
       errorSpy.mockRestore();

@@ -293,15 +293,32 @@ The reference agent is a **streaming tool-calling loop** (not a single completio
 each provider step yields the stage/chat batch produced so far, so the browser
 can watch the page build while the model continues deciding the next tool. The
 provider-agnostic tool vocabulary, executor, inspection helpers, and local stage
-shadow live in `@facet/agent-tools`; `@facet/reference-agent` supplies the
-provider loop and prompt around that mechanism. The stage tools map 1:1 onto the
-`Stage` control API — `append_node` / `set_node` / `remove_node` (incremental
-edits), `render_page` (a full redraw), and `say` (chat) — via the provider's
-native function-calling (OpenAI) / tool-use (Anthropic). It is fail-safe
-throughout: a bad tool argument becomes an `error:` observation the model
-recovers from (never a throw), a provider failure mid-loop keeps whatever the
-stage already has, and a turn that accomplishes nothing degrades to one
-apologetic chat line. External agent authors can use `@facet/agent-tools`
+shadow live in `@facet/agent-tools`; `@facet/reference-agent` supplies only the
+reference brain around that mechanism.
+
+Inside `@facet/reference-agent`, `provider/` holds the OpenAI/Anthropic adapters
+and provider turn types, `prompt/` holds the system prompt plus event/history and
+stage-summary text, and `harness/` owns the bounded turn machinery: transcript
+assembly, context sizing, deterministic compaction, budget presets, retry/stop
+classification, fallback policy, and sanitized trace events. The harness reads
+sink history, keeps the current visitor event, includes full stage JSON only
+after a bounded length check says it can fit, otherwise sends a deterministic
+bounded stage summary, and stops before a provider call if compaction still
+cannot fit the configured context budget. Corrupt sink history rows and
+malformed stage metadata degrade to placeholders/summaries instead of aborting
+prompt assembly. Tool observations are appended to the transcript before the
+next provider step, and oversized observations are truncated with an explicit
+marker. Trace callbacks are sanitized and bounded; saturated async trace queues
+preserve terminal `stop`/`turn_error` events over ordinary trace events.
+
+The stage tools map 1:1 onto the `Stage` control API — `append_node` /
+`set_node` / `remove_node` (incremental edits), `render_page` (a full redraw),
+and `say` (chat) — via the provider's native function-calling (OpenAI) /
+tool-use (Anthropic). It is fail-safe throughout: a bad tool argument becomes an
+`error:` observation the model recovers from (never a throw), retry happens only
+before tools from that provider step execute, provider failure mid-loop keeps
+whatever the stage already has, and a turn that accomplishes nothing degrades to
+one fallback chat line. External agent authors can use `@facet/agent-tools`
 without importing the reference provider loop.
 
 Quickstart's flagship interaction is the **field snapshot**: a pressable box's

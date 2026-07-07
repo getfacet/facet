@@ -1,0 +1,389 @@
+# Execution Manifest: Reference Agent Harness PR2
+#
+# Keep synchronized with specs/dev-specs/reference-agent-harness-pr2.md.
+
+feature_slug: "reference-agent-harness-pr2"
+spec_path: "specs/dev-specs/reference-agent-harness-pr2.md"
+context_evidence_path: "specs/context/reference-agent-harness-pr2.md"
+
+shared_preflight:
+  - concern: "base-branch"
+    requirement: "Use codex/feat/agent-tools-reference-agent-stack-pr1 as the base until PR1 lands on main."
+    owner: "main-agent"
+    verification: "git merge-base --is-ancestor codex/feat/agent-tools-reference-agent-stack-pr1 HEAD"
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before WU implementation starts."
+    owner: "main-agent"
+    verification: "run the three commands in the prepared PR2 worktree"
+  - concern: "live-link-surface"
+    requirement: "Final gate includes /live-test because reference-agent agent/provider surfaces are touched."
+    owner: "main-agent"
+    verification: "/live-test report"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Apply scoped fixes plus quick checks. Main agent re-runs /verify and /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files plus quick_checks plus no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "Provider Modules"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Split provider types/adapters/resolve logic into named provider modules while preserving top-level provider exports."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/provider.ts"
+        change_type: "update"
+        purpose: "Compatibility barrel and root provider surface."
+      - path: "packages/agent-stack/reference-agent/src/provider/types.ts"
+        change_type: "add"
+        purpose: "Provider-facing tool, step, turn, provider, and option types."
+      - path: "packages/agent-stack/reference-agent/src/provider/openai.ts"
+        change_type: "add"
+        purpose: "OpenAI adapter and response parser."
+      - path: "packages/agent-stack/reference-agent/src/provider/anthropic.ts"
+        change_type: "add"
+        purpose: "Anthropic adapter and response parser."
+      - path: "packages/agent-stack/reference-agent/src/provider/resolve.ts"
+        change_type: "add"
+        purpose: "Provider flag/env resolution."
+    depends_on: []
+    parallel_group: "provider-prompt"
+    red_check:
+      command: 'node -e ''const fs=require("fs"); for (const p of ["packages/agent-stack/reference-agent/src/provider/types.ts","packages/agent-stack/reference-agent/src/provider/openai.ts","packages/agent-stack/reference-agent/src/provider/anthropic.ts","packages/agent-stack/reference-agent/src/provider/resolve.ts"]) { if (!fs.existsSync(p)) throw new Error(`${p} missing`); }'''
+      target: "provider module split"
+      justification: ""
+    quick_checks:
+      - 'node -e ''const fs=require("fs"); for (const p of ["packages/agent-stack/reference-agent/src/provider/types.ts","packages/agent-stack/reference-agent/src/provider/openai.ts","packages/agent-stack/reference-agent/src/provider/anthropic.ts","packages/agent-stack/reference-agent/src/provider/resolve.ts"]) { if (!fs.existsSync(p)) throw new Error(`${p} missing`); }'''
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/provider.test.ts"
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/index.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/provider.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/index.test.ts"
+        covers_dc: ["DC-001", "DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Provider tests still pass for OpenAI, Anthropic, timeout, malformed body, and resolveProvider."
+      - "Package-root provider types remain source-compatible."
+      - "No new dependency is added."
+    handoff_format: &handoff
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Prompt Modules"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Split system prompt, event/history messages, and stage summary into named prompt modules while preserving top-level prompt exports."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/prompt.ts"
+        change_type: "update"
+        purpose: "Compatibility barrel and root prompt surface."
+      - path: "packages/agent-stack/reference-agent/src/prompt/system.ts"
+        change_type: "add"
+        purpose: "DEFAULT_GUIDE, buildSystem, tool workflow, and asset sections."
+      - path: "packages/agent-stack/reference-agent/src/prompt/messages.ts"
+        change_type: "add"
+        purpose: "describeEvent, history replay, and compatibility buildInitialMessages."
+      - path: "packages/agent-stack/reference-agent/src/prompt/stage-summary.ts"
+        change_type: "add"
+        purpose: "Bounded deterministic stage summary helpers."
+      - path: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "Prompt export and summary coverage."
+    depends_on: []
+    parallel_group: "provider-prompt"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts -t "summarizes a large stage without embedding full JSON"'
+      target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts"
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/index.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        covers_dc: ["DC-001", "DC-003", "DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Existing buildSystem, TOOLS, describeEvent, and buildInitialMessages behavior stays compatible."
+      - "Stage summary output is bounded and deterministic."
+    handoff_format: *handoff
+
+  - id: "WU-3"
+    title: "Transcript And Trace"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Add provider transcript helpers and an optional trace callback surface with the exact closed event-name/redaction contract."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/transcript.ts"
+        change_type: "add"
+        purpose: "Transcript construction and tool-result append helpers."
+      - path: "packages/agent-stack/reference-agent/src/harness/transcript.test.ts"
+        change_type: "add"
+        purpose: "Observation ordering, truncation marker, final prose policy."
+      - path: "packages/agent-stack/reference-agent/src/harness/trace.ts"
+        change_type: "add"
+        purpose: "Trace event types and no-op/default emitter."
+      - path: "packages/agent-stack/reference-agent/src/harness/trace.test.ts"
+        change_type: "add"
+        purpose: "Stop/tool/context trace event coverage."
+    depends_on: ["WU-1"]
+    parallel_group: "harness-foundation"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/transcript.test.ts"
+      target: "packages/agent-stack/reference-agent/src/harness/transcript.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/transcript.test.ts packages/agent-stack/reference-agent/src/harness/trace.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/transcript.test.ts"
+        covers_dc: ["DC-002", "DC-004", "DC-008"]
+        action: "new"
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/trace.test.ts"
+        covers_dc: ["DC-004", "DC-008"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Tool results append in order before the next provider call."
+      - "Trace event names match the closed union in this spec."
+      - "Trace API is optional, defaults to no-op behavior, ignores callback failures, and redacts keys, visitorId, full prompts, full stage JSON, and raw provider bodies."
+    handoff_format: *handoff
+
+  - id: "WU-4"
+    title: "Budget Policy"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Add explicit budget profiles, override normalization, stable stop reasons, retry classification, and fallback policy."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/budget.ts"
+        change_type: "add"
+        purpose: "Budget presets/options/defaults, override normalization, retry classifier, fallback helpers, and stop reason types."
+      - path: "packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+        change_type: "add"
+        purpose: "Exact quickstart/hosted/local-dev preset values, override precedence, invalid value normalization, stop union, retryable/non-retryable provider failures, and max steps/tool/context/observation coverage."
+    depends_on: []
+    parallel_group: "harness-foundation"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+      target: "packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+        covers_dc: ["DC-004", "DC-008"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Budget presets exactly match the Budget Profile Contract table."
+      - "quickstart is the default preset; hosted/local-dev are opt-in."
+      - "budget overrides win over legacy maxSteps/historyTurns, which win over preset values."
+      - "Invalid unbounded/negative/NaN/fractional values are rejected or normalized to safe integers."
+      - "All stop reasons are exported as a closed string union."
+      - "Retry classifier exactly matches the retryable/non-retryable lists in this spec."
+      - "Cross-provider fallback is not implemented."
+    handoff_format: *handoff
+
+  - id: "WU-5"
+    title: "Context And Compaction"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Build bounded context assembly from sink history, current event, stage summary/JSON, deterministic compaction, and hard context-limit stop behavior."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/context.ts"
+        change_type: "add"
+        purpose: "Bounded provider context assembly."
+      - path: "packages/agent-stack/reference-agent/src/harness/context.test.ts"
+        change_type: "add"
+        purpose: "Stage/history budget tests."
+      - path: "packages/agent-stack/reference-agent/src/harness/compaction.ts"
+        change_type: "add"
+        purpose: "Deterministic history/stage compaction helpers."
+      - path: "packages/agent-stack/reference-agent/src/harness/compaction.test.ts"
+        change_type: "add"
+        purpose: "Deterministic bounded compaction tests."
+    depends_on: ["WU-2", "WU-4"]
+    parallel_group: "context-budget"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/context.test.ts"
+      target: "packages/agent-stack/reference-agent/src/harness/context.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/context.test.ts packages/agent-stack/reference-agent/src/harness/compaction.test.ts"
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/context.test.ts"
+        covers_dc: ["DC-003"]
+        action: "new"
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/compaction.test.ts"
+        covers_dc: ["DC-003"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Large stages do not force unbounded CURRENT STAGE JSON into provider context."
+      - "Compaction is deterministic and has explicit truncation markers."
+      - "If context cannot fit after compaction, the loop receives context_limit before a provider call."
+    handoff_format: *handoff
+
+  - id: "WU-6"
+    title: "Harness Loop"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Move provider-step execution into harness/loop.ts, enforcing transcript, budget, retry, buffer reset, and fail-safe stop policy."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/loop.ts"
+        change_type: "add"
+        purpose: "Provider-step loop and batch yielding."
+      - path: "packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+        change_type: "add"
+        purpose: "Retry, stop/failure/fallback/buffer reset coverage."
+    depends_on: ["WU-1", "WU-3", "WU-4", "WU-5"]
+    parallel_group: "serial-loop"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+      target: "packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/buffer.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+        covers_dc: ["DC-002", "DC-004", "DC-005", "DC-008"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Every provider step observes prior tool results."
+      - "Buffer resetEmittedPatchOps() is called after yielded patch batches."
+      - "Retry happens only for failed provider calls before tool execution; no retry occurs after a patch or say from that step."
+      - "Provider failure preserves prior emitted edits."
+      - "Fallback say is emitted at most once and only under the fallback contract."
+    handoff_format: *handoff
+
+  - id: "WU-7"
+    title: "Public Factory Delegation"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Rewrite agent.ts into a public factory that configures assets, context, budgetPreset, budget overrides, trace, retry, and delegates turn execution to the harness."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/agent.ts"
+        change_type: "update"
+        purpose: "Public factory, compatibility options, harness delegation."
+      - path: "packages/agent-stack/reference-agent/src/agent.test.ts"
+        change_type: "update"
+        purpose: "Preserve existing behavior plus new budget/context/trace integration."
+    depends_on: ["WU-6"]
+    parallel_group: "serial-agent"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/agent.test.ts -t "passes tool observations into the next provider step through the harness"'
+      target: "packages/agent-stack/reference-agent/src/agent.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/agent.test.ts"
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/reference-agent/src/provider.test.ts"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/agent.test.ts"
+        covers_dc: ["DC-002", "DC-005", "DC-006", "DC-008"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Existing reference-agent behavior remains green."
+      - "Optional budgetPreset/budget/trace options are additive and default to current quickstart behavior."
+      - "Legacy maxSteps/historyTurns and new budget.* precedence matches the contract."
+    handoff_format: *handoff
+
+  - id: "WU-8"
+    title: "Exports, Guards, Docs"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent", "docs"]
+    objective: "Preserve root exports, update docs/comments for the new harness structure, and add import/package guards."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/index.ts"
+        change_type: "update"
+        purpose: "Root exports and compatibility aliases."
+      - path: "packages/agent-stack/reference-agent/src/index.test.ts"
+        change_type: "update"
+        purpose: "Export/type compatibility and optional options."
+      - path: "packages/agent-stack/reference-agent/README.md"
+        change_type: "update"
+        purpose: "Harness module guide."
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "Reference-agent harness paragraph."
+      - path: ".changeset/reference-agent-harness-pr2.md"
+        change_type: "add"
+        purpose: "Release note."
+    depends_on: ["WU-7"]
+    parallel_group: "serial-final"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/index.test.ts -t "exports the reference harness compatibility surface"'
+      target: "packages/agent-stack/reference-agent/src/index.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/index.test.ts"
+      - '! rg -n "executeStageTool|FACET_STAGE_TOOL_SPECS" packages/agent-stack/reference-agent/src/harness packages/agent-stack/reference-agent/src/prompt packages/agent-stack/reference-agent/src/provider'
+      - "! rg -n \"from [\\\"']@facet/reference-agent\" packages/agent-stack/agent-tools/src"
+    no_regression_checks:
+      - "pnpm --filter @facet/reference-agent typecheck"
+      - "pnpm --filter @facet/quickstart typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/index.test.ts"
+        covers_dc: ["DC-001", "DC-006", "DC-007", "DC-008"]
+        action: "update"
+      - type: "integration"
+        target: "import guards"
+        covers_dc: ["DC-007"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Package root exports remain compatible."
+      - "Docs describe provider/prompt/harness roles."
+      - "No new dependencies or reference-agent -> agent-tools cycle."
+    handoff_format: *handoff

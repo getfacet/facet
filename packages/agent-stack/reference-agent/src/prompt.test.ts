@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
-import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
+import type {
+  ClientEvent,
+  FacetSession,
+  FacetStamp,
+  FacetTheme,
+  FacetTree,
+  ServerMessage,
+} from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { CollectedEvent } from "@facet/core";
 import { FACET_STAGE_TOOL_SPECS } from "@facet/agent-tools";
@@ -11,6 +18,7 @@ import {
   buildInitialMessages,
   buildSystem,
   describeEvent,
+  formatCurrentStageForPrompt,
 } from "./prompt.js";
 
 const SESSION: FacetSession = {
@@ -18,6 +26,31 @@ const SESSION: FacetSession = {
   visitor: { visitorId: "v1" },
   stage: EMPTY_TREE,
 };
+
+function largeStage(order: readonly number[]): FacetTree {
+  const children = Array.from(
+    { length: 90 },
+    (_, index) => `node-${index.toString().padStart(3, "0")}`,
+  );
+  const nodes: Record<string, FacetTree["nodes"][string]> = {
+    root: { id: "root", type: "box", children },
+  };
+  for (const index of order) {
+    const id = `node-${index.toString().padStart(3, "0")}`;
+    nodes[id] = {
+      id,
+      type: "text",
+      value: `RAW_JSON_SENTINEL_${id}_${"x".repeat(900)}`,
+    };
+  }
+  return {
+    root: "root",
+    nodes,
+    screens: { home: "root", review: "node-001" },
+    entry: "home",
+    theme: "studio",
+  };
+}
 
 function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
   return { at: 0, event: { kind: "message", text }, messages };
@@ -309,6 +342,44 @@ describe("buildInitialMessages", () => {
     expect(describeEvent(poisoned)).toBe("(unknown event)");
   });
 
+  it("describeEvent returns a fallback for malformed visit and tap effect rows", () => {
+    const malformedVisit = { kind: "visit" } as unknown as CollectedEvent;
+    const malformedTap = { kind: "tap", effect: null } as unknown as CollectedEvent;
+
+    expect(() => describeEvent(malformedVisit)).not.toThrow();
+    expect(() => describeEvent(malformedTap)).not.toThrow();
+    expect(describeEvent(malformedVisit)).toBe("(unknown event)");
+    expect(describeEvent(malformedTap)).toBe("(unknown event)");
+  });
+
+  it("describeEvent returns a fallback for malformed message and action rows", () => {
+    const malformedEvents = [
+      { kind: "message" },
+      { kind: "message", text: 42 },
+      { kind: "tap", action: { kind: "navigate" } },
+      { kind: "tap", action: { kind: "toggle" } },
+      { kind: "tap", action: { kind: "agent", payload: { id: "7" } } },
+    ] as unknown as readonly CollectedEvent[];
+
+    for (const event of malformedEvents) {
+      expect(() => describeEvent(event)).not.toThrow();
+      expect(describeEvent(event)).toBe("(unknown event)");
+    }
+  });
+
+  it("describeEvent survives non-serializable action payloads and fields", () => {
+    const cyclicPayload: Record<string, unknown> = {};
+    cyclicPayload["self"] = cyclicPayload;
+    const poisoned = {
+      kind: "tap",
+      action: { kind: "agent", name: "submit", payload: cyclicPayload },
+      fields: { count: 1n },
+    } as unknown as CollectedEvent;
+
+    expect(() => describeEvent(poisoned)).not.toThrow();
+    expect(describeEvent(poisoned)).toBe("(action submit payload={} fields={})");
+  });
+
   it("renders a corrupt/unknown history event as a safe placeholder (never undefined)", () => {
     const history: StoredEvent[] = [
       { at: 0, event: { kind: "weird-kind" } as unknown as ClientEvent, messages: [] },
@@ -324,6 +395,120 @@ describe("buildInitialMessages", () => {
     expect(all).not.toContain("undefined");
   });
 
+  it("renders malformed sink reply rows as no reply instead of throwing", () => {
+    const history: StoredEvent[] = [
+      {
+        at: 0,
+        event: { kind: "message", text: "old" },
+        messages: null as unknown as readonly ServerMessage[],
+      },
+    ];
+
+    expect(() =>
+      buildInitialMessages({ kind: "message", text: "now" }, SESSION, history, HISTORY_TURNS),
+    ).not.toThrow();
+    const messages = buildInitialMessages(
+      { kind: "message", text: "now" },
+      SESSION,
+      history,
+      HISTORY_TURNS,
+    );
+    const all = messages.map((m) => ("content" in m ? m.content : "")).join("\n");
+    expect(all).toContain("(no reply)");
+  });
+
+  it("renders null sink history rows without throwing", () => {
+    const history = [null] as unknown as readonly StoredEvent[];
+
+    expect(() =>
+      buildInitialMessages({ kind: "message", text: "now" }, SESSION, history, HISTORY_TURNS),
+    ).not.toThrow();
+    const messages = buildInitialMessages(
+      { kind: "message", text: "now" },
+      SESSION,
+      history,
+      HISTORY_TURNS,
+    );
+    const all = messages.map((m) => ("content" in m ? m.content : "")).join("\n");
+    expect(all).toContain("(unknown event)");
+    expect(all).toContain("(no reply)");
+  });
+
+  it("summarizes a malformed public stage input without throwing", () => {
+    const malformed = { root: "root" } as unknown as FacetTree;
+
+    expect(() => formatCurrentStageForPrompt(malformed, { maxJsonChars: 0 })).not.toThrow();
+    const prompt = formatCurrentStageForPrompt(malformed, { maxJsonChars: 0 });
+
+    expect(prompt).toContain("CURRENT STAGE SUMMARY");
+    expect(prompt).toContain("nodes=1");
+    expect(prompt).toContain("- root: type=box children=0");
+  });
+
+  it("summarizes malformed optional stage fields without throwing", () => {
+    const malformed = {
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+      entry: 42,
+      theme: { name: "bad" },
+    } as unknown as FacetTree;
+
+    expect(() => formatCurrentStageForPrompt(malformed, { maxJsonChars: 0 })).not.toThrow();
+    const prompt = formatCurrentStageForPrompt(malformed, { maxJsonChars: 0 });
+    expect(prompt).not.toContain("entry=");
+    expect(prompt).not.toContain("theme=");
+  });
+
+  it("skips full JSON serialization when summary mode is explicitly requested", () => {
+    let stringifyAttempts = 0;
+    const stage = {
+      ...EMPTY_TREE,
+      toJSON() {
+        stringifyAttempts += 1;
+        return EMPTY_TREE;
+      },
+    } as unknown as FacetTree;
+
+    const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 0 });
+
+    expect(stringifyAttempts).toBe(0);
+    expect(prompt).toContain("CURRENT STAGE SUMMARY");
+  });
+
+  it("skips full JSON serialization when the stage exceeds the JSON cap", () => {
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["huge"] },
+        huge: { id: "huge", type: "text", value: "x".repeat(10_000) },
+      },
+      toJSON() {
+        throw new Error("full stage JSON should not be attempted");
+      },
+    } as unknown as FacetTree;
+
+    expect(() => formatCurrentStageForPrompt(stage, { maxJsonChars: 100 })).not.toThrow();
+    const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 100 });
+    expect(prompt).toContain("CURRENT STAGE SUMMARY");
+  });
+
+  it("keeps full JSON when escaped control characters still fit the JSON cap", () => {
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["text"] },
+        text: { id: "text", type: "text", value: "\n".repeat(10_000) },
+      },
+    } as unknown as FacetTree;
+    const json = JSON.stringify(stage);
+
+    const prompt = formatCurrentStageForPrompt(stage, {
+      maxJsonChars: json.length,
+    });
+
+    expect(prompt).toBe(`CURRENT STAGE: ${json}`);
+  });
+
   it("renders a visit event's non-secret context but never the visitorId bearer key", () => {
     const event: ClientEvent = {
       kind: "visit",
@@ -334,5 +519,48 @@ describe("buildInitialMessages", () => {
     expect(content).toContain("visit");
     expect(content).toContain("news.ycombinator.com");
     expect(content).not.toContain("secret-session-key-123");
+  });
+
+  it("summarizes a large stage without embedding full JSON", () => {
+    const naturalOrder = Array.from({ length: 90 }, (_, index) => index);
+    const reverseOrder = [...naturalOrder].reverse();
+    const event: ClientEvent = { kind: "message", text: "update the page" };
+
+    const first = buildInitialMessages(
+      event,
+      { ...SESSION, stage: largeStage(naturalOrder) },
+      [],
+      HISTORY_TURNS,
+    ).at(-1)!;
+    const second = buildInitialMessages(
+      event,
+      { ...SESSION, stage: largeStage(reverseOrder) },
+      [],
+      HISTORY_TURNS,
+    ).at(-1)!;
+    const firstContent = "content" in first ? first.content : "";
+    const secondContent = "content" in second ? second.content : "";
+
+    expect(firstContent.includes("CURRENT STAGE SUMMARY")).toBe(true);
+    expect(firstContent).toBe(secondContent);
+    expect(firstContent).toContain("root=root");
+    expect(firstContent).toContain("nodes=91");
+    expect(firstContent).toContain("screens=2");
+    expect(firstContent).toContain("entry=home");
+    expect(firstContent).toContain("theme=studio");
+    expect(firstContent).toContain("inspect_stage");
+    expect(firstContent).toContain("inspect_node");
+    expect(firstContent).not.toContain('"nodes"');
+    expect(firstContent).not.toContain("RAW_JSON_SENTINEL");
+    expect(firstContent).not.toContain('"patches"');
+    expect(firstContent.length).toBeLessThan(14_000);
+    expect(Array.from(firstContent).every((character) => character.charCodeAt(0) <= 0x7f)).toBe(
+      true,
+    );
+
+    const nodeLines = firstContent.split("\n").filter((line) => line.startsWith("- node-"));
+    expect(nodeLines).toHaveLength(80);
+    expect(nodeLines[0]).toContain("node-000");
+    expect(nodeLines.at(-1)).toContain("node-079");
   });
 });
