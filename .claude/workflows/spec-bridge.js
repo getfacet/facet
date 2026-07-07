@@ -55,7 +55,7 @@ const GATE_FAMILIES = [
   { key: 'invariant-fit', focus:
     'Invariant Fit Audit is real, not hand-wave: each TOUCHES invariant has a concrete safe design (#6 ordering/version rule, #5 constrained brick shape, #3 fail-safe behavior); the Fail-safe & boundary checklist covers malformed/empty/deep/cyclic input, offline agent, rapid events.' },
   { key: 'risk-consistency', focus:
-    'every RISK-* from the context pass is resolved in-spec or explicitly waived; spec/manifest consistency (WU ids/files/deps/checks IDENTICAL between the .md and the .execution.yaml); final_gate_owner = main-agent; file:line paths match the context evidence.' },
+    'every RISK-* from the context pass is resolved in-spec or explicitly waived; spec/manifest consistency (WU ids/files/deps/checks/final_gate_chain IDENTICAL between the .md and the .execution.yaml); feature hard gate includes /worktree-prep, /update-tests, /verify, /code-review, /live-test, /update-docs; final_gate_owner = main-agent; file:line paths match the context evidence.' },
 ]
 
 // ─── Schemas ───
@@ -172,8 +172,8 @@ const write = await agent(
   '- per WU: owner_role, packages, depends_on, parallel_group, red_check (a vitest cmd that FAILS before impl / PASSES after — or N/A with a deletion/docs/move justification), quick_checks, no_regression_checks, test_plan (type/target/covers_dc/action), handoff_format (incl. refactor_decision + green_diff_summary).\n' +
   '- union of all WU test_plan.covers_dc MUST cover every DC-*.\n' +
   '- include an **Invariant Fit Audit**, a Fail-safe & boundary checklist, and a risk register resolving every RISK-*.\n' +
-  '- final gate chain: /verify → /code-review (P0-P2=0), /refactor-audit periodic, final_gate_owner = main-agent.\n' +
-  'The manifest MUST keep WU ids, files, depends_on, parallel_group, red_check, quick_checks, no_regression_checks, and handoff_format IDENTICAL to the spec, with final_gate_owner: main-agent.\n\n' +
+  '- final gate chain: /worktree-prep → /update-tests → /verify → /code-review (P0-P2=0) → /live-test → /update-docs, final_gate_owner = main-agent.\n' +
+  'The manifest MUST keep WU ids, files, depends_on, parallel_group, red_check, quick_checks, no_regression_checks, handoff_format, and final_gate_chain IDENTICAL to the spec, with final_gate_owner: main-agent.\n\n' +
   'Return result DONE (or FAIL with why) and the Work Unit count.\n\nStructured output only.',
   { agentType: 'general-purpose', model: M, label: 'writer', phase: 'Write', schema: DONE_SCHEMA }
 )
@@ -193,7 +193,7 @@ const runPanel = async round => {
       '- Spec: `' + specPath + '`\n- Manifest: `' + manifestPath + '`\n- Brief: `' + briefPath + '`\n- Context: `' + contextPath + '`\n' +
       '- Gates rubric: `.claude/skills/spec-bridge/references/spec-qa-gates.md`\n\n' +
       'Evaluate ONLY your gate-family: ' + fam.focus + '\n\n' +
-      'Assign P0-P3 per finding (a false-invariant, an untraceable DC, a WU>5 files, a missing red_check, a spec/manifest mismatch, or final_gate_owner≠main-agent is >= P1). ' +
+      'Assign P0-P3 per finding (a false-invariant, an untraceable DC, a WU>5 files, a missing red_check, a spec/manifest mismatch, a missing feature hard-gate step, or final_gate_owner≠main-agent is >= P1). ' +
       'Return findings (severity/gate/evidence/fix) and a one-paragraph gate report for this family.\n\nStructured output only.',
       { agentType: 'general-purpose', model: M, label: 'review:' + fam.key + (round > 0 ? ':r' + round : ''), phase: 'Review', schema: REVIEWER_SCHEMA }
     ).then(r => ({ family: fam.key, ...(r || { findings: [], gateReport: '(reviewer returned nothing)' }) }))

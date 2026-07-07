@@ -18,11 +18,20 @@ shared_preflight:
     verification: "[command]"
 
 review_fix_policy:
-  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch."
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
   subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
   final_gate_rerun_owner: "main-agent"
 
 final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
 
 work_units:
   - id: "WU-1"

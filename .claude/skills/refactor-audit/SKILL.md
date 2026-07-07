@@ -51,10 +51,18 @@ by multiple lenses). Render:
 
 ## Output is a plan, not applied changes
 
-The maintainer approves scope; then execute item by item, running `/verify` after
-each and `/code-review` if a change is non-trivial. Bias toward a few high-value
-consolidations (real duplication, a misplaced module, a dead file) over cosmetic
-churn — every proposed move must reduce drift or clarify a boundary.
+The maintainer approves scope; then execute item by item through
+`/worktree-prep` in refactor mode using branch `refactor/<slug>`. Apply only the
+approved cleanup scope and run the refactor hard gate:
+`/update-tests` → `/verify` → `/code-review` → `/update-docs`. Also run
+`/live-test` if the cleanup touches a live-link surface (`packages/quickstart`,
+`packages/server`, `packages/client`, `packages/agent-client`, `packages/runtime`,
+`packages/bridge`, `packages/react` renderer/useFacet/ChatDock paths, or core
+patch/protocol/stage vocabulary) or the owner requests it.
+
+Bias toward a few high-value consolidations (real duplication, a misplaced
+module, a dead file) over cosmetic churn — every proposed move must reduce drift
+or clarify a boundary.
 
 `/refactor-audit` is periodic and owner-run — not part of the per-feature gate
 chain.

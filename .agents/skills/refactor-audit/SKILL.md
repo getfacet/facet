@@ -11,7 +11,9 @@ description: >
 # /refactor-audit
 
 Run the structural audit directly in Codex. The output is a plan, not applied
-changes. Do not call `Workflow(...)`.
+changes. Do not call `Workflow(...)`. Because Codex has no Claude workflow
+runner, the main agent must explicitly emulate the workflow: independent audit
+passes → adversarial verification → completeness re-sweep → dedup/ranking.
 
 This skill is an audit. Do not edit production/docs/test files while auditing.
 The only exception is when the user explicitly asks to update this skill itself.
@@ -41,8 +43,9 @@ Audit the whole repo shape, with emphasis on:
 
 ## Required Audit Passes
 
-Run each pass independently. Keep raw notes separate by pass until the final
-synthesis so one conclusion does not bias another.
+Run each pass independently. Keep raw notes separate by pass until verification
+so one conclusion does not bias another. Missing a required pass is a failed
+audit, not a shallow PASS.
 
 ### 1. Dimension passes
 
@@ -58,9 +61,11 @@ Run one pass for each dimension from `docs/REVIEW-RULES.md`:
   docs/package-map drift.
 - `naming` — misleading or inconsistent names that create maintenance risk.
 
-If Codex subagents are available, you may delegate one dimension at a time using
-`.codex/agents/audit-structure.toml`. If they are unavailable, run the passes
-inline. The main agent must still verify and rank all findings.
+If Codex subagents are available, delegate one dimension at a time using
+`.codex/agents/audit-structure.toml`. If they are unavailable, run separate
+inline passes. In either mode, pass only the dimension, scope, and required
+evidence; keep conclusions independent until verification. The main agent must
+still verify and rank all findings.
 
 ### 2. Public API/export audit
 
@@ -119,8 +124,30 @@ For every candidate finding:
 5. Drop cosmetic churn unless it prevents recurring confusion.
 
 Use `.codex/agents/review-verifier.toml` as the verifier checklist when present.
-If a candidate depends on absence of references or tests, rerun the absence check
-after reading the relevant package barrel and package README.
+Verifier policy:
+
+- P0/P1 candidates require three independent skeptical verifier passes. Use
+  subagents if available; otherwise do three separate inline passes with fresh
+  rereads and fresh `rg`/`git grep` checks. Strict majority confirms.
+- P2/P3 candidates require at least one skeptical verifier pass.
+- If a candidate depends on absence of references or tests, rerun the absence
+  check after reading the relevant package barrel and package README.
+- Refuted, unverifiable, or taste-only candidates are dropped before ranking.
+
+## Completeness Re-Sweep
+
+After the first verified finding set, run a critic pass before ranking:
+
+1. Compare audited scope against `AGENTS.md`'s package map and the actual
+   `packages/*/package.json` list.
+2. Name up to six under-audited `(dimension, area)` slices, such as a browser
+   entry, package manifest family, CLI bin, prompt/spec text, or pure-logic file
+   cluster.
+3. Re-audit those slices with the relevant dimension checklist.
+4. Verify any new candidates with the same verifier policy.
+
+Skipping this sweep is allowed only with an explicit reason for a tiny, targeted
+owner request. Otherwise the audit is incomplete.
 
 ## Rank
 
@@ -139,10 +166,29 @@ Report:
 3. Package/area summary with counts and finding titles.
 4. Ranked findings table: severity, files, dimension, issue, evidence, suggested
    fix, effort, score.
-5. Public API/export audit summary.
-6. Pure-logic test-gap audit summary.
-7. Recommended execution order.
-8. `Do not touch` list with reasons.
-9. Residual risks or areas intentionally left unaudited.
+5. Verification ledger: candidate counts, verifier passes, refuted/merged count.
+6. Completeness re-sweep slices and outcome.
+7. Public API/export audit summary.
+8. Pure-logic test-gap audit summary.
+9. Recommended execution order.
+10. `Do not touch` list with reasons.
+11. Residual risks or areas intentionally left unaudited.
+12. `Execution Handoff` using the refactor flow below.
 
-End with: `Plan only — no changes applied`.
+End the audit verdict with: `Plan only — no changes applied`.
+
+## Execution Handoff
+
+When the owner approves one or more findings, execute them through the refactor
+flow, not the feature flow:
+
+1. `/worktree-prep` in refactor mode using branch `refactor/<slug>`.
+2. Apply only the approved cleanup scope. Avoid behavior changes unless the owner
+   explicitly approves them.
+3. Run the refactor hard gate:
+   `/update-tests` → `/verify` → `/code-review` → `/update-docs`.
+4. Also run `/live-test` if the cleanup touches a live-link surface
+   (`packages/quickstart`, `packages/server`, `packages/client`,
+   `packages/agent-client`, `packages/runtime`, `packages/bridge`,
+   `packages/react` renderer/useFacet/ChatDock paths, or core
+   patch/protocol/stage vocabulary) or the owner requests it.
