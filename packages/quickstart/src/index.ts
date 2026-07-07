@@ -1,9 +1,6 @@
-// @facet/quickstart — the reference brain: a one-command live Facet page owned
-// by a built-in LLM agent (OpenAI/Anthropic via QuickstartProvider) or the
-// deterministic keyless stub. The `facet-quickstart` bin (src/cli.ts) is the
-// one non-barrel entry, per repo convention.
-export * from "./provider.js";
-export * from "./prompt.js";
-export * from "./agent.js";
-export * from "./stub.js";
+// @facet/quickstart — the one-command wrapper/server for a live Facet page.
+// The reference brain lives in @facet/reference-agent and is re-exported here
+// for compatibility. The `facet-quickstart` bin (src/cli.ts) is the one
+// non-barrel entry, per repo convention.
+export * from "@facet/reference-agent";
 export * from "./server.js";

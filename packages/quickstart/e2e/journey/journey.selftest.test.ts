@@ -25,7 +25,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chromium, type Browser } from "playwright";
-import { createStubAgent, type RunningQuickstart } from "../../src/index.js";
+import { createStubAgent } from "@facet/reference-agent";
+import type { RunningQuickstart } from "../../src/index.js";
 import { bootJourney } from "./harness.js";
 import { runJourney, settleDom } from "./journey.js";
 

@@ -12,13 +12,15 @@ import { readFile } from "node:fs/promises";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { FacetAgent, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
+import {
+  DEFAULT_GUIDE,
+  createQuickstartAgent,
+  createStubAgent,
+  resolveProvider,
+} from "@facet/reference-agent";
 import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
-import { createQuickstartAgent } from "./agent.js";
-import { DEFAULT_GUIDE } from "./prompt.js";
-import { resolveProvider } from "./provider.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
-import { createStubAgent } from "./stub.js";
 
 export interface RunCliHooks {
   /** Info output (default: console.log). */

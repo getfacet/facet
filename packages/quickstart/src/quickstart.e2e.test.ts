@@ -18,8 +18,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FacetTheme, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
+import * as referenceAgent from "@facet/reference-agent";
+import { createStubAgent } from "@facet/reference-agent";
+import * as localAgent from "./agent.js";
+import * as localPrompt from "./prompt.js";
+import * as localProvider from "./provider.js";
 import { startQuickstart, type QuickstartServerOptions, type RunningQuickstart } from "./server.js";
-import { createStubAgent } from "./stub.js";
+import * as localStub from "./stub.js";
 
 const FIXTURE_BUNDLE = `console.log("facet quickstart fixture bundle");\n`;
 
@@ -171,6 +176,15 @@ beforeAll(async () => {
 afterAll(async () => {
   await running.close();
   await rm(fixtureDir, { recursive: true, force: true });
+});
+
+describe("quickstart compatibility modules", () => {
+  it("compatibility modules re-export reference-agent implementations", () => {
+    expect(localAgent.createQuickstartAgent).toBe(referenceAgent.createQuickstartAgent);
+    expect(localProvider.resolveProvider).toBe(referenceAgent.resolveProvider);
+    expect(localPrompt.buildSystem).toBe(referenceAgent.buildSystem);
+    expect(localStub.createStubAgent).toBe(referenceAgent.createStubAgent);
+  });
 });
 
 describe("quickstart E2E — static shell + proxy plumbing", () => {

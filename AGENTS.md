@@ -45,7 +45,8 @@ small set of safe primitives and mutates them live as the conversation goes.
 | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres (`pg` peer dep). |
 | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
-| `@facet/quickstart` | Reference LLM brain + zero-setup `facet-quickstart` bin — the `@facet/server` of brains (the brain stays pluggable). |
+| `@facet/reference-agent` | Reference LLM/stub brain: provider adapters, prompt/tools, streaming tool loop, deterministic stub. |
+| `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
 | `apps/playground` | Demos (not published). |
 
 `StageStore` and `Sink` methods are **async** (Promise-based) so backends can be
@@ -94,10 +95,12 @@ For new feature work or any approved `/spec-bridge` implementation:
 `/live-test` runs after `/code-review` as the live-link gate. The three fast
 vitest tiers: Tier 1 (deterministic stub E2E + real-bundle run) always blocks;
 Tier 2 (key-gated provider smoke) **blocks whenever `packages/quickstart/`
-changed** — a missing key is then a FAIL, not a skip; Tier 3 (both providers)
-runs pre-merge/release. Plus an **owner-run "live journey" tier** (real headless
-browser + real LLM + vision-judged screenshots, pre-merge/on-request, SKIP
-without a key) that the skill invokes after the vitest tiers.
+changed, or when `packages/reference-agent/src/{agent,provider}.ts` or
+`packages/reference-agent/package.json` changed** — a missing key is then a FAIL,
+not a skip; Tier 3 (both providers) runs pre-merge/release. Plus an **owner-run
+"live journey" tier** (real headless browser + real LLM + vision-judged
+screenshots, pre-merge/on-request, SKIP without a key) that the skill invokes
+after the vitest tiers.
 
 ### Refactor hard gate
 

@@ -261,19 +261,19 @@ the shared fail-safe fold never permanently prunes content that arrives in a
 later batch. Replace the hand-written branches with an LLM call that emits the
 same operations and nothing else in the stack changes.
 
-## Reference brain: `@facet/quickstart`
+## Reference brain: `@facet/reference-agent`
 
 The brain is out of scope for Facet — the user brings the LLM/rules — but a
 *reference* brain ships anyway, exactly as a reference transport does:
-`@facet/quickstart` is to brains what `@facet/server` is to transports. Its
-built-in agent is an ordinary `FacetAgent` handed to the existing
-`createFacetServer({ agent })` seam, its LLM calls sit behind a small
-`QuickstartProvider` interface (OpenAI/Anthropic adapters, or a deterministic
+`@facet/reference-agent` is to brains what `@facet/server` is to transports. Its
+agent is an ordinary `FacetAgent` handed to the existing `createFacetServer({
+agent })` seam, its LLM calls sit behind a small `QuickstartProvider`/
+`ReferenceProvider` interface (OpenAI/Anthropic adapters, or a deterministic
 stub), and core/runtime/server gain zero LLM awareness — any user brain drops
 into the same slot, so the boundary stays intact while `npx facet-quickstart`
-gives a one-command first run.
+gives a one-command first run by composing it.
 
-The built-in agent is a **streaming tool-calling loop** (not a single completion):
+The reference agent is a **streaming tool-calling loop** (not a single completion):
 each provider step yields the stage/chat batch produced so far, so the browser
 can watch the page build while the model continues deciding the next tool. Five
 tools map 1:1 onto the `Stage` control
@@ -297,10 +297,11 @@ view-state like screen/toggle state (inputs are uncontrolled; there is no value
 property on a field node to write), and the server re-validates `fields` at the
 boundary, so the two-writers rule holds: the server stays the only writer of
 stage content.
-The `facet-quickstart` bin serves the page itself (HTML shell + prebuilt client
-bundle) and proxies the protocol routes to an internal loopback
-`createFacetServer` with a random per-boot agent token, never exposing
-`/agent/*`.
+The `facet-quickstart` bin stays in `@facet/quickstart`: it loads guides/assets,
+serves the page itself (HTML shell + prebuilt client bundle), composes
+`@facet/reference-agent` for provider or stub mode, and proxies the protocol
+routes to an internal loopback `createFacetServer` with a random per-boot agent
+token, never exposing `/agent/*`.
 
 ## What we adopt vs build (and why)
 

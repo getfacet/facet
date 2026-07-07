@@ -15,10 +15,11 @@
  * a `finally`; after `close()` the bound port is free again (a raw listener
  * binds it), proving no orphaned server keeps the port.
  */
+import { readFileSync } from "node:fs";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { createStubAgent } from "../../src/index.js";
+import { createStubAgent } from "@facet/reference-agent";
 import { bootJourney, resolveJourneyProvider, runBinSmoke } from "./harness.js";
 
 /** Occupy a loopback port so a boot attempt on it collides (EADDRINUSE). */
@@ -54,6 +55,14 @@ describe("journey harness", () => {
   const releasers: Array<() => Promise<void>> = [];
   afterEach(async () => {
     for (const release of releasers.splice(0)) await release().catch(() => {});
+  });
+
+  it("journey harness imports provider from reference-agent", () => {
+    const source = readFileSync(new URL("./harness.ts", import.meta.url), "utf8");
+    expect(source).toContain('from "@facet/reference-agent"');
+    expect(source).not.toMatch(
+      /import\s*\{[^}]*resolveProvider[^}]*\}\s*from "\.\.\/\.\.\/src\/index\.js"/s,
+    );
   });
 
   it("bin smoke runs the stub cli and reports a result", async () => {

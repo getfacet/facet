@@ -1,8 +1,8 @@
 /**
  * WU-2 (Decision B) — the journey harness the /live-test "Live Journey" tier
  * builds on: a shared server boot/teardown and a `node dist/cli.js --stub` bin
- * smoke. It only CONSUMES the quickstart's exported surface (`startQuickstart`,
- * `createStubAgent`, `resolveProvider`) — no `src/` change.
+ * smoke. It consumes quickstart's server wrapper (`startQuickstart`) and the
+ * reference-agent provider surface (`resolveProvider`) — no `src/` change.
  *
  * - `bootJourney({ agent, agentId })` boots the quickstart wrapper on a random
  *   loopback port, retrying on `EADDRINUSE` (the `smoke.test.ts` bind-retry
@@ -19,13 +19,9 @@
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import {
-  resolveProvider,
-  startQuickstart,
-  type QuickstartProvider,
-  type RunningQuickstart,
-} from "../../src/index.js";
 import type { FacetAgent } from "@facet/core";
+import { resolveProvider, type QuickstartProvider } from "@facet/reference-agent";
+import { startQuickstart, type RunningQuickstart } from "../../src/index.js";
 
 /** Options for {@link bootJourney}. */
 export interface BootJourneyOptions {
