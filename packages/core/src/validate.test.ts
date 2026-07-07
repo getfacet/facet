@@ -52,6 +52,41 @@ describe("validateTree", () => {
     expect(root.style?.["pad"]).toBe("md");
   });
 
+  it("keeps valid font family tokens on text styles", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["t"] },
+        t: { id: "t", type: "text", value: "hi", style: { family: "mono" } },
+      },
+    };
+
+    const text = validateTree(input).tree.nodes["t"] as unknown as {
+      style?: Record<string, unknown>;
+    };
+
+    expect(text.style?.["family"]).toBe("mono");
+  });
+
+  it("strips invalid font family tokens from text styles", () => {
+    const run = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["bad", "nonString"] },
+        bad: { id: "bad", type: "text", value: "bad", style: { family: "display" } },
+        nonString: { id: "nonString", type: "text", value: "bad", style: { family: 123 } },
+      },
+    });
+
+    const bad = run.tree.nodes["bad"] as unknown as { style?: Record<string, unknown> };
+    const nonString = run.tree.nodes["nonString"] as unknown as {
+      style?: Record<string, unknown>;
+    };
+
+    expect(bad.style?.["family"]).toBeUndefined();
+    expect(nonString.style?.["family"]).toBeUndefined();
+  });
+
   it("removes dangling child references", () => {
     const input = {
       root: "root",

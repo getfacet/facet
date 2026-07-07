@@ -53,6 +53,14 @@ describe("buildSystem", () => {
     expect(system).not.toMatch(/scroll\(bool\)/);
   });
 
+  it("teaches font family tokens through the embedded STAGE_SPEC", () => {
+    const system = buildSystem(DEFAULT_GUIDE);
+
+    expect(system).toContain("family(sans|serif|mono)");
+    expect(system).not.toContain("font-family:");
+    expect(system).not.toContain("system-ui");
+  });
+
   it("brick-vocab v1 prompt teaches media, field options, columns, and scroll axes", () => {
     const system = buildSystem(DEFAULT_GUIDE);
     expect(system).toContain('"type":"media"');

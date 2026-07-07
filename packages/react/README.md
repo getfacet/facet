@@ -3,7 +3,7 @@
 The Facet React renderer: `StageRenderer` turns the declarative stage spec into a
 sandboxed component tree built from the four bricks (`box`, `text`, `media`,
 `field`), and `useFacet(transport)` keeps that tree in sync by applying patches
-live. It also ships the token→CSS theme
+live. It also ships the token→CSS theme for color, spacing, and typography
 (`boxStyle`/`textStyle`/`mediaStyle`/…), `ChatDock`, and `useFacet`.
 (`browserVisitorId` lives in `@facet/client`, next to the transport that needs
 it.)

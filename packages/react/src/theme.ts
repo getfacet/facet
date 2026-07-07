@@ -1,11 +1,20 @@
 import type { CSSProperties } from "react";
-import { COLORS, FONT_SIZES, FONT_WEIGHTS, RADII, RATIOS, SPACES } from "@facet/core";
+import {
+  COLORS,
+  FONT_FAMILIES,
+  FONT_SIZES,
+  FONT_WEIGHTS,
+  RADII,
+  RATIOS,
+  SPACES,
+} from "@facet/core";
 import type {
   Align,
   BoxStyle,
   Color,
   FacetTheme,
   FieldStyle,
+  FontFamily,
   FontSize,
   FontWeight,
   Justify,
@@ -19,7 +28,16 @@ import type {
 // SINGLE source of default-theme truth. react imports them as its render floor and
 // re-exports `DEFAULT_THEME` + `COLOR` for back-compat, but owns no second copy
 // that could drift (RISK-INV-1 / RISK-API-2).
-import { COLOR, DEFAULT_THEME, FONT_SIZE, FONT_WEIGHT, RADIUS, RATIO, SPACE } from "@facet/assets";
+import {
+  COLOR,
+  DEFAULT_THEME,
+  FONT_FAMILY,
+  FONT_SIZE,
+  FONT_WEIGHT,
+  RADIUS,
+  RATIO,
+  SPACE,
+} from "@facet/assets";
 
 export { COLOR, DEFAULT_THEME };
 
@@ -31,6 +49,7 @@ export { COLOR, DEFAULT_THEME };
  */
 export interface ResolvedTheme {
   readonly space: Record<Space, string>;
+  readonly fontFamily: Record<FontFamily, string>;
   readonly fontSize: Record<FontSize, string>;
   readonly fontWeight: Record<FontWeight, number>;
   readonly radius: Record<Radius, string>;
@@ -40,11 +59,11 @@ export interface ResolvedTheme {
 
 /**
  * The default resolved theme — today's exact values. Every zero-extra-arg style
- * call defaults to this map, so output stays byte-identical to the pre-theme
- * renderer. `COLOR` above aliases `DEFAULT_RESOLVED.color`.
+ * call defaults to this map. `COLOR` above aliases `DEFAULT_RESOLVED.color`.
  */
 const DEFAULT_RESOLVED: ResolvedTheme = {
   space: SPACE,
+  fontFamily: FONT_FAMILY,
   fontSize: FONT_SIZE,
   fontWeight: FONT_WEIGHT,
   radius: RADIUS,
@@ -76,6 +95,10 @@ function overlayGroup<V>(
   return out;
 }
 
+function isFontFamily(value: unknown): value is FontFamily {
+  return typeof value === "string" && (FONT_FAMILIES as readonly string[]).includes(value);
+}
+
 /**
  * Resolves a theme NAME (from `tree.theme`, treated as `unknown` — the live
  * patch path can put junk there) against an operator-authored `themes` registry
@@ -91,6 +114,7 @@ export function resolveTheme(name: unknown, themes?: readonly FacetTheme[]): Res
   if (doc === undefined) return DEFAULT_RESOLVED;
   return {
     space: overlayGroup(SPACE, doc.space, SPACES, "string"),
+    fontFamily: overlayGroup(FONT_FAMILY, doc.fontFamily, FONT_FAMILIES, "string"),
     fontSize: overlayGroup(FONT_SIZE, doc.fontSize, FONT_SIZES, "string"),
     fontWeight: overlayGroup(FONT_WEIGHT, doc.fontWeight, FONT_WEIGHTS, "number"),
     radius: overlayGroup(RADIUS, doc.radius, RADII, "string"),
@@ -185,6 +209,10 @@ export function textStyle(
   theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
   const css: CSSProperties = { margin: 0 };
+  const rawFamily = (style as { readonly family?: unknown }).family;
+  const family: FontFamily = isFontFamily(rawFamily) ? rawFamily : "sans";
+  const fontFamily = theme.fontFamily[family];
+  if (fontFamily !== undefined) css.fontFamily = fontFamily;
   if (style.size) css.fontSize = theme.fontSize[style.size];
   if (style.weight) css.fontWeight = theme.fontWeight[style.weight];
   if (style.color) css.color = theme.color[style.color];

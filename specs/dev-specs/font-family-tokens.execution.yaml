@@ -1,0 +1,285 @@
+# Execution Manifest: Font Family Tokens
+#
+# Keep synchronized with specs/dev-specs/font-family-tokens.md.
+
+feature_slug: "font-family-tokens"
+spec_path: "specs/dev-specs/font-family-tokens.md"
+context_evidence_path: "specs/context/font-family-tokens.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands on the feature branch"
+  - concern: "package-test-scripts"
+    requirement: "package-local test scripts are absent; use root pnpm exec vitest run <targets>"
+    owner: "main-agent"
+    verification: "package.json inspection already recorded in context/spec"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Main agent applies scoped fixes and reruns /verify + /code-review once per batch."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+
+work_units:
+  - id: "WU-1"
+    title: "Core text font-family token"
+    owner_role: "main-agent"
+    packages: ["@facet/core"]
+    objective: "Add the closed font-family token vocabulary to core tree types and validation."
+    files:
+      - path: "packages/core/src/tokens.ts"
+        change_type: "update"
+        purpose: "add FONT_FAMILIES and FontFamily"
+      - path: "packages/core/src/nodes.ts"
+        change_type: "update"
+        purpose: "add TextStyle.family?: FontFamily"
+      - path: "packages/core/src/validate.ts"
+        change_type: "update"
+        purpose: "sanitize text family tokens"
+      - path: "packages/core/src/validate.test.ts"
+        change_type: "update"
+        purpose: "valid/invalid family token tests"
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/core/src/validate.test.ts -t "font family"'
+      target: "packages/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/core/src/validate.test.ts -t "font family"'
+      - "pnpm exec vitest run packages/core/src/validate.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/src/validate.test.ts packages/core/src/spec.test.ts packages/core/src/theme.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/validate.test.ts"
+        covers_dc: ["DC-001"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - 'family:"mono" survives validation on text style'
+      - "unknown/non-string family is stripped fail-safe"
+      - "No regression: scoped core validation suite"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Core theme font-family group"
+    owner_role: "main-agent"
+    packages: ["@facet/core"]
+    objective: "Add FacetTheme.fontFamily with safe string validation."
+    files:
+      - path: "packages/core/src/theme.ts"
+        change_type: "update"
+        purpose: "import font-family tokens, add theme group/key, implement safe font-family handler"
+      - path: "packages/core/src/theme.test.ts"
+        change_type: "update"
+        purpose: "valid partial, hostile values, unknown/forbidden keys, null-proto tests"
+    depends_on: ["WU-1"]
+    parallel_group: "serial-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/core/src/theme.test.ts -t "fontFamily"'
+      target: "packages/core/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/core/src/theme.test.ts -t "fontFamily"'
+      - "pnpm exec vitest run packages/core/src/theme.test.ts"
+      - '! rg "^import .*node:" packages/core/src --glob ''!*.test.ts'''
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/src/theme.test.ts packages/core/src/validate.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/theme.test.ts"
+        covers_dc: ["DC-002", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "safe font-family strings accepted into null-proto maps"
+      - "dangerous strings refuse the theme document"
+      - "No dependency or Node import added to core"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "STAGE_SPEC font-family vocabulary"
+    owner_role: "main-agent"
+    packages: ["@facet/core", "@facet/quickstart"]
+    objective: "Teach the LLM-facing spec and composed quickstart prompt about TextStyle.family tokens."
+    files:
+      - path: "packages/core/src/spec.ts"
+        change_type: "update"
+        purpose: "include family(sans|serif|mono) in TextStyle wording and preserve token-only language"
+      - path: "packages/core/src/spec.test.ts"
+        change_type: "update"
+        purpose: "pin family token wording from FONT_FAMILIES"
+      - path: "packages/quickstart/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "drift net for composed prompt containing the family vocabulary"
+    depends_on: ["WU-1"]
+    parallel_group: "serial-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/core/src/spec.test.ts packages/quickstart/src/prompt.test.ts -t "font family"'
+      target: "packages/core/src/spec.test.ts; packages/quickstart/src/prompt.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/core/src/spec.test.ts packages/quickstart/src/prompt.test.ts -t "font family"'
+      - "pnpm exec vitest run packages/core/src/spec.test.ts packages/quickstart/src/prompt.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/src/spec.test.ts packages/quickstart/src/prompt.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/src/spec.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+      - type: "unit"
+        target: "packages/quickstart/src/prompt.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "STAGE_SPEC advertises token names only, not raw font-family strings"
+      - "quickstart composed prompt picks up the vocabulary through STAGE_SPEC"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "Assets default font-family map"
+    owner_role: "main-agent"
+    packages: ["@facet/assets"]
+    objective: "Add the default font-family token values to the node-free default asset data."
+    files:
+      - path: "packages/assets/src/theme.ts"
+        change_type: "update"
+        purpose: "add null-proto FONT_FAMILY map and include it in DEFAULT_THEME"
+      - path: "packages/assets/src/theme.test.ts"
+        change_type: "update"
+        purpose: "shape, values, validation, and null-proto assertions for fontFamily"
+    depends_on: ["WU-2"]
+    parallel_group: "serial-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/assets/src/theme.test.ts -t "font family"'
+      target: "packages/assets/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/assets/src/theme.test.ts -t "font family"'
+      - "pnpm exec vitest run packages/assets/src/theme.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/assets/src/theme.test.ts packages/core/src/theme.test.ts"
+      - '! rg "^import .*(@facet/react|@facet/kit|node:)" packages/assets/src packages/assets/package.json'
+    test_plan:
+      - type: "unit"
+        target: "packages/assets/src/theme.test.ts"
+        covers_dc: ["DC-003", "DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "DEFAULT_THEME validates cleanly with seven groups"
+      - "@facet/assets stays node-free and renderer-free"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "React theme resolution and text rendering"
+    owner_role: "main-agent"
+    packages: ["@facet/react"]
+    objective: "Resolve font-family token maps and apply them to text rendering."
+    files:
+      - path: "packages/react/src/theme.ts"
+        change_type: "update"
+        purpose: "import font-family defaults/tokens, extend ResolvedTheme, resolve overlays, apply fontFamily in textStyle"
+      - path: "packages/react/src/theme.test.ts"
+        change_type: "update"
+        purpose: "textStyle mapping, default fallback, overlay, hostile key tests"
+      - path: "packages/react/src/StageRenderer.theme.test.tsx"
+        change_type: "update"
+        purpose: "DOM assertion for themed text font family"
+    depends_on: ["WU-4"]
+    parallel_group: "serial-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/react/src/theme.test.ts packages/react/src/StageRenderer.theme.test.tsx -t "font family"'
+      target: "packages/react/src/theme.test.ts; packages/react/src/StageRenderer.theme.test.tsx"
+      justification: ""
+    quick_checks:
+      - 'pnpm exec vitest run packages/react/src/theme.test.ts packages/react/src/StageRenderer.theme.test.tsx -t "font family"'
+      - "pnpm exec vitest run packages/react/src/theme.test.ts packages/react/src/StageRenderer.theme.test.tsx"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/react/src/theme.test.ts packages/react/src/StageRenderer.theme.test.tsx packages/assets/src/theme.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/react/src/theme.test.ts"
+        covers_dc: ["DC-004", "DC-006"]
+        action: "update"
+      - type: "integration"
+        target: "packages/react/src/StageRenderer.theme.test.tsx"
+        covers_dc: ["DC-004"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "omitted family maps to default sans"
+      - 'family:"mono" maps to resolved mono'
+      - "hostile keys resolve to no inherited prototype value"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+execution_order:
+  - "WU-1"
+  - "WU-2"
+  - "WU-3"
+  - "WU-4"
+  - "WU-5"
+
+final_gate_chain:
+  - "/update-tests"
+  - "/verify"
+  - "/code-review"
+  - "/live-test"
+  - "/update-docs"
+  - "changeset"

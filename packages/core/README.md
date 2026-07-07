@@ -6,6 +6,11 @@ The Facet contract: the declarative stage spec (`box` / `text` / `media` /
 `applyPatch`, `validateTree`, and the session/event types. It depends on nothing
 — every other Facet package builds on it.
 
+The style-token vocabulary includes colors, spacing, typography
+(`FontFamily` / `FontSize` / `FontWeight`), radii, media ratios, flow layout,
+and bounded text/media style choices. Concrete CSS values live in validated
+theme data, not in agent-authored trees.
+
 ```bash
 npm install @facet/core
 ```
