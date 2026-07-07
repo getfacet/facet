@@ -16,7 +16,10 @@ Convert an approved product brief into two files:
 - `specs/dev-specs/<slug>.execution.yaml`
 
 Codex runs this directly. Do not call `Workflow(...)`; do not use
-`.claude/workflows/**`; do not start implementation.
+`.claude/workflows/**`; do not start implementation. Because Codex has no Claude
+workflow runner, the main agent must explicitly emulate the workflow rigor:
+context evidence → independent risk probes → single synchronized writer →
+independent gate-review panel → bounded fix loop → human approval.
 
 ## Required Context
 
@@ -56,9 +59,18 @@ Record risks with stable IDs:
 - `RISK-API-*` — public API or consumer migration risks
 - `RISK-PKG-*` — package boundary, dependency, build, or publish risks
 
-If Codex subagents are available, you may run separate risk-probe passes for INV,
-API, and PKG. If unavailable, do the probes inline. The main agent owns the final
-context file.
+Risk probes are mandatory and independent:
+
+- `INV` — Facet invariant risks and fail-safe boundaries.
+- `API` — public API, exported symbols, consumers, migration risk.
+- `PKG` — package boundary, dependency direction, build/publish risk.
+
+If Codex subagents are available, run one probe per lens. If unavailable, run
+three separate inline passes and keep notes separate until the context file is
+written. Each probe must return evidence with `file:line` or literal `rg` /
+`git grep` commands. A missing probe is a Stage 0 FAIL. The main agent owns the
+final context file and must include every `RISK-*` or explicitly state that the
+lens found none.
 
 ## Stage 1 — Write Spec And Manifest Together
 
@@ -75,7 +87,9 @@ The spec must include:
 - Shared Preflight
 - Work Units
 - Execution Order
-- Final Gate Chain with `final_gate_owner: main-agent`
+- Feature Final Gate Chain with
+  `/worktree-prep` → `/update-tests` → `/verify` → `/code-review` →
+  `/live-test` → `/update-docs` and `final_gate_owner: main-agent`
 
 The execution manifest must mirror the Work Units exactly:
 
@@ -105,6 +119,17 @@ Produce a gate table:
 
 Any blocking FAIL means the spec is not approvable.
 
+Run the gate review as an independent panel. Do not let the writer self-review
+with one combined skim. If subagents are available, use one reviewer per panel
+lens; otherwise do separate inline passes with the same separation:
+
+- `traceability` — all `DC-*`, tests, and final gates are represented.
+- `decomposition` — WU file limits, ownership, dependencies, red checks, and
+  manifest/spec identity.
+- `invariant-fit` — every touched Facet invariant has a concrete safe design.
+- `risk-consistency` — every `RISK-*` from context is resolved or waived with
+  evidence; public API consumers are covered.
+
 Review specifically for:
 
 - all `DC-*` traced to implementation and tests
@@ -116,12 +141,21 @@ Review specifically for:
 - TDD-first enforcement
 - all `RISK-*` resolved or explicitly waived
 
+Fail closed:
+
+- missing panel lens → FAIL
+- placeholder or unverifiable evidence → FAIL
+- spec/manifest divergence → FAIL
+- production WU without a real `red_check` → FAIL unless it is docs,
+  deletion-only, or move-only with a concrete justification
+- unresolved invariant conflict → FAIL
+
 ## Stage 3 — Bounded Fix Loop
 
 If the gate review finds P0/P1 or blocking failures:
 
 1. Fix the spec and manifest together.
-2. Re-run the full gate review.
+2. Re-run the full gate-review panel, not only the failed gate.
 3. Repeat at most 3 rounds.
 
 If blocking failures remain after 3 rounds, stop and escalate to the user with
@@ -137,9 +171,10 @@ When the gate review passes:
 2. Summarize affected packages, WUs, risks resolved, and any residual P2/P3 notes.
 3. Ask the user:
 
-   `Approve this dev spec + manifest? After approval I'll hand off to /implement.`
+   `Approve this dev spec + manifest? After approval I'll run /worktree-prep, then /implement.`
 
-Only after explicit approval should `/implement` run.
+Only after explicit approval should `/worktree-prep` run. `/implement` runs only
+inside the prepared worktree.
 
 ## Hard Rules
 
@@ -148,6 +183,9 @@ Only after explicit approval should `/implement` run.
 - No silent placeholder content in the spec or manifest.
 - No spec/manifest divergence.
 - No unresolved invariant conflict.
+- No skipped Stage 0 risk lens or Stage 2 reviewer lens.
+- No starting `/worktree-prep` or `/implement` until the user explicitly approves
+  the final spec and manifest.
 
 ## Output Contract
 
@@ -161,4 +199,5 @@ Report:
 6. `Work Units`
 7. `Gate Review` PASS/FAIL table
 8. `Fix Rounds`
-9. `Ready For Approval` YES/NO
+9. `Panel Ledger` (risk probes, reviewer lenses, reruns)
+10. `Ready For Approval` YES/NO

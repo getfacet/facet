@@ -42,13 +42,16 @@ Merge into one changed-files list.
 | `packages/runtime/**` | `@facet/runtime` |
 | `packages/agent/**` | `@facet/agent` |
 | `packages/agent-client/**` | `@facet/agent-client` |
+| `packages/client/**` | `@facet/client` |
 | `packages/server/**` | `@facet/server` |
 | `packages/react/**` | `@facet/react` |
+| `packages/assets/**` | `@facet/assets` |
 | `packages/cli/**` | `@facet/cli` |
 | `packages/store-postgres/**` | `@facet/store-postgres` |
 | `packages/bridge/**` | `@facet/bridge` |
+| `packages/quickstart/**` | `@facet/quickstart` |
 | `apps/playground/**` | playground (integration surface) |
-| `.agents/**`, `.codex/**`, root `*.md`, `docs/**` | infra/docs |
+| `.agents/**`, `.codex/**`, `specs/**`, `.changeset/**`, root `*.md`, `docs/**` | infra/docs/planning |
 
 ### Step 3 — Gather evidence per affected package
 For each affected package, collect (as `file:line`):

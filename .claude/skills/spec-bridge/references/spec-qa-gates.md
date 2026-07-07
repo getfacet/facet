@@ -7,7 +7,9 @@ Any blocking FAIL → overall spec status FAIL.
 ## Gate 1 — Section Completeness
 PASS: all required spec sections exist with concrete (non-placeholder) content —
 including `Shared Preflight`, `Invariant Fit Audit`, `Risk Register`, the WU list,
-`Execution Order`, and the final gate chain with `final_gate_owner: main-agent`.
+`Execution Order`, and the feature final gate chain
+(`/worktree-prep` → `/update-tests` → `/verify` → `/code-review` → `/live-test`
+→ `/update-docs`) with `final_gate_owner: main-agent`.
 FAIL: a required section is missing or has no actionable detail.
 
 ## Gate 2 — Cross-Section Consistency
@@ -53,8 +55,8 @@ FAIL: a `DC-*` is uncovered, or any WU has an empty/missing `test_plan`.
 PASS: each WU ≤ 5 files; every file assigned to exactly one WU (no orphans);
 paths match context evidence; dependencies acyclic; each WU has an independently
 verifiable DoD with commands and a no-regression check; parallel groups share no
-writable files; the manifest matches the spec; an implementer could delegate
-without further design decisions.
+writable files; the manifest matches the spec, including `final_gate_chain`; an
+implementer could delegate without further design decisions.
 FAIL: any of the above is violated.
 
 ## Gate 8 — TDD-First Enforcement

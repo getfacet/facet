@@ -18,7 +18,8 @@ allowed-tools: Read, Glob, Grep, Agent, AskUserQuestion, Write
 > workflow can't do.
 
 Use order: `/context-scout` (optional) → `/feature-intake` → **`/spec-bridge`** →
-`/implement` (→ `/update-tests` → `/verify` → `/code-review` → `/update-docs`).
+`/worktree-prep` → `/implement` (feature hard gate: `/update-tests` → `/verify`
+→ `/code-review` → `/live-test` → `/update-docs`).
 
 ## Before you launch — pick the slug
 
@@ -60,10 +61,10 @@ slug).
 
 - **PASS** (`awaitingApproval: true`) — show the spec path, manifest path, gate
   summary, any P2/P3 (informational), then ask the user:
-  > Approve this dev spec + manifest? After approval I'll hand off to `/implement`
-  > (WUs TDD-first) and keep the final `/verify` + `/code-review` with the main
-  > agent.
-  On approval, hand off to `/implement` with the slug.
+  > Approve this dev spec + manifest? After approval I'll run `/worktree-prep`,
+  > then `/implement` in the prepared worktree and keep the feature hard gate with
+  > the main agent.
+  On approval, hand off to `/worktree-prep` with the slug.
 - **FAIL** (`escalate: true` — 3 fix rounds exhausted) — show the remaining
   findings + `gateReport` and escalate to the user; do NOT approve or start
   implementation.
@@ -72,7 +73,7 @@ slug).
 
 ## Hard rules (unchanged)
 
-- Never start implementation without explicit user approval.
+- Never start `/worktree-prep` or implementation without explicit user approval.
 - Never approve on a FAIL verdict.
 - The reviewer's gate list and the P0/P1 = must-fix rule are the source of truth;
   don't override the workflow verdict — fix (re-run) or escalate.
@@ -86,7 +87,7 @@ P1+ findings before asking for approval. Skipping it is not a gate violation.
 
 ## Handoff — implementation
 
-After approval, **execution is `/implement`'s job** (branch/worktree → Work Units
-TDD-first from the manifest → inner-loop gates). Pass the slug so it can read
-`specs/dev-specs/<slug>.md` + `specs/dev-specs/<slug>.execution.yaml`. This skill
-stops at an approved, delegatable plan; it does not write production code.
+After approval, **workspace setup is `/worktree-prep`'s job**. Pass the slug so it
+can create the feature worktree, carry plan artifacts, run baseline checks, and
+then hand off to `/implement`. This skill stops at an approved, delegatable plan;
+it does not write production code.

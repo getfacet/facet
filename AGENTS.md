@@ -80,19 +80,41 @@ exact commands and policy (`.agents/skills/live-test/SKILL.md` for Codex,
   `pnpm` commands directly). Add/adjust tests for any behavior change; core logic
   (`validateTree`, `applyPatch`, `Stage` op-generation) must stay covered.
 - **`/code-review`** on a non-trivial change — P0–P2 = 0 (P3 nits non-blocking).
-- **`/live-test`** after `/code-review` — the live-link gate. The three fast
-  vitest tiers: Tier 1 (deterministic stub E2E + real-bundle run) always blocks;
-  Tier 2 (key-gated provider smoke) **blocks whenever `packages/quickstart/`
-  changed** — a missing key is then a FAIL, not a skip; Tier 3 (both providers)
-  runs pre-merge/release. Plus an **owner-run "live journey" tier** (real headless
-  browser + real LLM + vision-judged screenshots, pre-merge/on-request, SKIP
-  without a key) that the skill invokes after the vitest tiers.
+- Run the gate profile for the flow: **feature development** and **refactoring**
+  have different hard gates (below).
 - New public API is exported through the package's barrel `index.ts`.
 - No new dependency without a clear reason (keep `@facet/core` dependency-free).
 
-The gate is right-sized: `/verify` (mechanical), `/code-review` (evidence-based,
-adversarially verified), and `/live-test` (a real boot) per change;
-`/refactor-audit` for consolidation passes.
+### Feature hard gate
+
+For new feature work or any approved `/spec-bridge` implementation:
+
+`/update-tests` → `/verify` → `/code-review` → `/live-test` → `/update-docs`
+
+`/live-test` runs after `/code-review` as the live-link gate. The three fast
+vitest tiers: Tier 1 (deterministic stub E2E + real-bundle run) always blocks;
+Tier 2 (key-gated provider smoke) **blocks whenever `packages/quickstart/`
+changed** — a missing key is then a FAIL, not a skip; Tier 3 (both providers)
+runs pre-merge/release. Plus an **owner-run "live journey" tier** (real headless
+browser + real LLM + vision-judged screenshots, pre-merge/on-request, SKIP
+without a key) that the skill invokes after the vitest tiers.
+
+### Refactor hard gate
+
+For approved `/refactor-audit` cleanup work with no intended behavior change:
+
+`/update-tests` → `/verify` → `/code-review` → `/update-docs`
+
+Run `/live-test` too when the refactor touches a live-link surface:
+`packages/quickstart`, `packages/server`, `packages/client`,
+`packages/agent-client`, `packages/runtime`, `packages/bridge`,
+`packages/react` renderer/useFacet/ChatDock paths, or core patch/protocol/stage
+vocabulary. Also run it for release/pre-merge owner requests.
+
+The gates are right-sized: `/verify` is mechanical, `/code-review` is
+evidence-based and adversarially verified, `/live-test` proves a real boot for
+feature/live-link risk, and `/refactor-audit` is the owner-run consolidation
+entrypoint.
 See [docs/REVIEW-RULES.md](docs/REVIEW-RULES.md) for the rubric and severity.
 
 ## Building a non-trivial feature (the pipeline)
@@ -104,9 +126,13 @@ straight away:
 /context-scout    (optional) gather docs + entrypoints + consumer sweep → GO/NO-GO
 /feature-intake   rough idea → structured, testable, invariant-checked brief
 /spec-bridge      brief → dev spec + execution manifest (Work Units, TDD red checks)
-/implement        branch/worktree → run WUs TDD-first → inner-loop gates
-   └─ inner loop:  /update-tests → /verify → /code-review → /live-test → /update-docs
-/refactor-audit   periodic structure audit (owner-run, not per-feature)
+/worktree-prep    create isolated worktree + branch, carry plan artifacts, baseline
+/implement        in the prepared worktree, run WUs TDD-first → feature hard gate
+
+Refactor flow:
+/refactor-audit   structural audit → owner approves cleanup scope
+/worktree-prep    create isolated refactor worktree + branch, baseline
+execute scope     apply only the approved cleanup → refactor hard gate
 ```
 
 `/feature-intake` and `/spec-bridge` both enforce Facet's invariants as gates

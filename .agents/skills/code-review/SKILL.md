@@ -6,17 +6,22 @@ description: Multi-dimension Codex code review of Facet changes (bugs, types, ed
 # /code-review
 
 Run the Facet review directly in Codex. There is no `Workflow(...)` call in
-Codex. If subagents are available, use them as optional helpers; the main Codex
-agent still owns scoping, verification, verdict math, and the final report.
+Codex, so the main agent must emulate the Claude workflow rigor explicitly:
+scope → independent dimension passes → adversarial verification → synthesis →
+verdict. Subagents are helpers only; the main Codex agent owns completeness,
+verification, verdict math, and the final report.
 
 ## Read First
 
 1. `AGENTS.md` — Facet invariants and Definition of Done.
 2. `docs/REVIEW-RULES.md` — severity and review dimensions.
-3. The diff under review:
-   - default: `git diff --name-only main...HEAD` and `git diff main...HEAD`
-   - if that base is unavailable or the change is uncommitted: `git diff HEAD`
-     plus `git status --short`
+3. The candidate diff under review:
+   - uncommitted: `git status --porcelain`, `git diff --name-only HEAD`,
+     `git diff HEAD`
+   - committed: first successful base among `origin/main`, `main`, then `HEAD~1`;
+     run `git diff --name-only <base>..HEAD` and `git diff <base>..HEAD`
+   - if no base is available, review the uncommitted diff plus `git show --stat`
+     for the current commit; fail closed on unclear scope by broadening review
 4. Optional Codex reviewer guides, if present:
    - `.codex/agents/review-bugs.toml`
    - `.codex/agents/review-types.toml`
@@ -32,9 +37,19 @@ orchestration files, not Codex procedures.
 
 ## Scope
 
-Classify changed files by package and select dimensions. Always include
-`test-gaps` for behavior changes. Prefer all seven dimensions for broad or risky
-changes:
+Classify changed files by package and select dimensions before looking for
+findings. Build a review packet containing: base ref, changed files, diff, touched
+packages, touched Facet invariants, test commands already run, and any relevant
+`specs/dev-specs/<slug>.md`.
+
+Dimension selection is fail-closed:
+
+- Run all seven dimensions for broad, multi-package, runtime, renderer,
+  protocol, bridge, quickstart, security, concurrency, or public API changes.
+- Always include `test-gaps` for behavior changes.
+- For docs/process-only changes, run at least `consistency` and `test-gaps`.
+- If you skip a dimension, record the concrete reason. A missing reason is a
+  review failure, not a PASS.
 
 - `bugs`
 - `types`
@@ -44,12 +59,15 @@ changes:
 - `consistency`
 - `test-gaps`
 
-For docs-only changes, focus on `consistency` and `test-gaps` only if the docs
-alter process or gates.
-
 ## Find
 
-Review the diff dimension by dimension. For each candidate finding, require:
+Run each selected dimension as an independent pass. Do not blend dimensions into
+one general skim. If Codex subagents are available, run one focused pass per
+dimension using the matching `.codex/agents/review-*.toml` instructions. If
+subagents are unavailable, do separate inline passes and reset the checklist for
+each pass.
+
+For each candidate finding, require:
 
 - `file:line`
 - short evidence quote
@@ -58,26 +76,35 @@ Review the diff dimension by dimension. For each candidate finding, require:
 - suggested fix
 
 No evidence means no finding.
-
-If Codex subagents are available, you may run one focused pass per dimension
-using the matching `.codex/agents/review-*.toml` instructions. Pass only the
-scoped files, diff, and dimension. If subagents are unavailable, do the passes
-inline.
+Keep raw findings separated by dimension until verification is complete.
 
 ## Verify
 
-Try to refute every candidate finding before reporting it:
+Every candidate finding must survive adversarial verification before it can be
+reported:
 
 1. Read the surrounding code and real callers.
 2. Check whether validation, tests, guards, or fail-safe behavior already handle
    the case.
 3. Reproduce with a command or tight reasoning where possible.
-4. Drop the finding if the failure cannot actually happen or the evidence is
+4. Verify severity against `docs/REVIEW-RULES.md`.
+5. Drop the finding if the failure cannot actually happen or the evidence is
    weak.
 
 Use `.codex/agents/review-verifier.toml` as the verifier checklist when present.
-For P0/P1 candidates, do a second independent inline pass even if a subagent was
-used.
+Verifier policy:
+
+- P0/P1 candidates require three independent skeptical verifier passes. Use
+  subagents if available; otherwise do three separate inline passes with fresh
+  rereads of the cited code and callers. Strict majority confirms.
+- P2/P3 candidates require at least one skeptical verifier pass.
+- Refuted or uncertain candidates are dropped or downgraded before synthesis.
+- If a candidate cannot be verified because required context is missing, report
+  the review as FAIL with a blocker instead of declaring PASS.
+
+After verification, run one completeness re-sweep over the final diff: reread
+the changed file list, selected dimensions, and confirmed/refuted counts; name
+any obviously under-reviewed area and review it before verdict.
 
 ## Spec-Fidelity Check
 
@@ -89,6 +116,9 @@ risk mitigation is a review finding at the severity implied by the risk.
 
 - **PASS** — P0-P2 confirmed findings = 0. P3 nits are non-blocking.
 - **FAIL** — any P0/P1/P2 confirmed finding remains.
+- **FAIL** — any selected dimension was not run, any candidate was not verified,
+  the scope/base is unclear and not broadened, or spec-fidelity was applicable
+  but not checked.
 
 After a FAIL is fixed, run `/verify` and then run `/code-review` again. Never
 declare PASS from the fix alone.
@@ -99,6 +129,7 @@ Report:
 
 1. Scope: base ref, files, packages, dimensions reviewed.
 2. Confirmed findings table: severity, `file:line`, issue, failure scenario, fix.
-3. Refuted/merged candidate count, briefly.
-4. Spec-fidelity result, or `N/A`.
-5. Verdict: `PASS` or `FAIL`.
+3. Verification ledger: candidate counts, verifier passes, refuted/merged count.
+4. Completeness re-sweep result.
+5. Spec-fidelity result, or `N/A`.
+6. Verdict: `PASS` or `FAIL`.

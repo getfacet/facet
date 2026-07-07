@@ -1,7 +1,8 @@
 # Facet Review Rules
 
-The shared rubric for `/verify`, `/code-review`, and `/refactor-audit`. Right-sized
-for a small TypeScript monorepo — rigorous, not bureaucratic.
+The shared rubric for `/verify`, `/code-review`, `/live-test`, and
+`/refactor-audit`. Right-sized for a small TypeScript monorepo — rigorous, not
+bureaucratic.
 
 ## Invariants (a violation is at least P1)
 
@@ -33,6 +34,14 @@ for a small TypeScript monorepo — rigorous, not bureaucratic.
 **`/code-review` PASS = P0–P2 = 0.** P3 are non-blocking nits — track them, don't
 gate on them. (A P2 may only ship unfixed with an explicit maintainer waiver
 recorded in the PR.)
+
+## Gate Profiles
+
+- **Feature hard gate:** `/update-tests` → `/verify` → `/code-review` →
+  `/live-test` → `/update-docs`.
+- **Refactor hard gate:** `/update-tests` → `/verify` → `/code-review` →
+  `/update-docs`; add `/live-test` if a live-link surface is touched or the owner
+  requests a pre-merge/release live run.
 
 ## Evidence (required for every finding)
 

@@ -1,6 +1,6 @@
 ---
 name: live-test
-description: Run Facet's live-link hard gate — the 3-tier quickstart E2E (deterministic stub run, real-bundle execution, key-gated provider smoke) — and report a per-tier PASS/FAIL verdict. Use after /code-review, before commit/merge of any change, and always before a release.
+description: Run Facet's live-link hard gate — the 3-tier quickstart E2E (deterministic stub run, real-bundle execution, key-gated provider smoke) — and report a per-tier PASS/FAIL verdict. Use after /code-review in the feature hard gate, for refactors that touch live-link surfaces, and always before a release or owner-requested live run.
 ---
 
 # /live-test
@@ -8,8 +8,9 @@ description: Run Facet's live-link hard gate — the 3-tier quickstart E2E (dete
 The live-link hard gate. `/verify` proves the code compiles and unit tests
 pass; `/live-test` proves a **real boot** works: the quickstart server comes
 up, a page is served, SSE flows through the proxy, and (when required) a real
-LLM turn produces a valid stage. It joins the Definition of Done **after
-`/code-review`**.
+LLM turn produces a valid stage. It runs **after `/code-review`** in the feature
+hard gate, and in the refactor hard gate only when a live-link surface was
+touched or the owner requests a live run.
 
 Never declare PASS with a blocking tier failed or silently skipped. For
 quickstart-touching changes, **SKIPPED = FAIL** (DC-009): a missing key does

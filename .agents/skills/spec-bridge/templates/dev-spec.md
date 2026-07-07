@@ -78,8 +78,11 @@ safe. Mark others `N/A`.
 - [e.g. WU-1 → (WU-2 ∥ WU-3) → WU-4]; parallel only where file sets are disjoint.
 
 ## Final Gate Chain (main agent)
-1. `/verify`
-2. `/code-review` (PASS = P0–P2 = 0)
-3. `/refactor-audit` (periodic; owner-run)
-4. Squash → one feature commit; commit/PR on the user's explicit go.
+1. `/worktree-prep` creates the isolated `feat/<slug>` worktree before `/implement`.
+2. `/update-tests`
+3. `/verify`
+4. `/code-review` (PASS = P0–P2 = 0)
+5. `/live-test`
+6. `/update-docs`
+7. Squash → one feature commit; commit/PR on the user's explicit go.
 - final_gate_owner: main-agent
