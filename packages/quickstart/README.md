@@ -154,6 +154,10 @@ itself, and proxies every protocol route (SSE + POST) to an internal
 The external agent channel (`/agent/*`) is never exposed — the composed
 reference agent is in-process; dial-in is an advanced jack.
 
+The default shell loads Nunito from Google Fonts so the built-in
+`DEFAULT_THEME.fontFamily.sans` value renders as intended. If that stylesheet is
+blocked or offline, the browser falls back to `sans-serif`.
+
 ## Security posture (local tool, not a hosted server)
 
 The quickstart is a **local first-run tool**. Its `/event` route is

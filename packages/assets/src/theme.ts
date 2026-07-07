@@ -52,7 +52,7 @@ export const FONT_SIZE: Record<FontSize, string> = Object.assign(
 export const FONT_FAMILY: Record<FontFamily, string> = Object.assign(
   Object.create(null) as Record<FontFamily, string>,
   {
-    sans: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+    sans: "Nunito, sans-serif",
     serif: 'Georgia, "Times New Roman", serif',
     mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
   } satisfies Record<FontFamily, string>,

@@ -93,6 +93,7 @@ const styles: Record<string, CSSProperties> = {
     padding: "8px 10px",
     borderRadius: "8px",
     border: `1px solid ${COLOR.border}`,
+    fontFamily: "inherit",
     fontSize: "14px",
   },
   send: {
@@ -101,6 +102,7 @@ const styles: Record<string, CSSProperties> = {
     border: "none",
     background: COLOR.accent,
     color: COLOR["accent-fg"],
+    fontFamily: "inherit",
     fontWeight: 600,
     cursor: "pointer",
   },

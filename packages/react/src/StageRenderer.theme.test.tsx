@@ -85,7 +85,7 @@ describe("StageRenderer theming (jsdom)", () => {
     const { container } = render(<StageRenderer themes={[MIDNIGHT]} tree={tree} />);
     const text = container.querySelector("p") as HTMLElement;
 
-    expect(text.style.fontFamily).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
+    expect(text.style.fontFamily).toBe("Nunito, sans-serif");
   });
 
   it("re-renders with the new theme values when the theme name flips", () => {

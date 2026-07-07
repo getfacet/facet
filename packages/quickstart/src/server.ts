@@ -65,6 +65,8 @@ export interface QuickstartServerOptions {
 
 /** Loopback default for the public wrapper (see `QuickstartServerOptions.host`). */
 const DEFAULT_PUBLIC_HOST = "127.0.0.1";
+const NUNITO_STYLESHEET =
+  "https://fonts.googleapis.com/css2?family=Nunito:wght@300;400;500;600;700&display=swap";
 
 export interface RunningQuickstart {
   readonly url: string;
@@ -100,9 +102,10 @@ function shellHtml(themes?: readonly FacetTheme[], initialStage?: FacetTree): st
     globals.push(`window.__FACET_INITIAL_STAGE__ = ${escapeForScript(initialStage)}`);
   }
   const bootScript = globals.length > 0 ? `<script>${globals.join(";")}</script>` : "";
+  const fontLink = `<link rel="preconnect" href="https://fonts.googleapis.com" /><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin /><link rel="stylesheet" href="${NUNITO_STYLESHEET}" />`;
   return `<!doctype html>
 <html>
-<head><meta charset="utf-8" /><title>Facet</title>${bootScript}</head>
+<head><meta charset="utf-8" /><title>Facet</title>${fontLink}${bootScript}</head>
 <body><div id="root"></div><script type="module" src="/app.js"></script></body>
 </html>`;
 }

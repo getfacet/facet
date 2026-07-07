@@ -42,7 +42,7 @@ describe("DEFAULT_THEME", () => {
   });
 
   it("includes a complete default font family token map", () => {
-    expect(FONT_FAMILY.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
+    expect(FONT_FAMILY.sans).toBe("Nunito, sans-serif");
     expect(FONT_FAMILY.serif).toBe('Georgia, "Times New Roman", serif');
     expect(FONT_FAMILY.mono).toBe("ui-monospace, SFMono-Regular, Menlo, monospace");
     expect(Object.getPrototypeOf(FONT_FAMILY)).toBeNull();
@@ -56,7 +56,7 @@ describe("DEFAULT_THEME", () => {
     expect(DEFAULT_THEME.name).toBe("default");
     expect(DEFAULT_THEME.color?.bg).toBe("#ffffff");
     expect(DEFAULT_THEME.space?.md).toBe("16px");
-    expect(DEFAULT_THEME.fontFamily?.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
+    expect(DEFAULT_THEME.fontFamily?.sans).toBe("Nunito, sans-serif");
     expect(DEFAULT_THEME.fontSize?.md).toBe("16px");
     expect(DEFAULT_THEME.fontWeight?.bold).toBe(700);
     expect(DEFAULT_THEME.radius?.md).toBe("10px");
