@@ -1,12 +1,12 @@
 {
-  "name": "@facet/agent",
+  "name": "@facet/agent-client",
   "version": "0.0.0",
-  "description": "Facet agent authoring — the Stage control API ('CLI') an agent uses to compose and mutate its page.",
+  "description": "Facet agent-side SDK — dial into a Facet server, receive visitor events, and drive the stage from an external agent (with heartbeat + reconnect).",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/getfacet/facet.git",
-    "directory": "packages/agent"
+    "directory": "packages/extensions/agent-client"
   },
   "homepage": "https://github.com/getfacet/facet#readme",
   "bugs": "https://github.com/getfacet/facet/issues",
