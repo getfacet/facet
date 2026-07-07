@@ -61,7 +61,8 @@ package whose helpers are themselves just box compositions.
 
 ## The brick palette
 
-`FacetNode` is a closed union of four bricks (see `core/src/nodes.ts`):
+`FacetNode` is a closed union of four bricks (see
+`packages/core/core/src/nodes.ts`):
 
 - `box` — the only container. Flow layout (`direction: row|col`), token styles
   (including `appear` — a bounded enter-animation token — and `scroll` — a
@@ -92,12 +93,12 @@ contend. Pre-draw the reachable screens (how deep is the agent's call) and let
 the browser flip between them for free; reserve `kind:"agent"` for anything that
 needs new reasoning.
 
-Style values are **tokens** defined in `core/src/tokens.ts` (`Space`,
-`FontFamily`, `FontSize`, `Color`, `Radius`, …). Token names are the
+Style values are **tokens** defined in `packages/core/core/src/tokens.ts`
+(`Space`, `FontFamily`, `FontSize`, `Color`, `Radius`, …). Token names are the
 agent-facing vocabulary; the concrete CSS lives only in the renderer's theme
-(`react/src/theme.ts`), so reskinning every page is a data change and the agent
-never deals in pixels, hex, or font stacks. The token names are kept
-compatible-in-spirit with the W3C Design Tokens (DTCG) format.
+(`packages/core/react/src/theme.ts`), so reskinning every page is a data change
+and the agent never deals in pixels, hex, or font stacks. The token names are
+kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
 
 ## Themes, stamps, and seeds: reskin as data
 
@@ -204,14 +205,15 @@ Pointers into the `FacetTree`:
 | append a child        | `add /nodes/<id>` + `add /nodes/<parent>/children/-`            |
 | remove a node         | `remove /nodes/<id>` (dangling child refs are skipped on render)|
 
-`applyPatch(tree, operations)` (in `core/src/patch.ts`) is a small, dependency-free
-implementation of the six standard ops, and it is pure. One level up,
-`foldPatchIntoStage` (in `core/src/stage-fold.ts`) is the shared fail-safe wrapper
-both sides actually run per delivered batch: a batch-atomic apply, per-op salvage
-on a throwing batch (bounded, capped at `MAX_PATCH_OPS`, RFC 6902 `test` guards
-honored), then `validateTree` on the result. Because the server (to keep the
-session's authoritative stage) and the client (to update the DOM) fold the same
-delivered batches through the same pure function, the two can never drift.
+`applyPatch(tree, operations)` (in `packages/core/core/src/patch.ts`) is a small,
+dependency-free implementation of the six standard ops, and it is pure. One
+level up, `foldPatchIntoStage` (in `packages/core/core/src/stage-fold.ts`) is the
+shared fail-safe wrapper both sides actually run per delivered batch: a
+batch-atomic apply, per-op salvage on a throwing batch (bounded, capped at
+`MAX_PATCH_OPS`, RFC 6902 `test` guards honored), then `validateTree` on the
+result. Because the server (to keep the session's authoritative stage) and the
+client (to update the DOM) fold the same delivered batches through the same pure
+function, the two can never drift.
 
 ## The event loop
 
@@ -238,6 +240,20 @@ ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[] | AsyncIte
 
 Sessions are keyed by `(agentId, visitorId)`, which is exactly why the page is
 "different for everyone": each visitor has an isolated stage.
+
+## Package taxonomy
+
+Facet's source packages are grouped by role while npm package names stay stable:
+
+- **Core** (`packages/core/*`) owns the contract, runtime, reference transport,
+  browser transport, React renderer, and default asset data.
+- **Agent Stack** (`packages/agent-stack/*`) owns the reusable stage-tool
+  mechanism, the reference LLM/stub brain, and the one-command quickstart.
+- **Extensions** (`packages/extensions/*`) owns optional agent authoring and
+  integration surfaces: in-process agents, dial-in agents, CLI, bridge, and
+  Postgres stores.
+- **Labs** (`packages/labs`) is reserved for experiments and carries no
+  supported package contract.
 
 ## The agent's "CLI"
 
@@ -275,14 +291,18 @@ gives a one-command first run by composing it.
 
 The reference agent is a **streaming tool-calling loop** (not a single completion):
 each provider step yields the stage/chat batch produced so far, so the browser
-can watch the page build while the model continues deciding the next tool. Five
-tools map 1:1 onto the `Stage` control
-API — `append_node` / `set_node` / `remove_node` (incremental edits),
-`render_page` (a full redraw), and `say` (chat) — via the provider's native
-function-calling (OpenAI) / tool-use (Anthropic). It is fail-safe throughout: a
-bad tool argument becomes an `error:` observation the model recovers from
-(never a throw), a provider failure mid-loop keeps whatever the stage already
-has, and a turn that accomplishes nothing degrades to one apologetic chat line.
+can watch the page build while the model continues deciding the next tool. The
+provider-agnostic tool vocabulary, executor, inspection helpers, and local stage
+shadow live in `@facet/agent-tools`; `@facet/reference-agent` supplies the
+provider loop and prompt around that mechanism. The stage tools map 1:1 onto the
+`Stage` control API — `append_node` / `set_node` / `remove_node` (incremental
+edits), `render_page` (a full redraw), and `say` (chat) — via the provider's
+native function-calling (OpenAI) / tool-use (Anthropic). It is fail-safe
+throughout: a bad tool argument becomes an `error:` observation the model
+recovers from (never a throw), a provider failure mid-loop keeps whatever the
+stage already has, and a turn that accomplishes nothing degrades to one
+apologetic chat line. External agent authors can use `@facet/agent-tools`
+without importing the reference provider loop.
 
 Quickstart's flagship interaction is the **field snapshot**: a pressable box's
 agent action may declare `collect: "<box id>"`, and at press time the renderer

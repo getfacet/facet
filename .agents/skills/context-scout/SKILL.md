@@ -38,18 +38,21 @@ Merge into one changed-files list.
 ### Step 2 — Map changed files to packages
 | Path | Package / area |
 |---|---|
-| `packages/core/**` | `@facet/core` (bricks/tokens/patch/validate/protocol/spec — browser-safe, node-free) |
-| `packages/runtime/**` | `@facet/runtime` |
-| `packages/agent/**` | `@facet/agent` |
-| `packages/agent-client/**` | `@facet/agent-client` |
-| `packages/client/**` | `@facet/client` |
-| `packages/server/**` | `@facet/server` |
-| `packages/react/**` | `@facet/react` |
-| `packages/assets/**` | `@facet/assets` |
-| `packages/cli/**` | `@facet/cli` |
-| `packages/store-postgres/**` | `@facet/store-postgres` |
-| `packages/bridge/**` | `@facet/bridge` |
-| `packages/quickstart/**` | `@facet/quickstart` |
+| `packages/core/core/**` | `@facet/core` (bricks/tokens/patch/validate/protocol/spec — browser-safe, node-free) |
+| `packages/core/runtime/**` | `@facet/runtime` |
+| `packages/core/server/**` | `@facet/server` |
+| `packages/core/client/**` | `@facet/client` |
+| `packages/core/react/**` | `@facet/react` |
+| `packages/core/assets/**` | `@facet/assets` |
+| `packages/agent-stack/agent-tools/**` | `@facet/agent-tools` |
+| `packages/agent-stack/reference-agent/**` | `@facet/reference-agent` |
+| `packages/agent-stack/quickstart/**` | `@facet/quickstart` |
+| `packages/extensions/agent/**` | `@facet/agent` |
+| `packages/extensions/agent-client/**` | `@facet/agent-client` |
+| `packages/extensions/cli/**` | `@facet/cli` |
+| `packages/extensions/bridge/**` | `@facet/bridge` |
+| `packages/extensions/store-postgres/**` | `@facet/store-postgres` |
+| `packages/labs/**` | labs (experimental, unpublished) |
 | `apps/playground/**` | playground (integration surface) |
 | `.agents/**`, `.codex/**`, `specs/**`, `.changeset/**`, root `*.md`, `docs/**` | infra/docs/planning |
 
@@ -76,7 +79,7 @@ Record one row per (surface × consumer area). Show `(no match)` with the litera
 command + `0` when empty — never a free-form "not used" claim. For every hit,
 name where the migration happens. Special Facet checks:
 - If the change touches the brick/token/action vocabulary → the LLM-facing
-  `packages/core/src/spec.ts` (STAGE_SPEC) is a consumer; flag it.
+  `packages/core/core/src/spec.ts` (STAGE_SPEC) is a consumer; flag it.
 - `@facet/core` must stay node-free; flag any new Node-only import.
 
 ### Step 3.6 — Invariant touch check (Facet-specific)
