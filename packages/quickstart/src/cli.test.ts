@@ -9,12 +9,24 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import * as referenceAgent from "@facet/reference-agent";
+import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 import { createStubAgent } from "./stub.js";
 
 const NO_KEY_MESSAGE =
   "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run with --stub for a keyless look around.";
+
+describe("@facet/quickstart barrel", () => {
+  it("quickstart barrel exposes reference-agent aliases", () => {
+    expect(quickstartBarrel.startQuickstart).toBe(startQuickstart);
+    expect(quickstartBarrel.createQuickstartAgent).toBe(referenceAgent.createQuickstartAgent);
+    expect(quickstartBarrel.createReferenceAgent).toBe(referenceAgent.createReferenceAgent);
+    expect(quickstartBarrel.resolveProvider).toBe(referenceAgent.resolveProvider);
+    expect(quickstartBarrel.createStubAgent).toBe(referenceAgent.createStubAgent);
+  });
+});
 
 interface Captured {
   readonly out: string[];

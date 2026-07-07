@@ -153,6 +153,9 @@ importers:
       '@facet/core':
         specifier: workspace:*
         version: link:../core
+      '@facet/reference-agent':
+        specifier: workspace:*
+        version: link:../reference-agent
       '@facet/runtime':
         specifier: workspace:*
         version: link:../runtime
@@ -209,6 +212,18 @@ importers:
       react-dom:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
+
+  packages/reference-agent:
+    dependencies:
+      '@facet/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+      '@facet/runtime':
+        specifier: workspace:*
+        version: link:../runtime
 
   packages/runtime:
     dependencies:

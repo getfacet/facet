@@ -1,12 +1,12 @@
 {
-  "name": "@facet/quickstart",
+  "name": "@facet/reference-agent",
   "version": "0.0.0",
-  "description": "One-command Facet quickstart — boots a live server whose page is owned by a built-in LLM agent (OpenAI or Anthropic key, or a keyless stub).",
+  "description": "Facet reference agent — provider adapters, prompt tools, streaming tool loop, and deterministic stub.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/getfacet/facet.git",
-    "directory": "packages/quickstart"
+    "directory": "packages/reference-agent"
   },
   "homepage": "https://github.com/getfacet/facet#readme",
   "bugs": "https://github.com/getfacet/facet/issues",
@@ -15,9 +15,6 @@
   },
   "type": "module",
   "sideEffects": false,
-  "bin": {
-    "facet-quickstart": "./src/cli.ts"
-  },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "exports": {
@@ -25,37 +22,26 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsup"
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean"
   },
   "dependencies": {
     "@facet/agent": "workspace:*",
     "@facet/core": "workspace:*",
-    "@facet/reference-agent": "workspace:*",
-    "@facet/runtime": "workspace:*",
-    "@facet/server": "workspace:*"
-  },
-  "devDependencies": {
-    "@facet/client": "workspace:*",
-    "@facet/react": "workspace:*",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@facet/runtime": "workspace:*"
   },
   "files": [
     "dist"
   ],
   "publishConfig": {
     "access": "public",
-    "main": "./dist/index.js",
+    "main": "./dist/index.cjs",
+    "module": "./dist/index.js",
     "types": "./dist/index.d.ts",
-    "bin": {
-      "facet-quickstart": "./dist/cli.js"
-    },
     "exports": {
       ".": {
         "types": "./dist/index.d.ts",
-        "import": "./dist/index.js"
+        "import": "./dist/index.js",
+        "require": "./dist/index.cjs"
       }
     }
   }

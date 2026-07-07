@@ -1,6 +1,6 @@
 /**
  * /live-test Tier 2/3 (spec Decision 7, DC-004 + DC-009) — one REAL provider
- * turn per available key: boot `startQuickstart` with the built-in
+ * turn per available key: boot `startQuickstart` with the reference
  * `createQuickstartAgent`, post a visit, and wait for a patch frame.
  *
  * LOOSE assertions only, by design: LLM output is nondeterministic, so the
@@ -16,13 +16,9 @@
  */
 import { describe, expect, it } from "vitest";
 import { validateTree } from "@facet/core";
+import { createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
 import { MemorySink } from "@facet/runtime";
-import {
-  createQuickstartAgent,
-  resolveProvider,
-  startQuickstart,
-  type RunningQuickstart,
-} from "../src/index.js";
+import { startQuickstart, type RunningQuickstart } from "../src/index.js";
 
 const REQUIRE_BOTH = process.env["FACET_SMOKE_PROVIDERS"] === "both";
 

@@ -21,6 +21,7 @@
       "@facet/runtime/node": ["packages/runtime/src/node.ts"],
       "@facet/react": ["packages/react/src/index.ts"],
       "@facet/agent": ["packages/agent/src/index.ts"],
+      "@facet/reference-agent": ["packages/reference-agent/src/index.ts"],
       "@facet/agent-client": ["packages/agent-client/src/index.ts"],
       "@facet/client": ["packages/client/src/index.ts"],
       "@facet/assets": ["packages/assets/src/index.ts"],

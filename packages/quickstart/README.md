@@ -1,13 +1,13 @@
 # @facet/quickstart
 
 One command from a provider key (or no key at all) to a live Facet page. The
-package ships a **built-in reference brain** — a tool-calling LLM agent that
-draws the page from your guide markdown and keeps editing it as visitors chat —
-plus the `facet-quickstart` bin that boots it behind a ready-made server. It is
-to brains what `@facet/server` is to transports: a reference implementation of a
-pluggable seam, not the only brain Facet can run.
+package is the `facet-quickstart` CLI/server/page wrapper. It composes
+`@facet/reference-agent`, a tool-calling LLM agent that draws the page from your
+guide markdown and keeps editing it as visitors chat, or its deterministic stub
+for keyless runs. The brain is a reference implementation of a pluggable seam,
+not the only brain Facet can run.
 
-Each turn the agent runs a bounded **streaming tool loop**: the model calls
+The reference agent runs a bounded **streaming tool loop**: the model calls
 `append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
 (a full redraw), and `say` (chat) — via the provider's native function-calling
 (OpenAI) / tool-use (Anthropic) — observing each result before deciding the
@@ -132,7 +132,8 @@ exist ⇒ exit 1 naming it.
 
 ## Stub mode
 
-`--stub` wires `createStubAgent()` instead of an LLM: a fixed fixture page
+`--stub` wires `createStubAgent()` from `@facet/reference-agent` instead of an
+LLM: a fixed fixture page
 (hero, a native form whose submit collects fields, and two navigate-linked
 screens) with fully deterministic replies — zero network, zero randomness. It
 exists for a keyless look around and as the fixture behind the repo's
@@ -145,12 +146,13 @@ e.g. `theme midnight` against a `midnight.theme.json`.
 
 ## The served page
 
-The bin runs a thin wrapper server: it serves the HTML shell and the prebuilt
+The bin runs a thin wrapper server: it resolves guides/assets, creates the
+reference provider-backed or stub agent, serves the HTML shell and the prebuilt
 browser bundle (`/app.js` — the standard `@facet/react` renderer + chat dock)
 itself, and proxies every protocol route (SSE + POST) to an internal
 `createFacetServer` bound to `127.0.0.1` with a random per-boot agent token.
-The external agent channel (`/agent/*`) is never exposed — quickstart's brain
-is in-process; dial-in is an advanced jack.
+The external agent channel (`/agent/*`) is never exposed — the composed
+reference agent is in-process; dial-in is an advanced jack.
 
 ## Security posture (local tool, not a hosted server)
 

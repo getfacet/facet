@@ -168,11 +168,11 @@ only ever names a theme or chooses style tokens such as `family: "mono"`.
  [ @facet/react ]   renders the brick spec to safe DOM; applies patches live
 ```
 
-**"Your model" defaults to the built-in one:** `facet-quickstart` ships a
-reference brain (`@facet/quickstart`) that fills the model slot with an
-OpenAI/Anthropic call. It is to brains what `@facet/server` is to transports —
-a reference implementation of a pluggable seam. To connect your own model
-instead, there are three jacks — see
+**"Your model" defaults to the reference one:** `facet-quickstart` composes
+`@facet/reference-agent`, which fills the model slot with an OpenAI/Anthropic
+tool-calling loop or deterministic stub. It is a reference implementation of a
+pluggable seam; `@facet/quickstart` is the one-command wrapper around it. To
+connect your own model instead, there are three jacks — see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
 **Persistence has three pluggable seams.** The *stage* (the page) is always
@@ -216,11 +216,12 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 | `@facet/assets`         | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
 | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres.                             |
 | `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
-| `@facet/quickstart`     | `facet-quickstart` — one-command boot with a built-in reference brain (OpenAI/Anthropic, or a keyless stub). |
+| `@facet/reference-agent` | Reference brain package: providers, prompt/tools, streaming agent, and keyless stub.       |
+| `@facet/quickstart`     | `facet-quickstart` — one-command CLI/server/page wrapper that composes `@facet/reference-agent`. |
 
 ## Advanced: bring your own brain
 
-The quickstart's built-in agent is just a default. **Your model connects in one
+The reference agent is just a default. **Your model connects in one
 of three ways** — all the same `Stage` API:
 
 - **in-process** — a JS function inside the server (`@facet/agent`).
@@ -267,7 +268,7 @@ back-compatible helper.
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
 - [x] Durable `StageStore`/`Sink`/`AssetsStore` + a Postgres adapter
 - [x] `@facet/assets` default theme + stamp data (node-free value maps)
-- [x] One-command quickstart (`facet-quickstart`) with a built-in reference brain
+- [x] One-command quickstart (`facet-quickstart`) composing `@facet/reference-agent`
 - [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint
 - [ ] Content-safety / moderation hooks
