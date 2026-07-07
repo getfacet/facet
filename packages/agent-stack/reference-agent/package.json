@@ -1,12 +1,12 @@
 {
-  "name": "@facet/react",
+  "name": "@facet/reference-agent",
   "version": "0.0.0",
-  "description": "Facet React renderer — turns the declarative stage spec into a sandboxed component tree and applies patches live.",
+  "description": "Facet reference agent — provider adapters, prompt tools, streaming tool loop, and deterministic stub.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/getfacet/facet.git",
-    "directory": "packages/react"
+    "directory": "packages/agent-stack/reference-agent"
   },
   "homepage": "https://github.com/getfacet/facet#readme",
   "bugs": "https://github.com/getfacet/facet/issues",
@@ -25,20 +25,9 @@
     "build": "tsup src/index.ts --format esm,cjs --dts --clean"
   },
   "dependencies": {
-    "@facet/assets": "workspace:*",
-    "@facet/core": "workspace:*"
-  },
-  "peerDependencies": {
-    "react": ">=18"
-  },
-  "devDependencies": {
-    "@testing-library/dom": "^10.4.1",
-    "@testing-library/react": "^16.3.2",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "jsdom": "^29.1.1",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "@facet/agent": "workspace:*",
+    "@facet/core": "workspace:*",
+    "@facet/runtime": "workspace:*"
   },
   "files": [
     "dist"

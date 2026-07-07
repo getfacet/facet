@@ -6,7 +6,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/getfacet/facet.git",
-    "directory": "packages/quickstart"
+    "directory": "packages/agent-stack/quickstart"
   },
   "homepage": "https://github.com/getfacet/facet#readme",
   "bugs": "https://github.com/getfacet/facet/issues",
