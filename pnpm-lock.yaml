@@ -85,6 +85,12 @@ importers:
         specifier: ^6.0.7
         version: 6.4.3(@types/node@22.20.0)(tsx@4.22.4)
 
+  packages/agent-stack/agent-tools:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../../core/core
+
   packages/agent-stack/quickstart:
     dependencies:
       '@facet/agent':

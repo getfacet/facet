@@ -1,3 +1,21 @@
+export {
+  FACET_STAGE_TOOL_NAMES,
+  FACET_STAGE_TOOL_SPECS,
+  TOOLS,
+  getStageToolSpec,
+} from "./specs.js";
+export type { FacetStageToolSpec } from "./specs.js";
+export {
+  changedNodeIdsBetween,
+  foldStageShadow,
+  summarizeStageChange,
+  summarizeStageTree,
+} from "./stage-shadow.js";
+export type {
+  StageChangeSummaryOptions,
+  StageShadowFoldResult,
+  StageTreeSummary,
+} from "./stage-shadow.js";
 export type {
   AppendNodeToolInput,
   FacetStageToolName,
