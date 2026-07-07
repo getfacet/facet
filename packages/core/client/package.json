@@ -1,12 +1,12 @@
 {
-  "name": "@facet/assets",
+  "name": "@facet/client",
   "version": "0.0.0",
-  "description": "Facet default asset data — the node-free default theme + stamp value maps (deps = @facet/core only).",
+  "description": "Facet browser-side transports — connect the React renderer to a Facet server (SSE + POST) or to an in-process runtime. The browser counterpart of @facet/agent-client.",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/getfacet/facet.git",
-    "directory": "packages/assets"
+    "directory": "packages/core/client"
   },
   "homepage": "https://github.com/getfacet/facet#readme",
   "bugs": "https://github.com/getfacet/facet/issues",
@@ -26,6 +26,9 @@
   },
   "dependencies": {
     "@facet/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@facet/runtime": "workspace:*"
   },
   "files": [
     "dist"
