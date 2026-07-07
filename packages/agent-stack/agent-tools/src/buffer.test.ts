@@ -61,6 +61,35 @@ describe("createStageToolBuffer", () => {
     expect(inspected.shadow.nodes["a"]).toMatchObject({ value: "A2" });
   });
 
+  it("normalizes the next provider step to the runtime-folded stage", () => {
+    const buffer = createStageToolBuffer(ROOT_TREE);
+
+    const orphan = buffer.run({
+      id: "set-title",
+      name: "set_node",
+      input: { node: { id: "title", type: "text", value: "Title" } },
+    });
+
+    expect(orphan.messages.some((message) => message.kind === "patch")).toBe(true);
+    expect(buffer.shadow.nodes["title"]).toMatchObject({ value: "Title" });
+    expect(buffer.shadow.nodes["title"]).not.toHaveProperty("style");
+
+    buffer.resetEmittedPatchOps();
+
+    expect(buffer.shadow.nodes["title"]).toMatchObject({ style: {} });
+    const appended = buffer.run({
+      id: "append-panel",
+      name: "append_node",
+      input: {
+        parentId: "root",
+        node: { id: "panel", type: "box", children: ["title"] },
+      },
+    });
+
+    expect(appended.observation).toContain("ok: appended");
+    expect(appended.messages.some((message) => message.kind === "patch")).toBe(true);
+  });
+
   it("rejects a tool call before the streamed batch exceeds the aggregate patch cap", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);
     const okCalls = Math.floor(MAX_PATCH_OPS / 2);
