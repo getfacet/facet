@@ -1,0 +1,540 @@
+# Execution Manifest: Agent Tools and Reference Agent Stack PR1
+#
+# Keep synchronized with specs/dev-specs/agent-tools-reference-agent-stack-pr1.md.
+
+feature_slug: "agent-tools-reference-agent-stack-pr1"
+spec_path: "specs/dev-specs/agent-tools-reference-agent-stack-pr1.md"
+context_evidence_path: "specs/context/agent-tools-reference-agent-stack.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts when possible"
+    owner: "main-agent"
+    verification: "run the three commands in the prepared worktree"
+  - concern: "workspace-paths"
+    requirement: "after package moves, run pnpm install so pnpm-lock.yaml importer paths match grouped packages"
+    owner: "main-agent"
+    verification: "pnpm install"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "Move Core Package Group A"
+    owner_role: "main-agent"
+    packages: ["@facet/core", "@facet/assets", "@facet/runtime", "@facet/server", "@facet/client"]
+    objective: "Move five core package directories under packages/core/ and update their internal tsconfig/manifests for the new depth."
+    files:
+      - path: "packages/core -> packages/core/core"
+        change_type: "update"
+        purpose: "Move/update core contract package"
+      - path: "packages/assets -> packages/core/assets"
+        change_type: "update"
+        purpose: "Move/update node-free assets package"
+      - path: "packages/runtime -> packages/core/runtime"
+        change_type: "update"
+        purpose: "Move/update runtime package"
+      - path: "packages/server -> packages/core/server"
+        change_type: "update"
+        purpose: "Move/update reference transport package"
+      - path: "packages/client -> packages/core/client"
+        change_type: "update"
+        purpose: "Move/update browser transport package"
+    depends_on: []
+    parallel_group: "serial-migration"
+    red_check:
+      command: 'node -e ''const fs=require("fs"); for (const p of ["packages/core/core","packages/core/assets","packages/core/runtime","packages/core/server","packages/core/client"]) { const pkg=JSON.parse(fs.readFileSync(`${p}/package.json`,"utf8")); if (pkg.repository?.directory!==p) throw new Error(`${p} repository.directory`); const ts=JSON.parse(fs.readFileSync(`${p}/tsconfig.json`,"utf8")); if (ts.extends!=="../../../tsconfig.base.json") throw new Error(`${p} tsconfig extends`); }'''
+      target: "grouped package manifests/tsconfigs"
+      justification: ""
+    quick_checks:
+      - 'node -e ''const fs=require("fs"); for (const p of ["packages/core/core","packages/core/assets","packages/core/runtime","packages/core/server","packages/core/client"]) { const pkg=JSON.parse(fs.readFileSync(`${p}/package.json`,"utf8")); if (pkg.repository?.directory!==p) throw new Error(`${p} repository.directory`); const ts=JSON.parse(fs.readFileSync(`${p}/tsconfig.json`,"utf8")); if (ts.extends!=="../../../tsconfig.base.json") throw new Error(`${p} tsconfig extends`); }'''
+      - "test -f packages/core/core/package.json"
+      - "test -f packages/core/assets/package.json"
+      - "test -f packages/core/runtime/package.json"
+      - "test -f packages/core/server/package.json"
+      - "test -f packages/core/client/package.json"
+    no_regression_checks:
+      - "covered by WU-4 path config checks and final /verify"
+    test_plan:
+      - type: "integration"
+        target: "find packages/core -mindepth 2 -maxdepth 2 -name package.json"
+        covers_dc: ["DC-001", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Move paths exist and old flat paths are gone"
+      - "Each moved package manifest repository.directory points to the grouped path"
+      - "Each moved package tsconfig extends ../../../tsconfig.base.json"
+    handoff_format: &handoff
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Move Core React And Agent Stack Existing Packages"
+    owner_role: "main-agent"
+    packages: ["@facet/react", "@facet/reference-agent", "@facet/quickstart"]
+    objective: "Move React into the core group and existing recommended agent stack packages under packages/agent-stack/."
+    files:
+      - path: "packages/react -> packages/core/react"
+        change_type: "update"
+        purpose: "Move/update renderer package"
+      - path: "packages/reference-agent -> packages/agent-stack/reference-agent"
+        change_type: "update"
+        purpose: "Move/update reference brain package"
+      - path: "packages/quickstart -> packages/agent-stack/quickstart"
+        change_type: "update"
+        purpose: "Move/update quickstart wrapper package"
+    depends_on: []
+    parallel_group: "serial-migration"
+    red_check:
+      command: 'node -e ''const fs=require("fs"); for (const p of ["packages/core/react","packages/agent-stack/reference-agent","packages/agent-stack/quickstart"]) { const pkg=JSON.parse(fs.readFileSync(`${p}/package.json`,"utf8")); if (pkg.repository?.directory!==p) throw new Error(`${p} repository.directory`); const ts=JSON.parse(fs.readFileSync(`${p}/tsconfig.json`,"utf8")); if (ts.extends!=="../../../tsconfig.base.json") throw new Error(`${p} tsconfig extends`); }'''
+      target: "grouped package manifests/tsconfigs"
+      justification: ""
+    quick_checks:
+      - 'node -e ''const fs=require("fs"); for (const p of ["packages/core/react","packages/agent-stack/reference-agent","packages/agent-stack/quickstart"]) { const pkg=JSON.parse(fs.readFileSync(`${p}/package.json`,"utf8")); if (pkg.repository?.directory!==p) throw new Error(`${p} repository.directory`); const ts=JSON.parse(fs.readFileSync(`${p}/tsconfig.json`,"utf8")); if (ts.extends!=="../../../tsconfig.base.json") throw new Error(`${p} tsconfig extends`); }'''
+      - "test -f packages/core/react/package.json"
+      - "test -f packages/agent-stack/reference-agent/package.json"
+      - "test -f packages/agent-stack/quickstart/package.json"
+    no_regression_checks:
+      - "covered by WU-4 path config checks and final /verify"
+    test_plan:
+      - type: "integration"
+        target: "find packages/agent-stack -mindepth 2 -maxdepth 2 -name package.json"
+        covers_dc: ["DC-001", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Move paths exist and old flat paths are gone"
+      - "Package names stay unchanged"
+      - "Internal package tsconfig/manifests use grouped paths"
+    handoff_format: *handoff
+
+  - id: "WU-3"
+    title: "Move Extensions Package Group"
+    owner_role: "main-agent"
+    packages:
+      [
+        "@facet/agent",
+        "@facet/agent-client",
+        "@facet/cli",
+        "@facet/bridge",
+        "@facet/store-postgres",
+      ]
+    objective: "Move optional/advanced packages under packages/extensions/."
+    files:
+      - path: "packages/agent -> packages/extensions/agent"
+        change_type: "update"
+        purpose: "Move/update in-process agent SDK"
+      - path: "packages/agent-client -> packages/extensions/agent-client"
+        change_type: "update"
+        purpose: "Move/update external agent client"
+      - path: "packages/cli -> packages/extensions/cli"
+        change_type: "update"
+        purpose: "Move/update CLI package"
+      - path: "packages/bridge -> packages/extensions/bridge"
+        change_type: "update"
+        purpose: "Move/update bridge package"
+      - path: "packages/store-postgres -> packages/extensions/store-postgres"
+        change_type: "update"
+        purpose: "Move/update Postgres store adapter"
+    depends_on: []
+    parallel_group: "serial-migration"
+    red_check:
+      command: 'node -e ''const fs=require("fs"); for (const p of ["packages/extensions/agent","packages/extensions/agent-client","packages/extensions/cli","packages/extensions/bridge","packages/extensions/store-postgres"]) { const pkg=JSON.parse(fs.readFileSync(`${p}/package.json`,"utf8")); if (pkg.repository?.directory!==p) throw new Error(`${p} repository.directory`); const ts=JSON.parse(fs.readFileSync(`${p}/tsconfig.json`,"utf8")); if (ts.extends!=="../../../tsconfig.base.json") throw new Error(`${p} tsconfig extends`); }'''
+      target: "grouped package manifests/tsconfigs"
+      justification: ""
+    quick_checks:
+      - 'node -e ''const fs=require("fs"); for (const p of ["packages/extensions/agent","packages/extensions/agent-client","packages/extensions/cli","packages/extensions/bridge","packages/extensions/store-postgres"]) { const pkg=JSON.parse(fs.readFileSync(`${p}/package.json`,"utf8")); if (pkg.repository?.directory!==p) throw new Error(`${p} repository.directory`); const ts=JSON.parse(fs.readFileSync(`${p}/tsconfig.json`,"utf8")); if (ts.extends!=="../../../tsconfig.base.json") throw new Error(`${p} tsconfig extends`); }'''
+      - "test -f packages/extensions/agent/package.json"
+      - "test -f packages/extensions/agent-client/package.json"
+      - "test -f packages/extensions/cli/package.json"
+      - "test -f packages/extensions/bridge/package.json"
+      - "test -f packages/extensions/store-postgres/package.json"
+    no_regression_checks:
+      - "covered by WU-4 path config checks and final /verify"
+    test_plan:
+      - type: "integration"
+        target: "find packages/extensions -mindepth 2 -maxdepth 2 -name package.json"
+        covers_dc: ["DC-001", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Move paths exist and old flat paths are gone"
+      - "Package names stay unchanged"
+      - "Internal package tsconfig/manifests use grouped paths"
+    handoff_format: *handoff
+
+  - id: "WU-4"
+    title: "Workspace Path Configuration"
+    owner_role: "main-agent"
+    packages: ["all workspace packages"]
+    objective: "Update workspace, TS path aliases, root build, lockfile importers, and playground direct path references for grouped packages."
+    files:
+      - path: "pnpm-workspace.yaml"
+        change_type: "update"
+        purpose: "include packages/*/* and apps/*"
+      - path: "package.json"
+        change_type: "update"
+        purpose: "build filter targets grouped packages"
+      - path: "tsconfig.base.json"
+        change_type: "update"
+        purpose: "grouped aliases plus @facet/agent-tools"
+      - path: "pnpm-lock.yaml"
+        change_type: "update"
+        purpose: "workspace importer paths after pnpm install"
+      - path: "apps/playground/package.json"
+        change_type: "update"
+        purpose: "bridge script path"
+    depends_on: ["WU-1", "WU-2", "WU-3"]
+    parallel_group: "serial-migration"
+    red_check:
+      command: "pnpm --filter @facet/core typecheck"
+      target: "tsconfig.base.json"
+      justification: ""
+    quick_checks:
+      - "pnpm --filter @facet/core typecheck"
+      - "pnpm --filter @facet/quickstart typecheck"
+      - "pnpm --filter @facet/playground typecheck"
+    no_regression_checks:
+      - "pnpm typecheck"
+      - "pnpm build"
+    test_plan:
+      - type: "integration"
+        target: "pnpm --filter @facet/core typecheck"
+        covers_dc: ["DC-010"]
+        action: "update"
+      - type: "integration"
+        target: "pnpm --filter @facet/playground typecheck"
+        covers_dc: ["DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "pnpm-workspace.yaml discovers grouped packages"
+      - "Root build reaches grouped packages"
+      - "TypeScript aliases resolve all moved packages and @facet/agent-tools"
+    handoff_format: *handoff
+
+  - id: "WU-5"
+    title: "Taxonomy And Gate Documentation"
+    owner_role: "main-agent"
+    packages: ["docs", "repo skills"]
+    objective: "Update primary package taxonomy docs and hard-gate path heuristics."
+    files:
+      - path: "AGENTS.md"
+        change_type: "update"
+        purpose: "grouped package map and gate paths"
+      - path: "README.md"
+        change_type: "update"
+        purpose: "grouped package taxonomy and quickstart path links"
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "reference brain/tools package story"
+      - path: ".agents/skills/live-test/SKILL.md"
+        change_type: "update"
+        purpose: "grouped quickstart/reference-agent paths"
+      - path: ".agents/skills/context-scout/SKILL.md"
+        change_type: "update"
+        purpose: "grouped package map"
+    depends_on: ["WU-4"]
+    parallel_group: "docs-a"
+    red_check:
+      command: "N/A"
+      target: "docs/skill path rules"
+      justification: "docs/skill path rules only"
+    quick_checks:
+      - '! rg -n "packages/(quickstart|reference-agent|agent-client|bridge|runtime|react)" AGENTS.md README.md docs/ARCHITECTURE.md .agents/skills/live-test/SKILL.md .agents/skills/context-scout/SKILL.md'
+      - "pnpm format:check"
+    no_regression_checks:
+      - "pnpm lint"
+    test_plan:
+      - type: "integration"
+        target: "rg path guard for docs/skills"
+        covers_dc: ["DC-001", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "N/A red_check acknowledged: docs/skill path rules only"
+      - "Core / Agent Stack / Extensions / Labs taxonomy is visible in docs"
+      - "live-test still treats grouped quickstart changes as blocking Tier 2"
+      - "context-scout maps grouped directories to package names"
+    handoff_format: *handoff
+
+  - id: "WU-6"
+    title: "Add Agent Tools Package Scaffold"
+    owner_role: "main-agent"
+    packages: ["@facet/agent-tools"]
+    objective: "Add package manifest, README, tsconfig, barrel, and shared public types for provider-agnostic Facet stage tools."
+    files:
+      - path: "packages/agent-stack/agent-tools/package.json"
+        change_type: "add"
+        purpose: "published package metadata"
+      - path: "packages/agent-stack/agent-tools/tsconfig.json"
+        change_type: "add"
+        purpose: "package TS config"
+      - path: "packages/agent-stack/agent-tools/README.md"
+        change_type: "add"
+        purpose: "external agent author path"
+      - path: "packages/agent-stack/agent-tools/src/index.ts"
+        change_type: "add"
+        purpose: "barrel exports"
+      - path: "packages/agent-stack/agent-tools/src/types.ts"
+        change_type: "add"
+        purpose: "public tool/result types"
+    depends_on: ["WU-4"]
+    parallel_group: "agent-tools-a"
+    red_check:
+      command: "pnpm --filter @facet/agent-tools typecheck"
+      target: "packages/agent-stack/agent-tools/src/index.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm --filter @facet/agent-tools typecheck"
+      - '! rg -n "@facet/reference-agent|node:" packages/agent-stack/agent-tools/src packages/agent-stack/agent-tools/package.json'
+    no_regression_checks:
+      - "pnpm typecheck"
+    test_plan:
+      - type: "integration"
+        target: "pnpm --filter @facet/agent-tools typecheck"
+        covers_dc: ["DC-002", "DC-008", "DC-009"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Package depends on @facet/core only unless WU reports a blocker"
+      - "Barrel exports types but no provider loop"
+    handoff_format: *handoff
+
+  - id: "WU-7"
+    title: "Agent Tools Specs And Stage Shadow"
+    owner_role: "main-agent"
+    packages: ["@facet/agent-tools"]
+    objective: "Add Facet stage tool specs and canonical local stage shadow folding."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/specs.ts"
+        change_type: "add"
+        purpose: "tool schemas including inspect tools"
+      - path: "packages/agent-stack/agent-tools/src/stage-shadow.ts"
+        change_type: "add"
+        purpose: "fold/summarize helpers"
+      - path: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        change_type: "add"
+        purpose: "schema/name coverage"
+      - path: "packages/agent-stack/agent-tools/src/stage-shadow.test.ts"
+        change_type: "add"
+        purpose: "fold/summary coverage"
+    depends_on: ["WU-6"]
+    parallel_group: "agent-tools-b"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/agent-tools/src/stage-shadow.test.ts -t "folds patch messages through foldPatchIntoStage"'
+      target: "packages/agent-stack/agent-tools/src/stage-shadow.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/specs.test.ts packages/agent-stack/agent-tools/src/stage-shadow.test.ts"
+      - "pnpm --filter @facet/agent-tools typecheck"
+    no_regression_checks:
+      - "pnpm test"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        covers_dc: ["DC-002"]
+        action: "new"
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/stage-shadow.test.ts"
+        covers_dc: ["DC-003"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Specs include existing stage tools plus bounded inspection tools"
+      - "Shadow folds patch messages via foldPatchIntoStage"
+    handoff_format: *handoff
+
+  - id: "WU-8"
+    title: "Agent Tools Executor"
+    owner_role: "main-agent"
+    packages: ["@facet/agent-tools"]
+    objective: "Port provider-agnostic tool execution from reference-agent into agent-tools with typed observations, patch output, shadow updates, and bounded inspection."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/executor.ts"
+        change_type: "add"
+        purpose: "execute one Facet tool call"
+      - path: "packages/agent-stack/agent-tools/src/executor.test.ts"
+        change_type: "add"
+        purpose: "valid/error/inspection coverage"
+    depends_on: ["WU-7"]
+    parallel_group: "agent-tools-c"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts -t "valid append returns an ok observation patch metadata and updated shadow"'
+      target: "packages/agent-stack/agent-tools/src/executor.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts"
+      - "pnpm --filter @facet/agent-tools typecheck"
+      - '! rg -n "@facet/reference-agent|https://api|node:" packages/agent-stack/agent-tools/src'
+    no_regression_checks:
+      - "pnpm test"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/executor.test.ts"
+        covers_dc: ["DC-002", "DC-003", "DC-004", "DC-008", "DC-009"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Valid mutations return ok, patch count, changed ids, compact summary, and updated shadow"
+      - "Invalid mutations return typed error, emit no patch, and keep shadow unchanged"
+      - "Inspection output is bounded and emits no patch"
+    handoff_format: *handoff
+
+  - id: "WU-9"
+    title: "Reference Agent Consumes Agent Tools"
+    owner_role: "main-agent"
+    packages: ["@facet/reference-agent"]
+    objective: "Replace private reference-agent tool schemas/execution with @facet/agent-tools while preserving public compatibility exports and tests."
+    files:
+      - path: "packages/agent-stack/reference-agent/package.json"
+        change_type: "update"
+        purpose: "add @facet/agent-tools"
+      - path: "packages/agent-stack/reference-agent/src/prompt.ts"
+        change_type: "update"
+        purpose: "re-export tool specs"
+      - path: "packages/agent-stack/reference-agent/src/agent.ts"
+        change_type: "update"
+        purpose: "use agent-tools executor"
+      - path: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "tool identity/schema compatibility"
+      - path: "packages/agent-stack/reference-agent/src/agent.test.ts"
+        change_type: "update"
+        purpose: "observations include rich metadata"
+    depends_on: ["WU-8"]
+    parallel_group: "reference-agent-a"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts -t "re-exports agent-tools stage tools by identity"'
+      target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/reference-agent/src/agent.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+      - "! rg -n \"function executeTool|const TOOLS: readonly ToolSpec\\[\\]\" packages/agent-stack/reference-agent/src"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src"
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src --exclude '**/quickstart.e2e.test.ts'"
+      - "pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/smoke.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        covers_dc: ["DC-005", "DC-007"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/agent.test.ts"
+        covers_dc: ["DC-003", "DC-004", "DC-005", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Reference-agent no longer owns a duplicate private tool executor"
+      - "Existing quickstart/reference public names stay importable"
+    handoff_format: *handoff
+
+  - id: "WU-10"
+    title: "Maintenance Skill Path Rules"
+    owner_role: "main-agent"
+    packages: ["repo skills"]
+    objective: "Update repo maintenance skills that use flat packages/* path patterns but are not part of the primary package taxonomy docs."
+    files:
+      - path: ".agents/skills/update-tests/SKILL.md"
+        change_type: "update"
+        purpose: "grouped package test paths"
+      - path: ".agents/skills/update-docs/SKILL.md"
+        change_type: "update"
+        purpose: "grouped doc triggers"
+      - path: ".agents/skills/refactor-audit/SKILL.md"
+        change_type: "update"
+        purpose: "grouped package scans"
+      - path: ".agents/skills/verify/SKILL.md"
+        change_type: "update"
+        purpose: "grouped package test wording if needed"
+    depends_on: ["WU-5"]
+    parallel_group: "docs-b"
+    red_check:
+      command: "N/A"
+      target: "repo skill documentation/path rules"
+      justification: "repo skill documentation/path rules only"
+    quick_checks:
+      - "! rg -n \"packages/\\*/|packages/<pkg>|packages/quickstart|packages/core/src\" .agents/skills/update-tests/SKILL.md .agents/skills/update-docs/SKILL.md .agents/skills/refactor-audit/SKILL.md .agents/skills/verify/SKILL.md"
+      - "pnpm format:check"
+    no_regression_checks:
+      - "pnpm lint"
+    test_plan:
+      - type: "integration"
+        target: "rg path guard for repo skills"
+        covers_dc: ["DC-010"]
+        action: "update"
+    done_conditions:
+      - "N/A red_check acknowledged: repo skill documentation/path rules only"
+      - "update-tests maps grouped package paths"
+      - "refactor-audit scans grouped package manifests/src dirs"
+      - "verify wording remains accurate"
+    handoff_format: *handoff
+
+  - id: "WU-11"
+    title: "Package Docs And Changeset"
+    owner_role: "main-agent"
+    packages: ["@facet/agent-tools", "@facet/reference-agent", "@facet/quickstart"]
+    objective: "Update package-level docs for the new tool package and path migration, and add release metadata."
+    files:
+      - path: "packages/agent-stack/reference-agent/README.md"
+        change_type: "update"
+        purpose: "tools now reusable via @facet/agent-tools"
+      - path: "packages/agent-stack/quickstart/README.md"
+        change_type: "update"
+        purpose: "grouped dev paths"
+      - path: ".changeset/agent-tools-reference-agent-stack-pr1.md"
+        change_type: "add"
+        purpose: "public package changes"
+    depends_on: ["WU-6", "WU-9"]
+    parallel_group: "docs-c"
+    red_check:
+      command: "N/A"
+      target: "docs/release metadata"
+      justification: "docs/release metadata only"
+    quick_checks:
+      - "pnpm format:check"
+      - '! rg -n "node packages/quickstart|packages/reference-agent|packages/quickstart" packages/agent-stack/reference-agent/README.md packages/agent-stack/quickstart/README.md'
+    no_regression_checks:
+      - "pnpm lint"
+    test_plan:
+      - type: "integration"
+        target: "changeset frontmatter"
+        covers_dc: ["DC-001", "DC-009", "DC-010"]
+        action: "new"
+    done_conditions:
+      - "N/A red_check acknowledged: docs/release metadata only"
+      - "Package docs explain @facet/agent-tools vs @facet/reference-agent"
+      - "Quickstart dev command paths use grouped directories"
+      - "Changeset includes @facet/agent-tools, @facet/reference-agent, and @facet/quickstart"
+    handoff_format: *handoff
+
+execution_order:
+  - "WU-1"
+  - "WU-2"
+  - "WU-3"
+  - "WU-4"
+  - "(WU-5 -> WU-10) || (WU-6 -> WU-7 -> WU-8 -> WU-9 -> WU-11)"
