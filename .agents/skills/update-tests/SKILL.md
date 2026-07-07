@@ -12,8 +12,9 @@ description: >
 > Don't let test evidence drift from behavior. Every changed production file must
 > either gain/keep a covering test or be accounted for as intentionally untested.
 
-Facet tests are **vitest**, one project per package (`packages/*/src/**/*.test.ts`).
-Run all: `pnpm test`. Run one package: `pnpm -C packages/<pkg> test`.
+Facet tests are **vitest**, one project per grouped package
+(`packages/{core,agent-stack,extensions}/*/src/**/*.test.ts`). Run all:
+`pnpm test`. Run one package: `pnpm -C packages/<group>/<name> test`.
 
 ## Pass/Fail policy
 - A changed production file with no covering test and no accountability row → FAIL.
@@ -32,12 +33,14 @@ Merge the three lists.
 - Test files only.
 - Docs/markdown only (`*.md`, `docs/**`).
 - Comments/formatting only.
-Any `packages/*/src/**` (non-test) or config/build change → do NOT skip.
+Any `packages/{core,agent-stack,extensions}/*/src/**` (non-test) or
+config/build change → do NOT skip.
 
 ## Workflow
-1. **Map to packages.** `packages/<pkg>/src/**` → that package. `apps/playground/**`
-   → playground (integration/manual — note if no unit suite). `.agents/**`, `.codex/**`,
-   root `*.md` → infra/docs (skip unit tests).
+1. **Map to packages.** `packages/<group>/<name>/src/**` → that package.
+   `apps/playground/**` → playground (integration/manual — note if no unit
+   suite). `.agents/**`, `.codex/**`, root `*.md` → infra/docs (skip unit
+   tests).
 2. **Build an obligation ledger** — one row per changed non-test source file:
    `{ package, source_file, test_target, behavior, status: PENDING }`.
    Every changed source file must produce a row; an unmapped file needs an
@@ -70,7 +73,7 @@ Any `packages/*/src/**` (non-test) or config/build change → do NOT skip.
 ## Mandatory commands by change
 | Changed | Command |
 |---|---|
-| `packages/<pkg>/src/**` | `pnpm -C packages/<pkg> test` (+ `pnpm -C packages/<pkg> typecheck` if the package has it) |
+| `packages/<group>/<name>/src/**` | `pnpm -C packages/<group>/<name> test` (+ `pnpm -C packages/<group>/<name> typecheck` if the package has it) |
 | multiple packages | `pnpm test` (root — runs the whole vitest workspace) |
 | `apps/playground/**` | note manual/integration check (no blocking unit gate) |
 

@@ -1,0 +1,62 @@
+{
+  "name": "@facet/quickstart",
+  "version": "0.0.0",
+  "description": "One-command Facet quickstart — boots a live server whose page is owned by a built-in LLM agent (OpenAI or Anthropic key, or a keyless stub).",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/agent-stack/quickstart"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "facet-quickstart": "./src/cli.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup"
+  },
+  "dependencies": {
+    "@facet/agent": "workspace:*",
+    "@facet/core": "workspace:*",
+    "@facet/reference-agent": "workspace:*",
+    "@facet/runtime": "workspace:*",
+    "@facet/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@facet/client": "workspace:*",
+    "@facet/react": "workspace:*",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts",
+    "bin": {
+      "facet-quickstart": "./dist/cli.js"
+    },
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    }
+  }
+}

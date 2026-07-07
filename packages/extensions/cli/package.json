@@ -1,0 +1,38 @@
+{
+  "name": "@facet/cli",
+  "version": "0.0.0",
+  "description": "The `facet` command — an agent's action surface for the stage. A running agent calls `facet append/say/…` and the local bridge forwards the change.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/getfacet/facet.git",
+    "directory": "packages/extensions/cli"
+  },
+  "homepage": "https://github.com/getfacet/facet#readme",
+  "bugs": "https://github.com/getfacet/facet/issues",
+  "engines": {
+    "node": ">=20"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "bin": {
+    "facet": "./src/cli.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsup src/cli.ts --format esm --clean"
+  },
+  "dependencies": {
+    "@facet/agent": "workspace:*",
+    "@facet/core": "workspace:*"
+  },
+  "files": [
+    "dist"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "bin": {
+      "facet": "./dist/cli.js"
+    }
+  }
+}

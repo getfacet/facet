@@ -32,8 +32,9 @@ npx facet-quickstart --stub
 
 runs the same server with a deterministic stub brain — no key, no network — for
 a keyless look around. Flags and details:
-[`@facet/quickstart`](packages/quickstart/README.md). To plug in *your own*
-model instead, see [Advanced: bring your own brain](#advanced-bring-your-own-brain).
+[`@facet/quickstart`](packages/agent-stack/quickstart/README.md). To plug in
+*your own* model instead, see
+[Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
 ## Why
 
@@ -203,21 +204,41 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 
 ## Packages
 
-| Package                 | Role                                                                                     |
-| ----------------------- | ---------------------------------------------------------------------------------------- |
-| `@facet/core`           | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, `expandStamp`, session/event types. |
-| `@facet/runtime`        | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
-| `@facet/agent`          | In-process agent SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`. |
-| `@facet/agent-client`   | Dial-in SDK for an external agent (SSE + heartbeat + reconnect).                          |
-| `@facet/client`         | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`.               |
-| `@facet/cli`            | The `facet` command — a running agent's action surface.                                  |
-| `@facet/server`         | Reference SSE/POST transport (browser side + agent side).                                |
-| `@facet/react`          | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `@facet/assets`         | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
-| `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres.                             |
-| `@facet/bridge`         | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
-| `@facet/reference-agent` | Reference brain package: providers, prompt/tools, streaming agent, and keyless stub.       |
-| `@facet/quickstart`     | `facet-quickstart` — one-command CLI/server/page wrapper that composes `@facet/reference-agent`. |
+Source directories are grouped by role; npm package names stay unchanged.
+
+### Core
+
+| Path | Package | Role |
+| --- | --- | --- |
+| `packages/core/core` | `@facet/core` | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, `expandStamp`, session/event types. |
+| `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
+| `packages/core/server` | `@facet/server` | Reference SSE/POST transport (browser side + agent side). |
+| `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`. |
+| `packages/core/react` | `@facet/react` | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
+| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
+
+### Agent Stack
+
+| Path | Package | Role |
+| --- | --- | --- |
+| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding. |
+| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming agent, tool loop, and keyless stub. |
+| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — one-command CLI/server/page wrapper that composes `@facet/reference-agent`. |
+
+### Extensions
+
+| Path | Package | Role |
+| --- | --- | --- |
+| `packages/extensions/agent` | `@facet/agent` | In-process agent SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`. |
+| `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an external agent (SSE + heartbeat + reconnect). |
+| `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
+| `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
+| `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres. |
+
+### Labs
+
+`packages/labs` is reserved for experiments; nothing there is part of the
+supported package contract.
 
 ## Advanced: bring your own brain
 

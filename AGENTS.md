@@ -12,7 +12,8 @@ small set of safe primitives and mutates them live as the conversation goes.
 ## Two invariants (do not break)
 
 1. **Agents emit a declarative brick spec, never raw HTML/JS.** The only node
-   types are `box`, `text`, `media`, `field` (`packages/core/src/nodes.ts`).
+   types are `box`, `text`, `media`, `field`
+   (`packages/core/core/src/nodes.ts`).
    Style values are **tokens**, not raw scalars. Layout is **flow-only** (no
    absolute positioning). Adding a capability means adding a node type or token
    *on purpose* — never letting a model emit arbitrary code.
@@ -32,22 +33,27 @@ small set of safe primitives and mutates them live as the conversation goes.
 
 ## Package map
 
-| Package | Role |
-| --- | --- |
-| `@facet/core` | Contract: bricks, tokens, RFC 6902 patch, `validateTree`, session/event types. Depends on nothing. |
-| `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (per-agent theme/stamp/initial-tree registry; `MemoryAssets` + `loadAssets`, `withInitialStage`). File-backed Node references (`FileAssets`) via `@facet/runtime/node`. |
-| `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
-| `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
-| `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
-| `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
-| `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
-| `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
-| `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres (`pg` peer dep). |
-| `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
-| `@facet/reference-agent` | Reference LLM/stub brain: provider adapters, prompt/tools, streaming tool loop, deterministic stub. |
-| `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
-| `apps/playground` | Demos (not published). |
+Source directories are grouped by role; npm package names and public import
+specifiers stay unchanged.
+
+| Group | Path | Package | Role |
+| --- | --- | --- | --- |
+| Core | `packages/core/core` | `@facet/core` | Contract: bricks, tokens, RFC 6902 patch, `validateTree`, session/event types. Depends on nothing. |
+| Core | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (per-agent theme/stamp/initial-tree registry; `MemoryAssets` + `loadAssets`, `withInitialStage`). File-backed Node references (`FileAssets`) via `@facet/runtime/node`. |
+| Core | `packages/core/server` | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
+| Core | `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
+| Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
+| Core | `packages/core/assets` | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
+| Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding. |
+| Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM/stub brain: provider adapters, prompt, streaming tool loop, deterministic stub. |
+| Agent Stack | `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
+| Extensions | `packages/extensions/agent` | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
+| Extensions | `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
+| Extensions | `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
+| Extensions | `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
+| Extensions | `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres (`pg` peer dep). |
+| Labs | `packages/labs` | unpublished | Reserved for experiments; nothing here is part of the supported package contract. |
+| App | `apps/playground` | unpublished | Demos (not published). |
 
 `StageStore` and `Sink` methods are **async** (Promise-based) so backends can be
 databases; the in-memory and file references resolve immediately.
@@ -64,13 +70,14 @@ pnpm test           # vitest run (unit tests live in packages/**/src/*.test.ts)
 pnpm demo           # in-process terminal demo
 pnpm --filter @facet/playground dev     # browser playground (port 5290)
 pnpm --filter @facet/playground serve   # live server (port 5291)
-pnpm --filter @facet/quickstart build   # then: node packages/quickstart/dist/cli.js --stub
+pnpm --filter @facet/quickstart build   # then: node packages/agent-stack/quickstart/dist/cli.js --stub
                                         # (published as the facet-quickstart bin, port 5292)
 ```
 
 The `/live-test` tiers are vitest runs: Tier 1a
-`pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts` (twice),
-Tier 1b/2/3 use `--config packages/quickstart/e2e/vitest.config.ts` against
+`pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts`
+(twice), Tier 1b/2/3 use
+`--config packages/agent-stack/quickstart/e2e/vitest.config.ts` against
 `e2e/bundle.test.ts` / `e2e/smoke.test.ts` — see the active agent skill for the
 exact commands and policy (`.agents/skills/live-test/SKILL.md` for Codex,
 `.claude/skills/live-test/SKILL.md` for Claude Code).
@@ -94,13 +101,14 @@ For new feature work or any approved `/spec-bridge` implementation:
 
 `/live-test` runs after `/code-review` as the live-link gate. The three fast
 vitest tiers: Tier 1 (deterministic stub E2E + real-bundle run) always blocks;
-Tier 2 (key-gated provider smoke) **blocks whenever `packages/quickstart/`
-changed, or when `packages/reference-agent/src/{agent,provider}.ts` or
-`packages/reference-agent/package.json` changed** — a missing key is then a FAIL,
-not a skip; Tier 3 (both providers) runs pre-merge/release. Plus an **owner-run
-"live journey" tier** (real headless browser + real LLM + vision-judged
-screenshots, pre-merge/on-request, SKIP without a key) that the skill invokes
-after the vitest tiers.
+Tier 2 (key-gated provider smoke) **blocks whenever
+`packages/agent-stack/quickstart/` changed, or when
+`packages/agent-stack/reference-agent/src/{agent,provider}.ts` or
+`packages/agent-stack/reference-agent/package.json` changed** — a missing key is
+then a FAIL, not a skip; Tier 3 (both providers) runs pre-merge/release. Plus an
+**owner-run "live journey" tier** (real headless browser + real LLM +
+vision-judged screenshots, pre-merge/on-request, SKIP without a key) that the
+skill invokes after the vitest tiers.
 
 ### Refactor hard gate
 
@@ -109,10 +117,11 @@ For approved `/refactor-audit` cleanup work with no intended behavior change:
 `/update-tests` → `/verify` → `/code-review` → `/update-docs`
 
 Run `/live-test` too when the refactor touches a live-link surface:
-`packages/quickstart`, `packages/server`, `packages/client`,
-`packages/agent-client`, `packages/runtime`, `packages/bridge`,
-`packages/react` renderer/useFacet/ChatDock paths, or core patch/protocol/stage
-vocabulary. Also run it for release/pre-merge owner requests.
+`packages/agent-stack/quickstart`, `packages/core/server`,
+`packages/core/client`, `packages/extensions/agent-client`,
+`packages/core/runtime`, `packages/extensions/bridge`, `packages/core/react`
+renderer/useFacet/ChatDock paths, or core patch/protocol/stage vocabulary. Also
+run it for release/pre-merge owner requests.
 
 The gates are right-sized: `/verify` is mechanical, `/code-review` is
 evidence-based and adversarially verified, `/live-test` proves a real boot for

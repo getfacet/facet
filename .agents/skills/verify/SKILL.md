@@ -22,8 +22,9 @@ git grep -PIl '\x00' -- '*.ts' '*.tsx'   # must print NOTHING
 ```
 
 - `typecheck` — `tsc --noEmit` across all packages.
-- `test` — `vitest run` (unit tests in `packages/**` and `apps/**`, including the
-  `@facet/react` jsdom render tests — `.test.tsx` files with a
+- `test` — `vitest run` (unit tests in grouped `packages/{core,agent-stack,extensions}/*`
+  workspaces and `apps/**`, including the `@facet/react` jsdom render tests —
+  `.test.tsx` files with a
   `// @vitest-environment jsdom` docblock; this is Facet's render-loop "QA").
 - `lint` — eslint.
 - `format:check` — prettier.

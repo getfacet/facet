@@ -13,8 +13,8 @@ hard gate, and in the refactor hard gate only when a live-link surface was
 touched or the owner requests a live run.
 
 Never declare PASS with a blocking tier failed or silently skipped. For
-quickstart-touching changes, **SKIPPED = FAIL** (DC-009): a missing key does
-not excuse the smoke tier — it fails it.
+quickstart or reference-agent provider-loop changes, **SKIPPED = FAIL**
+(DC-009): a missing key does not excuse the smoke tier — it fails it.
 
 ## Step 1 — Tier detection (robust, conservative)
 
@@ -34,19 +34,22 @@ then `git diff --name-only <base>..HEAD`.
 **If every base candidate errors** (shallow clone, detached HEAD, first
 commit) **or the result is unclear** (e.g. merge-base equals HEAD with a clean
 tree while the gate is being invoked for a change — nothing to diff), **assume
-quickstart-touched**. Conservative on purpose: over-verifying costs one smoke
-turn; under-verifying defeats the gate.
+provider-smoke-required**. Conservative on purpose: over-verifying costs one
+smoke turn; under-verifying defeats the gate.
 
-**quickstart-touched** ⇔ any candidate path starts with `packages/quickstart/`.
+**provider-smoke-required** ⇔ any candidate path starts with
+`packages/agent-stack/quickstart/`, is
+`packages/agent-stack/reference-agent/package.json`, or is
+`packages/agent-stack/reference-agent/src/agent.ts` or
+`packages/agent-stack/reference-agent/src/provider.ts`.
 
 ## Step 2 — Tier 1 (ALWAYS run, blocking)
 
 **1a — deterministic stub E2E** (no keys, no network beyond localhost):
 
 ```bash
-cd /Users/hoon/workspace/apps/facet
-pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts
-pnpm exec vitest run packages/quickstart/src/quickstart.e2e.test.ts   # run TWICE
+pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts
+pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts   # run TWICE
 ```
 
 Run it **twice**; both runs must pass with identical results (determinism,
@@ -56,27 +59,27 @@ DC-008). Any failure or run-to-run difference ⇒ Tier 1 FAIL.
 
 ```bash
 pnpm --filter @facet/quickstart build
-pnpm exec vitest run --config packages/quickstart/e2e/vitest.config.ts packages/quickstart/e2e/bundle.test.ts
+pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/bundle.test.ts
 ```
 
 Tier 1 failing blocks everything — do not proceed to a verdict of PASS, fix
 the cause and rerun from Step 2.
 
-## Step 3 — Tier 2 (blocking iff quickstart-touched)
+## Step 3 — Tier 2 (blocking iff provider-smoke-required)
 
 Requires a real key in the environment: `OPENAI_API_KEY` or
 `ANTHROPIC_API_KEY` (never echo values; presence check only).
 
 ```bash
-pnpm exec vitest run --config packages/quickstart/e2e/vitest.config.ts packages/quickstart/e2e/smoke.test.ts
+pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/smoke.test.ts
 ```
 
-- **Touched + key present** → run it; failure ⇒ FAIL.
-- **Touched + no key** → report Tier 2 as **FAIL** with the reason
-  `SKIPPED = FAIL for quickstart-touching changes (DC-009): no provider key in the environment`.
+- **Provider smoke required + key present** → run it; failure ⇒ FAIL.
+- **Provider smoke required + no key** → report Tier 2 as **FAIL** with the reason
+  `SKIPPED = FAIL for quickstart/reference-agent provider-loop changes (DC-009): no provider key in the environment`.
   Do not soften this to a skip.
 - **Not touched** → Tier 2 may be skipped; report `SKIPPED (diff does not
-  touch packages/quickstart/)` — that skip is OK and non-blocking.
+  require provider smoke)` — that skip is OK and non-blocking.
 
 ## Step 4 — Tier 3 (pre-merge / release, on request)
 
@@ -84,7 +87,7 @@ Both providers, missing either key = explicit failure (the test file enforces
 it):
 
 ```bash
-FACET_SMOKE_PROVIDERS=both pnpm exec vitest run --config packages/quickstart/e2e/vitest.config.ts packages/quickstart/e2e/smoke.test.ts
+FACET_SMOKE_PROVIDERS=both pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/smoke.test.ts
 ```
 
 Run this when the change is about to merge to main or ship a release. Missing
@@ -103,7 +106,7 @@ Codex runs this directly; do not invoke `.claude/workflows/live-journey.js`.
    ```
 2. Start the real-provider quickstart on a free port:
    ```bash
-   pnpm exec tsx packages/quickstart/src/cli.ts --provider <openai|anthropic> --port <port>
+   pnpm exec tsx packages/agent-stack/quickstart/src/cli.ts --provider <openai|anthropic> --port <port>
    ```
 3. Use Playwright or the in-app browser to open the page, send at least three
    fresh-visitor messages, and capture screenshots.
@@ -126,14 +129,14 @@ Report a per-tier table, then the overall verdict:
 |------|-------------------------------|----------------------------|
 | 1a   | stub E2E (run twice)          | PASS / FAIL                |
 | 1b   | real bundle in jsdom          | PASS / FAIL                |
-| 2    | provider smoke (touched=yes)  | PASS / FAIL / SKIPPED(why) |
+| 2    | provider smoke (required=yes) | PASS / FAIL / SKIPPED(why) |
 | 3    | both providers (pre-merge)    | PASS / FAIL / SKIPPED(why) |
 | journey | live browser + LLM (owner-run) | PASS / FAIL / WARNING / SKIPPED(why) |
 ```
 
-- State the tier-detection decision explicitly (base used, quickstart-touched
-  yes/no, and why).
+- State the tier-detection decision explicitly (base used,
+  provider-smoke-required yes/no, and why).
 - **Overall verdict: any blocking FAIL ⇒ FAIL.** Blocking = Tier 1 always;
-  Tier 2 when quickstart-touched; Tier 3 when invoked pre-merge/release.
+  Tier 2 when provider smoke is required; Tier 3 when invoked pre-merge/release.
   A SKIPPED is only acceptable where this skill explicitly allows it, and must
   carry its reason.

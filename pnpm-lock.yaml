@@ -46,25 +46,25 @@ importers:
     dependencies:
       '@facet/agent':
         specifier: workspace:*
-        version: link:../../packages/agent
+        version: link:../../packages/extensions/agent
       '@facet/agent-client':
         specifier: workspace:*
-        version: link:../../packages/agent-client
+        version: link:../../packages/extensions/agent-client
       '@facet/client':
         specifier: workspace:*
-        version: link:../../packages/client
+        version: link:../../packages/core/client
       '@facet/core':
         specifier: workspace:*
-        version: link:../../packages/core
+        version: link:../../packages/core/core
       '@facet/react':
         specifier: workspace:*
-        version: link:../../packages/react
+        version: link:../../packages/core/react
       '@facet/runtime':
         specifier: workspace:*
-        version: link:../../packages/runtime
+        version: link:../../packages/core/runtime
       '@facet/server':
         specifier: workspace:*
-        version: link:../../packages/server
+        version: link:../../packages/core/server
       react:
         specifier: ^19.0.0
         version: 19.2.7
@@ -85,90 +85,36 @@ importers:
         specifier: ^6.0.7
         version: 6.4.3(@types/node@22.20.0)(tsx@4.22.4)
 
-  packages/agent:
+  packages/agent-stack/agent-tools:
     dependencies:
       '@facet/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../core/core
 
-  packages/agent-client:
-    dependencies:
-      '@facet/core':
-        specifier: workspace:*
-        version: link:../core
-
-  packages/assets:
-    dependencies:
-      '@facet/core':
-        specifier: workspace:*
-        version: link:../core
-
-  packages/bridge:
-    dependencies:
-      '@anthropic-ai/claude-agent-sdk':
-        specifier: ^0.3.197
-        version: 0.3.197(@anthropic-ai/sdk@0.109.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
-      '@facet/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@facet/agent-client':
-        specifier: workspace:*
-        version: link:../agent-client
-      '@facet/cli':
-        specifier: workspace:*
-        version: link:../cli
-      '@facet/core':
-        specifier: workspace:*
-        version: link:../core
-      zod:
-        specifier: ^4.0.0
-        version: 4.4.3
-
-  packages/cli:
+  packages/agent-stack/quickstart:
     dependencies:
       '@facet/agent':
         specifier: workspace:*
-        version: link:../agent
+        version: link:../../extensions/agent
       '@facet/core':
         specifier: workspace:*
-        version: link:../core
-
-  packages/client:
-    dependencies:
-      '@facet/core':
-        specifier: workspace:*
-        version: link:../core
-    devDependencies:
-      '@facet/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-
-  packages/core: {}
-
-  packages/quickstart:
-    dependencies:
-      '@facet/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@facet/core':
-        specifier: workspace:*
-        version: link:../core
+        version: link:../../core/core
       '@facet/reference-agent':
         specifier: workspace:*
         version: link:../reference-agent
       '@facet/runtime':
         specifier: workspace:*
-        version: link:../runtime
+        version: link:../../core/runtime
       '@facet/server':
         specifier: workspace:*
-        version: link:../server
+        version: link:../../core/server
     devDependencies:
       '@facet/client':
         specifier: workspace:*
-        version: link:../client
+        version: link:../../core/client
       '@facet/react':
         specifier: workspace:*
-        version: link:../react
+        version: link:../../core/react
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.17
@@ -182,7 +128,40 @@ importers:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
 
-  packages/react:
+  packages/agent-stack/reference-agent:
+    dependencies:
+      '@facet/agent':
+        specifier: workspace:*
+        version: link:../../extensions/agent
+      '@facet/agent-tools':
+        specifier: workspace:*
+        version: link:../agent-tools
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../../core/core
+      '@facet/runtime':
+        specifier: workspace:*
+        version: link:../../core/runtime
+
+  packages/core/assets:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+
+  packages/core/client:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../core
+    devDependencies:
+      '@facet/runtime':
+        specifier: workspace:*
+        version: link:../runtime
+
+  packages/core/core: {}
+
+  packages/core/react:
     dependencies:
       '@facet/assets':
         specifier: workspace:*
@@ -213,19 +192,7 @@ importers:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
 
-  packages/reference-agent:
-    dependencies:
-      '@facet/agent':
-        specifier: workspace:*
-        version: link:../agent
-      '@facet/core':
-        specifier: workspace:*
-        version: link:../core
-      '@facet/runtime':
-        specifier: workspace:*
-        version: link:../runtime
-
-  packages/runtime:
+  packages/core/runtime:
     dependencies:
       '@facet/assets':
         specifier: workspace:*
@@ -234,7 +201,7 @@ importers:
         specifier: workspace:*
         version: link:../core
 
-  packages/server:
+  packages/core/server:
     dependencies:
       '@facet/core':
         specifier: workspace:*
@@ -243,14 +210,56 @@ importers:
         specifier: workspace:*
         version: link:../runtime
 
-  packages/store-postgres:
+  packages/extensions/agent:
     dependencies:
       '@facet/core':
         specifier: workspace:*
-        version: link:../core
+        version: link:../../core/core
+
+  packages/extensions/agent-client:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../../core/core
+
+  packages/extensions/bridge:
+    dependencies:
+      '@anthropic-ai/claude-agent-sdk':
+        specifier: ^0.3.197
+        version: 0.3.197(@anthropic-ai/sdk@0.109.0(zod@4.4.3))(@modelcontextprotocol/sdk@1.29.0(zod@4.4.3))(zod@4.4.3)
+      '@facet/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@facet/agent-client':
+        specifier: workspace:*
+        version: link:../agent-client
+      '@facet/cli':
+        specifier: workspace:*
+        version: link:../cli
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../../core/core
+      zod:
+        specifier: ^4.0.0
+        version: 4.4.3
+
+  packages/extensions/cli:
+    dependencies:
+      '@facet/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../../core/core
+
+  packages/extensions/store-postgres:
+    dependencies:
+      '@facet/core':
+        specifier: workspace:*
+        version: link:../../core/core
       '@facet/runtime':
         specifier: workspace:*
-        version: link:../runtime
+        version: link:../../core/runtime
       pg:
         specifier: '>=8'
         version: 8.22.0
