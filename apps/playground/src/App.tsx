@@ -104,7 +104,7 @@ function VisitorPane({
     return new LocalTransport(runtime, visitor);
   }, [visitor]);
 
-  const { tree, chat, send } = useFacet(transport);
+  const { tree, chat, send, transition } = useFacet(transport);
   const [log, setLog] = useState<readonly LogLine[]>([]);
   const [draft, setDraft] = useState("");
   const seen = useRef(0);
@@ -143,7 +143,7 @@ function VisitorPane({
 
       {/* The Stage — dynamic, agent-owned */}
       <div style={styles.stage}>
-        <StageRenderer tree={tree} onAction={onAction} />
+        <StageRenderer tree={tree} onAction={onAction} transition={transition} />
       </div>
 
       {/* The Chat dock — persistent, app chrome, not agent-generated */}

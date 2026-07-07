@@ -22,6 +22,12 @@ export interface StageFoldResult {
    * result. This reflects what APPLIED, not what `validateTree` then kept.
    */
   readonly mutated: boolean;
+  /**
+   * Whether an applied non-`test` op wrote the root document (`path: ""`). This
+   * is effect-based like `mutated`: a guarded or otherwise dropped root write
+   * remains false, so renderers do not animate a replacement that never landed.
+   */
+  readonly rootReplaced?: boolean;
 }
 
 /**
@@ -62,6 +68,7 @@ export function foldPatchIntoStage(
     return {
       tree,
       mutated: false,
+      rootReplaced: false,
       issues: ["patch message dropped: patches is not an array", ...issues],
     };
   }
@@ -76,6 +83,7 @@ export function foldPatchIntoStage(
     return {
       tree,
       mutated: false,
+      rootReplaced: false,
       issues: [
         `patch batch dropped: ${String(patches.length)} ops exceeds the ${String(MAX_PATCH_OPS)}-op cap`,
         ...issues,
@@ -87,12 +95,14 @@ export function foldPatchIntoStage(
   let raw: FacetTree = stage;
   // True once a non-`test` op actually applies — the effect-based edit signal.
   let mutated = false;
+  let rootReplaced = false;
   try {
     raw = applyPatch(stage, patches);
     // The atomic apply succeeded, so EVERY op applied: the batch mutated the
     // stage iff it carried at least one non-`test` op (a `test`-only batch is a
     // guard check that changes nothing).
     mutated = patches.some((op) => !isJsonPatchTestOperation(op));
+    rootReplaced = patches.some(isRootDocumentWrite);
   } catch {
     // The client applies this SAME batch atomically and would drop it whole on
     // the throw; salvage the good ops op-by-op so the stored + rendered trees
@@ -107,6 +117,7 @@ export function foldPatchIntoStage(
         // A non-`test` op that applied in place is a real mutation; a passing
         // `test` guard applies without throwing but changes nothing.
         if (!isJsonPatchTestOperation(op)) mutated = true;
+        if (isRootDocumentWrite(op)) rootReplaced = true;
       } catch {
         // A failed `test` is a guard, not an independently-bad op: RFC 6902 §5
         // forbids applying the ops it protects, so drop this and everything after
@@ -127,8 +138,17 @@ export function foldPatchIntoStage(
   return {
     tree,
     mutated,
+    rootReplaced,
     issues: droppedList.length === 0 ? issues : [...droppedList, ...issues],
   };
+}
+
+function isRootDocumentWrite(operation: unknown): boolean {
+  if (typeof operation !== "object" || operation === null) {
+    return false;
+  }
+  const { op, path } = operation as { readonly op?: unknown; readonly path?: unknown };
+  return path === "" && (op === "add" || op === "replace" || op === "copy" || op === "move");
 }
 
 /** The bounded, never-throwing `path` echo for a dropped op's issue string. */

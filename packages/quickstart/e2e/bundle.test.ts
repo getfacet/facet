@@ -37,6 +37,7 @@ function readBundle(): string {
 
 /** No-op EventSource: enough surface for SseTransport to construct + close. */
 class StubEventSource {
+  static instances: StubEventSource[] = [];
   static readonly CONNECTING = 0;
   static readonly OPEN = 1;
   static readonly CLOSED = 2;
@@ -47,6 +48,7 @@ class StubEventSource {
   onerror: ((event: unknown) => void) | null = null;
   constructor(url: string | URL) {
     this.url = String(url);
+    StubEventSource.instances.push(this);
   }
   addEventListener(): void {
     // no-op
@@ -56,6 +58,9 @@ class StubEventSource {
   }
   dispatchEvent(): boolean {
     return false;
+  }
+  emit(message: unknown): void {
+    this.onmessage?.({ data: JSON.stringify(message) });
   }
   close(): void {
     this.readyState = StubEventSource.CLOSED;
@@ -262,6 +267,105 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
       const okProbe = document.createElement("div");
       okProbe.style.background = okBg;
       expect(document.body.style.background).toBe(okProbe.style.background);
+    } finally {
+      delete bootWindow.__FACET_INITIAL_STAGE__;
+      delete bootWindow.__FACET_THEMES__;
+    }
+  });
+
+  it("wires transition metadata into the real page bundle", async () => {
+    const globals = globalThis as {
+      EventSource?: unknown;
+      fetch?: unknown;
+    };
+    StubEventSource.instances = [];
+    globals.EventSource = StubEventSource;
+    globals.fetch = (): Promise<Response> =>
+      Promise.resolve(new Response("{}", { status: 202, headers: {} }));
+
+    const seedText = "Seed before replacement";
+    const replacementText = "Replacement after SSE root write";
+    const bootWindow = window as unknown as {
+      __FACET_INITIAL_STAGE__?: unknown;
+      __FACET_THEMES__?: unknown;
+    };
+
+    bootWindow.__FACET_INITIAL_STAGE__ = {
+      root: "seed-root",
+      nodes: {
+        "seed-root": {
+          id: "seed-root",
+          type: "box",
+          style: { direction: "col", gap: "md" },
+          children: ["seed-copy"],
+        },
+        "seed-copy": { id: "seed-copy", type: "text", value: seedText },
+      },
+    };
+
+    try {
+      document.body.innerHTML = '<div id="root"></div>';
+      const root = document.getElementById("root");
+      expect(root).not.toBeNull();
+
+      expect(() => {
+        (0, eval)(bundleText);
+      }).not.toThrow();
+
+      const seedDeadline = Date.now() + 10_000;
+      while (
+        (!root!.textContent?.includes(seedText) || StubEventSource.instances.length === 0) &&
+        Date.now() < seedDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(root!.textContent).toContain(seedText);
+      const source = StubEventSource.instances[StubEventSource.instances.length - 1];
+      expect(source).toBeDefined();
+      if (source === undefined) {
+        throw new Error("expected the real bundle to subscribe to EventSource");
+      }
+
+      source.emit({
+        kind: "patch",
+        patches: [
+          {
+            op: "replace",
+            path: "",
+            value: {
+              root: "replacement-root",
+              nodes: {
+                "replacement-root": {
+                  id: "replacement-root",
+                  type: "box",
+                  style: { direction: "col", gap: "md" },
+                  children: ["replacement-copy"],
+                },
+                "replacement-copy": {
+                  id: "replacement-copy",
+                  type: "text",
+                  value: replacementText,
+                },
+              },
+            },
+          },
+        ],
+      });
+
+      const transitionDeadline = Date.now() + 10_000;
+      let frame: Element | null = null;
+      while (Date.now() < transitionDeadline) {
+        frame = root!.querySelector(".facet-motion-stage-frame.facet-motion-stage-crossfade");
+        if (frame !== null && root!.textContent?.includes(replacementText)) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+
+      expect(root!.textContent).toContain(replacementText);
+      expect(frame).not.toBeNull();
+      expect(frame!.querySelector(".facet-motion-stage-current")?.textContent).toContain(
+        replacementText,
+      );
+      expect(frame!.querySelector(".facet-motion-stage-previous")?.textContent).toContain(seedText);
     } finally {
       delete bootWindow.__FACET_INITIAL_STAGE__;
       delete bootWindow.__FACET_THEMES__;

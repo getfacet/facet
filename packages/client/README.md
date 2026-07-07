@@ -22,7 +22,14 @@ import { browserVisitorId } from "@facet/client";
 const transport = new SseTransport("http://localhost:5291", {
   visitorId: browserVisitorId(),
 });
-const { tree, send } = useFacet(transport);
+const { tree, send, record, transition } = useFacet(transport);
+
+<StageRenderer
+  tree={tree}
+  transition={transition}
+  onRecord={record}
+  onAction={(action) => send({ kind: "tap", action })}
+/>;
 ```
 
 ## Trust model (read before hosting)
@@ -37,7 +44,8 @@ default browser id is an unguessable random UUID.
 per-visitor sensitive data, or ids are guessable, you must put your own
 authentication in front of the server (see [SECURITY.md] in the repository) —
 and at that point wrap or replace this transport with one that presents your
-credential. `FacetTransport` is a two-method interface (`send`, `subscribe`),
-so a hardened transport is a small, local piece of code.
+credential. `FacetTransport` is a small interface (`send`, `subscribe`, plus
+optional `record` for local tap replay), so a hardened transport is a small,
+local piece of code.
 
 [SECURITY.md]: https://github.com/getfacet/facet/blob/main/SECURITY.md

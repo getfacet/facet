@@ -76,7 +76,7 @@ function Page(): ReactNode {
   const transport = useMemo(() => new SseTransport("", visitor), [visitor]);
   // Conditional spread: exactOptionalPropertyTypes forbids an explicit
   // `initialTree: undefined` — an absent seed must keep the EMPTY_TREE default.
-  const { tree, chat, send, record } = useFacet(
+  const { tree, chat, send, record, transition } = useFacet(
     transport,
     initialTree !== undefined ? { initialTree } : {},
   );
@@ -139,6 +139,7 @@ function Page(): ReactNode {
           tree={tree}
           onAction={onAction}
           onRecord={record}
+          transition={transition}
           {...(themes !== undefined ? { themes } : {})}
         />
       </div>

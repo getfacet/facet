@@ -1,7 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import { EMPTY_TREE, type FacetTransport, type ServerMessage } from "@facet/core";
+import {
+  EMPTY_TREE,
+  type FacetTransport,
+  type JsonPatchOperation,
+  type ServerMessage,
+} from "@facet/core";
 import { useFacet } from "./useFacet.js";
 
 afterEach(cleanup);
@@ -20,6 +25,7 @@ function fakeTransport() {
   return {
     transport,
     emit: (message: ServerMessage) => act(() => listener?.(message)),
+    emitRaw: (message: ServerMessage) => listener?.(message),
     subscribed: () => listener !== null,
   };
 }
@@ -132,6 +138,124 @@ describe("useFacet (jsdom)", () => {
     const { result } = renderHook(() => useFacet(t.transport));
     expect(result.current.tree).toEqual(EMPTY_TREE);
     expect(result.current.tree.nodes["seed"]).toBeUndefined();
+  });
+
+  it("exposes transition metadata for root document writes", () => {
+    const t = fakeTransport();
+    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
+
+    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
+
+    t.emit({ kind: "patch", patches: [{ op: "test", path: "/root", value: "seed" }] });
+    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
+
+    t.emit({ kind: "patch", patches: "not-an-array" as unknown as [] });
+    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
+
+    t.emit({
+      kind: "patch",
+      patches: [{ op: "replace", path: "/nodes/missing/value", value: "x" }],
+    });
+    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
+
+    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
+    expect(result.current.transition).toEqual({
+      revision: 1,
+      rootReplaced: true,
+      rootReplacedRevision: 1,
+    });
+
+    t.emit({
+      kind: "patch",
+      patches: [
+        { op: "add", path: "/nodes/child", value: { id: "child", type: "text", value: "child" } },
+      ],
+    });
+    expect(result.current.transition).toEqual({
+      revision: 2,
+      rootReplaced: false,
+      rootReplacedRevision: 1,
+    });
+
+    t.emit({
+      kind: "patch",
+      patches: [
+        null,
+        { op: "add", path: "/nodes/rawGood", value: { id: "rawGood", type: "text", value: "raw" } },
+      ] as unknown as JsonPatchOperation[],
+    });
+    expect(result.current.tree.nodes["rawGood"]).toBeDefined();
+    expect(result.current.transition).toEqual({
+      revision: 3,
+      rootReplaced: false,
+      rootReplacedRevision: 1,
+    });
+
+    t.emit({
+      kind: "patch",
+      patches: [
+        { op: "remove", path: "" },
+        { op: "add", path: "/nodes/other", value: { id: "other", type: "text", value: "other" } },
+      ],
+    });
+    expect(result.current.transition).toEqual({
+      revision: 4,
+      rootReplaced: false,
+      rootReplacedRevision: 1,
+    });
+
+    for (const patches of [
+      [{ op: "add", path: "", value: validTree }],
+      [{ op: "copy", from: "", path: "" }],
+      [{ op: "move", from: "/nodes/root", path: "" }],
+    ] as const) {
+      t.emit({ kind: "patch", patches });
+      expect(result.current.transition.rootReplaced).toBe(true);
+      expect(result.current.transition.rootReplacedRevision).toBe(
+        result.current.transition.revision,
+      );
+    }
+
+    expect(result.current.transition.revision).toBe(7);
+  });
+
+  it("preserves the last root-write revision across batched follow-up patch messages", () => {
+    const t = fakeTransport();
+    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
+
+    act(() => {
+      t.emitRaw({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
+      t.emitRaw({
+        kind: "patch",
+        patches: [
+          { op: "add", path: "/nodes/child", value: { id: "child", type: "text", value: "child" } },
+        ],
+      });
+    });
+
+    expect(result.current.transition).toEqual({
+      revision: 2,
+      rootReplaced: false,
+      rootReplacedRevision: 1,
+    });
+  });
+
+  it("does not mark a root write that was dropped behind a failed test guard", () => {
+    const t = fakeTransport();
+    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
+
+    t.emit({
+      kind: "patch",
+      patches: [
+        { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
+        { op: "test", path: "/root", value: "not-the-seed" },
+        { op: "replace", path: "", value: validTree },
+      ],
+    });
+
+    expect(result.current.tree.nodes["good"]).toBeDefined();
+    expect(result.current.tree.root).toBe("seed");
+    expect(result.current.transition).toEqual({ revision: 1, rootReplaced: false });
   });
 
   it("unsubscribes from the transport on unmount", () => {

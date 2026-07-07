@@ -3,9 +3,16 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { FacetNode, FacetTree, NodeId } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
+import { MOTION_CLASS_NAMES } from "./motion.js";
 
 function render(tree: FacetTree): string {
   return renderToStaticMarkup(createElement(StageRenderer, { tree }));
+}
+
+function renderWithTransition(tree: FacetTree): string {
+  return renderToStaticMarkup(
+    createElement(StageRenderer, { tree, transition: { revision: 0, rootReplaced: false } }),
+  );
 }
 
 function tree(nodes: Record<NodeId, FacetNode>, root: NodeId = "root"): FacetTree {
@@ -115,6 +122,21 @@ describe("StageRenderer fail-safe boundary", () => {
       tree({ root: box("root", ["a"]), a: box("a", ["root", "t"]), t: text("t", "once") }),
     );
     expect(out).toContain("once");
+  });
+
+  it("keeps transition bookkeeping fail-safe for null and cyclic raw trees", () => {
+    expect(renderWithTransition(null as unknown as FacetTree)).toBe("");
+
+    const cyclic = tree({
+      root: box("root", ["a"]),
+      a: box("a", ["root", "t"]),
+      t: text("t", "once"),
+    });
+    const out = renderWithTransition(cyclic);
+    expect(out).toContain("once");
+    expect(out).not.toContain(MOTION_CLASS_NAMES.brickEnter);
+    expect(out).not.toContain(MOTION_CLASS_NAMES.brickExit);
+    expect(out).not.toContain(MOTION_CLASS_NAMES.stageCrossfade);
   });
 
   it("breaks a self-cycle (node listing itself as a child)", () => {

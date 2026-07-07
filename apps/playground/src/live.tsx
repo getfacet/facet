@@ -30,7 +30,7 @@ export function LiveView(): React.ReactNode {
   }, []);
 
   const transport = useMemo(() => new SseTransport(SERVER, VISITOR), []);
-  const { tree, chat, send } = useFacet(transport);
+  const { tree, chat, send, transition } = useFacet(transport);
   const [log, setLog] = useState<readonly LogLine[]>([]);
   const [pending, setPending] = useState(false);
   const seen = useRef(0);
@@ -75,7 +75,7 @@ export function LiveView(): React.ReactNode {
       </div>
 
       <div style={styles.stage}>
-        <StageRenderer tree={tree} onAction={onAction} />
+        <StageRenderer tree={tree} onAction={onAction} transition={transition} />
       </div>
 
       <ChatDock messages={log} onSend={onSend} pending={pending} placeholder="describe a page…" />

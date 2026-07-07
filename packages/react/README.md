@@ -27,16 +27,23 @@ const transport = new SseTransport("http://localhost:5291", {
 });
 
 export function App() {
-  const { tree, send, record } = useFacet(transport);
+  const { tree, send, record, transition } = useFacet(transport);
   return (
     <StageRenderer
       tree={tree}
       onAction={(action) => send({ kind: "tap", action })}
       onRecord={record}
+      transition={transition}
     />
   );
 }
 ```
+
+`useFacet(...).transition` is local renderer metadata for the current folded
+patch revision. Pass it to `<StageRenderer transition={transition} />` so root
+document replacements use the renderer's exact stage crossfade path. Omitting
+the prop is compatible with existing consumers and still renders the latest
+tree, but disables exact root-replace crossfade.
 
 See the [Facet docs](https://github.com/getfacet/facet) and
 [ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   CSSProperties,
   MouseEvent as ReactMouseEvent,
@@ -15,6 +15,7 @@ import {
   MAX_FIELDS_KEYS,
   MAX_RENDER_NODES,
   sanitizeActionPayload,
+  treeHasContent,
   type AgentAction,
   type CollectedEvent,
   type FacetAction,
@@ -28,8 +29,35 @@ import {
 import { boxStyle, fieldStyle, mediaStyle, resolveTheme, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { APPEAR_CSS, appearClass } from "./appear.js";
+import {
+  MANY_CHANGE_THRESHOLD,
+  MOTION_CLASS_NAMES,
+  MOTION_CSS,
+  MOTION_ENTER_MS,
+  MOTION_EXIT_MS,
+  STAGE_CROSSFADE_MS,
+  composeMotionClassName,
+  stageCurrentClassName,
+  stageFrameClassName,
+  stagePreviousClassName,
+} from "./motion.js";
+import type { StageTransitionHint } from "./useFacet.js";
 
 const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
+const EMPTY_MOTION_CLASSES: ReadonlyMap<NodeId, string> = new Map<NodeId, string>();
+const EMPTY_EXIT_RECORDS_BY_PARENT: ReadonlyMap<NodeId, readonly ExitRecord[]> = new Map<
+  NodeId,
+  readonly ExitRecord[]
+>();
+const DISPLAY_CONTENTS_STYLE: CSSProperties = { display: "contents" };
+
+function useMotionLayoutEffect(
+  effect: Parameters<typeof useEffect>[0],
+  deps: readonly unknown[],
+): void {
+  const useLayout = typeof window === "undefined" ? useEffect : useLayoutEffect;
+  useLayout(effect, deps);
+}
 
 /**
  * Long-press gesture thresholds — renderer constants, never tokens or theme
@@ -77,6 +105,261 @@ function isFieldInput(input: unknown): input is (typeof FIELD_INPUTS)[number] {
 function isRenderableTree(tree: FacetTree): boolean {
   // != null: a patch can set the root node to JSON null, not just remove it.
   return isTreeShaped(tree) && tree.nodes[tree.root] != null;
+}
+
+type TimerHandle = ReturnType<typeof setTimeout>;
+type RenderMode = "live" | "inert";
+
+interface VisibleNodeInfo {
+  readonly parentId: NodeId | null;
+  readonly index: number;
+  readonly ancestors: ReadonlySet<NodeId>;
+  readonly depth: number;
+}
+
+interface VisibleInfo {
+  readonly ids: ReadonlySet<NodeId>;
+  readonly nodes: ReadonlyMap<NodeId, VisibleNodeInfo>;
+}
+
+interface RenderSnapshot {
+  readonly tree: FacetTree;
+  readonly rootId: NodeId;
+  readonly visible: VisibleInfo;
+  readonly visibilityOverrides: ReadonlyMap<NodeId, boolean>;
+  readonly theme: ResolvedTheme;
+  readonly revision: number | null;
+  readonly rootReplacedRevision: number | null;
+}
+
+interface ExitRecord {
+  readonly id: NodeId;
+  readonly parentId: NodeId | null;
+  readonly index: number;
+  readonly ancestors: ReadonlySet<NodeId>;
+  readonly depth: number;
+  readonly visibleIds: ReadonlySet<NodeId>;
+  readonly snapshot: RenderSnapshot;
+}
+
+interface StagePreviousRecord {
+  readonly snapshot: RenderSnapshot;
+}
+
+interface MotionState {
+  readonly enterIds: ReadonlySet<NodeId>;
+  readonly exitRecords: ReadonlyMap<NodeId, ExitRecord>;
+  readonly stagePrevious: StagePreviousRecord | null;
+}
+
+interface MotionRenderPlan {
+  readonly motionClassById: ReadonlyMap<NodeId, string>;
+  readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
+  readonly rootExitRecords: readonly ExitRecord[];
+}
+
+interface NormalizedTransitionHint {
+  readonly revision: number;
+  readonly rootReplacedRevision: number | null;
+}
+
+function emptyMotionState(): MotionState {
+  return {
+    enterIds: new Set<NodeId>(),
+    exitRecords: new Map<NodeId, ExitRecord>(),
+    stagePrevious: null,
+  };
+}
+
+function isMotionStateEmpty(state: MotionState): boolean {
+  return state.enterIds.size === 0 && state.exitRecords.size === 0 && state.stagePrevious === null;
+}
+
+function isBlankBootSnapshot(snapshot: RenderSnapshot): boolean {
+  return (
+    snapshot.revision === 0 &&
+    snapshot.rootReplacedRevision === null &&
+    !treeHasContent(snapshot.tree)
+  );
+}
+
+function isRenderableMedia(raw: unknown): boolean {
+  const rawMedia = raw as {
+    readonly type?: unknown;
+    readonly kind?: unknown;
+    readonly src?: unknown;
+  };
+  if (typeof rawMedia.src !== "string" || !isSafeMediaSrc(rawMedia.src)) {
+    return false;
+  }
+  const kind =
+    rawMedia.type === "image" ? "image" : rawMedia.kind === undefined ? "image" : rawMedia.kind;
+  return kind === "image" || kind === "video";
+}
+
+function normalizeTransitionHint(transition: unknown): NormalizedTransitionHint | null {
+  if (typeof transition !== "object" || transition === null) {
+    return null;
+  }
+  const raw = transition as {
+    readonly revision?: unknown;
+    readonly rootReplaced?: unknown;
+    readonly rootReplacedRevision?: unknown;
+  };
+  if (typeof raw.revision !== "number" || !Number.isFinite(raw.revision)) {
+    return null;
+  }
+  const rootReplacedRevision =
+    typeof raw.rootReplacedRevision === "number" && Number.isFinite(raw.rootReplacedRevision)
+      ? raw.rootReplacedRevision
+      : raw.rootReplaced === true
+        ? raw.revision
+        : null;
+  return { revision: raw.revision, rootReplacedRevision };
+}
+
+function collectVisibleInfo(
+  tree: FacetTree,
+  rootId: NodeId,
+  visibilityOverrides: ReadonlyMap<NodeId, boolean>,
+): VisibleInfo {
+  const ids = new Set<NodeId>();
+  const nodes = new Map<NodeId, VisibleNodeInfo>();
+  const budget = { left: RENDER_BUDGET, refsLeft: RENDER_BUDGET };
+
+  const visit = (
+    id: NodeId,
+    parentId: NodeId | null,
+    index: number,
+    ancestors: ReadonlySet<NodeId>,
+    depth: number,
+  ): void => {
+    const node = tree.nodes[id];
+    if (node == null || depth > MAX_DEPTH) {
+      return;
+    }
+    if (--budget.left < 0) {
+      return;
+    }
+    const visible = visibilityOverrides.get(id) ?? !isHiddenByDefault(node);
+    if (!visible) {
+      return;
+    }
+    if ((node as { readonly type?: unknown }).type === "image") {
+      if (isRenderableMedia(node)) {
+        ids.add(id);
+        nodes.set(id, { parentId, index, ancestors, depth });
+      }
+      return;
+    }
+
+    switch (node.type) {
+      case "box": {
+        ids.add(id);
+        nodes.set(id, { parentId, index, ancestors, depth });
+        const seen = ancestors;
+        const childAncestors = new Set(seen).add(id);
+        const childIds: readonly NodeId[] = Array.isArray(node.children) ? node.children : [];
+        const emitted = new Set<NodeId>(childAncestors);
+        let childIndex = 0;
+        for (const childId of childIds) {
+          if (--budget.refsLeft < 0) {
+            break;
+          }
+          if (emitted.has(childId)) {
+            continue;
+          }
+          emitted.add(childId);
+          visit(childId, id, childIndex, childAncestors, depth + 1);
+          childIndex += 1;
+        }
+        return;
+      }
+      case "text":
+        if (typeof node.value === "string") {
+          ids.add(id);
+          nodes.set(id, { parentId, index, ancestors, depth });
+        }
+        return;
+      case "media":
+        if (isRenderableMedia(node)) {
+          ids.add(id);
+          nodes.set(id, { parentId, index, ancestors, depth });
+        }
+        return;
+      case "field":
+        ids.add(id);
+        nodes.set(id, { parentId, index, ancestors, depth });
+        return;
+    }
+  };
+
+  visit(rootId, null, 0, EMPTY_ANCESTORS, 0);
+  return { ids, nodes };
+}
+
+function topmostExitingIds(previous: VisibleInfo, currentIds: ReadonlySet<NodeId>): NodeId[] {
+  const exiting = new Set<NodeId>();
+  for (const id of previous.ids) {
+    if (!currentIds.has(id)) {
+      exiting.add(id);
+    }
+  }
+  const topmost: NodeId[] = [];
+  for (const id of exiting) {
+    let parentId = previous.nodes.get(id)?.parentId ?? null;
+    let hasExitingAncestor = false;
+    const seenParents = new Set<NodeId>();
+    while (parentId !== null && !seenParents.has(parentId)) {
+      seenParents.add(parentId);
+      if (exiting.has(parentId)) {
+        hasExitingAncestor = true;
+        break;
+      }
+      parentId = previous.nodes.get(parentId)?.parentId ?? null;
+    }
+    if (!hasExitingAncestor) {
+      topmost.push(id);
+    }
+  }
+  return topmost;
+}
+
+function visibleSubtreeIds(visible: VisibleInfo, rootId: NodeId): ReadonlySet<NodeId> {
+  const ids = new Set<NodeId>();
+  for (const id of visible.ids) {
+    if (id === rootId || visible.nodes.get(id)?.ancestors.has(rootId) === true) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+function motionRenderPlan(state: MotionState): MotionRenderPlan {
+  const motionClassById = new Map<NodeId, string>();
+  for (const id of state.enterIds) {
+    motionClassById.set(id, MOTION_CLASS_NAMES.brickEnter);
+  }
+
+  const exitRecordsByParent = new Map<NodeId, ExitRecord[]>();
+  const rootExitRecords: ExitRecord[] = [];
+  for (const record of state.exitRecords.values()) {
+    if (record.parentId === null) {
+      rootExitRecords.push(record);
+      continue;
+    }
+    const records = exitRecordsByParent.get(record.parentId);
+    if (records === undefined) {
+      exitRecordsByParent.set(record.parentId, [record]);
+    } else {
+      records.push(record);
+    }
+  }
+  for (const records of exitRecordsByParent.values()) {
+    records.sort((left, right) => left.index - right.index);
+  }
+  rootExitRecords.sort((left, right) => left.index - right.index);
+  return { motionClassById, exitRecordsByParent, rootExitRecords };
 }
 
 /**
@@ -164,6 +447,7 @@ function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode
   // shared-child DAG (no validateTree on the live path) has an exponential number
   // of paths, so cap total gather steps the way renderNode caps total renders.
   let gatherBudget = RENDER_BUDGET;
+  let gatherRefsBudget = RENDER_BUDGET;
   const gather = (id: NodeId, ancestors: ReadonlySet<NodeId>, depth: number): void => {
     if (depth > MAX_DEPTH || ancestors.has(id) || --gatherBudget < 0) {
       return;
@@ -197,6 +481,9 @@ function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode
     const childIds: readonly NodeId[] = Array.isArray(node.children) ? node.children : [];
     const childAncestors = new Set(ancestors).add(id);
     for (const childId of childIds) {
+      if (--gatherRefsBudget < 0) {
+        break;
+      }
       gather(childId, childAncestors, depth + 1);
     }
   };
@@ -427,6 +714,7 @@ interface BoxElementProps {
   readonly dispatch: (press: ClassifiedPress) => void;
   readonly style: CSSProperties;
   readonly className: string | undefined;
+  readonly inert?: boolean;
   readonly children: ReactNode;
 }
 
@@ -456,6 +744,7 @@ function BoxElement({
   dispatch,
   style,
   className,
+  inert = false,
   children,
 }: BoxElementProps): ReactNode {
   // Latest-classification refs, updated each render: the timer callback must
@@ -482,7 +771,7 @@ function BoxElement({
   // scopes contextmenu suppression to the live gesture only.
   const holdingRef = useRef(false);
 
-  const holdable = hold !== null;
+  const holdable = !inert && hold !== null;
 
   // Unmount cleanup: a patch that removes the whole node mid-press unmounts
   // this component; the pending timer must die with it.
@@ -614,17 +903,18 @@ function BoxElement({
     }
   };
 
-  const interactive = holdable || press !== null;
+  const interactive = holdable || (!inert && press !== null);
   // Style composition per arm, byte-identical to the previous three-element
   // structure: plain boxes pass the base style through UNTOUCHED; interactive
   // boxes add cursor:pointer; a holdable box additionally disables text
   // selection and the iOS long-press callout so a real-device long press runs
   // the hold instead of starting a selection / the share sheet (review r6).
-  const finalStyle: CSSProperties = holdable
+  const activeStyle: CSSProperties = holdable
     ? { ...style, cursor: "pointer", userSelect: "none", WebkitTouchCallout: "none" }
     : interactive
       ? { ...style, cursor: "pointer" }
       : style;
+  const finalStyle: CSSProperties = inert ? { ...activeStyle, pointerEvents: "none" } : activeStyle;
 
   // Conditionally ATTACHED props: undefined adds no attribute to the static
   // markup (the exact-markup pins stay byte-identical) and attaches no
@@ -634,6 +924,7 @@ function BoxElement({
     <div
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
+      aria-hidden={inert ? true : undefined}
       className={className}
       style={finalStyle}
       onClick={interactive ? handleClick : undefined}
@@ -651,6 +942,7 @@ function BoxElement({
 
 export interface StageRendererProps {
   readonly tree: FacetTree;
+  readonly transition?: StageTransitionHint;
   /**
    * Invoked when an interactive brick fires (a pressed box, a submitted field).
    * When the pressed action declares `collect`, `fields` carries the press-time
@@ -696,7 +988,13 @@ export interface StageRendererProps {
  * replay; a record failure can never unwind the view-state. Content stays
  * server-owned via the patch flow.
  */
-export function StageRenderer({ tree, onAction, onRecord, themes }: StageRendererProps): ReactNode {
+export function StageRenderer({
+  tree,
+  transition,
+  onAction,
+  onRecord,
+  themes,
+}: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
   // A Map, not a plain object: node ids like "toString"/"valueOf" pass
   // validateTree (only __proto__/prototype/constructor are forbidden), and a
@@ -719,10 +1017,269 @@ export function StageRenderer({ tree, onAction, onRecord, themes }: StageRendere
       ? (tree as { readonly theme?: unknown }).theme
       : undefined;
   const theme = useMemo(() => resolveTheme(themeName, themes), [themeName, themes]);
+  const [motionState, setMotionState] = useState<MotionState>(() => emptyMotionState());
+  const motionStateRef = useRef<MotionState>(motionState);
+  motionStateRef.current = motionState;
+  const previousSnapshotRef = useRef<RenderSnapshot | null>(null);
+  const enterTimersRef = useRef<Map<NodeId, TimerHandle>>(new Map());
+  const exitTimersRef = useRef<Map<NodeId, TimerHandle>>(new Map());
+  const stageTimerRef = useRef<TimerHandle | null>(null);
+  const normalizedTransition = useMemo(() => normalizeTransitionHint(transition), [transition]);
+  const renderable = isRenderableTree(tree);
+  const currentRootId = renderable ? resolveScreenRoot(tree, currentScreen) : null;
+  const visibleInfo = useMemo(
+    () =>
+      currentRootId === null ? null : collectVisibleInfo(tree, currentRootId, visibilityOverrides),
+    [currentRootId, tree, visibilityOverrides],
+  );
+  const currentSnapshot: RenderSnapshot | null =
+    currentRootId === null || visibleInfo === null
+      ? null
+      : {
+          tree,
+          rootId: currentRootId,
+          visible: visibleInfo,
+          visibilityOverrides,
+          theme,
+          revision: normalizedTransition?.revision ?? null,
+          rootReplacedRevision: normalizedTransition?.rootReplacedRevision ?? null,
+        };
+
+  const updateMotionState = (updater: (current: MotionState) => MotionState): void => {
+    setMotionState((current) => {
+      const next = updater(current);
+      motionStateRef.current = next;
+      return next;
+    });
+  };
+
+  const clearEnterTimer = (id: NodeId): void => {
+    const timer = enterTimersRef.current.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      enterTimersRef.current.delete(id);
+    }
+  };
+  const clearExitTimer = (id: NodeId): void => {
+    const timer = exitTimersRef.current.get(id);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      exitTimersRef.current.delete(id);
+    }
+  };
+  const clearStageTimer = (): void => {
+    if (stageTimerRef.current !== null) {
+      clearTimeout(stageTimerRef.current);
+      stageTimerRef.current = null;
+    }
+  };
+  const clearAllMotionTimers = (): void => {
+    for (const timer of enterTimersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    enterTimersRef.current.clear();
+    for (const timer of exitTimersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    exitTimersRef.current.clear();
+    clearStageTimer();
+  };
+  const scheduleEnterTimer = (id: NodeId): void => {
+    clearEnterTimer(id);
+    const timer = setTimeout(() => {
+      enterTimersRef.current.delete(id);
+      updateMotionState((current) => {
+        if (!current.enterIds.has(id)) {
+          return current;
+        }
+        const enterIds = new Set(current.enterIds);
+        enterIds.delete(id);
+        return { ...current, enterIds };
+      });
+    }, MOTION_ENTER_MS);
+    enterTimersRef.current.set(id, timer);
+  };
+  const scheduleExitTimer = (id: NodeId): void => {
+    clearExitTimer(id);
+    const timer = setTimeout(() => {
+      exitTimersRef.current.delete(id);
+      updateMotionState((current) => {
+        if (!current.exitRecords.has(id)) {
+          return current;
+        }
+        const exitRecords = new Map(current.exitRecords);
+        exitRecords.delete(id);
+        return { ...current, exitRecords };
+      });
+    }, MOTION_EXIT_MS);
+    exitTimersRef.current.set(id, timer);
+  };
+  const scheduleStageTimer = (): void => {
+    clearStageTimer();
+    stageTimerRef.current = setTimeout(() => {
+      stageTimerRef.current = null;
+      updateMotionState((current) =>
+        current.stagePrevious === null ? current : { ...current, stagePrevious: null },
+      );
+    }, STAGE_CROSSFADE_MS);
+  };
+
+  useEffect(() => () => clearAllMotionTimers(), []);
+
+  useMotionLayoutEffect(() => {
+    if (currentSnapshot === null) {
+      previousSnapshotRef.current = null;
+      if (!isMotionStateEmpty(motionStateRef.current)) {
+        clearAllMotionTimers();
+        updateMotionState(() => emptyMotionState());
+      }
+      return;
+    }
+    if (normalizedTransition === null) {
+      previousSnapshotRef.current = currentSnapshot;
+      if (!isMotionStateEmpty(motionStateRef.current)) {
+        clearAllMotionTimers();
+        updateMotionState(() => emptyMotionState());
+      }
+      return;
+    }
+
+    const previous = previousSnapshotRef.current;
+    if (previous === null) {
+      previousSnapshotRef.current = currentSnapshot;
+      return;
+    }
+    if (isBlankBootSnapshot(previous)) {
+      previousSnapshotRef.current = currentSnapshot;
+      return;
+    }
+
+    const reappearedExitIds = new Set<NodeId>();
+    for (const [id, record] of motionStateRef.current.exitRecords) {
+      for (const visibleId of record.visibleIds) {
+        if (!currentSnapshot.visible.ids.has(visibleId)) {
+          continue;
+        }
+        reappearedExitIds.add(id);
+        break;
+      }
+    }
+
+    const enteringIds: NodeId[] = [];
+    for (const id of currentSnapshot.visible.ids) {
+      if (!previous.visible.ids.has(id) && !reappearedExitIds.has(id)) {
+        enteringIds.push(id);
+      }
+    }
+    let exitingVisibleCount = 0;
+    for (const id of previous.visible.ids) {
+      if (!currentSnapshot.visible.ids.has(id)) {
+        exitingVisibleCount += 1;
+      }
+    }
+    const exitingIds = topmostExitingIds(previous.visible, currentSnapshot.visible.ids);
+    const rootReplaced =
+      currentSnapshot.rootReplacedRevision !== null &&
+      (previous.rootReplacedRevision === null ||
+        currentSnapshot.rootReplacedRevision > previous.rootReplacedRevision);
+    const enteringIdSet = new Set<NodeId>(enteringIds);
+    let pendingEnterCount = 0;
+    for (const id of motionStateRef.current.enterIds) {
+      if (currentSnapshot.visible.ids.has(id) && !enteringIdSet.has(id)) {
+        pendingEnterCount += 1;
+      }
+    }
+    let pendingExitCount = 0;
+    for (const [id, record] of motionStateRef.current.exitRecords) {
+      if (!reappearedExitIds.has(id)) {
+        pendingExitCount += record.visibleIds.size;
+      }
+    }
+    const stageCrossfade =
+      rootReplaced ||
+      enteringIds.length + pendingEnterCount + exitingVisibleCount + pendingExitCount >
+        MANY_CHANGE_THRESHOLD;
+
+    if (
+      reappearedExitIds.size === 0 &&
+      enteringIds.length === 0 &&
+      exitingIds.length === 0 &&
+      !stageCrossfade
+    ) {
+      previousSnapshotRef.current = currentSnapshot;
+      return;
+    }
+
+    if (stageCrossfade) {
+      clearAllMotionTimers();
+      updateMotionState(() => ({
+        enterIds: new Set<NodeId>(),
+        exitRecords: new Map<NodeId, ExitRecord>(),
+        stagePrevious: { snapshot: previous },
+      }));
+      scheduleStageTimer();
+      previousSnapshotRef.current = currentSnapshot;
+      return;
+    }
+
+    if (motionStateRef.current.stagePrevious !== null) {
+      previousSnapshotRef.current = currentSnapshot;
+      return;
+    }
+
+    clearStageTimer();
+    for (const id of reappearedExitIds) {
+      clearExitTimer(id);
+    }
+    for (const id of enteringIds) {
+      scheduleEnterTimer(id);
+    }
+    for (const id of exitingIds) {
+      clearEnterTimer(id);
+      scheduleExitTimer(id);
+    }
+
+    updateMotionState((current) => {
+      const enterIds = new Set(current.enterIds);
+      for (const id of exitingIds) {
+        enterIds.delete(id);
+      }
+      for (const id of enteringIds) {
+        enterIds.add(id);
+      }
+
+      const exitRecords = new Map(current.exitRecords);
+      for (const id of reappearedExitIds) {
+        exitRecords.delete(id);
+      }
+      for (const id of exitingIds) {
+        const info = previous.visible.nodes.get(id);
+        if (info !== undefined) {
+          exitRecords.set(id, {
+            id,
+            parentId:
+              info.parentId !== null &&
+              currentSnapshot.visible.ids.has(info.parentId) &&
+              currentSnapshot.tree.nodes[info.parentId]?.type === "box"
+                ? info.parentId
+                : null,
+            index: info.index,
+            ancestors: info.ancestors,
+            depth: info.depth,
+            visibleIds: visibleSubtreeIds(previous.visible, id),
+            snapshot: previous,
+          });
+        }
+      }
+
+      return { enterIds, exitRecords, stagePrevious: null };
+    });
+    previousSnapshotRef.current = currentSnapshot;
+  }, [currentSnapshot, normalizedTransition]);
 
   // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
   // the unvalidated CLI path — renders as nothing, never a crash.
-  if (!isRenderableTree(tree)) {
+  if (!renderable || currentRootId === null) {
     return null;
   }
 
@@ -799,6 +1356,8 @@ export function StageRenderer({ tree, onAction, onRecord, themes }: StageRendere
   // budget exists to prevent). Reachable-only is also strictly more correct:
   // an appear token on an unrendered node no longer forces a useless stylesheet.
   const appearSeen = { used: false };
+  const motionPlan = motionRenderPlan(motionState);
+  const hasActiveMotion = !isMotionStateEmpty(motionState);
 
   // One mutable budget per render pass, LOCAL to this StageRenderer render and
   // threaded down the plain `renderNode` recursion. `renderNode` is a plain
@@ -806,17 +1365,71 @@ export function StageRenderer({ tree, onAction, onRecord, themes }: StageRendere
   // separate component invocations — under StrictMode React double-invokes
   // StageRenderer (each making its own fresh budget) rather than double-decrementing
   // one shared object per node, so a valid tree renders in full at either cap.
-  const budget: { left: number; warned?: boolean } = { left: RENDER_BUDGET };
+  const budget: { left: number; refsLeft: number; warned?: boolean } = {
+    left: RENDER_BUDGET,
+    refsLeft: RENDER_BUDGET,
+  };
   const stage = renderNode({
     tree,
-    id: resolveScreenRoot(tree, currentScreen),
+    id: currentRootId,
     onPress: handlePress,
     visibilityOverrides,
     theme,
     budget,
     appearSeen,
     depth: 0,
+    renderMode: "live",
+    motionClassById: motionPlan.motionClassById,
+    exitRecordsByParent: motionPlan.exitRecordsByParent,
   });
+  const rootExitNodes = motionPlan.rootExitRecords.map((record) => (
+    <Fragment key={`exit:${record.id}`}>
+      {renderExitRecord({ record, onPress: handlePress, appearSeen })}
+    </Fragment>
+  ));
+  const stageContent = (
+    <Fragment>
+      {stage}
+      {rootExitNodes}
+    </Fragment>
+  );
+  const stageBody =
+    normalizedTransition === null ? (
+      stageContent
+    ) : (
+      <div
+        className={stageFrameClassName(motionState.stagePrevious !== null)}
+        style={motionState.stagePrevious === null ? DISPLAY_CONTENTS_STYLE : undefined}
+      >
+        <div
+          className={stageCurrentClassName()}
+          style={motionState.stagePrevious === null ? DISPLAY_CONTENTS_STYLE : undefined}
+        >
+          {stageContent}
+        </div>
+        {motionState.stagePrevious === null ? null : (
+          <div
+            className={stagePreviousClassName()}
+            aria-hidden={true}
+            style={{ pointerEvents: "none" }}
+          >
+            {renderNode({
+              tree: motionState.stagePrevious.snapshot.tree,
+              id: motionState.stagePrevious.snapshot.rootId,
+              onPress: handlePress,
+              visibilityOverrides: motionState.stagePrevious.snapshot.visibilityOverrides,
+              theme: motionState.stagePrevious.snapshot.theme,
+              budget: { left: RENDER_BUDGET, refsLeft: RENDER_BUDGET },
+              appearSeen,
+              depth: 0,
+              renderMode: "inert",
+              motionClassById: EMPTY_MOTION_CLASSES,
+              exitRecordsByParent: EMPTY_EXIT_RECORDS_BY_PARENT,
+            })}
+          </div>
+        )}
+      </div>
+    );
   // The appear stylesheet rides ONCE per stage, and only when the tree uses
   // appear — appear-free trees stay byte-identical to today (Fragment and null
   // emit no markup). Two stages on one page each emit the identical namespaced
@@ -834,7 +1447,8 @@ export function StageRenderer({ tree, onAction, onRecord, themes }: StageRendere
   const staged = (
     <Fragment>
       {appearSeen.used ? <style>{APPEAR_CSS}</style> : null}
-      {stage}
+      {hasActiveMotion ? <style>{MOTION_CSS}</style> : null}
+      {stageBody}
     </Fragment>
   );
   if (onAction === undefined) {
@@ -871,7 +1485,7 @@ interface RenderArgs {
    * Per-render-pass node budget — bounds total renders (invariant #2). `warned`
    * latches the one-time console.warn when the budget first trips.
    */
-  readonly budget: { left: number; warned?: boolean };
+  readonly budget: { left: number; refsLeft: number; warned?: boolean };
   /**
    * Set to `true` the moment a REACHABLE box renders with an appear class, so
    * the caller can gate the one-per-stage `<style>` on the same budget-bounded
@@ -882,9 +1496,40 @@ interface RenderArgs {
    */
   readonly appearSeen: { used: boolean };
   readonly depth: number;
+  readonly renderMode: RenderMode;
+  readonly motionClassById: ReadonlyMap<NodeId, string>;
+  readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
 }
 
-function renderMediaNode(raw: unknown, theme: ResolvedTheme): ReactNode {
+interface ExitRenderArgs {
+  readonly record: ExitRecord;
+  readonly onPress: RenderArgs["onPress"];
+  readonly appearSeen: { used: boolean };
+}
+
+function renderExitRecord({ record, onPress, appearSeen }: ExitRenderArgs): ReactNode {
+  return renderNode({
+    tree: record.snapshot.tree,
+    id: record.id,
+    onPress,
+    visibilityOverrides: record.snapshot.visibilityOverrides,
+    theme: record.snapshot.theme,
+    ancestors: record.ancestors,
+    budget: { left: RENDER_BUDGET, refsLeft: RENDER_BUDGET },
+    appearSeen,
+    depth: record.depth,
+    renderMode: "inert",
+    motionClassById: new Map<NodeId, string>([[record.id, MOTION_CLASS_NAMES.brickExit]]),
+    exitRecordsByParent: EMPTY_EXIT_RECORDS_BY_PARENT,
+  });
+}
+
+function renderMediaNode(
+  raw: unknown,
+  theme: ResolvedTheme,
+  className?: string,
+  inert = false,
+): ReactNode {
   const rawMedia = raw as {
     readonly type?: unknown;
     readonly kind?: unknown;
@@ -903,7 +1548,8 @@ function renderMediaNode(raw: unknown, theme: ResolvedTheme): ReactNode {
   if (kind !== "image" && kind !== "video") {
     return null;
   }
-  const style = mediaStyle(styleOf(rawMedia.style), theme);
+  const baseStyle = mediaStyle(styleOf(rawMedia.style), theme);
+  const style: CSSProperties = inert ? { ...baseStyle, pointerEvents: "none" } : baseStyle;
   if (kind === "video") {
     const poster =
       typeof rawMedia.poster === "string" && isSafeMediaSrc(rawMedia.poster)
@@ -913,7 +1559,9 @@ function renderMediaNode(raw: unknown, theme: ResolvedTheme): ReactNode {
       <video
         src={rawMedia.src}
         poster={poster}
-        controls={rawMedia.controls === true ? true : undefined}
+        controls={!inert && rawMedia.controls === true ? true : undefined}
+        className={className}
+        aria-hidden={inert ? true : undefined}
         style={style}
       />
     );
@@ -922,6 +1570,8 @@ function renderMediaNode(raw: unknown, theme: ResolvedTheme): ReactNode {
     <img
       src={rawMedia.src}
       alt={typeof rawMedia.alt === "string" ? rawMedia.alt : ""}
+      className={className}
+      aria-hidden={inert ? true : undefined}
       style={style}
     />
   );
@@ -945,6 +1595,9 @@ function renderNode({
   budget,
   appearSeen,
   depth,
+  renderMode,
+  motionClassById,
+  exitRecordsByParent,
 }: RenderArgs): ReactNode {
   const node = tree.nodes[id];
   // == null also skips a node a patch replaced with JSON null (not just missing
@@ -972,8 +1625,10 @@ function renderNode({
   if (!visible) {
     return null;
   }
+  const inert = renderMode === "inert";
+  const motionClassName = motionClassById.get(id);
   if ((node as { readonly type?: unknown }).type === "image") {
-    return renderMediaNode(node, theme);
+    return renderMediaNode(node, theme, motionClassName, inert);
   }
 
   switch (node.type) {
@@ -987,32 +1642,79 @@ function renderNode({
       // One linear pass skips ancestors (cycle break) and dedupes sibling ids
       // (raw path can repeat one; validateTree dedupes too) — first occurrence
       // wins so React keys stay unique.
-      const emitted = new Set<NodeId>(seen);
-      const uniqueChildIds = childIds.filter((childId) => {
+      const emitted = new Set<NodeId>(childAncestors);
+      const uniqueChildIds: NodeId[] = [];
+      for (const childId of childIds) {
+        if (--budget.refsLeft < 0) {
+          if (budget.warned !== true) {
+            budget.warned = true;
+            console.warn(
+              `[facet] render budget of ${MAX_RENDER_NODES} nodes exceeded; the excess is truncated`,
+            );
+          }
+          break;
+        }
         if (emitted.has(childId)) {
-          return false;
+          continue;
         }
         emitted.add(childId);
-        return true;
-      });
-      // Each child is rendered by a direct recursive call; a keyed Fragment
-      // carries the React list key without adding a DOM node (flow layout and the
-      // byte-identical output are unchanged — a Fragment emits no markup).
-      const children = uniqueChildIds.map((childId) => (
-        <Fragment key={childId}>
-          {renderNode({
-            tree,
-            id: childId,
-            onPress,
-            visibilityOverrides,
-            theme,
-            ancestors: childAncestors,
-            budget,
-            appearSeen,
-            depth: depth + 1,
-          })}
-        </Fragment>
-      ));
+        uniqueChildIds.push(childId);
+      }
+      const exitsBySlot = new Map<number, readonly ExitRecord[]>();
+      if (renderMode === "live") {
+        const parentExitRecords = exitRecordsByParent.get(id) ?? [];
+        for (const record of parentExitRecords) {
+          let slot = uniqueChildIds.length;
+          for (const [index, childId] of uniqueChildIds.entries()) {
+            const previousIndex = record.snapshot.visible.nodes.get(childId)?.index;
+            if (previousIndex === undefined || previousIndex > record.index) {
+              slot = index;
+              break;
+            }
+          }
+          const records = exitsBySlot.get(slot);
+          if (records === undefined) {
+            exitsBySlot.set(slot, [record]);
+          } else {
+            exitsBySlot.set(slot, [...records, record]);
+          }
+        }
+      }
+      const children: ReactNode[] = [];
+      for (let index = 0; index <= uniqueChildIds.length; index += 1) {
+        for (const record of exitsBySlot.get(index) ?? []) {
+          children.push(
+            <Fragment key={`exit:${record.id}`}>
+              {renderExitRecord({ record, onPress, appearSeen })}
+            </Fragment>,
+          );
+        }
+        const childId = uniqueChildIds[index];
+        if (childId === undefined) {
+          continue;
+        }
+        // Each child is rendered by a direct recursive call; a keyed Fragment
+        // carries the React list key without adding a DOM node (flow layout and the
+        // byte-identical output are unchanged — a Fragment emits no markup).
+        children.push(
+          <Fragment key={`live:${childId}`}>
+            {renderNode({
+              tree,
+              id: childId,
+              onPress,
+              visibilityOverrides,
+              theme,
+              ancestors: childAncestors,
+              budget,
+              appearSeen,
+              depth: depth + 1,
+              renderMode,
+              motionClassById,
+              exitRecordsByParent,
+            })}
+          </Fragment>,
+        );
+      }
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.
       const press = classifyPress(node.onPress);
@@ -1042,11 +1744,12 @@ function renderNode({
       const dispatch = (classified: ClassifiedPress): void => onPress(classified, id);
       return (
         <BoxElement
-          press={press}
-          hold={hold}
+          press={inert ? null : press}
+          hold={inert ? null : hold}
           dispatch={dispatch}
-          className={appear}
+          className={composeMotionClassName(appear, motionClassName)}
           style={boxStyle(styleOf(node.style), theme)}
+          inert={inert}
         >
           {children}
         </BoxElement>
@@ -1057,10 +1760,20 @@ function renderNode({
       // No appear class here: appear is BoxStyle-only (Decision 2) — validateTree
       // strips it from non-box styles, so the raw path must render it as absent.
       return typeof node.value === "string" ? (
-        <p style={textStyle(styleOf(node.style), theme)}>{node.value}</p>
+        <p
+          className={motionClassName}
+          aria-hidden={inert ? true : undefined}
+          style={
+            inert
+              ? { ...textStyle(styleOf(node.style), theme), pointerEvents: "none" }
+              : textStyle(styleOf(node.style), theme)
+          }
+        >
+          {node.value}
+        </p>
       ) : null;
     case "media":
-      return renderMediaNode(node, theme);
+      return renderMediaNode(node, theme, motionClassName, inert);
     case "field": {
       // Raw-path junk: constrain `input` to the token set (else "text") and
       // omit non-string name/placeholder, mirroring core's field coercion.
@@ -1073,15 +1786,23 @@ function renderNode({
         flexDirection: "column",
         gap: "4px",
         ...fieldStyle(styleOf(node.style), theme),
+        ...(inert ? { pointerEvents: "none" } : {}),
       };
       const label = typeof node.label === "string" ? <span>{node.label}</span> : null;
+      const fieldId = inert ? undefined : id;
+      const controlName = inert ? undefined : name;
+      const inertControlProps = inert ? { disabled: true, tabIndex: -1 } : {};
       // Uncontrolled on purpose (invariant #6): the DOM owns values; the stamp
       // lets a collect press find these controls by node id at press time.
       if (input === "select") {
         return (
-          <label style={wrapperStyle}>
+          <label
+            className={motionClassName}
+            aria-hidden={inert ? true : undefined}
+            style={wrapperStyle}
+          >
             {label}
-            <select name={name} data-facet-field-id={id}>
+            <select name={controlName} data-facet-field-id={fieldId} {...inertControlProps}>
               {options.map((option, index) => (
                 <option key={`${String(index)}:${option}`} value={option}>
                   {option}
@@ -1093,11 +1814,21 @@ function renderNode({
       }
       if (input === "radio") {
         return (
-          <div style={wrapperStyle}>
+          <div
+            className={motionClassName}
+            aria-hidden={inert ? true : undefined}
+            style={wrapperStyle}
+          >
             {label}
             {options.map((option, index) => (
               <label key={`${String(index)}:${option}`}>
-                <input type="radio" name={name} value={option} data-facet-field-id={id} />
+                <input
+                  type="radio"
+                  name={controlName}
+                  value={option}
+                  data-facet-field-id={fieldId}
+                  {...inertControlProps}
+                />
                 {option}
               </label>
             ))}
@@ -1106,24 +1837,53 @@ function renderNode({
       }
       if (input === "checkbox") {
         return (
-          <label style={wrapperStyle}>
+          <label
+            className={motionClassName}
+            aria-hidden={inert ? true : undefined}
+            style={wrapperStyle}
+          >
             {label}
-            <input type="checkbox" name={name} data-facet-field-id={id} />
+            <input
+              type="checkbox"
+              name={controlName}
+              data-facet-field-id={fieldId}
+              {...inertControlProps}
+            />
           </label>
         );
       }
       if (input === "switch") {
         return (
-          <label style={wrapperStyle}>
+          <label
+            className={motionClassName}
+            aria-hidden={inert ? true : undefined}
+            style={wrapperStyle}
+          >
             {label}
-            <input type="checkbox" role="switch" name={name} data-facet-field-id={id} />
+            <input
+              type="checkbox"
+              role="switch"
+              name={controlName}
+              data-facet-field-id={fieldId}
+              {...inertControlProps}
+            />
           </label>
         );
       }
       return (
-        <label style={wrapperStyle}>
+        <label
+          className={motionClassName}
+          aria-hidden={inert ? true : undefined}
+          style={wrapperStyle}
+        >
           {label}
-          <input type={input} name={name} placeholder={placeholder} data-facet-field-id={id} />
+          <input
+            type={input}
+            name={controlName}
+            placeholder={placeholder}
+            data-facet-field-id={fieldId}
+            {...inertControlProps}
+          />
         </label>
       );
     }

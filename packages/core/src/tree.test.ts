@@ -73,4 +73,20 @@ describe("treeHasContent", () => {
       true,
     );
   });
+
+  it("false — and does NOT throw — when a foreign tree has null screens", () => {
+    const t = tree({ r: { id: "r", type: "box", children: [] } }, null);
+    expect(() => treeHasContent(t)).not.toThrow();
+    expect(treeHasContent(t)).toBe(false);
+  });
+
+  it("false for non-object screens on a foreign tree", () => {
+    expect(treeHasContent(tree({ r: { id: "r", type: "box", children: [] } }, "home"))).toBe(false);
+  });
+
+  it("false — and does NOT throw — for array-valued screens on a foreign tree", () => {
+    const t = tree({ r: { id: "r", type: "box", children: [] } }, ["home"]);
+    expect(() => treeHasContent(t)).not.toThrow();
+    expect(treeHasContent(t)).toBe(false);
+  });
 });

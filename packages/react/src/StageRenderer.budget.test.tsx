@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { FacetNode, FacetTree, NodeId } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
+import { MOTION_EXIT_MS } from "./motion.js";
 
 afterEach(cleanup);
 
@@ -77,6 +78,47 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     expect(container.querySelectorAll("p").length).toBe(3000);
   });
 
+  it("bounds a huge dangling child array without hanging", () => {
+    const children = Array.from({ length: 200_000 }, (_, index) => `missing-${String(index)}`);
+    const hostile: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children },
+      },
+    };
+    let container: HTMLElement | undefined;
+
+    expect(() => {
+      ({ container } = render(<StageRenderer tree={hostile} onAction={vi.fn()} />));
+    }).not.toThrow();
+    expect(container!.querySelectorAll("div").length).toBeLessThan(10);
+  });
+
+  it("keeps collect bounded on a huge dangling child array", () => {
+    const onAction = vi.fn();
+    const children = Array.from({ length: 200_000 }, (_, index) => `missing-${String(index)}`);
+    const hostile: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["form", "submit"] },
+        form: { id: "form", type: "box", children },
+        submit: {
+          id: "submit",
+          type: "box",
+          onPress: { kind: "agent", name: "submit", collect: "form" },
+          children: ["label"],
+        },
+        label: { id: "label", type: "text", value: "Submit" },
+      },
+    };
+
+    render(<StageRenderer tree={hostile} onAction={onAction} />);
+    expect(() => {
+      fireEvent.click(screen.getByRole("button"));
+    }).not.toThrow();
+    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "submit" }, {});
+  });
+
   it("keeps a collect press bounded on a shared-child subtree (gather budget)", () => {
     const onAction = vi.fn();
     const lattice = latticeTree(40, true);
@@ -99,5 +141,43 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     }).not.toThrow();
     // The press fired (the gather walk terminated under its own budget).
     expect(onAction).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps exit snapshot rendering bounded for a removed hostile subtree", () => {
+    vi.useFakeTimers();
+    try {
+      const lattice = latticeTree(40);
+      const initial: FacetTree = {
+        root: "wrap",
+        nodes: {
+          ...lattice.nodes,
+          wrap: { id: "wrap", type: "box", children: ["root", "stay"] },
+          stay: { id: "stay", type: "text", value: "still here" },
+        },
+      };
+      const next: FacetTree = {
+        root: "wrap",
+        nodes: {
+          wrap: { id: "wrap", type: "box", children: ["stay"] },
+          stay: { id: "stay", type: "text", value: "still here" },
+        },
+      };
+      const { container, rerender } = render(
+        <StageRenderer tree={initial} transition={{ revision: 0, rootReplaced: false }} />,
+      );
+
+      expect(() => {
+        rerender(<StageRenderer tree={next} transition={{ revision: 1, rootReplaced: false }} />);
+      }).not.toThrow();
+      expect(screen.getByText("still here")).toBeTruthy();
+      expect(container.querySelectorAll("div").length).toBeLessThan(6000);
+
+      act(() => {
+        vi.advanceTimersByTime(MOTION_EXIT_MS);
+      });
+      expect(screen.getByText("still here")).toBeTruthy();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

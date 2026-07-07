@@ -66,7 +66,15 @@ export function isTreeShaped(value: unknown): value is FacetTree {
  * the "shows something" definition can never silently drift between them.
  */
 export function treeHasContent(tree: FacetTree): boolean {
-  if (tree.screens !== undefined && Object.keys(tree.screens).length > 0) return true;
+  const screens = (tree as { readonly screens?: unknown }).screens;
+  if (
+    typeof screens === "object" &&
+    screens !== null &&
+    !Array.isArray(screens) &&
+    Object.keys(screens).length > 0
+  ) {
+    return true;
+  }
   const root = tree.nodes[tree.root];
   // A persisted/foreign FileStageStore tree can carry a `{type:"box"}` root with
   // NO children array (isTreeShaped admits it — it only rejects a *present*

@@ -232,6 +232,21 @@ describe("foldPatchIntoStage — mutated (effect-based edit signal)", () => {
     expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(true);
   });
 
+  it("reports rootReplaced only for root document writes that actually applied", () => {
+    const rootWrite: JsonPatchOperation[] = [{ op: "replace", path: "", value: rootBox }];
+    expect(foldPatchIntoStage(rootBox, rootWrite).rootReplaced).toBe(true);
+
+    const guarded: JsonPatchOperation[] = [
+      { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
+      { op: "test", path: "/root", value: "not-root" },
+      { op: "replace", path: "", value: rootBox },
+    ];
+    const folded = foldPatchIntoStage(rootBox, guarded);
+    expect(folded.mutated).toBe(true);
+    expect(folded.tree.nodes["good"]).toBeDefined();
+    expect(folded.rootReplaced).toBe(false);
+  });
+
   it("is false for a batch over MAX_PATCH_OPS (rejected whole)", () => {
     const patches = Array.from({ length: 200_000 }, () => 0) as unknown as JsonPatchOperation[];
     expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(false);
