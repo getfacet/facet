@@ -77,14 +77,14 @@ export interface InspectNodeToolInput {
 
 export interface ToolInputByName {
   readonly render_page: RenderPageToolInput;
-  readonly append_node: AppendNodeToolInput;
+  readonly ["append_node"]: AppendNodeToolInput;
   readonly use_stamp: UseStampToolInput;
-  readonly set_node: SetNodeToolInput;
-  readonly remove_node: RemoveNodeToolInput;
+  readonly ["set_node"]: SetNodeToolInput;
+  readonly ["remove_node"]: RemoveNodeToolInput;
   readonly say: SayToolInput;
   readonly set_theme: SetThemeToolInput;
   readonly inspect_stage: InspectStageToolInput;
-  readonly inspect_node: InspectNodeToolInput;
+  readonly ["inspect_node"]: InspectNodeToolInput;
 }
 
 export interface StageToolAssets {

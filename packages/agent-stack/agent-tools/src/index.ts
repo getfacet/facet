@@ -11,6 +11,7 @@ export {
   summarizeStageChange,
   summarizeStageTree,
 } from "./stage-shadow.js";
+export { executeStageTool } from "./executor.js";
 export type {
   StageChangeSummaryOptions,
   StageShadowFoldResult,

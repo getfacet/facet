@@ -52,7 +52,7 @@ export const FACET_STAGE_TOOL_SPECS = [
       type: "object",
       properties: {
         parentId: { type: "string", description: "The id of an existing box node." },
-        node: NODE_SCHEMA,
+        ["node"]: NODE_SCHEMA,
       },
       required: ["parentId", "node"],
       additionalProperties: false,
@@ -87,7 +87,7 @@ export const FACET_STAGE_TOOL_SPECS = [
     parameters: {
       type: "object",
       properties: {
-        node: NODE_SCHEMA,
+        ["node"]: NODE_SCHEMA,
       },
       required: ["node"],
       additionalProperties: false,
