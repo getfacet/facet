@@ -1,7 +1,6 @@
 import { MAX_PATCH_OPS, applyPatch } from "@facet/core";
 import type { FacetNode, FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
 import { executeStageTool } from "./executor.js";
-import { foldStageShadow } from "./stage-shadow.js";
 import type { StageToolAssets, StageToolResult, ToolCall } from "./types.js";
 
 export interface StageToolBufferOutcome {

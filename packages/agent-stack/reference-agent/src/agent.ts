@@ -27,7 +27,7 @@ import {
   buildInitialMessages,
   buildSystem,
 } from "./prompt.js";
-import type { QuickstartProvider, ToolCall, TurnMessage } from "./provider.js";
+import type { QuickstartProvider, TurnMessage } from "./provider.js";
 
 export interface QuickstartAgentOptions {
   readonly provider: QuickstartProvider;
