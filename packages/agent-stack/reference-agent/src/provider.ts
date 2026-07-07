@@ -16,20 +16,13 @@
  * auth header, and are never logged or echoed in errors (messages name the env
  * VAR, never its value).
  */
+import type { ToolCall as AgentToolCall, ToolSpec as AgentToolSpec } from "@facet/agent-tools";
 
 /** A tool offered to the model: a name, a description, and a JSON-schema for its input. */
-export interface ToolSpec {
-  readonly name: string;
-  readonly description: string;
-  readonly parameters: Readonly<Record<string, unknown>>;
-}
+export type ToolSpec = AgentToolSpec;
 
 /** One tool call the model wants to make, with its arguments already parsed. */
-export interface ToolCall {
-  readonly id: string;
-  readonly name: string;
-  readonly input: unknown;
-}
+export type ToolCall = AgentToolCall;
 
 /** One model step: any prose it emitted plus the tool calls it requested. */
 export interface ProviderStep {

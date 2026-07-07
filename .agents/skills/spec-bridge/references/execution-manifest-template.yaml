@@ -40,7 +40,7 @@ work_units:
     packages: ["@facet/core"] # affected Facet package(s)
     objective: "[one sentence]"
     files:
-      - path: "packages/<pkg>/src/<file>.ts"
+      - path: "packages/<group>/<pkg>/src/<file>.ts"
         change_type: "update" # add | update | delete
         purpose: "[why]"
     depends_on: []
@@ -48,16 +48,16 @@ work_units:
     red_check:
       # TDD-first. FAIL before impl, PASS after. Required for prod-code WUs.
       # Deletion/docs/move-only: command = "N/A" + justification.
-      command: "cd packages/<pkg> && pnpm exec vitest run src/<file>.test.ts -t '<name>'"
-      target: "packages/<pkg>/src/<file>.test.ts"
+      command: "cd packages/<group>/<pkg> && pnpm exec vitest run src/<file>.test.ts -t '<name>'"
+      target: "packages/<group>/<pkg>/src/<file>.test.ts"
       justification: "" # required only when command == "N/A"
     quick_checks:
       - "[first re-runs red_check, then any scoped check]"
     no_regression_checks:
-      - "pnpm -C packages/<pkg> test"
+      - "pnpm -C packages/<group>/<pkg> test"
     test_plan:
       - type: "unit" # unit | integration | e2e
-        target: "packages/<pkg>/src/<file>.test.ts"
+        target: "packages/<group>/<pkg>/src/<file>.test.ts"
         covers_dc: ["DC-001"]
         action: "new" # new | update
     done_conditions:

@@ -83,7 +83,7 @@ Run in order; on any FAIL, fix and restart the inner loop from the top:
 4. **`/live-test`** — Tier 1 always blocks; Tier 2 blocks when quickstart changed;
    Tier 3/journey per `/live-test` policy.
 5. **`/update-docs`** — reflect every triggered doc (esp.
-   `packages/core/src/spec.ts` STAGE_SPEC when the brick/token/action vocabulary
+   `packages/core/core/src/spec.ts` STAGE_SPEC when the brick/token/action vocabulary
    changed), or mark intentionally unchanged with `file:line` evidence.
 
 ## Stage 3 — Land it

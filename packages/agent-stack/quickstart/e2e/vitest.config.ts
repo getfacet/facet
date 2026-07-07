@@ -7,7 +7,7 @@
  *
  * `root` is pinned to the package directory so the include pattern resolves
  * identically whether vitest is invoked from the repo root
- * (`pnpm exec vitest run --config packages/quickstart/e2e/vitest.config.ts …`)
+ * (`pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts …`)
  * or from the package.
  */
 import { fileURLToPath } from "node:url";

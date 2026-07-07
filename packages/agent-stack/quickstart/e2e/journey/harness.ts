@@ -74,7 +74,7 @@ export async function bootJourney(options: BootJourneyOptions): Promise<RunningQ
 const BIN_SMOKE_TIMEOUT_MS = 15_000;
 const HEALTH_POLL_INTERVAL_MS = 200;
 
-/** The built bin this smoke spawns — `packages/quickstart/dist/cli.js`. */
+/** The built bin this smoke spawns — `packages/agent-stack/quickstart/dist/cli.js`. */
 function binPath(): string {
   return fileURLToPath(new URL("../../dist/cli.js", import.meta.url));
 }

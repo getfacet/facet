@@ -1,4 +1,4 @@
-import { foldPatchIntoStage } from "@facet/core";
+import { MAX_PATCH_OPS, foldPatchIntoStage } from "@facet/core";
 import type { FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
 
 export interface StageTreeSummary {
@@ -87,26 +87,45 @@ export function foldStageShadow(
   shadow: FacetTree,
   messages: readonly ServerMessage[],
 ): StageShadowFoldResult {
-  let current = shadow;
   const patches: JsonPatchOperation[] = [];
-  const issues: string[] = [];
+  let overCap = false;
 
   for (const message of messages) {
     if (message.kind !== "patch") continue;
-    patches.push(...message.patches);
-    const result = foldPatchIntoStage(current, message.patches);
-    current = result.tree;
-    issues.push(...result.issues);
+    for (const patch of message.patches) {
+      patches.push(patch);
+      if (patches.length > MAX_PATCH_OPS) {
+        overCap = true;
+        break;
+      }
+    }
+    if (overCap) break;
   }
 
+  if (patches.length === 0) {
+    return {
+      shadow,
+      patches: [],
+      patchCount: 0,
+      changedNodeIds: [],
+      summary: "no stage changes",
+      issues: [],
+    };
+  }
+
+  const result = foldPatchIntoStage(shadow, patches);
+  const appliedPatches = overCap ? [] : patches;
+  const patchCount = appliedPatches.length;
+  const issues = result.issues;
+  const current = result.tree;
   const changedNodeIds = changedNodeIdsBetween(shadow, current);
   return {
     shadow: current,
-    patches,
-    patchCount: patches.length,
+    patches: appliedPatches,
+    patchCount,
     changedNodeIds,
     summary: summarizeStageChange(shadow, current, {
-      patchCount: patches.length,
+      patchCount,
       changedNodeIds,
       issues,
     }),

@@ -11,6 +11,8 @@ export {
   summarizeStageChange,
   summarizeStageTree,
 } from "./stage-shadow.js";
+export { createStageToolBuffer } from "./buffer.js";
+export type { StageToolBuffer, StageToolBufferOutcome } from "./buffer.js";
 export { executeStageTool } from "./executor.js";
 export type {
   StageChangeSummaryOptions,

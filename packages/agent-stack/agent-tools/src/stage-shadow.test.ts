@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_TREE,
+  MAX_PATCH_OPS,
   type FacetTree,
   type JsonPatchOperation,
   type ServerMessage,
@@ -69,5 +70,24 @@ describe("foldStageShadow", () => {
       nodeCount: 2,
       screenCount: 0,
     });
+  });
+
+  it("does not spread huge patch batches before the fold cap", () => {
+    const patches: JsonPatchOperation[] = Array.from({ length: MAX_PATCH_OPS + 100_000 }, () => ({
+      op: "add",
+      path: "/nodes/root/children/-",
+      value: "x",
+    }));
+
+    const result = foldStageShadow(ROOT_BOX, [{ kind: "patch", patches }]);
+
+    expect(result.shadow).toEqual({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", style: {}, children: [] } },
+    });
+    expect(result.patches).toEqual([]);
+    expect(result.patchCount).toBe(0);
+    expect(result.issues.some((issue) => issue.includes("cap"))).toBe(true);
+    expect(result.summary).toContain("fold issue");
   });
 });

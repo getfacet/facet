@@ -111,6 +111,52 @@ describe("executeStageTool", () => {
     expect(nonBoxParent.shadow).toBe(TREE_WITH_TEXT);
   });
 
+  it("rejects root-breaking missing and forbidden-id mutations without patches", () => {
+    const setRoot = executeStageTool(
+      {
+        id: "call-root-set",
+        name: "set_node",
+        input: { ["node"]: { id: "root", type: "text", value: "oops" } },
+      },
+      { shadow: TREE_WITH_TEXT },
+    );
+    expect(setRoot.status).toBe("error");
+    expect(setRoot.patches).toEqual([]);
+    expect(setRoot.shadow).toBe(TREE_WITH_TEXT);
+    expect(setRoot.observation.text).toContain("cannot replace the stage root");
+
+    const removeRoot = executeStageTool(
+      { id: "call-root-remove", name: "remove_node", input: { nodeId: "root" } },
+      { shadow: TREE_WITH_TEXT },
+    );
+    expect(removeRoot.status).toBe("error");
+    expect(removeRoot.patches).toEqual([]);
+    expect(removeRoot.shadow).toBe(TREE_WITH_TEXT);
+    expect(removeRoot.observation.text).toContain("cannot remove the stage root");
+
+    const missing = executeStageTool(
+      { id: "call-missing-remove", name: "remove_node", input: { nodeId: "ghost" } },
+      { shadow: TREE_WITH_TEXT },
+    );
+    expect(missing.status).toBe("error");
+    expect(missing.patches).toEqual([]);
+    expect(missing.shadow).toBe(TREE_WITH_TEXT);
+    expect(missing.observation.text).toContain('node "ghost" does not exist');
+
+    const forbidden = executeStageTool(
+      {
+        id: "call-forbidden",
+        name: "set_node",
+        input: { ["node"]: { id: "__proto__", type: "text", value: "x" } },
+      },
+      { shadow: TREE_WITH_TEXT },
+    );
+    expect(forbidden.status).toBe("error");
+    expect(forbidden.patches).toEqual([]);
+    expect(forbidden.shadow).toBe(TREE_WITH_TEXT);
+    expect(forbidden.observation.text).toContain("forbidden");
+  });
+
   it("render_page validates folds a full tree and rejects an unrenderable tree", () => {
     const result = executeStageTool(
       {
@@ -239,6 +285,23 @@ describe("executeStageTool", () => {
     expect(invalidTheme.shadow).toBe(ROOT_TREE);
   });
 
+  it("escapes slash and tilde node ids in JSON Patch paths", () => {
+    const result = executeStageTool(
+      {
+        id: "call-escaped-id",
+        name: "set_node",
+        input: { ["node"]: { id: "a/b~c", type: "text", value: "escaped" } },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(result.status).toBe("ok");
+    expect(result.patches).toEqual([
+      { op: "add", path: "/nodes/a~1b~0c", value: { id: "a/b~c", type: "text", value: "escaped" } },
+    ]);
+    expect(result.shadow.nodes["a/b~c"]).toMatchObject({ type: "text", value: "escaped" });
+  });
+
   it("inspect_stage and inspect_node are bounded no-patch observations", () => {
     const nodes: FacetTree["nodes"] = {
       root: { id: "root", type: "box", children: ["a", "b", "c", "d"] },
@@ -273,5 +336,40 @@ describe("executeStageTool", () => {
     expect(node.observation.text).toContain("root box");
     expect(node.observation.text).toContain("a box");
     expect(node.observation.text).not.toContain("aa text");
+  });
+
+  it("bounds high-fanout inspect_node and missing-child observations", () => {
+    const children = Array.from({ length: 6000 }, (_, index) => `child-${String(index)}`);
+    const tree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children },
+        ...Object.fromEntries(children.map((id) => [id, { id, type: "text" as const, value: id }])),
+      },
+    };
+
+    const inspect = executeStageTool(
+      { id: "call-inspect-wide", name: "inspect_node", input: { nodeId: "root", depth: 1 } },
+      { shadow: tree },
+    );
+    expect(inspect.status).toBe("ok");
+    expect(inspect.patches).toEqual([]);
+    expect(inspect.observation.text).toContain("showing 200 node(s) (truncated)");
+    expect(inspect.observation.text).not.toContain("child-5999");
+    expect(inspect.observation.text.length).toBeLessThan(10000);
+
+    const missingChildren = executeStageTool(
+      {
+        id: "call-missing-children",
+        name: "set_node",
+        input: { ["node"]: { id: "wide", type: "box", children } },
+      },
+      { shadow: ROOT_TREE },
+    );
+    expect(missingChildren.status).toBe("error");
+    expect(missingChildren.patches).toEqual([]);
+    expect(missingChildren.observation.text).toContain("+5980 more");
+    expect(missingChildren.observation.text).not.toContain("child-5999");
+    expect(missingChildren.observation.text.length).toBeLessThan(1000);
   });
 });

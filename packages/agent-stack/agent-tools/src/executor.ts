@@ -30,6 +30,8 @@ const MAX_INSPECT_STAGE_NODES = 200;
 const DEFAULT_INSPECT_NODE_DEPTH = 2;
 const MAX_INSPECT_NODE_DEPTH = 5;
 const MAX_TEXT_PREVIEW_CHARS = 80;
+const MAX_ID_LIST_PREVIEW = 20;
+const FORBIDDEN_NODE_IDS = new Set(["__proto__", "prototype", "constructor"]);
 
 const TOOL_NAMES = FACET_STAGE_TOOL_NAMES.join(", ");
 
@@ -232,6 +234,13 @@ function executeUseStamp(
 function executeSetNode(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
   const node = parseNodeInput(input["node"], "set_node", shadow);
   if ("error" in node) return errorResult("invalid_input", node.error, shadow);
+  if (node.facetNode.id === shadow.root) {
+    return errorResult(
+      "invalid_input",
+      `error: set_node — cannot replace the stage root "${shadow.root}". Use render_page for root-level restructures.`,
+      shadow,
+    );
+  }
   return okPatchResult(`ok: set "${node.facetNode.id}"`, shadow, [
     { op: "add", path: nodePath(node.facetNode.id), value: node.facetNode },
   ]);
@@ -243,6 +252,27 @@ function executeRemoveNode(input: Readonly<Record<string, unknown>>, shadow: Fac
     return errorResult(
       "invalid_input",
       'error: remove_node needs a non-empty string "nodeId"',
+      shadow,
+    );
+  }
+  if (FORBIDDEN_NODE_IDS.has(nodeId)) {
+    return errorResult(
+      "invalid_input",
+      `error: remove_node — node id "${nodeId}" is forbidden`,
+      shadow,
+    );
+  }
+  if (nodeId === shadow.root) {
+    return errorResult(
+      "invalid_input",
+      `error: remove_node — cannot remove the stage root "${shadow.root}". Use render_page for root-level restructures.`,
+      shadow,
+    );
+  }
+  if (shadow.nodes[nodeId] === undefined) {
+    return errorResult(
+      "invalid_input",
+      `error: remove_node — node "${nodeId}" does not exist`,
       shadow,
     );
   }
@@ -326,9 +356,17 @@ function executeInspectNode(input: Readonly<Record<string, unknown>>, shadow: Fa
   );
   const lines: string[] = [];
   const seen = new Set<NodeId>();
-  collectNodeLines(shadow, nodeId, 0, depth, seen, lines);
+  const truncated = collectNodeLines(
+    shadow,
+    nodeId,
+    0,
+    depth,
+    seen,
+    lines,
+    MAX_INSPECT_STAGE_NODES,
+  );
   return okMessageResult(
-    `ok: node "${nodeId}" depth ${String(depth)}; showing ${String(lines.length)} node(s)\n${lines.join("\n")}`,
+    `ok: node "${nodeId}" depth ${String(depth)}; showing ${String(lines.length)} node(s)${truncated ? " (truncated)" : ""}\n${lines.join("\n")}`,
     shadow,
     [],
   );
@@ -413,7 +451,7 @@ function parseNodeInput(
   const missing = missingChildRefs(result.facetNode, shadow);
   if (missing.length > 0) {
     return {
-      error: `error: ${toolName} — node "${result.facetNode.id}" references missing child node(s): ${missing.join(", ")}`,
+      error: `error: ${toolName} — node "${result.facetNode.id}" references missing child node(s): ${summarizeIds(missing)}`,
     };
   }
   return result;
@@ -423,6 +461,9 @@ function asNode(value: unknown): { readonly facetNode: FacetNode } | { readonly 
   if (!isRecord(value)) return { error: 'the "node" argument must be an object' };
   if (typeof value["id"] !== "string" || value["id"].length === 0) {
     return { error: 'the node needs a non-empty string "id"' };
+  }
+  if (FORBIDDEN_NODE_IDS.has(value["id"])) {
+    return { error: `node id "${value["id"]}" is forbidden` };
   }
 
   switch (value["type"]) {
@@ -540,21 +581,28 @@ function collectNodeLines(
   maxDepth: number,
   seen: Set<NodeId>,
   lines: string[],
-): void {
+  maxLines: number,
+): boolean {
+  if (lines.length >= maxLines) return true;
   if (seen.has(nodeId)) {
     lines.push(`${"  ".repeat(depth)}- ${nodeId} already shown`);
-    return;
+    return lines.length >= maxLines;
   }
   const node = tree.nodes[nodeId];
   if (node === undefined) {
     lines.push(`${"  ".repeat(depth)}- ${nodeId} missing`);
-    return;
+    return lines.length >= maxLines;
   }
   seen.add(nodeId);
   lines.push(`${"  ".repeat(depth)}- ${describeNode(node)}`);
-  if (node.type !== "box" || depth >= maxDepth) return;
-  for (const childId of node.children)
-    collectNodeLines(tree, childId, depth + 1, maxDepth, seen, lines);
+  if (lines.length >= maxLines) return true;
+  if (node.type !== "box" || depth >= maxDepth) return false;
+  for (const childId of node.children) {
+    if (collectNodeLines(tree, childId, depth + 1, maxDepth, seen, lines, maxLines)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function describeNode(facetNode: FacetNode): string {
@@ -575,4 +623,10 @@ function preview(value: string): string {
   return collapsed.length > MAX_TEXT_PREVIEW_CHARS
     ? `${collapsed.slice(0, MAX_TEXT_PREVIEW_CHARS)}...`
     : collapsed;
+}
+
+function summarizeIds(ids: readonly NodeId[]): string {
+  const shown = ids.slice(0, MAX_ID_LIST_PREVIEW);
+  const suffix = ids.length > shown.length ? `, +${String(ids.length - shown.length)} more` : "";
+  return `${shown.join(", ")}${suffix}`;
 }

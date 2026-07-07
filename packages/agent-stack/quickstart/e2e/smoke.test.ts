@@ -10,7 +10,7 @@
  * Key gating (DC-009):
  * - default: each provider's describe is skipped unless its key env var is set
  *   (the /live-test skill turns that skip into a FAIL when the diff touches
- *   packages/quickstart/ — SKIPPED = FAIL is a skill-level rule);
+ *   packages/agent-stack/quickstart/ — SKIPPED = FAIL is a skill-level rule);
  * - `FACET_SMOKE_PROVIDERS=both` (Tier 3): a missing key is an explicit test
  *   FAILURE, not a skip — pre-merge must exercise both adapters.
  */

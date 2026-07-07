@@ -717,6 +717,30 @@ describe("createQuickstartAgent tool loop", () => {
     expect(obs[0]).toContain("summary=2 patch ops");
   });
 
+  it("reports an error before a provider step exceeds the aggregate patch cap", async () => {
+    const appendCalls = Array.from({ length: Math.floor(MAX_PATCH_OPS / 2) + 1 }, (_, index) =>
+      call("append_node", {
+        parentId: "root",
+        node: { id: `n${String(index)}`, type: "text", value: `node ${String(index)}` },
+      }),
+    );
+    const provider = providerOf(toolStep(...appendCalls), END);
+    const agent = makeAgent(provider);
+
+    const out = await runAgent(agent, { kind: "message", text: "add many" }, SESSION);
+
+    const patch = out.find((message) => message.kind === "patch");
+    expect(patch).toBeDefined();
+    if (patch?.kind === "patch") expect(patch.patches).toHaveLength(MAX_PATCH_OPS);
+    const observations = provider.turns[1]!.messages.filter(
+      (message) => message.role === "tool_result",
+    ).map((message) => (message.role === "tool_result" ? message.content : ""));
+    expect(
+      observations.filter((observation) => observation.startsWith("ok: appended")),
+    ).toHaveLength(Math.floor(MAX_PATCH_OPS / 2));
+    expect(observations.at(-1)).toContain("would exceed the patch op cap");
+  });
+
   it("feeds a bad tool arg back as an error observation and recovers on retry", async () => {
     const provider = providerOf(
       toolStep(call("append_node", { parentId: "root", node: { type: "text", value: "no id" } })), // invalid

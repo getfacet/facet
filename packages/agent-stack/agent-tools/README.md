@@ -16,10 +16,17 @@ the safe Facet stage tool surface.
 
 ## Current surface
 
-PR1 starts this package with public shared types. Follow-up work units add the
-canonical tool specs, stage-shadow helpers, inspection helpers, and executor.
+PR1 ships the reusable stage-tool surface used by the reference agent:
+canonical tool specs, shared tool-call/result types, a provider-agnostic
+executor, stage-shadow folding/summaries, and a buffered helper for streamed
+tool batches.
 
 ```ts
+import {
+  FACET_STAGE_TOOL_SPECS,
+  createStageToolBuffer,
+  executeStageTool,
+} from "@facet/agent-tools";
 import type { StageToolResult, ToolCall, ToolSpec } from "@facet/agent-tools";
 ```
 
