@@ -1,7 +1,13 @@
 # @facet/reference-agent
 
-Reference Facet brain: provider adapters, prompt/tool definitions, the
-streaming tool-loop agent, and the deterministic keyless stub.
+Reference Facet brain: provider adapters, prompt policy, the streaming tool-loop
+agent, and the deterministic keyless stub.
+
+The reusable Facet stage tool layer lives in `@facet/agent-tools`. That package
+owns the canonical tool specs, `executeStageTool`, inspection helpers, result
+types, and local stage-shadow helpers without choosing a provider or reference
+policy. `@facet/reference-agent` consumes those shared tools and adds the
+OpenAI/Anthropic adapters, system prompt, bounded tool loop, and stub.
 
 `@facet/quickstart` composes this package for `facet-quickstart` provider and
 `--stub` modes. You can import it directly when you want the reference agent
@@ -22,6 +28,19 @@ const agent = createReferenceAgent({
 });
 ```
 
+## Tool Layer
+
+Use `@facet/agent-tools` directly when you are writing your own provider loop
+and only need the safe Facet stage tool surface:
+
+```ts
+import { FACET_STAGE_TOOL_SPECS, executeStageTool } from "@facet/agent-tools";
+```
+
+Use `@facet/reference-agent` when you want Facet's runnable reference brain. For
+compatibility, this package re-exports the stage tool specs and related types
+from `@facet/agent-tools` through its prompt module.
+
 ## Exports
 
 - `createReferenceAgent` plus compatibility alias `createQuickstartAgent`.
@@ -29,8 +48,9 @@ const agent = createReferenceAgent({
 - `ReferenceProvider` plus compatibility alias `QuickstartProvider`.
 - Provider helpers: `resolveProvider`, `createOpenAiProvider`,
   `createAnthropicProvider`, model constants, and provider turn/tool types.
-- Prompt/tools: `DEFAULT_GUIDE`, `buildSystem`, `TOOLS`, `describeEvent`,
-  `buildInitialMessages`, `PromptAssets`.
+- Prompt/tool compatibility: `DEFAULT_GUIDE`, `buildSystem`, `TOOLS`,
+  `describeEvent`, `buildInitialMessages`, `PromptAssets`, and the Facet stage
+  tool types re-exported from `@facet/agent-tools`.
 - Stub: `createStubAgent`, `STUB_TREE`.
 
 ## Provider keys

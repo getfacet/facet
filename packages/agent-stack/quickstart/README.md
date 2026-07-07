@@ -34,8 +34,12 @@ In the workspace (dev), build first — the bin serves a prebuilt page bundle:
 
 ```bash
 pnpm --filter @facet/quickstart build
-node packages/quickstart/dist/cli.js --stub
+node packages/agent-stack/quickstart/dist/cli.js --stub
 ```
+
+The grouped source paths are `packages/agent-stack/quickstart` for this wrapper,
+`packages/agent-stack/reference-agent` for the composed reference brain, and
+`packages/agent-stack/agent-tools` for the reusable stage tool layer.
 
 ## Flags
 
@@ -177,5 +181,5 @@ hosted-product concerns (see the root roadmap), out of scope for the local
 quickstart.
 
 To bring your own brain instead (in-process, local CLI bridge, or dial-in), see
-["Advanced: bring your own brain"](../../README.md#advanced-bring-your-own-brain)
+["Advanced: bring your own brain"](../../../README.md#advanced-bring-your-own-brain)
 in the root README.
