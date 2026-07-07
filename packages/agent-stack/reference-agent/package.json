@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@facet/agent": "workspace:*",
+    "@facet/agent-tools": "workspace:*",
     "@facet/core": "workspace:*",
     "@facet/runtime": "workspace:*"
   },

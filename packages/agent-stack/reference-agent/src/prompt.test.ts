@@ -3,6 +3,7 @@ import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
 import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { CollectedEvent } from "@facet/core";
+import { FACET_STAGE_TOOL_SPECS } from "@facet/agent-tools";
 import {
   DEFAULT_GUIDE,
   HISTORY_TURNS,
@@ -156,10 +157,16 @@ describe("buildSystem", () => {
 });
 
 describe("TOOLS", () => {
+  it("re-exports agent-tools stage tools by identity", () => {
+    expect(TOOLS).toBe(FACET_STAGE_TOOL_SPECS);
+  });
+
   it("offers the Stage-mapped tools with schemas, including set_theme", () => {
     const names = TOOLS.map((t) => t.name).sort();
     expect(names).toEqual([
       "append_node",
+      "inspect_node",
+      "inspect_stage",
       "remove_node",
       "render_page",
       "say",

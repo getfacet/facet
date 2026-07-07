@@ -79,7 +79,7 @@ const TURN: ProviderTurn = {
   ],
 };
 
-const TOOLS: readonly ToolSpec[] = [
+const PROVIDER_TOOLS: readonly ToolSpec[] = [
   { name: "say", description: "Send a chat message.", parameters: { type: "object" } },
   { name: "render_page", description: "Replace the page.", parameters: { type: "object" } },
 ];
@@ -175,7 +175,7 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("ok")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    await provider.run(TURN, TOOLS);
+    await provider.run(TURN, PROVIDER_TOOLS);
 
     expect(calls).toHaveLength(1);
     const request = calls[0]!;
@@ -193,7 +193,7 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("ok")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    await provider.run(TURN, TOOLS);
+    await provider.run(TURN, PROVIDER_TOOLS);
 
     adapter.assertRequest(bodyOf(calls[0]!), TURN);
   });
@@ -208,7 +208,7 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     const { fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("just chatting")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    const step = await provider.run(TURN, TOOLS);
+    const step = await provider.run(TURN, PROVIDER_TOOLS);
     expect(step.text).toBe("just chatting");
     expect(step.toolCalls).toHaveLength(0);
   });
@@ -219,7 +219,7 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     );
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    const step = await provider.run(TURN, TOOLS);
+    const step = await provider.run(TURN, PROVIDER_TOOLS);
     expect(step.toolCalls).toHaveLength(1);
     expect(step.toolCalls[0]).toMatchObject({
       id: "call-1",
@@ -231,31 +231,31 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
   it("rejects on HTTP 4xx", async () => {
     const { fetchImpl } = createCapturingFetch(httpError(401));
     const provider = adapter.create(API_KEY, fetchImpl);
-    await expect(provider.run(TURN, TOOLS)).rejects.toThrow(/401/);
+    await expect(provider.run(TURN, PROVIDER_TOOLS)).rejects.toThrow(/401/);
   });
 
   it("rejects on HTTP 5xx", async () => {
     const { fetchImpl } = createCapturingFetch(httpError(500));
     const provider = adapter.create(API_KEY, fetchImpl);
-    await expect(provider.run(TURN, TOOLS)).rejects.toThrow(/500/);
+    await expect(provider.run(TURN, PROVIDER_TOOLS)).rejects.toThrow(/500/);
   });
 
   it("rejects on a malformed response envelope", async () => {
     const { fetchImpl } = createCapturingFetch(okJson(adapter.malformed));
     const provider = adapter.create(API_KEY, fetchImpl);
-    await expect(provider.run(TURN, TOOLS)).rejects.toThrow();
+    await expect(provider.run(TURN, PROVIDER_TOOLS)).rejects.toThrow();
   });
 
   it("aborts the attempt at the timeout", async () => {
     const provider = adapter.create(API_KEY, hangingFetch, { timeoutMs: 20 });
-    await expect(provider.run(TURN, TOOLS)).rejects.toThrow();
+    await expect(provider.run(TURN, PROVIDER_TOOLS)).rejects.toThrow();
   });
 
   it("never leaks the key outside the auth header (not in URL or body)", async () => {
     const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("ok")));
     const provider = adapter.create(API_KEY, fetchImpl);
 
-    await provider.run(TURN, TOOLS);
+    await provider.run(TURN, PROVIDER_TOOLS);
 
     const request = calls[0]!;
     expect(request.url).not.toContain(API_KEY);
@@ -292,7 +292,7 @@ const TOOL_LOOP_TURN: ProviderTurn = {
 describe("openai tool-loop wire translation", () => {
   it("maps assistant_tools to tool_calls and each tool_result to a role:tool message", async () => {
     const { calls, fetchImpl } = createCapturingFetch(okJson(openaiCase.textResponse("")));
-    await createOpenAiProvider(API_KEY, fetchImpl).run(TOOL_LOOP_TURN, TOOLS);
+    await createOpenAiProvider(API_KEY, fetchImpl).run(TOOL_LOOP_TURN, PROVIDER_TOOLS);
     const messages = bodyOf(calls[0]!)["messages"] as Array<Record<string, unknown>>;
 
     const assistant = messages.find((m) => m["role"] === "assistant" && "tool_calls" in m)!;
@@ -319,7 +319,7 @@ describe("openai tool-loop wire translation", () => {
       ],
     };
     const { fetchImpl } = createCapturingFetch(okJson(badArgs));
-    const step = await createOpenAiProvider(API_KEY, fetchImpl).run(TURN, TOOLS);
+    const step = await createOpenAiProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
     expect(step.toolCalls[0]!.input).toMatchObject({ __parseError: "{not json" });
   });
 });
@@ -327,7 +327,7 @@ describe("openai tool-loop wire translation", () => {
 describe("anthropic tool-loop wire translation", () => {
   it("maps assistant_tools to tool_use blocks and MERGES consecutive tool_results into one user message", async () => {
     const { calls, fetchImpl } = createCapturingFetch(okJson(anthropicCase.textResponse("")));
-    await createAnthropicProvider(API_KEY, fetchImpl).run(TOOL_LOOP_TURN, TOOLS);
+    await createAnthropicProvider(API_KEY, fetchImpl).run(TOOL_LOOP_TURN, PROVIDER_TOOLS);
     const messages = bodyOf(calls[0]!)["messages"] as Array<Record<string, unknown>>;
 
     // assistant turn carries both tool_use blocks

@@ -133,6 +133,9 @@ importers:
       '@facet/agent':
         specifier: workspace:*
         version: link:../../extensions/agent
+      '@facet/agent-tools':
+        specifier: workspace:*
+        version: link:../agent-tools
       '@facet/core':
         specifier: workspace:*
         version: link:../../core/core

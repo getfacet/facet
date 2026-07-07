@@ -168,6 +168,8 @@ describe("TOOLS", () => {
     const names = TOOLS.map((t) => t.name).sort();
     expect(names).toEqual([
       "append_node",
+      "inspect_node",
+      "inspect_stage",
       "remove_node",
       "render_page",
       "say",

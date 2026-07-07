@@ -11,6 +11,7 @@
  * append/set/remove a node, render the whole page, say a chat line).
  */
 import { STAGE_SPEC } from "@facet/core";
+import { FACET_STAGE_TOOL_SPECS } from "@facet/agent-tools";
 import type {
   ClientEvent,
   CollectedEvent,
@@ -23,6 +24,13 @@ import type {
 } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { ToolSpec, TurnMessage } from "./provider.js";
+
+export {
+  FACET_STAGE_TOOL_NAMES,
+  FACET_STAGE_TOOL_SPECS,
+  getStageToolSpec,
+} from "@facet/agent-tools";
+export type { FacetStageToolName, FacetStageToolSpec, ToolInputByName } from "@facet/agent-tools";
 
 /** How many sink entries (visitor event + agent reply pairs) layer ③ replays. */
 export const HISTORY_TURNS = 20;
@@ -124,95 +132,9 @@ export function buildSystem(guide: string, assets?: PromptAssets): string {
   return sections.join("\n\n");
 }
 
-/** A brick node — validated server-side (validateTree + the fail-safe renderer),
- * so the schema stays permissive and points the model at STAGE_SPEC. */
-const NODE_SCHEMA = {
-  type: "object",
-  description: "A Facet brick node (box | text | media | field) — see the stage format.",
-} as const;
-
-/** The tools the model drives — each maps 1:1 onto a Stage operation. */
-export const TOOLS: readonly ToolSpec[] = [
-  {
-    name: "render_page",
-    description:
-      "Replace the ENTIRE page with a new stage tree. Use for the first paint or a big restructure. Argument: the full stage tree { root, nodes, screens?, entry? }.",
-    parameters: {
-      type: "object",
-      properties: { tree: { type: "object", description: "The full stage tree." } },
-      required: ["tree"],
-    },
-  },
-  {
-    name: "append_node",
-    description:
-      "Add ONE node as the last child of the box `parentId`. Use for small incremental additions to the current page.",
-    parameters: {
-      type: "object",
-      properties: { parentId: { type: "string" }, node: NODE_SCHEMA },
-      required: ["parentId", "node"],
-    },
-  },
-  {
-    name: "use_stamp",
-    description:
-      "Expand a reusable stamp from the STAMPS section under `at.parent`. Pass the stamp `name` and string `params` for its slots; the server mints fresh ids.",
-    parameters: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "A stamp name from the STAMPS list." },
-        params: {
-          type: "object",
-          description: "Slot values as strings. Omit a slot to use its default or empty value.",
-        },
-        at: {
-          type: "object",
-          properties: { parent: { type: "string" } },
-          required: ["parent"],
-        },
-      },
-      required: ["name", "params", "at"],
-    },
-  },
-  {
-    name: "set_node",
-    description:
-      "Insert or replace ONE node by its `id`. Reuse an existing id to tweak that node in place; use a new id to add a standalone node.",
-    parameters: {
-      type: "object",
-      properties: { node: NODE_SCHEMA },
-      required: ["node"],
-    },
-  },
-  {
-    name: "remove_node",
-    description: "Delete ONE node from the page by its id.",
-    parameters: {
-      type: "object",
-      properties: { nodeId: { type: "string" } },
-      required: ["nodeId"],
-    },
-  },
-  {
-    name: "say",
-    description: "Send a short chat message to the visitor.",
-    parameters: {
-      type: "object",
-      properties: { text: { type: "string" } },
-      required: ["text"],
-    },
-  },
-  {
-    name: "set_theme",
-    description:
-      "Restyle the WHOLE page by selecting a theme by NAME. Argument is a name only — one from the THEMES section; never a CSS value or color. Skip this tool entirely when no THEMES are listed. An unknown name simply falls back to the default look.",
-    parameters: {
-      type: "object",
-      properties: { name: { type: "string", description: "A theme name from the THEMES list." } },
-      required: ["name"],
-    },
-  },
-];
+/** The tools the model drives. Kept as a compatibility export, but the canonical
+ * specs live in `@facet/agent-tools` and are re-exported by identity here. */
+export const TOOLS = FACET_STAGE_TOOL_SPECS satisfies readonly ToolSpec[];
 
 /**
  * A durable row persisted BEFORE the `action`→`tap` envelope rename still carries

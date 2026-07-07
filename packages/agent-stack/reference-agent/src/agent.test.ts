@@ -694,6 +694,29 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
+  it("feeds agent-tools patch metadata into successful tool observations", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("append_node", {
+          parentId: "root",
+          node: { id: "meta", type: "text", value: "metadata" },
+        }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider);
+
+    await runAgent(agent, { kind: "message", text: "add metadata" }, SESSION);
+
+    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
+      m.role === "tool_result" ? m.content : "",
+    );
+    expect(obs[0]).toContain('ok: appended "meta" under "root"');
+    expect(obs[0]).toContain("patches=2");
+    expect(obs[0]).toContain("changed=meta, root");
+    expect(obs[0]).toContain("summary=2 patch ops");
+  });
+
   it("feeds a bad tool arg back as an error observation and recovers on retry", async () => {
     const provider = providerOf(
       toolStep(call("append_node", { parentId: "root", node: { type: "text", value: "no id" } })), // invalid
