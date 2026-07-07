@@ -190,5 +190,6 @@ transport, one-way deps) is designed to allow this without compromising the core
 - Google Developers blog, "Introducing A2UI" —
   <https://developers.googleblog.com/introducing-a2ui-an-open-project-for-agent-driven-interfaces/>
 - AG-UI (CopilotKit) — <https://docs.ag-ui.com>, <https://github.com/CopilotKit/copilotkit>
-- Facet internals — `packages/core/src/nodes.ts`, `packages/core/src/protocol.ts`,
-  `packages/server/src/server.ts`, `CLAUDE.md`
+- Facet internals — `packages/core/core/src/nodes.ts`,
+  `packages/core/core/src/protocol.ts`, `packages/core/server/src/server.ts`,
+  `AGENTS.md`

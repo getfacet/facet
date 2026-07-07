@@ -46,7 +46,7 @@ describe("buildSystem", () => {
     // Not a tautology on STAGE_SPEC inclusion: pins that the COMPOSED system
     // prompt actually carries the three new words, so quickstart notices if the
     // vocabulary ever drops out of the spec (and this bundle touches
-    // packages/quickstart/ so the /live-test Tier-2 path heuristic fires).
+    // packages/agent-stack/quickstart/ so the /live-test Tier-2 path heuristic fires).
     const system = buildSystem(DEFAULT_GUIDE);
     expect(system).toContain('"onHold"');
     expect(system).toMatch(/appear\(none\|fade\|slide\)/);

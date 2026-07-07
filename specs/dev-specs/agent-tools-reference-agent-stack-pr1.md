@@ -116,12 +116,12 @@ Npm package names stay unchanged.
 
 | Risk id | Detected (file:line) | Resolution / waiver |
 |---|---|---|
-| RISK-INV-1 | `AGENTS.md:15-24`; `packages/core/src/validate.ts:48-57` | Agent-tools emits only existing declarative patch/say messages and uses existing validation/fold. |
-| RISK-INV-2 | `packages/core/src/stage-fold.ts:27-53`; `packages/reference-agent/src/agent.ts:539-580` | Stage shadow folds emitted patches through `foldPatchIntoStage`; runtime remains authoritative across turns. |
-| RISK-INV-3 | `packages/reference-agent/src/agent.ts:349-361`; `agent.test.ts:697-722` | Executor tests cover error observations/no patch/no throw for invalid inputs. |
-| RISK-INV-4 | `packages/reference-agent/src/agent.ts:219-321`; `agent.ts:465-470` | Port closure buffering and patch-cap tests into `@facet/agent-tools`. |
+| RISK-INV-1 | `AGENTS.md:15-24`; `packages/core/core/src/validate.ts:48-57` | Agent-tools emits only existing declarative patch/say messages and uses existing validation/fold. |
+| RISK-INV-2 | `packages/core/core/src/stage-fold.ts:27-53`; `packages/agent-stack/reference-agent/src/agent.ts` | Stage shadow folds emitted patches through `foldPatchIntoStage`; runtime remains authoritative across turns. |
+| RISK-INV-3 | `packages/agent-stack/agent-tools/src/executor.ts`; `packages/agent-stack/agent-tools/src/executor.test.ts` | Executor tests cover error observations/no patch/no throw for invalid inputs. |
+| RISK-INV-4 | `packages/agent-stack/agent-tools/src/buffer.ts`; `packages/agent-stack/agent-tools/src/buffer.test.ts` | Port closure buffering and patch-cap tests into `@facet/agent-tools`. |
 | RISK-INV-5 | `docs/ARCHITECTURE.md:335-343` | Agent-tools package has no provider/backend/domain modules; import guard checks no provider URLs or `node:` imports. |
-| RISK-API-1 | `packages/reference-agent/src/provider.ts:20-65`; `index.test.ts:47-80` | Move canonical tool types to agent-tools but re-export compatibility type aliases from reference-agent. |
+| RISK-API-1 | `packages/agent-stack/reference-agent/src/provider.ts:20-65`; `packages/agent-stack/reference-agent/src/index.test.ts:47-80` | Move canonical tool types to agent-tools but re-export compatibility type aliases from reference-agent. |
 | RISK-API-2 | quickstart imports listed in context | Preserve reference-agent public names and run quickstart tests/live-test. |
 | RISK-API-3 | `prompt.ts:134-215`; `agent.ts:343-525` | Agent-tools test imports and executes without reference-agent import. |
 | RISK-API-4 | package names in manifests | Path migration does not rename `name` fields or public specifiers. |
