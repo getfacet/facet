@@ -109,7 +109,7 @@ describe("textStyle", () => {
   it("defaults to zero margin and the sans font family", () => {
     expect(textStyle()).toEqual({
       margin: 0,
-      fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+      fontFamily: "Nunito, sans-serif",
     });
   });
 
@@ -250,7 +250,7 @@ describe("resolveTheme", () => {
     expect(resolved.color.bg).toBe("#010101"); // overridden
     expect(resolved.color.fg).toBe("#1a1d23"); // untouched group default
     expect(resolved.fontFamily.mono).toBe('"Fira Code", monospace'); // overridden
-    expect(resolved.fontFamily.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
+    expect(resolved.fontFamily.sans).toBe("Nunito, sans-serif");
     expect(resolved.fontSize.md).toBe("16px"); // group with no override at all
   });
 

@@ -194,6 +194,7 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
     expect(response.headers.get("content-type")).toContain("text/html");
     const body = await response.text();
     expect(body).toContain('<div id="root">');
+    expect(body).toContain("https://fonts.googleapis.com/css2?family=Nunito");
     expect(body).toContain('src="/app.js"');
   });
 

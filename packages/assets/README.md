@@ -9,6 +9,9 @@ npm install @facet/assets @facet/core
 
 `DEFAULT_THEME` is the built-in token value map for colors, spacing, typography
 (`fontFamily`/`fontSize`/`fontWeight`), radii, and media ratios.
+Its default sans stack is `Nunito, sans-serif`; this package only exports the
+data value, so hosts that want the exact Nunito face must load that font in
+their own shell.
 `DEFAULT_STAMPS` is a small library of reusable `FacetStamp` fragments such as
 `hero`, `card`, and `cta-button`; each stamp declares string slots and
 whole-value `{{slot}}` markers so hosts can expand them with `expandStamp` or

@@ -13,7 +13,14 @@ import { createRoot } from "react-dom/client";
 import { isTreeShaped } from "@facet/core";
 import type { FacetAction, FacetTheme, FacetTree, FieldValues, VisitorContext } from "@facet/core";
 import { browserVisitorId, SseTransport } from "@facet/client";
-import { ChatDock, resolveTheme, StageRenderer, useFacet, type ChatMessage } from "@facet/react";
+import {
+  ChatDock,
+  DEFAULT_THEME,
+  resolveTheme,
+  StageRenderer,
+  useFacet,
+  type ChatMessage,
+} from "@facet/react";
 
 declare global {
   interface Window {
@@ -150,7 +157,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "16px",
-    fontFamily: "system-ui, -apple-system, sans-serif",
+    fontFamily: DEFAULT_THEME.fontFamily?.sans ?? "sans-serif",
   },
   stage: { flex: 1 },
 } as const;

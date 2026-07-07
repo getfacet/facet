@@ -101,6 +101,9 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
       await new Promise((resolve) => setTimeout(resolve, 25));
     }
     expect(root!.children.length).toBeGreaterThan(0);
+    const page = root!.firstElementChild as HTMLElement | null;
+    expect(page).not.toBeNull();
+    expect(page!.style.fontFamily).toBe("Nunito, sans-serif");
   });
 
   it("paints the boot-shipped seed immediately and themes the canvas (no agent turn)", async () => {

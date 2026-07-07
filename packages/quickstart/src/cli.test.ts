@@ -318,6 +318,7 @@ describe("startQuickstart — page serving + agent blocking", () => {
       expect(shell.headers.get("content-type")).toContain("text/html");
       const shellBody = await shell.text();
       expect(shellBody).toContain('<div id="root">');
+      expect(shellBody).toContain("https://fonts.googleapis.com/css2?family=Nunito");
       expect(shellBody).toContain("/app.js");
 
       const bundle = await fetch(`${running.url}/app.js`);
