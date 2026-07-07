@@ -92,11 +92,12 @@ contend. Pre-draw the reachable screens (how deep is the agent's call) and let
 the browser flip between them for free; reserve `kind:"agent"` for anything that
 needs new reasoning.
 
-Style values are **tokens** defined in `core/src/tokens.ts` (`Space`, `FontSize`,
-`Color`, `Radius`, …). Token names are the agent-facing vocabulary; the concrete
-CSS lives only in the renderer's theme (`react/src/theme.ts`), so reskinning
-every page is a one-file change and the agent never deals in pixels. The token
-names are kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
+Style values are **tokens** defined in `core/src/tokens.ts` (`Space`,
+`FontFamily`, `FontSize`, `Color`, `Radius`, …). Token names are the
+agent-facing vocabulary; the concrete CSS lives only in the renderer's theme
+(`react/src/theme.ts`), so reskinning every page is a data change and the agent
+never deals in pixels, hex, or font stacks. The token names are kept
+compatible-in-spirit with the W3C Design Tokens (DTCG) format.
 
 ## Themes, stamps, and seeds: reskin as data
 
@@ -108,8 +109,9 @@ output. A `FacetTheme` is a partial override document (token name → CSS value)
 and the validator is the single gate it passes: an allowlist per token group, a
 deny-list (`url()`, `var()`, `expression()`, `javascript:` and injection
 characters are refused), dimension clamps so a theme can't push content
-off-screen, and a WCAG contrast check that is *measured as a warning, never a
-rejection* (Facet measures; the caller sets policy). Output maps are built on
+off-screen, a bounded font-family grammar for typography values, and a WCAG
+contrast check that is *measured as a warning, never a rejection* (Facet
+measures; the caller sets policy). Output maps are built on
 `Object.create(null)` so a hostile key can never resolve. The validator is pure
 and dependency-free, so it runs identically on the server and in the browser.
 

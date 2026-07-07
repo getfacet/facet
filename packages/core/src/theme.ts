@@ -14,12 +14,14 @@
  */
 import {
   COLORS,
+  FONT_FAMILIES,
   FONT_SIZES,
   FONT_WEIGHTS,
   RADII,
   RATIOS,
   SPACES,
   type Color,
+  type FontFamily,
   type FontSize,
   type FontWeight,
   type Radius,
@@ -45,6 +47,7 @@ export interface FacetTheme {
   readonly description?: string;
   readonly color?: Readonly<Partial<Record<Color, string>>>;
   readonly space?: Readonly<Partial<Record<Space, string>>>;
+  readonly fontFamily?: Readonly<Partial<Record<FontFamily, string>>>;
   readonly fontSize?: Readonly<Partial<Record<FontSize, string>>>;
   readonly fontWeight?: Readonly<Partial<Record<FontWeight, number>>>;
   readonly radius?: Readonly<Partial<Record<Radius, string>>>;
@@ -77,6 +80,7 @@ const KNOWN_KEYS = new Set([
   "description",
   "color",
   "space",
+  "fontFamily",
   "fontSize",
   "fontWeight",
   "radius",
@@ -304,6 +308,18 @@ function handleWeight(value: unknown): Handled<number> {
   return { value };
 }
 
+const FONT_FAMILY_RE = /^[A-Za-z0-9 _,'" -]+$/;
+
+function handleFontFamily(value: unknown): Handled<string> {
+  if (typeof value !== "string") return { error: "value is not a string" };
+  const unsafe = unsafeValue(value);
+  if (unsafe !== undefined) return { error: unsafe };
+  if (!/[A-Za-z]/.test(value) || !FONT_FAMILY_RE.test(value)) {
+    return { error: "not an allowed font-family value" };
+  }
+  return { value };
+}
+
 function handleRatio(value: unknown): Handled<string> {
   if (typeof value !== "string") return { error: "value is not a string" };
   const unsafe = unsafeValue(value);
@@ -387,6 +403,7 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     description?: string;
     color?: Record<string, string>;
     space?: Record<string, string>;
+    fontFamily?: Record<string, string>;
     fontSize?: Record<string, string>;
     fontWeight?: Record<string, number>;
     radius?: Record<string, string>;
@@ -425,6 +442,16 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
       issues,
     );
     if (group !== undefined) theme.space = group;
+  }
+  if (input.fontFamily !== undefined) {
+    const group = validateGroup(
+      input.fontFamily,
+      FONT_FAMILIES,
+      "fontFamily",
+      handleFontFamily,
+      issues,
+    );
+    if (group !== undefined) theme.fontFamily = group;
   }
   if (input.fontSize !== undefined) {
     const group = validateGroup(

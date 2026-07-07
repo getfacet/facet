@@ -20,6 +20,10 @@ export type Space = (typeof SPACES)[number];
 export const FONT_SIZES = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl"] as const;
 export type FontSize = (typeof FONT_SIZES)[number];
 
+/** Font family scale. */
+export const FONT_FAMILIES = ["sans", "serif", "mono"] as const;
+export type FontFamily = (typeof FONT_FAMILIES)[number];
+
 export const FONT_WEIGHTS = ["regular", "medium", "semibold", "bold"] as const;
 export type FontWeight = (typeof FONT_WEIGHTS)[number];
 

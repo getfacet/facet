@@ -1,7 +1,7 @@
-import type { Color, FacetTheme, Space } from "@facet/core";
+import type { Color, FacetTheme, FontFamily, Space } from "@facet/core";
 import { validateTheme } from "@facet/core";
 import { describe, expect, it } from "vitest";
-import { COLOR, DEFAULT_THEME } from "./theme.js";
+import { COLOR, DEFAULT_THEME, FONT_FAMILY } from "./theme.js";
 
 // COLOR is the single source of truth for the palette (ChatDock consumes it via
 // the renderer re-export), so its values are pinned here — byte-identical to the
@@ -34,17 +34,29 @@ describe("DEFAULT_THEME", () => {
     expect(result.issues).toEqual([]);
   });
 
-  // Pinned shape: exactly the name + the six token groups, nothing else.
-  it("keeps exactly the name + six token groups", () => {
+  // Pinned shape: exactly the name + the seven token groups, nothing else.
+  it("keeps exactly the name + seven token groups", () => {
     expect(Object.keys(DEFAULT_THEME).sort()).toEqual(
-      ["color", "fontSize", "fontWeight", "name", "radius", "ratio", "space"].sort(),
+      ["color", "fontFamily", "fontSize", "fontWeight", "name", "radius", "ratio", "space"].sort(),
     );
+  });
+
+  it("includes a complete default font family token map", () => {
+    expect(FONT_FAMILY.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
+    expect(FONT_FAMILY.serif).toBe('Georgia, "Times New Roman", serif');
+    expect(FONT_FAMILY.mono).toBe("ui-monospace, SFMono-Regular, Menlo, monospace");
+    expect(Object.getPrototypeOf(FONT_FAMILY)).toBeNull();
+    expect(FONT_FAMILY["constructor" as FontFamily]).toBeUndefined();
+
+    expect(DEFAULT_THEME.fontFamily).toBe(FONT_FAMILY);
+    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
   });
 
   it('is named "default" and covers every token group with the pinned values', () => {
     expect(DEFAULT_THEME.name).toBe("default");
     expect(DEFAULT_THEME.color?.bg).toBe("#ffffff");
     expect(DEFAULT_THEME.space?.md).toBe("16px");
+    expect(DEFAULT_THEME.fontFamily?.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
     expect(DEFAULT_THEME.fontSize?.md).toBe("16px");
     expect(DEFAULT_THEME.fontWeight?.bold).toBe(700);
     expect(DEFAULT_THEME.radius?.md).toBe("10px");
@@ -53,10 +65,14 @@ describe("DEFAULT_THEME", () => {
 
   it("uses null-prototype group maps (hostile token names resolve to nothing)", () => {
     const theme = DEFAULT_THEME as Required<
-      Pick<FacetTheme, "color" | "space" | "fontSize" | "fontWeight" | "radius" | "ratio">
+      Pick<
+        FacetTheme,
+        "color" | "space" | "fontFamily" | "fontSize" | "fontWeight" | "radius" | "ratio"
+      >
     >;
     expect(Object.getPrototypeOf(theme.color)).toBeNull();
     expect(Object.getPrototypeOf(theme.space)).toBeNull();
+    expect(Object.getPrototypeOf(theme.fontFamily)).toBeNull();
     expect(Object.getPrototypeOf(theme.fontSize)).toBeNull();
     expect(Object.getPrototypeOf(theme.fontWeight)).toBeNull();
     expect(Object.getPrototypeOf(theme.radius)).toBeNull();

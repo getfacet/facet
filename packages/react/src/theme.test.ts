@@ -1,4 +1,4 @@
-import type { BoxStyle, Color, FacetTheme, Space, TextStyle } from "@facet/core";
+import type { BoxStyle, Color, FacetTheme, FontFamily, Space, TextStyle } from "@facet/core";
 import { DEFAULT_THEME as ASSETS_DEFAULT_THEME } from "@facet/assets";
 import { describe, expect, it } from "vitest";
 import {
@@ -106,8 +106,11 @@ describe("boxStyle", () => {
 });
 
 describe("textStyle", () => {
-  it("defaults to zero margin only", () => {
-    expect(textStyle()).toEqual({ margin: 0 });
+  it("defaults to zero margin and the sans font family", () => {
+    expect(textStyle()).toEqual({
+      margin: 0,
+      fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+    });
   });
 
   it("maps size, weight, and color tokens", () => {
@@ -121,6 +124,43 @@ describe("textStyle", () => {
     expect(textStyle({ align: "start" }).textAlign).toBe("left");
     expect(textStyle({ align: "center" }).textAlign).toBe("center");
     expect(textStyle({ align: "end" }).textAlign).toBe("right");
+  });
+
+  it("maps font family tokens and defaults omitted family to sans", () => {
+    const typeTheme = resolveTheme("type", [
+      {
+        name: "type",
+        fontFamily: {
+          sans: "Inter, sans-serif",
+          mono: '"Fira Code", monospace',
+        },
+      },
+    ]);
+
+    expect(textStyle({}, typeTheme).fontFamily).toBe("Inter, sans-serif");
+    expect(textStyle({ family: "mono" }, typeTheme).fontFamily).toBe('"Fira Code", monospace');
+    expect(textStyle({ family: "serif" }, typeTheme).fontFamily).toBe(
+      'Georgia, "Times New Roman", serif',
+    );
+  });
+
+  it("falls back to sans when raw-path font family is invalid", () => {
+    const typeTheme = resolveTheme("type", [
+      {
+        name: "type",
+        fontFamily: {
+          sans: "Inter, sans-serif",
+          mono: '"Fira Code", monospace',
+        },
+      },
+    ]);
+
+    expect(textStyle({ family: "display" } as unknown as TextStyle, typeTheme).fontFamily).toBe(
+      "Inter, sans-serif",
+    );
+    expect(textStyle({ family: 123 } as unknown as TextStyle, typeTheme).fontFamily).toBe(
+      "Inter, sans-serif",
+    );
   });
 });
 
@@ -202,13 +242,30 @@ describe("resolveTheme", () => {
       name: "midnight",
       color: { bg: "#010101" },
       space: { md: "99px" },
+      fontFamily: { mono: '"Fira Code", monospace' },
     };
     const resolved = resolveTheme("midnight", [midnight]);
     expect(resolved.space.md).toBe("99px"); // overridden
     expect(resolved.space.sm).toBe("8px"); // default kept within the same group
     expect(resolved.color.bg).toBe("#010101"); // overridden
     expect(resolved.color.fg).toBe("#1a1d23"); // untouched group default
+    expect(resolved.fontFamily.mono).toBe('"Fira Code", monospace'); // overridden
+    expect(resolved.fontFamily.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
     expect(resolved.fontSize.md).toBe("16px"); // group with no override at all
+  });
+
+  it("overlays font family maps while ignoring hostile keys and non-strings", () => {
+    const hostile = JSON.parse(
+      '{"name":"evil","fontFamily":{"__proto__":"Bad","constructor":"Bad","nonsense":"Bad","sans":"Brand Sans, sans-serif","mono":7}}',
+    ) as FacetTheme;
+
+    const resolved = resolveTheme("evil", [hostile]);
+
+    expect(resolved.fontFamily.sans).toBe("Brand Sans, sans-serif");
+    expect(resolved.fontFamily.mono).toBe("ui-monospace, SFMono-Regular, Menlo, monospace");
+    expect(resolved.fontFamily["__proto__" as FontFamily]).toBeUndefined();
+    expect(resolved.fontFamily["nonsense" as FontFamily]).toBeUndefined();
+    expect(Object.getPrototypeOf(resolved.fontFamily)).toBeNull();
   });
 
   it("ignores forbidden/unknown keys and non-primitive values, and never pollutes", () => {
@@ -232,5 +289,6 @@ describe("resolveTheme", () => {
     expect(resolved.color["__proto__" as Color]).toBeUndefined();
     expect(Object.getPrototypeOf(resolved.color)).toBeNull();
     expect(Object.getPrototypeOf(resolved.space)).toBeNull();
+    expect(Object.getPrototypeOf(resolved.fontFamily)).toBeNull();
   });
 });

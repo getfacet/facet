@@ -7,10 +7,12 @@ Node-free default asset data for Facet. This package exports `DEFAULT_THEME` and
 npm install @facet/assets @facet/core
 ```
 
-`DEFAULT_THEME` is the built-in token value map. `DEFAULT_STAMPS` is a small
-library of reusable `FacetStamp` fragments such as `hero`, `card`, and
-`cta-button`; each stamp declares string slots and whole-value `{{slot}}` markers
-so hosts can expand them with `expandStamp` or quickstart's `use_stamp` tool.
+`DEFAULT_THEME` is the built-in token value map for colors, spacing, typography
+(`fontFamily`/`fontSize`/`fontWeight`), radii, and media ratios.
+`DEFAULT_STAMPS` is a small library of reusable `FacetStamp` fragments such as
+`hero`, `card`, and `cta-button`; each stamp declares string slots and
+whole-value `{{slot}}` markers so hosts can expand them with `expandStamp` or
+quickstart's `use_stamp` tool.
 
 ```ts
 import { DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";

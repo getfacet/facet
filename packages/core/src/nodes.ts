@@ -17,6 +17,7 @@ import type {
   Columns,
   Color,
   Direction,
+  FontFamily,
   FontSize,
   FontWeight,
   Justify,
@@ -111,6 +112,7 @@ export interface BoxStyle {
 }
 
 export interface TextStyle {
+  readonly family?: FontFamily;
   readonly size?: FontSize;
   readonly weight?: FontWeight;
   readonly color?: Color;

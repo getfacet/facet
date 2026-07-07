@@ -4,6 +4,7 @@ import {
   COLUMNS,
   COLORS,
   DIRECTIONS,
+  FONT_FAMILIES,
   FONT_SIZES,
   FONT_WEIGHTS,
   JUSTIFIES,
@@ -283,6 +284,8 @@ function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
 function textStyle(value: unknown): TextStyle {
   const style: Record<string, unknown> = {};
   if (isObject(value)) {
+    const family = asToken(value.family, FONT_FAMILIES);
+    if (family !== undefined) style.family = family;
     const size = asToken(value.size, FONT_SIZES);
     if (size !== undefined) style.size = size;
     const weight = asToken(value.weight, FONT_WEIGHTS);

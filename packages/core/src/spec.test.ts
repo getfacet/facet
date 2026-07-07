@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FIELD_INPUTS } from "./nodes.js";
 import { STAGE_SPEC } from "./spec.js";
-import { APPEARS, COLUMNS, SCROLL_AXES } from "./tokens.js";
+import { APPEARS, COLUMNS, FONT_FAMILIES, SCROLL_AXES } from "./tokens.js";
 
 describe("STAGE_SPEC", () => {
   it("teaches screens entry navigate toggle and hidden", () => {
@@ -50,6 +50,15 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/same Action union as onPress/i);
     // The advice (guidance, not enforcement — invariant #2): never hold-only content.
     expect(STAGE_SPEC).toMatch(/never make hold the only path/i);
+  });
+
+  it("teaches text font family tokens without raw font-family values", () => {
+    expect(STAGE_SPEC).toContain(`family(${FONT_FAMILIES.join("|")})`);
+    expect(STAGE_SPEC).toMatch(/Style values MUST be tokens/i);
+    expect(STAGE_SPEC).toMatch(/never pixels or hex/i);
+    expect(STAGE_SPEC).not.toContain("font-family:");
+    expect(STAGE_SPEC).not.toContain("system-ui");
+    expect(STAGE_SPEC).not.toContain("fontFamily");
   });
 
   it("brick-vocab v1 teaches media, native field inputs, columns, and scroll axes", () => {

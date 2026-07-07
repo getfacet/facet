@@ -14,6 +14,7 @@ const MIDNIGHT: FacetTheme = {
   name: "midnight",
   color: { bg: "#010101", fg: "#fe0000" },
   space: { md: "99px" },
+  fontFamily: { mono: '"Fira Code", monospace' },
   radius: { md: "42px" },
 };
 
@@ -34,7 +35,7 @@ function themedTree(theme: string): FacetTree {
         style: { bg: "bg", pad: "md", radius: "md" },
         children: ["t"],
       },
-      t: { id: "t", type: "text", value: "hello", style: { color: "fg" } },
+      t: { id: "t", type: "text", value: "hello", style: { color: "fg", family: "mono" } },
     },
     theme,
   };
@@ -67,6 +68,24 @@ describe("StageRenderer theming (jsdom)", () => {
     // The themed text color reaches the DOM (jsdom normalizes hex to rgb).
     const text = container.querySelector("p") as HTMLElement;
     expect(text.style.color === "#fe0000" || text.style.color === "rgb(254, 0, 0)").toBe(true);
+    expect(text.style.fontFamily).toBe('"Fira Code", monospace');
+  });
+
+  it("renders the default sans font family when text omits the family token", () => {
+    const base = themedTree("midnight");
+    const textNode = base.nodes["t"] as Extract<FacetTree["nodes"][string], { type: "text" }>;
+    const tree: FacetTree = {
+      ...base,
+      nodes: {
+        ...base.nodes,
+        t: { ...textNode, style: { color: "fg" } },
+      },
+    };
+
+    const { container } = render(<StageRenderer themes={[MIDNIGHT]} tree={tree} />);
+    const text = container.querySelector("p") as HTMLElement;
+
+    expect(text.style.fontFamily).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
   });
 
   it("re-renders with the new theme values when the theme name flips", () => {

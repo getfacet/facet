@@ -100,6 +100,60 @@ describe("validateTheme", () => {
     expect(issues.some((i) => i.severity === "warning")).toBe(true);
   });
 
+  it("accepts safe fontFamily stacks into null-proto maps", () => {
+    const { theme, issues } = validateTheme({
+      name: "type",
+      fontFamily: {
+        sans: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+        mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
+      },
+    });
+
+    expect(theme).toBeDefined();
+    const fontFamily = (theme as FacetTheme).fontFamily!;
+    expect(fontFamily.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
+    expect(fontFamily.mono).toBe("ui-monospace, SFMono-Regular, Menlo, monospace");
+    expect(Object.getPrototypeOf(fontFamily)).toBeNull();
+    expect(hasError(issues)).toBe(false);
+  });
+
+  it("refuses unsafe fontFamily values as errors", () => {
+    const hostile: unknown[] = [
+      { name: "x", fontFamily: { sans: "url(https://evil/font.woff2)" } },
+      { name: "x", fontFamily: { sans: "var(--font)" } },
+      { name: "x", fontFamily: { sans: "javascript:alert(1)" } },
+      { name: "x", fontFamily: { sans: "sans-serif;background:red" } },
+      { name: "x", fontFamily: { sans: "serif\x00mono" } },
+      { name: "x", fontFamily: { sans: "@import evil" } },
+      { name: "x", fontFamily: { sans: 123 } },
+    ];
+
+    for (const doc of hostile) {
+      const result = validateTheme(doc);
+      expect(result.theme, JSON.stringify(doc)).toBeUndefined();
+      expect(hasError(result.issues), JSON.stringify(doc)).toBe(true);
+    }
+  });
+
+  it("drops unknown and forbidden fontFamily keys while keeping valid tokens", () => {
+    const input = JSON.parse(
+      '{"name":"x","fontFamily":{"mono":"Menlo, monospace","display":"Papyrus","__proto__":"serif","constructor":"serif","prototype":"serif"}}',
+    );
+
+    const { theme, issues } = validateTheme(input);
+
+    expect(theme).toBeDefined();
+    const fontFamily = (theme as FacetTheme).fontFamily!;
+    expect(fontFamily.mono).toBe("Menlo, monospace");
+    expect(Object.getPrototypeOf(fontFamily)).toBeNull();
+    expect(Object.prototype.hasOwnProperty.call(fontFamily, "display")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fontFamily, "__proto__")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fontFamily, "constructor")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(fontFamily, "prototype")).toBe(false);
+    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(4);
+    expect(hasError(issues)).toBe(false);
+  });
+
   it("warns (never rejects) on a low-contrast pair, naming the pair and ratio", () => {
     const { theme, issues } = validateTheme({
       name: "x",

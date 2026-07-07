@@ -75,7 +75,7 @@ pre-made components:
 | Brick   | It is…                                                                           |
 | ------- | -------------------------------------------------------------------------------- |
 | `box`   | the universal container. Flow layout, token styles, optional `onPress`/`onHold`. |
-| `text`  | text with token styles (size/weight/color).                                      |
+| `text`  | text with token styles (family/size/weight/color).                               |
 | `media` | image or video media with a static, safe URL.                                    |
 | `field` | a native text/select/checkbox/radio/switch input.                                |
 
@@ -117,8 +117,8 @@ OPENAI_API_KEY=sk-… npx facet-quickstart --assets ./assets
 
 where `./assets` holds any mix of:
 
-- **`*.theme.json`** — a named palette/scale document mapping token names to CSS
-  values, e.g. `{ "name": "midnight", "color": { "bg": "#0b1020", "fg": "#e8ecff" } }`.
+- **`*.theme.json`** — a named palette/type/scale document mapping token names
+  to CSS values, e.g. `{ "name": "midnight", "color": { "bg": "#0b1020", "fg": "#e8ecff" }, "fontFamily": { "sans": "Inter, system-ui, sans-serif" } }`.
   The model **selects** a theme by name (via a `set_theme` tool); **it never
   authors the CSS values** and never writes one into the tree. An unknown or
   missing name simply falls back to the default look — nothing throws.
@@ -137,7 +137,7 @@ off-screen, and a low-contrast text/background pair is **flagged as a warning,
 never rejected** (Facet measures the WCAG ratio; you decide the policy). An
 invalid document is skipped with a logged issue and boot proceeds. Raw CSS enters
 Facet exactly here, as operator data behind one gate — the model-facing surface
-only ever names a theme.
+only ever names a theme or chooses style tokens such as `family: "mono"`.
 
 ## What you can build
 

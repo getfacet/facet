@@ -93,7 +93,7 @@ that doesn't match is ignored):
 
 | File | What it is |
 | --- | --- |
-| `*.theme.json` | A named palette/scale document — token names mapped to CSS values. Offered to the agent by NAME (a `set_theme` tool); **the model never authors the CSS values**. |
+| `*.theme.json` | A named palette/type/scale document — token names mapped to CSS values, including optional `fontFamily` stacks. Offered to the agent by NAME (a `set_theme` tool); **the model never authors the CSS values**. |
 | `*.stamp.json` | A reusable `{ name, description?, slots?, root, nodes }` brick fragment the agent may add with `use_stamp`. The prompt advertises names/slots/descriptions only; the server expands the root-reachable stamp subtree into ordinary patches with fresh ids. |
 | `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
 
@@ -103,7 +103,8 @@ A theme document looks like:
 {
   "name": "midnight",
   "description": "Dark, high-contrast",
-  "color": { "bg": "#0b1020", "fg": "#e8ecff", "accent": "#7c9cff" }
+  "color": { "bg": "#0b1020", "fg": "#e8ecff", "accent": "#7c9cff" },
+  "fontFamily": { "sans": "Inter, system-ui, sans-serif" }
 }
 ```
 
