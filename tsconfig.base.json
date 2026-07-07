@@ -16,18 +16,21 @@
     "declaration": true,
     "baseUrl": ".",
     "paths": {
-      "@facet/core": ["packages/core/src/index.ts"],
-      "@facet/runtime": ["packages/runtime/src/index.ts"],
-      "@facet/runtime/node": ["packages/runtime/src/node.ts"],
-      "@facet/react": ["packages/react/src/index.ts"],
-      "@facet/agent": ["packages/agent/src/index.ts"],
-      "@facet/reference-agent": ["packages/reference-agent/src/index.ts"],
-      "@facet/agent-client": ["packages/agent-client/src/index.ts"],
-      "@facet/client": ["packages/client/src/index.ts"],
-      "@facet/assets": ["packages/assets/src/index.ts"],
-      "@facet/cli": ["packages/cli/src/cli.ts"],
-      "@facet/server": ["packages/server/src/index.ts"],
-      "@facet/bridge": ["packages/bridge/src/index.ts"]
+      "@facet/core": ["packages/core/core/src/index.ts"],
+      "@facet/runtime": ["packages/core/runtime/src/index.ts"],
+      "@facet/runtime/node": ["packages/core/runtime/src/node.ts"],
+      "@facet/react": ["packages/core/react/src/index.ts"],
+      "@facet/agent-tools": ["packages/agent-stack/agent-tools/src/index.ts"],
+      "@facet/reference-agent": ["packages/agent-stack/reference-agent/src/index.ts"],
+      "@facet/quickstart": ["packages/agent-stack/quickstart/src/index.ts"],
+      "@facet/agent": ["packages/extensions/agent/src/index.ts"],
+      "@facet/agent-client": ["packages/extensions/agent-client/src/index.ts"],
+      "@facet/client": ["packages/core/client/src/index.ts"],
+      "@facet/assets": ["packages/core/assets/src/index.ts"],
+      "@facet/cli": ["packages/extensions/cli/src/cli.ts"],
+      "@facet/server": ["packages/core/server/src/index.ts"],
+      "@facet/bridge": ["packages/extensions/bridge/src/index.ts"],
+      "@facet/store-postgres": ["packages/extensions/store-postgres/src/index.ts"]
     }
   }
 }
