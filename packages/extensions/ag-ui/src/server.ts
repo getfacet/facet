@@ -18,6 +18,7 @@ import type { FacetRuntime, TurnResult } from "@facet/runtime";
 import { facetStageToStateSnapshot, serverMessageToAgUiEvents } from "./events.js";
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
+const RUNTIME_ERROR_MESSAGE = "Facet runtime failed";
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
   "Cache-Control": "no-cache, no-transform",
@@ -72,12 +73,23 @@ export async function runFacetAsAgUi(
   input: unknown,
   options: RunFacetAsAgUiOptions = {},
 ): Promise<readonly AGUIEvent[]> {
-  const parsed = RunAgentInputSchema.safeParse(input);
+  let parsed: ReturnType<typeof RunAgentInputSchema.safeParse>;
+  try {
+    parsed = RunAgentInputSchema.safeParse(input);
+  } catch {
+    return [runError("Malformed AG-UI run input", "BAD_REQUEST")];
+  }
   if (!parsed.success) return [runError("Malformed AG-UI run input", "BAD_REQUEST")];
 
   const runInput = parsed.data;
   const events: AGUIEvent[] = [runStarted(runInput)];
-  const facetInput = facetInputFromRunAgentInput(runInput);
+  let facetInput: FacetAgUiInput | undefined;
+  try {
+    facetInput = facetInputFromRunAgentInput(runInput);
+  } catch {
+    events.push(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
+    return events;
+  }
   if (facetInput === undefined) {
     events.push(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
     return events;
@@ -89,14 +101,17 @@ export async function runFacetAsAgUi(
     }
 
     if (facetInput.kind === "record") {
-      await runtime.record(facetInput.visitor, facetInput.record);
+      void runtime.record(facetInput.visitor, facetInput.record).catch((error: unknown) => {
+        logInternalFailure("record failed", error);
+      });
     } else {
       await appendHandledEvents(events, runtime, facetInput, runInput);
     }
 
     events.push(runFinished(runInput));
   } catch (error) {
-    events.push(runError(errorMessage(error), "RUNTIME_ERROR", runInput));
+    logInternalFailure("runtime failed", error);
+    events.push(runError(RUNTIME_ERROR_MESSAGE, "RUNTIME_ERROR", runInput));
   }
 
   return events;
@@ -146,12 +161,14 @@ export async function handleAgUiRequest(
       return;
     }
 
-    const events = await runFacetAsAgUi(runtime, parsed.data, options);
-    writeAgUiSseResponse(res, 200, events);
+    await writeAgUiRunResponse(res, runtime, parsed.data, options);
   } catch (error) {
     const statusCode = error instanceof AgUiHttpInputError ? error.statusCode : 500;
     const code = error instanceof AgUiHttpInputError ? error.code : "INTERNAL_ERROR";
-    writeAgUiSseResponse(res, statusCode, [runError(errorMessage(error), code)]);
+    const message =
+      error instanceof AgUiHttpInputError ? errorMessage(error) : RUNTIME_ERROR_MESSAGE;
+    if (!(error instanceof AgUiHttpInputError)) logInternalFailure("handler failed", error);
+    writeAgUiSseResponse(res, statusCode, [runError(message, code)]);
   }
 }
 
@@ -169,6 +186,80 @@ function writeAgUiSseResponse(
     writeAgUiSseEvent(res, event);
   }
   res.end();
+}
+
+async function writeAgUiRunResponse(
+  res: ServerResponse,
+  runtime: FacetRuntimeForAgUi,
+  runInput: RunAgentInput,
+  options: RunFacetAsAgUiOptions,
+): Promise<void> {
+  if (!res.headersSent) res.writeHead(200, SSE_HEADERS);
+  const writeQueue = createSseWriteQueue(res);
+  const write = (event: AGUIEvent): void => writeQueue.enqueue(event);
+
+  write(runStarted(runInput));
+  let facetInput: FacetAgUiInput | undefined;
+  try {
+    facetInput = facetInputFromRunAgentInput(runInput);
+  } catch {
+    write(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
+    await writeQueue.flush();
+    res.end();
+    return;
+  }
+  if (facetInput === undefined) {
+    write(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
+    await writeQueue.flush();
+    res.end();
+    return;
+  }
+
+  try {
+    if (options.includeSnapshot === true) {
+      const stage = await runtime.stageFor(facetInput.visitor.visitorId);
+      if (stage !== undefined) write(facetStageToStateSnapshot(stage));
+    }
+
+    if (facetInput.kind === "record") {
+      void runtime.record(facetInput.visitor, facetInput.record).catch((error: unknown) => {
+        logInternalFailure("record failed", error);
+      });
+    } else {
+      await writeHandledEvents(write, runtime, facetInput, runInput);
+    }
+
+    write(runFinished(runInput));
+  } catch (error) {
+    logInternalFailure("runtime failed", error);
+    write(runError(RUNTIME_ERROR_MESSAGE, "RUNTIME_ERROR", runInput));
+  }
+
+  await writeQueue.flush();
+  res.end();
+}
+
+function createSseWriteQueue(res: ServerResponse): {
+  readonly enqueue: (event: AGUIEvent) => void;
+  readonly flush: () => Promise<void>;
+} {
+  let chain = Promise.resolve();
+  return {
+    enqueue: (event) => {
+      chain = chain.then(() => writeAgUiSseEventWithBackpressure(res, event));
+    },
+    flush: () => chain,
+  };
+}
+
+function writeAgUiSseEventWithBackpressure(res: ServerResponse, event: AGUIEvent): Promise<void> {
+  return new Promise((resolve) => {
+    if (res.write(`data: ${JSON.stringify(event)}\n\n`)) {
+      resolve();
+      return;
+    }
+    res.once("drain", resolve);
+  });
 }
 
 async function appendSnapshot(
@@ -193,6 +284,27 @@ async function appendHandledEvents(
     appendServerMessages(events, messages, textState, runInput);
   });
   if (!deliveredFrame) appendTurnResult(events, result, textState, runInput);
+}
+
+async function writeHandledEvents(
+  write: (event: AGUIEvent) => void,
+  runtime: FacetRuntimeForAgUi,
+  input: Extract<FacetAgUiInput, { readonly kind: "event" }>,
+  runInput: RunAgentInput,
+): Promise<void> {
+  const events: AGUIEvent[] = [];
+  const textState: TextMessageState = { nextIndex: 1 };
+  let deliveredFrame = false;
+  const result = await runtime.handle(input.visitor, input.event, (messages) => {
+    deliveredFrame = true;
+    const frameEvents: AGUIEvent[] = [];
+    appendServerMessages(frameEvents, messages, textState, runInput);
+    for (const event of frameEvents) write(event);
+  });
+  if (!deliveredFrame) {
+    appendTurnResult(events, result, textState, runInput);
+    for (const event of events) write(event);
+  }
 }
 
 function appendTurnResult(
@@ -332,24 +444,53 @@ function normalizeClientEvent(value: unknown): ClientEvent | undefined {
 function normalizeCollectedEvent(value: unknown): CollectedEvent | undefined {
   if (!isObject(value)) return undefined;
   const kind = value["kind"];
-  if (kind !== "tap") return undefined;
-
   const seq = optionalSeq(value);
   if (seq === null) return undefined;
-  if (value["action"] !== undefined) return undefined;
+
+  if (kind === "visit") {
+    const eventVisitor = normalizeVisitor(value["visitor"]);
+    return eventVisitor === undefined
+      ? undefined
+      : { kind: "visit", visitor: eventVisitor, ...(seq === undefined ? {} : { seq }) };
+  }
+  if (kind === "message") {
+    const text = value["text"];
+    return typeof text === "string"
+      ? { kind, text, ...(seq === undefined ? {} : { seq }) }
+      : undefined;
+  }
+  if (kind !== "tap") return undefined;
+
+  const action = optionalFacetAction(value);
   const effect = optionalTapEffect(value);
   const fields = optionalFields(value);
   const target = optionalBoundedString(value, "target");
-  if (effect === undefined || effect === null || fields === null || target === null)
-    return undefined;
+  if (action === null || effect === null || fields === null || target === null) return undefined;
 
   return {
     kind,
     ...(target === undefined ? {} : { target }),
-    effect,
+    ...(effect === undefined ? {} : { effect }),
+    ...(action === undefined ? {} : { action }),
     ...(fields === undefined ? {} : { fields }),
     ...(seq === undefined ? {} : { seq }),
   };
+}
+
+function optionalFacetAction(object: Record<string, unknown>): FacetAction | undefined | null {
+  const action = object["action"];
+  if (action === undefined) return undefined;
+  if (!isObject(action)) return null;
+  const kind = action["kind"];
+  if (kind === "navigate") {
+    const to = optionalBoundedString(action, "to");
+    return typeof to === "string" ? { kind, to } : null;
+  }
+  if (kind === "toggle") {
+    const target = optionalBoundedString(action, "target");
+    return typeof target === "string" ? { kind, target } : null;
+  }
+  return normalizeAgentAction(action) ?? null;
 }
 
 function normalizeAgentAction(value: unknown): FacetAction | undefined {
@@ -451,4 +592,9 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "AG-UI run failed";
+}
+
+function logInternalFailure(label: string, error: unknown): void {
+  const errorKind = error instanceof Error ? error.name : typeof error;
+  console.error(`[facet/ag-ui] ${label}: ${errorKind}`);
 }

@@ -145,6 +145,76 @@ describe("AgUiTransport", () => {
     ]);
   });
 
+  it("emits overlapping AG-UI text messages in start order, not completion order", async () => {
+    const messages: ServerMessage[] = [];
+    const transport = new AgUiTransport(
+      () => [
+        { type: EventType.TEXT_MESSAGE_START, messageId: "m1", role: "assistant" },
+        { type: EventType.TEXT_MESSAGE_START, messageId: "m2", role: "assistant" },
+        { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "m2", delta: "second" },
+        { type: EventType.TEXT_MESSAGE_END, messageId: "m2" },
+        { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "m1", delta: "first" },
+        { type: EventType.TEXT_MESSAGE_END, messageId: "m1" },
+      ],
+      { visitor },
+    );
+
+    transport.subscribe((message) => messages.push(message));
+    transport.send({ kind: "message", text: "go" });
+
+    await waitForCondition(() => messages.length === 2);
+    expect(messages).toEqual([
+      { kind: "say", text: "first" },
+      { kind: "say", text: "second" },
+    ]);
+  });
+
+  it("clears unterminated text buffers when a run ends", async () => {
+    const messages: ServerMessage[] = [];
+    let runs = 0;
+    const transport = new AgUiTransport(
+      () => {
+        runs += 1;
+        return runs === 1
+          ? [
+              { type: EventType.TEXT_MESSAGE_START, messageId: "m1", role: "assistant" },
+              { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "m1", delta: "stale" },
+              { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "run-1" },
+            ]
+          : [{ type: EventType.TEXT_MESSAGE_END, messageId: "m1" }];
+      },
+      { visitor },
+    );
+
+    transport.subscribe((message) => messages.push(message));
+    transport.send({ kind: "message", text: "first" });
+    await waitForCondition(() => runs === 1);
+    transport.send({ kind: "message", text: "second" });
+    await waitForCondition(() => runs === 2);
+
+    expect(messages).toEqual([]);
+  });
+
+  it("surfaces AG-UI run errors as safe Facet say messages", async () => {
+    const messages: ServerMessage[] = [];
+    const transport = new AgUiTransport(
+      () => [
+        {
+          type: EventType.RUN_ERROR,
+          message: "postgres://secret@internal/path",
+          code: "RUNTIME_ERROR",
+        },
+      ],
+      { visitor },
+    );
+
+    transport.subscribe((message) => messages.push(message));
+    transport.send({ kind: "message", text: "fail" });
+
+    await waitForCondition(() => messages.length === 1);
+    expect(messages).toEqual([{ kind: "say", text: "(the agent hit an error - try again)" }]);
+  });
+
   it("converts duplicate AG-UI state snapshots to root patches without duplicating chat", async () => {
     const messages: ServerMessage[] = [];
     const transport = new AgUiTransport(
@@ -203,16 +273,78 @@ describe("AgUiTransport", () => {
     expect(messages).toEqual([{ kind: "say", text: "Observable" }]);
   });
 
+  it("unsubscribes observable runs on timeout and advances the queue", async () => {
+    const calls: RunAgentInput[] = [];
+    let unsubscribed = false;
+    const transport = new AgUiTransport(
+      (input) => {
+        calls.push(input);
+        if (calls.length === 1) {
+          return {
+            subscribe: () => ({
+              unsubscribe: () => {
+                unsubscribed = true;
+              },
+            }),
+          };
+        }
+        return [];
+      },
+      { visitor, runTimeoutMs: 5 },
+    );
+
+    transport.send({ kind: "message", text: "first" });
+    transport.send({ kind: "message", text: "second" });
+
+    await waitForCondition(() => calls.length === 2 && unsubscribed);
+    expect(facetForwarded(calls[1]!).event).toEqual({
+      kind: "message",
+      text: "second",
+      seq: 2,
+    });
+  });
+
+  it("times out a hung async iterable run and advances later submissions", async () => {
+    const calls: RunAgentInput[] = [];
+    const transport = new AgUiTransport(
+      (input) => {
+        calls.push(input);
+        if (calls.length === 1) {
+          return (async function* stream(): AsyncIterable<BaseEvent> {
+            await new Promise(() => {});
+            yield* [] as BaseEvent[];
+          })();
+        }
+        return [];
+      },
+      { visitor, runTimeoutMs: 5 },
+    );
+
+    transport.send({ kind: "message", text: "first" });
+    transport.send({ kind: "message", text: "second" });
+
+    await waitForCondition(() => calls.length === 2);
+    expect(facetForwarded(calls[1]!).event).toEqual({
+      kind: "message",
+      text: "second",
+      seq: 2,
+    });
+  });
+
   it("ignores malformed, unknown, lifecycle, tool, reasoning, and activity events", async () => {
     const messages: ServerMessage[] = [];
     let completed = false;
     const transport = new AgUiTransport(
-      async function* run(): AsyncIterable<unknown> {
-        yield null;
-        yield {};
+      async function* run(): AsyncIterable<BaseEvent> {
+        yield null as unknown as BaseEvent;
+        yield {} as BaseEvent;
         yield { type: EventType.RUN_STARTED, threadId: "thread-1", runId: "run-1" };
         yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "missing-start", delta: "drop" };
-        yield { type: EventType.TEXT_MESSAGE_START, messageId: 123, role: "assistant" };
+        yield {
+          type: EventType.TEXT_MESSAGE_START,
+          messageId: 123,
+          role: "assistant",
+        } as unknown as BaseEvent;
         yield { type: EventType.TEXT_MESSAGE_START, messageId: "never-ended", role: "assistant" };
         yield { type: EventType.TEXT_MESSAGE_CONTENT, messageId: "never-ended", delta: "drop" };
         yield { type: EventType.TOOL_CALL_START, toolCallId: "tool-1", toolCallName: "search" };

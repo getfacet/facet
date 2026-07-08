@@ -4,6 +4,7 @@ import {
   type StateDeltaEvent,
   type StateSnapshotEvent,
 } from "@ag-ui/core";
+import { MAX_PATCH_OPS } from "@facet/core";
 import { describe, expect, it } from "vitest";
 import type { FacetTree, JsonPatchOperation, ServerMessage } from "@facet/core";
 
@@ -56,6 +57,16 @@ describe("AG-UI event conversion", () => {
       ],
     });
     expect(agUiEventToServerMessages(event)).toEqual([{ kind: "patch", patches }]);
+  });
+
+  it("maps root replace patches to the exact /facet/stage state path", () => {
+    const patch: JsonPatchOperation = { op: "replace", path: "", value: stage };
+    const [event] = serverMessageToAgUiEvents({ kind: "patch", patches: [patch] });
+
+    expect((event as StateDeltaEvent).delta).toEqual([
+      { op: "replace", path: FACET_STAGE_STATE_PATH, value: stage },
+    ]);
+    expect(agUiEventToServerMessages(event)).toEqual([{ kind: "patch", patches: [patch] }]);
   });
 
   it("maps AG-UI STATE_SNAPSHOT facet.stage to a root-replace patch", () => {
@@ -145,6 +156,26 @@ describe("AG-UI event conversion", () => {
       expect(agUiEventToServerMessages(value)).toEqual([]);
     }
     expect(agUiEventsToServerMessages(values)).toEqual([]);
+  });
+
+  it("drops AG-UI state deltas over the shared patch operation cap before conversion", () => {
+    const delta = Array.from({ length: MAX_PATCH_OPS + 1 }, () => ({
+      op: "replace",
+      path: `${FACET_STAGE_STATE_PATH}/nodes/headline/value`,
+      value: "Updated",
+    }));
+
+    expect(agUiEventToServerMessages({ type: EventType.STATE_DELTA, delta })).toEqual([]);
+  });
+
+  it("surfaces AG-UI RUN_ERROR as a safe Facet say message", () => {
+    expect(
+      agUiEventToServerMessages({
+        type: EventType.RUN_ERROR,
+        message: "postgres://secret@internal/path",
+        code: "RUNTIME_ERROR",
+      }),
+    ).toEqual([{ kind: "say", text: "(the agent hit an error - try again)" }]);
   });
 
   it("does not alias converted stage state or patch values", () => {

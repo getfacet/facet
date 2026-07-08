@@ -8,11 +8,13 @@ import type {
   TextMessageEndEvent,
   TextMessageStartEvent,
 } from "@ag-ui/core";
+import { MAX_PATCH_OPS } from "@facet/core";
 import type { FacetTree, JsonPatchOperation, ServerMessage } from "@facet/core";
 import { isTreeShaped } from "@facet/core";
 
 export const FACET_STAGE_STATE_PATH = "/facet/stage";
 export const FACET_RESET_EVENT_NAME = "facet/reset";
+const RUN_ERROR_TEXT = "(the agent hit an error - try again)";
 
 type JsonPatchObject = Record<string, unknown>;
 
@@ -183,6 +185,7 @@ export function serverMessagesToAgUiEvents(
 function stateDeltaToServerMessages(event: Record<string, unknown>): readonly ServerMessage[] {
   const delta = event["delta"];
   if (!Array.isArray(delta) || delta.length === 0) return [];
+  if (delta.length > MAX_PATCH_OPS) return [];
 
   const patches: JsonPatchOperation[] = [];
   for (const candidate of delta) {
@@ -230,6 +233,8 @@ export function agUiEventToServerMessages(event: unknown): readonly ServerMessag
         return stateSnapshotToServerMessages(event);
       case EventType.CUSTOM:
         return customEventToServerMessages(event);
+      case EventType.RUN_ERROR:
+        return [{ kind: "say", text: RUN_ERROR_TEXT }];
       default:
         return [];
     }

@@ -11,6 +11,10 @@ function repoFile(path: string): string {
   return readFileSync(join(repoRoot, path), "utf8");
 }
 
+function repoJson<T>(path: string): T {
+  return JSON.parse(repoFile(path)) as T;
+}
+
 function sourceFiles(root: string): readonly string[] {
   const result: string[] = [];
 
@@ -53,6 +57,40 @@ describe("@facet/ag-ui package boundaries", () => {
     expect(rootIndex).toContain('export * from "./events.js";');
     expect(rootIndex).toContain('export * from "./transport.js";');
     expect(existsSync(join(repoRoot, "packages/extensions/ag-ui/src/server.ts"))).toBe(true);
+  });
+
+  it("keeps dev and published exports split between browser root and Node server", () => {
+    const packageJson = repoJson<{
+      readonly exports?: Record<string, unknown>;
+      readonly publishConfig?: { readonly exports?: Record<string, unknown> };
+    }>("packages/extensions/ag-ui/package.json");
+
+    expect(packageJson.exports).toEqual({
+      ".": "./src/index.ts",
+      "./server": "./src/server.ts",
+    });
+    expect(packageJson.publishConfig?.exports?.["."]).toEqual({
+      types: "./dist/index.d.ts",
+      import: "./dist/index.js",
+      require: "./dist/index.cjs",
+    });
+    expect(packageJson.publishConfig?.exports?.["./server"]).toEqual({
+      types: "./dist/server.d.ts",
+      import: "./dist/server.js",
+      require: "./dist/server.cjs",
+    });
+  });
+
+  it("keeps quickstart and playground on native reference transports", () => {
+    const sources = [
+      ...sourceFiles(join(repoRoot, "packages/agent-stack/quickstart/src")),
+      ...sourceFiles(join(repoRoot, "apps/playground/src")),
+    ].map((path) => readFileSync(path, "utf8"));
+    const joined = sources.join("\n");
+
+    expect(joined).not.toContain("@facet/ag-ui");
+    expect(joined).toContain('from "@facet/client"');
+    expect(joined).toMatch(/SseTransport|LocalTransport/);
   });
 
   it("documents AG-UI as an isolated public adapter with native fallback posture", () => {

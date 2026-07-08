@@ -1,6 +1,6 @@
 import { HttpAgent } from "@ag-ui/client";
 import { EventType } from "@ag-ui/core";
-import type { RunAgentInput } from "@ag-ui/core";
+import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import type {
   ClientEvent,
   CollectedEvent,
@@ -26,7 +26,7 @@ export interface AgUiObservableLike<T> {
 }
 
 export type AgUiEventStream =
-  AsyncIterable<unknown> | Iterable<unknown> | AgUiObservableLike<unknown>;
+  AsyncIterable<BaseEvent> | Iterable<BaseEvent> | AgUiObservableLike<BaseEvent>;
 export type AgUiRunResult = AgUiEventStream | Promise<AgUiEventStream>;
 export type AgUiRunFunction = (input: RunAgentInput) => AgUiRunResult;
 
@@ -38,6 +38,8 @@ export interface AgUiTransportOptions {
   readonly visitor: VisitorContext;
   readonly threadId?: string;
   readonly runId?: () => string;
+  readonly runTimeoutMs?: number | false;
+  readonly maxQueue?: number;
 }
 
 export interface CreateHttpAgUiTransportOptions extends AgUiTransportOptions {
@@ -49,6 +51,21 @@ type AgUiTransportSource = AgUiAgentLike | AgUiRunFunction | AgUiEventStream;
 type Submission =
   | { readonly kind: "event"; readonly value: ClientEvent }
   | { readonly kind: "record"; readonly value: CollectedEvent };
+
+const DEFAULT_RUN_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_QUEUE = 100;
+
+interface RunState {
+  active: boolean;
+  readonly textBuffers: Map<string, TextMessageBuffer>;
+  readonly textOrder: string[];
+  cancel?: () => void;
+}
+
+interface TextMessageBuffer {
+  readonly parts: string[];
+  complete: boolean;
+}
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -107,8 +124,8 @@ export class AgUiTransport implements FacetTransport {
   private readonly listeners = new Set<(message: ServerMessage) => void>();
   private readonly run: AgUiRunFunction;
   private readonly threadId: string;
-  private readonly textBuffers = new Map<string, string[]>();
   private runChain: Promise<void> = Promise.resolve();
+  private pendingRuns = 0;
   private seq = 0;
   private runSeq = 0;
 
@@ -136,11 +153,21 @@ export class AgUiTransport implements FacetTransport {
   }
 
   private enqueue(submission: Submission): void {
+    const maxQueue = this.options.maxQueue ?? DEFAULT_MAX_QUEUE;
+    if (this.pendingRuns >= maxQueue) {
+      const label = submission.kind === "record" ? "record" : "event";
+      console.error(`[facet/ag-ui] ${label} run dropped: queue limit reached`);
+      return;
+    }
+    this.pendingRuns += 1;
     this.runChain = this.runChain
       .then(() => this.runSubmission(submission))
       .catch((error: unknown) => {
         const label = submission.kind === "record" ? "record" : "event";
         console.error(`[facet/ag-ui] ${label} run failed:`, error);
+      })
+      .finally(() => {
+        this.pendingRuns -= 1;
       });
   }
 
@@ -152,17 +179,55 @@ export class AgUiTransport implements FacetTransport {
         ? { facet: { visitor: this.options.visitor, event: withSeq(submission.value, seq) } }
         : { facet: { visitor: this.options.visitor, record: withSeq(submission.value, seq) } };
 
-    await this.consumeRunResult(
-      this.run({
-        threadId: this.threadId,
-        runId: this.nextRunId(),
-        state: {},
-        messages: [],
-        tools: [],
-        context: [],
-        forwardedProps: forwarded,
-      }),
-    );
+    const runState: RunState = { active: true, textBuffers: new Map(), textOrder: [] };
+    try {
+      await this.consumeRunResult(
+        this.run({
+          threadId: this.threadId,
+          runId: this.nextRunId(),
+          state: {},
+          messages: [],
+          tools: [],
+          context: [],
+          forwardedProps: forwarded,
+        }),
+        runState,
+      );
+    } finally {
+      runState.active = false;
+      runState.cancel?.();
+      runState.textBuffers.clear();
+    }
+  }
+
+  private runInputTimeoutMs(): number | false {
+    return this.options.runTimeoutMs ?? DEFAULT_RUN_TIMEOUT_MS;
+  }
+
+  private async withRunTimeout(runState: RunState, consume: Promise<void>): Promise<void> {
+    const timeoutMs = this.runInputTimeoutMs();
+    if (timeoutMs === false) {
+      await consume;
+      return;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    let timedOut = false;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        runState.active = false;
+        runState.cancel?.();
+        reject(new Error(`AG-UI run timed out after ${String(timeoutMs)}ms`));
+      }, timeoutMs);
+    });
+
+    try {
+      await Promise.race([consume, timeout]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+      if (timedOut) consume.catch(() => undefined);
+    }
   }
 
   private nextRunId(): string {
@@ -170,38 +235,79 @@ export class AgUiTransport implements FacetTransport {
     return this.options.runId?.() ?? fallbackRunId(this.runSeq);
   }
 
-  private async consumeRunResult(result: AgUiRunResult): Promise<void> {
+  private async consumeRunResult(result: AgUiRunResult, runState: RunState): Promise<void> {
+    await this.withRunTimeout(runState, this.consumeRunResultWithoutTimeout(result, runState));
+  }
+
+  private async consumeRunResultWithoutTimeout(
+    result: AgUiRunResult,
+    runState: RunState,
+  ): Promise<void> {
     const stream = await result;
+    if (!runState.active) return;
     if (isAsyncIterable(stream)) {
-      for await (const event of stream) {
-        this.handleAgUiEvent(event);
+      const iterator = stream[Symbol.asyncIterator]();
+      runState.cancel = () => {
+        void iterator.return?.();
+      };
+      while (runState.active) {
+        const next = await iterator.next();
+        if (next.done === true) break;
+        this.handleAgUiEvent(next.value, runState);
       }
       return;
     }
     if (isIterable(stream)) {
       for (const event of stream) {
-        this.handleAgUiEvent(event);
+        if (!runState.active) break;
+        this.handleAgUiEvent(event, runState);
       }
       return;
     }
     if (isObservableLike(stream)) {
-      await this.consumeObservable(stream);
+      await this.consumeObservable(stream, runState);
     }
   }
 
-  private consumeObservable(stream: AgUiObservableLike<unknown>): Promise<void> {
+  private consumeObservable(
+    stream: AgUiObservableLike<unknown>,
+    runState: RunState,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
-      stream.subscribe({
-        next: (event) => this.handleAgUiEvent(event),
-        error: reject,
-        complete: resolve,
+      let settled = false;
+      let unsubscribe: (() => void) | undefined;
+      const cleanup = (): void => {
+        if (unsubscribe !== undefined) {
+          const release = unsubscribe;
+          unsubscribe = undefined;
+          release();
+        }
+      };
+      const settle = (done: () => void): void => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        done();
+      };
+
+      const subscription = stream.subscribe({
+        next: (event) => {
+          if (runState.active) this.handleAgUiEvent(event, runState);
+        },
+        error: (error) => settle(() => reject(error)),
+        complete: () => settle(resolve),
       });
+      unsubscribe =
+        typeof subscription === "function" ? subscription : () => subscription?.unsubscribe();
+      runState.cancel = cleanup;
+      if (settled) cleanup();
+      if (settled || !runState.active) settle(resolve);
     });
   }
 
-  private handleAgUiEvent(event: unknown): void {
+  private handleAgUiEvent(event: unknown, runState: RunState): void {
     try {
-      if (this.handleTextEvent(event)) return;
+      if (this.handleTextEvent(event, runState)) return;
       for (const message of agUiEventToServerMessages(event)) {
         this.emit(message);
       }
@@ -210,41 +316,58 @@ export class AgUiTransport implements FacetTransport {
     }
   }
 
-  private handleTextEvent(event: unknown): boolean {
+  private handleTextEvent(event: unknown, runState: RunState): boolean {
     if (!isObject(event)) return false;
     switch (event["type"]) {
       case EventType.TEXT_MESSAGE_START:
-        this.startTextMessage(event["messageId"]);
+        this.startTextMessage(event["messageId"], runState);
         return true;
       case EventType.TEXT_MESSAGE_CONTENT:
-        this.appendTextMessage(event["messageId"], event["delta"]);
+        this.appendTextMessage(event["messageId"], event["delta"], runState);
         return true;
       case EventType.TEXT_MESSAGE_END:
-        this.endTextMessage(event["messageId"]);
+        this.endTextMessage(event["messageId"], runState);
         return true;
       default:
         return false;
     }
   }
 
-  private startTextMessage(messageId: unknown): void {
+  private startTextMessage(messageId: unknown, runState: RunState): void {
     if (typeof messageId !== "string") return;
-    this.textBuffers.set(messageId, []);
+    if (!runState.textBuffers.has(messageId)) runState.textOrder.push(messageId);
+    runState.textBuffers.set(messageId, { parts: [], complete: false });
   }
 
-  private appendTextMessage(messageId: unknown, delta: unknown): void {
+  private appendTextMessage(messageId: unknown, delta: unknown, runState: RunState): void {
     if (typeof messageId !== "string" || typeof delta !== "string") return;
-    const buffer = this.textBuffers.get(messageId);
+    const buffer = runState.textBuffers.get(messageId);
     if (buffer === undefined) return;
-    buffer.push(delta);
+    buffer.parts.push(delta);
   }
 
-  private endTextMessage(messageId: unknown): void {
+  private endTextMessage(messageId: unknown, runState: RunState): void {
     if (typeof messageId !== "string") return;
-    const buffer = this.textBuffers.get(messageId);
+    const buffer = runState.textBuffers.get(messageId);
     if (buffer === undefined) return;
-    this.textBuffers.delete(messageId);
-    this.emit({ kind: "say", text: buffer.join("") });
+    buffer.complete = true;
+    this.flushCompletedTextMessages(runState);
+  }
+
+  private flushCompletedTextMessages(runState: RunState): void {
+    while (runState.textOrder.length > 0) {
+      const messageId = runState.textOrder[0];
+      if (messageId === undefined) return;
+      const buffer = runState.textBuffers.get(messageId);
+      if (buffer === undefined) {
+        runState.textOrder.shift();
+        continue;
+      }
+      if (!buffer.complete) return;
+      runState.textOrder.shift();
+      runState.textBuffers.delete(messageId);
+      this.emit({ kind: "say", text: buffer.parts.join("") });
+    }
   }
 
   private emit(message: ServerMessage): void {
