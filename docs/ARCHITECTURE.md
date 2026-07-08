@@ -110,9 +110,12 @@ output. A `FacetTheme` is a partial override document (token name → CSS value)
 and the validator is the single gate it passes: an allowlist per token group, a
 deny-list (`url()`, `var()`, `expression()`, `javascript:` and injection
 characters are refused), dimension clamps so a theme can't push content
-off-screen, a bounded font-family grammar for typography values, and a WCAG
-contrast check that is *measured as a warning, never a rejection* (Facet
-measures; the caller sets policy). Output maps are built on
+off-screen, a bounded font-family grammar for typography values, safe parseable
+opaque colors (hex, `rgb()`/`rgba()`, `hsl()`/`hsla()`, and a conservative
+named-color table), and a WCAG contrast check that is *measured as a warning,
+never a rejection* (Facet measures; the caller sets policy). The same color
+parser gates the value and feeds the contrast measurement, so an accepted color
+cannot skip the warning path. Output maps are built on
 `Object.create(null)` so a hostile key can never resolve. The validator is pure
 and dependency-free, so it runs identically on the server and in the browser.
 
@@ -134,9 +137,10 @@ The document library itself is a **pluggable adapter, exactly like `StageStore`*
 `@facet/runtime`'s main barrel and a file-backed `FileAssets` behind
 `@facet/runtime/node` (so a browser bundle never drags in `node:fs`); a database
 adapter would live outside, the `@facet/store-postgres` precedent. `loadAssets`
-runs the core validators once at boot (no hot reload) and skips any invalid
-document with a logged issue — the same skip-and-log posture the file stage store
-already uses. **Stamps** — validated `{ root, nodes, slots? }` brick fragments —
+runs the core validators once at boot (no hot reload), keeps adapter failures
+fail-soft, caps hostile asset/issue arrays before iterating them, and skips any
+invalid document with a logged issue — the same skip-and-log posture the file
+stage store already uses. **Stamps** — validated `{ root, nodes, slots? }` brick fragments —
 reach the quickstart LLM as names, slot names, and descriptions. The model calls
 `use_stamp`; the server resolves the name from the immutable per-agent stamp
 snapshot, fills whole-value `{{slot}}` markers, remaps every internal id to a
@@ -158,6 +162,8 @@ the session existed, so the store reports the fresh seed once (`takeSeeded`) and
 the runtime prepends a root `replace` as that turn's first frame — stamped,
 replayable, and applied by the same `applyPatch` on both sides. The frame is
 consumed only when the turn persists; a failed first turn re-emits it, and a
+durable commit-then-reject first save can recover the seed report even after the
+bounded pending-key set evicts the original armed key. A
 reconnect gets the seed the normal way, via the rehydrate snapshot. For the
 very first paint the quickstart shell also ships the seed (and the resolved
 theme's canvas colors) with the page itself — `useFacet` can start from a
@@ -206,14 +212,18 @@ Pointers into the `FacetTree`:
 | remove a node         | `remove /nodes/<id>` (dangling child refs are skipped on render)|
 
 `applyPatch(tree, operations)` (in `packages/core/core/src/patch.ts`) is a small,
-dependency-free implementation of the six standard ops, and it is pure. One
-level up, `foldPatchIntoStage` (in `packages/core/core/src/stage-fold.ts`) is the
-shared fail-safe wrapper both sides actually run per delivered batch: a
+dependency-free implementation of the six standard ops, and it is pure. Pointer
+reads require the source to exist for `move`, `copy`, and `test`; object-member
+`replace`/`remove` targets must exist too. A stale op therefore throws before it
+can create a ghost value or count as a stage mutation. One level up,
+`foldPatchIntoStage` (in `packages/core/core/src/stage-fold.ts`) is the shared
+fail-safe wrapper both sides actually run per delivered batch: a
 batch-atomic apply, per-op salvage on a throwing batch (bounded, capped at
-`MAX_PATCH_OPS`, RFC 6902 `test` guards honored), then `validateTree` on the
-result. Because the server (to keep the session's authoritative stage) and the
-client (to update the DOM) fold the same delivered batches through the same pure
-function, the two can never drift.
+`MAX_PATCH_OPS`, with a failed `test` guard dropping itself and the following
+ops in that salvage stream), then `validateTree` on the result. Because the
+server (to keep the session's authoritative stage) and the client (to update
+the DOM) fold the same delivered batches through the same pure function, the two
+can never drift.
 
 ## The event loop
 

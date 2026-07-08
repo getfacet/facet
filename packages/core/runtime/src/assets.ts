@@ -16,6 +16,10 @@ import { sessionKey, type StageStore } from "./stage-store.js";
  * (agent throw / save reject) leaves its key armed until it returns; a stream of
  * one-off broken-agent visitors would otherwise leak this in-process Set. */
 const MAX_SEEDED = 10_000;
+const MAX_ASSET_DOCUMENTS = 1024;
+const MAX_ASSET_ISSUES = 64;
+const MAX_ASSET_ISSUE_CHARS = 200;
+const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
 
 /**
  * The operator's per-agent asset library — themes, stamps, and an optional
@@ -47,6 +51,130 @@ export class MemoryAssets implements AssetsStore {
 
   async load(_agentId: string): Promise<AssetDocuments> {
     return this.docs;
+  }
+}
+
+type AssetField = "issues" | "themes" | "stamps" | "initialTree";
+type FieldRead = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
+
+function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isAssetArray(value: unknown): value is readonly unknown[] {
+  try {
+    return Array.isArray(value);
+  } catch {
+    return false;
+  }
+}
+
+function readAssetField(
+  docs: Record<PropertyKey, unknown>,
+  field: AssetField,
+  issues: string[],
+): FieldRead {
+  try {
+    return { ok: true, value: docs[field] };
+  } catch {
+    if (field === "initialTree") {
+      pushAssetIssue(issues, "initial tree skipped: document threw during validation");
+    } else {
+      pushAssetIssue(issues, `assets \`${field}\` threw during validation — ignored`);
+    }
+    return { ok: false };
+  }
+}
+
+function isControlChar(code: number): boolean {
+  return code < 0x20 || (code >= 0x7f && code <= 0x9f);
+}
+
+function sanitizeAssetIssue(raw: string): string {
+  let out = "";
+  const limit = Math.min(raw.length, MAX_ASSET_ISSUE_CHARS);
+  for (let i = 0; i < limit; i += 1) {
+    const ch = raw[i]!;
+    out += isControlChar(ch.charCodeAt(0)) ? "?" : ch;
+  }
+  return raw.length > MAX_ASSET_ISSUE_CHARS ? `${out}...` : out;
+}
+
+function describeAssetError(err: unknown): string {
+  try {
+    if (err instanceof Error) {
+      return err.message === "" ? "unknown error" : err.message;
+    }
+  } catch {
+    return "unreadable error";
+  }
+  if (
+    err === null ||
+    err === undefined ||
+    typeof err === "string" ||
+    typeof err === "number" ||
+    typeof err === "boolean" ||
+    typeof err === "bigint" ||
+    typeof err === "symbol"
+  ) {
+    try {
+      return String(err);
+    } catch {
+      return "unreadable error";
+    }
+  }
+  return "non-error rejection";
+}
+
+function pushAssetIssue(issues: string[], issue: string): void {
+  if (issues.length >= MAX_ASSET_ISSUES) {
+    if (issues[issues.length - 1] !== ASSET_ISSUES_SUPPRESSED) {
+      issues.push(ASSET_ISSUES_SUPPRESSED);
+    }
+    return;
+  }
+  issues.push(sanitizeAssetIssue(issue));
+}
+
+function readAssetArrayLength(
+  value: readonly unknown[],
+  label: "themes" | "stamps" | "issues",
+  issues: string[],
+  maxItems: number,
+): number {
+  try {
+    const length = value.length;
+    if (Number.isSafeInteger(length) && length >= 0) {
+      if (length > maxItems) {
+        pushAssetIssue(
+          issues,
+          `assets \`${label}\` had ${String(length)} item(s); truncated to ${String(maxItems)}`,
+        );
+        return maxItems;
+      }
+      return length;
+    }
+  } catch {
+    // Fall through to the shared issue below.
+  }
+  pushAssetIssue(issues, `assets \`${label}\` length was unreadable — ignored`);
+  return 0;
+}
+
+function readAssetArrayItem(
+  value: readonly unknown[],
+  index: number,
+  label: "themes" | "stamps" | "issues",
+  issues: string[],
+): FieldRead {
+  try {
+    return { ok: true, value: value[index] };
+  } catch {
+    pushAssetIssue(
+      issues,
+      `assets \`${label}\` item ${String(index)} threw during validation — ignored`,
+    );
+    return { ok: false };
   }
 }
 
@@ -89,35 +217,54 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   // The primary I/O fetch is guarded too: a pluggable adapter (a DB/proxy store)
   // can reject or return a malformed shape, and the "Never throws" contract must
   // hold for it — not just for the per-document validators below.
-  let docs: AssetDocuments;
+  let rawDocs: unknown;
+  const issues: string[] = [];
   try {
-    docs = await store.load(agentId);
+    rawDocs = await store.load(agentId);
   } catch (err) {
-    docs = {
+    rawDocs = {
       themes: [],
       stamps: [],
-      issues: [`assets load failed: ${err instanceof Error ? err.message : String(err)}`],
     };
+    pushAssetIssue(issues, `assets load failed: ${describeAssetError(err)}`);
   }
-  const issues: string[] = [...(docs.issues ?? [])];
+  let docs: Record<PropertyKey, unknown>;
+  if (isRecord(rawDocs)) {
+    docs = rawDocs;
+  } else {
+    pushAssetIssue(issues, "assets document was not an object — ignored");
+    docs = {};
+  }
+  const rawIssues = readAssetField(docs, "issues", issues);
+  if (rawIssues.ok && rawIssues.value !== undefined) {
+    if (isAssetArray(rawIssues.value)) {
+      const length = readAssetArrayLength(rawIssues.value, "issues", issues, MAX_ASSET_ISSUES);
+      for (let i = 0; i < length; i += 1) {
+        const issue = readAssetArrayItem(rawIssues.value, i, "issues", issues);
+        if (issue.ok && typeof issue.value === "string") pushAssetIssue(issues, issue.value);
+      }
+    } else {
+      pushAssetIssue(issues, "assets `issues` was not an array — ignored");
+    }
+  }
   // Coerce the trusted array fields so a malformed `{ themes: null }` from a
   // custom adapter can't throw at the spread sites below (skip-and-log, never
   // crash boot). Defaults still seed, so an empty/bad store yields the defaults.
-  const themeDocs = Array.isArray(docs.themes) ? docs.themes : [];
-  if (!Array.isArray(docs.themes)) issues.push("assets `themes` was not an array — ignored");
-  const stampDocs = Array.isArray(docs.stamps) ? docs.stamps : [];
-  if (!Array.isArray(docs.stamps)) issues.push("assets `stamps` was not an array — ignored");
+  const rawThemes = readAssetField(docs, "themes", issues);
+  const themeDocs = rawThemes.ok && isAssetArray(rawThemes.value) ? rawThemes.value : [];
+  if (rawThemes.ok && !isAssetArray(rawThemes.value)) {
+    pushAssetIssue(issues, "assets `themes` was not an array — ignored");
+  }
+  const rawStamps = readAssetField(docs, "stamps", issues);
+  const stampDocs = rawStamps.ok && isAssetArray(rawStamps.value) ? rawStamps.value : [];
+  if (rawStamps.ok && !isAssetArray(rawStamps.value)) {
+    pushAssetIssue(issues, "assets `stamps` was not an array — ignored");
+  }
 
   const themes: FacetTheme[] = [];
   const seenThemeNames = new Set<string>();
   const seededThemeNames = new Set<string>();
-  // Defaults first (seeded), then custom docs. Both run the SAME validateTheme
-  // gate — a bad default is dropped with an issue, exactly like a bad custom.
-  const themeInputs: readonly { readonly raw: unknown; readonly seeded: boolean }[] = [
-    { raw: DEFAULT_THEME, seeded: true },
-    ...themeDocs.map((raw) => ({ raw, seeded: false })),
-  ];
-  for (const { raw, seeded } of themeInputs) {
+  const loadTheme = (raw: unknown, seeded: boolean): void => {
     // Skip-and-log at the seam: a live in-process document (a DB adapter, a
     // proxy) can throw from a property accessor. `validateTheme` already guards
     // its own reads, but the try/catch keeps this loop's "Never throws" contract
@@ -126,8 +273,8 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
     try {
       result = validateTheme(raw);
     } catch {
-      issues.push(`${seeded ? "default " : ""}theme document skipped: validation threw`);
-      continue;
+      pushAssetIssue(issues, `${seeded ? "default " : ""}theme document skipped: validation threw`);
+      return;
     }
     const { theme, issues: themeIssues } = result;
     if (theme === undefined) {
@@ -135,8 +282,11 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
         .filter((i) => i.severity === "error")
         .map((i) => i.message)
         .join("; ");
-      issues.push(`${seeded ? "default " : ""}theme document skipped: ${why || "invalid"}`);
-      continue;
+      pushAssetIssue(
+        issues,
+        `${seeded ? "default " : ""}theme document skipped: ${why || "invalid"}`,
+      );
+      return;
     }
     if (seenThemeNames.has(theme.name)) {
       if (!seeded && seededThemeNames.has(theme.name)) {
@@ -147,48 +297,52 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
         const at = themes.findIndex((t) => t.name === theme.name);
         if (at !== -1) themes.splice(at, 1);
         seededThemeNames.delete(theme.name);
-        issues.push(`custom theme "${theme.name}" shadows the seeded default`);
+        pushAssetIssue(issues, `custom theme "${theme.name}" shadows the seeded default`);
         for (const warning of themeIssues) {
-          issues.push(`theme "${theme.name}": ${warning.message}`);
+          pushAssetIssue(issues, `theme "${theme.name}": ${warning.message}`);
         }
         themes.push(theme);
-        continue;
+        return;
       }
       // Custom-vs-custom (or a duplicate default): first wins.
-      issues.push(`duplicate theme name "${theme.name}" ignored (first wins)`);
-      continue;
+      pushAssetIssue(issues, `duplicate theme name "${theme.name}" ignored (first wins)`);
+      return;
     }
     seenThemeNames.add(theme.name);
     if (seeded) seededThemeNames.add(theme.name);
     for (const warning of themeIssues) {
-      issues.push(`theme "${theme.name}": ${warning.message}`);
+      pushAssetIssue(issues, `theme "${theme.name}": ${warning.message}`);
     }
     themes.push(theme);
+  };
+  // Defaults first (seeded), then custom docs. Both run the SAME validateTheme
+  // gate — a bad default is dropped with an issue, exactly like a bad custom.
+  loadTheme(DEFAULT_THEME, true);
+  const themeCount = readAssetArrayLength(themeDocs, "themes", issues, MAX_ASSET_DOCUMENTS);
+  const stampCount = readAssetArrayLength(stampDocs, "stamps", issues, MAX_ASSET_DOCUMENTS);
+  for (let i = 0; i < themeCount; i += 1) {
+    const raw = readAssetArrayItem(themeDocs, i, "themes", issues);
+    if (raw.ok) loadTheme(raw.value, false);
   }
 
   const stamps: FacetStamp[] = [];
   const seenStampNames = new Set<string>();
   const seededStampNames = new Set<string>();
-  // Defaults first (seeded), then custom docs — the same symmetric layering the
-  // theme loop uses, through the same validateStamp gate.
-  const stampInputs: readonly { readonly raw: unknown; readonly seeded: boolean }[] = [
-    ...DEFAULT_STAMPS.map((raw) => ({ raw, seeded: true })),
-    ...stampDocs.map((raw) => ({ raw, seeded: false })),
-  ];
-  for (const { raw, seeded } of stampInputs) {
+  const loadStamp = (raw: unknown, seeded: boolean): void => {
     let result: ReturnType<typeof validateStamp>;
     try {
       result = validateStamp(raw);
     } catch {
-      issues.push(`${seeded ? "default " : ""}stamp document skipped: validation threw`);
-      continue;
+      pushAssetIssue(issues, `${seeded ? "default " : ""}stamp document skipped: validation threw`);
+      return;
     }
     const { stamp, issues: stampIssues } = result;
     if (stamp === undefined) {
-      issues.push(
+      pushAssetIssue(
+        issues,
         `${seeded ? "default " : ""}stamp document skipped: ${stampIssues.join("; ") || "invalid"}`,
       );
-      continue;
+      return;
     }
     if (seenStampNames.has(stamp.name)) {
       if (!seeded && seededStampNames.has(stamp.name)) {
@@ -198,39 +352,60 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
         const at = stamps.findIndex((s) => s.name === stamp.name);
         if (at !== -1) stamps.splice(at, 1);
         seededStampNames.delete(stamp.name);
-        issues.push(`custom stamp "${stamp.name}" shadows the seeded default`);
+        pushAssetIssue(issues, `custom stamp "${stamp.name}" shadows the seeded default`);
         for (const note of stampIssues) {
-          issues.push(`stamp "${stamp.name}": ${note}`);
+          pushAssetIssue(issues, `stamp "${stamp.name}": ${note}`);
         }
         stamps.push(stamp);
-        continue;
+        return;
       }
       // Custom-vs-custom (or a duplicate default): first wins. Two same-named
       // stamps would inject contradictory entries into the prompt's STAMPS section.
-      issues.push(`duplicate stamp name "${stamp.name}" ignored (first wins)`);
-      continue;
+      pushAssetIssue(issues, `duplicate stamp name "${stamp.name}" ignored (first wins)`);
+      return;
     }
     seenStampNames.add(stamp.name);
     if (seeded) seededStampNames.add(stamp.name);
     for (const note of stampIssues) {
-      issues.push(`stamp "${stamp.name}": ${note}`);
+      pushAssetIssue(issues, `stamp "${stamp.name}": ${note}`);
     }
     stamps.push(stamp);
+  };
+  // Defaults first (seeded), then custom docs — the same symmetric layering the
+  // theme loop uses, through the same validateStamp gate.
+  for (const raw of DEFAULT_STAMPS) loadStamp(raw, true);
+  for (let i = 0; i < stampCount; i += 1) {
+    const raw = readAssetArrayItem(stampDocs, i, "stamps", issues);
+    if (raw.ok) loadStamp(raw.value, false);
   }
 
+  let rawInitialTree: unknown;
+  let hasInitialTree = false;
+  const initialTreeRead = readAssetField(docs, "initialTree", issues);
+  if (initialTreeRead.ok) {
+    rawInitialTree = initialTreeRead.value;
+    hasInitialTree = rawInitialTree !== undefined;
+  }
   let initialTree: FacetTree | undefined;
-  if (docs.initialTree !== undefined) {
-    const { tree, issues: treeIssues } = validateTree(docs.initialTree);
-    for (const note of treeIssues) {
-      issues.push(`initial tree: ${note}`);
-    }
-    if (isSeedableTree(tree)) {
-      initialTree = tree;
-    } else {
-      // The trap: `validateTree(garbage)` returns EMPTY_TREE; seeding it would
-      // silently flip `hasBuiltStage` and change the offline face. Refuse it so
-      // boot falls back to today's model-first paint.
-      issues.push("initial tree is empty or invalid — not seedable; using model-first paint");
+  if (hasInitialTree) {
+    try {
+      const { tree, issues: treeIssues } = validateTree(rawInitialTree);
+      for (const note of treeIssues) {
+        pushAssetIssue(issues, `initial tree: ${note}`);
+      }
+      if (isSeedableTree(tree)) {
+        initialTree = tree;
+      } else {
+        // The trap: `validateTree(garbage)` returns EMPTY_TREE; seeding it would
+        // silently flip `hasBuiltStage` and change the offline face. Refuse it so
+        // boot falls back to today's model-first paint.
+        pushAssetIssue(
+          issues,
+          "initial tree is empty or invalid — not seedable; using model-first paint",
+        );
+      }
+    } catch {
+      pushAssetIssue(issues, "initial tree skipped: validation threw");
     }
   }
 
@@ -277,10 +452,33 @@ export function isSeedableTree(tree: FacetTree): boolean {
 export function withInitialStage(store: StageStore, initialStage?: FacetTree): StageStore {
   if (initialStage === undefined || !isSeedableTree(initialStage)) return store;
   const seed = initialStage;
+  const seedFingerprint = stableTreeFingerprint(seed);
   // Keys of sessions this decorator just seeded, awaiting a single `takeSeeded`
-  // report to the runtime. Consume-once, so a re-open of the same key never
-  // re-emits the seed frame.
+  // report to the runtime. If a durable save commits the seed but rejects before
+  // runtime can call `takeSeeded`, and the pending key is later evicted, the key
+  // moves to `recoverable`: only sessions this decorator actually tried to seed
+  // can be re-armed, so unrelated pre-existing seed-shaped sessions stay quiet.
   const seeded = new Set<string>();
+  const recoverable = new Set<string>();
+  const remember = (set: Set<string>, key: string): void => {
+    if (set.has(key)) return;
+    if (set.size >= MAX_SEEDED) {
+      const oldest = set.values().next().value;
+      if (oldest !== undefined) set.delete(oldest);
+    }
+    set.add(key);
+  };
+  const armSeed = (key: string): void => {
+    recoverable.delete(key);
+    if (seeded.size >= MAX_SEEDED && !seeded.has(key)) {
+      const oldest = seeded.values().next().value;
+      if (oldest !== undefined) {
+        seeded.delete(oldest);
+        remember(recoverable, oldest);
+      }
+    }
+    remember(seeded, key);
+  };
   return {
     get: (agentId, visitorId) => store.get(agentId, visitorId),
     save: (session) => store.save(session),
@@ -288,22 +486,48 @@ export function withInitialStage(store: StageStore, initialStage?: FacetTree): S
       // Get-then-create, seeding on miss — the `openSession` shape, but with the
       // seed in place of EMPTY_TREE. Safe because the runtime serializes opens
       // per (agent, visitor), so the get→save window can't be raced through it.
+      const key = sessionKey(agentId, visitor.visitorId);
       const existing = await store.get(agentId, visitor.visitorId);
-      if (existing !== undefined) return existing;
-      const session: FacetSession = { agentId, visitor, stage: seed };
-      await store.save(session);
-      // Bound the armed-key set (FIFO): evict the oldest when full, exactly as
-      // the runtime caps its `pendingSeeds`. A lost seed report is benign — it
-      // just skips a no-op root-replace prepend.
-      if (seeded.size >= MAX_SEEDED) {
-        const oldest = seeded.values().next().value;
-        if (oldest !== undefined) seeded.delete(oldest);
+      if (existing !== undefined) {
+        if (
+          !seeded.has(key) &&
+          recoverable.has(key) &&
+          stageMatchesFingerprint(existing.stage, seedFingerprint)
+        ) {
+          armSeed(key);
+        }
+        return existing;
       }
-      seeded.add(sessionKey(agentId, visitor.visitorId));
+      const session: FacetSession = { agentId, visitor, stage: seed };
+      // Arm before save. A DB adapter can commit the seed then lose the ack; the
+      // next turn must still receive the seed frame so the browser catches up to
+      // the already-persisted seeded session.
+      armSeed(key);
+      await store.save(session);
       return session;
     },
     takeSeeded(agentId, visitorId) {
-      return seeded.delete(sessionKey(agentId, visitorId));
+      const key = sessionKey(agentId, visitorId);
+      const wasSeeded = seeded.delete(key);
+      if (wasSeeded) recoverable.delete(key);
+      return wasSeeded;
     },
   };
+}
+
+function stableTreeFingerprint(tree: FacetTree): string | undefined {
+  try {
+    return JSON.stringify(tree);
+  } catch {
+    return undefined;
+  }
+}
+
+function stageMatchesFingerprint(tree: FacetTree, fingerprint: string | undefined): boolean {
+  if (fingerprint === undefined) return false;
+  try {
+    return JSON.stringify(tree) === fingerprint;
+  } catch {
+    return false;
+  }
 }

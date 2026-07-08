@@ -36,6 +36,21 @@ describe("applyPatch (RFC 6902)", () => {
     expect(out.nodes["a"]).toBeUndefined();
   });
 
+  it("remove and replace reject a missing object-member target", () => {
+    expect(() => applyPatch(EMPTY_TREE, [{ op: "remove", path: "/nodes/missing" }])).toThrow(
+      /path not found/,
+    );
+    expect(() =>
+      applyPatch(EMPTY_TREE, [
+        {
+          op: "replace",
+          path: "/nodes/missing",
+          value: { id: "missing", type: "text", value: "x" },
+        },
+      ]),
+    ).toThrow(/path not found/);
+  });
+
   it("is pure — never mutates the input tree", () => {
     const before = JSON.stringify(EMPTY_TREE);
     applyPatch(EMPTY_TREE, [
@@ -84,6 +99,12 @@ describe("applyPatch (RFC 6902)", () => {
     const out = applyPatch(seeded, [{ op: "move", from: "/nodes/a", path: "/nodes/b" }]);
     expect(out.nodes["a"]).toBeUndefined();
     expect(out.nodes["b"]).toMatchObject({ value: "x" });
+  });
+
+  it("move rejects a missing object-member source", () => {
+    expect(() =>
+      applyPatch(EMPTY_TREE, [{ op: "move", from: "/nodes/missing", path: "/nodes/b" }]),
+    ).toThrow(/path not found/);
   });
 
   it("copy duplicates a node (deep clone)", () => {
@@ -317,6 +338,40 @@ describe("applyOpInPlace (non-cloning primitive)", () => {
       }),
     ).toThrow();
     expect(childrenOf(tree)).toEqual(["a", "b"]);
+  });
+
+  it("leaves no ghost key when a move's object-member source is missing", () => {
+    const tree = structuredClone(base);
+    expect(() =>
+      applyOpInPlace(tree, {
+        op: "move",
+        from: "/nodes/missing",
+        path: "/nodes/ghost/children/0",
+      }),
+    ).toThrow(/path not found/);
+    expect(Object.prototype.hasOwnProperty.call(tree.nodes, "missing")).toBe(false);
+    expect(childrenOf(tree)).toEqual(["a", "b"]);
+  });
+
+  it("leaves the tree byte-identical when remove/replace target a missing object member", () => {
+    const removeTree = structuredClone(base);
+    expect(() =>
+      applyOpInPlace(removeTree, {
+        op: "remove",
+        path: "/nodes/missing",
+      }),
+    ).toThrow(/path not found/);
+    expect(removeTree).toEqual(base);
+
+    const replaceTree = structuredClone(base);
+    expect(() =>
+      applyOpInPlace(replaceTree, {
+        op: "replace",
+        path: "/nodes/missing",
+        value: { id: "missing", type: "text", value: "x" },
+      }),
+    ).toThrow(/path not found/);
+    expect(replaceTree).toEqual(base);
   });
 });
 

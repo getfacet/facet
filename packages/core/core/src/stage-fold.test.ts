@@ -49,6 +49,41 @@ describe("foldPatchIntoStage — convergence by construction", () => {
     expect(joined.length).toBeLessThan(200);
   });
 
+  it("never throws while describing a malformed op with hostile accessors", () => {
+    const unreadableOp = Object.defineProperty({}, "op", {
+      get() {
+        throw new Error("op boom");
+      },
+    }) as unknown as JsonPatchOperation;
+    const unreadablePath = Object.defineProperties(
+      {},
+      {
+        op: { value: "remove" },
+        path: {
+          get() {
+            throw new Error("path boom");
+          },
+        },
+      },
+    ) as unknown as JsonPatchOperation;
+
+    const folded = foldPatchIntoStage(rootBox, [unreadableOp, unreadablePath]);
+    expect(folded.tree).toEqual(rootBox);
+    expect(folded.mutated).toBe(false);
+    expect(
+      folded.issues.filter((i) => i.includes("dropped an unapplicable patch op")),
+    ).toHaveLength(2);
+  });
+
+  it("never throws when the patch batch is a revoked proxy", () => {
+    const revoked = Proxy.revocable([], {});
+    revoked.revoke();
+    const folded = foldPatchIntoStage(rootBox, revoked.proxy as unknown as JsonPatchOperation[]);
+    expect(folded.tree).toEqual(rootBox);
+    expect(folded.mutated).toBe(false);
+    expect(folded.issues.some((i) => i.includes("patches is not an array"))).toBe(true);
+  });
+
   it("(b) replace /nodes/root with a text node → normalized to EMPTY_TREE", () => {
     const patches: JsonPatchOperation[] = [
       { op: "replace", path: "/nodes/root", value: { id: "root", type: "text", value: "hi" } },
@@ -178,7 +213,7 @@ describe("foldPatchIntoStage — batch is bounded (DoS belt)", () => {
   });
 });
 
-describe("foldPatchIntoStage — RFC 6902 test-guard semantics", () => {
+describe("foldPatchIntoStage — test-guard salvage semantics", () => {
   it("a failed `test` drops itself AND every op it guarded (write is NOT applied)", () => {
     const stage: FacetTree = {
       root: "root",
@@ -258,13 +293,39 @@ describe("foldPatchIntoStage — mutated (effect-based edit signal)", () => {
 
   it("is false when every op fails salvage (nothing applied)", () => {
     // Both ops traverse INTO a node id that does not exist, so each throws in the
-    // salvage loop and nothing is applied — a `remove` of a missing top-level key
-    // would instead be a successful no-op delete, which correctly counts as applied.
+    // salvage loop and nothing is applied.
     const patches: JsonPatchOperation[] = [
       { op: "remove", path: "/nodes/ghost/children/0" },
       { op: "replace", path: "/nodes/missing/value", value: "x" },
     ];
     expect(foldPatchIntoStage(rootBox, patches).mutated).toBe(false);
+  });
+
+  it("is false when remove/replace target missing object members", () => {
+    const patches: JsonPatchOperation[] = [
+      { op: "remove", path: "/nodes/missing" },
+      {
+        op: "replace",
+        path: "/nodes/also-missing",
+        value: { id: "also-missing", type: "text", value: "x" },
+      },
+    ];
+    const folded = foldPatchIntoStage(rootBox, patches);
+    expect(folded.mutated).toBe(false);
+    expect(folded.tree).toEqual(rootBox);
+    expect(
+      folded.issues.filter((i) => i.includes("dropped an unapplicable patch op")),
+    ).toHaveLength(2);
+  });
+
+  it("is false when a move's object-member source is missing", () => {
+    const patches: JsonPatchOperation[] = [
+      { op: "move", from: "/nodes/missing", path: "/nodes/new" },
+    ];
+    const folded = foldPatchIntoStage(rootBox, patches);
+    expect(folded.mutated).toBe(false);
+    expect(folded.tree).toEqual(rootBox);
+    expect(folded.issues.some((i) => i.includes("dropped an unapplicable patch op"))).toBe(true);
   });
 
   it("is false for a `test`-only batch (a passing guard changes nothing)", () => {

@@ -7,7 +7,10 @@ themes, stamps, and an optional initial tree. The default references are
 in-memory (`MemoryStageStore`, `MemorySink`, `MemoryAssets`); file-backed Node
 references live in `@facet/runtime/node`. Load asset documents through
 `loadAssets`, then use `withInitialStage` when a validated initial tree should
-seed fresh sessions.
+seed fresh sessions. Asset loading is fail-soft: adapter failures, malformed
+store shapes, hostile accessors/arrays, oversized asset arrays, and invalid
+initial trees are returned as bounded/sanitized issues while the bundled
+defaults still resolve.
 
 ```bash
 npm install @facet/runtime @facet/agent @facet/core
