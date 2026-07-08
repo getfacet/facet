@@ -6,6 +6,9 @@ these commands, exactly as it edits files. Each is a thin wrapper over
 `@facet/agent`'s `Stage` that POSTs the resulting change to the local Facet
 bridge, which forwards it to the server.
 
+This package is a local bridge command surface. It is not a remote admin CLI,
+hosted API client, or deployment-management tool.
+
 ```bash
 npm install @facet/cli
 ```

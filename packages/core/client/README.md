@@ -48,4 +48,9 @@ credential. `FacetTransport` is a small interface (`send`, `subscribe`, plus
 optional `record` for local tap replay), so a hardened transport is a small,
 local piece of code.
 
+Hosted platforms should treat `@facet/client` as the renderer-side transport
+contract plus a reference implementation. Project-scoped visitor credentials,
+custom-domain policy, and tenant isolation belong in the platform transport that
+implements `FacetTransport`.
+
 [SECURITY.md]: https://github.com/getfacet/facet/blob/main/SECURITY.md

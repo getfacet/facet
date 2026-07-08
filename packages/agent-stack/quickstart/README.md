@@ -175,10 +175,10 @@ unauthenticated and each event drives paid provider calls, so:
 - Provider keys are read from the environment only, used solely in the request
   auth header, and never logged.
 
-It is **not** a multi-tenant server: there is no per-visitor rate limit or
-global cap on concurrent turns, and `MemorySink` history is unbounded. Those are
-hosted-product concerns (see the root roadmap), out of scope for the local
-quickstart.
+It is **not** a multi-tenant server: there is no tenant/project isolation,
+per-visitor rate limit, spend cap, usage metering, admin auth, or global cap on
+concurrent turns, and `MemorySink` history is unbounded. Those are production
+platform concerns around Facet, out of scope for the local quickstart.
 
 To bring your own brain instead (in-process, local CLI bridge, or dial-in), see
 ["Advanced: bring your own brain"](../../../README.md#advanced-bring-your-own-brain)

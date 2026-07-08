@@ -5,6 +5,9 @@ dials into a Facet server (SSE + POST, NAT-safe) and, for each visitor event,
 runs your local agent — exposing a `facet` command the agent calls to change the
 page (`facet render/append/set/remove/screens/theme/say`).
 
+This is local/operator tooling. It is not a hosted worker fleet, queue, billing
+boundary, or tenant isolation layer.
+
 ```bash
 # it's a bin package — install globally or run with npx
 npm install -g @facet/bridge   # then: facet-bridge

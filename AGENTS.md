@@ -30,11 +30,17 @@ small set of safe primitives and mutates them live as the conversation goes.
   large distributed/scale infrastructure (Redis fan-out, durable stores) — those
   are **pluggable adapters** behind interfaces (e.g. `StageStore` for the page,
   `Sink` for the conversation), not baked in.
+- **Also out of scope:** hosted-platform control planes: tenant/project auth,
+  API keys, billing, usage metering, rate limits, abuse operations, admin
+  dashboards, secrets management, audit logs, and custom-domain routing. Facet
+  stays a neutral OSS technology layer; production platforms wrap it.
 
 ## Package map
 
 Source directories are grouped by role; npm package names and public import
-specifiers stay unchanged.
+specifiers stay unchanged. The physical source groups are not the same thing as
+product support tiers: `@facet/server` lives under `packages/core/server`, but
+it is a reference transport, not a hardened public edge.
 
 | Group | Path | Package | Role |
 | --- | --- | --- | --- |
@@ -54,6 +60,19 @@ specifiers stay unchanged.
 | Extensions | `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres (`pg` peer dep). |
 | Labs | `packages/labs` | unpublished | Reserved for experiments; nothing here is part of the supported package contract. |
 | App | `apps/playground` | unpublished | Demos (not published). |
+
+Semantic tiers for documentation and support:
+
+- **Facet Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
+  `@facet/client`, `@facet/assets`.
+- **Agent Integration:** `@facet/agent-tools`, `@facet/agent-client`,
+  `@facet/agent`.
+- **Reference / Demo / Local:** `@facet/server`, `@facet/quickstart`,
+  `@facet/reference-agent`, `@facet/bridge`, `@facet/cli`.
+- **Adapters:** `@facet/store-postgres`.
+
+See `docs/PACKAGE-BOUNDARIES.md` before changing package positioning, publishing
+metadata, or hosted-deployment claims.
 
 `StageStore` and `Sink` methods are **async** (Promise-based) so backends can be
 databases; the in-memory and file references resolve immediately.

@@ -3,6 +3,11 @@
 Reference Facet brain: provider adapters, prompt policy, a bounded streaming
 harness, and the deterministic keyless stub.
 
+This package is a reference harness, not Facet's product boundary and not a
+customer production brain. Use it to understand a robust tool-calling loop, test
+Facet end to end, or bootstrap local demos. Agent business logic, domain tools,
+and production policy belong to the application or platform that uses Facet.
+
 The reusable Facet stage tool layer lives in `@facet/agent-tools`. That package
 owns the canonical tool specs, `executeStageTool`, inspection helpers, result
 types, and local stage-shadow helpers without choosing a provider or reference
@@ -65,8 +70,8 @@ Preset intent:
 
 | Preset | Intended use |
 | --- | --- |
-| `quickstart` | Conservative default for public demos and npx-first hosted entrypoints. |
-| `hosted` | Opt-in production profile with larger per-turn context and retry limits. |
+| `quickstart` | Conservative default for local demos and npx-first evaluation. |
+| `hosted` | More generous reference-harness profile for controlled hosted evaluations; not an endorsement that this package is your production brain. |
 | `local-dev` | Generous but still bounded local experimentation profile. |
 
 Pass `trace(event)` to observe bounded, sanitized harness events such as

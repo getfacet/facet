@@ -31,5 +31,14 @@ const connection = connectAgent({
 connection.close();
 ```
 
+## Trust model
+
+`@facet/agent-client` speaks the reference agent channel used by
+`@facet/server`. It can send a shared `agentToken` when the server requires one,
+but it does not model tenants, projects, scoped API keys, billing quotas, or
+agent permissions. Production hosted platforms should wrap this package or
+provide a platform-specific client that validates project-scoped credentials
+before routing events to Facet runtime primitives.
+
 See the [Facet docs](https://github.com/getfacet/facet) and
 [ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).

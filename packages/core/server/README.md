@@ -54,6 +54,12 @@ secret), and `visitorId` is trusted verbatim as the session key. Put your own
 authentication in front of it for multi-tenant or sensitive-per-visitor
 deployments. See [SECURITY.md] in the repository.
 
+Do not expose this package as a public SaaS edge by itself. It has no
+tenant/project lookup, browser auth, default agent auth, per-visitor rate
+limits, usage metering, billing/quota enforcement, abuse controls, admin auth,
+audit log, secrets management, or custom-domain routing. Those are platform
+concerns around Facet, not `@facet/server` concerns.
+
 [SECURITY.md]: https://github.com/getfacet/facet/blob/main/SECURITY.md
 
 See the [Facet docs](https://github.com/getfacet/facet) and

@@ -243,7 +243,8 @@ Sessions are keyed by `(agentId, visitorId)`, which is exactly why the page is
 
 ## Package taxonomy
 
-Facet's source packages are grouped by role while npm package names stay stable:
+Facet's source packages are grouped by maintainer-facing directory role while
+npm package names stay stable:
 
 - **Core** (`packages/core/*`) owns the contract, runtime, reference transport,
   browser transport, React renderer, and default asset data.
@@ -254,6 +255,23 @@ Facet's source packages are grouped by role while npm package names stay stable:
   Postgres stores.
 - **Labs** (`packages/labs`) is reserved for experiments and carries no
   supported package contract.
+
+The product-facing support tiers are different from the physical directories:
+
+- **Facet Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
+  `@facet/client`, and `@facet/assets`.
+- **Agent Integration:** `@facet/agent-tools`, `@facet/agent-client`, and
+  `@facet/agent`.
+- **Reference / Demo / Local:** `@facet/server`, `@facet/quickstart`,
+  `@facet/reference-agent`, `@facet/bridge`, and `@facet/cli`.
+- **Adapters:** `@facet/store-postgres`.
+
+This distinction matters most for `@facet/server`: it is intentionally a
+reference transport for local/self-hosted single-operator deployments. A public
+multi-tenant platform should put its own edge/API layer in front of Facet for
+tenant/project lookup, authentication, authorization, rate limits, usage
+metering, abuse controls, audit logging, secrets management, and custom-domain
+routing. Those concerns are not part of `@facet/server` or `@facet/runtime`.
 
 ## The agent's "CLI"
 
@@ -376,12 +394,15 @@ Deliberately still out of scope:
 - **Hosted scale infrastructure** — Redis fan-out, multi-region delivery, queues,
   and durable orchestration beyond pluggable `StageStore`/`Sink`/`AssetsStore`
   adapters.
+- **Hosted control planes** — tenant/project auth, API keys, billing, usage
+  metering, rate limits, abuse operations, admin dashboards, audit logs, secrets
+  management, and custom-domain routing.
 - **Domain/backend work** — fetching data, taking payments, placing orders, or
   calling business APIs; those stay in the agent/operator's own tools.
 - **Safety operations** — content moderation and abuse workflows for public,
   agent-authored pages.
 - **SEO/crawlers** — production crawler rendering and indexing strategy.
-- **Hosted product UI** — dashboards, asset editors, tenant management, and
-  deployment operations.
+- **Product UI** — dashboards, asset editors, tenant management, analytics,
+  replay, evals, and deployment operations.
 
 These are tracked in the README roadmap.

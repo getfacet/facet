@@ -14,6 +14,12 @@ without ever emitting unsafe or broken markup.
 > transport (browser + external agents), a browser playground, durable stores,
 > and a Postgres adapter are all in place and tested. APIs may still change.
 
+Facet is the neutral open-source technology layer: protocol, runtime,
+renderer, reference transports, and agent integration tools. It does **not**
+include a hosted control plane, tenant/project auth, billing, metering, abuse
+operations, admin dashboards, or custom-domain routing. Production platforms
+should wrap these primitives with their own operational layer.
+
 ## Quickstart: one command
 
 ```bash
@@ -102,8 +108,8 @@ token (`2`/`3`/`4`) — all still tokens, never raw values.
 4. **The renderer is fail-safe** → unknown or dangling nodes are skipped, so a
    partial stage renders as "plain", never broken.
 
-Higher-level shapes (`card()`, `hero()`, `row()`) live in an optional preset
-package — they're just functions that emit box compositions, giving one-shot
+Higher-level shapes (`card()`, `hero()`, `row()`) can live in optional preset
+packages — they're just functions that emit box compositions, giving one-shot
 convenience without giving up the low-level foundation.
 
 ## Reskin with data, not code
@@ -158,7 +164,7 @@ only ever names a theme or chooses style tokens such as `family: "mono"`.
    Stage (dynamic)  +  Chat dock (persistent)
         │  ClientEvent: visit / message / tap
         ▼
- [ @facet/server ]    reference SSE/POST transport (browser side + model side)
+ [ @facet/server ]    reference SSE/POST transport (swap or wrap for production)
         │
  [ @facet/runtime ]   one isolated session per (agent, visitor)
         │  calls your model, applies streamed batches, persists the session
@@ -172,7 +178,7 @@ only ever names a theme or chooses style tokens such as `family: "mono"`.
 **"Your model" defaults to the reference one:** `facet-quickstart` composes
 `@facet/reference-agent`, which fills the model slot with an OpenAI/Anthropic
 tool-calling loop or deterministic stub. It is a reference implementation of a
-pluggable seam; `@facet/quickstart` is the one-command wrapper around it. To
+pluggable boundary; `@facet/quickstart` is the one-command wrapper around it. To
 connect your own model instead, there are three jacks — see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
@@ -188,7 +194,9 @@ anonymous page, `browserVisitorId()` stores an unguessable id in the browser so 
 refresh or return visit re-hydrates the same page. When your app already knows
 who the visitor is — a logged-in user, an actor id — pass *that* id instead;
 Facet keys sessions by whatever id you give it (bring-your-own-identity, same as
-the stores).
+the stores). In a public or multi-tenant deployment, project lookup,
+authentication, rate limits, abuse controls, and usage metering belong in the
+platform layer in front of Facet.
 
 Two engineering choices keep "constantly re-rendering" cheap and correct:
 
@@ -204,41 +212,50 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 
 ## Packages
 
-Source directories are grouped by role; npm package names stay unchanged.
+Source directories are grouped for maintainability; npm package names stay
+unchanged. The supported packages fall into four semantic tiers:
 
-### Core
+### Facet Foundation
 
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/core/core` | `@facet/core` | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, `expandStamp`, session/event types. |
 | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
-| `packages/core/server` | `@facet/server` | Reference SSE/POST transport (browser side + agent side). |
-| `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`. |
 | `packages/core/react` | `@facet/react` | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
+| `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`. |
 | `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
 
-### Agent Stack
+### Agent Integration
 
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding. |
-| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming agent, tool loop, and keyless stub. |
-| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — one-command CLI/server/page wrapper that composes `@facet/reference-agent`. |
+| `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an external agent (SSE + heartbeat + reconnect). |
+| `packages/extensions/agent` | `@facet/agent` | In-process agent SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`. |
 
-### Extensions
+### Reference, Demo, And Local Tools
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/extensions/agent` | `@facet/agent` | In-process agent SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`. |
-| `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an external agent (SSE + heartbeat + reconnect). |
+| `packages/core/server` | `@facet/server` | Reference SSE/POST transport for local/self-hosted single-operator use; not a production multi-tenant edge. |
+| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper that composes `@facet/reference-agent`. |
+| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming tool loop, and keyless stub. |
 | `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
 | `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
+
+### Adapters
+
+| Path | Package | Role |
+| --- | --- | --- |
 | `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres. |
 
 ### Labs
 
 `packages/labs` is reserved for experiments; nothing there is part of the
 supported package contract.
+
+See [docs/PACKAGE-BOUNDARIES.md](docs/PACKAGE-BOUNDARIES.md) for the package
+support tiers, hosting boundary, and known package gaps.
 
 ## Advanced: bring your own brain
 
@@ -293,7 +310,7 @@ back-compatible helper.
 - [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint
 - [ ] Content-safety / moderation hooks
-- [ ] Distributed store + fan-out for horizontal scale
+- [ ] More adapters and deployment examples around the runtime seams
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the longer write-up and
 [AGENTS.md](AGENTS.md) if you're contributing.
