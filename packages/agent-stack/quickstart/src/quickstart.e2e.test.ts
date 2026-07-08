@@ -18,6 +18,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { FacetTheme, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
+import { MemorySink } from "@facet/runtime";
 import * as referenceAgent from "@facet/reference-agent";
 import { createStubAgent } from "@facet/reference-agent";
 import * as localAgent from "./agent.js";
@@ -134,6 +135,23 @@ function postEvent(base: string, visitorId: string, event: unknown): Promise<Res
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ visitor: { visitorId }, event }),
   });
+}
+
+function postRecord(base: string, visitorId: string, event: unknown): Promise<Response> {
+  return fetch(`${base}/record`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ visitor: { visitorId }, event }),
+  });
+}
+
+async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 2_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error("waitFor timed out");
 }
 
 /**
@@ -407,6 +425,62 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
       expect(sayTexts(frames)).toEqual(["stub: first", "stub: second"]);
     } finally {
       await stream.close();
+    }
+  });
+
+  it("records forwarded turns and local /record taps into the injected sink", async () => {
+    const sink = new MemorySink();
+    const logged = await boot({ sink });
+    try {
+      const visitorId = "e2e-logging";
+      const stream = await openStream(logged.url, visitorId);
+      try {
+        await stream.next(1); // reset
+
+        const visitPost = await postEvent(logged.url, visitorId, {
+          kind: "visit",
+          visitor: { visitorId },
+        });
+        expect(visitPost.status).toBe(202);
+        await stream.next(1); // visit patch
+
+        const messagePost = await postEvent(logged.url, visitorId, {
+          kind: "message",
+          text: "log-me",
+        });
+        expect(messagePost.status).toBe(202);
+        const messageFrames = await stream.next(2); // patch + say
+        expect(sayTexts(messageFrames)).toEqual(["stub: log-me"]);
+
+        const recordPost = await postRecord(logged.url, visitorId, {
+          kind: "tap",
+          target: "go-about",
+          effect: { navigate: "about" },
+          fields: { source: "nav" },
+        });
+        expect(recordPost.status).toBe(202);
+
+        await waitFor(async () => (await sink.history("quickstart-e2e", visitorId)).length >= 3);
+        const history = await sink.history("quickstart-e2e", visitorId);
+        expect(history.map((entry) => entry.event.kind)).toEqual(["visit", "message", "tap"]);
+        expect(history[0]?.messages.some((message) => message.kind === "patch")).toBe(true);
+        expect(history[1]?.event.kind === "message" ? history[1].event.text : undefined).toBe(
+          "log-me",
+        );
+        expect(
+          history[1]?.messages.some(
+            (message) => message.kind === "say" && message.text === "stub: log-me",
+          ),
+        ).toBe(true);
+        expect(history[2]?.event.kind === "tap" ? history[2].event.effect : undefined).toEqual({
+          navigate: "about",
+        });
+        expect(history[2]?.messages).toEqual([]);
+      } finally {
+        await stream.close();
+      }
+    } finally {
+      await logged.close();
     }
   });
 
