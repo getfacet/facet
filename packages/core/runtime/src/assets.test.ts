@@ -158,6 +158,194 @@ describe("loadAssets", () => {
     expect(loaded?.issues.some((i) => i.includes("assets load failed"))).toBe(true);
   });
 
+  it("never throws when the store rejects with an unstringifiable reason", async () => {
+    const throwingStore: AssetsStore = {
+      load: () =>
+        Promise.reject({
+          toString() {
+            throw new Error("stringify boom");
+          },
+        }),
+    };
+    const loaded = await loadAssets(throwingStore, "a");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    expect(loaded.issues.some((i) => i.includes("non-error rejection"))).toBe(true);
+  });
+
+  it("never throws when the store resolves a non-object — defaults still resolve", async () => {
+    const malformedStore: AssetsStore = {
+      load: () => Promise.resolve(null as unknown as AssetDocuments),
+    };
+    const loaded = await loadAssets(malformedStore, "a");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const okStamps = loaded.stamps.map((s) => s.name);
+    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    expect(loaded.issues.some((i) => i.includes("not an object"))).toBe(true);
+  });
+
+  it("never throws when asset document accessors throw — defaults still resolve", async () => {
+    const hostileDocs = Object.defineProperties(
+      {},
+      {
+        issues: {
+          get() {
+            throw new Error("issues boom");
+          },
+        },
+        themes: {
+          get() {
+            throw new Error("themes boom");
+          },
+        },
+        stamps: {
+          get() {
+            throw new Error("stamps boom");
+          },
+        },
+        initialTree: {
+          get() {
+            throw new Error("initial boom");
+          },
+        },
+      },
+    );
+    const hostileStore: AssetsStore = {
+      load: () => Promise.resolve(hostileDocs as AssetDocuments),
+    };
+    const loaded = await loadAssets(hostileStore, "a");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const okStamps = loaded.stamps.map((s) => s.name);
+    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    expect(loaded.issues.some((i) => i.includes("`issues` threw"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`themes` threw"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`stamps` threw"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("initial tree"))).toBe(true);
+  });
+
+  it("never calls store-supplied array methods while reading themes and stamps", async () => {
+    const themes = new Proxy([validTheme], {
+      get(target, prop, receiver) {
+        if (prop === "map") throw new Error("themes map boom");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const stamps = new Proxy([validStamp], {
+      get(target, prop, receiver) {
+        if (prop === "map") throw new Error("stamps map boom");
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: themes as readonly unknown[],
+        stamps: stamps as readonly unknown[],
+      }),
+      "a",
+    );
+    expect(loaded.themes.map((t) => t.name)).toContain("midnight");
+    expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+  });
+
+  it("never throws when asset arrays are revoked proxies — defaults still resolve", async () => {
+    const themes = Proxy.revocable([], {});
+    const stamps = Proxy.revocable([], {});
+    const issues = Proxy.revocable([], {});
+    themes.revoke();
+    stamps.revoke();
+    issues.revoke();
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: themes.proxy as unknown as readonly unknown[],
+        stamps: stamps.proxy as unknown as readonly unknown[],
+        issues: issues.proxy as unknown as readonly string[],
+      }),
+      "a",
+    );
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    const okStamps = loaded.stamps.map((s) => s.name);
+    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    expect(loaded.issues.some((i) => i.includes("`issues` was not an array"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`themes` was not an array"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`stamps` was not an array"))).toBe(true);
+  });
+
+  it("never throws when asset array item accessors throw — readable docs still load", async () => {
+    const themes = [validTheme, validTheme] as unknown[];
+    Object.defineProperty(themes, "1", {
+      get() {
+        throw new Error("theme item boom");
+      },
+    });
+    const stamps = [validStamp, validStamp] as unknown[];
+    Object.defineProperty(stamps, "1", {
+      get() {
+        throw new Error("stamp item boom");
+      },
+    });
+
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: themes as readonly unknown[],
+        stamps: stamps as readonly unknown[],
+      }),
+      "a",
+    );
+    expect(loaded.themes.map((t) => t.name)).toContain("midnight");
+    expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+    expect(loaded.issues.some((i) => i.includes("`themes` item 1 threw"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`stamps` item 1 threw"))).toBe(true);
+  });
+
+  it("bounds and sanitizes backend issue strings before returning them", async () => {
+    const rawIssues = Array.from({ length: 100 }, (_, i) =>
+      i === 0 ? `\x1b[31m${"x".repeat(500)}` : `issue-${String(i)}`,
+    );
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], stamps: [], issues: rawIssues }),
+      "a",
+    );
+    expect(loaded.issues.length).toBeLessThanOrEqual(65);
+    expect(loaded.issues.join("\n")).not.toContain("\x1b");
+    expect(loaded.issues[0]?.length).toBeLessThanOrEqual(203);
+    expect(loaded.issues).toContain("...further asset issues suppressed");
+  });
+
+  it("caps asset document arrays before validating custom themes and stamps", async () => {
+    const hugeThemes = Array.from({ length: 1_100 }, (_, i) => ({ name: `theme_${String(i)}` }));
+    const hugeStamps = Array.from({ length: 1_100 }, (_, i) => ({
+      ...validStamp,
+      name: `stamp_${String(i)}`,
+    }));
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: hugeThemes, stamps: hugeStamps }),
+      "a",
+    );
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    expect(loaded.themes.map((t) => t.name)).toContain("theme_1023");
+    expect(loaded.themes.map((t) => t.name)).not.toContain("theme_1024");
+    expect(loaded.stamps.map((s) => s.name)).toContain("stamp_1023");
+    expect(loaded.stamps.map((s) => s.name)).not.toContain("stamp_1024");
+    expect(loaded.issues.some((i) => i.includes("`themes` had 1100 item(s)"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`stamps` had 1100 item(s)"))).toBe(true);
+  });
+
+  it("never throws when an initialTree accessor throws — defaults still resolve", async () => {
+    const hostileStore: AssetsStore = {
+      load: () =>
+        Promise.resolve({
+          themes: [],
+          stamps: [],
+          get initialTree(): unknown {
+            throw new Error("initial boom");
+          },
+        } as AssetDocuments),
+    };
+    const loaded = await loadAssets(hostileStore, "a");
+    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
+    expect(loaded.issues.some((i) => i.includes("initial tree"))).toBe(true);
+  });
+
   it("never throws on a malformed store shape (non-array fields) — defaults survive (P3 hardening)", async () => {
     const malformedStore: AssetsStore = {
       load: () => Promise.resolve({ themes: null, stamps: undefined } as unknown as AssetDocuments),
@@ -641,6 +829,117 @@ describe("withInitialStage seed re-arms on a failed turn", () => {
       expect(value).not.toEqual(seedTree);
     }
     await expectNoDrift(runtime, messages);
+  });
+
+  it("re-emits the seed after the initial seed save committed then rejected", async () => {
+    const sessions = new Map<string, FacetSession>();
+    const keyOf = (agentId: string, visitorId: string): string => `${agentId}:${visitorId}`;
+    let failFirstSave = true;
+    const baseStore: StageStore = {
+      get: (agentId, visitorId) => Promise.resolve(sessions.get(keyOf(agentId, visitorId))),
+      open: async (agentId, v) => {
+        const existing = sessions.get(keyOf(agentId, v.visitorId));
+        if (existing !== undefined) return existing;
+        const session: FacetSession = { agentId, visitor: v, stage: EMPTY_TREE };
+        await baseStore.save(session);
+        return session;
+      },
+      save: async (session) => {
+        sessions.set(keyOf(session.agentId, session.visitor.visitorId), session);
+        if (failFirstSave) {
+          failFirstSave = false;
+          throw new Error("post-commit seed save boom");
+        }
+      },
+    };
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: appendAgent,
+      stageStore: withInitialStage(baseStore, seedTree),
+    });
+
+    await expect(runtime.handle(visitor, { kind: "message", text: "one" })).rejects.toThrow(
+      /post-commit seed save boom/,
+    );
+
+    const { messages } = await runtime.handle(visitor, { kind: "message", text: "two" });
+    const first = messages[0];
+    expect(first?.kind).toBe("patch");
+    if (first?.kind === "patch") {
+      expect(first.patches[0]).toEqual({ op: "replace", path: "", value: seedTree });
+    }
+    await expectNoDrift(runtime, messages);
+  });
+
+  it("does not evict another pending seed when retrying an already armed save miss at the cap", async () => {
+    const maxSeeded = 10_000;
+    const sessions = new Map<string, FacetSession>();
+    const keyOf = (agentId: string, visitorId: string): string => `${agentId}:${visitorId}`;
+    const baseStore: StageStore = {
+      get: (agentId, visitorId) => Promise.resolve(sessions.get(keyOf(agentId, visitorId))),
+      open: async (agentId, v) => {
+        const existing = sessions.get(keyOf(agentId, v.visitorId));
+        if (existing !== undefined) return existing;
+        const session: FacetSession = { agentId, visitor: v, stage: EMPTY_TREE };
+        await baseStore.save(session);
+        return session;
+      },
+      save: async (session) => {
+        if (session.visitor.visitorId === "retry") {
+          throw new Error("pre-commit seed save boom");
+        }
+        sessions.set(keyOf(session.agentId, session.visitor.visitorId), session);
+      },
+    };
+    const store = withInitialStage(baseStore, seedTree);
+
+    for (let i = 0; i < maxSeeded - 1; i += 1) {
+      await store.open("a", { visitorId: `old${String(i)}` });
+    }
+    await expect(store.open("a", { visitorId: "retry" })).rejects.toThrow(
+      /pre-commit seed save boom/,
+    );
+    await expect(store.open("a", { visitorId: "retry" })).rejects.toThrow(
+      /pre-commit seed save boom/,
+    );
+
+    expect(store.takeSeeded?.("a", "old0")).toBe(true);
+  });
+
+  it("re-arms a committed seed after pending eviction when runtime never consumed it", async () => {
+    const maxSeeded = 10_000;
+    const sessions = new Map<string, FacetSession>();
+    const keyOf = (agentId: string, visitorId: string): string => `${agentId}:${visitorId}`;
+    let failRetrySave = true;
+    const baseStore: StageStore = {
+      get: (agentId, visitorId) => Promise.resolve(sessions.get(keyOf(agentId, visitorId))),
+      open: async (agentId, v) => {
+        const existing = sessions.get(keyOf(agentId, v.visitorId));
+        if (existing !== undefined) return existing;
+        const session: FacetSession = { agentId, visitor: v, stage: EMPTY_TREE };
+        await baseStore.save(session);
+        return session;
+      },
+      save: async (session) => {
+        sessions.set(keyOf(session.agentId, session.visitor.visitorId), session);
+        if (session.visitor.visitorId === "retry" && failRetrySave) {
+          failRetrySave = false;
+          throw new Error("post-commit seed save boom");
+        }
+      },
+    };
+    const store = withInitialStage(baseStore, seedTree);
+
+    await expect(store.open("a", { visitorId: "retry" })).rejects.toThrow(
+      /post-commit seed save boom/,
+    );
+    for (let i = 0; i < maxSeeded; i += 1) {
+      await store.open("a", { visitorId: `filler${String(i)}` });
+    }
+    expect(store.takeSeeded?.("a", "retry")).toBe(false);
+
+    await store.open("a", { visitorId: "retry" });
+    expect(store.takeSeeded?.("a", "retry")).toBe(true);
   });
 
   it("prepends the seed on the applyMessages path, once", async () => {

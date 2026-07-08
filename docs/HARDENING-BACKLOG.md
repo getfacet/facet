@@ -56,12 +56,12 @@ landed, the exhaustive matrix did not.
 Found by the campaign's own `/code-review` verification pass; all confirmed
 real but downgraded/non-blocking. Evidence in the PR #3 review record.
 
-- **core/patch.ts + runtime vs react** — server salvages a partially-bad patch
-  batch per-op while the client drops the whole batch (`useFacet` keeps the
-  current tree) and the server forwards the ORIGINAL batch — a mixed batch
-  diverges the live view until reconnect. Pre-existing design asymmetry, no
-  in-repo producer can trigger it today. *Fix (design):* forward the salvaged
-  batch instead of the original, or unify the error policy both sides.
+- ~~core/patch.ts + runtime vs react~~ — RESOLVED before
+  core-runtime-hardening, recorded here on 2026-07-08: both runtime and React now
+  fold delivered patch batches with `foldPatchIntoStage`; the server emits one
+  coalesced patch frame and `useFacet` runs the same salvage + validation fold,
+  so the old "server salvages while client drops the whole batch" backlog entry
+  is stale.
 - **core/patch.ts (deepEqual)** — recurses without a depth bound; a ~50k-deep
   `test` value blows the stack (absorbed by runtime salvage; agent-supplied
   input only). *Fix:* depth guard for parity with `MAX_DEPTH`.
@@ -227,35 +227,38 @@ Bundle B PR review record.
   `TurnResult` with `agentMutated` (computed pre-seed), and the server gates
   `recordApplied` on it — a say-only turn re-emitting the seed can no longer
   falsely stale a parked late result; pinned by a server interleaving test.
-- **runtime/assets.ts (loadAssets throw guards, r7)** — the theme/stamp loops
-  are try/catch-guarded but `await store.load()` and the initial-tree
-  `validateTree` call are not; a rejecting DB adapter or throwing accessor
-  breaks the documented "never throws" contract. *Fix:* mirror the loop
-  guards at both seams (skip + issue).
-- **runtime/assets.ts (seed arming order + eviction comment, r7)** —
-  `withInitialStage.open()` arms `takeSeeded` only after `store.save`
-  resolves, so a commit-then-reject save loses the seed frame permanently;
-  and the FIFO-eviction comment calls a dropped armed key "benign" when it
-  actually means a failed-first-turn client keeps a blank page until reload.
-  *Fix:* arm before save; correct both comments.
-- **core/theme.ts (contrast parser coverage, r7)** — `parseSrgb` skips
-  keyword and `hsl()` colors that `isAllowedColor` admits, so the WCAG check
-  silently misses them. *Fix:* HSL→RGB conversion + a named-colors table, or
-  narrow the allowlist claim.
-- **core/patch.ts (move ghost key, r11)** — a failed `move` whose `from` is a
-  missing object member restores a ghost `undefined` key, violating per-op
-  atomicity. *Fix:* verify source existence before mutating (RFC 6902 "from
-  MUST exist").
+- ~~runtime/assets.ts (loadAssets throw guards, r7)~~ — RESOLVED by
+  core-runtime-hardening (2026-07-08): `loadAssets` now guards `store.load()`,
+  malformed store shapes, hostile accessors/arrays, oversized asset and issue
+  arrays, `initialTree` accessors, and initial-tree validation; skipped seams
+  become bounded/sanitized issues and the default assets still resolve. Pinned
+  by rejecting-store, malformed-shape, revoked-array, cap, and throwing-accessor
+  tests.
+- ~~runtime/assets.ts (seed arming order + eviction comment, r7)~~ — RESOLVED
+  by core-runtime-hardening (2026-07-08): `withInitialStage.open()` arms the
+  seed before `store.save`, so a commit-then-reject durable save re-emits the
+  seed frame on the next turn, and committed-but-unreported seeds can be
+  re-armed after pending-key eviction without flagging unrelated pre-existing
+  seed-shaped sessions; the comments now describe that failure model. Pinned by
+  commit-then-reject and cap-eviction seed-save runtime tests.
+- ~~core/theme.ts (contrast parser coverage, r7)~~ — RESOLVED by
+  core-runtime-hardening (2026-07-08): color allowance now goes through the
+  same `parseSrgb` parser the contrast check uses, with hex, `rgb()`/`rgba()`,
+  `hsl()`/`hsla()`, and a conservative named-color table covered by tests.
+- ~~core/patch.ts (move ghost key, r11)~~ — RESOLVED by core-runtime-hardening
+  (2026-07-08): object-member source reads now require an own property, so
+  `move`/`copy` from a missing object member throws before mutating. Pinned by
+  `applyPatch`, `applyOpInPlace`, and `foldPatchIntoStage` tests.
 - ~~runtime (effect-based agentMutated, r11)~~ — RESOLVED in-branch (review
   r12, upgraded to P2): `StageFoldResult.mutated` (true iff a non-`test` op
   actually applied) now feeds `TurnResult.agentMutated`; over-cap/empty/
   non-array/all-salvage-dropped turns no longer bump `recordApplied` (r13
   closed the late-apply seam variant with the same effect-based gate).
-- **core/stage-fold.ts (test-guard pre-guard ops, r13)** — ops applied BEFORE
-  a failed `test` guard stay applied while the in-code RFC 6902 §5 citation
-  promises whole-document abort. *Fix:* roll back to the pre-batch stage on a
-  failed guard (or correct the citation to the deliberate partial-salvage
-  semantics).
+- ~~core/stage-fold.ts (test-guard pre-guard ops, r13)~~ — RESOLVED by
+  core-runtime-hardening (2026-07-08): the misleading RFC whole-document-abort
+  comment was removed and the in-code contract now states the deliberate
+  partial-salvage policy: a failed `test` drops itself and following ops in the
+  salvage stream, while already-salvaged pre-guard ops stay applied.
 - **server/server.ts:390 (deliver-throw comment precision, r14)** — the
   "failed handle leaves the stage untouched" comment overclaims for a
   commit-then-reject durable store; the behavior is the accepted trade-off.

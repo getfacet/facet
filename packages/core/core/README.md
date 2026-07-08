@@ -56,7 +56,10 @@ const expanded = expandStamp(
 
 `expandStamp` is fail-safe: malformed params become issues and defaults, unknown
 parents return no ops, and the returned ids are fresh only for the nodes that
-will actually be emitted.
+will actually be emitted. `applyPatch` enforces JSON Pointer reads for source
+operations (`move`, `copy`, and `test`) and requires object-member
+`replace`/`remove` targets to exist before mutating, so stale ops do not leave
+partial object members behind or count as stage edits.
 
 Also exported: small dependency-free async primitives the other packages build
 on — `createSerialQueue` (per-key ordering) and `createSemaphore` (FIFO

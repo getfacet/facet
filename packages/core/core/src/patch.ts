@@ -132,6 +132,9 @@ function childOf(node: Container, token: string): unknown {
   if (Array.isArray(node)) {
     return node[arrayIndex(token, node.length, "access")];
   }
+  if (!Object.prototype.hasOwnProperty.call(node, token)) {
+    throw new Error(`path not found: "${token}"`);
+  }
   return node[token];
 }
 
@@ -175,6 +178,9 @@ function setMember(
       container[arrayIndex(key, container.length, "access")] = value;
     }
   } else {
+    if (mode === "replace" && !Object.prototype.hasOwnProperty.call(container, key)) {
+      throw new Error(`path not found: "${key}"`);
+    }
     container[key] = value;
   }
 }
@@ -183,6 +189,9 @@ function removeMember(container: Container, key: string): void {
   if (Array.isArray(container)) {
     container.splice(arrayIndex(key, container.length, "access"), 1);
   } else {
+    if (!Object.prototype.hasOwnProperty.call(container, key)) {
+      throw new Error(`path not found: "${key}"`);
+    }
     delete container[key];
   }
 }

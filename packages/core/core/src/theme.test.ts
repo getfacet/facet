@@ -57,6 +57,17 @@ describe("validateTheme", () => {
       { name: "x", color: { fg: "</style><script>" } },
       { name: "x", color: { fg: "#fff`" } },
       { name: "x", color: { fg: "expr\x00ession" } },
+      { name: "x", color: { fg: "#0000" } },
+      { name: "x", color: { fg: "rgba(0, 0, 0, 0.5)" } },
+      { name: "x", color: { fg: "hsla(0, 0%, 0%, 50%)" } },
+      { name: "x", color: { fg: "rgba(0 0 0 1)" } },
+      { name: "x", color: { fg: "hsla(0 0% 0% 1)" } },
+      { name: "x", color: { fg: "__proto__" } },
+      { name: "x", color: { fg: "constructor" } },
+      { name: "x", color: { fg: "rgb(, 0, 0)" } },
+      { name: "x", color: { fg: "rgb(%, 0, 0)" } },
+      { name: "x", color: { fg: "hsl(, 100%, 50%)" } },
+      { name: "x", color: { fg: "hsl(0, 100%, %)" } },
     ];
     for (const doc of hostile) {
       const result = validateTheme(doc);
@@ -203,6 +214,19 @@ describe("validateTheme", () => {
     });
     expect(theme).toBeDefined();
     expect(issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(false);
+  });
+
+  it("warns on low-contrast hsl() and named-color pairs", () => {
+    const hsl = validateTheme({
+      name: "hsl-theme",
+      color: { fg: "hsl(0, 0%, 50%)", bg: "hsl(0, 0%, 50%)" },
+    });
+    expect(hsl.theme).toBeDefined();
+    expect(hsl.issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(true);
+
+    const named = validateTheme({ name: "named", color: { fg: "gray", bg: "gray" } });
+    expect(named.theme).toBeDefined();
+    expect(named.issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(true);
   });
 
   it("drops unknown token and group keys with a warning but keeps the document", () => {

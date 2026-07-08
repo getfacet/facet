@@ -137,7 +137,13 @@ export type ServerMessage =
 
 /** True for an RFC 6902 `test` op guard: a plain object whose `op` is "test". */
 export function isJsonPatchTestOperation(op: unknown): boolean {
-  return typeof op === "object" && op !== null && (op as Record<string, unknown>)["op"] === "test";
+  try {
+    return (
+      typeof op === "object" && op !== null && (op as Record<string, unknown>)["op"] === "test"
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
