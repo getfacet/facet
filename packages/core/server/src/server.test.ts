@@ -1748,6 +1748,27 @@ describe("async delivery — resume & rehydrate", () => {
     expect(snapshot?.id).toBe("");
   });
 
+  it("treats the same visitorId as the same reference session and separates different visitorIds", async () => {
+    const inner = new MemoryStageStore();
+    const { server, base } = await start({ agentId: "a", agent: seedAgent, stageStore: inner });
+    running = server;
+
+    const seed = await fetch(`${base}/stream?visitorId=shared`);
+    await postEvent(base, "shared", { kind: "message", text: "seed" });
+    await readEvents(seed, 2); // reset + seeded snapshot
+
+    const same = await fetch(`${base}/stream?visitorId=shared`);
+    const sameFrames = await readEvents(same, 2);
+    const sameText = JSON.stringify(sameFrames);
+    expect(sameFrames[0]?.data).toEqual({ kind: "reset" });
+    expect(sameText).toContain("seeded stage");
+
+    const different = await fetch(`${base}/stream?visitorId=different`);
+    const differentFrames = await readEvents(different, 1);
+    expect(differentFrames).toEqual([{ id: "", data: { kind: "reset" } }]);
+    expect(JSON.stringify(differentFrames)).not.toContain("seeded stage");
+  });
+
   it("paints a token-less tab promptly during a mid-flight slow turn", async () => {
     // A slow (never-answered within the window) turn is in flight; a fresh
     // token-less tab must still rehydrate promptly (rehydrate runs OUTSIDE the lane).

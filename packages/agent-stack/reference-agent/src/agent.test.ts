@@ -1233,6 +1233,37 @@ describe("createQuickstartAgent tool loop", () => {
     expect(all).not.toContain("older-line");
   });
 
+  it("feeds only the current visitor's sink history into the provider turn", async () => {
+    const sink = new MemorySink();
+    await sink.record("quickstart", "v1", {
+      at: 0,
+      event: { kind: "message", text: "private-v1-line" },
+      messages: [{ kind: "say", text: "private-v1-reply" }],
+    });
+    await sink.record("quickstart", "v2", {
+      at: 1,
+      event: { kind: "message", text: "visible-v2-line" },
+      messages: [{ kind: "say", text: "visible-v2-reply" }],
+    });
+
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = makeAgent(provider, { sink, historyTurns: 10 });
+    await runAgent(
+      agent,
+      { kind: "message", text: "visible-v2-now" },
+      {
+        ...SESSION,
+        visitor: { visitorId: "v2" },
+      },
+    );
+
+    const all = providerTurnText(provider.turns[0]!);
+    expect(all).toContain("visible-v2-line");
+    expect(all).toContain("visible-v2-now");
+    expect(all).not.toContain("private-v1-line");
+    expect(all).not.toContain("private-v1-reply");
+  });
+
   it("budget.maxHistoryTurns overrides legacy historyTurns while legacy historyTurns still works", async () => {
     const sink = new MemorySink();
     await recordHistory(sink, ["older", "middle", "newer"]);
