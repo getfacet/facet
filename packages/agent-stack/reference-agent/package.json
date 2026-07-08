@@ -1,7 +1,7 @@
 {
   "name": "@facet/reference-agent",
   "version": "0.0.0",
-  "description": "Facet reference agent — provider adapters, prompt policy, bounded harness loop, and deterministic stub.",
+  "description": "Facet reference agent — provider adapters, prompt policy, bounded harness loop, and deterministic test fixture.",
   "license": "MIT",
   "repository": {
     "type": "git",

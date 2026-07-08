@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * `facet-quickstart` — one command from a provider key (or `--stub`) to a live
- * Facet page owned by the built-in agent (spec Decision 9).
+ * `facet-quickstart` — one command from a provider key to a live Facet page
+ * owned by the built-in reference agent.
  *
  * The bin is a thin `main()`; all arg-parse/key-resolution/boot logic lives in
  * the exported `runCli(argv, env, hooks?)` so cli.test.ts drives DC-005
@@ -12,12 +12,7 @@ import { readFile } from "node:fs/promises";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { FacetAgent, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
-import {
-  DEFAULT_GUIDE,
-  createQuickstartAgent,
-  createStubAgent,
-  resolveProvider,
-} from "@facet/reference-agent";
+import { DEFAULT_GUIDE, createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
 import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
@@ -44,17 +39,15 @@ const DEFAULT_PORT = 5292;
 const DEFAULT_AGENT_ID = "quickstart";
 const DEFAULT_GUIDE_PATH = "./facet.md";
 
-const NO_KEY_MESSAGE =
-  "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run with --stub for a keyless look around.";
+const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
 
 const USAGE =
-  "Usage: facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--stub] [--agent-id <id>] [--assets <dir>]";
+  "Usage: facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--agent-id <id>] [--assets <dir>]";
 
 interface CliFlags {
   readonly guide?: string;
   readonly port: number;
   readonly provider?: string;
-  readonly stub: boolean;
   readonly agentId: string;
   readonly assets?: string;
 }
@@ -64,7 +57,6 @@ function parseFlags(argv: readonly string[]): CliFlags {
   let guide: string | undefined;
   let port = DEFAULT_PORT;
   let provider: string | undefined;
-  let stub = false;
   let agentId = DEFAULT_AGENT_ID;
   let assets: string | undefined;
 
@@ -93,9 +85,6 @@ function parseFlags(argv: readonly string[]): CliFlags {
       case "--provider":
         provider = takeValue("--provider", argv[++i]);
         break;
-      case "--stub":
-        stub = true;
-        break;
       case "--agent-id":
         agentId = takeValue("--agent-id", argv[++i]);
         break;
@@ -111,7 +100,6 @@ function parseFlags(argv: readonly string[]): CliFlags {
     ...(guide !== undefined ? { guide } : {}),
     port,
     ...(provider !== undefined ? { provider } : {}),
-    stub,
     agentId,
     ...(assets !== undefined ? { assets } : {}),
   };
@@ -192,36 +180,29 @@ export async function runCli(
   // facet server (which records into it) — the same conversation, both sides.
   const sink = new MemorySink();
 
-  let agent: FacetAgent;
-  let brain: string;
-  if (flags.stub) {
-    agent = createStubAgent();
-    brain = "stub";
-  } else {
-    let provider;
-    try {
-      provider = resolveProvider(
-        flags.provider !== undefined ? { provider: flags.provider } : {},
-        env,
-      );
-    } catch (cause) {
-      error(cause instanceof Error ? cause.message : String(cause));
-      return 1;
-    }
-    if (provider === null) {
-      error(NO_KEY_MESSAGE);
-      return 1;
-    }
-    agent = createQuickstartAgent({
-      provider,
-      guide,
-      sink,
-      agentId: flags.agentId,
-      themes,
-      stamps,
-    });
-    brain = `${provider.name} (${provider.model})`;
+  let provider;
+  try {
+    provider = resolveProvider(
+      flags.provider !== undefined ? { provider: flags.provider } : {},
+      env,
+    );
+  } catch (cause) {
+    error(cause instanceof Error ? cause.message : String(cause));
+    return 1;
   }
+  if (provider === null) {
+    error(NO_KEY_MESSAGE);
+    return 1;
+  }
+  const agent: FacetAgent = createQuickstartAgent({
+    provider,
+    guide,
+    sink,
+    agentId: flags.agentId,
+    themes,
+    stamps,
+  });
+  const brain = `${provider.name} (${provider.model})`;
 
   let running: RunningQuickstart;
   try {

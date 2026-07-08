@@ -1,5 +1,5 @@
 // @facet/reference-agent: provider adapters, prompt policy, the bounded
-// harness loop, and the deterministic keyless stub.
+// harness loop, and the deterministic test fixture.
 export * from "./provider.js";
 export {
   DEFAULT_GUIDE,

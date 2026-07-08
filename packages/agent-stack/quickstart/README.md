@@ -1,13 +1,12 @@
 # @facet/quickstart
 
-Tier: **Local / Demo Tool**.
+Tier: **Local First-Run Tool**.
 
-One command from a provider key (or no key at all) to a live Facet page. The
-package is the `facet-quickstart` CLI/server/page wrapper. It composes
-`@facet/reference-agent`, a tool-calling LLM agent that draws the page from your
-guide markdown and keeps editing it as visitors chat, or its deterministic stub
-for keyless runs. The brain is a reference implementation of a pluggable seam,
-not the only brain Facet can run.
+One command from a provider key to a live Facet page. The package is the
+`facet-quickstart` CLI/server/page wrapper. It composes `@facet/reference-agent`,
+a tool-calling LLM agent that draws the page from your guide markdown and keeps
+editing it as visitors chat. The brain is a reference implementation of a
+pluggable seam, not the only brain Facet can run.
 
 The reference agent runs a bounded **streaming tool loop**: the model calls
 `append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
@@ -20,9 +19,6 @@ to finish.
 ```bash
 # with a provider key (env only — see below)
 OPENAI_API_KEY=sk-… npx facet-quickstart --guide ./my-page.md
-
-# no key: the deterministic stub brain (no network, fixture page)
-npx facet-quickstart --stub
 ```
 
 On success it prints the link and the resolved brain:
@@ -36,7 +32,7 @@ In the workspace (dev), build first — the bin serves a prebuilt page bundle:
 
 ```bash
 pnpm --filter @facet/quickstart build
-node packages/agent-stack/quickstart/dist/cli.js --stub
+OPENAI_API_KEY=sk-… node packages/agent-stack/quickstart/dist/cli.js --guide ./my-page.md
 ```
 
 The grouped source paths are `packages/agent-stack/quickstart` for this wrapper,
@@ -46,7 +42,7 @@ The grouped source paths are `packages/agent-stack/quickstart` for this wrapper,
 ## Flags
 
 ```
-facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--stub] [--agent-id <id>] [--assets <dir>]
+facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--agent-id <id>] [--assets <dir>]
 ```
 
 | Flag | Default | Meaning |
@@ -54,7 +50,6 @@ facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--
 | `--guide <path>` | `./facet.md` | Guide markdown — what the page is about (the deployer's brief). |
 | `--port <n>` | `5292` | Public port. Busy ⇒ exit 1 naming the port and `--port`. |
 | `--provider openai\|anthropic` | auto | Force a provider; requires that provider's key. |
-| `--stub` | off | Keyless deterministic brain; skips key resolution entirely. |
 | `--agent-id <id>` | `quickstart` | Agent id the sessions are keyed under. |
 | `--assets <dir>` | none | Directory of theme/stamp/initial-tree documents to reskin and pre-seed the page (see below). An explicit path that doesn't exist ⇒ exit 1 naming it. |
 
@@ -67,10 +62,10 @@ facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--
 
 Resolution: an explicit `--provider` wins and requires its own key; otherwise
 `OPENAI_API_KEY` ⇒ openai (also when both keys are present), else
-`ANTHROPIC_API_KEY` ⇒ anthropic. No key and no `--stub` exits 1 with:
+`ANTHROPIC_API_KEY` ⇒ anthropic. No key exits 1 with:
 
 ```
-No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run with --stub for a keyless look around.
+No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.
 ```
 
 Keys are read from the environment only — never a config file, never persisted.
@@ -136,29 +131,15 @@ batch. The validated theme map ships inline in the served HTML shell for the
 renderer (no new protocol message). An explicit `--assets` path that doesn't
 exist ⇒ exit 1 naming it.
 
-## Stub mode
-
-`--stub` wires `createStubAgent()` from `@facet/reference-agent` instead of an
-LLM: a fixed fixture page
-(hero, a native form whose submit collects fields, and two navigate-linked
-screens) with fully deterministic replies — zero network, zero randomness. It
-exists for a keyless look around and as the fixture behind the repo's
-`/live-test` Tier-1 gate.
-
-`--stub` composes with `--assets`: the shell still carries the theme map and the
-initial tree still seeds. A chat message of `theme <name>` makes the stub select
-that theme (`stage.theme(<name>)`), so you can watch a live reskin with no key —
-e.g. `theme midnight` against a `midnight.theme.json`.
-
 ## The served page
 
 The bin runs a thin wrapper server: it resolves guides/assets, creates the
-reference provider-backed or stub agent, serves the HTML shell and the prebuilt
-browser bundle (`/app.js` — the standard `@facet/react` renderer + chat dock)
-itself, and proxies every protocol route (SSE + POST) to an internal
-`createFacetServer` bound to `127.0.0.1` with a random per-boot agent token.
-The external agent channel (`/agent/*`) is never exposed — the composed
-reference agent is in-process; dial-in is an advanced jack.
+reference provider-backed agent, serves the HTML shell and the prebuilt browser
+bundle (`/app.js` — the standard `@facet/react` renderer + chat dock) itself,
+and proxies every protocol route (SSE + POST) to an internal `createFacetServer`
+bound to `127.0.0.1` with a random per-boot agent token. The external agent
+channel (`/agent/*`) is never exposed — the composed reference agent is
+in-process; dial-in is an advanced jack.
 
 The default shell loads Nunito from Google Fonts so the built-in
 `DEFAULT_THEME.fontFamily.sans` value renders as intended. If that stylesheet is

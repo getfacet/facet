@@ -1,13 +1,13 @@
 # @facet/reference-agent
 
 Reference Facet brain: provider adapters, prompt policy, a bounded streaming
-harness, and the deterministic keyless stub.
+harness, and a deterministic test fixture.
 
 Tier: **Reference Implementation**.
 
 This package is a reference harness, not Facet's product boundary and not a
 customer production brain. Use it to understand a robust tool-calling loop, test
-Facet end to end, or bootstrap local demos. Agent business logic, domain tools,
+Facet end to end, or bootstrap local evaluations. Agent business logic, domain tools,
 and production policy belong to the application or platform that uses Facet.
 
 The reusable Facet stage tool layer lives in `@facet/agent-tools`. That package
@@ -15,11 +15,11 @@ owns the canonical tool specs, `executeStageTool`, inspection helpers, result
 types, and local stage-shadow helpers without choosing a provider or reference
 policy. Use `@facet/agent-tools` directly for custom agent loops. This package
 consumes that layer and adds the OpenAI/Anthropic adapters, system prompt,
-bounded harness loop, and stub.
+bounded harness loop, and deterministic test fixture.
 
-`@facet/quickstart` composes this package for `facet-quickstart` provider and
-`--stub` modes. You can import it directly when you want the reference agent
-without the quickstart CLI/server/page wrapper.
+`@facet/quickstart` composes this package for the provider-backed
+`facet-quickstart` path. You can import it directly when you want the reference
+agent without the quickstart CLI/server/page wrapper.
 
 ```ts
 import { MemorySink } from "@facet/runtime";
@@ -48,7 +48,7 @@ const agent = createReferenceAgent({
 - `harness/`: context assembly, deterministic compaction, budget normalization,
   retry/stop classification, transcript observations, trace events, and the
   streaming loop.
-- `stub.ts`: deterministic keyless agent for local tests and quickstart `--stub`.
+- `stub.ts`: deterministic agent fixture for local tests and live-link gates.
 
 The harness is bounded by default. It compacts sink history, includes full stage
 JSON only after a bounded length check says it can fit, falls back to
@@ -133,4 +133,5 @@ provider SDK dependency is bundled here.
 reads. It renders `STUB_TREE` on visit, echoes messages into the stage and chat,
 responds to `theme <name>`, and echoes collected tap fields in sorted order.
 
-Use it for keyless local tests and the quickstart live-test Tier 1 path.
+Use it for local tests and the quickstart live-test Tier 1 path, not as the
+public quickstart experience.

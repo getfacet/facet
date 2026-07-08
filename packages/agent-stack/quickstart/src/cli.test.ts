@@ -15,8 +15,9 @@ import { runCli, type RunCliHooks } from "./cli.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 import { createStubAgent } from "./stub.js";
 
-const NO_KEY_MESSAGE =
-  "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY, or run with --stub for a keyless look around.";
+const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
+
+const TEST_PROVIDER_ENV = { OPENAI_API_KEY: "sk-test" } as const;
 
 describe("@facet/quickstart barrel", () => {
   it("quickstart barrel exposes reference-agent aliases", () => {
@@ -51,18 +52,14 @@ async function bootCli(
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     const captured = capture();
     let running: RunningQuickstart | undefined;
-    const code = await runCli(
-      ["--stub", "--port", String(port), ...extraArgs],
-      {},
-      {
-        ...extraHooks,
-        log: captured.log,
-        error: captured.error,
-        onStarted: (handle) => {
-          running = handle;
-        },
+    const code = await runCli(["--port", String(port), ...extraArgs], TEST_PROVIDER_ENV, {
+      ...extraHooks,
+      log: captured.log,
+      error: captured.error,
+      onStarted: (handle) => {
+        running = handle;
       },
-    );
+    });
     if (code === 0 && running !== undefined) return { captured, running };
   }
   throw new Error("could not boot the quickstart CLI on a free port");
@@ -87,14 +84,13 @@ async function bootServer(pageBundlePath?: string): Promise<RunningQuickstart> {
 }
 
 describe("runCli — key resolution (DC-005)", () => {
-  it("exits non-zero naming both env vars and --stub when no key is set", async () => {
+  it("exits non-zero naming both env vars when no key is set", async () => {
     const captured = capture();
     const code = await runCli([], {}, { log: captured.log, error: captured.error });
     expect(code).toBe(1);
     const text = [...captured.err, ...captured.out].join("\n");
     expect(text).toContain("OPENAI_API_KEY");
     expect(text).toContain("ANTHROPIC_API_KEY");
-    expect(text).toContain("--stub");
     expect(text).toContain(NO_KEY_MESSAGE);
   });
 });
@@ -102,20 +98,20 @@ describe("runCli — key resolution (DC-005)", () => {
 describe("runCli — flag parsing", () => {
   async function expectExit1(argv: readonly string[]): Promise<string> {
     const captured = capture();
-    const code = await runCli(
-      argv,
-      { OPENAI_API_KEY: "sk-test" },
-      {
-        log: captured.log,
-        error: captured.error,
-      },
-    );
+    const code = await runCli(argv, TEST_PROVIDER_ENV, {
+      log: captured.log,
+      error: captured.error,
+    });
     expect(code).toBe(1);
     return [...captured.err, ...captured.out].join("\n");
   }
 
   it("exits 1 on an unknown flag", async () => {
     expect(await expectExit1(["--bogus"])).toContain('Unknown flag "--bogus"');
+  });
+
+  it("rejects the retired --stub flag", async () => {
+    expect(await expectExit1(["--stub"])).toContain('Unknown flag "--stub"');
   });
 
   it("exits 1 when a value-taking flag has no value", async () => {
@@ -133,7 +129,7 @@ describe("runCli — guide resolution (DC-005)", () => {
   it("exits non-zero naming the path when an explicit --guide file is missing", async () => {
     const captured = capture();
     const code = await runCli(
-      ["--guide", "./nope.md", "--stub"],
+      ["--guide", "./nope.md"],
       {},
       {
         log: captured.log,
@@ -160,11 +156,10 @@ describe("runCli — --assets (DC-009)", () => {
       `facet-assets-missing-${String(Date.now())}-${String(Math.random())}`,
     );
     const captured = capture();
-    const code = await runCli(
-      ["--stub", "--assets", missing],
-      {},
-      { log: captured.log, error: captured.error },
-    );
+    const code = await runCli(["--assets", missing], TEST_PROVIDER_ENV, {
+      log: captured.log,
+      error: captured.error,
+    });
     expect(code).toBe(1);
     expect([...captured.err, ...captured.out].join("\n")).toContain(missing);
   });
@@ -180,19 +175,15 @@ describe("runCli — --assets (DC-009)", () => {
       writeFileSync(file, "hello");
       const port = 20_000 + Math.floor(Math.random() * 20_000);
       const captured = capture();
-      const code = await runCli(
-        ["--stub", "--port", String(port), "--assets", file],
-        {},
-        {
-          log: captured.log,
-          error: captured.error,
-          // Defensive: if the guard failed to fire and the server booted, close it
-          // so the listening handle can't leak past this test.
-          onStarted: (handle) => {
-            running = handle;
-          },
+      const code = await runCli(["--port", String(port), "--assets", file], TEST_PROVIDER_ENV, {
+        log: captured.log,
+        error: captured.error,
+        // Defensive: if the guard failed to fire and the server booted, close it
+        // so the listening handle can't leak past this test.
+        onStarted: (handle) => {
+          running = handle;
         },
-      );
+      });
       expect(code).toBe(1);
       expect([...captured.err, ...captured.out].join("\n")).toContain(file);
     } finally {
@@ -270,13 +261,13 @@ describe("runCli — --assets (DC-009)", () => {
   });
 });
 
-describe("runCli — --stub boot (DC-004)", () => {
-  it("boots keyless with --stub, prints the link and the stub brain line", async () => {
+describe("runCli — provider-backed boot (DC-004)", () => {
+  it("boots with a provider key, prints the link and the provider brain line", async () => {
     const { captured, running } = await bootCli();
     try {
       const text = captured.out.join("\n");
       expect(text).toContain(running.url);
-      expect(text).toContain("stub");
+      expect(text).toContain("openai");
     } finally {
       await running.close();
     }
@@ -287,14 +278,10 @@ describe("runCli — --stub boot (DC-004)", () => {
     try {
       const port = new URL(running.url).port;
       const captured = capture();
-      const code = await runCli(
-        ["--stub", "--port", port],
-        {},
-        {
-          log: captured.log,
-          error: captured.error,
-        },
-      );
+      const code = await runCli(["--port", port], TEST_PROVIDER_ENV, {
+        log: captured.log,
+        error: captured.error,
+      });
       expect(code).toBe(1);
       const text = [...captured.err, ...captured.out].join("\n");
       expect(text).toContain(port);
