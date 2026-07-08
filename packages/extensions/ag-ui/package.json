@@ -28,7 +28,8 @@
   "dependencies": {
     "@ag-ui/client": "0.0.57",
     "@ag-ui/core": "0.0.57",
-    "@facet/core": "workspace:*"
+    "@facet/core": "workspace:*",
+    "@facet/runtime": "workspace:*"
   },
   "files": [
     "dist"

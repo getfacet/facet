@@ -221,6 +221,9 @@ importers:
       '@facet/core':
         specifier: workspace:*
         version: link:../../core/core
+      '@facet/runtime':
+        specifier: workspace:*
+        version: link:../../core/runtime
 
   packages/extensions/agent:
     dependencies:
