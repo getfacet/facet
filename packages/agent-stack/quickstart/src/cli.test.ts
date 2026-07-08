@@ -312,6 +312,15 @@ describe("startQuickstart — page serving + agent blocking", () => {
       expect(bundle.status).toBe(200);
       expect(await bundle.text()).toContain("pnpm --filter @facet/quickstart build");
 
+      const bundleHead = await fetch(`${running.url}/app.js`, { method: "HEAD" });
+      expect(bundleHead.status).toBe(200);
+      expect(bundleHead.headers.get("content-type")).toContain("text/javascript");
+      expect(await bundleHead.text()).toBe("");
+
+      const favicon = await fetch(`${running.url}/favicon.ico`);
+      expect(favicon.status).toBe(204);
+      expect(await favicon.text()).toBe("");
+
       const health = await fetch(`${running.url}/health`);
       expect(health.status).toBe(200);
       expect(await health.text()).toContain("ok agent=local");

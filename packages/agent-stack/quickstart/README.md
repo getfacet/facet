@@ -18,7 +18,7 @@ to finish.
 
 ```bash
 # with a provider key (env only — see below)
-OPENAI_API_KEY=sk-… npx facet-quickstart --guide ./my-page.md
+OPENAI_API_KEY=sk-… npx facet-quickstart
 ```
 
 On success it prints the link and the resolved brain:
@@ -28,11 +28,12 @@ Facet quickstart running at http://localhost:5292
 Brain: openai (gpt-5.4-mini)
 ```
 
-In the workspace (dev), build first — the bin serves a prebuilt page bundle:
+In the workspace (dev), build first — the source CLI serves the prebuilt page
+bundle from `dist/page/app.js`:
 
 ```bash
 pnpm --filter @facet/quickstart build
-OPENAI_API_KEY=sk-… node packages/agent-stack/quickstart/dist/cli.js --guide ./my-page.md
+OPENAI_API_KEY=sk-… pnpm exec tsx packages/agent-stack/quickstart/src/cli.ts
 ```
 
 The grouped source paths are `packages/agent-stack/quickstart` for this wrapper,
@@ -79,11 +80,26 @@ The guide is plain markdown describing the page you want — tone, sections,
 what to collect. It becomes the "PAGE BRIEF" layer of the agent's prompt (the
 stage vocabulary and output contract are fixed layers above it).
 
-- Default path `./facet.md`; if it doesn't exist, a built-in demo brief
-  (`DEFAULT_GUIDE` — a personal landing page with a say-hi form) is used
+- Default path `./facet.md`; if it doesn't exist, a built-in sample service
+  brief (`DEFAULT_GUIDE`) is used
   silently.
 - An **explicitly passed** `--guide` path that doesn't exist is an error:
   exit 1 with `Guide file not found: <path>`.
+
+To customize the first run, create `facet.md` next to the command:
+
+```markdown
+# My onboarding assistant
+
+Build a page for an AI assistant that helps new users choose the right plan.
+Ask for their team size, goal, and timeline, then reshape the page as they chat.
+```
+
+Or pass a different file explicitly:
+
+```bash
+OPENAI_API_KEY=sk-… npx facet-quickstart --guide ./my-page.md
+```
 
 ## Assets: themes, stamps, initial tree
 

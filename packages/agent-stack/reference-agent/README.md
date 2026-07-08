@@ -72,7 +72,7 @@ Preset intent:
 
 | Preset | Intended use |
 | --- | --- |
-| `quickstart` | Conservative default for local demos and npx-first evaluation. |
+| `quickstart` | Conservative default for local first-run and npx evaluation. |
 | `hosted` | More generous reference-harness profile for controlled hosted evaluations; not an endorsement that this package is your production brain. |
 | `local-dev` | Generous but still bounded local experimentation profile. |
 

@@ -95,7 +95,7 @@ pnpm test           # vitest run (unit tests live in packages/**/src/*.test.ts)
 pnpm demo           # in-process terminal demo
 pnpm --filter @facet/playground dev     # browser playground (port 5290)
 pnpm --filter @facet/playground serve   # live server (port 5291)
-pnpm --filter @facet/quickstart build   # then: OPENAI_API_KEY=sk-... node packages/agent-stack/quickstart/dist/cli.js
+pnpm --filter @facet/quickstart build   # then: OPENAI_API_KEY=sk-... pnpm exec tsx packages/agent-stack/quickstart/src/cli.ts
                                         # (published as the facet-quickstart bin, port 5292)
 ```
 
