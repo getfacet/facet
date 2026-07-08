@@ -1,6 +1,6 @@
 /**
  * WU-2 (Decision B) — the journey harness the /live-test "Live Journey" tier
- * builds on: a shared server boot/teardown and a `node dist/cli.js --stub` bin
+ * builds on: a shared server boot/teardown and a provider-keyed bin
  * smoke. It consumes quickstart's server wrapper (`startQuickstart`) and the
  * reference-agent provider surface (`resolveProvider`) — no `src/` change.
  *
@@ -9,12 +9,13 @@
  *   pattern), and returns the `RunningQuickstart` handle. The real tier passes
  *   the built-in agent; the self-test passes `createStubAgent()` — one boot
  *   helper, two agents. Every boot MUST be paired with `.close()` (teardown).
- * - `runBinSmoke()` spawns the built bin under `--stub`, polls `/health`, always
- *   kills the child (in a `finally`), and reports `{ ok, detail, stderr }`
- *   (DC-005). It is "runs + reports a result", NOT `ok===true`: in the dev
- *   monorepo the documented `@facet/* → src/*.ts` resolution gap makes the child
- *   crash (`ok:false`, error in `detail`/`stderr`). Needs a prior
- *   `pnpm --filter @facet/quickstart build`.
+ * - `runBinSmoke()` spawns the built bin with a fake provider key, polls
+ *   `/health` before any provider turn can run, always kills the child (in a
+ *   `finally`), and reports `{ ok, detail, stderr }` (DC-005). It is "runs +
+ *   reports a result", NOT `ok===true`: in the dev monorepo the documented
+ *   `@facet/* → src/*.ts` resolution gap makes the child crash (`ok:false`,
+ *   error in `detail`/`stderr`). Needs a prior `pnpm --filter @facet/quickstart
+ *   build`.
  * - `resolveJourneyProvider(env)` is a thin wrapper over `resolveProvider`.
  */
 import { spawn } from "node:child_process";
@@ -84,14 +85,16 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Spawn `node dist/cli.js --stub --port <random>`, poll `GET /health` until 200
- * (or the child dies / the deadline passes), then ALWAYS kill the child. Reports
- * `{ ok, detail, stderr }`. DC-005: this RUNS + REPORTS a result — `ok` is not
- * asserted (the dev-monorepo resolution gap makes it `false`).
+ * Spawn `node dist/cli.js --port <random>` with a fake provider key, poll
+ * `GET /health` until 200 (or the child dies / the deadline passes), then ALWAYS
+ * kill the child. Reports `{ ok, detail, stderr }`. DC-005: this RUNS + REPORTS
+ * a result — `ok` is not asserted (the dev-monorepo resolution gap makes it
+ * `false`).
  */
 export async function runBinSmoke(): Promise<BinSmokeResult> {
   const port = randomHighPort();
-  const child = spawn(process.execPath, [binPath(), "--stub", "--port", String(port)], {
+  const child = spawn(process.execPath, [binPath(), "--port", String(port)], {
+    env: { ...process.env, OPENAI_API_KEY: "sk-test" },
     stdio: ["ignore", "pipe", "pipe"],
   });
 

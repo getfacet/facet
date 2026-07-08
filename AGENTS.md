@@ -53,7 +53,7 @@ imports, and release metadata all benefit from the physical move.
 | Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
 | Core | `packages/core/assets` | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
 | Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding. |
-| Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM/stub brain: provider adapters, prompt, streaming tool loop, deterministic stub. |
+| Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters, prompt, streaming tool loop, deterministic test fixture. |
 | Agent Stack | `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
 | Extensions | `packages/extensions/agent` | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
 | Extensions | `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
@@ -70,7 +70,7 @@ Semantic tiers for documentation and support:
 - **Agent Authoring:** `@facet/agent-tools`, `@facet/agent`.
 - **Reference Implementations:** `@facet/server`, `@facet/client`,
   `@facet/agent-client`, `@facet/store-postgres`, `@facet/reference-agent`.
-- **Local / Demo Tools:** `@facet/quickstart`, `@facet/cli`, `@facet/bridge`.
+- **Local Tools:** `@facet/quickstart`, `@facet/cli`, `@facet/bridge`.
 
 `Self-host` is a deployment style for the reference implementations, not a
 separate package tier. Hosted/multi-tenant products should depend on the
@@ -95,7 +95,7 @@ pnpm test           # vitest run (unit tests live in packages/**/src/*.test.ts)
 pnpm demo           # in-process terminal demo
 pnpm --filter @facet/playground dev     # browser playground (port 5290)
 pnpm --filter @facet/playground serve   # live server (port 5291)
-pnpm --filter @facet/quickstart build   # then: node packages/agent-stack/quickstart/dist/cli.js --stub
+pnpm --filter @facet/quickstart build   # then: OPENAI_API_KEY=sk-... node packages/agent-stack/quickstart/dist/cli.js
                                         # (published as the facet-quickstart bin, port 5292)
 ```
 

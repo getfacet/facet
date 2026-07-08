@@ -259,7 +259,8 @@ npm package names stay stable:
 - **Core** (`packages/core/*`) owns the contract, runtime, reference transport,
   browser transport, React renderer, and default asset data.
 - **Agent Stack** (`packages/agent-stack/*`) owns the reusable stage-tool
-  mechanism, the reference LLM/stub brain, and the one-command quickstart.
+  mechanism, the reference LLM brain, deterministic test fixture, and
+  one-command quickstart.
 - **Extensions** (`packages/extensions/*`) owns optional agent authoring and
   integration surfaces: in-process agents, dial-in agents, CLI, bridge, and
   Postgres stores.
@@ -277,8 +278,7 @@ contracts, reference implementations, or local tools.
 - **Reference Implementations:** `@facet/server`, `@facet/client`,
   `@facet/agent-client`, `@facet/store-postgres`, and
   `@facet/reference-agent`.
-- **Local / Demo Tools:** `@facet/quickstart`, `@facet/bridge`, and
-  `@facet/cli`.
+- **Local Tools:** `@facet/quickstart`, `@facet/bridge`, and `@facet/cli`.
 
 This distinction matters most for `@facet/server`: it is intentionally a
 reference transport for local/self-hosted single-operator deployments. A public
@@ -329,10 +329,11 @@ The brain is out of scope for Facet — the user brings the LLM/rules — but a
 `@facet/reference-agent` is to brains what `@facet/server` is to transports. Its
 agent is an ordinary `FacetAgent` handed to the existing `createFacetServer({
 agent })` seam, its LLM calls sit behind a small `QuickstartProvider`/
-`ReferenceProvider` interface (OpenAI/Anthropic adapters, or a deterministic
-stub), and core/runtime/server gain zero LLM awareness — any user brain drops
-into the same slot, so the boundary stays intact while `npx facet-quickstart`
-gives a one-command first run by composing it.
+`ReferenceProvider` interface (OpenAI/Anthropic adapters), and core/runtime/
+server gain zero LLM awareness — any user brain drops into the same slot, so the
+boundary stays intact while `npx facet-quickstart` gives a one-command first run
+by composing it. The package also keeps a deterministic stub agent as a test
+fixture for live-link gates; it is not the public quickstart path.
 
 The reference agent is a **streaming tool-calling loop** (not a single completion):
 each provider step yields the stage/chat batch produced so far, so the browser
@@ -381,9 +382,9 @@ boundary, so the two-writers rule holds: the server stays the only writer of
 stage content.
 The `facet-quickstart` bin stays in `@facet/quickstart`: it loads guides/assets,
 serves the page itself (HTML shell + prebuilt client bundle), composes
-`@facet/reference-agent` for provider or stub mode, and proxies the protocol
-routes to an internal loopback `createFacetServer` with a random per-boot agent
-token, never exposing `/agent/*`.
+`@facet/reference-agent` with a provider-backed reference agent, and proxies the
+protocol routes to an internal loopback `createFacetServer` with a random
+per-boot agent token, never exposing `/agent/*`.
 
 ## What we adopt vs build (and why)
 

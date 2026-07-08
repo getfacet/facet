@@ -1,6 +1,6 @@
 /**
  * WU-2 (Decision B) — the journey harness: shared server boot/teardown +
- * `node dist/cli.js --stub` bin smoke. Runs ONLY under the e2e vitest config
+ * provider-keyed bin smoke. Runs ONLY under the e2e vitest config
  * (the root glob never touches `e2e/`).
  *
  * DC-005 (bin result reported): `runBinSmoke()` RUNS the built bin and REPORTS a
@@ -65,7 +65,7 @@ describe("journey harness", () => {
     );
   });
 
-  it("bin smoke runs the stub cli and reports a result", async () => {
+  it("bin smoke runs the provider-backed cli and reports a result", async () => {
     const result = await runBinSmoke();
     // DC-005: RUNS + REPORTS a result — NOT ok===true (dev-monorepo resolution
     // gap is expected ok:false with the error surfaced in detail/stderr).

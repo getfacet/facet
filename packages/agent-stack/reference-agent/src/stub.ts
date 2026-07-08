@@ -1,6 +1,6 @@
 /**
- * The deterministic stub brain (spec Decision 6) — the keyless fixture agent
- * behind `facet-quickstart --stub` and the /live-test Tier-1 gate.
+ * The deterministic stub brain (spec Decision 6) — the fixture agent behind
+ * local tests and the /live-test Tier-1 gate.
  *
  * Zero network, zero randomness, zero clock reads: the same event sequence
  * always yields deep-equal message sequences (DC-008), so the E2E gate can

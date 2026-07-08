@@ -56,7 +56,7 @@ business logic, provider choice, customer tools, or production policy.
 `@facet/agent` stays separate for now. Removing it would force in-process users
 to hand-write patches or import the reference agent stack just to get a fluent
 `Stage` API. If future usage proves it is only a test helper, it can move down
-to Local / Demo Tools before 1.0, but it should not be deleted while it remains
+to Local Tools before 1.0, but it should not be deleted while it remains
 the small code-authored agent surface.
 
 ### Reference Implementations
@@ -72,17 +72,17 @@ surface.
 | `@facet/client` | Reference browser transports for `@facet/server` plus the `FacetTransport` usage pattern. | `SseTransport` has no credential seam by design; sensitive or multi-tenant deployments should implement their own `FacetTransport`. |
 | `@facet/agent-client` | Reference external-agent dial-in SDK for the reference SSE/POST agent channel. | Uses reference server auth semantics; hosted platforms should add project-scoped tokens or provide a platform-specific client. |
 | `@facet/store-postgres` | Reference durable `StageStore`, `Sink`, and `AssetsStore` adapter backed by Postgres. | This is Facet persistence only, not a platform schema; hosted products need their own tenant/project/page/token/usage/audit schema. |
-| `@facet/reference-agent` | Reference LLM/stub brain: providers, prompt policy, bounded harness, and stub. | Not a customer production brain. It should stay a reference harness and test surface. |
+| `@facet/reference-agent` | Reference LLM brain: providers, prompt policy, bounded harness, and deterministic test fixture. | Not a customer production brain. It should stay a reference harness and test surface. |
 
-### Local / Demo Tools
+### Local Tools
 
-These packages optimize first-run experience and local experimentation. They can
-stay published, but they should not be presented as the core integration surface
-for hosted products.
+These packages optimize first-run experience and local operator workflows. They
+can stay published, but they should not be presented as the core integration
+surface for hosted products.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local/demo. |
+| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local. |
 | `@facet/bridge` | Local bridge from Claude/Codex-style coding agents to a Facet link. | Local/operator tool only; not a hosted worker fleet. |
 | `@facet/cli` | Local command surface used by `@facet/bridge`. | Bin publish metadata exists; still needs a package-level pack/install smoke before npm release. |
 

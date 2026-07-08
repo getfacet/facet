@@ -29,17 +29,9 @@ OPENAI_API_KEY=sk-… npx facet-quickstart --guide ./my-page.md
 That boots a live Facet server at `http://localhost:5292` whose page is drawn by
 a **built-in LLM agent**: it reads your guide markdown (what the page is about),
 paints a first stage for each visitor, and keeps patching it as they chat.
-`ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). No key
-handy?
-
-```bash
-npx facet-quickstart --stub
-```
-
-runs the same server with a deterministic stub brain — no key, no network — for
-a keyless look around. Flags and details:
-[`@facet/quickstart`](packages/agent-stack/quickstart/README.md). To plug in
-*your own* model instead, see
+`ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). Flags
+and details: [`@facet/quickstart`](packages/agent-stack/quickstart/README.md).
+To plug in *your own* model instead, see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
 ## Why
@@ -177,9 +169,9 @@ only ever names a theme or chooses style tokens such as `family: "mono"`.
 
 **"Your model" defaults to the reference one:** `facet-quickstart` composes
 `@facet/reference-agent`, which fills the model slot with an OpenAI/Anthropic
-tool-calling loop or deterministic stub. It is a reference implementation of a
-pluggable boundary; `@facet/quickstart` is the one-command wrapper around it. To
-connect your own model instead, there are three jacks — see
+tool-calling loop. It is a reference implementation of a pluggable boundary;
+`@facet/quickstart` is the one-command wrapper around it. To connect your own
+model instead, there are three jacks — see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
 **Persistence has three pluggable seams.** The *stage* (the page) is always
@@ -241,9 +233,9 @@ reference packages only when they match your integration shape.
 | `packages/core/client` | `@facet/client` | Reference browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`; hosted platforms usually implement their own `FacetTransport`. |
 | `packages/extensions/agent-client` | `@facet/agent-client` | Reference external-agent dial-in client for `@facet/server`'s agent channel (SSE + heartbeat + reconnect). |
 | `packages/extensions/store-postgres` | `@facet/store-postgres` | Reference durable `StageStore`/`Sink`/`AssetsStore` adapter backed by Postgres; not a hosted-platform product schema. |
-| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming tool loop, and keyless stub. |
+| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming tool loop, and deterministic test fixture. |
 
-### Local / Demo Tools
+### Local Tools
 
 | Path | Package | Role |
 | --- | --- | --- |
