@@ -3,7 +3,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { EventType } from "@ag-ui/core";
 import type { AGUIEvent, RunAgentInput, StateSnapshotEvent } from "@ag-ui/core";
-import type { ClientEvent, CollectedEvent, FacetTree, ServerMessage, VisitorContext } from "@facet/core";
+import type {
+  ClientEvent,
+  CollectedEvent,
+  FacetTree,
+  ServerMessage,
+  VisitorContext,
+} from "@facet/core";
 import { describe, expect, it } from "vitest";
 
 import { handleAgUiRequest, runFacetAsAgUi } from "./server.js";
@@ -54,7 +60,8 @@ type FrameSink = (messages: readonly ServerMessage[]) => void;
 
 class MemoryRuntime {
   readonly handled: Array<{ readonly visitor: VisitorContext; readonly event: ClientEvent }> = [];
-  readonly recorded: Array<{ readonly visitor: VisitorContext; readonly event: CollectedEvent }> = [];
+  readonly recorded: Array<{ readonly visitor: VisitorContext; readonly event: CollectedEvent }> =
+    [];
 
   constructor(
     private readonly handleImpl: (
@@ -70,7 +77,11 @@ class MemoryRuntime {
     return this.snapshot;
   }
 
-  async handle(visitor: VisitorContext, event: ClientEvent, onFrame?: FrameSink): Promise<TurnResult> {
+  async handle(
+    visitor: VisitorContext,
+    event: ClientEvent,
+    onFrame?: FrameSink,
+  ): Promise<TurnResult> {
     this.handled.push({ visitor, event });
     return this.handleImpl(visitor, event, onFrame);
   }
@@ -173,7 +184,9 @@ describe("AG-UI server adapter", () => {
       runInput({ visitor, event: { kind: "message", text: "hello", seq: 7 } }),
     );
 
-    expect(runtime.handled).toEqual([{ visitor, event: { kind: "message", text: "hello", seq: 7 } }]);
+    expect(runtime.handled).toEqual([
+      { visitor, event: { kind: "message", text: "hello", seq: 7 } },
+    ]);
     expect(eventTypes(events)).toEqual([
       EventType.RUN_STARTED,
       EventType.TEXT_MESSAGE_START,
@@ -218,7 +231,9 @@ describe("AG-UI server adapter", () => {
       ),
       { includeSnapshot: true },
     );
-    const snapshot = events.find((event): event is StateSnapshotEvent => event.type === EventType.STATE_SNAPSHOT);
+    const snapshot = events.find(
+      (event): event is StateSnapshotEvent => event.type === EventType.STATE_SNAPSHOT,
+    );
 
     expect(runtime.handled).toEqual([{ visitor, event: { kind: "message", text: "snapshot" } }]);
     expect(snapshot?.snapshot).toEqual({ facet: { stage } });
@@ -292,7 +307,10 @@ describe("AG-UI server adapter", () => {
       { visitor, record: { kind: "tap", target: long, effect: { toggle: "panel" } } },
       { visitor, record: { kind: "tap", effect: { toggle: long } } },
       { visitor, record: { kind: "tap", effect: { toggle: "panel" }, fields: tooManyFields } },
-      { visitor, record: { kind: "tap", effect: { toggle: "panel" }, fields: { [long]: "value" } } },
+      {
+        visitor,
+        record: { kind: "tap", effect: { toggle: "panel" }, fields: { [long]: "value" } },
+      },
       { visitor, record: { kind: "tap", effect: { toggle: "panel" }, fields: { ok: long } } },
     ];
 
@@ -360,7 +378,9 @@ describe("AG-UI server adapter", () => {
     const res = new FakeResponse();
 
     await handleAgUiRequest(
-      requestWithBody(JSON.stringify(runInput({ visitor, event: { kind: "message", text: "http" } }))),
+      requestWithBody(
+        JSON.stringify(runInput({ visitor, event: { kind: "message", text: "http" } })),
+      ),
       res as unknown as ServerResponse,
       runtime,
     );
@@ -383,7 +403,11 @@ describe("AG-UI server adapter", () => {
     const res = new FakeResponse();
 
     await expect(
-      handleAgUiRequest(requestWithBody(JSON.stringify({ threadId: "thread-1" })), res as unknown as ServerResponse, runtime),
+      handleAgUiRequest(
+        requestWithBody(JSON.stringify({ threadId: "thread-1" })),
+        res as unknown as ServerResponse,
+        runtime,
+      ),
     ).resolves.toBeUndefined();
 
     const events = parseSseEvents(res.body());

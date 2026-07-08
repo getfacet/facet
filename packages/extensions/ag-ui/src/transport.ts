@@ -1,7 +1,13 @@
 import { HttpAgent } from "@ag-ui/client";
 import { EventType } from "@ag-ui/core";
 import type { RunAgentInput } from "@ag-ui/core";
-import type { ClientEvent, CollectedEvent, FacetTransport, ServerMessage, VisitorContext } from "@facet/core";
+import type {
+  ClientEvent,
+  CollectedEvent,
+  FacetTransport,
+  ServerMessage,
+  VisitorContext,
+} from "@facet/core";
 
 import { agUiEventToServerMessages } from "./events.js";
 
@@ -16,12 +22,11 @@ export interface AgUiObservableSubscription {
 }
 
 export interface AgUiObservableLike<T> {
-  subscribe(
-    observer: AgUiObservableObserver<T>,
-  ): AgUiObservableSubscription | (() => void) | void;
+  subscribe(observer: AgUiObservableObserver<T>): AgUiObservableSubscription | (() => void) | void;
 }
 
-export type AgUiEventStream = AsyncIterable<unknown> | Iterable<unknown> | AgUiObservableLike<unknown>;
+export type AgUiEventStream =
+  AsyncIterable<unknown> | Iterable<unknown> | AgUiObservableLike<unknown>;
 export type AgUiRunResult = AgUiEventStream | Promise<AgUiEventStream>;
 export type AgUiRunFunction = (input: RunAgentInput) => AgUiRunResult;
 
@@ -52,7 +57,8 @@ function isObject(value: unknown): value is Record<string, unknown> {
 function isAsyncIterable(value: unknown): value is AsyncIterable<unknown> {
   return (
     isObject(value) &&
-    typeof (value as { readonly [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === "function"
+    typeof (value as { readonly [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] ===
+      "function"
   );
 }
 
@@ -64,7 +70,9 @@ function isIterable(value: unknown): value is Iterable<unknown> {
 }
 
 function isObservableLike(value: unknown): value is AgUiObservableLike<unknown> {
-  return isObject(value) && typeof (value as { readonly subscribe?: unknown }).subscribe === "function";
+  return (
+    isObject(value) && typeof (value as { readonly subscribe?: unknown }).subscribe === "function"
+  );
 }
 
 function isAgentLike(value: unknown): value is AgUiAgentLike {
@@ -77,7 +85,10 @@ function runFunctionFor(source: AgUiTransportSource): AgUiRunFunction {
   return () => source;
 }
 
-function withSeq<T extends ClientEvent | CollectedEvent>(event: T, seq: number): T & { readonly seq: number } {
+function withSeq<T extends ClientEvent | CollectedEvent>(
+  event: T,
+  seq: number,
+): T & { readonly seq: number } {
   return { ...event, seq };
 }
 

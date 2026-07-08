@@ -8,7 +8,6 @@ import type {
   ClientEvent,
   CollectedEvent,
   FacetAction,
-  FacetTree,
   FieldValues,
   ServerMessage,
   TapEffect,
@@ -309,7 +308,9 @@ function normalizeClientEvent(value: unknown): ClientEvent | undefined {
   }
   if (kind === "message") {
     const text = value["text"];
-    return typeof text === "string" ? { kind, text, ...(seq === undefined ? {} : { seq }) } : undefined;
+    return typeof text === "string"
+      ? { kind, text, ...(seq === undefined ? {} : { seq }) }
+      : undefined;
   }
   if (kind === "tap") {
     const action = normalizeAgentAction(value["action"]);
@@ -339,7 +340,8 @@ function normalizeCollectedEvent(value: unknown): CollectedEvent | undefined {
   const effect = optionalTapEffect(value);
   const fields = optionalFields(value);
   const target = optionalBoundedString(value, "target");
-  if (effect === undefined || effect === null || fields === null || target === null) return undefined;
+  if (effect === undefined || effect === null || fields === null || target === null)
+    return undefined;
 
   return {
     kind,
@@ -375,9 +377,17 @@ function optionalTapEffect(object: Record<string, unknown>): TapEffect | undefin
   if (!isObject(effect)) return null;
   const navigate = effect["navigate"];
   const toggle = effect["toggle"];
-  if (typeof navigate === "string" && navigate.length <= MAX_FIELD_VALUE_CHARS && toggle === undefined)
+  if (
+    typeof navigate === "string" &&
+    navigate.length <= MAX_FIELD_VALUE_CHARS &&
+    toggle === undefined
+  )
     return { navigate };
-  if (typeof toggle === "string" && toggle.length <= MAX_FIELD_VALUE_CHARS && navigate === undefined)
+  if (
+    typeof toggle === "string" &&
+    toggle.length <= MAX_FIELD_VALUE_CHARS &&
+    navigate === undefined
+  )
     return { toggle };
   return null;
 }
@@ -406,7 +416,8 @@ function optionalPayload(
   if (!isObject(payload)) return null;
   const normalized: Record<string, string | number | boolean> = {};
   for (const [name, value] of Object.entries(payload)) {
-    if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean") return null;
+    if (typeof value !== "string" && typeof value !== "number" && typeof value !== "boolean")
+      return null;
     if (typeof value === "number" && !Number.isFinite(value)) return null;
     normalized[name] = value;
   }
@@ -419,7 +430,10 @@ function optionalString(object: Record<string, unknown>, key: string): string | 
   return typeof value === "string" ? value : null;
 }
 
-function optionalBoundedString(object: Record<string, unknown>, key: string): string | undefined | null {
+function optionalBoundedString(
+  object: Record<string, unknown>,
+  key: string,
+): string | undefined | null {
   const value = optionalString(object, key);
   if (value === null || value === undefined) return value;
   return value.length <= MAX_FIELD_VALUE_CHARS ? value : null;

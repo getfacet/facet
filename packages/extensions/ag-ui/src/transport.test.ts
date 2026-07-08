@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 
 import { EventType } from "@ag-ui/core";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
-import type { ClientEvent, CollectedEvent, FacetTree, ServerMessage, VisitorContext } from "@facet/core";
+import type {
+  ClientEvent,
+  CollectedEvent,
+  FacetTree,
+  ServerMessage,
+  VisitorContext,
+} from "@facet/core";
 import { describe, expect, it } from "vitest";
 
 import { AgUiTransport, createHttpAgUiTransport } from "./transport.js";
@@ -67,6 +73,7 @@ describe("AgUiTransport", () => {
       releases.push(gate.resolve);
       return (async function* stream(): AsyncIterable<BaseEvent> {
         await gate.promise;
+        yield* [] as BaseEvent[];
       })();
     };
     const transport = new AgUiTransport({ run }, { visitor });
@@ -130,7 +137,10 @@ describe("AgUiTransport", () => {
     await waitForCondition(() => messages.length === 3);
     expect(messages).toEqual([
       { kind: "say", text: "Hello" },
-      { kind: "patch", patches: [{ op: "replace", path: "/nodes/headline/value", value: "Updated" }] },
+      {
+        kind: "patch",
+        patches: [{ op: "replace", path: "/nodes/headline/value", value: "Updated" }],
+      },
       { kind: "say", text: "Again" },
     ]);
   });
@@ -167,8 +177,16 @@ describe("AgUiTransport", () => {
       {
         run: () => ({
           subscribe: (observer) => {
-            observer.next?.({ type: EventType.TEXT_MESSAGE_START, messageId: "m1", role: "assistant" });
-            observer.next?.({ type: EventType.TEXT_MESSAGE_CONTENT, messageId: "m1", delta: "Observable" });
+            observer.next?.({
+              type: EventType.TEXT_MESSAGE_START,
+              messageId: "m1",
+              role: "assistant",
+            });
+            observer.next?.({
+              type: EventType.TEXT_MESSAGE_CONTENT,
+              messageId: "m1",
+              delta: "Observable",
+            });
             observer.next?.({ type: EventType.TEXT_MESSAGE_END, messageId: "m1" });
             observer.complete?.();
             return { unsubscribe: () => {} };
@@ -201,8 +219,17 @@ describe("AgUiTransport", () => {
         yield { type: EventType.TOOL_CALL_ARGS, toolCallId: "tool-1", delta: "{}" };
         yield { type: EventType.TOOL_CALL_END, toolCallId: "tool-1" };
         yield { type: EventType.REASONING_START, messageId: "reasoning-1" };
-        yield { type: EventType.REASONING_MESSAGE_CONTENT, messageId: "reasoning-1", delta: "hidden" };
-        yield { type: EventType.ACTIVITY_SNAPSHOT, messageId: "activity-1", activityType: "task", content: {} };
+        yield {
+          type: EventType.REASONING_MESSAGE_CONTENT,
+          messageId: "reasoning-1",
+          delta: "hidden",
+        };
+        yield {
+          type: EventType.ACTIVITY_SNAPSHOT,
+          messageId: "activity-1",
+          activityType: "task",
+          content: {},
+        };
         yield { type: EventType.RUN_FINISHED, threadId: "thread-1", runId: "run-1" };
         completed = true;
       },

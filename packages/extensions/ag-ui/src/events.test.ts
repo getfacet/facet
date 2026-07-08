@@ -1,4 +1,9 @@
-import { EventType, type CustomEvent, type StateDeltaEvent, type StateSnapshotEvent } from "@ag-ui/core";
+import {
+  EventType,
+  type CustomEvent,
+  type StateDeltaEvent,
+  type StateSnapshotEvent,
+} from "@ag-ui/core";
 import { describe, expect, it } from "vitest";
 import type { FacetTree, JsonPatchOperation, ServerMessage } from "@facet/core";
 
@@ -121,7 +126,10 @@ describe("AG-UI event conversion", () => {
       { type: EventType.STATE_DELTA, delta: null },
       { type: EventType.STATE_DELTA, delta: [] },
       { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: FACET_STAGE_STATE_PATH }] },
-      { type: EventType.STATE_DELTA, delta: [{ op: "replace", path: FACET_STAGE_STATE_PATH, value: cyclic }] },
+      {
+        type: EventType.STATE_DELTA,
+        delta: [{ op: "replace", path: FACET_STAGE_STATE_PATH, value: cyclic }],
+      },
       {
         type: EventType.STATE_DELTA,
         delta: [{ op: "copy", from: "/messages/0", path: `${FACET_STAGE_STATE_PATH}/nodes/leak` }],
@@ -157,7 +165,11 @@ describe("AG-UI event conversion", () => {
       patches: [{ op: "replace", path: "", value: stage }],
     });
 
-    const patch: JsonPatchOperation = { op: "replace", path: "/nodes/headline", value: stage.nodes.headline };
+    const patch: JsonPatchOperation = {
+      op: "replace",
+      path: "/nodes/headline",
+      value: stage.nodes.headline,
+    };
     const [delta] = serverMessagesToAgUiEvents([{ kind: "patch", patches: [patch] }]);
     const [deltaOperation] = (delta as StateDeltaEvent).delta;
     expect(deltaOperation).toBeDefined();
@@ -191,7 +203,11 @@ describe("AG-UI event conversion", () => {
 
     expect(agUiEventToServerMessages(event)).toEqual([{ kind: "reset" }]);
     expect(
-      agUiEventToServerMessages({ type: EventType.CUSTOM, name: FACET_RESET_EVENT_NAME, value: "payload" }),
+      agUiEventToServerMessages({
+        type: EventType.CUSTOM,
+        name: FACET_RESET_EVENT_NAME,
+        value: "payload",
+      }),
     ).toEqual([]);
   });
 });

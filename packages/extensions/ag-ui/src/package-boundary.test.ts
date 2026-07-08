@@ -65,7 +65,9 @@ describe("@facet/ag-ui package boundaries", () => {
     expect(agents).toContain("`@facet/ag-ui`");
     expect(packageBoundaries).toContain("`@facet/ag-ui`");
     expect(packageBoundaries).toMatch(/@facet\/core` remains dependency-free/);
-    expect(packageBoundaries).toMatch(/native `@facet\/client`\/`@facet\/server`.*reference fallback/s);
+    expect(packageBoundaries).toMatch(
+      /native `@facet\/client`\/`@facet\/server`.*reference fallback/s,
+    );
     expect(packageBoundaries).toMatch(/quickstart\/playground.*native.*local\/reference fallback/s);
   });
 

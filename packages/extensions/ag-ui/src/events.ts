@@ -156,16 +156,22 @@ export function serverMessageToAgUiEvents(
       ] satisfies [TextMessageStartEvent, TextMessageContentEvent, TextMessageEndEvent];
     }
     case "reset":
-      return [{ type: EventType.CUSTOM, name: FACET_RESET_EVENT_NAME, value: null } satisfies CustomEvent];
+      return [
+        { type: EventType.CUSTOM, name: FACET_RESET_EVENT_NAME, value: null } satisfies CustomEvent,
+      ];
   }
 }
 
-export function serverMessagesToAgUiEvents(messages: readonly ServerMessage[]): readonly AGUIEvent[] {
+export function serverMessagesToAgUiEvents(
+  messages: readonly ServerMessage[],
+): readonly AGUIEvent[] {
   const events: AGUIEvent[] = [];
   let textMessageIndex = 0;
   for (const message of messages) {
     if (message.kind === "say") {
-      events.push(...serverMessageToAgUiEvents(message, { messageId: messageIdFor(textMessageIndex) }));
+      events.push(
+        ...serverMessageToAgUiEvents(message, { messageId: messageIdFor(textMessageIndex) }),
+      );
       textMessageIndex += 1;
       continue;
     }

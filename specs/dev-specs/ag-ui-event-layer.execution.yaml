@@ -260,7 +260,7 @@ work_units:
     quick_checks:
       - "pnpm exec vitest run packages/extensions/ag-ui/src/package-boundary.test.ts"
       - "pnpm --filter @facet/ag-ui typecheck"
-      - "bash -lc '! rg \"@ag-ui/\" packages/core/core packages/core/core/package.json'"
+      - 'bash -lc ''! rg "@ag-ui/" packages/core/core packages/core/core/package.json'''
     no_regression_checks:
       - "pnpm typecheck"
     test_plan:
