@@ -5,6 +5,8 @@ to the runtime and streams patches back. Two channels, both SSE + POST so an
 agent behind NAT only ever dials OUT — a browser side (`GET /stream` + `POST
 /event`) and an agent side (`GET /agent/stream` + `POST /agent/control`).
 
+Tier: **Reference Implementation**.
+
 ```bash
 npm install @facet/server @facet/agent @facet/runtime @facet/core
 ```

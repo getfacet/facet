@@ -1,7 +1,7 @@
 {
   "name": "@facet/client",
   "version": "0.0.0",
-  "description": "Facet browser-side transports — connect the React renderer to a Facet server (SSE + POST) or to an in-process runtime. The browser counterpart of @facet/agent-client.",
+  "description": "Facet reference browser transports — connect the React renderer to the reference server or an in-process runtime via FacetTransport.",
   "license": "MIT",
   "repository": {
     "type": "git",

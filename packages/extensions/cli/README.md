@@ -1,5 +1,7 @@
 # @facet/cli
 
+Tier: **Local / Demo Tool**.
+
 The `facet` command — a running agent's action surface for its page, as a
 terminal command. A local agent (e.g. Claude Code) changes the page by invoking
 these commands, exactly as it edits files. Each is a thin wrapper over

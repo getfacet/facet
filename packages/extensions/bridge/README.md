@@ -1,5 +1,7 @@
 # @facet/bridge
 
+Tier: **Local / Demo Tool**.
+
 Point a local coding agent (Claude Code, Codex, …) at a Facet link. The bridge
 dials into a Facet server (SSE + POST, NAT-safe) and, for each visitor event,
 runs your local agent — exposing a `facet` command the agent calls to change the

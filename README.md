@@ -213,41 +213,43 @@ Two engineering choices keep "constantly re-rendering" cheap and correct:
 ## Packages
 
 Source directories are grouped for maintainability; npm package names stay
-unchanged. The supported packages fall into four semantic tiers:
+unchanged. The public surface is intentionally narrower than the source tree:
+use the Foundation packages as the stable Facet contract, then pick authoring or
+reference packages only when they match your integration shape.
 
-### Facet Foundation
+### Foundation
 
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/core/core` | `@facet/core` | The contract: bricks, style tokens, RFC 6902 patch, `validateTree`, `expandStamp`, session/event types. |
 | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
 | `packages/core/react` | `@facet/react` | Brick renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`. |
 | `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_THEME` + `DEFAULT_STAMPS` (value maps, not code). Depends only on `@facet/core`. |
 
-### Agent Integration
+### Agent Authoring
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding. |
-| `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an external agent (SSE + heartbeat + reconnect). |
-| `packages/extensions/agent` | `@facet/agent` | In-process agent SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`. |
+| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding for custom LLM/tool loops. |
+| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
 
-### Reference, Demo, And Local Tools
+### Reference Implementations
 
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/core/server` | `@facet/server` | Reference SSE/POST transport for local/self-hosted single-operator use; not a production multi-tenant edge. |
-| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper that composes `@facet/reference-agent`. |
+| `packages/core/client` | `@facet/client` | Reference browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`; hosted platforms usually implement their own `FacetTransport`. |
+| `packages/extensions/agent-client` | `@facet/agent-client` | Reference external-agent dial-in client for `@facet/server`'s agent channel (SSE + heartbeat + reconnect). |
+| `packages/extensions/store-postgres` | `@facet/store-postgres` | Reference durable `StageStore`/`Sink`/`AssetsStore` adapter backed by Postgres; not a hosted-platform product schema. |
 | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming tool loop, and keyless stub. |
-| `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
-| `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 
-### Adapters
+### Local / Demo Tools
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres. |
+| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper that composes `@facet/reference-agent`. |
+| `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
+| `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 
 ### Labs
 
@@ -259,15 +261,21 @@ support tiers, hosting boundary, and known package gaps.
 
 ## Advanced: bring your own brain
 
-The reference agent is just a default. **Your model connects in one
-of three ways** — all the same `Stage` API:
+The reference agent is just a default. Your model connects through the authoring
+or reference layer that fits your setup:
 
-- **in-process** — a JS function inside the server (`@facet/agent`).
+- **custom LLM/tool loop** — use `@facet/agent-tools` to expose safe stage tools
+  to your provider and fold a local stage shadow.
+- **in-process TypeScript** — a JS function inside the server (`@facet/agent`),
+  useful for tests, rules engines, or code-authored agents.
 - **local CLI** — a running agent (e.g. Claude Code or Codex) calls
   `facet append/theme/say/…` and a local bridge forwards it (`@facet/cli`).
-- **dial-in** — an external agent connects out over SSE, NAT-safe, and is served
-  events to answer (`@facet/agent-client`). The model (the LLM/rules) is always
-  yours; Facet is the surface it draws on.
+- **reference dial-in** — an external agent connects out over SSE, NAT-safe, and
+  is served events to answer (`@facet/agent-client`). Hosted platforms usually
+  wrap or replace this reference client with their own scoped credentials and
+  transport.
+
+The model (the LLM/rules) is always yours; Facet is the surface it draws on.
 
 To poke at the repo itself:
 

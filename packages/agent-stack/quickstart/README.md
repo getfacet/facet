@@ -1,5 +1,7 @@
 # @facet/quickstart
 
+Tier: **Local / Demo Tool**.
+
 One command from a provider key (or no key at all) to a live Facet page. The
 package is the `facet-quickstart` CLI/server/page wrapper. It composes
 `@facet/reference-agent`, a tool-calling LLM agent that draws the page from your

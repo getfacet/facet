@@ -25,9 +25,13 @@ public traffic
      - renderer protocol
 ```
 
-## Support Tiers
+## Public Surface Tiers
 
-### Facet Foundation
+These tiers are semantic. They describe what a user should depend on, not where
+the package happens to live in the repo. `Self-host` is a deployment style for
+the reference implementations, not a separate package tier.
+
+### Foundation
 
 These packages are the reusable core of Facet:
 
@@ -36,38 +40,51 @@ These packages are the reusable core of Facet:
 | `@facet/core` | Brick spec, token vocabulary, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
 | `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, and `AssetsStore` interfaces and memory/file references. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
 | `@facet/react` | Renderer, theme-to-CSS mapping, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
-| `@facet/client` | Browser transports implementing the `FacetTransport` interface. | `SseTransport` has no credential seam by design; sensitive or multi-tenant deployments should wrap or replace it. |
 | `@facet/assets` | Default theme/stamp value maps. | Theme/stamp schemas need fuller authoring docs and editor-facing examples. |
 
-### Agent Integration
+### Agent Authoring
 
-These packages help an agent use Facet without taking over the agent's business
-logic:
+These packages help developers make an agent produce Facet stage changes without
+manually assembling JSON Patch arrays. They still do not own the agent's
+business logic, provider choice, customer tools, or production policy.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local stage shadow. | Useful as-is, but provider-specific schema adapter helpers would make custom loops easier. |
-| `@facet/agent-client` | External agent dial-in SDK for the reference SSE/POST agent channel. | Uses reference server auth semantics; hosted platforms should add project-scoped tokens or provide a wrapper client. |
-| `@facet/agent` | In-process agent authoring SDK with `Stage` and `defineAgent`. | Good local authoring surface; needs clearer guide docs for when to choose it vs `@facet/agent-tools`. |
+| `@facet/agent-tools` | LLM/tool-loop mechanism: provider-agnostic stage tool specs, executor, inspection helpers, observations, and local stage shadow. | Useful as-is; provider-specific schema adapter helpers would make custom loops easier. |
+| `@facet/agent` | In-process TypeScript authoring SDK with `Stage`, `defineAgent`, and `defineStreamingAgent`. | Keep it for code-authored agents, tests, rules engines, and demos; it is not the LLM tool schema package. |
 
-### Reference, Demo, And Local Tools
+`@facet/agent` stays separate for now. Removing it would force in-process users
+to hand-write patches or import the reference agent stack just to get a fluent
+`Stage` API. If future usage proves it is only a test helper, it can move down
+to Local / Demo Tools before 1.0, but it should not be deleted while it remains
+the small code-authored agent surface.
 
-These packages prove the protocol and make local development easy. They are not
-the production service surface.
+### Reference Implementations
+
+These packages show working implementations of Facet transport, persistence, and
+brain boundaries. They are useful for local/self-hosted single-operator setups,
+tests, and as implementation references. They are not a hosted-platform service
+surface.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
 | `@facet/server` | Reference SSE/POST transport for local/self-hosted single-operator use. | Not a public multi-tenant edge: no tenant/project isolation, browser auth, default agent auth, metering, rate limits, billing, abuse controls, admin auth, audit log, secrets handling, or custom-domain routing. |
-| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local/demo. |
+| `@facet/client` | Reference browser transports for `@facet/server` plus the `FacetTransport` usage pattern. | `SseTransport` has no credential seam by design; sensitive or multi-tenant deployments should implement their own `FacetTransport`. |
+| `@facet/agent-client` | Reference external-agent dial-in SDK for the reference SSE/POST agent channel. | Uses reference server auth semantics; hosted platforms should add project-scoped tokens or provide a platform-specific client. |
+| `@facet/store-postgres` | Reference durable `StageStore`, `Sink`, and `AssetsStore` adapter backed by Postgres. | This is Facet persistence only, not a platform schema; hosted products need their own tenant/project/page/token/usage/audit schema. |
 | `@facet/reference-agent` | Reference LLM/stub brain: providers, prompt policy, bounded harness, and stub. | Not a customer production brain. It should stay a reference harness and test surface. |
-| `@facet/bridge` | Local bridge from Claude/Codex-style coding agents to a Facet link. | Local/operator tool only; not a hosted worker fleet. |
-| `@facet/cli` | Local command surface used by `@facet/bridge`. | Bin publish metadata exists; still needs a package-level pack/install smoke before npm release. |
 
-### Adapters
+### Local / Demo Tools
+
+These packages optimize first-run experience and local experimentation. They can
+stay published, but they should not be presented as the core integration surface
+for hosted products.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/store-postgres` | Durable `StageStore`, `Sink`, and `AssetsStore` backed by Postgres. | Needs migration/versioning guidance, pool sizing notes, and operational examples before serious production use. |
+| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local/demo. |
+| `@facet/bridge` | Local bridge from Claude/Codex-style coding agents to a Facet link. | Local/operator tool only; not a hosted worker fleet. |
+| `@facet/cli` | Local command surface used by `@facet/bridge`. | Bin publish metadata exists; still needs a package-level pack/install smoke before npm release. |
 
 ## Cross-Package Gaps
 
@@ -77,7 +94,7 @@ the production service surface.
 - **Hosted wrappers:** Facet intentionally does not provide project-scoped API
   keys, billing, metering, admin auth, or tenant isolation. Those belong outside
   this repo.
-- **Docs:** the next docs pass should add package-level "choose this when..."
-  pages for `@facet/agent`, `@facet/agent-tools`, and `@facet/agent-client`.
+- **Docs:** package README files should say which tier they belong to and when
+  a hosted platform should wrap or replace them.
 - **Examples:** the repo needs examples for custom agent loops using
   `@facet/agent-tools` without importing `@facet/reference-agent`.

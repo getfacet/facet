@@ -3,6 +3,8 @@
 Reference Facet brain: provider adapters, prompt policy, a bounded streaming
 harness, and the deterministic keyless stub.
 
+Tier: **Reference Implementation**.
+
 This package is a reference harness, not Facet's product boundary and not a
 customer production brain. Use it to understand a robust tool-calling loop, test
 Facet end to end, or bootstrap local demos. Agent business logic, domain tools,

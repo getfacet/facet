@@ -1,7 +1,7 @@
 {
   "name": "@facet/quickstart",
   "version": "0.0.0",
-  "description": "One-command Facet quickstart — boots a live server whose page is owned by a built-in LLM agent (OpenAI or Anthropic key, or a keyless stub).",
+  "description": "Facet local demo quickstart — boots a live reference server/page with a built-in reference LLM agent or keyless stub.",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 {
   "name": "@facet/bridge",
   "version": "0.0.0",
-  "description": "Local bridge — lets a local coding agent (Claude, Codex, …) own a Facet link from your machine, driving the page via the `facet` CLI.",
+  "description": "Facet local bridge — lets a local coding agent own a Facet link from your machine via the `facet` CLI.",
   "license": "MIT",
   "repository": {
     "type": "git",

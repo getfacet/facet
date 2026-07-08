@@ -1,7 +1,7 @@
 {
   "name": "@facet/agent",
   "version": "0.0.0",
-  "description": "Facet agent authoring — the Stage control API ('CLI') an agent uses to compose and mutate its page.",
+  "description": "Facet in-process TypeScript agent authoring — the Stage control API for code-authored stage changes.",
   "license": "MIT",
   "repository": {
     "type": "git",

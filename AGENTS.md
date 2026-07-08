@@ -40,7 +40,9 @@ small set of safe primitives and mutates them live as the conversation goes.
 Source directories are grouped by role; npm package names and public import
 specifiers stay unchanged. The physical source groups are not the same thing as
 product support tiers: `@facet/server` lives under `packages/core/server`, but
-it is a reference transport, not a hardened public edge.
+it is a reference transport, not a hardened public edge. Do not move packages
+just to mirror the semantic tiers below; move a package only when ownership,
+imports, and release metadata all benefit from the physical move.
 
 | Group | Path | Package | Role |
 | --- | --- | --- | --- |
@@ -63,13 +65,17 @@ it is a reference transport, not a hardened public edge.
 
 Semantic tiers for documentation and support:
 
-- **Facet Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
-  `@facet/client`, `@facet/assets`.
-- **Agent Integration:** `@facet/agent-tools`, `@facet/agent-client`,
-  `@facet/agent`.
-- **Reference / Demo / Local:** `@facet/server`, `@facet/quickstart`,
-  `@facet/reference-agent`, `@facet/bridge`, `@facet/cli`.
-- **Adapters:** `@facet/store-postgres`.
+- **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
+  `@facet/assets`.
+- **Agent Authoring:** `@facet/agent-tools`, `@facet/agent`.
+- **Reference Implementations:** `@facet/server`, `@facet/client`,
+  `@facet/agent-client`, `@facet/store-postgres`, `@facet/reference-agent`.
+- **Local / Demo Tools:** `@facet/quickstart`, `@facet/cli`, `@facet/bridge`.
+
+`Self-host` is a deployment style for the reference implementations, not a
+separate package tier. Hosted/multi-tenant products should depend on the
+Foundation contracts and provide their own transport, identity, metering, and
+operational wrapper.
 
 See `docs/PACKAGE-BOUNDARIES.md` before changing package positioning, publishing
 metadata, or hosted-deployment claims.

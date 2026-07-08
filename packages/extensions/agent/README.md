@@ -6,6 +6,11 @@ the runtime can call, and `Stage` is the control surface it drives —
 `say` — to compose and mutate a visitor's page. Each method records standard RFC
 6902 operations underneath.
 
+Tier: **Agent Authoring**. Use this when TypeScript code, tests, a rules engine,
+or a local demo should author stage changes without hand-writing patch arrays.
+For LLM/provider tool-calling loops, start with `@facet/agent-tools`; this
+package is not the LLM tool-schema surface.
+
 ```bash
 npm install @facet/agent @facet/core
 ```

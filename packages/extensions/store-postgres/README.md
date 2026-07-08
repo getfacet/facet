@@ -7,6 +7,10 @@ directly into `createFacetServer`; `PostgresAssets` plugs into any host code tha
 loads `AssetsStore` documents and wires the loaded themes, stamps, and optional
 initial tree to its renderer/agent setup.
 
+Tier: **Reference Implementation**. This adapter stores Facet stage/session
+state only. It is not a hosted-platform schema for tenants, projects, pages,
+agent tokens, usage, billing, audit, or abuse controls.
+
 ```bash
 npm install @facet/store-postgres @facet/server @facet/runtime @facet/core pg
 ```

@@ -3,6 +3,8 @@
 Provider-agnostic Facet stage tools for people building their own external
 agents.
 
+Tier: **Agent Authoring**.
+
 This package is the reusable mechanism layer: shared tool-call contracts,
 result shapes, and stage-tool helpers that can sit inside any provider loop.
 It does not choose a model, make provider requests, read environment variables,

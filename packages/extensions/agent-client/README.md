@@ -9,6 +9,11 @@ errors, 5xx) reconnect forever; a `403` (bad token) stops immediately, and a
 `409` (link already owned) is retried for a bounded window — long enough for
 the server to reap a half-open previous connection — before giving up loudly.
 
+Tier: **Reference Implementation**. This client speaks the `@facet/server`
+reference agent channel. Hosted platforms should usually provide a
+platform-specific agent client with project/page-scoped tokens, permissions, and
+connection policy.
+
 ```bash
 npm install @facet/agent-client @facet/core @facet/agent
 ```

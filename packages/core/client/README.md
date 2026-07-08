@@ -4,6 +4,11 @@ Browser-side transports for Facet — the visitor's counterpart of
 `@facet/agent-client`. Both implement the `FacetTransport` contract from
 `@facet/core`, so `useFacet(transport)` accepts either.
 
+Tier: **Reference Implementation**. This package is useful for local/self-hosted
+reference deployments and for seeing how a `FacetTransport` works. Hosted
+platforms normally implement their own transport with their own page/session
+routes, credentials, and tenant policy.
+
 - **`SseTransport`** — talks to a `@facet/server` over the reference protocol:
   Server-Sent Events for server→client, `fetch` POST for client→server. Events
   sent before the stream opens are queued and flushed on connect.

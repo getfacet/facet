@@ -256,15 +256,19 @@ npm package names stay stable:
 - **Labs** (`packages/labs`) is reserved for experiments and carries no
   supported package contract.
 
-The product-facing support tiers are different from the physical directories:
+The product-facing support tiers are different from the physical directories.
+The physical layout does not need to mirror these tiers; it is an ownership and
+maintenance layout, while the tiers describe what users should treat as stable
+contracts, reference implementations, or local tools.
 
-- **Facet Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
-  `@facet/client`, and `@facet/assets`.
-- **Agent Integration:** `@facet/agent-tools`, `@facet/agent-client`, and
-  `@facet/agent`.
-- **Reference / Demo / Local:** `@facet/server`, `@facet/quickstart`,
-  `@facet/reference-agent`, `@facet/bridge`, and `@facet/cli`.
-- **Adapters:** `@facet/store-postgres`.
+- **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`, and
+  `@facet/assets`.
+- **Agent Authoring:** `@facet/agent-tools` and `@facet/agent`.
+- **Reference Implementations:** `@facet/server`, `@facet/client`,
+  `@facet/agent-client`, `@facet/store-postgres`, and
+  `@facet/reference-agent`.
+- **Local / Demo Tools:** `@facet/quickstart`, `@facet/bridge`, and
+  `@facet/cli`.
 
 This distinction matters most for `@facet/server`: it is intentionally a
 reference transport for local/self-hosted single-operator deployments. A public
@@ -272,11 +276,24 @@ multi-tenant platform should put its own edge/API layer in front of Facet for
 tenant/project lookup, authentication, authorization, rate limits, usage
 metering, abuse controls, audit logging, secrets management, and custom-domain
 routing. Those concerns are not part of `@facet/server` or `@facet/runtime`.
+Likewise, `@facet/client` and `@facet/agent-client` speak that reference
+transport; hosted platforms usually implement their own `FacetTransport` and
+agent connection client while preserving the core Facet contracts. `Self-host`
+is a way to run the reference implementation, not a separate package tier.
 
-## The agent's "CLI"
+## Agent authoring surfaces
 
-Agents don't hand-assemble patch arrays. `@facet/agent` gives a fluent control
-surface that records standard RFC 6902 ops underneath:
+Agents don't hand-assemble patch arrays. There are two authoring surfaces:
+
+- `@facet/agent-tools` is the LLM/tool-loop mechanism: provider-neutral tool
+  specs, execution, local stage-shadow folding, and observations. Use it when
+  you are building your own OpenAI/Anthropic/LangGraph/etc. loop.
+- `@facet/agent` is the in-process TypeScript authoring SDK. It keeps existing
+  because rules engines, tests, demos, and code-authored agents still need a
+  convenient `Stage` API. It is not the LLM tool schema package.
+
+`@facet/agent` gives a fluent control surface that records standard RFC 6902 ops
+underneath:
 
 ```ts
 defineAgent(({ event, session, stage }) => {
