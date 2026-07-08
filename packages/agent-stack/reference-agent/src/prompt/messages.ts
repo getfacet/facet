@@ -13,6 +13,11 @@ import { formatCurrentStageForPrompt } from "./stage-summary.js";
 /** How many sink entries (visitor event + agent reply pairs) layer 3 replays. */
 export const HISTORY_TURNS = 20;
 
+const REDACTED_PROMPT_VALUE = "[redacted]";
+const SENSITIVE_FIELD_NAME =
+  /(?:password|passcode|secret|token|api[_-]?key|authorization|bearer|provider[_-]?key)/i;
+const SENSITIVE_FIELD_VALUE = /\b(?:sk-[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+)\b/i;
+
 function normalizeLegacyEvent(event: unknown): unknown {
   if (!isRecord(event) || event["kind"] !== "action") return event;
   const legacy = event as {
@@ -68,7 +73,7 @@ export function describeEvent(raw: CollectedEvent): string {
         const name = action["name"];
         if (typeof name !== "string") return "(unknown event)";
         const payload = safeJson(action["payload"] ?? {});
-        const fields = safeJson(event["fields"] ?? {});
+        const fields = safeFieldsJson(event["fields"] ?? {});
         return `(action ${name} payload=${payload} fields=${fields})`;
       }
       return "(unknown event)";
@@ -103,6 +108,22 @@ function safeJson(value: unknown): string {
   } catch {
     return "{}";
   }
+}
+
+function safeFieldsJson(value: unknown): string {
+  if (!isRecord(value)) return "{}";
+  const fields: Record<string, unknown> = {};
+  for (const [name, fieldValue] of Object.entries(value)) {
+    fields[name] = shouldRedactField(name, fieldValue) ? REDACTED_PROMPT_VALUE : fieldValue;
+  }
+  return safeJson(fields);
+}
+
+function shouldRedactField(name: string, value: unknown): boolean {
+  return (
+    SENSITIVE_FIELD_NAME.test(name) ||
+    (typeof value === "string" && SENSITIVE_FIELD_VALUE.test(value))
+  );
 }
 
 /**

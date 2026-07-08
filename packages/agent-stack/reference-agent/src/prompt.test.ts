@@ -279,6 +279,43 @@ describe("buildInitialMessages", () => {
     expect(content).toContain(`CURRENT STAGE: ${JSON.stringify(SESSION.stage)}`);
   });
 
+  it("redacts sensitive action field names in current and replayed prompt events", () => {
+    const history: StoredEvent[] = [
+      {
+        at: 0,
+        event: {
+          kind: "tap",
+          action: { kind: "agent", name: "stored-submit" },
+          fields: { name: "Ada", note: "sk-history-secret", token: "stored-token-secret" },
+        },
+        messages: [],
+      },
+    ];
+    const event: ClientEvent = {
+      kind: "tap",
+      action: { kind: "agent", name: "submit" },
+      fields: {
+        email: "ada@example.com",
+        note: "Bearer prompt-secret",
+        password: "hunter2",
+        api_key: "sk-secret",
+      },
+    };
+
+    const messages = buildInitialMessages(event, SESSION, history, HISTORY_TURNS);
+    const all = messages.map((m) => ("content" in m ? m.content : "")).join("\n");
+    expect(all).toContain("stored-submit");
+    expect(all).toContain("submit");
+    expect(all).toContain("Ada");
+    expect(all).toContain("ada@example.com");
+    expect(all).toContain("[redacted]");
+    expect(all).not.toContain("sk-history-secret");
+    expect(all).not.toContain("Bearer prompt-secret");
+    expect(all).not.toContain("stored-token-secret");
+    expect(all).not.toContain("hunter2");
+    expect(all).not.toContain("sk-secret");
+  });
+
   it("renders navigate/toggle history events and marks patches as (page updated)", () => {
     // Local navigate/toggle taps are recorded as `tap` rows carrying the
     // renderer-resolved `effect` (the 3-layer log currency).

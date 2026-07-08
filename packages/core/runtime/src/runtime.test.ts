@@ -81,6 +81,71 @@ describe("FacetRuntime.handle", () => {
     expect(history[0]?.event).toMatchObject({ text: "ask" });
   });
 
+  it("redacts visitor ids and sensitive field values from sink event bodies", async () => {
+    const seen: ClientEvent[] = [];
+    const agent: FacetAgent = (event) => {
+      seen.push(event);
+      return [{ kind: "say", text: "ok" }];
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent });
+    const secretVisitor = { visitorId: "visitor-secret-123", referrer: "https://example.com" };
+    const visit: ClientEvent = { kind: "visit", visitor: secretVisitor };
+    const submit: ClientEvent = {
+      kind: "tap",
+      action: { kind: "agent", name: "submit" },
+      fields: {
+        email: "ada@example.com",
+        note: "sk-value-secret",
+        password: "hunter2",
+        providerKey: "sk-secret",
+      },
+    };
+
+    await rt.handle(secretVisitor, visit);
+    await rt.handle(secretVisitor, submit);
+
+    const history = await rt.historyFor(secretVisitor.visitorId);
+    expect(seen).toEqual([visit, submit]); // the agent still receives the original event.
+    expect(history).toHaveLength(2);
+    expect(
+      history[0]?.event.kind === "visit" ? history[0].event.visitor.visitorId : undefined,
+    ).toBe("[redacted]");
+    expect(history[1]?.event.kind === "tap" ? history[1].event.fields : undefined).toEqual({
+      email: "ada@example.com",
+      note: "[redacted]",
+      password: "[redacted]",
+      providerKey: "[redacted]",
+    });
+    const serialized = JSON.stringify(history);
+    expect(serialized).not.toContain("visitor-secret-123");
+    expect(serialized).not.toContain("sk-value-secret");
+    expect(serialized).not.toContain("hunter2");
+    expect(serialized).not.toContain("sk-secret");
+  });
+
+  it("snapshots the sink event before the agent can mutate the live event object", async () => {
+    const event: ClientEvent = {
+      kind: "tap",
+      action: { kind: "agent", name: "submit" },
+      fields: { note: "safe-at-arrival" },
+    };
+    const agent: FacetAgent = (incoming) => {
+      if (incoming.kind === "tap") {
+        (incoming.fields as Record<string, string>)["note"] = "sk-mutated-after-arrival";
+      }
+      return [{ kind: "say", text: "ok" }];
+    };
+    const rt = new FacetRuntime({ agentId: "a", agent });
+
+    await rt.handle(visitor, event);
+
+    const history = await rt.historyFor("v");
+    expect(history[0]?.event.kind === "tap" ? history[0].event.fields : undefined).toEqual({
+      note: "safe-at-arrival",
+    });
+    expect(JSON.stringify(history)).not.toContain("sk-mutated-after-arrival");
+  });
+
   it("coalesces a turn's patch messages so a forward ref between them is NOT pruned", async () => {
     // Stage.say() flushes pending ops mid-turn, so one turn can arrive as
     // [patch(add child ref "x"), say, patch(add node x)]. Folding each message
@@ -890,6 +955,33 @@ describe("FacetRuntime.record", () => {
     expect(history[0]?.event).toEqual(tap);
     expect(history[0]?.messages).toEqual([]); // record carries no agent messages
     expect(agent).not.toHaveBeenCalled(); // the brain is never invoked
+  });
+
+  it("record redacts sensitive local tap fields before writing the sink", async () => {
+    const rt = new FacetRuntime({ agentId: "a", agent: agentOf({ kind: "say", text: "unused" }) });
+    await rt.record(visitor, {
+      kind: "tap",
+      target: "x",
+      effect: { toggle: "details" },
+      fields: {
+        source: "local",
+        note: "Bearer local-secret",
+        password: "hunter2",
+        api_key: "sk-secret",
+      },
+    });
+
+    const history = await rt.historyFor("v");
+    expect(history[0]?.event.kind === "tap" ? history[0].event.fields : undefined).toEqual({
+      source: "local",
+      note: "[redacted]",
+      password: "[redacted]",
+      api_key: "[redacted]",
+    });
+    const serialized = JSON.stringify(history);
+    expect(serialized).not.toContain("Bearer local-secret");
+    expect(serialized).not.toContain("hunter2");
+    expect(serialized).not.toContain("sk-secret");
   });
 
   it("two records and one turn persist in append order (send order, not sink latency)", async () => {
