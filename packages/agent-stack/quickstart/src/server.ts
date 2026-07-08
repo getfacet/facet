@@ -137,17 +137,25 @@ function resolveBundlePath(override: string | undefined): string | undefined {
   return undefined;
 }
 
-function serveBundle(res: ServerResponse, override: string | undefined): void {
+function serveBundle(res: ServerResponse, override: string | undefined, headOnly = false): void {
   const bundlePath = resolveBundlePath(override);
   if (bundlePath === undefined) {
     // Fail-safe: /app.js is a module script — serve the hint AS JS so the
     // browser runs it and shows the build message (an HTML body would be
     // MIME-refused, leaving a blank page).
     res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+    if (headOnly) {
+      res.end();
+      return;
+    }
     res.end(MISSING_BUNDLE_JS);
     return;
   }
   res.writeHead(200, { "Content-Type": "text/javascript; charset=utf-8" });
+  if (headOnly) {
+    res.end();
+    return;
+  }
   const stream = createReadStream(bundlePath);
   stream.on("error", (error) => {
     // Headers are already out — nothing safe to write; sever so the browser retries.
@@ -294,13 +302,22 @@ function handleRequest(
     res.end("request refused");
     return;
   }
-  if (req.method === "GET" && pathname === "/") {
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/") {
     res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+    if (req.method === "HEAD") {
+      res.end();
+      return;
+    }
     res.end(shellHtml(options.themes, options.initialStage));
     return;
   }
-  if (req.method === "GET" && pathname === "/app.js") {
-    serveBundle(res, options.pageBundlePath);
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/app.js") {
+    serveBundle(res, options.pageBundlePath, req.method === "HEAD");
+    return;
+  }
+  if ((req.method === "GET" || req.method === "HEAD") && pathname === "/favicon.ico") {
+    res.writeHead(204);
+    res.end();
     return;
   }
   // The protocol routes (/event, /stream, /health) are unauthenticated and

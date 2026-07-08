@@ -11,32 +11,32 @@ import type { ToolSpec } from "../provider.js";
 export { FACET_STAGE_TOOL_NAMES, getStageToolSpec } from "@facet/agent-tools";
 export type { FacetStageToolName, FacetStageToolSpec, ToolInputByName } from "@facet/agent-tools";
 
-/** Built-in demo brief used when the deployer passes no `--guide`. It makes the
- * default page a live, self-explaining demo of Facet — drawn by Facet. */
-export const DEFAULT_GUIDE = `# A page that explains Facet — drawn by Facet itself
+/** Built-in sample brief used when the deployer passes no `--guide`. It gives
+ * first-run users a real provider-backed agent-service page, not a keyless demo
+ * mode or a page about Facet itself. */
+export const DEFAULT_GUIDE = `# Northstar Studio live intake page
 
-This page IS the demo: you are an LLM drawing it live, per visitor, from Facet's
-safe UI bricks. Explain what that means while showing it off. Keep it clear,
-concrete, and a little proud.
+Build a compact page for "Northstar Studio", an AI product-planning assistant
+that helps founders turn a rough idea into a focused launch plan. It should feel
+like a real service page an agent developer could ship to visitors.
 
-- On the first visit, paint a hero: a title "Facet" and a one-line pitch like
-  "UI your model draws itself — safe, live, and different for every visitor."
-- Below it, a card row of the three core ideas:
-  - "Safe bricks, not code" — the model composes pages from a few typed bricks
-    (box, text, media, field) with token styles, so it can't inject scripts or
-    break the layout.
-  - "Live & personal" — the page is rebuilt for each visitor and keeps changing
-    as they chat; nothing is pre-built.
-  - "Only diffs travel" — changes ship as tiny JSON patches applied the same way
-    on the server and in the browser, so the two never drift.
-- Add a friendly line inviting the visitor to try it, e.g. "Ask me in the chat
-  to restyle this page, add a section, or make one just for you."
-- Pre-draw two screens — "home" and "how-it-works" — with a navigate box
-  between them; on the second screen put a short step list of the
-  request → redraw loop (visitor types → model edits the bricks → only the
-  patch travels → the page updates live).
-- When the visitor chats, ACTUALLY do what they ask to this page, live — that
-  is the whole demo. Prefer small incremental edits that reuse existing nodes.`;
+- On the first visit, paint a hero with the title "Northstar Studio" and the
+  pitch "Turn a rough product idea into a focused launch plan."
+- Below it, add three concise cards:
+  - "Clarify the goal" — capture what the visitor wants to build and why it
+    matters.
+  - "Map the first workflow" — identify the first user journey the assistant
+    should support.
+  - "Choose the next experiment" — suggest a practical validation step.
+- Add a short intake section with fields for "Project idea", "Audience", and
+  "Timeline", plus a pressable box that sends those fields to the agent.
+- Pre-draw two screens, "home" and "process", with an in-page navigation control
+  between them. The process screen should show a short ordered flow:
+  visitor shares context, assistant reshapes the page, next actions become
+  clearer.
+- When the visitor chats, update this page to match their request. Prefer small
+  incremental edits that reuse existing node ids. Use chat only as a short
+  acknowledgement alongside the page change.`;
 
 const WORKFLOW = `You build and edit the PAGE by CALLING TOOLS. Your primary job is the page, not the chat — a reply of only a chat line, with no page, is wrong.
 - ALWAYS draw or update the page with tools. On a "(visit)" event, or whenever CURRENT STAGE is empty/near-empty, you MUST call render_page to paint the full initial page (following the PAGE BRIEF) before you say anything.

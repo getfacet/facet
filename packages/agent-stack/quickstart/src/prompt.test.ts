@@ -79,6 +79,9 @@ describe("buildSystem", () => {
 
   it("exports a non-empty DEFAULT_GUIDE and HISTORY_TURNS = 20", () => {
     expect(DEFAULT_GUIDE.length).toBeGreaterThan(0);
+    expect(DEFAULT_GUIDE).toContain("Northstar Studio");
+    expect(DEFAULT_GUIDE.toLowerCase()).not.toContain("demo");
+    expect(DEFAULT_GUIDE).not.toContain("Facet");
     expect(HISTORY_TURNS).toBe(20);
   });
 

@@ -205,6 +205,17 @@ describe("quickstart E2E — static shell + proxy plumbing", () => {
     expect(await response.text()).toBe(FIXTURE_BUNDLE);
   });
 
+  it("HEAD /app.js and GET /favicon.ico return clean browser-facing responses", async () => {
+    const bundleHead = await fetch(`${base}/app.js`, { method: "HEAD" });
+    expect(bundleHead.status).toBe(200);
+    expect(bundleHead.headers.get("content-type")).toContain("text/javascript");
+    expect(await bundleHead.text()).toBe("");
+
+    const favicon = await fetch(`${base}/favicon.ico`);
+    expect(favicon.status).toBe(204);
+    expect(await favicon.text()).toBe("");
+  });
+
   it("proxies /health to the internal facet server", async () => {
     const response = await fetch(`${base}/health`);
     expect(response.status).toBe(200);

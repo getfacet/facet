@@ -23,14 +23,15 @@ should wrap these primitives with their own operational layer.
 ## Quickstart: one command
 
 ```bash
-OPENAI_API_KEY=sk-… npx facet-quickstart --guide ./my-page.md
+OPENAI_API_KEY=sk-… npx facet-quickstart
 ```
 
 That boots a live Facet server at `http://localhost:5292` whose page is drawn by
-a **built-in LLM agent**: it reads your guide markdown (what the page is about),
-paints a first stage for each visitor, and keeps patching it as they chat.
-`ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). Flags
-and details: [`@facet/quickstart`](packages/agent-stack/quickstart/README.md).
+a **built-in LLM agent**: it reads a guide markdown brief (your `./facet.md` if
+present, otherwise a built-in sample service brief), paints a first stage for
+each visitor, and keeps patching it as they chat. `ANTHROPIC_API_KEY` works too
+(OpenAI is the default when both are set). Flags and details:
+[`@facet/quickstart`](packages/agent-stack/quickstart/README.md).
 To plug in *your own* model instead, see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
 
