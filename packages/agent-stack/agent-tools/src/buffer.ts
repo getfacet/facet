@@ -1,6 +1,7 @@
 import { MAX_PATCH_OPS, applyPatch, foldPatchIntoStage } from "@facet/core";
 import type { FacetNode, FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
 import { executeStageTool } from "./executor.js";
+import { formatAgentToolObservation } from "./observation.js";
 import type { StageToolAssets, StageToolResult, ToolCall } from "./types.js";
 
 export interface StageToolBufferOutcome {
@@ -99,7 +100,15 @@ export function createStageToolBuffer(
       call.name === "use_stamp" && typeof stampName === "string" && stampName.length > 0
         ? `error: use_stamp — expanded "${stampName}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`
         : `error: ${call.name} — this step would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`;
-    return failedOutcome(observation, shadow);
+    return failedOutcome(
+      rejectedObservation(
+        call.name,
+        "patch_limit",
+        observation,
+        "Split the change into smaller edits.",
+      ),
+      shadow,
+    );
   };
 
   const execute = (call: ToolCall): StageToolBufferOutcome => {
@@ -131,7 +140,7 @@ export function createStageToolBuffer(
     if (boxNode !== undefined && !isClosed(boxNode, shadow)) {
       pending.set(boxNode.id, { kind: "set", node: boxNode });
       return failedOutcome(
-        queuedObservation(boxNode.id, missingChildRefs(boxNode, shadow)),
+        queuedObservation("set_node", boxNode.id, missingChildRefs(boxNode, shadow)),
         shadow,
       );
     }
@@ -147,7 +156,11 @@ export function createStageToolBuffer(
         const missing = pendingMissing(parentId);
         if (missing !== undefined) {
           return failedOutcome(
-            `error: append_node — parent "${parentId}" was created this turn but is still waiting for child node(s): ${summarizeIds(missing)}. Define those child nodes before appending into it.`,
+            pendingObservation(
+              "append_node",
+              `error: append_node — parent "${parentId}" was created this turn but is still waiting for child node(s): ${summarizeIds(missing)}. Define those child nodes before appending into it.`,
+              "Define the parent node's missing child node(s), then append into it.",
+            ),
             shadow,
           );
         }
@@ -156,7 +169,7 @@ export function createStageToolBuffer(
         if (boxNode !== undefined && !isClosed(boxNode, shadow)) {
           pending.set(boxNode.id, { kind: "append", parentId, node: boxNode });
           return failedOutcome(
-            queuedObservation(boxNode.id, missingChildRefs(boxNode, shadow)),
+            queuedObservation("append_node", boxNode.id, missingChildRefs(boxNode, shadow)),
             shadow,
           );
         }
@@ -174,7 +187,11 @@ export function createStageToolBuffer(
       const missing = pendingMissing(parent);
       if (missing !== undefined) {
         return failedOutcome(
-          `error: use_stamp — parent "${parent}" was created this turn but is still waiting for child node(s): ${summarizeIds(missing)}. Define those child nodes before using a stamp inside it.`,
+          pendingObservation(
+            "use_stamp",
+            `error: use_stamp — parent "${parent}" was created this turn but is still waiting for child node(s): ${summarizeIds(missing)}. Define those child nodes before using a stamp inside it.`,
+            "Define the parent node's missing child node(s), then use the stamp.",
+          ),
           shadow,
         );
       }
@@ -275,8 +292,12 @@ function hasBox(shadow: FacetTree, id: NodeId): boolean {
   return shadow.nodes[id]?.type === "box";
 }
 
-function queuedObservation(id: NodeId, missing: readonly NodeId[]): string {
-  return `queued: "${id}" waits for child node(s): ${summarizeIds(missing)}`;
+function queuedObservation(tool: string, id: NodeId, missing: readonly NodeId[]): string {
+  return pendingObservation(
+    tool,
+    `queued: "${id}" waits for child node(s): ${summarizeIds(missing)}`,
+    "Define the missing child node(s), then continue the edit.",
+  );
 }
 
 function failedOutcome(observation: string, shadow: FacetTree): StageToolBufferOutcome {
@@ -293,12 +314,6 @@ function messageStats(messages: readonly ServerMessage[]): {
   };
 }
 
-function changedSummary(ids: readonly NodeId[]): string {
-  if (ids.length === 0) return "none";
-  const shown = ids.slice(0, 8).join(", ");
-  return ids.length > 8 ? `${shown}, +${String(ids.length - 8)} more` : shown;
-}
-
 function summarizeIds(ids: readonly NodeId[]): string {
   const shown = ids.slice(0, MAX_ID_LIST_PREVIEW);
   const suffix = ids.length > shown.length ? `, +${String(ids.length - shown.length)} more` : "";
@@ -306,23 +321,44 @@ function summarizeIds(ids: readonly NodeId[]): string {
 }
 
 function formatObservation(result: StageToolResult): string {
-  const text = result.observation.text;
-  if (
-    result.status !== "ok" ||
-    (result.patchCount === 0 && result.changedNodeIds.length === 0 && result.issues.length === 0)
-  ) {
-    return text;
-  }
+  return result.observation.text;
+}
 
-  const issuePart = result.issues.length > 0 ? `; issues=${String(result.issues.length)}` : "";
-  const metadata = `(patches=${String(result.patchCount)}; changed=${changedSummary(
-    result.changedNodeIds,
-  )}; summary=${result.summary}${issuePart})`;
-  const jsonStart = text.indexOf(' {"');
-  if (jsonStart >= 0) {
-    return `${text.slice(0, jsonStart)} ${metadata}${text.slice(jsonStart)}`;
-  }
-  return `${text} ${metadata}`;
+function pendingObservation(tool: string, message: string, nextAction: string): string {
+  return formatAgentToolObservation({
+    tool,
+    status: "pending",
+    outcome: "pending",
+    code: "pending",
+    message,
+    applied: false,
+    stageChanged: false,
+    visibleToVisitor: false,
+    patchCount: 0,
+    nextAction,
+    summary: "no stage changes",
+  }).text;
+}
+
+function rejectedObservation(
+  tool: string,
+  code: "patch_limit",
+  message: string,
+  nextAction: string,
+): string {
+  return formatAgentToolObservation({
+    tool,
+    status: "error",
+    outcome: "rejected",
+    code,
+    message,
+    applied: false,
+    stageChanged: false,
+    visibleToVisitor: false,
+    patchCount: 0,
+    nextAction,
+    summary: "no stage changes",
+  }).text;
 }
 
 function appendMessages(target: ServerMessage[], messages: readonly ServerMessage[]): void {

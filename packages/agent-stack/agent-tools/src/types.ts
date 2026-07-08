@@ -109,9 +109,39 @@ export type StageToolErrorCode =
   | "patch_limit"
   | "fold_error";
 
+export type AgentToolObservationStatus = StageToolStatus | "pending";
+
+export type AgentToolOutcome =
+  | "applied_visible"
+  | "applied_not_visible"
+  | "applied_with_warnings"
+  | "pending"
+  | "rejected"
+  | "no_stage_change";
+
+export interface AgentToolObservationData {
+  readonly version: 1;
+  readonly tool: string;
+  readonly status: AgentToolObservationStatus;
+  readonly outcome: AgentToolOutcome;
+  readonly applied: boolean;
+  readonly stage_changed: boolean;
+  readonly visible_to_visitor: boolean;
+  readonly patch_count: number;
+  readonly changed_node_ids: readonly NodeId[];
+  readonly omitted_changed_node_count: number;
+  readonly warnings: readonly string[];
+  readonly omitted_warning_count: number;
+  readonly message: string;
+  readonly next_action: string;
+  readonly summary: string;
+  readonly code?: StageToolErrorCode | "pending";
+}
+
 export interface StageToolObservation {
-  readonly status: StageToolStatus;
+  readonly status: AgentToolObservationStatus;
   readonly text: string;
+  readonly data?: AgentToolObservationData;
 }
 
 export interface StageToolOkResult {

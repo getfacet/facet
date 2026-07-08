@@ -52,7 +52,7 @@ imports, and release metadata all benefit from the physical move.
 | Core | `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
 | Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
 | Core | `packages/core/assets` | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
-| Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding. |
+| Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, and local shadow folding. |
 | Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters, prompt, streaming tool loop, deterministic test fixture. |
 | Agent Stack | `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
 | Extensions | `packages/extensions/agent` | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |

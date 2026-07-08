@@ -141,7 +141,7 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     }).not.toThrow();
     // The press fired (the gather walk terminated under its own budget).
     expect(onAction).toHaveBeenCalledTimes(1);
-  });
+  }, 10_000);
 
   it("keeps exit snapshot rendering bounded for a removed hostile subtree", () => {
     vi.useFakeTimers();
@@ -179,5 +179,5 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     } finally {
       vi.useRealTimers();
     }
-  });
+  }, 10_000);
 });

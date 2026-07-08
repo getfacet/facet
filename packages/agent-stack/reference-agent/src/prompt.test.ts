@@ -75,6 +75,17 @@ describe("buildSystem", () => {
     expect(system).toMatch(/reuse .*node ids/i);
   });
 
+  it("teaches structured pending and visibility outcomes before completion", () => {
+    const system = buildSystem(DEFAULT_GUIDE);
+    expect(system).toContain("TOOL RESULT CONTRACT");
+    expect(system).toContain("applied_visible");
+    expect(system).toContain("applied_not_visible");
+    expect(system).toContain("applied_with_warnings");
+    expect(system).toContain("pending");
+    expect(system).toContain("rejected");
+    expect(system).toMatch(/Do not claim completion/i);
+  });
+
   it("teaches appear/scroll/onHold through the embedded STAGE_SPEC (drift net)", () => {
     // Not a tautology on STAGE_SPEC inclusion: pins that the COMPOSED system
     // prompt actually carries the three new words, so quickstart notices if the

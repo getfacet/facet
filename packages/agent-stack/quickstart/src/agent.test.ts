@@ -44,6 +44,17 @@ interface MockProvider extends QuickstartProvider {
   readonly turns: ProviderTurn[];
 }
 
+interface ToolObservationData {
+  readonly status: string;
+  readonly outcome: string;
+  readonly applied: boolean;
+  readonly visible_to_visitor: boolean;
+  readonly message: string;
+  readonly next_action: string;
+  readonly summary: string;
+  readonly warnings: readonly string[];
+}
+
 /** A scripted provider: returns steps in order; the last entry repeats. */
 function providerOf(...steps: ReadonlyArray<ProviderStep | Error>): MockProvider {
   const turns: ProviderTurn[] = [];
@@ -91,6 +102,48 @@ function saysOf(messages: readonly ServerMessage[]): string[] {
 }
 function patchesOf(messages: readonly ServerMessage[]): readonly ServerMessage[] {
   return messages.filter((m) => m.kind === "patch");
+}
+
+function toolResultContents(turn: ProviderTurn): string[] {
+  return turn.messages.flatMap((message) =>
+    message.role === "tool_result" ? [message.content] : [],
+  );
+}
+
+function toolResultData(turn: ProviderTurn): ToolObservationData[] {
+  return toolResultContents(turn).map((content) => {
+    const parsed = JSON.parse(content) as Partial<ToolObservationData>;
+    if (
+      typeof parsed.status !== "string" ||
+      typeof parsed.outcome !== "string" ||
+      typeof parsed.message !== "string" ||
+      typeof parsed.next_action !== "string" ||
+      typeof parsed.summary !== "string" ||
+      typeof parsed.applied !== "boolean" ||
+      typeof parsed.visible_to_visitor !== "boolean" ||
+      !Array.isArray(parsed.warnings)
+    ) {
+      throw new Error(`expected structured tool observation: ${content}`);
+    }
+    return {
+      status: parsed.status,
+      outcome: parsed.outcome,
+      applied: parsed.applied,
+      visible_to_visitor: parsed.visible_to_visitor,
+      message: parsed.message,
+      next_action: parsed.next_action,
+      summary: parsed.summary,
+      warnings: parsed.warnings.filter((warning): warning is string => typeof warning === "string"),
+    };
+  });
+}
+
+function toolResultSearchText(turn: ProviderTurn): string {
+  return toolResultData(turn)
+    .map((data) =>
+      [data.message, data.next_action, data.summary, ...data.warnings].filter(Boolean).join("\n"),
+    )
+    .join("\n");
 }
 
 async function runAgent(
@@ -156,14 +209,19 @@ describe("createQuickstartAgent tool loop", () => {
       const childId = rootNode.children?.[0];
       expect(childId).toBeDefined();
       expect(nodeAdds.some((op) => op.path === `/nodes/${String(childId)}`)).toBe(true);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      )[0]!;
-      const idsJson = JSON.parse(obs.slice(obs.indexOf("{"))) as {
+      const observation = toolResultData(provider.turns[1]!)[0]!;
+      const metadataStart = observation.message.indexOf("{");
+      const idsJson = JSON.parse(observation.message.slice(metadataStart)) as {
         readonly root: string;
         readonly slots: Readonly<Record<string, string>>;
         readonly ids: Readonly<Record<string, string>>;
       };
+      expect(observation).toMatchObject({
+        status: "ok",
+        outcome: "applied_visible",
+        applied: true,
+        visible_to_visitor: true,
+      });
       expect(idsJson.root).toBe(rootId);
       expect(idsJson.slots["title"]).toBe(childId);
       expect(idsJson.ids["card"]).toBe(rootId);
@@ -309,10 +367,13 @@ describe("createQuickstartAgent tool loop", () => {
       );
 
       expect(patchesOf(out)).toHaveLength(0);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
+      expect(toolResultData(provider.turns[1]!)).toContainEqual(
+        expect.objectContaining({
+          status: "error",
+          outcome: "rejected",
+          message: 'error: use_stamp — parent "title" is not a box',
+        }),
       );
-      expect(obs).toContain('error: use_stamp — parent "title" is not a box');
     } finally {
       errorSpy.mockRestore();
     }
@@ -349,10 +410,13 @@ describe("createQuickstartAgent tool loop", () => {
       );
 
       expect(patchesOf(out)).toHaveLength(0);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
+      expect(toolResultData(provider.turns[1]!)).toContainEqual(
+        expect.objectContaining({
+          status: "error",
+          outcome: "rejected",
+          message: 'error: append_node — parent "title" is not a box',
+        }),
       );
-      expect(obs).toContain('error: append_node — parent "title" is not a box');
     } finally {
       errorSpy.mockRestore();
     }
@@ -443,11 +507,11 @@ describe("createQuickstartAgent tool loop", () => {
 
     await runAgent(agent, { kind: "message", text: "bad params" });
 
-    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-      m.role === "tool_result" ? m.content : "",
-    );
-    expect(obs[0]).toContain("note:");
-    expect(obs[0]).toContain("params is not an object map");
+    const observation = toolResultData(provider.turns[1]!)[0]!;
+    expect(observation.message).toContain("note:");
+    expect(
+      observation.warnings.some((warning) => warning.includes("params is not an object map")),
+    ).toBe(true);
   });
 
   it("per-step streaming yields one batch for each provider step that changed output", async () => {
@@ -595,10 +659,13 @@ describe("createQuickstartAgent tool loop", () => {
 
       expect(patchesOf(out)).toHaveLength(0);
       expect(saysOf(out)[0]).toMatch(/sorry/i);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
+      expect(toolResultData(provider.turns[1]!)).toContainEqual(
+        expect.objectContaining({
+          status: "pending",
+          outcome: "pending",
+          message: 'queued: "panel" waits for child node(s): missing',
+        }),
       );
-      expect(obs).toContain('queued: "panel" waits for child node(s): missing');
     } finally {
       errorSpy.mockRestore();
     }
@@ -642,11 +709,13 @@ describe("createQuickstartAgent tool loop", () => {
     try {
       await runAgent(agent, { kind: "message", text: "build" });
 
-      const obs = provider.turns[2]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs).toContain(
-        'error: append_node — parent "panel" was created this turn but is still waiting for child node(s): missing. Define those child nodes before appending into it.',
+      expect(toolResultData(provider.turns[2]!)).toContainEqual(
+        expect.objectContaining({
+          status: "pending",
+          outcome: "pending",
+          message:
+            'error: append_node — parent "panel" was created this turn but is still waiting for child node(s): missing. Define those child nodes before appending into it.',
+        }),
       );
     } finally {
       errorSpy.mockRestore();
@@ -707,10 +776,8 @@ describe("createQuickstartAgent tool loop", () => {
 
     // The 2nd turn's messages carry the error observation from the failed call.
     const secondTurn = provider.turns[1]!;
-    const observations = secondTurn.messages
-      .filter((m) => m.role === "tool_result")
-      .map((m) => (m.role === "tool_result" ? m.content : ""));
-    expect(observations.some((o) => o.startsWith("error:"))).toBe(true);
+    const observations = toolResultData(secondTurn);
+    expect(observations.some((o) => o.status === "error")).toBe(true);
 
     // Only the valid append reached the stage.
     const patch = out.find((m) => m.kind === "patch");
@@ -736,10 +803,7 @@ describe("createQuickstartAgent tool loop", () => {
       expect(patchesOf(out)).toHaveLength(0);
       expect(saysOf(out)[0]).toMatch(/sorry/i);
       // The model saw an error observation for the bad node.
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs.some((o) => o.startsWith("error:"))).toBe(true);
+      expect(toolResultData(provider.turns[1]!).some((o) => o.status === "error")).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }
@@ -761,14 +825,10 @@ describe("createQuickstartAgent tool loop", () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       await runAgent(agent, { kind: "message", text: "go" }, SESSION);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs.some((o) => o.includes('"text" node needs a string "value"'))).toBe(true);
-      expect(obs.some((o) => o.includes("unknown tool") && o.includes("append_node"))).toBe(true);
-      expect(obs.some((o) => o.includes("render_page") && o.includes("at least one child"))).toBe(
-        true,
-      );
+      const obs = toolResultSearchText(provider.turns[1]!);
+      expect(obs.includes('"text" node needs a string "value"')).toBe(true);
+      expect(obs.includes("unknown tool") && obs.includes("append_node")).toBe(true);
+      expect(obs.includes("render_page") && obs.includes("at least one child")).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }
@@ -806,11 +866,12 @@ describe("createQuickstartAgent tool loop", () => {
     );
     const agent = makeAgent(provider);
     await runAgent(agent, { kind: "message", text: "build" }, SESSION);
-    const obs = provider.turns[2]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-      m.role === "tool_result" ? m.content : "",
-    );
     // The append into the freshly-rendered "root" succeeds (root is now known).
-    expect(obs.some((o) => o.startsWith("ok: appended"))).toBe(true);
+    expect(
+      toolResultData(provider.turns[2]!).some(
+        (o) => o.status === "ok" && o.message.startsWith("Appended"),
+      ),
+    ).toBe(true);
   });
 
   it("accepts a screens-only render_page whose shell root is empty but entry screen has content", async () => {
@@ -849,11 +910,9 @@ describe("createQuickstartAgent tool loop", () => {
         patch.patches.some((p) => p.op === "remove" && "path" in p && p.path === "/nodes/greet"),
       ).toBe(true);
     }
-    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-      m.role === "tool_result" ? m.content : "",
-    );
-    expect(obs.some((o) => o.includes('"media" node needs string "src"'))).toBe(true);
-    expect(obs.some((o) => o.includes('"field" node needs a string "name"'))).toBe(true);
+    const obs = toolResultSearchText(provider.turns[1]!);
+    expect(obs.includes('"media" node needs string "src"')).toBe(true);
+    expect(obs.includes('"field" node needs a string "name"')).toBe(true);
   });
 
   it("brick-vocab v1 accepts media nodes and rejects old image nodes", async () => {
@@ -905,14 +964,13 @@ describe("createQuickstartAgent tool loop", () => {
       expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/badKind")).toBe(false);
       expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/badSrc")).toBe(false);
     }
-    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-      m.role === "tool_result" ? m.content : "",
-    );
-    expect(obs.some((o) => o.includes("ok: set") && o.includes("clip"))).toBe(true);
-    expect(obs.some((o) => o.includes('"type" must be one of'))).toBe(true);
-    expect(obs.some((o) => o.includes("media"))).toBe(true);
-    expect(obs.some((o) => o.includes('kind must be "image" or "video"'))).toBe(true);
-    expect(obs.some((o) => o.includes('safe static "src"'))).toBe(true);
+    const observations = toolResultData(provider.turns[1]!);
+    const obs = toolResultSearchText(provider.turns[1]!);
+    expect(observations.some((o) => o.status === "ok" && o.message.includes("clip"))).toBe(true);
+    expect(obs.includes('"type" must be one of')).toBe(true);
+    expect(obs.includes("media")).toBe(true);
+    expect(obs.includes('kind must be "image" or "video"')).toBe(true);
+    expect(obs.includes('safe static "src"')).toBe(true);
   });
 
   it("set_theme records a /theme add op the model can drive", async () => {
@@ -938,10 +996,11 @@ describe("createQuickstartAgent tool loop", () => {
       const out = await runAgent(agent, { kind: "message", text: "go" }, SESSION);
       // No /theme patch was emitted — the invalid name degraded to an observation.
       expect(patchesOf(out)).toHaveLength(0);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs.some((o) => o.startsWith("error:") && o.includes("valid theme name"))).toBe(true);
+      expect(
+        toolResultData(provider.turns[1]!).some(
+          (o) => o.status === "error" && o.message.includes("valid theme name"),
+        ),
+      ).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }
@@ -955,10 +1014,7 @@ describe("createQuickstartAgent tool loop", () => {
       const out = await runAgent(agent, { kind: "message", text: "go" }, SESSION);
       // Nothing was applied — the bad arg degraded to an observation, the turn survived.
       expect(patchesOf(out)).toHaveLength(0);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs.some((o) => o.startsWith("error:"))).toBe(true);
+      expect(toolResultData(provider.turns[1]!).some((o) => o.status === "error")).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }
@@ -1052,10 +1108,7 @@ describe("createQuickstartAgent tool loop", () => {
     const agent = makeAgent(provider);
     const out = await runAgent(agent, { kind: "message", text: "draw" }, SESSION);
 
-    const firstTurnObs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map(
-      (m) => (m.role === "tool_result" ? m.content : ""),
-    );
-    expect(firstTurnObs.some((o) => o.startsWith("error:"))).toBe(true);
+    expect(toolResultData(provider.turns[1]!).some((o) => o.status === "error")).toBe(true);
     // The valid render still applied.
     const patch = out.find((m) => m.kind === "patch");
     expect(patch).toBeDefined();

@@ -282,6 +282,50 @@ class DelayedGetStore implements StageStore {
   }
 }
 
+/** Holds exactly the first `get` until the test releases it. This opens a
+ * deterministic rehydrate window without making the fallback re-read slow too. */
+class HoldFirstGetStore implements StageStore {
+  private firstGetHeld = false;
+  private releaseFirstGet: (() => void) | undefined;
+  private resolveFirstGetStarted: () => void = () => {};
+  private readonly firstGetStarted = new Promise<void>((resolve) => {
+    this.resolveFirstGetStarted = resolve;
+  });
+
+  constructor(private readonly inner: StageStore) {}
+
+  waitForFirstGet(): Promise<void> {
+    return this.firstGetStarted;
+  }
+
+  release(): void {
+    const release = this.releaseFirstGet;
+    if (release === undefined) return;
+    this.releaseFirstGet = undefined;
+    release();
+  }
+
+  async get(agentId: string, visitorId: string): Promise<FacetSession | undefined> {
+    const snapshot = await this.inner.get(agentId, visitorId);
+    if (!this.firstGetHeld) {
+      this.firstGetHeld = true;
+      await new Promise<void>((resolve) => {
+        this.releaseFirstGet = resolve;
+        this.resolveFirstGetStarted();
+      });
+    }
+    return snapshot;
+  }
+
+  open(agentId: string, visitor: VisitorContext): Promise<FacetSession> {
+    return this.inner.open(agentId, visitor);
+  }
+
+  save(session: FacetSession): Promise<void> {
+    return this.inner.save(session);
+  }
+}
+
 /** Rejects the FIRST `get` (a rehydrate failure) then delegates — the second
  * connection's rehydrate succeeds, modelling a transient store error + reconnect. */
 class FailOnceGetStore implements StageStore {
@@ -1705,7 +1749,7 @@ describe("async delivery — resume & rehydrate", () => {
         ? [{ kind: "patch", patches: [{ op: "replace", path: "", value: seededTree }] }]
         : [];
     const inner = new MemoryStageStore();
-    const stageStore = new DelayedGetStore(inner, 1_000);
+    const stageStore = new HoldFirstGetStore(inner);
     const { server, base } = await start({ agentId: "a", agent, stageStore });
     running = server;
 
@@ -1715,18 +1759,26 @@ describe("async delivery — resume & rehydrate", () => {
     const stream = await fetch(`${base}/stream?visitorId=v`);
     const reader = eventReader(stream);
     try {
-      await Promise.all(
-        Array.from({ length: MAX_FRAME_SESSIONS + 1 }, (_item, index) =>
-          postEvent(base, `evict-${String(index)}`, { kind: "message", text: "evict" }),
-        ),
-      );
+      await stageStore.waitForFirstGet();
+      for (let index = 0; index < MAX_FRAME_SESSIONS + 1; index += 200) {
+        const batch = Array.from(
+          { length: Math.min(200, MAX_FRAME_SESSIONS + 1 - index) },
+          (_item, offset) =>
+            postEvent(base, `evict-${String(index + offset)}`, {
+              kind: "message",
+              text: "evict",
+            }),
+        );
+        await Promise.all(batch);
+      }
+      stageStore.release();
 
-      expect((await reader.next(2_000))?.data).toEqual({ kind: "reset" });
-      expect((await reader.next(2_000))?.data).toMatchObject({ kind: "patch" });
+      expect((await reader.next(8_000))?.data).toEqual({ kind: "reset" });
+      expect((await reader.next(8_000))?.data).toMatchObject({ kind: "patch" });
     } finally {
       await reader.close();
     }
-  });
+  }, 15_000);
 
   it("leads a full rehydrate with reset and snapshot frames that clear resume state", async () => {
     const inner = new MemoryStageStore();

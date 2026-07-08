@@ -46,6 +46,16 @@ const WORKFLOW = `You build and edit the PAGE by CALLING TOOLS. Your primary job
 - Use say for a SHORT chat line, IN ADDITION to a page edit — never instead of one.
 - You may call several tools in one turn. When the page reflects the request and you have replied, STOP (make no more tool calls). Never describe the page in prose — build it with tools.`;
 
+const TOOL_RESULT_CONTRACT = `TOOL RESULT CONTRACT
+Every tool result is JSON. Read status, outcome, visible_to_visitor, warnings, and next_action before deciding you are done.
+- applied_visible: the stage changed and the visitor can see the relevant change.
+- applied_not_visible: the stage changed but the visitor cannot see the relevant node yet. Do not claim completion; attach it to a visible box or inspect_stage.
+- applied_with_warnings: the stage changed but validation/folding dropped or sanitized something. Inspect or retry if the warning affects the request.
+- pending: no patch was emitted yet. Define the missing child node(s) before claiming completion.
+- rejected: no patch was emitted. Follow next_action and retry.
+- no_stage_change: inspect/say did not mutate the stage. This is only enough when no page change was required.
+Do not claim completion unless the requested page change has an applied_visible result, or you intentionally only needed a no_stage_change tool such as inspect or say.`;
+
 /** Operator assets injected into prompt layer 2: themes offered to the model by
  * NAME and stamps it may expand by name. */
 export interface PromptAssets {
@@ -90,6 +100,7 @@ export function buildSystem(guide: string, assets?: PromptAssets): string {
     "You are the live agent behind a Facet page: you draw the page and chat with its visitor.",
     STAGE_SPEC,
     WORKFLOW,
+    TOOL_RESULT_CONTRACT,
   ];
   const themes = assets?.themes ?? [];
   const stamps = assets?.stamps ?? [];

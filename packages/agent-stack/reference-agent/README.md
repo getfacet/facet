@@ -93,6 +93,13 @@ and only need the safe Facet stage tool surface:
 import { FACET_STAGE_TOOL_SPECS, executeStageTool } from "@facet/agent-tools";
 ```
 
+The tool loop feeds the model structured JSON tool results. The prompt teaches
+the model to inspect `outcome`, `visible_to_visitor`, `warnings`, and
+`next_action` before claiming completion. In particular, `pending`,
+`rejected`, `applied_with_warnings`, and `applied_not_visible` are not visible
+success. This keeps false-success cases, such as creating an unattached node
+with `set_node`, inside the repair loop.
+
 Use `@facet/reference-agent` when you want Facet's runnable reference brain.
 
 ## Exports

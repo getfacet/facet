@@ -223,7 +223,7 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, and local shadow folding for custom LLM/tool loops. |
+| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, and local shadow folding for custom LLM/tool loops. |
 | `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
 
 ### Reference Implementations
@@ -257,8 +257,8 @@ support tiers, hosting boundary, and known package gaps.
 The reference agent is just a default. Your model connects through the authoring
 or reference layer that fits your setup:
 
-- **custom LLM/tool loop** — use `@facet/agent-tools` to expose safe stage tools
-  to your provider and fold a local stage shadow.
+- **custom LLM/tool loop** — use `@facet/agent-tools` to expose safe stage
+  tools, structured tool observations, and a local stage shadow to your provider.
 - **in-process TypeScript** — a JS function inside the server (`@facet/agent`),
   useful for tests, rules engines, or code-authored agents.
 - **local CLI** — a running agent (e.g. Claude Code or Codex) calls

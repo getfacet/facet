@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FacetStamp, FacetTree, JsonPatchOperation } from "@facet/core";
 import { executeStageTool } from "./executor.js";
+import { parseAgentToolObservation } from "./observation.js";
 
 const ROOT_TREE: FacetTree = {
   root: "root",
@@ -40,9 +41,15 @@ describe("executeStageTool", () => {
       { op: "add", path: "/nodes/root/children/-", value: "greeting" },
     ];
     expect(result.status).toBe("ok");
-    expect(result.observation).toEqual({
+    expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
+      tool: "append_node",
       status: "ok",
-      text: 'ok: appended "greeting" under "root"',
+      outcome: "applied_visible",
+      applied: true,
+      stage_changed: true,
+      visible_to_visitor: true,
+      patch_count: 2,
+      changed_node_ids: ["greeting", "root"],
     });
     expect(result.messages).toEqual([{ kind: "patch", patches: expectedPatches }]);
     expect(result.patches).toEqual(expectedPatches);
@@ -141,7 +148,13 @@ describe("executeStageTool", () => {
     expect(missing.status).toBe("error");
     expect(missing.patches).toEqual([]);
     expect(missing.shadow).toBe(TREE_WITH_TEXT);
-    expect(missing.observation.text).toContain('node "ghost" does not exist');
+    expect(parseAgentToolObservation(missing.observation.text)).toMatchObject({
+      tool: "remove_node",
+      status: "error",
+      outcome: "rejected",
+      message: 'error: remove_node — node "ghost" does not exist',
+      next_action: "Inspect the stage and remove an existing non-root node.",
+    });
 
     const forbidden = executeStageTool(
       {
@@ -219,7 +232,13 @@ describe("executeStageTool", () => {
 
     expect(result.status).toBe("ok");
     expect(result.patchCount).toBe(3);
-    expect(result.observation.text).toContain('ok: used stamp "card"');
+    expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
+      tool: "use_stamp",
+      status: "ok",
+      outcome: "applied_visible",
+      visible_to_visitor: true,
+      patch_count: 3,
+    });
     const rootChildren =
       result.shadow.nodes["root"]?.type === "box" ? result.shadow.nodes["root"].children : [];
     const cardId = rootChildren[0];
@@ -249,6 +268,24 @@ describe("executeStageTool", () => {
     expect(set.patches).toEqual([
       { op: "add", path: "/nodes/title", value: { id: "title", type: "text", value: "T" } },
     ]);
+    expect(parseAgentToolObservation(set.observation.text)).toMatchObject({
+      outcome: "applied_not_visible",
+      next_action:
+        "Attach the changed node to a visible box with append_node, or inspect_stage to find a visible parent.",
+    });
+
+    const visibleSet = executeStageTool(
+      {
+        id: "call-8b",
+        name: "set_node",
+        input: { ["node"]: { id: "title", type: "text", value: "T2" } },
+      },
+      { shadow: TREE_WITH_TEXT },
+    );
+    expect(parseAgentToolObservation(visibleSet.observation.text)).toMatchObject({
+      outcome: "applied_visible",
+      next_action: "",
+    });
 
     const removed = executeStageTool(
       { id: "call-9", name: "remove_node", input: { nodeId: "title" } },
@@ -283,6 +320,30 @@ describe("executeStageTool", () => {
     if (invalidTheme.status === "error") expect(invalidTheme.code).toBe("invalid_input");
     expect(invalidTheme.patches).toEqual([]);
     expect(invalidTheme.shadow).toBe(ROOT_TREE);
+  });
+
+  it("returns applied_not_visible when set_node creates an unattached node", () => {
+    const result = executeStageTool(
+      {
+        id: "call-orphan",
+        name: "set_node",
+        input: { ["node"]: { id: "pricing", type: "text", value: "Pricing" } },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(result.status).toBe("ok");
+    const observation = parseAgentToolObservation(result.observation.text);
+    expect(observation).toMatchObject({
+      tool: "set_node",
+      status: "ok",
+      outcome: "applied_not_visible",
+      applied: true,
+      stage_changed: true,
+      visible_to_visitor: false,
+      next_action:
+        "Attach the changed node to a visible box with append_node, or inspect_stage to find a visible parent.",
+    });
   });
 
   it("escapes slash and tilde node ids in JSON Patch paths", () => {

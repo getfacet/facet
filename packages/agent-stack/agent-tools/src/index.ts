@@ -11,6 +11,12 @@ export {
   summarizeStageChange,
   summarizeStageTree,
 } from "./stage-shadow.js";
+export {
+  formatAgentToolObservation,
+  isVisitorVisibleStageChange,
+  parseAgentToolObservation,
+  visibleStageNodeIds,
+} from "./observation.js";
 export { createStageToolBuffer } from "./buffer.js";
 export type { StageToolBuffer, StageToolBufferOutcome } from "./buffer.js";
 export { executeStageTool } from "./executor.js";
@@ -21,6 +27,9 @@ export type {
 } from "./stage-shadow.js";
 export type {
   AppendNodeToolInput,
+  AgentToolObservationData,
+  AgentToolObservationStatus,
+  AgentToolOutcome,
   FacetStageToolName,
   InspectNodeToolInput,
   InspectStageToolInput,

@@ -12,9 +12,12 @@ The reference agent runs a bounded **streaming tool loop**: the model calls
 `append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
 (a full redraw), and `say` (chat) — via the provider's native function-calling
 (OpenAI) / tool-use (Anthropic) — observing each result before deciding the
-next. After every provider step, quickstart yields the closed batch it produced,
-so the browser can see the page build live instead of waiting for the whole turn
-to finish.
+next. Those observations are structured results with outcomes such as
+`applied_visible`, `applied_not_visible`, `applied_with_warnings`, `pending`,
+and `rejected`, so the model can repair tool failures instead of treating them
+as success. After every provider step, quickstart yields the closed batch it
+produced, so the browser can see the page build live instead of waiting for the
+whole turn to finish.
 
 ```bash
 # with a provider key (env only — see below)

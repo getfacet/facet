@@ -358,19 +358,25 @@ bounded stage summary, and stops before a provider call if compaction still
 cannot fit the configured context budget. Corrupt sink history rows and
 malformed stage metadata degrade to placeholders/summaries instead of aborting
 prompt assembly. Tool observations are appended to the transcript before the
-next provider step, and oversized observations are truncated with an explicit
-marker. Trace callbacks are sanitized and bounded; saturated async trace queues
-preserve terminal `stop`/`turn_error` events over ordinary trace events.
+next provider step as bounded JSON emitted by `@facet/agent-tools`. The model
+reads `status`, `outcome`, `visible_to_visitor`, `warnings`, and `next_action`
+instead of matching prose. Observation fields are bounded before they enter the
+transcript; the harness's observation cap remains a final guard. Trace callbacks
+are sanitized and bounded; saturated async trace queues preserve terminal
+`stop`/`turn_error` events over ordinary trace events.
 
 The stage tools map 1:1 onto the `Stage` control API — `append_node` /
 `set_node` / `remove_node` (incremental edits), `render_page` (a full redraw),
 and `say` (chat) — via the provider's native function-calling (OpenAI) /
-tool-use (Anthropic). It is fail-safe throughout: a bad tool argument becomes an
-`error:` observation the model recovers from (never a throw), retry happens only
-before tools from that provider step execute, provider failure mid-loop keeps
-whatever the stage already has, and a turn that accomplishes nothing degrades to
-one fallback chat line. External agent authors can use `@facet/agent-tools`
-without importing the reference provider loop.
+tool-use (Anthropic). It is fail-safe throughout: a bad tool argument becomes a
+structured `status: "error"` / `outcome: "rejected"` observation the model
+recovers from (never a throw), buffered forward references become
+`outcome: "pending"`, and non-visible writes are reported as
+`outcome: "applied_not_visible"` so the model cannot treat them as completed
+visible work. Retry happens only before tools from that provider step execute,
+provider failure mid-loop keeps whatever the stage already has, and a turn that
+accomplishes nothing degrades to one fallback chat line. External agent authors
+can use `@facet/agent-tools` without importing the reference provider loop.
 
 Quickstart's flagship interaction is the **field snapshot**: a pressable box's
 agent action may declare `collect: "<box id>"`, and at press time the renderer
