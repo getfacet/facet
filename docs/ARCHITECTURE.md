@@ -267,8 +267,8 @@ npm package names stay stable:
   mechanism, the reference LLM brain, deterministic test fixture, and
   one-command quickstart.
 - **Extensions** (`packages/extensions/*`) owns optional agent authoring and
-  integration surfaces: in-process agents, dial-in agents, CLI, bridge, and
-  Postgres stores.
+  integration surfaces: in-process agents, dial-in agents, AG-UI adapters, CLI,
+  bridge, and Postgres stores.
 - **Labs** (`packages/labs`) is reserved for experiments and carries no
   supported package contract.
 
@@ -280,6 +280,7 @@ contracts, reference implementations, or local tools.
 - **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`, and
   `@facet/assets`.
 - **Agent Authoring:** `@facet/agent-tools` and `@facet/agent`.
+- **Integration Adapters:** `@facet/ag-ui`.
 - **Reference Implementations:** `@facet/server`, `@facet/client`,
   `@facet/agent-client`, `@facet/store-postgres`, and
   `@facet/reference-agent`.
@@ -291,10 +292,11 @@ multi-tenant platform should put its own edge/API layer in front of Facet for
 tenant/project lookup, authentication, authorization, rate limits, usage
 metering, abuse controls, audit logging, secrets management, and custom-domain
 routing. Those concerns are not part of `@facet/server` or `@facet/runtime`.
-Likewise, `@facet/client` and `@facet/agent-client` speak that reference
-transport; hosted platforms usually implement their own `FacetTransport` and
-agent connection client while preserving the core Facet contracts. `Self-host`
-is a way to run the reference implementation, not a separate package tier.
+`@facet/ag-ui` is the public adapter path for AG-UI event interop. Likewise,
+native `@facet/client` and `@facet/agent-client` speak the reference transport;
+hosted platforms usually implement their own `FacetTransport` and agent
+connection client while preserving the core Facet contracts. `Self-host` is a
+way to run the reference implementation, not a separate package tier.
 
 ## Agent authoring surfaces
 
@@ -408,9 +410,14 @@ closest (A2UI, Adaptive Cards) are semantic widget catalogs. So:
   (flat map, `root` id, progressive streaming) for future interop.
 - **Patch format = adopted RFC 6902** instead of inventing ops.
 - **Token names = aligned to the W3C DTCG format.**
-- Adaptive Cards independently validates the flow-only + semantic-token choices;
-  AG-UI (transport-only) remains a candidate event channel but is not a v0
-  dependency (a native SSE/WebSocket channel emitting RFC 6902 patches is simpler).
+- **AG-UI = adopted optional/public edge adapter** via `@facet/ag-ui` for event
+  transport, while Facet owns the stage spec, renderer, and patch safety. The
+  adapter maps Facet stage frames only as `STATE_DELTA`/`STATE_SNAPSHOT` events
+  under the reserved `/facet/stage` path; `RunAgentInput.state` is not stage
+  authority and cannot replace `StageStore`/runtime state. External NAT-safe
+  AG-UI dial-out is deferred to future `@facet/ag-ui/agent`; native
+  `@facet/agent-client` remains unchanged.
+- Adaptive Cards independently validates the flow-only + semantic-token choices.
 
 ### What belongs in `@facet/core`
 
@@ -425,9 +432,10 @@ would pull in a dependency or Node built-in, lives in that package instead.
 
 The current repo implements the **core model** (bricks, tokens, RFC 6902
 patches), sessions and the event loop, a React renderer, reference SSE+POST
-transports, browser-side transports, local agent surfaces (CLI/bridge), default
-asset data, file/in-memory asset references, a Postgres store adapter, the
-playground, and the quickstart reference brain.
+transports, browser-side transports, the optional AG-UI adapter/event layer,
+local agent surfaces (CLI/bridge), default asset data, file/in-memory asset
+references, a Postgres store adapter, the playground, and the quickstart
+reference brain.
 
 Deliberately still out of scope:
 

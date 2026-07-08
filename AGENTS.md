@@ -59,6 +59,7 @@ imports, and release metadata all benefit from the physical move.
 | Extensions | `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
 | Extensions | `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
 | Extensions | `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
+| Extensions | `packages/extensions/ag-ui` | `@facet/ag-ui` | Official AG-UI adapter/event layer, browser transport and Node server adapter, keeping Facet safety. |
 | Extensions | `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore` backed by Postgres (`pg` peer dep). |
 | Labs | `packages/labs` | unpublished | Reserved for experiments; nothing here is part of the supported package contract. |
 | App | `apps/playground` | unpublished | Demos (not published). |
@@ -68,6 +69,7 @@ Semantic tiers for documentation and support:
 - **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
   `@facet/assets`.
 - **Agent Authoring:** `@facet/agent-tools`, `@facet/agent`.
+- **Integration Adapters:** `@facet/ag-ui`.
 - **Reference Implementations:** `@facet/server`, `@facet/client`,
   `@facet/agent-client`, `@facet/store-postgres`, `@facet/reference-agent`.
 - **Local Tools:** `@facet/quickstart`, `@facet/cli`, `@facet/bridge`.

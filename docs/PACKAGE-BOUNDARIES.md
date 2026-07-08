@@ -59,12 +59,24 @@ to hand-write patches or import the reference agent stack just to get a fluent
 to Local Tools before 1.0, but it should not be deleted while it remains
 the small code-authored agent surface.
 
+### Integration Adapters
+
+These packages make Facet speak external event protocols while keeping Facet's
+own stage spec, patch validation, and renderer safety as the authority.
+Protocol-specific dependencies stay here; `@facet/core` remains dependency-free.
+
+| Package | Role | Current gap |
+| --- | --- | --- |
+| `@facet/ag-ui` | Official AG-UI adapter/event layer: browser `FacetTransport` over AG-UI plus Node `@facet/ag-ui/server` handlers around `FacetRuntime`, while Facet still owns stage safety. | External NAT-safe AG-UI dial-out is deferred to future `@facet/ag-ui/agent`; native `@facet/agent-client` remains unchanged. |
+
 ### Reference Implementations
 
 These packages show working implementations of Facet transport, persistence, and
 brain boundaries. They are useful for local/self-hosted single-operator setups,
 tests, and as implementation references. They are not a hosted-platform service
-surface.
+surface. The native `@facet/client`/`@facet/server` route remains a reference
+fallback for local/self-hosted Facet deployments, not the new external interop
+path.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
@@ -73,6 +85,11 @@ surface.
 | `@facet/agent-client` | Reference external-agent dial-in SDK for the reference SSE/POST agent channel. | Uses reference server auth semantics; hosted platforms should add project-scoped tokens or provide a platform-specific client. |
 | `@facet/store-postgres` | Reference durable `StageStore`, `Sink`, and `AssetsStore` adapter backed by Postgres. | This is Facet persistence only, not a platform schema; hosted products need their own tenant/project/page/token/usage/audit schema. |
 | `@facet/reference-agent` | Reference LLM brain: providers, prompt policy, bounded harness, and deterministic test fixture. | Not a customer production brain. It should stay a reference harness and test surface. |
+
+The quickstart/playground native consumers are local/reference fallback paths:
+`@facet/quickstart` and `apps/playground` continue to use native reference
+transports for first-run demos and live-link fixtures, while external AG-UI
+interop goes through `@facet/ag-ui`.
 
 ### Local Tools
 
