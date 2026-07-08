@@ -15,6 +15,20 @@ function mockLocalStorage(): void {
   } as Storage;
 }
 
+function mockThrowingLocalStorage(overrides: Partial<Storage>): void {
+  globalThis.localStorage = {
+    getItem: () => null,
+    setItem: () => {},
+    removeItem: () => {},
+    clear: () => {},
+    key: () => null,
+    get length() {
+      return 0;
+    },
+    ...overrides,
+  } as Storage;
+}
+
 afterEach(() => {
   // @ts-expect-error remove the stub so the "no storage" case can run
   delete globalThis.localStorage;
@@ -42,6 +56,33 @@ describe("browserVisitorId", () => {
   });
 
   it("falls back to a fresh id when storage is unavailable", () => {
+    expect(browserVisitorId().length).toBeGreaterThan(0);
+  });
+
+  it("falls back to a fresh id when storage access throws", () => {
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      get: () => {
+        throw new Error("storage blocked");
+      },
+    });
+
+    expect(browserVisitorId().length).toBeGreaterThan(0);
+  });
+
+  it("falls back to a fresh id when storage reads or writes throw", () => {
+    mockThrowingLocalStorage({
+      getItem: () => {
+        throw new Error("read blocked");
+      },
+    });
+    expect(browserVisitorId().length).toBeGreaterThan(0);
+
+    mockThrowingLocalStorage({
+      setItem: () => {
+        throw new Error("write blocked");
+      },
+    });
     expect(browserVisitorId().length).toBeGreaterThan(0);
   });
 });

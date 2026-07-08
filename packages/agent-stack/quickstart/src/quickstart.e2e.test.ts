@@ -409,6 +409,46 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
       await stream.close();
     }
   });
+
+  it("isolates two visitors' stage snapshots and replies through the proxy", async () => {
+    const alphaId = "e2e-isolation-alpha";
+    const betaId = "e2e-isolation-beta";
+    const alpha = await openStream(base, alphaId);
+    const beta = await openStream(base, betaId);
+    try {
+      await alpha.next(1); // reset
+      await beta.next(1); // reset
+      await postEvent(base, alphaId, { kind: "visit", visitor: { visitorId: alphaId } });
+      await postEvent(base, betaId, { kind: "visit", visitor: { visitorId: betaId } });
+      await alpha.next(1); // visit patch
+      await beta.next(1); // visit patch
+
+      await postEvent(base, alphaId, { kind: "message", text: "alpha-only" });
+      const alphaFrames = await alpha.next(2);
+      expect(sayTexts(alphaFrames)).toEqual(["stub: alpha-only"]);
+      expect(JSON.stringify(alphaFrames)).toContain("alpha-only");
+
+      await postEvent(base, betaId, { kind: "message", text: "beta-only" });
+      const betaFrames = await beta.next(2);
+      expect(sayTexts(betaFrames)).toEqual(["stub: beta-only"]);
+      expect(JSON.stringify(betaFrames)).toContain("beta-only");
+    } finally {
+      await alpha.close();
+      await beta.close();
+    }
+
+    const alphaReconnect = await fetch(`${base}/stream?visitorId=${alphaId}`);
+    const alphaSnapshot = await readEvents(alphaReconnect, 2); // reset + stage snapshot
+    const alphaText = JSON.stringify(alphaSnapshot);
+    expect(alphaText).toContain("alpha-only");
+    expect(alphaText).not.toContain("beta-only");
+
+    const betaReconnect = await fetch(`${base}/stream?visitorId=${betaId}`);
+    const betaSnapshot = await readEvents(betaReconnect, 2); // reset + stage snapshot
+    const betaText = JSON.stringify(betaSnapshot);
+    expect(betaText).toContain("beta-only");
+    expect(betaText).not.toContain("alpha-only");
+  });
 });
 
 /** A seedable initial tree (Decision 4): a box root with a child — passes

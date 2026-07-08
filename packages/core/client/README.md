@@ -44,6 +44,10 @@ This is the reference client for a **reference** server: `@facet/server` trusts
 channel. That is correct for local/self-hosted, public/anonymous pages — the
 default browser id is an unguessable random UUID.
 
+Two tabs, browsers, or devices that present the same `visitorId` intentionally
+attach to the same Facet session. Treat that id as a bearer session key, not as
+proof of user identity.
+
 `SseTransport` deliberately carries **no credentials**: no auth token seam, no
 `fetch` `credentials`, no `EventSource` `withCredentials`. If your pages hold
 per-visitor sensitive data, or ids are guessable, you must put your own
