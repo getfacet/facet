@@ -301,8 +301,9 @@ is a way to run the reference implementation, not a separate package tier.
 Agents don't hand-assemble patch arrays. There are two authoring surfaces:
 
 - `@facet/agent-tools` is the LLM/tool-loop mechanism: provider-neutral tool
-  specs, execution, local stage-shadow folding, and observations. Use it when
-  you are building your own OpenAI/Anthropic/LangGraph/etc. loop.
+  specs, execution, local stage-shadow folding, observations, and reusable
+  Facet prompt-kit sections. Use it when you are building your own
+  OpenAI/Anthropic/LangGraph/etc. loop.
 - `@facet/agent` is the in-process TypeScript authoring SDK. It keeps existing
   because rules engines, tests, demos, and code-authored agents still need a
   convenient `Stage` API. It is not the LLM tool schema package.
@@ -325,7 +326,11 @@ boundaries, flushing the commands recorded since the previous yield as the next
 batch. Each batch is closed over its child references before it is delivered, so
 the shared fail-safe fold never permanently prunes content that arrives in a
 later batch. Replace the hand-written branches with an LLM call that emits the
-same operations and nothing else in the stack changes.
+same operations and nothing else in the stack changes. The shared prompt kit
+covers Facet-specific guidance such as compact page UX, edit-before-append
+behavior, bounded `render_page` use, visible-completion rules, and theme/stamp
+metadata privacy; the consuming agent still owns the page brief, provider
+context, history, budgets, retries, stop policy, and any business/domain tools.
 
 ## Reference brain: `@facet/reference-agent`
 
@@ -343,9 +348,10 @@ fixture for live-link gates; it is not the public quickstart path.
 The reference agent is a **streaming tool-calling loop** (not a single completion):
 each provider step yields the stage/chat batch produced so far, so the browser
 can watch the page build while the model continues deciding the next tool. The
-provider-agnostic tool vocabulary, executor, inspection helpers, and local stage
-shadow live in `@facet/agent-tools`; `@facet/reference-agent` supplies only the
-reference brain around that mechanism.
+provider-agnostic tool vocabulary, executor, inspection helpers, local stage
+shadow, structured observation contract, and shared Facet prompt kit live in
+`@facet/agent-tools`; `@facet/reference-agent` supplies only the reference brain
+around that mechanism.
 
 Inside `@facet/reference-agent`, `provider/` holds the OpenAI/Anthropic adapters
 and provider turn types, `prompt/` holds the system prompt plus event/history and

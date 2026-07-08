@@ -10,12 +10,14 @@ customer production brain. Use it to understand a robust tool-calling loop, test
 Facet end to end, or bootstrap local evaluations. Agent business logic, domain tools,
 and production policy belong to the application or platform that uses Facet.
 
-The reusable Facet stage tool layer lives in `@facet/agent-tools`. That package
-owns the canonical tool specs, `executeStageTool`, inspection helpers, result
-types, and local stage-shadow helpers without choosing a provider or reference
-policy. Use `@facet/agent-tools` directly for custom agent loops. This package
-consumes that layer and adds the OpenAI/Anthropic adapters, system prompt,
-bounded harness loop, and deterministic test fixture.
+The reusable Facet stage tool and prompt-kit layer lives in
+`@facet/agent-tools`. That package owns the canonical tool specs,
+`executeStageTool`, inspection helpers, result types, local stage-shadow
+helpers, and provider-neutral Facet authoring guidance without choosing a
+provider or reference policy. Use `@facet/agent-tools` directly for custom agent
+loops. This package consumes that layer and adds the OpenAI/Anthropic adapters,
+reference page brief, event/history/stage context, bounded harness loop, and
+deterministic test fixture.
 
 `@facet/quickstart` composes this package for the provider-backed
 `facet-quickstart` path. You can import it directly when you want the reference
@@ -42,9 +44,10 @@ const agent = createReferenceAgent({
 
 - `provider/`: provider turn/tool types, OpenAI and Anthropic adapters, and env
   resolution. The top-level `provider.ts` remains a compatibility barrel.
-- `prompt/`: system prompt, event/history transcript messages, and bounded
-  current-stage summaries. The package root keeps the prompt helpers used by
-  quickstart, including `TOOLS`, without exporting the raw agent-tools executor.
+- `prompt/`: compatibility wrapper around the shared agent-tools prompt kit,
+  plus event/history transcript messages and bounded current-stage summaries.
+  The package root keeps the prompt helpers used by quickstart, including
+  `TOOLS`, without exporting the raw agent-tools executor.
 - `harness/`: context assembly, deterministic compaction, budget normalization,
   retry/stop classification, transcript observations, trace events, and the
   streaming loop.
@@ -99,6 +102,11 @@ the model to inspect `outcome`, `visible_to_visitor`, `warnings`, and
 `rejected`, `applied_with_warnings`, and `applied_not_visible` are not visible
 success. This keeps false-success cases, such as creating an unattached node
 with `set_node`, inside the repair loop.
+
+`buildSystem(guide, assets?)` remains the reference-agent compatibility helper,
+but its fixed Facet guidance now comes from `@facet/agent-tools`. This package
+still owns the reference `DEFAULT_GUIDE`, provider adapters, context assembly,
+history compaction, budgets, retries, trace events, and fallback behavior.
 
 Use `@facet/reference-agent` when you want Facet's runnable reference brain.
 

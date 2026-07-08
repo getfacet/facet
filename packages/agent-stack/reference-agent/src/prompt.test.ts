@@ -10,7 +10,14 @@ import type {
 } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { CollectedEvent } from "@facet/core";
-import { FACET_STAGE_TOOL_SPECS } from "@facet/agent-tools";
+import {
+  FACET_ASSET_PRIVACY_PROMPT,
+  FACET_PAGE_EXPERIENCE_PROMPT,
+  FACET_STAGE_TOOL_SPECS,
+  FACET_STATE_EDITING_PROMPT,
+  FACET_TOOL_PLAYBOOK_PROMPT,
+  FACET_TOOL_RESULT_CONTRACT_PROMPT,
+} from "@facet/agent-tools";
 import {
   DEFAULT_GUIDE,
   HISTORY_TURNS,
@@ -69,15 +76,20 @@ describe("buildSystem", () => {
     expect(system).toContain(STAGE_SPEC);
     expect(system).toContain(guide);
     expect(system).toContain("PAGE BRIEF");
-    // The workflow tells the model to build via tools, not prose.
-    expect(system).toMatch(/render_page/);
-    expect(system).toMatch(/append_node|set_node/);
+    expect(system).toContain(FACET_PAGE_EXPERIENCE_PROMPT);
+    expect(system).toContain(FACET_STATE_EDITING_PROMPT);
+    expect(system).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
+    expect(system).toContain("Build a compact UX");
+    expect(system).toContain("Use an edit-before-append strategy");
+    expect(system).toContain("render_page: first paint");
     expect(system).toMatch(/reuse .*node ids/i);
   });
 
   it("teaches structured pending and visibility outcomes before completion", () => {
     const system = buildSystem(DEFAULT_GUIDE);
+    expect(system).toContain(FACET_TOOL_RESULT_CONTRACT_PROMPT);
     expect(system).toContain("TOOL RESULT CONTRACT");
+    expect(system).toContain("Use structured outcome recovery");
     expect(system).toContain("applied_visible");
     expect(system).toContain("applied_not_visible");
     expect(system).toContain("applied_with_warnings");
@@ -125,6 +137,7 @@ describe("buildSystem", () => {
   it("with no assets (or empty arrays) adds no THEMES/STAMPS section (DC-008 byte-identity)", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
     const base = buildSystem(guide);
+    expect(base).toContain(FACET_ASSET_PRIVACY_PROMPT);
     // Empty assets must produce the byte-identical no-assets string.
     expect(buildSystem(guide, { themes: [], stamps: [] })).toBe(base);
     // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES

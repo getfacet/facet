@@ -6,9 +6,9 @@ agents.
 Tier: **Agent Authoring**.
 
 This package is the reusable mechanism layer: shared tool-call contracts,
-result shapes, and stage-tool helpers that can sit inside any provider loop.
-It does not choose a model, make provider requests, read environment variables,
-or own a reference policy.
+result shapes, stage-tool helpers, and provider-neutral Facet prompt guidance
+that can sit inside any LLM/tool loop. It does not choose a model, make provider
+requests, read environment variables, or own a reference policy.
 
 `@facet/reference-agent` is separate on purpose. It is Facet's runnable reference
 brain with provider adapters, prompt policy, a tool loop, and the deterministic
@@ -18,14 +18,15 @@ the safe Facet stage tool surface.
 
 ## Current surface
 
-PR1 ships the reusable stage-tool surface used by the reference agent:
+This package ships the reusable stage-tool surface used by the reference agent:
 canonical tool specs, shared tool-call/result types, a provider-agnostic
-executor, stage-shadow folding/summaries, and a buffered helper for streamed
-tool batches.
+executor, stage-shadow folding/summaries, a buffered helper for streamed tool
+batches, and reusable LLM-facing Facet authoring guidance.
 
 ```ts
 import {
   FACET_STAGE_TOOL_SPECS,
+  buildFacetAgentSystemPrompt,
   createStageToolBuffer,
   executeStageTool,
   parseAgentToolObservation,
@@ -35,6 +36,32 @@ import type { StageToolResult, ToolCall, ToolSpec } from "@facet/agent-tools";
 
 The package depends only on `@facet/core`, so it can be reused by external agent
 authors without pulling in the reference agent or a Node-only provider stack.
+
+## Prompt kit
+
+`buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
+most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
+from `@facet/core`, compact page UX guidance, edit-before-append rules, the
+tool playbook, the structured tool-result contract, and optional theme/stamp
+metadata.
+
+The prompt kit is not a complete agent. Your loop still owns the page brief,
+business logic, domain tools, provider messages, history, current event,
+current stage context, budgets, retries, and stop policy.
+
+```ts
+const system = buildFacetAgentSystemPrompt({
+  pageBrief: "# Pricing concierge\n\nHelp each visitor compare plans.",
+  assets: {
+    themes,
+    stamps,
+  },
+});
+```
+
+Asset sections expose only theme/stamp names, descriptions, and stamp slot names
+so the model can choose `set_theme` or `use_stamp` without seeing CSS values or
+stamp node JSON.
 
 ## LLM-facing observations
 

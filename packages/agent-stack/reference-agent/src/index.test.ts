@@ -62,6 +62,7 @@ describe("reference-agent barrel", () => {
       readonly description: string;
       readonly parameters: Readonly<Record<string, unknown>>;
     }>();
+    expectTypeOf<typeof reference.TOOLS>().toEqualTypeOf<readonly ToolSpec[]>();
     expectTypeOf<ToolCall>().toMatchTypeOf<{
       readonly id: string;
       readonly name: string;

@@ -6,6 +6,17 @@ export {
 } from "./specs.js";
 export type { FacetStageToolSpec } from "./specs.js";
 export {
+  FACET_AGENT_ROLE_PROMPT,
+  FACET_ASSET_PRIVACY_PROMPT,
+  FACET_PAGE_BRIEF_HEADING,
+  FACET_PAGE_EXPERIENCE_PROMPT,
+  FACET_STATE_EDITING_PROMPT,
+  FACET_TOOL_PLAYBOOK_PROMPT,
+  FACET_TOOL_RESULT_CONTRACT_PROMPT,
+  buildFacetAgentSystemPrompt,
+} from "./prompt-kit.js";
+export type { FacetAgentSystemPromptOptions, FacetPromptAssets } from "./prompt-kit.js";
+export {
   changedNodeIdsBetween,
   foldStageShadow,
   summarizeStageChange,

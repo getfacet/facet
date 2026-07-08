@@ -50,7 +50,7 @@ business logic, provider choice, customer tools, or production policy.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/agent-tools` | LLM/tool-loop mechanism: provider-agnostic stage tool specs, executor, inspection helpers, observations, and local stage shadow. | Useful as-is; provider-specific schema adapter helpers would make custom loops easier. |
+| `@facet/agent-tools` | LLM/tool-loop mechanism: provider-agnostic stage tool specs, executor, inspection helpers, observations, local stage shadow, and reusable Facet prompt kit. | Useful as-is; provider-specific schema adapter helpers would make custom loops easier. |
 | `@facet/agent` | In-process TypeScript authoring SDK with `Stage`, `defineAgent`, and `defineStreamingAgent`. | Keep it for code-authored agents, tests, rules engines, and demos; it is not the LLM tool schema package. |
 
 `@facet/agent` stays separate for now. Removing it would force in-process users
@@ -98,3 +98,8 @@ surface for hosted products.
   a hosted platform should wrap or replace them.
 - **Examples:** the repo needs examples for custom agent loops using
   `@facet/agent-tools` without importing `@facet/reference-agent`.
+- **Prompt ownership:** `@facet/agent-tools` may provide generic Facet prompt
+  guidance for stage authoring and tool-result recovery. Page briefs, business
+  policy, provider message assembly, history, budgets, retries, and production
+  stop policy belong to the consuming agent or to `@facet/reference-agent` as a
+  reference implementation.
