@@ -494,6 +494,19 @@ describe("resolveProvider", () => {
     );
   });
 
+  it("never includes present provider key values in resolution errors", () => {
+    const secret = "sk-resolution-secret";
+    let message = "";
+    try {
+      resolveProvider({ provider: "anthropic" }, { OPENAI_API_KEY: secret });
+    } catch (cause) {
+      message = cause instanceof Error ? cause.message : String(cause);
+    }
+
+    expect(message).toContain("ANTHROPIC_API_KEY");
+    expect(message).not.toContain(secret);
+  });
+
   it("throws on an unknown --provider value", () => {
     expect(() => resolveProvider({ provider: "llama" }, {})).toThrow(/llama/);
   });

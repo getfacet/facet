@@ -241,6 +241,11 @@ ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[] | AsyncIte
   for an **ordered replay log**: the browser fires them at `POST /record` (log-only,
   no agent turn), which `runtime.record` appends to the `Sink` on the same
   per-visitor order as forwarded turns (append order = the join key).
+- `Sink` calls still receive `(agentId, visitorId)` as their lookup key, but the
+  `StoredEvent.event` body is log-safe: duplicate `visitorId` values are redacted
+  inside visit events, and sensitive collected field names (`password`, `token`,
+  `api_key`, provider-key-like names) or key-looking field values store
+  `[redacted]`.
 - `FacetRuntime.handle(visitor, event)` opens (or finds) the session for that
   `(agent, visitor)` pair, runs the agent, applies each returned batch to the
   stored stage, and ships that batch over the visitor's connection before
@@ -379,7 +384,8 @@ stay capped (`MAX_FIELDS_KEYS`, `MAX_FIELD_VALUE_CHARS`). Field state is browser
 view-state like screen/toggle state (inputs are uncontrolled; there is no value
 property on a field node to write), and the server re-validates `fields` at the
 boundary, so the two-writers rule holds: the server stays the only writer of
-stage content.
+stage content. The reference-agent prompt redacts sensitive field names and
+key-looking field values again when rendering current events or Sink history.
 The `facet-quickstart` bin stays in `@facet/quickstart`: it loads guides/assets,
 serves the page itself (HTML shell + prebuilt client bundle), composes
 `@facet/reference-agent` with a provider-backed reference agent, and proxies the

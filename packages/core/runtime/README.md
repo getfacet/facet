@@ -20,7 +20,10 @@ npm install @facet/runtime @facet/agent @facet/core
 and accepts either one result array or an async stream of result batches. Each
 batch is folded into the stored session, saved, and delivered before the next
 batch is pulled; the `Sink` record is still written once for the whole turn.
-Sessions are isolated and serialized per `(agent, visitor)`.
+Sessions are isolated and serialized per `(agent, visitor)`. The `Sink` is keyed
+by visitor id, but the stored event body redacts duplicate `visitorId` values and
+sensitive collected field names such as `password`, `token`, and `api_key`, plus
+key-looking field values.
 `FacetRuntime.applyMessages` applies an already-produced result (e.g. one that
 arrived after the transport's wait ended) through the same queue and salvage.
 

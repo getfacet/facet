@@ -171,6 +171,9 @@ unauthenticated and each event drives paid provider calls, so:
   add your own auth, rate limiting, and spend caps in front of it.
 - **`password` fields are never collected** — the renderer excludes them, so a
   typed password can't ride an action event into the LLM or history.
+- `MemorySink` is keyed by visitor id, but stored event bodies redact duplicate
+  visit `visitorId` values, sensitive collected field names, and key-looking
+  field values.
 - Provider keys are read from the environment only, used solely in the request
   auth header, and never logged.
 

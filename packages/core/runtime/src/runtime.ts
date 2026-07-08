@@ -10,6 +10,7 @@ import {
   type FacetAgent,
   type FacetSession,
   type FacetTree,
+  type FieldValues,
   type JsonPatchOperation,
   type ServerMessage,
   type VisitorContext,
@@ -22,6 +23,10 @@ const MAX_PENDING_SEEDS = 10_000;
 
 /** Defensive cap on save-time re-validation issues logged per turn (log-flood belt). */
 const MAX_LOGGED_ISSUES = 64;
+const REDACTED_LOG_VALUE = "[redacted]";
+const SENSITIVE_FIELD_NAME =
+  /(?:password|passcode|secret|token|api[_-]?key|authorization|bearer|provider[_-]?key)/i;
+const SENSITIVE_FIELD_VALUE = /\b(?:sk-[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+)\b/i;
 
 export interface FacetRuntimeOptions {
   readonly agentId: string;
@@ -126,9 +131,17 @@ export class FacetRuntime {
     // reserveRecordSlot). persist() fills the slot; a turn that throws resolves it
     // to null so it records nothing (prior behavior).
     const recordSlot = this.reserveRecordSlot(visitor.visitorId);
+    const recordEvent = sanitizeEventForSink(event);
     return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
       try {
-        return await this.handleOne(visitor, event, recordSlot, onFrame, onRecordSettled);
+        return await this.handleOne(
+          visitor,
+          event,
+          recordEvent,
+          recordSlot,
+          onFrame,
+          onRecordSettled,
+        );
       } catch (error) {
         recordSlot.resolve(null);
         throw error;
@@ -156,7 +169,11 @@ export class FacetRuntime {
    * not; a failed sink write is logged, never thrown.
    */
   record(visitor: VisitorContext, event: CollectedEvent): Promise<void> {
-    return this.enqueueRecord(visitor.visitorId, { at: Date.now(), event, messages: [] });
+    return this.enqueueRecord(visitor.visitorId, {
+      at: Date.now(),
+      event: sanitizeEventForSink(event),
+      messages: [],
+    });
   }
 
   /**
@@ -217,7 +234,7 @@ export class FacetRuntime {
         return await this.streamTurn(
           visitor,
           session,
-          event,
+          sanitizeEventForSink(event),
           messages,
           recordSlot,
           undefined,
@@ -233,13 +250,22 @@ export class FacetRuntime {
   private async handleOne(
     visitor: VisitorContext,
     event: ClientEvent,
+    recordEvent: CollectedEvent,
     recordSlot: RecordSlot,
     onFrame: RuntimeFrameSink | undefined,
     onRecordSettled: RuntimeRecordSink | undefined,
   ): Promise<TurnResult> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const result = this.agent(event, session);
-    return this.streamTurn(visitor, session, event, result, recordSlot, onFrame, onRecordSettled);
+    return this.streamTurn(
+      visitor,
+      session,
+      recordEvent,
+      result,
+      recordSlot,
+      onFrame,
+      onRecordSettled,
+    );
   }
 
   /**
@@ -253,7 +279,7 @@ export class FacetRuntime {
   private async streamTurn(
     visitor: VisitorContext,
     initialSession: FacetSession,
-    event: ClientEvent,
+    recordEvent: CollectedEvent,
     result: Parameters<typeof iterateAgentResult>[0],
     recordSlot: RecordSlot,
     onFrame?: RuntimeFrameSink,
@@ -306,7 +332,7 @@ export class FacetRuntime {
     };
 
     const finishPartial = (): TurnResult => {
-      settleRecord({ at: Date.now(), event, messages: accumulated });
+      settleRecord({ at: Date.now(), event: recordEvent, messages: accumulated });
       if (seedPrepended) this.pendingSeeds.delete(key);
       return { messages: onFrame === undefined ? returned : [], agentMutated };
     };
@@ -376,7 +402,7 @@ export class FacetRuntime {
       }
       seedPrepended = true;
     }
-    settleRecord({ at: Date.now(), event, messages: accumulated });
+    settleRecord({ at: Date.now(), event: recordEvent, messages: accumulated });
     if (persistedAnyBatch || seedPrepended) this.pendingSeeds.delete(key);
     return { messages: onFrame === undefined ? returned : [], agentMutated };
   }
@@ -526,4 +552,35 @@ export class FacetRuntime {
       mutated,
     };
   }
+}
+
+function sanitizeEventForSink(event: CollectedEvent): CollectedEvent {
+  if (event.kind === "visit") {
+    return {
+      ...event,
+      visitor: { ...event.visitor, visitorId: REDACTED_LOG_VALUE },
+    };
+  }
+  if (event.kind === "message") return { ...event };
+  if (event.fields === undefined) return { ...event };
+  return { ...event, fields: sanitizeFieldsForSink(event.fields) };
+}
+
+function sanitizeFieldsForSink(fields: FieldValues): FieldValues {
+  const sanitized: Record<string, string | boolean> = {};
+  for (const [name, value] of Object.entries(fields)) {
+    if (shouldRedactField(name, value)) {
+      sanitized[name] = REDACTED_LOG_VALUE;
+    } else {
+      sanitized[name] = value;
+    }
+  }
+  return sanitized;
+}
+
+function shouldRedactField(name: string, value: string | boolean): boolean {
+  return (
+    SENSITIVE_FIELD_NAME.test(name) ||
+    (typeof value === "string" && SENSITIVE_FIELD_VALUE.test(value))
+  );
 }

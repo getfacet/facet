@@ -463,6 +463,10 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
         await waitFor(async () => (await sink.history("quickstart-e2e", visitorId)).length >= 3);
         const history = await sink.history("quickstart-e2e", visitorId);
         expect(history.map((entry) => entry.event.kind)).toEqual(["visit", "message", "tap"]);
+        expect(
+          history[0]?.event.kind === "visit" ? history[0].event.visitor.visitorId : undefined,
+        ).toBe("[redacted]");
+        expect(JSON.stringify(history)).not.toContain(visitorId);
         expect(history[0]?.messages.some((message) => message.kind === "patch")).toBe(true);
         expect(history[1]?.event.kind === "message" ? history[1].event.text : undefined).toBe(
           "log-me",
@@ -479,6 +483,44 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
       } finally {
         await stream.close();
       }
+    } finally {
+      await logged.close();
+    }
+  });
+
+  it("records local navigate/toggle taps without invoking the quickstart agent", async () => {
+    const sink = new MemorySink();
+    let agentCalls = 0;
+    const countingAgent = defineAgent(() => {
+      agentCalls += 1;
+    });
+    const logged = await boot({ agent: countingAgent, sink });
+    try {
+      const visitorId = "e2e-local-record-only";
+      const navigate = await postRecord(logged.url, visitorId, {
+        kind: "tap",
+        target: "go-about",
+        effect: { navigate: "about" },
+      });
+      expect(navigate.status).toBe(202);
+      const toggle = await postRecord(logged.url, visitorId, {
+        kind: "tap",
+        target: "panel-toggle",
+        effect: { toggle: "panel" },
+      });
+      expect(toggle.status).toBe(202);
+
+      await waitFor(async () => (await sink.history("quickstart-e2e", visitorId)).length >= 2);
+      const history = await sink.history("quickstart-e2e", visitorId);
+      expect(history.map((entry) => entry.event.kind)).toEqual(["tap", "tap"]);
+      expect(history.map((entry) => entry.messages)).toEqual([[], []]);
+      expect(history[0]?.event.kind === "tap" ? history[0].event.effect : undefined).toEqual({
+        navigate: "about",
+      });
+      expect(history[1]?.event.kind === "tap" ? history[1].event.effect : undefined).toEqual({
+        toggle: "panel",
+      });
+      expect(agentCalls).toBe(0);
     } finally {
       await logged.close();
     }

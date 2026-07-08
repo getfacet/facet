@@ -93,6 +93,21 @@ describe("runCli — key resolution (DC-005)", () => {
     expect(text).toContain("ANTHROPIC_API_KEY");
     expect(text).toContain(NO_KEY_MESSAGE);
   });
+
+  it("does not echo present provider key values on key-resolution errors", async () => {
+    const secret = "sk-cli-secret";
+    const captured = capture();
+    const code = await runCli(
+      ["--provider", "anthropic"],
+      { OPENAI_API_KEY: secret },
+      { log: captured.log, error: captured.error },
+    );
+
+    expect(code).toBe(1);
+    const text = [...captured.err, ...captured.out].join("\n");
+    expect(text).toContain("ANTHROPIC_API_KEY");
+    expect(text).not.toContain(secret);
+  });
 });
 
 describe("runCli — flag parsing", () => {
@@ -268,6 +283,8 @@ describe("runCli — provider-backed boot (DC-004)", () => {
       const text = captured.out.join("\n");
       expect(text).toContain(running.url);
       expect(text).toContain("openai");
+      expect(text).not.toContain(TEST_PROVIDER_ENV.OPENAI_API_KEY);
+      expect(captured.err.join("\n")).not.toContain(TEST_PROVIDER_ENV.OPENAI_API_KEY);
     } finally {
       await running.close();
     }
