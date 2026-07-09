@@ -97,7 +97,7 @@ describe("printTree", () => {
     expect(out).toContain("  media(video): https://example.com/clip.mp4");
   });
 
-  it("prints high-level nodes with labels and counts while walking section and card children", () => {
+  it("prints component nodes with labels and counts while walking section, card, and form children", () => {
     const out = lines({
       root: "root",
       nodes: {
@@ -110,12 +110,19 @@ describe("printTree", () => {
             "card",
             "button",
             "tabs",
+            "nav",
             "table",
             "chart",
+            "metric",
+            "keyValue",
             "progress",
             "alert",
             "list",
             "divider",
+            "form",
+            "filterBar",
+            "emptyState",
+            "loading",
           ],
         },
         card: {
@@ -138,6 +145,14 @@ describe("printTree", () => {
             { label: "Settings", to: "settings" },
           ],
         },
+        nav: {
+          id: "nav",
+          type: "nav",
+          items: [
+            { label: "Customers", to: "customers" },
+            { label: "Reports", to: "reports" },
+          ],
+        },
         table: {
           id: "table",
           type: "table",
@@ -156,6 +171,15 @@ describe("printTree", () => {
           labels: ["Jan", "Feb"],
           series: [{ label: "Revenue", values: [1, 2] }],
         },
+        metric: { id: "metric", type: "metric", label: "MRR", value: "$10k" },
+        keyValue: {
+          id: "keyValue",
+          type: "keyValue",
+          items: [
+            { label: "Plan", value: "Pro" },
+            { label: "Owner", value: "Ada" },
+          ],
+        },
         progress: { id: "progress", type: "progress", label: "Onboarding", value: 64 },
         alert: {
           id: "alert",
@@ -170,22 +194,51 @@ describe("printTree", () => {
           items: [{ title: "One" }, { title: "Two", body: "Second item" }],
         },
         divider: { id: "divider", type: "divider", label: "Next" },
+        form: {
+          id: "form",
+          type: "form",
+          title: "Lead",
+          children: ["search"],
+        },
+        search: { id: "search", type: "search", name: "q", placeholder: "Search" },
+        filterBar: {
+          id: "filterBar",
+          type: "filterBar",
+          filters: [{ name: "status", label: "Status", options: ["Open"] }],
+        },
+        emptyState: {
+          id: "emptyState",
+          type: "emptyState",
+          title: "No results",
+          body: "Try another query",
+          actionLabel: "Clear filters",
+          onPress: { name: "clear_filters" },
+        },
+        loading: { id: "loading", type: "loading", label: "Loading customers" },
       },
     });
 
     expect(out).toEqual([
-      'section: "Catalog / Overview" (9 children)',
+      'section: "Catalog / Overview" (16 children)',
       '  card: "Revenue" (2 children) [→ open_revenue]',
       "    stat: ARR = $1M (+5%)",
       '    badge: "Live"',
       '  button: "Refresh" [→ refresh]',
       "  tabs: 2 tabs",
+      "  nav: 2 items",
       '  table: "Pipeline" (2 columns, 1 row)',
       '  chart(bar): "Trend" (1 series, 2 labels)',
+      "  metric: MRR = $10k",
+      "  keyValue: 2 items",
       "  progress: Onboarding 64%",
       '  alert: "Heads up" - Check setup',
       "  list: 2 items",
       '  divider: "Next"',
+      '  form: "Lead" (1 child)',
+      "    search: q",
+      "  filterBar: 1 filter",
+      '  emptyState: "No results / Try another query / Clear filters" [→ clear_filters]',
+      '  loading: "Loading customers"',
     ]);
   });
 });
