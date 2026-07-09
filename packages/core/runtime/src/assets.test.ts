@@ -6,6 +6,7 @@ import {
   applyPatch,
   EMPTY_TREE,
   validateTree,
+  type FacetComponentDefinition,
   type FacetCatalog,
   type FacetAgent,
   type FacetSession,
@@ -54,6 +55,49 @@ const invalidStamp = {
   nodes: { x: { id: "x", type: "text", value: "orphan" } },
 };
 
+const validComponentDefinition = {
+  name: "customerSummaryCard",
+  description: "Reusable customer summary",
+  root: "card",
+  nodes: {
+    card: {
+      id: "card",
+      type: "card",
+      title: "{{customer}}",
+      children: ["metric", "action"],
+    },
+    metric: { id: "metric", type: "metric", label: "ARR", value: "{{arr}}" },
+    action: {
+      id: "action",
+      type: "button",
+      label: "Open customer",
+      onPress: { name: "open_customer", payload: { id: "acme" } },
+    },
+  },
+};
+
+const compactComponentDefinition = {
+  name: "compactSummary",
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["copy"] },
+    copy: { id: "copy", type: "text", value: "Summary" },
+  },
+};
+
+const invalidComponentDefinition = {
+  name: "unsafeSummary",
+  root: "root",
+  nodes: {
+    root: {
+      id: "root",
+      type: "card",
+      children: [],
+      html: "<script>alert(1)</script>",
+    },
+  },
+};
+
 /** A seedable initial tree: a root box with ≥ 1 child. */
 const seedTree: FacetTree = {
   root: "root",
@@ -83,6 +127,9 @@ function fileMake(docs: AssetDocuments): AssetsStore {
   const dir = makeTempDir();
   docs.themes.forEach((t, i) => writeFileSync(join(dir, `t${i}.theme.json`), JSON.stringify(t)));
   docs.stamps.forEach((s, i) => writeFileSync(join(dir, `s${i}.stamp.json`), JSON.stringify(s)));
+  docs.componentDefinitions?.forEach((component, i) =>
+    writeFileSync(join(dir, `c${i}.component.json`), JSON.stringify(component)),
+  );
   if (docs.catalog !== undefined) {
     writeFileSync(join(dir, "catalog.json"), JSON.stringify(docs.catalog));
   }
@@ -110,6 +157,7 @@ function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): vo
       const store = make({
         themes: [validTheme, invalidTheme],
         stamps: [validStamp, invalidStamp],
+        componentDefinitions: [validComponentDefinition, invalidComponentDefinition],
         initialTree: seedTree,
       });
       const loaded = await loadAssets(store, "agent");
@@ -118,8 +166,31 @@ function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): vo
       expect(loaded.themes.map((t) => t.name)).not.toContain("hostile");
       expect(loaded.stamps.map((s) => s.name)).toContain("cta");
       expect(loaded.stamps.map((s) => s.name)).not.toContain("broken");
+      expect(loaded.componentDefinitions.map((definition) => definition.name)).toContain(
+        "customerSummaryCard",
+      );
+      expect(loaded.componentDefinitions.map((definition) => definition.name)).not.toContain(
+        "unsafeSummary",
+      );
       for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
       expect(loaded.issues.length).toBeGreaterThan(0);
+    });
+
+    it("loads validated component definitions without adding them to stamps", async () => {
+      const store = make({
+        themes: [],
+        stamps: [],
+        componentDefinitions: [validComponentDefinition],
+      });
+      const loaded = await loadAssets(store, "agent");
+      const definitions: readonly FacetComponentDefinition[] = loaded.componentDefinitions;
+
+      expect(definitions.map((definition) => definition.name)).toEqual(["customerSummaryCard"]);
+      expect(definitions[0]?.nodes["action"]).toMatchObject({
+        type: "button",
+        onPress: { kind: "agent", name: "open_customer", payload: { id: "acme" } },
+      });
+      expect(loaded.stamps.map((stamp) => stamp.name)).not.toContain("customerSummaryCard");
     });
 
     it("refuses a garbage initial tree (the EMPTY_TREE trap) with no seed + an issue", async () => {
@@ -298,21 +369,33 @@ describe("loadAssets", () => {
   it("returns a fresh bundled catalog object for fallback loads", async () => {
     const first = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
     (first.catalog.theme.allowed as unknown as string[]).length = 0;
+    (first.catalog.components as unknown as { length: number }).length = 0;
+    (first.catalog.compositions as unknown as { mode: "allow"; names: string[] }).names = [
+      "mutated",
+    ];
     const mediaBrick = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "media");
     const firstMediaBrick = first.catalog.bricks.find((brick) => brick.type === "media");
     (firstMediaBrick?.variants as unknown as string[] | undefined)?.splice(0);
     (first.catalog.bricks as { length: number }).length = 0;
     (first.catalog.policy.order as unknown as string[]).reverse();
+    (first.catalog.policy.componentOrder as unknown as string[]).reverse();
 
     const second = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
 
     expect(second.catalog).toEqual(DEFAULT_CATALOG);
     expect(second.catalog.bricks).toHaveLength(DEFAULT_CATALOG.bricks.length);
+    expect(second.catalog.components).toEqual(DEFAULT_CATALOG.components);
+    expect(second.catalog.compositions).toEqual(DEFAULT_CATALOG.compositions);
     expect(second.catalog.theme.allowed).toEqual(DEFAULT_CATALOG.theme.allowed);
     expect(second.catalog.bricks.find((brick) => brick.type === "media")?.variants).toEqual(
       mediaBrick?.variants,
     );
     expect(second.catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
+    expect(second.catalog.policy.componentOrder).toEqual([
+      "composition",
+      "component",
+      "primitive",
+    ]);
   });
 
   it("never calls store-supplied array methods while reading themes and stamps", async () => {
@@ -409,8 +492,16 @@ describe("loadAssets", () => {
       ...validStamp,
       name: `stamp_${String(i)}`,
     }));
+    const hugeComponentDefinitions = Array.from({ length: 1_100 }, (_, i) => ({
+      ...compactComponentDefinition,
+      name: `component_${String(i)}`,
+    }));
     const loaded = await loadAssets(
-      new MemoryAssets({ themes: hugeThemes, stamps: hugeStamps }),
+      new MemoryAssets({
+        themes: hugeThemes,
+        stamps: hugeStamps,
+        componentDefinitions: hugeComponentDefinitions,
+      }),
       "a",
     );
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
@@ -418,8 +509,17 @@ describe("loadAssets", () => {
     expect(loaded.themes.map((t) => t.name)).not.toContain("theme_1024");
     expect(loaded.stamps.map((s) => s.name)).toContain("stamp_1023");
     expect(loaded.stamps.map((s) => s.name)).not.toContain("stamp_1024");
+    expect(loaded.componentDefinitions.map((definition) => definition.name)).toContain(
+      "component_1023",
+    );
+    expect(loaded.componentDefinitions.map((definition) => definition.name)).not.toContain(
+      "component_1024",
+    );
     expect(loaded.issues.some((i) => i.includes("`themes` had 1100 item(s)"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("`stamps` had 1100 item(s)"))).toBe(true);
+    expect(
+      loaded.issues.some((i) => i.includes("`componentDefinitions` had 1100 item(s)")),
+    ).toBe(true);
   });
 
   it("never throws when an initialTree accessor throws — defaults still resolve", async () => {
@@ -560,6 +660,68 @@ describe("loadAssets", () => {
     expect(loaded.stamps.map((s) => s.name)).toContain("card");
   });
 
+  it("merges componentDefinitions before compositions and keeps first duplicate definition", async () => {
+    const first = {
+      ...compactComponentDefinition,
+      name: "summary",
+      nodes: {
+        root: { id: "root", type: "box", children: ["copy"] },
+        copy: { id: "copy", type: "text", value: "first" },
+      },
+    };
+    const duplicate = {
+      ...compactComponentDefinition,
+      name: "summary",
+      nodes: {
+        root: { id: "root", type: "box", children: ["copy"] },
+        copy: { id: "copy", type: "text", value: "duplicate" },
+      },
+    };
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: [],
+        stamps: [],
+        componentDefinitions: [first],
+        compositions: [duplicate, compactComponentDefinition],
+      }),
+      "a",
+    );
+
+    const summaries = loaded.componentDefinitions.filter(
+      (definition) => definition.name === "summary",
+    );
+    const copy = summaries[0]?.nodes["copy"] as { value?: string } | undefined;
+    expect(summaries).toHaveLength(1);
+    expect(copy?.value).toBe("first");
+    expect(loaded.componentDefinitions.map((definition) => definition.name)).toContain(
+      "compactSummary",
+    );
+    expect(
+      loaded.issues.some(
+        (issue) => issue.includes("duplicate component definition") && issue.includes("summary"),
+      ),
+    ).toBe(true);
+  });
+
+  it("drops invalid component definitions while default assets still resolve", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: [],
+        stamps: [],
+        componentDefinitions: [invalidComponentDefinition],
+      }),
+      "a",
+    );
+
+    expect(loaded.componentDefinitions).toEqual([]);
+    expect(loaded.themes.map((theme) => theme.name)).toContain(DEFAULT_THEME.name);
+    for (const stamp of DEFAULT_STAMPS) {
+      expect(loaded.stamps.map((loadedStamp) => loadedStamp.name)).toContain(stamp.name);
+    }
+    expect(loaded.catalog).toEqual(DEFAULT_CATALOG);
+    expect(loaded.issues.some((issue) => issue.includes("component definition"))).toBe(true);
+  });
+
   it("surfaces backend-level issues from the store", async () => {
     const loaded = await loadAssets(
       new MemoryAssets({ themes: [], stamps: [], issues: ["backend said so"] }),
@@ -608,6 +770,45 @@ describe("FileAssets", () => {
     expect(loaded.themes.map((t) => t.name)).toContain("midnight");
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
     expect(loaded.issues.length).toBeGreaterThan(0);
+  });
+
+  it("loads sorted *.component.json files as raw component definition documents", async () => {
+    const dir = makeTempDir();
+    writeFileSync(
+      join(dir, "z.component.json"),
+      JSON.stringify({
+        ...compactComponentDefinition,
+        name: "sortedSummary",
+        nodes: {
+          root: { id: "root", type: "box", children: ["copy"] },
+          copy: { id: "copy", type: "text", value: "z-last" },
+        },
+      }),
+    );
+    writeFileSync(
+      join(dir, "a.component.json"),
+      JSON.stringify({
+        ...compactComponentDefinition,
+        name: "sortedSummary",
+        nodes: {
+          root: { id: "root", type: "box", children: ["copy"] },
+          copy: { id: "copy", type: "text", value: "a-first" },
+        },
+      }),
+    );
+
+    const loaded = await loadAssets(new FileAssets(dir), "a");
+    const definition = loaded.componentDefinitions.find(
+      (component) => component.name === "sortedSummary",
+    );
+    const copy = definition?.nodes["copy"] as { value?: string } | undefined;
+    expect(copy?.value).toBe("a-first");
+    expect(
+      loaded.issues.some(
+        (issue) =>
+          issue.includes("duplicate component definition") && issue.includes("sortedSummary"),
+      ),
+    ).toBe(true);
   });
 
   it("records an issue for an unreadable directory instead of throwing", async () => {

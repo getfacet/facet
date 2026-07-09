@@ -4,9 +4,9 @@ import type { AssetDocuments, AssetsStore } from "./assets.js";
 
 /**
  * Durable, dependency-free reference `AssetsStore`: reads an operator's asset
- * documents from a directory — `*.theme.json`, `*.stamp.json` (both sorted for
- * determinism), an optional `catalog.json`, and an optional `initial.tree.json`.
- * Documents are served RAW;
+ * documents from a directory — `*.theme.json`, `*.stamp.json`,
+ * `*.component.json` (all sorted for determinism), an optional `catalog.json`,
+ * and an optional `initial.tree.json`. Documents are served RAW;
  * `loadAssets` validates them. An unreadable directory, or an unreadable/
  * unparseable file, becomes an `issues` entry and boot proceeds — never a throw
  * past a file (the `FileStageStore` skip-and-log posture).
@@ -36,14 +36,20 @@ export class FileAssets implements AssetsStore {
       entries.filter((f) => f.endsWith(".stamp.json")),
       issues,
     );
+    const componentDefinitions = this.parseEach(
+      entries.filter((f) => f.endsWith(".component.json")),
+      issues,
+    );
 
     const docs: {
       themes: readonly unknown[];
       stamps: readonly unknown[];
+      componentDefinitions?: readonly unknown[];
       catalog?: unknown;
       initialTree?: unknown;
       issues: readonly string[];
     } = { themes, stamps, issues };
+    if (componentDefinitions.length > 0) docs.componentDefinitions = componentDefinitions;
 
     if (entries.includes("catalog.json")) {
       const catalog = this.parseFile("catalog.json", issues);

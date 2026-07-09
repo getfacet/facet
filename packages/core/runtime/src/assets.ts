@@ -1,9 +1,11 @@
 import {
   validateCatalog,
+  validateComponentDefinition,
   treeHasContent,
   validateStamp,
   validateTheme,
   validateTree,
+  type FacetComponentDefinition,
   type FacetCatalog,
   type FacetSession,
   type FacetStamp,
@@ -22,6 +24,26 @@ const MAX_ASSET_DOCUMENTS = 1024;
 const MAX_ASSET_ISSUES = 64;
 const MAX_ASSET_ISSUE_CHARS = 200;
 const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
+
+type CatalogComponent = NonNullable<FacetCatalog["components"]>[number];
+type CatalogComponentOrder = NonNullable<FacetCatalog["policy"]["componentOrder"]>;
+type AssetArrayField =
+  | "issues"
+  | "themes"
+  | "stamps"
+  | "componentDefinitions"
+  | "compositions";
+
+function cloneCatalogComponent(component: CatalogComponent): CatalogComponent {
+  const cloned: {
+    type: CatalogComponent["type"];
+    variants?: readonly string[];
+    guidance?: string;
+  } = { type: component.type };
+  if (component.variants !== undefined) cloned.variants = [...component.variants];
+  if (component.guidance !== undefined) cloned.guidance = component.guidance;
+  return cloned;
+}
 
 function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
   const theme: {
@@ -43,12 +65,31 @@ function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
     if (brick.guidance !== undefined) clonedBrick.guidance = brick.guidance;
     return clonedBrick;
   });
+  const policy: {
+    order: FacetCatalog["policy"]["order"];
+    componentOrder?: CatalogComponentOrder;
+    editBeforeAppend: boolean;
+    compactScreens: boolean;
+    maxScreenSections?: number;
+  } = {
+    order: [...catalog.policy.order] as FacetCatalog["policy"]["order"],
+    editBeforeAppend: catalog.policy.editBeforeAppend,
+    compactScreens: catalog.policy.compactScreens,
+  };
+  if (catalog.policy.componentOrder !== undefined) {
+    policy.componentOrder = [...catalog.policy.componentOrder] as CatalogComponentOrder;
+  }
+  if (catalog.policy.maxScreenSections !== undefined) {
+    policy.maxScreenSections = catalog.policy.maxScreenSections;
+  }
   const cloned: {
     name: string;
     description?: string;
     theme: FacetCatalog["theme"];
     bricks: FacetCatalog["bricks"];
+    components?: NonNullable<FacetCatalog["components"]>;
     stamps: FacetCatalog["stamps"];
+    compositions?: NonNullable<FacetCatalog["compositions"]>;
     primitiveFallback: FacetCatalog["primitiveFallback"];
     policy: FacetCatalog["policy"];
   } = {
@@ -60,12 +101,18 @@ function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
         ? { mode: "all" }
         : { mode: "allow", names: [...catalog.stamps.names] },
     primitiveFallback: catalog.primitiveFallback,
-    policy: {
-      ...catalog.policy,
-      order: [...catalog.policy.order] as FacetCatalog["policy"]["order"],
-    },
+    policy,
   };
   if (catalog.description !== undefined) cloned.description = catalog.description;
+  if (catalog.components !== undefined) {
+    cloned.components = catalog.components.map(cloneCatalogComponent);
+  }
+  if (catalog.compositions !== undefined) {
+    cloned.compositions =
+      catalog.compositions.mode === "all"
+        ? { mode: "all" }
+        : { mode: "allow", names: [...catalog.compositions.names] };
+  }
   return cloned;
 }
 
@@ -81,6 +128,8 @@ function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
 export interface AssetDocuments {
   readonly themes: readonly unknown[];
   readonly stamps: readonly unknown[];
+  readonly componentDefinitions?: readonly unknown[];
+  readonly compositions?: readonly unknown[];
   readonly catalog?: unknown;
   readonly initialTree?: unknown;
   /** Backend-level problems (unreadable file, bad JSON) — surfaced, never thrown. */
@@ -103,7 +152,14 @@ export class MemoryAssets implements AssetsStore {
   }
 }
 
-type AssetField = "issues" | "themes" | "stamps" | "catalog" | "initialTree";
+type AssetField =
+  | "issues"
+  | "themes"
+  | "stamps"
+  | "componentDefinitions"
+  | "compositions"
+  | "catalog"
+  | "initialTree";
 type FieldRead = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
@@ -117,10 +173,13 @@ function isObjectRecord(value: unknown): value is Record<PropertyKey, unknown> {
 function isCompleteCatalogDocument(value: unknown): boolean {
   try {
     if (!isObjectRecord(value)) return false;
+    const hasBricksOrComponents = isAssetArray(value.bricks) || isAssetArray(value.components);
+    const hasStampsOrCompositions =
+      isObjectRecord(value.stamps) || isObjectRecord(value.compositions);
     return (
       isObjectRecord(value.theme) &&
-      isAssetArray(value.bricks) &&
-      isObjectRecord(value.stamps) &&
+      hasBricksOrComponents &&
+      hasStampsOrCompositions &&
       isObjectRecord(value.policy)
     );
   } catch {
@@ -205,7 +264,7 @@ function pushAssetIssue(issues: string[], issue: string): void {
 
 function readAssetArrayLength(
   value: readonly unknown[],
-  label: "themes" | "stamps" | "issues",
+  label: AssetArrayField,
   issues: string[],
   maxItems: number,
 ): number {
@@ -231,7 +290,7 @@ function readAssetArrayLength(
 function readAssetArrayItem(
   value: readonly unknown[],
   index: number,
-  label: "themes" | "stamps" | "issues",
+  label: AssetArrayField,
   issues: string[],
 ): FieldRead {
   try {
@@ -250,6 +309,7 @@ function readAssetArrayItem(
 export interface LoadedAssets {
   readonly themes: readonly FacetTheme[];
   readonly stamps: readonly FacetStamp[];
+  readonly componentDefinitions: readonly FacetComponentDefinition[];
   readonly catalog: FacetCatalog;
   readonly initialTree?: FacetTree;
   readonly issues: readonly string[];
@@ -328,6 +388,34 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   if (rawStamps.ok && !isAssetArray(rawStamps.value)) {
     pushAssetIssue(issues, "assets `stamps` was not an array — ignored");
   }
+  const rawComponentDefinitions = readAssetField(docs, "componentDefinitions", issues);
+  const componentDefinitionDocs =
+    rawComponentDefinitions.ok &&
+    rawComponentDefinitions.value !== undefined &&
+    isAssetArray(rawComponentDefinitions.value)
+      ? rawComponentDefinitions.value
+      : [];
+  if (
+    rawComponentDefinitions.ok &&
+    rawComponentDefinitions.value !== undefined &&
+    !isAssetArray(rawComponentDefinitions.value)
+  ) {
+    pushAssetIssue(issues, "assets `componentDefinitions` was not an array — ignored");
+  }
+  const rawCompositions = readAssetField(docs, "compositions", issues);
+  const compositionDocs =
+    rawCompositions.ok &&
+    rawCompositions.value !== undefined &&
+    isAssetArray(rawCompositions.value)
+      ? rawCompositions.value
+      : [];
+  if (
+    rawCompositions.ok &&
+    rawCompositions.value !== undefined &&
+    !isAssetArray(rawCompositions.value)
+  ) {
+    pushAssetIssue(issues, "assets `compositions` was not an array — ignored");
+  }
   const rawCatalog = readAssetField(docs, "catalog", issues);
   const catalogInput =
     rawCatalog.ok && rawCatalog.value !== undefined ? rawCatalog.value : DEFAULT_CATALOG;
@@ -391,6 +479,18 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   loadTheme(DEFAULT_THEME, true);
   const themeCount = readAssetArrayLength(themeDocs, "themes", issues, MAX_ASSET_DOCUMENTS);
   const stampCount = readAssetArrayLength(stampDocs, "stamps", issues, MAX_ASSET_DOCUMENTS);
+  const componentDefinitionCount = readAssetArrayLength(
+    componentDefinitionDocs,
+    "componentDefinitions",
+    issues,
+    MAX_ASSET_DOCUMENTS,
+  );
+  const compositionCount = readAssetArrayLength(
+    compositionDocs,
+    "compositions",
+    issues,
+    MAX_ASSET_DOCUMENTS,
+  );
   for (let i = 0; i < themeCount; i += 1) {
     const raw = readAssetArrayItem(themeDocs, i, "themes", issues);
     if (raw.ok) loadTheme(raw.value, false);
@@ -450,6 +550,46 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
     if (raw.ok) loadStamp(raw.value, false);
   }
 
+  const componentDefinitions: FacetComponentDefinition[] = [];
+  const seenComponentDefinitionNames = new Set<string>();
+  const loadComponentDefinition = (raw: unknown): void => {
+    let result: ReturnType<typeof validateComponentDefinition>;
+    try {
+      result = validateComponentDefinition(raw);
+    } catch {
+      pushAssetIssue(issues, "component definition document skipped: validation threw");
+      return;
+    }
+    const { definition, issues: definitionIssues } = result;
+    if (definition === undefined) {
+      pushAssetIssue(
+        issues,
+        `component definition document skipped: ${definitionIssues.join("; ") || "invalid"}`,
+      );
+      return;
+    }
+    if (seenComponentDefinitionNames.has(definition.name)) {
+      pushAssetIssue(
+        issues,
+        `duplicate component definition name "${definition.name}" ignored (first wins)`,
+      );
+      return;
+    }
+    seenComponentDefinitionNames.add(definition.name);
+    for (const note of definitionIssues) {
+      pushAssetIssue(issues, `component definition "${definition.name}": ${note}`);
+    }
+    componentDefinitions.push(definition);
+  };
+  for (let i = 0; i < componentDefinitionCount; i += 1) {
+    const raw = readAssetArrayItem(componentDefinitionDocs, i, "componentDefinitions", issues);
+    if (raw.ok) loadComponentDefinition(raw.value);
+  }
+  for (let i = 0; i < compositionCount; i += 1) {
+    const raw = readAssetArrayItem(compositionDocs, i, "compositions", issues);
+    if (raw.ok) loadComponentDefinition(raw.value);
+  }
+
   let catalog: FacetCatalog = cloneCatalog(DEFAULT_CATALOG);
   try {
     const result = validateCatalog(catalogInput);
@@ -507,6 +647,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   const loaded: { -readonly [K in keyof LoadedAssets]: LoadedAssets[K] } = {
     themes,
     stamps,
+    componentDefinitions,
     catalog,
     issues,
   };
