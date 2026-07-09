@@ -153,9 +153,24 @@ function readJson(req: IncomingMessage, maxBytes: number = MAX_BODY_BYTES): Prom
 function isEventEnvelope(body: unknown): body is { visitor: VisitorContext; event: object } {
   if (typeof body !== "object" || body === null) return false;
   const { visitor, event } = body as { visitor?: unknown; event?: unknown };
-  if (typeof visitor !== "object" || visitor === null) return false;
-  if (typeof (visitor as { visitorId?: unknown }).visitorId !== "string") return false;
+  if (!isVisitorContext(visitor)) return false;
   return typeof event === "object" && event !== null;
+}
+
+function isVisitorContext(value: unknown): value is VisitorContext {
+  if (typeof value !== "object" || value === null) return false;
+  const { visitorId, referrer, locale, relationship } = value as {
+    visitorId?: unknown;
+    referrer?: unknown;
+    locale?: unknown;
+    relationship?: unknown;
+  };
+  return (
+    typeof visitorId === "string" &&
+    (referrer === undefined || typeof referrer === "string") &&
+    (locale === undefined || typeof locale === "string") &&
+    (relationship === undefined || typeof relationship === "string")
+  );
 }
 
 /** `seq` is a forward-compatible wire field on every event variant (declared
@@ -164,7 +179,7 @@ function isEventEnvelope(body: unknown): body is { visitor: VisitorContext; even
  * (unsound). Shared by both validators. */
 function isValidSeq(event: object): boolean {
   const seq = (event as { seq?: unknown }).seq;
-  return seq === undefined || typeof seq === "number";
+  return seq === undefined || (typeof seq === "number" && Number.isFinite(seq));
 }
 
 /** Shape-check an untrusted browser /event body before trusting it — including
@@ -177,11 +192,7 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
   const { kind, text, action } = event as { kind?: unknown; text?: unknown; action?: unknown };
   if (kind === "visit") {
     const eventVisitor = (event as { visitor?: unknown }).visitor;
-    return (
-      typeof eventVisitor === "object" &&
-      eventVisitor !== null &&
-      typeof (eventVisitor as { visitorId?: unknown }).visitorId === "string"
-    );
+    return isVisitorContext(eventVisitor);
   }
   if (kind === "message") return typeof text === "string";
   if (kind === "tap") {
@@ -213,9 +224,18 @@ function isEventBody(body: unknown): body is { visitor: VisitorContext; event: C
     // every value is a primitive — otherwise a nested object or an array would pass
     // a kind-only check and reach the agent. `isPrimitiveRecord` is the REJECTING
     // form of that rule (see core's validate.ts).
-    return isPrimitiveRecord(payload);
+    return isFinitePrimitiveRecord(payload);
   }
   return false;
+}
+
+function isFinitePrimitiveRecord(value: unknown): boolean {
+  return (
+    isPrimitiveRecord(value) &&
+    Object.values(value as Record<string, unknown>).every(
+      (entry) => typeof entry !== "number" || Number.isFinite(entry),
+    )
+  );
 }
 
 /** Shape-check a renderer-resolved `TapEffect` on a collected /record tap: an object
@@ -228,9 +248,15 @@ function isTapEffect(value: unknown): value is TapEffect {
   // navigate/toggle can't be persisted into the (unbounded) Sink and later
   // replayed into the LLM prompt.
   if (navigate !== undefined)
-    return typeof navigate === "string" && navigate.length <= MAX_FIELD_VALUE_CHARS;
+    return (
+      typeof navigate === "string" &&
+      navigate.length <= MAX_FIELD_VALUE_CHARS &&
+      toggle === undefined
+    );
   if (toggle !== undefined)
-    return typeof toggle === "string" && toggle.length <= MAX_FIELD_VALUE_CHARS;
+    return (
+      typeof toggle === "string" && toggle.length <= MAX_FIELD_VALUE_CHARS && navigate === undefined
+    );
   return false;
 }
 
@@ -650,6 +676,10 @@ function removeHandlingTurn(
   else handling.set(visitorId, remaining);
 }
 
+function handlingTurnHasFrames(turn: HandlingTurn): boolean {
+  return turn.streamEndSeq !== undefined && turn.streamEndSeq >= turn.streamStartSeq;
+}
+
 /** The runtime-facing wiring the two POST handlers share: the delivery lane, the
  * runtime, the frame log, and the synchronous fan-out (`deliver`, which stays in
  * server.ts). */
@@ -726,7 +756,7 @@ function handleEvent(req: IncomingMessage, res: ServerResponse, deps: PostHandle
             frameLog.recordApplied(visitor.visitorId, arrival.index, arrival.era);
           turn.streamEndSeq = frameLog.logFor(visitor.visitorId).nextSeq - 1;
           const removeTurn = (): void => removeHandlingTurn(handling, visitor.visitorId, turn);
-          if (recordSettled === undefined) {
+          if (recordSettled === undefined || !handlingTurnHasFrames(turn)) {
             removeTurn();
           } else {
             void recordSettled.finally(removeTurn);
@@ -847,7 +877,7 @@ function handleControl(
               turn.streamEndSeq = frameLog.logFor(late.visitor.visitorId).nextSeq - 1;
               const removeTurn = (): void =>
                 removeHandlingTurn(handling, late.visitor.visitorId, turn);
-              if (recordSettled === undefined) {
+              if (recordSettled === undefined || !handlingTurnHasFrames(turn)) {
                 removeTurn();
               } else {
                 void recordSettled.finally(removeTurn);

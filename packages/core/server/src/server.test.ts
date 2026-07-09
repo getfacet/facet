@@ -479,6 +479,39 @@ class HistoryReleaseSink implements Sink {
   }
 }
 
+class GatedZeroMessageSink implements Sink {
+  private readonly inner = new MemorySink();
+  releaseOnNextHistory = false;
+  historyCalls = 0;
+  zeroMessageRecordStarted = false;
+  private releaseHeld: () => void = () => {};
+  private readonly held = new Promise<void>((resolve) => {
+    this.releaseHeld = resolve;
+  });
+
+  release(): void {
+    this.releaseHeld();
+  }
+
+  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
+    if (entry.event.kind === "message" && entry.messages.length === 0) {
+      this.zeroMessageRecordStarted = true;
+      await this.held;
+    }
+    return this.inner.record(agentId, visitorId, entry);
+  }
+
+  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
+    this.historyCalls += 1;
+    if (this.releaseOnNextHistory) {
+      this.releaseOnNextHistory = false;
+      this.release();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    return this.inner.history(agentId, visitorId);
+  }
+}
+
 /** The text field of a stored node, if present (nodes are a union — box has no value). */
 const nodeValue = (session: FacetSession | undefined, id: string): string | undefined =>
   (session?.stage.nodes[id] as { value?: string } | undefined)?.value;
@@ -865,6 +898,24 @@ describe("browser channel", () => {
     }
   });
 
+  it("full rehydrate does not reread history for a pending no-frame turn", async () => {
+    const sink = new GatedZeroMessageSink();
+    const agent: FacetAgent = () => [];
+    const { server, base } = await start({ agentId: "a", agent, sink });
+    running = server;
+
+    await postEvent(base, "v", { kind: "message", text: "silent" });
+    await waitFor(async () => sink.zeroMessageRecordStarted);
+
+    const baselineHistoryCalls = sink.historyCalls;
+    sink.releaseOnNextHistory = true;
+    const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+    const frames = await readEvents(rehydrating, 1);
+
+    expect(frames[0]).toEqual({ id: "", data: { kind: "reset" } });
+    expect(sink.historyCalls - baselineHistoryCalls).toBe(1);
+  });
+
   it("does not block later same-visitor events while a streamed turn sink record is pending", async () => {
     const sink = new GatedMessageSink();
     sink.gateMessageRecord = true;
@@ -1213,6 +1264,33 @@ describe("async delivery — late results", () => {
     } finally {
       sink.release();
       await liveReader.close();
+      await link.close();
+    }
+  });
+
+  it("full rehydrate does not reread history for a pending late no-frame result", async () => {
+    const sink = new GatedZeroMessageSink();
+    const { server, base } = await start({ agentId: "a", agentTimeoutMs: 50, sink });
+    running = server;
+    const link = await dialAgent(base);
+
+    try {
+      await postEvent(base, "v", { kind: "message", text: "slow please" });
+      const evt = await link.nextEvent();
+      await waitFor(async () => (await sink.history("a", "v")).length >= 1);
+
+      expect((await control(base, evt.requestId, [])).status).toBe(202);
+      await waitFor(async () => sink.zeroMessageRecordStarted);
+
+      const baselineHistoryCalls = sink.historyCalls;
+      sink.releaseOnNextHistory = true;
+      const rehydrating = await fetch(`${base}/stream?visitorId=v`);
+      const frames = await readEvents(rehydrating, 1);
+
+      expect(frames[0]).toEqual({ id: "", data: { kind: "reset" } });
+      expect(sink.historyCalls - baselineHistoryCalls).toBe(1);
+    } finally {
+      sink.release();
       await link.close();
     }
   });
@@ -2449,6 +2527,15 @@ describe("record validation hardening", () => {
     );
     // toggle present but not a string → rejected.
     expect((await postRecord(base, "v", { kind: "tap", effect: { toggle: {} } })).status).toBe(400);
+    // both effect branches present → rejected because a TapEffect is either/or.
+    expect(
+      (
+        await postRecord(base, "v", {
+          kind: "tap",
+          effect: { navigate: "screen", toggle: "panel" },
+        })
+      ).status,
+    ).toBe(400);
     // neither key present → isTapEffect defines this invalid.
     expect((await postRecord(base, "v", { kind: "tap", effect: {} })).status).toBe(400);
 
@@ -2540,6 +2627,12 @@ describe("record + event validation hardening (round 2)", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ visitor: { visitorId: "v" }, event }),
     });
+  const postRawEventBody = (base: string, body: string): Promise<Response> =>
+    fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
 
   it("POST /record rejects a tap carrying an action (null or object)", async () => {
     const sink = new MemorySink();
@@ -2600,6 +2693,44 @@ describe("record + event validation hardening (round 2)", () => {
     expect((await postRawEvent(base, { kind: "message", text: "hi", seq: "x" })).status).toBe(400);
     expect(
       (await postRawEvent(base, { kind: "tap", action: { name: "x" }, seq: "x" })).status,
+    ).toBe(400);
+    expect(
+      (
+        await postRawEventBody(
+          base,
+          '{"visitor":{"visitorId":"v"},"event":{"kind":"message","text":"hi","seq":1e309}}',
+        )
+      ).status,
+    ).toBe(400);
+  });
+
+  it("POST /event rejects malformed visitor context and non-finite payload numbers", async () => {
+    const { server, base } = await start({ agentId: "a", agent: sayAgent });
+    running = server;
+
+    expect(
+      (
+        await postRawEventBody(
+          base,
+          '{"visitor":{"visitorId":"v","locale":1},"event":{"kind":"message","text":"hi"}}',
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await postRawEventBody(
+          base,
+          '{"visitor":{"visitorId":"v"},"event":{"kind":"visit","visitor":{"visitorId":"v","relationship":false}}}',
+        )
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await postRawEventBody(
+          base,
+          '{"visitor":{"visitorId":"v"},"event":{"kind":"tap","action":{"name":"x","payload":{"n":1e309}}}}',
+        )
+      ).status,
     ).toBe(400);
   });
 });

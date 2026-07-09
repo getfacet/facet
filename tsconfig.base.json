@@ -25,6 +25,8 @@
       "@facet/quickstart": ["packages/agent-stack/quickstart/src/index.ts"],
       "@facet/agent": ["packages/extensions/agent/src/index.ts"],
       "@facet/agent-client": ["packages/extensions/agent-client/src/index.ts"],
+      "@facet/ag-ui": ["packages/extensions/ag-ui/src/index.ts"],
+      "@facet/ag-ui/server": ["packages/extensions/ag-ui/src/server.ts"],
       "@facet/client": ["packages/core/client/src/index.ts"],
       "@facet/assets": ["packages/core/assets/src/index.ts"],
       "@facet/cli": ["packages/extensions/cli/src/cli.ts"],

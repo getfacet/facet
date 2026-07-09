@@ -53,12 +53,37 @@ export interface TurnResult {
   readonly agentMutated: boolean;
 }
 
-export type RuntimeFrameSink = (messages: readonly ServerMessage[]) => void;
+export interface RuntimeFrameContext {
+  readonly stage: FacetTree | undefined;
+}
+
+export type RuntimeFrameSink = (
+  messages: readonly ServerMessage[],
+  context?: RuntimeFrameContext,
+) => void;
 export type RuntimeRecordSink = (settled: Promise<void>) => void;
 
 interface RecordSlot {
   readonly resolve: (entry: StoredEvent | null) => void;
   readonly settled: Promise<void>;
+}
+
+function runtimeFrameContext(stage: FacetTree): RuntimeFrameContext {
+  let cloned: FacetTree | undefined;
+  let attempted = false;
+  return {
+    get stage(): FacetTree | undefined {
+      if (!attempted) {
+        attempted = true;
+        try {
+          cloned = structuredClone(stage);
+        } catch {
+          cloned = undefined;
+        }
+      }
+      return cloned;
+    },
+  };
 }
 
 /**
@@ -322,7 +347,7 @@ export class FacetRuntime {
 
     const deliverFrame = (frame: readonly ServerMessage[]): void => {
       if (frame.length === 0) return;
-      if (onFrame !== undefined) onFrame(frame);
+      if (onFrame !== undefined) onFrame(frame, runtimeFrameContext(session.stage));
       else appendMessages(returned, frame);
     };
 
