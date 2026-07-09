@@ -3,21 +3,30 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { EventType, RunAgentInputSchema } from "@ag-ui/core";
 import type { AGUIEvent, RunAgentInput } from "@ag-ui/core";
-import { MAX_FIELD_VALUE_CHARS, MAX_FIELDS_KEYS } from "@facet/core";
+import {
+  MAX_FIELD_VALUE_CHARS,
+  MAX_FIELDS_KEYS,
+  createSerialQueue,
+  foldPatchIntoStage,
+} from "@facet/core";
 import type {
   ClientEvent,
   CollectedEvent,
   FacetAction,
+  FacetTree,
   FieldValues,
   ServerMessage,
   TapEffect,
   VisitorContext,
 } from "@facet/core";
-import type { FacetRuntime, TurnResult } from "@facet/runtime";
+import type { FacetRuntime, RuntimeFrameContext, TurnResult } from "@facet/runtime";
 
 import { facetStageToStateSnapshot, serverMessageToAgUiEvents } from "./events.js";
 
 const DEFAULT_MAX_BODY_BYTES = 1_000_000;
+const DEFAULT_SNAPSHOT_TIMEOUT_MS = 30_000;
+const DEFAULT_MAX_IN_FLIGHT_RUNS = 64;
+const DEFAULT_MAX_BUFFERED_SSE_EVENTS = 1_024;
 const RUNTIME_ERROR_MESSAGE = "Facet runtime failed";
 const SSE_HEADERS = {
   "Content-Type": "text/event-stream",
@@ -27,12 +36,34 @@ const SSE_HEADERS = {
 
 export type FacetRuntimeForAgUi = Pick<FacetRuntime, "handle" | "record" | "stageFor">;
 
-export interface RunFacetAsAgUiOptions {
-  readonly includeSnapshot?: boolean;
+export interface FacetAgUiVisitorResolutionInput {
+  readonly threadId: string;
+  readonly runId: string;
+  readonly parentRunId?: string;
+  readonly forwardedVisitor?: VisitorContext;
 }
 
-export interface HandleAgUiRequestOptions extends RunFacetAsAgUiOptions {
+export interface RunFacetAsAgUiOptions {
+  readonly includeSnapshot?: boolean;
+  readonly snapshotTimeoutMs?: number | false;
+  readonly maxInFlightRuns?: number | false;
+  readonly allowForwardedVisitor?: boolean;
+  readonly authorizedVisitor?: VisitorContext;
+  readonly resolveVisitor?: (
+    input: FacetAgUiVisitorResolutionInput,
+  ) => VisitorContext | undefined | Promise<VisitorContext | undefined>;
+}
+
+export interface HandleAgUiRequestOptions extends Omit<
+  RunFacetAsAgUiOptions,
+  "authorizedVisitor" | "resolveVisitor"
+> {
   readonly maxBodyBytes?: number;
+  readonly maxBufferedSseEvents?: number | false;
+  readonly resolveVisitor?: (
+    req: IncomingMessage,
+    input: FacetAgUiVisitorResolutionInput,
+  ) => VisitorContext | undefined | Promise<VisitorContext | undefined>;
 }
 
 export type FacetAgUiInput =
@@ -58,6 +89,25 @@ interface TextMessageState {
   nextIndex: number;
 }
 
+type AgUiRuntimeExecutionOptions = Pick<
+  RunFacetAsAgUiOptions,
+  "includeSnapshot" | "snapshotTimeoutMs" | "maxInFlightRuns"
+>;
+
+type AgUiHttpExecutionOptions = AgUiRuntimeExecutionOptions &
+  Pick<HandleAgUiRequestOptions, "maxBufferedSseEvents">;
+
+interface StageSnapshotState {
+  stage: FacetTree | undefined;
+}
+
+const runtimeRunCounts = new WeakMap<object, number>();
+const runtimeVisitorQueues = new WeakMap<
+  object,
+  (key: string, task: () => Promise<unknown>) => Promise<unknown>
+>();
+const runtimeQueuedRunCounts = new WeakMap<object, Map<string, number>>();
+
 class AgUiHttpInputError extends Error {
   constructor(
     readonly statusCode: number,
@@ -81,40 +131,61 @@ export async function runFacetAsAgUi(
   }
   if (!parsed.success) return [runError("Malformed AG-UI run input", "BAD_REQUEST")];
 
-  const runInput = parsed.data;
+  let runInput = parsed.data;
   const events: AGUIEvent[] = [runStarted(runInput)];
-  let facetInput: FacetAgUiInput | undefined;
+  let releaseRun: (() => void) | undefined;
+  let releaseAfter: Promise<unknown> | undefined;
   try {
-    facetInput = facetInputFromRunAgentInput(runInput);
-  } catch {
-    events.push(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
-    return events;
-  }
-  if (facetInput === undefined) {
-    events.push(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
-    return events;
-  }
+    releaseRun = acquireRuntimeRun(runtime, options);
+    const scheduledRun = await withRuntimeAuthorizationRun(runtime, runInput, options, async () => {
+      const authorizedRunInput = await authorizeDirectRunInput(runInput, options);
+      const facetInput = requireFacetInput(authorizedRunInput);
 
-  try {
-    if (options.includeSnapshot === true) {
-      await appendSnapshot(events, runtime, facetInput.visitor);
-    }
+      const queuedRun = withRuntimeVisitorRun(runtime, facetInput.visitor, async () => {
+        try {
+          const stageState: StageSnapshotState = { stage: undefined };
+          if (options.includeSnapshot === true) {
+            stageState.stage = await appendSnapshot(events, runtime, facetInput.visitor, options);
+          }
 
-    if (facetInput.kind === "record") {
-      void runtime.record(facetInput.visitor, facetInput.record).catch((error: unknown) => {
-        logInternalFailure("record failed", error);
+          if (facetInput.kind === "record") {
+            releaseAfter = recordWithoutThrow(runtime, facetInput.visitor, facetInput.record);
+          } else {
+            await appendHandledEvents(events, runtime, facetInput, authorizedRunInput, stageState);
+          }
+        } catch (error) {
+          releaseAfter = pendingWorkForTimeout(error);
+          throw error;
+        }
       });
-    } else {
-      await appendHandledEvents(events, runtime, facetInput, runInput);
-    }
 
+      return { runInput: authorizedRunInput, queuedRun };
+    });
+    runInput = scheduledRun.runInput;
+    await scheduledRun.queuedRun;
     events.push(runFinished(runInput));
   } catch (error) {
-    logInternalFailure("runtime failed", error);
-    events.push(runError(RUNTIME_ERROR_MESSAGE, "RUNTIME_ERROR", runInput));
+    if (error instanceof AgUiHttpInputError) {
+      events.push(runError(error.message, error.code, runInput));
+    } else {
+      logInternalFailure("runtime failed", error);
+      events.push(runError(RUNTIME_ERROR_MESSAGE, runtimeErrorCode(error), runInput));
+    }
+  } finally {
+    if (releaseRun !== undefined) releaseRuntimeRun(releaseRun, releaseAfter);
   }
 
   return events;
+}
+
+function requireFacetInput(input: RunAgentInput): FacetAgUiInput {
+  try {
+    const facetInput = facetInputFromRunAgentInput(input);
+    if (facetInput !== undefined) return facetInput;
+  } catch {
+    // Fall through to the uniform BAD_REQUEST below.
+  }
+  throw new AgUiHttpInputError(400, "BAD_REQUEST", "Malformed Facet forwardedProps");
 }
 
 export function facetInputFromRunAgentInput(input: RunAgentInput): FacetAgUiInput | undefined {
@@ -161,7 +232,63 @@ export async function handleAgUiRequest(
       return;
     }
 
-    await writeAgUiRunResponse(res, runtime, parsed.data, options);
+    const releaseRun = acquireRuntimeRun(runtime, options);
+    let handedToWriter = false;
+    let closedBeforeWriter = false;
+    let resolveClosedBeforeWriter: (() => void) | undefined;
+    const closedBeforeWriterPromise = new Promise<void>((resolve) => {
+      resolveClosedBeforeWriter = resolve;
+    });
+    const cleanupPreWriterCloseWatch = (): void => {
+      res.off("close", onClosedBeforeWriter);
+      res.off("error", onClosedBeforeWriter);
+    };
+    const onClosedBeforeWriter = (): void => {
+      closedBeforeWriter = true;
+      cleanupPreWriterCloseWatch();
+      releaseRun();
+      resolveClosedBeforeWriter?.();
+    };
+    res.once("close", onClosedBeforeWriter);
+    res.once("error", onClosedBeforeWriter);
+    try {
+      if (isResponseClosed(res)) {
+        onClosedBeforeWriter();
+        return;
+      }
+      const authorizedRun = withRuntimeAuthorizationRun(runtime, parsed.data, options, async () => {
+        if (closedBeforeWriter || isResponseClosed(res)) return { kind: "closed" as const };
+        const runInput = await authorizeHttpRunInputUntilOpen(
+          req,
+          parsed.data,
+          options,
+          closedBeforeWriterPromise,
+        );
+        if (runInput === undefined || closedBeforeWriter || isResponseClosed(res)) {
+          return { kind: "closed" as const };
+        }
+        cleanupPreWriterCloseWatch();
+        handedToWriter = true;
+        return {
+          kind: "writer" as const,
+          writerRun: writeAgUiRunResponse(res, runtime, runInput, options, releaseRun),
+        };
+      });
+      const completed = await Promise.race([
+        authorizedRun,
+        closedBeforeWriterPromise.then(() => ({ kind: "closed" as const })),
+      ]);
+      if (completed.kind === "closed") {
+        void authorizedRun.catch((error: unknown) => {
+          logInternalFailure("authorization failed after response close", error);
+        });
+        return;
+      }
+      await completed.writerRun;
+    } finally {
+      cleanupPreWriterCloseWatch();
+      if (!handedToWriter) releaseRun();
+    }
   } catch (error) {
     const statusCode = error instanceof AgUiHttpInputError ? error.statusCode : 500;
     const code = error instanceof AgUiHttpInputError ? error.code : "INTERNAL_ERROR";
@@ -173,7 +300,17 @@ export async function handleAgUiRequest(
 }
 
 export function writeAgUiSseEvent(res: ServerResponse, event: AGUIEvent): void {
-  res.write(`data: ${JSON.stringify(event)}\n\n`);
+  res.write(agUiSseFrame(event));
+}
+
+function agUiSseFrame(event: AGUIEvent): string {
+  try {
+    const json = JSON.stringify(event);
+    if (json !== undefined) return `data: ${json}\n\n`;
+  } catch {
+    // Fall through to the safe terminal event below.
+  }
+  return `data: ${JSON.stringify(runError("Malformed AG-UI SSE event", "BAD_REQUEST"))}\n\n`;
 }
 
 function writeAgUiSseResponse(
@@ -181,94 +318,294 @@ function writeAgUiSseResponse(
   statusCode: number,
   events: readonly AGUIEvent[],
 ): void {
-  if (!res.headersSent) res.writeHead(statusCode, SSE_HEADERS);
-  for (const event of events) {
-    writeAgUiSseEvent(res, event);
+  try {
+    if (isResponseClosed(res)) return;
+    if (!res.headersSent) res.writeHead(statusCode, SSE_HEADERS);
+    for (const event of events) {
+      if (isResponseClosed(res)) return;
+      writeAgUiSseEvent(res, event);
+    }
+    endResponse(res);
+  } catch {
+    closeResponseForWriteFailure(res);
   }
-  res.end();
 }
 
 async function writeAgUiRunResponse(
   res: ServerResponse,
   runtime: FacetRuntimeForAgUi,
   runInput: RunAgentInput,
-  options: RunFacetAsAgUiOptions,
+  options: AgUiHttpExecutionOptions,
+  releaseRun: () => void,
 ): Promise<void> {
   if (!res.headersSent) res.writeHead(200, SSE_HEADERS);
-  const writeQueue = createSseWriteQueue(res);
+  const writeQueue = createSseWriteQueue(res, options.maxBufferedSseEvents);
   const write = (event: AGUIEvent): void => writeQueue.enqueue(event);
+  let runReleased = false;
+  const releaseActiveRun = (): void => {
+    if (runReleased) return;
+    runReleased = true;
+    releaseRun();
+  };
+  const finishWithoutRuntime = async (): Promise<void> => {
+    releaseActiveRun();
+    await writeQueue.flush();
+    endResponse(res);
+  };
 
   write(runStarted(runInput));
-  let facetInput: FacetAgUiInput | undefined;
+  let facetInput: FacetAgUiInput;
   try {
-    facetInput = facetInputFromRunAgentInput(runInput);
-  } catch {
-    write(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
-    await writeQueue.flush();
-    res.end();
-    return;
-  }
-  if (facetInput === undefined) {
-    write(runError("Malformed Facet forwardedProps", "BAD_REQUEST", runInput));
-    await writeQueue.flush();
-    res.end();
-    return;
-  }
-
-  try {
-    if (options.includeSnapshot === true) {
-      const stage = await runtime.stageFor(facetInput.visitor.visitorId);
-      if (stage !== undefined) write(facetStageToStateSnapshot(stage));
-    }
-
-    if (facetInput.kind === "record") {
-      void runtime.record(facetInput.visitor, facetInput.record).catch((error: unknown) => {
-        logInternalFailure("record failed", error);
-      });
-    } else {
-      await writeHandledEvents(write, runtime, facetInput, runInput);
-    }
-
-    write(runFinished(runInput));
+    facetInput = requireFacetInput(runInput);
   } catch (error) {
-    logInternalFailure("runtime failed", error);
-    write(runError(RUNTIME_ERROR_MESSAGE, "RUNTIME_ERROR", runInput));
+    const code = error instanceof AgUiHttpInputError ? error.code : "BAD_REQUEST";
+    const message =
+      error instanceof AgUiHttpInputError ? error.message : "Malformed Facet forwardedProps";
+    write(runError(message, code, runInput));
+    await finishWithoutRuntime();
+    return;
+  }
+
+  try {
+    if (isResponseClosed(res)) {
+      releaseActiveRun();
+      return;
+    }
+    let queuedTaskStarted = false;
+    let abortedBeforeStart = false;
+    let resolveClosedBeforeStart: (() => void) | undefined;
+    const closedBeforeStart = new Promise<void>((resolve) => {
+      resolveClosedBeforeStart = resolve;
+    });
+    const cleanupCloseWatch = (): void => {
+      res.off("close", onClosedBeforeStart);
+      res.off("error", onClosedBeforeStart);
+    };
+    const onClosedBeforeStart = (): void => {
+      if (queuedTaskStarted) return;
+      abortedBeforeStart = true;
+      cleanupCloseWatch();
+      releaseActiveRun();
+      resolveClosedBeforeStart?.();
+    };
+    res.once("close", onClosedBeforeStart);
+    res.once("error", onClosedBeforeStart);
+    if (isResponseClosed(res)) {
+      onClosedBeforeStart();
+      return;
+    }
+
+    let releaseQueuedRun: (() => void) | undefined;
+    let queuedRunReleased = false;
+    const releaseQueuedRunOnce = (): void => {
+      if (queuedRunReleased) return;
+      queuedRunReleased = true;
+      releaseQueuedRun?.();
+    };
+    try {
+      releaseQueuedRun = acquireRuntimeQueuedRun(runtime, facetInput.visitor, options);
+    } catch (error) {
+      cleanupCloseWatch();
+      releaseActiveRun();
+      throw error;
+    }
+
+    const queuedRun = withRuntimeVisitorRun(runtime, facetInput.visitor, async () => {
+      releaseQueuedRunOnce();
+      queuedTaskStarted = true;
+      cleanupCloseWatch();
+      if (abortedBeforeStart) return;
+      if (res.destroyed || res.writableEnded) {
+        releaseActiveRun();
+        return;
+      }
+      let releaseAfter: Promise<unknown> | undefined;
+      try {
+        const stageState: StageSnapshotState = { stage: undefined };
+        if (options.includeSnapshot === true) {
+          const stage = await withSnapshotTimeout(
+            runtime.stageFor(facetInput.visitor.visitorId),
+            options,
+          );
+          stageState.stage = stage;
+          if (stage !== undefined) write(facetStageToStateSnapshot(stage));
+        }
+
+        if (facetInput.kind === "record") {
+          releaseAfter = recordWithoutThrow(runtime, facetInput.visitor, facetInput.record);
+        } else {
+          await writeHandledEvents(write, runtime, facetInput, runInput, stageState);
+        }
+      } catch (error) {
+        releaseAfter = pendingWorkForTimeout(error);
+        throw error;
+      } finally {
+        releaseRuntimeRun(releaseActiveRun, releaseAfter);
+      }
+
+      write(runFinished(runInput));
+    });
+    const completed = await Promise.race([
+      queuedRun.then(() => true),
+      closedBeforeStart.then(() => false),
+    ]);
+    if (!completed) {
+      void queuedRun.catch((error: unknown) => {
+        logInternalFailure("queued run failed after response close", error);
+      });
+      return;
+    }
+  } catch (error) {
+    if (error instanceof AgUiHttpInputError) {
+      write(runError(error.message, error.code, runInput));
+    } else {
+      logInternalFailure("runtime failed", error);
+      write(runError(RUNTIME_ERROR_MESSAGE, runtimeErrorCode(error), runInput));
+    }
   }
 
   await writeQueue.flush();
-  res.end();
+  endResponse(res);
 }
 
-function createSseWriteQueue(res: ServerResponse): {
+function createSseWriteQueue(
+  res: ServerResponse,
+  maxBufferedEvents: number | false = DEFAULT_MAX_BUFFERED_SSE_EVENTS,
+): {
   readonly enqueue: (event: AGUIEvent) => void;
   readonly flush: () => Promise<void>;
 } {
-  let chain = Promise.resolve();
+  const maxBuffered = normalizeMaxBufferedSseEvents(maxBufferedEvents);
+  let closed = false;
+  let pumping = false;
+  const queue: AGUIEvent[] = [];
+  const flushWaiters: Array<() => void> = [];
+  const onClose = (): void => {
+    closed = true;
+    queue.length = 0;
+    resolveFlushWaiters();
+  };
+  const resolveFlushWaiters = (): void => {
+    if (!closed && (pumping || queue.length > 0)) return;
+    res.off("close", onClose);
+    res.off("error", onClose);
+    while (flushWaiters.length > 0) flushWaiters.shift()?.();
+  };
+  res.once("close", onClose);
+  res.once("error", onClose);
+  const closeQueueForWriteFailure = (): void => {
+    closed = true;
+    queue.length = 0;
+    closeResponseForWriteFailure(res);
+    resolveFlushWaiters();
+  };
+  const startPump = (): void => {
+    void pump().catch(closeQueueForWriteFailure);
+  };
+  const pump = async (): Promise<void> => {
+    if (pumping) return;
+    pumping = true;
+    try {
+      while (!closed && queue.length > 0 && !res.destroyed && !res.writableEnded) {
+        const event = queue.shift();
+        if (event === undefined) continue;
+        try {
+          const blocked = writeAgUiSseEventWithBackpressure(res, event);
+          if (blocked !== undefined) await blocked;
+        } catch {
+          closeQueueForWriteFailure();
+          break;
+        }
+      }
+    } finally {
+      pumping = false;
+      resolveFlushWaiters();
+      if (!closed && queue.length > 0) startPump();
+    }
+  };
   return {
     enqueue: (event) => {
-      chain = chain.then(() => writeAgUiSseEventWithBackpressure(res, event));
+      if (closed || res.destroyed || res.writableEnded) return;
+      if (pumping && maxBuffered !== false && queue.length >= maxBuffered) {
+        closed = true;
+        closeResponseForOverflow(res);
+        resolveFlushWaiters();
+        return;
+      }
+      queue.push(event);
+      startPump();
     },
-    flush: () => chain,
+    flush: () =>
+      !closed && (pumping || queue.length > 0)
+        ? new Promise((resolve) => {
+            flushWaiters.push(resolve);
+          })
+        : Promise.resolve(),
   };
 }
 
-function writeAgUiSseEventWithBackpressure(res: ServerResponse, event: AGUIEvent): Promise<void> {
+function normalizeMaxBufferedSseEvents(value: number | false): number | false {
+  if (value === false) return false;
+  if (!Number.isFinite(value)) return DEFAULT_MAX_BUFFERED_SSE_EVENTS;
+  return Math.max(1, Math.floor(value));
+}
+
+function closeResponseForOverflow(res: ServerResponse): void {
+  closeResponseForWriteFailure(res);
+}
+
+function closeResponseForWriteFailure(res: ServerResponse): void {
+  if (res.destroyed || res.writableEnded) return;
+  try {
+    res.destroy();
+  } catch {
+    endResponse(res);
+  }
+}
+
+function writeAgUiSseEventWithBackpressure(
+  res: ServerResponse,
+  event: AGUIEvent,
+): Promise<void> | undefined {
+  if (res.destroyed || res.writableEnded) return undefined;
+  if (res.write(agUiSseFrame(event))) return undefined;
+
   return new Promise((resolve) => {
-    if (res.write(`data: ${JSON.stringify(event)}\n\n`)) {
+    const cleanup = (): void => {
+      res.off("drain", onDrain);
+      res.off("close", onClose);
+      res.off("error", onError);
+    };
+    const settle = (): void => {
+      cleanup();
       resolve();
-      return;
-    }
-    res.once("drain", resolve);
+    };
+    const onDrain = (): void => settle();
+    const onClose = (): void => settle();
+    const onError = (): void => settle();
+    res.once("drain", onDrain);
+    res.once("close", onClose);
+    res.once("error", onError);
   });
+}
+
+function endResponse(res: ServerResponse): void {
+  if (!res.destroyed && !res.writableEnded) res.end();
+}
+
+function isResponseClosed(res: ServerResponse): boolean {
+  return res.destroyed || res.writableEnded;
 }
 
 async function appendSnapshot(
   events: AGUIEvent[],
   runtime: FacetRuntimeForAgUi,
   visitor: VisitorContext,
-): Promise<void> {
-  const stage = await runtime.stageFor(visitor.visitorId);
+  options: AgUiRuntimeExecutionOptions,
+): Promise<FacetTree | undefined> {
+  const stage = await withSnapshotTimeout(runtime.stageFor(visitor.visitorId), options);
   if (stage !== undefined) events.push(facetStageToStateSnapshot(stage));
+  return stage;
 }
 
 async function appendHandledEvents(
@@ -276,14 +613,22 @@ async function appendHandledEvents(
   runtime: FacetRuntimeForAgUi,
   input: Extract<FacetAgUiInput, { readonly kind: "event" }>,
   runInput: RunAgentInput,
+  stageState: StageSnapshotState,
 ): Promise<void> {
   const textState: TextMessageState = { nextIndex: 1 };
   let deliveredFrame = false;
-  const result = await runtime.handle(input.visitor, input.event, (messages) => {
+  let delivery = Promise.resolve();
+  const resultPromise = invokeRuntimeHandle(runtime, input, (messages, context) => {
     deliveredFrame = true;
-    appendServerMessages(events, messages, textState, runInput);
+    delivery = delivery.then(async () => {
+      await appendServerMessages(events, messages, textState, runInput, stageState, context);
+    });
   });
-  if (!deliveredFrame) appendTurnResult(events, result, textState, runInput);
+  const result = await resultPromise;
+  await delivery;
+  if (!deliveredFrame) {
+    appendTurnResult(events, result, textState, runInput, stageState);
+  }
 }
 
 async function writeHandledEvents(
@@ -291,20 +636,317 @@ async function writeHandledEvents(
   runtime: FacetRuntimeForAgUi,
   input: Extract<FacetAgUiInput, { readonly kind: "event" }>,
   runInput: RunAgentInput,
+  stageState: StageSnapshotState,
 ): Promise<void> {
   const events: AGUIEvent[] = [];
   const textState: TextMessageState = { nextIndex: 1 };
   let deliveredFrame = false;
-  const result = await runtime.handle(input.visitor, input.event, (messages) => {
+  let delivery = Promise.resolve();
+  const resultPromise = invokeRuntimeHandle(runtime, input, (messages, context) => {
     deliveredFrame = true;
-    const frameEvents: AGUIEvent[] = [];
-    appendServerMessages(frameEvents, messages, textState, runInput);
-    for (const event of frameEvents) write(event);
+    delivery = delivery.then(async () => {
+      const frameEvents: AGUIEvent[] = [];
+      await appendServerMessages(frameEvents, messages, textState, runInput, stageState, context);
+      for (const event of frameEvents) write(event);
+    });
   });
+  const result = await resultPromise;
+  await delivery;
   if (!deliveredFrame) {
-    appendTurnResult(events, result, textState, runInput);
+    appendTurnResult(events, result, textState, runInput, stageState);
     for (const event of events) write(event);
   }
+}
+
+function invokeRuntimeHandle(
+  runtime: FacetRuntimeForAgUi,
+  input: Extract<FacetAgUiInput, { readonly kind: "event" }>,
+  onFrame: (messages: readonly ServerMessage[], context?: RuntimeFrameContext) => void,
+): Promise<TurnResult> {
+  return Promise.resolve().then(() => runtime.handle(input.visitor, input.event, onFrame));
+}
+
+function acquireRuntimeRun(
+  runtime: FacetRuntimeForAgUi,
+  options: AgUiRuntimeExecutionOptions,
+): () => void {
+  const maxInFlight = options.maxInFlightRuns ?? DEFAULT_MAX_IN_FLIGHT_RUNS;
+  if (maxInFlight === false) return () => {};
+  const current = runtimeRunCounts.get(runtime) ?? 0;
+  if (current >= maxInFlight) {
+    throw new AgUiHttpInputError(429, "TOO_MANY_RUNS", "Too many AG-UI runs");
+  }
+  runtimeRunCounts.set(runtime, current + 1);
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const next = (runtimeRunCounts.get(runtime) ?? 1) - 1;
+    if (next <= 0) {
+      runtimeRunCounts.delete(runtime);
+    } else {
+      runtimeRunCounts.set(runtime, next);
+    }
+  };
+}
+
+function acquireRuntimeQueuedRun(
+  runtime: FacetRuntimeForAgUi,
+  visitor: VisitorContext,
+  options: AgUiRuntimeExecutionOptions,
+): () => void {
+  const maxQueued = options.maxInFlightRuns ?? DEFAULT_MAX_IN_FLIGHT_RUNS;
+  if (maxQueued === false) return () => {};
+
+  let counts = runtimeQueuedRunCounts.get(runtime);
+  if (counts === undefined) {
+    counts = new Map();
+    runtimeQueuedRunCounts.set(runtime, counts);
+  }
+  const key = visitor.visitorId;
+  const current = counts.get(key) ?? 0;
+  if (current >= maxQueued) {
+    throw new AgUiHttpInputError(429, "TOO_MANY_RUNS", "Too many queued AG-UI runs");
+  }
+  counts.set(key, current + 1);
+
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    const latestCounts = runtimeQueuedRunCounts.get(runtime);
+    if (latestCounts === undefined) return;
+    const next = (latestCounts.get(key) ?? 1) - 1;
+    if (next <= 0) latestCounts.delete(key);
+    else latestCounts.set(key, next);
+    if (latestCounts.size === 0) runtimeQueuedRunCounts.delete(runtime);
+  };
+}
+
+async function withSnapshotTimeout<T>(
+  work: Promise<T>,
+  options: AgUiRuntimeExecutionOptions,
+): Promise<T> {
+  const timeoutMs = options.snapshotTimeoutMs ?? DEFAULT_SNAPSHOT_TIMEOUT_MS;
+  if (timeoutMs === false) return work;
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timedOut = false;
+  const settledWork = work.then(
+    () => undefined,
+    () => undefined,
+  );
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      timedOut = true;
+      reject(new AgUiRunTimeoutError(timeoutMs, settledWork));
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([work, timeout]);
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+    if (timedOut) void settledWork;
+  }
+}
+
+class AgUiRunTimeoutError extends Error {
+  constructor(
+    timeoutMs: number,
+    readonly pendingWork: Promise<unknown>,
+  ) {
+    super(`AG-UI run timed out after ${String(timeoutMs)}ms`);
+  }
+}
+
+function pendingWorkForTimeout(error: unknown): Promise<unknown> | undefined {
+  return error instanceof AgUiRunTimeoutError ? error.pendingWork : undefined;
+}
+
+function releaseRuntimeRun(releaseRun: () => void, releaseAfter?: Promise<unknown>): void {
+  if (releaseAfter === undefined) {
+    releaseRun();
+    return;
+  }
+  void releaseAfter.finally(releaseRun);
+}
+
+function recordWithoutThrow(
+  runtime: FacetRuntimeForAgUi,
+  visitor: VisitorContext,
+  record: CollectedEvent,
+): Promise<void> {
+  return Promise.resolve()
+    .then(() => runtime.record(visitor, record))
+    .catch((error: unknown) => {
+      logInternalFailure("record failed", error);
+    });
+}
+
+function runtimeErrorCode(error: unknown): string {
+  return error instanceof AgUiRunTimeoutError ? "RUNTIME_TIMEOUT" : "RUNTIME_ERROR";
+}
+
+async function withRuntimeVisitorRun<T>(
+  runtime: FacetRuntimeForAgUi,
+  visitor: VisitorContext,
+  task: () => Promise<T>,
+): Promise<T> {
+  return withRuntimeQueueKey(runtime, `visitor:${visitor.visitorId}`, task);
+}
+
+function authorizationQueueKey(
+  input: RunAgentInput,
+  options: RunFacetAsAgUiOptions | HandleAgUiRequestOptions,
+): string {
+  if (options.resolveVisitor !== undefined) return "authorize:runtime";
+  if ("authorizedVisitor" in options && options.authorizedVisitor !== undefined) {
+    return `authorize:visitor:${options.authorizedVisitor.visitorId}`;
+  }
+  const forwardedVisitor = forwardedVisitorFromRunAgentInput(input);
+  if (forwardedVisitor !== undefined) return `authorize:visitor:${forwardedVisitor.visitorId}`;
+  return `authorize:thread:${input.threadId}`;
+}
+
+async function withRuntimeAuthorizationRun<T>(
+  runtime: FacetRuntimeForAgUi,
+  input: RunAgentInput,
+  options: RunFacetAsAgUiOptions | HandleAgUiRequestOptions,
+  task: () => Promise<T>,
+): Promise<T> {
+  return withRuntimeQueueKey(runtime, authorizationQueueKey(input, options), task);
+}
+
+async function withRuntimeQueueKey<T>(
+  runtime: FacetRuntimeForAgUi,
+  key: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  let queue = runtimeVisitorQueues.get(runtime);
+  if (queue === undefined) {
+    queue = createSerialQueue<unknown>();
+    runtimeVisitorQueues.set(runtime, queue);
+  }
+  return (await queue(key, task as () => Promise<unknown>)) as T;
+}
+
+async function authorizeDirectRunInput(
+  input: RunAgentInput,
+  options: RunFacetAsAgUiOptions,
+): Promise<RunAgentInput> {
+  const forwardedVisitor = forwardedVisitorFromRunAgentInput(input);
+  if (options.authorizedVisitor !== undefined) {
+    return withAuthorizedVisitor(input, options.authorizedVisitor);
+  }
+  if (options.resolveVisitor !== undefined) {
+    const visitor = await options.resolveVisitor(visitorResolutionInput(input, forwardedVisitor));
+    if (visitor === undefined) {
+      throw new AgUiHttpInputError(403, "FORBIDDEN", "AG-UI visitor is not authorized");
+    }
+    return withAuthorizedVisitor(input, visitor);
+  }
+  if (options.allowForwardedVisitor === true) return input;
+  throw new AgUiHttpInputError(403, "FORBIDDEN", "AG-UI visitor resolver required");
+}
+
+async function authorizeHttpRunInput(
+  req: IncomingMessage,
+  input: RunAgentInput,
+  options: HandleAgUiRequestOptions,
+): Promise<RunAgentInput> {
+  const forwardedVisitor = forwardedVisitorFromRunAgentInput(input);
+  if (options.resolveVisitor !== undefined) {
+    const visitor = await options.resolveVisitor(
+      req,
+      visitorResolutionInput(input, forwardedVisitor),
+    );
+    if (visitor === undefined) {
+      throw new AgUiHttpInputError(403, "FORBIDDEN", "AG-UI visitor is not authorized");
+    }
+    return withAuthorizedVisitor(input, visitor);
+  }
+  if (options.allowForwardedVisitor === true) return input;
+  throw new AgUiHttpInputError(403, "FORBIDDEN", "AG-UI visitor resolver required");
+}
+
+async function authorizeHttpRunInputUntilOpen(
+  req: IncomingMessage,
+  input: RunAgentInput,
+  options: HandleAgUiRequestOptions,
+  closed: Promise<void>,
+): Promise<RunAgentInput | undefined> {
+  const authorization = authorizeHttpRunInput(req, input, options);
+  const result = await Promise.race([
+    authorization.then(
+      (runInput) => ({ kind: "authorized" as const, runInput }),
+      (error: unknown) => ({ kind: "error" as const, error }),
+    ),
+    closed.then(() => ({ kind: "closed" as const })),
+  ]);
+
+  if (result.kind === "closed") {
+    void authorization.catch((error: unknown) => {
+      logInternalFailure("authorization failed after response close", error);
+    });
+    return undefined;
+  }
+  if (result.kind === "error") throw result.error;
+  return result.runInput;
+}
+
+function visitorResolutionInput(
+  input: RunAgentInput,
+  forwardedVisitor: VisitorContext | undefined,
+): FacetAgUiVisitorResolutionInput {
+  return {
+    threadId: input.threadId,
+    runId: input.runId,
+    ...(input.parentRunId === undefined ? {} : { parentRunId: input.parentRunId }),
+    ...(forwardedVisitor === undefined ? {} : { forwardedVisitor }),
+  };
+}
+
+function forwardedVisitorFromRunAgentInput(input: RunAgentInput): VisitorContext | undefined {
+  try {
+    const forwardedProps: unknown = input.forwardedProps;
+    if (!isObject(forwardedProps)) return undefined;
+    const facet = forwardedProps["facet"];
+    if (!isObject(facet)) return undefined;
+    return normalizeVisitor(facet["visitor"]);
+  } catch {
+    return undefined;
+  }
+}
+
+function withAuthorizedVisitor(input: RunAgentInput, visitor: VisitorContext): RunAgentInput {
+  try {
+    const forwardedProps: Record<string, unknown> = isObject(input.forwardedProps)
+      ? input.forwardedProps
+      : {};
+    const facet: Record<string, unknown> = isObject(forwardedProps["facet"])
+      ? forwardedProps["facet"]
+      : {};
+    const event = authorizedEventValue(facet["event"], visitor);
+    return {
+      ...input,
+      forwardedProps: {
+        ...forwardedProps,
+        facet: {
+          ...facet,
+          visitor,
+          ...(event === undefined ? {} : { event }),
+        },
+      },
+    };
+  } catch {
+    throw new AgUiHttpInputError(400, "BAD_REQUEST", "Malformed Facet forwardedProps");
+  }
+}
+
+function authorizedEventValue(event: unknown, visitor: VisitorContext): unknown {
+  if (!isObject(event) || event["kind"] !== "visit") return event;
+  return { ...event, visitor };
 }
 
 function appendTurnResult(
@@ -312,8 +954,9 @@ function appendTurnResult(
   result: TurnResult,
   textState: TextMessageState,
   runInput: RunAgentInput,
+  stageState: StageSnapshotState,
 ): void {
-  appendServerMessages(events, result.messages, textState, runInput);
+  appendServerMessages(events, result.messages, textState, runInput, stageState);
 }
 
 function appendServerMessages(
@@ -321,16 +964,43 @@ function appendServerMessages(
   messages: readonly ServerMessage[],
   textState: TextMessageState,
   runInput: RunAgentInput,
+  stageState: StageSnapshotState,
+  context?: RuntimeFrameContext,
 ): void {
+  let contextStageRead = false;
+  let contextStage: FacetTree | undefined;
+  const readContextStage = (): FacetTree | undefined => {
+    if (!contextStageRead) {
+      contextStageRead = true;
+      contextStage = context?.stage;
+      if (contextStage !== undefined) stageState.stage = contextStage;
+    }
+    return contextStage;
+  };
   for (const message of messages) {
     if (message.kind === "say") {
       const messageId = `facet-${runInput.runId}-message-${String(textState.nextIndex)}`;
       textState.nextIndex += 1;
       events.push(...serverMessageToAgUiEvents(message, { messageId }));
     } else {
-      events.push(...serverMessageToAgUiEvents(message));
+      const converted = serverMessageToAgUiEvents(message);
+      if (message.kind === "patch" && message.patches.length > 0 && converted.length === 0) {
+        if (readContextStage() === undefined) updateStageShadow(stageState, message);
+        if (stageState.stage !== undefined)
+          events.push(facetStageToStateSnapshot(stageState.stage));
+      } else {
+        if (message.kind === "patch" && readContextStage() === undefined) {
+          updateStageShadow(stageState, message);
+        }
+        events.push(...converted);
+      }
     }
   }
+}
+
+function updateStageShadow(stageState: StageSnapshotState, message: ServerMessage): void {
+  if (message.kind !== "patch" || stageState.stage === undefined) return;
+  stageState.stage = foldPatchIntoStage(stageState.stage, message.patches).tree;
 }
 
 async function readRequestBody(req: IncomingMessage, maxBodyBytes: number): Promise<string> {
@@ -447,50 +1117,22 @@ function normalizeCollectedEvent(value: unknown): CollectedEvent | undefined {
   const seq = optionalSeq(value);
   if (seq === null) return undefined;
 
-  if (kind === "visit") {
-    const eventVisitor = normalizeVisitor(value["visitor"]);
-    return eventVisitor === undefined
-      ? undefined
-      : { kind: "visit", visitor: eventVisitor, ...(seq === undefined ? {} : { seq }) };
-  }
-  if (kind === "message") {
-    const text = value["text"];
-    return typeof text === "string"
-      ? { kind, text, ...(seq === undefined ? {} : { seq }) }
-      : undefined;
-  }
   if (kind !== "tap") return undefined;
-
-  const action = optionalFacetAction(value);
+  if (value["action"] !== undefined) return undefined;
   const effect = optionalTapEffect(value);
   const fields = optionalFields(value);
   const target = optionalBoundedString(value, "target");
-  if (action === null || effect === null || fields === null || target === null) return undefined;
+  if (effect === undefined || effect === null || fields === null || target === null) {
+    return undefined;
+  }
 
   return {
     kind,
     ...(target === undefined ? {} : { target }),
-    ...(effect === undefined ? {} : { effect }),
-    ...(action === undefined ? {} : { action }),
+    effect,
     ...(fields === undefined ? {} : { fields }),
     ...(seq === undefined ? {} : { seq }),
   };
-}
-
-function optionalFacetAction(object: Record<string, unknown>): FacetAction | undefined | null {
-  const action = object["action"];
-  if (action === undefined) return undefined;
-  if (!isObject(action)) return null;
-  const kind = action["kind"];
-  if (kind === "navigate") {
-    const to = optionalBoundedString(action, "to");
-    return typeof to === "string" ? { kind, to } : null;
-  }
-  if (kind === "toggle") {
-    const target = optionalBoundedString(action, "target");
-    return typeof target === "string" ? { kind, target } : null;
-  }
-  return normalizeAgentAction(action) ?? null;
 }
 
 function normalizeAgentAction(value: unknown): FacetAction | undefined {

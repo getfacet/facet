@@ -22,6 +22,12 @@ review_fix_policy:
   subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
   final_gate_rerun_owner: "main-agent"
 
+review_hardening_outcome:
+  - "packages/core/runtime exposes lazy RuntimeFrameContext.stage to frame sinks so AG-UI fallback snapshots use the saved frame stage instead of rereading future state."
+  - "packages/core/server native input validation rejects malformed visitor context, non-finite seq/payload values, and impossible tap effect/action combinations."
+  - "packages/extensions/ag-ui bounds aggregate AG-UI state payload strings/entries before clone, redacts browser run-failure logs, creates fresh HTTP agents after timeout aborts, and keeps non-2xx RUN_ERROR SSE bodies visible to the browser transport."
+  - "packages/extensions/ag-ui/server narrows authorization queue scope so visitor resolution order is preserved without serializing unrelated resolved visitor runtime turns."
+
 final_gate_owner: "main-agent"
 final_gate_chain:
   flow: "feature"

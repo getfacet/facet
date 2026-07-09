@@ -9,7 +9,9 @@
 - Feature slug: `ag-ui-event-layer`
 - Intake brief: `specs/feature-intake/ag-ui-event-layer.md`
 - Context evidence: `specs/context/ag-ui-event-layer.md`
-- Affected `@facet/*` packages: `@facet/ag-ui` (new), docs/package metadata
+- Affected `@facet/*` packages: `@facet/ag-ui` (new), `@facet/runtime`
+  (`RuntimeFrameContext` for frame-stage snapshots), `@facet/server` validation
+  hardening, docs/package metadata
 - One-paragraph technical approach: add a new adapter package at
   `packages/extensions/ag-ui` that uses official `@ag-ui/core` and
   `@ag-ui/client` as the public AG-UI edge, while keeping Facet's canonical stage
@@ -18,7 +20,11 @@
   `STATE_SNAPSHOT`; inbound AG-UI state/custom/raw payloads are narrowed before
   becoming native `ServerMessage` or `ClientEvent`. Browser consumers can pass an
   `AgUiTransport` to `useFacet`, and server integrators can mount the Node-only
-  `@facet/ag-ui/server` handler around a `FacetRuntime`.
+  `@facet/ag-ui/server` handler around a `FacetRuntime`. Review hardening added
+  bounded aggregate state-payload guards, redacted browser error logging,
+  per-run HTTP agent creation after timeout aborts, and authorization queuing
+  that serializes visitor resolution without serializing unrelated resolved
+  visitor runtime turns.
 
 ## Done-Criteria Mapping (DC -> implementation)
 
@@ -88,6 +94,8 @@
 | Package | Change | Additive/Breaking | Consumer migration |
 |---|---|---|---|
 | `@facet/ag-ui` | New package with browser-safe `.` export and Node-only `./server` export | Additive | New AG-UI integrators import from this package. |
+| `@facet/runtime` | `RuntimeFrameContext.stage` is available to frame sinks as a lazy saved-stage snapshot | Additive | Transports that need full repair snapshots can read the frame context instead of rereading future stage state. |
+| `@facet/server` | Native event/record validation hardening for malformed visitor context, non-finite seq/payload values, and impossible tap shapes | Compatible hardening | Invalid native POST payloads fail closed instead of reaching runtime handlers. |
 | `@facet/core` | No dependency or API change | Unchanged | None. |
 | `@facet/react` | No code change; accepts `AgUiTransport` because it implements `FacetTransport` | Unchanged | Consumers can swap transport construction. |
 | `@facet/client` | No code change; native transports remain reference fallback | Unchanged | Docs point new external integrations to `@facet/ag-ui`. |

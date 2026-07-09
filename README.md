@@ -226,6 +226,12 @@ reference packages only when they match your integration shape.
 | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, and local shadow folding for custom LLM/tool loops. |
 | `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
 
+### Integration Adapters
+
+| Path | Package | Role |
+| --- | --- | --- |
+| `packages/extensions/ag-ui` | `@facet/ag-ui` | Optional AG-UI event-layer adapter: browser `FacetTransport` over AG-UI plus Node `@facet/ag-ui/server` handlers around `FacetRuntime`, while Facet keeps stage spec, patch validation, and renderer safety as the authority. |
+
 ### Reference Implementations
 
 | Path | Package | Role |

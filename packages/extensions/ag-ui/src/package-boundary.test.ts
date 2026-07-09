@@ -95,12 +95,15 @@ describe("@facet/ag-ui package boundaries", () => {
 
   it("documents AG-UI as an isolated public adapter with native fallback posture", () => {
     const agents = repoFile("AGENTS.md");
+    const readme = repoFile("README.md");
     const packageBoundaries = repoFile("docs/PACKAGE-BOUNDARIES.md");
 
     expect(agents).toContain(
       "| Extensions | `packages/extensions/ag-ui` | `@facet/ag-ui` | Official AG-UI adapter/event layer, browser transport and Node server adapter, keeping Facet safety. |",
     );
     expect(agents).toContain("`@facet/ag-ui`");
+    expect(readme).toContain("### Integration Adapters");
+    expect(readme).toContain("| `packages/extensions/ag-ui` | `@facet/ag-ui` |");
     expect(packageBoundaries).toContain("`@facet/ag-ui`");
     expect(packageBoundaries).toMatch(/@facet\/core` remains dependency-free/);
     expect(packageBoundaries).toMatch(

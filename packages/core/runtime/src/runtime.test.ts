@@ -66,6 +66,84 @@ describe("FacetRuntime.handle", () => {
     expect(stage?.nodes["root"]).toMatchObject({ type: "box", children: [] });
   });
 
+  it("passes onFrame an isolated stage snapshot", async () => {
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf(renderPatch),
+    });
+
+    await rt.handle(visitor, { kind: "message", text: "hi" }, (_frame, context) => {
+      const stageSnapshot = context?.stage;
+      expect(stageSnapshot).toEqual(validTree);
+      if (stageSnapshot === undefined) throw new Error("expected frame stage");
+      (stageSnapshot as { root: string }).root = "corrupted";
+      (stageSnapshot.nodes as Record<string, unknown>)["root"] = {
+        id: "root",
+        type: "text",
+        value: "corrupted",
+      };
+    });
+
+    const stored = await rt.stageFor("v");
+    expect(stored?.root).toBe("root");
+    expect(stored?.nodes["root"]).toMatchObject({ type: "box", children: [] });
+    expect(stored?.nodes["root"]).not.toMatchObject({ type: "text", value: "corrupted" });
+  });
+
+  it("does not clone the frame stage when onFrame ignores the context stage", async () => {
+    const cloneSpy = vi.spyOn(globalThis, "structuredClone");
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "say", text: "no clone needed" }),
+    });
+
+    try {
+      await rt.handle(visitor, { kind: "message", text: "hi" }, (_messages, context) => {
+        expect(context).toBeDefined();
+      });
+
+      expect(cloneSpy).not.toHaveBeenCalled();
+    } finally {
+      cloneSpy.mockRestore();
+    }
+  });
+
+  it("still delivers onFrame messages when frame context stage cannot be cloned", async () => {
+    const uncloneableStage = {
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: [],
+          unsafe: () => undefined,
+        },
+      },
+    } as unknown as FacetTree;
+    const store: StageStore = {
+      get: async () => undefined,
+      open: async () => ({ agentId: "a", visitor, stage: uncloneableStage }),
+      save: async () => undefined,
+    };
+    const frames: Array<{
+      readonly messages: readonly ServerMessage[];
+      readonly stage: FacetTree | undefined;
+    }> = [];
+    const rt = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "say", text: "still delivered" }),
+      stageStore: store,
+    });
+
+    await rt.handle(visitor, { kind: "message", text: "hi" }, (messages, context) => {
+      frames.push({ messages, stage: context?.stage });
+    });
+
+    expect(frames).toEqual([
+      { messages: [{ kind: "say", text: "still delivered" }], stage: undefined },
+    ]);
+  });
+
   it("leaves the stage unchanged for a say-only response", async () => {
     const rt = new FacetRuntime({ agentId: "a", agent: agentOf({ kind: "say", text: "hi" }) });
     await rt.handle(visitor, { kind: "message", text: "hi" });

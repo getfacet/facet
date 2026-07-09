@@ -1,15 +1,16 @@
 import { HttpAgent } from "@ag-ui/client";
-import { EventType } from "@ag-ui/core";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
+import { MAX_FIELD_VALUE_CHARS, MAX_FIELDS_KEYS } from "@facet/core";
 import type {
   ClientEvent,
   CollectedEvent,
   FacetTransport,
   ServerMessage,
+  TapEffect,
   VisitorContext,
 } from "@facet/core";
 
-import { agUiEventToServerMessages } from "./events.js";
+import { AgUiServerMessageAccumulator } from "./events.js";
 
 export interface AgUiObservableObserver<T> {
   next?(value: T): void;
@@ -28,10 +29,47 @@ export interface AgUiObservableLike<T> {
 export type AgUiEventStream =
   AsyncIterable<BaseEvent> | Iterable<BaseEvent> | AgUiObservableLike<BaseEvent>;
 export type AgUiRunResult = AgUiEventStream | Promise<AgUiEventStream>;
-export type AgUiRunFunction = (input: RunAgentInput) => AgUiRunResult;
+type FacetAgUiRecordBase = Omit<
+  Extract<CollectedEvent, { readonly kind: "tap" }>,
+  "action" | "effect" | "seq"
+> & {
+  readonly kind: "tap";
+  readonly effect: TapEffect;
+  readonly action?: never;
+};
+type FacetAgUiRecordSubmission = FacetAgUiRecordBase & {
+  readonly seq?: number;
+};
+export type FacetAgUiRecordEvent = FacetAgUiRecordBase & {
+  readonly seq: number;
+};
+export type FacetAgUiForwardedProps =
+  | {
+      readonly facet: {
+        readonly visitor: VisitorContext;
+        readonly event: ClientEvent & { readonly seq: number };
+        readonly record?: never;
+      };
+    }
+  | {
+      readonly facet: {
+        readonly visitor: VisitorContext;
+        readonly event?: never;
+        readonly record: FacetAgUiRecordEvent;
+      };
+    };
+export type FacetAgUiRunInput = Omit<RunAgentInput, "forwardedProps" | "state"> & {
+  readonly forwardedProps: FacetAgUiForwardedProps;
+  readonly state: Record<string, never>;
+};
+export type AgUiRunFunction = (input: FacetAgUiRunInput) => AgUiRunResult;
 
 export interface AgUiAgentLike {
-  run(input: RunAgentInput): AgUiRunResult;
+  run(input: FacetAgUiRunInput): AgUiRunResult;
+}
+
+export interface AgUiAbortableAgentLike extends AgUiAgentLike {
+  abortRun(): void;
 }
 
 export interface AgUiTransportOptions {
@@ -47,24 +85,22 @@ export interface CreateHttpAgUiTransportOptions extends AgUiTransportOptions {
   readonly fetch?: (url: string, requestInit: RequestInit) => Promise<Response>;
 }
 
-type AgUiTransportSource = AgUiAgentLike | AgUiRunFunction | AgUiEventStream;
+type AgUiTransportSource =
+  AgUiAbortableAgentLike | AgUiAgentLike | AgUiRunFunction | AgUiEventStream;
 type Submission =
   | { readonly kind: "event"; readonly value: ClientEvent }
-  | { readonly kind: "record"; readonly value: CollectedEvent };
+  | { readonly kind: "record"; readonly value: FacetAgUiRecordSubmission };
 
 const DEFAULT_RUN_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_QUEUE = 100;
+const SYNC_ITERABLE_YIELD_EVERY = 64;
+type HttpAgentConfig = ConstructorParameters<typeof HttpAgent>[0];
 
 interface RunState {
   active: boolean;
-  readonly textBuffers: Map<string, TextMessageBuffer>;
-  readonly textOrder: string[];
+  readonly accumulator: AgUiServerMessageAccumulator;
+  readonly silent: boolean;
   cancel?: () => void;
-}
-
-interface TextMessageBuffer {
-  readonly parts: string[];
-  complete: boolean;
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -96,13 +132,19 @@ function isAgentLike(value: unknown): value is AgUiAgentLike {
   return isObject(value) && typeof (value as { readonly run?: unknown }).run === "function";
 }
 
+function isAbortableAgentLike(value: unknown): value is AgUiAbortableAgentLike {
+  return (
+    isAgentLike(value) && typeof (value as { readonly abortRun?: unknown }).abortRun === "function"
+  );
+}
+
 function runFunctionFor(source: AgUiTransportSource): AgUiRunFunction {
   if (typeof source === "function") return source;
   if (isAgentLike(source)) return (input) => source.run(input);
   return () => source;
 }
 
-function withSeq<T extends ClientEvent | CollectedEvent>(
+function withSeq<T extends ClientEvent | FacetAgUiRecordSubmission>(
   event: T,
   seq: number,
 ): T & { readonly seq: number } {
@@ -123,6 +165,7 @@ function fallbackRunId(seq: number): string {
 export class AgUiTransport implements FacetTransport {
   private readonly listeners = new Set<(message: ServerMessage) => void>();
   private readonly run: AgUiRunFunction;
+  private readonly abortSourceRun: (() => void) | undefined;
   private readonly threadId: string;
   private runChain: Promise<void> = Promise.resolve();
   private pendingRuns = 0;
@@ -134,6 +177,7 @@ export class AgUiTransport implements FacetTransport {
     private readonly options: AgUiTransportOptions,
   ) {
     this.run = runFunctionFor(source);
+    this.abortSourceRun = isAbortableAgentLike(source) ? () => source.abortRun() : undefined;
     this.threadId = options.threadId ?? `facet-${options.visitor.visitorId}`;
   }
 
@@ -142,7 +186,17 @@ export class AgUiTransport implements FacetTransport {
   }
 
   record(event: CollectedEvent): void {
-    this.enqueue({ kind: "record", value: event });
+    let record: FacetAgUiRecordSubmission | undefined;
+    try {
+      if (isLocalTapRecord(event)) record = event;
+    } catch {
+      record = undefined;
+    }
+    if (record === undefined) {
+      console.error("[facet/ag-ui] record dropped: unsupported record event");
+      return;
+    }
+    this.enqueue({ kind: "record", value: record });
   }
 
   subscribe(onMessage: (message: ServerMessage) => void): () => void {
@@ -162,9 +216,9 @@ export class AgUiTransport implements FacetTransport {
     this.pendingRuns += 1;
     this.runChain = this.runChain
       .then(() => this.runSubmission(submission))
-      .catch((error: unknown) => {
+      .catch(() => {
         const label = submission.kind === "record" ? "record" : "event";
-        console.error(`[facet/ag-ui] ${label} run failed:`, error);
+        console.error(`[facet/ag-ui] ${label} run failed`);
       })
       .finally(() => {
         this.pendingRuns -= 1;
@@ -174,29 +228,32 @@ export class AgUiTransport implements FacetTransport {
   private async runSubmission(submission: Submission): Promise<void> {
     this.seq += 1;
     const seq = this.seq;
-    const forwarded =
+    const forwarded: FacetAgUiForwardedProps =
       submission.kind === "event"
         ? { facet: { visitor: this.options.visitor, event: withSeq(submission.value, seq) } }
         : { facet: { visitor: this.options.visitor, record: withSeq(submission.value, seq) } };
 
-    const runState: RunState = { active: true, textBuffers: new Map(), textOrder: [] };
+    const runState: RunState = {
+      active: true,
+      accumulator: new AgUiServerMessageAccumulator(),
+      silent: submission.kind === "record",
+    };
     try {
-      await this.consumeRunResult(
-        this.run({
-          threadId: this.threadId,
-          runId: this.nextRunId(),
-          state: {},
-          messages: [],
-          tools: [],
-          context: [],
-          forwardedProps: forwarded,
-        }),
-        runState,
-      );
+      const input: FacetAgUiRunInput = {
+        threadId: this.threadId,
+        runId: this.nextRunId(),
+        state: {},
+        messages: [],
+        tools: [],
+        context: [],
+        forwardedProps: forwarded,
+      };
+      await this.consumeRunResult(this.run(input), runState);
     } finally {
+      if (runState.active) this.emitAll(runState.accumulator.flush());
+      else runState.accumulator.discard();
       runState.active = false;
-      runState.cancel?.();
-      runState.textBuffers.clear();
+      this.cancelRun(runState);
     }
   }
 
@@ -217,7 +274,8 @@ export class AgUiTransport implements FacetTransport {
       timeoutId = setTimeout(() => {
         timedOut = true;
         runState.active = false;
-        runState.cancel?.();
+        this.abortActiveRun();
+        this.cancelRun(runState);
         reject(new Error(`AG-UI run timed out after ${String(timeoutMs)}ms`));
       }, timeoutMs);
     });
@@ -248,24 +306,72 @@ export class AgUiTransport implements FacetTransport {
     if (isAsyncIterable(stream)) {
       const iterator = stream[Symbol.asyncIterator]();
       runState.cancel = () => {
-        void iterator.return?.();
+        try {
+          const returned = iterator.return?.();
+          if (returned !== undefined) {
+            void Promise.resolve(returned).catch((error: unknown) => {
+              this.logCleanupFailure(error);
+            });
+          }
+        } catch (error: unknown) {
+          this.logCleanupFailure(error);
+        }
       };
       while (runState.active) {
         const next = await iterator.next();
+        if (!runState.active) break;
         if (next.done === true) break;
         this.handleAgUiEvent(next.value, runState);
       }
       return;
     }
     if (isIterable(stream)) {
-      for (const event of stream) {
-        if (!runState.active) break;
-        this.handleAgUiEvent(event, runState);
-      }
+      await this.consumeIterable(stream, runState);
       return;
     }
     if (isObservableLike(stream)) {
       await this.consumeObservable(stream, runState);
+    }
+  }
+
+  private async consumeIterable(stream: Iterable<unknown>, runState: RunState): Promise<void> {
+    const timeoutMs = this.runInputTimeoutMs();
+    const deadline = timeoutMs === false ? Number.POSITIVE_INFINITY : Date.now() + timeoutMs;
+    const iterator = stream[Symbol.iterator]();
+    let processed = 0;
+    let completed = false;
+
+    try {
+      while (runState.active) {
+        if (Date.now() >= deadline) {
+          runState.active = false;
+          throw new Error(`AG-UI run timed out after ${String(timeoutMs)}ms`);
+        }
+        const next = iterator.next();
+        if (next.done === true) {
+          completed = true;
+          break;
+        }
+        if (Date.now() >= deadline) {
+          runState.active = false;
+          throw new Error(`AG-UI run timed out after ${String(timeoutMs)}ms`);
+        }
+
+        if (!runState.active) break;
+        this.handleAgUiEvent(next.value, runState);
+        processed += 1;
+        if (processed % SYNC_ITERABLE_YIELD_EVERY === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+        }
+      }
+    } finally {
+      if (!completed) {
+        try {
+          iterator.return?.();
+        } catch (error: unknown) {
+          this.logCleanupFailure(error);
+        }
+      }
     }
   }
 
@@ -280,7 +386,11 @@ export class AgUiTransport implements FacetTransport {
         if (unsubscribe !== undefined) {
           const release = unsubscribe;
           unsubscribe = undefined;
-          release();
+          try {
+            release();
+          } catch (error: unknown) {
+            this.logCleanupFailure(error);
+          }
         }
       };
       const settle = (done: () => void): void => {
@@ -305,68 +415,35 @@ export class AgUiTransport implements FacetTransport {
     });
   }
 
+  private cancelRun(runState: RunState): void {
+    const cancel = runState.cancel;
+    delete runState.cancel;
+    try {
+      cancel?.();
+    } catch (error: unknown) {
+      this.logCleanupFailure(error);
+    }
+  }
+
+  private abortActiveRun(): void {
+    try {
+      this.abortSourceRun?.();
+    } catch (error: unknown) {
+      this.logCleanupFailure(error);
+    }
+  }
+
+  private logCleanupFailure(error: unknown): void {
+    const errorKind = error instanceof Error ? error.name : typeof error;
+    console.error(`[facet/ag-ui] run cleanup failed: ${errorKind}`);
+  }
+
   private handleAgUiEvent(event: unknown, runState: RunState): void {
     try {
-      if (this.handleTextEvent(event, runState)) return;
-      for (const message of agUiEventToServerMessages(event)) {
-        this.emit(message);
-      }
+      if (runState.silent) return;
+      this.emitAll(runState.accumulator.accept(event));
     } catch {
       // Malformed AG-UI input is ignored; Facet renderers only see narrowed native messages.
-    }
-  }
-
-  private handleTextEvent(event: unknown, runState: RunState): boolean {
-    if (!isObject(event)) return false;
-    switch (event["type"]) {
-      case EventType.TEXT_MESSAGE_START:
-        this.startTextMessage(event["messageId"], runState);
-        return true;
-      case EventType.TEXT_MESSAGE_CONTENT:
-        this.appendTextMessage(event["messageId"], event["delta"], runState);
-        return true;
-      case EventType.TEXT_MESSAGE_END:
-        this.endTextMessage(event["messageId"], runState);
-        return true;
-      default:
-        return false;
-    }
-  }
-
-  private startTextMessage(messageId: unknown, runState: RunState): void {
-    if (typeof messageId !== "string") return;
-    if (!runState.textBuffers.has(messageId)) runState.textOrder.push(messageId);
-    runState.textBuffers.set(messageId, { parts: [], complete: false });
-  }
-
-  private appendTextMessage(messageId: unknown, delta: unknown, runState: RunState): void {
-    if (typeof messageId !== "string" || typeof delta !== "string") return;
-    const buffer = runState.textBuffers.get(messageId);
-    if (buffer === undefined) return;
-    buffer.parts.push(delta);
-  }
-
-  private endTextMessage(messageId: unknown, runState: RunState): void {
-    if (typeof messageId !== "string") return;
-    const buffer = runState.textBuffers.get(messageId);
-    if (buffer === undefined) return;
-    buffer.complete = true;
-    this.flushCompletedTextMessages(runState);
-  }
-
-  private flushCompletedTextMessages(runState: RunState): void {
-    while (runState.textOrder.length > 0) {
-      const messageId = runState.textOrder[0];
-      if (messageId === undefined) return;
-      const buffer = runState.textBuffers.get(messageId);
-      if (buffer === undefined) {
-        runState.textOrder.shift();
-        continue;
-      }
-      if (!buffer.complete) return;
-      runState.textOrder.shift();
-      runState.textBuffers.delete(messageId);
-      this.emit({ kind: "say", text: buffer.parts.join("") });
     }
   }
 
@@ -375,16 +452,94 @@ export class AgUiTransport implements FacetTransport {
       listener(message);
     }
   }
+
+  private emitAll(messages: readonly ServerMessage[]): void {
+    for (const message of messages) this.emit(message);
+  }
 }
 
 export function createHttpAgUiTransport(
   url: string,
   options: CreateHttpAgUiTransportOptions,
 ): AgUiTransport {
-  const agentConfig: ConstructorParameters<typeof HttpAgent>[0] = {
+  const agentConfig: HttpAgentConfig = {
     url,
     ...(options.headers === undefined ? {} : { headers: options.headers }),
-    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    fetch: normalizeAgUiFetch(options.fetch),
   };
-  return new AgUiTransport(new HttpAgent(agentConfig), options);
+  return new AgUiTransport(new PerRunHttpAgentSource(agentConfig), options);
+}
+
+class PerRunHttpAgentSource implements AgUiAbortableAgentLike {
+  private activeAgent: HttpAgent | undefined;
+
+  constructor(private readonly config: HttpAgentConfig) {}
+
+  run(input: FacetAgUiRunInput): AgUiRunResult {
+    const agent = new HttpAgent(this.config);
+    this.activeAgent = agent;
+    return agent.run(input);
+  }
+
+  abortRun(): void {
+    this.activeAgent?.abortRun();
+    this.activeAgent = undefined;
+  }
+}
+
+function normalizeAgUiFetch(
+  fetchImpl: CreateHttpAgUiTransportOptions["fetch"],
+): (url: string, requestInit: RequestInit) => Promise<Response> {
+  const runFetch = fetchImpl ?? ((requestUrl, requestInit) => fetch(requestUrl, requestInit));
+  return async (requestUrl, requestInit) => {
+    const response = await runFetch(requestUrl, requestInit);
+    if (response.ok || !isEventStreamResponse(response)) return response;
+    return new Response(response.body, {
+      status: 200,
+      statusText: "OK",
+      headers: response.headers,
+    });
+  };
+}
+
+function isEventStreamResponse(response: Response): boolean {
+  return response.headers.get("Content-Type")?.toLowerCase().includes("text/event-stream") === true;
+}
+
+function isLocalTapRecord(event: CollectedEvent): event is FacetAgUiRecordSubmission {
+  if (event.kind !== "tap") return false;
+  if (event.action !== undefined) return false;
+  if (event.effect === undefined || !isTapEffect(event.effect)) return false;
+  if (event.target !== undefined && !isBoundedString(event.target)) return false;
+  if (event.fields !== undefined && !isFieldsRecord(event.fields)) return false;
+  if (event.seq !== undefined && !Number.isFinite(event.seq)) return false;
+  return true;
+}
+
+function isTapEffect(effect: unknown): boolean {
+  if (!isObject(effect)) return false;
+  const navigate = effect["navigate"];
+  const toggle = effect["toggle"];
+  if (navigate !== undefined) {
+    return isBoundedString(navigate) && toggle === undefined;
+  }
+  if (toggle !== undefined) {
+    return isBoundedString(toggle) && navigate === undefined;
+  }
+  return false;
+}
+
+function isFieldsRecord(fields: unknown): boolean {
+  if (!isObject(fields) || Array.isArray(fields)) return false;
+  const entries = Object.entries(fields);
+  if (entries.length > MAX_FIELDS_KEYS) return false;
+  return entries.every(
+    ([key, value]) =>
+      isBoundedString(key) &&
+      (typeof value === "boolean" || (typeof value === "string" && isBoundedString(value))),
+  );
+}
+
+function isBoundedString(value: unknown): value is string {
+  return typeof value === "string" && value.length <= MAX_FIELD_VALUE_CHARS;
 }
