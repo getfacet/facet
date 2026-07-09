@@ -49,6 +49,7 @@ import {
   SHADOW as DEFAULT_SHADOW,
   SPACE,
 } from "@facet/assets";
+import { rootContainmentStyle, scrollContainmentStyle } from "./layout-contract.js";
 
 export { COLOR, DEFAULT_THEME };
 
@@ -301,10 +302,6 @@ function justifyValue(justify: Justify): CSSProperties["justifyContent"] {
   }
 }
 
-// The one concrete scroll-region height — a renderer constant, not a theme
-// token (RISK-API-5): agents say `scroll`, never a number.
-const SCROLL_MAX_HEIGHT = "20rem";
-
 /**
  * Note: `appear` is renderer-bound — the class name and the once-per-stage
  * `<style>` element live in `StageRenderer` (via the internal `appear.ts`),
@@ -319,13 +316,11 @@ export function boxStyle(
   const css: CSSProperties = isGrid
     ? {
         display: "grid",
-        boxSizing: "border-box",
         gridTemplateColumns: `repeat(${String(style.columns)},minmax(0,1fr))`,
       }
     : {
         display: "flex",
         flexDirection: style.direction === "row" ? "row" : "column",
-        boxSizing: "border-box",
       };
   if (style.gap) css.gap = theme.space[style.gap];
   if (style.pad) css.padding = theme.space[style.pad];
@@ -342,24 +337,18 @@ export function boxStyle(
   // only as a bounded internal region: maxWidth/minWidth keep the page from
   // widening while children clip inside the box. `true` is legacy vertical.
   if (style.scroll === "x") {
-    css.overflowX = "auto";
-    css.overflowY = "hidden";
-    css.maxWidth = "100%";
-    css.minWidth = 0;
+    Object.assign(css, scrollContainmentStyle("x"));
   } else if (style.scroll === "y" || style.scroll === true) {
-    css.overflowY = "auto";
-    css.overflowX = "hidden";
-    css.maxHeight = SCROLL_MAX_HEIGHT;
-    css.minHeight = 0;
+    Object.assign(css, scrollContainmentStyle("y"));
   }
-  return css;
+  return rootContainmentStyle(css);
 }
 
 export function textStyle(
   style: TextStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
-  const css: CSSProperties = { margin: 0 };
+  const css: CSSProperties = { margin: 0, wordBreak: "break-word" };
   const rawFamily = (style as { readonly family?: unknown }).family;
   const family: FontFamily = isFontFamily(rawFamily) ? rawFamily : "sans";
   const fontFamily = theme.fontFamily[family];
@@ -370,18 +359,18 @@ export function textStyle(
   if (style.align) {
     css.textAlign = style.align === "start" ? "left" : style.align === "end" ? "right" : "center";
   }
-  return css;
+  return rootContainmentStyle(css);
 }
 
 export function mediaStyle(
   style: MediaStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
-  const css: CSSProperties = { display: "block", objectFit: "cover" };
+  const css: CSSProperties = { display: "block", objectFit: "cover", height: "auto" };
   if (style.radius) css.borderRadius = theme.radius[style.radius];
   if (style.width === "full") css.width = "100%";
   if (style.ratio) css.aspectRatio = theme.ratio[style.ratio];
-  return css;
+  return rootContainmentStyle(css);
 }
 
 // fieldStyle uses no themed token today (only the width sizing keyword), but
@@ -393,5 +382,5 @@ export function fieldStyle(
 ): CSSProperties {
   const css: CSSProperties = {};
   if (style.width === "full") css.width = "100%";
-  return css;
+  return rootContainmentStyle(css);
 }
