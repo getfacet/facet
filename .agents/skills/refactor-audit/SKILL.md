@@ -3,9 +3,10 @@ name: refactor-audit
 description: >
   Codex structural audit of the whole Facet codebase for duplication, module
   boundaries, dead code, package hygiene, naming, public API/export drift,
-  reference reachability, and pure-logic test gaps. Produces a ranked,
-  evidence-backed cleanup plan without applying changes. Use for owner-run
-  consolidation passes, not per-change review. Do not invoke Claude Workflow().
+  reference reachability, oversized-file pressure, project scaffold shape, and
+  pure-logic test gaps. Produces a ranked, evidence-backed cleanup plan without
+  applying changes. Use for owner-run consolidation passes, not per-change
+  review. Do not invoke Claude Workflow().
 ---
 
 # /refactor-audit
@@ -114,6 +115,67 @@ candidate:
 4. A test gap finding must name the untested behavior and show the grep/test
    evidence that coverage is absent.
 
+### 5. Oversized-file and growth-pressure audit
+
+Audit large and fast-growing files as module-pressure signals, not as cosmetic
+line-count violations.
+
+1. Count tracked text files by line count against `origin/main` (or the owner
+   requested baseline). Record the command used and exclude binary files.
+2. Flag production files over 500 lines, test files over 800 lines, and any file
+   over 1000 lines. Also flag files that grew by 250+ lines or 30%+ relative to
+   the merge-base/baseline.
+3. For each flagged file, classify the pressure:
+   - `cohesive-large`: one clear responsibility, large because the contract or
+     integration surface is large.
+   - `mixed-responsibility`: multiple roles, protocols, render paths, policies,
+     or fixture families living together.
+   - `growth-watch`: currently tolerable, but recent growth predicts drift.
+   - `ignore`: lockfile, generated artifact, spec manifest, or deliberately
+     broad integration test where splitting would reduce clarity.
+4. Confirm a finding only when size correlates with structural evidence such as
+   mixed responsibilities, duplicated fixtures/helpers, package-boundary
+   pressure, hard-to-test branches, unstable ownership, or repeated review
+   confusion.
+5. Do not recommend splitting a file solely because it crosses a line-count
+   threshold. Line count is a triage trigger; the finding must explain the
+   structural risk and the improvement expected from the split.
+6. Produce a large-file inventory, a watchlist, and ranked extraction candidates.
+
+### 6. Scaffold and module-shape audit
+
+Audit whether the current directory/file structure still matches the
+responsibilities that have emerged in the codebase.
+
+1. Review package-local scaffolds under `packages/{core,agent-stack,extensions}`
+   and `apps/playground` against the package roles in `AGENTS.md`.
+2. For every extraction candidate from the oversized-file, duplication,
+   boundary, or test-gap passes, decide whether the right shape is:
+   - a small sibling helper file,
+   - a role-named directory with private internal modules,
+   - a package-level shared helper,
+   - a public package surface, or
+   - no split.
+3. A split recommendation must include:
+   - the current responsibility map of the file,
+   - the proposed directory/file scaffold,
+   - what remains public vs private,
+   - import direction after the split,
+   - test placement after the split,
+   - why the change reduces future drift, and
+   - why a smaller local helper extraction is insufficient, if proposing a new
+     directory.
+4. Preserve package boundaries from `AGENTS.md`. Do not move protocol contracts
+   out of `@facet/core`, do not make browser-safe entries import Node-only code,
+   and do not expose private helpers through package barrels unless the public
+   API/export audit justifies it.
+5. Prefer role names over generic buckets. Avoid recommending `utils.ts`,
+   `helpers.ts`, or `shared.ts` unless the name reflects a real package-local
+   concept and the exported surface is tightly bounded.
+6. Include a `Do not split` rationale for cohesive large files, broad integration
+   tests, generated files, lockfiles, and cases where a directory would add
+   navigation cost without reducing drift.
+
 ## Verify Findings
 
 For every candidate finding:
@@ -124,6 +186,9 @@ For every candidate finding:
    dead code.
 4. Confirm severity against `docs/REVIEW-RULES.md`.
 5. Drop cosmetic churn unless it prevents recurring confusion.
+6. For large-file and scaffold findings, verify that the proposed structure
+   follows existing package patterns, improves ownership/testability, and does
+   not create generic helper sprawl.
 
 Use `.codex/agents/review-verifier.toml` as the verifier checklist when present.
 Verifier policy:
@@ -143,8 +208,8 @@ After the first verified finding set, run a critic pass before ranking:
 1. Compare audited scope against `AGENTS.md`'s package map and the actual
    grouped package manifest list.
 2. Name up to six under-audited `(dimension, area)` slices, such as a browser
-   entry, package manifest family, CLI bin, prompt/spec text, or pure-logic file
-   cluster.
+   entry, package manifest family, CLI bin, prompt/spec text, pure-logic file
+   cluster, oversized-file cluster, or package scaffold boundary.
 3. Re-audit those slices with the relevant dimension checklist.
 4. Verify any new candidates with the same verifier policy.
 
@@ -172,10 +237,14 @@ Report:
 6. Completeness re-sweep slices and outcome.
 7. Public API/export audit summary.
 8. Pure-logic test-gap audit summary.
-9. Recommended execution order.
-10. `Do not touch` list with reasons.
-11. Residual risks or areas intentionally left unaudited.
-12. `Execution Handoff` using the refactor flow below.
+9. Large-file and growth-pressure summary: inventory, watchlist, extraction
+   candidates, and explicit `ignore`/`do not split` rationales.
+10. Scaffold/module-shape summary: proposed structures, public/private surfaces,
+    import direction, and test placement for each structural split candidate.
+11. Recommended execution order.
+12. `Do not touch` list with reasons.
+13. Residual risks or areas intentionally left unaudited.
+14. `Execution Handoff` using the refactor flow below.
 
 End the audit verdict with: `Plan only — no changes applied`.
 
