@@ -206,10 +206,11 @@ async function capture(page: Page, outDir: string, index: number, label: string)
 /** Type a message into the ChatDock and send it. */
 async function sendChat(page: Page, message: string): Promise<void> {
   // The ChatDock input is the only input WITHOUT a data-facet-field-id stamp
-  // (stage fields carry that attribute); the Send button is the page's only
-  // native <button> (stage pressables are <div role="button">).
-  await page.locator("input:not([data-facet-field-id])").first().fill(message);
-  await page.locator("button").first().click();
+  // (stage fields carry that attribute). Submit through the focused input's
+  // Enter handler so native stage buttons/tabs cannot steal the click target.
+  const input = page.locator("input:not([data-facet-field-id])").first();
+  await input.fill(message);
+  await input.press("Enter");
 }
 
 /**

@@ -29,8 +29,9 @@ OPENAI_API_KEY=sk-… npx facet-quickstart
 
 That boots a live Facet server at `http://localhost:5292` whose page is drawn by
 a **built-in LLM agent**: it reads a guide markdown brief (your `./facet.md` if
-present, otherwise the built-in Facet Live Lab brief), starts from a compact
-polished seed stage on the default path, and keeps patching it as visitors chat.
+present, otherwise the built-in quickstart tour brief), starts from a compact
+polished four-tab seed stage on the default path, and keeps patching it as
+visitors chat.
 `ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). Flags
 and details:
 [`@facet/quickstart`](packages/agent-stack/quickstart/README.md).

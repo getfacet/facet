@@ -387,7 +387,10 @@ describe("runCli — quickstart polished default", () => {
       const seedText = JSON.stringify(globals.__FACET_INITIAL_STAGE__);
 
       expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
-      expect(seedText).toContain("Facet Live Lab");
+      expect(seedText).toContain("What is Facet?");
+      expect(seedText).toContain("Core Structure");
+      expect(seedText).toContain("Design System");
+      expect(seedText).toContain("Use Cases");
       for (const type of [
         "section",
         "card",

@@ -71,6 +71,14 @@ function collectTypes(
   return out;
 }
 
+function collectTypesFromScreens(tree: FacetTree): Set<FacetNode["type"]> {
+  const out = new Set<FacetNode["type"]>();
+  for (const root of Object.values(tree.screens ?? { root: tree.root })) {
+    collectTypes(tree, root, out);
+  }
+  return out;
+}
+
 const REPRESENTATIVE_POLISHED_TYPES: readonly FacetNode["type"][] = [
   "section",
   "card",
@@ -170,16 +178,35 @@ describe("buildSystem", () => {
     const firstScreenTypes = Array.from(
       collectTypes(QUICKSTART_INITIAL_STAGE, entryRootOf(QUICKSTART_INITIAL_STAGE)),
     ).sort();
+    const systemScreenTypes = Array.from(
+      collectTypes(QUICKSTART_INITIAL_STAGE, QUICKSTART_INITIAL_STAGE.screens?.system ?? ""),
+    ).sort();
+    const allScreenTypes = Array.from(collectTypesFromScreens(QUICKSTART_INITIAL_STAGE)).sort();
     const serializedSeed = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
     expect(system).toContain("PAGE BRIEF");
     expect(system).toContain(QUICKSTART_PAGE_BRIEF);
+    expect(system).toContain("navigate to that screen in the same turn");
     expect(system).toMatch(/polished hierarchy/i);
     expect(issues).toEqual([]);
     expect(treeHasContent(tree)).toBe(true);
     expect(QUICKSTART_INITIAL_STAGE.theme).toBe("default");
-    expect(QUICKSTART_INITIAL_STAGE.entry).toBe("home");
-    expect(firstScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_POLISHED_TYPES]));
+    expect(QUICKSTART_INITIAL_STAGE.entry).toBe("what");
+    expect(Object.keys(QUICKSTART_INITIAL_STAGE.screens ?? {}).sort()).toEqual([
+      "structure",
+      "system",
+      "usecases",
+      "what",
+    ]);
+    expect(firstScreenTypes).toEqual(expect.arrayContaining(["button", "card", "chart"]));
+    expect(systemScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_POLISHED_TYPES]));
+    expect(allScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_POLISHED_TYPES]));
+    expect(serializedSeed).toContain('"What is Facet?"');
+    expect(serializedSeed).toContain('"Core Structure"');
+    expect(serializedSeed).toContain('"Design System"');
+    expect(serializedSeed).toContain('"Use Cases"');
+    expect(serializedSeed).toContain('"Default stamp patterns"');
+    expect(serializedSeed).toContain('"pricing-section"');
     expect(serializedSeed).toContain('"collect":"qs.intake"');
     expect(serializedSeed).not.toMatch(
       /className|dangerouslySetInnerHTML|<script|#[0-9a-fA-F]{3,8}|\b\d+(px|rem|em|%)\b/,

@@ -920,8 +920,8 @@ describe("quickstart E2E — quickstart polished default", () => {
         }
 
         const providerRequest = JSON.stringify(openAi.bodies[0]);
-        expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet Live Lab");
-        expect(providerRequest).toContain("# Facet Live Lab");
+        expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
+        expect(providerRequest).toContain("# Facet quickstart tour");
         expect(providerRequest).toContain("polished hierarchy");
         expect(providerRequest).not.toContain("STUB_TREE");
         expect(booted.captured.out.join("\n")).toContain("openai");

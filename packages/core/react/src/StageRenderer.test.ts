@@ -468,7 +468,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     expect(out).toContain("Trend");
     expect(out).toContain("$24k");
     expect(out).toContain("Healthy");
-    expect(out).toContain("<progress");
+    expect(out).toContain('role="progressbar"');
     expect(out).toContain('role="alert"');
     expect(out).toContain("Call customer");
     expect(out).toContain("<hr");
@@ -698,10 +698,20 @@ describe("StageRenderer high-level renderer (static)", () => {
     );
     expect(out).toMatch(/<th style="[^"]*color:#2563eb[^"]*font-weight:700[^"]*">Name/);
     expect(out).toMatch(/<td style="[^"]*color:#b45309[^"]*">Acme/);
+    expect(out).not.toMatch(/<th[^>]*style="[^"]*display:flex/);
+    expect(out).not.toMatch(/<td[^>]*style="[^"]*display:flex/);
     expect(out).toMatch(/<figcaption style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Trend/);
-    expect(out).toMatch(/<svg[^>]*style="[^"]*background:#eef2ff[^"]*border-radius:17px/);
+    expect(out).toMatch(/<figure[^>]*style="(?=[^"]*margin:0)(?=[^"]*max-width:100%)[^"]*">/);
+    expect(out).toMatch(
+      /<svg[^>]*style="(?=[^"]*background:#eef2ff)(?=[^"]*border-radius:17px)(?=[^"]*display:block)[^"]*"/,
+    );
+    expect(out).not.toMatch(/<svg[^>]*style="[^"]*display:flex/);
     expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Completion/);
-    expect(out).toMatch(/<progress[^>]*style="[^"]*width:100%[^"]*background:#eef2ff/);
+    expect(out).toMatch(
+      /role="progressbar" aria-valuenow="72" aria-valuemin="0" aria-valuemax="100"[^>]*style="(?=[^"]*width:100%)(?=[^"]*background:#eef2ff)[^"]*"><div style="[^"]*width:72%/,
+    );
+    expect(out).not.toMatch(/<label[^>]*style="[^"]*background:/);
+    expect(out).not.toContain("<progress");
     expect(out).toMatch(/<p style="(?=[^"]*font-weight:700)(?=[^"]*color:#2563eb)[^"]*">ARR/);
     expect(out).toMatch(/<p style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)[^"]*">\$24k/);
     expect(out).toMatch(/<p style="(?=[^"]*font-weight:500)(?=[^"]*color:#b45309)[^"]*">\+12%/);
@@ -716,7 +726,13 @@ describe("StageRenderer high-level renderer (static)", () => {
     expect(out).toMatch(/<hr style="[^"]*background:#dc2626[^"]*width:100%/);
     expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#2563eb[^"]*">Details/);
     expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Email/);
-    expect(out).toMatch(/<input[^>]*data-facet-field-id="email"[^>]*style="width:100%"/);
+    expect(out).toMatch(/<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*width:100%/);
+    expect(out).toMatch(
+      /<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*background:#ffffff/,
+    );
+    expect(out).toMatch(
+      /<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*border:1px solid #64748b/,
+    );
   });
 
   it("keeps high-level raw-path malformed data fail-safe", () => {
@@ -992,6 +1008,38 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain("aspect-ratio:16 / 9");
     expect(out).toContain("border-radius:16px");
     expect(out).toContain("width:100%");
+  });
+
+  it("renders default text and select fields with polished token-resolved control chrome", () => {
+    const out = render(
+      tree({
+        root: box("root", ["email", "surface"]),
+        email: {
+          id: "email",
+          type: "field",
+          name: "email",
+          input: "email",
+          label: "Email",
+        },
+        surface: {
+          id: "surface",
+          type: "field",
+          name: "surface",
+          input: "select",
+          options: ["Dashboard", "Pricing"],
+          label: "Surface",
+        },
+      }),
+    );
+
+    expect(out).toMatch(/<input[^>]*style="[^"]*background:#ffffff/);
+    expect(out).toMatch(/<input[^>]*style="[^"]*border:1px solid #e2e5ea/);
+    expect(out).toMatch(/<input[^>]*style="[^"]*border-radius:6px/);
+    expect(out).toMatch(/<input[^>]*style="[^"]*padding:8px/);
+    expect(out).toMatch(/<select[^>]*style="[^"]*background:#ffffff/);
+    expect(out).toMatch(/<select[^>]*style="[^"]*border:1px solid #e2e5ea/);
+    expect(out).not.toMatch(/<input[^>]*style="[^"]*display:flex/);
+    expect(out).not.toMatch(/<select[^>]*style="[^"]*display:flex/);
   });
 
   it("renders all four bricks", () => {

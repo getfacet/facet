@@ -186,19 +186,63 @@ function partTextStyle(
   return part.text === undefined ? base : { ...base, ...part.text };
 }
 
-function fieldControlStyle(
-  theme: ResolvedTheme,
-  recipe: ComponentRecipe,
-): CSSProperties | undefined {
+function intrinsicBoxStyle(style: CSSProperties | undefined): CSSProperties {
+  if (style === undefined) return {};
+  const css: CSSProperties = { ...style };
+  delete css.display;
+  delete css.flexDirection;
+  delete css.flexWrap;
+  delete css.gap;
+  delete css.alignItems;
+  delete css.justifyContent;
+  delete css.flexGrow;
+  delete css.width;
+  delete css.minWidth;
+  delete css.maxWidth;
+  delete css.overflowX;
+  delete css.overflowY;
+  delete css.maxHeight;
+  delete css.minHeight;
+  return css;
+}
+
+function fieldControlStyle(theme: ResolvedTheme, recipe: ComponentRecipe): CSSProperties {
   const control = resolveRecipePart(recipe, "control", theme);
   const input = resolveRecipePart(recipe, "input", theme);
   const css: CSSProperties = {
-    ...(control.box ?? {}),
+    boxSizing: "border-box",
+    background: theme.color.surface,
+    color: theme.color.fg,
+    border: `1px solid ${theme.color.border}`,
+    borderRadius: theme.radius.sm,
+    padding: `${theme.space.sm} ${theme.space.md}`,
+    font: "inherit",
+    lineHeight: 1.4,
+    minHeight: "40px",
+    outline: "none",
+    ...(intrinsicBoxStyle(control.box) ?? {}),
     ...(control.field ?? {}),
-    ...(input.box ?? {}),
+    ...(intrinsicBoxStyle(input.box) ?? {}),
     ...(input.field ?? {}),
   };
-  return Object.keys(css).length === 0 ? undefined : css;
+  return css;
+}
+
+function fieldChoiceControlStyle(theme: ResolvedTheme): CSSProperties {
+  return {
+    accentColor: theme.color.accent,
+  };
+}
+
+function fieldChoiceOptionStyle(theme: ResolvedTheme): CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: theme.space.sm,
+    color: theme.color.fg,
+    fontFamily: theme.fontFamily.sans,
+    fontSize: theme.fontSize.md,
+  };
 }
 
 interface RenderChartSeries {
@@ -555,20 +599,20 @@ function renderTable<Press>(node: FacetNode, context: BrickRenderContext<Press>)
         style={{
           width: "100%",
           borderCollapse: "collapse",
-          ...(tablePart.box ?? {}),
+          ...intrinsicBoxStyle(tablePart.box),
           ...(tablePart.text ?? {}),
         }}
       >
         {caption === undefined ? null : <caption style={captionPart.text}>{caption}</caption>}
         <thead>
-          <tr style={{ ...(headerRowPart.box ?? {}) }}>
+          <tr style={intrinsicBoxStyle(headerRowPart.box)}>
             {columns.map((column) => (
               <th
                 key={column.key}
                 style={{
                   borderBottom: `1px solid ${theme.color.border}`,
                   color: theme.color["fg-muted"],
-                  ...(headerCellPart.box ?? {}),
+                  ...intrinsicBoxStyle(headerCellPart.box),
                   ...(headerCellPart.text ?? {}),
                   textAlign: column.align,
                 }}
@@ -580,13 +624,13 @@ function renderTable<Press>(node: FacetNode, context: BrickRenderContext<Press>)
         </thead>
         <tbody>
           {rows.map((row, rowIndex) => (
-            <tr key={String(rowIndex)} style={{ ...(rowPart.box ?? {}) }}>
+            <tr key={String(rowIndex)} style={intrinsicBoxStyle(rowPart.box)}>
               {columns.map((column) => (
                 <td
                   key={column.key}
                   style={{
                     borderBottom: `1px solid ${theme.color.border}`,
-                    ...(cellPart.box ?? {}),
+                    ...intrinsicBoxStyle(cellPart.box),
                     ...(cellPart.text ?? {}),
                     textAlign: column.align,
                   }}
@@ -626,7 +670,7 @@ function renderChart<Press>(node: FacetNode, context: BrickRenderContext<Press>)
     <figure
       className={className}
       aria-hidden={inert ? true : undefined}
-      style={withInert(style, inert)}
+      style={withInert({ ...style, margin: 0, maxWidth: "100%", minWidth: 0 }, inert)}
     >
       {title === undefined ? null : (
         <figcaption style={componentTextStyle(theme, recipe, { weight: "semibold" }, "title")}>
@@ -638,7 +682,15 @@ function renderChart<Press>(node: FacetNode, context: BrickRenderContext<Press>)
         aria-label={title ?? "chart"}
         viewBox="0 0 360 140"
         width="100%"
-        style={plotPart.box}
+        style={{
+          ...intrinsicBoxStyle(plotPart.box),
+          display: "block",
+          boxSizing: "border-box",
+          width: "100%",
+          maxWidth: "100%",
+          height: "auto",
+          overflow: "hidden",
+        }}
       >
         {title === undefined ? null : <title>{title}</title>}
         {chart}
@@ -740,8 +792,8 @@ function renderProgress<Press>(node: FacetNode, context: BrickRenderContext<Pres
   });
   const trackPart = resolveRecipePart(recipe, "track", theme);
   const fillPart = resolveRecipePart(recipe, "fill", theme);
-  const fillColor =
-    typeof fillPart.box?.background === "string" ? fillPart.box.background : undefined;
+  const trackStyle = intrinsicBoxStyle(trackPart.box);
+  const fillStyle = intrinsicBoxStyle(fillPart.box);
   return (
     <label
       className={className}
@@ -751,15 +803,30 @@ function renderProgress<Press>(node: FacetNode, context: BrickRenderContext<Pres
       {label === undefined ? null : (
         <span style={componentTextStyle(theme, recipe, {}, "label")}>{label}</span>
       )}
-      <progress
-        value={value}
-        max={100}
+      <div
+        role="progressbar"
+        aria-valuenow={value}
+        aria-valuemin={0}
+        aria-valuemax={100}
         style={{
+          ...trackStyle,
+          display: "block",
+          boxSizing: "border-box",
           width: "100%",
-          ...(trackPart.box ?? {}),
-          ...(fillColor === undefined ? {} : { accentColor: fillColor }),
+          height: theme.space.sm,
+          overflow: "hidden",
         }}
-      />
+      >
+        <div
+          style={{
+            ...fillStyle,
+            display: "block",
+            boxSizing: "border-box",
+            width: `${String(value)}%`,
+            height: "100%",
+          }}
+        />
+      </div>
     </label>
   );
 }
@@ -864,7 +931,9 @@ interface FieldRenderModel {
   readonly fieldId: NodeId | undefined;
   readonly controlName: string | undefined;
   readonly inertControlProps: { readonly disabled?: true; readonly tabIndex?: -1 };
-  readonly controlStyle: CSSProperties | undefined;
+  readonly controlStyle: CSSProperties;
+  readonly choiceControlStyle: CSSProperties;
+  readonly choiceOptionStyle: CSSProperties;
   readonly options: readonly string[];
   readonly placeholder: string | undefined;
 }
@@ -902,13 +971,13 @@ function renderRadioField(model: FieldRenderModel): ReactNode {
     >
       {model.label}
       {model.options.map((option, index) => (
-        <label key={`${String(index)}:${option}`}>
+        <label key={`${String(index)}:${option}`} style={model.choiceOptionStyle}>
           <input
             type="radio"
             name={model.controlName}
             value={option}
             data-facet-field-id={model.fieldId}
-            style={model.controlStyle}
+            style={model.choiceControlStyle}
             {...model.inertControlProps}
           />
           {option}
@@ -931,7 +1000,7 @@ function renderBooleanField(model: FieldRenderModel, role?: "switch"): ReactNode
         role={role}
         name={model.controlName}
         data-facet-field-id={model.fieldId}
-        style={model.controlStyle}
+        style={model.choiceControlStyle}
         {...model.inertControlProps}
       />
     </label>
@@ -997,6 +1066,8 @@ function renderField<Press>(node: FacetNode, context: BrickRenderContext<Press>)
     controlName: inert ? undefined : name,
     inertControlProps: inert ? { disabled: true, tabIndex: -1 } : {},
     controlStyle: fieldControlStyle(theme, recipe),
+    choiceControlStyle: fieldChoiceControlStyle(theme),
+    choiceOptionStyle: fieldChoiceOptionStyle(theme),
     options,
     placeholder,
   };

@@ -8,12 +8,13 @@ a tool-calling LLM agent that draws the page from your guide markdown and keeps
 editing it as visitors chat. The brain is a reference implementation of a
 pluggable seam, not the only brain Facet can run.
 
-With no `facet.md`, quickstart opens on a compact, validated **Facet Live Lab**
-stage that demonstrates the polished default kit: sections, cards, tabs, table,
-chart, fields, buttons, stats, badges, progress, alerts, lists, and a divider.
-That first paint is not a stub mode; the normal path still resolves your
-provider key and the provider-backed reference agent can refine the seeded stage
-on the first visit.
+With no `facet.md`, quickstart opens on a compact, validated four-tab product
+tour: **What is Facet?**, **Core Structure**, **Design System**, and **Use
+Cases**. The seed demonstrates the polished default kit: sections, cards, tabs,
+table, chart, fields, buttons, stats, badges, progress, alerts, lists, and a
+divider. That first paint is not a stub mode; the normal path still resolves
+your provider key and the provider-backed reference agent can refine the seeded
+stage on the first visit.
 
 The reference agent runs a bounded **streaming tool loop**: the model calls
 `append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
@@ -90,8 +91,8 @@ The guide is plain markdown describing the page you want — tone, sections,
 what to collect. It becomes the "PAGE BRIEF" layer of the agent's prompt (the
 stage vocabulary and output contract are fixed layers above it).
 
-- Default path `./facet.md`; if it doesn't exist, a built-in sample service
-  brief and seeded "Facet Live Lab" first paint are used silently.
+- Default path `./facet.md`; if it doesn't exist, a built-in quickstart tour
+  brief and seeded four-tab first paint are used silently.
 - Passing an explicit guide makes that guide the product brief. Quickstart will
   not use the built-in seed; provide `initial.tree.json` through assets if you
   want an explicit pre-seeded first paint.
@@ -128,7 +129,7 @@ that doesn't match is ignored):
 | `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
 
 If the built-in guide is in use and assets do not provide `initial.tree.json`,
-quickstart supplies its own polished Live Lab seed. A valid asset
+quickstart supplies its own polished four-tab tour seed. A valid asset
 `initial.tree.json` wins over that built-in seed.
 
 A theme document looks like:

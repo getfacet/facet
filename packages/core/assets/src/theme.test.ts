@@ -131,6 +131,15 @@ describe("DEFAULT_THEME recipes", () => {
       radius: "md",
       shadow: "sm",
     });
+    expect(DEFAULT_THEME.recipes?.field?.default?.parts?.control?.box).toEqual({
+      bg: "bg",
+      border: true,
+      pad: "sm",
+      radius: "sm",
+    });
+    expect(DEFAULT_THEME.recipes?.field?.default?.parts?.control?.field).toEqual({
+      width: "full",
+    });
     expect(DEFAULT_THEME.recipes?.stat?.default?.text).toEqual({
       color: "fg-muted",
       size: "sm",

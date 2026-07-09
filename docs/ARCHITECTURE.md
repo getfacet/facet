@@ -221,8 +221,8 @@ very first paint the quickstart shell also ships the seed (and the resolved
 theme's canvas colors) with the page itself — `useFacet` can start from a
 boot-shipped tree, so nothing waits on the model; the seed frame then applies
 idempotently. The zero-config `facet-quickstart` path uses its own compact
-Facet Live Lab seed when no explicit guide or operator initial tree is present,
-while custom `initial.tree.json` assets still win. One
+four-tab quickstart tour seed when no explicit guide or operator initial tree is
+present, while custom `initial.tree.json` assets still win. One
 trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
 which would silently seed a blank page and flip the server's offline face, so a
 tree that isn't *seedable* (the initial render root has visible, renderable

@@ -163,7 +163,10 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       field: { width: "full" },
       parts: {
         label: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
-        control: { field: { width: "full" } },
+        control: {
+          box: { bg: "bg", border: true, pad: "sm", radius: "sm" },
+          field: { width: "full" },
+        },
         input: { field: { width: "full" } },
         helpText: { text: { color: "fg-muted", size: "xs" } },
         errorText: { text: { color: "danger", size: "xs", weight: "medium" } },
@@ -317,7 +320,7 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
   }),
   progress: recipeVariants({
     default: {
-      box: { bg: "surface-2", radius: "full", width: "full" },
+      box: { gap: "xs", width: "full" },
       parts: {
         label: { text: { color: "fg-muted", size: "sm", weight: "medium" } },
         track: { box: { bg: "surface-2", radius: "full", width: "full" } },
@@ -325,7 +328,7 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       },
     },
     success: {
-      box: { bg: "success", radius: "full", width: "full" },
+      box: { gap: "xs", width: "full" },
       parts: {
         label: { text: { color: "success", size: "sm", weight: "medium" } },
         track: { box: { bg: "surface-2", radius: "full", width: "full" } },
