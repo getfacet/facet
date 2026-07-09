@@ -33,14 +33,14 @@ function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
 }
 
 function stampSectionOf(system: string): string {
-  const start = system.indexOf("STAMPS");
+  const start = system.indexOf("COMPOSITIONS");
   const end = system.lastIndexOf("PAGE BRIEF");
   return start >= 0 && end > start ? system.slice(start, end) : "";
 }
 
 function catalogSectionOf(system: string): string {
   const start = system.indexOf("CATALOG");
-  const nextSections = ["STAMPS", "PAGE BRIEF"]
+  const nextSections = ["COMPOSITIONS", "PAGE BRIEF"]
     .map((heading) => system.indexOf(heading, start + 1))
     .filter((index) => index > start);
   const end = nextSections.length > 0 ? Math.min(...nextSections) : system.length;
@@ -79,7 +79,7 @@ function collectTypesFromScreens(tree: FacetTree): Set<FacetNode["type"]> {
   return out;
 }
 
-const REPRESENTATIVE_POLISHED_TYPES: readonly FacetNode["type"][] = [
+const REPRESENTATIVE_COMPONENT_TYPES: readonly FacetNode["type"][] = [
   "section",
   "card",
   "tabs",
@@ -87,7 +87,7 @@ const REPRESENTATIVE_POLISHED_TYPES: readonly FacetNode["type"][] = [
   "chart",
   "field",
   "button",
-  "stat",
+  "metric",
   "badge",
   "progress",
   "alert",
@@ -160,7 +160,7 @@ describe("buildSystem", () => {
     expect(system).not.toContain("(box, text, image, field)");
 
     const tools = JSON.stringify(TOOLS);
-    expect(tools).toContain("Allowed types are box, text, media, field, button");
+    expect(tools).toContain("Primitive bricks are box, text, media, field");
     expect(tools).not.toContain("box | text | image | field");
   });
 
@@ -172,7 +172,7 @@ describe("buildSystem", () => {
     expect(HISTORY_TURNS).toBe(20);
   });
 
-  it("quickstart polished default guide validates its compact seeded first screen", () => {
+  it("quickstart component default guide validates its compact seeded first screen", () => {
     const system = buildSystem(QUICKSTART_PAGE_BRIEF);
     const { tree, issues } = validateTree(QUICKSTART_INITIAL_STAGE);
     const firstScreenTypes = Array.from(
@@ -187,7 +187,7 @@ describe("buildSystem", () => {
     expect(system).toContain("PAGE BRIEF");
     expect(system).toContain(QUICKSTART_PAGE_BRIEF);
     expect(system).toContain("navigate to that screen in the same turn");
-    expect(system).toMatch(/polished hierarchy/i);
+    expect(system).toMatch(/Primitive Brick -> Component -> Catalog/i);
     expect(issues).toEqual([]);
     expect(treeHasContent(tree)).toBe(true);
     expect(QUICKSTART_INITIAL_STAGE.theme).toBe("default");
@@ -199,13 +199,13 @@ describe("buildSystem", () => {
       "what",
     ]);
     expect(firstScreenTypes).toEqual(expect.arrayContaining(["button", "card", "chart"]));
-    expect(systemScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_POLISHED_TYPES]));
-    expect(allScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_POLISHED_TYPES]));
+    expect(systemScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_COMPONENT_TYPES]));
+    expect(allScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_COMPONENT_TYPES]));
     expect(serializedSeed).toContain('"What is Facet?"');
     expect(serializedSeed).toContain('"Core Structure"');
     expect(serializedSeed).toContain('"Design System"');
     expect(serializedSeed).toContain('"Use Cases"');
-    expect(serializedSeed).toContain('"Default stamp patterns"');
+    expect(serializedSeed).toContain('"Default composition patterns"');
     expect(serializedSeed).toContain('"pricing-section"');
     expect(serializedSeed).toContain('"collect":"qs.intake"');
     expect(serializedSeed).not.toMatch(
@@ -213,7 +213,7 @@ describe("buildSystem", () => {
     );
   });
 
-  it("with no assets (or empty arrays) adds no THEMES/STAMPS section (DC-008 byte-identity)", () => {
+  it("with no assets (or empty arrays) adds no THEMES/COMPOSITIONS section (DC-008 byte-identity)", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
     const base = buildSystem(guide);
     // Empty assets must produce the byte-identical no-assets string.
@@ -221,7 +221,7 @@ describe("buildSystem", () => {
     // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
     // list" in prose — we probe for the section intros this WU adds, not the word).
     expect(base).not.toContain("select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reusable stamps you may expand");
+    expect(base).not.toContain("Reusable catalog compositions you may expand");
   });
 
   it("injects theme names and descriptions never values", () => {
@@ -265,7 +265,7 @@ describe("buildSystem", () => {
     const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
     const stampSection = stampSectionOf(system);
 
-    expect(system).toContain("STAMPS");
+    expect(system).toContain("COMPOSITIONS");
     expect(stampSection).toContain("cta");
     expect(stampSection).toContain("A call-to-action button");
     expect(stampSection).toContain("label");
@@ -310,11 +310,11 @@ describe("buildSystem", () => {
     expect(catalogSection).toContain("CATALOG");
     expect(catalogSection).toContain("quickstart-catalog");
     expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
-    expect(catalogSection).toContain("allowed bricks: section variants: surface");
+    expect(catalogSection).toContain("allowed components: section variants: surface");
     expect(catalogSection).toContain("button variants: primary");
-    expect(catalogSection).toContain("stamp policy: allow pricing");
+    expect(catalogSection).toContain("composition policy: allow pricing");
     expect(catalogSection).toContain("primitiveFallback: allowed");
-    expect(catalogSection).toContain("policy order: stamp -> brick -> primitive");
+    expect(catalogSection).toContain("policy order: composition -> component -> primitive");
     expect(catalogSection).not.toContain("#ffffff");
     expect(catalogSection).not.toContain("#111111");
     expect(catalogSection).not.toContain('"nodes"');

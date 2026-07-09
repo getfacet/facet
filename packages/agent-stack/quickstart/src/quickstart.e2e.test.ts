@@ -41,7 +41,7 @@ const CATALOG_E2E: FacetCatalog = {
     { type: "section", variants: ["surface"] },
     { type: "card", variants: ["interactive"] },
     { type: "button", variants: ["primary"] },
-    { type: "stat" },
+    { type: "metric" },
   ],
   stamps: { mode: "all" },
   primitiveFallback: "allowed",
@@ -66,7 +66,7 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
     },
     "catalog-arr": {
       id: "catalog-arr",
-      type: "stat",
+      type: "metric",
       label: "ARR",
       value: "$1.2M",
       delta: "+18%",
@@ -788,7 +788,7 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         const providerRequest = JSON.stringify(openAi.bodies[0]);
         expect(providerRequest).toContain("CATALOG");
         expect(providerRequest).toContain("quickstart-catalog");
-        expect(providerRequest).toContain("policy order: stamp -> brick -> primitive");
+        expect(providerRequest).toContain("policy order: composition -> component -> primitive");
 
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
@@ -872,8 +872,8 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
   });
 });
 
-describe("quickstart E2E — quickstart polished default", () => {
-  it("quickstart polished default ships the seed before provider output on the CLI path", async () => {
+describe("quickstart E2E — quickstart component default", () => {
+  it("quickstart component default ships the seed before provider output on the CLI path", async () => {
     const openAi = installOpenAiMock([[mockCall("say", { text: "quickstart seed ready" })], []]);
     let running: RunningQuickstart | undefined;
     try {
@@ -884,7 +884,7 @@ describe("quickstart E2E — quickstart polished default", () => {
       expect(shell).toContain("window.__FACET_INITIAL_STAGE__ = ");
       expect(shell).toContain(QUICKSTART_INITIAL_STAGE.root);
 
-      const visitorId = "e2e-polished-default";
+      const visitorId = "e2e-component-default";
       const stream = await openStream(running.url, visitorId);
       try {
         await stream.next(1); // reset
@@ -909,7 +909,7 @@ describe("quickstart E2E — quickstart polished default", () => {
           "chart",
           "field",
           "button",
-          "stat",
+          "metric",
           "badge",
           "progress",
           "alert",
@@ -922,7 +922,7 @@ describe("quickstart E2E — quickstart polished default", () => {
         const providerRequest = JSON.stringify(openAi.bodies[0]);
         expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
         expect(providerRequest).toContain("# Facet quickstart tour");
-        expect(providerRequest).toContain("polished hierarchy");
+        expect(providerRequest).toContain("Primitive Brick -> Component -> Catalog");
         expect(providerRequest).not.toContain("STUB_TREE");
         expect(booted.captured.out.join("\n")).toContain("openai");
       } finally {

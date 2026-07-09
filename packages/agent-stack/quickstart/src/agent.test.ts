@@ -1255,7 +1255,7 @@ describe("createQuickstartAgent tool loop", () => {
     const system = provider.turns[0]!.system;
     expect(system).toContain("THEMES");
     expect(system).toContain("neon");
-    expect(system).toContain("STAMPS");
+    expect(system).toContain("COMPOSITIONS");
     expect(system).toContain("hero");
     // Theme documents reach the model by NAME only — the raw CSS value never does.
     expect(system).not.toContain("#ff00ff");
