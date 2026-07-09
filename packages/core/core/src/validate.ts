@@ -920,6 +920,7 @@ function sanitizeNode(
     }
     case "metric":
     case "keyValue":
+    case "nav":
     case "form":
     case "search":
     case "filterBar":

@@ -233,6 +233,7 @@ describe("validateTree high-level bricks", () => {
             "metric",
             "stat",
             "keyValue",
+            "nav",
             "form",
             "search",
             "filterBar",
@@ -246,6 +247,11 @@ describe("validateTree high-level bricks", () => {
           id: "keyValue",
           type: "keyValue",
           items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+        },
+        nav: {
+          id: "nav",
+          type: "nav",
+          items: [{ label: "Customers", to: "customers" }],
         },
         form: {
           id: "form",
@@ -285,6 +291,10 @@ describe("validateTree high-level bricks", () => {
     expect(tree.nodes["keyValue"]).toMatchObject({
       type: "keyValue",
       items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+    });
+    expect(tree.nodes["nav"]).toMatchObject({
+      type: "nav",
+      items: [{ label: "Customers", to: "customers" }],
     });
     expect(tree.nodes["form"]).toMatchObject({
       type: "form",

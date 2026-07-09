@@ -19,6 +19,7 @@ const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
   "section",
   "card",
   "tabs",
+  "nav",
   "table",
   "chart",
   "metric",

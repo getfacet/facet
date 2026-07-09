@@ -195,8 +195,9 @@ describe("treeHasContent", () => {
     }
   });
 
-  it("true for keyValue, emptyState, and loading intrinsic components with content", () => {
+  it("true for nav, keyValue, emptyState, and loading intrinsic components with content", () => {
     for (const child of [
+      { id: "child", type: "nav", items: [{ label: "Home", to: "home" }] },
       { id: "child", type: "keyValue", items: [{ label: "Owner", value: "Design" }] },
       { id: "child", type: "emptyState", title: "No projects yet" },
       { id: "child", type: "loading" },
@@ -215,6 +216,7 @@ describe("treeHasContent", () => {
   it("false for hostile empty intrinsic component payloads", () => {
     for (const child of [
       { id: "child", type: "metric", label: "ARR" },
+      { id: "child", type: "nav", items: [] },
       { id: "child", type: "keyValue", items: [] },
       { id: "child", type: "emptyState" },
       { id: "child", type: "form", children: [] },

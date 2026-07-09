@@ -178,6 +178,8 @@ function nodeRendersItself(node: Record<string, unknown>): boolean {
       return typeof node.label === "string";
     case "tabs":
       return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
+    case "nav":
+      return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
     case "table":
       return hasRenderableArray(
         node.columns,

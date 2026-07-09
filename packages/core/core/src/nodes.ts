@@ -217,6 +217,7 @@ export const INTRINSIC_COMPONENT_TYPES = [
   "section",
   "card",
   "tabs",
+  "nav",
   "table",
   "chart",
   "metric",
@@ -304,6 +305,18 @@ export interface TabsNode {
   readonly id: NodeId;
   readonly type: "tabs";
   readonly items: readonly TabItem[];
+  readonly variant?: string;
+}
+
+export interface NavItem {
+  readonly label: string;
+  readonly to: string;
+}
+
+export interface NavNode {
+  readonly id: NodeId;
+  readonly type: "nav";
+  readonly items: readonly NavItem[];
   readonly variant?: string;
 }
 
@@ -480,6 +493,7 @@ export type IntrinsicComponentNode =
   | SectionNode
   | CardNode
   | TabsNode
+  | NavNode
   | TableNode
   | ChartNode
   | MetricNode

@@ -15,6 +15,7 @@ import {
   type IntrinsicComponentType,
   type KeyValueItem,
   type ListItem,
+  type NavItem,
   type PrimitiveBrickType,
   type TableCell,
   type TableColumn,
@@ -94,6 +95,8 @@ export function sanitizeComponentNode(
       return cardNode(id, raw, issues);
     case "tabs":
       return tabsNode(id, raw, issues);
+    case "nav":
+      return navNode(id, raw, issues);
     case "table":
       return tableNode(id, raw, issues);
     case "chart":
@@ -212,6 +215,23 @@ function tabsNode(id: string, raw: Record<string, unknown>, issues: IssueSink): 
   const node: { id: string; type: "tabs"; items: readonly TabItem[]; variant?: string } = {
     id,
     type: "tabs",
+    items,
+  };
+  setVariant(raw, id, node, issues);
+  return node;
+}
+
+function navNode(id: string, raw: Record<string, unknown>, issues: IssueSink): ComponentNode {
+  const items: NavItem[] = [];
+  for (const item of boundedArray(raw.items, id, "items", issues)) {
+    if (!isPlainObject(item)) continue;
+    const label = textValue(item.label, id, "nav label", MAX_COMPONENT_LABEL_CHARS, issues);
+    const to = typeof item.to === "string" ? item.to : undefined;
+    if (label !== undefined && to !== undefined) items.push({ label, to });
+  }
+  const node: { id: string; type: "nav"; items: readonly NavItem[]; variant?: string } = {
+    id,
+    type: "nav",
     items,
   };
   setVariant(raw, id, node, issues);
