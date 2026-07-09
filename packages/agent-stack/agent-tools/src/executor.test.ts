@@ -784,6 +784,54 @@ describe("executeStageTool", () => {
       expect(variant.observation.text).toContain("danger");
     });
 
+    it("catalog policy enforces component aliases before divergent legacy bricks", () => {
+      const catalog: FacetCatalog = {
+        ...CATALOG_POLICY,
+        bricks: [{ type: "button", variants: ["primary"] }],
+        components: [{ type: "metric", variants: ["success"] }],
+        stamps: { mode: "all" },
+        compositions: { mode: "all" },
+      };
+
+      const metric = executeStageTool(
+        {
+          id: "catalog-component-metric",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: {
+              id: "metric",
+              type: "metric",
+              label: "ARR",
+              value: "$24k",
+              variant: "success",
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog } },
+      );
+
+      expect(metric.status).toBe("ok");
+      expect(metric.patches).toHaveLength(2);
+
+      const legacyOnlyButton = executeStageTool(
+        {
+          id: "catalog-component-button",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "button", type: "button", label: "Legacy only", variant: "primary" },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog } },
+      );
+
+      expect(legacyOnlyButton.status).toBe("error");
+      expect(legacyOnlyButton.patches).toEqual([]);
+      expect(legacyOnlyButton.observation.text).toContain("metric");
+      expect(legacyOnlyButton.observation.text).not.toContain("Allowed node types: button");
+    });
+
     it("catalog policy rejects tone-only recipe selectors not listed as variants", () => {
       const toneCatalog: FacetCatalog = {
         ...CATALOG_POLICY,

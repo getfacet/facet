@@ -1182,7 +1182,7 @@ describe("createQuickstartAgent tool loop", () => {
       expect(transcript).toContain("catalog policy locked theme");
       expect(transcript).toContain('rejected theme "midnight"');
       expect(transcript).toContain('catalog policy rejected node type "chart"');
-      expect(transcript).toContain("Use an allowed catalog brick");
+      expect(transcript).toContain("Use an allowed catalog component");
     } finally {
       errorSpy.mockRestore();
     }

@@ -40,6 +40,7 @@ const MAX_TEXT_PREVIEW_CHARS = 80;
 const MAX_ID_LIST_PREVIEW = 20;
 const FORBIDDEN_NODE_IDS = new Set(["__proto__", "prototype", "constructor"]);
 const PRIMITIVE_NODE_TYPES = new Set<FacetNode["type"]>(PRIMITIVE_BRICK_TYPES);
+const COMPONENT_NODE_TYPE_SET = new Set<FacetNode["type"]>(COMPONENT_NODE_TYPES);
 const FACET_NODE_TYPES_TEXT = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]
   .map((type) => `"${type}"`)
   .join(", ");
@@ -717,21 +718,25 @@ function nodeCatalogViolation(
   catalog: FacetCatalog | undefined,
 ): CatalogPolicyViolation | undefined {
   if (catalog === undefined) return undefined;
-  const brick = catalog.bricks.find((candidate) => candidate.type === node.type);
-  if (brick === undefined) {
+  const policy = catalogPolicyEntryForNode(node, catalog);
+  if (policy === undefined) {
     if (PRIMITIVE_NODE_TYPES.has(node.type) && catalog.primitiveFallback === "allowed") {
       return undefined;
     }
     return {
       message: `error: catalog policy rejected node type "${node.type}". Allowed node types: ${catalogAllowedNodeTypes(catalog)}.`,
-      nextAction: "Use an allowed catalog brick, stamp, or permitted primitive fallback.",
+      nextAction: "Use an allowed catalog component, composition, or permitted primitive fallback.",
     };
   }
 
   const variant = nodeVariant(node);
-  if (variant !== undefined && brick.variants !== undefined && !brick.variants.includes(variant)) {
+  if (
+    variant !== undefined &&
+    policy.variants !== undefined &&
+    !policy.variants.includes(variant)
+  ) {
     return {
-      message: `error: catalog policy rejected variant "${variant}" for node type "${node.type}". Allowed variants: ${brick.variants.join(", ")}.`,
+      message: `error: catalog policy rejected variant "${variant}" for node type "${node.type}". Allowed variants: ${policy.variants.join(", ")}.`,
       nextAction: `Use an allowed "${node.type}" variant or omit variant for the default recipe.`,
     };
   }
@@ -739,15 +744,27 @@ function nodeCatalogViolation(
   if (
     variant === undefined &&
     tone !== undefined &&
-    brick.variants !== undefined &&
-    !brick.variants.includes(tone)
+    policy.variants !== undefined &&
+    !policy.variants.includes(tone)
   ) {
     return {
-      message: `error: catalog policy rejected tone "${tone}" as a recipe selector for node type "${node.type}". Allowed variants: ${brick.variants.join(", ")}.`,
+      message: `error: catalog policy rejected tone "${tone}" as a recipe selector for node type "${node.type}". Allowed variants: ${policy.variants.join(", ")}.`,
       nextAction: `Use an allowed "${node.type}" variant, or omit tone when the catalog does not advertise that recipe.`,
     };
   }
   return undefined;
+}
+
+function catalogPolicyEntryForNode(
+  node: FacetNode,
+  catalog: FacetCatalog,
+): FacetCatalog["bricks"][number] | NonNullable<FacetCatalog["components"]>[number] | undefined {
+  if (COMPONENT_NODE_TYPE_SET.has(node.type)) {
+    const component = catalog.components?.find((candidate) => candidate.type === node.type);
+    if (component !== undefined) return component;
+    if (catalog.components !== undefined && node.type !== "stat") return undefined;
+  }
+  return catalog.bricks.find((candidate) => candidate.type === node.type);
 }
 
 function stampCatalogViolation(
@@ -798,7 +815,15 @@ function nodeTone(node: FacetNode): string | undefined {
 }
 
 function catalogAllowedNodeTypes(catalog: FacetCatalog): string {
-  const allowed = new Set(catalog.bricks.map((brick) => brick.type));
+  const allowed = new Set<string>();
+  if (catalog.components === undefined) {
+    for (const brick of catalog.bricks) allowed.add(brick.type);
+  } else {
+    for (const component of catalog.components) allowed.add(component.type);
+    for (const brick of catalog.bricks) {
+      if (PRIMITIVE_NODE_TYPES.has(brick.type) || brick.type === "stat") allowed.add(brick.type);
+    }
+  }
   if (catalog.primitiveFallback === "allowed") {
     for (const type of PRIMITIVE_NODE_TYPES) allowed.add(type);
   }
