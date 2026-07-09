@@ -99,6 +99,12 @@ function summarizeNode(node: FacetTree["nodes"][string] | undefined): string {
         `items=${String(arrayCount(node["items"]))}`,
         safeStringSummary(node["variant"], "variant"),
       ]);
+    case "nav":
+      return compactSummary([
+        "type=nav",
+        `items=${String(arrayCount(node["items"]))}`,
+        safeStringSummary(node["variant"], "variant"),
+      ]);
     case "table":
       return compactSummary([
         "type=table",
@@ -118,13 +124,13 @@ function summarizeNode(node: FacetTree["nodes"][string] | undefined): string {
         safeStringSummary(node["variant"], "variant"),
       ]);
     }
+    case "metric":
     case "stat":
+      return summarizeMetric(type, node);
+    case "keyValue":
       return compactSummary([
-        "type=stat",
-        charSummary(node["label"], "labelChars"),
-        charSummary(node["value"], "valueChars"),
-        charSummary(node["delta"], "deltaChars"),
-        safeStringSummary(node["tone"], "tone"),
+        "type=keyValue",
+        `items=${String(arrayCount(node["items"]))}`,
         safeStringSummary(node["variant"], "variant"),
       ]);
     case "badge":
@@ -162,12 +168,56 @@ function summarizeNode(node: FacetTree["nodes"][string] | undefined): string {
         charSummary(node["label"], "labelChars"),
         safeStringSummary(node["variant"], "variant"),
       ]);
+    case "form":
+      return summarizeContainer(type, node, ["title", "body", "submitLabel"], ["variant"]);
+    case "search": {
+      const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
+      return compactSummary([
+        `type=search name=${name}`,
+        charSummary(node["label"], "labelChars"),
+        charSummary(node["placeholder"], "placeholderChars"),
+        charSummary(node["value"], "valueChars"),
+        charSummary(node["submitLabel"], "submitLabelChars"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    }
+    case "filterBar":
+      return compactSummary([
+        "type=filterBar",
+        `filters=${String(arrayCount(node["filters"]))}`,
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "emptyState":
+      return compactSummary([
+        "type=emptyState",
+        charSummary(node["title"], "titleChars"),
+        charSummary(node["body"], "bodyChars"),
+        charSummary(node["actionLabel"], "actionLabelChars"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "loading":
+      return compactSummary([
+        "type=loading",
+        charSummary(node["label"], "labelChars"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
   }
   return "type=unknown";
 }
 
+function summarizeMetric(type: "metric" | "stat", node: Record<string, unknown>): string {
+  return compactSummary([
+    `type=${type}`,
+    charSummary(node["label"], "labelChars"),
+    charSummary(node["value"], "valueChars"),
+    charSummary(node["delta"], "deltaChars"),
+    safeStringSummary(node["tone"], "tone"),
+    safeStringSummary(node["variant"], "variant"),
+  ]);
+}
+
 function summarizeContainer(
-  type: "section" | "card",
+  type: "section" | "card" | "form",
   node: Record<string, unknown>,
   charFields: readonly string[],
   safeStringFields: readonly string[],

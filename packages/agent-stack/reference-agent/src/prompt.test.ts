@@ -751,13 +751,21 @@ describe("buildInitialMessages", () => {
           children: [
             "section",
             "tabs",
+            "nav",
             "table",
             "chart",
+            "metric",
+            "keyValue",
             "badge",
             "progress",
             "alert",
             "list",
             "divider",
+            "form",
+            "search",
+            "filterBar",
+            "emptyState",
+            "loading",
           ],
         },
         section: {
@@ -776,7 +784,7 @@ describe("buildInitialMessages", () => {
           body: "RAW_JSON_SENTINEL_CARD_BODY",
           variant: "surface",
           tone: "accent",
-          children: ["stat"],
+          children: ["legacy-stat"],
         },
         button: {
           id: "button",
@@ -793,6 +801,15 @@ describe("buildInitialMessages", () => {
           items: [
             { label: "Home", to: "home" },
             { label: "Metrics", to: "metrics" },
+          ],
+        },
+        nav: {
+          id: "nav",
+          type: "nav",
+          variant: "default",
+          items: [
+            { label: "Docs", to: "docs" },
+            { label: "API", to: "api" },
           ],
         },
         table: {
@@ -818,13 +835,30 @@ describe("buildInitialMessages", () => {
           series: [{ label: "Revenue", values: [1, 2, 3] }],
           labels: ["Q1", "Q2", "Q3"],
         },
-        stat: {
-          id: "stat",
-          type: "stat",
+        metric: {
+          id: "metric",
+          type: "metric",
           label: "Revenue",
           value: "$42",
           delta: "+5%",
           tone: "success",
+        },
+        "legacy-stat": {
+          id: "legacy-stat",
+          type: "stat",
+          label: "Legacy",
+          value: "$7",
+          delta: "-1%",
+          tone: "warning",
+        },
+        keyValue: {
+          id: "keyValue",
+          type: "keyValue",
+          items: [
+            { label: "Plan", value: "Pro" },
+            { label: "Region", value: "US", tone: "info" },
+          ],
+          variant: "compact",
         },
         badge: { id: "badge", type: "badge", label: "Live", tone: "info" },
         progress: {
@@ -848,12 +882,43 @@ describe("buildInitialMessages", () => {
           items: [{ title: "One" }, { title: "Two", body: "Second" }],
         },
         divider: { id: "divider", type: "divider", label: "Details" },
+        form: {
+          id: "form",
+          type: "form",
+          title: "Signup",
+          body: "RAW_JSON_SENTINEL_FORM",
+          submitLabel: "Send",
+          children: ["search"],
+        },
+        search: {
+          id: "search",
+          type: "search",
+          name: "q",
+          label: "Search",
+          placeholder: "RAW_JSON_SENTINEL_SEARCH",
+          submitLabel: "Go",
+        },
+        filterBar: {
+          id: "filterBar",
+          type: "filterBar",
+          filters: [
+            { name: "status", label: "Status", input: "select", options: ["Open", "Closed"] },
+          ],
+        },
+        emptyState: {
+          id: "emptyState",
+          type: "emptyState",
+          title: "No results",
+          body: "RAW_JSON_SENTINEL_EMPTY",
+          actionLabel: "Reset",
+        },
+        loading: { id: "loading", type: "loading", label: "Loading results" },
       },
       screens: { home: "root" },
       entry: "home",
     };
 
-    const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 0, maxSummaryNodes: 20 });
+    const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 0, maxSummaryNodes: 30 });
 
     expect(prompt).toContain("CURRENT STAGE SUMMARY");
     expect(prompt).toContain("- section: type=section children=2");
@@ -863,14 +928,22 @@ describe("buildInitialMessages", () => {
     expect(prompt).toContain("- button: type=button labelChars=24");
     expect(prompt).toContain("disabled=true");
     expect(prompt).toContain("- tabs: type=tabs items=2");
+    expect(prompt).toContain("- nav: type=nav items=2");
     expect(prompt).toContain("- table: type=table columns=2 rows=2");
     expect(prompt).toContain("- chart: type=chart kind=bar series=1 points=3");
-    expect(prompt).toContain("- stat: type=stat labelChars=7 valueChars=3");
+    expect(prompt).toContain("- metric: type=metric labelChars=7 valueChars=3");
+    expect(prompt).toContain("- legacy-stat: type=stat labelChars=6 valueChars=2");
+    expect(prompt).toContain("- keyValue: type=keyValue items=2");
     expect(prompt).toContain("- badge: type=badge labelChars=4");
     expect(prompt).toContain("- progress: type=progress value=45");
     expect(prompt).toContain("- alert: type=alert titleChars=8 bodyChars=23");
     expect(prompt).toContain("- list: type=list items=2");
     expect(prompt).toContain("- divider: type=divider labelChars=7");
+    expect(prompt).toContain("- form: type=form children=1");
+    expect(prompt).toContain("- search: type=search name=q");
+    expect(prompt).toContain("- filterBar: type=filterBar filters=1");
+    expect(prompt).toContain("- emptyState: type=emptyState titleChars=10");
+    expect(prompt).toContain("- loading: type=loading labelChars=15");
     expect(prompt).not.toContain("RAW_JSON_SENTINEL");
     expect(prompt).not.toContain('"nodes"');
     expect(prompt).not.toContain('"type":"section"');
