@@ -143,7 +143,7 @@ describe("treeHasContent", () => {
     expect(treeHasContent(t)).toBe(false);
   });
 
-  it("false for high-level data bricks with no renderable data", () => {
+  it("false for component data nodes with no renderable data", () => {
     for (const child of [
       { id: "child", type: "table", columns: [], rows: [] },
       { id: "child", type: "chart", kind: "bar", series: [] },
@@ -161,7 +161,7 @@ describe("treeHasContent", () => {
     }
   });
 
-  it("true for high-level data bricks with renderable data", () => {
+  it("true for component data nodes with renderable data", () => {
     for (const child of [
       { id: "child", type: "table", columns: [{ key: "name", label: "Name" }], rows: [] },
       { id: "child", type: "chart", kind: "bar", series: [{ label: "A", values: [1] }] },
@@ -337,7 +337,7 @@ describe("treeHasContent", () => {
     expect(treeHasContent(tree(nodes))).toBe(false);
   });
 
-  it("does not read high-level table, tabs, or list data beyond their caps", () => {
+  it("does not read component table, tabs, or list data beyond their caps", () => {
     const columns: unknown[] = [{ key: "name", label: "Name" }];
     columns.length = 20;
     Object.defineProperty(columns, "12", {
@@ -384,7 +384,7 @@ describe("treeHasContent", () => {
     }
   });
 
-  it("does not read high-level chart data beyond its caps", () => {
+  it("does not read component chart data beyond its caps", () => {
     const values: unknown[] = [1];
     values.length = 250;
     Object.defineProperty(values, "200", {

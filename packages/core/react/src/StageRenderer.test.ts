@@ -341,7 +341,7 @@ describe("StageRenderer brick-vocab v1", () => {
   });
 });
 
-describe("StageRenderer high-level renderer (static)", () => {
+describe("StageRenderer component renderer (static)", () => {
   const catalogTheme: FacetTheme = {
     name: "catalog",
     color: {
@@ -382,7 +382,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     },
   };
 
-  it("renders high-level layout, action, data, and feedback bricks with recipes", () => {
+  it("renders component layout, action, data, and feedback nodes with recipes", () => {
     const out = renderThemed(
       {
         root: "root",
@@ -474,7 +474,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     expect(out).toContain("<hr");
   });
 
-  it("renders polished high-level brick parts", () => {
+  it("renders component recipe parts", () => {
     const partsTheme: FacetTheme = {
       name: "parts",
       color: {
@@ -735,7 +735,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     );
   });
 
-  it("keeps high-level raw-path malformed data fail-safe", () => {
+  it("keeps component raw-path malformed data fail-safe", () => {
     const noisy = {
       root: {
         id: "root",
@@ -1010,7 +1010,7 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain("width:100%");
   });
 
-  it("renders default text and select fields with polished token-resolved control chrome", () => {
+  it("renders default text and select fields with token-resolved control chrome", () => {
     const out = render(
       tree({
         root: box("root", ["email", "surface"]),
@@ -1063,7 +1063,7 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain("Email");
   });
 
-  it("caps raw high-level and primitive strings before rendering", () => {
+  it("caps raw component and primitive strings before rendering", () => {
     const longLabel = "L".repeat(MAX_NODE_LABEL_CHARS + 10);
     const longBody = "B".repeat(MAX_NODE_BODY_CHARS + 10);
     const out = render(

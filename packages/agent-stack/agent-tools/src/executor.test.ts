@@ -730,7 +730,7 @@ describe("executeStageTool", () => {
       expect(primitive.patches).toHaveLength(2);
     });
 
-    it("catalog policy rejects disallowed brick types and variants without patches", () => {
+    it("catalog policy rejects disallowed component types and variants without patches", () => {
       const chart = executeStageTool(
         {
           id: "catalog-chart",

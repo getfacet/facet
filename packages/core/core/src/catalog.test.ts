@@ -225,7 +225,7 @@ describe("validateCatalog", () => {
     );
   });
 
-  it("keeps the polished default catalog compact with recipe-backed variants", () => {
+  it("keeps the component default catalog compact with recipe-backed variants", () => {
     const variants = Object.fromEntries(
       DEFAULT_CATALOG.bricks.map((brick) => [brick.type, brick.variants ?? []]),
     );
@@ -258,7 +258,7 @@ describe("validateCatalog", () => {
       loading: ["default"],
     });
 
-    const { catalog, issues } = validateCatalog({ name: "minimal-polished-default" });
+    const { catalog, issues } = validateCatalog({ name: "minimal-component-default" });
     expect(issues).toEqual([]);
     expect(catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
     expect(catalog.policy).toEqual({

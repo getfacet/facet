@@ -319,7 +319,7 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper with a polished seeded first paint that composes `@facet/reference-agent`. |
+| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper with a component-based seeded first paint that composes `@facet/reference-agent`. |
 | `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
 | `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 

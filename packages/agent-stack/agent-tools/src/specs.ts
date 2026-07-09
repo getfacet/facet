@@ -70,7 +70,10 @@ export const FACET_STAGE_TOOL_SPECS = [
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "A stamp name from the offered STAMPS list." },
+        name: {
+          type: "string",
+          description: "A composition/stamp name from the offered COMPOSITIONS list.",
+        },
         params: STRING_MAP_SCHEMA,
         at: {
           type: "object",

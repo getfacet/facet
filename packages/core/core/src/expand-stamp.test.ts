@@ -184,7 +184,7 @@ describe("expandStamp", () => {
     expect(result.issues.some((issue) => issue.includes("unreachable"))).toBe(true);
   });
 
-  it("remaps high-level section and card child refs while preserving metadata", () => {
+  it("remaps component section and card child refs while preserving metadata", () => {
     const result = expandStamp(
       {
         name: "dashboard-summary",

@@ -25,7 +25,7 @@ const DAWN: FacetTheme = {
 };
 
 const POLISHED_PARTS: FacetTheme = {
-  name: "polished-parts",
+  name: "component-parts",
   color: { fg: "#fe0000", bg: "#ababab" },
   recipes: {
     button: {
@@ -132,10 +132,10 @@ describe("StageRenderer theming (jsdom)", () => {
     expect(box.style.borderRadius).toBe("10px");
   });
 
-  it("renders high-level recipe parts with variant and tone fallback", () => {
+  it("renders component recipe parts with variant and tone fallback", () => {
     const tree: FacetTree = {
       root: "root",
-      theme: "polished-parts",
+      theme: "component-parts",
       nodes: {
         root: { id: "root", type: "box", children: ["save", "status", "email"] },
         save: { id: "save", type: "button", label: "Save", variant: "missing" },

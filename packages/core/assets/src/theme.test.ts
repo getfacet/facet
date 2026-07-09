@@ -182,7 +182,7 @@ describe("DEFAULT_THEME recipes", () => {
     expect(source).not.toMatch(/\b(CSSProperties|React)\b/);
   });
 
-  it("polished default recipes define token-only parts for high-level affordances", () => {
+  it("component default recipes define token-only parts for component affordances", () => {
     const expectedParts: ReadonlyArray<{
       readonly component: keyof NonNullable<FacetTheme["recipes"]>;
       readonly variant: string;

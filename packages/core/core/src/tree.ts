@@ -72,7 +72,7 @@ export function isTreeShaped(value: unknown): value is FacetTree {
 /**
  * Does this tree "show something real"? True iff at least one render root has a
  * visible, renderable descendant. A root that only points at a dangling id, a
- * hidden subtree, or a high-level data brick with no renderable data (empty
+ * hidden subtree, or a component data node with no renderable data (empty
  * table/chart/tabs/list) is NOT content.
  *
  * The single canonical form: the server's offline path (`hasBuiltStage` — should

@@ -3,7 +3,7 @@
 The Facet runtime: the event loop that drives stage patches, plus the three
 persistence seams — a `StageStore` for the page (always Facet's), a `Sink` for
 the conversation (store, forward, or drop), and an `AssetsStore` for per-agent
-themes, stamps, catalog policy, and an optional initial tree. The default references are
+themes, composition/stamp assets, catalog policy, and an optional initial tree. The default references are
 in-memory (`MemoryStageStore`, `MemorySink`, `MemoryAssets`); file-backed Node
 references live in `@facet/runtime/node`. Load asset documents through
 `loadAssets`, then use `withInitialStage` when a validated initial tree should
@@ -51,7 +51,7 @@ const messages = await runtime.handle({ visitorId: "alice" }, { kind: "visit" })
 single validation gate that turns those documents into:
 
 - `themes`: `DEFAULT_THEME` plus valid custom `*.theme.json` documents.
-- `stamps`: `DEFAULT_STAMPS` plus valid custom `*.stamp.json` documents.
+- `stamps`: `DEFAULT_STAMPS` plus valid custom composition/stamp documents.
 - `catalog`: a validated catalog document, or `DEFAULT_CATALOG`.
 - `initialTree`: an optional seed tree only when it validates and renders content.
 - `issues`: bounded warnings for skipped, shadowed, or sanitized documents.
@@ -66,8 +66,8 @@ so an empty registry still resolves the default theme, default stamps, and the
 locked theme default catalog.
 
 Catalog policy is UI authoring policy for the agent stack: active theme,
-theme-switch allowance, allowed brick types/variants, stamp allow-list, primitive
-fallback, and the `stamp -> high-level brick -> primitive fallback` authoring
+theme-switch allowance, allowed components/variants, composition allow-list,
+primitive fallback, and the `composition -> component -> primitive` authoring
 order. The runtime only loads and validates that policy. Hosted platform policy
 such as auth, tenant isolation, billing, usage metering, rate limits, and spend
 caps belongs to the platform around Facet, not to `AssetsStore`.

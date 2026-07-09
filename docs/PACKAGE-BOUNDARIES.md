@@ -107,7 +107,7 @@ surface for hosted products.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`, with a provider-backed polished seed for the default path. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local. |
+| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`, with a provider-backed component seed for the default path. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local. |
 | `@facet/bridge` | Local bridge from Claude/Codex-style coding agents to a Facet link. | Local/operator tool only; not a hosted worker fleet. |
 | `@facet/cli` | Local command surface used by `@facet/bridge`. | Bin publish metadata exists; still needs a package-level pack/install smoke before npm release. |
 

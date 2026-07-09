@@ -221,7 +221,7 @@ describe("validateTree", () => {
   });
 });
 
-describe("validateTree high-level bricks", () => {
+describe("validateTree component nodes", () => {
   it("keeps new intrinsic component nodes and legacy stat compatibility", () => {
     const { tree, issues } = validateTree({
       root: "root",
@@ -350,7 +350,7 @@ describe("validateTree high-level bricks", () => {
     expect(issues.some((issue) => issue.includes("name must be a string"))).toBe(true);
   });
 
-  it("keeps v1 high-level leaf and container nodes with sanitized token fields", () => {
+  it("keeps component leaf and container nodes with sanitized token fields", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
@@ -462,7 +462,7 @@ describe("validateTree high-level bricks", () => {
     expect(issues.some((issue) => issue.includes("points exceeded"))).toBe(true);
   });
 
-  it("caps high-level table chart and list payloads fail-safely", () => {
+  it("caps component table chart and list payloads fail-safely", () => {
     const rows = Array.from({ length: 250 }, (_, index) => ({ value: `row-${String(index)}` }));
     const values = Array.from({ length: 2000 }, (_, index) => index);
     const items = Array.from({ length: 200 }, (_, index) => `item-${String(index)}`);
@@ -485,7 +485,7 @@ describe("validateTree high-level bricks", () => {
     expect(issues.some((issue) => issue.includes("cap"))).toBe(true);
   });
 
-  it("sanitizes malformed high-level tabs, progress, and required text fields", () => {
+  it("sanitizes malformed component tabs, progress, and required text fields", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {

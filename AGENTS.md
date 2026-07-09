@@ -18,8 +18,8 @@ are one application.) See [README.md](README.md) and
    (`packages/core/core/src/nodes.ts`). Agents/consumers may emit no node kind or
    style value unless core intentionally defines and validates it. The primitive
    fallback/base vocabulary remains `box` and `text` for structure and copy,
-   plus `media` and `field` for rendered assets and input; higher-level catalog
-   bricks are allowed only when added deliberately in core. Style values are
+   plus `media` and `field` for rendered assets and input; intrinsic components
+   are allowed only when added deliberately in core. Style values are
    **tokens**, not raw scalars. Layout is **flow-only** (no absolute
    positioning). Adding a brick capability means adding a node kind or token *on
    purpose* — never letting a model emit arbitrary code.
@@ -57,7 +57,7 @@ imports, and release metadata all benefit from the physical move.
 | Core | `packages/core/server` | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | Core | `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
 | Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| Core | `packages/core/assets` | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_THEME` + `DEFAULT_STAMPS` (token/stamp value maps, not code). Depends only on `@facet/core`. |
+| Core | `packages/core/assets` | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_CATALOG`, `DEFAULT_THEME`, and `DEFAULT_STAMPS`/compositions (token/component recipe and composition value maps, not code). Depends only on `@facet/core`. |
 | Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, and reusable Facet prompt kit. |
 | Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters, prompt, streaming tool loop, deterministic test fixture. |
 | Agent Stack | `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
@@ -192,5 +192,5 @@ fixes can skip straight to `/verify` → `/code-review`.
   extensions (bundler resolution).
 - No `any`. Prefer `unknown` + narrowing (see `validate.ts`).
 - Barrel exports only (`index.ts`); the `facet` bin is the one exception.
-- Keep the primitive base stable and small; grow higher-level bricks/tokens
+- Keep the primitive base stable and small; grow intrinsic components/tokens
   deliberately in `@facet/core`, never via raw markup.

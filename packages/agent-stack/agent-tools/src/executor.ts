@@ -218,10 +218,10 @@ function executeUseStamp(
     return errorResult(
       "use_stamp",
       "invalid_input",
-      'error: use_stamp needs a non-empty string "name" from the STAMPS list',
+      'error: use_stamp needs a non-empty string "name" from the COMPOSITIONS list',
       shadow,
       [],
-      "Pick a stamp name from the STAMPS list and pass it as name.",
+      "Pick a composition name from the COMPOSITIONS list and pass it as name.",
     );
   }
 
@@ -233,7 +233,7 @@ function executeUseStamp(
       'error: use_stamp needs at={ "parent": "<container node id>" }',
       shadow,
       [],
-      'Pass at={ "parent": "<existing box, section, or card node id>" }.',
+      'Pass at={ "parent": "<existing box, section, card, or form node id>" }.',
     );
   }
 
@@ -256,7 +256,7 @@ function executeUseStamp(
       `error: use_stamp — parent "${parent}" is not a container`,
       shadow,
       [],
-      "Choose an existing box, section, or card node as at.parent.",
+      "Choose an existing box, section, card, or form node as at.parent.",
     );
   }
 
@@ -277,10 +277,10 @@ function executeUseStamp(
     return errorResult(
       "use_stamp",
       "invalid_stamp",
-      `error: use_stamp — unknown stamp "${name}". Pick a name from STAMPS.`,
+      `error: use_stamp — unknown stamp "${name}". Pick a name from COMPOSITIONS.`,
       shadow,
       [],
-      "Pick one of the advertised STAMPS names.",
+      "Pick one of the advertised COMPOSITIONS names.",
     );
   }
 
@@ -759,7 +759,7 @@ function stampCatalogViolation(
   return {
     message: `error: catalog policy rejected stamp "${name}". Allowed stamps: ${catalog.stamps.names.join(", ")}.`,
     nextAction:
-      "Pick a stamp allowed by the active catalog, or compose the UI from allowed bricks.",
+      "Pick a composition allowed by the active catalog, or compose the UI from allowed components/primitives.",
   };
 }
 

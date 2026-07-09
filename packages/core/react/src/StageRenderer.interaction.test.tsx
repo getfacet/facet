@@ -305,7 +305,7 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
   });
 });
 
-describe("StageRenderer high-level button and tabs (jsdom)", () => {
+describe("StageRenderer component button and tabs (jsdom)", () => {
   const highLevelScreensTree = (): FacetTree => ({
     root: "root",
     nodes: {
@@ -341,7 +341,7 @@ describe("StageRenderer high-level button and tabs (jsdom)", () => {
     entry: "home",
   });
 
-  it("high-level button fires agent actions and disabled buttons stay inert", () => {
+  it("component button fires agent actions and disabled buttons stay inert", () => {
     const onAction = vi.fn();
     render(<StageRenderer onAction={onAction} tree={highLevelScreensTree()} />);
 
@@ -356,7 +356,7 @@ describe("StageRenderer high-level button and tabs (jsdom)", () => {
     });
   });
 
-  it("high-level tabs navigate locally without stage writes", () => {
+  it("component tabs navigate locally without stage writes", () => {
     const onAction = vi.fn();
     render(<StageRenderer onAction={onAction} tree={highLevelScreensTree()} />);
 
@@ -612,7 +612,7 @@ describe("StageRenderer collect (jsdom)", () => {
     );
   });
 
-  it("collects fields from high-level section/card targets via a high-level button", () => {
+  it("collects fields from component section/card targets via a component button", () => {
     const onAction = vi.fn();
     render(
       <StageRenderer

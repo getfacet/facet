@@ -219,7 +219,7 @@ describe("agent tool observation contract", () => {
     expect(isVisitorVisibleStageChange(TREE, afterOrphan, ["orphan"])).toBe(false);
   });
 
-  it("classifies high-level section and card descendants as visible while skipping blank data bricks", () => {
+  it("classifies component section and card descendants as visible while skipping blank data components", () => {
     const highLevelTree: FacetTree = {
       root: "section",
       nodes: {

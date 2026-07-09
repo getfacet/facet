@@ -71,7 +71,7 @@ describe("createStageToolBuffer", () => {
     expect(child.shadow.nodes["title"]).toMatchObject({ type: "text", value: "Hello" });
   });
 
-  it("buffers forward-referenced high-level section and card edits until child nodes exist", () => {
+  it("buffers forward-referenced component section and card edits until child nodes exist", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);
 
     const queuedSection = buffer.run({
@@ -110,7 +110,7 @@ describe("createStageToolBuffer", () => {
     });
   });
 
-  it("buffers appended high-level card containers under existing high-level section parents", () => {
+  it("buffers appended component card containers under existing component section parents", () => {
     const buffer = createStageToolBuffer({
       root: "section",
       nodes: {

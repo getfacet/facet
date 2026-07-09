@@ -524,7 +524,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
         return;
       }
       // Custom-vs-custom (or a duplicate default): first wins. Two same-named
-      // stamps would inject contradictory entries into the prompt's STAMPS section.
+      // stamps would inject contradictory entries into the prompt's COMPOSITIONS section.
       pushAssetIssue(issues, `duplicate stamp name "${stamp.name}" ignored (first wins)`);
       return;
     }

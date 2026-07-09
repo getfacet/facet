@@ -179,7 +179,7 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     ]);
   });
 
-  it("supports high-level section and card parents after set", () => {
+  it("supports component section and card parents after set", () => {
     const stage = new Stage();
     stage.set({ id: "section", type: "section", title: "Overview", children: [] });
     const sectionResult = stage.useStamp(
@@ -219,7 +219,7 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     });
   });
 
-  it("tracks high-level container parents added through append", () => {
+  it("tracks component container parents added through append", () => {
     const stage = new Stage();
     stage.append("root", { id: "section", type: "section", title: "Plan", children: [] });
     const result = stage.useStamp(

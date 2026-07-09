@@ -109,14 +109,14 @@ with `set_node`, inside the repair loop.
 Reference-agent catalog consumption has two paths:
 
 - Prompt path: `buildSystem(guide, assets?)` delegates to the agent-tools prompt
-  kit and includes theme names, the active catalog, stamp names, slot names, and
-  whitelisted stamp metadata. Catalog guidance includes locked theme behavior,
-  allowed brick variants, stamp policy, primitive fallback, compact-screen
-  guidance, product-quality polished brick defaults, and
-  `stamp -> high-level brick -> primitive fallback`.
+  kit and includes theme names, the active catalog, composition/stamp names,
+  slot names, and whitelisted composition metadata. Catalog guidance includes
+  locked theme behavior, allowed component variants, composition policy,
+  primitive fallback, compact-screen guidance, product-quality component
+  defaults, and `composition -> component -> primitive`.
 - Executor path: the same `catalog` and immutable stamp snapshot are passed as
   stage-tool assets to the buffered executor. That makes catalog policy
-  enforceable, not just prompt text: disallowed bricks/variants/stamps, tone-only
+  enforceable, not just prompt text: disallowed components/variants/compositions, tone-only
   recipe selectors outside the advertised variants, and locked theme changes are
   rejected before any patch is yielded to the runtime.
 
@@ -128,9 +128,9 @@ caps, secrets operations, or admin workflows.
 but its fixed Facet guidance now comes from `@facet/agent-tools`. This package
 still owns the reference `DEFAULT_GUIDE`, provider adapters, context assembly,
 history compaction, budgets, retries, trace events, and fallback behavior.
-The reference prompt consumes the reusable polished brick guidance from
-agent-tools; it does not duplicate renderer recipes, theme token values, stamp
-node JSON, provider keys, or visitor ids.
+The reference prompt consumes the reusable component-model guidance from
+agent-tools; it does not duplicate renderer recipes, theme token values,
+composition/stamp node JSON, provider keys, or visitor ids.
 
 Use `@facet/reference-agent` when you want Facet's runnable reference brain.
 

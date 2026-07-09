@@ -1,8 +1,8 @@
 # @facet/core
 
-The Facet contract: the declarative stage spec (v1 high-level bricks plus the
-primitive `box`, `text`, `media`, and `field` fallback), catalog policy, style
-tokens and theme recipes, reusable stamp expansion/metadata, the
+The Facet contract: the declarative stage spec in the Primitive Brick ->
+Component -> Catalog model, catalog policy, style tokens and theme recipes,
+reusable composition/stamp expansion and metadata, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
 `applyPatch`, validators, and the session/event types. It depends on nothing —
 every other Facet package builds on it.
@@ -22,8 +22,8 @@ npm install @facet/core
 
 Core helpers do the heavy lifting: `validateTree` turns arbitrary input (e.g. an
 LLM's JSON) into a guaranteed-renderable tree, preserving valid primitive
-fallback and high-level nodes while dropping malformed payloads; `validateCatalog`
-turns untrusted catalog data into bounded UI policy; `validateTheme` gates
+fallback and intrinsic component nodes while dropping malformed payloads;
+`validateCatalog` turns untrusted catalog data into bounded UI policy; `validateTheme` gates
 token-value maps, component recipes, and recipe parts as operator data;
 `expandStamp` fills
 validated stamp slots, preserves bounded metadata, prunes the root-reachable
@@ -47,11 +47,11 @@ const { tree, issues } = validateTree(EMPTY_TREE);
 const { catalog } = validateCatalog({
   name: "product-ui",
   theme: { active: "default", switchPolicy: "locked" },
-  bricks: [{ type: "section", variants: ["surface"] }, { type: "card" }],
-  stamps: { mode: "all" },
+  components: [{ type: "section", variants: ["surface"] }, { type: "card" }],
+  compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
   },
@@ -85,8 +85,8 @@ const expanded = expandStamp(
 
 `expandStamp` is fail-safe: malformed params become issues and defaults, unknown
 parents return no ops, and the returned ids are fresh only for the nodes that
-will actually be emitted. Stamps may carry bounded metadata for prompt guidance,
-but expansion still emits ordinary nodes and JSON Patch operations. `applyPatch`
+will actually be emitted. Composition/stamp assets may carry bounded metadata for
+prompt guidance, but expansion still emits ordinary nodes and JSON Patch operations. `applyPatch`
 enforces JSON Pointer reads for source operations (`move`, `copy`, and `test`)
 and requires object-member `replace`/`remove` targets to exist before mutating,
 so stale ops do not leave partial object members behind or count as stage edits.

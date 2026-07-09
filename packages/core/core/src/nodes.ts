@@ -1,7 +1,7 @@
 /**
- * The closed brick palette an agent uses to build a stage. Primitive bricks
- * (`box`, `text`, `media`, `field`) remain the universal fallback; high-level
- * bricks provide safer common UI shapes without allowing raw HTML/JS/CSS.
+ * The closed vocabulary an agent uses to build a stage. Primitive bricks
+ * (`box`, `text`, `media`, `field`) remain the universal fallback; intrinsic
+ * components provide safer common UI shapes without allowing raw HTML/JS/CSS.
  *
  * These are Lego bricks, not finished furniture. A "card" is a `box` with a
  * border; a "button" is a `box` with `onPress`; a "heading" is a big `text`. The

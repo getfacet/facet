@@ -198,9 +198,9 @@ Bundle B PR review record.
 - ~~core/validate.ts (validateStamp bounds)~~ — RESOLVED in-branch (review
   r5+r6): stamp names share `isValidThemeName`, descriptions truncate at the
   shared 200-char cap, and the refusal issue never echoes the raw name.
-- **quickstart/prompt.ts (stamp budget)** — the 4000-char cap measures only the
+- **quickstart/prompt.ts (composition budget)** — the 4000-char cap measures only the
   fragment JSON, not the `- name: description` head, and there is no aggregate
-  section cap. *Fix:* measure head+fragment; add `MAX_STAMPS_SECTION_CHARS`.
+  section cap. *Fix:* measure head+fragment; add a COMPOSITIONS section cap.
 - **quickstart/agent.ts (set_theme)** — an unknown theme name returns
   `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
   error observation naming the available themes (append_node precedent).
@@ -219,8 +219,8 @@ Bundle B PR review record.
   spacing range name.
 - **core/theme.ts** — redundant `theme as FacetTheme` cast at the return
   (compiles clean without it).
-- **tests** — prompt.test.ts: no assertion that an all-oversized stamp set
-  suppresses the STAMPS section; theme.test.ts: negative-dimension clamp floor
+- **tests** — prompt.test.ts: no assertion that an all-oversized composition set
+  suppresses the COMPOSITIONS section; theme.test.ts: negative-dimension clamp floor
   (`"-20px"` → `"0px"`) untested.
 - ~~server/server.ts:385 (seed frame vs lastApplied)~~ — RESOLVED in-branch
   (review r6, upgraded to P2): `FacetRuntime.handle`/`applyMessages` return
