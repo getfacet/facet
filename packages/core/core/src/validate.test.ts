@@ -222,6 +222,124 @@ describe("validateTree", () => {
 });
 
 describe("validateTree high-level bricks", () => {
+  it("keeps new intrinsic component nodes and legacy stat compatibility", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: [
+            "metric",
+            "stat",
+            "keyValue",
+            "form",
+            "search",
+            "filterBar",
+            "emptyState",
+            "loading",
+          ],
+        },
+        metric: { id: "metric", type: "metric", label: "ARR", value: "$24k", tone: "success" },
+        stat: { id: "stat", type: "stat", label: "MRR", value: "$2k", tone: "info" },
+        keyValue: {
+          id: "keyValue",
+          type: "keyValue",
+          items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+        },
+        form: {
+          id: "form",
+          type: "form",
+          title: "Update customer",
+          submitLabel: "Save",
+          onSubmit: { name: "save_customer", collect: "form" },
+          children: [],
+        },
+        search: {
+          id: "search",
+          type: "search",
+          name: "q",
+          placeholder: "Search customers",
+          onSubmit: { name: "search_customers" },
+        },
+        filterBar: {
+          id: "filterBar",
+          type: "filterBar",
+          filters: [{ name: "status", label: "Status", options: ["Open"] }],
+          onChange: { name: "filter_customers" },
+        },
+        emptyState: {
+          id: "emptyState",
+          type: "emptyState",
+          title: "No customers",
+          actionLabel: "Create customer",
+          onPress: { name: "create_customer" },
+        },
+        loading: { id: "loading", type: "loading", label: "Loading customers" },
+      },
+    });
+
+    expect(issues).toHaveLength(0);
+    expect(tree.nodes["metric"]).toMatchObject({ type: "metric", label: "ARR", value: "$24k" });
+    expect(tree.nodes["stat"]).toMatchObject({ type: "stat", label: "MRR", value: "$2k" });
+    expect(tree.nodes["keyValue"]).toMatchObject({
+      type: "keyValue",
+      items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+    });
+    expect(tree.nodes["form"]).toMatchObject({
+      type: "form",
+      onSubmit: { kind: "agent", name: "save_customer", collect: "form" },
+    });
+    expect(tree.nodes["search"]).toMatchObject({
+      type: "search",
+      onSubmit: { kind: "agent", name: "search_customers" },
+    });
+    expect(tree.nodes["filterBar"]).toMatchObject({
+      type: "filterBar",
+      onChange: { kind: "agent", name: "filter_customers" },
+    });
+    expect(tree.nodes["emptyState"]).toMatchObject({
+      type: "emptyState",
+      onPress: { kind: "agent", name: "create_customer" },
+    });
+    expect(tree.nodes["loading"]).toMatchObject({ type: "loading", label: "Loading customers" });
+  });
+
+  it("skips malformed new intrinsic nodes and strips forbidden backend fields", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["form", "badMetric", "badSearch"] },
+        form: {
+          id: "form",
+          type: "form",
+          title: "Lead capture",
+          endpoint: "https://api.example.test/leads",
+          html: "<form></form>",
+          css: ".lead { display: none }",
+          children: [],
+        },
+        badMetric: { id: "badMetric", type: "metric", label: "ARR" },
+        badSearch: { id: "badSearch", type: "search", placeholder: "Missing name" },
+      },
+    });
+
+    expect(tree.nodes["form"]).toMatchObject({ type: "form", title: "Lead capture" });
+    expect(tree.nodes["form"]).not.toHaveProperty("endpoint");
+    expect(tree.nodes["form"]).not.toHaveProperty("html");
+    expect(tree.nodes["form"]).not.toHaveProperty("css");
+    expect(tree.nodes["badMetric"]).toBeUndefined();
+    expect(tree.nodes["badSearch"]).toBeUndefined();
+    expect((tree.nodes["root"] as unknown as { children: readonly string[] }).children).toEqual([
+      "form",
+    ]);
+    expect(issues.filter((issue) => issue.includes("not allowed on component nodes"))).toHaveLength(
+      3,
+    );
+    expect(issues.some((issue) => issue.includes("value must be a string"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("name must be a string"))).toBe(true);
+  });
+
   it("keeps v1 high-level leaf and container nodes with sanitized token fields", () => {
     const { tree, issues } = validateTree({
       root: "root",

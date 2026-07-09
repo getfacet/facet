@@ -37,6 +37,7 @@ import {
   type TextStyle,
   type Tone,
 } from "./nodes.js";
+import { sanitizeComponentNode } from "./component-validation.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
@@ -917,6 +918,14 @@ function sanitizeNode(
       if (variant !== undefined) node.variant = variant;
       return node;
     }
+    case "metric":
+    case "keyValue":
+    case "form":
+    case "search":
+    case "filterBar":
+    case "emptyState":
+    case "loading":
+      return sanitizeComponentNode(id, raw, issues);
     default:
       issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
       return undefined;
