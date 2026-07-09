@@ -7,7 +7,7 @@ Any blocking FAIL → overall spec status FAIL.
 ## Gate 1 — Section Completeness
 PASS: all required spec sections exist with concrete (non-placeholder) content —
 including `Shared Preflight`, `Invariant Fit Audit`, `Risk Register`, the WU list,
-`Execution Order`, and the feature final gate chain
+`Module Shape & Scaffold Plan`, `Execution Order`, and the feature final gate chain
 (`/worktree-prep` → `/update-tests` → `/verify` → `/code-review` → `/live-test`
 → `/update-docs`) with `final_gate_owner: main-agent`.
 FAIL: a required section is missing or has no actionable detail.
@@ -45,21 +45,35 @@ evidence). `@facet/core` stays browser-safe/node-free; barrel exports preserved.
 FAIL: a breaking change with no consumer migration, or a core/barrel/boundary
 violation.
 
-## Gate 6 — Test Traceability
+## Gate 6 — Module Shape & Scaffold Fit
+Apply when the spec grows a large file, touches an already-large file, creates a
+new directory/scaffold, extracts helpers, or changes public/private module
+boundaries.
+PASS: the spec records current shape evidence, planned shape, public/private
+surface, import direction, and test placement; any split uses role-specific
+ownership instead of generic `utils.ts`/`helpers.ts`; any do-not-split choice has
+a concrete rationale; package boundaries from `AGENTS.md` are preserved.
+FAIL: line-count growth, extraction, or new scaffold is planned without
+rationale; a split creates generic helper sprawl; private helpers are exposed
+through barrels without Public API Impact coverage; tests do not follow the new
+structure.
+
+## Gate 7 — Test Traceability
 PASS: every `DC-*` maps to ≥1 test; ≥1 boundary/error test exists; each WU has a
 non-empty `test_plan` (type/target/covers_dc/action); the union of
 `test_plan.covers_dc` covers every `DC-*`.
 FAIL: a `DC-*` is uncovered, or any WU has an empty/missing `test_plan`.
 
-## Gate 7 — Work Unit Decomposition Quality
+## Gate 8 — Work Unit Decomposition Quality
 PASS: each WU ≤ 5 files; every file assigned to exactly one WU (no orphans);
 paths match context evidence; dependencies acyclic; each WU has an independently
 verifiable DoD with commands and a no-regression check; parallel groups share no
-writable files; the manifest matches the spec, including `final_gate_chain`; an
-implementer could delegate without further design decisions.
+writable files; each relevant WU records a module-shape decision; the manifest
+matches the spec, including `final_gate_chain`; an implementer could delegate
+without further design decisions.
 FAIL: any of the above is violated.
 
-## Gate 8 — TDD-First Enforcement
+## Gate 9 — TDD-First Enforcement
 PASS: every WU touching non-test/non-docs production files declares a concrete
 `red_check` (a real test target, expected FAIL→PASS, distinct from
 no-regression checks) and a `RED→GREEN evidence` DoD item; deletion/docs/move-only
@@ -70,14 +84,15 @@ FAIL: a prod-code WU lacks a real `red_check`, or `N/A` is used on a file that
 isn't pure deletion/docs/move (enumerate the offending files), or spec/manifest
 disagree.
 
-## Gate 9 — Risk Resolution
+## Gate 10 — Risk Resolution
 Apply when Stage 0 produced any `RISK-*`.
-PASS: every `RISK-INV-*` / `RISK-API-*` / `RISK-PKG-*` has an addressed
-resolution row (or an explicit owner-acknowledged waiver) in the spec's Risk
-Register.
+PASS: every `RISK-INV-*` / `RISK-API-*` / `RISK-PKG-*` / `RISK-SHAPE-*` has an
+addressed resolution row (or an explicit owner-acknowledged waiver) in the
+spec's Risk Register.
 FAIL: any `RISK-*` silently dropped.
 
 ## Output rule
 Return the gate table plus explicit call-outs for: spec/manifest mismatches, any
-`TOUCHES` invariant lacking a concrete design (Gate 3), and any WU lacking a real
-`red_check` (Gate 8). If any blocking gate is FAIL, the spec is FAIL.
+`TOUCHES` invariant lacking a concrete design (Gate 3), any module-shape/scaffold
+failure (Gate 6), and any WU lacking a real `red_check` (Gate 9). If any blocking
+gate is FAIL, the spec is FAIL.

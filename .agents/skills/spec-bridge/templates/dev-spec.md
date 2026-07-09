@@ -43,11 +43,23 @@ safe. Mark others `N/A`.
 | RISK-INV-1 | | |
 | RISK-API-1 | | |
 | RISK-PKG-1 | | |
+| RISK-SHAPE-1 | | |
 
 ## Public API Impact (published `@facet/*` surface)
 
 | Package | Change | Additive/Breaking | Consumer migration |
 |---|---|---|---|
+
+## Module Shape & Scaffold Plan
+
+Use this section to prevent accidental large-file growth and arbitrary
+extractions before implementation starts. Do not require splitting by line count
+alone; require evidence that the planned shape reduces drift, clarifies
+ownership, preserves package boundaries, or improves testability.
+
+| Area / file cluster | Current shape evidence | Planned shape | Public vs private | Import direction | Test placement | Rationale / do-not-split note |
+|---|---|---|---|---|---|---|
+| `packages/...` | [file:line, line count, or scaffold evidence] | [preserve / sibling-helper / role-directory / package-shared / public-surface / no-split] | [barrel/private] | [allowed imports] | [test files] | [why] |
 
 ## Shared Preflight (once, main agent)
 - Runtime: [what must be healthy — e.g. `pnpm i` done, playground buildable]
@@ -61,6 +73,7 @@ safe. Mark others `N/A`.
 - objective: [one sentence]
 - files (max 5):
   - `path` — [add|update|delete] — [why]
+- module_shape: [preserve | sibling-helper | role-directory | package-shared | public-surface | no-split] — [rationale; include public/private boundary, import direction, and test placement when splitting or adding scaffold]
 - depends_on: []
 - parallel_group: [serial-a | par-1]
 - red_check: `[vitest command that FAILS pre-impl, PASSES post-impl]` (target: `[test file]`) — or `N/A: [justification]`

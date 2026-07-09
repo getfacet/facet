@@ -39,6 +39,9 @@ work_units:
     owner_role: "subagent" # subagent | main-agent
     packages: ["@facet/core"] # affected Facet package(s)
     objective: "[one sentence]"
+    module_shape:
+      decision: "preserve" # preserve | sibling-helper | role-directory | package-shared | public-surface | no-split
+      rationale: "[why this shape fits; include public/private boundary, import direction, and test placement when splitting or adding scaffold]"
     files:
       - path: "packages/<group>/<pkg>/src/<file>.ts"
         change_type: "update" # add | update | delete

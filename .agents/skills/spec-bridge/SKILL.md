@@ -3,9 +3,10 @@ name: spec-bridge
 description: >
   Translate an approved Facet feature-intake brief into an executable development
   spec and execution manifest using Codex steps: context pass, risk probes, spec
-  writing, gate review, and bounded fix loop. Stops at an approvable plan before
-  implementation. Use before coding, after /feature-intake approval, or when the
-  user asks for /spec-bridge. Do not invoke Claude Workflow().
+  writing, gate review, module-shape/scaffold planning, and bounded fix loop.
+  Stops at an approvable plan before implementation. Use before coding, after
+  /feature-intake approval, or when the user asks for /spec-bridge. Do not invoke
+  Claude Workflow().
 ---
 
 # Spec Bridge (Facet)
@@ -52,21 +53,26 @@ Gather:
 - existing tests near the planned behavior
 - current public API exports if a published surface may change
 - consumers via `rg`/`git grep` for changed symbols or strings
+- current file sizes, large-file hot spots, and package-local scaffold patterns
+  for likely touched areas
 
 Record risks with stable IDs:
 
 - `RISK-INV-*` — Facet invariant risks
 - `RISK-API-*` — public API or consumer migration risks
 - `RISK-PKG-*` — package boundary, dependency, build, or publish risks
+- `RISK-SHAPE-*` — oversized-file, module-shape, scaffold, or extraction risks
 
 Risk probes are mandatory and independent:
 
 - `INV` — Facet invariant risks and fail-safe boundaries.
 - `API` — public API, exported symbols, consumers, migration risk.
 - `PKG` — package boundary, dependency direction, build/publish risk.
+- `SHAPE` — module shape, oversized-file pressure, scaffold fit, extraction
+  boundaries, and public/private split risk.
 
 If Codex subagents are available, run one probe per lens. If unavailable, run
-three separate inline passes and keep notes separate until the context file is
+four separate inline passes and keep notes separate until the context file is
 written. Each probe must return evidence with `file:line` or literal `rg` /
 `git grep` commands. A missing probe is a Stage 0 FAIL. The main agent owns the
 final context file and must include every `RISK-*` or explicitly state that the
@@ -84,6 +90,7 @@ The spec must include:
 - fail-safe and boundary checklist
 - Risk Register resolving every `RISK-*`
 - Public API Impact
+- Module Shape & Scaffold Plan
 - Shared Preflight
 - Work Units
 - Execution Order
@@ -102,11 +109,17 @@ Work Unit rules:
 
 - each WU touches at most 5 files
 - each file belongs to exactly one WU
+- each WU records a module-shape decision (`preserve`, `sibling-helper`,
+  `role-directory`, `package-shared`, `public-surface`, or `no-split`) with
+  rationale when it grows a large file, creates a directory, or extracts code
 - production-code WUs need a real `red_check` that fails before implementation
   and passes after implementation
 - `red_check: N/A` is allowed only for docs, deletion-only, or move-only WUs with
   a concrete justification
 - parallel WUs must have disjoint writable files
+- do not require splitting by line count alone; require evidence that the planned
+  shape reduces drift, clarifies ownership, preserves package boundaries, or
+  improves testability
 
 ## Stage 2 — Gate Review
 
@@ -129,6 +142,8 @@ lens; otherwise do separate inline passes with the same separation:
 - `invariant-fit` — every touched Facet invariant has a concrete safe design.
 - `risk-consistency` — every `RISK-*` from context is resolved or waived with
   evidence; public API consumers are covered.
+- `module-shape` — file growth, scaffold fit, extraction quality,
+  public/private boundaries, import direction, and test placement.
 
 Review specifically for:
 
@@ -137,6 +152,7 @@ Review specifically for:
 - concrete invariant mitigations
 - fail-safe and boundary test coverage
 - public API consumer migration evidence
+- Module Shape & Scaffold Plan quality
 - WU decomposition quality
 - TDD-first enforcement
 - all `RISK-*` resolved or explicitly waived
@@ -149,6 +165,10 @@ Fail closed:
 - production WU without a real `red_check` → FAIL unless it is docs,
   deletion-only, or move-only with a concrete justification
 - unresolved invariant conflict → FAIL
+- missing module-shape plan for large-file growth, new scaffold, or extraction
+  work → FAIL
+- generic `utils.ts`/`helpers.ts` extraction with no role-specific ownership or
+  test-placement rationale → FAIL
 
 ## Stage 3 — Bounded Fix Loop
 
@@ -184,6 +204,8 @@ inside the prepared worktree.
 - No spec/manifest divergence.
 - No unresolved invariant conflict.
 - No skipped Stage 0 risk lens or Stage 2 reviewer lens.
+- No large-file growth, new directory scaffold, or extraction plan without a
+  module-shape rationale.
 - No starting `/worktree-prep` or `/implement` until the user explicitly approves
   the final spec and manifest.
 
@@ -196,8 +218,9 @@ Report:
 3. `Manifest Path`
 4. `Affected Packages`
 5. `Risk Register Summary`
-6. `Work Units`
-7. `Gate Review` PASS/FAIL table
-8. `Fix Rounds`
-9. `Panel Ledger` (risk probes, reviewer lenses, reruns)
-10. `Ready For Approval` YES/NO
+6. `Module Shape Summary`
+7. `Work Units`
+8. `Gate Review` PASS/FAIL table
+9. `Fix Rounds`
+10. `Panel Ledger` (risk probes, reviewer lenses, reruns)
+11. `Ready For Approval` YES/NO
