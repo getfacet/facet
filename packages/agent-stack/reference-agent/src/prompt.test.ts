@@ -65,14 +65,14 @@ function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
 }
 
 function stampSectionOf(system: string): string {
-  const start = system.indexOf("STAMPS");
+  const start = system.indexOf("COMPOSITIONS");
   const end = system.lastIndexOf("PAGE BRIEF");
   return start >= 0 && end > start ? system.slice(start, end) : "";
 }
 
 function catalogSectionOf(system: string): string {
   const start = system.indexOf("CATALOG");
-  const nextSections = ["STAMPS", "PAGE BRIEF"]
+  const nextSections = ["COMPOSITIONS", "PAGE BRIEF"]
     .map((heading) => system.indexOf(heading, start + 1))
     .filter((index) => index > start);
   const end = nextSections.length > 0 ? Math.min(...nextSections) : system.length;
@@ -110,13 +110,13 @@ describe("buildSystem", () => {
     expect(system).toContain(FACET_STATE_EDITING_PROMPT);
     expect(system).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
     expect(system).toContain("Default to a compact UX");
-    expect(system).toContain("POLISHED BRICK GUIDANCE");
+    expect(system).toContain("COMPONENT GUIDANCE");
     expect(system).toContain("Default to an edit-before-append strategy");
     expect(system).toContain("render_page: first paint");
     expect(system).toMatch(/reuse .*node ids/i);
   });
 
-  it("polished brick guidance is consumed from agent-tools without leaking asset internals", () => {
+  it("component guidance is consumed from agent-tools without leaking asset internals", () => {
     const system = buildSystem(DEFAULT_GUIDE, {
       themes: [
         {
@@ -147,15 +147,15 @@ describe("buildSystem", () => {
     });
 
     expect(system).toMatch(
-      /POLISHED BRICK GUIDANCE[\s\S]*advertised stamp first[\s\S]*high-level bricks with catalog-advertised variants[\s\S]*never write raw CSS/i,
+      /COMPONENT GUIDANCE[\s\S]*catalog-advertised compositions[\s\S]*intrinsic components with catalog-advertised variants[\s\S]*never write raw CSS/i,
     );
     expect(system).toMatch(
-      /product-quality defaults[\s\S]*field for inputs[\s\S]*button for actions/i,
+      /product-quality defaults[\s\S]*field for raw inputs[\s\S]*button for actions/i,
     );
     expect(system).toMatch(/editBeforeAppend is true/i);
-    expect(system).toContain("allowed bricks: section variants: surface");
+    expect(system).toContain("allowed components: section variants: surface");
     expect(system).toContain("button variants: primary");
-    expect(system).toContain("policy order: stamp -> brick -> primitive");
+    expect(system).toContain("policy order: composition -> component -> primitive");
 
     expect(system).not.toContain("#ffffff");
     expect(system).not.toContain("#111111");
@@ -219,7 +219,7 @@ describe("buildSystem", () => {
     expect(HISTORY_TURNS).toBe(20);
   });
 
-  it("with no assets (or empty arrays) adds no THEMES/STAMPS section (DC-008 byte-identity)", () => {
+  it("with no assets (or empty arrays) adds no THEMES/COMPOSITIONS section (DC-008 byte-identity)", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
     const base = buildSystem(guide);
     expect(base).toContain(FACET_ASSET_PRIVACY_PROMPT);
@@ -228,7 +228,7 @@ describe("buildSystem", () => {
     // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
     // list" in prose — we probe for the section intros this WU adds, not the word).
     expect(base).not.toContain("select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reusable stamps you may expand");
+    expect(base).not.toContain("Reusable catalog compositions you may expand");
   });
 
   it("injects theme names and descriptions never values", () => {
@@ -272,7 +272,7 @@ describe("buildSystem", () => {
     const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
     const stampSection = stampSectionOf(system);
 
-    expect(system).toContain("STAMPS");
+    expect(system).toContain("COMPOSITIONS");
     expect(stampSection).toContain("cta");
     expect(stampSection).toContain("A call-to-action button");
     expect(stampSection).toContain("label");
@@ -318,11 +318,11 @@ describe("buildSystem", () => {
     expect(catalogSection).toContain("reference-catalog");
     expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
     expect(catalogSection).toContain("locked theme guidance");
-    expect(catalogSection).toContain("allowed bricks: section variants: surface");
+    expect(catalogSection).toContain("allowed components: section variants: surface");
     expect(catalogSection).toContain("button variants: primary");
-    expect(catalogSection).toContain("stamp policy: allow approved");
+    expect(catalogSection).toContain("composition policy: allow approved");
     expect(catalogSection).toContain("primitiveFallback: allowed");
-    expect(catalogSection).toContain("policy order: stamp -> brick -> primitive");
+    expect(catalogSection).toContain("policy order: composition -> component -> primitive");
     expect(catalogSection).not.toContain("#ffffff");
     expect(catalogSection).not.toContain("#111111");
     expect(catalogSection).not.toContain('"nodes"');
@@ -741,7 +741,7 @@ describe("buildInitialMessages", () => {
     expect(nodeLines.at(-1)).toContain("node-079");
   });
 
-  it("stage summary covers high-level catalog nodes without full JSON", () => {
+  it("stage summary covers component catalog nodes without full JSON", () => {
     const stage: FacetTree = {
       root: "root",
       nodes: {

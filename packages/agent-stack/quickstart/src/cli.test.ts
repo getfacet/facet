@@ -377,8 +377,8 @@ describe("runCli — --assets (DC-009)", () => {
   });
 });
 
-describe("runCli — quickstart polished default", () => {
-  it("quickstart polished default CLI inlines the seeded first paint on the built-in guide path", async () => {
+describe("runCli — quickstart component default", () => {
+  it("quickstart component default CLI inlines the seeded first paint on the built-in guide path", async () => {
     const { captured, running } = await bootCli();
     try {
       expect(captured.err).toEqual([]);
@@ -399,7 +399,7 @@ describe("runCli — quickstart polished default", () => {
         "chart",
         "field",
         "button",
-        "stat",
+        "metric",
         "badge",
         "progress",
         "alert",

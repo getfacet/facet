@@ -13,11 +13,11 @@ patches:
 
 - safe declarative UI, never raw HTML, JS, CSS, or arbitrary pixels
 - theme-locked, token-based visual styling
-- reusable stamps and high-level bricks before primitive fallback
+- catalog compositions and intrinsic components before primitive fallback
 - live JSON Patch updates that mutate the page during a conversation
 - multiple screens with local navigation
 - fields and buttons that send structured context back to the agent
-- compact product surfaces with charts, tables, stats, cards, alerts, progress,
+- compact product surfaces with charts, tables, metrics, cards, alerts, progress,
   lists, forms, and action buttons
 
 On the first visit, keep or refine the seeded four-tab tour:
@@ -26,7 +26,7 @@ On the first visit, keep or refine the seeded four-tab tour:
    static article.
 2. Core Structure — show the stage, patch loop, renderer, runtime, assets, and
    agent tool boundary.
-3. Design System — introduce the default theme, bricks, stamps, and catalog
+3. Design System — introduce the default theme, components, compositions, and catalog
    through live Facet UI examples.
 4. Use Cases — let the visitor request a dashboard, pricing flow, onboarding
    flow, replay view, or other concrete product surface.
@@ -46,8 +46,8 @@ When changing the page:
 
 - Prefer editing the existing quickstart nodes before appending more sections.
 - Keep every screen compact; do not make a long scrolling marketing page.
-- Use available stamps and high-level bricks first. Use box/text/media/field
-  only when the catalog or stamps cannot express the needed UI.
+- Use available catalog compositions and intrinsic components first. Use
+  box/text/media/field only when the catalog cannot express the needed UI.
 - Keep the active theme unless theme switching is explicitly allowed.
 - If a tool result says a change was rejected, inspect the stage and repair it
   before claiming success.
@@ -123,11 +123,11 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       id: "qs.metrics",
       type: "box",
       style: { direction: "col", gap: "md" },
-      children: ["qs.stat.patch", "qs.card.safety", "qs.card.progress"],
+      children: ["qs.metric.patch", "qs.card.safety", "qs.card.progress"],
     },
-    "qs.stat.patch": {
-      id: "qs.stat.patch",
-      type: "stat",
+    "qs.metric.patch": {
+      id: "qs.metric.patch",
+      type: "metric",
       label: "Patch loop",
       value: "Live",
       delta: "per visitor",
@@ -137,7 +137,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
     "qs.card.safety": {
       id: "qs.card.safety",
       type: "card",
-      title: "Safe bricks",
+      title: "Safe vocabulary",
       body: "Agents emit validated stage data, not HTML or scripts.",
       children: ["qs.badge.safe"],
     },
@@ -167,7 +167,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       id: "qs.surface.card",
       type: "card",
       title: "Representative product surface",
-      body: "Display bricks stay display-only. Ask the agent to turn this into your own dashboard, pricing path, or workflow.",
+      body: "Display components stay display-only. Ask the agent to turn this into your own dashboard, pricing path, or workflow.",
       variant: "interactive",
       children: ["qs.surface.chart", "qs.surface.divider", "qs.surface.table"],
     },
@@ -287,7 +287,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       type: "section",
       eyebrow: "Default assets",
       title: "Design System",
-      body: "The agent can introduce the default theme, catalog variants, built-in bricks, fields, and stamp patterns through live Facet UI examples.",
+      body: "The agent can introduce the default theme, catalog variants, intrinsic components, fields, and composition patterns through live Facet UI examples.",
       variant: "surface",
       children: ["qs.system.hero.alert"],
     },
@@ -367,8 +367,8 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
     "qs.system.bricks": {
       id: "qs.system.bricks",
       type: "section",
-      title: "Brick gallery",
-      body: "The built-in high-level bricks render through React recipe parts while box, text, media, and field remain the primitive base.",
+      title: "Component gallery",
+      body: "The built-in intrinsic components render through React recipe parts while box, text, media, and field remain the primitive base.",
       variant: "surface",
       children: [
         "qs.system.actions.card",
@@ -381,10 +381,10 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       id: "qs.system.actions.card",
       type: "card",
       title: "Actions and layout",
-      body: "Buttons, cards, stats, badges, progress, dividers, and flow boxes.",
+      body: "Buttons, cards, metrics, badges, progress, dividers, and flow boxes.",
       children: [
         "qs.system.action.buttons",
-        "qs.system.action.stat",
+        "qs.system.action.metric",
         "qs.system.action.progress",
         "qs.system.action.divider",
       ],
@@ -422,10 +422,10 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       tone: "danger",
       onPress: { kind: "agent", name: "show_danger_action" },
     },
-    "qs.system.action.stat": {
-      id: "qs.system.action.stat",
-      type: "stat",
-      label: "Interactive bricks",
+    "qs.system.action.metric": {
+      id: "qs.system.action.metric",
+      type: "metric",
+      label: "Interactive components",
       value: "12",
       delta: "plus field",
       variant: "success",
@@ -458,7 +458,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       title: "Renderer checks",
       kind: "bar",
       variant: "default",
-      labels: ["Table", "Chart", "Field", "Stamp"],
+      labels: ["Table", "Chart", "Field", "Composition"],
       series: [{ label: "coverage", values: [3, 4, 3, 5] }],
     },
     "qs.system.data.table": {
@@ -467,14 +467,14 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       caption: "Catalog variants",
       variant: "default",
       columns: [
-        { key: "brick", label: "Brick" },
+        { key: "component", label: "Component" },
         { key: "contract", label: "Variant / role" },
       ],
       rows: [
-        { brick: "button", contract: "primary, secondary, danger" },
-        { brick: "table", contract: "display-only rows" },
-        { brick: "progress", contract: "track and fill" },
-        { brick: "field", contract: "browser view-state" },
+        { component: "button", contract: "primary, secondary, danger" },
+        { component: "table", contract: "display-only rows" },
+        { component: "progress", contract: "track and fill" },
+        { component: "field", contract: "primitive browser view-state" },
       ],
     },
     "qs.system.form.card": {
@@ -536,8 +536,8 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
     "qs.system.stamps": {
       id: "qs.system.stamps",
       type: "section",
-      title: "Default stamp patterns",
-      body: "The agent sees stamp names, slots, and metadata before it falls back to primitive composition.",
+      title: "Default composition patterns",
+      body: "The agent sees composition names, slots, and metadata before it falls back to primitive composition.",
       variant: "surface",
       children: ["qs.system.stamps.list", "qs.system.stamps.table"],
     },
@@ -548,7 +548,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       items: [
         { title: "hero", body: "Compact product intro with a call to action." },
         { title: "pricing-section", body: "Three-card plan comparison." },
-        { title: "dashboard-summary", body: "KPI stat, status badge, and progress." },
+        { title: "dashboard-summary", body: "KPI metric, status badge, and progress." },
         { title: "settings-panel", body: "Fields plus a collect action." },
         { title: "chart-table-view", body: "Display-only data view." },
       ],
@@ -556,23 +556,23 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
     "qs.system.stamps.table": {
       id: "qs.system.stamps.table",
       type: "table",
-      caption: "Stamp slots",
+      caption: "Composition slots",
       variant: "default",
       columns: [
-        { key: "stamp", label: "Stamp" },
+        { key: "composition", label: "Composition" },
         { key: "slots", label: "Slots" },
       ],
       rows: [
-        { stamp: "hero", slots: "title, subtitle, cta" },
-        { stamp: "settings-panel", slots: "title, email, timezone, save" },
-        { stamp: "support-triage", slots: "issue, details, submit" },
+        { composition: "hero", slots: "title, subtitle, cta" },
+        { composition: "settings-panel", slots: "title, email, timezone, save" },
+        { composition: "support-triage", slots: "issue, details, submit" },
       ],
     },
     "qs.system.catalog": {
       id: "qs.system.catalog",
       type: "section",
       title: "Catalog policy",
-      body: "The default order is stamp, then high-level brick, then primitive fallback. The model chooses intent; assets and renderer own polish.",
+      body: "The default order is composition, then component, then primitive fallback. The model chooses intent; assets and renderer own polish.",
       variant: "surface",
       children: ["qs.system.catalog.list"],
     },
@@ -582,8 +582,8 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       variant: "default",
       items: [
         { title: "Theme", body: "default, locked by name" },
-        { title: "Brick", body: "variant and tone from the catalog only" },
-        { title: "Stamp", body: "name and slots, never fragment JSON in prompt" },
+        { title: "Component", body: "variant and tone from the catalog only" },
+        { title: "Composition", body: "name and slots, never fragment JSON in prompt" },
         { title: "Primitive", body: "box, text, media, and field as fallback base" },
       ],
     },
@@ -604,7 +604,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       type: "section",
       eyebrow: "Your turn",
       title: "Use Cases",
-      body: "Ask Facet to draw a concrete app surface. The agent should update the page with high-level bricks, stamps, variants, and fields instead of only replying in chat.",
+      body: "Ask Facet to draw a concrete app surface. The agent should update the page with components, compositions, variants, and fields instead of only replying in chat.",
       variant: "surface",
       children: ["qs.usecases.alert"],
     },
@@ -715,9 +715,9 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       type: "list",
       variant: "default",
       items: [
-        { title: "Stage", body: "A validated tree of safe bricks and local screens." },
+        { title: "Stage", body: "A validated tree of primitive bricks, components, and local screens." },
         { title: "Patch loop", body: "Server and browser fold the same JSON Patch stream." },
-        { title: "Assets", body: "Themes, stamps, and catalog policy guide visual intent." },
+        { title: "Assets", body: "Themes, compositions, and catalog policy guide visual intent." },
         { title: "Renderer", body: "React resolves token recipes into product UI." },
       ],
     },
@@ -733,8 +733,8 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       ],
       rows: [
         { layer: "Contract", package: "@facet/core", owns: "nodes, tokens, patches" },
-        { layer: "Assets", package: "@facet/assets", owns: "default recipes, stamps" },
-        { layer: "Renderer", package: "@facet/react", owns: "brick rendering" },
+        { layer: "Assets", package: "@facet/assets", owns: "default recipes, compositions" },
+        { layer: "Renderer", package: "@facet/react", owns: "component rendering" },
         { layer: "Agent tools", package: "@facet/agent-tools", owns: "safe mutations" },
       ],
     },
