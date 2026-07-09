@@ -179,6 +179,57 @@ describe("treeHasContent", () => {
     }
   });
 
+  it("true for metric and legacy stat nodes with renderable values", () => {
+    for (const child of [
+      { id: "child", type: "metric", label: "ARR", value: "$24k" },
+      { id: "child", type: "stat", label: "ARR", value: "$24k" },
+    ]) {
+      expect(
+        treeHasContent(
+          tree({
+            r: { id: "r", type: "box", children: ["child"] },
+            child,
+          }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("true for keyValue, emptyState, and loading intrinsic components with content", () => {
+    for (const child of [
+      { id: "child", type: "keyValue", items: [{ label: "Owner", value: "Design" }] },
+      { id: "child", type: "emptyState", title: "No projects yet" },
+      { id: "child", type: "loading" },
+    ]) {
+      expect(
+        treeHasContent(
+          tree({
+            r: { id: "r", type: "box", children: ["child"] },
+            child,
+          }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("false for hostile empty intrinsic component payloads", () => {
+    for (const child of [
+      { id: "child", type: "metric", label: "ARR" },
+      { id: "child", type: "keyValue", items: [] },
+      { id: "child", type: "emptyState" },
+      { id: "child", type: "form", children: [] },
+      { id: "child", type: "search" },
+      { id: "child", type: "filterBar", filters: [] },
+    ]) {
+      const t = tree({
+        r: { id: "r", type: "box", children: ["child"] },
+        child,
+      });
+      expect(() => treeHasContent(t)).not.toThrow();
+      expect(treeHasContent(t)).toBe(false);
+    }
+  });
+
   it("does not count malformed media kind as renderable content", () => {
     expect(
       treeHasContent(
