@@ -46,6 +46,7 @@ import {
   type Space,
   type TextAlign,
 } from "./tokens.js";
+import { COMPONENT_NODE_TYPES, PRIMITIVE_BRICK_TYPES, type FacetNode } from "./nodes.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import {
   boundedDescription,
@@ -129,23 +130,9 @@ export interface ComponentRecipe extends ComponentRecipePart {
 }
 
 export const RECIPE_COMPONENTS = [
-  "box",
-  "text",
-  "media",
-  "field",
-  "button",
-  "section",
-  "card",
-  "tabs",
-  "table",
-  "chart",
-  "stat",
-  "badge",
-  "progress",
-  "alert",
-  "list",
-  "divider",
-] as const;
+  ...PRIMITIVE_BRICK_TYPES,
+  ...COMPONENT_NODE_TYPES,
+] as const satisfies readonly FacetNode["type"][];
 export type RecipeComponentName = (typeof RECIPE_COMPONENTS)[number];
 
 export type ComponentRecipes = Readonly<
