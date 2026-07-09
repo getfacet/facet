@@ -1,9 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { CATALOG_BRICK_TYPES, validateCatalog } from "@facet/core";
+import {
+  CATALOG_BRICK_TYPES,
+  CATALOG_COMPONENT_TYPES,
+  PRIMITIVE_BRICK_TYPES,
+  validateCatalog,
+} from "@facet/core";
 import { DEFAULT_CATALOG } from "./catalog.js";
 
 describe("DEFAULT_CATALOG", () => {
-  it("catalog validates and exposes the full v1 brick coverage", () => {
+  it("catalog validates and exposes primitives, components, and legacy brick compatibility", () => {
     const { catalog, issues } = validateCatalog(DEFAULT_CATALOG);
 
     expect(issues).toEqual([]);
@@ -16,17 +21,43 @@ describe("DEFAULT_CATALOG", () => {
     for (const type of CATALOG_BRICK_TYPES) {
       expect(types.has(type), type).toBe(true);
     }
+
+    const primitiveTypes = new Set(PRIMITIVE_BRICK_TYPES);
+    for (const brick of catalog.bricks) {
+      if (primitiveTypes.has(brick.type as (typeof PRIMITIVE_BRICK_TYPES)[number])) {
+        expect(["box", "text", "media", "field"]).toContain(brick.type);
+      }
+    }
+
+    const componentTypes = new Set((catalog.components ?? []).map((component) => component.type));
+    for (const type of CATALOG_COMPONENT_TYPES) {
+      expect(componentTypes.has(type), type).toBe(true);
+    }
+    expect(componentTypes.has("stat")).toBe(false);
   });
 
-  it("catalog includes variants and guidance for agent-facing high-level bricks", () => {
-    const section = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "section");
-    const card = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "card");
-    const chart = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "chart");
+  it("catalog includes variants and guidance for agent-facing components", () => {
+    const section = DEFAULT_CATALOG.components?.find((component) => component.type === "section");
+    const card = DEFAULT_CATALOG.components?.find((component) => component.type === "card");
+    const chart = DEFAULT_CATALOG.components?.find((component) => component.type === "chart");
+    const metric = DEFAULT_CATALOG.components?.find((component) => component.type === "metric");
+    const stat = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "stat");
 
     expect(section?.variants).toContain("surface");
     expect(card?.variants).toContain("interactive");
     expect(chart?.variants).toContain("default");
+    expect(metric?.variants).toEqual(["default", "success"]);
+    expect(stat?.guidance).toMatch(/legacy alias/i);
     expect(section?.guidance).toMatch(/screen/i);
     expect(chart?.guidance).toMatch(/display-only/i);
+  });
+
+  it("does not hide structural component definitions in default assets", () => {
+    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, "componentDefinitions")).toBe(
+      false,
+    );
+    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, "componentLibrary")).toBe(false);
+    expect(DEFAULT_CATALOG.compositions).toEqual({ mode: "all" });
+    expect(Array.isArray(DEFAULT_CATALOG.compositions)).toBe(false);
   });
 });

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { expandStamp, validateStamp } from "@facet/core";
 import { DEFAULT_STAMPS } from "./stamps.js";
@@ -51,6 +52,30 @@ describe("DEFAULT_STAMPS", () => {
       expect(stamp.metadata?.tags?.length, stamp.name).toBeGreaterThan(0);
       expect(JSON.stringify(stamp.metadata), stamp.name).not.toContain('"nodes"');
     }
+  });
+
+  it("prefers metric where stamp expansion compatibility allows it", () => {
+    const serialized = JSON.stringify(DEFAULT_STAMPS);
+    const nodeTypes = DEFAULT_STAMPS.flatMap((stamp) =>
+      Object.values(stamp.nodes).map((node) => node.type),
+    );
+    const legacyStatNodes = DEFAULT_STAMPS.flatMap((stamp) =>
+      Object.entries(stamp.nodes)
+        .filter(([, node]) => node.type === "stat")
+        .map(([id, node]) => ({ id, stamp: stamp.name, node })),
+    );
+
+    expect(nodeTypes).toContain("metric");
+    expect(legacyStatNodes.map(({ id, stamp }) => `${stamp}:${id}`)).toEqual([
+      "dashboard-summary:dashboard-summary.stat",
+    ]);
+    expect(JSON.stringify(legacyStatNodes[0]?.node)).toContain("{{metric}}");
+    expect(serialized).not.toContain("componentDefinitions");
+    expect(serialized).not.toContain("compositions");
+
+    const source = readFileSync(new URL("./stamps.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/\bfrom\s+["@'](?:node:|@facet\/(react|runtime|server|client))\b/);
+    expect(source).not.toMatch(/\bcomponentDefinitions\b|\bcompositions\b/);
   });
 
   it("declares slots with whole-value markers and each stamp is fillable", () => {

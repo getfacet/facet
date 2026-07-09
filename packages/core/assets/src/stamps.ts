@@ -135,7 +135,7 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
       },
       "pricing-section.starter-price": {
         id: "pricing-section.starter-price",
-        type: "stat",
+        type: "metric",
         label: "Monthly",
         value: "$19",
       },
@@ -149,7 +149,7 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
       },
       "pricing-section.pro-price": {
         id: "pricing-section.pro-price",
-        type: "stat",
+        type: "metric",
         label: "Monthly",
         value: "$49",
       },

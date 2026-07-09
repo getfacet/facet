@@ -144,6 +144,8 @@ describe("DEFAULT_THEME recipes", () => {
       color: "fg-muted",
       size: "sm",
     });
+    expect(DEFAULT_THEME.recipes?.metric?.default).toEqual(DEFAULT_THEME.recipes?.stat?.default);
+    expect(DEFAULT_THEME.recipes?.metric?.success).toEqual(DEFAULT_THEME.recipes?.stat?.success);
   });
 
   it("recipes stay node-free and renderer-free", () => {
@@ -194,18 +196,28 @@ describe("DEFAULT_THEME recipes", () => {
       { component: "button", variant: "primary", parts: ["label"] },
       { component: "button", variant: "secondary", parts: ["label"] },
       { component: "tabs", variant: "default", parts: ["tabList", "tab", "activeTab"] },
+      { component: "nav", variant: "default", parts: ["item", "activeTab"] },
       {
         component: "table",
         variant: "default",
         parts: ["title", "table", "headerRow", "headerCell", "row", "cell"],
       },
       { component: "chart", variant: "default", parts: ["title", "plot", "legend"] },
+      { component: "metric", variant: "default", parts: ["label", "value", "trend"] },
+      { component: "metric", variant: "success", parts: ["label", "value", "trend"] },
+      { component: "keyValue", variant: "default", parts: ["item", "label", "value"] },
       { component: "stat", variant: "default", parts: ["label", "value", "trend"] },
+      { component: "stat", variant: "success", parts: ["label", "value", "trend"] },
       { component: "badge", variant: "neutral", parts: ["label"] },
       { component: "progress", variant: "default", parts: ["label", "track", "fill"] },
       { component: "alert", variant: "info", parts: ["title", "body"] },
       { component: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
       { component: "divider", variant: "default", parts: ["label", "rule"] },
+      { component: "form", variant: "default", parts: ["header", "title", "body", "actions"] },
+      { component: "search", variant: "default", parts: ["label", "control", "input"] },
+      { component: "filterBar", variant: "default", parts: ["item", "label", "control", "input"] },
+      { component: "emptyState", variant: "default", parts: ["title", "body"] },
+      { component: "loading", variant: "default", parts: ["label"] },
     ];
 
     for (const { component, variant, parts } of expectedParts) {
@@ -236,6 +248,15 @@ describe("DEFAULT_THEME recipes", () => {
   });
 
   it("defines every catalog-advertised default variant as a recipe", () => {
+    for (const component of DEFAULT_CATALOG.components ?? []) {
+      for (const variant of component.variants ?? []) {
+        expect(
+          DEFAULT_THEME.recipes?.[component.type]?.[variant],
+          `${component.type}.${variant}`,
+        ).toBeDefined();
+      }
+    }
+
     for (const brick of DEFAULT_CATALOG.bricks) {
       for (const variant of brick.variants ?? []) {
         expect(
