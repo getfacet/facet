@@ -657,7 +657,7 @@ describe("executeStageTool", () => {
   });
 
   describe("catalog policy", () => {
-    it("catalog policy allows catalog-listed v1 bricks and primitive fallback", () => {
+    it("catalog policy allows catalog-listed components and primitive fallback", () => {
       const section = executeStageTool(
         {
           id: "catalog-section",

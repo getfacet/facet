@@ -3,11 +3,11 @@
  * (`box`, `text`, `media`, `field`) remain the universal fallback; intrinsic
  * components provide safer common UI shapes without allowing raw HTML/JS/CSS.
  *
- * These are Lego bricks, not finished furniture. A "card" is a `box` with a
- * border; a "button" is a `box` with `onPress`; a "heading" is a big `text`. The
- * agent composes everything from these four, so the set of producible pages is
- * unbounded — while every brick stays a typed, token-styled data value (never
- * raw HTML/JS), so nothing can be injected and nothing can render broken.
+ * Primitive bricks stay the base and escape hatch; intrinsic components are
+ * typed shortcuts for common, renderer-owned UI shapes. The agent can fall back
+ * to primitives whenever a component is too specific, while every node remains a
+ * typed, token-styled data value (never raw HTML/JS), so nothing can be injected
+ * and nothing can render broken.
  *
  * The vocabulary grows only by adding typed node shapes here and matching
  * validation/rendering support on purpose.

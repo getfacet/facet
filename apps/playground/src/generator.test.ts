@@ -73,7 +73,7 @@ describe("extractJson", () => {
   });
 });
 
-describe("high-level generator renderability", () => {
+describe("component generator renderability", () => {
   it.each(["section", "card"] as const)(
     "accepts a renderable %s root without retrying",
     async (type) => {
@@ -106,7 +106,7 @@ describe("high-level generator renderability", () => {
         rows: [{ name: "Ada" }],
       },
     ],
-  ])("keeps retrying when a non-container high-level %s is the root", async (_type, root) => {
+  ])("keeps retrying when a non-container component %s is the root", async (_type, root) => {
     mockClaudeResponse({ root: "root", nodes: { root } });
     mockClaudeResponse(renderableBoxTree("fallback"));
 
