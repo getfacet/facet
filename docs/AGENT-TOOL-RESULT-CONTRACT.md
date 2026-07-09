@@ -63,7 +63,7 @@ In particular:
 - Buffered edits are `pending`, not success.
 - Rejected edits emit no patch and must include a concrete `next_action`.
 - Catalog policy rejections are `rejected`, not warnings. They emit no patch
-  when the active catalog disallows a node type, variant, stamp, or theme
+  when the active catalog disallows a node type, component variant, composition, or theme
   switch.
 
 ## Visibility Definition
@@ -91,8 +91,8 @@ Every non-complete result should include a concrete `next_action`.
   closed tree.
 - `pending`: define the missing child nodes in the same turn, or replace the
   pending container with a closed node.
-- `rejected`: fix the named input, parent, stamp, tree, or patch limit issue and
-  retry.
+- `rejected`: fix the named input, parent, composition/stamp, tree, or patch
+  limit issue and retry.
 
 Catalog policy rejection is a specific rejected class, often referred to in docs
 and tests as `catalog_policy`. The JSON observation still uses the closest
@@ -102,11 +102,12 @@ appears in `next_action`.
 
 When a catalog policy rejection happens:
 
-- disallowed node type or variant: use an allowed catalog brick, use an allowed
-  variant, or fall back to primitives only when the catalog permits primitive
-  fallback;
-- disallowed stamp: choose a stamp allowed by the active catalog, or compose the
-  UI from allowed bricks;
+- disallowed node type or component variant: use an allowed primitive/component,
+  use an allowed variant, or fall back to primitives only when the catalog
+  permits primitive fallback;
+- disallowed composition: choose a composition allowed by the active catalog
+  (the current tool name is still `use_stamp`), or compose the UI from allowed
+  components/primitives;
 - locked theme: keep the active catalog theme and do not call `set_theme`;
 - allowed-theme list miss: pick a theme listed by the active catalog.
 
@@ -122,6 +123,6 @@ Observations must remain bounded and safe to place in a provider transcript.
 - If a changed node id is too long for the observation contract, omit it and
   increment `omitted_changed_node_count`.
 - Do not include provider keys, visitor ids, collected secrets, raw CSS values,
-  full stamp JSON, or unbounded user input.
+  full composition/stamp JSON, or unbounded user input.
 - Keep the contract provider-neutral; OpenAI and Anthropic receive the same
   logical observation content.

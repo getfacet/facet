@@ -7,9 +7,12 @@ rate limits, abuse operations, admin dashboards, audit logs, secrets management,
 or custom-domain routing.
 
 The catalog and design-system surface is part of that neutral technology layer:
-it is typed UI vocabulary and agent authoring policy (allowed bricks, variants,
-stamps, primitive fallback, and theme switching), not tenant/project or billing
-policy.
+it is typed UI vocabulary and agent authoring policy (primitive bricks,
+intrinsic components, variants, compositions, primitive fallback, and theme
+switching), not tenant/project or billing policy. Facet core owns the intrinsic
+component set; hosted products that need domain-specific UI should expose recipe
+components/compositions through assets rather than letting tenants add new
+intrinsics at runtime.
 
 Production hosted platforms should wrap Facet primitives with their own edge/API
 and operations layer:
@@ -42,10 +45,10 @@ These packages are the reusable core of Facet:
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/core` | Closed stage contract: primitive fallback, v1 high-level bricks, catalog policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
-| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, and `AssetsStore` interfaces and memory/file references for catalog/theme/stamp/initial-tree assets. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
-| `@facet/react` | Renderer, recipe/theme-to-CSS mapping, recipe-part rendering for polished high-level bricks, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
-| `@facet/assets` | Default catalog, polished theme recipes/parts, and stamp metadata/value maps. | Catalog/theme/stamp schemas need fuller authoring docs and editor-facing examples. |
+| `@facet/core` | Closed stage contract: primitive bricks, Facet-owned intrinsic components, catalog/component/composition policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
+| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, and `AssetsStore` interfaces and memory/file references for catalog/theme/composition/initial-tree assets. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
+| `@facet/react` | Renderer, recipe/theme-to-CSS mapping, recipe-part rendering for intrinsic components, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
+| `@facet/assets` | Default catalog, component recipes/parts, and legacy stamp/composition metadata/value maps. | Catalog/theme/composition schemas need fuller authoring docs and editor-facing examples. |
 
 ### Agent Authoring
 
@@ -117,9 +120,9 @@ surface for hosted products.
   keys, billing, metering, admin auth, or tenant isolation. Those belong outside
   this repo.
 - **Catalog scope:** `FacetCatalog` is UI vocabulary policy. It can restrict
-  bricks, variants, stamps, primitive fallback, and theme switching, but it is
-  not authentication, authorization, billing, tenant isolation, moderation, or
-  platform routing.
+  primitive bricks, intrinsic components, variants, compositions, primitive
+  fallback, and theme switching, but it is not authentication, authorization,
+  billing, tenant isolation, moderation, or platform routing.
 - **Docs:** package README files should say which tier they belong to and when
   a hosted platform should wrap or replace them.
 - **Examples:** the repo needs examples for custom agent loops using

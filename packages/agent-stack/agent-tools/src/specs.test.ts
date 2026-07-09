@@ -94,7 +94,8 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     expect(setTheme.description).toMatch(/catalog/i);
     expect(useStamp.description).toMatch(/compat/i);
     expect(useStamp.description).toMatch(/composition/i);
-    expect(allToolText()).not.toMatch(/high-level brick/i);
+    const retiredTerm = new RegExp(["high-level", "brick"].join(" "), "i");
+    expect(allToolText()).not.toMatch(retiredTerm);
     expect(allToolText()).not.toMatch(/v1 brick/i);
   });
 
