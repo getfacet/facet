@@ -715,7 +715,10 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       type: "list",
       variant: "default",
       items: [
-        { title: "Stage", body: "A validated tree of primitive bricks, components, and local screens." },
+        {
+          title: "Stage",
+          body: "A validated tree of primitive bricks, components, and local screens.",
+        },
         { title: "Patch loop", body: "Server and browser fold the same JSON Patch stream." },
         { title: "Assets", body: "Themes, compositions, and catalog policy guide visual intent." },
         { title: "Renderer", body: "React resolves token recipes into product UI." },

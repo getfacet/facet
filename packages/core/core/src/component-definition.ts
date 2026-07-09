@@ -47,9 +47,7 @@ export interface ComponentDefinitionValidationResult {
   readonly issues: readonly string[];
 }
 
-export function validateComponentDefinition(
-  input: unknown,
-): ComponentDefinitionValidationResult {
+export function validateComponentDefinition(input: unknown): ComponentDefinitionValidationResult {
   const issues = new BoundedIssues();
   try {
     return validateComponentDefinitionUnsafe(input, issues);

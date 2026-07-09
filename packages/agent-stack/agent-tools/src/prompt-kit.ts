@@ -182,7 +182,9 @@ function catalogPolicyLines(value: unknown): readonly string[] {
     lines.push(`policy order: ${componentOrder.join(" -> ")}`);
   } else if (Array.isArray(value["order"])) {
     const order = value["order"]
-      .filter((item): item is string => item === "stamp" || item === "brick" || item === "primitive")
+      .filter(
+        (item): item is string => item === "stamp" || item === "brick" || item === "primitive",
+      )
       .map((item) => (item === "stamp" ? "composition" : item === "brick" ? "component" : item));
     if (order.length > 0) lines.push(`policy order: ${order.join(" -> ")}`);
   }

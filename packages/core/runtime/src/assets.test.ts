@@ -391,11 +391,7 @@ describe("loadAssets", () => {
       mediaBrick?.variants,
     );
     expect(second.catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
-    expect(second.catalog.policy.componentOrder).toEqual([
-      "composition",
-      "component",
-      "primitive",
-    ]);
+    expect(second.catalog.policy.componentOrder).toEqual(["composition", "component", "primitive"]);
   });
 
   it("never calls store-supplied array methods while reading themes and stamps", async () => {
@@ -517,9 +513,9 @@ describe("loadAssets", () => {
     );
     expect(loaded.issues.some((i) => i.includes("`themes` had 1100 item(s)"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("`stamps` had 1100 item(s)"))).toBe(true);
-    expect(
-      loaded.issues.some((i) => i.includes("`componentDefinitions` had 1100 item(s)")),
-    ).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`componentDefinitions` had 1100 item(s)"))).toBe(
+      true,
+    );
   });
 
   it("never throws when an initialTree accessor throws — defaults still resolve", async () => {

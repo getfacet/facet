@@ -27,12 +27,7 @@ const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
 
 type CatalogComponent = NonNullable<FacetCatalog["components"]>[number];
 type CatalogComponentOrder = NonNullable<FacetCatalog["policy"]["componentOrder"]>;
-type AssetArrayField =
-  | "issues"
-  | "themes"
-  | "stamps"
-  | "componentDefinitions"
-  | "compositions";
+type AssetArrayField = "issues" | "themes" | "stamps" | "componentDefinitions" | "compositions";
 
 function cloneCatalogComponent(component: CatalogComponent): CatalogComponent {
   const cloned: {
@@ -404,9 +399,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   }
   const rawCompositions = readAssetField(docs, "compositions", issues);
   const compositionDocs =
-    rawCompositions.ok &&
-    rawCompositions.value !== undefined &&
-    isAssetArray(rawCompositions.value)
+    rawCompositions.ok && rawCompositions.value !== undefined && isAssetArray(rawCompositions.value)
       ? rawCompositions.value
       : [];
   if (

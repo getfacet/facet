@@ -20,10 +20,7 @@ function sectionBetween(system: string, start: string, end: string): string {
   return startIndex >= 0 && endIndex > startIndex ? system.slice(startIndex, endIndex) : "";
 }
 
-function promptSection(
-  system: string,
-  heading: "CATALOG" | "THEMES" | "COMPOSITIONS",
-): string {
+function promptSection(system: string, heading: "CATALOG" | "THEMES" | "COMPOSITIONS"): string {
   const start = system.indexOf(heading);
   if (start < 0) return "";
   const nextHeadings = ["CATALOG", "THEMES", "COMPOSITIONS", FACET_PAGE_BRIEF_HEADING]
@@ -340,7 +337,9 @@ describe("buildFacetAgentSystemPrompt", () => {
 
     expect(empty).toBe(base);
     expect(base).not.toContain("Themes you may select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reusable catalog compositions you may expand with the legacy use_stamp tool");
+    expect(base).not.toContain(
+      "Reusable catalog compositions you may expand with the legacy use_stamp tool",
+    );
   });
 
   it("serializes theme names and descriptions only, never theme values or unknown fields", () => {

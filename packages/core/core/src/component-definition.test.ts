@@ -122,8 +122,7 @@ describe("validateComponentDefinition", () => {
       },
     });
     const child = cyclic.definition?.nodes["child"] as unknown as
-      | { children?: readonly string[] }
-      | undefined;
+      { children?: readonly string[] } | undefined;
     expect(child?.children).toEqual([]);
     expect(cyclic.issues.some((issue) => issue.includes("cyclic"))).toBe(true);
 
