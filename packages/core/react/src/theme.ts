@@ -7,6 +7,7 @@ import {
   RADII,
   RATIOS,
   RECIPE_COMPONENTS,
+  RECIPE_PARTS,
   SHADOWS,
   SPACES,
 } from "@facet/core";
@@ -15,6 +16,8 @@ import type {
   BoxStyle,
   Color,
   ComponentRecipe,
+  ComponentRecipePart,
+  ComponentRecipeParts,
   ComponentRecipes,
   FacetTheme,
   FieldStyle,
@@ -26,6 +29,7 @@ import type {
   Radius,
   Ratio,
   RecipeComponentName,
+  RecipePartName,
   Shadow,
   Space,
   TextStyle,
@@ -76,6 +80,15 @@ function safeObjectKeys(value: object): readonly string[] {
   }
 }
 
+function safeOwnValue(record: Record<string, unknown>, key: string): unknown {
+  try {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) return undefined;
+    return record[key];
+  } catch {
+    return undefined;
+  }
+}
+
 function mergeRecipes(override: unknown): ComponentRecipes | undefined {
   const defaults = DEFAULT_THEME.recipes;
   const out: Partial<Record<RecipeComponentName, Readonly<Record<string, ComponentRecipe>>>> =
@@ -94,7 +107,7 @@ function mergeRecipes(override: unknown): ComponentRecipes | undefined {
     );
     if (overrideVariants !== undefined) {
       for (const name of safeObjectKeys(overrideVariants).slice(0, MAX_RECIPE_VARIANTS)) {
-        const recipe = overrideVariants[name];
+        const recipe = safeOwnValue(overrideVariants, name);
         if (!isObjectRecord(recipe)) continue;
         variants[name] = mergeComponentRecipe(variants[name], recipe);
       }
@@ -108,21 +121,62 @@ function mergeComponentRecipe(
   base: ComponentRecipe | undefined,
   override: Record<string, unknown>,
 ): ComponentRecipe {
+  const styleBundles = mergeComponentRecipePart(base, override);
   const merged: {
     box?: ComponentRecipe["box"];
     text?: ComponentRecipe["text"];
     media?: ComponentRecipe["media"];
     field?: ComponentRecipe["field"];
-  } = {};
-  for (const key of ["box", "text", "media", "field"] as const) {
-    const basePart = isObjectRecord(base?.[key]) ? base[key] : undefined;
-    const overridePart = isObjectRecord(override[key]) ? override[key] : undefined;
-    if (basePart === undefined && overridePart === undefined) continue;
-    merged[key] = { ...(basePart ?? {}), ...(overridePart ?? {}) };
-  }
+    parts?: ComponentRecipe["parts"];
+  } = { ...(styleBundles ?? {}) };
+  const overrideParts = safeOwnValue(override, "parts");
+  const parts = mergeComponentRecipeParts(
+    isObjectRecord(base?.parts) ? base.parts : undefined,
+    isObjectRecord(overrideParts) ? overrideParts : undefined,
+  );
+  if (parts !== undefined) merged.parts = parts;
   return Object.keys(merged).length > 0
     ? (merged as ComponentRecipe)
     : (override as ComponentRecipe);
+}
+
+function mergeComponentRecipeParts(
+  base: ComponentRecipeParts | undefined,
+  override: Record<string, unknown> | undefined,
+): ComponentRecipeParts | undefined {
+  if (base === undefined && override === undefined) return undefined;
+  const merged: Partial<Record<RecipePartName, ComponentRecipePart>> = Object.create(
+    null,
+  ) as Partial<Record<RecipePartName, ComponentRecipePart>>;
+  for (const partName of RECIPE_PARTS) {
+    const basePart = isObjectRecord(base?.[partName]) ? base[partName] : undefined;
+    const overrideValue = override === undefined ? undefined : safeOwnValue(override, partName);
+    const overridePart = isObjectRecord(overrideValue) ? overrideValue : undefined;
+    const part = mergeComponentRecipePart(basePart, overridePart);
+    if (part !== undefined) merged[partName] = part;
+  }
+  return Object.keys(merged).length > 0 ? (merged as ComponentRecipeParts) : undefined;
+}
+
+function mergeComponentRecipePart(
+  base: ComponentRecipePart | undefined,
+  override: Record<string, unknown> | undefined,
+): ComponentRecipePart | undefined {
+  if (base === undefined && override === undefined) return undefined;
+  const merged: {
+    box?: ComponentRecipePart["box"];
+    text?: ComponentRecipePart["text"];
+    media?: ComponentRecipePart["media"];
+    field?: ComponentRecipePart["field"];
+  } = {};
+  for (const key of ["box", "text", "media", "field"] as const) {
+    const baseStyle = isObjectRecord(base?.[key]) ? base[key] : undefined;
+    const overrideValue = override === undefined ? undefined : safeOwnValue(override, key);
+    const overrideStyle = isObjectRecord(overrideValue) ? overrideValue : undefined;
+    if (baseStyle === undefined && overrideStyle === undefined) continue;
+    merged[key] = { ...(baseStyle ?? {}), ...(overrideStyle ?? {}) };
+  }
+  return Object.keys(merged).length > 0 ? (merged as ComponentRecipePart) : undefined;
 }
 
 /**

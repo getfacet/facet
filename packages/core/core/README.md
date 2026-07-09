@@ -10,8 +10,11 @@ every other Facet package builds on it.
 The style-token vocabulary includes colors, spacing, typography
 (`FontFamily` / `FontSize` / `FontWeight`), radii, media ratios, flow layout,
 and bounded text/media style choices. Theme recipes are token-only style bundles
-for component variants; concrete CSS values live in validated theme data, not in
-agent-authored trees.
+for component variants and closed internal recipe parts; concrete CSS values
+live in validated theme data, not in agent-authored trees. Recipe parts let a
+theme describe renderer-owned affordances such as field labels/controls, table
+cells, tabs, chart plots, progress fills, list rows, and divider rules without
+letting agents emit raw CSS or arbitrary part keys.
 
 ```bash
 npm install @facet/core
@@ -20,7 +23,9 @@ npm install @facet/core
 Core helpers do the heavy lifting: `validateTree` turns arbitrary input (e.g. an
 LLM's JSON) into a guaranteed-renderable tree, preserving valid primitive
 fallback and high-level nodes while dropping malformed payloads; `validateCatalog`
-turns untrusted catalog data into bounded UI policy; `expandStamp` fills
+turns untrusted catalog data into bounded UI policy; `validateTheme` gates
+token-value maps, component recipes, and recipe parts as operator data;
+`expandStamp` fills
 validated stamp slots, preserves bounded metadata, prunes the root-reachable
 subtree, drops stamped actions that point outside that subtree, and remaps ids
 before a caller emits ordinary patches. `applyPatch` is the one patch function

@@ -8,6 +8,13 @@ a tool-calling LLM agent that draws the page from your guide markdown and keeps
 editing it as visitors chat. The brain is a reference implementation of a
 pluggable seam, not the only brain Facet can run.
 
+With no `facet.md`, quickstart opens on a compact, validated **Facet Live Lab**
+stage that demonstrates the polished default kit: sections, cards, tabs, table,
+chart, fields, buttons, stats, badges, progress, alerts, lists, and a divider.
+That first paint is not a stub mode; the normal path still resolves your
+provider key and the provider-backed reference agent can refine the seeded stage
+on the first visit.
+
 The reference agent runs a bounded **streaming tool loop**: the model calls
 `append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
 (a full redraw), and `say` (chat) — via the provider's native function-calling
@@ -84,8 +91,10 @@ what to collect. It becomes the "PAGE BRIEF" layer of the agent's prompt (the
 stage vocabulary and output contract are fixed layers above it).
 
 - Default path `./facet.md`; if it doesn't exist, a built-in sample service
-  brief (`DEFAULT_GUIDE`) is used
-  silently.
+  brief and seeded "Facet Live Lab" first paint are used silently.
+- Passing an explicit guide makes that guide the product brief. Quickstart will
+  not use the built-in seed; provide `initial.tree.json` through assets if you
+  want an explicit pre-seeded first paint.
 - An **explicitly passed** `--guide` path that doesn't exist is an error:
   exit 1 with `Guide file not found: <path>`.
 
@@ -117,6 +126,10 @@ that doesn't match is ignored):
 | `*.stamp.json` | A reusable `{ name, description?, slots?, root, nodes }` brick fragment the agent may add with `use_stamp`. The prompt advertises names/slots/descriptions only; the server expands the root-reachable stamp subtree into ordinary patches with fresh ids. |
 | `catalog.json` | A `FacetCatalog` policy document that tells the agent which theme is active, whether theme switching is locked or allowed, which brick types/variants and stamps it may use, and whether primitive fallback is allowed. |
 | `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
+
+If the built-in guide is in use and assets do not provide `initial.tree.json`,
+quickstart supplies its own polished Live Lab seed. A valid asset
+`initial.tree.json` wins over that built-in seed.
 
 A theme document looks like:
 
@@ -200,11 +213,11 @@ the model calls `use_stamp`. Stamp expansion only targets an existing container
 parent, reports non-fatal sanitization issues back to the model, and refuses an
 expansion that would overflow one patch batch. Catalog-guided behavior is also
 enforced by the tool executor: a locked theme rejects `set_theme`, disallowed
-brick variants and stamp names reject before any patch is emitted, and the model
-gets a structured repair observation instead of a silent no-op. The validated
-theme map ships inline in the served HTML shell for the renderer (no new
-protocol message). An explicit `--assets` path that doesn't exist ⇒ exit 1
-naming it.
+brick variants, tone-only recipe selectors outside the advertised variants, and
+stamp names reject before any patch is emitted, and the model gets a structured
+repair observation instead of a silent no-op. The validated theme map ships
+inline in the served HTML shell for the renderer (no new protocol message). An
+explicit `--assets` path that doesn't exist ⇒ exit 1 naming it.
 
 This catalog is catalog UI policy only. It is not a hosted auth, billing,
 tenant, metering, rate-limit, or spend-control policy; put those controls in the

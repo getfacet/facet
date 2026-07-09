@@ -1,4 +1,12 @@
-import type { BoxStyle, Color, FacetTheme, FontFamily, Space, TextStyle } from "@facet/core";
+import type {
+  BoxStyle,
+  Color,
+  ComponentRecipe,
+  FacetTheme,
+  FontFamily,
+  Space,
+  TextStyle,
+} from "@facet/core";
 import { DEFAULT_THEME as ASSETS_DEFAULT_THEME } from "@facet/assets";
 import { describe, expect, it } from "vitest";
 import {
@@ -329,6 +337,96 @@ describe("resolveTheme", () => {
 });
 
 describe("recipe resolution", () => {
+  it("resolves component recipe parts", async () => {
+    const { resolveRecipePart } = await import("./recipe-parts.js");
+    const resolved = resolveTheme("brand", [
+      {
+        name: "brand",
+        color: {
+          accent: "#123456",
+          "accent-fg": "#fefefe",
+          surface: "#f3f4f6",
+        },
+        space: { xs: "6px", sm: "10px", lg: "30px" },
+        radius: { md: "14px" },
+        recipes: {
+          button: {
+            primary: {
+              box: { pad: "lg" },
+              parts: {
+                label: { text: { color: "accent-fg", weight: "bold" } },
+                icon: { box: { pad: "xs" } },
+              },
+            },
+          },
+          field: {
+            default: {
+              field: { width: "full" },
+              parts: {
+                label: { text: { color: "fg-muted", size: "sm", weight: "medium" } },
+                control: {
+                  box: { bg: "surface", border: true, pad: "sm", radius: "md" },
+                  field: { width: "full" },
+                },
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    const button = resolveRecipe(resolved, "button", "primary");
+    expect(button.box).toMatchObject({ bg: "accent", pad: "lg" });
+    expect(button.text).toMatchObject({ color: "accent-fg", weight: "semibold" });
+    expect(button.parts?.label?.text).toEqual({ color: "accent-fg", weight: "bold" });
+    expect(boxStyle(button.box, resolved)).toMatchObject({
+      background: "#123456",
+      padding: "30px",
+    });
+    expect(textStyle(button.text, resolved)).toMatchObject({
+      color: "#fefefe",
+      fontWeight: 600,
+    });
+
+    const buttonLabel = resolveRecipePart(button, "label", resolved);
+    expect(buttonLabel.text).toMatchObject({
+      color: "#fefefe",
+      fontWeight: 700,
+    });
+    expect(resolveRecipePart(button, "icon", resolved).box).toMatchObject({
+      padding: "6px",
+    });
+
+    const fallbackField = resolveRecipe(resolved, "field", "__proto__");
+    expect(fallbackField.field).toEqual({ width: "full" });
+    const control = resolveRecipePart(fallbackField, "control", resolved);
+    expect(control.box).toMatchObject({
+      background: "#f3f4f6",
+      border: "1px solid #e2e5ea",
+      borderRadius: "14px",
+      padding: "10px",
+    });
+    expect(control.field).toEqual({ width: "100%" });
+    expect(resolveRecipePart(fallbackField, "unknown", resolved)).toEqual({});
+    expect(
+      resolveRecipePart({ parts: "junk" } as unknown as ComponentRecipe, "label", resolved),
+    ).toEqual({});
+
+    const hostileParts = Object.create(null) as Record<string, unknown>;
+    Object.defineProperty(hostileParts, "label", {
+      enumerable: true,
+      get() {
+        throw new Error("hostile part getter");
+      },
+    });
+    const hostileRecipe = { parts: hostileParts } as unknown as ComponentRecipe;
+    expect(() => resolveRecipePart(hostileRecipe, "label", resolved)).not.toThrow();
+    expect(resolveRecipePart(hostileRecipe, "label", resolved)).toEqual({});
+
+    expect(mediaStyle(undefined, resolved)).toEqual({ display: "block", objectFit: "cover" });
+    expect(fieldStyle(fallbackField.field, resolved)).toEqual({ width: "100%" });
+  });
+
   it("resolves component recipes through the active theme token maps", () => {
     const resolved = resolveTheme("catalog", [
       {
@@ -392,6 +490,11 @@ describe("recipe resolution", () => {
     expect(resolveRecipe(resolved, "stat", "primary")).toEqual({
       box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md", shadow: "sm" },
       text: { color: "fg-muted", size: "sm" },
+      parts: {
+        label: { text: { color: "fg-muted", size: "sm" } },
+        value: { text: { color: "fg", size: "xl", weight: "bold" } },
+        trend: { text: { color: "fg-muted", size: "sm", weight: "medium" } },
+      },
     });
     expect(resolveRecipe(resolved, "button", "__proto__")).toEqual({ box: { pad: "sm" } });
   });

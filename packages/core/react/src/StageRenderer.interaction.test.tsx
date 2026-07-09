@@ -362,11 +362,15 @@ describe("StageRenderer high-level button and tabs (jsdom)", () => {
 
     expect(screen.getByText("home content")).toBeTruthy();
     expect(screen.queryByText("about content")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("false");
 
     fireEvent.click(screen.getByRole("tab", { name: "About" }));
 
     expect(screen.getByText("about content")).toBeTruthy();
     expect(screen.queryByText("home content")).toBeNull();
+    expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("true");
     expect(onAction).not.toHaveBeenCalled();
   });
 });

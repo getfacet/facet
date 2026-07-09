@@ -121,6 +121,42 @@ describe("validateCatalog", () => {
     }
   });
 
+  it("keeps the polished default catalog compact with recipe-backed variants", () => {
+    const variants = Object.fromEntries(
+      DEFAULT_CATALOG.bricks.map((brick) => [brick.type, brick.variants ?? []]),
+    );
+
+    expect(DEFAULT_CATALOG.bricks).toHaveLength(CATALOG_BRICK_TYPES.length);
+    expect(variants).toEqual({
+      box: [],
+      text: [],
+      media: ["default", "hero"],
+      field: ["default"],
+      button: ["primary", "secondary", "danger"],
+      section: ["default", "surface"],
+      card: ["default", "interactive"],
+      tabs: ["default"],
+      table: ["default"],
+      chart: ["default"],
+      stat: ["default", "success"],
+      badge: ["neutral", "success", "warning", "danger"],
+      progress: ["default", "success"],
+      alert: ["info", "success", "warning", "danger"],
+      list: ["default", "compact"],
+      divider: ["default"],
+    });
+
+    const { catalog, issues } = validateCatalog({ name: "minimal-polished-default" });
+    expect(issues).toEqual([]);
+    expect(catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
+    expect(catalog.policy).toEqual({
+      order: ["stamp", "brick", "primitive"],
+      editBeforeAppend: true,
+      compactScreens: true,
+      maxScreenSections: 6,
+    });
+  });
+
   it("returns a catalog typed as FacetCatalog", () => {
     const { catalog } = validateCatalog({ name: "typed" });
     const typed: FacetCatalog = catalog;

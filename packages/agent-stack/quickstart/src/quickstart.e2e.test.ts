@@ -23,6 +23,7 @@ import * as referenceAgent from "@facet/reference-agent";
 import { createStubAgent } from "@facet/reference-agent";
 import * as localAgent from "./agent.js";
 import { runCli, type RunCliHooks } from "./cli.js";
+import { QUICKSTART_INITIAL_STAGE, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 import * as localPrompt from "./prompt.js";
 import * as localProvider from "./provider.js";
 import { startQuickstart, type QuickstartServerOptions, type RunningQuickstart } from "./server.js";
@@ -780,8 +781,8 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         });
         expect(post.status).toBe(202);
 
-        const frames = await stream.next(2);
-        expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "say"]);
+        const frames = await stream.next(3);
+        expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "patch", "say"]);
         expect(sayTexts(frames)).toEqual(["catalog dashboard ready"]);
 
         const providerRequest = JSON.stringify(openAi.bodies[0]);
@@ -789,7 +790,10 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         expect(providerRequest).toContain("quickstart-catalog");
         expect(providerRequest).toContain("policy order: stamp -> brick -> primitive");
 
-        const patchText = JSON.stringify(frames[0]?.data);
+        const seedText = JSON.stringify(frames[0]?.data);
+        expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
+
+        const patchText = JSON.stringify(frames[1]?.data);
         expect(patchText).toContain("catalog-dashboard");
         expect(patchText).toContain("catalog-pricing");
         expect(patchText).toContain('"type":"section"');
@@ -838,11 +842,18 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         ]);
         expect([dashboardPost.status, pricingPost.status]).toEqual([202, 202]);
 
-        const frames = await stream.next(4);
-        expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "say", "patch", "say"]);
+        const frames = await stream.next(5);
+        expect(frames.map((frame) => kindOf(frame.data))).toEqual([
+          "patch",
+          "patch",
+          "say",
+          "patch",
+          "say",
+        ]);
         expect(sayTexts(frames)).toEqual(["catalog dashboard ready", "catalog pricing ready"]);
 
         const frameText = JSON.stringify(frames);
+        expect(frameText).toContain(QUICKSTART_INITIAL_STAGE.root);
         expect(frameText).toContain("catalog-dashboard");
         expect(frameText).toContain("catalog-pricing-screen");
         expect(frameText).not.toContain("midnight");
@@ -857,6 +868,69 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
       await running?.close();
       openAi.restore();
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("quickstart E2E — quickstart polished default", () => {
+  it("quickstart polished default ships the seed before provider output on the CLI path", async () => {
+    const openAi = installOpenAiMock([[mockCall("say", { text: "quickstart seed ready" })], []]);
+    let running: RunningQuickstart | undefined;
+    try {
+      const booted = await bootCli([]);
+      running = booted.running;
+
+      const shell = await (await fetch(`${running.url}/`)).text();
+      expect(shell).toContain("window.__FACET_INITIAL_STAGE__ = ");
+      expect(shell).toContain(QUICKSTART_INITIAL_STAGE.root);
+
+      const visitorId = "e2e-polished-default";
+      const stream = await openStream(running.url, visitorId);
+      try {
+        await stream.next(1); // reset
+        const post = await postEvent(running.url, visitorId, {
+          kind: "visit",
+          visitor: { visitorId },
+        });
+        expect(post.status).toBe(202);
+
+        const frames = await stream.next(2);
+        expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "say"]);
+        expect(sayTexts(frames)).toEqual(["quickstart seed ready"]);
+
+        const seedText = JSON.stringify(frames[0]?.data);
+        expect(seedText).toContain('"op":"replace"');
+        expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
+        for (const type of [
+          "section",
+          "card",
+          "tabs",
+          "table",
+          "chart",
+          "field",
+          "button",
+          "stat",
+          "badge",
+          "progress",
+          "alert",
+          "list",
+          "divider",
+        ]) {
+          expect(seedText).toContain(`"type":"${type}"`);
+        }
+
+        const providerRequest = JSON.stringify(openAi.bodies[0]);
+        expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet Live Lab");
+        expect(providerRequest).toContain("# Facet Live Lab");
+        expect(providerRequest).toContain("polished hierarchy");
+        expect(providerRequest).not.toContain("STUB_TREE");
+        expect(booted.captured.out.join("\n")).toContain("openai");
+      } finally {
+        await stream.close();
+      }
+    } finally {
+      await running?.close();
+      openAi.restore();
     }
   });
 });

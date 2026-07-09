@@ -22,6 +22,13 @@ Default to a compact UX that is useful at first glance: focused sections, visibl
 - Pre-draw screens, hidden panels, and form controls when the visitor should navigate or toggle without waiting for you.
 - Keep forms and their submit controls visible together, with stable field names and concise labels.`;
 
+export const FACET_POLISHED_BRICK_GUIDANCE_PROMPT = `POLISHED BRICK GUIDANCE
+Prefer the polished hierarchy before raw primitive sprawl: use an advertised stamp first when it fits; otherwise use high-level bricks with catalog-advertised variants; use primitive box/text/media only as a fallback for custom flow, copy, or media.
+- Build product-quality defaults with section, card, field, button, tabs, table, chart, stat, badge, progress, alert, list, and divider when those bricks are allowed. Choose variants and tones named in the active catalog before inventing custom primitive structures.
+- Use field for inputs, button for actions, tabs for local navigation, table/chart for display-only data, and stat/badge/progress/alert/list/divider for compact feedback or data affordances before assembling equivalent box/text clusters.
+- Follow catalog policy while editing: when editBeforeAppend is true, update existing polished bricks, stamps, and variants before appending new primitive clusters.
+- Treat recipe parts and concrete theme token values as renderer/operator internals, not stage syntax: never write raw CSS, token values, recipe part names as node fields, stamp node JSON, provider keys, visitor ids, secrets, or unknown asset fields into the page.`;
+
 export const FACET_STATE_EDITING_PROMPT = `STATE EDITING
 Default to an edit-before-append strategy: edit before you append, reuse existing node ids, and change the smallest node that satisfies the request. If an active catalog says editBeforeAppend:false, follow that catalog policy.
 - Use render_page only for the first paint or a major restructure.
@@ -291,6 +298,7 @@ export function buildFacetAgentSystemPrompt(options: FacetAgentSystemPromptOptio
     FACET_AGENT_ROLE_PROMPT,
     STAGE_SPEC,
     FACET_PAGE_EXPERIENCE_PROMPT,
+    FACET_POLISHED_BRICK_GUIDANCE_PROMPT,
     FACET_STATE_EDITING_PROMPT,
     FACET_TOOL_PLAYBOOK_PROMPT,
     FACET_TOOL_RESULT_CONTRACT_PROMPT,

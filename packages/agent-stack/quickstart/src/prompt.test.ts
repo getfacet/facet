@@ -1,15 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
+import { EMPTY_TREE, STAGE_SPEC, isContainer, treeHasContent, validateTree } from "@facet/core";
 import type {
   ClientEvent,
   FacetCatalog,
+  FacetNode,
   FacetSession,
   FacetStamp,
   FacetTheme,
+  FacetTree,
   ServerMessage,
 } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { CollectedEvent } from "@facet/core";
+import { QUICKSTART_INITIAL_STAGE, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 import {
   DEFAULT_GUIDE,
   HISTORY_TURNS,
@@ -43,6 +46,46 @@ function catalogSectionOf(system: string): string {
   const end = nextSections.length > 0 ? Math.min(...nextSections) : system.length;
   return start >= 0 ? system.slice(start, end) : "";
 }
+
+function entryRootOf(tree: FacetTree): string {
+  const entry = tree.entry;
+  if (entry !== undefined && tree.screens !== undefined) {
+    return tree.screens[entry] ?? tree.root;
+  }
+  return tree.root;
+}
+
+function collectTypes(
+  tree: FacetTree,
+  nodeId: string,
+  out = new Set<FacetNode["type"]>(),
+  seen = new Set<string>(),
+) {
+  const node = tree.nodes[nodeId];
+  if (node === undefined || seen.has(nodeId) || seen.size > 1000) return out;
+  seen.add(nodeId);
+  out.add(node.type);
+  if (isContainer(node)) {
+    for (const child of node.children) collectTypes(tree, child, out, seen);
+  }
+  return out;
+}
+
+const REPRESENTATIVE_POLISHED_TYPES: readonly FacetNode["type"][] = [
+  "section",
+  "card",
+  "tabs",
+  "table",
+  "chart",
+  "field",
+  "button",
+  "stat",
+  "badge",
+  "progress",
+  "alert",
+  "list",
+  "divider",
+];
 
 function catalogFixture(): FacetCatalog {
   return {
@@ -119,6 +162,28 @@ describe("buildSystem", () => {
     expect(DEFAULT_GUIDE.toLowerCase()).not.toContain("demo");
     expect(DEFAULT_GUIDE).not.toContain("Facet");
     expect(HISTORY_TURNS).toBe(20);
+  });
+
+  it("quickstart polished default guide validates its compact seeded first screen", () => {
+    const system = buildSystem(QUICKSTART_PAGE_BRIEF);
+    const { tree, issues } = validateTree(QUICKSTART_INITIAL_STAGE);
+    const firstScreenTypes = Array.from(
+      collectTypes(QUICKSTART_INITIAL_STAGE, entryRootOf(QUICKSTART_INITIAL_STAGE)),
+    ).sort();
+    const serializedSeed = JSON.stringify(QUICKSTART_INITIAL_STAGE);
+
+    expect(system).toContain("PAGE BRIEF");
+    expect(system).toContain(QUICKSTART_PAGE_BRIEF);
+    expect(system).toMatch(/polished hierarchy/i);
+    expect(issues).toEqual([]);
+    expect(treeHasContent(tree)).toBe(true);
+    expect(QUICKSTART_INITIAL_STAGE.theme).toBe("default");
+    expect(QUICKSTART_INITIAL_STAGE.entry).toBe("home");
+    expect(firstScreenTypes).toEqual(expect.arrayContaining([...REPRESENTATIVE_POLISHED_TYPES]));
+    expect(serializedSeed).toContain('"collect":"qs.intake"');
+    expect(serializedSeed).not.toMatch(
+      /className|dangerouslySetInnerHTML|<script|#[0-9a-fA-F]{3,8}|\b\d+(px|rem|em|%)\b/,
+    );
   });
 
   it("with no assets (or empty arrays) adds no THEMES/STAMPS section (DC-008 byte-identity)", () => {

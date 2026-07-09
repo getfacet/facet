@@ -24,6 +24,22 @@ const DAWN: FacetTheme = {
   space: { md: "50px" },
 };
 
+const POLISHED_PARTS: FacetTheme = {
+  name: "polished-parts",
+  color: { fg: "#fe0000", bg: "#ababab" },
+  recipes: {
+    button: {
+      default: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
+    },
+    badge: {
+      success: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
+    },
+    field: {
+      default: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
+    },
+  },
+};
+
 /** A one-box, one-text tree whose styles reference the tokens the themes override. */
 function themedTree(theme: string): FacetTree {
   return {
@@ -114,6 +130,34 @@ describe("StageRenderer theming (jsdom)", () => {
     const box = rootBox(container);
     expect(box.style.padding).toBe("16px");
     expect(box.style.borderRadius).toBe("10px");
+  });
+
+  it("renders high-level recipe parts with variant and tone fallback", () => {
+    const tree: FacetTree = {
+      root: "root",
+      theme: "polished-parts",
+      nodes: {
+        root: { id: "root", type: "box", children: ["save", "status", "email"] },
+        save: { id: "save", type: "button", label: "Save", variant: "missing" },
+        status: { id: "status", type: "badge", label: "Ready", tone: "success" },
+        email: { id: "email", type: "field", name: "email", label: "Email" },
+      },
+    };
+
+    const { container } = render(<StageRenderer themes={[POLISHED_PARTS]} tree={tree} />);
+    const save = container.querySelector('[role="button"] span') as HTMLElement;
+    const readySpans = Array.from(container.querySelectorAll("span")).filter(
+      (node) => node.textContent === "Ready",
+    );
+    const status = readySpans[readySpans.length - 1] as HTMLElement;
+    const email = Array.from(container.querySelectorAll("span")).find(
+      (node) => node.textContent === "Email",
+    ) as HTMLElement;
+
+    for (const node of [save, status, email]) {
+      expect(node.style.color === "#fe0000" || node.style.color === "rgb(254, 0, 0)").toBe(true);
+      expect(node.style.fontWeight).toBe("700");
+    }
   });
 
   it("never throws and never injects for hostile or non-string theme names", () => {

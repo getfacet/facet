@@ -116,6 +116,20 @@ export const SHADOW: Record<Shadow, string> = Object.assign(
 const recipeVariants = <T extends Record<string, ComponentRecipe>>(variants: T): Readonly<T> =>
   Object.assign(Object.create(null) as T, variants);
 
+const sectionParts = (): NonNullable<ComponentRecipe["parts"]> => ({
+  label: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
+  title: { text: { color: "fg", size: "xl", weight: "bold" } },
+  body: { text: { color: "fg" } },
+});
+
+const cardParts = (): NonNullable<ComponentRecipe["parts"]> => ({
+  header: { box: { gap: "xs" } },
+  title: { text: { color: "fg", size: "lg", weight: "bold" } },
+  body: { text: { color: "fg-muted" } },
+  footer: { box: { direction: "row", gap: "sm", align: "center" } },
+  actions: { box: { direction: "row", gap: "sm", align: "center", wrap: true } },
+});
+
 export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as ComponentRecipes, {
   box: recipeVariants({
     panel: {
@@ -147,127 +161,239 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
   field: recipeVariants({
     default: {
       field: { width: "full" },
+      parts: {
+        label: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
+        control: { field: { width: "full" } },
+        input: { field: { width: "full" } },
+        helpText: { text: { color: "fg-muted", size: "xs" } },
+        errorText: { text: { color: "danger", size: "xs", weight: "medium" } },
+      },
     },
   }),
   button: recipeVariants({
     primary: {
       box: { bg: "accent", border: true, pad: "sm", radius: "md", shadow: "sm" },
       text: { color: "accent-fg", weight: "semibold" },
+      parts: {
+        label: { text: { color: "accent-fg", weight: "semibold" } },
+      },
     },
     secondary: {
       box: { bg: "surface", border: true, pad: "sm", radius: "md" },
       text: { color: "fg", weight: "semibold" },
+      parts: {
+        label: { text: { color: "fg", weight: "semibold" } },
+      },
     },
     danger: {
       box: { bg: "danger", border: true, pad: "sm", radius: "md", shadow: "sm" },
       text: { color: "accent-fg", weight: "semibold" },
+      parts: {
+        label: { text: { color: "accent-fg", weight: "semibold" } },
+      },
     },
   }),
   section: recipeVariants({
     default: {
       box: { gap: "md", pad: "lg", width: "full" },
       text: { color: "fg" },
+      parts: sectionParts(),
     },
     surface: {
       box: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
       text: { color: "fg" },
+      parts: sectionParts(),
     },
   }),
   card: recipeVariants({
     default: {
       box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
       text: { color: "fg" },
+      parts: cardParts(),
     },
     interactive: {
       box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "md" },
       text: { color: "fg" },
+      parts: cardParts(),
     },
   }),
   tabs: recipeVariants({
     default: {
       box: { bg: "surface", border: true, gap: "xs", pad: "xs", radius: "full" },
       text: { color: "fg-muted", size: "sm", weight: "semibold" },
+      parts: {
+        tabList: { box: { direction: "row", gap: "xs", wrap: true } },
+        tab: {
+          box: { bg: "surface", border: true, pad: "sm", radius: "full" },
+          text: { color: "fg-muted", size: "sm", weight: "semibold" },
+        },
+        activeTab: {
+          box: { bg: "accent", border: true, pad: "sm", radius: "full" },
+          text: { color: "accent-fg", size: "sm", weight: "semibold" },
+        },
+      },
     },
   }),
   table: recipeVariants({
     default: {
       box: { bg: "surface", border: true, pad: "md", radius: "md", scroll: "x" },
       text: { color: "fg", size: "sm" },
+      parts: {
+        title: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
+        table: { text: { color: "fg", size: "sm" } },
+        headerRow: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
+        headerCell: {
+          box: { pad: "sm" },
+          text: { color: "fg-muted", size: "sm", weight: "semibold" },
+        },
+        row: { text: { color: "fg", size: "sm" } },
+        cell: {
+          box: { pad: "sm" },
+          text: { color: "fg", size: "sm" },
+        },
+      },
     },
   }),
   chart: recipeVariants({
     default: {
       box: { bg: "surface", border: true, pad: "md", radius: "md", shadow: "sm" },
       text: { color: "fg-muted", size: "sm" },
+      parts: {
+        title: { text: { color: "fg", size: "sm", weight: "semibold" } },
+        plot: { box: { bg: "surface-2", radius: "md" } },
+        legend: { text: { color: "fg-muted", size: "xs" } },
+      },
     },
   }),
   stat: recipeVariants({
     default: {
       box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md", shadow: "sm" },
       text: { color: "fg-muted", size: "sm" },
+      parts: {
+        label: { text: { color: "fg-muted", size: "sm" } },
+        value: { text: { color: "fg", size: "xl", weight: "bold" } },
+        trend: { text: { color: "fg-muted", size: "sm", weight: "medium" } },
+      },
     },
     success: {
       box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
       text: { color: "success", size: "sm", weight: "semibold" },
+      parts: {
+        label: { text: { color: "fg-muted", size: "sm" } },
+        value: { text: { color: "success", size: "xl", weight: "bold" } },
+        trend: { text: { color: "success", size: "sm", weight: "medium" } },
+      },
     },
   }),
   badge: recipeVariants({
     neutral: {
       box: { bg: "surface-2", pad: "xs", radius: "full" },
       text: { color: "neutral", size: "xs", weight: "semibold" },
+      parts: {
+        label: { text: { color: "neutral", size: "xs", weight: "semibold" } },
+      },
     },
     success: {
       box: { bg: "surface", border: true, pad: "xs", radius: "full" },
       text: { color: "success", size: "xs", weight: "semibold" },
+      parts: {
+        label: { text: { color: "success", size: "xs", weight: "semibold" } },
+      },
     },
     warning: {
       box: { bg: "surface", border: true, pad: "xs", radius: "full" },
       text: { color: "warning", size: "xs", weight: "semibold" },
+      parts: {
+        label: { text: { color: "warning", size: "xs", weight: "semibold" } },
+      },
     },
     danger: {
       box: { bg: "surface", border: true, pad: "xs", radius: "full" },
       text: { color: "danger", size: "xs", weight: "semibold" },
+      parts: {
+        label: { text: { color: "danger", size: "xs", weight: "semibold" } },
+      },
     },
   }),
   progress: recipeVariants({
     default: {
       box: { bg: "surface-2", radius: "full", width: "full" },
+      parts: {
+        label: { text: { color: "fg-muted", size: "sm", weight: "medium" } },
+        track: { box: { bg: "surface-2", radius: "full", width: "full" } },
+        fill: { box: { bg: "accent", radius: "full", width: "full" } },
+      },
     },
     success: {
       box: { bg: "success", radius: "full", width: "full" },
+      parts: {
+        label: { text: { color: "success", size: "sm", weight: "medium" } },
+        track: { box: { bg: "surface-2", radius: "full", width: "full" } },
+        fill: { box: { bg: "success", radius: "full", width: "full" } },
+      },
     },
   }),
   alert: recipeVariants({
     info: {
       box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
       text: { color: "info" },
+      parts: {
+        title: { text: { color: "info", weight: "bold" } },
+        body: { text: { color: "fg" } },
+      },
     },
     success: {
       box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
       text: { color: "success" },
+      parts: {
+        title: { text: { color: "success", weight: "bold" } },
+        body: { text: { color: "fg" } },
+      },
     },
     warning: {
       box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
       text: { color: "warning" },
+      parts: {
+        title: { text: { color: "warning", weight: "bold" } },
+        body: { text: { color: "fg" } },
+      },
     },
     danger: {
       box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
       text: { color: "danger" },
+      parts: {
+        title: { text: { color: "danger", weight: "bold" } },
+        body: { text: { color: "fg" } },
+      },
     },
   }),
   list: recipeVariants({
     default: {
       box: { gap: "sm", pad: "sm" },
       text: { color: "fg" },
+      parts: {
+        item: { box: { bg: "surface", border: true, pad: "sm", radius: "md" } },
+        itemTitle: { text: { color: "fg", weight: "semibold" } },
+        itemText: { text: { color: "fg-muted", size: "sm" } },
+      },
     },
     compact: {
       box: { gap: "xs", pad: "xs" },
       text: { color: "fg-muted", size: "sm" },
+      parts: {
+        item: { box: { pad: "xs", radius: "sm" } },
+        itemTitle: { text: { color: "fg", size: "sm", weight: "semibold" } },
+        itemText: { text: { color: "fg-muted", size: "xs" } },
+      },
     },
   }),
   divider: recipeVariants({
     default: {
       box: { border: true, width: "full" },
+      parts: {
+        label: { text: { color: "fg-muted", size: "xs", weight: "medium" } },
+        rule: { box: { bg: "border", width: "full" } },
+      },
     },
   }),
 } satisfies ComponentRecipes);

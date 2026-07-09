@@ -13,6 +13,10 @@ npm install @facet/assets @facet/core
 component recipes. Recipes are named style bundles for primitive and high-level
 bricks, such as `button.primary`, `section.surface`, `card.interactive`, and
 `badge.success`; agents still emit recipe or token names, not CSS values.
+High-level recipes also carry token-only `parts` for internal affordances such as
+field labels and controls, button labels, tabs, table cells, chart plots,
+progress tracks/fills, list items, and divider rules. Those parts are default
+renderer data, not new stage syntax.
 Its default sans stack is `Nunito, sans-serif`; this package only exports the
 data value, so hosts that want the exact Nunito face must load that font in
 their own shell.
@@ -26,12 +30,12 @@ Prompt layers expose that metadata, names, descriptions, and slot names only;
 stamp node JSON stays server-side.
 
 `DEFAULT_CATALOG` is the default UI authoring policy. It locks the active theme
-to `default`, allows the built-in high-level brick set and variants, allows all
-advertised stamps, permits primitive fallback, and teaches the order
-`stamp -> high-level brick -> primitive fallback` with edit-before-append and
-compact-screen guidance. This catalog is about what UI the agent may author; it
-is not hosted platform policy for tenant isolation, authentication, billing,
-metering, spend caps, or custom domains.
+to `default`, allows the built-in high-level brick set, advertises the compact
+recipe variants backed by `DEFAULT_THEME`, allows all advertised stamps, permits
+primitive fallback, and teaches the order `stamp -> high-level brick -> primitive
+fallback` with edit-before-append and compact-screen guidance. This catalog is
+about what UI the agent may author; it is not hosted platform policy for tenant
+isolation, authentication, billing, metering, spend caps, or custom domains.
 
 ```ts
 import { DEFAULT_CATALOG, DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";

@@ -12,9 +12,10 @@ import { readFile } from "node:fs/promises";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import type { FacetAgent, FacetCatalog, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
-import { DEFAULT_GUIDE, createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
+import { createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
 import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
+import { QUICKSTART_INITIAL_STAGE, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 
 export interface RunCliHooks {
@@ -123,8 +124,9 @@ export async function runCli(
   }
 
   // Guide resolution (Decision 9): an EXPLICIT path must exist; the DEFAULT
-  // path falls back to the built-in guide silently.
+  // path falls back to the quickstart-owned built-in guide silently.
   let guide: string;
+  let usingQuickstartPageBrief = false;
   if (flags.guide !== undefined) {
     try {
       guide = await readFile(flags.guide, "utf8");
@@ -136,7 +138,8 @@ export async function runCli(
     try {
       guide = await readFile(DEFAULT_GUIDE_PATH, "utf8");
     } catch {
-      guide = DEFAULT_GUIDE;
+      guide = QUICKSTART_PAGE_BRIEF;
+      usingQuickstartPageBrief = true;
     }
   }
 
@@ -174,7 +177,8 @@ export async function runCli(
   const themes: readonly FacetTheme[] = loaded.themes;
   const stamps: readonly FacetStamp[] = loaded.stamps;
   const catalog: FacetCatalog = loaded.catalog;
-  const initialStage: FacetTree | undefined = loaded.initialTree;
+  const initialStage: FacetTree | undefined =
+    loaded.initialTree ?? (usingQuickstartPageBrief ? QUICKSTART_INITIAL_STAGE : undefined);
   for (const issue of loaded.issues) error(`[facet-quickstart] ${issue}`);
   hooks.onResolvedAssets?.({ themes, stamps, catalog });
 

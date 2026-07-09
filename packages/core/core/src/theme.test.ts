@@ -413,6 +413,11 @@ describe("validateTheme", () => {
             text: { color: "fg-muted", size: "sm" },
           },
         },
+        media: {
+          hero: {
+            media: { radius: "lg", width: "full", ratio: "wide" },
+          },
+        },
       },
     });
 
@@ -430,7 +435,74 @@ describe("validateTheme", () => {
       color: "accent-fg",
       weight: "semibold",
     });
+    expect(theme?.recipes?.media?.hero?.media).toEqual({
+      radius: "lg",
+      width: "full",
+      ratio: "wide",
+    });
     expect(Object.getPrototypeOf(theme?.recipes?.button)).toBeNull();
+  });
+
+  it("validates token-only recipe parts", () => {
+    const input = JSON.parse(`{
+      "name": "brand",
+      "recipes": {
+        "field": {
+          "default": {
+            "field": { "width": "full" },
+            "parts": {
+              "label": {
+                "text": { "color": "fg-muted", "size": "sm", "weight": "medium" }
+              },
+              "control": {
+                "box": { "bg": "surface", "pad": "sm", "radius": "md", "border": true }
+              },
+              "icon": {
+                "box": { "bg": "#fff", "pad": "huge", "width": "auto", "border": "yes" },
+                "text": { "color": "var(--danger)", "size": "sm" },
+                "style": { "color": "red" }
+              },
+              "customRawPart": {
+                "box": { "bg": "accent" }
+              },
+              "__proto__": {
+                "box": { "bg": "danger" }
+              }
+            }
+          }
+        }
+      }
+    }`);
+    Object.defineProperty(input.recipes.field.default.parts, "body", {
+      enumerable: true,
+      get() {
+        throw new Error("hostile part");
+      },
+    });
+
+    const { theme, issues } = validateTheme(input);
+
+    expect(theme).toBeDefined();
+    expect(hasError(issues)).toBe(false);
+    expect(theme?.recipes?.field?.default?.field).toEqual({ width: "full" });
+    const parts = theme?.recipes?.field?.default?.parts;
+    expect(parts?.label?.text).toEqual({
+      color: "fg-muted",
+      size: "sm",
+      weight: "medium",
+    });
+    expect(parts?.control?.box).toEqual({
+      bg: "surface",
+      pad: "sm",
+      radius: "md",
+      border: true,
+    });
+    expect(parts?.icon?.box).toEqual({ width: "auto" });
+    expect(parts?.icon?.text).toEqual({ size: "sm" });
+    expect(Object.prototype.hasOwnProperty.call(parts ?? {}, "customRawPart")).toBe(false);
+    expect(parts?.body).toBeUndefined();
+    expect(Object.getPrototypeOf(parts)).toBeNull();
+    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(6);
   });
 
   it("drops invalid component recipe tokens and raw CSS values with warnings", () => {

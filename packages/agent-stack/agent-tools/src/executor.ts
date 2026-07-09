@@ -730,6 +730,18 @@ function nodeCatalogViolation(
       nextAction: `Use an allowed "${node.type}" variant or omit variant for the default recipe.`,
     };
   }
+  const tone = nodeTone(node);
+  if (
+    variant === undefined &&
+    tone !== undefined &&
+    brick.variants !== undefined &&
+    !brick.variants.includes(tone)
+  ) {
+    return {
+      message: `error: catalog policy rejected tone "${tone}" as a recipe selector for node type "${node.type}". Allowed variants: ${brick.variants.join(", ")}.`,
+      nextAction: `Use an allowed "${node.type}" variant, or omit tone when the catalog does not advertise that recipe.`,
+    };
+  }
   return undefined;
 }
 
@@ -774,6 +786,10 @@ function themeCatalogViolation(
 
 function nodeVariant(node: FacetNode): string | undefined {
   return "variant" in node && typeof node.variant === "string" ? node.variant : undefined;
+}
+
+function nodeTone(node: FacetNode): string | undefined {
+  return "tone" in node && typeof node.tone === "string" ? node.tone : undefined;
 }
 
 function catalogAllowedNodeTypes(catalog: FacetCatalog): string {

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
-import type { Color, FacetTheme, FontFamily, Shadow, Space } from "@facet/core";
-import { validateTheme } from "@facet/core";
+import type { Color, FacetTheme, FontFamily, RecipePartName, Shadow, Space } from "@facet/core";
+import { DEFAULT_CATALOG, validateTheme } from "@facet/core";
 import { describe, expect, it } from "vitest";
 import { COLOR, DEFAULT_THEME, FONT_FAMILY } from "./theme.js";
 
@@ -147,8 +147,6 @@ describe("DEFAULT_THEME recipes", () => {
       "root",
       "onPress",
       "onHold",
-      "label",
-      "value",
       "items",
       "rows",
       "series",
@@ -171,5 +169,71 @@ describe("DEFAULT_THEME recipes", () => {
       /\bfrom\s+["@']@facet\/(react|runtime|server|client|reference-agent|quickstart)["']/,
     );
     expect(source).not.toMatch(/\b(CSSProperties|React)\b/);
+  });
+
+  it("polished default recipes define token-only parts for high-level affordances", () => {
+    const expectedParts: ReadonlyArray<{
+      readonly component: keyof NonNullable<FacetTheme["recipes"]>;
+      readonly variant: string;
+      readonly parts: readonly RecipePartName[];
+    }> = [
+      {
+        component: "field",
+        variant: "default",
+        parts: ["label", "control", "input", "helpText", "errorText"],
+      },
+      { component: "button", variant: "primary", parts: ["label"] },
+      { component: "button", variant: "secondary", parts: ["label"] },
+      { component: "tabs", variant: "default", parts: ["tabList", "tab", "activeTab"] },
+      {
+        component: "table",
+        variant: "default",
+        parts: ["title", "table", "headerRow", "headerCell", "row", "cell"],
+      },
+      { component: "chart", variant: "default", parts: ["title", "plot", "legend"] },
+      { component: "stat", variant: "default", parts: ["label", "value", "trend"] },
+      { component: "badge", variant: "neutral", parts: ["label"] },
+      { component: "progress", variant: "default", parts: ["label", "track", "fill"] },
+      { component: "alert", variant: "info", parts: ["title", "body"] },
+      { component: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
+      { component: "divider", variant: "default", parts: ["label", "rule"] },
+    ];
+
+    for (const { component, variant, parts } of expectedParts) {
+      const recipe = DEFAULT_THEME.recipes?.[component]?.[variant];
+      expect(recipe, `${String(component)}.${variant}`).toBeDefined();
+      for (const part of parts) {
+        expect(
+          recipe?.parts?.[part],
+          `${String(component)}.${variant}.parts.${part}`,
+        ).toBeDefined();
+      }
+    }
+
+    const tokenOnly = (value: unknown, path: string): void => {
+      if (typeof value === "string") {
+        expect(value, path).not.toMatch(/#|rgb\(|hsl\(|url\(|var\(|\b\d+(px|rem|em|%)\b/);
+        return;
+      }
+      if (typeof value === "boolean" || value === undefined) return;
+      expect(typeof value === "object" && value !== null && !Array.isArray(value), path).toBe(true);
+      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+        tokenOnly(child, `${path}.${key}`);
+      }
+    };
+
+    tokenOnly(DEFAULT_THEME.recipes, "DEFAULT_THEME.recipes");
+    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
+  });
+
+  it("defines every catalog-advertised default variant as a recipe", () => {
+    for (const brick of DEFAULT_CATALOG.bricks) {
+      for (const variant of brick.variants ?? []) {
+        expect(
+          DEFAULT_THEME.recipes?.[brick.type]?.[variant],
+          `${brick.type}.${variant}`,
+        ).toBeDefined();
+      }
+    }
   });
 });

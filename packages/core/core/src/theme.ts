@@ -58,6 +58,11 @@ import {
   printableKey,
   ISSUES_SUPPRESSED,
 } from "./issues.js";
+import { validateRecipeParts } from "./theme-recipes.js";
+import type { RecipePartName } from "./theme-recipes.js";
+
+export { RECIPE_PARTS } from "./theme-recipes.js";
+export type { RecipePartName } from "./theme-recipes.js";
 
 /** A partial override document over the default theme. Every group is optional. */
 export interface FacetTheme {
@@ -110,11 +115,17 @@ export interface RecipeFieldStyle {
   readonly width?: Sizing;
 }
 
-export interface ComponentRecipe {
+export interface ComponentRecipePart {
   readonly box?: RecipeBoxStyle;
   readonly text?: RecipeTextStyle;
   readonly media?: RecipeMediaStyle;
   readonly field?: RecipeFieldStyle;
+}
+
+export type ComponentRecipeParts = Readonly<Partial<Record<RecipePartName, ComponentRecipePart>>>;
+
+export interface ComponentRecipe extends ComponentRecipePart {
+  readonly parts?: ComponentRecipeParts;
 }
 
 export const RECIPE_COMPONENTS = [
@@ -678,18 +689,29 @@ function validateRecipeFieldStyle(
   return Object.keys(out).length > 0 ? (out as RecipeFieldStyle) : undefined;
 }
 
-const COMPONENT_RECIPE_KEYS = new Set(["box", "text", "media", "field"]);
+const COMPONENT_RECIPE_PART_KEYS = new Set(["box", "text", "media", "field"]);
+const COMPONENT_RECIPE_KEYS = new Set([...COMPONENT_RECIPE_PART_KEYS, "parts"]);
 
-function validateComponentRecipe(
+function recipeObject(
   raw: unknown,
   path: string,
   issues: IssueList,
-): ComponentRecipe | undefined {
+): Record<string, unknown> | undefined {
   if (!isPlainObject(raw)) {
     issues.push({ severity: "warning", message: `${path}: recipe is not an object; ignored` });
     return undefined;
   }
-  for (const key of Object.keys(raw)) {
+  return raw;
+}
+
+function assignRecipeStyleBundles(
+  input: Record<string, unknown>,
+  out: Record<string, unknown>,
+  path: string,
+  issues: IssueList,
+  knownKeys: ReadonlySet<string>,
+): void {
+  for (const key of Object.keys(input)) {
     if (isForbiddenKey(key)) {
       issues.push({
         severity: "warning",
@@ -697,29 +719,57 @@ function validateComponentRecipe(
       });
       continue;
     }
-    if (!COMPONENT_RECIPE_KEYS.has(key)) {
+    if (!knownKeys.has(key)) {
       issues.push({
         severity: "warning",
         message: `${path}: unknown recipe key "${printableKey(key)}" dropped`,
       });
     }
   }
-  const out: Record<string, unknown> = nullMap<unknown>();
-  if (raw.box !== undefined) {
-    const box = validateRecipeBoxStyle(raw.box, `${path}.box`, issues);
+  if (input.box !== undefined) {
+    const box = validateRecipeBoxStyle(input.box, `${path}.box`, issues);
     if (box !== undefined) out.box = box;
   }
-  if (raw.text !== undefined) {
-    const text = validateRecipeTextStyle(raw.text, `${path}.text`, issues);
+  if (input.text !== undefined) {
+    const text = validateRecipeTextStyle(input.text, `${path}.text`, issues);
     if (text !== undefined) out.text = text;
   }
-  if (raw.media !== undefined) {
-    const media = validateRecipeMediaStyle(raw.media, `${path}.media`, issues);
+  if (input.media !== undefined) {
+    const media = validateRecipeMediaStyle(input.media, `${path}.media`, issues);
     if (media !== undefined) out.media = media;
   }
-  if (raw.field !== undefined) {
-    const field = validateRecipeFieldStyle(raw.field, `${path}.field`, issues);
+  if (input.field !== undefined) {
+    const field = validateRecipeFieldStyle(input.field, `${path}.field`, issues);
     if (field !== undefined) out.field = field;
+  }
+}
+
+function validateComponentRecipePart(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): ComponentRecipePart | undefined {
+  const input = recipeObject(raw, path, issues);
+  if (input === undefined) return undefined;
+  const out: Record<string, unknown> = nullMap<unknown>();
+  assignRecipeStyleBundles(input, out, path, issues, COMPONENT_RECIPE_PART_KEYS);
+  return Object.keys(out).length > 0 ? (out as ComponentRecipePart) : undefined;
+}
+
+function validateComponentRecipe(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): ComponentRecipe | undefined {
+  const input = recipeObject(raw, path, issues);
+  if (input === undefined) return undefined;
+  const out: Record<string, unknown> = nullMap<unknown>();
+  assignRecipeStyleBundles(input, out, path, issues, COMPONENT_RECIPE_KEYS);
+  if (input.parts !== undefined) {
+    const parts = validateRecipeParts(input.parts, `${path}.parts`, issues, (partRaw, partPath) =>
+      validateComponentRecipePart(partRaw, partPath, issues),
+    );
+    if (parts !== undefined) out.parts = parts;
   }
   return Object.keys(out).length > 0 ? (out as ComponentRecipe) : undefined;
 }

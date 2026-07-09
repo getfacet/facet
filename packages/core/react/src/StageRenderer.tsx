@@ -6,24 +6,15 @@ import type {
   ReactNode,
 } from "react";
 import {
-  FIELD_INPUTS,
   isContainer,
   isSafeMediaSrc,
   isTreeShaped,
-  MAX_CHART_POINTS,
-  MAX_CHART_SERIES,
   MAX_DEPTH,
-  MAX_FIELD_OPTIONS,
   MAX_FIELD_VALUE_CHARS,
   MAX_FIELDS_KEYS,
-  MAX_LIST_ITEMS,
   MAX_NODE_BODY_CHARS,
   MAX_NODE_LABEL_CHARS,
   MAX_RENDER_NODES,
-  MAX_TABLE_CELL_CHARS,
-  MAX_TABLE_COLUMNS,
-  MAX_TABLE_ROWS,
-  MAX_TABS_ITEMS,
   sanitizeActionPayload,
   treeHasContent,
   type AgentAction,
@@ -36,15 +27,9 @@ import {
   type FieldValues,
   type NodeId,
 } from "@facet/core";
-import {
-  boxStyle,
-  fieldStyle,
-  mediaStyle,
-  resolveRecipe,
-  resolveTheme,
-  textStyle,
-} from "./theme.js";
+import { boxStyle, mediaStyle, resolveRecipe, resolveTheme, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
+import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
 import { APPEAR_CSS, appearClass } from "./appear.js";
 import {
   MANY_CHANGE_THRESHOLD,
@@ -102,33 +87,9 @@ function styleOf<T extends object>(style: T | undefined): T | undefined {
   return typeof style === "object" && style !== null ? style : undefined;
 }
 
-function optionsOf(options: unknown): readonly string[] {
-  if (!Array.isArray(options)) return [];
-  const kept: string[] = [];
-  for (const option of options) {
-    if (kept.length >= MAX_FIELD_OPTIONS) break;
-    if (typeof option === "string") {
-      kept.push(option.slice(0, MAX_FIELD_VALUE_CHARS));
-    }
-  }
-  return kept;
-}
-
-function isFieldInput(input: unknown): input is (typeof FIELD_INPUTS)[number] {
-  return typeof input === "string" && (FIELD_INPUTS as readonly string[]).includes(input);
-}
-
-function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
 function cappedString(value: unknown, max: number): string | undefined {
-  const text = stringValue(value);
+  const text = typeof value === "string" ? value : undefined;
   return text === undefined ? undefined : text.slice(0, max);
-}
-
-function finiteNumber(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
 function childIdsOf(node: FacetNode): readonly NodeId[] {
@@ -211,6 +172,7 @@ interface VisibleInfo {
 interface RenderSnapshot {
   readonly tree: FacetTree;
   readonly rootId: NodeId;
+  readonly activeScreen: string | null;
   readonly visible: VisibleInfo;
   readonly visibilityOverrides: ReadonlyMap<NodeId, boolean>;
   readonly theme: ResolvedTheme;
@@ -509,6 +471,23 @@ function resolveScreenRoot(tree: FacetTree, currentScreen: string | null): NodeI
     }
   }
   return safeTreeRoot(tree) ?? "root";
+}
+
+function resolveActiveScreen(tree: FacetTree, currentScreen: string | null): string | null {
+  if (liveScreenRoot(tree, currentScreen) !== null) {
+    return currentScreen;
+  }
+  const entry = safeTreeEntry(tree);
+  if (typeof entry === "string" && liveScreenRoot(tree, entry) !== null) {
+    return entry;
+  }
+  const screens = safeTreeScreens(tree);
+  if (screens !== undefined) {
+    for (const name of safeObjectKeys(screens)) {
+      if (liveScreenRoot(tree, name) !== null) return name;
+    }
+  }
+  return null;
 }
 
 /** A press the renderer has classified from an UNTRUSTED `onPress` value. */
@@ -1132,6 +1111,7 @@ export function StageRenderer({
   const normalizedTransition = useMemo(() => normalizeTransitionHint(transition), [transition]);
   const renderable = isRenderableTree(tree);
   const currentRootId = renderable ? resolveScreenRoot(tree, currentScreen) : null;
+  const activeScreen = renderable ? resolveActiveScreen(tree, currentScreen) : null;
   const visibleInfo = useMemo(
     () =>
       currentRootId === null ? null : collectVisibleInfo(tree, currentRootId, visibilityOverrides),
@@ -1143,6 +1123,7 @@ export function StageRenderer({
       : {
           tree,
           rootId: currentRootId,
+          activeScreen,
           visible: visibleInfo,
           visibilityOverrides,
           theme,
@@ -1486,6 +1467,7 @@ export function StageRenderer({
     renderMode: "live",
     motionClassById: motionPlan.motionClassById,
     exitRecordsByParent: motionPlan.exitRecordsByParent,
+    activeScreen,
   });
   const rootExitNodes = motionPlan.rootExitRecords.map((record) => (
     <Fragment key={`exit:${record.id}`}>
@@ -1530,6 +1512,7 @@ export function StageRenderer({
               renderMode: "inert",
               motionClassById: EMPTY_MOTION_CLASSES,
               exitRecordsByParent: EMPTY_EXIT_RECORDS_BY_PARENT,
+              activeScreen: motionState.stagePrevious.snapshot.activeScreen,
             })}
           </div>
         )}
@@ -1604,6 +1587,7 @@ interface RenderArgs {
   readonly renderMode: RenderMode;
   readonly motionClassById: ReadonlyMap<NodeId, string>;
   readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
+  readonly activeScreen: string | null;
 }
 
 interface ExitRenderArgs {
@@ -1626,6 +1610,7 @@ interface ContainerChildrenRenderArgs {
   readonly renderMode: RenderMode;
   readonly motionClassById: ReadonlyMap<NodeId, string>;
   readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
+  readonly activeScreen: string | null;
 }
 
 function renderContainerChildren({
@@ -1642,6 +1627,7 @@ function renderContainerChildren({
   renderMode,
   motionClassById,
   exitRecordsByParent,
+  activeScreen,
 }: ContainerChildrenRenderArgs): ReactNode[] {
   // Fail-safe (invariant #2): skip a child that points back to an ancestor so
   // a cyclic tree (which never passes through validateTree on the live path)
@@ -1720,6 +1706,7 @@ function renderContainerChildren({
           renderMode,
           motionClassById,
           exitRecordsByParent,
+          activeScreen,
         })}
       </Fragment>,
     );
@@ -1741,6 +1728,7 @@ function renderExitRecord({ record, onPress, appearSeen }: ExitRenderArgs): Reac
     renderMode: "inert",
     motionClassById: new Map<NodeId, string>([[record.id, MOTION_CLASS_NAMES.brickExit]]),
     exitRecordsByParent: EMPTY_EXIT_RECORDS_BY_PARENT,
+    activeScreen: record.snapshot.activeScreen,
   });
 }
 
@@ -1802,184 +1790,6 @@ function renderMediaNode(
   );
 }
 
-function objectRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function tableCellText(value: unknown): string {
-  const text =
-    typeof value === "string" || typeof value === "number" || typeof value === "boolean"
-      ? String(value)
-      : "";
-  return text.slice(0, MAX_TABLE_CELL_CHARS);
-}
-
-function textAlignStyle(align: unknown): CSSProperties["textAlign"] | undefined {
-  switch (align) {
-    case "start":
-      return "left";
-    case "center":
-      return "center";
-    case "end":
-      return "right";
-    default:
-      return undefined;
-  }
-}
-
-function clampProgress(value: unknown): number {
-  const numeric = finiteNumber(value);
-  if (numeric === undefined) return 0;
-  return Math.min(100, Math.max(0, numeric));
-}
-
-function defaultBoxRecipeStyle(
-  theme: ResolvedTheme,
-  component: Parameters<typeof resolveRecipe>[1],
-  variant: unknown,
-  tone: unknown,
-  defaults: Parameters<typeof boxStyle>[0],
-): CSSProperties {
-  const recipe = resolveRecipe(theme, component, variant, tone);
-  return boxStyle({ ...defaults, ...recipe.box }, theme);
-}
-
-function defaultTextRecipeStyle(
-  theme: ResolvedTheme,
-  component: Parameters<typeof resolveRecipe>[1],
-  variant: unknown,
-  tone: unknown,
-  defaults: Parameters<typeof textStyle>[0],
-): CSSProperties {
-  const recipe = resolveRecipe(theme, component, variant, tone);
-  return textStyle({ ...defaults, ...recipe.text }, theme);
-}
-
-interface RenderChartSeries {
-  readonly label: string;
-  readonly values: readonly number[];
-}
-
-function chartSeriesOf(raw: unknown): readonly RenderChartSeries[] {
-  const node = raw as {
-    readonly series?: unknown;
-  };
-  const rawSeries = Array.isArray(node.series) ? node.series : [];
-  const series: RenderChartSeries[] = [];
-  for (const item of rawSeries.slice(0, MAX_CHART_SERIES)) {
-    if (!objectRecord(item)) continue;
-    const label = cappedString(item.label, MAX_NODE_LABEL_CHARS);
-    if (label === undefined || !Array.isArray(item.values)) continue;
-    const values: number[] = [];
-    for (const value of item.values.slice(0, MAX_CHART_POINTS)) {
-      const number = finiteNumber(value);
-      if (number !== undefined) values.push(number);
-    }
-    if (values.length > 0) series.push({ label, values });
-  }
-  return series;
-}
-
-function chartColor(theme: ResolvedTheme, index: number): string {
-  return theme.color[`chart-${String((index % 6) + 1)}` as keyof typeof theme.color];
-}
-
-function renderChartBars(raw: unknown, theme: ResolvedTheme): ReactNode {
-  const series = chartSeriesOf(raw);
-  if (series.length === 0) return null;
-  const values = series.flatMap((item) => item.values as number[]);
-  const max = Math.max(1, ...values.map((value) => Math.abs(value)));
-  const barWidth = 24;
-  const gap = 10;
-  const height = 120;
-  let index = 0;
-  return series.map((item, seriesIndex) =>
-    item.values.map((value) => {
-      const barHeight = Math.round((Math.abs(value) / max) * 100);
-      const x = index++ * (barWidth + gap);
-      const y = height - barHeight;
-      const color = chartColor(theme, seriesIndex);
-      return (
-        <rect
-          key={`${item.label}:${String(index)}`}
-          x={x}
-          y={y}
-          width={barWidth}
-          height={barHeight}
-          fill={color}
-        />
-      );
-    }),
-  );
-}
-
-function renderChartLines(raw: unknown, theme: ResolvedTheme): ReactNode {
-  const series = chartSeriesOf(raw);
-  if (series.length === 0) return null;
-  const values = series.flatMap((item) => item.values as number[]);
-  const min = Math.min(0, ...values);
-  const max = Math.max(1, ...values);
-  const range = Math.max(1, max - min);
-  const width = 320;
-  const top = 12;
-  const height = 112;
-  return series.map((item, seriesIndex) => {
-    const step = item.values.length <= 1 ? 0 : width / (item.values.length - 1);
-    const points = item.values
-      .map((value, valueIndex) => {
-        const x = 20 + valueIndex * step;
-        const y = top + height - ((value - min) / range) * height;
-        return `${x.toFixed(2)},${y.toFixed(2)}`;
-      })
-      .join(" ");
-    return (
-      <polyline
-        key={item.label}
-        points={points}
-        fill="none"
-        stroke={chartColor(theme, seriesIndex)}
-        strokeWidth={3}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    );
-  });
-}
-
-function renderChartDonut(raw: unknown, theme: ResolvedTheme): ReactNode {
-  const slices = chartSeriesOf(raw).flatMap((item) =>
-    item.values
-      .map((value) => Math.abs(value))
-      .filter((value) => value > 0)
-      .slice(0, MAX_CHART_POINTS),
-  );
-  if (slices.length === 0) return null;
-  const total = slices.reduce((sum, value) => sum + value, 0);
-  if (total <= 0) return null;
-  const radius = 46;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
-  return slices.map((value, index) => {
-    const length = (value / total) * circumference;
-    const dashOffset = -offset;
-    offset += length;
-    return (
-      <circle
-        key={String(index)}
-        cx={70}
-        cy={70}
-        r={radius}
-        fill="none"
-        stroke={chartColor(theme, index)}
-        strokeWidth={20}
-        strokeDasharray={`${length.toFixed(2)} ${Math.max(0, circumference - length).toFixed(2)}`}
-        strokeDashoffset={dashOffset.toFixed(2)}
-        transform="rotate(-90 70 70)"
-      />
-    );
-  });
-}
-
 /**
  * Renders one node to a `ReactNode`, recursing into box children. A PLAIN
  * function (not a React component) invoked from StageRenderer's body: the mutable
@@ -2001,6 +1811,7 @@ function renderNode({
   renderMode,
   motionClassById,
   exitRecordsByParent,
+  activeScreen,
 }: RenderArgs): ReactNode {
   const node = tree.nodes[id];
   // == null also skips a node a patch replaced with JSON null (not just missing
@@ -2033,6 +1844,23 @@ function renderNode({
   if ((node as { readonly type?: unknown }).type === "image") {
     return renderMediaNode(node, theme, motionClassName, inert);
   }
+  const renderPressable = (args: PressableRenderArgs<ClassifiedPress>): ReactNode => (
+    <BoxElement {...args} />
+  );
+  const dispatchBrickPress = (classified: ClassifiedPress): void => onPress(classified, id);
+  const renderBrick = (children?: ReactNode): ReactNode =>
+    renderBrickNode(node, {
+      theme,
+      className: motionClassName,
+      inert,
+      nodeId: id,
+      activeScreen,
+      children,
+      classifyPress,
+      dispatch: dispatchBrickPress,
+      navigate: (to: string): void => onPress({ kind: "navigate", to }, id),
+      renderPressable,
+    });
 
   switch (node.type) {
     case "box": {
@@ -2050,6 +1878,7 @@ function renderNode({
         renderMode,
         motionClassById,
         exitRecordsByParent,
+        activeScreen,
       });
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.
@@ -2094,521 +1923,55 @@ function renderNode({
         </BoxElement>
       );
     }
-    case "section": {
-      const children = renderContainerChildren({
-        tree,
-        parentId: id,
-        childIds: childIdsOf(node),
-        onPress,
-        visibilityOverrides,
-        theme,
-        ancestors,
-        budget,
-        appearSeen,
-        depth,
-        renderMode,
-        motionClassById,
-        exitRecordsByParent,
-      });
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const style = defaultBoxRecipeStyle(theme, "section", variant, undefined, {
-        gap: "md",
-        pad: "md",
-        width: "full",
-      });
-      const textCss = defaultTextRecipeStyle(theme, "section", variant, undefined, {
-        color: "fg",
-      });
-      return (
-        <section
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          {cappedString(node.eyebrow, MAX_NODE_LABEL_CHARS) !== undefined ? (
-            <p
-              style={defaultTextRecipeStyle(theme, "section", variant, undefined, {
-                color: "fg-muted",
-                size: "sm",
-                weight: "semibold",
-              })}
-            >
-              {cappedString(node.eyebrow, MAX_NODE_LABEL_CHARS)}
-            </p>
-          ) : null}
-          {cappedString(node.title, MAX_NODE_LABEL_CHARS) !== undefined ? (
-            <h2
-              style={defaultTextRecipeStyle(theme, "section", variant, undefined, {
-                color: "fg",
-                size: "xl",
-                weight: "bold",
-              })}
-            >
-              {cappedString(node.title, MAX_NODE_LABEL_CHARS)}
-            </h2>
-          ) : null}
-          {cappedString(node.body, MAX_NODE_BODY_CHARS) !== undefined ? (
-            <p style={textCss}>{cappedString(node.body, MAX_NODE_BODY_CHARS)}</p>
-          ) : null}
-          {children}
-        </section>
+    case "section":
+      return renderBrick(
+        renderContainerChildren({
+          tree,
+          parentId: id,
+          childIds: childIdsOf(node),
+          onPress,
+          visibilityOverrides,
+          theme,
+          ancestors,
+          budget,
+          appearSeen,
+          depth,
+          renderMode,
+          motionClassById,
+          exitRecordsByParent,
+          activeScreen,
+        }),
       );
-    }
-    case "card": {
-      const children = renderContainerChildren({
-        tree,
-        parentId: id,
-        childIds: childIdsOf(node),
-        onPress,
-        visibilityOverrides,
-        theme,
-        ancestors,
-        budget,
-        appearSeen,
-        depth,
-        renderMode,
-        motionClassById,
-        exitRecordsByParent,
-      });
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const tone = (node as { readonly tone?: unknown }).tone;
-      const style = defaultBoxRecipeStyle(theme, "card", variant, tone, {
-        gap: "sm",
-        pad: "md",
-        bg: "surface",
-        border: true,
-        radius: "md",
-      });
-      const textCss = defaultTextRecipeStyle(theme, "card", variant, tone, { color: "fg" });
-      const press = classifyPress(node.onPress);
-      const hold = classifyPress(node.onHold);
-      const dispatch = (classified: ClassifiedPress): void => onPress(classified, id);
-      return (
-        <BoxElement
-          press={inert ? null : press}
-          hold={inert ? null : hold}
-          dispatch={dispatch}
-          className={motionClassName}
-          style={style}
-          inert={inert}
-        >
-          {cappedString(node.title, MAX_NODE_LABEL_CHARS) !== undefined ? (
-            <h3
-              style={defaultTextRecipeStyle(theme, "card", variant, tone, {
-                color: "fg",
-                size: "lg",
-                weight: "bold",
-              })}
-            >
-              {cappedString(node.title, MAX_NODE_LABEL_CHARS)}
-            </h3>
-          ) : null}
-          {cappedString(node.body, MAX_NODE_BODY_CHARS) !== undefined ? (
-            <p style={textCss}>{cappedString(node.body, MAX_NODE_BODY_CHARS)}</p>
-          ) : null}
-          {children}
-        </BoxElement>
+    case "card":
+      return renderBrick(
+        renderContainerChildren({
+          tree,
+          parentId: id,
+          childIds: childIdsOf(node),
+          onPress,
+          visibilityOverrides,
+          theme,
+          ancestors,
+          budget,
+          appearSeen,
+          depth,
+          renderMode,
+          motionClassById,
+          exitRecordsByParent,
+          activeScreen,
+        }),
       );
-    }
-    case "button": {
-      const label = cappedString(node.label, MAX_NODE_LABEL_CHARS);
-      if (label === undefined) return null;
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const tone = (node as { readonly tone?: unknown }).tone;
-      const disabled = (node as { readonly disabled?: unknown }).disabled === true;
-      const style = defaultBoxRecipeStyle(theme, "button", variant, tone, {
-        direction: "row",
-        align: "center",
-        justify: "center",
-        gap: "sm",
-        pad: "sm",
-        bg: "accent",
-        radius: "md",
-      });
-      const press = disabled ? null : classifyPress(node.onPress);
-      const hold = disabled ? null : classifyPress(node.onHold);
-      const dispatch = (classified: ClassifiedPress): void => onPress(classified, id);
-      return (
-        <BoxElement
-          press={inert ? null : press}
-          hold={inert ? null : hold}
-          dispatch={dispatch}
-          className={motionClassName}
-          style={style}
-          inert={inert}
-          disabled={disabled}
-          buttonRole={true}
-        >
-          <span
-            style={defaultTextRecipeStyle(theme, "button", variant, tone, {
-              color: "accent-fg",
-              weight: "semibold",
-            })}
-          >
-            {label}
-          </span>
-        </BoxElement>
-      );
-    }
-    case "tabs": {
-      const rawItems = Array.isArray((node as { readonly items?: unknown }).items)
-        ? (node as { readonly items: readonly unknown[] }).items
-        : [];
-      const items = rawItems
-        .slice(0, MAX_TABS_ITEMS)
-        .filter(objectRecord)
-        .flatMap((item) => {
-          const label = cappedString(item.label, MAX_NODE_LABEL_CHARS);
-          const to = stringValue(item.to);
-          return label !== undefined && to !== undefined ? [{ label, to }] : [];
-        });
-      if (items.length === 0) return null;
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const style = defaultBoxRecipeStyle(theme, "tabs", variant, undefined, {
-        direction: "row",
-        gap: "sm",
-        wrap: true,
-      });
-      const tabText = defaultTextRecipeStyle(theme, "tabs", variant, undefined, {
-        color: "fg",
-        weight: "semibold",
-      });
-      return (
-        <div
-          role="tablist"
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          {items.map((item) => (
-            <button
-              key={`${item.to}:${item.label}`}
-              type="button"
-              role="tab"
-              tabIndex={inert ? -1 : undefined}
-              disabled={inert ? true : undefined}
-              onClick={inert ? undefined : () => onPress({ kind: "navigate", to: item.to }, id)}
-              style={{
-                ...boxStyle({ pad: "sm", radius: "md", border: true }, theme),
-                ...tabText,
-                background: "transparent",
-              }}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-      );
-    }
-    case "table": {
-      const rawColumns = Array.isArray((node as { readonly columns?: unknown }).columns)
-        ? (node as { readonly columns: readonly unknown[] }).columns
-        : [];
-      const columns = rawColumns
-        .slice(0, MAX_TABLE_COLUMNS)
-        .filter(objectRecord)
-        .flatMap((column) => {
-          const key = stringValue(column.key);
-          const label = cappedString(column.label, MAX_NODE_LABEL_CHARS);
-          return key !== undefined && label !== undefined
-            ? [{ key, label, align: textAlignStyle(column.align) }]
-            : [];
-        });
-      if (columns.length === 0) return null;
-      const rawRows = Array.isArray((node as { readonly rows?: unknown }).rows)
-        ? (node as { readonly rows: readonly unknown[] }).rows
-        : [];
-      const rows = rawRows.slice(0, MAX_TABLE_ROWS).filter(objectRecord);
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const style = defaultBoxRecipeStyle(theme, "table", variant, undefined, {
-        scroll: "x",
-        width: "full",
-      });
-      return (
-        <div
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            {cappedString(node.caption, MAX_NODE_LABEL_CHARS) !== undefined ? (
-              <caption>{cappedString(node.caption, MAX_NODE_LABEL_CHARS)}</caption>
-            ) : null}
-            <thead>
-              <tr>
-                {columns.map((column) => (
-                  <th
-                    key={column.key}
-                    style={{
-                      borderBottom: `1px solid ${theme.color.border}`,
-                      color: theme.color["fg-muted"],
-                      textAlign: column.align,
-                    }}
-                  >
-                    {column.label}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, rowIndex) => (
-                <tr key={String(rowIndex)}>
-                  {columns.map((column) => (
-                    <td
-                      key={column.key}
-                      style={{
-                        borderBottom: `1px solid ${theme.color.border}`,
-                        textAlign: column.align,
-                      }}
-                    >
-                      {tableCellText(row[column.key])}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    }
-    case "chart": {
-      const kind = (node as { readonly kind?: unknown }).kind;
-      if (kind !== "bar" && kind !== "line" && kind !== "donut") return null;
-      const chart =
-        kind === "bar"
-          ? renderChartBars(node, theme)
-          : kind === "line"
-            ? renderChartLines(node, theme)
-            : renderChartDonut(node, theme);
-      if (chart === null) return null;
-      const title = cappedString(
-        (node as { readonly title?: unknown }).title,
-        MAX_NODE_LABEL_CHARS,
-      );
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const style = defaultBoxRecipeStyle(theme, "chart", variant, undefined, {
-        gap: "sm",
-        pad: "sm",
-        width: "full",
-      });
-      return (
-        <figure
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          {title === undefined ? null : (
-            <figcaption
-              style={defaultTextRecipeStyle(theme, "chart", variant, undefined, {
-                weight: "semibold",
-              })}
-            >
-              {title}
-            </figcaption>
-          )}
-          <svg role="img" aria-label={title ?? "chart"} viewBox="0 0 360 140" width="100%">
-            {title === undefined ? null : <title>{title}</title>}
-            {chart}
-          </svg>
-        </figure>
-      );
-    }
-    case "stat": {
-      const label = cappedString(node.label, MAX_NODE_LABEL_CHARS);
-      const value = cappedString(node.value, MAX_NODE_LABEL_CHARS);
-      if (label === undefined || value === undefined) return null;
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const tone = (node as { readonly tone?: unknown }).tone;
-      const style = defaultBoxRecipeStyle(theme, "stat", variant, tone, {
-        gap: "xs",
-        pad: "sm",
-        bg: "surface",
-        radius: "md",
-      });
-      return (
-        <div
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          <p
-            style={defaultTextRecipeStyle(theme, "stat", variant, tone, {
-              color: "fg-muted",
-              size: "sm",
-            })}
-          >
-            {label}
-          </p>
-          <p
-            style={defaultTextRecipeStyle(theme, "stat", variant, tone, {
-              color: "fg",
-              size: "xl",
-              weight: "bold",
-            })}
-          >
-            {value}
-          </p>
-          {cappedString(node.delta, MAX_NODE_LABEL_CHARS) !== undefined ? (
-            <p style={defaultTextRecipeStyle(theme, "stat", variant, tone, { color: "fg-muted" })}>
-              {cappedString(node.delta, MAX_NODE_LABEL_CHARS)}
-            </p>
-          ) : null}
-        </div>
-      );
-    }
-    case "badge": {
-      const label = cappedString(node.label, MAX_NODE_LABEL_CHARS);
-      if (label === undefined) return null;
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const tone = (node as { readonly tone?: unknown }).tone;
-      return (
-        <span
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={{
-            ...defaultBoxRecipeStyle(theme, "badge", variant, tone, {
-              direction: "row",
-              pad: "xs",
-              radius: "full",
-              bg: tone === "success" ? "success" : "surface-2",
-            }),
-            ...(inert ? { pointerEvents: "none" } : {}),
-          }}
-        >
-          <span
-            style={defaultTextRecipeStyle(theme, "badge", variant, tone, {
-              color: tone === "success" ? "accent-fg" : "fg",
-              size: "sm",
-              weight: "semibold",
-            })}
-          >
-            {label}
-          </span>
-        </span>
-      );
-    }
-    case "progress": {
-      const value = clampProgress(node.value);
-      const label = cappedString(
-        (node as { readonly label?: unknown }).label,
-        MAX_NODE_LABEL_CHARS,
-      );
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const tone = (node as { readonly tone?: unknown }).tone;
-      const style = defaultBoxRecipeStyle(theme, "progress", variant, tone, {
-        gap: "xs",
-        width: "full",
-      });
-      return (
-        <label
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          {label === undefined ? null : (
-            <span style={defaultTextRecipeStyle(theme, "progress", variant, tone, {})}>
-              {label}
-            </span>
-          )}
-          <progress value={value} max={100} />
-        </label>
-      );
-    }
-    case "alert": {
-      const body = cappedString(node.body, MAX_NODE_BODY_CHARS);
-      if (body === undefined) return null;
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const tone = (node as { readonly tone?: unknown }).tone;
-      const style = defaultBoxRecipeStyle(theme, "alert", variant, tone, {
-        gap: "xs",
-        pad: "md",
-        bg: "surface",
-        border: true,
-        radius: "md",
-      });
-      return (
-        <div
-          role="alert"
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          {cappedString(node.title, MAX_NODE_LABEL_CHARS) !== undefined ? (
-            <p
-              style={defaultTextRecipeStyle(theme, "alert", variant, tone, {
-                weight: "bold",
-              })}
-            >
-              {cappedString(node.title, MAX_NODE_LABEL_CHARS)}
-            </p>
-          ) : null}
-          <p style={defaultTextRecipeStyle(theme, "alert", variant, tone, {})}>{body}</p>
-        </div>
-      );
-    }
-    case "list": {
-      const rawItems = Array.isArray((node as { readonly items?: unknown }).items)
-        ? (node as { readonly items: readonly unknown[] }).items
-        : [];
-      const items = rawItems.slice(0, MAX_LIST_ITEMS).flatMap((item) => {
-        if (typeof item === "string") {
-          return [{ title: item.slice(0, MAX_NODE_LABEL_CHARS), body: undefined }];
-        }
-        if (!objectRecord(item)) return [];
-        const title = cappedString(item.title, MAX_NODE_LABEL_CHARS);
-        if (title === undefined) return [];
-        return [{ title, body: cappedString(item.body, MAX_NODE_BODY_CHARS) }];
-      });
-      if (items.length === 0) return null;
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const style = defaultBoxRecipeStyle(theme, "list", variant, undefined, { gap: "sm" });
-      return (
-        <ul
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { ...style, pointerEvents: "none" } : style}
-        >
-          {items.map((item, index) => (
-            <li key={`${String(index)}:${item.title}`}>
-              <span style={defaultTextRecipeStyle(theme, "list", variant, undefined, {})}>
-                {item.title}
-              </span>
-              {item.body === undefined ? null : (
-                <p
-                  style={defaultTextRecipeStyle(theme, "list", variant, undefined, {
-                    color: "fg-muted",
-                  })}
-                >
-                  {item.body}
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      );
-    }
-    case "divider": {
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const label = cappedString(
-        (node as { readonly label?: unknown }).label,
-        MAX_NODE_LABEL_CHARS,
-      );
-      return (
-        <div
-          role="separator"
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={inert ? { pointerEvents: "none" } : undefined}
-        >
-          <hr style={{ border: 0, borderTop: `1px solid ${theme.color.border}` }} />
-          {label === undefined ? null : (
-            <span style={defaultTextRecipeStyle(theme, "divider", variant, undefined, {})}>
-              {label}
-            </span>
-          )}
-        </div>
-      );
-    }
+    case "button":
+    case "tabs":
+    case "table":
+    case "chart":
+    case "stat":
+    case "badge":
+    case "progress":
+    case "alert":
+    case "list":
+    case "divider":
+      return renderBrick();
     case "text": {
       // A non-string value (an object would make React itself throw) is skipped.
       // No appear class here: appear is BoxStyle-only (Decision 2) — validateTree
@@ -2630,121 +1993,7 @@ function renderNode({
     }
     case "media":
       return renderMediaNode(node, theme, motionClassName, inert);
-    case "field": {
-      // Raw-path junk: constrain `input` to the token set (else "text") and
-      // omit non-string name/placeholder, mirroring core's field coercion.
-      const input = isFieldInput(node.input) ? node.input : "text";
-      const name = cappedString(node.name, MAX_FIELD_VALUE_CHARS);
-      const placeholder = cappedString(node.placeholder, MAX_NODE_LABEL_CHARS);
-      const options = optionsOf((node as { readonly options?: unknown }).options);
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const recipe = resolveRecipe(theme, "field", variant);
-      const wrapperStyle: CSSProperties = {
-        display: "flex",
-        flexDirection: "column",
-        gap: "4px",
-        ...fieldStyle({ ...(recipe.field ?? {}), ...(styleOf(node.style) ?? {}) }, theme),
-        ...(inert ? { pointerEvents: "none" } : {}),
-      };
-      const fieldLabel = cappedString(node.label, MAX_NODE_LABEL_CHARS);
-      const label = fieldLabel === undefined ? null : <span>{fieldLabel}</span>;
-      const fieldId = inert ? undefined : id;
-      const controlName = inert ? undefined : name;
-      const inertControlProps = inert ? { disabled: true, tabIndex: -1 } : {};
-      // Uncontrolled on purpose (invariant #6): the DOM owns values; the stamp
-      // lets a collect press find these controls by node id at press time.
-      if (input === "select") {
-        return (
-          <label
-            className={motionClassName}
-            aria-hidden={inert ? true : undefined}
-            style={wrapperStyle}
-          >
-            {label}
-            <select name={controlName} data-facet-field-id={fieldId} {...inertControlProps}>
-              {options.map((option, index) => (
-                <option key={`${String(index)}:${option}`} value={option}>
-                  {option}
-                </option>
-              ))}
-            </select>
-          </label>
-        );
-      }
-      if (input === "radio") {
-        return (
-          <div
-            className={motionClassName}
-            aria-hidden={inert ? true : undefined}
-            style={wrapperStyle}
-          >
-            {label}
-            {options.map((option, index) => (
-              <label key={`${String(index)}:${option}`}>
-                <input
-                  type="radio"
-                  name={controlName}
-                  value={option}
-                  data-facet-field-id={fieldId}
-                  {...inertControlProps}
-                />
-                {option}
-              </label>
-            ))}
-          </div>
-        );
-      }
-      if (input === "checkbox") {
-        return (
-          <label
-            className={motionClassName}
-            aria-hidden={inert ? true : undefined}
-            style={wrapperStyle}
-          >
-            {label}
-            <input
-              type="checkbox"
-              name={controlName}
-              data-facet-field-id={fieldId}
-              {...inertControlProps}
-            />
-          </label>
-        );
-      }
-      if (input === "switch") {
-        return (
-          <label
-            className={motionClassName}
-            aria-hidden={inert ? true : undefined}
-            style={wrapperStyle}
-          >
-            {label}
-            <input
-              type="checkbox"
-              role="switch"
-              name={controlName}
-              data-facet-field-id={fieldId}
-              {...inertControlProps}
-            />
-          </label>
-        );
-      }
-      return (
-        <label
-          className={motionClassName}
-          aria-hidden={inert ? true : undefined}
-          style={wrapperStyle}
-        >
-          {label}
-          <input
-            type={input}
-            name={controlName}
-            placeholder={placeholder}
-            data-facet-field-id={fieldId}
-            {...inertControlProps}
-          />
-        </label>
-      );
-    }
+    case "field":
+      return renderBrick();
   }
 }

@@ -784,6 +784,55 @@ describe("executeStageTool", () => {
       expect(variant.observation.text).toContain("danger");
     });
 
+    it("catalog policy rejects tone-only recipe selectors not listed as variants", () => {
+      const toneCatalog: FacetCatalog = {
+        ...CATALOG_POLICY,
+        bricks: [{ type: "badge", variants: ["neutral"] }],
+      };
+
+      const toneRejected = executeStageTool(
+        {
+          id: "catalog-tone",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "status", type: "badge", label: "Healthy", tone: "success" },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: toneCatalog } },
+      );
+
+      expect(toneRejected.status).toBe("error");
+      expect(toneRejected.patches).toEqual([]);
+      expect(toneRejected.messages).toEqual([]);
+      expect(parseAgentToolObservation(toneRejected.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(toneRejected.observation.text).toContain("tone");
+      expect(toneRejected.observation.text).toContain("success");
+
+      const variantWins = executeStageTool(
+        {
+          id: "catalog-tone-with-variant",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: {
+              id: "status",
+              type: "badge",
+              label: "Healthy",
+              variant: "neutral",
+              tone: "success",
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: toneCatalog } },
+      );
+
+      expect(variantWins.status).toBe("ok");
+    });
+
     it("catalog policy rejects disallowed set_node brick types and variants without patches", () => {
       const typeRejected = executeStageTool(
         {

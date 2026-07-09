@@ -29,9 +29,10 @@ OPENAI_API_KEY=sk-… npx facet-quickstart
 
 That boots a live Facet server at `http://localhost:5292` whose page is drawn by
 a **built-in LLM agent**: it reads a guide markdown brief (your `./facet.md` if
-present, otherwise a built-in sample service brief), paints a first stage for
-each visitor, and keeps patching it as they chat. `ANTHROPIC_API_KEY` works too
-(OpenAI is the default when both are set). Flags and details:
+present, otherwise the built-in Facet Live Lab brief), starts from a compact
+polished seed stage on the default path, and keeps patching it as visitors chat.
+`ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). Flags
+and details:
 [`@facet/quickstart`](packages/agent-stack/quickstart/README.md).
 To plug in *your own* model instead, see
 [Advanced: bring your own brain](#advanced-bring-your-own-brain).
@@ -164,9 +165,12 @@ where `./assets` holds any mix of:
   authors the CSS values** and never writes one into the tree. Theme documents
   can also carry **component recipes**: token-only style bundles for components
   such as `button.primary`, `card.interactive`, `media.hero`, or
-  `field.default`. Nodes choose a `variant` or `tone` where supported; the
-  renderer resolves that through the active theme. An unknown or missing name
-  simply falls back to the default look — nothing throws.
+  `field.default`, plus closed recipe `parts` for renderer-owned internals like
+  field labels/controls, tabs, table cells, chart plots, progress fills, and
+  list rows. Nodes choose a `variant` or `tone` where supported; recipe parts
+  never become stage node fields. The renderer resolves the selected recipe
+  through the active theme. An unknown or missing name simply falls back to the
+  default look — nothing throws.
 - **`*.stamp.json`** — a reusable `{ root, nodes, slots? }` brick fragment (a
   hero, a card) offered to the model by name. Stamps can include bounded
   metadata (`category`, `useWhen`, `avoidWhen`, `tags`, `preferredParent`,
@@ -263,10 +267,10 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/core` | `@facet/core` | The contract: closed brick vocabulary (v1 high-level bricks plus primitive fallback), catalog policy, style tokens/theme recipes, RFC 6902 patch, validators, `expandStamp`, session/event types. |
+| `packages/core/core` | `@facet/core` | The contract: closed brick vocabulary (v1 high-level bricks plus primitive fallback), catalog policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, `expandStamp`, session/event types. |
 | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/stamp/initial-tree loading, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
-| `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for high-level and primitive bricks, token→CSS and recipe resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with recipes, and `DEFAULT_STAMPS` with metadata. Depends only on `@facet/core`. |
+| `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for high-level and primitive bricks, token→CSS and recipe/part resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
+| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with polished recipes/parts, and `DEFAULT_STAMPS` with metadata. Depends only on `@facet/core`. |
 
 ### Agent Authoring
 
@@ -295,7 +299,7 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper that composes `@facet/reference-agent`. |
+| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper with a polished seeded first paint that composes `@facet/reference-agent`. |
 | `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
 | `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 

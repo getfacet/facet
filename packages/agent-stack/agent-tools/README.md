@@ -43,8 +43,8 @@ authors without pulling in the reference agent or a Node-only provider stack.
 `buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
 most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
 from `@facet/core`, compact page UX guidance, edit-before-append rules, the
-tool playbook, the structured tool-result contract, and optional theme, catalog,
-and stamp metadata.
+polished brick hierarchy, the tool playbook, the structured tool-result
+contract, and optional theme, catalog, and stamp metadata.
 
 The prompt kit is not a complete agent. Your loop still owns the page brief,
 business logic, domain tools, provider messages, history, current event,
@@ -67,6 +67,13 @@ stamp metadata such as category, use/avoid guidance, tags, variants,
 repeatability, preferred parent, composition, data requirements, and follow-up
 edit hints. They never expose theme CSS values, stamp node JSON, slot default
 values, provider keys, visitor ids, secrets, or unknown asset fields.
+
+The polished brick guidance tells agents to try advertised stamps first, then
+high-level bricks and catalog-advertised variants, before falling back to raw
+`box`/`text`/`media` primitives. It names product-quality defaults such as
+sections, cards, fields, buttons, tabs, tables, charts, stats, badges, progress,
+alerts, lists, and dividers without exposing renderer recipe parts, theme token
+values, or stamp node JSON as stage syntax.
 
 The catalog prompt section is active UI authoring policy. It tells the model the
 active theme, whether theme switching is a locked theme or explicitly allowed,
@@ -93,7 +100,9 @@ const result = executeStageTool(call, {
 The executor enforces catalog policy before it emits patches:
 
 - `render_page`, `append_node`, and `set_node` reject disallowed node types and
-  disallowed variants.
+  disallowed variants. For tone-capable polished bricks, a `tone` used without
+  an allowed `variant` is treated as a recipe selector and is rejected unless
+  the catalog advertises that name.
 - `use_stamp` rejects stamp names outside an allow-list catalog before expansion.
 - `set_theme` rejects locked theme changes and names outside an allowed theme
   list.

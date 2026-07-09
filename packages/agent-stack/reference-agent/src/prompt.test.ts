@@ -110,9 +110,64 @@ describe("buildSystem", () => {
     expect(system).toContain(FACET_STATE_EDITING_PROMPT);
     expect(system).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
     expect(system).toContain("Default to a compact UX");
+    expect(system).toContain("POLISHED BRICK GUIDANCE");
     expect(system).toContain("Default to an edit-before-append strategy");
     expect(system).toContain("render_page: first paint");
     expect(system).toMatch(/reuse .*node ids/i);
+  });
+
+  it("polished brick guidance is consumed from agent-tools without leaking asset internals", () => {
+    const system = buildSystem(DEFAULT_GUIDE, {
+      themes: [
+        {
+          name: "default",
+          description: "Default theme",
+          color: { bg: "#ffffff", fg: "#111111" },
+          recipeInternals: "reference-recipe-sentinel",
+        },
+      ] as unknown as readonly FacetTheme[],
+      stamps: [
+        {
+          name: "approved",
+          description: "Approved reference stamp",
+          slots: { title: "Slot default must stay private" },
+          root: "reference-stamp-root",
+          nodes: {
+            "reference-stamp-root": {
+              id: "reference-stamp-root",
+              type: "text",
+              value: "reference-stamp-json",
+            },
+          },
+          providerKey: "sk-reference-key",
+          visitorId: "reference-visitor-id",
+        },
+      ] as unknown as readonly FacetStamp[],
+      catalog: catalogFixture(),
+    });
+
+    expect(system).toMatch(
+      /POLISHED BRICK GUIDANCE[\s\S]*advertised stamp first[\s\S]*high-level bricks with catalog-advertised variants[\s\S]*never write raw CSS/i,
+    );
+    expect(system).toMatch(
+      /product-quality defaults[\s\S]*field for inputs[\s\S]*button for actions/i,
+    );
+    expect(system).toMatch(/editBeforeAppend is true/i);
+    expect(system).toContain("allowed bricks: section variants: surface");
+    expect(system).toContain("button variants: primary");
+    expect(system).toContain("policy order: stamp -> brick -> primitive");
+
+    expect(system).not.toContain("#ffffff");
+    expect(system).not.toContain("#111111");
+    expect(system).not.toContain("reference-recipe-sentinel");
+    expect(system).not.toContain("reference-stamp-root");
+    expect(system).not.toContain("reference-stamp-json");
+    expect(system).not.toContain("Slot default must stay private");
+    expect(system).not.toContain("sk-reference-key");
+    expect(system).not.toContain("reference-visitor-id");
+    const stampSection = stampSectionOf(system);
+    expect(stampSection).not.toContain('"nodes"');
+    expect(stampSection).not.toContain('"root"');
   });
 
   it("teaches structured pending and visibility outcomes before completion", () => {

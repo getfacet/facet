@@ -463,7 +463,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     expect(out).toContain("Refresh");
     expect(out).toContain("background:#123456");
     expect(out).toContain("<table");
-    expect(out).toContain("<caption>Pipeline</caption>");
+    expect(out).toMatch(/<caption[^>]*>Pipeline<\/caption>/);
     expect(out).toContain("<svg");
     expect(out).toContain("Trend");
     expect(out).toContain("$24k");
@@ -472,6 +472,251 @@ describe("StageRenderer high-level renderer (static)", () => {
     expect(out).toContain('role="alert"');
     expect(out).toContain("Call customer");
     expect(out).toContain("<hr");
+  });
+
+  it("renders polished high-level brick parts", () => {
+    const partsTheme: FacetTheme = {
+      name: "parts",
+      color: {
+        fg: "#111827",
+        "fg-muted": "#475569",
+        surface: "#f8fafc",
+        "surface-2": "#eef2ff",
+        accent: "#0f766e",
+        "accent-fg": "#ffffff",
+        border: "#64748b",
+        danger: "#dc2626",
+        warning: "#b45309",
+        info: "#2563eb",
+      },
+      space: { xs: "3px", sm: "7px", md: "13px" },
+      radius: { sm: "5px", lg: "17px", full: "999px" },
+      recipes: {
+        section: {
+          default: {
+            parts: {
+              title: { text: { color: "danger", weight: "bold" } },
+              body: { text: { color: "warning" } },
+            },
+          },
+        },
+        card: {
+          default: {
+            parts: {
+              header: { box: { bg: "surface-2", pad: "xs", radius: "sm" } },
+              title: { text: { color: "danger", weight: "bold" } },
+              body: { text: { color: "warning" } },
+            },
+          },
+        },
+        button: {
+          default: {
+            parts: {
+              label: { text: { color: "warning", weight: "bold" } },
+            },
+          },
+        },
+        tabs: {
+          default: {
+            parts: {
+              tab: {
+                box: { bg: "surface-2", pad: "xs", radius: "full" },
+                text: { color: "danger", weight: "bold" },
+              },
+              activeTab: {
+                box: { bg: "accent", pad: "xs", radius: "full" },
+                text: { color: "accent-fg", weight: "bold" },
+              },
+            },
+          },
+        },
+        table: {
+          default: {
+            parts: {
+              headerCell: { text: { color: "info", weight: "bold" } },
+              cell: { text: { color: "warning" } },
+            },
+          },
+        },
+        chart: {
+          default: {
+            parts: {
+              title: { text: { color: "danger", weight: "bold" } },
+              plot: { box: { bg: "surface-2", radius: "lg" } },
+            },
+          },
+        },
+        progress: {
+          default: {
+            parts: {
+              label: { text: { color: "danger", weight: "bold" } },
+              track: { box: { bg: "surface-2", radius: "full" } },
+              fill: { box: { bg: "accent", radius: "full" } },
+            },
+          },
+        },
+        stat: {
+          default: {
+            parts: {
+              label: { text: { color: "info", weight: "bold" } },
+              value: { text: { color: "danger", weight: "bold" } },
+              trend: { text: { color: "warning", weight: "medium" } },
+            },
+          },
+        },
+        alert: {
+          default: {
+            parts: {
+              title: { text: { color: "danger", weight: "bold" } },
+              body: { text: { color: "warning" } },
+            },
+          },
+        },
+        list: {
+          default: {
+            parts: {
+              item: { box: { bg: "surface-2", pad: "xs", radius: "sm" } },
+              itemTitle: { text: { color: "danger", weight: "bold" } },
+              itemText: { text: { color: "warning" } },
+            },
+          },
+        },
+        divider: {
+          default: {
+            parts: {
+              label: { text: { color: "info", weight: "bold" } },
+              rule: { box: { bg: "danger", width: "full" } },
+            },
+          },
+        },
+        field: {
+          default: {
+            parts: {
+              label: { text: { color: "danger", weight: "bold" } },
+              control: { field: { width: "full" } },
+            },
+          },
+        },
+      },
+    };
+    const out = renderThemed(
+      {
+        root: "root",
+        theme: "parts",
+        screens: { pipeline: "root", accounts: "accountsRoot" },
+        entry: "pipeline",
+        nodes: {
+          root: {
+            id: "root",
+            type: "section",
+            title: "Overview",
+            body: "Part-driven internals",
+            children: [
+              "card",
+              "tabs",
+              "table",
+              "chart",
+              "stat",
+              "progress",
+              "alert",
+              "list",
+              "divider",
+              "email",
+            ],
+          },
+          card: {
+            id: "card",
+            type: "card",
+            title: "Revenue",
+            body: "Current quarter",
+            children: ["button"],
+          },
+          button: { id: "button", type: "button", label: "Refresh" },
+          tabs: {
+            id: "tabs",
+            type: "tabs",
+            items: [
+              { label: "Pipeline", to: "pipeline" },
+              { label: "Accounts", to: "accounts" },
+            ],
+          },
+          accountsRoot: {
+            id: "accountsRoot",
+            type: "section",
+            title: "Accounts",
+            children: [],
+          },
+          table: {
+            id: "table",
+            type: "table",
+            columns: [
+              { key: "name", label: "Name" },
+              { key: "value", label: "Value", align: "end" },
+            ],
+            rows: [{ name: "Acme", value: 42 }],
+          },
+          chart: {
+            id: "chart",
+            type: "chart",
+            title: "Trend",
+            kind: "bar",
+            series: [{ label: "ARR", values: [10, 20] }],
+          },
+          progress: { id: "progress", type: "progress", label: "Completion", value: 72 },
+          stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", delta: "+12%" },
+          alert: { id: "alert", type: "alert", title: "Heads up", body: "Review pricing." },
+          list: {
+            id: "list",
+            type: "list",
+            items: [{ title: "Next", body: "Call customer" }],
+          },
+          divider: { id: "divider", type: "divider", label: "Details" },
+          email: {
+            id: "email",
+            type: "field",
+            name: "email",
+            input: "email",
+            label: "Email",
+            placeholder: "you@example.com",
+          },
+        },
+      },
+      [partsTheme],
+    );
+
+    expect(out).toMatch(/<h2 style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Overview/);
+    expect(out).toMatch(/<p style="[^"]*color:#b45309[^"]*">Part-driven internals/);
+    expect(out).toMatch(
+      /<div style="(?=[^"]*background:#eef2ff)(?=[^"]*padding:3px)(?=[^"]*border-radius:5px)[^"]*"><h3/,
+    );
+    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#b45309[^"]*">Refresh/);
+    expect(out).toMatch(
+      /role="tab" aria-selected="true"[^>]*style="(?=[^"]*background:#0f766e)(?=[^"]*border-radius:999px)(?=[^"]*color:#ffffff)[^"]*">Pipeline/,
+    );
+    expect(out).toMatch(
+      /role="tab" aria-selected="false"[^>]*style="(?=[^"]*background:#eef2ff)(?=[^"]*border-radius:999px)(?=[^"]*color:#dc2626)[^"]*">Accounts/,
+    );
+    expect(out).toMatch(/<th style="[^"]*color:#2563eb[^"]*font-weight:700[^"]*">Name/);
+    expect(out).toMatch(/<td style="[^"]*color:#b45309[^"]*">Acme/);
+    expect(out).toMatch(/<figcaption style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Trend/);
+    expect(out).toMatch(/<svg[^>]*style="[^"]*background:#eef2ff[^"]*border-radius:17px/);
+    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Completion/);
+    expect(out).toMatch(/<progress[^>]*style="[^"]*width:100%[^"]*background:#eef2ff/);
+    expect(out).toMatch(/<p style="(?=[^"]*font-weight:700)(?=[^"]*color:#2563eb)[^"]*">ARR/);
+    expect(out).toMatch(/<p style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)[^"]*">\$24k/);
+    expect(out).toMatch(/<p style="(?=[^"]*font-weight:500)(?=[^"]*color:#b45309)[^"]*">\+12%/);
+    expect(out).toMatch(
+      /role="alert"[^>]*><p style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)/,
+    );
+    expect(out).toMatch(/<p style="[^"]*color:#b45309[^"]*">Review pricing\./);
+    expect(out).toMatch(
+      /<li style="(?=[^"]*background:#eef2ff)(?=[^"]*padding:3px)(?=[^"]*border-radius:5px)[^"]*"><span style="[^"]*color:#dc2626[^"]*">Next/,
+    );
+    expect(out).toMatch(/<p style="[^"]*color:#b45309[^"]*">Call customer/);
+    expect(out).toMatch(/<hr style="[^"]*background:#dc2626[^"]*width:100%/);
+    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#2563eb[^"]*">Details/);
+    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Email/);
+    expect(out).toMatch(/<input[^>]*data-facet-field-id="email"[^>]*style="width:100%"/);
   });
 
   it("keeps high-level raw-path malformed data fail-safe", () => {

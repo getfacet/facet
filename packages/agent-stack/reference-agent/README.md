@@ -112,11 +112,13 @@ Reference-agent catalog consumption has two paths:
   kit and includes theme names, the active catalog, stamp names, slot names, and
   whitelisted stamp metadata. Catalog guidance includes locked theme behavior,
   allowed brick variants, stamp policy, primitive fallback, compact-screen
-  guidance, and `stamp -> high-level brick -> primitive fallback`.
+  guidance, product-quality polished brick defaults, and
+  `stamp -> high-level brick -> primitive fallback`.
 - Executor path: the same `catalog` and immutable stamp snapshot are passed as
   stage-tool assets to the buffered executor. That makes catalog policy
-  enforceable, not just prompt text: disallowed bricks/variants/stamps and
-  locked theme changes are rejected before any patch is yielded to the runtime.
+  enforceable, not just prompt text: disallowed bricks/variants/stamps, tone-only
+  recipe selectors outside the advertised variants, and locked theme changes are
+  rejected before any patch is yielded to the runtime.
 
 Catalog policy here is UI authoring policy for the reference brain. It is not
 hosted platform policy for auth, tenants, billing, metering, rate limits, spend
@@ -126,6 +128,9 @@ caps, secrets operations, or admin workflows.
 but its fixed Facet guidance now comes from `@facet/agent-tools`. This package
 still owns the reference `DEFAULT_GUIDE`, provider adapters, context assembly,
 history compaction, budgets, retries, trace events, and fallback behavior.
+The reference prompt consumes the reusable polished brick guidance from
+agent-tools; it does not duplicate renderer recipes, theme token values, stamp
+node JSON, provider keys, or visitor ids.
 
 Use `@facet/reference-agent` when you want Facet's runnable reference brain.
 

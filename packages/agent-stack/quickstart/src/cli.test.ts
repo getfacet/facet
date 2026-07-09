@@ -13,6 +13,7 @@ import type { FacetCatalog } from "@facet/core";
 import * as referenceAgent from "@facet/reference-agent";
 import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
+import { QUICKSTART_INITIAL_STAGE } from "./guide.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 import { createStubAgent } from "./stub.js";
 
@@ -59,6 +60,23 @@ function capture(): Captured {
   const out: string[] = [];
   const err: string[] = [];
   return { out, err, log: (line) => out.push(line), error: (line) => err.push(line) };
+}
+
+interface ShellGlobals {
+  __FACET_THEMES__?: unknown;
+  __FACET_INITIAL_STAGE__?: unknown;
+}
+
+function readShellGlobals(body: string): ShellGlobals {
+  const bootTag =
+    (body.match(/<script>[\s\S]*?<\/script>/g) ?? []).find((tag) =>
+      tag.includes("__FACET_INITIAL_STAGE__"),
+    ) ?? "";
+  expect(bootTag).not.toBe("");
+  const scriptBody = bootTag.slice("<script>".length, -"</script>".length);
+  const fakeWindow: ShellGlobals = {};
+  new Function("window", scriptBody)(fakeWindow);
+  return fakeWindow;
 }
 
 /** Drive `runCli` onto a random free port, retrying on collisions (the
@@ -353,6 +371,40 @@ describe("runCli — --assets (DC-009)", () => {
       expect(captured.err).toEqual([]);
       const shell = await (await fetch(`${running.url}/`)).text();
       expect(shell).toContain("window.__FACET_THEMES__");
+    } finally {
+      await running.close();
+    }
+  });
+});
+
+describe("runCli — quickstart polished default", () => {
+  it("quickstart polished default CLI inlines the seeded first paint on the built-in guide path", async () => {
+    const { captured, running } = await bootCli();
+    try {
+      expect(captured.err).toEqual([]);
+      const shell = await (await fetch(`${running.url}/`)).text();
+      const globals = readShellGlobals(shell);
+      const seedText = JSON.stringify(globals.__FACET_INITIAL_STAGE__);
+
+      expect(globals.__FACET_INITIAL_STAGE__).toEqual(QUICKSTART_INITIAL_STAGE);
+      expect(seedText).toContain("Facet Live Lab");
+      for (const type of [
+        "section",
+        "card",
+        "tabs",
+        "table",
+        "chart",
+        "field",
+        "button",
+        "stat",
+        "badge",
+        "progress",
+        "alert",
+        "list",
+        "divider",
+      ]) {
+        expect(seedText).toContain(`"type":"${type}"`);
+      }
     } finally {
       await running.close();
     }

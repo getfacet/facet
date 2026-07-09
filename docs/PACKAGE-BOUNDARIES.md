@@ -42,10 +42,10 @@ These packages are the reusable core of Facet:
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/core` | Closed stage contract: primitive fallback, v1 high-level bricks, catalog policy, token vocabulary/theme recipes, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
+| `@facet/core` | Closed stage contract: primitive fallback, v1 high-level bricks, catalog policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
 | `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, and `AssetsStore` interfaces and memory/file references for catalog/theme/stamp/initial-tree assets. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
-| `@facet/react` | Renderer, recipe/theme-to-CSS mapping, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
-| `@facet/assets` | Default catalog, theme recipe, and stamp metadata/value maps. | Catalog/theme/stamp schemas need fuller authoring docs and editor-facing examples. |
+| `@facet/react` | Renderer, recipe/theme-to-CSS mapping, recipe-part rendering for polished high-level bricks, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
+| `@facet/assets` | Default catalog, polished theme recipes/parts, and stamp metadata/value maps. | Catalog/theme/stamp schemas need fuller authoring docs and editor-facing examples. |
 
 ### Agent Authoring
 
@@ -104,7 +104,7 @@ surface for hosted products.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local. |
+| `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`, with a provider-backed polished seed for the default path. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local. |
 | `@facet/bridge` | Local bridge from Claude/Codex-style coding agents to a Facet link. | Local/operator tool only; not a hosted worker fleet. |
 | `@facet/cli` | Local command surface used by `@facet/bridge`. | Bin publish metadata exists; still needs a package-level pack/install smoke before npm release. |
 

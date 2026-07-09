@@ -146,8 +146,10 @@ layer makes it a **data** change — without moving the pixel boundary into the
 spec. Raw CSS values enter Facet in exactly one place — `validateTheme` in
 `@facet/core` — and only as **operator data**, never as tree content or model
 output. A `FacetTheme` is a partial override document (token name → CSS value)
-plus optional `recipes` for components and variants. The validator is the single
-gate it passes: an allowlist per token group and recipe style group, a deny-list
+plus optional `recipes` for components, variants, and closed internal recipe
+parts such as field labels/controls, tabs, table cells, chart plots, progress
+tracks/fills, list rows, and divider rules. The validator is the single gate it
+passes: an allowlist per token group, recipe style group, and recipe part name, a deny-list
 (`url()`, `var()`, `expression()`, `javascript:` and injection characters are
 refused), dimension clamps so a theme can't push content off-screen, a bounded
 font-family grammar for typography values, safe parseable opaque colors (hex,
@@ -163,17 +165,19 @@ The stage tree carries only a **name**: `FacetTree.theme?: string`,
 kept-if-string by `validateTree`. `STAGE_SPEC` teaches the agent to set it to a
 theme name it has been given and nothing else — **the LLM never authors theme
 values**. Nodes carry `variant`/`tone` selectors where supported; primitive
-`box`/`text`/`media`/`field` may also choose a theme recipe variant, while primitive styles still
-carry token names. Resolution is a boot-shipped map plus local lookups: the
-validated theme documents ship to the browser **once**, inline in
-the quickstart HTML shell as an escaped `window.__FACET_THEMES__` global,
-`resolveTheme` (`@facet/react`) maps the tree's theme name to a resolved token
-map, and `resolveRecipe` maps a component + variant/tone to token-only style
-bundles. Unknown theme names, recipes, variants, or tones fall back to the
-default recipe/style path. This is pure lookup — the browser writes no stage
-state — and it introduces **no new protocol message**: `@facet/server` and
-`@facet/client` are untouched, and a live theme switch is just a normal `/theme`
-patch re-resolved locally when catalog policy allows it.
+`box`/`text`/`media`/`field` may also choose a theme recipe variant, while
+primitive styles still carry token names. Recipe parts are not stage syntax; they
+are renderer-owned subrecipes inside validated operator theme data. Resolution is
+a boot-shipped map plus local lookups: the validated theme documents ship to the
+browser **once**, inline in the quickstart HTML shell as an escaped
+`window.__FACET_THEMES__` global, `resolveTheme` (`@facet/react`) maps the
+tree's theme name to a resolved token map, `resolveRecipe` maps a component +
+variant/tone to token-only style bundles, and the renderer resolves recipe parts
+for internal brick affordances. Unknown theme names, recipes, variants, tones,
+or parts fall back to the default recipe/style path. This is pure lookup — the
+browser writes no stage state — and it introduces **no new protocol message**:
+`@facet/server` and `@facet/client` are untouched, and a live theme switch is
+just a normal `/theme` patch re-resolved locally when catalog policy allows it.
 
 The document library itself is a **pluggable adapter, exactly like `StageStore`**:
 `AssetsStore` is an interface with a browser-safe `MemoryAssets` reference in
@@ -216,7 +220,9 @@ reconnect gets the seed the normal way, via the rehydrate snapshot. For the
 very first paint the quickstart shell also ships the seed (and the resolved
 theme's canvas colors) with the page itself — `useFacet` can start from a
 boot-shipped tree, so nothing waits on the model; the seed frame then applies
-idempotently. One
+idempotently. The zero-config `facet-quickstart` path uses its own compact
+Facet Live Lab seed when no explicit guide or operator initial tree is present,
+while custom `initial.tree.json` assets still win. One
 trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
 which would silently seed a blank page and flip the server's offline face, so a
 tree that isn't *seedable* (the initial render root has visible, renderable

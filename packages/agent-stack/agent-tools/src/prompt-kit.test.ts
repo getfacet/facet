@@ -65,6 +65,72 @@ function catalogFixture(): FacetCatalog {
 }
 
 describe("buildFacetAgentSystemPrompt catalog guidance", () => {
+  it("polished brick guidance prefers stamps, high-level variants, and edits before primitive sprawl without leaking assets", () => {
+    const system = buildFacetAgentSystemPrompt({
+      pageBrief: PAGE_BRIEF,
+      assets: {
+        catalog: catalogFixture(),
+        themes: [
+          {
+            name: "studio",
+            description: "Studio theme",
+            color: { bg: "#123456" },
+            recipeInternals: "recipe-internal-sentinel",
+          },
+        ] as unknown as readonly FacetTheme[],
+        stamps: [
+          {
+            name: "pricing-grid",
+            description: "Pricing grid stamp",
+            slots: { title: "Private title default" },
+            root: "stamp-root-private",
+            nodes: {
+              "stamp-root-private": {
+                id: "stamp-root-private",
+                type: "text",
+                value: "stamp-node-json",
+              },
+            },
+            providerKey: "sk-provider-secret",
+            visitorId: "visitor-private-id",
+          },
+        ] as unknown as readonly FacetStamp[],
+      },
+    });
+
+    expect(system).toContain("POLISHED BRICK GUIDANCE");
+    expect(system).toMatch(/polished hierarchy/i);
+    expect(system).toMatch(/advertised stamp first/i);
+    expect(system).toMatch(/high-level bricks with catalog-advertised variants/i);
+    expect(system).toMatch(/primitive fallback/i);
+    expect(system).toMatch(/product-quality defaults/i);
+    expect(system).toMatch(/field for inputs/i);
+    expect(system).toMatch(/button for actions/i);
+    expect(system).toMatch(/tabs for local navigation/i);
+    expect(system).toMatch(/editBeforeAppend is true/i);
+    expect(system).toMatch(
+      /recipe parts and concrete theme token values as renderer\/operator internals/i,
+    );
+    expect(system).toMatch(/never write raw CSS/i);
+
+    const section = catalogSection(system);
+    expect(section).toContain("section variants: surface, hero");
+    expect(section).toContain("card variants: metric");
+    expect(section).toContain("button variants: primary");
+    expect(section).toContain("policy order: stamp -> brick -> primitive");
+
+    const stampSection = assetSection(system, "STAMPS");
+    expect(system).not.toContain("#123456");
+    expect(system).not.toContain("recipe-internal-sentinel");
+    expect(system).not.toContain("stamp-root-private");
+    expect(system).not.toContain("stamp-node-json");
+    expect(system).not.toContain("Private title default");
+    expect(system).not.toContain("sk-provider-secret");
+    expect(system).not.toContain("visitor-private-id");
+    expect(stampSection).not.toContain('"nodes"');
+    expect(stampSection).not.toContain('"root"');
+  });
+
   it("teaches append_node against all container parents, not only boxes", () => {
     expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain(
       "existing container parent (box, section, or card)",
