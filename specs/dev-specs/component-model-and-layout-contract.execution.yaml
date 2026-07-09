@@ -1,0 +1,635 @@
+# Execution Manifest: Component Model + Renderer Layout Contract
+#
+# Keep synchronized with specs/dev-specs/component-model-and-layout-contract.md.
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "component-model-and-layout-contract"
+spec_path: "specs/dev-specs/component-model-and-layout-contract.md"
+context_evidence_path: "specs/context/component-model-and-layout-contract.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "PATH=/opt/homebrew/bin:$PATH pnpm typecheck && PATH=/opt/homebrew/bin:$PATH pnpm test && PATH=/opt/homebrew/bin:$PATH pnpm lint"
+  - concern: "runtime"
+    requirement: "Use pnpm 9.12.0 from /opt/homebrew/bin on this workspace"
+    owner: "main-agent"
+    verification: "PATH=/opt/homebrew/bin:$PATH pnpm --version"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "Core Intrinsic Vocabulary And Renderability"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Define primitive/component vocabulary, new intrinsic node shapes, metric alias compatibility, and content detection."
+    module_shape:
+      decision: "sibling-helper"
+      rationale: "Public node union remains in nodes.ts; private component-validation.ts keeps bounded component parsing out of the already-large validate.ts and has focused tests."
+    files:
+      - path: "packages/core/core/src/nodes.ts"
+        change_type: "update"
+        purpose: "Add primitive and intrinsic component constants, new intrinsic interfaces, MetricNode, and legacy aliases."
+      - path: "packages/core/core/src/tree.ts"
+        change_type: "update"
+        purpose: "Recognize renderable content for new intrinsic nodes and metric/stat."
+      - path: "packages/core/core/src/component-validation.ts"
+        change_type: "add"
+        purpose: "Private bounded sanitizers/helpers for component node payloads."
+      - path: "packages/core/core/src/tree.test.ts"
+        change_type: "update"
+        purpose: "Renderable-content tests for metric, keyValue, emptyState, loading, and hostile empty nodes."
+      - path: "packages/core/core/src/component-validation.test.ts"
+        change_type: "add"
+        purpose: "Focused tests for primitive preservation, intrinsic set lock, bounded arrays, and backend-field rejection."
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/tree.test.ts packages/core/core/src/component-validation.test.ts"
+      target: "packages/core/core/src/tree.test.ts packages/core/core/src/component-validation.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/tree.test.ts packages/core/core/src/component-validation.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core test"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/component-validation.test.ts"
+        covers_dc: ["DC-002", "DC-003", "DC-005", "DC-010", "DC-012"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/tree.test.ts"
+        covers_dc: ["DC-005", "DC-010", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "stat and metric both count as renderable when valid"
+      - "No regression: @facet/core tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Core Validation And Component Definitions"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Integrate component sanitizers into validation and add a public component-definition validator distinct from theme recipes."
+    module_shape:
+      decision: "public-surface"
+      rationale: "component-definition.ts is the hosted-extension boundary and is exported deliberately; validate.ts remains the existing tree gate."
+    files:
+      - path: "packages/core/core/src/validate.ts"
+        change_type: "update"
+        purpose: "Delegate new component node cases and keep unknown/malformed nodes fail-safe."
+      - path: "packages/core/core/src/component-definition.ts"
+        change_type: "add"
+        purpose: "Public FacetComponentDefinition, validateComponentDefinition, and safe normalization over stamp-compatible templates."
+      - path: "packages/core/core/src/component-definition.test.ts"
+        change_type: "add"
+        purpose: "Tests for raw HTML/JS/CSS/data-binding rejection, unknown intrinsic rejection, caps, and safe normalization."
+      - path: "packages/core/core/src/validate.test.ts"
+        change_type: "update"
+        purpose: "Tree-level tests for new intrinsic nodes, stat alias compatibility, and malformed skip behavior."
+      - path: "packages/core/core/src/index.ts"
+        change_type: "update"
+        purpose: "Export the deliberate public component-definition surface."
+    depends_on: ["WU-1"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/component-definition.test.ts packages/core/core/src/validate.test.ts"
+      target: "packages/core/core/src/component-definition.test.ts packages/core/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/component-definition.test.ts packages/core/core/src/validate.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core test"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/component-definition.test.ts"
+        covers_dc: ["DC-004", "DC-010", "DC-011", "DC-012"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/validate.test.ts"
+        covers_dc: ["DC-003", "DC-005", "DC-010", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/component-definition.test.ts"
+        covers_dc: ["DC-004", "DC-010"]
+        action: "new"
+        boundary: "deep/cyclic composition expansion"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Component definitions cannot be registered through theme recipes"
+      - "No regression: @facet/core tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "Catalog And Theme Component Surface"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Expose component-facing catalog and recipe names additively while accepting old brick/stamp catalog data."
+    module_shape:
+      decision: "preserve"
+      rationale: "catalog.ts and theme.ts are already public contracts; updating in place preserves imports while adding compatibility aliases."
+    files:
+      - path: "packages/core/core/src/catalog.ts"
+        change_type: "update"
+        purpose: "Add CatalogComponent, component aliases/normalization, default intrinsic catalog, and legacy order compatibility."
+      - path: "packages/core/core/src/catalog.test.ts"
+        change_type: "update"
+        purpose: "Tests for component aliases, old catalog compatibility, unknown intrinsic rejection, and primitive fallback."
+      - path: "packages/core/core/src/theme.ts"
+        change_type: "update"
+        purpose: "Include new intrinsic component names and metric/stat recipe compatibility."
+      - path: "packages/core/core/src/theme.test.ts"
+        change_type: "update"
+        purpose: "Tests that recipes remain style-only and cover every catalog-advertised component variant."
+    depends_on: ["WU-2"]
+    parallel_group: "serial-c"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/catalog.test.ts packages/core/core/src/theme.test.ts"
+      target: "packages/core/core/src/catalog.test.ts packages/core/core/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/catalog.test.ts packages/core/core/src/theme.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core test"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/catalog.test.ts"
+        covers_dc: ["DC-001", "DC-002", "DC-003", "DC-005", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/theme.test.ts"
+        covers_dc: ["DC-004", "DC-005", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Old bricks/stamps catalogs and new component-facing fields validate deterministically"
+      - "No regression: @facet/core tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "Runtime Composition Asset Loading"
+    owner_role: "subagent"
+    packages: ["@facet/runtime"]
+    objective: "Let runtime asset stores provide component definitions/compositions as validated immutable assets while preserving stamps."
+    module_shape:
+      decision: "preserve"
+      rationale: "Runtime asset loading is already centralized and browser-safe; FileAssets remains the Node-only file reader behind @facet/runtime/node."
+    files:
+      - path: "packages/core/runtime/src/assets.ts"
+        change_type: "update"
+        purpose: "Accept componentDefinitions/compositions, validate through core, merge into loaded compatibility data, and report bounded issues."
+      - path: "packages/core/runtime/src/assets.test.ts"
+        change_type: "update"
+        purpose: "Tests for memory/file assets, duplicates, invalid definitions, and fallback behavior."
+      - path: "packages/core/runtime/src/file-assets.ts"
+        change_type: "update"
+        purpose: "Load sorted *.component.json files as raw component-definition documents."
+    depends_on: ["WU-2"]
+    parallel_group: "serial-d"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/runtime/src/assets.test.ts"
+      target: "packages/core/runtime/src/assets.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/runtime/src/assets.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/runtime typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/runtime test"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/runtime/src/assets.test.ts"
+        covers_dc: ["DC-004", "DC-006", "DC-010", "DC-011"]
+        action: "update"
+      - type: "integration"
+        target: "packages/core/runtime/src/runtime.test.ts"
+        covers_dc: ["DC-010"]
+        action: "existing"
+        boundary: "offline/racing writer regression remains unchanged"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Invalid composition assets never prevent default assets from loading"
+      - "No regression: @facet/runtime tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "React Intrinsic Rendering And Layout Contract"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Render every intrinsic component and enforce the shared containment contract for primitive and component roots."
+    module_shape:
+      decision: "sibling-helper"
+      rationale: "Private layout-contract.ts centralizes containment rules without exporting renderer internals or growing scattered CSS constants."
+    files:
+      - path: "packages/core/react/src/layout-contract.ts"
+        change_type: "add"
+        purpose: "Private root and scroll containment helpers."
+      - path: "packages/core/react/src/theme.ts"
+        change_type: "update"
+        purpose: "Apply default box-sizing, min-width:0, max-width:100%, wrapping, and bounded media styles."
+      - path: "packages/core/react/src/brick-renderers.tsx"
+        change_type: "update"
+        purpose: "Add renderers for nav, form, search, filterBar, keyValue, metric, emptyState, and loading; preserve stat."
+      - path: "packages/core/react/src/StageRenderer.tsx"
+        change_type: "update"
+        purpose: "Wire new intrinsic dispatch/visibility/live-path behavior and root containment."
+      - path: "packages/core/react/src/component-layout.test.tsx"
+        change_type: "add"
+        purpose: "Hostile-content layout and renderer tests for all new intrinsics."
+    depends_on: ["WU-3"]
+    parallel_group: "serial-e"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/react/src/component-layout.test.tsx"
+      target: "packages/core/react/src/component-layout.test.tsx"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/react/src/component-layout.test.tsx"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/react typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/react test"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/component-layout.test.tsx"
+        covers_dc: ["DC-002", "DC-005", "DC-007", "DC-008", "DC-009", "DC-010"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Every intrinsic in the locked list has a renderer path"
+      - "Horizontal overflow is bounded except explicit renderer-owned scroll"
+      - "No regression: @facet/react tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-6"
+    title: "Default Assets And Compatibility Data"
+    owner_role: "subagent"
+    packages: ["@facet/assets"]
+    objective: "Update default style recipes and default asset tests so the component set is advertised without creating a hidden structural library."
+    module_shape:
+      decision: "preserve"
+      rationale: "@facet/assets remains data-only and depends only on core; supported UI nouns remain intrinsic rather than a hidden asset library."
+    files:
+      - path: "packages/core/assets/src/theme.ts"
+        change_type: "update"
+        purpose: "Add default recipes for new intrinsic components and metric/stat compatibility."
+      - path: "packages/core/assets/src/theme.test.ts"
+        change_type: "update"
+        purpose: "Coverage for all catalog-advertised component variants."
+      - path: "packages/core/assets/src/stamps.ts"
+        change_type: "update"
+        purpose: "Prefer metric in default composition examples where appropriate while keeping compatibility."
+      - path: "packages/core/assets/src/stamps.test.ts"
+        change_type: "update"
+        purpose: "Assert default stamps remain valid and node-free assets."
+      - path: "packages/core/assets/src/catalog.test.ts"
+        change_type: "update"
+        purpose: "Assert default catalog exposes primitives/components and no hidden composition library."
+    depends_on: ["WU-3"]
+    parallel_group: "serial-f"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/assets/src/theme.test.ts packages/core/assets/src/stamps.test.ts packages/core/assets/src/catalog.test.ts"
+      target: "packages/core/assets/src/theme.test.ts packages/core/assets/src/stamps.test.ts packages/core/assets/src/catalog.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/assets/src/theme.test.ts packages/core/assets/src/stamps.test.ts packages/core/assets/src/catalog.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/assets typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/assets test"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/assets/src/theme.test.ts"
+        covers_dc: ["DC-005", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/assets/src/stamps.test.ts"
+        covers_dc: ["DC-006", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/assets/src/catalog.test.ts"
+        covers_dc: ["DC-002", "DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "@facet/assets does not ship default structural component definitions"
+      - "No regression: @facet/assets tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-7"
+    title: "Core Stage Spec And Tool Schemas"
+    owner_role: "subagent"
+    packages: ["@facet/core", "@facet/agent-tools"]
+    objective: "Update the canonical prompt contract and tool schema wording to the component model."
+    module_shape:
+      decision: "preserve"
+      rationale: "Canonical text remains in core and agent-tools consumes it; no new package boundary is needed."
+    files:
+      - path: "packages/core/core/src/spec.ts"
+        change_type: "update"
+        purpose: "Teach Primitive Brick -> Component -> Catalog, locked intrinsics, composition boundary, layout contract, and metric preference."
+      - path: "packages/core/core/src/spec.test.ts"
+        change_type: "update"
+        purpose: "Assert new vocabulary and compatibility guidance."
+      - path: "packages/agent-stack/agent-tools/src/specs.ts"
+        change_type: "update"
+        purpose: "Node schema description with primitive/component vocabulary and intrinsic list."
+      - path: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        change_type: "update"
+        purpose: "Tool schema expectations."
+      - path: "packages/agent-stack/agent-tools/src/executor.ts"
+        change_type: "update"
+        purpose: "Keep stage tool node intake and inspect summaries exhaustive for the intrinsic component set."
+    depends_on: ["WU-5"]
+    parallel_group: "serial-g"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/spec.test.ts packages/agent-stack/agent-tools/src/specs.test.ts"
+      target: "packages/core/core/src/spec.test.ts packages/agent-stack/agent-tools/src/specs.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/core/core/src/spec.test.ts packages/agent-stack/agent-tools/src/specs.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core typecheck"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/agent-tools typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/core test"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/agent-tools test"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/spec.test.ts"
+        covers_dc: ["DC-001", "DC-005", "DC-007", "DC-011", "DC-012"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        covers_dc: ["DC-001", "DC-005", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/executor.test.ts"
+        covers_dc: ["DC-005", "DC-011"]
+        action: "existing"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Tool schemas no longer describe the model as high-level-brick-first"
+      - "No regression: core and agent-tools tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-8"
+    title: "Agent Prompt Consumers And Quickstart Copy"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools", "@facet/reference-agent", "@facet/quickstart", "@facet/bridge"]
+    objective: "Migrate model-facing copy away from separate high-level brick and stamp concepts while preserving the legacy use_stamp tool."
+    module_shape:
+      decision: "preserve"
+      rationale: "Consumer prompt copy remains in existing files; no new abstraction is needed for terminology migration."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.ts"
+        change_type: "update"
+        purpose: "Render component/composition catalog guidance and legacy tool note without leaking internals."
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        change_type: "update"
+        purpose: "Prompt expectations and asset privacy tests."
+      - path: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "Reference prompt snapshots/expectations."
+      - path: "packages/agent-stack/quickstart/src/guide.ts"
+        change_type: "update"
+        purpose: "Quickstart guide and examples use component-first language and metric."
+      - path: "packages/agent-stack/quickstart/src/cli.test.ts"
+        change_type: "update"
+        purpose: "Quickstart expectation for component/default catalog wording and metric compatibility."
+    depends_on: ["WU-7"]
+    parallel_group: "serial-h"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/agent-stack/agent-tools/src/prompt-kit.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/quickstart/src/cli.test.ts"
+      target: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/quickstart/src/cli.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/agent-stack/agent-tools/src/prompt-kit.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/quickstart/src/cli.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/agent-tools typecheck"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/reference-agent typecheck"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/quickstart typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/agent-tools test"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/reference-agent test"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/quickstart test"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        covers_dc: ["DC-001", "DC-011", "DC-012"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        covers_dc: ["DC-001", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/quickstart/src/cli.test.ts"
+        covers_dc: ["DC-001", "DC-006", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Prompt still hides theme values and structural component internals"
+      - "No regression: touched package tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-8a"
+    title: "Reference Agent Stage Summary Components"
+    owner_role: "main"
+    packages: ["@facet/reference-agent"]
+    objective: "Keep prompt-stage summaries exhaustive enough for the intrinsic component set so large stages do not summarize new components as unknown."
+    module_shape:
+      decision: "preserve"
+      rationale: "Summary logic stays in the existing reference-agent prompt module."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/prompt/stage-summary.ts"
+        change_type: "update"
+        purpose: "Summarize nav, metric, keyValue, form, search, filterBar, emptyState, and loading; keep stat as legacy compatibility."
+      - path: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "Assert prompt summaries cover new component nodes without leaking raw JSON."
+    depends_on: ["WU-8"]
+    parallel_group: "serial-h2"
+    red_check:
+      command: "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts"
+      target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+      justification: ""
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts"
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm --filter @facet/reference-agent test"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        covers_dc: ["DC-001", "DC-005", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "New intrinsic components have bounded prompt summaries"
+      - "No regression: reference-agent tests"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-9"
+    title: "Documentation And Migration Notes"
+    owner_role: "subagent"
+    packages: ["docs"]
+    objective: "Document intrinsic criteria, component/composition boundary, migration compatibility, and renderer layout contract."
+    module_shape:
+      decision: "preserve"
+      rationale: "Docs are updated in existing canonical locations."
+    files:
+      - path: "README.md"
+        change_type: "update"
+        purpose: "Public overview and examples."
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "Architecture boundary and layout contract."
+      - path: "docs/PACKAGE-BOUNDARIES.md"
+        change_type: "update"
+        purpose: "Package ownership of intrinsics, composition assets, and hosted-platform boundary."
+      - path: "docs/REVIEW-RULES.md"
+        change_type: "update"
+        purpose: "Review checks for component vocabulary and layout contract."
+      - path: "docs/AGENT-TOOL-RESULT-CONTRACT.md"
+        change_type: "update"
+        purpose: "Prompt/tool terminology."
+      - path: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        change_type: "update"
+        purpose: "Keep the retired-term grep from matching its own assertion text."
+    depends_on: ["WU-8a"]
+    parallel_group: "serial-i"
+    red_check:
+      command: "N/A"
+      target: "README.md docs/ARCHITECTURE.md docs/PACKAGE-BOUNDARIES.md docs/REVIEW-RULES.md docs/AGENT-TOOL-RESULT-CONTRACT.md"
+      justification: "Docs-only WU; final docs grep and format check cover it."
+    quick_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm format:check"
+      - '! rg -n "high-level brick|stamp -> high-level" README.md docs packages/core/core/src/spec.ts packages/agent-stack/agent-tools/src packages/agent-stack/quickstart/src/guide.ts'
+      - 'rg -n "legacy.*stat|stat.*legacy|metric.*stat" README.md docs packages/core/core/src/spec.ts packages/agent-stack/agent-tools/src packages/agent-stack/quickstart/src/guide.ts'
+    no_regression_checks:
+      - "PATH=/opt/homebrew/bin:$PATH pnpm format:check"
+    test_plan:
+      - type: "unit"
+        target: "README.md docs/ARCHITECTURE.md docs/PACKAGE-BOUNDARIES.md docs/REVIEW-RULES.md docs/AGENT-TOOL-RESULT-CONTRACT.md"
+        covers_dc: ["DC-001", "DC-003", "DC-006", "DC-007", "DC-011", "DC-012"]
+        action: "update"
+    done_conditions:
+      - "N/A red check justified"
+      - "Docs include intrinsic criteria and renderer layout contract"
+      - "Format check passes"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
