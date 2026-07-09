@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { INTRINSIC_COMPONENT_TYPES, PRIMITIVE_BRICK_TYPES } from "@facet/core";
 import {
   FACET_STAGE_TOOL_NAMES,
   FACET_STAGE_TOOL_SPECS,
@@ -27,6 +28,10 @@ function tool(name: FacetStageToolName): ToolSpec<FacetStageToolName> {
 
 function propertiesOf(spec: ToolSpec<FacetStageToolName>): Record<string, unknown> {
   return spec.parameters["properties"] as Record<string, unknown>;
+}
+
+function allToolText(): string {
+  return JSON.stringify(FACET_STAGE_TOOL_SPECS);
 }
 
 describe("FACET_STAGE_TOOL_SPECS", () => {
@@ -65,18 +70,32 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     expect(at["required"]).toEqual(["parent"]);
   });
 
-  it("documents v1 high-level node schemas and catalog policy boundaries", () => {
+  it("documents component node schemas and catalog policy boundaries", () => {
     const renderPage = tool("render_page");
     const appendNode = tool("append_node");
     const setNode = tool("set_node");
     const setTheme = tool("set_theme");
+    const useStamp = tool("use_stamp");
+    const nodeSchemaText = JSON.stringify(propertiesOf(appendNode)["node"]);
 
     expect(renderPage.description).toMatch(/catalog policy/i);
-    expect(appendNode.description).toMatch(/box, section, or card/i);
-    expect(JSON.stringify(propertiesOf(appendNode)["node"])).toContain("button");
+    expect(appendNode.description).toMatch(/box, section, card, or form/i);
+    expect(nodeSchemaText).toMatch(/Primitive Brick -> Component -> Catalog/);
+    for (const type of PRIMITIVE_BRICK_TYPES) {
+      expect(nodeSchemaText).toContain(type);
+    }
+    for (const type of INTRINSIC_COMPONENT_TYPES) {
+      expect(nodeSchemaText).toContain(type);
+    }
+    expect(nodeSchemaText).toMatch(/metric/);
+    expect(nodeSchemaText).toMatch(/legacy stat/i);
     expect(JSON.stringify(propertiesOf(setNode)["node"])).toMatch(/section|card|table|chart/);
     expect(setTheme.description).toMatch(/locked/i);
     expect(setTheme.description).toMatch(/catalog/i);
+    expect(useStamp.description).toMatch(/compat/i);
+    expect(useStamp.description).toMatch(/composition/i);
+    expect(allToolText()).not.toMatch(/high-level brick/i);
+    expect(allToolText()).not.toMatch(/v1 brick/i);
   });
 
   it("bounds inspection schemas", () => {

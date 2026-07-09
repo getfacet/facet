@@ -5,7 +5,7 @@ export type FacetStageToolSpec = ToolSpec<FacetStageToolName>;
 const NODE_SCHEMA = {
   type: "object",
   description:
-    "A Facet v1 brick node. Allowed types are box, text, media, field, button, section, card, tabs, table, chart, stat, badge, progress, alert, list, divider. Only box, section, and card are containers. Variant names must be allowed by the active catalog policy.",
+    "A Facet stage node in the Primitive Brick -> Component -> Catalog model. Primitive bricks are box, text, media, field. Intrinsic components are button, section, card, tabs, nav, table, chart, metric, keyValue, badge, progress, alert, list, divider, form, search, filterBar, emptyState, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box, section, card, and form are containers. No raw HTML/JS/CSS, no client-side fetch, and no data-binding. Variant names must be allowed by the active catalog policy.",
 } as const;
 
 const TREE_SCHEMA = {
@@ -49,13 +49,13 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "append_node",
     description:
-      "Add one v1 node as the last child of the existing box, section, or card parentId. Use for small incremental page additions. Catalog policy controls allowed node types and variants.",
+      "Add one primitive brick or component node as the last child of the existing box, section, card, or form parentId. Use for small incremental page additions. Catalog policy controls allowed node types and variants.",
     parameters: {
       type: "object",
       properties: {
         parentId: {
           type: "string",
-          description: "The id of an existing container node: box, section, or card.",
+          description: "The id of an existing container node: box, section, card, or form.",
         },
         ["node"]: NODE_SCHEMA,
       },
@@ -66,7 +66,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "use_stamp",
     description:
-      "Expand a reusable stamp by name under at.parent. Pass string params for stamp slots; the executor mints fresh ids. Catalog policy may restrict stamp names and the expanded v1 bricks.",
+      "Compatibility tool: expand a reusable composition/stamp asset by name under at.parent. Pass string params for slots; the executor mints fresh ids. Catalog policy may restrict names and the expanded validated nodes.",
     parameters: {
       type: "object",
       properties: {
@@ -77,7 +77,7 @@ export const FACET_STAGE_TOOL_SPECS = [
           properties: {
             parent: {
               type: "string",
-              description: "The id of an existing container node: box, section, or card.",
+              description: "The id of an existing container node: box, section, card, or form.",
             },
           },
           required: ["parent"],
@@ -91,7 +91,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "set_node",
     description:
-      "Insert or replace one v1 node by id. Reuse an existing id to update that node in place. Catalog policy controls allowed node types and variants.",
+      "Insert or replace one primitive brick or component node by id. Reuse an existing id to update that node in place. Catalog policy controls allowed node types and variants.",
     parameters: {
       type: "object",
       properties: {

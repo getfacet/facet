@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { FIELD_INPUTS, HIGH_LEVEL_NODE_TYPES } from "./nodes.js";
+import {
+  FIELD_INPUTS,
+  INTRINSIC_COMPONENT_TYPES,
+  LEGACY_COMPONENT_TYPES,
+  PRIMITIVE_BRICK_TYPES,
+} from "./nodes.js";
 import { STAGE_SPEC } from "./spec.js";
 import { APPEARS, COLUMNS, FONT_FAMILIES, SCROLL_AXES } from "./tokens.js";
 
@@ -86,13 +91,38 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).not.toContain('"type":"image"');
   });
 
-  it("teaches the closed high-level brick vocabulary without raw HTML or CSS", () => {
-    for (const type of HIGH_LEVEL_NODE_TYPES) {
+  it("teaches Primitive Brick -> Component -> Catalog and the locked component vocabulary", () => {
+    expect(STAGE_SPEC).toMatch(/Primitive Brick -> Component -> Catalog/);
+    expect(STAGE_SPEC).toMatch(/primitive bricks/i);
+    for (const type of PRIMITIVE_BRICK_TYPES) {
       expect(STAGE_SPEC).toContain(`"type":"${type}"`);
     }
-    expect(STAGE_SPEC).toMatch(/Only box, section, and card are containers/i);
-    expect(STAGE_SPEC).toMatch(/Tables\/charts are display-only/i);
-    expect(STAGE_SPEC).toMatch(/stamp .* high-level brick .* primitive/i);
+    expect(STAGE_SPEC).toMatch(/intrinsic components are locked/i);
+    for (const type of INTRINSIC_COMPONENT_TYPES) {
+      expect(STAGE_SPEC).toContain(`"type":"${type}"`);
+    }
+    for (const type of LEGACY_COMPONENT_TYPES) {
+      expect(STAGE_SPEC).toContain(`"type":"${type}"`);
+    }
+    expect(STAGE_SPEC).toMatch(/prefer metric/i);
+    expect(STAGE_SPEC).toMatch(/stat[^.]*legacy/i);
+    expect(STAGE_SPEC).toMatch(/Catalog/i);
+    expect(STAGE_SPEC).not.toMatch(/high-level brick/i);
+    expect(STAGE_SPEC).not.toMatch(/stamp -> high-level/i);
+  });
+
+  it("documents composition and renderer layout boundaries without backend bindings", () => {
+    expect(STAGE_SPEC).toMatch(/composition/i);
+    expect(STAGE_SPEC).toMatch(/validated nodes/i);
+    expect(STAGE_SPEC).toMatch(/use_stamp[^.]*compat/i);
+    expect(STAGE_SPEC).toMatch(/renderer layout contract/i);
+    expect(STAGE_SPEC).toMatch(/parent[^.]*placement/i);
+    expect(STAGE_SPEC).toMatch(/component[^.]*internal layout/i);
+    expect(STAGE_SPEC).toMatch(/bounded overflow/i);
+    expect(STAGE_SPEC).toMatch(/flow-only/i);
+    expect(STAGE_SPEC).toMatch(/no client-side fetch/i);
+    expect(STAGE_SPEC).toMatch(/data-binding/i);
+    expect(STAGE_SPEC).toMatch(/backend[^.]*agent/i);
     expect(STAGE_SPEC).not.toMatch(/<script|innerHTML|dangerouslySetInnerHTML/i);
     expect(STAGE_SPEC).not.toMatch(/position:\s*absolute/i);
   });

@@ -1,7 +1,9 @@
 import {
+  COMPONENT_NODE_TYPES,
   EMPTY_TREE,
   MAX_PATCH_OPS,
   MEDIA_KINDS,
+  PRIMITIVE_BRICK_TYPES,
   expandStamp,
   isContainer,
   isSafeMediaSrc,
@@ -37,7 +39,10 @@ const MAX_INSPECT_NODE_DEPTH = 5;
 const MAX_TEXT_PREVIEW_CHARS = 80;
 const MAX_ID_LIST_PREVIEW = 20;
 const FORBIDDEN_NODE_IDS = new Set(["__proto__", "prototype", "constructor"]);
-const PRIMITIVE_NODE_TYPES = new Set<FacetNode["type"]>(["box", "text", "media", "field"]);
+const PRIMITIVE_NODE_TYPES = new Set<FacetNode["type"]>(PRIMITIVE_BRICK_TYPES);
+const FACET_NODE_TYPES_TEXT = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]
+  .map((type) => `"${type}"`)
+  .join(", ");
 const CHART_KINDS = new Set(["bar", "line", "donut"]);
 
 const TOOL_NAMES = FACET_STAGE_TOOL_NAMES.join(", ");
@@ -993,6 +998,14 @@ function asNode(
         };
       }
       return { facetNode: value as unknown as FacetNode };
+    case "nav":
+      if (!Array.isArray(value["items"])) {
+        return {
+          error: 'a "nav" node needs "items" as an array',
+          nextAction: 'Pass "items": [] or an array of nav items.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
     case "table":
       if (value["columns"] !== undefined && !Array.isArray(value["columns"])) {
         return {
@@ -1040,11 +1053,20 @@ function asNode(
           series: value["series"] ?? [],
         } as unknown as FacetNode,
       };
+    case "metric":
     case "stat":
       if (typeof value["label"] !== "string" || typeof value["value"] !== "string") {
         return {
-          error: 'a "stat" node needs string "label" and "value"',
-          nextAction: 'Pass string "label" and "value" for stat nodes.',
+          error: `a "${value["type"]}" node needs string "label" and "value"`,
+          nextAction: `Pass string "label" and "value" for ${String(value["type"])} nodes.`,
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "keyValue":
+      if (!Array.isArray(value["items"])) {
+        return {
+          error: 'a "keyValue" node needs "items" as an array',
+          nextAction: 'Pass "items": [] or an array of key/value items.',
         };
       }
       return { facetNode: value as unknown as FacetNode };
@@ -1082,10 +1104,40 @@ function asNode(
       return { facetNode: value as unknown as FacetNode };
     case "divider":
       return { facetNode: value as unknown as FacetNode };
+    case "form": {
+      const children = parseContainerChildren(value["children"], "form");
+      if ("error" in children) return children;
+      return {
+        facetNode: {
+          ...value,
+          id: value["id"],
+          type: "form",
+          children: children.children,
+        } as unknown as FacetNode,
+      };
+    }
+    case "search":
+      if (typeof value["name"] !== "string") {
+        return {
+          error: 'a "search" node needs a string "name"',
+          nextAction: 'Pass a string "name" for search nodes.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "filterBar":
+      if (!Array.isArray(value["filters"])) {
+        return {
+          error: 'a "filterBar" node needs "filters" as an array',
+          nextAction: 'Pass "filters": [] or an array of filter controls.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "emptyState":
+    case "loading":
+      return { facetNode: value as unknown as FacetNode };
     default:
       return {
-        error:
-          '"type" must be one of the Facet v1 node types: "box", "text", "media", "field", "button", "section", "card", "tabs", "table", "chart", "stat", "badge", "progress", "alert", "list", or "divider"',
+        error: `"type" must be one of the Facet v1 node types: ${FACET_NODE_TYPES_TEXT}`,
         nextAction: "Use one allowed Facet v1 node type.",
       };
   }
@@ -1093,7 +1145,7 @@ function asNode(
 
 function parseContainerChildren(
   value: unknown,
-  nodeType: "section" | "card",
+  nodeType: "section" | "card" | "form",
 ):
   | { readonly children: readonly string[] }
   | { readonly error: string; readonly nextAction: string } {
@@ -1224,12 +1276,18 @@ function describeNode(facetNode: FacetNode): string {
       return `${facetNode.id} card children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
     case "tabs":
       return `${facetNode.id} tabs items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
+    case "nav":
+      return `${facetNode.id} nav items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
     case "table":
       return `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(facetNode.rows.length)}${variantSuffix(facetNode)}`;
     case "chart":
       return `${facetNode.id} chart kind=${facetNode.kind} series=${String(facetNode.series.length)}${variantSuffix(facetNode)}`;
+    case "metric":
+      return `${facetNode.id} metric label="${preview(facetNode.label)}" value="${preview(facetNode.value)}"${variantSuffix(facetNode)}`;
     case "stat":
       return `${facetNode.id} stat label="${preview(facetNode.label)}" value="${preview(facetNode.value)}"${variantSuffix(facetNode)}`;
+    case "keyValue":
+      return `${facetNode.id} keyValue items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
     case "badge":
       return `${facetNode.id} badge label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`;
     case "progress":
@@ -1240,7 +1298,19 @@ function describeNode(facetNode: FacetNode): string {
       return `${facetNode.id} list items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
     case "divider":
       return `${facetNode.id} divider${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
+    case "form":
+      return `${facetNode.id} form children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
+    case "search":
+      return `${facetNode.id} search name="${preview(facetNode.name)}"${variantSuffix(facetNode)}`;
+    case "filterBar":
+      return `${facetNode.id} filterBar filters=${String(facetNode.filters.length)}${variantSuffix(facetNode)}`;
+    case "emptyState":
+      return `${facetNode.id} emptyState${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
+    case "loading":
+      return `${facetNode.id} loading${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
   }
+  const exhaustive: never = facetNode;
+  return exhaustive;
 }
 
 function variantSuffix(node: FacetNode): string {
