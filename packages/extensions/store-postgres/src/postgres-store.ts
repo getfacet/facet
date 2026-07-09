@@ -42,10 +42,12 @@ export async function initSchema(pool: Pool): Promise<void> {
       agent_id text primary key,
       themes jsonb,
       stamps jsonb,
+      catalog jsonb,
       initial_tree jsonb,
       updated_at timestamptz not null default now()
     )
   `);
+  await pool.query("alter table facet_assets add column if not exists catalog jsonb");
 }
 
 export class PostgresStageStore implements StageStore {

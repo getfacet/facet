@@ -1,6 +1,7 @@
 import {
   MAX_PATCH_OPS,
   expandStamp,
+  isContainer,
   type ExpandAt,
   type FacetStamp,
   type FacetNode,
@@ -39,11 +40,11 @@ export class Stage {
   private pending: JsonPatchOperation[] = [];
   private emittedPatchOps = 0;
   private knownIds: Set<NodeId>;
-  private knownBoxIds: Set<NodeId>;
+  private knownContainerIds: Set<NodeId>;
 
   constructor(initialStage?: FacetTree) {
     this.knownIds = new Set(["root"]);
-    this.knownBoxIds = new Set(["root"]);
+    this.knownContainerIds = new Set(["root"]);
     if (initialStage !== undefined) this.seedKnown(initialStage);
   }
 
@@ -61,7 +62,7 @@ export class Stage {
     return this;
   }
 
-  /** Append a new node as the last child of a box. */
+  /** Append a new node as the last child of a container. */
   append(parent: NodeId, node: FacetNode): this {
     this.pending.push({ op: "add", path: nodePath(node.id), value: node });
     this.pending.push({ op: "add", path: childrenPath(parent), value: node.id });
@@ -71,7 +72,7 @@ export class Stage {
 
   /** Expand a resolved stamp under a known parent as ordinary patch ops. */
   useStamp(stamp: FacetStamp | undefined, params: StampParams, at: ExpandAt): UseStampResult {
-    if (!this.knownBoxIds.has(at.parent)) return { slots: {}, ids: {} };
+    if (!this.knownContainerIds.has(at.parent)) return { slots: {}, ids: {} };
     const expanded = expandStamp(stamp, params, at, { existingIds: this.knownIds });
     if (expanded.root === undefined) return { slots: expanded.slots, ids: expanded.ids };
 
@@ -123,7 +124,7 @@ export class Stage {
   remove(id: NodeId): this {
     this.pending.push({ op: "remove", path: nodePath(id) });
     this.knownIds.delete(id);
-    this.knownBoxIds.delete(id);
+    this.knownContainerIds.delete(id);
     return this;
   }
 
@@ -153,16 +154,16 @@ export class Stage {
 
   private seedKnown(tree: FacetTree): void {
     this.knownIds = new Set(Object.keys(tree.nodes));
-    this.knownBoxIds = new Set(
+    this.knownContainerIds = new Set(
       Object.values(tree.nodes)
-        .filter((node) => node != null && node.type === "box")
+        .filter((node) => node != null && isContainer(node))
         .map((node) => node.id),
     );
   }
 
   private rememberNode(node: FacetNode): void {
     this.knownIds.add(node.id);
-    if (node.type === "box") this.knownBoxIds.add(node.id);
-    else this.knownBoxIds.delete(node.id);
+    if (isContainer(node)) this.knownContainerIds.add(node.id);
+    else this.knownContainerIds.delete(node.id);
   }
 }

@@ -11,15 +11,20 @@ import {
   RADII,
   RATIOS,
   SCROLL_AXES,
+  SHADOWS,
   SIZINGS,
   SPACES,
   TEXT_ALIGNS,
 } from "./tokens.js";
 import {
+  CHART_KINDS,
   FIELD_INPUTS,
+  HIGH_LEVEL_NODE_TYPES,
   MEDIA_KINDS,
+  TONES,
   isContainer,
   type BoxStyle,
+  type ChartKind,
   type FacetAction,
   type FacetNode,
   type FieldInput,
@@ -27,7 +32,10 @@ import {
   type MediaKind,
   type MediaStyle,
   type NodeId,
+  type TableCell,
+  type TableRow,
   type TextStyle,
+  type Tone,
 } from "./nodes.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
@@ -241,6 +249,7 @@ function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
     set("bg", COLORS);
     set("radius", RADII);
     set("width", SIZINGS);
+    set("shadow", SHADOWS);
     // appear/scroll junk is stripped WITH an issue (unlike the legacy tokens
     // above): the words are new, so a wrong value is a teachable agent mistake,
     // not pre-existing content. Echoes are bounded (printableValue/printableKey)
@@ -329,6 +338,204 @@ function fieldOptions(value: unknown): readonly string[] | undefined {
   return options.length > 0 ? options : undefined;
 }
 
+export const MAX_NODE_LABEL_CHARS = 200;
+export const MAX_NODE_BODY_CHARS = 1000;
+export const MAX_TABLE_COLUMNS = 12;
+export const MAX_TABLE_ROWS = 100;
+export const MAX_TABLE_CELL_CHARS = 200;
+export const MAX_CHART_SERIES = 8;
+export const MAX_CHART_POINTS = 200;
+export const MAX_LIST_ITEMS = 50;
+export const MAX_TABS_ITEMS = 12;
+export const MAX_STAMP_METADATA_ITEMS = 16;
+
+function boundedString(
+  value: unknown,
+  nodeId: string,
+  field: string,
+  max: number,
+  issues: IssueSink,
+): string | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value.length <= max) return value;
+  issues.push(`node "${printableKey(nodeId)}": ${field} truncated to ${max} characters`);
+  return value.slice(0, max);
+}
+
+function asVariant(value: unknown, nodeId: string, issues: IssueSink): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === "string" && isValidSlotName(value)) return value;
+  issues.push(`node "${printableKey(nodeId)}": malformed variant dropped`);
+  return undefined;
+}
+
+function asTone(value: unknown, nodeId: string, issues: IssueSink): Tone | undefined {
+  if (value === undefined) return undefined;
+  const tone = asToken<Tone>(value, TONES);
+  if (tone !== undefined) return tone;
+  issues.push(`node "${printableKey(nodeId)}": unknown tone ${printableValue(value)} dropped`);
+  return undefined;
+}
+
+function childRefs(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((child): child is string => typeof child === "string")
+    : [];
+}
+
+function capArray<T>(
+  values: readonly T[],
+  max: number,
+  nodeId: string,
+  field: string,
+  issues: IssueSink,
+): readonly T[] {
+  if (values.length <= max) return values;
+  issues.push(
+    `node "${printableKey(nodeId)}": ${field} exceeded the ${max}-item cap; extra items dropped`,
+  );
+  return values.slice(0, max);
+}
+
+function tableColumns(
+  value: unknown,
+  nodeId: string,
+  issues: IssueSink,
+): readonly {
+  key: string;
+  label: string;
+  align?: "start" | "center" | "end";
+}[] {
+  if (!Array.isArray(value)) return [];
+  const columns: { key: string; label: string; align?: "start" | "center" | "end" }[] = [];
+  const capped = capArray(value, MAX_TABLE_COLUMNS, nodeId, "columns", issues);
+  for (const raw of capped) {
+    if (!isObject(raw)) continue;
+    const key = typeof raw.key === "string" && isValidSlotName(raw.key) ? raw.key : undefined;
+    const label = boundedString(raw.label, nodeId, "column label", MAX_NODE_LABEL_CHARS, issues);
+    if (key === undefined || label === undefined) continue;
+    const column: { key: string; label: string; align?: "start" | "center" | "end" } = {
+      key,
+      label,
+    };
+    const align = asToken<"start" | "center" | "end">(raw.align, TEXT_ALIGNS);
+    if (align !== undefined) column.align = align;
+    columns.push(column);
+  }
+  return columns;
+}
+
+function tableCell(value: unknown, nodeId: string, issues: IssueSink): TableCell | undefined {
+  if (typeof value === "string") {
+    if (value.length <= MAX_TABLE_CELL_CHARS) return value;
+    issues.push(
+      `node "${printableKey(nodeId)}": table cell truncated to ${MAX_TABLE_CELL_CHARS} characters`,
+    );
+    return value.slice(0, MAX_TABLE_CELL_CHARS);
+  }
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "boolean") return value;
+  return undefined;
+}
+
+function tableRows(
+  value: unknown,
+  columns: readonly { key: string }[],
+  nodeId: string,
+  issues: IssueSink,
+): readonly TableRow[] {
+  if (!Array.isArray(value) || columns.length === 0) return [];
+  const rows: TableRow[] = [];
+  const capped = capArray(value, MAX_TABLE_ROWS, nodeId, "rows", issues);
+  for (const raw of capped) {
+    if (!isObject(raw)) continue;
+    const row: Record<string, TableCell> = nullMap<TableCell>();
+    for (const column of columns) {
+      const cell = tableCell(raw[column.key], nodeId, issues);
+      if (cell !== undefined) row[column.key] = cell;
+    }
+    rows.push(row);
+  }
+  return rows;
+}
+
+function chartSeries(
+  value: unknown,
+  nodeId: string,
+  issues: IssueSink,
+): readonly {
+  label: string;
+  values: readonly number[];
+}[] {
+  if (!Array.isArray(value)) return [];
+  const out: { label: string; values: readonly number[] }[] = [];
+  const cappedSeries = capArray(value, MAX_CHART_SERIES, nodeId, "series", issues);
+  for (const raw of cappedSeries) {
+    if (!isObject(raw)) continue;
+    const label = boundedString(raw.label, nodeId, "series label", MAX_NODE_LABEL_CHARS, issues);
+    if (label === undefined || !Array.isArray(raw.values)) continue;
+    const cappedValues = capArray(raw.values, MAX_CHART_POINTS, nodeId, "points", issues);
+    const values: number[] = [];
+    for (const point of cappedValues) {
+      if (typeof point === "number" && Number.isFinite(point)) values.push(point);
+    }
+    out.push({ label, values });
+  }
+  return out;
+}
+
+function stringList(
+  value: unknown,
+  nodeId: string,
+  field: string,
+  issues: IssueSink,
+): readonly string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const kept: string[] = [];
+  const capped = capArray(value, MAX_CHART_POINTS, nodeId, field, issues);
+  for (const raw of capped) {
+    const label = boundedString(raw, nodeId, field, MAX_NODE_LABEL_CHARS, issues);
+    if (label !== undefined) kept.push(label);
+  }
+  return kept.length > 0 ? kept : undefined;
+}
+
+function listItems(
+  value: unknown,
+  nodeId: string,
+  issues: IssueSink,
+): readonly {
+  title: string;
+  body?: string;
+}[] {
+  if (!Array.isArray(value)) return [];
+  const items: { title: string; body?: string }[] = [];
+  const capped = capArray(value, MAX_LIST_ITEMS, nodeId, "items", issues);
+  for (const raw of capped) {
+    if (typeof raw === "string") {
+      items.push({ title: raw.slice(0, MAX_NODE_LABEL_CHARS) });
+      continue;
+    }
+    if (!isObject(raw)) continue;
+    const title = boundedString(raw.title, nodeId, "item title", MAX_NODE_LABEL_CHARS, issues);
+    if (title === undefined) continue;
+    const item: { title: string; body?: string } = { title };
+    const body = boundedString(raw.body, nodeId, "item body", MAX_NODE_BODY_CHARS, issues);
+    if (body !== undefined) item.body = body;
+    items.push(item);
+  }
+  return items;
+}
+
+function progressValue(value: unknown, nodeId: string, issues: IssueSink): number {
+  const raw = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const clamped = Math.min(100, Math.max(0, raw));
+  if (clamped !== raw) {
+    issues.push(`node "${printableKey(nodeId)}": progress value clamped to ${String(clamped)}`);
+  }
+  return clamped;
+}
+
 interface SanitizeNodeOptions {
   readonly allowSlotMarkers?: boolean;
 }
@@ -358,7 +565,10 @@ function sanitizeNode(
         onPress?: FacetAction;
         onHold?: FacetAction;
         hidden?: boolean;
+        variant?: string;
       } = { id, type: "box", style: boxStyle(raw.style, id, issues), children };
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
       const onPress = asAction(raw.onPress, id, "onPress", issues);
       if (onPress !== undefined) node.onPress = onPress;
       const onHold = asAction(raw.onHold, id, "onHold", issues);
@@ -375,7 +585,16 @@ function sanitizeNode(
         issues.push(`node "${key}": text has no string value`);
         return undefined;
       }
-      return { id, type: "text", value, style: textStyle(raw.style) };
+      const node: { id: string; type: "text"; value: string; style: TextStyle; variant?: string } =
+        {
+          id,
+          type: "text",
+          value,
+          style: textStyle(raw.style),
+        };
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
     }
     case "image":
     case "media": {
@@ -403,11 +622,14 @@ function sanitizeNode(
         type: "media";
         kind: MediaKind;
         src: string;
+        variant?: string;
         alt?: string;
         poster?: string;
         controls?: boolean;
         style: MediaStyle;
       } = { id, type: "media", kind, src, style: mediaStyle(raw.style) };
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
       const alt = asString(raw.alt);
       node.alt = alt ?? "";
       const poster = asString(raw.poster);
@@ -431,12 +653,15 @@ function sanitizeNode(
         id: string;
         type: "field";
         name: string;
+        variant?: string;
         input?: FieldInput;
         label?: string;
         placeholder?: string;
         options?: readonly string[];
         style?: FieldStyle;
       } = { id, type: "field", name };
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
       const input = asToken<FieldInput>(raw.input, FIELD_INPUTS);
       if (input !== undefined) node.input = input;
       const options = fieldOptions(raw.options);
@@ -456,6 +681,242 @@ function sanitizeNode(
       if (style !== undefined) node.style = style;
       return node;
     }
+    case "button": {
+      const label = boundedString(raw.label, id, "label", MAX_NODE_LABEL_CHARS, issues);
+      if (label === undefined) {
+        issues.push(`node "${key}": button has no string label`);
+        return undefined;
+      }
+      const node: {
+        id: string;
+        type: "button";
+        label: string;
+        variant?: string;
+        tone?: Tone;
+        disabled?: boolean;
+        onPress?: FacetAction;
+        onHold?: FacetAction;
+      } = { id, type: "button", label };
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      const tone = asTone(raw.tone, id, issues);
+      if (tone !== undefined) node.tone = tone;
+      const disabled = asBool(raw.disabled);
+      if (disabled !== undefined) node.disabled = disabled;
+      const onPress = asAction(raw.onPress, id, "onPress", issues);
+      if (onPress !== undefined) node.onPress = onPress;
+      const onHold = asAction(raw.onHold, id, "onHold", issues);
+      if (onHold !== undefined) node.onHold = onHold;
+      return node;
+    }
+    case "section": {
+      const node: {
+        id: string;
+        type: "section";
+        title?: string;
+        eyebrow?: string;
+        body?: string;
+        variant?: string;
+        children: string[];
+      } = { id, type: "section", children: childRefs(raw.children) };
+      const title = boundedString(raw.title, id, "title", MAX_NODE_LABEL_CHARS, issues);
+      if (title !== undefined) node.title = title;
+      const eyebrow = boundedString(raw.eyebrow, id, "eyebrow", MAX_NODE_LABEL_CHARS, issues);
+      if (eyebrow !== undefined) node.eyebrow = eyebrow;
+      const body = boundedString(raw.body, id, "body", MAX_NODE_BODY_CHARS, issues);
+      if (body !== undefined) node.body = body;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "card": {
+      const node: {
+        id: string;
+        type: "card";
+        title?: string;
+        body?: string;
+        variant?: string;
+        tone?: Tone;
+        onPress?: FacetAction;
+        onHold?: FacetAction;
+        children: string[];
+      } = { id, type: "card", children: childRefs(raw.children) };
+      const title = boundedString(raw.title, id, "title", MAX_NODE_LABEL_CHARS, issues);
+      if (title !== undefined) node.title = title;
+      const body = boundedString(raw.body, id, "body", MAX_NODE_BODY_CHARS, issues);
+      if (body !== undefined) node.body = body;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      const tone = asTone(raw.tone, id, issues);
+      if (tone !== undefined) node.tone = tone;
+      const onPress = asAction(raw.onPress, id, "onPress", issues);
+      if (onPress !== undefined) node.onPress = onPress;
+      const onHold = asAction(raw.onHold, id, "onHold", issues);
+      if (onHold !== undefined) node.onHold = onHold;
+      return node;
+    }
+    case "tabs": {
+      const items: { label: string; to: string }[] = [];
+      if (Array.isArray(raw.items)) {
+        const capped = capArray(raw.items, MAX_TABS_ITEMS, id, "items", issues);
+        for (const item of capped) {
+          if (!isObject(item)) continue;
+          const label = boundedString(item.label, id, "tab label", MAX_NODE_LABEL_CHARS, issues);
+          const to = asString(item.to);
+          if (label !== undefined && to !== undefined) items.push({ label, to });
+        }
+      }
+      const node: {
+        id: string;
+        type: "tabs";
+        items: { label: string; to: string }[];
+        variant?: string;
+      } = {
+        id,
+        type: "tabs",
+        items,
+      };
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "table": {
+      const columns = tableColumns(raw.columns, id, issues);
+      const node: {
+        id: string;
+        type: "table";
+        columns: typeof columns;
+        rows: readonly TableRow[];
+        caption?: string;
+        variant?: string;
+      } = { id, type: "table", columns, rows: tableRows(raw.rows, columns, id, issues) };
+      const caption = boundedString(raw.caption, id, "caption", MAX_NODE_LABEL_CHARS, issues);
+      if (caption !== undefined) node.caption = caption;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "chart": {
+      const kind = asToken<ChartKind>(raw.kind, CHART_KINDS) ?? "bar";
+      const node: {
+        id: string;
+        type: "chart";
+        kind: ChartKind;
+        series: ReturnType<typeof chartSeries>;
+        labels?: readonly string[];
+        title?: string;
+        variant?: string;
+      } = { id, type: "chart", kind, series: chartSeries(raw.series, id, issues) };
+      const labels = stringList(raw.labels, id, "labels", issues);
+      if (labels !== undefined) node.labels = labels;
+      const title = boundedString(raw.title, id, "title", MAX_NODE_LABEL_CHARS, issues);
+      if (title !== undefined) node.title = title;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "stat": {
+      const label = boundedString(raw.label, id, "label", MAX_NODE_LABEL_CHARS, issues);
+      const value = boundedString(raw.value, id, "value", MAX_NODE_LABEL_CHARS, issues);
+      if (label === undefined || value === undefined) {
+        issues.push(`node "${key}": stat needs string label and value`);
+        return undefined;
+      }
+      const node: {
+        id: string;
+        type: "stat";
+        label: string;
+        value: string;
+        delta?: string;
+        tone?: Tone;
+        variant?: string;
+      } = { id, type: "stat", label, value };
+      const delta = boundedString(raw.delta, id, "delta", MAX_NODE_LABEL_CHARS, issues);
+      if (delta !== undefined) node.delta = delta;
+      const tone = asTone(raw.tone, id, issues);
+      if (tone !== undefined) node.tone = tone;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "badge": {
+      const label = boundedString(raw.label, id, "label", MAX_NODE_LABEL_CHARS, issues);
+      if (label === undefined) {
+        issues.push(`node "${key}": badge has no string label`);
+        return undefined;
+      }
+      const node: { id: string; type: "badge"; label: string; tone?: Tone; variant?: string } = {
+        id,
+        type: "badge",
+        label,
+      };
+      const tone = asTone(raw.tone, id, issues);
+      if (tone !== undefined) node.tone = tone;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "progress": {
+      const node: {
+        id: string;
+        type: "progress";
+        value: number;
+        label?: string;
+        tone?: Tone;
+        variant?: string;
+      } = { id, type: "progress", value: progressValue(raw.value, id, issues) };
+      const label = boundedString(raw.label, id, "label", MAX_NODE_LABEL_CHARS, issues);
+      if (label !== undefined) node.label = label;
+      const tone = asTone(raw.tone, id, issues);
+      if (tone !== undefined) node.tone = tone;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "alert": {
+      const body = boundedString(raw.body, id, "body", MAX_NODE_BODY_CHARS, issues);
+      if (body === undefined) {
+        issues.push(`node "${key}": alert has no string body`);
+        return undefined;
+      }
+      const node: {
+        id: string;
+        type: "alert";
+        body: string;
+        title?: string;
+        tone?: Tone;
+        variant?: string;
+      } = { id, type: "alert", body };
+      const title = boundedString(raw.title, id, "title", MAX_NODE_LABEL_CHARS, issues);
+      if (title !== undefined) node.title = title;
+      const tone = asTone(raw.tone, id, issues);
+      if (tone !== undefined) node.tone = tone;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "list": {
+      const node: {
+        id: string;
+        type: "list";
+        items: ReturnType<typeof listItems>;
+        variant?: string;
+      } = { id, type: "list", items: listItems(raw.items, id, issues) };
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
+    case "divider": {
+      const node: { id: string; type: "divider"; label?: string; variant?: string } = {
+        id,
+        type: "divider",
+      };
+      const label = boundedString(raw.label, id, "label", MAX_NODE_LABEL_CHARS, issues);
+      if (label !== undefined) node.label = label;
+      const variant = asVariant(raw.variant, id, issues);
+      if (variant !== undefined) node.variant = variant;
+      return node;
+    }
     default:
       issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
       return undefined;
@@ -464,7 +925,7 @@ function sanitizeNode(
 
 /**
  * Sanitizes screens: keep only entries whose value is a string naming an
- * existing BOX node (a screen root must be renderable as a root). Zero
+ * existing container node (a screen root must be renderable as a root). Zero
  * survivors ⇒ both fields come back undefined and the tree stays the plain
  * single-screen form. entry must name a kept screen, else fall back to the
  * first kept key so a kept screens map always ships a valid entry.
@@ -508,8 +969,10 @@ function sanitizeScreens(
       issues.push(`screen "${screen}": target "${printableKey(target)}" does not exist; dropped`);
       continue;
     }
-    if (node.type !== "box") {
-      issues.push(`screen "${screen}": target "${printableKey(target)}" is not a box; dropped`);
+    if (!isContainer(node)) {
+      issues.push(
+        `screen "${screen}": target "${printableKey(target)}" is not a container; dropped`,
+      );
       continue;
     }
     kept[name] = target;
@@ -630,7 +1093,7 @@ function breakCycles(
   let claimed = new Set<string>();
   const visit = (nodeId: string, depth: number): void => {
     const node = nodes[nodeId];
-    if (node === undefined || node.type !== "box") {
+    if (node === undefined || !isContainer(node)) {
       return;
     }
     inPath.add(nodeId);
@@ -684,6 +1147,15 @@ function breakCycles(
 
 export function validateTree(input: unknown): ValidationResult {
   const issues = new BoundedIssues();
+  try {
+    return validateTreeUnsafe(input, issues);
+  } catch {
+    issues.push("input could not be read safely; empty tree used");
+    return { tree: EMPTY_TREE, issues: issues.list };
+  }
+}
+
+function validateTreeUnsafe(input: unknown, issues: BoundedIssues): ValidationResult {
   if (!isObject(input) || !isObject(input.nodes)) {
     issues.push("input is not a tree object with a nodes map");
     return { tree: EMPTY_TREE, issues: issues.list };
@@ -717,8 +1189,8 @@ export function validateTree(input: unknown): ValidationResult {
     issues.push("no valid root node");
     return { tree: EMPTY_TREE, issues: issues.list };
   }
-  if (rootNode.type !== "box") {
-    issues.push("root node must be a box");
+  if (!isContainer(rootNode)) {
+    issues.push("root node must be a container");
     return { tree: EMPTY_TREE, issues: issues.list };
   }
 
@@ -780,9 +1252,23 @@ export function validateTree(input: unknown): ValidationResult {
 export interface FacetStamp {
   readonly name: string;
   readonly description?: string;
+  readonly metadata?: StampMetadata;
   readonly slots?: Readonly<Record<string, string>>;
   readonly root: NodeId;
   readonly nodes: Readonly<Record<NodeId, FacetNode>>;
+}
+
+export interface StampMetadata {
+  readonly category?: string;
+  readonly useWhen?: string;
+  readonly avoidWhen?: string;
+  readonly variants?: readonly string[];
+  readonly tags?: readonly string[];
+  readonly repeatable?: boolean;
+  readonly preferredParent?: "root" | "box" | "section" | "card";
+  readonly composedOf?: readonly FacetNode["type"][];
+  readonly dataRequirements?: readonly string[];
+  readonly followUpEdits?: readonly string[];
 }
 
 export interface StampValidationResult {
@@ -801,6 +1287,15 @@ export interface StampValidationResult {
  */
 export function validateStamp(input: unknown): StampValidationResult {
   const issues = new BoundedIssues();
+  try {
+    return validateStampUnsafe(input, issues);
+  } catch {
+    issues.push("stamp could not be read safely; refused");
+    return { issues: issues.list };
+  }
+}
+
+function validateStampUnsafe(input: unknown, issues: BoundedIssues): StampValidationResult {
   if (!isObject(input) || !isObject(input.nodes)) {
     issues.push("stamp is not an object with a nodes map");
     return { issues: issues.list };
@@ -837,6 +1332,7 @@ export function validateStamp(input: unknown): StampValidationResult {
   const stamp: {
     name: string;
     description?: string;
+    metadata?: StampMetadata;
     slots?: Record<string, string>;
     root: string;
     nodes: Record<string, FacetNode>;
@@ -856,7 +1352,125 @@ export function validateStamp(input: unknown): StampValidationResult {
   }
   const slots = sanitizeStampSlots(input.slots, issues);
   if (slots !== undefined) stamp.slots = slots;
+  const metadata = sanitizeStampMetadata(input.metadata, issues);
+  if (metadata !== undefined) stamp.metadata = metadata;
   return { stamp, issues: issues.list };
+}
+
+function metadataString(raw: unknown, field: string, issues: IssueSink): string | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "string") {
+    issues.push(`stamp metadata "${field}" is not a string; dropped`);
+    return undefined;
+  }
+  if (raw.length <= MAX_DESCRIPTION_LENGTH) return raw;
+  issues.push(`stamp metadata "${field}" truncated to ${MAX_DESCRIPTION_LENGTH} characters`);
+  return raw.slice(0, MAX_DESCRIPTION_LENGTH);
+}
+
+function metadataStringList(
+  raw: unknown,
+  field: string,
+  issues: IssueSink,
+): readonly string[] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    issues.push(`stamp metadata "${field}" is not an array; dropped`);
+    return undefined;
+  }
+  const out: string[] = [];
+  for (const value of raw.slice(0, MAX_STAMP_METADATA_ITEMS)) {
+    if (typeof value === "string" && isValidSlotName(value)) out.push(value);
+  }
+  if (raw.length > MAX_STAMP_METADATA_ITEMS) {
+    issues.push(
+      `stamp metadata "${field}" exceeded the ${MAX_STAMP_METADATA_ITEMS}-item cap; extra items dropped`,
+    );
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+const STAMP_METADATA_NODE_TYPES = [
+  "box",
+  "text",
+  "media",
+  "field",
+  ...HIGH_LEVEL_NODE_TYPES,
+] as const satisfies readonly FacetNode["type"][];
+
+function metadataNodeTypeList(
+  raw: unknown,
+  field: string,
+  issues: IssueSink,
+): readonly FacetNode["type"][] | undefined {
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    issues.push(`stamp metadata "${field}" is not an array; dropped`);
+    return undefined;
+  }
+  const out: FacetNode["type"][] = [];
+  for (const value of raw.slice(0, MAX_STAMP_METADATA_ITEMS)) {
+    if (
+      typeof value === "string" &&
+      (STAMP_METADATA_NODE_TYPES as readonly string[]).includes(value)
+    ) {
+      out.push(value as FacetNode["type"]);
+    }
+  }
+  if (raw.length > MAX_STAMP_METADATA_ITEMS) {
+    issues.push(
+      `stamp metadata "${field}" exceeded the ${MAX_STAMP_METADATA_ITEMS}-item cap; extra items dropped`,
+    );
+  }
+  return out.length > 0 ? out : undefined;
+}
+
+function sanitizeStampMetadata(raw: unknown, issues: IssueSink): StampMetadata | undefined {
+  if (raw === undefined) return undefined;
+  if (!isObject(raw)) {
+    issues.push("stamp metadata is not an object; dropped");
+    return undefined;
+  }
+  const metadata: {
+    category?: string;
+    useWhen?: string;
+    avoidWhen?: string;
+    variants?: readonly string[];
+    tags?: readonly string[];
+    repeatable?: boolean;
+    preferredParent?: "root" | "box" | "section" | "card";
+    composedOf?: readonly FacetNode["type"][];
+    dataRequirements?: readonly string[];
+    followUpEdits?: readonly string[];
+  } = {};
+  const category = metadataString(raw.category, "category", issues);
+  if (category !== undefined) metadata.category = category;
+  const useWhen = metadataString(raw.useWhen, "useWhen", issues);
+  if (useWhen !== undefined) metadata.useWhen = useWhen;
+  const avoidWhen = metadataString(raw.avoidWhen, "avoidWhen", issues);
+  if (avoidWhen !== undefined) metadata.avoidWhen = avoidWhen;
+  const variants = metadataStringList(raw.variants, "variants", issues);
+  if (variants !== undefined) metadata.variants = variants;
+  const tags = metadataStringList(raw.tags, "tags", issues);
+  if (tags !== undefined) metadata.tags = tags;
+  if (typeof raw.repeatable === "boolean") metadata.repeatable = raw.repeatable;
+  if (
+    raw.preferredParent === "root" ||
+    raw.preferredParent === "box" ||
+    raw.preferredParent === "section" ||
+    raw.preferredParent === "card"
+  ) {
+    metadata.preferredParent = raw.preferredParent;
+  } else if (raw.preferredParent !== undefined) {
+    issues.push("stamp metadata preferredParent is invalid; dropped");
+  }
+  const composedOf = metadataNodeTypeList(raw.composedOf, "composedOf", issues);
+  if (composedOf !== undefined) metadata.composedOf = composedOf;
+  const dataRequirements = metadataStringList(raw.dataRequirements, "dataRequirements", issues);
+  if (dataRequirements !== undefined) metadata.dataRequirements = dataRequirements;
+  const followUpEdits = metadataStringList(raw.followUpEdits, "followUpEdits", issues);
+  if (followUpEdits !== undefined) metadata.followUpEdits = followUpEdits;
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 function sanitizeStampSlots(raw: unknown, issues: IssueSink): Record<string, string> | undefined {

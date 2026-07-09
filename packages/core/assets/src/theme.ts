@@ -1,12 +1,15 @@
 import { DEFAULT_COLORS } from "@facet/core";
 import type {
   Color,
+  ComponentRecipe,
+  ComponentRecipes,
   FacetTheme,
   FontFamily,
   FontSize,
   FontWeight,
   Radius,
   Ratio,
+  Shadow,
   Space,
 } from "@facet/core";
 
@@ -100,12 +103,182 @@ export const RATIO: Record<Ratio, string> = Object.assign(
   } satisfies Record<Ratio, string>,
 );
 
+export const SHADOW: Record<Shadow, string> = Object.assign(
+  Object.create(null) as Record<Shadow, string>,
+  {
+    none: "none",
+    sm: "0 1px 2px rgba(15, 23, 42, 0.08)",
+    md: "0 12px 30px rgba(15, 23, 42, 0.14)",
+    lg: "0 24px 60px rgba(15, 23, 42, 0.18)",
+  } satisfies Record<Shadow, string>,
+);
+
+const recipeVariants = <T extends Record<string, ComponentRecipe>>(variants: T): Readonly<T> =>
+  Object.assign(Object.create(null) as T, variants);
+
+export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as ComponentRecipes, {
+  box: recipeVariants({
+    panel: {
+      box: { bg: "surface", border: true, pad: "md", radius: "md", shadow: "sm" },
+    },
+    inset: {
+      box: { bg: "surface-2", pad: "md", radius: "md" },
+    },
+  }),
+  text: recipeVariants({
+    eyebrow: {
+      text: { color: "fg-muted", size: "sm", weight: "semibold" },
+    },
+    heading: {
+      text: { color: "fg", size: "2xl", weight: "bold" },
+    },
+    muted: {
+      text: { color: "fg-muted", size: "sm" },
+    },
+  }),
+  media: recipeVariants({
+    default: {
+      media: { radius: "md", width: "full" },
+    },
+    hero: {
+      media: { radius: "lg", ratio: "wide", width: "full" },
+    },
+  }),
+  field: recipeVariants({
+    default: {
+      field: { width: "full" },
+    },
+  }),
+  button: recipeVariants({
+    primary: {
+      box: { bg: "accent", border: true, pad: "sm", radius: "md", shadow: "sm" },
+      text: { color: "accent-fg", weight: "semibold" },
+    },
+    secondary: {
+      box: { bg: "surface", border: true, pad: "sm", radius: "md" },
+      text: { color: "fg", weight: "semibold" },
+    },
+    danger: {
+      box: { bg: "danger", border: true, pad: "sm", radius: "md", shadow: "sm" },
+      text: { color: "accent-fg", weight: "semibold" },
+    },
+  }),
+  section: recipeVariants({
+    default: {
+      box: { gap: "md", pad: "lg", width: "full" },
+      text: { color: "fg" },
+    },
+    surface: {
+      box: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+      text: { color: "fg" },
+    },
+  }),
+  card: recipeVariants({
+    default: {
+      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+      text: { color: "fg" },
+    },
+    interactive: {
+      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "md" },
+      text: { color: "fg" },
+    },
+  }),
+  tabs: recipeVariants({
+    default: {
+      box: { bg: "surface", border: true, gap: "xs", pad: "xs", radius: "full" },
+      text: { color: "fg-muted", size: "sm", weight: "semibold" },
+    },
+  }),
+  table: recipeVariants({
+    default: {
+      box: { bg: "surface", border: true, pad: "md", radius: "md", scroll: "x" },
+      text: { color: "fg", size: "sm" },
+    },
+  }),
+  chart: recipeVariants({
+    default: {
+      box: { bg: "surface", border: true, pad: "md", radius: "md", shadow: "sm" },
+      text: { color: "fg-muted", size: "sm" },
+    },
+  }),
+  stat: recipeVariants({
+    default: {
+      box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md", shadow: "sm" },
+      text: { color: "fg-muted", size: "sm" },
+    },
+    success: {
+      box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
+      text: { color: "success", size: "sm", weight: "semibold" },
+    },
+  }),
+  badge: recipeVariants({
+    neutral: {
+      box: { bg: "surface-2", pad: "xs", radius: "full" },
+      text: { color: "neutral", size: "xs", weight: "semibold" },
+    },
+    success: {
+      box: { bg: "surface", border: true, pad: "xs", radius: "full" },
+      text: { color: "success", size: "xs", weight: "semibold" },
+    },
+    warning: {
+      box: { bg: "surface", border: true, pad: "xs", radius: "full" },
+      text: { color: "warning", size: "xs", weight: "semibold" },
+    },
+    danger: {
+      box: { bg: "surface", border: true, pad: "xs", radius: "full" },
+      text: { color: "danger", size: "xs", weight: "semibold" },
+    },
+  }),
+  progress: recipeVariants({
+    default: {
+      box: { bg: "surface-2", radius: "full", width: "full" },
+    },
+    success: {
+      box: { bg: "success", radius: "full", width: "full" },
+    },
+  }),
+  alert: recipeVariants({
+    info: {
+      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
+      text: { color: "info" },
+    },
+    success: {
+      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
+      text: { color: "success" },
+    },
+    warning: {
+      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
+      text: { color: "warning" },
+    },
+    danger: {
+      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
+      text: { color: "danger" },
+    },
+  }),
+  list: recipeVariants({
+    default: {
+      box: { gap: "sm", pad: "sm" },
+      text: { color: "fg" },
+    },
+    compact: {
+      box: { gap: "xs", pad: "xs" },
+      text: { color: "fg-muted", size: "sm" },
+    },
+  }),
+  divider: recipeVariants({
+    default: {
+      box: { border: true, width: "full" },
+    },
+  }),
+} satisfies ComponentRecipes);
+
 /**
  * The default theme expressed as an operator DOCUMENT (the `@facet/core`
- * `FacetTheme` shape): token NAMES → today's concrete values, across all seven
- * groups. It passes `validateTheme` cleanly, so operators can copy it as the
- * starting point for a reskin, and hosts can register it by name. `@facet/react`
- * and `@facet/runtime` both import this as the default base layer.
+ * `FacetTheme` shape): token NAMES → today's concrete values, across all eight
+ * token groups plus component recipes. It passes `validateTheme` cleanly, so
+ * operators can copy it as the starting point for a reskin, and hosts can
+ * register it by name. `@facet/react` and `@facet/runtime` both import this as
+ * the default base layer.
  */
 export const DEFAULT_THEME: FacetTheme = {
   name: "default",
@@ -116,4 +289,6 @@ export const DEFAULT_THEME: FacetTheme = {
   fontWeight: FONT_WEIGHT,
   radius: RADIUS,
   ratio: RATIO,
+  shadow: SHADOW,
+  recipes: RECIPES,
 };

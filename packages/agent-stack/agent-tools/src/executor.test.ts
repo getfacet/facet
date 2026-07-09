@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { FacetStamp, FacetTree, JsonPatchOperation } from "@facet/core";
+import { MAX_CHART_POINTS, MAX_TABLE_ROWS } from "@facet/core";
+import type { FacetCatalog, FacetStamp, FacetTree, JsonPatchOperation } from "@facet/core";
 import { executeStageTool } from "./executor.js";
 import { parseAgentToolObservation } from "./observation.js";
 
@@ -15,6 +16,22 @@ const TREE_WITH_TEXT: FacetTree = {
   nodes: {
     root: { id: "root", type: "box", children: ["title"] },
     title: { id: "title", type: "text", value: "Title" },
+  },
+};
+
+const CATALOG_POLICY: FacetCatalog = {
+  name: "catalog-policy-test",
+  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+  bricks: [
+    { type: "section", variants: ["surface"] },
+    { type: "button", variants: ["primary"] },
+  ],
+  stamps: { mode: "allow", names: ["approved"] },
+  primitiveFallback: "allowed",
+  policy: {
+    order: ["stamp", "brick", "primitive"],
+    editBeforeAppend: true,
+    compactScreens: true,
   },
 };
 
@@ -36,7 +53,7 @@ describe("executeStageTool", () => {
       {
         op: "add",
         path: "/nodes/greeting",
-        value: { id: "greeting", type: "text", value: "Hello" },
+        value: { id: "greeting", type: "text", value: "Hello", style: {} },
       },
       { op: "add", path: "/nodes/root/children/-", value: "greeting" },
     ];
@@ -72,6 +89,108 @@ describe("executeStageTool", () => {
     expect(result.issues).toEqual([]);
   });
 
+  it("sanitizes direct node tool payloads before returning messages and patches", () => {
+    const append = executeStageTool(
+      {
+        id: "call-sanitize-append",
+        name: "append_node",
+        input: {
+          parentId: "root",
+          node: {
+            id: "unsafe",
+            type: "text",
+            value: "Hello",
+            dangerouslySetInnerHTML: "<img src=x>",
+            onclick: "steal()",
+            style: { color: "fg", backgroundImage: "url(https://example.test/track)" },
+          },
+        },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(append.status).toBe("ok");
+    expect(append.patches[0]).toEqual({
+      op: "add",
+      path: "/nodes/unsafe",
+      value: { id: "unsafe", type: "text", value: "Hello", style: { color: "fg" } },
+    });
+    expect(append.shadow.nodes["unsafe"]).toEqual({
+      id: "unsafe",
+      type: "text",
+      value: "Hello",
+      style: { color: "fg" },
+    });
+    const appendMessages = JSON.stringify(append.messages);
+    expect(appendMessages).not.toContain("dangerouslySetInnerHTML");
+    expect(appendMessages).not.toContain("onclick");
+    expect(appendMessages).not.toContain("backgroundImage");
+
+    const rows = Array.from({ length: MAX_TABLE_ROWS + 10 }, (_, index) => ({
+      name: `Row ${String(index)}`,
+      leak: { nested: true },
+    }));
+    const table = executeStageTool(
+      {
+        id: "call-sanitize-table",
+        name: "set_node",
+        input: {
+          node: {
+            id: "table",
+            type: "table",
+            columns: [{ key: "name", label: "Name" }],
+            rows,
+            rawRows: rows,
+          },
+        },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(table.status).toBe("ok");
+    const tablePatch = table.patches[0];
+    expect(tablePatch?.op).toBe("add");
+    if (tablePatch?.op === "add") {
+      const value = tablePatch.value as { rows?: readonly unknown[]; rawRows?: unknown };
+      expect(value.rows).toHaveLength(MAX_TABLE_ROWS);
+      expect(value.rawRows).toBeUndefined();
+    }
+    expect(JSON.stringify(table.messages)).not.toContain("rawRows");
+    expect(table.issues.some((issue) => issue.includes("rows exceeded"))).toBe(true);
+
+    const chart = executeStageTool(
+      {
+        id: "call-sanitize-chart",
+        name: "set_node",
+        input: {
+          node: {
+            id: "chart",
+            type: "chart",
+            kind: "bar",
+            series: [
+              {
+                label: "A",
+                values: Array.from({ length: MAX_CHART_POINTS + 10 }, (_, index) => index),
+              },
+            ],
+          },
+        },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(chart.status).toBe("ok");
+    const chartPatch = chart.patches[0];
+    expect(chartPatch?.op).toBe("add");
+    if (chartPatch?.op === "add") {
+      const value = chartPatch.value as {
+        series?: readonly { readonly values?: readonly unknown[] }[];
+      };
+      expect(value.series?.[0]?.values).toHaveLength(MAX_CHART_POINTS);
+    }
+    expect(chart.issues.some((issue) => issue.includes("points exceeded"))).toBe(true);
+  });
+
   it("returns typed no-patch errors for malformed unknown and invalid inputs", () => {
     const malformed = executeStageTool(null, { shadow: ROOT_TREE });
     expect(malformed.status).toBe("error");
@@ -80,6 +199,20 @@ describe("executeStageTool", () => {
     expect(malformed.patches).toEqual([]);
     expect(malformed.patchCount).toBe(0);
     expect(malformed.shadow).toBe(ROOT_TREE);
+
+    const hostile = executeStageTool(
+      Object.defineProperty({}, "name", {
+        get() {
+          throw new Error("name boom");
+        },
+      }),
+      { shadow: ROOT_TREE },
+    );
+    expect(hostile.status).toBe("error");
+    if (hostile.status === "error") expect(hostile.code).toBe("invalid_input");
+    expect(hostile.messages).toEqual([]);
+    expect(hostile.patches).toEqual([]);
+    expect(hostile.shadow).toBe(ROOT_TREE);
 
     const unknown = executeStageTool(
       { id: "call-2", name: "frobnicate", input: {} },
@@ -210,6 +343,87 @@ describe("executeStageTool", () => {
     expect(empty.shadow).toBe(ROOT_TREE);
   });
 
+  it("render_page rejects roots whose only descendants are non-rendering data bricks", () => {
+    for (const node of [
+      { id: "data", type: "table", columns: [], rows: [] },
+      { id: "data", type: "chart", kind: "bar", series: [] },
+      { id: "data", type: "tabs", items: [] },
+      { id: "data", type: "list", items: [] },
+    ]) {
+      const result = executeStageTool(
+        {
+          id: `call-blank-${node.type}`,
+          name: "render_page",
+          input: {
+            tree: {
+              root: "root",
+              nodes: {
+                root: { id: "root", type: "box", children: ["data"] },
+                data: node,
+              },
+            },
+          },
+        },
+        { shadow: ROOT_TREE },
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_tree");
+      expect(result.patches).toEqual([]);
+      expect(result.shadow).toBe(ROOT_TREE);
+    }
+  });
+
+  it("render_page rejects a blank entry screen even when another screen has content", () => {
+    const result = executeStageTool(
+      {
+        id: "call-blank-entry-screen",
+        name: "render_page",
+        input: {
+          tree: {
+            root: "shell",
+            entry: "home",
+            screens: { home: "home", about: "about" },
+            nodes: {
+              shell: { id: "shell", type: "box", children: [] },
+              home: { id: "home", type: "box", children: [] },
+              about: { id: "about", type: "box", children: ["copy"] },
+              copy: { id: "copy", type: "text", value: "About" },
+            },
+          },
+        },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.code).toBe("invalid_tree");
+    expect(result.patches).toEqual([]);
+    expect(result.shadow).toBe(ROOT_TREE);
+  });
+
+  it("render_page preserves the current theme when locked catalog has no active theme", () => {
+    const result = executeStageTool(
+      {
+        id: "call-locked-current-theme",
+        name: "render_page",
+        input: { tree: TREE_WITH_TEXT },
+      },
+      {
+        shadow: { ...ROOT_TREE, theme: "brand" },
+        assets: {
+          catalog: {
+            ...CATALOG_POLICY,
+            theme: { switchPolicy: "locked" },
+          },
+        },
+      },
+    );
+
+    expect(result.status).toBe("ok");
+    expect(result.shadow.theme).toBe("brand");
+  });
+
   it("use_stamp expands a known stamp with fresh ids and appends it under the parent", () => {
     const stamp: FacetStamp = {
       name: "card",
@@ -266,7 +480,11 @@ describe("executeStageTool", () => {
     );
     expect(set.status).toBe("ok");
     expect(set.patches).toEqual([
-      { op: "add", path: "/nodes/title", value: { id: "title", type: "text", value: "T" } },
+      {
+        op: "add",
+        path: "/nodes/title",
+        value: { id: "title", type: "text", value: "T", style: {} },
+      },
     ]);
     expect(parseAgentToolObservation(set.observation.text)).toMatchObject({
       outcome: "applied_not_visible",
@@ -358,7 +576,11 @@ describe("executeStageTool", () => {
 
     expect(result.status).toBe("ok");
     expect(result.patches).toEqual([
-      { op: "add", path: "/nodes/a~1b~0c", value: { id: "a/b~c", type: "text", value: "escaped" } },
+      {
+        op: "add",
+        path: "/nodes/a~1b~0c",
+        value: { id: "a/b~c", type: "text", value: "escaped", style: {} },
+      },
     ]);
     expect(result.shadow.nodes["a/b~c"]).toMatchObject({ type: "text", value: "escaped" });
   });
@@ -432,5 +654,412 @@ describe("executeStageTool", () => {
     expect(missingChildren.observation.text).toContain("+5980 more");
     expect(missingChildren.observation.text).not.toContain("child-5999");
     expect(missingChildren.observation.text.length).toBeLessThan(1000);
+  });
+
+  describe("catalog policy", () => {
+    it("catalog policy allows catalog-listed v1 bricks and primitive fallback", () => {
+      const section = executeStageTool(
+        {
+          id: "catalog-section",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: {
+              id: "hero",
+              type: "section",
+              title: "Overview",
+              variant: "surface",
+              children: [],
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(section.status).toBe("ok");
+      expect(section.patches).toEqual([
+        {
+          op: "add",
+          path: "/nodes/hero",
+          value: {
+            id: "hero",
+            type: "section",
+            title: "Overview",
+            variant: "surface",
+            children: [],
+          },
+        },
+        { op: "add", path: "/nodes/root/children/-", value: "hero" },
+      ]);
+
+      const button = executeStageTool(
+        {
+          id: "catalog-button",
+          name: "append_node",
+          input: {
+            parentId: "hero",
+            ["node"]: { id: "cta", type: "button", label: "Start", variant: "primary" },
+          },
+        },
+        { shadow: section.shadow, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(button.status).toBe("ok");
+      expect(button.patches).toEqual([
+        {
+          op: "add",
+          path: "/nodes/cta",
+          value: { id: "cta", type: "button", label: "Start", variant: "primary" },
+        },
+        { op: "add", path: "/nodes/hero/children/-", value: "cta" },
+      ]);
+
+      const primitive = executeStageTool(
+        {
+          id: "catalog-primitive",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "copy", type: "text", value: "Primitive fallback stays valid." },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(primitive.status).toBe("ok");
+      expect(primitive.patches).toHaveLength(2);
+    });
+
+    it("catalog policy rejects disallowed brick types and variants without patches", () => {
+      const chart = executeStageTool(
+        {
+          id: "catalog-chart",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: {
+              id: "chart",
+              type: "chart",
+              kind: "line",
+              series: [{ label: "Revenue", values: [1, 2, 3] }],
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(chart.status).toBe("error");
+      expect(chart.patches).toEqual([]);
+      expect(chart.messages).toEqual([]);
+      expect(chart.shadow).toBe(ROOT_TREE);
+      expect(parseAgentToolObservation(chart.observation.text)).toMatchObject({
+        outcome: "rejected",
+        applied: false,
+        stage_changed: false,
+        patch_count: 0,
+      });
+      expect(chart.observation.text).toContain("catalog policy");
+      expect(chart.observation.text).toContain("chart");
+
+      const variant = executeStageTool(
+        {
+          id: "catalog-variant",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "danger", type: "button", label: "Delete", variant: "danger" },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(variant.status).toBe("error");
+      expect(variant.patches).toEqual([]);
+      expect(variant.messages).toEqual([]);
+      expect(parseAgentToolObservation(variant.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(variant.observation.text).toContain("variant");
+      expect(variant.observation.text).toContain("danger");
+    });
+
+    it("catalog policy rejects disallowed set_node brick types and variants without patches", () => {
+      const typeRejected = executeStageTool(
+        {
+          id: "catalog-set-chart",
+          name: "set_node",
+          input: {
+            ["node"]: {
+              id: "chart",
+              type: "chart",
+              kind: "bar",
+              series: [{ label: "Usage", values: [3, 4] }],
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(typeRejected.status).toBe("error");
+      expect(typeRejected.patches).toEqual([]);
+      expect(typeRejected.messages).toEqual([]);
+      expect(typeRejected.shadow).toBe(ROOT_TREE);
+      expect(parseAgentToolObservation(typeRejected.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(typeRejected.observation.text).toContain("catalog policy");
+      expect(typeRejected.observation.text).toContain("chart");
+
+      const variantRejected = executeStageTool(
+        {
+          id: "catalog-set-danger",
+          name: "set_node",
+          input: { ["node"]: { id: "danger", type: "button", label: "Delete", variant: "danger" } },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(variantRejected.status).toBe("error");
+      expect(variantRejected.patches).toEqual([]);
+      expect(variantRejected.messages).toEqual([]);
+      expect(variantRejected.shadow).toBe(ROOT_TREE);
+      expect(parseAgentToolObservation(variantRejected.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(variantRejected.observation.text).toContain("variant");
+      expect(variantRejected.observation.text).toContain("danger");
+    });
+
+    it("catalog policy rejects disallowed render_page trees before patch emission", () => {
+      const result = executeStageTool(
+        {
+          id: "catalog-render",
+          name: "render_page",
+          input: {
+            tree: {
+              root: "root",
+              nodes: {
+                root: { id: "root", type: "box", children: ["chart"] },
+                chart: {
+                  id: "chart",
+                  type: "chart",
+                  kind: "bar",
+                  series: [{ label: "Usage", values: [3, 4] }],
+                },
+              },
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(result.status).toBe("error");
+      expect(result.patches).toEqual([]);
+      expect(result.messages).toEqual([]);
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(result.observation.text).toContain("catalog policy");
+      expect(result.observation.text).toContain("chart");
+    });
+
+    it("catalog policy rejects disallowed stamps before expansion", () => {
+      const approved: FacetStamp = {
+        name: "approved",
+        root: "approved",
+        nodes: {
+          approved: { id: "approved", type: "section", title: "Approved", children: [] },
+        },
+      };
+      const banned: FacetStamp = {
+        name: "banned",
+        root: "banned",
+        nodes: {
+          banned: { id: "banned", type: "section", title: "Banned", children: [] },
+        },
+      };
+
+      const rejected = executeStageTool(
+        {
+          id: "catalog-stamp-banned",
+          name: "use_stamp",
+          input: { name: "banned", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY, stamps: [approved, banned] } },
+      );
+
+      expect(rejected.status).toBe("error");
+      expect(rejected.patches).toEqual([]);
+      expect(rejected.messages).toEqual([]);
+      expect(rejected.shadow).toBe(ROOT_TREE);
+      expect(parseAgentToolObservation(rejected.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(rejected.observation.text).toContain("catalog policy");
+      expect(rejected.observation.text).toContain("banned");
+
+      const allowed = executeStageTool(
+        {
+          id: "catalog-stamp-approved",
+          name: "use_stamp",
+          input: { name: "approved", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY, stamps: [approved, banned] } },
+      );
+
+      expect(allowed.status).toBe("ok");
+      expect(allowed.patches.length).toBeGreaterThan(0);
+    });
+
+    it("catalog policy rejects allowed stamps whose expanded nodes violate brick policy", () => {
+      const allowedButInvalid: FacetStamp = {
+        name: "approved",
+        root: "chart",
+        nodes: {
+          chart: {
+            id: "chart",
+            type: "chart",
+            kind: "bar",
+            series: [{ label: "Usage", values: [3, 4] }],
+          },
+        },
+      };
+
+      const result = executeStageTool(
+        {
+          id: "catalog-stamp-expanded",
+          name: "use_stamp",
+          input: { name: "approved", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY, stamps: [allowedButInvalid] } },
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_stamp");
+      expect(result.patches).toEqual([]);
+      expect(result.messages).toEqual([]);
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(result.observation.text).toContain("catalog policy");
+      expect(result.observation.text).toContain("chart");
+    });
+
+    it("catalog policy rejects locked theme changes without patches", () => {
+      const result = executeStageTool(
+        { id: "catalog-theme", name: "set_theme", input: { name: "midnight" } },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(result.status).toBe("error");
+      expect(result.patches).toEqual([]);
+      expect(result.messages).toEqual([]);
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(result.observation.text).toContain("catalog policy");
+      expect(result.observation.text).toContain("locked");
+    });
+
+    it("render_page preserves the active locked catalog theme when omitted", () => {
+      const result = executeStageTool(
+        {
+          id: "catalog-render-theme",
+          name: "render_page",
+          input: {
+            tree: {
+              root: "root",
+              nodes: {
+                root: { id: "root", type: "box", children: ["copy"] },
+                copy: { id: "copy", type: "text", value: "Themed" },
+              },
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
+      );
+
+      expect(result.status).toBe("ok");
+      expect(result.shadow.theme).toBe("default");
+      expect(result.patches).toEqual([
+        {
+          op: "replace",
+          path: "",
+          value: {
+            root: "root",
+            theme: "default",
+            nodes: {
+              root: { id: "root", type: "box", children: ["copy"], style: {} },
+              copy: { id: "copy", type: "text", value: "Themed", style: {} },
+            },
+          },
+        },
+      ]);
+    });
+
+    it("render_page does not preserve a stale shadow theme without a locked catalog", () => {
+      const themedShadow: FacetTree = { ...ROOT_TREE, theme: "midnight" };
+      const result = executeStageTool(
+        {
+          id: "catalog-render-no-policy",
+          name: "render_page",
+          input: {
+            tree: {
+              root: "root",
+              nodes: {
+                root: { id: "root", type: "box", children: ["copy"] },
+                copy: { id: "copy", type: "text", value: "Plain" },
+              },
+            },
+          },
+        },
+        { shadow: themedShadow },
+      );
+
+      expect(result.status).toBe("ok");
+      expect(result.shadow).not.toHaveProperty("theme");
+      expect(result.patches[0]).toMatchObject({
+        op: "replace",
+        path: "",
+      });
+      expect((result.patches[0] as { value?: FacetTree }).value).not.toHaveProperty("theme");
+    });
+
+    it("render_page leaves theme omitted when the catalog allows switching", () => {
+      const allowedCatalog: FacetCatalog = {
+        ...CATALOG_POLICY,
+        theme: { active: "default", switchPolicy: "allowed", allowed: ["default", "midnight"] },
+      };
+      const result = executeStageTool(
+        {
+          id: "catalog-render-allowed-theme",
+          name: "render_page",
+          input: {
+            tree: {
+              root: "root",
+              nodes: {
+                root: { id: "root", type: "box", children: ["copy"] },
+                copy: { id: "copy", type: "text", value: "Allowed" },
+              },
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: allowedCatalog } },
+      );
+
+      expect(result.status).toBe("ok");
+      expect(result.shadow).not.toHaveProperty("theme");
+      expect((result.patches[0] as { value?: FacetTree }).value).not.toHaveProperty("theme");
+    });
   });
 });

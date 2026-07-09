@@ -1,10 +1,12 @@
 # @facet/react
 
 The Facet React renderer: `StageRenderer` turns the declarative stage spec into a
-sandboxed component tree built from the four bricks (`box`, `text`, `media`,
-`field`), and `useFacet(transport)` keeps that tree in sync by applying patches
-live. It also ships the token→CSS theme for color, spacing, and typography
-(`boxStyle`/`textStyle`/`mediaStyle`/…), `ChatDock`, and `useFacet`.
+sandboxed component tree built from the closed Facet vocabulary: v1 high-level
+bricks plus the primitive `box`, `text`, `media`, and `field` fallback.
+`useFacet(transport)` keeps that tree in sync by applying patches live. It also
+ships token→CSS and recipe resolution for color, spacing, typography, component
+variants, and tones (`boxStyle`/`textStyle`/`mediaStyle`/…, `resolveTheme`,
+`resolveRecipe`), `ChatDock`, and `useFacet`.
 (`browserVisitorId` lives in `@facet/client`, next to the transport that needs
 it.)
 
@@ -13,9 +15,11 @@ npm install @facet/react @facet/client @facet/core react
 ```
 
 `StageRenderer` is the security + fail-safe boundary: only known brick types are
-rendered, no node carries raw HTML/JS, and unresolvable ids are skipped rather
-than thrown on. Wire it to a transport with `useFacet` and pass `send` through
-`onAction`.
+rendered, no node carries raw HTML/JS/CSS, and unresolvable ids are skipped
+rather than thrown on. High-level bricks render through token-only theme recipes;
+unknown recipes, variants, tones, or theme names fall back to defaults. Primitive
+nodes remain the base rendering path for custom composition. Wire it to a
+transport with `useFacet` and pass `send` through `onAction`.
 
 ```tsx
 import { SseTransport } from "@facet/client";

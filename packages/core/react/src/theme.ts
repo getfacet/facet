@@ -6,12 +6,16 @@ import {
   FONT_WEIGHTS,
   RADII,
   RATIOS,
+  RECIPE_COMPONENTS,
+  SHADOWS,
   SPACES,
 } from "@facet/core";
 import type {
   Align,
   BoxStyle,
   Color,
+  ComponentRecipe,
+  ComponentRecipes,
   FacetTheme,
   FieldStyle,
   FontFamily,
@@ -21,6 +25,8 @@ import type {
   MediaStyle,
   Radius,
   Ratio,
+  RecipeComponentName,
+  Shadow,
   Space,
   TextStyle,
 } from "@facet/core";
@@ -36,6 +42,7 @@ import {
   FONT_WEIGHT,
   RADIUS,
   RATIO,
+  SHADOW as DEFAULT_SHADOW,
   SPACE,
 } from "@facet/assets";
 
@@ -55,6 +62,67 @@ export interface ResolvedTheme {
   readonly radius: Record<Radius, string>;
   readonly color: Record<Color, string>;
   readonly ratio: Record<Ratio, string>;
+  readonly shadow: Record<Shadow, string>;
+  readonly recipes?: ComponentRecipes;
+}
+
+const MAX_RECIPE_VARIANTS = 64;
+
+function safeObjectKeys(value: object): readonly string[] {
+  try {
+    return Object.keys(value);
+  } catch {
+    return [];
+  }
+}
+
+function mergeRecipes(override: unknown): ComponentRecipes | undefined {
+  const defaults = DEFAULT_THEME.recipes;
+  const out: Partial<Record<RecipeComponentName, Readonly<Record<string, ComponentRecipe>>>> =
+    Object.create(null) as Partial<
+      Record<RecipeComponentName, Readonly<Record<string, ComponentRecipe>>>
+    >;
+  const hasOverride = isObjectRecord(override);
+  for (const component of RECIPE_COMPONENTS) {
+    const baseVariants = isObjectRecord(defaults?.[component]) ? defaults[component] : undefined;
+    const overrideVariants =
+      hasOverride && isObjectRecord(override[component]) ? override[component] : undefined;
+    if (baseVariants === undefined && overrideVariants === undefined) continue;
+    const variants: Record<string, ComponentRecipe> = Object.assign(
+      Object.create(null) as Record<string, ComponentRecipe>,
+      baseVariants,
+    );
+    if (overrideVariants !== undefined) {
+      for (const name of safeObjectKeys(overrideVariants).slice(0, MAX_RECIPE_VARIANTS)) {
+        const recipe = overrideVariants[name];
+        if (!isObjectRecord(recipe)) continue;
+        variants[name] = mergeComponentRecipe(variants[name], recipe);
+      }
+    }
+    out[component] = variants;
+  }
+  return Object.keys(out).length > 0 ? (out as ComponentRecipes) : undefined;
+}
+
+function mergeComponentRecipe(
+  base: ComponentRecipe | undefined,
+  override: Record<string, unknown>,
+): ComponentRecipe {
+  const merged: {
+    box?: ComponentRecipe["box"];
+    text?: ComponentRecipe["text"];
+    media?: ComponentRecipe["media"];
+    field?: ComponentRecipe["field"];
+  } = {};
+  for (const key of ["box", "text", "media", "field"] as const) {
+    const basePart = isObjectRecord(base?.[key]) ? base[key] : undefined;
+    const overridePart = isObjectRecord(override[key]) ? override[key] : undefined;
+    if (basePart === undefined && overridePart === undefined) continue;
+    merged[key] = { ...(basePart ?? {}), ...(overridePart ?? {}) };
+  }
+  return Object.keys(merged).length > 0
+    ? (merged as ComponentRecipe)
+    : (override as ComponentRecipe);
 }
 
 /**
@@ -69,6 +137,8 @@ const DEFAULT_RESOLVED: ResolvedTheme = {
   radius: RADIUS,
   color: COLOR,
   ratio: RATIO,
+  shadow: DEFAULT_SHADOW,
+  recipes: mergeRecipes(undefined) ?? (Object.create(null) as ComponentRecipes),
 };
 
 /**
@@ -99,6 +169,10 @@ function isFontFamily(value: unknown): value is FontFamily {
   return typeof value === "string" && (FONT_FAMILIES as readonly string[]).includes(value);
 }
 
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 /**
  * Resolves a theme NAME (from `tree.theme`, treated as `unknown` — the live
  * patch path can put junk there) against an operator-authored `themes` registry
@@ -112,7 +186,7 @@ export function resolveTheme(name: unknown, themes?: readonly FacetTheme[]): Res
   if (typeof name !== "string" || themes === undefined) return DEFAULT_RESOLVED;
   const doc = themes.find((t) => (t as { name?: unknown } | null)?.name === name);
   if (doc === undefined) return DEFAULT_RESOLVED;
-  return {
+  const resolved: ResolvedTheme = {
     space: overlayGroup(SPACE, doc.space, SPACES, "string"),
     fontFamily: overlayGroup(FONT_FAMILY, doc.fontFamily, FONT_FAMILIES, "string"),
     fontSize: overlayGroup(FONT_SIZE, doc.fontSize, FONT_SIZES, "string"),
@@ -120,7 +194,29 @@ export function resolveTheme(name: unknown, themes?: readonly FacetTheme[]): Res
     radius: overlayGroup(RADIUS, doc.radius, RADII, "string"),
     color: overlayGroup(COLOR, doc.color, COLORS, "string"),
     ratio: overlayGroup(RATIO, doc.ratio, RATIOS, "string"),
+    shadow: overlayGroup(DEFAULT_SHADOW, doc.shadow, SHADOWS, "string"),
   };
+  const recipes = mergeRecipes((doc as { readonly recipes?: unknown }).recipes);
+  return recipes === undefined ? resolved : { ...resolved, recipes };
+}
+
+const EMPTY_RECIPE: ComponentRecipe = {};
+
+export function resolveRecipe(
+  theme: ResolvedTheme,
+  component: RecipeComponentName,
+  variant?: unknown,
+  tone?: unknown,
+): ComponentRecipe {
+  const variants = theme.recipes?.[component];
+  if (!isObjectRecord(variants)) return EMPTY_RECIPE;
+  for (const key of [variant, tone, "default"]) {
+    if (typeof key !== "string") continue;
+    if (!Object.prototype.hasOwnProperty.call(variants, key)) continue;
+    const recipe = (variants as Record<string, unknown>)[key];
+    if (isObjectRecord(recipe)) return recipe as ComponentRecipe;
+  }
+  return EMPTY_RECIPE;
 }
 
 function alignValue(align: Align): CSSProperties["alignItems"] {
@@ -185,6 +281,7 @@ export function boxStyle(
   if (style.bg) css.background = theme.color[style.bg];
   if (style.radius) css.borderRadius = theme.radius[style.radius];
   if (style.border) css.border = `1px solid ${theme.color.border}`;
+  if (style.shadow) css.boxShadow = theme.shadow[style.shadow];
   if (style.grow) css.flexGrow = 1;
   if (style.width === "full") css.width = "100%";
   // `scroll:"x"` deliberately supersedes the old "never overflow-x" guard, but

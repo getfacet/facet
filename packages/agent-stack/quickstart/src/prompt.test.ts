@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
-import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
+import type {
+  ClientEvent,
+  FacetCatalog,
+  FacetSession,
+  FacetStamp,
+  FacetTheme,
+  ServerMessage,
+} from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { CollectedEvent } from "@facet/core";
 import {
@@ -26,6 +33,35 @@ function stampSectionOf(system: string): string {
   const start = system.indexOf("STAMPS");
   const end = system.lastIndexOf("PAGE BRIEF");
   return start >= 0 && end > start ? system.slice(start, end) : "";
+}
+
+function catalogSectionOf(system: string): string {
+  const start = system.indexOf("CATALOG");
+  const nextSections = ["STAMPS", "PAGE BRIEF"]
+    .map((heading) => system.indexOf(heading, start + 1))
+    .filter((index) => index > start);
+  const end = nextSections.length > 0 ? Math.min(...nextSections) : system.length;
+  return start >= 0 ? system.slice(start, end) : "";
+}
+
+function catalogFixture(): FacetCatalog {
+  return {
+    name: "quickstart-catalog",
+    description: "Quickstart catalog policy",
+    theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+    bricks: [
+      { type: "section", variants: ["surface"], guidance: "Use sections for compact screens." },
+      { type: "button", variants: ["primary"] },
+    ],
+    stamps: { mode: "allow", names: ["pricing"] },
+    primitiveFallback: "allowed",
+    policy: {
+      order: ["stamp", "brick", "primitive"],
+      editBeforeAppend: true,
+      compactScreens: true,
+      maxScreenSections: 3,
+    },
+  };
 }
 
 describe("buildSystem", () => {
@@ -73,7 +109,7 @@ describe("buildSystem", () => {
     expect(system).not.toContain("(box, text, image, field)");
 
     const tools = JSON.stringify(TOOLS);
-    expect(tools).toContain("box | text | media | field");
+    expect(tools).toContain("Allowed types are box, text, media, field, button");
     expect(tools).not.toContain("box | text | image | field");
   });
 
@@ -163,6 +199,33 @@ describe("buildSystem", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it("catalog policy guidance appears in the quickstart prompt compatibility export", () => {
+    const system = buildSystem(DEFAULT_GUIDE, {
+      themes: [
+        {
+          name: "default",
+          description: "Default theme",
+          color: { bg: "#ffffff", fg: "#111111" },
+        },
+      ],
+      stamps: [],
+      catalog: catalogFixture(),
+    });
+    const catalogSection = catalogSectionOf(system);
+
+    expect(catalogSection).toContain("CATALOG");
+    expect(catalogSection).toContain("quickstart-catalog");
+    expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
+    expect(catalogSection).toContain("allowed bricks: section variants: surface");
+    expect(catalogSection).toContain("button variants: primary");
+    expect(catalogSection).toContain("stamp policy: allow pricing");
+    expect(catalogSection).toContain("primitiveFallback: allowed");
+    expect(catalogSection).toContain("policy order: stamp -> brick -> primitive");
+    expect(catalogSection).not.toContain("#ffffff");
+    expect(catalogSection).not.toContain("#111111");
+    expect(catalogSection).not.toContain('"nodes"');
   });
 });
 

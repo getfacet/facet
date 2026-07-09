@@ -6,7 +6,14 @@ import {
   iterateAgentResult,
   validateTree,
 } from "@facet/core";
-import type { ClientEvent, FacetSession, FacetStamp, FacetTheme, ServerMessage } from "@facet/core";
+import type {
+  ClientEvent,
+  FacetCatalog,
+  FacetSession,
+  FacetStamp,
+  FacetTheme,
+  ServerMessage,
+} from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
@@ -24,6 +31,24 @@ const VALID_TREE = {
   nodes: {
     root: { id: "root", type: "box", children: ["greet"] },
     greet: { id: "greet", type: "text", value: "hello" },
+  },
+};
+
+const CATALOG_POLICY: FacetCatalog = {
+  name: "quickstart-catalog",
+  description: "Quickstart catalog policy",
+  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+  bricks: [
+    { type: "section", variants: ["surface"] },
+    { type: "button", variants: ["primary"] },
+  ],
+  stamps: { mode: "allow", names: ["approved"] },
+  primitiveFallback: "allowed",
+  policy: {
+    order: ["stamp", "brick", "primitive"],
+    editBeforeAppend: true,
+    compactScreens: true,
+    maxScreenSections: 3,
   },
 };
 
@@ -84,6 +109,7 @@ function makeAgent(
     historyTurns?: number;
     maxSteps?: number;
     stamps?: readonly FacetStamp[];
+    catalog?: FacetCatalog;
   } = {},
 ): ReturnType<typeof createQuickstartAgent> {
   return createQuickstartAgent({
@@ -94,6 +120,7 @@ function makeAgent(
     ...(extra.historyTurns !== undefined ? { historyTurns: extra.historyTurns } : {}),
     ...(extra.maxSteps !== undefined ? { maxSteps: extra.maxSteps } : {}),
     ...(extra.stamps !== undefined ? { stamps: extra.stamps } : {}),
+    ...(extra.catalog !== undefined ? { catalog: extra.catalog } : {}),
   });
 }
 
@@ -336,7 +363,7 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
-  it("use_stamp rejects a parent that exists but is not a box", async () => {
+  it("use_stamp rejects a parent that exists but is not a container", async () => {
     const stamp: FacetStamp = {
       name: "label",
       root: "label",
@@ -371,7 +398,7 @@ describe("createQuickstartAgent tool loop", () => {
         expect.objectContaining({
           status: "error",
           outcome: "rejected",
-          message: 'error: use_stamp — parent "title" is not a box',
+          message: 'error: use_stamp — parent "title" is not a container',
         }),
       );
     } finally {
@@ -379,7 +406,7 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
-  it("append_node rejects a parent that exists but is not a box", async () => {
+  it("append_node rejects a parent that exists but is not a container", async () => {
     const provider = providerOf(
       toolStep(
         call("append_node", {
@@ -414,7 +441,7 @@ describe("createQuickstartAgent tool loop", () => {
         expect.objectContaining({
           status: "error",
           outcome: "rejected",
-          message: 'error: append_node — parent "title" is not a box',
+          message: 'error: append_node — parent "title" is not a container',
         }),
       );
     } finally {
@@ -533,6 +560,40 @@ describe("createQuickstartAgent tool loop", () => {
     expect(batches[2]).toEqual([{ kind: "say", text: "done" }]);
   });
 
+  it("catalog compatibility option reaches the quickstart agent alias prompt and executor", async () => {
+    const provider = providerOf(
+      toolStep(
+        call("set_theme", { name: "midnight" }),
+        call("append_node", {
+          parentId: "root",
+          node: {
+            id: "sales-chart",
+            type: "chart",
+            kind: "bar",
+            series: [{ label: "Sales", values: [1, 2] }],
+          },
+        }),
+      ),
+      END,
+    );
+    const agent = makeAgent(provider, { catalog: CATALOG_POLICY });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "switch theme and add chart" });
+
+      expect(provider.turns[0]!.system).toContain("CATALOG");
+      expect(provider.turns[0]!.system).toContain("quickstart-catalog");
+      expect(patchesOf(out)).toHaveLength(0);
+      const transcript = toolResultSearchText(provider.turns[1]!);
+      expect(transcript).toContain("catalog policy locked theme");
+      expect(transcript).toContain('rejected theme "midnight"');
+      expect(transcript).toContain('catalog policy rejected node type "chart"');
+      expect(transcript).toContain("Use an allowed catalog brick");
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("defers a set_node forward child ref until the target node exists in the same streamed batch", async () => {
     const provider = providerOf(
       toolStep(call("set_node", { node: { id: "panel", type: "box", children: ["child"] } })),
@@ -552,7 +613,7 @@ describe("createQuickstartAgent tool loop", () => {
       expect(patch.patches).toContainEqual({
         op: "add",
         path: "/nodes/panel",
-        value: { id: "panel", type: "box", children: ["child"] },
+        value: { id: "panel", type: "box", style: {}, children: ["child"] },
       });
     }
   });
@@ -642,7 +703,7 @@ describe("createQuickstartAgent tool loop", () => {
       expect(patch.patches).toContainEqual({
         op: "add",
         path: "/nodes/panel",
-        value: { id: "panel", type: "box", children: [] },
+        value: { id: "panel", type: "box", style: {}, children: [] },
       });
     }
   });
@@ -828,7 +889,7 @@ describe("createQuickstartAgent tool loop", () => {
       const obs = toolResultSearchText(provider.turns[1]!);
       expect(obs.includes('"text" node needs a string "value"')).toBe(true);
       expect(obs.includes("unknown tool") && obs.includes("append_node")).toBe(true);
-      expect(obs.includes("render_page") && obs.includes("at least one child")).toBe(true);
+      expect(obs.includes("render_page") && obs.includes("renderable content")).toBe(true);
     } finally {
       errorSpy.mockRestore();
     }

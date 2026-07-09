@@ -58,29 +58,158 @@ export function summarizeStageForPrompt(
 function summarizeNode(node: FacetTree["nodes"][string] | undefined): string {
   if (!isRecord(node)) return "type=unknown";
   const type = typeof node["type"] === "string" ? node["type"] : "unknown";
-  if (type === "box") {
-    const children = Array.isArray(node["children"]) ? node["children"].length : 0;
-    return `type=box children=${String(children)}${node["hidden"] === true ? " hidden=true" : ""}`;
-  }
-  if (type === "text") {
-    const value = typeof node["value"] === "string" ? node["value"] : "";
-    return `type=text chars=${String(value.length)}`;
-  }
-  if (type === "media") {
-    const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
-    const src = typeof node["src"] === "string" ? node["src"] : "";
-    const alt = typeof node["alt"] === "string" ? ` altChars=${String(node["alt"].length)}` : "";
-    return `type=media kind=${kind} srcChars=${String(src.length)}${alt}`;
-  }
-  if (type === "field") {
-    const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
-    const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
-    const options = Array.isArray(node["options"])
-      ? ` options=${String(node["options"].length)}`
-      : "";
-    return `type=field name=${name}${input}${options}`;
+  switch (type) {
+    case "box": {
+      const children = Array.isArray(node["children"]) ? node["children"].length : 0;
+      return `type=box children=${String(children)}${node["hidden"] === true ? " hidden=true" : ""}`;
+    }
+    case "text": {
+      const value = typeof node["value"] === "string" ? node["value"] : "";
+      return `type=text chars=${String(value.length)}`;
+    }
+    case "media": {
+      const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
+      const src = typeof node["src"] === "string" ? node["src"] : "";
+      const alt = typeof node["alt"] === "string" ? ` altChars=${String(node["alt"].length)}` : "";
+      return `type=media kind=${kind} srcChars=${String(src.length)}${alt}`;
+    }
+    case "field": {
+      const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
+      const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
+      const options = Array.isArray(node["options"])
+        ? ` options=${String(node["options"].length)}`
+        : "";
+      return `type=field name=${name}${input}${options}`;
+    }
+    case "section":
+      return summarizeContainer(type, node, ["title", "eyebrow", "body"], ["variant"]);
+    case "card":
+      return summarizeContainer(type, node, ["title", "body"], ["variant", "tone"]);
+    case "button":
+      return compactSummary([
+        "type=button",
+        charSummary(node["label"], "labelChars"),
+        safeStringSummary(node["variant"], "variant"),
+        safeStringSummary(node["tone"], "tone"),
+        node["disabled"] === true ? "disabled=true" : undefined,
+      ]);
+    case "tabs":
+      return compactSummary([
+        "type=tabs",
+        `items=${String(arrayCount(node["items"]))}`,
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "table":
+      return compactSummary([
+        "type=table",
+        `columns=${String(arrayCount(node["columns"]))}`,
+        `rows=${String(arrayCount(node["rows"]))}`,
+        charSummary(node["caption"], "captionChars"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "chart": {
+      const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
+      return compactSummary([
+        `type=chart kind=${kind}`,
+        `series=${String(arrayCount(node["series"]))}`,
+        `points=${String(chartPointCount(node["series"]))}`,
+        `labels=${String(arrayCount(node["labels"]))}`,
+        charSummary(node["title"], "titleChars"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    }
+    case "stat":
+      return compactSummary([
+        "type=stat",
+        charSummary(node["label"], "labelChars"),
+        charSummary(node["value"], "valueChars"),
+        charSummary(node["delta"], "deltaChars"),
+        safeStringSummary(node["tone"], "tone"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "badge":
+      return compactSummary([
+        "type=badge",
+        charSummary(node["label"], "labelChars"),
+        safeStringSummary(node["tone"], "tone"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "progress":
+      return compactSummary([
+        "type=progress",
+        numberSummary(node["value"], "value"),
+        charSummary(node["label"], "labelChars"),
+        safeStringSummary(node["tone"], "tone"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "alert":
+      return compactSummary([
+        "type=alert",
+        charSummary(node["title"], "titleChars"),
+        charSummary(node["body"], "bodyChars"),
+        safeStringSummary(node["tone"], "tone"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "list":
+      return compactSummary([
+        "type=list",
+        `items=${String(arrayCount(node["items"]))}`,
+        safeStringSummary(node["variant"], "variant"),
+      ]);
+    case "divider":
+      return compactSummary([
+        "type=divider",
+        charSummary(node["label"], "labelChars"),
+        safeStringSummary(node["variant"], "variant"),
+      ]);
   }
   return "type=unknown";
+}
+
+function summarizeContainer(
+  type: "section" | "card",
+  node: Record<string, unknown>,
+  charFields: readonly string[],
+  safeStringFields: readonly string[],
+): string {
+  return compactSummary([
+    `type=${type}`,
+    `children=${String(arrayCount(node["children"]))}`,
+    ...charFields.map((field) => charSummary(node[field], `${field}Chars`)),
+    ...safeStringFields.map((field) => safeStringSummary(node[field], field)),
+  ]);
+}
+
+function compactSummary(parts: readonly (string | undefined)[]): string {
+  return parts.filter((part): part is string => part !== undefined && part.length > 0).join(" ");
+}
+
+function charSummary(value: unknown, label: string): string | undefined {
+  return typeof value === "string" ? `${label}=${String(value.length)}` : undefined;
+}
+
+function safeStringSummary(value: unknown, label: string): string | undefined {
+  return typeof value === "string" ? `${label}=${safeField(value)}` : undefined;
+}
+
+function numberSummary(value: unknown, label: string): string | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? `${label}=${String(value)}`
+    : undefined;
+}
+
+function arrayCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+function chartPointCount(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  let total = 0;
+  for (const series of value) {
+    if (!isRecord(series) || !Array.isArray(series["values"])) continue;
+    total += series["values"].length;
+  }
+  return total;
 }
 
 function safeNonNegativeInteger(value: number | undefined, fallback: number): number {

@@ -45,7 +45,7 @@ stage changed and the changed state is visitor-visible.
 | `applied_visible` | The stage changed and the changed stage is reachable from the server-side render root, or a visible stage metadata field changed. | Yes, if the requested work is complete. |
 | `applied_not_visible` | A patch was applied, but the changed node is not reachable from the current server-side render root. | No. Attach the node to a visible parent or inspect first. |
 | `applied_with_warnings` | A patch was applied, but validation/folding dropped or sanitized something. | Usually no. Inspect or repair when the warning affects the requested work. |
-| `pending` | The edit is buffered, usually because a box references child ids that do not exist yet. No patch was emitted. | No. Define the missing children or change the edit. |
+| `pending` | The edit is buffered, usually because a container references child ids that do not exist yet. No patch was emitted. | No. Define the missing children or change the edit. |
 | `rejected` | The tool call was invalid or unsafe. No patch was emitted. | No. Follow `next_action`. |
 | `no_stage_change` | The tool intentionally did not mutate the stage, for example `inspect_stage`, `inspect_node`, or `say`. | Only if no page change was required. |
 
@@ -62,6 +62,9 @@ In particular:
   is `applied_with_warnings`.
 - Buffered edits are `pending`, not success.
 - Rejected edits emit no patch and must include a concrete `next_action`.
+- Catalog policy rejections are `rejected`, not warnings. They emit no patch
+  when the active catalog disallows a node type, variant, stamp, or theme
+  switch.
 
 ## Visibility Definition
 
@@ -82,14 +85,30 @@ change.
 
 Every non-complete result should include a concrete `next_action`.
 
-- `applied_not_visible`: append the node under an existing visible box, or call
-  `inspect_stage` / `inspect_node` to find a visible parent.
+- `applied_not_visible`: append the node under an existing visible container, or
+  call `inspect_stage` / `inspect_node` to find a visible parent.
 - `applied_with_warnings`: inspect the affected stage area or retry with a valid
   closed tree.
 - `pending`: define the missing child nodes in the same turn, or replace the
-  pending box with a closed node.
+  pending container with a closed node.
 - `rejected`: fix the named input, parent, stamp, tree, or patch limit issue and
   retry.
+
+Catalog policy rejection is a specific rejected class, often referred to in docs
+and tests as `catalog_policy`. The JSON observation still uses the closest
+stable `code` value such as `invalid_input`, `invalid_tree`, `invalid_stamp`, or
+`invalid_parent`; the catalog detail appears in `message` and the recovery path
+appears in `next_action`.
+
+When a catalog policy rejection happens:
+
+- disallowed node type or variant: use an allowed catalog brick, use an allowed
+  variant, or fall back to primitives only when the catalog permits primitive
+  fallback;
+- disallowed stamp: choose a stamp allowed by the active catalog, or compose the
+  UI from allowed bricks;
+- locked theme: keep the active catalog theme and do not call `set_theme`;
+- allowed-theme list miss: pick a theme listed by the active catalog.
 
 ## Bounds And Privacy
 

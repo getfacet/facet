@@ -1,32 +1,56 @@
 # @facet/core
 
-The Facet contract: the declarative stage spec (`box` / `text` / `media` /
-`field` bricks + style tokens), reusable stamp expansion, the
+The Facet contract: the declarative stage spec (v1 high-level bricks plus the
+primitive `box`, `text`, `media`, and `field` fallback), catalog policy, style
+tokens and theme recipes, reusable stamp expansion/metadata, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
-`applyPatch`, `validateTree`, and the session/event types. It depends on nothing
-— every other Facet package builds on it.
+`applyPatch`, validators, and the session/event types. It depends on nothing —
+every other Facet package builds on it.
 
 The style-token vocabulary includes colors, spacing, typography
 (`FontFamily` / `FontSize` / `FontWeight`), radii, media ratios, flow layout,
-and bounded text/media style choices. Concrete CSS values live in validated
-theme data, not in agent-authored trees.
+and bounded text/media style choices. Theme recipes are token-only style bundles
+for component variants; concrete CSS values live in validated theme data, not in
+agent-authored trees.
 
 ```bash
 npm install @facet/core
 ```
 
-Three pure functions do the heavy lifting: `validateTree` turns arbitrary input
-(e.g. an LLM's JSON) into a guaranteed-renderable tree, `expandStamp` fills
-validated stamp slots, prunes the root-reachable subtree, drops stamped actions
-that point outside that subtree, and remaps ids before a caller emits ordinary
-patches. `applyPatch` is the one patch function that runs identically on server
-and client.
+Core helpers do the heavy lifting: `validateTree` turns arbitrary input (e.g. an
+LLM's JSON) into a guaranteed-renderable tree, preserving valid primitive
+fallback and high-level nodes while dropping malformed payloads; `validateCatalog`
+turns untrusted catalog data into bounded UI policy; `expandStamp` fills
+validated stamp slots, preserves bounded metadata, prunes the root-reachable
+subtree, drops stamped actions that point outside that subtree, and remaps ids
+before a caller emits ordinary patches. `applyPatch` is the one patch function
+that runs identically on server and client.
 
 ```ts
-import { applyPatch, EMPTY_TREE, expandStamp, validateTree } from "@facet/core";
+import {
+  applyPatch,
+  EMPTY_TREE,
+  expandStamp,
+  validateCatalog,
+  validateTree,
+} from "@facet/core";
 
 // Fail-safe: unknown nodes / bad tokens are stripped, never thrown on.
 const { tree, issues } = validateTree(EMPTY_TREE);
+
+// Catalogs are UI vocabulary policy, not hosted auth/billing/tenant policy.
+const { catalog } = validateCatalog({
+  name: "product-ui",
+  theme: { active: "default", switchPolicy: "locked" },
+  bricks: [{ type: "section", variants: ["surface"] }, { type: "card" }],
+  stamps: { mode: "all" },
+  primitiveFallback: "allowed",
+  policy: {
+    order: ["stamp", "brick", "primitive"],
+    editBeforeAppend: true,
+    compactScreens: true,
+  },
+});
 
 // Only patches travel — the same pure applyPatch on both ends.
 const next = applyPatch(tree, [
@@ -56,10 +80,11 @@ const expanded = expandStamp(
 
 `expandStamp` is fail-safe: malformed params become issues and defaults, unknown
 parents return no ops, and the returned ids are fresh only for the nodes that
-will actually be emitted. `applyPatch` enforces JSON Pointer reads for source
-operations (`move`, `copy`, and `test`) and requires object-member
-`replace`/`remove` targets to exist before mutating, so stale ops do not leave
-partial object members behind or count as stage edits.
+will actually be emitted. Stamps may carry bounded metadata for prompt guidance,
+but expansion still emits ordinary nodes and JSON Patch operations. `applyPatch`
+enforces JSON Pointer reads for source operations (`move`, `copy`, and `test`)
+and requires object-member `replace`/`remove` targets to exist before mutating,
+so stale ops do not leave partial object members behind or count as stage edits.
 
 Also exported: small dependency-free async primitives the other packages build
 on — `createSerialQueue` (per-key ordering) and `createSemaphore` (FIFO

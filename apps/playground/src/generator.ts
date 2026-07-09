@@ -4,7 +4,7 @@
  * server (`serve`). No API key needed.
  */
 import { spawn } from "node:child_process";
-import { isTreeShaped, STAGE_SPEC, validateTree, type FacetTree } from "@facet/core";
+import { isContainer, isTreeShaped, STAGE_SPEC, validateTree, type FacetTree } from "@facet/core";
 
 export const SYSTEM = `You generate Facet pages. Output ONLY a single JSON object for a stage tree — no prose, no markdown code fences.
 
@@ -94,10 +94,10 @@ export interface GenerateResult {
   readonly issues: readonly string[];
 }
 
-/** A tree renders something only if its root box has at least one child. */
+/** A tree renders something only if its root container has at least one child. */
 function isRenderable(tree: FacetTree): boolean {
   const root = tree.nodes[tree.root];
-  return root !== undefined && root.type === "box" && root.children.length > 0;
+  return root !== undefined && isContainer(root) && root.children.length > 0;
 }
 
 /**

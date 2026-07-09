@@ -3,10 +3,13 @@ import {
   MAX_PATCH_OPS,
   MEDIA_KINDS,
   expandStamp,
+  isContainer,
   isSafeMediaSrc,
   isTreeShaped,
   isValidThemeName,
+  treeHasContent,
   validateTree,
+  type FacetCatalog,
   type FacetNode,
   type FacetStamp,
   type FacetTree,
@@ -34,6 +37,8 @@ const MAX_INSPECT_NODE_DEPTH = 5;
 const MAX_TEXT_PREVIEW_CHARS = 80;
 const MAX_ID_LIST_PREVIEW = 20;
 const FORBIDDEN_NODE_IDS = new Set(["__proto__", "prototype", "constructor"]);
+const PRIMITIVE_NODE_TYPES = new Set<FacetNode["type"]>(["box", "text", "media", "field"]);
+const CHART_KINDS = new Set(["bar", "line", "donut"]);
 
 const TOOL_NAMES = FACET_STAGE_TOOL_NAMES.join(", ");
 
@@ -63,21 +68,22 @@ export function executeStageTool(call: unknown, context: StageToolContext): Stag
   }
 
   const input = isRecord(parsed.input) ? parsed.input : {};
+  const catalog = context.assets?.catalog;
   switch (parsed.name) {
     case "render_page":
-      return executeRenderPage(input, shadow);
+      return executeRenderPage(input, shadow, catalog);
     case "append_node":
-      return executeAppendNode(input, shadow);
+      return executeAppendNode(input, shadow, catalog);
     case "use_stamp":
-      return executeUseStamp(input, shadow, context.assets?.stamps ?? []);
+      return executeUseStamp(input, shadow, context.assets?.stamps ?? [], catalog);
     case "set_node":
-      return executeSetNode(input, shadow);
+      return executeSetNode(input, shadow, catalog);
     case "remove_node":
       return executeRemoveNode(input, shadow);
     case "say":
       return executeSay(input, shadow);
     case "set_theme":
-      return executeSetTheme(input, shadow);
+      return executeSetTheme(input, shadow, catalog);
     case "inspect_stage":
       return executeInspectStage(input, shadow);
     case "inspect_node":
@@ -85,21 +91,38 @@ export function executeStageTool(call: unknown, context: StageToolContext): Stag
   }
 }
 
-function executeRenderPage(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
-  const { tree, issues } = validateTree(input["tree"]);
+function executeRenderPage(
+  input: Readonly<Record<string, unknown>>,
+  shadow: FacetTree,
+  catalog: FacetCatalog | undefined,
+) {
+  const validated = validateTree(input["tree"]);
+  const issues = validated.issues;
+  const tree = preserveCatalogTheme(validated.tree, catalog, shadow);
   if (!isRenderable(tree)) {
     const hint = issueHint(issues);
     return errorResult(
       "render_page",
       "invalid_tree",
-      `error: render_page needs a full tree { root, nodes } whose entry screen (or root) is a box with at least one child. ${
+      `error: render_page needs a full tree { root, nodes } whose entry screen (or root) has renderable content. ${
         hint.length > 0
           ? `Fix these and retry: ${hint}`
-          : "Provide a non-empty root/entry box and retry."
+          : "Provide a root or entry screen with visible text, fields, media, controls, or data-backed bricks and retry."
       }`,
       shadow,
       issues,
-      "Provide a non-empty root or entry box with valid child nodes, then retry render_page.",
+      "Provide a root or entry screen with renderable content, then retry render_page.",
+    );
+  }
+  const catalogViolation = treeCatalogViolation(tree, catalog, shadow);
+  if (catalogViolation !== undefined) {
+    return errorResult(
+      "render_page",
+      "invalid_input",
+      catalogViolation.message,
+      shadow,
+      [],
+      catalogViolation.nextAction,
     );
   }
 
@@ -113,16 +136,20 @@ function executeRenderPage(input: Readonly<Record<string, unknown>>, shadow: Fac
   );
 }
 
-function executeAppendNode(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
+function executeAppendNode(
+  input: Readonly<Record<string, unknown>>,
+  shadow: FacetTree,
+  catalog: FacetCatalog | undefined,
+) {
   const parentId = input["parentId"];
   if (typeof parentId !== "string" || parentId.length === 0) {
     return errorResult(
       "append_node",
       "invalid_input",
-      'error: append_node needs a non-empty string "parentId" (the box to append into)',
+      'error: append_node needs a non-empty string "parentId" (the container to append into)',
       shadow,
       [],
-      "Pass parentId as an existing box node id. Use inspect_stage if you need to find one.",
+      "Pass parentId as an existing box, section, or card node id. Use inspect_stage if you need to find one.",
     );
   }
 
@@ -137,20 +164,31 @@ function executeAppendNode(input: Readonly<Record<string, unknown>>, shadow: Fac
       "Inspect the stage and append under an existing visible box, or create the parent first.",
     );
   }
-  if (parent.type !== "box") {
+  if (!isContainer(parent)) {
     return errorResult(
       "append_node",
       "invalid_parent",
-      `error: append_node — parent "${parentId}" is not a box`,
+      `error: append_node — parent "${parentId}" is not a container`,
       shadow,
       [],
-      "Choose an existing box node as parentId.",
+      "Choose an existing box, section, or card node as parentId.",
     );
   }
 
   const node = parseNodeInput(input["node"], "append_node", shadow);
   if ("error" in node)
     return errorResult("append_node", "invalid_input", node.error, shadow, [], node.nextAction);
+  const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
+  if (catalogViolation !== undefined) {
+    return errorResult(
+      "append_node",
+      "invalid_input",
+      catalogViolation.message,
+      shadow,
+      [],
+      catalogViolation.nextAction,
+    );
+  }
 
   return okPatchResult(
     "append_node",
@@ -160,6 +198,7 @@ function executeAppendNode(input: Readonly<Record<string, unknown>>, shadow: Fac
       { op: "add", path: nodePath(node.facetNode.id), value: node.facetNode },
       { op: "add", path: childrenPath(parentId), value: node.facetNode.id },
     ],
+    node.issues,
   );
 }
 
@@ -167,6 +206,7 @@ function executeUseStamp(
   input: Readonly<Record<string, unknown>>,
   shadow: FacetTree,
   stamps: readonly FacetStamp[],
+  catalog: FacetCatalog | undefined,
 ) {
   const name = input["name"];
   if (typeof name !== "string" || name.length === 0) {
@@ -185,10 +225,10 @@ function executeUseStamp(
     return errorResult(
       "use_stamp",
       "invalid_input",
-      'error: use_stamp needs at={ "parent": "<box node id>" }',
+      'error: use_stamp needs at={ "parent": "<container node id>" }',
       shadow,
       [],
-      'Pass at={ "parent": "<existing box node id>" }.',
+      'Pass at={ "parent": "<existing box, section, or card node id>" }.',
     );
   }
 
@@ -201,17 +241,29 @@ function executeUseStamp(
       `error: use_stamp — parent "${parent}" does not exist yet`,
       shadow,
       [],
-      "Inspect the stage and choose an existing box parent before using a stamp.",
+      "Inspect the stage and choose an existing container parent before using a stamp.",
     );
   }
-  if (parentNode.type !== "box") {
+  if (!isContainer(parentNode)) {
     return errorResult(
       "use_stamp",
       "invalid_parent",
-      `error: use_stamp — parent "${parent}" is not a box`,
+      `error: use_stamp — parent "${parent}" is not a container`,
       shadow,
       [],
-      "Choose an existing box node as at.parent.",
+      "Choose an existing box, section, or card node as at.parent.",
+    );
+  }
+
+  const stampViolation = stampCatalogViolation(name, catalog);
+  if (stampViolation !== undefined) {
+    return errorResult(
+      "use_stamp",
+      "invalid_stamp",
+      stampViolation.message,
+      shadow,
+      [],
+      stampViolation.nextAction,
     );
   }
 
@@ -244,6 +296,18 @@ function executeUseStamp(
       shadow,
       expanded.issues,
       "Fix the stamp params or choose another stamp, then retry use_stamp.",
+    );
+  }
+
+  const catalogViolation = nodesCatalogViolation(Object.values(expanded.nodes), catalog);
+  if (catalogViolation !== undefined) {
+    return errorResult(
+      "use_stamp",
+      "invalid_stamp",
+      catalogViolation.message,
+      shadow,
+      expanded.issues,
+      catalogViolation.nextAction,
     );
   }
 
@@ -281,7 +345,11 @@ function executeUseStamp(
   );
 }
 
-function executeSetNode(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
+function executeSetNode(
+  input: Readonly<Record<string, unknown>>,
+  shadow: FacetTree,
+  catalog: FacetCatalog | undefined,
+) {
   const node = parseNodeInput(input["node"], "set_node", shadow);
   if ("error" in node)
     return errorResult("set_node", "invalid_input", node.error, shadow, [], node.nextAction);
@@ -295,12 +363,23 @@ function executeSetNode(input: Readonly<Record<string, unknown>>, shadow: FacetT
       "Use render_page for root-level restructures.",
     );
   }
+  const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
+  if (catalogViolation !== undefined) {
+    return errorResult(
+      "set_node",
+      "invalid_input",
+      catalogViolation.message,
+      shadow,
+      [],
+      catalogViolation.nextAction,
+    );
+  }
   return okPatchResult(
     "set_node",
     `Set "${node.facetNode.id}".`,
     shadow,
     [{ op: "add", path: nodePath(node.facetNode.id), value: node.facetNode }],
-    [],
+    node.issues,
     { visibilityNodeIds: [node.facetNode.id] },
   );
 }
@@ -372,7 +451,11 @@ function executeSay(input: Readonly<Record<string, unknown>>, shadow: FacetTree)
   return okMessageResult("say", "Sent chat message.", shadow, [{ kind: "say", text }]);
 }
 
-function executeSetTheme(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
+function executeSetTheme(
+  input: Readonly<Record<string, unknown>>,
+  shadow: FacetTree,
+  catalog: FacetCatalog | undefined,
+) {
   const name = input["name"];
   if (typeof name !== "string" || name.length === 0) {
     return errorResult(
@@ -392,6 +475,17 @@ function executeSetTheme(input: Readonly<Record<string, unknown>>, shadow: Facet
       shadow,
       [],
       "Pick a valid theme name from the THEMES list.",
+    );
+  }
+  const catalogViolation = themeCatalogViolation(name, catalog, shadow.theme);
+  if (catalogViolation !== undefined) {
+    return errorResult(
+      "set_theme",
+      "invalid_input",
+      catalogViolation.message,
+      shadow,
+      [],
+      catalogViolation.nextAction,
     );
   }
   return okPatchResult("set_theme", `Theme set to "${name}".`, shadow, [
@@ -572,22 +666,146 @@ function errorResult(
   };
 }
 
+interface CatalogPolicyViolation {
+  readonly message: string;
+  readonly nextAction: string;
+}
+
+function treeCatalogViolation(
+  tree: FacetTree,
+  catalog: FacetCatalog | undefined,
+  shadow: FacetTree,
+): CatalogPolicyViolation | undefined {
+  const nodeViolation = nodesCatalogViolation(Object.values(tree.nodes), catalog);
+  if (nodeViolation !== undefined) return nodeViolation;
+  return tree.theme === undefined
+    ? undefined
+    : themeCatalogViolation(tree.theme, catalog, shadow.theme);
+}
+
+function preserveCatalogTheme(
+  tree: FacetTree,
+  catalog: FacetCatalog | undefined,
+  shadow: FacetTree,
+): FacetTree {
+  if (tree.theme !== undefined) return tree;
+  if (catalog?.theme.switchPolicy !== "locked") return tree;
+  const theme = catalog.theme.active ?? shadow.theme;
+  if (theme === undefined) return tree;
+  if (themeCatalogViolation(theme, catalog, shadow.theme) !== undefined) return tree;
+  return { ...tree, theme };
+}
+
+function nodesCatalogViolation(
+  nodes: readonly FacetNode[],
+  catalog: FacetCatalog | undefined,
+): CatalogPolicyViolation | undefined {
+  for (const node of nodes) {
+    const violation = nodeCatalogViolation(node, catalog);
+    if (violation !== undefined) return violation;
+  }
+  return undefined;
+}
+
+function nodeCatalogViolation(
+  node: FacetNode,
+  catalog: FacetCatalog | undefined,
+): CatalogPolicyViolation | undefined {
+  if (catalog === undefined) return undefined;
+  const brick = catalog.bricks.find((candidate) => candidate.type === node.type);
+  if (brick === undefined) {
+    if (PRIMITIVE_NODE_TYPES.has(node.type) && catalog.primitiveFallback === "allowed") {
+      return undefined;
+    }
+    return {
+      message: `error: catalog policy rejected node type "${node.type}". Allowed node types: ${catalogAllowedNodeTypes(catalog)}.`,
+      nextAction: "Use an allowed catalog brick, stamp, or permitted primitive fallback.",
+    };
+  }
+
+  const variant = nodeVariant(node);
+  if (variant !== undefined && brick.variants !== undefined && !brick.variants.includes(variant)) {
+    return {
+      message: `error: catalog policy rejected variant "${variant}" for node type "${node.type}". Allowed variants: ${brick.variants.join(", ")}.`,
+      nextAction: `Use an allowed "${node.type}" variant or omit variant for the default recipe.`,
+    };
+  }
+  return undefined;
+}
+
+function stampCatalogViolation(
+  name: string,
+  catalog: FacetCatalog | undefined,
+): CatalogPolicyViolation | undefined {
+  if (catalog === undefined || catalog.stamps.mode === "all") return undefined;
+  if (catalog.stamps.names.includes(name)) return undefined;
+  return {
+    message: `error: catalog policy rejected stamp "${name}". Allowed stamps: ${catalog.stamps.names.join(", ")}.`,
+    nextAction:
+      "Pick a stamp allowed by the active catalog, or compose the UI from allowed bricks.",
+  };
+}
+
+function themeCatalogViolation(
+  name: string,
+  catalog: FacetCatalog | undefined,
+  currentTheme: string | undefined,
+): CatalogPolicyViolation | undefined {
+  if (catalog === undefined) return undefined;
+  const activeTheme = catalog.theme.active;
+  if (catalog.theme.switchPolicy === "locked") {
+    if (name === activeTheme || (activeTheme === undefined && name === currentTheme)) {
+      return undefined;
+    }
+    return {
+      message: `error: catalog policy locked theme${activeTheme === undefined ? "" : ` to "${activeTheme}"`}; rejected theme "${name}".`,
+      nextAction:
+        "Keep the active catalog theme; do not call set_theme unless the catalog allows theme switching.",
+    };
+  }
+  if (catalog.theme.allowed !== undefined && !catalog.theme.allowed.includes(name)) {
+    return {
+      message: `error: catalog policy rejected theme "${name}". Allowed themes: ${catalog.theme.allowed.join(", ")}.`,
+      nextAction: "Pick a theme allowed by the active catalog.",
+    };
+  }
+  return undefined;
+}
+
+function nodeVariant(node: FacetNode): string | undefined {
+  return "variant" in node && typeof node.variant === "string" ? node.variant : undefined;
+}
+
+function catalogAllowedNodeTypes(catalog: FacetCatalog): string {
+  const allowed = new Set(catalog.bricks.map((brick) => brick.type));
+  if (catalog.primitiveFallback === "allowed") {
+    for (const type of PRIMITIVE_NODE_TYPES) allowed.add(type);
+  }
+  return Array.from(allowed).join(", ");
+}
+
 function parseToolCall(
   call: unknown,
 ): { readonly name: string; readonly input: unknown } | { readonly error: string } {
   if (!isRecord(call)) return { error: "error: tool call must be an object" };
-  const name = call["name"];
-  if (typeof name !== "string" || name.length === 0) {
-    return { error: 'error: tool call needs a non-empty string "name"' };
+  try {
+    const name = call["name"];
+    if (typeof name !== "string" || name.length === 0) {
+      return { error: 'error: tool call needs a non-empty string "name"' };
+    }
+    return { name, input: call["input"] };
+  } catch {
+    return { error: "error: tool call could not be read safely" };
   }
-  return { name, input: call["input"] };
 }
 
 function parseNodeInput(
   value: unknown,
   toolName: "append_node" | "set_node",
   shadow: FacetTree,
-): { readonly facetNode: FacetNode } | { readonly error: string; readonly nextAction: string } {
+):
+  | { readonly facetNode: FacetNode; readonly issues: readonly string[] }
+  | { readonly error: string; readonly nextAction: string } {
   const result = asNode(value);
   if ("error" in result)
     return { error: `error: ${toolName} — ${result.error}`, nextAction: result.nextAction };
@@ -598,7 +816,39 @@ function parseNodeInput(
       nextAction: "Define the missing child nodes first, or remove those child references.",
     };
   }
-  return result;
+  return sanitizeToolNode(result.facetNode, toolName, shadow);
+}
+
+function sanitizeToolNode(
+  facetNode: FacetNode,
+  toolName: "append_node" | "set_node",
+  shadow: FacetTree,
+):
+  | { readonly facetNode: FacetNode; readonly issues: readonly string[] }
+  | { readonly error: string; readonly nextAction: string } {
+  const sanitizeRoot = toolSanitizeRootId(shadow, facetNode.id);
+  const validated = validateTree({
+    root: sanitizeRoot,
+    nodes: {
+      ...shadow.nodes,
+      [facetNode.id]: facetNode,
+      [sanitizeRoot]: { id: sanitizeRoot, type: "box", children: [facetNode.id] },
+    },
+  });
+  const sanitized = validated.tree.nodes[facetNode.id];
+  if (sanitized === undefined) {
+    return {
+      error: `error: ${toolName} — node "${facetNode.id}" was removed by validation`,
+      nextAction: "Fix the node shape and retry with a valid Facet node.",
+    };
+  }
+  return { facetNode: sanitized, issues: validated.issues };
+}
+
+function toolSanitizeRootId(shadow: FacetTree, nodeId: string): string {
+  let id = "__facet_tool_sanitize_root__";
+  while (id === nodeId || shadow.nodes[id] !== undefined) id = `_${id}`;
+  return id;
 }
 
 function asNode(
@@ -687,12 +937,160 @@ function asNode(
         };
       }
       return { facetNode: value as unknown as FacetNode };
+    case "button":
+      if (typeof value["label"] !== "string") {
+        return {
+          error: 'a "button" node needs a string "label"',
+          nextAction: 'Pass a string "label" for button nodes.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "section": {
+      const children = parseContainerChildren(value["children"], "section");
+      if ("error" in children) return children;
+      return {
+        facetNode: {
+          ...value,
+          id: value["id"],
+          type: "section",
+          children: children.children,
+        } as unknown as FacetNode,
+      };
+    }
+    case "card": {
+      const children = parseContainerChildren(value["children"], "card");
+      if ("error" in children) return children;
+      return {
+        facetNode: {
+          ...value,
+          id: value["id"],
+          type: "card",
+          children: children.children,
+        } as unknown as FacetNode,
+      };
+    }
+    case "tabs":
+      if (!Array.isArray(value["items"])) {
+        return {
+          error: 'a "tabs" node needs "items" as an array',
+          nextAction: 'Pass "items": [] or an array of tab items.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "table":
+      if (value["columns"] !== undefined && !Array.isArray(value["columns"])) {
+        return {
+          error: 'a "table" node needs "columns" as an array',
+          nextAction: 'Pass "columns": [] or an array of table columns.',
+        };
+      }
+      if (value["rows"] !== undefined && !Array.isArray(value["rows"])) {
+        return {
+          error: 'a "table" node needs "rows" as an array',
+          nextAction: 'Pass "rows": [] or an array of table rows.',
+        };
+      }
+      return {
+        facetNode: {
+          ...value,
+          id: value["id"],
+          type: "table",
+          columns: value["columns"] ?? [],
+          rows: value["rows"] ?? [],
+        } as unknown as FacetNode,
+      };
+    case "chart":
+      if (
+        value["kind"] !== undefined &&
+        (typeof value["kind"] !== "string" || !CHART_KINDS.has(value["kind"]))
+      ) {
+        return {
+          error: 'a "chart" node kind must be "bar", "line", or "donut"',
+          nextAction: 'Use kind "bar", "line", or "donut".',
+        };
+      }
+      if (value["series"] !== undefined && !Array.isArray(value["series"])) {
+        return {
+          error: 'a "chart" node needs "series" as an array',
+          nextAction: 'Pass "series": [] or an array of chart series.',
+        };
+      }
+      return {
+        facetNode: {
+          ...value,
+          id: value["id"],
+          type: "chart",
+          kind: value["kind"] ?? "bar",
+          series: value["series"] ?? [],
+        } as unknown as FacetNode,
+      };
+    case "stat":
+      if (typeof value["label"] !== "string" || typeof value["value"] !== "string") {
+        return {
+          error: 'a "stat" node needs string "label" and "value"',
+          nextAction: 'Pass string "label" and "value" for stat nodes.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "badge":
+      if (typeof value["label"] !== "string") {
+        return {
+          error: 'a "badge" node needs a string "label"',
+          nextAction: 'Pass a string "label" for badge nodes.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "progress":
+      if (typeof value["value"] !== "number" || !Number.isFinite(value["value"])) {
+        return {
+          error: 'a "progress" node needs a finite number "value"',
+          nextAction: 'Pass a finite number "value" from 0 to 100 for progress nodes.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "alert":
+      if (typeof value["body"] !== "string") {
+        return {
+          error: 'an "alert" node needs a string "body"',
+          nextAction: 'Pass a string "body" for alert nodes.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "list":
+      if (!Array.isArray(value["items"])) {
+        return {
+          error: 'a "list" node needs "items" as an array',
+          nextAction: 'Pass "items": [] or an array of list items.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "divider":
+      return { facetNode: value as unknown as FacetNode };
     default:
       return {
-        error: '"type" must be one of "box" | "text" | "media" | "field"',
-        nextAction: 'Use one node type: "box", "text", "media", or "field".',
+        error:
+          '"type" must be one of the Facet v1 node types: "box", "text", "media", "field", "button", "section", "card", "tabs", "table", "chart", "stat", "badge", "progress", "alert", "list", or "divider"',
+        nextAction: "Use one allowed Facet v1 node type.",
       };
   }
+}
+
+function parseContainerChildren(
+  value: unknown,
+  nodeType: "section" | "card",
+):
+  | { readonly children: readonly string[] }
+  | { readonly error: string; readonly nextAction: string } {
+  if (
+    value !== undefined &&
+    (!Array.isArray(value) || !value.every((child): child is string => typeof child === "string"))
+  ) {
+    return {
+      error: `a "${nodeType}" node needs "children" as an array of string ids`,
+      nextAction: 'Use "children": [] or an array of existing child node ids.',
+    };
+  }
+  return { children: value ?? [] };
 }
 
 function okOutcome(
@@ -722,7 +1120,7 @@ function nextActionForOutcome(outcome: AgentToolOutcome): string {
 }
 
 function missingChildRefs(facetNode: FacetNode, shadow: FacetTree): readonly NodeId[] {
-  if (facetNode.type !== "box") return [];
+  if (!isContainer(facetNode)) return [];
   return facetNode.children.filter((id) => shadow.nodes[id] === undefined);
 }
 
@@ -746,24 +1144,8 @@ function childrenPath(parent: NodeId): string {
   return `${nodePath(parent)}/children/-`;
 }
 
-function isBoxWithChildren(tree: FacetTree, id: NodeId | undefined): boolean {
-  if (id === undefined) return false;
-  const node = tree.nodes[id];
-  return node !== undefined && node.type === "box" && node.children.length > 0;
-}
-
-function renderRoot(tree: FacetTree): NodeId {
-  const screens = tree.screens;
-  if (screens !== undefined && Object.keys(screens).length > 0) {
-    const entryRoot = typeof tree.entry === "string" ? screens[tree.entry] : undefined;
-    if (entryRoot !== undefined && tree.nodes[entryRoot] !== undefined) return entryRoot;
-    for (const id of Object.values(screens)) if (tree.nodes[id] !== undefined) return id;
-  }
-  return tree.root;
-}
-
 function isRenderable(tree: FacetTree): boolean {
-  return isBoxWithChildren(tree, renderRoot(tree));
+  return treeHasContent(tree);
 }
 
 function issueHint(issues: readonly string[]): string {
@@ -799,7 +1181,7 @@ function collectNodeLines(
   seen.add(nodeId);
   lines.push(`${"  ".repeat(depth)}- ${describeNode(node)}`);
   if (lines.length >= maxLines) return true;
-  if (node.type !== "box" || depth >= maxDepth) return false;
+  if (!isContainer(node) || depth >= maxDepth) return false;
   for (const childId of node.children) {
     if (collectNodeLines(tree, childId, depth + 1, maxDepth, seen, lines, maxLines)) {
       return true;
@@ -818,7 +1200,36 @@ function describeNode(facetNode: FacetNode): string {
       return `${facetNode.id} media kind=${facetNode.kind} src="${preview(facetNode.src)}"`;
     case "field":
       return `${facetNode.id} field name="${preview(facetNode.name)}"`;
+    case "button":
+      return `${facetNode.id} button label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`;
+    case "section":
+      return `${facetNode.id} section children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
+    case "card":
+      return `${facetNode.id} card children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
+    case "tabs":
+      return `${facetNode.id} tabs items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
+    case "table":
+      return `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(facetNode.rows.length)}${variantSuffix(facetNode)}`;
+    case "chart":
+      return `${facetNode.id} chart kind=${facetNode.kind} series=${String(facetNode.series.length)}${variantSuffix(facetNode)}`;
+    case "stat":
+      return `${facetNode.id} stat label="${preview(facetNode.label)}" value="${preview(facetNode.value)}"${variantSuffix(facetNode)}`;
+    case "badge":
+      return `${facetNode.id} badge label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`;
+    case "progress":
+      return `${facetNode.id} progress value=${String(facetNode.value)}${variantSuffix(facetNode)}`;
+    case "alert":
+      return `${facetNode.id} alert body="${preview(facetNode.body)}"${variantSuffix(facetNode)}`;
+    case "list":
+      return `${facetNode.id} list items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
+    case "divider":
+      return `${facetNode.id} divider${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
   }
+}
+
+function variantSuffix(node: FacetNode): string {
+  const variant = nodeVariant(node);
+  return variant === undefined ? "" : ` variant=${variant}`;
 }
 
 function preview(value: string): string {

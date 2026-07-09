@@ -1,4 +1,4 @@
-import { MAX_PATCH_OPS, applyPatch, foldPatchIntoStage } from "@facet/core";
+import { MAX_PATCH_OPS, applyPatch, foldPatchIntoStage, isContainer } from "@facet/core";
 import type { FacetNode, FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
 import { executeStageTool } from "./executor.js";
 import { formatAgentToolObservation } from "./observation.js";
@@ -75,13 +75,31 @@ export function createStageToolBuffer(
     return result.messages;
   };
 
+  const queuedPreflightObservation = (
+    op: PendingOp,
+    toolName: "append_node" | "set_node",
+  ): string | undefined => {
+    const node = { ...op.node, children: [] };
+    const result = executeStageTool(
+      toolName === "set_node"
+        ? { id: `buffer-preflight:${op.node.id}`, name: "set_node", input: { node } }
+        : {
+            id: `buffer-preflight:${op.node.id}`,
+            name: "append_node",
+            input: { parentId: op.kind === "append" ? op.parentId : "", node },
+          },
+      { shadow, assets },
+    );
+    return result.status === "ok" ? undefined : formatObservation(result);
+  };
+
   const flushReady = (): readonly ServerMessage[] => {
     const messages: ServerMessage[] = [];
     let progressed = true;
     while (progressed) {
       progressed = false;
       for (const [id, op] of pending) {
-        if (op.kind === "append" && !hasBox(shadow, op.parentId)) continue;
+        if (op.kind === "append" && !hasContainer(shadow, op.parentId)) continue;
         if (!isClosed(op.node, shadow)) continue;
         const readyMessages = executeReady(op);
         if (readyMessages === undefined) continue;
@@ -136,11 +154,14 @@ export function createStageToolBuffer(
   const runSetNode = (call: ToolCall): StageToolBufferOutcome => {
     const input = inputOf(call);
     const nodeId = nodeIdCandidate(input["node"]);
-    const boxNode = boxNodeCandidate(input["node"]);
-    if (boxNode !== undefined && !isClosed(boxNode, shadow)) {
-      pending.set(boxNode.id, { kind: "set", node: boxNode });
+    const containerNode = containerNodeCandidate(input["node"]);
+    if (containerNode !== undefined && !isClosed(containerNode, shadow)) {
+      const op: PendingOp = { kind: "set", node: containerNode };
+      const preflight = queuedPreflightObservation(op, "set_node");
+      if (preflight !== undefined) return failedOutcome(preflight, shadow);
+      pending.set(containerNode.id, op);
       return failedOutcome(
-        queuedObservation("set_node", boxNode.id, missingChildRefs(boxNode, shadow)),
+        queuedObservation("set_node", containerNode.id, missingChildRefs(containerNode, shadow)),
         shadow,
       );
     }
@@ -164,12 +185,19 @@ export function createStageToolBuffer(
             shadow,
           );
         }
-      } else if (hasBox(shadow, parentId)) {
-        const boxNode = boxNodeCandidate(input["node"]);
-        if (boxNode !== undefined && !isClosed(boxNode, shadow)) {
-          pending.set(boxNode.id, { kind: "append", parentId, node: boxNode });
+      } else if (hasContainer(shadow, parentId)) {
+        const containerNode = containerNodeCandidate(input["node"]);
+        if (containerNode !== undefined && !isClosed(containerNode, shadow)) {
+          const op: PendingOp = { kind: "append", parentId, node: containerNode };
+          const preflight = queuedPreflightObservation(op, "append_node");
+          if (preflight !== undefined) return failedOutcome(preflight, shadow);
+          pending.set(containerNode.id, op);
           return failedOutcome(
-            queuedObservation("append_node", boxNode.id, missingChildRefs(boxNode, shadow)),
+            queuedObservation(
+              "append_node",
+              containerNode.id,
+              missingChildRefs(containerNode, shadow),
+            ),
             shadow,
           );
         }
@@ -240,9 +268,7 @@ export function createStageToolBuffer(
 }
 
 function childRefs(node: FacetNode): readonly NodeId[] {
-  return node.type === "box" && Array.isArray((node as { children?: unknown }).children)
-    ? node.children
-    : [];
+  return isContainer(node) ? node.children : [];
 }
 
 function missingChildRefs(node: FacetNode, shadow: FacetTree): readonly NodeId[] {
@@ -263,11 +289,12 @@ function nodeIdCandidate(value: unknown): NodeId | undefined {
     : undefined;
 }
 
-function boxNodeCandidate(value: unknown): FacetNode | undefined {
+function containerNodeCandidate(value: unknown): FacetNode | undefined {
   if (!isRecord(value)) return undefined;
-  if (value["type"] !== "box") return undefined;
   const id = nodeIdCandidate(value);
   if (id === undefined) return undefined;
+  const type = value["type"];
+  if (type !== "box" && type !== "section" && type !== "card") return undefined;
   const children = value["children"];
   if (
     children !== undefined &&
@@ -279,7 +306,7 @@ function boxNodeCandidate(value: unknown): FacetNode | undefined {
   return {
     ...value,
     id,
-    type: "box",
+    type,
     children: children ?? [],
   } as unknown as FacetNode;
 }
@@ -288,8 +315,9 @@ function hasNode(shadow: FacetTree, id: NodeId): boolean {
   return shadow.nodes[id] !== undefined;
 }
 
-function hasBox(shadow: FacetTree, id: NodeId): boolean {
-  return shadow.nodes[id]?.type === "box";
+function hasContainer(shadow: FacetTree, id: NodeId): boolean {
+  const node = shadow.nodes[id];
+  return node !== undefined && isContainer(node);
 }
 
 function queuedObservation(tool: string, id: NodeId, missing: readonly NodeId[]): string {

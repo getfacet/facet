@@ -4,19 +4,25 @@ Guidance for coding agents (and humans) working on **Facet**. This is the source
 of truth; `CLAUDE.md` points here.
 
 Facet is a TypeScript framework for **UI a language model renders itself** —
-safe, live, and different for every user. The model composes interfaces from a
-small set of safe primitives and mutates them live as the conversation goes.
-(Living, per-visitor pages an agent "owns" are one application.) See
-[README.md](README.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+safe, live, and different for every user. The model composes interfaces from
+`@facet/core`'s closed, validated vocabulary of safe bricks and mutates them
+live as the conversation goes. The primitive nodes are the universal base and
+fallback, not the permanent ceiling. (Living, per-visitor pages an agent "owns"
+are one application.) See [README.md](README.md) and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Two invariants (do not break)
 
-1. **Agents emit a declarative brick spec, never raw HTML/JS.** The only node
-   types are `box`, `text`, `media`, `field`
-   (`packages/core/core/src/nodes.ts`).
-   Style values are **tokens**, not raw scalars. Layout is **flow-only** (no
-   absolute positioning). Adding a capability means adding a node type or token
-   *on purpose* — never letting a model emit arbitrary code.
+1. **Agents emit a declarative brick spec, never raw HTML/JS/CSS.**
+   `@facet/core` owns the closed, validated node and token vocabulary
+   (`packages/core/core/src/nodes.ts`). Agents/consumers may emit no node kind or
+   style value unless core intentionally defines and validates it. The primitive
+   fallback/base vocabulary remains `box` and `text` for structure and copy,
+   plus `media` and `field` for rendered assets and input; higher-level catalog
+   bricks are allowed only when added deliberately in core. Style values are
+   **tokens**, not raw scalars. Layout is **flow-only** (no absolute
+   positioning). Adding a brick capability means adding a node kind or token *on
+   purpose* — never letting a model emit arbitrary code.
 2. **Only patches travel** — [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)
    JSON Patch — and the *same* pure `applyPatch` runs on server and client so
    they never drift. The renderer is **fail-safe**: unknown/dangling nodes are
@@ -46,7 +52,7 @@ imports, and release metadata all benefit from the physical move.
 
 | Group | Path | Package | Role |
 | --- | --- | --- | --- |
-| Core | `packages/core/core` | `@facet/core` | Contract: bricks, tokens, RFC 6902 patch, `validateTree`, session/event types. Depends on nothing. |
+| Core | `packages/core/core` | `@facet/core` | Contract: closed brick vocabulary, tokens, RFC 6902 patch, `validateTree`, session/event types. Depends on nothing. |
 | Core | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (per-agent theme/stamp/initial-tree registry; `MemoryAssets` + `loadAssets`, `withInitialStage`). File-backed Node references (`FileAssets`) via `@facet/runtime/node`. |
 | Core | `packages/core/server` | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | Core | `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
@@ -186,4 +192,5 @@ fixes can skip straight to `/verify` → `/code-review`.
   extensions (bundler resolution).
 - No `any`. Prefer `unknown` + narrowing (see `validate.ts`).
 - Barrel exports only (`index.ts`); the `facet` bin is the one exception.
-- Keep the four bricks minimal; grow the palette deliberately, never via raw markup.
+- Keep the primitive base stable and small; grow higher-level bricks/tokens
+  deliberately in `@facet/core`, never via raw markup.

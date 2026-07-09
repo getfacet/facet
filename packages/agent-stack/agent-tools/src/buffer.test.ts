@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MAX_PATCH_OPS, type FacetStamp, type FacetTree } from "@facet/core";
+import { MAX_PATCH_OPS, type FacetCatalog, type FacetStamp, type FacetTree } from "@facet/core";
 import { createStageToolBuffer } from "./buffer.js";
 import { parseAgentToolObservation } from "./observation.js";
 
@@ -15,6 +15,22 @@ const TREE_WITH_CHILD: FacetTree = {
   nodes: {
     root: { id: "root", type: "box", children: ["a"] },
     a: { id: "a", type: "text", value: "A" },
+  },
+};
+
+const CATALOG_POLICY: FacetCatalog = {
+  name: "buffer-policy-test",
+  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+  bricks: [
+    { type: "section", variants: ["surface"] },
+    { type: "card", variants: ["plain"] },
+  ],
+  stamps: { mode: "all" },
+  primitiveFallback: "allowed",
+  policy: {
+    order: ["stamp", "brick", "primitive"],
+    editBeforeAppend: true,
+    compactScreens: true,
   },
 };
 
@@ -55,6 +71,78 @@ describe("createStageToolBuffer", () => {
     expect(child.shadow.nodes["title"]).toMatchObject({ type: "text", value: "Hello" });
   });
 
+  it("buffers forward-referenced high-level section and card edits until child nodes exist", () => {
+    const buffer = createStageToolBuffer(ROOT_TREE);
+
+    const queuedSection = buffer.run({
+      id: "call-section",
+      name: "set_node",
+      input: { node: { id: "section", type: "section", children: ["card"] } },
+    });
+    expect(queuedSection.observation).toContain("queued");
+    expect(queuedSection.messages).toEqual([]);
+
+    const queuedCard = buffer.run({
+      id: "call-card",
+      name: "set_node",
+      input: { node: { id: "card", type: "card", children: ["stat"] } },
+    });
+    expect(queuedCard.observation).toContain("queued");
+    expect(queuedCard.messages).toEqual([]);
+
+    const stat = buffer.run({
+      id: "call-stat",
+      name: "set_node",
+      input: { node: { id: "stat", type: "stat", label: "Revenue", value: "$12k" } },
+    });
+
+    const patchMessages = stat.messages.filter((message) => message.kind === "patch");
+    expect(patchMessages).toHaveLength(3);
+    expect(stat.shadow.nodes["section"]).toMatchObject({
+      type: "section",
+      children: ["card"],
+    });
+    expect(stat.shadow.nodes["card"]).toMatchObject({ type: "card", children: ["stat"] });
+    expect(stat.shadow.nodes["stat"]).toMatchObject({
+      type: "stat",
+      label: "Revenue",
+      value: "$12k",
+    });
+  });
+
+  it("buffers appended high-level card containers under existing high-level section parents", () => {
+    const buffer = createStageToolBuffer({
+      root: "section",
+      nodes: {
+        section: { id: "section", type: "section", children: [] },
+      },
+    });
+
+    const queuedCard = buffer.run({
+      id: "append-card",
+      name: "append_node",
+      input: {
+        parentId: "section",
+        node: { id: "card", type: "card", children: ["badge"] },
+      },
+    });
+
+    expect(queuedCard.observation).toContain("queued");
+    expect(queuedCard.messages).toEqual([]);
+
+    const badge = buffer.run({
+      id: "set-badge",
+      name: "set_node",
+      input: { node: { id: "badge", type: "badge", label: "Live" } },
+    });
+
+    const patchMessages = badge.messages.filter((message) => message.kind === "patch");
+    expect(patchMessages).toHaveLength(2);
+    expect(badge.shadow.nodes["section"]).toMatchObject({ children: ["card"] });
+    expect(badge.shadow.nodes["card"]).toMatchObject({ type: "card", children: ["badge"] });
+    expect(badge.shadow.nodes["badge"]).toMatchObject({ type: "badge", label: "Live" });
+  });
+
   it("reports pending when a buffered box waits for missing children", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);
 
@@ -74,6 +162,35 @@ describe("createStageToolBuffer", () => {
       visible_to_visitor: false,
       next_action: "Define the missing child node(s), then continue the edit.",
     });
+  });
+
+  it("rejects catalog-invalid forward-referenced containers instead of buffering them", () => {
+    const buffer = createStageToolBuffer(ROOT_TREE, { catalog: CATALOG_POLICY });
+
+    const queued = buffer.run({
+      id: "call-card",
+      name: "set_node",
+      input: { node: { id: "card", type: "card", variant: "danger", children: ["title"] } },
+    });
+
+    expect(parseAgentToolObservation(queued.observation)).toMatchObject({
+      tool: "set_node",
+      status: "error",
+      outcome: "rejected",
+      patch_count: 0,
+    });
+    expect(queued.observation).toContain("catalog policy");
+    expect(queued.messages).toEqual([]);
+
+    const child = buffer.run({
+      id: "call-child",
+      name: "set_node",
+      input: { node: { id: "title", type: "text", value: "Hello" } },
+    });
+
+    expect(child.messages.filter((message) => message.kind === "patch")).toHaveLength(1);
+    expect(child.shadow.nodes["card"]).toBeUndefined();
+    expect(buffer.drainUnresolved()).toEqual([]);
   });
 
   it("keeps local shadow aligned with runtime aggregate patch folding", () => {
@@ -106,8 +223,7 @@ describe("createStageToolBuffer", () => {
     });
 
     expect(orphan.messages.some((message) => message.kind === "patch")).toBe(true);
-    expect(buffer.shadow.nodes["title"]).toMatchObject({ value: "Title" });
-    expect(buffer.shadow.nodes["title"]).not.toHaveProperty("style");
+    expect(buffer.shadow.nodes["title"]).toMatchObject({ value: "Title", style: {} });
 
     buffer.resetEmittedPatchOps();
 

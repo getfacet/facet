@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STAGE_SPEC } from "@facet/core";
-import type { FacetStamp, FacetTheme } from "@facet/core";
+import type { FacetCatalog, FacetStamp, FacetTheme } from "@facet/core";
 import {
   FACET_AGENT_ROLE_PROMPT,
   FACET_ASSET_PRIVACY_PROMPT,
@@ -20,15 +20,203 @@ function sectionBetween(system: string, start: string, end: string): string {
   return startIndex >= 0 && endIndex > startIndex ? system.slice(startIndex, endIndex) : "";
 }
 
-function assetSection(system: string, heading: "THEMES" | "STAMPS"): string {
+function promptSection(system: string, heading: "CATALOG" | "THEMES" | "STAMPS"): string {
   const start = system.indexOf(heading);
   if (start < 0) return "";
-  const nextTheme = heading === "STAMPS" ? -1 : system.indexOf("STAMPS", start + heading.length);
-  const pageBrief = system.indexOf(FACET_PAGE_BRIEF_HEADING, start + heading.length);
-  const endCandidates = [nextTheme, pageBrief].filter((index) => index > start);
-  const end = Math.min(...endCandidates);
+  const nextHeadings = ["CATALOG", "THEMES", "STAMPS", FACET_PAGE_BRIEF_HEADING]
+    .filter((candidate) => candidate !== heading)
+    .map((candidate) => system.indexOf(candidate, start + heading.length))
+    .filter((index) => index > start);
+  const end = Math.min(...nextHeadings);
   return system.slice(start, end);
 }
+
+function assetSection(system: string, heading: "THEMES" | "STAMPS"): string {
+  return promptSection(system, heading);
+}
+
+function catalogSection(system: string): string {
+  return promptSection(system, "CATALOG");
+}
+
+function catalogFixture(): FacetCatalog {
+  return {
+    name: "studio-catalog",
+    description: "Compact SaaS catalog",
+    theme: { active: "studio", switchPolicy: "locked", allowed: ["studio", "print"] },
+    bricks: [
+      {
+        type: "section",
+        variants: ["surface", "hero"],
+        guidance: "Use for compact screen regions.",
+      },
+      { type: "card", variants: ["metric"], guidance: "Use for grouped records." },
+      { type: "button", variants: ["primary"] },
+    ],
+    stamps: { mode: "allow", names: ["pricing-grid", "onboarding-flow"] },
+    primitiveFallback: "discouraged",
+    policy: {
+      order: ["stamp", "brick", "primitive"],
+      editBeforeAppend: true,
+      compactScreens: true,
+      maxScreenSections: 4,
+    },
+  };
+}
+
+describe("buildFacetAgentSystemPrompt catalog guidance", () => {
+  it("teaches append_node against all container parents, not only boxes", () => {
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain(
+      "existing container parent (box, section, or card)",
+    );
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toContain("existing box parent");
+  });
+
+  it("serializes compact catalog policy without leaking theme values or unknown fields", () => {
+    const catalog = {
+      ...catalogFixture(),
+      operatorSecret: "catalog-secret",
+      themeTokenValues: { accent: "#123456" },
+    } as unknown as FacetCatalog;
+    const system = buildFacetAgentSystemPrompt({
+      pageBrief: PAGE_BRIEF,
+      assets: {
+        catalog,
+        themes: [
+          {
+            name: "studio",
+            description: "Studio theme",
+            color: { bg: "#0b1020" },
+            space: { md: "18px" },
+          },
+        ] as unknown as readonly FacetTheme[],
+      },
+    });
+
+    const section = catalogSection(system);
+    expect(section).toContain("CATALOG");
+    expect(section).toContain("studio-catalog");
+    expect(section).toContain("Compact SaaS catalog");
+    expect(section).toMatch(/active theme:\s*studio/i);
+    expect(section).toMatch(/switchPolicy:\s*locked/i);
+    expect(section).toMatch(/allowed themes:\s*studio, print/i);
+    expect(section).toMatch(/allowed bricks/i);
+    expect(section).toContain("section");
+    expect(section).toContain("surface, hero");
+    expect(section).toContain("Use for compact screen regions.");
+    expect(section).toContain("card");
+    expect(section).toContain("metric");
+    expect(section).toMatch(/stamp policy:\s*allow pricing-grid, onboarding-flow/i);
+    expect(section).toMatch(/primitiveFallback:\s*discouraged/i);
+    expect(section).toMatch(/policy order:\s*stamp -> brick -> primitive/i);
+    expect(section).toMatch(/edit-before-append:\s*true/i);
+    expect(section).toMatch(/compact screen:\s*true/i);
+    expect(section).toMatch(/max screen sections:\s*4/i);
+    expect(section).not.toContain("#123456");
+    expect(section).not.toContain("#0b1020");
+    expect(section).not.toContain("18px");
+    expect(section).not.toContain("catalog-secret");
+    expect(section).not.toContain("themeTokenValues");
+  });
+
+  it("explains locked theme behavior and the catalog use order", () => {
+    const system = buildFacetAgentSystemPrompt({
+      pageBrief: PAGE_BRIEF,
+      assets: { catalog: catalogFixture() },
+    });
+    const section = catalogSection(system);
+
+    expect(section).toMatch(/locked/i);
+    expect(section).toMatch(/do not call set_theme/i);
+    expect(section).toMatch(/keep the active theme/i);
+    expect(section).toMatch(/stamp -> high-level brick -> primitive fallback/i);
+    expect(section).toMatch(/edit before you append/i);
+    expect(section).toMatch(/compact screen/i);
+  });
+
+  it("does not contradict catalog edit/compact opt-outs", () => {
+    const catalog: FacetCatalog = {
+      ...catalogFixture(),
+      policy: {
+        ...catalogFixture().policy,
+        editBeforeAppend: false,
+        compactScreens: false,
+      },
+    };
+    const system = buildFacetAgentSystemPrompt({
+      pageBrief: PAGE_BRIEF,
+      assets: { catalog },
+    });
+    const section = catalogSection(system);
+
+    expect(section).toMatch(/edit-before-append:\s*false/i);
+    expect(section).toMatch(/compact screen:\s*false/i);
+    expect(section).toMatch(/catalog allows append-first edits/i);
+    expect(section).toMatch(/catalog allows broader screens/i);
+  });
+
+  it("serializes only whitelisted compact stamp metadata and no stamp JSON", () => {
+    const stamps = [
+      {
+        name: "metric-card",
+        description: "Metric card stamp",
+        metadata: {
+          category: "dashboard",
+          useWhen: "Show one KPI with trend context.",
+          avoidWhen: "Avoid for long tables.",
+          variants: ["compact", "emphasis"],
+          tags: ["analytics", "kpi"],
+          repeatable: true,
+          preferredParent: "section",
+          composedOf: ["card", "stat"],
+          dataRequirements: ["metric label", "current value"],
+          followUpEdits: ["update stat value after data changes"],
+          root: "metadata-root-leak",
+          nodes: { leak: true },
+          unknownSecret: "stamp-secret",
+          themeTokenValues: { accent: "#abcdef" },
+        },
+        slots: { title: "Revenue", value: "$42k" },
+        root: "metric-root",
+        nodes: {
+          "metric-root": { id: "metric-root", type: "card", children: ["metric-title"] },
+          "metric-title": { id: "metric-title", type: "text", value: "{{title}}" },
+        },
+      },
+    ] as unknown as readonly FacetStamp[];
+
+    const system = buildFacetAgentSystemPrompt({
+      pageBrief: PAGE_BRIEF,
+      assets: { stamps },
+    });
+    const section = assetSection(system, "STAMPS");
+
+    expect(section).toContain("metric-card");
+    expect(section).toContain("Metric card stamp");
+    expect(section).toContain("slots: title, value");
+    expect(section).toContain("category: dashboard");
+    expect(section).toContain("useWhen: Show one KPI with trend context.");
+    expect(section).toContain("avoidWhen: Avoid for long tables.");
+    expect(section).toContain("variants: compact, emphasis");
+    expect(section).toContain("tags: analytics, kpi");
+    expect(section).toContain("repeatable: true");
+    expect(section).toContain("preferredParent: section");
+    expect(section).toContain("composedOf: card, stat");
+    expect(section).toContain("dataRequirements: metric label, current value");
+    expect(section).toContain("followUpEdits: update stat value after data changes");
+    expect(section).not.toContain("metric-root");
+    expect(section).not.toContain("metric-title");
+    expect(section).not.toContain("metadata-root-leak");
+    expect(section).not.toContain("Revenue");
+    expect(section).not.toContain("$42k");
+    expect(section).not.toContain("stamp-secret");
+    expect(section).not.toContain("#abcdef");
+    expect(section).not.toContain('"nodes"');
+    expect(section).not.toContain('"root"');
+    expect(section).not.toContain("unknownSecret");
+    expect(section).not.toContain("themeTokenValues");
+  });
+});
 
 describe("buildFacetAgentSystemPrompt", () => {
   it("includes the canonical STAGE_SPEC and page brief without copying stage vocabulary", () => {

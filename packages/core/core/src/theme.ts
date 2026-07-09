@@ -14,19 +14,37 @@
  */
 import {
   COLORS,
+  ALIGNS,
+  APPEARS,
+  COLUMNS,
+  DIRECTIONS,
   FONT_FAMILIES,
   FONT_SIZES,
   FONT_WEIGHTS,
+  JUSTIFIES,
   RADII,
   RATIOS,
+  SCROLL_AXES,
+  SHADOWS,
+  SIZINGS,
   SPACES,
+  TEXT_ALIGNS,
+  type Align,
+  type Appear,
+  type Columns,
   type Color,
+  type Direction,
   type FontFamily,
   type FontSize,
   type FontWeight,
+  type Justify,
   type Radius,
   type Ratio,
+  type ScrollAxis,
+  type Shadow,
+  type Sizing,
   type Space,
+  type TextAlign,
 } from "./tokens.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import {
@@ -52,7 +70,76 @@ export interface FacetTheme {
   readonly fontWeight?: Readonly<Partial<Record<FontWeight, number>>>;
   readonly radius?: Readonly<Partial<Record<Radius, string>>>;
   readonly ratio?: Readonly<Partial<Record<Ratio, string>>>;
+  readonly shadow?: Readonly<Partial<Record<Shadow, string>>>;
+  readonly recipes?: ComponentRecipes;
 }
+
+export interface RecipeBoxStyle {
+  readonly direction?: Direction;
+  readonly gap?: Space;
+  readonly pad?: Space;
+  readonly align?: Align;
+  readonly justify?: Justify;
+  readonly wrap?: boolean;
+  readonly bg?: Color;
+  readonly radius?: Radius;
+  readonly border?: boolean;
+  readonly grow?: boolean;
+  readonly width?: Sizing;
+  readonly appear?: Appear;
+  readonly scroll?: ScrollAxis | true;
+  readonly columns?: Columns;
+  readonly shadow?: Shadow;
+}
+
+export interface RecipeTextStyle {
+  readonly family?: FontFamily;
+  readonly size?: FontSize;
+  readonly weight?: FontWeight;
+  readonly color?: Color;
+  readonly align?: TextAlign;
+}
+
+export interface RecipeMediaStyle {
+  readonly radius?: Radius;
+  readonly width?: Sizing;
+  readonly ratio?: Ratio;
+}
+
+export interface RecipeFieldStyle {
+  readonly width?: Sizing;
+}
+
+export interface ComponentRecipe {
+  readonly box?: RecipeBoxStyle;
+  readonly text?: RecipeTextStyle;
+  readonly media?: RecipeMediaStyle;
+  readonly field?: RecipeFieldStyle;
+}
+
+export const RECIPE_COMPONENTS = [
+  "box",
+  "text",
+  "media",
+  "field",
+  "button",
+  "section",
+  "card",
+  "tabs",
+  "table",
+  "chart",
+  "stat",
+  "badge",
+  "progress",
+  "alert",
+  "list",
+  "divider",
+] as const;
+export type RecipeComponentName = (typeof RECIPE_COMPONENTS)[number];
+
+export type ComponentRecipes = Readonly<
+  Partial<Record<RecipeComponentName, Readonly<Record<string, ComponentRecipe>>>>
+>;
 
 export interface ThemeIssue {
   readonly severity: "error" | "warning";
@@ -85,6 +172,8 @@ const KNOWN_KEYS = new Set([
   "fontWeight",
   "radius",
   "ratio",
+  "shadow",
+  "recipes",
 ]);
 
 /** Substrings that make a CSS value dangerous regardless of context. */
@@ -152,6 +241,14 @@ export const DEFAULT_COLORS: Readonly<Record<Color, string>> = {
   success: "#16a34a",
   warning: "#d97706",
   danger: "#dc2626",
+  neutral: "#64748b",
+  info: "#0284c7",
+  "chart-1": "#2563eb",
+  "chart-2": "#16a34a",
+  "chart-3": "#d97706",
+  "chart-4": "#dc2626",
+  "chart-5": "#7c3aed",
+  "chart-6": "#0891b2",
 };
 
 /**
@@ -349,6 +446,348 @@ function handleRatio(value: unknown): Handled<string> {
   return { value };
 }
 
+function handleShadow(value: unknown): Handled<string> {
+  if (typeof value !== "string") return { error: "value is not a string" };
+  const unsafe = unsafeValue(value);
+  if (unsafe !== undefined) return { error: unsafe };
+  if (value.trim() === "") return { error: "shadow value is empty" };
+  return { value };
+}
+
+function tokenValue<T extends string | number>(
+  raw: unknown,
+  members: readonly T[],
+  path: string,
+  issues: IssueList,
+): T | undefined {
+  if ((members as readonly unknown[]).includes(raw)) return raw as T;
+  issues.push({ severity: "warning", message: `${path}: invalid token dropped` });
+  return undefined;
+}
+
+function booleanValue(raw: unknown, path: string, issues: IssueList): boolean | undefined {
+  if (typeof raw === "boolean") return raw;
+  issues.push({ severity: "warning", message: `${path}: invalid boolean dropped` });
+  return undefined;
+}
+
+function recipeStyleObject(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): Record<string, unknown> | undefined {
+  if (!isPlainObject(raw)) {
+    issues.push({ severity: "warning", message: `${path}: style is not an object; ignored` });
+    return undefined;
+  }
+  return raw;
+}
+
+function warnUnknownStyleKeys(
+  raw: Record<string, unknown>,
+  known: ReadonlySet<string>,
+  path: string,
+  issues: IssueList,
+): void {
+  for (const key of Object.keys(raw)) {
+    if (isForbiddenKey(key)) {
+      issues.push({
+        severity: "warning",
+        message: `${path}: forbidden key "${printableKey(key)}" dropped`,
+      });
+      continue;
+    }
+    if (!known.has(key)) {
+      issues.push({
+        severity: "warning",
+        message: `${path}: unknown style key "${printableKey(key)}" dropped`,
+      });
+    }
+  }
+}
+
+const RECIPE_BOX_STYLE_KEYS = new Set([
+  "direction",
+  "gap",
+  "pad",
+  "align",
+  "justify",
+  "wrap",
+  "bg",
+  "radius",
+  "border",
+  "grow",
+  "width",
+  "appear",
+  "scroll",
+  "columns",
+  "shadow",
+]);
+
+function validateRecipeBoxStyle(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): RecipeBoxStyle | undefined {
+  const input = recipeStyleObject(raw, path, issues);
+  if (input === undefined) return undefined;
+  warnUnknownStyleKeys(input, RECIPE_BOX_STYLE_KEYS, path, issues);
+  const out: Record<string, unknown> = nullMap<unknown>();
+  if (input.direction !== undefined) {
+    const value = tokenValue(input.direction, DIRECTIONS, `${path}.direction`, issues);
+    if (value !== undefined) out.direction = value;
+  }
+  if (input.gap !== undefined) {
+    const value = tokenValue(input.gap, SPACES, `${path}.gap`, issues);
+    if (value !== undefined) out.gap = value;
+  }
+  if (input.pad !== undefined) {
+    const value = tokenValue(input.pad, SPACES, `${path}.pad`, issues);
+    if (value !== undefined) out.pad = value;
+  }
+  if (input.align !== undefined) {
+    const value = tokenValue(input.align, ALIGNS, `${path}.align`, issues);
+    if (value !== undefined) out.align = value;
+  }
+  if (input.justify !== undefined) {
+    const value = tokenValue(input.justify, JUSTIFIES, `${path}.justify`, issues);
+    if (value !== undefined) out.justify = value;
+  }
+  if (input.wrap !== undefined) {
+    const value = booleanValue(input.wrap, `${path}.wrap`, issues);
+    if (value !== undefined) out.wrap = value;
+  }
+  if (input.bg !== undefined) {
+    const value = tokenValue(input.bg, COLORS, `${path}.bg`, issues);
+    if (value !== undefined) out.bg = value;
+  }
+  if (input.radius !== undefined) {
+    const value = tokenValue(input.radius, RADII, `${path}.radius`, issues);
+    if (value !== undefined) out.radius = value;
+  }
+  if (input.border !== undefined) {
+    const value = booleanValue(input.border, `${path}.border`, issues);
+    if (value !== undefined) out.border = value;
+  }
+  if (input.grow !== undefined) {
+    const value = booleanValue(input.grow, `${path}.grow`, issues);
+    if (value !== undefined) out.grow = value;
+  }
+  if (input.width !== undefined) {
+    const value = tokenValue(input.width, SIZINGS, `${path}.width`, issues);
+    if (value !== undefined) out.width = value;
+  }
+  if (input.appear !== undefined) {
+    const value = tokenValue(input.appear, APPEARS, `${path}.appear`, issues);
+    if (value !== undefined) out.appear = value;
+  }
+  if (input.scroll !== undefined) {
+    if (input.scroll === true) {
+      out.scroll = true;
+    } else {
+      const value = tokenValue(input.scroll, SCROLL_AXES, `${path}.scroll`, issues);
+      if (value !== undefined) out.scroll = value;
+    }
+  }
+  if (input.columns !== undefined) {
+    const value = tokenValue(input.columns, COLUMNS, `${path}.columns`, issues);
+    if (value !== undefined) out.columns = value;
+  }
+  if (input.shadow !== undefined) {
+    const value = tokenValue(input.shadow, SHADOWS, `${path}.shadow`, issues);
+    if (value !== undefined) out.shadow = value;
+  }
+  return Object.keys(out).length > 0 ? (out as RecipeBoxStyle) : undefined;
+}
+
+const RECIPE_TEXT_STYLE_KEYS = new Set(["family", "size", "weight", "color", "align"]);
+
+function validateRecipeTextStyle(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): RecipeTextStyle | undefined {
+  const input = recipeStyleObject(raw, path, issues);
+  if (input === undefined) return undefined;
+  warnUnknownStyleKeys(input, RECIPE_TEXT_STYLE_KEYS, path, issues);
+  const out: Record<string, unknown> = nullMap<unknown>();
+  if (input.family !== undefined) {
+    const value = tokenValue(input.family, FONT_FAMILIES, `${path}.family`, issues);
+    if (value !== undefined) out.family = value;
+  }
+  if (input.size !== undefined) {
+    const value = tokenValue(input.size, FONT_SIZES, `${path}.size`, issues);
+    if (value !== undefined) out.size = value;
+  }
+  if (input.weight !== undefined) {
+    const value = tokenValue(input.weight, FONT_WEIGHTS, `${path}.weight`, issues);
+    if (value !== undefined) out.weight = value;
+  }
+  if (input.color !== undefined) {
+    const value = tokenValue(input.color, COLORS, `${path}.color`, issues);
+    if (value !== undefined) out.color = value;
+  }
+  if (input.align !== undefined) {
+    const value = tokenValue(input.align, TEXT_ALIGNS, `${path}.align`, issues);
+    if (value !== undefined) out.align = value;
+  }
+  return Object.keys(out).length > 0 ? (out as RecipeTextStyle) : undefined;
+}
+
+const RECIPE_MEDIA_STYLE_KEYS = new Set(["radius", "width", "ratio"]);
+
+function validateRecipeMediaStyle(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): RecipeMediaStyle | undefined {
+  const input = recipeStyleObject(raw, path, issues);
+  if (input === undefined) return undefined;
+  warnUnknownStyleKeys(input, RECIPE_MEDIA_STYLE_KEYS, path, issues);
+  const out: Record<string, unknown> = nullMap<unknown>();
+  if (input.radius !== undefined) {
+    const value = tokenValue(input.radius, RADII, `${path}.radius`, issues);
+    if (value !== undefined) out.radius = value;
+  }
+  if (input.width !== undefined) {
+    const value = tokenValue(input.width, SIZINGS, `${path}.width`, issues);
+    if (value !== undefined) out.width = value;
+  }
+  if (input.ratio !== undefined) {
+    const value = tokenValue(input.ratio, RATIOS, `${path}.ratio`, issues);
+    if (value !== undefined) out.ratio = value;
+  }
+  return Object.keys(out).length > 0 ? (out as RecipeMediaStyle) : undefined;
+}
+
+const RECIPE_FIELD_STYLE_KEYS = new Set(["width"]);
+
+function validateRecipeFieldStyle(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): RecipeFieldStyle | undefined {
+  const input = recipeStyleObject(raw, path, issues);
+  if (input === undefined) return undefined;
+  warnUnknownStyleKeys(input, RECIPE_FIELD_STYLE_KEYS, path, issues);
+  const out: Record<string, unknown> = nullMap<unknown>();
+  if (input.width !== undefined) {
+    const value = tokenValue(input.width, SIZINGS, `${path}.width`, issues);
+    if (value !== undefined) out.width = value;
+  }
+  return Object.keys(out).length > 0 ? (out as RecipeFieldStyle) : undefined;
+}
+
+const COMPONENT_RECIPE_KEYS = new Set(["box", "text", "media", "field"]);
+
+function validateComponentRecipe(
+  raw: unknown,
+  path: string,
+  issues: IssueList,
+): ComponentRecipe | undefined {
+  if (!isPlainObject(raw)) {
+    issues.push({ severity: "warning", message: `${path}: recipe is not an object; ignored` });
+    return undefined;
+  }
+  for (const key of Object.keys(raw)) {
+    if (isForbiddenKey(key)) {
+      issues.push({
+        severity: "warning",
+        message: `${path}: forbidden key "${printableKey(key)}" dropped`,
+      });
+      continue;
+    }
+    if (!COMPONENT_RECIPE_KEYS.has(key)) {
+      issues.push({
+        severity: "warning",
+        message: `${path}: unknown recipe key "${printableKey(key)}" dropped`,
+      });
+    }
+  }
+  const out: Record<string, unknown> = nullMap<unknown>();
+  if (raw.box !== undefined) {
+    const box = validateRecipeBoxStyle(raw.box, `${path}.box`, issues);
+    if (box !== undefined) out.box = box;
+  }
+  if (raw.text !== undefined) {
+    const text = validateRecipeTextStyle(raw.text, `${path}.text`, issues);
+    if (text !== undefined) out.text = text;
+  }
+  if (raw.media !== undefined) {
+    const media = validateRecipeMediaStyle(raw.media, `${path}.media`, issues);
+    if (media !== undefined) out.media = media;
+  }
+  if (raw.field !== undefined) {
+    const field = validateRecipeFieldStyle(raw.field, `${path}.field`, issues);
+    if (field !== undefined) out.field = field;
+  }
+  return Object.keys(out).length > 0 ? (out as ComponentRecipe) : undefined;
+}
+
+function isRecipeComponentName(value: string): value is RecipeComponentName {
+  return (RECIPE_COMPONENTS as readonly string[]).includes(value);
+}
+
+function validateRecipes(raw: unknown, issues: IssueList): ComponentRecipes | undefined {
+  if (!isPlainObject(raw)) {
+    issues.push({
+      severity: "warning",
+      message: `theme group "recipes" is not an object; ignored`,
+    });
+    return undefined;
+  }
+  const out = nullMap<Readonly<Record<string, ComponentRecipe>>>();
+  for (const component of Object.keys(raw)) {
+    if (isForbiddenKey(component)) {
+      issues.push({
+        severity: "warning",
+        message: `theme "recipes": forbidden component "${printableKey(component)}" dropped`,
+      });
+      continue;
+    }
+    if (!isRecipeComponentName(component)) {
+      issues.push({
+        severity: "warning",
+        message: `theme "recipes": unknown component "${printableKey(component)}" dropped`,
+      });
+      continue;
+    }
+    const variantsRaw = raw[component];
+    if (!isPlainObject(variantsRaw)) {
+      issues.push({
+        severity: "warning",
+        message: `theme "recipes.${component}" is not an object; ignored`,
+      });
+      continue;
+    }
+    const variants = nullMap<ComponentRecipe>();
+    for (const variant of Object.keys(variantsRaw)) {
+      if (isForbiddenKey(variant)) {
+        issues.push({
+          severity: "warning",
+          message: `theme "recipes.${component}": forbidden variant "${printableKey(variant)}" dropped`,
+        });
+        continue;
+      }
+      if (!SLOT_NAME_RE.test(variant)) {
+        issues.push({
+          severity: "warning",
+          message: `theme "recipes.${component}": malformed variant "${printableKey(variant)}" dropped`,
+        });
+        continue;
+      }
+      const recipe = validateComponentRecipe(
+        variantsRaw[variant],
+        `theme recipes.${component}.${variant}`,
+        issues,
+      );
+      if (recipe !== undefined) variants[variant] = recipe;
+    }
+    if (Object.keys(variants).length > 0) out[component] = variants;
+  }
+  return Object.keys(out).length > 0 ? (out as ComponentRecipes) : undefined;
+}
+
 /** Parse a safe color value to sRGB channels [0,255]; else undefined. */
 function parseSrgb(value: string): readonly [number, number, number] | undefined {
   if (value.startsWith("#")) {
@@ -508,6 +947,8 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     fontWeight?: Record<string, number>;
     radius?: Record<string, string>;
     ratio?: Record<string, string>;
+    shadow?: Record<string, string>;
+    recipes?: ComponentRecipes;
   } = { name };
 
   if (input.description !== undefined) {
@@ -580,6 +1021,14 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
   if (input.ratio !== undefined) {
     const group = validateGroup(input.ratio, RATIOS, "ratio", handleRatio, issues);
     if (group !== undefined) theme.ratio = group;
+  }
+  if (input.shadow !== undefined) {
+    const group = validateGroup(input.shadow, SHADOWS, "shadow", handleShadow, issues);
+    if (group !== undefined) theme.shadow = group;
+  }
+  if (input.recipes !== undefined) {
+    const recipes = validateRecipes(input.recipes, issues);
+    if (recipes !== undefined) theme.recipes = recipes;
   }
 
   // Contrast is MEASURED, never enforced: a low ratio is a warning, not a refusal.

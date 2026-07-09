@@ -108,13 +108,14 @@ OPENAI_API_KEY=sk-… npx facet-quickstart --guide ./my-page.md
 
 `--assets <dir>` points at a directory of **operator data** that reskins and
 pre-seeds the page. It's read once at boot — there is no hot reload; a registry
-edit needs a restart. Three file kinds are recognized (any subset; a `.json`
+edit needs a restart. Four file kinds are recognized (any subset; a `.json`
 that doesn't match is ignored):
 
 | File | What it is |
 | --- | --- |
 | `*.theme.json` | A named palette/type/scale document — token names mapped to CSS values, including optional `fontFamily` stacks. Offered to the agent by NAME (a `set_theme` tool); **the model never authors the CSS values**. |
 | `*.stamp.json` | A reusable `{ name, description?, slots?, root, nodes }` brick fragment the agent may add with `use_stamp`. The prompt advertises names/slots/descriptions only; the server expands the root-reachable stamp subtree into ordinary patches with fresh ids. |
+| `catalog.json` | A `FacetCatalog` policy document that tells the agent which theme is active, whether theme switching is locked or allowed, which brick types/variants and stamps it may use, and whether primitive fallback is allowed. |
 | `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
 
 A theme document looks like:
@@ -128,8 +129,58 @@ A theme document looks like:
 }
 ```
 
+With no `catalog.json`, quickstart uses `DEFAULT_CATALOG`: a compact product/app
+UI catalog with a locked theme (`default`), all default stamps advertised, the
+built-in high-level brick set and variants, primitive fallback allowed, and the
+authoring order `stamp -> high-level brick -> primitive fallback`.
+
+A catalog document can lock the page to one theme:
+
+```json
+{
+  "name": "launch-catalog",
+  "description": "Launch page UI policy",
+  "theme": { "active": "midnight", "switchPolicy": "locked", "allowed": ["midnight"] },
+  "bricks": [
+    { "type": "section", "variants": ["surface"] },
+    { "type": "card", "variants": ["default", "interactive"] },
+    { "type": "button", "variants": ["primary", "secondary"] }
+  ],
+  "stamps": { "mode": "all" },
+  "primitiveFallback": "allowed",
+  "policy": {
+    "order": ["stamp", "brick", "primitive"],
+    "editBeforeAppend": true,
+    "compactScreens": true,
+    "maxScreenSections": 6
+  }
+}
+```
+
+To explicitly allow theme switching, set `switchPolicy` to `allowed` and list the
+theme names the model may choose with `set_theme`:
+
+```json
+{
+  "name": "switchable-catalog",
+  "theme": {
+    "active": "midnight",
+    "switchPolicy": "allowed",
+    "allowed": ["midnight", "daylight"]
+  },
+  "bricks": [{ "type": "section", "variants": ["surface"] }],
+  "stamps": { "mode": "all" },
+  "primitiveFallback": "allowed",
+  "policy": {
+    "order": ["stamp", "brick", "primitive"],
+    "editBeforeAppend": true,
+    "compactScreens": true
+  }
+}
+```
+
 Every document passes one `@facet/core` validator at boot — `validateTheme`,
-`validateStamp`, `validateTree` respectively:
+`validateStamp`, `validateCatalog`, and `validateTree` respectively:
 
 - A theme value that smuggles CSS (`url()`, `var()`, `expression()`,
   `javascript:`) is refused; dimensions are clamped so a theme can't push
@@ -139,16 +190,25 @@ Every document passes one `@facet/core` validator at boot — `validateTheme`,
   as one concise `[facet-quickstart]` line (never a document value). An initial
   tree that `validateTree` reduces to empty is refused as a seed, so a bad
   `initial.tree.json` falls back to today's model-first paint rather than
-  silently seeding a blank page.
+  silently seeding a blank page. A missing, malformed, or invalid `catalog.json`
+  falls back to `DEFAULT_CATALOG` and logs a concise catalog issue.
 
-The validated theme names + descriptions (never values) and stamp names + slot
-names + descriptions are injected into the agent's prompt; full stamp JSON stays
-server-side and is expanded only when the model calls `use_stamp`. Stamp
-expansion only targets an existing box parent, reports non-fatal sanitization
-issues back to the model, and refuses an expansion that would overflow one patch
-batch. The validated theme map ships inline in the served HTML shell for the
-renderer (no new protocol message). An explicit `--assets` path that doesn't
-exist ⇒ exit 1 naming it.
+The validated theme names + descriptions (never values), catalog policy, and
+stamp names + slot names + descriptions + whitelisted metadata are injected into
+the agent's prompt; full stamp JSON stays server-side and is expanded only when
+the model calls `use_stamp`. Stamp expansion only targets an existing container
+parent, reports non-fatal sanitization issues back to the model, and refuses an
+expansion that would overflow one patch batch. Catalog-guided behavior is also
+enforced by the tool executor: a locked theme rejects `set_theme`, disallowed
+brick variants and stamp names reject before any patch is emitted, and the model
+gets a structured repair observation instead of a silent no-op. The validated
+theme map ships inline in the served HTML shell for the renderer (no new
+protocol message). An explicit `--assets` path that doesn't exist ⇒ exit 1
+naming it.
+
+This catalog is catalog UI policy only. It is not a hosted auth, billing,
+tenant, metering, rate-limit, or spend-control policy; put those controls in the
+platform that wraps quickstart.
 
 ## The served page
 

@@ -1,5 +1,5 @@
 import { isForbiddenKey, printableKey } from "./issues.js";
-import type { FacetAction, FacetNode, NodeId } from "./nodes.js";
+import { isContainer, type FacetAction, type FacetNode, type NodeId } from "./nodes.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { SLOT_MARKER_RE, validateStamp, type FacetStamp } from "./validate.js";
 
@@ -132,7 +132,7 @@ function reachableStamp(stamp: FacetStamp, issues: string[]): FacetStamp {
     const node = stamp.nodes[id];
     if (node === undefined) return;
     reachable.add(id);
-    if (node.type === "box") {
+    if (isContainer(node)) {
       for (const child of node.children) visit(child);
     }
   };
@@ -159,11 +159,13 @@ function reachableStamp(stamp: FacetStamp, issues: string[]): FacetStamp {
   const next: {
     name: string;
     description?: string;
+    metadata?: typeof stamp.metadata;
     slots?: Readonly<Record<string, string>>;
     root: NodeId;
     nodes: Record<NodeId, FacetNode>;
   } = { name: stamp.name, root: stamp.root, nodes };
   if (stamp.description !== undefined) next.description = stamp.description;
+  if (stamp.metadata !== undefined) next.metadata = stamp.metadata;
   if (stamp.slots !== undefined) next.slots = stamp.slots;
   return next;
 }
@@ -176,11 +178,13 @@ function fillStamp(stamp: FacetStamp, params: Readonly<Record<string, unknown>>,
   const filled: {
     name: string;
     description?: string;
+    metadata?: typeof stamp.metadata;
     slots?: Readonly<Record<string, string>>;
     root: NodeId;
     nodes: Record<string, FacetNode>;
   } = { name: stamp.name, root: stamp.root, nodes };
   if (stamp.description !== undefined) filled.description = stamp.description;
+  if (stamp.metadata !== undefined) filled.metadata = stamp.metadata;
   if (stamp.slots !== undefined) filled.slots = stamp.slots;
   return filled;
 }
@@ -215,6 +219,104 @@ function fillNode(
       }
       return next;
     }
+    case "button": {
+      return { ...node, label: fillString(node.label, defaults, params, issues) };
+    }
+    case "section": {
+      const next = { ...node };
+      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+      if (node.eyebrow !== undefined) {
+        next.eyebrow = fillString(node.eyebrow, defaults, params, issues);
+      }
+      if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
+      return next;
+    }
+    case "card": {
+      const next = { ...node };
+      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+      if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
+      return next;
+    }
+    case "tabs": {
+      return {
+        ...node,
+        items: node.items.map((item) => ({
+          label: fillString(item.label, defaults, params, issues),
+          to: fillString(item.to, defaults, params, issues),
+        })),
+      };
+    }
+    case "table": {
+      const next = {
+        ...node,
+        columns: node.columns.map((column) => ({
+          ...column,
+          label: fillString(column.label, defaults, params, issues),
+        })),
+        rows: node.rows.map((row) => {
+          const next: Record<string, string | number | boolean> = {};
+          for (const [key, value] of Object.entries(row)) {
+            next[key] =
+              typeof value === "string" ? fillString(value, defaults, params, issues) : value;
+          }
+          return next;
+        }),
+      };
+      if (node.caption !== undefined) {
+        next.caption = fillString(node.caption, defaults, params, issues);
+      }
+      return next;
+    }
+    case "chart": {
+      const next = { ...node };
+      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+      if (node.labels !== undefined) {
+        next.labels = node.labels.map((label) => fillString(label, defaults, params, issues));
+      }
+      next.series = node.series.map((series) => ({
+        ...series,
+        label: fillString(series.label, defaults, params, issues),
+      }));
+      return next;
+    }
+    case "stat": {
+      const next = {
+        ...node,
+        label: fillString(node.label, defaults, params, issues),
+        value: fillString(node.value, defaults, params, issues),
+      };
+      if (node.delta !== undefined) next.delta = fillString(node.delta, defaults, params, issues);
+      return next;
+    }
+    case "badge":
+      return { ...node, label: fillString(node.label, defaults, params, issues) };
+    case "progress": {
+      const next = { ...node };
+      if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
+      return next;
+    }
+    case "alert": {
+      const next = { ...node, body: fillString(node.body, defaults, params, issues) };
+      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+      return next;
+    }
+    case "list": {
+      return {
+        ...node,
+        items: node.items.map((item) => {
+          const next = { ...item, title: fillString(item.title, defaults, params, issues) };
+          if (item.body !== undefined) next.body = fillString(item.body, defaults, params, issues);
+          return next;
+        }),
+      };
+    }
+    case "divider": {
+      const next = { ...node };
+      if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
+      return next;
+    }
+    default:
+      return node;
   }
 }
 
@@ -267,6 +369,48 @@ function nodeStringLeaves(node: FacetNode): readonly string[] {
       return [node.name, node.label, node.placeholder, ...(node.options ?? [])].filter(
         (value): value is string => value !== undefined,
       );
+    case "button":
+      return [node.label];
+    case "section":
+      return [node.title, node.eyebrow, node.body].filter(
+        (value): value is string => value !== undefined,
+      );
+    case "card":
+      return [node.title, node.body].filter((value): value is string => value !== undefined);
+    case "tabs":
+      return node.items.flatMap((item) => [item.label, item.to]);
+    case "table":
+      return [
+        node.caption,
+        ...node.columns.map((column) => column.label),
+        ...node.rows.flatMap((row) =>
+          Object.values(row).filter((value): value is string => typeof value === "string"),
+        ),
+      ].filter((value): value is string => value !== undefined);
+    case "chart":
+      return [
+        node.title,
+        ...(node.labels ?? []),
+        ...node.series.map((series) => series.label),
+      ].filter((value): value is string => value !== undefined);
+    case "stat":
+      return [node.label, node.value, node.delta].filter(
+        (value): value is string => value !== undefined,
+      );
+    case "badge":
+      return [node.label];
+    case "progress":
+      return [node.label].filter((value): value is string => value !== undefined);
+    case "alert":
+      return [node.title, node.body].filter((value): value is string => value !== undefined);
+    case "list":
+      return node.items.flatMap((item) =>
+        [item.title, item.body].filter((value): value is string => value !== undefined),
+      );
+    case "divider":
+      return [node.label].filter((value): value is string => value !== undefined);
+    default:
+      return [];
   }
 }
 
@@ -357,6 +501,42 @@ function remapNode(node: FacetNode, id: NodeId, ids: Readonly<Record<NodeId, Nod
     case "media":
       return { ...node, id };
     case "field":
+      return { ...node, id };
+    case "button": {
+      const next = { ...node, id };
+      const onPress = node.onPress === undefined ? undefined : remapAction(node.onPress, ids);
+      if (onPress !== undefined) next.onPress = onPress;
+      else delete next.onPress;
+      const onHold = node.onHold === undefined ? undefined : remapAction(node.onHold, ids);
+      if (onHold !== undefined) next.onHold = onHold;
+      else delete next.onHold;
+      return next;
+    }
+    case "section":
+      return {
+        ...node,
+        id,
+        children: node.children
+          .map((child) => ids[child])
+          .filter((child): child is string => child !== undefined),
+      };
+    case "card": {
+      const next = {
+        ...node,
+        id,
+        children: node.children
+          .map((child) => ids[child])
+          .filter((child): child is string => child !== undefined),
+      };
+      const onPress = node.onPress === undefined ? undefined : remapAction(node.onPress, ids);
+      if (onPress !== undefined) next.onPress = onPress;
+      else delete next.onPress;
+      const onHold = node.onHold === undefined ? undefined : remapAction(node.onHold, ids);
+      if (onHold !== undefined) next.onHold = onHold;
+      else delete next.onHold;
+      return next;
+    }
+    default:
       return { ...node, id };
   }
 }

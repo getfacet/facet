@@ -1,14 +1,16 @@
 import {
+  validateCatalog,
   treeHasContent,
   validateStamp,
   validateTheme,
   validateTree,
+  type FacetCatalog,
   type FacetSession,
   type FacetStamp,
   type FacetTheme,
   type FacetTree,
 } from "@facet/core";
-import { DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
 import { sessionKey, type StageStore } from "./stage-store.js";
 
 /** Hygiene cap on `withInitialStage`'s armed-but-unconsumed seed keys — mirrors
@@ -20,6 +22,52 @@ const MAX_ASSET_DOCUMENTS = 1024;
 const MAX_ASSET_ISSUES = 64;
 const MAX_ASSET_ISSUE_CHARS = 200;
 const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
+
+function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
+  const theme: {
+    active?: string;
+    switchPolicy: "locked" | "allowed";
+    allowed?: readonly string[];
+  } = {
+    switchPolicy: catalog.theme.switchPolicy,
+  };
+  if (catalog.theme.active !== undefined) theme.active = catalog.theme.active;
+  if (catalog.theme.allowed !== undefined) theme.allowed = [...catalog.theme.allowed];
+  const bricks = catalog.bricks.map((brick) => {
+    const clonedBrick: {
+      type: FacetCatalog["bricks"][number]["type"];
+      variants?: readonly string[];
+      guidance?: string;
+    } = { type: brick.type };
+    if (brick.variants !== undefined) clonedBrick.variants = [...brick.variants];
+    if (brick.guidance !== undefined) clonedBrick.guidance = brick.guidance;
+    return clonedBrick;
+  });
+  const cloned: {
+    name: string;
+    description?: string;
+    theme: FacetCatalog["theme"];
+    bricks: FacetCatalog["bricks"];
+    stamps: FacetCatalog["stamps"];
+    primitiveFallback: FacetCatalog["primitiveFallback"];
+    policy: FacetCatalog["policy"];
+  } = {
+    name: catalog.name,
+    theme,
+    bricks,
+    stamps:
+      catalog.stamps.mode === "all"
+        ? { mode: "all" }
+        : { mode: "allow", names: [...catalog.stamps.names] },
+    primitiveFallback: catalog.primitiveFallback,
+    policy: {
+      ...catalog.policy,
+      order: [...catalog.policy.order] as FacetCatalog["policy"]["order"],
+    },
+  };
+  if (catalog.description !== undefined) cloned.description = catalog.description;
+  return cloned;
+}
 
 /**
  * The operator's per-agent asset library — themes, stamps, and an optional
@@ -33,6 +81,7 @@ const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
 export interface AssetDocuments {
   readonly themes: readonly unknown[];
   readonly stamps: readonly unknown[];
+  readonly catalog?: unknown;
   readonly initialTree?: unknown;
   /** Backend-level problems (unreadable file, bad JSON) — surfaced, never thrown. */
   readonly issues?: readonly string[];
@@ -54,11 +103,29 @@ export class MemoryAssets implements AssetsStore {
   }
 }
 
-type AssetField = "issues" | "themes" | "stamps" | "initialTree";
+type AssetField = "issues" | "themes" | "stamps" | "catalog" | "initialTree";
 type FieldRead = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+function isObjectRecord(value: unknown): value is Record<PropertyKey, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCompleteCatalogDocument(value: unknown): boolean {
+  try {
+    if (!isObjectRecord(value)) return false;
+    return (
+      isObjectRecord(value.theme) &&
+      isAssetArray(value.bricks) &&
+      isObjectRecord(value.stamps) &&
+      isObjectRecord(value.policy)
+    );
+  } catch {
+    return false;
+  }
 }
 
 function isAssetArray(value: unknown): value is readonly unknown[] {
@@ -183,6 +250,7 @@ function readAssetArrayItem(
 export interface LoadedAssets {
   readonly themes: readonly FacetTheme[];
   readonly stamps: readonly FacetStamp[];
+  readonly catalog: FacetCatalog;
   readonly initialTree?: FacetTree;
   readonly issues: readonly string[];
 }
@@ -260,6 +328,9 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   if (rawStamps.ok && !isAssetArray(rawStamps.value)) {
     pushAssetIssue(issues, "assets `stamps` was not an array — ignored");
   }
+  const rawCatalog = readAssetField(docs, "catalog", issues);
+  const catalogInput =
+    rawCatalog.ok && rawCatalog.value !== undefined ? rawCatalog.value : DEFAULT_CATALOG;
 
   const themes: FacetTheme[] = [];
   const seenThemeNames = new Set<string>();
@@ -379,6 +450,30 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
     if (raw.ok) loadStamp(raw.value, false);
   }
 
+  let catalog: FacetCatalog = cloneCatalog(DEFAULT_CATALOG);
+  try {
+    const result = validateCatalog(catalogInput);
+    catalog = result.catalog;
+    for (const note of result.issues) {
+      pushAssetIssue(issues, `catalog: ${note}`);
+    }
+    if (catalogInput !== DEFAULT_CATALOG && !isCompleteCatalogDocument(catalogInput)) {
+      pushAssetIssue(issues, "catalog: incomplete catalog document; using bundled default catalog");
+      catalog = cloneCatalog(DEFAULT_CATALOG);
+    } else if (
+      catalogInput !== DEFAULT_CATALOG &&
+      isRecord(catalogInput) &&
+      catalogInput.name !== undefined &&
+      catalog.name === DEFAULT_CATALOG.name &&
+      catalogInput.name !== DEFAULT_CATALOG.name
+    ) {
+      catalog = cloneCatalog(DEFAULT_CATALOG);
+    }
+  } catch {
+    pushAssetIssue(issues, "catalog skipped: validation threw; using default catalog");
+    catalog = cloneCatalog(DEFAULT_CATALOG);
+  }
+
   let rawInitialTree: unknown;
   let hasInitialTree = false;
   const initialTreeRead = readAssetField(docs, "initialTree", issues);
@@ -412,6 +507,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   const loaded: { -readonly [K in keyof LoadedAssets]: LoadedAssets[K] } = {
     themes,
     stamps,
+    catalog,
     issues,
   };
   if (initialTree !== undefined) loaded.initialTree = initialTree;
@@ -421,10 +517,10 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
 /**
  * A tree worth seeding a fresh session with — it already shows something.
  * Delegates to core's `treeHasContent`, the single canonical "shows something"
- * predicate (the render root resolves to a box with ≥ 1 child, or `screens` is
- * non-empty). An empty root box (EMPTY_TREE, the shape `validateTree` falls back
- * to on garbage) is NOT seedable — refusing it here is what closes the
- * EMPTY_TREE trap in `loadAssets`.
+ * predicate (the initial render root has a visible, renderable descendant).
+ * Empty containers, blank entry screens, and empty table/chart/tabs/list leaves
+ * are NOT seedable — refusing them here is what closes the EMPTY_TREE trap in
+ * `loadAssets`.
  */
 export function isSeedableTree(tree: FacetTree): boolean {
   return treeHasContent(tree);

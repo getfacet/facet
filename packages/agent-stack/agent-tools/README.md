@@ -20,8 +20,9 @@ the safe Facet stage tool surface.
 
 This package ships the reusable stage-tool surface used by the reference agent:
 canonical tool specs, shared tool-call/result types, a provider-agnostic
-executor, stage-shadow folding/summaries, a buffered helper for streamed tool
-batches, and reusable LLM-facing Facet authoring guidance.
+executor, catalog-aware enforcement, stage-shadow folding/summaries, a buffered
+helper for streamed tool batches, and reusable LLM-facing Facet authoring
+guidance.
 
 ```ts
 import {
@@ -42,8 +43,8 @@ authors without pulling in the reference agent or a Node-only provider stack.
 `buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
 most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
 from `@facet/core`, compact page UX guidance, edit-before-append rules, the
-tool playbook, the structured tool-result contract, and optional theme/stamp
-metadata.
+tool playbook, the structured tool-result contract, and optional theme, catalog,
+and stamp metadata.
 
 The prompt kit is not a complete agent. Your loop still owns the page brief,
 business logic, domain tools, provider messages, history, current event,
@@ -54,14 +55,53 @@ const system = buildFacetAgentSystemPrompt({
   pageBrief: "# Pricing concierge\n\nHelp each visitor compare plans.",
   assets: {
     themes,
+    catalog,
     stamps,
   },
 });
 ```
 
-Asset sections expose only theme/stamp names, descriptions, and stamp slot names
-so the model can choose `set_theme` or `use_stamp` without seeing CSS values or
-stamp node JSON.
+Asset sections expose only prompt-safe metadata: theme names/descriptions,
+catalog policy, stamp names/descriptions, stamp slot names, and whitelisted
+stamp metadata such as category, use/avoid guidance, tags, variants,
+repeatability, preferred parent, composition, data requirements, and follow-up
+edit hints. They never expose theme CSS values, stamp node JSON, slot default
+values, provider keys, visitor ids, secrets, or unknown asset fields.
+
+The catalog prompt section is active UI authoring policy. It tells the model the
+active theme, whether theme switching is a locked theme or explicitly allowed,
+which brick types and variants are allowed, whether all stamps or only named
+stamps may be used, whether primitive fallback is allowed, and the preferred
+order: `stamp -> high-level brick -> primitive fallback`.
+
+Catalog policy is deliberately narrower than hosted platform policy. It guides
+and gates the UI the model may author; it does not define tenant isolation,
+authentication, billing, usage metering, rate limits, spend caps, or operational
+admin policy.
+
+## Catalog-Aware Enforcement
+
+Pass the same catalog into `executeStageTool` through `StageToolAssets`:
+
+```ts
+const result = executeStageTool(call, {
+  shadow,
+  assets: { themes, catalog, stamps },
+});
+```
+
+The executor enforces catalog policy before it emits patches:
+
+- `render_page`, `append_node`, and `set_node` reject disallowed node types and
+  disallowed variants.
+- `use_stamp` rejects stamp names outside an allow-list catalog before expansion.
+- `set_theme` rejects locked theme changes and names outside an allowed theme
+  list.
+
+These are catalog_policy rejections: the structured observation has
+`outcome: "rejected"`, `applied: false`, `patch_count: 0`, a catalog-policy
+message, and a `next_action` telling the model to use an allowed stamp, brick,
+variant, or theme. Treat them as repair instructions, not as visible success.
 
 ## LLM-facing observations
 

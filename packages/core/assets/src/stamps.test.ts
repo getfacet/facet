@@ -28,6 +28,31 @@ describe("DEFAULT_STAMPS", () => {
     expect(new Set(names).size).toBe(names.length);
   });
 
+  it("metadata covers practical catalog-guided stamp patterns", () => {
+    const names = new Set(DEFAULT_STAMPS.map((stamp) => stamp.name));
+    for (const expected of [
+      "hero",
+      "cta-button",
+      "pricing-section",
+      "faq-section",
+      "dashboard-summary",
+      "settings-panel",
+      "feature-grid",
+      "empty-state",
+      "support-triage",
+      "chart-table-view",
+    ]) {
+      expect(names.has(expected), expected).toBe(true);
+    }
+
+    for (const stamp of DEFAULT_STAMPS) {
+      expect(stamp.metadata?.category, stamp.name).toBeDefined();
+      expect(stamp.metadata?.useWhen, stamp.name).toBeDefined();
+      expect(stamp.metadata?.tags?.length, stamp.name).toBeGreaterThan(0);
+      expect(JSON.stringify(stamp.metadata), stamp.name).not.toContain('"nodes"');
+    }
+  });
+
   it("declares slots with whole-value markers and each stamp is fillable", () => {
     for (const stamp of DEFAULT_STAMPS) {
       expect(Object.keys(stamp.slots ?? {}), stamp.name).not.toEqual([]);

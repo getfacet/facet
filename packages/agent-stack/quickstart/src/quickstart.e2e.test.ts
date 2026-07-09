@@ -11,28 +11,189 @@
  * (parseBlock/drainFrames/readEvents) — copied locally, never imported across
  * packages from a test.
  */
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { connect } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FacetTheme, FacetTree } from "@facet/core";
+import type { FacetCatalog, FacetTheme, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { MemorySink } from "@facet/runtime";
 import * as referenceAgent from "@facet/reference-agent";
 import { createStubAgent } from "@facet/reference-agent";
 import * as localAgent from "./agent.js";
+import { runCli, type RunCliHooks } from "./cli.js";
 import * as localPrompt from "./prompt.js";
 import * as localProvider from "./provider.js";
 import { startQuickstart, type QuickstartServerOptions, type RunningQuickstart } from "./server.js";
 import * as localStub from "./stub.js";
 
 const FIXTURE_BUNDLE = `console.log("facet quickstart fixture bundle");\n`;
+const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const TEST_PROVIDER_ENV = { OPENAI_API_KEY: "sk-test" } as const;
+
+const CATALOG_E2E: FacetCatalog = {
+  name: "quickstart-catalog",
+  description: "Quickstart catalog policy",
+  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+  bricks: [
+    { type: "section", variants: ["surface"] },
+    { type: "card", variants: ["interactive"] },
+    { type: "button", variants: ["primary"] },
+    { type: "stat" },
+  ],
+  stamps: { mode: "all" },
+  primitiveFallback: "allowed",
+  policy: {
+    order: ["stamp", "brick", "primitive"],
+    editBeforeAppend: true,
+    compactScreens: true,
+    maxScreenSections: 3,
+  },
+};
+
+const CATALOG_DASHBOARD_TREE: FacetTree = {
+  root: "catalog-dashboard",
+  nodes: {
+    "catalog-dashboard": {
+      id: "catalog-dashboard",
+      type: "section",
+      title: "Catalog dashboard",
+      eyebrow: "Operator catalog",
+      variant: "surface",
+      children: ["catalog-arr", "catalog-pricing"],
+    },
+    "catalog-arr": {
+      id: "catalog-arr",
+      type: "stat",
+      label: "ARR",
+      value: "$1.2M",
+      delta: "+18%",
+      tone: "success",
+    },
+    "catalog-pricing": {
+      id: "catalog-pricing",
+      type: "card",
+      title: "Pricing path",
+      body: "Route qualified teams to the Pro plan.",
+      variant: "interactive",
+      children: ["catalog-pricing-cta"],
+    },
+    "catalog-pricing-cta": {
+      id: "catalog-pricing-cta",
+      type: "button",
+      label: "View pricing",
+      variant: "primary",
+      onPress: { kind: "agent", name: "view_pricing", payload: { plan: "pro" } },
+    },
+  },
+};
+
+const CATALOG_PRICING_TREE: FacetTree = {
+  root: "catalog-pricing-screen",
+  nodes: {
+    "catalog-pricing-screen": {
+      id: "catalog-pricing-screen",
+      type: "section",
+      title: "Catalog pricing",
+      variant: "surface",
+      children: ["catalog-pro-plan", "catalog-pro-cta"],
+    },
+    "catalog-pro-plan": {
+      id: "catalog-pro-plan",
+      type: "card",
+      title: "Pro",
+      body: "$49 per seat, built for growing teams.",
+      variant: "interactive",
+      children: [],
+    },
+    "catalog-pro-cta": {
+      id: "catalog-pro-cta",
+      type: "button",
+      label: "Start Pro",
+      variant: "primary",
+      onPress: { kind: "agent", name: "start_plan", payload: { plan: "pro" } },
+    },
+  },
+};
 
 /** One parsed SSE frame: its optional `id:` line and its decoded `data:` payload. */
 interface SseFrame {
   readonly id?: string;
   readonly data: unknown;
+}
+
+interface Captured {
+  readonly out: string[];
+  readonly err: string[];
+  readonly log: (line: string) => void;
+  readonly error: (line: string) => void;
+}
+
+interface MockOpenAiToolCall {
+  readonly name: string;
+  readonly input: unknown;
+}
+
+function capture(): Captured {
+  const out: string[] = [];
+  const err: string[] = [];
+  return { out, err, log: (line) => out.push(line), error: (line) => err.push(line) };
+}
+
+function mockCall(name: string, input: unknown): MockOpenAiToolCall {
+  return { name, input };
+}
+
+function requestUrl(input: Parameters<typeof fetch>[0]): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+function parseFetchBody(init: Parameters<typeof fetch>[1] | undefined): unknown {
+  if (typeof init?.body !== "string") return {};
+  return JSON.parse(init.body) as unknown;
+}
+
+function openAiResponse(toolCalls: readonly MockOpenAiToolCall[]): Response {
+  const message =
+    toolCalls.length === 0
+      ? { content: "" }
+      : {
+          content: null,
+          tool_calls: toolCalls.map((call, index) => ({
+            id: `catalog-call-${String(index)}`,
+            type: "function",
+            function: { name: call.name, arguments: JSON.stringify(call.input) },
+          })),
+        };
+  return new Response(JSON.stringify({ choices: [{ message }] }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function installOpenAiMock(steps: readonly (readonly MockOpenAiToolCall[])[]): {
+  readonly bodies: unknown[];
+  restore(): void;
+} {
+  const realFetch = globalThis.fetch.bind(globalThis);
+  const bodies: unknown[] = [];
+  let next = 0;
+  const spy = vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    if (requestUrl(input) === OPENAI_URL) {
+      bodies.push(parseFetchBody(init));
+      const step = steps[Math.min(next, steps.length - 1)] ?? [];
+      next += 1;
+      return Promise.resolve(openAiResponse(step));
+    }
+    return realFetch(input, init);
+  });
+  return {
+    bodies,
+    restore: () => spy.mockRestore(),
+  };
 }
 
 /** Parse a `\n\n`-delimited SSE block into its id + data, or undefined for a
@@ -176,6 +337,31 @@ async function boot(overrides: Partial<QuickstartServerOptions> = {}): Promise<R
     }
   }
   throw new Error("could not boot startQuickstart on a free port");
+}
+
+async function bootCli(
+  extraArgs: readonly string[],
+  extraHooks: Partial<RunCliHooks> = {},
+): Promise<{ captured: Captured; running: RunningQuickstart }> {
+  let lastOutput = "";
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const port = 20_000 + Math.floor(Math.random() * 20_000);
+    const captured = capture();
+    let running: RunningQuickstart | undefined;
+    const code = await runCli(["--port", String(port), ...extraArgs], TEST_PROVIDER_ENV, {
+      ...extraHooks,
+      log: captured.log,
+      error: captured.error,
+      onStarted: (handle) => {
+        running = handle;
+        extraHooks.onStarted?.(handle);
+      },
+    });
+    if (code === 0 && running !== undefined) return { captured, running };
+    await running?.close();
+    lastOutput = [...captured.err, ...captured.out].join("\n");
+  }
+  throw new Error(`could not boot the quickstart CLI on a free port\n${lastOutput}`);
 }
 
 let fixtureDir: string;
@@ -564,6 +750,114 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
     const betaText = JSON.stringify(betaSnapshot);
     expect(betaText).toContain("beta-only");
     expect(betaText).not.toContain("alpha-only");
+  });
+});
+
+describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
+  it("runCli loads catalog.json and drives a catalog-guided dashboard/pricing path", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
+    const openAi = installOpenAiMock([
+      [
+        mockCall("set_theme", { name: "midnight" }),
+        mockCall("render_page", { tree: CATALOG_DASHBOARD_TREE }),
+        mockCall("say", { text: "catalog dashboard ready" }),
+      ],
+      [],
+    ]);
+    let running: RunningQuickstart | undefined;
+    try {
+      await writeFile(join(dir, "catalog.json"), JSON.stringify(CATALOG_E2E), "utf8");
+      const booted = await bootCli(["--assets", dir]);
+      running = booted.running;
+
+      const visitorId = "e2e-catalog-dashboard";
+      const stream = await openStream(running.url, visitorId);
+      try {
+        await stream.next(1); // reset
+        const post = await postEvent(running.url, visitorId, {
+          kind: "message",
+          text: "Build the catalog dashboard and pricing path",
+        });
+        expect(post.status).toBe(202);
+
+        const frames = await stream.next(2);
+        expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "say"]);
+        expect(sayTexts(frames)).toEqual(["catalog dashboard ready"]);
+
+        const providerRequest = JSON.stringify(openAi.bodies[0]);
+        expect(providerRequest).toContain("CATALOG");
+        expect(providerRequest).toContain("quickstart-catalog");
+        expect(providerRequest).toContain("policy order: stamp -> brick -> primitive");
+
+        const patchText = JSON.stringify(frames[0]?.data);
+        expect(patchText).toContain("catalog-dashboard");
+        expect(patchText).toContain("catalog-pricing");
+        expect(patchText).toContain('"type":"section"');
+        expect(patchText).toContain('"type":"button"');
+        expect(patchText).not.toContain("midnight");
+        expect(booted.captured.err.join("\n")).not.toContain("turn failed");
+      } finally {
+        await stream.close();
+      }
+    } finally {
+      await running?.close();
+      openAi.restore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("serializes rapid catalog-guided visitor events without throwing or drifting stage output", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
+    const openAi = installOpenAiMock([
+      [
+        mockCall("set_theme", { name: "midnight" }),
+        mockCall("render_page", { tree: CATALOG_DASHBOARD_TREE }),
+        mockCall("say", { text: "catalog dashboard ready" }),
+      ],
+      [],
+      [
+        mockCall("set_theme", { name: "midnight" }),
+        mockCall("render_page", { tree: CATALOG_PRICING_TREE }),
+        mockCall("say", { text: "catalog pricing ready" }),
+      ],
+      [],
+    ]);
+    let running: RunningQuickstart | undefined;
+    try {
+      await writeFile(join(dir, "catalog.json"), JSON.stringify(CATALOG_E2E), "utf8");
+      const booted = await bootCli(["--assets", dir]);
+      running = booted.running;
+
+      const visitorId = "e2e-catalog-rapid";
+      const stream = await openStream(running.url, visitorId);
+      try {
+        await stream.next(1); // reset
+        const [dashboardPost, pricingPost] = await Promise.all([
+          postEvent(running.url, visitorId, { kind: "message", text: "catalog dashboard" }),
+          postEvent(running.url, visitorId, { kind: "message", text: "catalog pricing" }),
+        ]);
+        expect([dashboardPost.status, pricingPost.status]).toEqual([202, 202]);
+
+        const frames = await stream.next(4);
+        expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "say", "patch", "say"]);
+        expect(sayTexts(frames)).toEqual(["catalog dashboard ready", "catalog pricing ready"]);
+
+        const frameText = JSON.stringify(frames);
+        expect(frameText).toContain("catalog-dashboard");
+        expect(frameText).toContain("catalog-pricing-screen");
+        expect(frameText).not.toContain("midnight");
+        for (const body of openAi.bodies) {
+          expect(JSON.stringify(body)).toContain("quickstart-catalog");
+        }
+        expect(booted.captured.err.join("\n")).not.toContain("turn failed");
+      } finally {
+        await stream.close();
+      }
+    } finally {
+      await running?.close();
+      openAi.restore();
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

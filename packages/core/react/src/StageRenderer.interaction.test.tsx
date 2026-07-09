@@ -305,6 +305,72 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
   });
 });
 
+describe("StageRenderer high-level button and tabs (jsdom)", () => {
+  const highLevelScreensTree = (): FacetTree => ({
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "section", children: ["tabs", "rootText"] },
+      rootText: { id: "rootText", type: "text", value: "plain root content" },
+      home: { id: "home", type: "section", children: ["tabs", "homeText", "refresh", "locked"] },
+      tabs: {
+        id: "tabs",
+        type: "tabs",
+        items: [
+          { label: "Home", to: "home" },
+          { label: "About", to: "about" },
+        ],
+      },
+      homeText: { id: "homeText", type: "text", value: "home content" },
+      refresh: {
+        id: "refresh",
+        type: "button",
+        label: "Refresh",
+        onPress: { kind: "agent", name: "refresh", payload: { id: "7" } },
+      },
+      locked: {
+        id: "locked",
+        type: "button",
+        label: "Locked",
+        disabled: true,
+        onPress: { kind: "agent", name: "locked" },
+      },
+      about: { id: "about", type: "section", children: ["tabs", "aboutText"] },
+      aboutText: { id: "aboutText", type: "text", value: "about content" },
+    },
+    screens: { home: "home", about: "about" },
+    entry: "home",
+  });
+
+  it("high-level button fires agent actions and disabled buttons stay inert", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={highLevelScreensTree()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    fireEvent.click(screen.getByRole("button", { name: "Locked" }));
+
+    expect(onAction).toHaveBeenCalledTimes(1);
+    expect(onAction).toHaveBeenCalledWith({
+      kind: "agent",
+      name: "refresh",
+      payload: { id: "7" },
+    });
+  });
+
+  it("high-level tabs navigate locally without stage writes", () => {
+    const onAction = vi.fn();
+    render(<StageRenderer onAction={onAction} tree={highLevelScreensTree()} />);
+
+    expect(screen.getByText("home content")).toBeTruthy();
+    expect(screen.queryByText("about content")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+
+    expect(screen.getByText("about content")).toBeTruthy();
+    expect(screen.queryByText("home content")).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+});
+
 describe("StageRenderer toggle (jsdom)", () => {
   it("toggle hides then shows a visible panel across two clicks, browser-local", () => {
     const onAction = vi.fn();
@@ -539,6 +605,41 @@ describe("StageRenderer collect (jsdom)", () => {
     expect(onAction).toHaveBeenCalledWith(
       { kind: "agent", name: "submit" },
       { name: "Ada", email: "ada@lovelace.dev" },
+    );
+  });
+
+  it("collects fields from high-level section/card targets via a high-level button", () => {
+    const onAction = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        tree={tree({
+          root: { id: "root", type: "section", children: ["card", "submit"] },
+          card: {
+            id: "card",
+            type: "card",
+            title: "Contact",
+            children: ["emailF"],
+          },
+          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          submit: {
+            id: "submit",
+            type: "button",
+            label: "Send",
+            onPress: { kind: "agent", name: "submit", collect: "card" },
+          },
+        })}
+      />,
+    );
+
+    fireEvent.change(screen.getByPlaceholderText("your email"), {
+      target: { value: "ada@lovelace.dev" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    expect(onAction).toHaveBeenCalledWith(
+      { kind: "agent", name: "submit" },
+      { email: "ada@lovelace.dev" },
     );
   });
 
@@ -896,6 +997,37 @@ describe("StageRenderer collect (jsdom)", () => {
     const key = Object.keys(fields)[0] ?? "";
     expect(key.length).toBe(MAX_FIELD_VALUE_CHARS); // capped, so isFieldsRecord accepts it
     expect(fields[key]).toBe("v");
+  });
+
+  it("keeps long radio field DOM names distinct past the label cap", () => {
+    const leftName = `${"n".repeat(220)}left`;
+    const rightName = `${"n".repeat(220)}right`;
+    render(
+      <StageRenderer
+        tree={tree({
+          root: { id: "root", type: "box", children: ["left", "right"] },
+          left: {
+            id: "left",
+            type: "field",
+            name: leftName,
+            input: "radio",
+            options: ["Yes"],
+          },
+          right: {
+            id: "right",
+            type: "field",
+            name: rightName,
+            input: "radio",
+            options: ["Yes"],
+          },
+        })}
+      />,
+    );
+
+    const radios = screen.getAllByRole("radio");
+    expect(radios).toHaveLength(2);
+    expect(radios[0]?.getAttribute("name")).toBe(leftName);
+    expect(radios[1]?.getAttribute("name")).toBe(rightName);
   });
 
   it("terminates on a cyclic collect subtree and keeps the fields it reached", () => {

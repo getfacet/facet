@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
 import type {
   ClientEvent,
+  FacetCatalog,
   FacetSession,
   FacetStamp,
   FacetTheme,
@@ -69,6 +70,35 @@ function stampSectionOf(system: string): string {
   return start >= 0 && end > start ? system.slice(start, end) : "";
 }
 
+function catalogSectionOf(system: string): string {
+  const start = system.indexOf("CATALOG");
+  const nextSections = ["STAMPS", "PAGE BRIEF"]
+    .map((heading) => system.indexOf(heading, start + 1))
+    .filter((index) => index > start);
+  const end = nextSections.length > 0 ? Math.min(...nextSections) : system.length;
+  return start >= 0 ? system.slice(start, end) : "";
+}
+
+function catalogFixture(): FacetCatalog {
+  return {
+    name: "reference-catalog",
+    description: "Reference agent catalog policy",
+    theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+    bricks: [
+      { type: "section", variants: ["surface"], guidance: "Use sections for major groups." },
+      { type: "button", variants: ["primary"] },
+    ],
+    stamps: { mode: "allow", names: ["approved"] },
+    primitiveFallback: "allowed",
+    policy: {
+      order: ["stamp", "brick", "primitive"],
+      editBeforeAppend: true,
+      compactScreens: true,
+      maxScreenSections: 4,
+    },
+  };
+}
+
 describe("buildSystem", () => {
   it("contains STAGE_SPEC verbatim, the tool workflow, and the guide under PAGE BRIEF", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
@@ -79,8 +109,8 @@ describe("buildSystem", () => {
     expect(system).toContain(FACET_PAGE_EXPERIENCE_PROMPT);
     expect(system).toContain(FACET_STATE_EDITING_PROMPT);
     expect(system).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
-    expect(system).toContain("Build a compact UX");
-    expect(system).toContain("Use an edit-before-append strategy");
+    expect(system).toContain("Default to a compact UX");
+    expect(system).toContain("Default to an edit-before-append strategy");
     expect(system).toContain("render_page: first paint");
     expect(system).toMatch(/reuse .*node ids/i);
   });
@@ -122,7 +152,7 @@ describe("buildSystem", () => {
     expect(system).not.toContain("(box, text, image, field)");
 
     const tools = JSON.stringify(TOOLS);
-    expect(tools).toContain("box | text | media | field");
+    expect(tools).toContain("box, text, media, field");
     expect(tools).not.toContain("box | text | image | field");
   });
 
@@ -213,6 +243,34 @@ describe("buildSystem", () => {
     } finally {
       warnSpy.mockRestore();
     }
+  });
+
+  it("catalog policy guidance appears in the reference prompt without leaking internals", () => {
+    const system = buildSystem(DEFAULT_GUIDE, {
+      themes: [
+        {
+          name: "default",
+          description: "Default theme",
+          color: { bg: "#ffffff", fg: "#111111" },
+        },
+      ],
+      stamps: [],
+      catalog: catalogFixture(),
+    });
+    const catalogSection = catalogSectionOf(system);
+
+    expect(catalogSection).toContain("CATALOG");
+    expect(catalogSection).toContain("reference-catalog");
+    expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
+    expect(catalogSection).toContain("locked theme guidance");
+    expect(catalogSection).toContain("allowed bricks: section variants: surface");
+    expect(catalogSection).toContain("button variants: primary");
+    expect(catalogSection).toContain("stamp policy: allow approved");
+    expect(catalogSection).toContain("primitiveFallback: allowed");
+    expect(catalogSection).toContain("policy order: stamp -> brick -> primitive");
+    expect(catalogSection).not.toContain("#ffffff");
+    expect(catalogSection).not.toContain("#111111");
+    expect(catalogSection).not.toContain('"nodes"');
   });
 });
 
@@ -626,5 +684,140 @@ describe("buildInitialMessages", () => {
     expect(nodeLines).toHaveLength(80);
     expect(nodeLines[0]).toContain("node-000");
     expect(nodeLines.at(-1)).toContain("node-079");
+  });
+
+  it("stage summary covers high-level catalog nodes without full JSON", () => {
+    const stage: FacetTree = {
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: [
+            "section",
+            "tabs",
+            "table",
+            "chart",
+            "badge",
+            "progress",
+            "alert",
+            "list",
+            "divider",
+          ],
+        },
+        section: {
+          id: "section",
+          type: "section",
+          title: "Overview",
+          eyebrow: "RAW_JSON_SENTINEL_EYEBROW",
+          body: "RAW_JSON_SENTINEL_SECTION_BODY",
+          variant: "surface",
+          children: ["card", "button"],
+        },
+        card: {
+          id: "card",
+          type: "card",
+          title: "Metrics",
+          body: "RAW_JSON_SENTINEL_CARD_BODY",
+          variant: "surface",
+          tone: "accent",
+          children: ["stat"],
+        },
+        button: {
+          id: "button",
+          type: "button",
+          label: "RAW_JSON_SENTINEL button",
+          variant: "primary",
+          tone: "success",
+          disabled: true,
+        },
+        tabs: {
+          id: "tabs",
+          type: "tabs",
+          variant: "pills",
+          items: [
+            { label: "Home", to: "home" },
+            { label: "Metrics", to: "metrics" },
+          ],
+        },
+        table: {
+          id: "table",
+          type: "table",
+          caption: "RAW_JSON_SENTINEL_TABLE",
+          variant: "compact",
+          columns: [
+            { key: "plan", label: "Plan" },
+            { key: "price", label: "Price" },
+          ],
+          rows: [
+            { plan: "Starter", price: "$19" },
+            { plan: "Pro", price: "$49" },
+          ],
+        },
+        chart: {
+          id: "chart",
+          type: "chart",
+          kind: "bar",
+          title: "RAW_JSON_SENTINEL_CHART",
+          variant: "mini",
+          series: [{ label: "Revenue", values: [1, 2, 3] }],
+          labels: ["Q1", "Q2", "Q3"],
+        },
+        stat: {
+          id: "stat",
+          type: "stat",
+          label: "Revenue",
+          value: "$42",
+          delta: "+5%",
+          tone: "success",
+        },
+        badge: { id: "badge", type: "badge", label: "Live", tone: "info" },
+        progress: {
+          id: "progress",
+          type: "progress",
+          label: "Completion",
+          value: 45,
+          tone: "accent",
+        },
+        alert: {
+          id: "alert",
+          type: "alert",
+          title: "Heads up",
+          body: "RAW_JSON_SENTINEL_ALERT",
+          tone: "warning",
+        },
+        list: {
+          id: "list",
+          type: "list",
+          variant: "checks",
+          items: [{ title: "One" }, { title: "Two", body: "Second" }],
+        },
+        divider: { id: "divider", type: "divider", label: "Details" },
+      },
+      screens: { home: "root" },
+      entry: "home",
+    };
+
+    const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 0, maxSummaryNodes: 20 });
+
+    expect(prompt).toContain("CURRENT STAGE SUMMARY");
+    expect(prompt).toContain("- section: type=section children=2");
+    expect(prompt).toContain("titleChars=8");
+    expect(prompt).toContain("- card: type=card children=1");
+    expect(prompt).toContain("tone=accent");
+    expect(prompt).toContain("- button: type=button labelChars=24");
+    expect(prompt).toContain("disabled=true");
+    expect(prompt).toContain("- tabs: type=tabs items=2");
+    expect(prompt).toContain("- table: type=table columns=2 rows=2");
+    expect(prompt).toContain("- chart: type=chart kind=bar series=1 points=3");
+    expect(prompt).toContain("- stat: type=stat labelChars=7 valueChars=3");
+    expect(prompt).toContain("- badge: type=badge labelChars=4");
+    expect(prompt).toContain("- progress: type=progress value=45");
+    expect(prompt).toContain("- alert: type=alert titleChars=8 bodyChars=23");
+    expect(prompt).toContain("- list: type=list items=2");
+    expect(prompt).toContain("- divider: type=divider labelChars=7");
+    expect(prompt).not.toContain("RAW_JSON_SENTINEL");
+    expect(prompt).not.toContain('"nodes"');
+    expect(prompt).not.toContain('"type":"section"');
   });
 });

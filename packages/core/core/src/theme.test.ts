@@ -395,4 +395,84 @@ describe("validateTheme", () => {
       true,
     );
   });
+
+  it("preserves component recipes with token-only style bundles", () => {
+    const { theme, issues } = validateTheme({
+      name: "brand",
+      shadow: { md: "0 12px 30px rgba(0, 0, 0, 0.15)" },
+      recipes: {
+        button: {
+          primary: {
+            box: { bg: "accent", pad: "md", radius: "lg", border: true, shadow: "md" },
+            text: { color: "accent-fg", weight: "semibold" },
+          },
+        },
+        chart: {
+          line: {
+            box: { bg: "surface", pad: "sm", radius: "md" },
+            text: { color: "fg-muted", size: "sm" },
+          },
+        },
+      },
+    });
+
+    expect(theme).toBeDefined();
+    expect(hasError(issues)).toBe(false);
+    expect(theme?.shadow?.md).toBe("0 12px 30px rgba(0, 0, 0, 0.15)");
+    expect(theme?.recipes?.button?.primary?.box).toEqual({
+      bg: "accent",
+      pad: "md",
+      radius: "lg",
+      border: true,
+      shadow: "md",
+    });
+    expect(theme?.recipes?.button?.primary?.text).toEqual({
+      color: "accent-fg",
+      weight: "semibold",
+    });
+    expect(Object.getPrototypeOf(theme?.recipes?.button)).toBeNull();
+  });
+
+  it("drops invalid component recipe tokens and raw CSS values with warnings", () => {
+    const { theme, issues } = validateTheme({
+      name: "brand",
+      recipes: {
+        button: {
+          primary: {
+            box: {
+              bg: "#ffffff",
+              pad: "huge",
+              shadow: "floating",
+              width: "full",
+              border: "yes",
+            },
+            text: {
+              color: "accent",
+              size: "massive",
+              family: "sans",
+            },
+          },
+          "bad variant": {
+            box: { bg: "accent" },
+          },
+        },
+        script: {
+          default: {
+            box: { bg: "accent" },
+          },
+        },
+      },
+    });
+
+    expect(theme).toBeDefined();
+    expect(hasError(issues)).toBe(false);
+    expect(theme?.recipes?.button?.primary?.box).toEqual({ width: "full" });
+    expect(theme?.recipes?.button?.primary?.text).toEqual({
+      color: "accent",
+      family: "sans",
+    });
+    expect(theme?.recipes?.button?.["bad variant"]).toBeUndefined();
+    expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, "script")).toBe(false);
+    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(5);
+  });
 });

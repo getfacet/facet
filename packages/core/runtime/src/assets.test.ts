@@ -6,13 +6,14 @@ import {
   applyPatch,
   EMPTY_TREE,
   validateTree,
+  type FacetCatalog,
   type FacetAgent,
   type FacetSession,
   type FacetTree,
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
 import {
   isSeedableTree,
   loadAssets,
@@ -82,6 +83,9 @@ function fileMake(docs: AssetDocuments): AssetsStore {
   const dir = makeTempDir();
   docs.themes.forEach((t, i) => writeFileSync(join(dir, `t${i}.theme.json`), JSON.stringify(t)));
   docs.stamps.forEach((s, i) => writeFileSync(join(dir, `s${i}.stamp.json`), JSON.stringify(s)));
+  if (docs.catalog !== undefined) {
+    writeFileSync(join(dir, "catalog.json"), JSON.stringify(docs.catalog));
+  }
   if (docs.initialTree !== undefined) {
     writeFileSync(join(dir, "initial.tree.json"), JSON.stringify(docs.initialTree));
   }
@@ -133,6 +137,69 @@ contract("FileAssets", fileMake);
 // --- loadAssets specifics -----------------------------------------------------
 
 describe("loadAssets", () => {
+  it("catalog defaults to the bundled catalog when no custom catalog is supplied", async () => {
+    const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+
+    expect(loaded.catalog).toEqual(DEFAULT_CATALOG);
+    expect(loaded.catalog.theme.switchPolicy).toBe("locked");
+  });
+
+  it("catalog loads from memory and file assets with fail-soft validation", async () => {
+    const custom: FacetCatalog = {
+      name: "custom",
+      theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+      bricks: [{ type: "section", variants: ["surface"] }],
+      stamps: { mode: "allow", names: ["dashboard-summary"] },
+      primitiveFallback: "discouraged",
+      policy: {
+        order: ["stamp", "brick", "primitive"],
+        editBeforeAppend: true,
+        compactScreens: true,
+        maxScreenSections: 4,
+      },
+    };
+
+    for (const make of [(docs: AssetDocuments) => new MemoryAssets(docs), fileMake]) {
+      const loaded = await loadAssets(make({ themes: [], stamps: [], catalog: custom }), "a");
+      expect(loaded.catalog.name).toBe("custom");
+      expect(loaded.catalog.stamps).toEqual({ mode: "allow", names: ["dashboard-summary"] });
+      expect(loaded.catalog.policy.maxScreenSections).toBe(4);
+    }
+  });
+
+  it("malformed catalog falls back to the bundled catalog with issues", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: [],
+        stamps: [],
+        catalog: {
+          name: "bad name",
+          theme: { switchPolicy: "sometimes" },
+          bricks: [{ type: "script" }],
+        },
+      }),
+      "a",
+    );
+
+    expect(loaded.catalog.name).toBe(DEFAULT_CATALOG.name);
+    expect(loaded.catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
+    expect(loaded.issues.some((issue) => issue.includes("catalog"))).toBe(true);
+  });
+
+  it("null or incomplete catalog documents fall back to the bundled catalog", async () => {
+    for (const catalog of [null, {}]) {
+      const loaded = await loadAssets(
+        new MemoryAssets({ themes: [], stamps: [], catalog } as unknown as AssetDocuments),
+        "a",
+      );
+
+      expect(loaded.catalog).toEqual(DEFAULT_CATALOG);
+      expect(loaded.catalog.description).toBe(DEFAULT_CATALOG.description);
+      expect(loaded.catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
+      expect(loaded.issues.some((issue) => issue.includes("bundled default catalog"))).toBe(true);
+    }
+  });
+
   it("seeds the default base layer", async () => {
     // DC-001: an empty/absent operator store still resolves the bundled defaults —
     // the default theme document plus the whole default stamp library.
@@ -202,6 +269,11 @@ describe("loadAssets", () => {
             throw new Error("stamps boom");
           },
         },
+        catalog: {
+          get() {
+            throw new Error("catalog boom");
+          },
+        },
         initialTree: {
           get() {
             throw new Error("initial boom");
@@ -219,7 +291,28 @@ describe("loadAssets", () => {
     expect(loaded.issues.some((i) => i.includes("`issues` threw"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("`themes` threw"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("`stamps` threw"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`catalog` threw"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("initial tree"))).toBe(true);
+  });
+
+  it("returns a fresh bundled catalog object for fallback loads", async () => {
+    const first = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+    (first.catalog.theme.allowed as unknown as string[]).length = 0;
+    const mediaBrick = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "media");
+    const firstMediaBrick = first.catalog.bricks.find((brick) => brick.type === "media");
+    (firstMediaBrick?.variants as unknown as string[] | undefined)?.splice(0);
+    (first.catalog.bricks as { length: number }).length = 0;
+    (first.catalog.policy.order as unknown as string[]).reverse();
+
+    const second = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+
+    expect(second.catalog).toEqual(DEFAULT_CATALOG);
+    expect(second.catalog.bricks).toHaveLength(DEFAULT_CATALOG.bricks.length);
+    expect(second.catalog.theme.allowed).toEqual(DEFAULT_CATALOG.theme.allowed);
+    expect(second.catalog.bricks.find((brick) => brick.type === "media")?.variants).toEqual(
+      mediaBrick?.variants,
+    );
+    expect(second.catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
   });
 
   it("never calls store-supplied array methods while reading themes and stamps", async () => {
@@ -540,13 +633,42 @@ describe("isSeedableTree", () => {
     expect(isSeedableTree(seedTree)).toBe(true);
   });
 
-  it("is true for a non-empty screens map even with an empty root", () => {
+  it("is false for a non-empty screens map when every screen is blank", () => {
     const tree: FacetTree = {
       root: "home",
       nodes: { home: { id: "home", type: "box", children: [] } },
       screens: { home: "home" },
     };
+    expect(isSeedableTree(tree)).toBe(false);
+  });
+
+  it("is true for a non-empty screens map whose entry screen has content", () => {
+    const tree: FacetTree = {
+      root: "shell",
+      nodes: {
+        shell: { id: "shell", type: "box", children: [] },
+        home: { id: "home", type: "box", children: ["copy"] },
+        copy: { id: "copy", type: "text", value: "Ready" },
+      },
+      screens: { home: "home" },
+      entry: "home",
+    };
     expect(isSeedableTree(tree)).toBe(true);
+  });
+
+  it("is false when the entry screen is blank even if another screen has content", () => {
+    const tree: FacetTree = {
+      root: "shell",
+      nodes: {
+        shell: { id: "shell", type: "box", children: [] },
+        home: { id: "home", type: "box", children: [] },
+        about: { id: "about", type: "box", children: ["copy"] },
+        copy: { id: "copy", type: "text", value: "About" },
+      },
+      screens: { home: "home", about: "about" },
+      entry: "home",
+    };
+    expect(isSeedableTree(tree)).toBe(false);
   });
 
   it("is false for an empty screens map with an empty root", () => {

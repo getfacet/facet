@@ -39,8 +39,15 @@ describe("treeHasContent", () => {
   const tree = (nodes: unknown, screens?: unknown): FacetTree =>
     ({ root: "r", nodes, ...(screens !== undefined ? { screens } : {}) }) as unknown as FacetTree;
 
-  it("true when the root box has children", () => {
-    expect(treeHasContent(tree({ r: { id: "r", type: "box", children: ["a"] } }))).toBe(true);
+  it("true when the root box has a renderable child", () => {
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children: ["a"] },
+          a: { id: "a", type: "text", value: "A" },
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("false for an empty children array", () => {
@@ -68,10 +75,56 @@ describe("treeHasContent", () => {
     expect(treeHasContent(tree({}))).toBe(false);
   });
 
-  it("true when screens is non-empty even with an empty root box", () => {
+  it("false when screens is non-empty but points only at blank roots", () => {
     expect(treeHasContent(tree({ r: { id: "r", type: "box", children: [] } }, { home: "r" }))).toBe(
-      true,
+      false,
     );
+  });
+
+  it("true when a screen root has renderable content", () => {
+    expect(
+      treeHasContent(
+        tree(
+          {
+            r: { id: "r", type: "box", children: [] },
+            screen: { id: "screen", type: "box", children: ["copy"] },
+            copy: { id: "copy", type: "text", value: "Copy" },
+          },
+          { home: "screen" },
+        ),
+      ),
+    ).toBe(true);
+  });
+
+  it("false when the entry screen is blank even if another screen has content", () => {
+    expect(
+      treeHasContent({
+        root: "shell",
+        nodes: {
+          shell: { id: "shell", type: "box", children: [] },
+          home: { id: "home", type: "box", children: [] },
+          about: { id: "about", type: "box", children: ["copy"] },
+          copy: { id: "copy", type: "text", value: "About" },
+        },
+        screens: { home: "home", about: "about" },
+        entry: "home",
+      } satisfies FacetTree),
+    ).toBe(false);
+  });
+
+  it("falls back to the first live screen when entry is missing or invalid", () => {
+    expect(
+      treeHasContent({
+        root: "shell",
+        nodes: {
+          shell: { id: "shell", type: "box", children: [] },
+          about: { id: "about", type: "box", children: ["copy"] },
+          copy: { id: "copy", type: "text", value: "About" },
+        },
+        screens: { about: "about" },
+        entry: "missing",
+      } satisfies FacetTree),
+    ).toBe(true);
   });
 
   it("false — and does NOT throw — when a foreign tree has null screens", () => {
@@ -88,5 +141,227 @@ describe("treeHasContent", () => {
     const t = tree({ r: { id: "r", type: "box", children: [] } }, ["home"]);
     expect(() => treeHasContent(t)).not.toThrow();
     expect(treeHasContent(t)).toBe(false);
+  });
+
+  it("false for high-level data bricks with no renderable data", () => {
+    for (const child of [
+      { id: "child", type: "table", columns: [], rows: [] },
+      { id: "child", type: "chart", kind: "bar", series: [] },
+      { id: "child", type: "tabs", items: [] },
+      { id: "child", type: "list", items: [] },
+    ]) {
+      expect(
+        treeHasContent(
+          tree({
+            r: { id: "r", type: "box", children: ["child"] },
+            child,
+          }),
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("true for high-level data bricks with renderable data", () => {
+    for (const child of [
+      { id: "child", type: "table", columns: [{ key: "name", label: "Name" }], rows: [] },
+      { id: "child", type: "chart", kind: "bar", series: [{ label: "A", values: [1] }] },
+      { id: "child", type: "tabs", items: [{ label: "Home", to: "home" }] },
+      { id: "child", type: "list", items: [{ title: "Item" }] },
+    ]) {
+      expect(
+        treeHasContent(
+          tree({
+            r: { id: "r", type: "box", children: ["child"] },
+            child,
+          }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("does not count malformed media kind as renderable content", () => {
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children: ["media"] },
+          media: { id: "media", type: "media", kind: "gif", src: "https://example.com/a.gif" },
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children: ["image"] },
+          image: { id: "image", type: "image", src: "https://example.com/a.png" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not count an empty radio group as renderable content", () => {
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children: ["choice"] },
+          choice: { id: "choice", type: "field", name: "plan", input: "radio", options: [] },
+        }),
+      ),
+    ).toBe(false);
+
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children: ["choice"] },
+          choice: {
+            id: "choice",
+            type: "field",
+            name: "plan",
+            input: "radio",
+            options: ["pro"],
+          },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not read container children beyond the renderability budget", () => {
+    const children: unknown[] = [];
+    children.length = 6_000;
+    Object.defineProperty(children, "4999", {
+      get() {
+        throw new Error("budget over-read");
+      },
+    });
+
+    expect(() =>
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children },
+        }),
+      ),
+    ).not.toThrow();
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("finds renderable content before the budget cap without reading past it", () => {
+    const children: unknown[] = ["copy"];
+    children.length = 6_000;
+    Object.defineProperty(children, "4999", {
+      get() {
+        throw new Error("budget over-read");
+      },
+    });
+
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children },
+          copy: { id: "copy", type: "text", value: "Copy" },
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects content that exists only beyond the renderability depth cap", () => {
+    const nodes: Record<string, unknown> = {
+      r: { id: "r", type: "box", children: ["n0"] },
+    };
+    for (let i = 0; i < 105; i += 1) {
+      nodes[`n${String(i)}`] = {
+        id: `n${String(i)}`,
+        type: "box",
+        children: [i === 104 ? "copy" : `n${String(i + 1)}`],
+      };
+    }
+    nodes["copy"] = { id: "copy", type: "text", value: "Too deep" };
+
+    expect(treeHasContent(tree(nodes))).toBe(false);
+  });
+
+  it("does not read high-level table, tabs, or list data beyond their caps", () => {
+    const columns: unknown[] = [{ key: "name", label: "Name" }];
+    columns.length = 20;
+    Object.defineProperty(columns, "12", {
+      get() {
+        throw new Error("table cap over-read");
+      },
+    });
+    const tabs: unknown[] = [{ label: "Home", to: "home" }];
+    tabs.length = 20;
+    Object.defineProperty(tabs, "12", {
+      get() {
+        throw new Error("tabs cap over-read");
+      },
+    });
+    const listItems: unknown[] = [{ title: "Item" }];
+    listItems.length = 80;
+    Object.defineProperty(listItems, "50", {
+      get() {
+        throw new Error("list cap over-read");
+      },
+    });
+
+    for (const child of [
+      { id: "child", type: "table", columns, rows: [] },
+      { id: "child", type: "tabs", items: tabs },
+      { id: "child", type: "list", items: listItems },
+    ]) {
+      expect(() =>
+        treeHasContent(
+          tree({
+            r: { id: "r", type: "box", children: ["child"] },
+            child,
+          }),
+        ),
+      ).not.toThrow();
+      expect(
+        treeHasContent(
+          tree({
+            r: { id: "r", type: "box", children: ["child"] },
+            child,
+          }),
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("does not read high-level chart data beyond its caps", () => {
+    const values: unknown[] = [1];
+    values.length = 250;
+    Object.defineProperty(values, "200", {
+      get() {
+        throw new Error("value cap over-read");
+      },
+    });
+    const series: unknown[] = [{ label: "A", values }];
+    series.length = 20;
+    Object.defineProperty(series, "8", {
+      get() {
+        throw new Error("series cap over-read");
+      },
+    });
+
+    expect(() =>
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children: ["chart"] },
+          chart: { id: "chart", type: "chart", kind: "bar", series },
+        }),
+      ),
+    ).not.toThrow();
+    expect(
+      treeHasContent(
+        tree({
+          r: { id: "r", type: "box", children: ["chart"] },
+          chart: { id: "chart", type: "chart", kind: "bar", series },
+        }),
+      ),
+    ).toBe(true);
   });
 });

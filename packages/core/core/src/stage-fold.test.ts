@@ -90,7 +90,7 @@ describe("foldPatchIntoStage — convergence by construction", () => {
     ];
     const { tree, issues } = foldPatchIntoStage(rootBox, patches);
     expect(tree).toEqual(EMPTY_TREE);
-    expect(issues.some((i) => i.includes("root node must be a box"))).toBe(true);
+    expect(issues.some((i) => i.includes("root node must be a container"))).toBe(true);
     expect(converges(rootBox, patches)).toEqual(EMPTY_TREE);
   });
 
@@ -104,7 +104,7 @@ describe("foldPatchIntoStage — convergence by construction", () => {
     ];
     const { tree, issues } = foldPatchIntoStage(rootBox, patches);
     expect(tree).toEqual(EMPTY_TREE);
-    expect(issues.some((i) => i.includes("root node must be a box"))).toBe(true);
+    expect(issues.some((i) => i.includes("root node must be a container"))).toBe(true);
     expect(converges(rootBox, patches)).toEqual(EMPTY_TREE);
   });
 
@@ -126,7 +126,7 @@ describe("foldPatchIntoStage — convergence by construction", () => {
     ];
     const { tree, issues } = foldPatchIntoStage(rootBox, patches);
     expect(tree.screens).toBeUndefined();
-    expect(issues.some((i) => i.includes("is not a box"))).toBe(true);
+    expect(issues.some((i) => i.includes("is not a container"))).toBe(true);
     expect(converges(rootBox, patches).screens).toBeUndefined();
   });
 

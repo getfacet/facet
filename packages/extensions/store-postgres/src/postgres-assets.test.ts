@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Pool } from "pg";
-import type { FacetTree } from "@facet/core";
+import type { FacetCatalog, FacetTree } from "@facet/core";
 import { loadAssets, MemoryAssets, type AssetDocuments, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
 import { PostgresAssets as BarrelPostgresAssets } from "./index.js";
@@ -31,7 +31,7 @@ function rejectingPool(error: Error): Pool {
 function roundTripPool(): Pool {
   const rows = new Map<
     string,
-    { themes: unknown; stamps: unknown; initial_tree: unknown | null }
+    { themes: unknown; stamps: unknown; catalog: unknown | null; initial_tree: unknown | null }
   >();
   return {
     query: (text: string, values: readonly unknown[] = []) => {
@@ -39,7 +39,8 @@ function roundTripPool(): Pool {
         rows.set(String(values[0]), {
           themes: JSON.parse(String(values[1])) as unknown,
           stamps: JSON.parse(String(values[2])) as unknown,
-          initial_tree: values[3] === null ? null : (JSON.parse(String(values[3])) as unknown),
+          catalog: values[3] === null ? null : (JSON.parse(String(values[3])) as unknown),
+          initial_tree: values[4] === null ? null : (JSON.parse(String(values[4])) as unknown),
         });
         return Promise.resolve({ rows: [] });
       }
@@ -78,6 +79,20 @@ const invalidStamp = {
   nodes: { x: { id: "x", type: "text", value: "orphan" } },
 };
 
+const customCatalog: FacetCatalog = {
+  name: "operator",
+  theme: { active: "midnight", switchPolicy: "locked", allowed: ["midnight"] },
+  bricks: [{ type: "section", variants: ["surface"] }],
+  stamps: { mode: "allow", names: ["cta"] },
+  primitiveFallback: "discouraged",
+  policy: {
+    order: ["stamp", "brick", "primitive"],
+    editBeforeAppend: true,
+    compactScreens: true,
+    maxScreenSections: 4,
+  },
+};
+
 const seedTree: FacetTree = {
   root: "root",
   nodes: {
@@ -113,6 +128,29 @@ describe("PostgresAssets", () => {
     });
   });
 
+  it("load returns raw persisted catalog documents without validating them", async () => {
+    const malformedCatalog = {
+      name: "bad name",
+      theme: { switchPolicy: "sometimes" },
+      bricks: [{ type: "script" }],
+    };
+    const { pool } = fakePool([
+      {
+        themes: [validTheme],
+        stamps: [validStamp],
+        catalog: malformedCatalog,
+        initial_tree: seedTree,
+      },
+    ]);
+
+    await expect(new PostgresAssets(pool).load("agent")).resolves.toEqual({
+      themes: [validTheme],
+      stamps: [validStamp],
+      catalog: malformedCatalog,
+      initialTree: seedTree,
+    });
+  });
+
   it("load normalizes missing rows and null jsonb columns", async () => {
     const { pool: emptyPool } = fakePool([]);
     await expect(new PostgresAssets(emptyPool).load("missing")).resolves.toEqual({
@@ -125,6 +163,56 @@ describe("PostgresAssets", () => {
       themes: [],
       stamps: [],
     });
+  });
+
+  it("load reports non-array theme and stamp jsonb columns to runtime validation", async () => {
+    const { pool } = fakePool([
+      { themes: { not: "an array" }, stamps: "not an array", initial_tree: null },
+    ]);
+
+    const docs = await new PostgresAssets(pool).load("agent");
+
+    expect(docs.themes).toEqual([]);
+    expect(docs.stamps).toEqual([]);
+    expect(docs.issues).toEqual([
+      "postgres assets `themes` was not an array — ignored",
+      "postgres assets `stamps` was not an array — ignored",
+    ]);
+
+    const loaded = await loadAssets(new PostgresAssets(pool), "agent");
+    expect(loaded.issues.some((issue) => issue.includes("postgres assets `themes`"))).toBe(true);
+    expect(loaded.issues.some((issue) => issue.includes("postgres assets `stamps`"))).toBe(true);
+  });
+
+  it("loadAssets defaults nullable Postgres catalog rows through runtime validation", async () => {
+    const { pool } = fakePool([
+      { themes: [validTheme], stamps: [validStamp], catalog: null, initial_tree: null },
+    ]);
+    const loaded = await loadAssets(new PostgresAssets(pool), "agent");
+
+    expect(loaded.catalog.name).toBe("default");
+    expect(loaded.catalog.theme.switchPolicy).toBe("locked");
+    expect(loaded.issues.some((issue) => issue.includes("catalog"))).toBe(false);
+  });
+
+  it("putAssets upserts catalog docs and a later load returns them", async () => {
+    const store = new PostgresAssets(roundTripPool());
+    const docs: AssetDocuments = {
+      themes: [validTheme],
+      stamps: [validStamp],
+      catalog: customCatalog,
+      initialTree: seedTree,
+    };
+    const replacement: AssetDocuments = {
+      themes: [],
+      stamps: [],
+    };
+
+    await store.putAssets("agent", docs);
+    await expect(store.load("agent")).resolves.toEqual(docs);
+
+    await store.putAssets("agent", replacement);
+    await expect(store.load("agent")).resolves.toEqual(replacement);
   });
 
   it("loadAssets still resolves defaults for an agent with no Postgres asset row", async () => {
@@ -173,15 +261,21 @@ describe("PostgresAssets", () => {
 
   it("putAssets emits an agent_id upsert that replaces all jsonb fields", async () => {
     const { pool, calls } = fakePool();
-    await new PostgresAssets(pool).putAssets("agent", { themes: [], stamps: [] });
+    await new PostgresAssets(pool).putAssets("agent", {
+      themes: [],
+      stamps: [],
+      catalog: customCatalog,
+    });
 
     const call = calls[0];
-    expect(call?.values).toEqual(["agent", "[]", "[]", null]);
+    expect(call?.values).toEqual(["agent", "[]", "[]", JSON.stringify(customCatalog), null]);
     const sql = normalizeSql(call?.text ?? "");
+    expect(sql).toContain("catalog");
     expect(sql).toContain("on conflict (agent_id)");
     expect(sql).toContain("do update set");
     expect(sql).toContain("themes = excluded.themes");
     expect(sql).toContain("stamps = excluded.stamps");
+    expect(sql).toContain("catalog = excluded.catalog");
     expect(sql).toContain("initial_tree = excluded.initial_tree");
     expect(sql).toContain("updated_at = now()");
   });

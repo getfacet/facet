@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { FacetCatalog } from "@facet/core";
 import * as referenceAgent from "@facet/reference-agent";
 import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
@@ -18,6 +19,24 @@ import { createStubAgent } from "./stub.js";
 const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
 
 const TEST_PROVIDER_ENV = { OPENAI_API_KEY: "sk-test" } as const;
+
+const CATALOG_FIXTURE: FacetCatalog = {
+  name: "quickstart-catalog",
+  description: "Quickstart catalog policy",
+  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+  bricks: [
+    { type: "section", variants: ["surface"] },
+    { type: "button", variants: ["primary"] },
+  ],
+  stamps: { mode: "allow", names: ["pricing"] },
+  primitiveFallback: "allowed",
+  policy: {
+    order: ["stamp", "brick", "primitive"],
+    editBeforeAppend: true,
+    compactScreens: true,
+    maxScreenSections: 3,
+  },
+};
 
 describe("@facet/quickstart barrel", () => {
   it("quickstart barrel exposes reference-agent aliases", () => {
@@ -247,17 +266,81 @@ describe("runCli — --assets (DC-009)", () => {
     // `onResolvedAssets` is the observable seam for what was handed downstream.
     let resolvedThemes = 0;
     let resolvedStamps = 0;
+    let resolvedCatalog: FacetCatalog | undefined;
     const { running } = await bootCli([], {
-      onResolvedAssets: ({ themes, stamps }) => {
+      onResolvedAssets: ({ themes, stamps, catalog }) => {
         resolvedThemes = themes.length;
         resolvedStamps = stamps.length;
+        resolvedCatalog = catalog;
       },
     });
     try {
       expect(resolvedThemes).toBeGreaterThan(0);
       expect(resolvedStamps).toBeGreaterThan(0);
+      expect(resolvedCatalog?.name).toBe("default");
+      expect(resolvedCatalog?.theme.switchPolicy).toBe("locked");
     } finally {
       await running.close();
+    }
+  });
+
+  it("catalog.json reaches the resolved assets hook", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    try {
+      writeFileSync(join(dir, "catalog.json"), JSON.stringify(CATALOG_FIXTURE));
+      let resolvedCatalog: FacetCatalog | undefined;
+      const { running } = await bootCli(["--assets", dir], {
+        onResolvedAssets: ({ catalog }) => {
+          resolvedCatalog = catalog;
+        },
+      });
+      try {
+        expect(resolvedCatalog).toMatchObject({
+          name: "quickstart-catalog",
+          description: "Quickstart catalog policy",
+          theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+          stamps: { mode: "allow", names: ["pricing"] },
+          primitiveFallback: "allowed",
+        });
+        expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["section", "button"]);
+        expect(resolvedCatalog?.policy.maxScreenSections).toBe(3);
+      } finally {
+        await running.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("malformed catalog.json falls back to the default catalog with a concise issue", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    try {
+      writeFileSync(
+        join(dir, "catalog.json"),
+        JSON.stringify({
+          name: 7,
+          theme: { switchPolicy: "sometimes" },
+          bricks: [{ type: "unknown-brick" }],
+        }),
+      );
+      let resolvedCatalog: FacetCatalog | undefined;
+      const { captured, running } = await bootCli(["--assets", dir], {
+        onResolvedAssets: ({ catalog }) => {
+          resolvedCatalog = catalog;
+        },
+      });
+      try {
+        expect(resolvedCatalog?.name).toBe("default");
+        expect(resolvedCatalog?.theme.switchPolicy).toBe("locked");
+        expect(resolvedCatalog?.bricks.length).toBeGreaterThan(2);
+        const issues = captured.err.join("\n");
+        expect(issues).toContain("[facet-quickstart]");
+        expect(issues).toContain("catalog:");
+      } finally {
+        await running.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 

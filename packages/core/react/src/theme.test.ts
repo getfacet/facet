@@ -7,6 +7,7 @@ import {
   boxStyle,
   fieldStyle,
   mediaStyle,
+  resolveRecipe,
   resolveTheme,
   textStyle,
 } from "./theme.js";
@@ -254,6 +255,40 @@ describe("resolveTheme", () => {
     expect(resolved.fontSize.md).toBe("16px"); // group with no override at all
   });
 
+  it("keeps default recipes for fallback and partial custom themes", () => {
+    expect(resolveRecipe(resolveTheme(undefined), "button", "primary").box).toMatchObject({
+      bg: "accent",
+      pad: "sm",
+    });
+
+    const resolved = resolveTheme("brand", [
+      {
+        name: "brand",
+        space: { sm: "10px" },
+        recipes: {
+          button: {
+            primary: {
+              box: { bg: "danger", pad: "lg" },
+            },
+          },
+        },
+      },
+    ]);
+
+    expect(resolveRecipe(resolved, "button", "primary").box).toMatchObject({
+      bg: "danger",
+      pad: "lg",
+    });
+    expect(resolveRecipe(resolved, "button", "primary").text).toMatchObject({
+      color: "accent-fg",
+      weight: "semibold",
+    });
+    expect(resolveRecipe(resolved, "card", "default").box).toMatchObject({
+      bg: "surface",
+      shadow: "sm",
+    });
+  });
+
   it("overlays font family maps while ignoring hostile keys and non-strings", () => {
     const hostile = JSON.parse(
       '{"name":"evil","fontFamily":{"__proto__":"Bad","constructor":"Bad","nonsense":"Bad","sans":"Brand Sans, sans-serif","mono":7}}',
@@ -290,5 +325,108 @@ describe("resolveTheme", () => {
     expect(Object.getPrototypeOf(resolved.color)).toBeNull();
     expect(Object.getPrototypeOf(resolved.space)).toBeNull();
     expect(Object.getPrototypeOf(resolved.fontFamily)).toBeNull();
+  });
+});
+
+describe("recipe resolution", () => {
+  it("resolves component recipes through the active theme token maps", () => {
+    const resolved = resolveTheme("catalog", [
+      {
+        name: "catalog",
+        color: {
+          accent: "#123456",
+          "accent-fg": "#fefefe",
+          surface: "#f3f4f6",
+        },
+        space: { lg: "30px" },
+        radius: { lg: "18px" },
+        shadow: { md: "0 12px 30px rgba(0, 0, 0, 0.18)" },
+        recipes: {
+          button: {
+            primary: {
+              box: { bg: "accent", pad: "lg", radius: "lg", shadow: "md" },
+              text: { color: "accent-fg", weight: "bold" },
+            },
+          },
+          card: {
+            default: {
+              box: { bg: "surface", border: true, radius: "lg" },
+            },
+          },
+        },
+      },
+    ]);
+
+    const button = resolveRecipe(resolved, "button", "primary");
+    expect(boxStyle(button.box, resolved)).toMatchObject({
+      background: "#123456",
+      padding: "30px",
+      borderRadius: "18px",
+      boxShadow: "0 12px 30px rgba(0, 0, 0, 0.18)",
+    });
+    expect(textStyle(button.text, resolved)).toMatchObject({
+      color: "#fefefe",
+      fontWeight: 700,
+    });
+
+    const card = resolveRecipe(resolved, "card", "missing");
+    expect(boxStyle(card.box, resolved)).toMatchObject({
+      background: "#f3f4f6",
+      border: "1px solid #e2e5ea",
+      borderRadius: "18px",
+    });
+  });
+
+  it("falls back to default recipe variants for missing or hostile recipe keys", () => {
+    const resolved = resolveTheme("catalog", [
+      {
+        name: "catalog",
+        recipes: {
+          button: {
+            default: { box: { pad: "sm" } },
+          },
+        },
+      },
+    ]);
+
+    expect(resolveRecipe(resolved, "stat", "primary")).toEqual({
+      box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md", shadow: "sm" },
+      text: { color: "fg-muted", size: "sm" },
+    });
+    expect(resolveRecipe(resolved, "button", "__proto__")).toEqual({ box: { pad: "sm" } });
+  });
+
+  it("caps custom recipe variant traversal while keeping defaults", () => {
+    const button = Object.create(null) as Record<string, unknown>;
+    for (let i = 0; i < 80; i += 1) {
+      button[`v${String(i)}`] = { box: { pad: "xs" } };
+    }
+    Object.defineProperty(button, "v64", {
+      get() {
+        throw new Error("recipe cap over-read");
+      },
+    });
+
+    expect(() =>
+      resolveTheme("catalog", [
+        {
+          name: "catalog",
+          recipes: { button },
+        } as unknown as FacetTheme,
+      ]),
+    ).not.toThrow();
+
+    const resolved = resolveTheme("catalog", [
+      {
+        name: "catalog",
+        recipes: { button },
+      } as unknown as FacetTheme,
+    ]);
+    expect(resolveRecipe(resolved, "button", "v63")).toEqual({ box: { pad: "xs" } });
+    expect(resolveRecipe(resolved, "button", "v64")).toEqual({});
+    expect(resolveRecipe(resolved, "button", "primary").box).toMatchObject({
+      bg: "accent",
+      pad: "sm",
+    });
   });
 });

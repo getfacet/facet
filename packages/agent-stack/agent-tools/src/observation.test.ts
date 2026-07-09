@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FacetTree } from "@facet/core";
+import type { FacetNode, FacetTree } from "@facet/core";
 import {
   formatAgentToolObservation,
   isVisitorVisibleStageChange,
@@ -217,6 +217,75 @@ describe("agent tool observation contract", () => {
       },
     };
     expect(isVisitorVisibleStageChange(TREE, afterOrphan, ["orphan"])).toBe(false);
+  });
+
+  it("classifies high-level section and card descendants as visible while skipping blank data bricks", () => {
+    const highLevelTree: FacetTree = {
+      root: "section",
+      nodes: {
+        section: { id: "section", type: "section", children: ["card"] },
+        card: { id: "card", type: "card", children: ["stat", "table"] },
+        stat: {
+          id: "stat",
+          type: "stat",
+          label: "Revenue",
+          value: "$12k",
+          children: ["ghost"],
+        } as unknown as FacetNode,
+        table: { id: "table", type: "table", columns: [], rows: [] },
+        ghost: { id: "ghost", type: "text", value: "Not reachable through stat" },
+      },
+    };
+
+    expect(Array.from(visibleStageNodeIds(highLevelTree)).sort()).toEqual([
+      "card",
+      "section",
+      "stat",
+    ]);
+
+    const afterStat: FacetTree = {
+      ...highLevelTree,
+      nodes: {
+        ...highLevelTree.nodes,
+        stat: { id: "stat", type: "stat", label: "Revenue", value: "$18k" },
+      },
+    };
+    expect(isVisitorVisibleStageChange(highLevelTree, afterStat, ["stat"])).toBe(true);
+
+    const afterGhost: FacetTree = {
+      ...highLevelTree,
+      nodes: {
+        ...highLevelTree.nodes,
+        ghost: { id: "ghost", type: "text", value: "Still hidden" },
+      },
+    };
+    expect(isVisitorVisibleStageChange(highLevelTree, afterGhost, ["ghost"])).toBe(false);
+    expect(isVisitorVisibleStageChange(highLevelTree, highLevelTree, ["table"])).toBe(false);
+  });
+
+  it("does not classify non-entry screen changes as visible on the default render root", () => {
+    const screenTree: FacetTree = {
+      root: "shell",
+      entry: "home",
+      screens: { home: "home", about: "about" },
+      nodes: {
+        shell: { id: "shell", type: "box", children: [] },
+        home: { id: "home", type: "box", children: ["home-copy"] },
+        "home-copy": { id: "home-copy", type: "text", value: "Home" },
+        about: { id: "about", type: "box", children: ["about-copy"] },
+        "about-copy": { id: "about-copy", type: "text", value: "About" },
+      },
+    };
+    const afterAbout: FacetTree = {
+      ...screenTree,
+      nodes: {
+        ...screenTree.nodes,
+        "about-copy": { id: "about-copy", type: "text", value: "Updated" },
+      },
+    };
+
+    expect(Array.from(visibleStageNodeIds(screenTree)).sort()).toEqual(["home", "home-copy"]);
+    expect(isVisitorVisibleStageChange(screenTree, afterAbout, ["about-copy"])).toBe(false);
   });
 
   it("treats stage metadata changes as visitor-visible", () => {

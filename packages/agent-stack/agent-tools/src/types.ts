@@ -1,5 +1,6 @@
 import type {
   FacetNode,
+  FacetCatalog,
   FacetStamp,
   FacetTheme,
   FacetTree,
@@ -90,6 +91,7 @@ export interface ToolInputByName {
 export interface StageToolAssets {
   readonly themes?: readonly FacetTheme[];
   readonly stamps?: readonly FacetStamp[];
+  readonly catalog?: FacetCatalog;
 }
 
 export interface StageToolContext {
@@ -136,6 +138,7 @@ export interface AgentToolObservationData {
   readonly next_action: string;
   readonly summary: string;
   readonly code?: StageToolErrorCode | "pending";
+  readonly reason?: string;
 }
 
 export interface StageToolObservation {

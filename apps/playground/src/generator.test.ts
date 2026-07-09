@@ -1,7 +1,41 @@
-import { describe, expect, it } from "vitest";
-import { extractJson } from "./generator.js";
+import { EventEmitter } from "node:events";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+const spawnMock = vi.hoisted(() => vi.fn());
+
+vi.mock("node:child_process", () => ({ spawn: spawnMock }));
+
+import { extractJson, generatePage } from "./generator.js";
 
 const tree = { root: "root", nodes: { root: { id: "root", type: "box", children: [] } } };
+
+function mockClaudeResponse(output: unknown): void {
+  spawnMock.mockImplementationOnce(() => {
+    const child = new EventEmitter();
+    const stdout = new EventEmitter();
+    const stderr = new EventEmitter();
+    Object.assign(child, { stdout, stderr });
+    queueMicrotask(() => {
+      stdout.emit("data", JSON.stringify(output));
+      child.emit("close", 0);
+    });
+    return child;
+  });
+}
+
+function renderableBoxTree(label: string): unknown {
+  return {
+    root: "root",
+    nodes: {
+      root: { id: "root", type: "box", children: ["text"] },
+      text: { id: "text", type: "text", value: label },
+    },
+  };
+}
+
+beforeEach(() => {
+  spawnMock.mockReset();
+});
 
 describe("extractJson", () => {
   it("parses a clean tree", () => {
@@ -36,5 +70,49 @@ describe("extractJson", () => {
 
   it("throws when there is no object at all", () => {
     expect(() => extractJson("no json here")).toThrow();
+  });
+});
+
+describe("high-level generator renderability", () => {
+  it.each(["section", "card"] as const)(
+    "accepts a renderable %s root without retrying",
+    async (type) => {
+      mockClaudeResponse({
+        root: "root",
+        nodes: {
+          root: { id: "root", type, title: "Overview", children: ["body"] },
+          body: { id: "body", type: "text", value: "Ready" },
+        },
+      });
+      mockClaudeResponse(renderableBoxTree("fallback"));
+
+      const result = await generatePage("make a dashboard");
+
+      expect(result.tree.nodes[result.tree.root]).toMatchObject({ type });
+      expect(spawnMock).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it.each([
+    ["button", { id: "root", type: "button", label: "Open" }],
+    ["stat", { id: "root", type: "stat", label: "MRR", value: "$42k" }],
+    [
+      "table",
+      {
+        id: "root",
+        type: "table",
+        caption: "Accounts",
+        columns: [{ key: "name", label: "Name" }],
+        rows: [{ name: "Ada" }],
+      },
+    ],
+  ])("keeps retrying when a non-container high-level %s is the root", async (_type, root) => {
+    mockClaudeResponse({ root: "root", nodes: { root } });
+    mockClaudeResponse(renderableBoxTree("fallback"));
+
+    const result = await generatePage("make a dashboard");
+
+    expect(result.tree.nodes[result.tree.root]).toMatchObject({ type: "box" });
+    expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 });

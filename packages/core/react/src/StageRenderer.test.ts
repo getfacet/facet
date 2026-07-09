@@ -1,12 +1,30 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { FacetNode, FacetTree, NodeId } from "@facet/core";
+import {
+  MAX_CHART_POINTS,
+  MAX_CHART_SERIES,
+  MAX_LIST_ITEMS,
+  MAX_NODE_BODY_CHARS,
+  MAX_NODE_LABEL_CHARS,
+  MAX_TABLE_CELL_CHARS,
+  MAX_TABLE_COLUMNS,
+  MAX_TABLE_ROWS,
+  MAX_TABS_ITEMS,
+  type FacetNode,
+  type FacetTheme,
+  type FacetTree,
+  type NodeId,
+} from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 import { MOTION_CLASS_NAMES } from "./motion.js";
 
 function render(tree: FacetTree): string {
   return renderToStaticMarkup(createElement(StageRenderer, { tree }));
+}
+
+function renderThemed(tree: FacetTree, themes: readonly FacetTheme[]): string {
+  return renderToStaticMarkup(createElement(StageRenderer, { tree, themes }));
 }
 
 function renderWithTransition(tree: FacetTree): string {
@@ -41,6 +59,58 @@ describe("StageRenderer fail-safe boundary", () => {
 
   it("renders nothing when nodes is not a map", () => {
     expect(render({ root: "root", nodes: null } as unknown as FacetTree)).toBe("");
+  });
+
+  it("renders nothing when raw tree root or nodes access throws", () => {
+    const rootThrows = Object.defineProperties(
+      {},
+      {
+        root: {
+          get() {
+            throw new Error("root boom");
+          },
+        },
+        nodes: { value: {} },
+      },
+    ) as FacetTree;
+    const nodesThrows = Object.defineProperties(
+      {},
+      {
+        root: { value: "root" },
+        nodes: {
+          get() {
+            throw new Error("nodes boom");
+          },
+        },
+      },
+    ) as FacetTree;
+
+    expect(() => render(rootThrows)).not.toThrow();
+    expect(() => render(nodesThrows)).not.toThrow();
+    expect(render(rootThrows)).toBe("");
+    expect(render(nodesThrows)).toBe("");
+  });
+
+  it("falls back safely when raw screen maps throw during resolution", () => {
+    const screens = new Proxy(
+      {},
+      {
+        ownKeys() {
+          throw new Error("screens boom");
+        },
+      },
+    );
+    const out = render({
+      root: "root",
+      nodes: {
+        root: box("root", ["copy"]),
+        copy: text("copy", "Safe root"),
+      },
+      screens,
+      entry: "home",
+    } as unknown as FacetTree);
+
+    expect(out).toContain("Safe root");
   });
 
   it("skips a dangling child reference and renders the rest", () => {
@@ -271,6 +341,319 @@ describe("StageRenderer brick-vocab v1", () => {
   });
 });
 
+describe("StageRenderer high-level renderer (static)", () => {
+  const catalogTheme: FacetTheme = {
+    name: "catalog",
+    color: {
+      accent: "#123456",
+      "accent-fg": "#ffffff",
+      surface: "#f3f4f6",
+      "surface-2": "#e5e7eb",
+      success: "#15803d",
+      warning: "#b45309",
+    },
+    space: { md: "20px" },
+    radius: { lg: "18px", full: "9999px" },
+    shadow: { md: "0 14px 36px rgba(0, 0, 0, 0.18)" },
+    recipes: {
+      section: {
+        dashboard: {
+          box: { bg: "surface", pad: "md", radius: "lg" },
+          text: { color: "fg-muted", weight: "semibold" },
+        },
+      },
+      card: {
+        elevated: {
+          box: { bg: "bg", border: true, radius: "lg", shadow: "md", pad: "md" },
+        },
+      },
+      button: {
+        primary: {
+          box: { bg: "accent", pad: "md", radius: "full" },
+          text: { color: "accent-fg", weight: "bold" },
+        },
+      },
+      badge: {
+        success: {
+          box: { bg: "success", pad: "xs", radius: "full" },
+          text: { color: "accent-fg" },
+        },
+      },
+    },
+  };
+
+  it("renders high-level layout, action, data, and feedback bricks with recipes", () => {
+    const out = renderThemed(
+      {
+        root: "root",
+        theme: "catalog",
+        nodes: {
+          root: {
+            id: "root",
+            type: "section",
+            title: "Dashboard",
+            eyebrow: "Q3",
+            body: "Live operating view",
+            variant: "dashboard",
+            children: [
+              "card",
+              "table",
+              "chart",
+              "stat",
+              "badge",
+              "progress",
+              "alert",
+              "list",
+              "divider",
+            ],
+          },
+          card: {
+            id: "card",
+            type: "card",
+            title: "Revenue",
+            body: "Current quarter",
+            variant: "elevated",
+            children: ["button"],
+          },
+          button: {
+            id: "button",
+            type: "button",
+            label: "Refresh",
+            variant: "primary",
+            onPress: { kind: "agent", name: "refresh" },
+          },
+          table: {
+            id: "table",
+            type: "table",
+            caption: "Pipeline",
+            columns: [
+              { key: "name", label: "Name" },
+              { key: "value", label: "Value", align: "end" },
+            ],
+            rows: [{ name: "Acme", value: 42 }],
+          },
+          chart: {
+            id: "chart",
+            type: "chart",
+            title: "Trend",
+            kind: "bar",
+            labels: ["Jan", "Feb"],
+            series: [{ label: "ARR", values: [10, 20] }],
+          },
+          stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", delta: "+12%" },
+          badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
+          progress: { id: "progress", type: "progress", label: "Quota", value: 72 },
+          alert: { id: "alert", type: "alert", title: "Heads up", body: "Review pricing." },
+          list: {
+            id: "list",
+            type: "list",
+            items: [{ title: "Next", body: "Call customer" }],
+          },
+          divider: { id: "divider", type: "divider", label: "Details" },
+        },
+      },
+      [catalogTheme],
+    );
+
+    expect(out).toContain("<section");
+    expect(out).toContain("Dashboard");
+    expect(out).toContain("Live operating view");
+    expect(out).toContain("box-shadow:0 14px 36px rgba(0, 0, 0, 0.18)");
+    expect(out).toContain('role="button"');
+    expect(out).toContain("Refresh");
+    expect(out).toContain("background:#123456");
+    expect(out).toContain("<table");
+    expect(out).toContain("<caption>Pipeline</caption>");
+    expect(out).toContain("<svg");
+    expect(out).toContain("Trend");
+    expect(out).toContain("$24k");
+    expect(out).toContain("Healthy");
+    expect(out).toContain("<progress");
+    expect(out).toContain('role="alert"');
+    expect(out).toContain("Call customer");
+    expect(out).toContain("<hr");
+  });
+
+  it("keeps high-level raw-path malformed data fail-safe", () => {
+    const noisy = {
+      root: {
+        id: "root",
+        type: "section",
+        title: 42,
+        body: "still renders",
+        children: ["button", "table", "chart", "list", "text"],
+      },
+      button: { id: "button", type: "button", label: { bad: true }, onPress: 99 },
+      table: { id: "table", type: "table", columns: "bad", rows: [{ value: { nope: true } }] },
+      chart: { id: "chart", type: "chart", kind: "space", series: "bad", title: "Bad chart" },
+      list: { id: "list", type: "list", items: ["Plain item", { title: 9, body: "bad title" }] },
+      text: text("text", "safe child"),
+    } as unknown as Record<NodeId, FacetNode>;
+
+    expect(() => render(tree(noisy))).not.toThrow();
+    const out = render(tree(noisy));
+    expect(out).toContain("still renders");
+    expect(out).toContain("Plain item");
+    expect(out).toContain("safe child");
+    expect(out).not.toContain("[object Object]");
+    expect(out).not.toContain("Bad chart");
+  });
+
+  it("caps raw-path table, chart, tabs, and list collections at the core validator limits", () => {
+    const columns = Array.from({ length: MAX_TABLE_COLUMNS + 8 }, (_, index) => ({
+      key: `c${String(index)}`,
+      label: `Column ${String(index)}`,
+    }));
+    const rows = Array.from({ length: MAX_TABLE_ROWS + 20 }, (_, rowIndex) =>
+      Object.fromEntries(columns.map((column) => [column.key, `r${String(rowIndex)}`])),
+    );
+    const series = Array.from({ length: MAX_CHART_SERIES + 4 }, (_, seriesIndex) => ({
+      label: `Series ${String(seriesIndex)}`,
+      values: Array.from({ length: MAX_CHART_POINTS + 25 }, (_, valueIndex) => valueIndex),
+    }));
+    const longLabel = "x".repeat(MAX_NODE_LABEL_CHARS + 25);
+    const out = render(
+      tree({
+        root: box("root", ["table", "chart", "tabs", "list"]),
+        table: { id: "table", type: "table", columns, rows } as unknown as FacetNode,
+        chart: { id: "chart", type: "chart", kind: "bar", series } as unknown as FacetNode,
+        tabs: {
+          id: "tabs",
+          type: "tabs",
+          items: Array.from({ length: MAX_TABS_ITEMS + 4 }, (_, index) => ({
+            label: `${longLabel}-${String(index)}`,
+            to: `screen-${String(index)}`,
+          })),
+        } as unknown as FacetNode,
+        list: {
+          id: "list",
+          type: "list",
+          items: Array.from({ length: MAX_LIST_ITEMS + 4 }, () => longLabel),
+        } as unknown as FacetNode,
+      }),
+    );
+
+    expect(out.match(/<th\b/g)).toHaveLength(MAX_TABLE_COLUMNS);
+    expect(out.match(/<tr/g)).toHaveLength(MAX_TABLE_ROWS + 1);
+    expect(out.match(/<rect/g)).toHaveLength(MAX_CHART_SERIES * MAX_CHART_POINTS);
+    expect(out.match(/role="tab"/g)).toHaveLength(MAX_TABS_ITEMS);
+    expect(out.match(/<li/g)).toHaveLength(MAX_LIST_ITEMS);
+    expect(out).not.toContain(longLabel);
+  });
+
+  it("does not read raw-path collection entries beyond the render caps", () => {
+    const readPastCap = new Set<string>();
+    const defineThrowingPastCap = <T>(values: T[], index: number, label: string): T[] => {
+      values.length = index + 1;
+      Object.defineProperty(values, String(index), {
+        get() {
+          readPastCap.add(label);
+          throw new Error(`read past ${label} cap`);
+        },
+        configurable: true,
+      });
+      return values;
+    };
+
+    const columns = defineThrowingPastCap(
+      Array.from({ length: MAX_TABLE_COLUMNS }, (_, index) => ({
+        key: `c${String(index)}`,
+        label: `Column ${String(index)}`,
+      })),
+      MAX_TABLE_COLUMNS,
+      "columns",
+    );
+    const longCell = "x".repeat(MAX_TABLE_CELL_CHARS + 20);
+    const rows = defineThrowingPastCap(
+      Array.from({ length: MAX_TABLE_ROWS }, (_, rowIndex) => ({
+        c0: rowIndex === 0 ? longCell : `r${String(rowIndex)}`,
+      })),
+      MAX_TABLE_ROWS,
+      "rows",
+    );
+    const values = defineThrowingPastCap(
+      Array.from({ length: MAX_CHART_POINTS }, (_, index) => index + 1),
+      MAX_CHART_POINTS,
+      "chart points",
+    );
+    const series = defineThrowingPastCap(
+      Array.from({ length: MAX_CHART_SERIES }, (_, index) => ({
+        label: `Series ${String(index)}`,
+        values,
+      })),
+      MAX_CHART_SERIES,
+      "chart series",
+    );
+    const tabs = defineThrowingPastCap(
+      Array.from({ length: MAX_TABS_ITEMS }, (_, index) => ({
+        label: `Tab ${String(index)}`,
+        to: `screen-${String(index)}`,
+      })),
+      MAX_TABS_ITEMS,
+      "tabs",
+    );
+    const listItems = defineThrowingPastCap(
+      Array.from({ length: MAX_LIST_ITEMS }, (_, index) => `Item ${String(index)}`),
+      MAX_LIST_ITEMS,
+      "list",
+    );
+
+    let out = "";
+    expect(() => {
+      out = render(
+        tree({
+          root: box("root", ["table", "chart", "tabs", "list"]),
+          table: { id: "table", type: "table", columns, rows } as unknown as FacetNode,
+          chart: { id: "chart", type: "chart", kind: "bar", series } as unknown as FacetNode,
+          tabs: { id: "tabs", type: "tabs", items: tabs } as unknown as FacetNode,
+          list: { id: "list", type: "list", items: listItems } as unknown as FacetNode,
+        }),
+      );
+    }).not.toThrow();
+
+    expect(readPastCap.size).toBe(0);
+    expect(out.match(/<th\b/g)).toHaveLength(MAX_TABLE_COLUMNS);
+    expect(out.match(/<tr/g)).toHaveLength(MAX_TABLE_ROWS + 1);
+    expect(out.match(/<rect/g)).toHaveLength(MAX_CHART_SERIES * MAX_CHART_POINTS);
+    expect(out.match(/role="tab"/g)).toHaveLength(MAX_TABS_ITEMS);
+    expect(out.match(/<li/g)).toHaveLength(MAX_LIST_ITEMS);
+    expect(out).toContain("x".repeat(MAX_TABLE_CELL_CHARS));
+    expect(out).not.toContain(longCell);
+  });
+
+  it("renders line and donut charts as distinct chart primitives, not bars", () => {
+    const line = render(
+      tree({
+        root: box("root", ["chart"]),
+        chart: {
+          id: "chart",
+          type: "chart",
+          title: "Line",
+          kind: "line",
+          series: [{ label: "Revenue", values: [1, 3, 2] }],
+        },
+      }),
+    );
+    expect(line).toContain("<polyline");
+    expect(line).not.toContain("<rect");
+
+    const donut = render(
+      tree({
+        root: box("root", ["chart"]),
+        chart: {
+          id: "chart",
+          type: "chart",
+          title: "Donut",
+          kind: "donut",
+          series: [{ label: "Mix", values: [2, 3, 5] }],
+        },
+      }),
+    );
+    expect(donut).toContain("<circle");
+    expect(donut).not.toContain("<rect");
+  });
+});
+
 // The live patch path can produce a box whose children list repeats an id
 // (validateTree dedupes siblings; the raw path does not). React needs unique
 // keys, so the renderer keeps only the first occurrence.
@@ -323,6 +706,49 @@ describe("StageRenderer field coercion", () => {
 });
 
 describe("StageRenderer happy path", () => {
+  it("renders primitive box/text variants through default theme recipes", () => {
+    const out = render(
+      tree({
+        root: { id: "root", type: "box", variant: "panel", children: ["title"] },
+        title: { id: "title", type: "text", value: "Welcome", variant: "heading" },
+      }),
+    );
+
+    expect(out).toContain("background:#f6f7f9");
+    expect(out).toContain("border:1px solid #e2e5ea");
+    expect(out).toContain("box-shadow:0 1px 2px rgba(15, 23, 42, 0.08)");
+    expect(out).toContain("font-size:36px");
+    expect(out).toContain("font-weight:700");
+  });
+
+  it("renders primitive media and field variants through default theme recipes", () => {
+    const out = render(
+      tree({
+        root: box("root", ["hero", "email"]),
+        hero: {
+          id: "hero",
+          type: "media",
+          kind: "image",
+          variant: "hero",
+          src: "https://example.com/hero.png",
+          alt: "Hero",
+        },
+        email: {
+          id: "email",
+          type: "field",
+          name: "email",
+          input: "email",
+          variant: "default",
+          label: "Email",
+        },
+      }),
+    );
+
+    expect(out).toContain("aspect-ratio:16 / 9");
+    expect(out).toContain("border-radius:16px");
+    expect(out).toContain("width:100%");
+  });
+
   it("renders all four bricks", () => {
     const out = render(
       tree({
@@ -342,6 +768,79 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain('src="https://example.com/a.png"');
     expect(out).toContain('name="email"');
     expect(out).toContain("Email");
+  });
+
+  it("caps raw high-level and primitive strings before rendering", () => {
+    const longLabel = "L".repeat(MAX_NODE_LABEL_CHARS + 10);
+    const longBody = "B".repeat(MAX_NODE_BODY_CHARS + 10);
+    const out = render(
+      tree({
+        root: box("root", [
+          "section",
+          "card",
+          "button",
+          "table",
+          "chart",
+          "stat",
+          "badge",
+          "progress",
+          "alert",
+          "divider",
+          "text",
+          "media",
+          "field",
+        ]),
+        section: {
+          id: "section",
+          type: "section",
+          eyebrow: longLabel,
+          title: longLabel,
+          body: longBody,
+          children: [],
+        },
+        card: { id: "card", type: "card", title: longLabel, body: longBody, children: [] },
+        button: { id: "button", type: "button", label: longLabel },
+        table: {
+          id: "table",
+          type: "table",
+          caption: longLabel,
+          columns: [{ key: "name", label: longLabel }],
+          rows: [{ name: longLabel }],
+        },
+        chart: {
+          id: "chart",
+          type: "chart",
+          title: longLabel,
+          kind: "bar",
+          series: [{ label: "A", values: [1] }],
+        },
+        stat: { id: "stat", type: "stat", label: longLabel, value: longLabel, delta: longLabel },
+        badge: { id: "badge", type: "badge", label: longLabel },
+        progress: { id: "progress", type: "progress", value: 50, label: longLabel },
+        alert: { id: "alert", type: "alert", title: longLabel, body: longBody },
+        divider: { id: "divider", type: "divider", label: longLabel },
+        text: { id: "text", type: "text", value: longBody },
+        media: {
+          id: "media",
+          type: "media",
+          kind: "image",
+          src: "https://example.com/a.png",
+          alt: longLabel,
+        },
+        field: {
+          id: "field",
+          type: "field",
+          name: "field-name",
+          label: longLabel,
+          placeholder: longLabel,
+        },
+      } as Record<NodeId, FacetNode>),
+    );
+
+    expect(out).not.toContain(longLabel);
+    expect(out).not.toContain(longBody);
+    expect(out).toContain("L".repeat(MAX_NODE_LABEL_CHARS));
+    expect(out).toContain("B".repeat(MAX_NODE_BODY_CHARS));
   });
 
   it("renders a pressable box as a button", () => {

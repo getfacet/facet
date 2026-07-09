@@ -13,11 +13,12 @@ and production policy belong to the application or platform that uses Facet.
 The reusable Facet stage tool and prompt-kit layer lives in
 `@facet/agent-tools`. That package owns the canonical tool specs,
 `executeStageTool`, inspection helpers, result types, local stage-shadow
-helpers, and provider-neutral Facet authoring guidance without choosing a
-provider or reference policy. Use `@facet/agent-tools` directly for custom agent
-loops. This package consumes that layer and adds the OpenAI/Anthropic adapters,
-reference page brief, event/history/stage context, bounded harness loop, and
-deterministic test fixture.
+helpers, catalog-aware enforcement, and provider-neutral Facet authoring
+guidance without choosing a provider or reference policy. Use
+`@facet/agent-tools` directly for custom agent loops. This package consumes that
+layer and adds the OpenAI/Anthropic adapters, reference page brief,
+event/history/stage context, bounded harness loop, and deterministic test
+fixture.
 
 `@facet/quickstart` composes this package for the provider-backed
 `facet-quickstart` path. You can import it directly when you want the reference
@@ -25,6 +26,7 @@ agent without the quickstart CLI/server/page wrapper.
 
 ```ts
 import { MemorySink } from "@facet/runtime";
+import { DEFAULT_CATALOG } from "@facet/assets";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
 
 const provider = resolveProvider({}, process.env);
@@ -35,6 +37,7 @@ const agent = createReferenceAgent({
   sink: new MemorySink(),
   agentId: "reference",
   guide: "# My Facet page",
+  catalog: DEFAULT_CATALOG,
   budgetPreset: "quickstart",
   trace: (event) => console.debug("[facet-reference-agent]", event),
 });
@@ -102,6 +105,22 @@ the model to inspect `outcome`, `visible_to_visitor`, `warnings`, and
 `rejected`, `applied_with_warnings`, and `applied_not_visible` are not visible
 success. This keeps false-success cases, such as creating an unattached node
 with `set_node`, inside the repair loop.
+
+Reference-agent catalog consumption has two paths:
+
+- Prompt path: `buildSystem(guide, assets?)` delegates to the agent-tools prompt
+  kit and includes theme names, the active catalog, stamp names, slot names, and
+  whitelisted stamp metadata. Catalog guidance includes locked theme behavior,
+  allowed brick variants, stamp policy, primitive fallback, compact-screen
+  guidance, and `stamp -> high-level brick -> primitive fallback`.
+- Executor path: the same `catalog` and immutable stamp snapshot are passed as
+  stage-tool assets to the buffered executor. That makes catalog policy
+  enforceable, not just prompt text: disallowed bricks/variants/stamps and
+  locked theme changes are rejected before any patch is yielded to the runtime.
+
+Catalog policy here is UI authoring policy for the reference brain. It is not
+hosted platform policy for auth, tenants, billing, metering, rate limits, spend
+caps, secrets operations, or admin workflows.
 
 `buildSystem(guide, assets?)` remains the reference-agent compatibility helper,
 but its fixed Facet guidance now comes from `@facet/agent-tools`. This package

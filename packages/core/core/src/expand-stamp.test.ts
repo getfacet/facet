@@ -184,6 +184,61 @@ describe("expandStamp", () => {
     expect(result.issues.some((issue) => issue.includes("unreachable"))).toBe(true);
   });
 
+  it("remaps high-level section and card child refs while preserving metadata", () => {
+    const result = expandStamp(
+      {
+        name: "dashboard-summary",
+        description: "Dashboard summary",
+        metadata: {
+          category: "dashboard",
+          variants: ["compact"],
+          preferredParent: "section",
+        },
+        slots: { title: "Revenue" },
+        root: "section",
+        nodes: {
+          section: {
+            id: "section",
+            type: "section",
+            title: "{{title}}",
+            children: ["card", "badge"],
+          },
+          card: {
+            id: "card",
+            type: "card",
+            title: "MRR",
+            children: ["stat"],
+            onPress: { kind: "toggle", target: "badge" },
+          },
+          stat: { id: "stat", type: "stat", label: "MRR", value: "$42k" },
+          badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
+        },
+      },
+      { title: "Revenue now" },
+      { parent: "root" },
+      {
+        existingIds: new Set(["root"]),
+        mintId: mintFrom(["fresh-section", "fresh-card", "fresh-stat", "fresh-badge"]),
+      },
+    );
+
+    expect(result.issues).toHaveLength(0);
+    expect(result.root).toBe("fresh-section");
+    expect(result.slots).toEqual({ title: "fresh-section" });
+    expect(result.nodes["fresh-section"]).toMatchObject({
+      id: "fresh-section",
+      type: "section",
+      title: "Revenue now",
+      children: ["fresh-card", "fresh-badge"],
+    });
+    expect(result.nodes["fresh-card"]).toMatchObject({
+      id: "fresh-card",
+      type: "card",
+      children: ["fresh-stat"],
+      onPress: { kind: "toggle", target: "fresh-badge" },
+    });
+  });
+
   it("bounds untrusted node ids echoed in expansion issues", () => {
     const longId = "x".repeat(80);
     const unreachable = expandStamp(

@@ -1,4 +1,4 @@
-import type { FacetTree, NodeId } from "@facet/core";
+import { treeRenderableNodeIds, type FacetTree, type NodeId } from "@facet/core";
 import type {
   AgentToolObservationData,
   AgentToolObservationStatus,
@@ -71,10 +71,7 @@ export function parseAgentToolObservation(text: string): AgentToolObservationDat
 }
 
 export function visibleStageNodeIds(tree: FacetTree): ReadonlySet<NodeId> {
-  const visible = new Set<NodeId>();
-  const root = renderRoot(tree);
-  collectVisible(tree, root, visible, new Set<NodeId>());
-  return visible;
+  return treeRenderableNodeIds(tree);
 }
 
 export function isVisitorVisibleStageChange(
@@ -87,32 +84,6 @@ export function isVisitorVisibleStageChange(
   const beforeVisible = visibleStageNodeIds(before);
   const afterVisible = visibleStageNodeIds(after);
   return changedNodeIds.some((id) => beforeVisible.has(id) || afterVisible.has(id));
-}
-
-function collectVisible(
-  tree: FacetTree,
-  nodeId: NodeId,
-  visible: Set<NodeId>,
-  seen: Set<NodeId>,
-): void {
-  if (seen.has(nodeId)) return;
-  seen.add(nodeId);
-  const node = tree.nodes[nodeId];
-  if (node === undefined) return;
-  if (node.type === "box" && node.hidden === true) return;
-  visible.add(nodeId);
-  if (node.type !== "box") return;
-  for (const childId of node.children) collectVisible(tree, childId, visible, seen);
-}
-
-function renderRoot(tree: FacetTree): NodeId {
-  const screens = tree.screens;
-  if (screens !== undefined && Object.keys(screens).length > 0) {
-    const entryRoot = typeof tree.entry === "string" ? screens[tree.entry] : undefined;
-    if (entryRoot !== undefined && tree.nodes[entryRoot] !== undefined) return entryRoot;
-    for (const id of Object.values(screens)) if (tree.nodes[id] !== undefined) return id;
-  }
-  return tree.root;
 }
 
 function stageMetadataChanged(before: FacetTree, after: FacetTree): boolean {

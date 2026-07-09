@@ -11,7 +11,7 @@
 import { readFile } from "node:fs/promises";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import type { FacetAgent, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
+import type { FacetAgent, FacetCatalog, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
 import { DEFAULT_GUIDE, createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
 import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
@@ -32,6 +32,7 @@ export interface RunCliHooks {
   readonly onResolvedAssets?: (assets: {
     readonly themes: readonly FacetTheme[];
     readonly stamps: readonly FacetStamp[];
+    readonly catalog: FacetCatalog;
   }) => void;
 }
 
@@ -172,9 +173,10 @@ export async function runCli(
   const loaded = await loadAssets(store, flags.agentId);
   const themes: readonly FacetTheme[] = loaded.themes;
   const stamps: readonly FacetStamp[] = loaded.stamps;
+  const catalog: FacetCatalog = loaded.catalog;
   const initialStage: FacetTree | undefined = loaded.initialTree;
   for (const issue of loaded.issues) error(`[facet-quickstart] ${issue}`);
-  hooks.onResolvedAssets?.({ themes, stamps });
+  hooks.onResolvedAssets?.({ themes, stamps, catalog });
 
   // One MemorySink shared by the agent (prompt layer ③ reads history) and the
   // facet server (which records into it) — the same conversation, both sides.
@@ -201,6 +203,7 @@ export async function runCli(
     agentId: flags.agentId,
     themes,
     stamps,
+    catalog,
   });
   const brain = `${provider.name} (${provider.model})`;
 

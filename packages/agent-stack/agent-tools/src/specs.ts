@@ -4,12 +4,14 @@ export type FacetStageToolSpec = ToolSpec<FacetStageToolName>;
 
 const NODE_SCHEMA = {
   type: "object",
-  description: "A Facet brick node (box | text | media | field) - see the stage format.",
+  description:
+    "A Facet v1 brick node. Allowed types are box, text, media, field, button, section, card, tabs, table, chart, stat, badge, progress, alert, list, divider. Only box, section, and card are containers. Variant names must be allowed by the active catalog policy.",
 } as const;
 
 const TREE_SCHEMA = {
   type: "object",
-  description: "The full Facet stage tree: { root, nodes, screens?, entry?, theme? }.",
+  description:
+    "The full Facet stage tree: { root, nodes, screens?, entry?, theme? }. Every node and theme must pass the active catalog policy before patches are emitted.",
 } as const;
 
 const STRING_MAP_SCHEMA = {
@@ -34,7 +36,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "render_page",
     description:
-      "Replace the entire page with a new Facet stage tree. Use for the first paint or a large restructure.",
+      "Replace the entire page with a new Facet stage tree. Use for the first paint or a large restructure. The executor rejects catalog policy violations before emitting patches.",
     parameters: {
       type: "object",
       properties: {
@@ -47,11 +49,14 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "append_node",
     description:
-      "Add one node as the last child of the existing box parentId. Use for small incremental page additions.",
+      "Add one v1 node as the last child of the existing box, section, or card parentId. Use for small incremental page additions. Catalog policy controls allowed node types and variants.",
     parameters: {
       type: "object",
       properties: {
-        parentId: { type: "string", description: "The id of an existing box node." },
+        parentId: {
+          type: "string",
+          description: "The id of an existing container node: box, section, or card.",
+        },
         ["node"]: NODE_SCHEMA,
       },
       required: ["parentId", "node"],
@@ -61,7 +66,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "use_stamp",
     description:
-      "Expand a reusable stamp by name under at.parent. Pass string params for stamp slots; the executor mints fresh ids.",
+      "Expand a reusable stamp by name under at.parent. Pass string params for stamp slots; the executor mints fresh ids. Catalog policy may restrict stamp names and the expanded v1 bricks.",
     parameters: {
       type: "object",
       properties: {
@@ -70,7 +75,10 @@ export const FACET_STAGE_TOOL_SPECS = [
         at: {
           type: "object",
           properties: {
-            parent: { type: "string", description: "The id of an existing box node." },
+            parent: {
+              type: "string",
+              description: "The id of an existing container node: box, section, or card.",
+            },
           },
           required: ["parent"],
           additionalProperties: false,
@@ -83,7 +91,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "set_node",
     description:
-      "Insert or replace one node by id. Reuse an existing id to update that node in place.",
+      "Insert or replace one v1 node by id. Reuse an existing id to update that node in place. Catalog policy controls allowed node types and variants.",
     parameters: {
       type: "object",
       properties: {
@@ -120,7 +128,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "set_theme",
     description:
-      "Restyle the whole page by selecting a theme by name only. Never pass CSS values or colors.",
+      "Restyle the whole page by selecting a theme by name only. Never pass CSS values or colors. A locked catalog policy rejects theme switches.",
     parameters: {
       type: "object",
       properties: {

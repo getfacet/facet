@@ -33,7 +33,9 @@ describe("foldStageShadow", () => {
     const result = foldStageShadow(ROOT_BOX, [{ kind: "patch", patches }]);
 
     expect(result.shadow).toEqual(EMPTY_TREE);
-    expect(result.issues.some((issue) => issue.includes("root node must be a box"))).toBe(true);
+    expect(result.issues.some((issue) => issue.includes("root node must be a container"))).toBe(
+      true,
+    );
     expect(result.patches).toEqual(patches);
     expect(result.patchCount).toBe(1);
     expect(result.changedNodeIds).toEqual(["root"]);

@@ -3,7 +3,7 @@
  * tool workflow, operator assets, and deployer page brief.
  */
 import { FACET_STAGE_TOOL_SPECS, buildFacetAgentSystemPrompt } from "@facet/agent-tools";
-import type { FacetStamp, FacetTheme } from "@facet/core";
+import type { FacetCatalog, FacetStamp, FacetTheme } from "@facet/core";
 
 import type { ToolSpec } from "../provider.js";
 
@@ -42,6 +42,7 @@ like a real service page an agent developer could ship to visitors.
 export interface PromptAssets {
   readonly themes: readonly FacetTheme[];
   readonly stamps: readonly FacetStamp[];
+  readonly catalog?: FacetCatalog;
 }
 
 /** Layers 1 and 2: vocabulary, tool workflow, optional assets, and page brief. */

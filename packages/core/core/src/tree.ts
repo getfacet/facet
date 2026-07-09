@@ -1,5 +1,18 @@
 import { isContainer, type FacetNode, type NodeId } from "./nodes.js";
 
+const TREE_RENDERABLE_NODE_BUDGET = 5_000;
+const TREE_RENDERABLE_MAX_DEPTH = 100;
+const TREE_RENDERABLE_MAX_TABLE_COLUMNS = 12;
+const TREE_RENDERABLE_MAX_CHART_SERIES = 8;
+const TREE_RENDERABLE_MAX_CHART_POINTS = 200;
+const TREE_RENDERABLE_MAX_LIST_ITEMS = 50;
+const TREE_RENDERABLE_MAX_TABS_ITEMS = 12;
+const TREE_RENDERABLE_MAX_FIELD_OPTIONS = 64;
+
+interface RenderableBudget {
+  left: number;
+}
+
 /**
  * A stage is the dynamic surface of a Facet page — everything except the
  * persistent chat dock.
@@ -55,10 +68,10 @@ export function isTreeShaped(value: unknown): value is FacetTree {
 }
 
 /**
- * Does this tree "show something real"? True iff it has a non-empty `screens`
- * map, or its render root resolves to a container box with ≥ 1 child. An empty
- * root box (EMPTY_TREE, the shape `validateTree` falls back to on garbage) is
- * NOT content.
+ * Does this tree "show something real"? True iff at least one render root has a
+ * visible, renderable descendant. A root that only points at a dangling id, a
+ * hidden subtree, or a high-level data brick with no renderable data (empty
+ * table/chart/tabs/list) is NOT content.
  *
  * The single canonical form: the server's offline path (`hasBuiltStage` — should
  * the offline face overwrite this page?) and the runtime's seed gate
@@ -66,26 +79,197 @@ export function isTreeShaped(value: unknown): value is FacetTree {
  * the "shows something" definition can never silently drift between them.
  */
 export function treeHasContent(tree: FacetTree): boolean {
-  const screens = (tree as { readonly screens?: unknown }).screens;
-  if (
-    typeof screens === "object" &&
-    screens !== null &&
-    !Array.isArray(screens) &&
-    Object.keys(screens).length > 0
-  ) {
-    return true;
+  return treeRenderableNodeIds(tree).size > 0;
+}
+
+export function treeRenderableNodeIds(tree: FacetTree): ReadonlySet<NodeId> {
+  const ids = new Set<NodeId>();
+  try {
+    collectRenderableRoot(tree, renderRootId(tree), ids, new Set(), {
+      left: TREE_RENDERABLE_NODE_BUDGET,
+    });
+  } catch {
+    ids.clear();
   }
-  const root = tree.nodes[tree.root];
-  // A persisted/foreign FileStageStore tree can carry a `{type:"box"}` root with
-  // NO children array (isTreeShaped admits it — it only rejects a *present*
-  // non-array children). Guard the array so a childless container root fails safe
-  // (offline face) instead of throwing on `.length` on a live offline-visit path.
+  return ids;
+}
+
+function renderRootId(tree: FacetTree): NodeId {
+  const entry = liveScreenRoot(tree, (tree as { readonly entry?: unknown }).entry);
+  if (entry !== null) return entry;
+  const screens = (tree as { readonly screens?: unknown }).screens;
+  if (isRecord(screens)) {
+    for (const name of Object.keys(screens)) {
+      const first = liveScreenRoot(tree, name);
+      if (first !== null) return first;
+    }
+  }
+  return tree.root;
+}
+
+function liveScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
+  const screens = (tree as { readonly screens?: unknown }).screens;
+  if (!isRecord(screens) || typeof name !== "string") return null;
+  if (!Object.prototype.hasOwnProperty.call(screens, name)) return null;
+  const id = screens[name];
+  if (typeof id !== "string") return null;
+  const node = tree.nodes[id];
+  return isRecord(node) && isContainer(node as FacetNode) ? id : null;
+}
+
+function collectRenderableRoot(
+  tree: FacetTree,
+  id: NodeId,
+  out: Set<NodeId>,
+  seen: Set<NodeId>,
+  budget: RenderableBudget,
+): boolean {
+  const node = tree.nodes[id];
+  if (!isRecord(node) || node.hidden === true || !isContainer(node as FacetNode)) return false;
+  return collectRenderableNode(tree, id, out, seen, budget, 0);
+}
+
+function collectRenderableNode(
+  tree: FacetTree,
+  id: NodeId,
+  out: Set<NodeId>,
+  seen: Set<NodeId>,
+  budget: RenderableBudget,
+  depth: number,
+): boolean {
+  if (depth > TREE_RENDERABLE_MAX_DEPTH || budget.left <= 0) return false;
+  if (seen.has(id)) return false;
+  seen.add(id);
+  budget.left -= 1;
+  const node = tree.nodes[id];
+  if (!isRecord(node) || node.hidden === true) return false;
+  let renders = nodeRendersItself(node);
+  if (isContainer(node as FacetNode) && Array.isArray(node.children)) {
+    const limit = Math.min(node.children.length, budget.left);
+    for (let i = 0; i < limit && budget.left > 0; i += 1) {
+      const child = node.children[i];
+      if (typeof child !== "string") continue;
+      if (collectRenderableNode(tree, child, out, seen, budget, depth + 1)) renders = true;
+    }
+  }
+  if (renders) out.add(id);
+  return renders;
+}
+
+function nodeRendersItself(node: Record<string, unknown>): boolean {
+  switch (node.type) {
+    case "box":
+      return false;
+    case "section":
+    case "card":
+      return hasString(node.eyebrow) || hasString(node.title) || hasString(node.body);
+    case "text":
+      return hasString(node.value);
+    case "image":
+      return typeof node.src === "string" && isRenderableMediaSrc(node.src);
+    case "media":
+      if (node.kind !== undefined && node.kind !== "image" && node.kind !== "video") return false;
+      return typeof node.src === "string" && isRenderableMediaSrc(node.src);
+    case "field":
+      return fieldHasRenderableControl(node);
+    case "button":
+      return typeof node.label === "string";
+    case "tabs":
+      return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
+    case "table":
+      return hasRenderableArray(
+        node.columns,
+        TREE_RENDERABLE_MAX_TABLE_COLUMNS,
+        isRenderableTableColumn,
+      );
+    case "chart":
+      return chartHasRenderableData(node);
+    case "stat":
+      return typeof node.label === "string" && typeof node.value === "string";
+    case "badge":
+      return typeof node.label === "string";
+    case "progress":
+      return typeof node.value === "number" && Number.isFinite(node.value);
+    case "alert":
+      return typeof node.body === "string";
+    case "list":
+      return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_LIST_ITEMS, isRenderableListItem);
+    case "divider":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function hasRenderableArray(
+  value: unknown,
+  cap: number,
+  predicate: (item: unknown) => boolean,
+): boolean {
+  if (!Array.isArray(value)) return false;
+  const limit = Math.min(value.length, cap);
+  for (let i = 0; i < limit; i += 1) {
+    if (predicate(value[i])) return true;
+  }
+  return false;
+}
+
+function isRenderableMediaSrc(src: string): boolean {
+  const value = src.trim().toLowerCase();
   return (
-    root !== undefined &&
-    isContainer(root) &&
-    Array.isArray((root as { children?: unknown }).children) &&
-    root.children.length > 0
+    value.startsWith("https://") ||
+    value.startsWith("http://") ||
+    value.startsWith("//") ||
+    value.startsWith("data:image/") ||
+    (value.startsWith("/") && !value.startsWith("//"))
   );
+}
+
+function isRenderableTabItem(item: unknown): boolean {
+  return isRecord(item) && typeof item.label === "string" && typeof item.to === "string";
+}
+
+function isRenderableTableColumn(column: unknown): boolean {
+  return isRecord(column) && typeof column.key === "string" && typeof column.label === "string";
+}
+
+function isRenderableListItem(item: unknown): boolean {
+  if (typeof item === "string") return true;
+  return isRecord(item) && typeof item.title === "string";
+}
+
+function fieldHasRenderableControl(node: Record<string, unknown>): boolean {
+  if (typeof node.name !== "string") return false;
+  if (node.input !== "radio") return true;
+  return (
+    hasString(node.label) ||
+    hasRenderableArray(node.options, TREE_RENDERABLE_MAX_FIELD_OPTIONS, hasString)
+  );
+}
+
+function chartHasRenderableData(node: Record<string, unknown>): boolean {
+  if (node.kind !== "bar" && node.kind !== "line" && node.kind !== "donut") return false;
+  if (!Array.isArray(node.series)) return false;
+  const seriesLimit = Math.min(node.series.length, TREE_RENDERABLE_MAX_CHART_SERIES);
+  for (let seriesIndex = 0; seriesIndex < seriesLimit; seriesIndex += 1) {
+    const series = node.series[seriesIndex];
+    if (!isRecord(series) || !Array.isArray(series.values)) continue;
+    const valueLimit = Math.min(series.values.length, TREE_RENDERABLE_MAX_CHART_POINTS);
+    for (let valueIndex = 0; valueIndex < valueLimit; valueIndex += 1) {
+      const value = series.values[valueIndex];
+      if (typeof value !== "number" || !Number.isFinite(value)) continue;
+      if (node.kind !== "donut" || Math.abs(value) > 0) return true;
+    }
+  }
+  return false;
 }
 
 /** A fresh, empty stage: a single vertical root box with no children. */

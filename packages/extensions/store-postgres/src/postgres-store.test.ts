@@ -73,8 +73,12 @@ describe("initSchema", () => {
     expect(sql).toContain("agent_id text primary key");
     expect(sql).toContain("themes jsonb");
     expect(sql).toContain("stamps jsonb");
+    expect(sql).toContain("catalog jsonb");
     expect(sql).toContain("initial_tree jsonb");
     expect(sql).toContain("updated_at timestamptz not null default now()");
+    expect(calls.some((call) => /add column if not exists catalog jsonb/i.test(call.text))).toBe(
+      true,
+    );
   });
 });
 

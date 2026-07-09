@@ -30,7 +30,7 @@ The Stage diverges along two axes:
 - **What they say** — each `message`/`action` event lets the agent patch the
   Stage further.
 
-## Why low-level bricks (the central bet)
+## Why a closed vocabulary plus catalog (the central bet)
 
 Every existing way to let an agent build UI sits at one of two extremes:
 
@@ -42,40 +42,63 @@ Every existing way to let an agent build UI sits at one of two extremes:
   writes actual page code. Total freedom, but unsafe (injection) and prone to
   visual breakage.
 
-Facet takes the empty middle: **low-level bricks** the agent composes freely.
+Facet takes the empty middle: a **closed core vocabulary** the agent composes
+freely, guided by a catalog when a project wants stronger design-system policy.
 The trick that makes this safe *and* one-shot-reliable is that freedom and
 fragility are separated onto different axes:
 
-- Freedom comes from **composition** — four bricks (`box`, `text`, `media`,
-  `field`) stack into anything.
-- Safety comes from **constraining the bricks, not the composition**: bricks are
-  typed data (no raw HTML/JS), style values are **tokens** not scalars, layout is
-  **flow-only** (no absolute positioning), every prop has a **default**, and the
-  renderer is **fail-safe**.
+- Freedom comes from **composition**: v1 high-level bricks cover common
+  product/app UI, stamps provide reusable fragments, and primitive bricks remain
+  the fallback for custom flow composition.
+- Safety comes from **constraining the vocabulary, not handing over markup**:
+  nodes are typed data (no raw HTML/JS), style values are **tokens** not scalars,
+  layout is **flow-only** (no absolute positioning), every prop has a
+  **default**, and the renderer is **fail-safe**.
 
 So "broken" splits into two kinds, and both are designed out: *crashes /
 injection / overlap* are made structurally impossible; *ugliness* is prevented
-because tokens force every choice onto a coherent scale. One-shot leverage (the
-thing semantic catalogs were good at) is restored later by an optional preset
-package whose helpers are themselves just box compositions.
+because tokens and recipes force every choice onto a coherent scale. One-shot
+leverage (the thing semantic catalogs were good at) comes from catalog policy,
+theme recipes, and stamp metadata, while primitive fallback keeps the system from
+becoming an opaque widget-only catalog.
 
 ## The brick palette
 
-`FacetNode` is a closed union of four bricks (see
-`packages/core/core/src/nodes.ts`):
+`FacetNode` is a closed union in `packages/core/core/src/nodes.ts`. The union can
+grow only by adding typed node shapes, validators, tool policy, and renderer
+support on purpose; it never accepts raw HTML, JS, CSS, or arbitrary component
+code.
 
-- `box` — the only container. Flow layout (`direction: row|col`), token styles
-  (including `appear` — a bounded enter-animation token — and `scroll` — a
-  bounded internally-scrollable axis, plus `columns` for a bounded responsive
-  grid), an optional `onPress` action (a pressable box is the button primitive),
-  an optional `onHold` action (the same behavior-language union, fired by a long
-  press — a secondary gesture), and an optional `hidden` flag (a
-  content-declared initial-collapsed default).
+The primitive base remains valid as fallback:
+
+- `box` — the universal flow container. Flow layout (`direction: row|col`),
+  token styles (including `appear`, `scroll`, and `columns`), optional
+  `onPress`/`onHold`, and optional `hidden`.
 - `text` — a string with token text styles.
-- `media` — a static safe `src`, optional `alt`, `kind: "image" | "video"`,
-  and token styles. Legacy stored `image` nodes normalize to media images.
+- `media` — a static safe `src`, optional `alt`, `kind: "image" | "video"`, and
+  token styles. Legacy stored `image` nodes normalize to media images.
 - `field` — a native input (`name`, `input` kind, capped `options` for
   select/radio, token styles).
+
+The v1 high-level bricks are still just typed stage data:
+
+- `button` — a leaf action brick with `label`, optional `variant`/`tone`,
+  `disabled`, `onPress`, and `onHold`.
+- `section` — a normal-flow container with optional `title`, `eyebrow`, `body`,
+  `variant`, and `children`.
+- `card` — a normal-flow container with optional `title`, `body`, `variant`,
+  `tone`, `onPress`/`onHold`, and `children`.
+- `tabs` — local navigation over existing screen/view-state semantics. It does
+  not write stage content or call the agent.
+- `table` — display-only tabular data with capped columns, rows, and cells.
+- `chart` — display-only chart data with capped series and points.
+- `stat`, `badge`, `progress`, `alert`, `list`, and `divider` — compact display
+  and feedback bricks with bounded payloads.
+
+Only `box`, `section`, and `card` are containers in v1. Tables and charts are
+display-only; there is no client fetch, sort/filter state, backend binding, or
+inline script. Overlay-class modal/drawer/popover bricks are intentionally out of
+v1 so normal-flow layout stays the invariant.
 
 `onPress` is a small **behavior language** — a discriminated union so the agent
 can pre-declare what an interaction does:
@@ -95,61 +118,86 @@ needs new reasoning.
 
 Style values are **tokens** defined in `packages/core/core/src/tokens.ts`
 (`Space`, `FontFamily`, `FontSize`, `Color`, `Radius`, …). Token names are the
-agent-facing vocabulary; the concrete CSS lives only in the renderer's theme
-(`packages/core/react/src/theme.ts`), so reskinning every page is a data change
-and the agent never deals in pixels, hex, or font stacks. The token names are
-kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
+agent-facing vocabulary; the concrete default token values live in
+`@facet/assets` (`packages/core/assets/src/theme.ts`), while `@facet/react`
+resolves those data maps to CSS at render time. Reskinning every page is a data
+change and the agent never deals in pixels, hex, or font stacks. The token names
+are kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
 
-## Themes, stamps, and seeds: reskin as data
+## Catalog policy
+
+`FacetCatalog` is the agent-facing usage manual for the active project. It says
+which bricks and variants are allowed, which stamps may be used, whether
+primitive fallback is allowed or discouraged, whether theme switching is locked,
+and whether the agent should prefer compact screens or edit-before-append
+behavior. Missing or malformed catalog input falls back to `DEFAULT_CATALOG` with
+bounded issues.
+
+The catalog is deliberately neutral UI vocabulary/policy. It is not LiveFrame and
+it is not a hosted control plane. Tenant/project lookup, browser auth, agent
+auth, billing, usage metering, rate limits, abuse operations, audit logs, secrets
+management, and custom-domain routing stay outside Facet in the platform edge or
+operator environment.
+
+## Catalog, themes, stamps, and seeds: reskin as data
 
 The renderer-owns-the-CSS rule above makes a reskin a one-file change; the theme
 layer makes it a **data** change — without moving the pixel boundary into the
 spec. Raw CSS values enter Facet in exactly one place — `validateTheme` in
 `@facet/core` — and only as **operator data**, never as tree content or model
-output. A `FacetTheme` is a partial override document (token name → CSS value),
-and the validator is the single gate it passes: an allowlist per token group, a
-deny-list (`url()`, `var()`, `expression()`, `javascript:` and injection
-characters are refused), dimension clamps so a theme can't push content
-off-screen, a bounded font-family grammar for typography values, safe parseable
-opaque colors (hex, `rgb()`/`rgba()`, `hsl()`/`hsla()`, and a conservative
-named-color table), and a WCAG contrast check that is *measured as a warning,
-never a rejection* (Facet measures; the caller sets policy). The same color
-parser gates the value and feeds the contrast measurement, so an accepted color
-cannot skip the warning path. Output maps are built on
-`Object.create(null)` so a hostile key can never resolve. The validator is pure
-and dependency-free, so it runs identically on the server and in the browser.
+output. A `FacetTheme` is a partial override document (token name → CSS value)
+plus optional `recipes` for components and variants. The validator is the single
+gate it passes: an allowlist per token group and recipe style group, a deny-list
+(`url()`, `var()`, `expression()`, `javascript:` and injection characters are
+refused), dimension clamps so a theme can't push content off-screen, a bounded
+font-family grammar for typography values, safe parseable opaque colors (hex,
+`rgb()`/`rgba()`, `hsl()`/`hsla()`, and a conservative named-color table), and a
+WCAG contrast check that is *measured as a warning, never a rejection* (Facet
+measures; the caller sets policy). The same color parser gates the value and
+feeds the contrast measurement, so an accepted color cannot skip the warning
+path. Output maps are built on `Object.create(null)` so a hostile key can never
+resolve. The validator is pure and dependency-free, so it runs identically on
+the server and in the browser.
 
 The stage tree carries only a **name**: `FacetTree.theme?: string`,
 kept-if-string by `validateTree`. `STAGE_SPEC` teaches the agent to set it to a
 theme name it has been given and nothing else — **the LLM never authors theme
-values**; the style functions still index by token name. Resolution is a
-boot-shipped map plus a local lookup: the validated theme documents ship to the
-browser **once**, inline in the quickstart HTML shell as an escaped
-`window.__FACET_THEMES__` global, and `resolveTheme` (`@facet/react`) maps the
-tree's theme name to a resolved token map, falling back to the default for an
-unknown or missing name. This is a pure lookup — the browser writes no stage
+values**. Nodes carry `variant`/`tone` selectors where supported; primitive
+`box`/`text`/`media`/`field` may also choose a theme recipe variant, while primitive styles still
+carry token names. Resolution is a boot-shipped map plus local lookups: the
+validated theme documents ship to the browser **once**, inline in
+the quickstart HTML shell as an escaped `window.__FACET_THEMES__` global,
+`resolveTheme` (`@facet/react`) maps the tree's theme name to a resolved token
+map, and `resolveRecipe` maps a component + variant/tone to token-only style
+bundles. Unknown theme names, recipes, variants, or tones fall back to the
+default recipe/style path. This is pure lookup — the browser writes no stage
 state — and it introduces **no new protocol message**: `@facet/server` and
 `@facet/client` are untouched, and a live theme switch is just a normal `/theme`
-patch re-resolved locally.
+patch re-resolved locally when catalog policy allows it.
 
 The document library itself is a **pluggable adapter, exactly like `StageStore`**:
 `AssetsStore` is an interface with a browser-safe `MemoryAssets` reference in
 `@facet/runtime`'s main barrel and a file-backed `FileAssets` behind
 `@facet/runtime/node` (so a browser bundle never drags in `node:fs`); a database
 adapter would live outside, the `@facet/store-postgres` precedent. `loadAssets`
-runs the core validators once at boot (no hot reload), keeps adapter failures
-fail-soft, caps hostile asset/issue arrays before iterating them, and skips any
-invalid document with a logged issue — the same skip-and-log posture the file
-stage store already uses. **Stamps** — validated `{ root, nodes, slots? }` brick fragments —
-reach the quickstart LLM as names, slot names, and descriptions. The model calls
-`use_stamp`; the server resolves the name from the immutable per-agent stamp
-snapshot, fills whole-value `{{slot}}` markers, remaps every internal id to a
-fresh id, drops unreachable nodes and stamped actions that point outside the
-expanded subtree, and emits ordinary JSON Patch ops through the same closure
-buffer as hand-authored nodes. The parent must be a known box, and an expansion
-that would overflow one patch batch is refused before any partial patch is
-emitted. There is **no client-side stamp expansion** anywhere: `validateTree`
-and the fail-safe renderer see only normal bricks.
+runs the core validators once at boot (no hot reload), resolves catalog, theme,
+stamp, and initial-tree assets fail-soft, caps hostile asset/issue arrays before
+iterating them, and skips any invalid document with a logged issue — the same
+skip-and-log posture the file stage store already uses.
+
+**Stamps** — validated `{ root, nodes, slots? }` brick fragments — reach the
+quickstart LLM as names, slot names, descriptions, and bounded metadata such as
+`category`, `useWhen`, `avoidWhen`, `tags`, `preferredParent`, `composedOf`, and
+`followUpEdits`. Full stamp JSON, `root`, `nodes`, slot defaults, and unknown
+fields are not prompt surface. The model calls `use_stamp`; the server resolves
+the name from the immutable per-agent stamp snapshot, fills whole-value
+`{{slot}}` markers, remaps every internal id to a fresh id, drops unreachable
+nodes and stamped actions that point outside the expanded subtree, and emits
+ordinary JSON Patch ops through the same closure buffer as hand-authored nodes.
+The parent must be a known container (`box`, `section`, or `card`), and an
+expansion that would overflow one patch batch is refused before any partial
+patch is emitted. There is **no client-side stamp expansion** anywhere:
+`validateTree` and the fail-safe renderer see only normal bricks.
 
 Seeding a page before the first model call is a `StageStore` **decorator**,
 `withInitialStage`, that opens a fresh session on a validated initial tree
@@ -171,8 +219,11 @@ boot-shipped tree, so nothing waits on the model; the seed frame then applies
 idempotently. One
 trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
 which would silently seed a blank page and flip the server's offline face, so a
-tree that isn't *seedable* (a render root with at least one child, or a non-empty
-`screens`) is refused as a seed and boot falls back to today's model-first paint.
+tree that isn't *seedable* (the initial render root has visible, renderable
+content such as text, media, fields, controls, or data-backed bricks) is refused
+as a seed and boot falls back to today's model-first paint. Empty containers,
+blank entry screens, empty table/chart/tabs/list leaves, and empty radio groups
+with no label or options are not seedable.
 
 ## The stage tree
 
@@ -436,12 +487,12 @@ would pull in a dependency or Node built-in, lives in that package instead.
 
 ## Boundaries and what's still out of scope
 
-The current repo implements the **core model** (bricks, tokens, RFC 6902
-patches), sessions and the event loop, a React renderer, reference SSE+POST
-transports, browser-side transports, the optional AG-UI adapter/event layer,
-local agent surfaces (CLI/bridge), default asset data, file/in-memory asset
-references, a Postgres store adapter, the playground, and the quickstart
-reference brain.
+The current repo implements the **core model** (closed brick vocabulary,
+primitive fallback, catalog policy, tokens/recipes, RFC 6902 patches), sessions
+and the event loop, a React renderer, reference SSE+POST transports,
+browser-side transports, the optional AG-UI adapter/event layer, local agent
+surfaces (CLI/bridge), default asset data, file/in-memory asset references, a
+Postgres store adapter, the playground, and the quickstart reference brain.
 
 Deliberately still out of scope:
 

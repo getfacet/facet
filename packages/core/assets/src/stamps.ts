@@ -1,25 +1,23 @@
 import type { FacetStamp } from "@facet/core";
 
 /**
- * `DEFAULT_STAMPS` — the default stamp library as literal, validated
- * `FacetStamp` trees. A stamp is a named `{root, nodes}` subtree an operator
- * hands to the assets registry; the LLM expands it by name through `use_stamp`.
- *
- * These replace the retired kit-factory `KIT_STAMPS`, which captured the same
- * three shapes (hero, card, cta-button) by running the kit presets through a
- * graft builder. Here the trees are written out by hand — plain box/text bricks
- * with token style values, no builder/renderer dependency — so `@facet/assets`
- * stays node-free with deps = the core contract only.
- *
- * Every node id is prefixed with its stamp's own `name` (e.g. `hero.root`,
- * `hero.title`), so the stamps are pairwise disjoint and none touches the
- * reserved `"root"` id. Each tree passes `validateStamp` with zero error issues.
+ * Default stamps are prompt-safe, node-free data assets: reusable stage
+ * fragments with bounded metadata so an agent can choose useful patterns before
+ * falling back to raw bricks.
  */
 export const DEFAULT_STAMPS: readonly FacetStamp[] = [
   {
     name: "hero",
-    description:
-      "A centered hero banner: large title, optional subtitle, and a call-to-action button.",
+    description: "A compact product hero with a title, subtitle, and CTA.",
+    metadata: {
+      category: "marketing",
+      useWhen: "Introducing a product, feature, or first screen.",
+      avoidWhen: "The user needs dense operational data first.",
+      tags: ["hero", "landing", "cta"],
+      variants: ["default"],
+      repeatable: false,
+      preferredParent: "root",
+    },
     slots: {
       title: "Your headline",
       subtitle: "A short supporting line.",
@@ -29,40 +27,34 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
     nodes: {
       "hero.root": {
         id: "hero.root",
-        type: "box",
-        style: { direction: "col", gap: "lg", pad: "2xl", align: "center" },
-        children: ["hero.title", "hero.subtitle", "hero.cta"],
-      },
-      "hero.title": {
-        id: "hero.title",
-        type: "text",
-        value: "{{title}}",
-        style: { size: "3xl", weight: "bold", align: "center" },
-      },
-      "hero.subtitle": {
-        id: "hero.subtitle",
-        type: "text",
-        value: "{{subtitle}}",
-        style: { size: "md", color: "fg-muted", align: "center" },
+        type: "section",
+        title: "{{title}}",
+        body: "{{subtitle}}",
+        variant: "surface",
+        children: ["hero.cta"],
       },
       "hero.cta": {
         id: "hero.cta",
-        type: "box",
-        style: { bg: "accent", radius: "md", pad: "md", align: "center" },
+        type: "button",
+        label: "{{cta}}",
+        variant: "primary",
+        tone: "accent",
         onPress: { kind: "agent", name: "start" },
-        children: ["hero.cta-label"],
-      },
-      "hero.cta-label": {
-        id: "hero.cta-label",
-        type: "text",
-        value: "{{cta}}",
-        style: { color: "accent-fg", weight: "semibold" },
       },
     },
   },
   {
     name: "card",
-    description: "A bordered, padded content card stacking a heading over body copy.",
+    description: "A titled content card with body copy.",
+    metadata: {
+      category: "content",
+      useWhen: "Grouping one concept, record, or explanation.",
+      avoidWhen: "The content is a whole screen section.",
+      tags: ["card", "content"],
+      variants: ["default", "interactive"],
+      repeatable: true,
+      preferredParent: "section",
+    },
     slots: {
       title: "Card title",
       body: "Card body copy.",
@@ -71,26 +63,26 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
     nodes: {
       "card.root": {
         id: "card.root",
-        type: "box",
-        style: { direction: "col", gap: "sm", pad: "lg", border: true, radius: "lg" },
-        children: ["card.title", "card.body"],
-      },
-      "card.title": {
-        id: "card.title",
-        type: "text",
-        value: "{{title}}",
-        style: { size: "3xl", weight: "bold" },
-      },
-      "card.body": {
-        id: "card.body",
-        type: "text",
-        value: "{{body}}",
+        type: "card",
+        title: "{{title}}",
+        body: "{{body}}",
+        variant: "default",
+        children: [],
       },
     },
   },
   {
     name: "cta-button",
     description: "A single accent call-to-action button that fires an agent action.",
+    metadata: {
+      category: "action",
+      useWhen: "The user should take one clear next action.",
+      avoidWhen: "The action needs surrounding explanation or fields.",
+      tags: ["button", "cta", "action"],
+      variants: ["primary"],
+      repeatable: true,
+      preferredParent: "card",
+    },
     slots: {
       label: "Get started",
     },
@@ -98,16 +90,412 @@ export const DEFAULT_STAMPS: readonly FacetStamp[] = [
     nodes: {
       "cta-button.root": {
         id: "cta-button.root",
-        type: "box",
-        style: { bg: "accent", radius: "md", pad: "md", align: "center" },
+        type: "button",
+        label: "{{label}}",
+        variant: "primary",
+        tone: "accent",
         onPress: { kind: "agent", name: "start" },
-        children: ["cta-button.label"],
       },
-      "cta-button.label": {
-        id: "cta-button.label",
-        type: "text",
-        value: "{{label}}",
-        style: { color: "accent-fg", weight: "semibold" },
+    },
+  },
+  {
+    name: "pricing-section",
+    description: "A compact pricing comparison section with three plan cards.",
+    metadata: {
+      category: "commerce",
+      useWhen: "Showing plans, packages, or tier comparison.",
+      avoidWhen: "The user asked for a single plan detail.",
+      tags: ["pricing", "plans", "commerce"],
+      variants: ["three-card"],
+      repeatable: false,
+      preferredParent: "root",
+    },
+    slots: {
+      title: "Choose a plan",
+      starter: "Starter",
+      pro: "Pro",
+      enterprise: "Enterprise",
+      cta: "Compare plans",
+    },
+    root: "pricing-section.root",
+    nodes: {
+      "pricing-section.root": {
+        id: "pricing-section.root",
+        type: "section",
+        title: "{{title}}",
+        variant: "surface",
+        children: ["pricing-section.starter", "pricing-section.pro", "pricing-section.enterprise"],
+      },
+      "pricing-section.starter": {
+        id: "pricing-section.starter",
+        type: "card",
+        title: "{{starter}}",
+        body: "Simple tools for early teams.",
+        children: ["pricing-section.starter-price"],
+      },
+      "pricing-section.starter-price": {
+        id: "pricing-section.starter-price",
+        type: "stat",
+        label: "Monthly",
+        value: "$19",
+      },
+      "pricing-section.pro": {
+        id: "pricing-section.pro",
+        type: "card",
+        title: "{{pro}}",
+        body: "Advanced workflows and analytics.",
+        tone: "accent",
+        children: ["pricing-section.pro-price", "pricing-section.cta"],
+      },
+      "pricing-section.pro-price": {
+        id: "pricing-section.pro-price",
+        type: "stat",
+        label: "Monthly",
+        value: "$49",
+      },
+      "pricing-section.cta": {
+        id: "pricing-section.cta",
+        type: "button",
+        label: "{{cta}}",
+        variant: "primary",
+        onPress: { kind: "agent", name: "compare_pricing" },
+      },
+      "pricing-section.enterprise": {
+        id: "pricing-section.enterprise",
+        type: "card",
+        title: "{{enterprise}}",
+        body: "Custom controls for larger organizations.",
+        children: ["pricing-section.enterprise-badge"],
+      },
+      "pricing-section.enterprise-badge": {
+        id: "pricing-section.enterprise-badge",
+        type: "badge",
+        label: "Custom",
+        tone: "info",
+      },
+    },
+  },
+  {
+    name: "faq-section",
+    description: "A concise FAQ list for common questions.",
+    metadata: {
+      category: "support",
+      useWhen: "Answering several predictable questions.",
+      avoidWhen: "The user needs an interactive troubleshooting flow.",
+      tags: ["faq", "support", "list"],
+      variants: ["compact"],
+      repeatable: false,
+      preferredParent: "root",
+    },
+    slots: {
+      title: "Questions",
+      q1: "What is included?",
+      q2: "Can I cancel?",
+      q3: "How do I get support?",
+    },
+    root: "faq-section.root",
+    nodes: {
+      "faq-section.root": {
+        id: "faq-section.root",
+        type: "section",
+        title: "{{title}}",
+        children: ["faq-section.list"],
+      },
+      "faq-section.list": {
+        id: "faq-section.list",
+        type: "list",
+        items: [{ title: "{{q1}}" }, { title: "{{q2}}" }, { title: "{{q3}}" }],
+      },
+    },
+  },
+  {
+    name: "dashboard-summary",
+    description: "A KPI summary section with stats and status.",
+    metadata: {
+      category: "dashboard",
+      useWhen: "Summarizing current performance or account state.",
+      avoidWhen: "The user asked for detailed raw records first.",
+      tags: ["dashboard", "metrics", "summary"],
+      variants: ["kpi"],
+      repeatable: false,
+      preferredParent: "root",
+    },
+    slots: {
+      title: "Overview",
+      metric: "Revenue",
+      value: "$42k",
+      delta: "+12%",
+    },
+    root: "dashboard-summary.root",
+    nodes: {
+      "dashboard-summary.root": {
+        id: "dashboard-summary.root",
+        type: "section",
+        title: "{{title}}",
+        variant: "surface",
+        children: [
+          "dashboard-summary.stat",
+          "dashboard-summary.badge",
+          "dashboard-summary.progress",
+        ],
+      },
+      "dashboard-summary.stat": {
+        id: "dashboard-summary.stat",
+        type: "stat",
+        label: "{{metric}}",
+        value: "{{value}}",
+        delta: "{{delta}}",
+        tone: "success",
+      },
+      "dashboard-summary.badge": {
+        id: "dashboard-summary.badge",
+        type: "badge",
+        label: "Healthy",
+        tone: "success",
+      },
+      "dashboard-summary.progress": {
+        id: "dashboard-summary.progress",
+        type: "progress",
+        label: "Goal",
+        value: 72,
+        tone: "accent",
+      },
+    },
+  },
+  {
+    name: "settings-panel",
+    description: "A settings card with two editable fields and a save action.",
+    metadata: {
+      category: "settings",
+      useWhen: "Collecting a small configuration update.",
+      avoidWhen: "The form needs many fields or validation steps.",
+      tags: ["settings", "form", "fields"],
+      variants: ["compact"],
+      repeatable: true,
+      preferredParent: "section",
+    },
+    slots: {
+      title: "Settings",
+      email: "Email",
+      timezone: "Timezone",
+      save: "Save",
+    },
+    root: "settings-panel.root",
+    nodes: {
+      "settings-panel.root": {
+        id: "settings-panel.root",
+        type: "card",
+        title: "{{title}}",
+        children: ["settings-panel.email", "settings-panel.timezone", "settings-panel.save"],
+      },
+      "settings-panel.email": {
+        id: "settings-panel.email",
+        type: "field",
+        name: "email",
+        input: "email",
+        label: "{{email}}",
+        style: { width: "full" },
+      },
+      "settings-panel.timezone": {
+        id: "settings-panel.timezone",
+        type: "field",
+        name: "timezone",
+        input: "select",
+        label: "{{timezone}}",
+        options: ["UTC", "PST", "EST"],
+        style: { width: "full" },
+      },
+      "settings-panel.save": {
+        id: "settings-panel.save",
+        type: "button",
+        label: "{{save}}",
+        variant: "primary",
+        onPress: { kind: "agent", name: "save_settings", collect: "settings-panel.root" },
+      },
+    },
+  },
+  {
+    name: "feature-grid",
+    description: "A three-card feature grid.",
+    metadata: {
+      category: "marketing",
+      useWhen: "Explaining a small set of product capabilities.",
+      avoidWhen: "The user needs one focused workflow.",
+      tags: ["features", "grid", "cards"],
+      variants: ["three-card"],
+      repeatable: false,
+      preferredParent: "root",
+    },
+    slots: {
+      title: "Features",
+      first: "Fast setup",
+      second: "Live UI",
+      third: "Safe patches",
+    },
+    root: "feature-grid.root",
+    nodes: {
+      "feature-grid.root": {
+        id: "feature-grid.root",
+        type: "section",
+        title: "{{title}}",
+        children: ["feature-grid.first", "feature-grid.second", "feature-grid.third"],
+      },
+      "feature-grid.first": {
+        id: "feature-grid.first",
+        type: "card",
+        title: "{{first}}",
+        body: "Start from safe default UI patterns.",
+        children: [],
+      },
+      "feature-grid.second": {
+        id: "feature-grid.second",
+        type: "card",
+        title: "{{second}}",
+        body: "Render task-specific screens as the conversation changes.",
+        children: [],
+      },
+      "feature-grid.third": {
+        id: "feature-grid.third",
+        type: "card",
+        title: "{{third}}",
+        body: "Keep every update declarative and bounded.",
+        children: [],
+      },
+    },
+  },
+  {
+    name: "empty-state",
+    description: "A compact empty state with a recovery action.",
+    metadata: {
+      category: "feedback",
+      useWhen: "There is no data yet and the user needs a clear next action.",
+      avoidWhen: "There is meaningful content to summarize.",
+      tags: ["empty", "feedback", "action"],
+      variants: ["default"],
+      repeatable: true,
+      preferredParent: "section",
+    },
+    slots: {
+      title: "Nothing here yet",
+      body: "Create the first item to get started.",
+      action: "Create item",
+    },
+    root: "empty-state.root",
+    nodes: {
+      "empty-state.root": {
+        id: "empty-state.root",
+        type: "card",
+        title: "{{title}}",
+        body: "{{body}}",
+        children: ["empty-state.action"],
+      },
+      "empty-state.action": {
+        id: "empty-state.action",
+        type: "button",
+        label: "{{action}}",
+        variant: "primary",
+        onPress: { kind: "agent", name: "create_item" },
+      },
+    },
+  },
+  {
+    name: "support-triage",
+    description: "A support triage card with issue type selection.",
+    metadata: {
+      category: "support",
+      useWhen: "Collecting basic support context before agent follow-up.",
+      avoidWhen: "The user already gave all required details.",
+      tags: ["support", "triage", "form"],
+      variants: ["compact"],
+      repeatable: true,
+      preferredParent: "section",
+    },
+    slots: {
+      title: "How can we help?",
+      issue: "Issue type",
+      details: "Details",
+      submit: "Send",
+    },
+    root: "support-triage.root",
+    nodes: {
+      "support-triage.root": {
+        id: "support-triage.root",
+        type: "card",
+        title: "{{title}}",
+        children: ["support-triage.issue", "support-triage.details", "support-triage.submit"],
+      },
+      "support-triage.issue": {
+        id: "support-triage.issue",
+        type: "field",
+        name: "issue_type",
+        input: "select",
+        label: "{{issue}}",
+        options: ["Billing", "Technical", "Account"],
+        style: { width: "full" },
+      },
+      "support-triage.details": {
+        id: "support-triage.details",
+        type: "field",
+        name: "details",
+        input: "text",
+        label: "{{details}}",
+        style: { width: "full" },
+      },
+      "support-triage.submit": {
+        id: "support-triage.submit",
+        type: "button",
+        label: "{{submit}}",
+        variant: "primary",
+        onPress: { kind: "agent", name: "submit_support", collect: "support-triage.root" },
+      },
+    },
+  },
+  {
+    name: "chart-table-view",
+    description: "A data view combining one chart and one small table.",
+    metadata: {
+      category: "dashboard",
+      useWhen: "Showing a compact trend with supporting records.",
+      avoidWhen: "The data needs sorting, filtering, or live fetching.",
+      tags: ["chart", "table", "data"],
+      variants: ["summary"],
+      repeatable: false,
+      preferredParent: "root",
+    },
+    slots: {
+      title: "Performance",
+      chart: "Trend",
+      table: "Recent rows",
+    },
+    root: "chart-table-view.root",
+    nodes: {
+      "chart-table-view.root": {
+        id: "chart-table-view.root",
+        type: "section",
+        title: "{{title}}",
+        children: ["chart-table-view.chart", "chart-table-view.table"],
+      },
+      "chart-table-view.chart": {
+        id: "chart-table-view.chart",
+        type: "chart",
+        kind: "line",
+        title: "{{chart}}",
+        labels: ["Week 1", "Week 2", "Week 3"],
+        series: [{ label: "Value", values: [12, 18, 24] }],
+      },
+      "chart-table-view.table": {
+        id: "chart-table-view.table",
+        type: "table",
+        caption: "{{table}}",
+        columns: [
+          { key: "name", label: "Name" },
+          { key: "value", label: "Value", align: "end" },
+        ],
+        rows: [
+          { name: "Alpha", value: "12" },
+          { name: "Beta", value: "18" },
+          { name: "Gamma", value: "24" },
+        ],
       },
     },
   },

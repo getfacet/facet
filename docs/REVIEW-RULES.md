@@ -6,10 +6,14 @@ bureaucratic.
 
 ## Invariants (a violation is at least P1)
 
-1. **Declarative bricks only.** Agents/consumers emit `box`/`text`/`media`/`field`
-   nodes with **token** style values — never raw HTML/JS, never raw scalars, never
-   absolute positioning. New capability = a new node type or token added *on
-   purpose*, in `@facet/core`.
+1. **Declarative closed vocabulary.** Agents/consumers emit only
+   `@facet/core`-validated bricks with **token** style values — never raw
+   HTML/JS/CSS, never raw scalars, never absolute positioning. The primitive
+   fallback/base nodes remain `box` and `text` for structure and copy, plus
+   `media` and `field` for rendered assets and input. Catalog/high-level bricks
+   are valid only when added deliberately to the closed vocabulary in
+   `@facet/core`; bypassing core validation or admitting arbitrary markup is an
+   invariant violation.
 2. **Patches-only + fail-safe.** Stage changes travel as RFC 6902 patches; the
    *same* pure `applyPatch` runs on server and client. The renderer/validator is
    fail-safe — unknown/dangling/invalid input is dropped or skipped, **never
@@ -34,6 +38,12 @@ bureaucratic.
 **`/code-review` PASS = P0–P2 = 0.** P3 are non-blocking nits — track them, don't
 gate on them. (A P2 may only ship unfixed with an explicit maintainer waiver
 recorded in the PR.)
+
+Catalog/high-level brick expansion is not a violation when the node kind and
+tokens are intentionally defined and validated in `@facet/core`. Treat code,
+prompts, or docs that reject valid catalog bricks merely because they are not
+primitive fallback nodes as a bug; treat any path that accepts unvalidated
+nodes, raw markup, raw scalar styles, or absolute positioning as at least P1.
 
 ## Gate Profiles
 
@@ -62,7 +72,8 @@ recorded in the PR.)
 - **concurrency** — races (same-visitor events, runtime stage), the bridge queue
   + persistent generator handshake (deadlock/ordering), timeouts, resource leaks.
 - **consistency** — duplication, cross-package drift, dev-vs-published resolution
-  (`publishConfig`/`exports`), barrel usage, naming.
+  (`publishConfig`/`exports`), barrel usage, naming, docs/prompts that hard-code
+  primitive fallback nodes as the full permanent vocabulary.
 - **test-gaps** — changed behavior without a test; critical pure logic
   (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
   coverage; untested testable surface (`@facet/cli`); tautological

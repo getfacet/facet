@@ -1,6 +1,7 @@
 /**
- * The low-level brick palette — the entire vocabulary an agent uses to build a
- * stage. There are only four bricks: `box`, `text`, `media`, `field`.
+ * The closed brick palette an agent uses to build a stage. Primitive bricks
+ * (`box`, `text`, `media`, `field`) remain the universal fallback; high-level
+ * bricks provide safer common UI shapes without allowing raw HTML/JS/CSS.
  *
  * These are Lego bricks, not finished furniture. A "card" is a `box` with a
  * border; a "button" is a `box` with `onPress`; a "heading" is a big `text`. The
@@ -8,8 +9,8 @@
  * unbounded — while every brick stays a typed, token-styled data value (never
  * raw HTML/JS), so nothing can be injected and nothing can render broken.
  *
- * Higher-level shapes (card(), hero(), row()) live in an optional preset
- * package, not here — they are just functions that emit box compositions.
+ * The vocabulary grows only by adding typed node shapes here and matching
+ * validation/rendering support on purpose.
  */
 import type {
   Align,
@@ -24,6 +25,7 @@ import type {
   Radius,
   Ratio,
   ScrollAxis,
+  Shadow,
   Sizing,
   Space,
   TextAlign,
@@ -109,6 +111,7 @@ export interface BoxStyle {
    * ignores direction/wrap because the grid owns the axis.
    */
   readonly columns?: Columns;
+  readonly shadow?: Shadow;
 }
 
 export interface TextStyle {
@@ -138,6 +141,7 @@ export interface FieldStyle {
 export interface BoxNode {
   readonly id: NodeId;
   readonly type: "box";
+  readonly variant?: string;
   readonly style?: BoxStyle;
   /** Makes the box pressable. Any box can be a button — or a clickable card. */
   readonly onPress?: FacetAction;
@@ -158,6 +162,7 @@ export interface TextNode {
   readonly id: NodeId;
   readonly type: "text";
   readonly value: string;
+  readonly variant?: string;
   readonly style?: TextStyle;
 }
 
@@ -169,6 +174,7 @@ export interface MediaNode {
   readonly type: "media";
   readonly kind: MediaKind;
   readonly src: string;
+  readonly variant?: string;
   readonly alt?: string;
   readonly poster?: string;
   readonly controls?: boolean;
@@ -194,6 +200,7 @@ export interface FieldNode {
   readonly id: NodeId;
   readonly type: "field";
   readonly name: string;
+  readonly variant?: string;
   readonly input?: FieldInput;
   readonly options?: readonly string[];
   readonly label?: string;
@@ -201,10 +208,183 @@ export interface FieldNode {
   readonly style?: FieldStyle;
 }
 
-/** Any brick the agent may place on a stage. */
-export type FacetNode = BoxNode | TextNode | MediaNode | FieldNode;
+export const HIGH_LEVEL_NODE_TYPES = [
+  "button",
+  "section",
+  "card",
+  "tabs",
+  "table",
+  "chart",
+  "stat",
+  "badge",
+  "progress",
+  "alert",
+  "list",
+  "divider",
+] as const;
+export type HighLevelNodeType = (typeof HIGH_LEVEL_NODE_TYPES)[number];
 
-/** Narrows a node to the one brick that can hold children. */
-export function isContainer(node: FacetNode): node is BoxNode {
-  return node.type === "box";
+export const TONES = ["neutral", "accent", "info", "success", "warning", "danger"] as const;
+export type Tone = (typeof TONES)[number];
+
+export interface ButtonNode {
+  readonly id: NodeId;
+  readonly type: "button";
+  readonly label: string;
+  readonly variant?: string;
+  readonly tone?: Tone;
+  readonly disabled?: boolean;
+  readonly onPress?: FacetAction;
+  readonly onHold?: FacetAction;
+}
+
+export interface SectionNode {
+  readonly id: NodeId;
+  readonly type: "section";
+  readonly title?: string;
+  readonly eyebrow?: string;
+  readonly body?: string;
+  readonly variant?: string;
+  readonly children: readonly NodeId[];
+}
+
+export interface CardNode {
+  readonly id: NodeId;
+  readonly type: "card";
+  readonly title?: string;
+  readonly body?: string;
+  readonly variant?: string;
+  readonly tone?: Tone;
+  readonly onPress?: FacetAction;
+  readonly onHold?: FacetAction;
+  readonly children: readonly NodeId[];
+}
+
+export interface TabItem {
+  readonly label: string;
+  readonly to: string;
+}
+
+export interface TabsNode {
+  readonly id: NodeId;
+  readonly type: "tabs";
+  readonly items: readonly TabItem[];
+  readonly variant?: string;
+}
+
+export interface TableColumn {
+  readonly key: string;
+  readonly label: string;
+  readonly align?: TextAlign;
+}
+
+export type TableCell = string | number | boolean;
+export type TableRow = Readonly<Record<string, TableCell>>;
+
+export interface TableNode {
+  readonly id: NodeId;
+  readonly type: "table";
+  readonly columns: readonly TableColumn[];
+  readonly rows: readonly TableRow[];
+  readonly caption?: string;
+  readonly variant?: string;
+}
+
+export const CHART_KINDS = ["bar", "line", "donut"] as const;
+export type ChartKind = (typeof CHART_KINDS)[number];
+
+export interface ChartSeries {
+  readonly label: string;
+  readonly values: readonly number[];
+}
+
+export interface ChartNode {
+  readonly id: NodeId;
+  readonly type: "chart";
+  readonly kind: ChartKind;
+  readonly series: readonly ChartSeries[];
+  readonly labels?: readonly string[];
+  readonly title?: string;
+  readonly variant?: string;
+}
+
+export interface StatNode {
+  readonly id: NodeId;
+  readonly type: "stat";
+  readonly label: string;
+  readonly value: string;
+  readonly delta?: string;
+  readonly tone?: Tone;
+  readonly variant?: string;
+}
+
+export interface BadgeNode {
+  readonly id: NodeId;
+  readonly type: "badge";
+  readonly label: string;
+  readonly tone?: Tone;
+  readonly variant?: string;
+}
+
+export interface ProgressNode {
+  readonly id: NodeId;
+  readonly type: "progress";
+  readonly value: number;
+  readonly label?: string;
+  readonly tone?: Tone;
+  readonly variant?: string;
+}
+
+export interface AlertNode {
+  readonly id: NodeId;
+  readonly type: "alert";
+  readonly title?: string;
+  readonly body: string;
+  readonly tone?: Tone;
+  readonly variant?: string;
+}
+
+export interface ListItem {
+  readonly title: string;
+  readonly body?: string;
+}
+
+export interface ListNode {
+  readonly id: NodeId;
+  readonly type: "list";
+  readonly items: readonly ListItem[];
+  readonly variant?: string;
+}
+
+export interface DividerNode {
+  readonly id: NodeId;
+  readonly type: "divider";
+  readonly label?: string;
+  readonly variant?: string;
+}
+
+/** Any brick the agent may place on a stage. */
+export type FacetNode =
+  | BoxNode
+  | TextNode
+  | MediaNode
+  | FieldNode
+  | ButtonNode
+  | SectionNode
+  | CardNode
+  | TabsNode
+  | TableNode
+  | ChartNode
+  | StatNode
+  | BadgeNode
+  | ProgressNode
+  | AlertNode
+  | ListNode
+  | DividerNode;
+
+export type ContainerNode = BoxNode | SectionNode | CardNode;
+
+/** Narrows a node to the bricks that can hold children. */
+export function isContainer(node: FacetNode): node is ContainerNode {
+  return node.type === "box" || node.type === "section" || node.type === "card";
 }

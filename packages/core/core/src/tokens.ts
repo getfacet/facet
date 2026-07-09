@@ -40,11 +40,23 @@ export const COLORS = [
   "accent",
   "accent-fg",
   "border",
+  "neutral",
+  "info",
   "success",
   "warning",
   "danger",
+  "chart-1",
+  "chart-2",
+  "chart-3",
+  "chart-4",
+  "chart-5",
+  "chart-6",
 ] as const;
 export type Color = (typeof COLORS)[number];
+
+/** Shadow elevation tokens. Concrete box-shadow values live in a theme. */
+export const SHADOWS = ["none", "sm", "md", "lg"] as const;
+export type Shadow = (typeof SHADOWS)[number];
 
 /** Flow direction. There is no absolute positioning — only flow layout. */
 export const DIRECTIONS = ["row", "col"] as const;

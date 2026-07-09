@@ -65,6 +65,20 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     expect(at["required"]).toEqual(["parent"]);
   });
 
+  it("documents v1 high-level node schemas and catalog policy boundaries", () => {
+    const renderPage = tool("render_page");
+    const appendNode = tool("append_node");
+    const setNode = tool("set_node");
+    const setTheme = tool("set_theme");
+
+    expect(renderPage.description).toMatch(/catalog policy/i);
+    expect(appendNode.description).toMatch(/box, section, or card/i);
+    expect(JSON.stringify(propertiesOf(appendNode)["node"])).toContain("button");
+    expect(JSON.stringify(propertiesOf(setNode)["node"])).toMatch(/section|card|table|chart/);
+    expect(setTheme.description).toMatch(/locked/i);
+    expect(setTheme.description).toMatch(/catalog/i);
+  });
+
   it("bounds inspection schemas", () => {
     const inspectStage = propertiesOf(tool("inspect_stage"));
     const inspectNode = propertiesOf(tool("inspect_node"));

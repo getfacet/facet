@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   isPrimitiveRecord,
   isSafeMediaSrc,
+  MAX_CHART_POINTS,
   MAX_DEPTH,
   MAX_RENDER_NODES,
   MAX_SCREENS,
+  MAX_TABS_ITEMS,
   sanitizeActionPayload,
   validateStamp,
   validateTree,
@@ -50,6 +52,22 @@ describe("validateTree", () => {
     };
     expect(root.style?.["gap"]).toBeUndefined();
     expect(root.style?.["pad"]).toBe("md");
+  });
+
+  it("keeps valid primitive recipe variants and drops malformed ones", () => {
+    const run = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", variant: "panel", children: ["t", "bad"] },
+        t: { id: "t", type: "text", value: "Title", variant: "heading" },
+        bad: { id: "bad", type: "text", value: "Bad", variant: "bad variant" },
+      },
+    });
+
+    expect(run.tree.nodes["root"]).toMatchObject({ variant: "panel" });
+    expect(run.tree.nodes["t"]).toMatchObject({ variant: "heading" });
+    expect(run.tree.nodes["bad"]).not.toHaveProperty("variant");
+    expect(run.issues.some((issue) => issue.includes("malformed variant dropped"))).toBe(true);
   });
 
   it("keeps valid font family tokens on text styles", () => {
@@ -139,6 +157,18 @@ describe("validateTree", () => {
     expect(validateTree(null).tree.root).toBe("root");
   });
 
+  it("never throws on a hostile nodes getter", () => {
+    const run = validateTree({
+      root: "root",
+      get nodes(): unknown {
+        throw new Error("boom");
+      },
+    });
+
+    expect(run.tree.root).toBe("root");
+    expect(run.issues).toContain("input could not be read safely; empty tree used");
+  });
+
   it("breaks a self-referencing cycle (root child = root)", () => {
     const input = {
       root: "root",
@@ -191,6 +221,202 @@ describe("validateTree", () => {
   });
 });
 
+describe("validateTree high-level bricks", () => {
+  it("keeps v1 high-level leaf and container nodes with sanitized token fields", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "section",
+          title: "Overview",
+          eyebrow: "Live",
+          variant: "dashboard",
+          children: [
+            "card",
+            "tabs",
+            "table",
+            "chart",
+            "stat",
+            "badge",
+            "progress",
+            "alert",
+            "list",
+            "divider",
+          ],
+        },
+        card: {
+          id: "card",
+          type: "card",
+          title: "Revenue",
+          body: "Pipeline summary",
+          tone: "success",
+          variant: "metric",
+          children: ["button"],
+        },
+        button: {
+          id: "button",
+          type: "button",
+          label: "Refresh",
+          tone: "accent",
+          variant: "primary",
+          onPress: { kind: "agent", name: "refresh" },
+        },
+        tabs: { id: "tabs", type: "tabs", items: [{ label: "Home", to: "home" }] },
+        table: {
+          id: "table",
+          type: "table",
+          columns: [{ key: "plan", label: "Plan" }],
+          rows: [{ plan: "Pro" }],
+        },
+        chart: {
+          id: "chart",
+          type: "chart",
+          kind: "line",
+          series: [{ label: "ARR", values: [1, 2, 3] }],
+        },
+        stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", tone: "success" },
+        badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
+        progress: { id: "progress", type: "progress", label: "Quota", value: 72 },
+        alert: {
+          id: "alert",
+          type: "alert",
+          title: "Heads up",
+          body: "Review pricing.",
+          tone: "warning",
+        },
+        list: { id: "list", type: "list", items: [{ title: "Next", body: "Call customer" }] },
+        divider: { id: "divider", type: "divider", label: "Details" },
+      },
+      screens: { home: "root" },
+      entry: "home",
+    });
+
+    expect(issues).toHaveLength(0);
+    expect(tree.root).toBe("root");
+    expect(tree.nodes["root"]).toMatchObject({ type: "section", title: "Overview" });
+    expect(tree.nodes["card"]).toMatchObject({ type: "card", children: ["button"] });
+    expect(tree.nodes["button"]).toMatchObject({ type: "button", label: "Refresh" });
+    expect(tree.nodes["table"]).toMatchObject({ type: "table" });
+    expect(tree.nodes["chart"]).toMatchObject({ type: "chart", kind: "line" });
+    expect(tree.screens).toEqual({ home: "root" });
+  });
+
+  it("caps chart values before reading past the point limit", () => {
+    let readPastCap = false;
+    const values = new Array<number>(MAX_CHART_POINTS + 10).fill(1);
+    Object.defineProperty(values, String(MAX_CHART_POINTS + 1), {
+      get() {
+        readPastCap = true;
+        return 1;
+      },
+      configurable: true,
+    });
+
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["chart"] },
+        chart: {
+          id: "chart",
+          type: "chart",
+          kind: "bar",
+          series: [{ label: "A", values }],
+        },
+      },
+    });
+
+    const chart = tree.nodes["chart"] as unknown as {
+      series?: readonly { readonly values?: readonly number[] }[];
+    };
+    expect(readPastCap).toBe(false);
+    expect(chart.series?.[0]?.values).toHaveLength(MAX_CHART_POINTS);
+    expect(issues.some((issue) => issue.includes("points exceeded"))).toBe(true);
+  });
+
+  it("caps high-level table chart and list payloads fail-safely", () => {
+    const rows = Array.from({ length: 250 }, (_, index) => ({ value: `row-${String(index)}` }));
+    const values = Array.from({ length: 2000 }, (_, index) => index);
+    const items = Array.from({ length: 200 }, (_, index) => `item-${String(index)}`);
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "section", children: ["table", "chart", "list"] },
+        table: { id: "table", type: "table", columns: [{ key: "value", label: "Value" }], rows },
+        chart: { id: "chart", type: "chart", kind: "bar", series: [{ label: "A", values }] },
+        list: { id: "list", type: "list", items },
+      },
+    });
+
+    expect((tree.nodes["table"] as { rows?: readonly unknown[] }).rows?.length).toBeLessThan(250);
+    expect(
+      (tree.nodes["chart"] as { series?: readonly { values: readonly unknown[] }[] }).series?.[0]
+        ?.values.length,
+    ).toBeLessThan(2000);
+    expect((tree.nodes["list"] as { items?: readonly unknown[] }).items?.length).toBeLessThan(200);
+    expect(issues.some((issue) => issue.includes("cap"))).toBe(true);
+  });
+
+  it("sanitizes malformed high-level tabs, progress, and required text fields", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "section",
+          children: [
+            "tabs",
+            "lowProgress",
+            "highProgress",
+            "badStat",
+            "badBadge",
+            "badAlert",
+            "good",
+          ],
+        },
+        tabs: {
+          id: "tabs",
+          type: "tabs",
+          variant: "bad variant",
+          items: Array.from({ length: MAX_TABS_ITEMS + 5 }, (_, index) => ({
+            label: `Tab ${String(index)}`,
+            to: `screen-${String(index)}`,
+          })),
+        },
+        lowProgress: { id: "lowProgress", type: "progress", value: -25 },
+        highProgress: {
+          id: "highProgress",
+          type: "progress",
+          value: 175,
+          tone: "not-a-tone",
+        },
+        badStat: { id: "badStat", type: "stat", label: "ARR" },
+        badBadge: { id: "badBadge", type: "badge", label: 42 },
+        badAlert: { id: "badAlert", type: "alert", title: "Missing body" },
+        good: { id: "good", type: "text", value: "kept" },
+      },
+    });
+
+    expect(
+      (tree.nodes["tabs"] as { items?: readonly unknown[]; variant?: unknown }).items,
+    ).toHaveLength(MAX_TABS_ITEMS);
+    expect((tree.nodes["tabs"] as { variant?: unknown }).variant).toBeUndefined();
+    expect((tree.nodes["lowProgress"] as { value?: unknown }).value).toBe(0);
+    expect((tree.nodes["highProgress"] as { value?: unknown; tone?: unknown }).value).toBe(100);
+    expect((tree.nodes["highProgress"] as { tone?: unknown }).tone).toBeUndefined();
+    expect(tree.nodes["badStat"]).toBeUndefined();
+    expect(tree.nodes["badBadge"]).toBeUndefined();
+    expect(tree.nodes["badAlert"]).toBeUndefined();
+    expect(tree.nodes["good"]).toMatchObject({ type: "text", value: "kept" });
+    expect(issues.some((issue) => issue.includes("items exceeded"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("progress value clamped to 0"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("progress value clamped to 100"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("stat needs string label and value"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("badge has no string label"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("alert has no string body"))).toBe(true);
+  });
+});
+
 describe("validateTree theme", () => {
   const base = {
     root: "root",
@@ -228,6 +454,19 @@ describe("validateTree theme", () => {
 });
 
 describe("validateStamp", () => {
+  it("never throws on a hostile stamp nodes getter", () => {
+    const run = validateStamp({
+      name: "bad",
+      root: "root",
+      get nodes(): unknown {
+        throw new Error("boom");
+      },
+    });
+
+    expect(run.stamp).toBeUndefined();
+    expect(run.issues).toContain("stamp could not be read safely; refused");
+  });
+
   it("keeps a valid fragment with a resolving root and one-line description", () => {
     const { stamp, issues } = validateStamp({
       name: "hero",
@@ -336,6 +575,41 @@ describe("validateStamp", () => {
     expect(run).not.toThrow();
     const { issues } = run();
     expect(issues.some((issue) => issue.includes("max depth"))).toBe(true);
+  });
+
+  it("keeps bounded prompt-safe stamp metadata", () => {
+    const { stamp, issues } = validateStamp({
+      name: "dashboard-summary",
+      description: "Dashboard cards",
+      metadata: {
+        category: "dashboard",
+        useWhen: "Summarizing KPIs",
+        avoidWhen: "Long narrative content",
+        variants: ["compact", "detailed"],
+        tags: ["dashboard", "metrics"],
+        repeatable: true,
+        preferredParent: "section",
+        composedOf: ["section", "card", "stat", "not-a-node"],
+        dataRequirements: ["metric_label", "current_value"],
+        followUpEdits: ["refresh_value"],
+      },
+      root: "card",
+      nodes: { card: { id: "card", type: "card", title: "KPI", children: [] } },
+    });
+
+    expect(issues).toHaveLength(0);
+    expect(stamp?.metadata).toEqual({
+      category: "dashboard",
+      useWhen: "Summarizing KPIs",
+      avoidWhen: "Long narrative content",
+      variants: ["compact", "detailed"],
+      tags: ["dashboard", "metrics"],
+      repeatable: true,
+      preferredParent: "section",
+      composedOf: ["section", "card", "stat"],
+      dataRequirements: ["metric_label", "current_value"],
+      followUpEdits: ["refresh_value"],
+    });
   });
 });
 
@@ -777,6 +1051,7 @@ describe("brick-vocab v1 core validation", () => {
           type: "media",
           kind: "video",
           src: "https://cdn.example.com/clip.mp4",
+          variant: "hero",
           alt: "Launch",
           poster: "/posters/launch.png",
           controls: true,
@@ -804,6 +1079,7 @@ describe("brick-vocab v1 core validation", () => {
       type: "media",
       kind: "video",
       src: "https://cdn.example.com/clip.mp4",
+      variant: "hero",
       alt: "Launch",
       poster: "/posters/launch.png",
       controls: true,
@@ -868,6 +1144,7 @@ describe("brick-vocab v1 core validation", () => {
           id: "select",
           type: "field",
           name: "plan",
+          variant: "default",
           input: "select",
           options: ["Free", 7, "Pro", long],
         },
@@ -885,6 +1162,7 @@ describe("brick-vocab v1 core validation", () => {
     ]);
     expect(tree.nodes["select"]).toMatchObject({
       type: "field",
+      variant: "default",
       input: "select",
       options: ["Free", "Pro", "x".repeat(2000)],
     });
@@ -894,6 +1172,30 @@ describe("brick-vocab v1 core validation", () => {
     expect(tree.nodes["emptySelect"]).not.toHaveProperty("options");
     expect(tree.nodes["switcher"]).toMatchObject({ type: "field", input: "switch" });
     expect(tree.nodes["unknown"]).not.toHaveProperty("input");
+  });
+
+  it("drops malformed media and field variants", () => {
+    const { tree, issues } = validateTree(
+      rootWith({
+        media: {
+          id: "media",
+          type: "media",
+          kind: "image",
+          src: "https://cdn.example.com/a.png",
+          variant: "bad variant",
+        },
+        field: {
+          id: "field",
+          type: "field",
+          name: "email",
+          variant: "bad variant",
+        },
+      }),
+    );
+
+    expect(tree.nodes["media"]).not.toHaveProperty("variant");
+    expect(tree.nodes["field"]).not.toHaveProperty("variant");
+    expect(issues.filter((issue) => issue.includes("malformed variant dropped"))).toHaveLength(2);
   });
 
   it("keeps scroll axes and columns tokens while stripping unknown values with issues", () => {

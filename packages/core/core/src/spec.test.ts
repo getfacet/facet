@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FIELD_INPUTS } from "./nodes.js";
+import { FIELD_INPUTS, HIGH_LEVEL_NODE_TYPES } from "./nodes.js";
 import { STAGE_SPEC } from "./spec.js";
 import { APPEARS, COLUMNS, FONT_FAMILIES, SCROLL_AXES } from "./tokens.js";
 
@@ -65,10 +65,12 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toContain('"type":"media"');
     expect(STAGE_SPEC).toContain('"kind"');
     expect(STAGE_SPEC).toMatch(/"image"\|"video"/);
+    expect(STAGE_SPEC).toMatch(/media:[^\n]*"variant"\?:name/);
     expect(STAGE_SPEC).toContain('"poster"?');
     expect(STAGE_SPEC).toContain('"controls"?');
     expect(STAGE_SPEC).toMatch(/MediaStyle/);
 
+    expect(STAGE_SPEC).toMatch(/field:[^\n]*"variant"\?:name/);
     for (const input of FIELD_INPUTS) {
       expect(STAGE_SPEC).toContain(`"${input}"`);
     }
@@ -84,9 +86,20 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).not.toContain('"type":"image"');
   });
 
+  it("teaches the closed high-level brick vocabulary without raw HTML or CSS", () => {
+    for (const type of HIGH_LEVEL_NODE_TYPES) {
+      expect(STAGE_SPEC).toContain(`"type":"${type}"`);
+    }
+    expect(STAGE_SPEC).toMatch(/Only box, section, and card are containers/i);
+    expect(STAGE_SPEC).toMatch(/Tables\/charts are display-only/i);
+    expect(STAGE_SPEC).toMatch(/stamp .* high-level brick .* primitive/i);
+    expect(STAGE_SPEC).not.toMatch(/<script|innerHTML|dangerouslySetInnerHTML/i);
+    expect(STAGE_SPEC).not.toMatch(/position:\s*absolute/i);
+  });
+
   it("teaches collect and press-time field snapshots", () => {
-    // Agent action shape gains an optional collect box id.
-    expect(STAGE_SPEC).toContain('"collect"?:<boxId>');
+    // Agent action shape gains an optional collect container id.
+    expect(STAGE_SPEC).toContain('"collect"?:<containerId>');
     // Snapshot rule: pressing snapshots VISIBLE fields on the CURRENT screen
     // within the collect box's subtree into the event's "fields".
     expect(STAGE_SPEC).toMatch(/visible fields on the current screen/i);

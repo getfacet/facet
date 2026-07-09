@@ -179,6 +179,70 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     ]);
   });
 
+  it("supports high-level section and card parents after set", () => {
+    const stage = new Stage();
+    stage.set({ id: "section", type: "section", title: "Overview", children: [] });
+    const sectionResult = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside section" } },
+      },
+      {},
+      { parent: "section" },
+    );
+    stage.set({ id: "card", type: "card", title: "Metrics", children: [] });
+    const cardResult = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Inside card" } },
+      },
+      {},
+      { parent: "card" },
+    );
+
+    expect(sectionResult.root).toBeDefined();
+    expect(cardResult.root).toBeDefined();
+
+    const message = stage.flush()[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toContainEqual({
+      op: "add",
+      path: "/nodes/section/children/-",
+      value: sectionResult.root,
+    });
+    expect(message.patches).toContainEqual({
+      op: "add",
+      path: "/nodes/card/children/-",
+      value: cardResult.root,
+    });
+  });
+
+  it("tracks high-level container parents added through append", () => {
+    const stage = new Stage();
+    stage.append("root", { id: "section", type: "section", title: "Plan", children: [] });
+    const result = stage.useStamp(
+      {
+        name: "label",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "Nested" } },
+      },
+      {},
+      { parent: "section" },
+    );
+
+    expect(result.root).toBeDefined();
+
+    const message = stage.flush()[0];
+    if (message?.kind !== "patch") throw new Error("expected patch");
+    expect(message.patches).toContainEqual({
+      op: "add",
+      path: "/nodes/section/children/-",
+      value: result.root,
+    });
+  });
+
   it("useStamp is a no-op for malformed stamps or unknown parents", () => {
     const stage = new Stage();
 
