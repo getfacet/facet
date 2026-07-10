@@ -8,7 +8,7 @@ import type {
 import type { StoredEvent } from "@facet/runtime";
 
 import type { TurnMessage } from "../provider.js";
-import { formatCurrentStageForPrompt } from "./stage-summary.js";
+import { formatCurrentStageForPrompt, type StageSummaryOptions } from "./stage-summary.js";
 
 /** How many sink entries (visitor event + agent reply pairs) layer 3 replays. */
 export const HISTORY_TURNS = 20;
@@ -17,6 +17,38 @@ const REDACTED_PROMPT_VALUE = "[redacted]";
 const SENSITIVE_FIELD_NAME =
   /(?:password|passcode|secret|token|api[_-]?key|authorization|bearer|provider[_-]?key)/i;
 const SENSITIVE_FIELD_VALUE = /\b(?:sk-[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+)\b/i;
+
+const SENSITIVE_FIELD_VALUE_GLOBAL = new RegExp(SENSITIVE_FIELD_VALUE.source, "gi");
+// The key-name quantifiers are BOUNDED ({0,256}): with unbounded `[^"]*` on both
+// sides of the alternation, an unclosed quote followed by repeated sensitive
+// words backtracks quadratically (seconds of synchronous event-loop work at a
+// few hundred KB). No realistic secret field name exceeds 256 chars.
+const SENSITIVE_FIELD_PAIR_GLOBAL = new RegExp(
+  `("[^"]{0,256}(?:${SENSITIVE_FIELD_NAME.source})[^"]{0,256}"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`,
+  "gi",
+);
+
+/** Ceiling on text fed to the redaction regexes. Summary fields are capped far
+ * below this later (`MAX_SUMMARY_FIELD_CHARS`), so truncating a pathological
+ * pre-cap input loses nothing that would survive validation. */
+const MAX_REDACTION_INPUT_CHARS = 100_000;
+
+/**
+ * Redact sensitive substrings (`sk-…` / `Bearer …`) and the quoted values of
+ * sensitive field names (`"password": "…"`) inside free text. Reuses the same
+ * private patterns that gate input-field redaction so summary output and input
+ * are scrubbed to the same rule. Pure; never throws.
+ */
+export function redactSensitiveText(text: string): string {
+  const bounded =
+    text.length > MAX_REDACTION_INPUT_CHARS ? text.slice(0, MAX_REDACTION_INPUT_CHARS) : text;
+  return bounded
+    .replace(
+      SENSITIVE_FIELD_PAIR_GLOBAL,
+      (_match, prefix: string) => `${prefix}"${REDACTED_PROMPT_VALUE}"`,
+    )
+    .replace(SENSITIVE_FIELD_VALUE_GLOBAL, REDACTED_PROMPT_VALUE);
+}
 
 function normalizeLegacyEvent(event: unknown): unknown {
   if (!isRecord(event) || event["kind"] !== "action") return event;
@@ -135,6 +167,9 @@ export function buildInitialMessages(
   session: FacetSession,
   history: readonly StoredEvent[],
   limit: number,
+  /** Stage rendering bounds; omit for the built-in defaults. Pass the budget's
+   * bounds when the result must mirror the real context assembly. */
+  stageOptions?: StageSummaryOptions,
 ): TurnMessage[] {
   const messages: TurnMessage[] = [];
   const safeHistory = Array.isArray(history) ? history : [];
@@ -147,7 +182,21 @@ export function buildInitialMessages(
   }
   messages.push({
     role: "user",
-    content: `${describeEvent(event)}\n\n${formatCurrentStageForPrompt(session.stage)}`,
+    content: `${describeEvent(event)}\n\n${formatCurrentStageForPrompt(session.stage, stageOptions ?? {})}`,
   });
   return messages;
+}
+
+/**
+ * Render ONE stored history entry to its plain `user:`/`assistant:` summarizer-input
+ * lines, reusing the exact `describeEvent`/`describeReplies` rendering the live prompt
+ * uses (without the current-turn event/stage block `buildInitialMessages` appends).
+ * Never touches the stage, so a caller bounding a long backlog can render lazily —
+ * one entry at a time under a char cap — instead of materializing every entry's full
+ * prompt (event + ~48K stage) first. Zero behavior change to `buildInitialMessages`.
+ */
+export function renderHistoryEntry(entry: StoredEvent): string {
+  const event = isRecord(entry) ? entry["event"] : undefined;
+  const replies = isRecord(entry) ? entry["messages"] : undefined;
+  return `user: ${describeEvent(event as CollectedEvent)}\nassistant: ${describeReplies(replies)}`;
 }

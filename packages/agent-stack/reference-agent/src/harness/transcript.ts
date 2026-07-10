@@ -1,5 +1,6 @@
 import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
 import { MIN_REFERENCE_AGENT_OBSERVATION_CHARS, type ReferenceAgentBudget } from "./budget.js";
+import { truncateWithMarker } from "./compaction.js";
 import type { ProviderStep, TurnMessage } from "../provider.js";
 
 export interface TranscriptToolObservation {
@@ -107,32 +108,6 @@ export function boundObservationText(
 
 export function finalProseForProviderStop(step: ProviderStep): string {
   return step.toolCalls.length === 0 ? step.text.trim() : "";
-}
-
-function truncateWithMarker(
-  content: string,
-  maxChars: number,
-): { readonly content: string; readonly omittedChars: number } {
-  for (let keepChars = maxChars; keepChars >= 0; keepChars -= 1) {
-    const omittedChars = content.length - keepChars;
-    const marker = truncationMarker(omittedChars);
-    if (marker.length <= maxChars && keepChars + marker.length <= maxChars) {
-      return {
-        content: `${content.slice(0, keepChars)}${marker}`,
-        omittedChars,
-      };
-    }
-  }
-
-  const omittedChars = content.length;
-  return {
-    content: truncationMarker(omittedChars),
-    omittedChars,
-  };
-}
-
-function truncationMarker(omittedChars: number): string {
-  return `[truncated: ${String(omittedChars)} chars omitted]`;
 }
 
 function normalizeObservationLimit(maxObservationChars: number): number {

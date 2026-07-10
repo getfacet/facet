@@ -5,7 +5,16 @@
  * console in production); boot tests receive the running server via `onStarted`
  * and close it immediately.
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// Spy on the compaction-ON composition so a regression back to the bare
+// createQuickstartAgent (compaction OFF) fails a test instead of shipping.
+const { composeSpy } = vi.hoisted(() => ({ composeSpy: vi.fn() }));
+vi.mock("./agent.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./agent.js")>();
+  composeSpy.mockImplementation(actual.composeQuickstartAgent as (...args: unknown[]) => unknown);
+  return { ...actual, composeQuickstartAgent: composeSpy };
+});
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -423,6 +432,21 @@ describe("runCli — provider-backed boot (DC-004)", () => {
       expect(text).toContain("openai");
       expect(text).not.toContain(TEST_PROVIDER_ENV.OPENAI_API_KEY);
       expect(captured.err.join("\n")).not.toContain(TEST_PROVIDER_ENV.OPENAI_API_KEY);
+    } finally {
+      await running.close();
+    }
+  });
+
+  it("wires the compaction-ON composition (composeQuickstartAgent) into the provider boot", async () => {
+    composeSpy.mockClear();
+    const { running } = await bootCli();
+    try {
+      // The CLI must compose via composeQuickstartAgent (default MemorySummaryStore),
+      // not the bare createQuickstartAgent whose default is compaction OFF.
+      expect(composeSpy).toHaveBeenCalledTimes(1);
+      const options = composeSpy.mock.calls[0]?.[0] as { summaryStore?: unknown } | undefined;
+      // No explicit opt-out slipped in: the default (undefined) wires the store.
+      expect(options?.summaryStore).not.toBeNull();
     } finally {
       await running.close();
     }

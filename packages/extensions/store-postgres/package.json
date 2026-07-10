@@ -1,7 +1,7 @@
 {
   "name": "@facet/store-postgres",
   "version": "0.0.0",
-  "description": "Reference Postgres adapter for Facet — durable StageStore, Sink, and AssetsStore backed by Postgres/Supabase.",
+  "description": "Reference Postgres adapter for Facet — durable StageStore, Sink, AssetsStore, and SummaryStore backed by Postgres/Supabase.",
   "license": "MIT",
   "repository": {
     "type": "git",

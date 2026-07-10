@@ -2,6 +2,7 @@ import {
   TURN_TIMEOUT_MS,
   isRecord,
   postJson,
+  readProviderUsage,
   type FetchImpl,
   type ProviderOptions,
   type ProviderStep,
@@ -15,6 +16,7 @@ export const DEFAULT_ANTHROPIC_MODEL = "claude-sonnet-4-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_VERSION = "2023-06-01";
 const ANTHROPIC_MAX_TOKENS = 8192;
+const ANTHROPIC_CONTEXT_WINDOW_TOKENS = 200_000;
 
 /** A user message carrying one or more `tool_result` blocks (Anthropic requires
  * ALL results for one assistant tool_use turn to sit in a SINGLE user message). */
@@ -102,7 +104,14 @@ function parseAnthropicStep(body: unknown): ProviderStep {
       toolCalls.push({ id, name, input: block["input"] ?? {} });
     }
   }
-  return { text, toolCalls };
+  // Anthropic's `input_tokens` EXCLUDES the cached prefix; add the cache
+  // creation/read counts back so the estimator calibrates on the real prompt
+  // size (with prompt caching on, most input tokens land in those two fields).
+  const usage = readProviderUsage(body["usage"], "input_tokens", "output_tokens", [
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+  ]);
+  return { text, toolCalls, ...(usage !== undefined ? { usage } : {}) };
 }
 
 export function createAnthropicProvider(
@@ -115,6 +124,7 @@ export function createAnthropicProvider(
   return {
     name: "anthropic",
     model,
+    contextWindowTokens: ANTHROPIC_CONTEXT_WINDOW_TOKENS,
     async run(turn, tools) {
       const json = await postJson(
         fetchImpl,
@@ -123,7 +133,9 @@ export function createAnthropicProvider(
         {
           model,
           max_tokens: ANTHROPIC_MAX_TOKENS,
-          system: turn.system,
+          // One cache breakpoint on `system` caches the stable tools+system
+          // prefix (Anthropic's tools → system → messages cache hierarchy).
+          system: [{ type: "text", text: turn.system, cache_control: { type: "ephemeral" } }],
           messages: toAnthropicMessages(turn.messages),
           tools: tools.map((t) => ({
             name: t.name,

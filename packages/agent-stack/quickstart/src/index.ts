@@ -3,4 +3,5 @@
 // for compatibility. The `facet-quickstart` bin (src/cli.ts) is the one
 // non-barrel entry, per repo convention.
 export * from "@facet/reference-agent";
+export * from "./agent.js";
 export * from "./server.js";

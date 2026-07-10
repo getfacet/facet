@@ -1,3 +1,5 @@
+import { truncatedMarker } from "./compaction.js";
+
 export type ReferenceAgentBudgetPreset = "quickstart" | "hosted" | "local-dev";
 
 export interface ReferenceAgentBudget {
@@ -12,6 +14,33 @@ export interface ReferenceAgentBudget {
   readonly maxFinalTextChars: number;
   readonly maxProviderRetries: number;
   readonly retryBackoffMs: number;
+  /** Per-preset token cap, derived from `maxContextChars` at the default chars-per-token (÷4). */
+  readonly maxContextTokens: number;
+  /** Fraction of the effective token budget at which compaction is triggered. */
+  readonly compactionTriggerRatio: number;
+  /** In-turn landing target (fraction of the effective token budget): compaction
+   * keeps as many recent step groups verbatim as still fit under this target,
+   * never fewer than `minRecentStepsVerbatim`. Must stay below the trigger ratio. */
+  readonly compactionTargetRatio: number;
+  /** Cross-turn tail of recent turns kept verbatim (never summarized). */
+  readonly minRecentTurnsVerbatim: number;
+  /** In-turn tail of recent step groups kept verbatim. */
+  readonly minRecentStepsVerbatim: number;
+  /** Self-cap on a generated summary (deterministic truncation), in tokens. */
+  readonly maxSummaryTokens: number;
+  /** Summarizer call budget in milliseconds. */
+  readonly summarizerTimeoutMs: number;
+  /** Summarizer retries before falling back to deterministic compaction. */
+  readonly summarizerRetries: number;
+  /** Cap on total rendered-history chars fed to ONE cross-turn summarizer call. A
+   * longer backlog folds forward incrementally across background runs, so a
+   * pre-existing long sink or a summarizer outage can never build one
+   * always-failing megabyte request. Per preset = `maxContextChars / 2`. */
+  readonly maxSummarizerInputChars: number;
+  /** Min-gain + cooldown guard against re-trigger loops, in steps. */
+  readonly compactionCooldownSteps: number;
+  /** Context window used when a provider declares no `contextWindowTokens`. */
+  readonly contextWindowTokensDefault: number;
 }
 
 export type ReferenceAgentBudgetOverrides = Partial<ReferenceAgentBudget>;
@@ -27,6 +56,19 @@ export interface ReferenceAgentBudgetOptions {
 
 export const DEFAULT_REFERENCE_AGENT_BUDGET_PRESET: ReferenceAgentBudgetPreset = "quickstart";
 
+/** Compaction policy constants shared verbatim across all budget presets. */
+const COMPACTION_POLICY = {
+  compactionTriggerRatio: 0.75,
+  compactionTargetRatio: 0.5,
+  minRecentTurnsVerbatim: 4,
+  minRecentStepsVerbatim: 4,
+  maxSummaryTokens: 1_200,
+  summarizerTimeoutMs: 30_000,
+  summarizerRetries: 1,
+  compactionCooldownSteps: 4,
+  contextWindowTokensDefault: 100_000,
+} as const;
+
 export const REFERENCE_AGENT_BUDGET_PRESETS = {
   quickstart: {
     maxSteps: 50,
@@ -40,6 +82,9 @@ export const REFERENCE_AGENT_BUDGET_PRESETS = {
     maxFinalTextChars: 4_000,
     maxProviderRetries: 1,
     retryBackoffMs: 250,
+    maxContextTokens: 24_000,
+    maxSummarizerInputChars: 48_000,
+    ...COMPACTION_POLICY,
   },
   hosted: {
     maxSteps: 120,
@@ -53,6 +98,9 @@ export const REFERENCE_AGENT_BUDGET_PRESETS = {
     maxFinalTextChars: 8_000,
     maxProviderRetries: 2,
     retryBackoffMs: 500,
+    maxContextTokens: 40_000,
+    maxSummarizerInputChars: 80_000,
+    ...COMPACTION_POLICY,
   },
   "local-dev": {
     maxSteps: 240,
@@ -66,6 +114,9 @@ export const REFERENCE_AGENT_BUDGET_PRESETS = {
     maxFinalTextChars: 12_000,
     maxProviderRetries: 2,
     retryBackoffMs: 0,
+    maxContextTokens: 60_000,
+    maxSummarizerInputChars: 120_000,
+    ...COMPACTION_POLICY,
   },
 } as const satisfies Record<ReferenceAgentBudgetPreset, ReferenceAgentBudget>;
 
@@ -106,6 +157,10 @@ export const REFERENCE_AGENT_NON_RETRYABLE_HTTP_STATUSES = [400, 401, 403, 404, 
 
 type BudgetField = keyof ReferenceAgentBudget;
 
+/** Fields normalized as fractions in (0, 1], not floored integers. */
+type RatioBudgetField = "compactionTriggerRatio" | "compactionTargetRatio";
+type IntegerBudgetField = Exclude<BudgetField, RatioBudgetField>;
+
 const BUDGET_FIELDS = [
   "maxSteps",
   "maxToolCallsPerStep",
@@ -118,9 +173,18 @@ const BUDGET_FIELDS = [
   "maxFinalTextChars",
   "maxProviderRetries",
   "retryBackoffMs",
-] as const satisfies readonly BudgetField[];
+  "maxContextTokens",
+  "minRecentTurnsVerbatim",
+  "minRecentStepsVerbatim",
+  "maxSummaryTokens",
+  "summarizerTimeoutMs",
+  "summarizerRetries",
+  "maxSummarizerInputChars",
+  "compactionCooldownSteps",
+  "contextWindowTokensDefault",
+] as const satisfies readonly IntegerBudgetField[];
 
-export const MIN_REFERENCE_AGENT_OBSERVATION_CHARS = "[truncated: 1000000000 chars omitted]".length;
+export const MIN_REFERENCE_AGENT_OBSERVATION_CHARS = truncatedMarker(1_000_000_000).length;
 
 const MIN_BUDGET_VALUES = {
   maxSteps: 1,
@@ -134,7 +198,21 @@ const MIN_BUDGET_VALUES = {
   maxFinalTextChars: 1,
   maxProviderRetries: 0,
   retryBackoffMs: 0,
-} as const satisfies Record<BudgetField, number>;
+  maxContextTokens: 1,
+  minRecentTurnsVerbatim: 0,
+  minRecentStepsVerbatim: 0,
+  maxSummaryTokens: 1,
+  summarizerTimeoutMs: 0,
+  summarizerRetries: 0,
+  maxSummarizerInputChars: 1,
+  compactionCooldownSteps: 0,
+  contextWindowTokensDefault: 1,
+} as const satisfies Record<IntegerBudgetField, number>;
+
+const RATIO_BUDGET_FIELDS = [
+  "compactionTriggerRatio",
+  "compactionTargetRatio",
+] as const satisfies readonly RatioBudgetField[];
 
 const MAX_BUDGET_VALUE = 1_000_000_000;
 
@@ -149,7 +227,55 @@ export function normalizeBudget(options: ReferenceAgentBudgetOptions = {}): Refe
     out[field] = chooseBudgetValue(field, preset[field], options);
   }
 
+  const ratios = normalizeRatios(preset, options);
+  for (const field of RATIO_BUDGET_FIELDS) {
+    out[field] = ratios[field];
+  }
+
   return out;
+}
+
+/**
+ * The token budget actually available for a turn: the smaller of the preset's
+ * `maxContextTokens` cap and the provider's declared context window (falling
+ * back to `contextWindowTokensDefault` when the provider declares none).
+ */
+export function effectiveTokenBudget(
+  budget: ReferenceAgentBudget,
+  contextWindowTokens?: number,
+): number {
+  const providerWindow =
+    typeof contextWindowTokens === "number" &&
+    Number.isFinite(contextWindowTokens) &&
+    contextWindowTokens > 0
+      ? contextWindowTokens
+      : budget.contextWindowTokensDefault;
+  return Math.min(budget.maxContextTokens, providerWindow);
+}
+
+function normalizeRatios(
+  preset: ReferenceAgentBudget,
+  options: ReferenceAgentBudgetOptions,
+): Record<RatioBudgetField, number> {
+  const trigger =
+    normalizeRatioValue(options.budget?.compactionTriggerRatio) ?? preset.compactionTriggerRatio;
+  const target =
+    normalizeRatioValue(options.budget?.compactionTargetRatio) ?? preset.compactionTargetRatio;
+  // Trigger must sit strictly above the post-compaction floor; an override that
+  // breaks the ordering reverts BOTH to the preset's coherent pair.
+  if (trigger <= target) {
+    return {
+      compactionTriggerRatio: preset.compactionTriggerRatio,
+      compactionTargetRatio: preset.compactionTargetRatio,
+    };
+  }
+  return { compactionTriggerRatio: trigger, compactionTargetRatio: target };
+}
+
+function normalizeRatioValue(value: number | undefined): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
+  if (value <= 0 || value > 1) return undefined;
+  return value;
 }
 
 export function classifyProviderFailure(
@@ -207,7 +333,7 @@ export function isRetryableProviderFailure(error: unknown): boolean {
 }
 
 function chooseBudgetValue(
-  field: BudgetField,
+  field: IntegerBudgetField,
   presetValue: number,
   options: ReferenceAgentBudgetOptions,
 ): number {
@@ -220,7 +346,7 @@ function chooseBudgetValue(
 }
 
 function budgetCandidates(
-  field: BudgetField,
+  field: IntegerBudgetField,
   options: ReferenceAgentBudgetOptions,
 ): readonly (number | undefined)[] {
   if (field === "maxSteps") return [options.budget?.maxSteps, options.maxSteps];
@@ -228,7 +354,10 @@ function budgetCandidates(
   return [options.budget?.[field]];
 }
 
-function normalizeBudgetValue(field: BudgetField, value: number | undefined): number | undefined {
+function normalizeBudgetValue(
+  field: IntegerBudgetField,
+  value: number | undefined,
+): number | undefined {
   if (typeof value !== "number") return undefined;
   if (!Number.isFinite(value) || value >= Number.MAX_SAFE_INTEGER || value > MAX_BUDGET_VALUE) {
     return undefined;

@@ -158,7 +158,11 @@ const anthropicCase: AdapterCase = {
   toolResponse: (id, name, input) => ({ content: [{ type: "tool_use", id, name, input }] }),
   malformed: {},
   assertRequest: (body, turn) => {
-    expect(body["system"]).toBe(turn.system);
+    // One ephemeral cache breakpoint on the system block caches the stable
+    // tools+system prefix (see the reference-agent anthropic adapter).
+    expect(body["system"]).toEqual([
+      { type: "text", text: turn.system, cache_control: { type: "ephemeral" } },
+    ]);
     expect(body["messages"]).toEqual(turn.messages);
     expect(typeof body["max_tokens"]).toBe("number");
     expect(body["max_tokens"]).toBeGreaterThan(0);
