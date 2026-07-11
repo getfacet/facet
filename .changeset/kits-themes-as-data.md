@@ -10,8 +10,9 @@
 
 Kits & themes as data — reskin and pre-seed a Facet page without touching code.
 Four additive layers, one flow, and the invariants hold: **the LLM never authors
-theme values** (it selects a theme by NAME), **stamps are never expanded**
-(they reach the model as prompt data and are copied into ordinary patches), and
+theme values** (it selects a theme by NAME), **composition internals never reach
+the model** (compositions are advertised as name/description/slot metadata and
+expanded server-side by `expandComposition` into ordinary patch ops), and
 **no new protocol messages** are introduced (the theme map and initial stage
 ship inline in the quickstart shell).
 
@@ -33,7 +34,8 @@ and the salvage clone.
   `url()`/`var()`/`expression()`/`javascript:` denied, dimensions clamped, hostile
   keys never resolve, WCAG contrast measured as a warning never a rejection);
   `FacetTree.theme?: string` (a name, kept-if-string by `validateTree`);
-  `FacetStamp` + `validateStamp`; the `STAGE_SPEC` theme line (select-by-name).
+  `FacetComposition` + `validateComposition`; the `STAGE_SPEC` theme line
+  (select-by-name).
 - `@facet/agent`: `Stage.theme(name)` — one top-level RFC 6902 `add`.
 - `@facet/react`: `DEFAULT_THEME`, `ResolvedTheme`, `resolveTheme`; the style fns
   gain a defaulted trailing theme parameter (zero-arg output byte-identical);
@@ -44,15 +46,18 @@ and the salvage clone.
   validators once at boot, skips invalid documents with logged issues), and
   `withInitialStage` — a `StageStore` decorator that seeds fresh sessions from a
   validated initial tree inside the runtime's serialized write path; the seed
-  travels the patch channel as the first stamped frame of the seeding turn (and
+  travels the patch channel as the first versioned frame of the seeding turn (and
   the quickstart shell also ships it for an instant first paint).
 - `@facet/assets`: node-free default-asset DATA (deps = `@facet/core` only) —
-  `DEFAULT_THEME` and `DEFAULT_STAMPS` (hero/card/cta-button as validated stamps),
-  the single source of default-theme truth (`@facet/react` derives its floor from
-  it; `loadAssets` seeds it as the base layer).
-- `@facet/quickstart`: `--assets <dir>` (reads `*.theme.json`, `*.stamp.json`,
-  `initial.tree.json`), theme names + descriptions and stamp fragments injected
-  into the prompt, a `set_theme` tool (a NAME argument only), and the escaped
-  theme map inlined into the shell. With no `--assets`, boot is byte-identical.
+  `DEFAULT_THEME` and `DEFAULT_COMPOSITIONS` (hero, card, cta-button, and more as
+  validated compositions), the single source of default-theme truth
+  (`@facet/react` derives its floor from it; `loadAssets` seeds it as the base
+  layer).
+- `@facet/quickstart`: `--assets <dir>` (reads `*.theme.json`,
+  `*.composition.json`, `initial.tree.json`), theme names + descriptions and
+  composition metadata (names, descriptions, slots) injected into the prompt, a
+  `set_theme` tool (a NAME argument only) plus a `use_composition` tool (a listed
+  name + string slot params, expanded server-side), and the escaped theme map
+  inlined into the shell. With no `--assets`, boot is byte-identical.
 
 (`@facet/*` are versioned together as a fixed group.)

@@ -3,9 +3,9 @@
 A Postgres adapter for Facet: durable `StageStore`, `Sink`, and `AssetsStore`
 implementations backed by Postgres/Supabase, so a page, its conversation, and
 per-agent assets survive restarts. `PostgresStageStore` and `PostgresSink` plug
-directly into `createFacetServer`; `PostgresAssets` plugs into any host code that
-loads `AssetsStore` documents and wires the loaded themes, stamps, and optional
-initial tree to its renderer/agent setup.
+directly into `createFacetServer`; `PostgresAssets` plugs into any host code
+that loads `AssetsStore` documents and wires the loaded themes, compositions,
+catalog, and optional initial tree to its renderer/agent setup.
 
 Tier: **Reference Implementation**. This adapter stores Facet stage/session
 state only. It is not a hosted-platform schema for tenants, projects, pages,
@@ -36,12 +36,22 @@ const server = createFacetServer({
 await server.listen();
 ```
 
-Use `PostgresAssets` anywhere an `AssetsStore` is accepted. `loadAssets` remains
-the validation/fallback gate; the Postgres adapter returns raw jsonb documents.
-The reference `createFacetServer` only accepts `stageStore` and `sink`, so a host
-that loads assets must pass `loaded.initialTree` to `withInitialStage`,
-`loaded.themes` to its renderer shell, and `loaded.stamps`/`loaded.themes` to its
-agent prompt path.
+## Assets: the `compositions` JSONB shape
+
+`facet_assets` holds one row per agent with four JSONB columns: `themes`,
+`compositions`, `catalog`, and `initial_tree`. `PostgresAssets.load(agentId)`
+returns them as a raw `AssetDocuments` value — a `themes` array, a
+`compositions` array, and optional `catalog` / `initialTree` documents. A
+non-array `themes`/`compositions` value is ignored with a bounded issue, never
+thrown on.
+
+Use `PostgresAssets` anywhere an `AssetsStore` is accepted. `loadAssets`
+remains the validation/fallback gate; the Postgres adapter returns raw JSONB
+documents and performs no validation of its own. The reference
+`createFacetServer` only accepts `stageStore` and `sink`, so a host that loads
+assets must pass `loaded.initialTree` to `withInitialStage`, `loaded.themes` to
+its renderer shell, and `loaded.compositions`/`loaded.catalog`/`loaded.themes`
+to its agent prompt/tool path.
 
 ```ts
 import { loadAssets, withInitialStage } from "@facet/runtime";
@@ -52,17 +62,19 @@ const loaded = await loadAssets(assets, "live");
 
 const stageStore = withInitialStage(new PostgresStageStore(pool), loaded.initialTree);
 // Pass loaded.themes to the renderer shell.
-// Pass loaded.themes and loaded.stamps to the agent prompt path.
+// Pass loaded.themes, loaded.compositions, and loaded.catalog to the agent
+// prompt/tool path.
 ```
 
-`putAssets(agentId, docs)` is an explicit admin/write operation that replaces the
-agent's whole asset row. Do not run it as part of normal server boot unless you
-intend to overwrite any existing custom assets for that agent.
+`putAssets(agentId, docs)` is an explicit admin/write operation that replaces
+the agent's whole asset row — all four JSONB columns at once. Do not run it as
+part of normal server boot unless you intend to overwrite any existing custom
+assets for that agent.
 
 ```ts
 await new PostgresAssets(pool).putAssets("live", {
   themes: [customTheme],
-  stamps: [customStamp],
+  compositions: [customComposition],
   initialTree: optionalInitialTree,
 });
 ```

@@ -7,13 +7,19 @@ import {
 } from "@facet/core";
 import { DEFAULT_CATALOG } from "./catalog.js";
 
+// Legacy vocabulary is built at runtime so the removed tokens never appear as
+// source literals (same idiom as theme.test.ts).
+const legacyPolicyField = ["st", "amp", "s"].join("");
+const legacyOrderField = ["component", "Order"].join("");
+const legacyDefinitionsField = ["component", "Definitions"].join("");
+
 describe("DEFAULT_CATALOG", () => {
   it("catalog validates and exposes primitives, components, and legacy brick compatibility", () => {
     const { catalog, issues } = validateCatalog(DEFAULT_CATALOG);
 
     expect(issues).toEqual([]);
     expect(catalog.theme.switchPolicy).toBe("locked");
-    expect(catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
+    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
     expect(catalog.policy.editBeforeAppend).toBe(true);
     expect(catalog.policy.compactScreens).toBe(true);
 
@@ -53,11 +59,20 @@ describe("DEFAULT_CATALOG", () => {
   });
 
   it("does not hide structural component definitions in default assets", () => {
-    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, "componentDefinitions")).toBe(
+    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, legacyDefinitionsField)).toBe(
       false,
     );
     expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, "componentLibrary")).toBe(false);
     expect(DEFAULT_CATALOG.compositions).toEqual({ mode: "all" });
     expect(Array.isArray(DEFAULT_CATALOG.compositions)).toBe(false);
+  });
+
+  it("pins the default catalog to the canonical composition shape", () => {
+    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, legacyPolicyField)).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG.policy, legacyOrderField)).toBe(
+      false,
+    );
+    expect(DEFAULT_CATALOG.compositions).toEqual({ mode: "all" });
+    expect(DEFAULT_CATALOG.policy.order).toEqual(["composition", "component", "primitive"]);
   });
 });

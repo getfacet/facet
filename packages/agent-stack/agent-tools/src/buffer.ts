@@ -113,10 +113,12 @@ export function createStageToolBuffer(
 
   const cumulativePatchLimitOutcome = (call: ToolCall): StageToolBufferOutcome => {
     const input = inputOf(call);
-    const stampName = input["name"];
+    const compositionName = input["name"];
     const observation =
-      call.name === "use_stamp" && typeof stampName === "string" && stampName.length > 0
-        ? `error: use_stamp — expanded "${stampName}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`
+      call.name === "use_composition" &&
+      typeof compositionName === "string" &&
+      compositionName.length > 0
+        ? `error: use_composition — expanded "${compositionName}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`
         : `error: ${call.name} — this step would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`;
     return failedOutcome(
       rejectedObservation(
@@ -208,7 +210,7 @@ export function createStageToolBuffer(
     return execute(call);
   };
 
-  const runUseStamp = (call: ToolCall): StageToolBufferOutcome => {
+  const runUseComposition = (call: ToolCall): StageToolBufferOutcome => {
     const at = inputOf(call)["at"];
     const parent = isRecord(at) ? at["parent"] : undefined;
     if (typeof parent === "string" && parent.length > 0 && !hasNode(shadow, parent)) {
@@ -216,9 +218,9 @@ export function createStageToolBuffer(
       if (missing !== undefined) {
         return failedOutcome(
           pendingObservation(
-            "use_stamp",
-            `error: use_stamp — parent "${parent}" was created this turn but is still waiting for child node(s): ${summarizeIds(missing)}. Define those child nodes before using a stamp inside it.`,
-            "Define the parent node's missing child node(s), then use the stamp.",
+            "use_composition",
+            `error: use_composition — parent "${parent}" was created this turn but is still waiting for child node(s): ${summarizeIds(missing)}. Define those child nodes before using a composition inside it.`,
+            "Define the parent node's missing child node(s), then use the composition.",
           ),
           shadow,
         );
@@ -240,8 +242,8 @@ export function createStageToolBuffer(
           return runSetNode(call);
         case "append_node":
           return runAppendNode(call);
-        case "use_stamp":
-          return runUseStamp(call);
+        case "use_composition":
+          return runUseComposition(call);
         case "remove_node":
           return runRemoveNode(call);
         default:

@@ -1,7 +1,7 @@
 import type {
   FacetNode,
   FacetCatalog,
-  FacetStamp,
+  FacetComposition,
   FacetTheme,
   FacetTree,
   JsonPatchOperation,
@@ -26,7 +26,7 @@ export interface ToolCall<Name extends string = string, Input = unknown> {
 export type FacetStageToolName =
   | "render_page"
   | "append_node"
-  | "use_stamp"
+  | "use_composition"
   | "set_node"
   | "remove_node"
   | "say"
@@ -43,7 +43,7 @@ export interface AppendNodeToolInput {
   readonly ["node"]: FacetNode;
 }
 
-export interface UseStampToolInput {
+export interface UseCompositionToolInput {
   readonly name: string;
   readonly params: Readonly<Record<string, string>>;
   readonly at: {
@@ -79,7 +79,7 @@ export interface InspectNodeToolInput {
 export interface ToolInputByName {
   readonly render_page: RenderPageToolInput;
   readonly ["append_node"]: AppendNodeToolInput;
-  readonly use_stamp: UseStampToolInput;
+  readonly use_composition: UseCompositionToolInput;
   readonly ["set_node"]: SetNodeToolInput;
   readonly ["remove_node"]: RemoveNodeToolInput;
   readonly say: SayToolInput;
@@ -90,7 +90,7 @@ export interface ToolInputByName {
 
 export interface StageToolAssets {
   readonly themes?: readonly FacetTheme[];
-  readonly stamps?: readonly FacetStamp[];
+  readonly compositions?: readonly FacetComposition[];
   readonly catalog?: FacetCatalog;
 }
 
@@ -107,7 +107,7 @@ export type StageToolErrorCode =
   | "invalid_input"
   | "invalid_tree"
   | "invalid_parent"
-  | "invalid_stamp"
+  | "invalid_composition"
   | "patch_limit"
   | "fold_error";
 
@@ -138,7 +138,8 @@ export interface AgentToolObservationData {
   readonly next_action: string;
   readonly summary: string;
   readonly code?: StageToolErrorCode | "pending";
-  readonly reason?: string;
+  /** Bounded, always-valid JSON payload for machine-readable tool metadata (e.g. minted composition ids). */
+  readonly data?: string;
 }
 
 export interface StageToolObservation {

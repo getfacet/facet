@@ -3,14 +3,14 @@ import type { AssetDocuments, AssetsStore } from "@facet/runtime";
 
 interface AssetsRow {
   readonly themes: unknown | null;
-  readonly stamps: unknown | null;
+  readonly compositions: unknown | null;
   readonly catalog: unknown | null;
   readonly initial_tree: unknown | null;
 }
 
 function jsonbAssetField(
   value: unknown | null | undefined,
-  label: "themes" | "stamps",
+  label: "themes" | "compositions",
 ): { readonly value: readonly unknown[]; readonly issue?: string } {
   if (value === null || value === undefined) return { value: [] };
   if (Array.isArray(value)) return { value };
@@ -22,27 +22,27 @@ export class PostgresAssets implements AssetsStore {
 
   async load(agentId: string): Promise<AssetDocuments> {
     const result = await this.pool.query<AssetsRow>(
-      `select fa.themes, fa.stamps, to_jsonb(fa) -> 'catalog' as catalog, fa.initial_tree
+      `select fa.themes, fa.compositions, to_jsonb(fa) -> 'catalog' as catalog, fa.initial_tree
        from facet_assets fa
        where fa.agent_id = $1`,
       [agentId],
     );
     const row = result.rows[0];
-    if (row === undefined) return { themes: [], stamps: [] };
+    if (row === undefined) return { themes: [], compositions: [] };
     const themes = jsonbAssetField(row.themes, "themes");
-    const stamps = jsonbAssetField(row.stamps, "stamps");
+    const compositions = jsonbAssetField(row.compositions, "compositions");
 
     const docs: {
       themes: readonly unknown[];
-      stamps: readonly unknown[];
+      compositions: readonly unknown[];
       catalog?: unknown;
       initialTree?: unknown;
       issues?: readonly string[];
     } = {
       themes: themes.value,
-      stamps: stamps.value,
+      compositions: compositions.value,
     };
-    const issues = [themes.issue, stamps.issue].filter(
+    const issues = [themes.issue, compositions.issue].filter(
       (issue): issue is string => issue !== undefined,
     );
     if (issues.length > 0) docs.issues = issues;
@@ -57,19 +57,19 @@ export class PostgresAssets implements AssetsStore {
 
   async putAssets(agentId: string, docs: AssetDocuments): Promise<void> {
     await this.pool.query(
-      `insert into facet_assets (agent_id, themes, stamps, catalog, initial_tree, updated_at)
+      `insert into facet_assets (agent_id, themes, compositions, catalog, initial_tree, updated_at)
        values ($1, $2, $3, $4, $5, now())
        on conflict (agent_id)
        do update set
          themes = excluded.themes,
-         stamps = excluded.stamps,
+         compositions = excluded.compositions,
          catalog = excluded.catalog,
          initial_tree = excluded.initial_tree,
          updated_at = now()`,
       [
         agentId,
         JSON.stringify(docs.themes),
-        JSON.stringify(docs.stamps),
+        JSON.stringify(docs.compositions),
         docs.catalog === undefined ? null : JSON.stringify(docs.catalog),
         docs.initialTree === undefined ? null : JSON.stringify(docs.initialTree),
       ],

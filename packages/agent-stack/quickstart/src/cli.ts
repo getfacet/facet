@@ -11,7 +11,13 @@
 import { readFile } from "node:fs/promises";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import type { FacetAgent, FacetCatalog, FacetStamp, FacetTheme, FacetTree } from "@facet/core";
+import type {
+  FacetAgent,
+  FacetCatalog,
+  FacetComposition,
+  FacetTheme,
+  FacetTree,
+} from "@facet/core";
 import { createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
 import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
@@ -32,7 +38,7 @@ export interface RunCliHooks {
    * observable seam tests use to assert the defaults seed on every boot. */
   readonly onResolvedAssets?: (assets: {
     readonly themes: readonly FacetTheme[];
-    readonly stamps: readonly FacetStamp[];
+    readonly compositions: readonly FacetComposition[];
     readonly catalog: FacetCatalog;
   }) => void;
 }
@@ -144,14 +150,15 @@ export async function runCli(
   }
 
   // Assets registry (Decision 8): resolve through `loadAssets` on EVERY boot so
-  // the `@facet/assets` default theme + stamp library seeds even with no
+  // the `@facet/assets` default theme + composition library seeds even with no
   // --assets (an empty MemoryAssets still yields the defaults through the same
   // validation gate — WU-6). An EXPLICIT --assets path must exist (the --guide
   // precedent) and adds the operator's docs on top of the defaults.
   // Documents are validated once here at boot; each issue is one concise warn
   // line (never a document value). Themes go to the agent (names in prompt ②)
-  // AND the server (the shell map); stamps to the agent; a seedable initial tree
-  // to the server (which wraps the stage store).
+  // AND the server (the shell map); compositions to the agent only — expanded
+  // server-side, never shipped to the browser; a seedable initial tree to the
+  // server (which wraps the stage store).
   let store: AssetsStore;
   if (flags.assets !== undefined) {
     // An EXPLICIT --assets must be a READABLE DIRECTORY (the --guide hard-fail
@@ -171,16 +178,16 @@ export async function runCli(
     store = new FileAssets(flags.assets);
   } else {
     // No --assets: an empty document set still seeds the default base layer.
-    store = new MemoryAssets({ themes: [], stamps: [] });
+    store = new MemoryAssets({ themes: [], compositions: [] });
   }
   const loaded = await loadAssets(store, flags.agentId);
   const themes: readonly FacetTheme[] = loaded.themes;
-  const stamps: readonly FacetStamp[] = loaded.stamps;
+  const compositions: readonly FacetComposition[] = loaded.compositions;
   const catalog: FacetCatalog = loaded.catalog;
   const initialStage: FacetTree | undefined =
     loaded.initialTree ?? (usingQuickstartPageBrief ? QUICKSTART_INITIAL_STAGE : undefined);
   for (const issue of loaded.issues) error(`[facet-quickstart] ${issue}`);
-  hooks.onResolvedAssets?.({ themes, stamps, catalog });
+  hooks.onResolvedAssets?.({ themes, compositions, catalog });
 
   // One MemorySink shared by the agent (prompt layer ③ reads history) and the
   // facet server (which records into it) — the same conversation, both sides.
@@ -206,7 +213,7 @@ export async function runCli(
     sink,
     agentId: flags.agentId,
     themes,
-    stamps,
+    compositions,
     catalog,
   });
   const brain = `${provider.name} (${provider.model})`;

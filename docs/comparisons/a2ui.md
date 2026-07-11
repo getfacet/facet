@@ -144,9 +144,9 @@ is flagged. These are candidates, not commitments.
    as a second update grammar; drop two-way data-model sync rather than bolt it on.*
 4. **Versioned registry for default-asset data (`@facet/assets`).** `[effort M · risk MODERATE — care]`
    Capture the ergonomics of an extensible catalog at the *asset-data* layer —
-   themes and stamps as versioned value maps, not code.
+   themes and compositions as versioned value maps, not code.
    *VIOLATES 4-brick minimalism the moment an entry introduces a new node type or
-   admits raw markup. Safe only while every stamp provably reduces to
+   admits raw markup. Safe only while every composition provably reduces to
    `box/text/media/field` before it hits the wire.*
 5. **First-class execution-boundary annotation on actions** (A2UI's `callableFrom`
    concept). `[effort S · risk LOW-MODERATE]` Facet already seeds this: `FacetAction`

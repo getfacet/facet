@@ -177,7 +177,7 @@ const KNOWN_KEYS = new Set([
 /** Substrings that make a CSS value dangerous regardless of context. */
 const DANGEROUS_SUBSTRINGS = ["url(", "var(", "expression(", "javascript:"];
 
-/** Shared cap for a document's one-line `description` (a theme's and a stamp's). */
+/** Shared cap for a document's one-line `description` (a theme's and a composition's). */
 export const MAX_DESCRIPTION_LENGTH = 200;
 
 /**

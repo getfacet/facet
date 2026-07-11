@@ -195,16 +195,17 @@ Bundle B PR review record.
 - ~~quickstart/cli.ts (--assets guard)~~ — RESOLVED in-branch (review r6): the
   explicit path must be a readable directory (statSync + readdirSync probe,
   exit 1), pinned by a cli test.
-- ~~core/validate.ts (validateStamp bounds)~~ — RESOLVED in-branch (review
-  r5+r6): stamp names share `isValidThemeName`, descriptions truncate at the
-  shared 200-char cap, and the refusal issue never echoes the raw name.
+- ~~core/validate.ts (composition validator bounds, now
+  `validateComposition`)~~ — RESOLVED in-branch (review r5+r6): composition
+  names share `isValidThemeName`, descriptions truncate at the shared 200-char
+  cap, and the refusal issue never echoes the raw name.
 - **quickstart/prompt.ts (composition budget)** — the 4000-char cap measures only the
   fragment JSON, not the `- name: description` head, and there is no aggregate
   section cap. *Fix:* measure head+fragment; add a COMPOSITIONS section cap.
 - **quickstart/agent.ts (set_theme)** — an unknown theme name returns
   `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
   error observation naming the available themes (append_node precedent).
-- ~~runtime/assets.ts (stamp dedup)~~ — RESOLVED in-branch (review r6):
+- ~~runtime/assets.ts (composition dedup)~~ — RESOLVED in-branch (review r6):
   first-wins + issue, mirroring themes; pinned by an assets test.
 - **core/validate.ts (sanitizeScreens)** — `kept` is a plain object: a screen
   keyed `__proto__` drops silently and `entry:"constructor"` resolves through

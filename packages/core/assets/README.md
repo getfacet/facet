@@ -1,8 +1,8 @@
 # @facet/assets
 
 Node-free default asset data for Facet. This package exports `DEFAULT_THEME`,
-`DEFAULT_STAMPS`, and `DEFAULT_CATALOG` as validated data values and depends
-only on `@facet/core`.
+`DEFAULT_COMPOSITIONS`, and `DEFAULT_CATALOG` as validated data values and
+depends only on `@facet/core`.
 
 ```bash
 npm install @facet/assets @facet/core
@@ -20,14 +20,16 @@ renderer data, not new stage syntax.
 Its default sans stack is `Nunito, sans-serif`; this package only exports the
 data value, so hosts that want the exact Nunito face must load that font in
 their own shell.
-`DEFAULT_STAMPS` is a small library of reusable composition fragments such as
-`hero`, `card`, `pricing-section`, and `dashboard-summary`; each stamp declares
-string slots and whole-value `{{slot}}` markers so hosts can expand them with
-`expandStamp` or quickstart's `use_stamp` tool. Stamps also carry bounded
-metadata for agent authoring: category, use/avoid guidance, tags, variants,
-repeatability, preferred parent, and optional composition/data/follow-up hints.
-Prompt layers expose that metadata, names, descriptions, and slot names only;
-stamp node JSON stays server-side.
+`DEFAULT_COMPOSITIONS` is a small library of eleven reusable composition
+fragments such as `hero`, `card`, `pricing-section`, and `dashboard-summary`;
+each composition declares string slots and whole-value `{{slot}}` markers so
+hosts can expand them with `expandComposition` or quickstart's `use_composition`
+tool. Compositions also carry bounded metadata for agent authoring: category,
+use/avoid guidance, tags, variants, repeatability, preferred parent, and
+optional composed-of/data/follow-up hints. The prompt boundary is
+metadata-only: prompt layers expose names, descriptions, slot names, and that
+metadata only — composition node JSON and slot defaults never serialize into
+prompts and stay server-side.
 
 `DEFAULT_CATALOG` is the default UI authoring policy. It locks the active theme
 to `default`, allows the built-in intrinsic component set, advertises the compact
@@ -39,9 +41,9 @@ about what UI the agent may author; it is not hosted platform policy for tenant
 isolation, authentication, billing, metering, spend caps, or custom domains.
 
 ```ts
-import { DEFAULT_CATALOG, DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_COMPOSITIONS, DEFAULT_THEME } from "@facet/assets";
 
-const hero = DEFAULT_STAMPS.find((stamp) => stamp.name === "hero");
+const hero = DEFAULT_COMPOSITIONS.find((composition) => composition.name === "hero");
 const lockedTheme = DEFAULT_CATALOG.theme.switchPolicy === "locked";
 ```
 

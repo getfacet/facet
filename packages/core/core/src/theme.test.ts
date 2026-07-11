@@ -381,8 +381,8 @@ describe("validateTheme", () => {
   });
 
   // Pins the theme\u2192boundedDescription wiring (label "theme" + MAX_DESCRIPTION_LENGTH
-  // cap); the shared truncate/reject logic is also covered on the stamp path, but
-  // that coverage is label-agnostic and wouldn't catch a wrong label/cap here.
+  // cap); the shared truncate/reject logic is also covered on the composition path,
+  // but that coverage is label-agnostic and wouldn't catch a wrong label/cap here.
   it("drops a non-string description with a labelled warning", () => {
     const { theme, issues } = validateTheme({ name: "x", description: 123 });
     expect(theme?.description).toBeUndefined();
@@ -581,7 +581,7 @@ describe("validateTheme", () => {
     }
   });
 
-  it("keeps recipes style-only and drops structural component definition fields", () => {
+  it("keeps structural composition definitions out of style recipes under canonical names", () => {
     const { theme, issues } = validateTheme({
       name: "structural-recipes",
       recipes: {
@@ -593,7 +593,7 @@ describe("validateTheme", () => {
               root: { id: "root", type: "text", value: "not a recipe" },
             },
             slots: { title: "Title" },
-            componentDefinitions: [{ name: "not-a-recipe" }],
+            [["component", "Definitions"].join("")]: [{ name: "not-a-recipe" }],
             compositions: [{ name: "not-a-recipe" }],
           },
         },
@@ -607,8 +607,19 @@ describe("validateTheme", () => {
     expect(Object.prototype.hasOwnProperty.call(recipe, "root")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(recipe, "nodes")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(recipe, "slots")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(recipe, "componentDefinitions")).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(recipe, ["component", "Definitions"].join("")),
+    ).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(recipe, "compositions")).toBe(false);
     expect(issues.filter((issue) => issue.severity === "warning").length).toBeGreaterThanOrEqual(5);
+
+    // DC-012: the theme surface (validator + this suite) carries canonical
+    // composition naming only. The legacy token is spelled split so this
+    // hygiene check cannot match its own source.
+    const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
+    expect(readFileSync(new URL("./theme.ts", import.meta.url), "utf8")).not.toMatch(legacyNaming);
+    expect(readFileSync(new URL("./theme.test.ts", import.meta.url), "utf8")).not.toMatch(
+      legacyNaming,
+    );
   });
 });

@@ -1,11 +1,11 @@
-import type { FacetStamp } from "@facet/core";
+import type { FacetComposition } from "@facet/core";
 
 /**
- * Default stamps are prompt-safe, node-free data assets: reusable stage
+ * Default compositions are prompt-safe, node-free data assets: reusable stage
  * fragments with bounded metadata so an agent can choose useful patterns before
  * falling back to raw bricks.
  */
-export const DEFAULT_STAMPS: readonly FacetStamp[] = [
+export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   {
     name: "hero",
     description: "A compact product hero with a title, subtitle, and CTA.",

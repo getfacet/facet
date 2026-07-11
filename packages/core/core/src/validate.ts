@@ -18,8 +18,8 @@ import {
 } from "./tokens.js";
 import {
   CHART_KINDS,
+  COMPONENT_NODE_TYPES,
   FIELD_INPUTS,
-  HIGH_LEVEL_NODE_TYPES,
   MEDIA_KINDS,
   TONES,
   isContainer,
@@ -37,13 +37,18 @@ import {
   type TextStyle,
   type Tone,
 } from "./nodes.js";
-import { sanitizeComponentNode } from "./component-validation.js";
+import {
+  isComponentNodeType,
+  isPrimitiveBrickType,
+  sanitizeComponentNode,
+} from "./component-validation.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
 import {
   BoundedIssues,
   boundedDescription,
+  isControlChar,
   isForbiddenKey,
   isPlainObject as isObject,
   nullMap,
@@ -157,7 +162,7 @@ function isSlotMarker(value: string): boolean {
 /**
  * Normalizes an action value (`onPress`/`onHold`) to the FacetAction union. A
  * bare legacy `{name}` (kind absent) or explicit `kind: "agent"` gets the
- * canonical `kind: "agent"` stamp SILENTLY (no issue — it is the same action,
+ * canonical `kind: "agent"` discriminator SILENTLY (no issue — it is the same action,
  * not a mistake). Malformed or unknown-kind actions are stripped with an issue
  * naming `field` (the node property being normalized), so the box degrades to
  * a plain non-pressable box.
@@ -348,7 +353,32 @@ export const MAX_CHART_SERIES = 8;
 export const MAX_CHART_POINTS = 200;
 export const MAX_LIST_ITEMS = 50;
 export const MAX_TABS_ITEMS = 12;
-export const MAX_STAMP_METADATA_ITEMS = 16;
+const MAX_COMPOSITION_METADATA_ITEMS = 16;
+const MAX_COMPOSITION_NODES = 1023;
+
+const LEGACY_COMPOSITION_NODE_TYPES = ["image"] as const;
+
+const FORBIDDEN_COMPOSITION_FIELDS = [
+  "html",
+  "rawHtml",
+  "innerHTML",
+  "script",
+  "javascript",
+  "js",
+  "css",
+  "fetch",
+  "fetchUrl",
+  "endpoint",
+  "url",
+  "dataSource",
+  "dataBinding",
+  "binding",
+  "bindings",
+  "query",
+  "queryExpr",
+  "expression",
+  "resolver",
+] as const;
 
 function boundedString(
   value: unknown,
@@ -1015,7 +1045,7 @@ function sanitizeScreens(
  * ASSIGN the map's [[Prototype]] instead of storing a node (silently losing it
  * and making dangling-child lookups resolve through the prototype chain). Such
  * ids are also dropped outright — patch pointers to them are forbidden anyway,
- * so they'd be unreachable. Shared by `validateTree` and `validateStamp` so the
+ * so they'd be unreachable. Shared by `validateTree` and `validateComposition` so the
  * brick-shape + token-membership sanitization is derived once, not twice.
  */
 function sanitizeNodeMap(
@@ -1025,6 +1055,10 @@ function sanitizeNodeMap(
 ): Record<string, FacetNode> {
   const nodes: Record<string, FacetNode> = nullMap<FacetNode>();
   for (const [id, raw] of Object.entries(rawNodes)) {
+    if (id === "") {
+      issues.push('node "": empty node id dropped');
+      continue;
+    }
     if (isForbiddenKey(id)) {
       issues.push(`node "${printableKey(id)}": forbidden node id dropped`);
       continue;
@@ -1084,7 +1118,7 @@ function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: IssueSi
  * instantiates 2^depth elements and hangs the tab.
  *
  * Single-parent is enforced PER WALK ROOT: `claimed` resets at the start of each
- * root's DFS (the roots are the tree root plus each kept screen root; a stamp
+ * root's DFS (the roots are the tree root plus each kept screen root; a composition
  * passes its single fragment root). This is deliberate — two screens legitimately
  * SHARE a node (a common header/footer), so a global claim would strip the ref
  * from the second screen and break the pre-drawn-screens feature. Path explosion
@@ -1256,19 +1290,19 @@ function validateTreeUnsafe(input: unknown, issues: BoundedIssues): ValidationRe
 /**
  * A reusable, validated brick fragment — a named `{root, nodes}` subtree the
  * operator authors and an agent can expand into ordinary patches. The `root`
- * need NOT be a box (a single-text stamp is legal), and unlike a tree a stamp
+ * need NOT be a box (a single-text composition is legal), and unlike a tree a composition
  * has no `screens`/`entry`.
  */
-export interface FacetStamp {
+export interface FacetComposition {
   readonly name: string;
   readonly description?: string;
-  readonly metadata?: StampMetadata;
+  readonly metadata?: CompositionMetadata;
   readonly slots?: Readonly<Record<string, string>>;
   readonly root: NodeId;
   readonly nodes: Readonly<Record<NodeId, FacetNode>>;
 }
 
-export interface StampMetadata {
+export interface CompositionMetadata {
   readonly category?: string;
   readonly useWhen?: string;
   readonly avoidWhen?: string;
@@ -1281,38 +1315,51 @@ export interface StampMetadata {
   readonly followUpEdits?: readonly string[];
 }
 
-export interface StampValidationResult {
-  readonly stamp?: FacetStamp;
+export interface CompositionValidationResult {
+  readonly composition?: FacetComposition;
   readonly issues: readonly string[];
 }
 
 /**
- * Fail-safe boundary for an untrusted stamp document, mirroring `validateTree`'s
+ * Fail-safe boundary for an untrusted composition document, mirroring `validateTree`'s
  * discipline (shared `sanitizeNodeMap`/`pruneDanglingChildren`/`breakCycles`):
  * brick-shape + token-membership sanitization, null-proto node map, dangling and
- * cyclic child refs removed, depth capped. Never throws. A stamp needs a string
+ * cyclic child refs removed, depth capped. Never throws. A composition needs a string
  * `name` and a `root` that resolves to a kept node (any brick type); optional
- * `slots` are bounded string defaults; no usable root ⇒ `stamp` undefined.
+ * `slots` are bounded string defaults; no usable root ⇒ `composition` undefined.
  * Issues report everything that was fixed or refused.
  */
-export function validateStamp(input: unknown): StampValidationResult {
+export function validateComposition(input: unknown): CompositionValidationResult {
   const issues = new BoundedIssues();
   try {
-    return validateStampUnsafe(input, issues);
+    return validateCompositionUnsafe(input, issues);
   } catch {
-    issues.push("stamp could not be read safely; refused");
+    issues.push("composition could not be read safely; refused");
     return { issues: issues.list };
   }
 }
 
-function validateStampUnsafe(input: unknown, issues: BoundedIssues): StampValidationResult {
+function validateCompositionUnsafe(
+  input: unknown,
+  issues: BoundedIssues,
+): CompositionValidationResult {
   if (!isObject(input) || !isObject(input.nodes)) {
-    issues.push("stamp is not an object with a nodes map");
+    issues.push("composition is not an object with a nodes map");
     return { issues: issues.list };
   }
+
+  const rawNodeCount = Object.keys(input.nodes).length;
+  if (rawNodeCount > MAX_COMPOSITION_NODES) {
+    issues.push(`composition nodes exceeded the ${MAX_COMPOSITION_NODES}-node cap; refused`);
+    return { issues: issues.list };
+  }
+  if (!inspectCompositionNodes(input.nodes, issues)) {
+    return { issues: issues.list };
+  }
+
   const name = asString(input.name);
   if (name === undefined || name.trim() === "") {
-    issues.push("stamp has no string name");
+    issues.push("composition has no string name");
     return { issues: issues.list };
   }
   // Cap the name with the same rule a theme document's name uses (a short,
@@ -1323,7 +1370,7 @@ function validateStampUnsafe(input: unknown, issues: BoundedIssues): StampValida
     // is exactly what this branch rejects, so interpolating it here would defeat
     // the cap and inject into the prompt/issue/log strings it flows into (matches
     // validateTheme's constant "name is missing or malformed" posture).
-    issues.push("stamp name is missing or malformed (letters/digits/_/-, max 64); refused");
+    issues.push("composition name is missing or malformed (letters/digits/_/-, max 64); refused");
     return { issues: issues.list };
   }
 
@@ -1333,16 +1380,16 @@ function validateStampUnsafe(input: unknown, issues: BoundedIssues): StampValida
   const rootId =
     typeof input.root === "string" && nodes[input.root] !== undefined ? input.root : undefined;
   if (rootId === undefined) {
-    issues.push("stamp has no valid root node");
+    issues.push("composition has no valid root node");
     return { issues: issues.list };
   }
 
   breakCycles(nodes, [rootId], issues);
 
-  const stamp: {
+  const composition: {
     name: string;
     description?: string;
-    metadata?: StampMetadata;
+    metadata?: CompositionMetadata;
     slots?: Record<string, string>;
     root: string;
     nodes: Record<string, FacetNode>;
@@ -1354,58 +1401,105 @@ function validateStampUnsafe(input: unknown, issues: BoundedIssues): StampValida
     // giant description can't blow the prompt/context budget it is injected into.
     const { description, warning } = boundedDescription(
       input.description,
-      "stamp",
+      "composition",
       MAX_DESCRIPTION_LENGTH,
     );
-    if (description !== undefined) stamp.description = description;
+    if (description !== undefined) composition.description = description;
     if (warning !== undefined) issues.push(warning);
   }
-  const slots = sanitizeStampSlots(input.slots, issues);
-  if (slots !== undefined) stamp.slots = slots;
-  const metadata = sanitizeStampMetadata(input.metadata, issues);
-  if (metadata !== undefined) stamp.metadata = metadata;
-  return { stamp, issues: issues.list };
+  const slots = sanitizeCompositionSlots(input.slots, issues);
+  if (slots !== undefined) composition.slots = slots;
+  const metadata = sanitizeCompositionMetadata(input.metadata, issues);
+  if (metadata !== undefined) composition.metadata = metadata;
+  return { composition, issues: issues.list };
+}
+
+function inspectCompositionNodes(rawNodes: Record<string, unknown>, issues: IssueSink): boolean {
+  let safe = true;
+  for (const [id, raw] of Object.entries(rawNodes)) {
+    if (!isObject(raw)) continue;
+    if (!isAllowedCompositionNodeType(raw.type)) {
+      issues.push(
+        `node "${printableKey(id)}": unknown component type ${printableValue(raw.type)} in composition`,
+      );
+      safe = false;
+    }
+    for (const field of FORBIDDEN_COMPOSITION_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(raw, field)) {
+        issues.push(`node "${printableKey(id)}": ${field} is not allowed in compositions; refused`);
+        safe = false;
+      }
+    }
+  }
+  return safe;
+}
+
+function isAllowedCompositionNodeType(value: unknown): boolean {
+  return (
+    isPrimitiveBrickType(value) ||
+    isComponentNodeType(value) ||
+    (typeof value === "string" &&
+      (LEGACY_COMPOSITION_NODE_TYPES as readonly string[]).includes(value))
+  );
 }
 
 function metadataString(raw: unknown, field: string, issues: IssueSink): string | undefined {
   if (raw === undefined) return undefined;
   if (typeof raw !== "string") {
-    issues.push(`stamp metadata "${field}" is not a string; dropped`);
+    issues.push(`composition metadata "${field}" is not a string; dropped`);
     return undefined;
   }
   if (raw.length <= MAX_DESCRIPTION_LENGTH) return raw;
-  issues.push(`stamp metadata "${field}" truncated to ${MAX_DESCRIPTION_LENGTH} characters`);
+  issues.push(`composition metadata "${field}" truncated to ${MAX_DESCRIPTION_LENGTH} characters`);
   return raw.slice(0, MAX_DESCRIPTION_LENGTH);
 }
 
+// `variants`/`tags` are slot-name gated; `freeText` fields are prose that accept
+// any string after bounded sanitation (control chars stripped, trimmed, capped).
 function metadataStringList(
   raw: unknown,
   field: string,
   issues: IssueSink,
+  freeText = false,
 ): readonly string[] | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw)) {
-    issues.push(`stamp metadata "${field}" is not an array; dropped`);
+    issues.push(`composition metadata "${field}" is not an array; dropped`);
     return undefined;
   }
   const out: string[] = [];
-  for (const value of raw.slice(0, MAX_STAMP_METADATA_ITEMS)) {
-    if (typeof value === "string" && isValidSlotName(value)) out.push(value);
+  for (const value of raw.slice(0, MAX_COMPOSITION_METADATA_ITEMS)) {
+    if (typeof value !== "string") {
+      if (freeText) issues.push(`composition metadata "${field}" entry is not a string; dropped`);
+    } else if (!freeText) {
+      if (isValidSlotName(value)) out.push(value);
+    } else {
+      const text = boundedMetadataText(value, field, issues);
+      if (text !== undefined) out.push(text);
+    }
   }
-  if (raw.length > MAX_STAMP_METADATA_ITEMS) {
+  if (raw.length > MAX_COMPOSITION_METADATA_ITEMS) {
     issues.push(
-      `stamp metadata "${field}" exceeded the ${MAX_STAMP_METADATA_ITEMS}-item cap; extra items dropped`,
+      `composition metadata "${field}" exceeded the ${MAX_COMPOSITION_METADATA_ITEMS}-item cap; extra items dropped`,
     );
   }
   return out.length > 0 ? out : undefined;
 }
 
-const STAMP_METADATA_NODE_TYPES = [
-  "box",
-  "text",
-  "media",
-  "field",
-  ...HIGH_LEVEL_NODE_TYPES,
+function boundedMetadataText(value: string, field: string, issues: IssueSink): string | undefined {
+  const kept = [...value].filter((ch) => !isControlChar(ch.charCodeAt(0)));
+  const stripped = kept.join("").trim();
+  if (stripped.length === 0) return undefined;
+  if (stripped.length <= MAX_DESCRIPTION_LENGTH) return stripped;
+  issues.push(
+    `composition metadata "${field}" entry truncated to ${MAX_DESCRIPTION_LENGTH} characters`,
+  );
+  return stripped.slice(0, MAX_DESCRIPTION_LENGTH);
+}
+
+// Full component vocabulary incl. legacy `stat`, so `composedOf` keeps every real node type.
+const COMPOSITION_METADATA_NODE_TYPES = [
+  ...new Set<FacetNode["type"]>(["box", "text", "media", "field", ...COMPONENT_NODE_TYPES]),
 ] as const satisfies readonly FacetNode["type"][];
 
 function metadataNodeTypeList(
@@ -1415,30 +1509,33 @@ function metadataNodeTypeList(
 ): readonly FacetNode["type"][] | undefined {
   if (raw === undefined) return undefined;
   if (!Array.isArray(raw)) {
-    issues.push(`stamp metadata "${field}" is not an array; dropped`);
+    issues.push(`composition metadata "${field}" is not an array; dropped`);
     return undefined;
   }
   const out: FacetNode["type"][] = [];
-  for (const value of raw.slice(0, MAX_STAMP_METADATA_ITEMS)) {
+  for (const value of raw.slice(0, MAX_COMPOSITION_METADATA_ITEMS)) {
     if (
       typeof value === "string" &&
-      (STAMP_METADATA_NODE_TYPES as readonly string[]).includes(value)
+      (COMPOSITION_METADATA_NODE_TYPES as readonly string[]).includes(value)
     ) {
       out.push(value as FacetNode["type"]);
     }
   }
-  if (raw.length > MAX_STAMP_METADATA_ITEMS) {
+  if (raw.length > MAX_COMPOSITION_METADATA_ITEMS) {
     issues.push(
-      `stamp metadata "${field}" exceeded the ${MAX_STAMP_METADATA_ITEMS}-item cap; extra items dropped`,
+      `composition metadata "${field}" exceeded the ${MAX_COMPOSITION_METADATA_ITEMS}-item cap; extra items dropped`,
     );
   }
   return out.length > 0 ? out : undefined;
 }
 
-function sanitizeStampMetadata(raw: unknown, issues: IssueSink): StampMetadata | undefined {
+function sanitizeCompositionMetadata(
+  raw: unknown,
+  issues: IssueSink,
+): CompositionMetadata | undefined {
   if (raw === undefined) return undefined;
   if (!isObject(raw)) {
-    issues.push("stamp metadata is not an object; dropped");
+    issues.push("composition metadata is not an object; dropped");
     return undefined;
   }
   const metadata: {
@@ -1472,41 +1569,48 @@ function sanitizeStampMetadata(raw: unknown, issues: IssueSink): StampMetadata |
   ) {
     metadata.preferredParent = raw.preferredParent;
   } else if (raw.preferredParent !== undefined) {
-    issues.push("stamp metadata preferredParent is invalid; dropped");
+    issues.push("composition metadata preferredParent is invalid; dropped");
   }
   const composedOf = metadataNodeTypeList(raw.composedOf, "composedOf", issues);
   if (composedOf !== undefined) metadata.composedOf = composedOf;
-  const dataRequirements = metadataStringList(raw.dataRequirements, "dataRequirements", issues);
+  const freeTextList = (r: unknown, f: string): readonly string[] | undefined =>
+    metadataStringList(r, f, issues, true);
+  const dataRequirements = freeTextList(raw.dataRequirements, "dataRequirements");
   if (dataRequirements !== undefined) metadata.dataRequirements = dataRequirements;
-  const followUpEdits = metadataStringList(raw.followUpEdits, "followUpEdits", issues);
+  const followUpEdits = freeTextList(raw.followUpEdits, "followUpEdits");
   if (followUpEdits !== undefined) metadata.followUpEdits = followUpEdits;
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
-function sanitizeStampSlots(raw: unknown, issues: IssueSink): Record<string, string> | undefined {
+function sanitizeCompositionSlots(
+  raw: unknown,
+  issues: IssueSink,
+): Record<string, string> | undefined {
   if (raw === undefined) return undefined;
   if (!isObject(raw)) {
-    issues.push("stamp slots is not an object map; dropped");
+    issues.push("composition slots is not an object map; dropped");
     return undefined;
   }
   const slots = nullMap<string>();
   for (const [name, value] of Object.entries(raw)) {
     const key = printableKey(name);
     if (isForbiddenKey(name)) {
-      issues.push(`stamp slot "${key}": forbidden slot name dropped`);
+      issues.push(`composition slot "${key}": forbidden slot name dropped`);
       continue;
     }
     if (!isValidSlotName(name)) {
-      issues.push(`stamp slot "${key}": invalid slot name dropped`);
+      issues.push(`composition slot "${key}": invalid slot name dropped`);
       continue;
     }
     if (typeof value !== "string") {
-      issues.push(`stamp slot "${key}": default is not a string; dropped`);
+      issues.push(`composition slot "${key}": default is not a string; dropped`);
       continue;
     }
     if (value.length > MAX_FIELD_VALUE_CHARS) {
       slots[name] = value.slice(0, MAX_FIELD_VALUE_CHARS);
-      issues.push(`stamp slot "${key}": default truncated to ${MAX_FIELD_VALUE_CHARS} characters`);
+      issues.push(
+        `composition slot "${key}": default truncated to ${MAX_FIELD_VALUE_CHARS} characters`,
+      );
       continue;
     }
     slots[name] = value;

@@ -198,7 +198,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
       ],
       rows: [
         { tool: "render_page", result: "applied_visible", visible: true },
-        { tool: "use_stamp", result: "applied_visible", visible: true },
+        { tool: "append_node", result: "applied_visible", visible: true },
         { tool: "set_node", result: "needs_repair", visible: false },
       ],
     },
@@ -272,7 +272,7 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
         "qs.system.hero",
         "qs.system.theme",
         "qs.system.bricks",
-        "qs.system.stamps",
+        "qs.system.compositions",
         "qs.system.catalog",
       ],
     },
@@ -533,16 +533,16 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
         { title: "Fail-safe renderer", body: "Malformed nodes skip instead of throwing." },
       ],
     },
-    "qs.system.stamps": {
-      id: "qs.system.stamps",
+    "qs.system.compositions": {
+      id: "qs.system.compositions",
       type: "section",
       title: "Default composition patterns",
       body: "The agent sees composition names, slots, and metadata before it falls back to primitive composition.",
       variant: "surface",
-      children: ["qs.system.stamps.list", "qs.system.stamps.table"],
+      children: ["qs.system.compositions.list", "qs.system.compositions.table"],
     },
-    "qs.system.stamps.list": {
-      id: "qs.system.stamps.list",
+    "qs.system.compositions.list": {
+      id: "qs.system.compositions.list",
       type: "list",
       variant: "compact",
       items: [
@@ -553,8 +553,8 @@ export const QUICKSTART_INITIAL_STAGE: FacetTree = {
         { title: "chart-table-view", body: "Display-only data view." },
       ],
     },
-    "qs.system.stamps.table": {
-      id: "qs.system.stamps.table",
+    "qs.system.compositions.table": {
+      id: "qs.system.compositions.table",
       type: "table",
       caption: "Composition slots",
       variant: "default",

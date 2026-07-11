@@ -168,10 +168,10 @@ which primitive bricks, components, variants, and compositions are allowed,
 whether primitive fallback is allowed or discouraged, whether theme switching is
 locked, and whether the agent should prefer compact screens or
 edit-before-append behavior. Missing or malformed catalog input falls back to
-`DEFAULT_CATALOG` with bounded issues. Old catalog fields (`bricks`, `stamps`,
-and `order: ["stamp", "brick", "primitive"]`) remain valid compatibility input;
-the normalized model also exposes `components`, `compositions`, and
-`componentOrder: ["composition", "component", "primitive"]`.
+`DEFAULT_CATALOG` with bounded issues. The normalized model exposes `bricks`,
+`components`, a required `compositions` policy (`{ mode: "all" }` by default, or
+`{ mode: "allow", names }`), `primitiveFallback`, and a usage `policy` whose
+canonical `order` is `["composition", "component", "primitive"]`.
 
 The catalog is deliberately neutral UI vocabulary/policy. It is not LiveFrame and
 it is not a hosted control plane. Tenant/project lookup, browser auth, agent
@@ -229,12 +229,12 @@ composition, and initial-tree assets fail-soft, caps hostile asset/issue arrays 
 iterating them, and skips any invalid document with a logged issue — the same
 skip-and-log posture the file stage store already uses.
 
-**Compositions** — legacy `*.stamp.json` validated `{ root, nodes, slots? }`
+**Compositions** — `*.composition.json` validated `{ root, nodes, slots? }`
 fragments — reach the quickstart LLM as names, slot names, descriptions, and
 bounded metadata such as `category`, `useWhen`, `avoidWhen`, `tags`,
 `preferredParent`, `composedOf`, and `followUpEdits`. Full composition JSON,
 `root`, `nodes`, slot defaults, and unknown fields are not prompt surface. The
-model calls the legacy `use_stamp` tool; the server resolves the name from the
+model calls the `use_composition` tool; the server resolves the name from the
 immutable per-agent composition snapshot, fills whole-value `{{slot}}` markers,
 remaps every internal id to a fresh id, drops unreachable nodes and composition
 actions that point outside the expanded subtree, and emits ordinary JSON Patch
@@ -252,7 +252,7 @@ is inside the same serialized stage-write path (the server stays the only writer
 and is visible to that first turn, which then refines it. The seed also
 **travels the patch channel**: the browser's first connection rehydrated before
 the session existed, so the store reports the fresh seed once (`takeSeeded`) and
-the runtime prepends a root `replace` as that turn's first frame — stamped,
+the runtime prepends a root `replace` as that turn's first frame — ordered,
 replayable, and applied by the same `applyPatch` on both sides. The frame is
 consumed only when the turn persists; a failed first turn re-emits it, and a
 durable commit-then-reject first save can recover the seed report even after the

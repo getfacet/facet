@@ -9,7 +9,7 @@ export interface FacetAgentSystemPromptOptions {
 }
 
 const MAX_PROMPT_ASSET_ITEMS = 1024;
-const MAX_PROMPT_STAMP_SLOTS = 64;
+const MAX_PROMPT_COMPOSITION_SLOTS = 64;
 const MAX_PROMPT_CATALOG_ITEMS = 64;
 const MAX_PROMPT_METADATA_ITEMS = 16;
 
@@ -32,7 +32,7 @@ Use the Facet model as Primitive Brick -> Component -> Catalog. Prefer catalog-a
 export const FACET_STATE_EDITING_PROMPT = `STATE EDITING
 Default to an edit-before-append strategy: edit before you append, reuse existing node ids, and change the smallest node that satisfies the request. If an active catalog says editBeforeAppend:false, follow that catalog policy.
 - Use render_page only for the first paint or a major restructure.
-- Use set_node, append_node, remove_node, use_stamp, or set_theme for incremental edits.
+- Use set_node, append_node, remove_node, use_composition, or set_theme for incremental edits.
 - Reuse existing node ids so updates replace the right content instead of duplicating old sections.
 - Never describe a page change in prose when you can make the change with a stage tool.`;
 
@@ -42,7 +42,7 @@ You build and edit the page by calling Facet stage tools.
 - set_node: replace or update one existing node by id.
 - append_node: add one new node under an existing container parent (box, section, card, or form).
 - remove_node: delete a node that no longer belongs.
-- use_stamp: expand an advertised stamp by name, filling slot params with strings.
+- use_composition: expand an advertised composition by name, filling slot params with strings.
 - set_theme: choose an advertised theme by name only.
 - inspect_stage / inspect_node: inspect before editing when the current structure or ids are unclear.
 - say: send a short chat line; do not use chat as a substitute for the requested page edit.
@@ -59,7 +59,7 @@ Use structured outcome recovery. Every tool result is JSON; read status, outcome
 Do not claim completion unless the requested page change has an applied_visible result, or you intentionally only needed a no_stage_change tool such as inspect or say.`;
 
 export const FACET_ASSET_PRIVACY_PROMPT = `ASSET PRIVACY
-Operator assets are offered as metadata only. Use catalog policy, theme names, composition names, legacy stamp names, descriptions, slot names, and whitelisted composition metadata; never copy theme CSS values, composition node JSON, provider keys, visitor ids, secrets, slot default values, or unknown asset fields into the prompt or page.`;
+Operator assets are offered as metadata only. Use catalog policy, theme names, composition names, descriptions, slot names, and whitelisted composition metadata; never copy theme CSS values, composition node JSON, provider keys, visitor ids, secrets, slot default values, or unknown asset fields into the prompt or page.`;
 
 export const FACET_PAGE_BRIEF_HEADING = "PAGE BRIEF";
 
@@ -149,8 +149,8 @@ function catalogComponentLine(value: unknown): string | undefined {
   return `${type}${variantText}${guidanceText}`;
 }
 
-function catalogComponentsLine(value: unknown, legacyBricks: unknown): string | undefined {
-  const source = assetArray(value).length > 0 ? value : legacyBricks;
+function catalogComponentsLine(value: unknown, bricks: unknown): string | undefined {
+  const source = assetArray(value).length > 0 ? value : bricks;
   const components = assetArray(source)
     .flatMap((component) => {
       const line = catalogComponentLine(component);
@@ -160,34 +160,24 @@ function catalogComponentsLine(value: unknown, legacyBricks: unknown): string | 
   return components.length > 0 ? `allowed components: ${components.join("; ")}` : undefined;
 }
 
-function catalogCompositionsLine(value: unknown, legacyStamps: unknown): string | undefined {
-  const source = isRecord(value) ? value : legacyStamps;
-  if (!isRecord(source)) return undefined;
-  if (source["mode"] === "all") return "composition policy: all advertised compositions";
-  if (source["mode"] !== "allow") return undefined;
-  const names = assetNameList(source["names"]);
+function catalogCompositionsLine(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  if (value["mode"] === "all") return "composition policy: all advertised compositions";
+  if (value["mode"] !== "allow") return undefined;
+  const names = assetNameList(value["names"]);
   return `composition policy: allow ${names.length > 0 ? names.join(", ") : "(none)"}`;
 }
 
 function catalogPolicyLines(value: unknown): readonly string[] {
   if (!isRecord(value)) return [];
   const lines: string[] = [];
-  const componentOrder = Array.isArray(value["componentOrder"])
-    ? value["componentOrder"].filter(
+  const order = Array.isArray(value["order"])
+    ? value["order"].filter(
         (item): item is string =>
           item === "composition" || item === "component" || item === "primitive",
       )
     : [];
-  if (componentOrder.length > 0) {
-    lines.push(`policy order: ${componentOrder.join(" -> ")}`);
-  } else if (Array.isArray(value["order"])) {
-    const order = value["order"]
-      .filter(
-        (item): item is string => item === "stamp" || item === "brick" || item === "primitive",
-      )
-      .map((item) => (item === "stamp" ? "composition" : item === "brick" ? "component" : item));
-    if (order.length > 0) lines.push(`policy order: ${order.join(" -> ")}`);
-  }
+  if (order.length > 0) lines.push(`policy order: ${order.join(" -> ")}`);
   if (typeof value["editBeforeAppend"] === "boolean") {
     lines.push(`edit-before-append: ${String(value["editBeforeAppend"])}`);
   }
@@ -228,7 +218,7 @@ function catalogSection(catalog: unknown): string | undefined {
   ];
   const components = catalogComponentsLine(catalog["components"], catalog["bricks"]);
   if (components !== undefined) lines.push(components);
-  const compositions = catalogCompositionsLine(catalog["compositions"], catalog["stamps"]);
+  const compositions = catalogCompositionsLine(catalog["compositions"]);
   if (compositions !== undefined) lines.push(compositions);
   const primitiveFallback =
     catalog["primitiveFallback"] === "discouraged" || catalog["primitiveFallback"] === "allowed"
@@ -244,7 +234,7 @@ function catalogSection(catalog: unknown): string | undefined {
   ].join("\n\n");
 }
 
-function stampMetadataLines(value: unknown): readonly string[] {
+function compositionMetadataLines(value: unknown): readonly string[] {
   if (!isRecord(value)) return [];
   const lines: string[] = [];
   const category = assetDescription(value["category"]);
@@ -277,30 +267,30 @@ function stampMetadataLines(value: unknown): readonly string[] {
   return lines;
 }
 
-function stampLine(stamp: unknown): string | undefined {
-  if (!isRecord(stamp)) return undefined;
-  const name = assetName(stamp["name"]);
+function compositionLine(composition: unknown): string | undefined {
+  if (!isRecord(composition)) return undefined;
+  const name = assetName(composition["name"]);
   if (name === undefined) return undefined;
-  const description = assetDescription(stamp["description"]);
+  const description = assetDescription(composition["description"]);
   const head = description !== undefined ? `- ${name}: ${description}` : `- ${name}`;
-  const rawSlots = stamp["slots"];
+  const rawSlots = composition["slots"];
   const slotNames = isRecord(rawSlots)
-    ? Object.keys(rawSlots).filter(isValidThemeName).slice(0, MAX_PROMPT_STAMP_SLOTS)
+    ? Object.keys(rawSlots).filter(isValidThemeName).slice(0, MAX_PROMPT_COMPOSITION_SLOTS)
     : [];
   const slots = slotNames.length > 0 ? slotNames.join(", ") : "(none)";
-  const metadata = stampMetadataLines(stamp["metadata"]).map((line) => `  ${line}`);
+  const metadata = compositionMetadataLines(composition["metadata"]).map((line) => `  ${line}`);
   return [head, `  slots: ${slots}`, ...metadata].join("\n");
 }
 
-function stampsSection(stamps: readonly unknown[]): string | undefined {
-  const entries = stamps.flatMap((stamp) => {
-    const entry = stampLine(stamp);
+function compositionsSection(compositions: readonly unknown[]): string | undefined {
+  const entries = compositions.flatMap((composition) => {
+    const entry = compositionLine(composition);
     return entry === undefined ? [] : [entry];
   });
   if (entries.length === 0) return undefined;
   return [
     "COMPOSITIONS",
-    "Reusable catalog compositions you may expand with the legacy use_stamp tool. Pick a listed name, pass string params for its slots, and choose at.parent; do not copy composition JSON or invent composition ids.",
+    "Reusable catalog compositions you may expand with the use_composition tool. Pick a listed name, pass string params for its slots, and choose at.parent; do not copy composition JSON or invent composition ids.",
     entries.join("\n\n"),
   ].join("\n\n");
 }
@@ -324,9 +314,9 @@ export function buildFacetAgentSystemPrompt(options: FacetAgentSystemPromptOptio
   const catalogBlock = catalogSection(options.assets?.catalog);
   if (catalogBlock !== undefined) sections.push(catalogBlock);
 
-  const stamps = assetArray(options.assets?.stamps);
-  const stampBlock = stampsSection(stamps);
-  if (stampBlock !== undefined) sections.push(stampBlock);
+  const compositions = assetArray(options.assets?.compositions);
+  const compositionBlock = compositionsSection(compositions);
+  if (compositionBlock !== undefined) sections.push(compositionBlock);
 
   sections.push(`${FACET_PAGE_BRIEF_HEADING}\n\n${options.pageBrief}`);
   return sections.join("\n\n");

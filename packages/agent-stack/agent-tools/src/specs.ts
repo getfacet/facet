@@ -23,7 +23,7 @@ const STRING_MAP_SCHEMA = {
 export const FACET_STAGE_TOOL_NAMES = [
   "render_page",
   "append_node",
-  "use_stamp",
+  "use_composition",
   "set_node",
   "remove_node",
   "say",
@@ -64,15 +64,15 @@ export const FACET_STAGE_TOOL_SPECS = [
     },
   },
   {
-    name: "use_stamp",
+    name: "use_composition",
     description:
-      "Compatibility tool: expand a reusable composition/stamp asset by name under at.parent. Pass string params for slots; the executor mints fresh ids. Catalog policy may restrict names and the expanded validated nodes.",
+      "Expand a reusable composition asset by name under at.parent. Pass string params for slots; the executor mints fresh ids. Catalog policy may restrict names and the expanded validated nodes.",
     parameters: {
       type: "object",
       properties: {
         name: {
           type: "string",
-          description: "A composition/stamp name from the offered COMPOSITIONS list.",
+          description: "A composition name from the offered COMPOSITIONS list.",
         },
         params: STRING_MAP_SCHEMA,
         at: {

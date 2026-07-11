@@ -1364,9 +1364,9 @@ work_units:
         ESBUILD_BIN=$(node -e 'const {createRequire}=require("node:module");const r=createRequire(require.resolve("tsup/package.json"));process.stdout.write(r.resolve("esbuild/bin/esbuild"))')
         (
           cd "$CONSUMER"
-          node "$ESBUILD_BIN" browser.mjs --bundle --platform=browser --format=esm --log-level=error --outfile="$TEMP_ROOT/core-browser.js"
+          "$ESBUILD_BIN" browser.mjs --bundle --platform=browser --format=esm --log-level=error --outfile="$TEMP_ROOT/core-browser.js"
         )
-        ! rg -n 'node:' "$TEMP_ROOT/core-browser.js"
+        ! grep -n 'node:' "$TEMP_ROOT/core-browser.js"
     test_plan:
       - type: "integration"
         target: "product/current-release semantic surface and Changesets status"

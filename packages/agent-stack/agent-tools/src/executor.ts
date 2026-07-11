@@ -4,7 +4,7 @@ import {
   MAX_PATCH_OPS,
   MEDIA_KINDS,
   PRIMITIVE_BRICK_TYPES,
-  expandStamp,
+  expandComposition,
   isContainer,
   isSafeMediaSrc,
   isTreeShaped,
@@ -12,8 +12,8 @@ import {
   treeHasContent,
   validateTree,
   type FacetCatalog,
+  type FacetComposition,
   type FacetNode,
-  type FacetStamp,
   type FacetTree,
   type JsonPatchOperation,
   type NodeId,
@@ -45,6 +45,13 @@ const FACET_NODE_TYPES_TEXT = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES
   .map((type) => `"${type}"`)
   .join(", ");
 const CHART_KINDS = new Set(["bar", "line", "donut"]);
+const MAX_COMPOSITION_METADATA_CHARS = 2000;
+
+interface OkResultOptions {
+  readonly nextAction?: string;
+  readonly visibilityNodeIds?: readonly NodeId[];
+  readonly data?: string;
+}
 
 const TOOL_NAMES = FACET_STAGE_TOOL_NAMES.join(", ");
 
@@ -80,8 +87,8 @@ export function executeStageTool(call: unknown, context: StageToolContext): Stag
       return executeRenderPage(input, shadow, catalog);
     case "append_node":
       return executeAppendNode(input, shadow, catalog);
-    case "use_stamp":
-      return executeUseStamp(input, shadow, context.assets?.stamps ?? [], catalog);
+    case "use_composition":
+      return executeUseComposition(input, shadow, context.assets?.compositions ?? [], catalog);
     case "set_node":
       return executeSetNode(input, shadow, catalog);
     case "remove_node":
@@ -184,6 +191,26 @@ function executeAppendNode(
   const node = parseNodeInput(input["node"], "append_node", shadow);
   if ("error" in node)
     return errorResult("append_node", "invalid_input", node.error, shadow, [], node.nextAction);
+  if (node.facetNode.id === shadow.root) {
+    return errorResult(
+      "append_node",
+      "invalid_input",
+      `error: append_node — cannot replace the stage root "${shadow.root}". Use render_page for root-level restructures.`,
+      shadow,
+      [],
+      "Use render_page for root-level restructures.",
+    );
+  }
+  if (Object.hasOwn(shadow.nodes, node.facetNode.id)) {
+    return errorResult(
+      "append_node",
+      "invalid_input",
+      `error: append_node — node "${node.facetNode.id}" already exists. Use set_node to replace it or choose a new id.`,
+      shadow,
+      [],
+      "Use set_node to replace the existing node, or choose a new id.",
+    );
+  }
   const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
   if (catalogViolation !== undefined) {
     return errorResult(
@@ -208,18 +235,18 @@ function executeAppendNode(
   );
 }
 
-function executeUseStamp(
+function executeUseComposition(
   input: Readonly<Record<string, unknown>>,
   shadow: FacetTree,
-  stamps: readonly FacetStamp[],
+  compositions: readonly FacetComposition[],
   catalog: FacetCatalog | undefined,
 ) {
   const name = input["name"];
   if (typeof name !== "string" || name.length === 0) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_input",
-      'error: use_stamp needs a non-empty string "name" from the COMPOSITIONS list',
+      'error: use_composition needs a non-empty string "name" from the COMPOSITIONS list',
       shadow,
       [],
       "Pick a composition name from the COMPOSITIONS list and pass it as name.",
@@ -229,9 +256,9 @@ function executeUseStamp(
   const at = input["at"];
   if (!isRecord(at) || typeof at["parent"] !== "string" || at["parent"].length === 0) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_input",
-      'error: use_stamp needs at={ "parent": "<container node id>" }',
+      'error: use_composition needs at={ "parent": "<container node id>" }',
       shadow,
       [],
       'Pass at={ "parent": "<existing box, section, card, or form node id>" }.',
@@ -242,51 +269,51 @@ function executeUseStamp(
   const parentNode = shadow.nodes[parent];
   if (parentNode === undefined) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_parent",
-      `error: use_stamp — parent "${parent}" does not exist yet`,
+      `error: use_composition — parent "${parent}" does not exist yet`,
       shadow,
       [],
-      "Inspect the stage and choose an existing container parent before using a stamp.",
+      "Inspect the stage and choose an existing container parent before using a composition.",
     );
   }
   if (!isContainer(parentNode)) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_parent",
-      `error: use_stamp — parent "${parent}" is not a container`,
+      `error: use_composition — parent "${parent}" is not a container`,
       shadow,
       [],
       "Choose an existing box, section, card, or form node as at.parent.",
     );
   }
 
-  const stampViolation = stampCatalogViolation(name, catalog);
-  if (stampViolation !== undefined) {
+  const policyViolation = compositionCatalogViolation(name, catalog);
+  if (policyViolation !== undefined) {
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
-      stampViolation.message,
+      "use_composition",
+      "invalid_composition",
+      policyViolation.message,
       shadow,
       [],
-      stampViolation.nextAction,
+      policyViolation.nextAction,
     );
   }
 
-  const stamp = stamps.find((candidate) => candidate.name === name);
-  if (stamp === undefined) {
+  const composition = compositions.find((candidate) => candidate.name === name);
+  if (composition === undefined) {
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
-      `error: use_stamp — unknown stamp "${name}". Pick a name from COMPOSITIONS.`,
+      "use_composition",
+      "invalid_composition",
+      `error: use_composition — unknown composition "${name}". Pick a name from COMPOSITIONS.`,
       shadow,
       [],
       "Pick one of the advertised COMPOSITIONS names.",
     );
   }
 
-  const expanded = expandStamp(
-    stamp,
+  const expanded = expandComposition(
+    composition,
     input["params"] ?? {},
     { parent },
     {
@@ -296,20 +323,20 @@ function executeUseStamp(
   if (expanded.root === undefined) {
     const hint = issueHint(expanded.issues);
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
-      `error: use_stamp — could not expand "${name}"${hint.length > 0 ? `: ${hint}` : ""}`,
+      "use_composition",
+      "invalid_composition",
+      `error: use_composition — could not expand "${name}"${hint.length > 0 ? `: ${hint}` : ""}`,
       shadow,
       expanded.issues,
-      "Fix the stamp params or choose another stamp, then retry use_stamp.",
+      "Fix the composition params or choose another composition, then retry use_composition.",
     );
   }
 
   const catalogViolation = nodesCatalogViolation(Object.values(expanded.nodes), catalog);
   if (catalogViolation !== undefined) {
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
+      "use_composition",
+      "invalid_composition",
       catalogViolation.message,
       shadow,
       expanded.issues,
@@ -320,12 +347,12 @@ function executeUseStamp(
   const expansionPatchOps = Object.keys(expanded.nodes).length + 1;
   if (expansionPatchOps > MAX_PATCH_OPS) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "patch_limit",
-      `error: use_stamp — expanded "${name}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`,
+      `error: use_composition — expanded "${name}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`,
       shadow,
       expanded.issues,
-      "Split the page change into smaller edits or use a smaller stamp.",
+      "Split the page change into smaller edits or use a smaller composition.",
     );
   }
 
@@ -337,18 +364,76 @@ function executeUseStamp(
   patches.push({ op: "add", path: childrenPath(parent), value: expanded.root });
 
   const note = expanded.issues.length > 0 ? ` note: ${issueHint(expanded.issues)}` : "";
-  const metadata = JSON.stringify({
-    root: expanded.root,
-    slots: expanded.slots,
-    ids: expanded.ids,
-  });
+  const metadata = compositionMetadata(expanded.root, expanded.slots, expanded.ids);
   return okPatchResult(
-    "use_stamp",
-    `Used stamp "${name}".${note} ${metadata}`,
+    "use_composition",
+    `Used composition "${name}".${note}`,
     shadow,
     patches,
     expanded.issues,
+    { data: metadata },
   );
+}
+
+/**
+ * Serialize the minted composition ids and slots as always-valid JSON bounded to
+ * {@link MAX_COMPOSITION_METADATA_CHARS}. EVERY part of the envelope participates
+ * in the budget — not just `ids` — so a slots-heavy payload can never serialize
+ * past the cap and collapse to `{"truncated":true}` downstream in
+ * `boundedData`. `root` is always kept (a bounded node id); `slots` entries are
+ * added first, then `ids` entries, each one at a time and dropped when it would
+ * push the envelope over the cap. Dropped counts surface as `slotsOmitted` /
+ * `idsOmitted`, INCLUDED ONLY WHEN GREATER THAN ZERO so a payload that fully fits
+ * carries neither counter. Even the first entry of either map can be dropped when
+ * the preceding content already fills the budget. The cap ({@link
+ * MAX_COMPOSITION_METADATA_CHARS} = 2000) sits below the observation layer's 2048
+ * `MAX_DATA_CHARS`, so `boundedData` never fires on this well-formed output and
+ * `observation.data` stays valid JSON ≤ 2048.
+ */
+function compositionMetadata(
+  root: NodeId,
+  slots: Readonly<Record<string, NodeId>>,
+  ids: Readonly<Record<string, NodeId>>,
+): string {
+  const slotEntries = Object.entries(slots);
+  const idEntries = Object.entries(ids);
+  const keptSlots: Record<string, NodeId> = {};
+  const keptIds: Record<string, NodeId> = {};
+  const pack = (): string => {
+    const envelope: {
+      root: NodeId;
+      slots: Record<string, NodeId>;
+      ids: Record<string, NodeId>;
+      slotsOmitted?: number;
+      idsOmitted?: number;
+    } = { root, slots: keptSlots, ids: keptIds };
+    const slotsOmitted = slotEntries.length - Object.keys(keptSlots).length;
+    const idsOmitted = idEntries.length - Object.keys(keptIds).length;
+    if (slotsOmitted > 0) envelope.slotsOmitted = slotsOmitted;
+    if (idsOmitted > 0) envelope.idsOmitted = idsOmitted;
+    return JSON.stringify(envelope);
+  };
+  // Root is always kept. Only theoretical: if even the root-only envelope (with
+  // every slot and id counted as omitted) overflows — root is a bounded node id —
+  // fall back to a minimal valid object instead of an over-cap payload.
+  if (pack().length > MAX_COMPOSITION_METADATA_CHARS) {
+    return JSON.stringify({ root, truncated: true });
+  }
+  for (const [key, value] of slotEntries) {
+    keptSlots[key] = value;
+    if (pack().length > MAX_COMPOSITION_METADATA_CHARS) {
+      delete keptSlots[key];
+      break;
+    }
+  }
+  for (const [key, value] of idEntries) {
+    keptIds[key] = value;
+    if (pack().length > MAX_COMPOSITION_METADATA_CHARS) {
+      delete keptIds[key];
+      break;
+    }
+  }
+  return pack();
 }
 
 function executeSetNode(
@@ -367,6 +452,22 @@ function executeSetNode(
       shadow,
       [],
       "Use render_page for root-level restructures.",
+    );
+  }
+  // The entry screen's root must stay a container: a non-container replacement
+  // would make the fold drop the screen, leaving no renderable entry.
+  const entryTarget =
+    shadow.screens !== undefined && shadow.entry !== undefined
+      ? shadow.screens[shadow.entry]
+      : undefined;
+  if (node.facetNode.id === entryTarget && !isContainer(node.facetNode)) {
+    return errorResult(
+      "set_node",
+      "invalid_input",
+      `error: set_node — node "${node.facetNode.id}" is the entry screen root and must stay a container; render a replacement screen first`,
+      shadow,
+      [],
+      "Replace the entry screen root only with a container node, or use render_page to restructure.",
     );
   }
   const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
@@ -422,7 +523,7 @@ function executeRemoveNode(input: Readonly<Record<string, unknown>>, shadow: Fac
       "Use render_page for root-level restructures.",
     );
   }
-  if (shadow.nodes[nodeId] === undefined) {
+  if (!Object.hasOwn(shadow.nodes, nodeId)) {
     return errorResult(
       "remove_node",
       "invalid_input",
@@ -432,14 +533,49 @@ function executeRemoveNode(input: Readonly<Record<string, unknown>>, shadow: Fac
       "Inspect the stage and remove an existing non-root node.",
     );
   }
-  return okPatchResult(
-    "remove_node",
-    `Removed "${nodeId}".`,
-    shadow,
-    [{ op: "remove", path: nodePath(nodeId) }],
-    [],
-    { visibilityNodeIds: [nodeId] },
-  );
+  // Refuse to remove the entry screen's root: dropping it would leave the page
+  // with no renderable entry, and there is no in-band repair path. The author must
+  // render a replacement screen first.
+  const entryTarget =
+    shadow.screens !== undefined && shadow.entry !== undefined
+      ? shadow.screens[shadow.entry]
+      : undefined;
+  if (entryTarget === nodeId) {
+    return errorResult(
+      "remove_node",
+      "invalid_input",
+      `error: remove_node — node "${nodeId}" is the entry screen root; render a replacement screen first`,
+      shadow,
+      [],
+      "Render a replacement entry screen (render_page or set the entry screen's target) before removing this node.",
+    );
+  }
+  // Detach the node from every parent that references it BEFORE removing it, so
+  // the validated fold never sees a dangling child ref (which it would strip
+  // with a warning, misreporting a fully successful removal). Non-entry screens
+  // whose target is this node get their /screens entry removed for the same
+  // reason — a dangling screen target folds away with a warning otherwise.
+  const patches: JsonPatchOperation[] = [];
+  for (const parent of Object.values(shadow.nodes)) {
+    if (isContainer(parent) && parent.children.includes(nodeId)) {
+      patches.push({
+        op: "replace",
+        path: nodeChildrenPath(parent.id),
+        value: parent.children.filter((childId) => childId !== nodeId),
+      });
+    }
+  }
+  if (shadow.screens !== undefined) {
+    for (const [name, target] of Object.entries(shadow.screens)) {
+      if (target === nodeId) {
+        patches.push({ op: "remove", path: screenPath(name) });
+      }
+    }
+  }
+  patches.push({ op: "remove", path: nodePath(nodeId) });
+  return okPatchResult("remove_node", `Removed "${nodeId}".`, shadow, patches, [], {
+    visibilityNodeIds: [nodeId],
+  });
 }
 
 function executeSay(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
@@ -533,7 +669,7 @@ function executeInspectNode(input: Readonly<Record<string, unknown>>, shadow: Fa
       "Pass nodeId as a non-empty string. Use inspect_stage to find node ids.",
     );
   }
-  if (shadow.nodes[nodeId] === undefined) {
+  if (!Object.hasOwn(shadow.nodes, nodeId)) {
     return errorResult(
       "inspect_node",
       "invalid_input",
@@ -575,7 +711,7 @@ function okPatchResult(
   shadow: FacetTree,
   patches: readonly JsonPatchOperation[],
   issues: readonly string[] = [],
-  options: { readonly nextAction?: string; readonly visibilityNodeIds?: readonly NodeId[] } = {},
+  options: OkResultOptions = {},
 ): StageToolResult {
   if (patches.length > MAX_PATCH_OPS) {
     return errorResult(
@@ -598,7 +734,7 @@ function okMessageResult(
   shadow: FacetTree,
   messages: readonly ServerMessage[],
   extraIssues: readonly string[] = [],
-  options: { readonly nextAction?: string; readonly visibilityNodeIds?: readonly NodeId[] } = {},
+  options: OkResultOptions = {},
 ): StageToolOkResult {
   const folded = foldStageShadow(shadow, messages);
   const issues = [...extraIssues, ...folded.issues];
@@ -626,6 +762,7 @@ function okMessageResult(
       warnings: issues,
       nextAction: options.nextAction ?? nextActionForOutcome(outcome),
       summary: folded.summary,
+      ...(options.data !== undefined ? { data: options.data } : {}),
     }),
     messages,
     patches: folded.patches,
@@ -767,14 +904,14 @@ function catalogPolicyEntryForNode(
   return catalog.bricks.find((candidate) => candidate.type === node.type);
 }
 
-function stampCatalogViolation(
+function compositionCatalogViolation(
   name: string,
   catalog: FacetCatalog | undefined,
 ): CatalogPolicyViolation | undefined {
-  if (catalog === undefined || catalog.stamps.mode === "all") return undefined;
-  if (catalog.stamps.names.includes(name)) return undefined;
+  if (catalog === undefined || catalog.compositions.mode === "all") return undefined;
+  if (catalog.compositions.names.includes(name)) return undefined;
   return {
-    message: `error: catalog policy rejected stamp "${name}". Allowed stamps: ${catalog.stamps.names.join(", ")}.`,
+    message: `error: catalog policy rejected composition "${name}". Allowed compositions: ${catalog.compositions.names.join(", ")}.`,
     nextAction:
       "Pick a composition allowed by the active catalog, or compose the UI from allowed components/primitives.",
   };
@@ -893,7 +1030,7 @@ function sanitizeToolNode(
 
 function toolSanitizeRootId(shadow: FacetTree, nodeId: string): string {
   let id = "__facet_tool_sanitize_root__";
-  while (id === nodeId || shadow.nodes[id] !== undefined) id = `_${id}`;
+  while (id === nodeId || Object.hasOwn(shadow.nodes, id)) id = `_${id}`;
   return id;
 }
 
@@ -1214,7 +1351,7 @@ function nextActionForOutcome(outcome: AgentToolOutcome): string {
 
 function missingChildRefs(facetNode: FacetNode, shadow: FacetTree): readonly NodeId[] {
   if (!isContainer(facetNode)) return [];
-  return facetNode.children.filter((id) => shadow.nodes[id] === undefined);
+  return facetNode.children.filter((id) => !Object.hasOwn(shadow.nodes, id));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1233,8 +1370,16 @@ function nodePath(id: NodeId): string {
   return `/nodes/${pointerEscape(id)}`;
 }
 
+function nodeChildrenPath(parent: NodeId): string {
+  return `${nodePath(parent)}/children`;
+}
+
 function childrenPath(parent: NodeId): string {
-  return `${nodePath(parent)}/children/-`;
+  return `${nodeChildrenPath(parent)}/-`;
+}
+
+function screenPath(name: string): string {
+  return `/screens/${pointerEscape(name)}`;
 }
 
 function isRenderable(tree: FacetTree): boolean {

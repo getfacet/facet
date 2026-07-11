@@ -86,9 +86,9 @@ HTML/JS/CSS. In v1 that vocabulary has three layers:
    variants, compositions, primitive fallback, and theme switching.
 
 The built-in catalog tells the agent to try those layers in that order:
-`composition -> component -> primitive`. The legacy `use_stamp` tool and
-`*.stamp.json` files still exist as the compatibility path for expanding
-catalog compositions. A project can narrow the allowed components, variants,
+`composition -> component -> primitive`. Catalog compositions are expanded
+server-side through the `use_composition` tool, arriving in the browser as
+ordinary validated nodes. A project can narrow the allowed components, variants,
 compositions, and theme switching through catalog data, but the catalog is still
 just UI vocabulary and usage policy. It is not hosted-platform auth, billing,
 tenant, rate-limit, or abuse policy.
@@ -190,20 +190,20 @@ where `./assets` holds any mix of:
   never become stage node fields. The renderer resolves the selected recipe
   through the active theme. An unknown or missing name simply falls back to the
   default look — nothing throws.
-- **`*.stamp.json`** — the legacy filename for a reusable catalog composition:
-  a validated `{ root, nodes, slots? }` fragment (a hero, a card) offered to the
+- **`*.composition.json`** — a reusable catalog composition: a validated
+  `{ root, nodes, slots? }` fragment (a hero, a card) offered to the
   model by name. Compositions can include bounded
   metadata (`category`, `useWhen`, `avoidWhen`, `tags`, `preferredParent`,
   `composedOf`, and similar prompt-safe fields) so the agent knows when to use
   them without seeing full composition JSON. The quickstart model calls the
-  legacy `use_stamp` tool with string slot params and the server expands the composition into ordinary patches
+  `use_composition` tool with string slot params and the server expands the composition into ordinary patches
   with fresh ids, under a known container parent and within the patch batch cap;
   there is **no client-side composition expansion**.
 - **`initial.tree.json`** — a starting stage the first visit opens on *before*
   the model's first turn: a fast, non-blank first paint the agent then refines.
 
 Every document passes one validator at boot (`validateCatalog` /
-`validateTheme` / `validateStamp` / `validateTree`): a value that smuggles CSS
+`validateTheme` / `validateComposition` / `validateTree`): a value that smuggles CSS
 (`url()`, `var()`, `expression()`, `javascript:`) is refused, dimensions are
 clamped so a theme can't push content off-screen, and a low-contrast
 text/background pair is **flagged as a warning, never rejected** (Facet measures
@@ -287,17 +287,17 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/core` | `@facet/core` | The contract: closed primitive/component vocabulary, catalog/component/composition policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, `expandStamp`, session/event types. |
+| `packages/core/core` | `@facet/core` | The contract: closed primitive/component vocabulary, catalog/component/composition policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, `expandComposition`, session/event types. |
 | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/composition/initial-tree loading, `withInitialStage`). File-backed Node references via `@facet/runtime/node`. |
 | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for primitive bricks and intrinsic components, token→CSS and recipe/part resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with component recipes/parts, and `DEFAULT_STAMPS`/compositions with metadata. Depends only on `@facet/core`. |
+| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with component recipes/parts, and `DEFAULT_COMPOSITIONS` with metadata. Depends only on `@facet/core`. |
 
 ### Agent Authoring
 
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, and reusable prompt kit for custom LLM/tool loops. |
-| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
+| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useComposition`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
 
 ### Integration Adapters
 

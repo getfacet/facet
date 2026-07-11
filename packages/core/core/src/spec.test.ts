@@ -8,6 +8,11 @@ import {
 import { STAGE_SPEC } from "./spec.js";
 import { APPEARS, COLUMNS, FONT_FAMILIES, SCROLL_AXES } from "./tokens.js";
 
+// Legacy vocabulary is built at runtime so the removed tokens never appear as
+// source literals (same idiom as theme.test.ts).
+const legacy = ["st", "amp"].join("");
+const legacyNaming = new RegExp(legacy, "i");
+
 describe("STAGE_SPEC", () => {
   it("teaches screens entry navigate toggle and hidden", () => {
     // Tree gains named screens + entry.
@@ -108,13 +113,13 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/stat[^.]*legacy/i);
     expect(STAGE_SPEC).toMatch(/Catalog/i);
     expect(STAGE_SPEC).not.toMatch(/high-level brick/i);
-    expect(STAGE_SPEC).not.toMatch(/stamp -> high-level/i);
+    expect(STAGE_SPEC).not.toMatch(new RegExp(`${legacy} -> high-level`, "i"));
   });
 
   it("documents composition and renderer layout boundaries without backend bindings", () => {
     expect(STAGE_SPEC).toMatch(/composition/i);
     expect(STAGE_SPEC).toMatch(/validated nodes/i);
-    expect(STAGE_SPEC).toMatch(/use_stamp[^.]*compat/i);
+    expect(STAGE_SPEC).toMatch(/loaded as assets/i);
     expect(STAGE_SPEC).toMatch(/renderer layout contract/i);
     expect(STAGE_SPEC).toMatch(/parent[^.]*placement/i);
     expect(STAGE_SPEC).toMatch(/component[^.]*internal layout/i);
@@ -125,6 +130,32 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/backend[^.]*agent/i);
     expect(STAGE_SPEC).not.toMatch(/<script|innerHTML|dangerouslySetInnerHTML/i);
     expect(STAGE_SPEC).not.toMatch(/position:\s*absolute/i);
+  });
+
+  it("teaches a composition-only vocabulary with no legacy or tool-specific guidance", () => {
+    // DC-012: the stage contract carries canonical composition language only —
+    // no legacy vocabulary survives anywhere in the spec text.
+    expect(STAGE_SPEC).not.toMatch(legacyNaming);
+    // Compositions are taught as asset-loaded reusable component definitions
+    // expanded into ordinary validated nodes — never renderer plugins or code.
+    expect(STAGE_SPEC).toMatch(/reusable component definitions/i);
+    expect(STAGE_SPEC).toMatch(/expanded into ordinary validated nodes/i);
+    // Tool-neutral: STAGE_SPEC describes the stage vocabulary; every embedding
+    // surface (CLI generator, bridge prompt, persistent tools) wraps it with
+    // its own action instructions, so no concrete tool name may leak in here.
+    for (const toolName of [
+      "render_page",
+      "set_node",
+      "append_node",
+      "remove_node",
+      "use_composition",
+      `use_${legacy}`,
+      "set_theme",
+      "inspect_stage",
+      "inspect_node",
+    ]) {
+      expect(STAGE_SPEC).not.toContain(toolName);
+    }
   });
 
   it("teaches collect and press-time field snapshots", () => {

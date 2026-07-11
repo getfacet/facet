@@ -1,7 +1,18 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { MAX_PATCH_OPS, type FacetCatalog, type FacetStamp, type FacetTree } from "@facet/core";
+import {
+  MAX_PATCH_OPS,
+  type FacetCatalog,
+  type FacetComposition,
+  type FacetNode,
+  type FacetTree,
+} from "@facet/core";
 import { createStageToolBuffer } from "./buffer.js";
 import { parseAgentToolObservation } from "./observation.js";
+
+// Built at runtime so the legacy token never appears as a source literal
+// (same idiom as theme.test.ts).
+const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
 
 const ROOT_TREE: FacetTree = {
   root: "root",
@@ -25,27 +36,37 @@ const CATALOG_POLICY: FacetCatalog = {
     { type: "section", variants: ["surface"] },
     { type: "card", variants: ["plain"] },
   ],
-  stamps: { mode: "all" },
+  compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
   },
 };
 
-function stampWithPatchCount(name: string, patchCount: number): FacetStamp {
+function compositionWithPatchCount(name: string, patchCount: number): FacetComposition {
   const nodeCount = patchCount - 1;
   const children = Array.from({ length: nodeCount - 1 }, (_, index) => `child-${String(index)}`);
   return {
     name,
-    root: "stamp-root",
+    root: "composition-root",
     nodes: {
-      "stamp-root": { id: "stamp-root", type: "box", children },
+      "composition-root": { id: "composition-root", type: "box", children },
       ...Object.fromEntries(children.map((id) => [id, { id, type: "text" as const, value: id }])),
     },
   };
 }
+
+const CARD_COMPOSITION: FacetComposition = {
+  name: "card",
+  slots: { title: "Fallback" },
+  root: "card",
+  nodes: {
+    card: { id: "card", type: "box", children: ["title"] },
+    title: { id: "title", type: "text", value: "{{title}}" },
+  },
+};
 
 describe("createStageToolBuffer", () => {
   it("buffers forward-referenced box edits until child nodes exist", () => {
@@ -208,8 +229,10 @@ describe("createStageToolBuffer", () => {
       input: { nodeId: "root", depth: 1 },
     });
 
-    expect(inspected.observation).toContain("root box children=1");
-    expect(inspected.shadow.nodes["root"]).toMatchObject({ children: ["a"] });
+    // remove_node eagerly detaches the parent ref, so a later set_node re-add
+    // leaves the node orphaned — exactly what the runtime aggregate fold yields.
+    expect(inspected.observation).toContain("root box children=0");
+    expect(inspected.shadow.nodes["root"]).toMatchObject({ children: [] });
     expect(inspected.shadow.nodes["a"]).toMatchObject({ value: "A2" });
   });
 
@@ -247,16 +270,16 @@ describe("createStageToolBuffer", () => {
 
   it("rejects a tool call before the streamed batch exceeds the aggregate patch cap", () => {
     const buffer = createStageToolBuffer(ROOT_TREE, {
-      stamps: [stampWithPatchCount("cap-fill", MAX_PATCH_OPS)],
+      compositions: [compositionWithPatchCount("cap-fill", MAX_PATCH_OPS)],
     });
 
     const filled = buffer.run({
       id: "fill-cap",
-      name: "use_stamp",
+      name: "use_composition",
       input: { name: "cap-fill", params: {}, at: { parent: "root" } },
     });
     expect(parseAgentToolObservation(filled.observation)).toMatchObject({
-      tool: "use_stamp",
+      tool: "use_composition",
       status: "ok",
       outcome: "applied_visible",
       patch_count: MAX_PATCH_OPS,
@@ -271,5 +294,163 @@ describe("createStageToolBuffer", () => {
     expect(capped.observation).toContain("would exceed the patch op cap");
     expect(capped.messages).toEqual([]);
     expect(capped.shadow.nodes["too-many"]).toBeUndefined();
+  });
+
+  describe("use_composition", () => {
+    it("use_composition is the canonical buffered branch with no old-tool compatibility path", () => {
+      const source = readFileSync(new URL("./buffer.ts", import.meta.url), "utf8");
+
+      expect(source).toContain('case "use_composition"');
+      expect(source).toContain("use_composition — parent");
+      expect(source).not.toMatch(legacyNaming);
+    });
+
+    it("use_composition reports pending against a buffered parent and emits no message ops", () => {
+      const buffer = createStageToolBuffer(ROOT_TREE, { compositions: [CARD_COMPOSITION] });
+
+      const queued = buffer.run({
+        id: "queue-panel",
+        name: "set_node",
+        input: { node: { id: "panel", type: "box", children: ["leaf"] } },
+      });
+      expect(queued.observation).toContain("queued");
+
+      const pending = buffer.run({
+        id: "comp-pending",
+        name: "use_composition",
+        input: { name: "card", params: { title: "Hi" }, at: { parent: "panel" } },
+      });
+
+      expect(pending.messages).toEqual([]);
+      expect(pending.mutated).toBe(false);
+      expect(pending.said).toBe(false);
+      expect(pending.shadow).toBe(queued.shadow);
+      const parsed = parseAgentToolObservation(pending.observation);
+      expect(parsed).toMatchObject({
+        tool: "use_composition",
+        status: "pending",
+        outcome: "pending",
+        code: "pending",
+        applied: false,
+        stage_changed: false,
+        visible_to_visitor: false,
+        patch_count: 0,
+        next_action: "Define the parent node's missing child node(s), then use the composition.",
+      });
+      expect(parsed?.message).toContain(
+        'use_composition — parent "panel" was created this turn but is still waiting for child node(s): leaf',
+      );
+    });
+
+    it("use_composition over the cumulative patch cap emits the canonical expanded message and preserves state", () => {
+      const buffer = createStageToolBuffer(ROOT_TREE, {
+        compositions: [
+          compositionWithPatchCount("cap-fill", MAX_PATCH_OPS),
+          compositionWithPatchCount("over-cap", 3),
+        ],
+      });
+
+      const filled = buffer.run({
+        id: "fill-cap",
+        name: "use_composition",
+        input: { name: "cap-fill", params: {}, at: { parent: "root" } },
+      });
+
+      const capped = buffer.run({
+        id: "comp-over-cap",
+        name: "use_composition",
+        input: { name: "over-cap", params: {}, at: { parent: "root" } },
+      });
+
+      const parsed = parseAgentToolObservation(capped.observation);
+      expect(parsed).toMatchObject({
+        tool: "use_composition",
+        status: "error",
+        outcome: "rejected",
+        code: "patch_limit",
+        patch_count: 0,
+      });
+      expect(parsed?.message).toBe(
+        `error: use_composition — expanded "over-cap" would exceed the patch op cap (${String(
+          MAX_PATCH_OPS,
+        )}) for this streamed batch`,
+      );
+      expect(capped.messages).toEqual([]);
+      expect(capped.mutated).toBe(false);
+      expect(capped.said).toBe(false);
+      expect(capped.shadow).toBe(filled.shadow);
+    });
+
+    it("hostile use_composition expansion is a bounded no-op that does not poison the buffer", () => {
+      const sentinel = new Error("boom");
+      Object.defineProperty(sentinel, "message", {
+        get(): string {
+          throw new Error("SENTINEL_LEAK");
+        },
+      });
+      const hostileComposition = {
+        name: "hostile",
+        root: "r",
+        get nodes(): Readonly<Record<string, FacetNode>> {
+          throw sentinel;
+        },
+      } as unknown as FacetComposition;
+      const buffer = createStageToolBuffer(ROOT_TREE, {
+        compositions: [hostileComposition, CARD_COMPOSITION],
+      });
+
+      const queued = buffer.run({
+        id: "queue-panel",
+        name: "set_node",
+        input: { node: { id: "panel", type: "box", children: ["leaf"] } },
+      });
+      expect(queued.observation).toContain("queued");
+
+      const hostile = buffer.run({
+        id: "comp-hostile",
+        name: "use_composition",
+        input: { name: "hostile", params: {}, at: { parent: "root" } },
+      });
+
+      expect(hostile.messages).toEqual([]);
+      expect(hostile.mutated).toBe(false);
+      expect(hostile.said).toBe(false);
+      expect(hostile.shadow).toBe(queued.shadow);
+      expect(parseAgentToolObservation(hostile.observation)).toMatchObject({
+        tool: "use_composition",
+        status: "error",
+        outcome: "rejected",
+        code: "invalid_composition",
+        patch_count: 0,
+      });
+      expect(hostile.observation).not.toContain("SENTINEL_LEAK");
+      expect(hostile.observation).not.toContain("boom");
+      expect(hostile.observation).not.toMatch(
+        // eslint-disable-next-line no-control-regex
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/,
+      );
+
+      const followUp = buffer.run({
+        id: "comp-follow",
+        name: "use_composition",
+        input: { name: "card", params: { title: "Recovered" }, at: { parent: "root" } },
+      });
+      expect(parseAgentToolObservation(followUp.observation)).toMatchObject({
+        tool: "use_composition",
+        status: "ok",
+        outcome: "applied_visible",
+      });
+      expect(followUp.mutated).toBe(true);
+
+      const released = buffer.run({
+        id: "set-leaf",
+        name: "set_node",
+        input: { node: { id: "leaf", type: "text", value: "Leaf" } },
+      });
+      expect(released.messages.filter((message) => message.kind === "patch")).toHaveLength(2);
+      expect(released.shadow.nodes["panel"]).toMatchObject({ type: "box", children: ["leaf"] });
+      expect(released.shadow.nodes["leaf"]).toMatchObject({ type: "text", value: "Leaf" });
+      expect(buffer.drainUnresolved()).toEqual([]);
+    });
   });
 });

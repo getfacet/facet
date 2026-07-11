@@ -8,6 +8,13 @@ import {
   type FacetCatalog,
 } from "./catalog.js";
 
+// Legacy vocabulary is built at runtime so the removed tokens never appear as
+// source literals (same idiom as theme.test.ts).
+const legacy = ["st", "amp"].join("");
+const legacyPolicyField = `${legacy}s`;
+const legacyOrderField = ["component", "Order"].join("");
+const legacyDefinitionsField = ["component", "Definitions"].join("");
+
 describe("validateCatalog", () => {
   it("defaults missing catalog input to a locked safe catalog", () => {
     const { catalog, issues } = validateCatalog(undefined);
@@ -16,10 +23,33 @@ describe("validateCatalog", () => {
     expect(catalog).not.toBe(DEFAULT_CATALOG);
     expect(issues).toHaveLength(0);
     expect(catalog.theme.switchPolicy).toBe("locked");
-    expect(catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
-    expect(catalog.policy.componentOrder).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
     expect(catalog.components).toEqual(DEFAULT_CATALOG.components);
     expect(catalog.compositions).toEqual(DEFAULT_CATALOG.compositions);
+  });
+
+  it("uses only canonical composition policy", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "canonical",
+      compositions: { mode: "allow", names: ["customerSummary"] },
+      policy: {
+        order: ["composition", "component", "primitive"],
+        editBeforeAppend: true,
+        compactScreens: true,
+        maxScreenSections: 4,
+      },
+    });
+
+    expect(issues).toEqual([]);
+    expect(catalog.compositions).toEqual({ mode: "allow", names: ["customerSummary"] });
+    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(legacyPolicyField in catalog).toBe(false);
+    expect(legacyOrderField in catalog.policy).toBe(false);
+
+    expect(legacyPolicyField in DEFAULT_CATALOG).toBe(false);
+    expect(legacyOrderField in DEFAULT_CATALOG.policy).toBe(false);
+    expect(DEFAULT_CATALOG.compositions).toEqual({ mode: "all" });
+    expect(DEFAULT_CATALOG.policy.order).toEqual(["composition", "component", "primitive"]);
   });
 
   it("returns fresh fallback catalog objects so caller mutation cannot poison defaults", () => {
@@ -29,7 +59,6 @@ describe("validateCatalog", () => {
     (first.components as CatalogComponent[]).push({ type: "metric" });
     (first.compositions as { mode: "allow"; names: string[] }).names = ["mutated"];
     (first.policy.order as unknown as string[])[0] = "primitive";
-    (first.policy.componentOrder as unknown as string[])[0] = "primitive";
 
     const { catalog: second } = validateCatalog(undefined);
     expect(second).toEqual(DEFAULT_CATALOG);
@@ -37,11 +66,10 @@ describe("validateCatalog", () => {
     expect(second.bricks).toHaveLength(DEFAULT_CATALOG.bricks.length);
     expect(second.components).toEqual(DEFAULT_CATALOG.components);
     expect(second.compositions).toEqual(DEFAULT_CATALOG.compositions);
-    expect(second.policy.order).toEqual(["stamp", "brick", "primitive"]);
-    expect(second.policy.componentOrder).toEqual(["composition", "component", "primitive"]);
+    expect(second.policy.order).toEqual(["composition", "component", "primitive"]);
   });
 
-  it("keeps valid catalog bricks, variants, stamps, and usage policy", () => {
+  it("keeps valid catalog bricks, variants, compositions, and usage policy", () => {
     const { catalog, issues } = validateCatalog({
       name: "acme",
       description: "Acme UI policy",
@@ -55,10 +83,10 @@ describe("validateCatalog", () => {
         { type: "button", variants: ["primary", "secondary"] },
         { type: "box" },
       ],
-      stamps: { mode: "allow", names: ["pricing", "dashboard-summary"] },
+      compositions: { mode: "allow", names: ["pricing", "dashboard-summary"] },
       primitiveFallback: "discouraged",
       policy: {
-        order: ["stamp", "brick", "primitive"],
+        order: ["composition", "component", "primitive"],
         editBeforeAppend: true,
         compactScreens: true,
         maxScreenSections: 6,
@@ -81,16 +109,15 @@ describe("validateCatalog", () => {
       { type: "section", variants: ["dashboard"], guidance: "Use as screen regions." },
       { type: "button", variants: ["primary", "secondary"] },
     ]);
-    expect(catalog.stamps).toEqual({ mode: "allow", names: ["pricing", "dashboard-summary"] });
     expect(catalog.compositions).toEqual({
       mode: "allow",
       names: ["pricing", "dashboard-summary"],
     });
     expect(catalog.primitiveFallback).toBe("discouraged");
-    expect(catalog.policy.componentOrder).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
   });
 
-  it("normalizes component-facing aliases while preserving legacy catalog fields", () => {
+  it("normalizes component-facing catalogs to the canonical shape", () => {
     const { catalog, issues } = validateCatalog({
       name: "component-catalog",
       theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
@@ -117,40 +144,52 @@ describe("validateCatalog", () => {
     ]);
     expect(catalog.bricks).toEqual(catalog.components);
     expect(catalog.compositions).toEqual({ mode: "allow", names: ["customerSummary"] });
-    expect(catalog.stamps).toEqual({ mode: "allow", names: ["customerSummary"] });
-    expect(catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
-    expect(catalog.policy.componentOrder).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
   });
 
-  it("keeps old brick, stamp, and policy order catalogs valid public API", () => {
+  it(`ignores legacy ${legacy} and order fields when normalizing policy`, () => {
     const { catalog, issues } = validateCatalog({
       name: "legacy-catalog",
       bricks: [
         { type: "stat", variants: ["success"], guidance: "Old KPI component." },
         { type: "box" },
       ],
-      stamps: { mode: "allow", names: ["legacy-card"] },
+      [legacyPolicyField]: { mode: "allow", names: ["legacy-card"] },
+      compositions: { mode: "allow", names: ["pricing"] },
       primitiveFallback: "discouraged",
       policy: {
-        order: ["stamp", "brick", "primitive"],
+        order: [legacy, "brick", "primitive"],
+        [legacyOrderField]: ["composition", "component", "primitive"],
         editBeforeAppend: false,
         compactScreens: false,
         maxScreenSections: 2,
       },
     });
 
-    expect(issues).toEqual([]);
     expect(catalog.bricks).toEqual([
       { type: "stat", variants: ["success"], guidance: "Old KPI component." },
       { type: "box" },
     ]);
-    expect(catalog.components).toEqual([
-      { type: "stat", variants: ["success"], guidance: "Old KPI component." },
-    ]);
-    expect(catalog.stamps).toEqual({ mode: "allow", names: ["legacy-card"] });
-    expect(catalog.compositions).toEqual({ mode: "allow", names: ["legacy-card"] });
-    expect(catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
-    expect(catalog.policy.componentOrder).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.compositions).toEqual({ mode: "allow", names: ["pricing"] });
+    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.editBeforeAppend).toBe(false);
+    expect(catalog.policy.compactScreens).toBe(false);
+    expect(catalog.policy.maxScreenSections).toBe(2);
+    expect(legacyPolicyField in catalog).toBe(false);
+    expect(legacyOrderField in catalog.policy).toBe(false);
+    expect(issues).toContain(
+      "catalog policy: invalid order defaulted to composition > component > primitive",
+    );
+  });
+
+  it(`never lets a legacy ${legacyPolicyField} policy shape the normalized compositions policy`, () => {
+    const { catalog } = validateCatalog({
+      name: `${legacyPolicyField}-only`,
+      [legacyPolicyField]: { mode: "allow", names: ["legacy-card"] },
+    });
+
+    expect(catalog.compositions).toEqual({ mode: "all" });
+    expect(legacyPolicyField in catalog).toBe(false);
   });
 
   it("drops malformed entries with bounded issues instead of throwing", () => {
@@ -167,12 +206,12 @@ describe("validateCatalog", () => {
         { type: "timeline" },
         { type: "metric", variants: ["default"] },
       ],
-      stamps: { mode: "allow", names: ["pricing", "bad name", 123] },
+      [legacyPolicyField]: { mode: "allow", names: ["pricing", "bad name", 123] },
       compositions: { mode: "allow", names: ["summary", "bad name", 123] },
       primitiveFallback: "maybe",
       policy: {
-        order: ["primitive", "stamp"],
-        componentOrder: ["primitive", "component"],
+        order: ["primitive", legacy],
+        [legacyOrderField]: ["primitive", "component"],
         editBeforeAppend: "yes",
         compactScreens: "no",
         maxScreenSections: 9999,
@@ -185,12 +224,195 @@ describe("validateCatalog", () => {
     expect(catalog.theme.allowed).toEqual(["ok"]);
     expect(catalog.bricks).toEqual([{ type: "button", variants: ["primary"] }]);
     expect(catalog.components).toEqual([{ type: "metric", variants: ["default"] }]);
-    expect(catalog.stamps).toEqual({ mode: "allow", names: ["pricing"] });
     expect(catalog.compositions).toEqual({ mode: "allow", names: ["summary"] });
     expect(catalog.primitiveFallback).toBe(DEFAULT_CATALOG.primitiveFallback);
+    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
     expect(catalog.policy.maxScreenSections).toBe(DEFAULT_CATALOG.policy.maxScreenSections);
     expect(issues.length).toBeGreaterThan(0);
     expect(issues.join("\n")).not.toContain("bad name".repeat(100));
+  });
+
+  it("fails closed to an empty restriction when a provided variant list has no valid entries", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      bricks: [{ type: "button", variants: ["Bad Variant!", 123] }],
+    });
+
+    // Not undefined (which downstream reads as unrestricted / allow-anything) —
+    // an empty restriction that allows nothing.
+    expect(catalog.bricks).toEqual([{ type: "button", variants: [] }]);
+    const button = catalog.bricks.find((brick) => brick.type === "button");
+    expect(button?.variants).not.toBeUndefined();
+    expect(issues.join("\n")).toContain(
+      "catalog bricks.button.variants: no valid entries — restriction kept empty",
+    );
+  });
+
+  it("keeps an explicitly empty variant list empty rather than unrestricted", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      bricks: [{ type: "button", variants: [] }],
+    });
+
+    expect(catalog.bricks).toEqual([{ type: "button", variants: [] }]);
+    expect(issues.join("\n")).toContain(
+      "catalog bricks.button.variants: no valid entries — restriction kept empty",
+    );
+  });
+
+  it("fails closed to an empty theme allow-list when every entry is invalid", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      theme: { switchPolicy: "allowed", allowed: ["has space", 123] },
+    });
+
+    expect(catalog.theme.allowed).toEqual([]);
+    expect(catalog.theme.allowed).not.toBeUndefined();
+    expect(issues.join("\n")).toContain(
+      "catalog theme.allowed: no valid entries — restriction kept empty",
+    );
+  });
+
+  it("fails closed when a provided components list is explicitly empty", () => {
+    const { catalog, issues } = validateCatalog({ name: "acme", components: [] });
+
+    // A provided-but-empty restriction allows nothing — never the permissive
+    // default component set.
+    expect(catalog.components).toEqual([]);
+    expect(catalog.bricks).toEqual([]);
+    expect(issues.join("\n")).toContain(
+      "catalog components: provided restriction list validated to empty; no catalog components allowed (primitives follow primitiveFallback)",
+    );
+  });
+
+  it("fails closed when a provided bricks list validates to empty (all invalid)", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      bricks: [{ type: "not-a-real-brick" }],
+    });
+
+    expect(catalog.bricks).toEqual([]);
+    expect(issues.join("\n")).toContain(
+      "catalog bricks: provided restriction list validated to empty; no catalog bricks allowed (primitives follow primitiveFallback)",
+    );
+  });
+
+  it("falls back to the default vocabulary only when bricks/components are absent", () => {
+    const { catalog, issues } = validateCatalog({ name: "acme" });
+
+    expect(catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
+    expect(catalog.components).toEqual(DEFAULT_CATALOG.components);
+    expect(issues.join("\n")).not.toContain("provided restriction list validated to empty");
+  });
+
+  it("leaves an absent variant/allowed field unrestricted (undefined)", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      theme: { switchPolicy: "allowed" },
+      bricks: [{ type: "button" }],
+    });
+
+    expect(catalog.theme.allowed).toBeUndefined();
+    const button = catalog.bricks.find((brick) => brick.type === "button");
+    expect(button?.variants).toBeUndefined();
+    expect(issues.join("\n")).not.toContain("no valid entries");
+  });
+
+  it("fails closed when a provided compositions policy has an invalid mode", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "bad-compositions",
+      compositions: { mode: "deny", names: ["pricing"] },
+    });
+
+    expect(catalog.compositions).toEqual({ mode: "allow", names: [] });
+    expect(issues.join("\n")).toContain("catalog compositions: invalid mode");
+    expect(issues.join("\n")).toContain("restriction kept empty");
+  });
+
+  it("fails closed when a provided bricks restriction is not an array", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      bricks: { section: {} } as unknown as FacetCatalog["bricks"],
+    });
+
+    // Provided-but-mistyped must not silently reopen the full default vocabulary.
+    expect(catalog.bricks).toEqual([]);
+    expect(catalog.components).toEqual([]);
+    expect(issues.join("\n")).toContain(
+      "catalog bricks: expected an array; restriction kept empty (primitives follow primitiveFallback)",
+    );
+  });
+
+  it("fails closed when a provided components restriction is not an array", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      components: "metric" as unknown as FacetCatalog["components"],
+    });
+
+    expect(catalog.components).toEqual([]);
+    expect(catalog.bricks).toEqual([]);
+    expect(issues.join("\n")).toContain(
+      "catalog components: expected an array; restriction kept empty (primitives follow primitiveFallback)",
+    );
+  });
+
+  it("fails closed when a provided compositions policy is not an object", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      compositions: ["pricing"] as unknown as FacetCatalog["compositions"],
+    });
+
+    expect(catalog.compositions).toEqual({ mode: "allow", names: [] });
+    expect(issues.join("\n")).toContain(
+      "catalog compositions: expected a policy object; restriction kept empty",
+    );
+  });
+
+  it("fails closed when a provided theme allow-list is not an array", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      theme: { switchPolicy: "allowed", allowed: "dark" as unknown as readonly string[] },
+    });
+
+    expect(catalog.theme.allowed).toEqual([]);
+    expect(catalog.theme.allowed).not.toBeUndefined();
+    expect(issues.join("\n")).toContain(
+      "catalog theme.allowed: expected an array of names; restriction kept empty",
+    );
+  });
+
+  it("diagnoses an allow-mode compositions policy whose names are missing", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      compositions: { mode: "allow" } as unknown as FacetCatalog["compositions"],
+    });
+
+    expect(catalog.compositions).toEqual({ mode: "allow", names: [] });
+    expect(issues.join("\n")).toContain(
+      "catalog compositions.names: no valid entries — restriction kept empty",
+    );
+  });
+
+  it("fails closed when an allow-mode compositions names field is not an array", () => {
+    const { catalog, issues } = validateCatalog({
+      name: "acme",
+      compositions: {
+        mode: "allow",
+        names: "pricing",
+      } as unknown as FacetCatalog["compositions"],
+    });
+
+    expect(catalog.compositions).toEqual({ mode: "allow", names: [] });
+    expect(issues.join("\n")).toContain(
+      "catalog compositions.names: expected an array of names; restriction kept empty",
+    );
+  });
+
+  it("keeps an absent compositions policy at the allow-all default with no issue", () => {
+    const { catalog, issues } = validateCatalog({ name: "acme" });
+
+    expect(catalog.compositions).toEqual({ mode: "all" });
+    expect(issues.join("\n")).not.toContain("compositions");
   });
 
   it("never throws on hostile catalog property getters", () => {
@@ -220,7 +442,7 @@ describe("validateCatalog", () => {
       expect(types.has(type), type).toBe(true);
     }
     expect(types.has("stat")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, "componentDefinitions")).toBe(
+    expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, legacyDefinitionsField)).toBe(
       false,
     );
   });
@@ -262,8 +484,7 @@ describe("validateCatalog", () => {
     expect(issues).toEqual([]);
     expect(catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
     expect(catalog.policy).toEqual({
-      order: ["stamp", "brick", "primitive"],
-      componentOrder: ["composition", "component", "primitive"],
+      order: ["composition", "component", "primitive"],
       editBeforeAppend: true,
       compactScreens: true,
       maxScreenSections: 6,

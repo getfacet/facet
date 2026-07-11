@@ -1,11 +1,13 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC, isContainer, treeHasContent, validateTree } from "@facet/core";
 import type {
   ClientEvent,
   FacetCatalog,
+  FacetComposition,
   FacetNode,
   FacetSession,
-  FacetStamp,
   FacetTheme,
   FacetTree,
   ServerMessage,
@@ -32,7 +34,7 @@ function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
   return { at: 0, event: { kind: "message", text }, messages };
 }
 
-function stampSectionOf(system: string): string {
+function compositionSectionOf(system: string): string {
   const start = system.indexOf("COMPOSITIONS");
   const end = system.lastIndexOf("PAGE BRIEF");
   return start >= 0 && end > start ? system.slice(start, end) : "";
@@ -104,10 +106,10 @@ function catalogFixture(): FacetCatalog {
       { type: "section", variants: ["surface"], guidance: "Use sections for compact screens." },
       { type: "button", variants: ["primary"] },
     ],
-    stamps: { mode: "allow", names: ["pricing"] },
+    compositions: { mode: "allow", names: ["pricing"] },
     primitiveFallback: "allowed",
     policy: {
-      order: ["stamp", "brick", "primitive"],
+      order: ["composition", "component", "primitive"],
       editBeforeAppend: true,
       compactScreens: true,
       maxScreenSections: 3,
@@ -217,7 +219,7 @@ describe("buildSystem", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
     const base = buildSystem(guide);
     // Empty assets must produce the byte-identical no-assets string.
-    expect(buildSystem(guide, { themes: [], stamps: [] })).toBe(base);
+    expect(buildSystem(guide, { themes: [], compositions: [] })).toBe(base);
     // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
     // list" in prose — we probe for the section intros this WU adds, not the word).
     expect(base).not.toContain("select by NAME with the set_theme tool");
@@ -233,7 +235,7 @@ describe("buildSystem", () => {
       },
       { name: "sunrise", description: "Warm light morning palette", color: { bg: "#fff7ed" } },
     ];
-    const system = buildSystem(DEFAULT_GUIDE, { themes, stamps: [] });
+    const system = buildSystem(DEFAULT_GUIDE, { themes, compositions: [] });
 
     expect(system).toContain("THEMES");
     // Names + one-line descriptions are present.
@@ -249,8 +251,8 @@ describe("buildSystem", () => {
     expect(system).toMatch(/set_theme/);
   });
 
-  it("advertises stamp names, slots, and descriptions without embedding fragment JSON", () => {
-    const stamps: FacetStamp[] = [
+  it("advertises composition names, slots, and descriptions without embedding fragment JSON", () => {
+    const compositions: FacetComposition[] = [
       {
         name: "cta",
         description: "A call-to-action button",
@@ -262,31 +264,31 @@ describe("buildSystem", () => {
         },
       },
     ];
-    const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
-    const stampSection = stampSectionOf(system);
+    const system = buildSystem(DEFAULT_GUIDE, { themes: [], compositions });
+    const compositionSection = compositionSectionOf(system);
 
     expect(system).toContain("COMPOSITIONS");
-    expect(stampSection).toContain("cta");
-    expect(stampSection).toContain("A call-to-action button");
-    expect(stampSection).toContain("label");
-    expect(stampSection).toContain("href");
-    expect(stampSection).toContain("use_stamp");
-    expect(stampSection).not.toContain("cta-label");
-    expect(stampSection).not.toContain('"nodes"');
-    expect(stampSection).not.toContain("Get started");
+    expect(compositionSection).toContain("cta");
+    expect(compositionSection).toContain("A call-to-action button");
+    expect(compositionSection).toContain("label");
+    expect(compositionSection).toContain("href");
+    expect(compositionSection).toContain("use_composition");
+    expect(compositionSection).not.toContain("cta-label");
+    expect(compositionSection).not.toContain('"nodes"');
+    expect(compositionSection).not.toContain("Get started");
   });
 
-  it("advertises oversized stamps by name without copying their large JSON", () => {
+  it("advertises oversized compositions by name without copying their large JSON", () => {
     const big = "x".repeat(5000);
-    const stamps: FacetStamp[] = [
+    const compositions: FacetComposition[] = [
       { name: "huge", root: "h", nodes: { h: { id: "h", type: "text", value: big } } },
     ];
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
-      const stampSection = stampSectionOf(system);
-      expect(stampSection).toContain("huge");
-      expect(stampSection).not.toContain(big);
+      const system = buildSystem(DEFAULT_GUIDE, { themes: [], compositions });
+      const compositionSection = compositionSectionOf(system);
+      expect(compositionSection).toContain("huge");
+      expect(compositionSection).not.toContain(big);
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
@@ -302,7 +304,7 @@ describe("buildSystem", () => {
           color: { bg: "#ffffff", fg: "#111111" },
         },
       ],
-      stamps: [],
+      compositions: [],
       catalog: catalogFixture(),
     });
     const catalogSection = catalogSectionOf(system);
@@ -333,7 +335,7 @@ describe("TOOLS", () => {
       "say",
       "set_node",
       "set_theme",
-      "use_stamp",
+      "use_composition",
     ]);
     for (const tool of TOOLS) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -350,14 +352,25 @@ describe("TOOLS", () => {
     expect(props["name"]).toMatchObject({ type: "string" });
   });
 
-  it("use_stamp takes a stamp name, params map, and parent location", () => {
-    const useStamp = TOOLS.find((t) => t.name === "use_stamp");
-    expect(useStamp).toBeDefined();
-    const props = useStamp!.parameters["properties"] as Record<string, unknown>;
+  it("use_composition takes a composition name, params map, and parent location", () => {
+    const useComposition = TOOLS.find((t) => t.name === "use_composition");
+    expect(useComposition).toBeDefined();
+    const props = useComposition!.parameters["properties"] as Record<string, unknown>;
     expect(Object.keys(props)).toEqual(["name", "params", "at"]);
     expect(props["name"]).toMatchObject({ type: "string" });
     expect(props["params"]).toMatchObject({ type: "object" });
     expect(props["at"]).toMatchObject({ type: "object" });
+  });
+
+  it("use_composition wiring is canonical in quickstart cli.ts (loaded compositions, no legacy naming)", () => {
+    // WU-11 structural gate: the CLI must thread `loadAssets().compositions`
+    // into the reference-agent options and the resolved-assets hook; any
+    // legacy pre-canonicalization naming in the quickstart CLI source is a
+    // regression.
+    const source = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
+    expect(source).toContain("loaded.compositions");
+    expect(source).toContain("compositions");
+    expect(source).not.toMatch(new RegExp(["st", "amp"].join(""), "i"));
   });
 });
 

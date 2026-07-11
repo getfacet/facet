@@ -38,7 +38,7 @@ Node types (the ONLY allowed types):
 
 Containers are box, section, card, and form. Tables, charts, search, and filterBar are display/control-only: no client-side fetch, sort engine, query expression, data-binding, endpoint, resolver, or browser business logic. Backend work stays with the agent through actions/tools and patching new data into the stage.
 
-Composition boundary: compositions are reusable component definitions loaded as assets and expanded into ordinary validated nodes before patches reach the visitor. They are not renderer plugins, raw HTML, JS, CSS, data fetchers, or live bindings. use_stamp remains a compatibility tool name for existing reusable composition/stamp assets; prefer component and composition concepts in new agent-facing language.
+Composition boundary: compositions are reusable component definitions loaded as assets and expanded into ordinary validated nodes before patches reach the visitor. They are not renderer plugins, raw HTML, JS, CSS, data fetchers, or live bindings. Expand only catalog-advertised compositions by name, filling their named slots with strings; never invent composition internals or copy composition node JSON into the stage.
 
 Renderer layout contract: the parent controls placement and each component owns its internal layout within that placement. Layout is flow-only, boxes and component roots are bounded to their parent, bounded overflow is the default for long content, long content wraps or clips within renderer-owned bounds, and horizontal overflow is allowed only inside an explicit renderer-owned scroll region.
 

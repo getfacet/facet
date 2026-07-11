@@ -6,6 +6,10 @@ import { FileAssets } from "@facet/runtime/node";
 import { PostgresAssets as BarrelPostgresAssets } from "./index.js";
 import { PostgresAssets } from "./postgres-assets.js";
 
+// Built at runtime so the legacy token never appears as a source literal
+// (same idiom as theme.test.ts).
+const legacy = ["st", "amp"].join("");
+
 interface Call {
   readonly text: string;
   readonly values: readonly unknown[];
@@ -31,14 +35,19 @@ function rejectingPool(error: Error): Pool {
 function roundTripPool(): Pool {
   const rows = new Map<
     string,
-    { themes: unknown; stamps: unknown; catalog: unknown | null; initial_tree: unknown | null }
+    {
+      themes: unknown;
+      compositions: unknown;
+      catalog: unknown | null;
+      initial_tree: unknown | null;
+    }
   >();
   return {
     query: (text: string, values: readonly unknown[] = []) => {
       if (/insert into facet_assets/i.test(text)) {
         rows.set(String(values[0]), {
           themes: JSON.parse(String(values[1])) as unknown,
-          stamps: JSON.parse(String(values[2])) as unknown,
+          compositions: JSON.parse(String(values[2])) as unknown,
           catalog: values[3] === null ? null : (JSON.parse(String(values[3])) as unknown),
           initial_tree: values[4] === null ? null : (JSON.parse(String(values[4])) as unknown),
         });
@@ -63,7 +72,7 @@ const validTheme = {
   color: { bg: "#111111", fg: "#eeeeee" },
 };
 
-const validStamp = {
+const validComposition = {
   name: "cta",
   description: "a call to action",
   root: "s-root",
@@ -73,7 +82,7 @@ const validStamp = {
   },
 };
 
-const invalidStamp = {
+const invalidComposition = {
   name: "broken",
   root: "missing",
   nodes: { x: { id: "x", type: "text", value: "orphan" } },
@@ -83,10 +92,10 @@ const customCatalog: FacetCatalog = {
   name: "operator",
   theme: { active: "midnight", switchPolicy: "locked", allowed: ["midnight"] },
   bricks: [{ type: "section", variants: ["surface"] }],
-  stamps: { mode: "allow", names: ["cta"] },
+  compositions: { mode: "allow", names: ["cta"] },
   primitiveFallback: "discouraged",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 4,
@@ -107,7 +116,7 @@ describe("PostgresAssets", () => {
 
     const { pool } = fakePool();
     const postgresAssets: AssetsStore = new PostgresAssets(pool);
-    const memoryAssets: AssetsStore = new MemoryAssets({ themes: [], stamps: [] });
+    const memoryAssets: AssetsStore = new MemoryAssets({ themes: [], compositions: [] });
     const fileAssets: AssetsStore = new FileAssets("/tmp/facet-assets-unused");
 
     expect(postgresAssets).toBeInstanceOf(PostgresAssets);
@@ -115,15 +124,19 @@ describe("PostgresAssets", () => {
     expect(fileAssets).toBeInstanceOf(FileAssets);
   });
 
-  it("load returns raw persisted documents without validating them", async () => {
+  it("load returns raw persisted composition documents without validating them", async () => {
     const malformedTheme = { name: "hostile", color: { bg: "url(http://evil)" } };
     const { pool } = fakePool([
-      { themes: [validTheme, malformedTheme], stamps: [validStamp], initial_tree: seedTree },
+      {
+        themes: [validTheme, malformedTheme],
+        compositions: [validComposition],
+        initial_tree: seedTree,
+      },
     ]);
 
     await expect(new PostgresAssets(pool).load("agent")).resolves.toEqual({
       themes: [validTheme, malformedTheme],
-      stamps: [validStamp],
+      compositions: [validComposition],
       initialTree: seedTree,
     });
   });
@@ -137,7 +150,7 @@ describe("PostgresAssets", () => {
     const { pool } = fakePool([
       {
         themes: [validTheme],
-        stamps: [validStamp],
+        compositions: [validComposition],
         catalog: malformedCatalog,
         initial_tree: seedTree,
       },
@@ -145,48 +158,50 @@ describe("PostgresAssets", () => {
 
     await expect(new PostgresAssets(pool).load("agent")).resolves.toEqual({
       themes: [validTheme],
-      stamps: [validStamp],
+      compositions: [validComposition],
       catalog: malformedCatalog,
       initialTree: seedTree,
     });
   });
 
-  it("load normalizes missing rows and null jsonb columns", async () => {
+  it("load normalizes missing rows and null jsonb columns to canonical composition defaults", async () => {
     const { pool: emptyPool } = fakePool([]);
     await expect(new PostgresAssets(emptyPool).load("missing")).resolves.toEqual({
       themes: [],
-      stamps: [],
+      compositions: [],
     });
 
-    const { pool: nullPool } = fakePool([{ themes: null, stamps: null, initial_tree: null }]);
+    const { pool: nullPool } = fakePool([{ themes: null, compositions: null, initial_tree: null }]);
     await expect(new PostgresAssets(nullPool).load("agent")).resolves.toEqual({
       themes: [],
-      stamps: [],
+      compositions: [],
     });
   });
 
-  it("load reports non-array theme and stamp jsonb columns to runtime validation", async () => {
+  it("load reports non-array theme and composition jsonb columns to runtime validation", async () => {
     const { pool } = fakePool([
-      { themes: { not: "an array" }, stamps: "not an array", initial_tree: null },
+      { themes: { not: "an array" }, compositions: "not an array", initial_tree: null },
     ]);
 
     const docs = await new PostgresAssets(pool).load("agent");
 
     expect(docs.themes).toEqual([]);
-    expect(docs.stamps).toEqual([]);
+    expect(docs.compositions).toEqual([]);
     expect(docs.issues).toEqual([
       "postgres assets `themes` was not an array — ignored",
-      "postgres assets `stamps` was not an array — ignored",
+      "postgres assets `compositions` was not an array — ignored",
     ]);
 
     const loaded = await loadAssets(new PostgresAssets(pool), "agent");
     expect(loaded.issues.some((issue) => issue.includes("postgres assets `themes`"))).toBe(true);
-    expect(loaded.issues.some((issue) => issue.includes("postgres assets `stamps`"))).toBe(true);
+    expect(loaded.issues.some((issue) => issue.includes("postgres assets `compositions`"))).toBe(
+      true,
+    );
   });
 
   it("loadAssets defaults nullable Postgres catalog rows through runtime validation", async () => {
     const { pool } = fakePool([
-      { themes: [validTheme], stamps: [validStamp], catalog: null, initial_tree: null },
+      { themes: [validTheme], compositions: [validComposition], catalog: null, initial_tree: null },
     ]);
     const loaded = await loadAssets(new PostgresAssets(pool), "agent");
 
@@ -199,13 +214,13 @@ describe("PostgresAssets", () => {
     const store = new PostgresAssets(roundTripPool());
     const docs: AssetDocuments = {
       themes: [validTheme],
-      stamps: [validStamp],
+      compositions: [validComposition],
       catalog: customCatalog,
       initialTree: seedTree,
     };
     const replacement: AssetDocuments = {
       themes: [],
-      stamps: [],
+      compositions: [],
     };
 
     await store.putAssets("agent", docs);
@@ -220,20 +235,20 @@ describe("PostgresAssets", () => {
     const loaded = await loadAssets(new PostgresAssets(pool), "agent");
 
     expect(loaded.themes.length).toBeGreaterThan(0);
-    expect(loaded.stamps.length).toBeGreaterThan(0);
+    expect(loaded.compositions.length).toBeGreaterThan(0);
     expect(loaded.issues).toEqual([]);
   });
 
-  it("putAssets upserts docs and a later load returns them", async () => {
+  it("putAssets round-trips composition docs and a later load returns the replacement", async () => {
     const store = new PostgresAssets(roundTripPool());
     const docs: AssetDocuments = {
       themes: [validTheme],
-      stamps: [validStamp],
+      compositions: [validComposition],
       initialTree: seedTree,
     };
     const replacement: AssetDocuments = {
       themes: [{ ...validTheme, name: "dawn", color: { bg: "#ffffff", fg: "#111111" } }],
-      stamps: [],
+      compositions: [],
     };
 
     await store.putAssets("agent", docs);
@@ -242,12 +257,12 @@ describe("PostgresAssets", () => {
     await expect(store.load("agent")).resolves.toEqual(replacement);
   });
 
-  it("keeps assets isolated by agent id", async () => {
+  it("keeps composition assets isolated by agent id", async () => {
     const store = new PostgresAssets(roundTripPool());
-    const agentA: AssetDocuments = { themes: [validTheme], stamps: [] };
+    const agentA: AssetDocuments = { themes: [validTheme], compositions: [] };
     const agentB: AssetDocuments = {
       themes: [],
-      stamps: [validStamp],
+      compositions: [validComposition],
       initialTree: seedTree,
     };
 
@@ -256,14 +271,14 @@ describe("PostgresAssets", () => {
 
     await expect(store.load("agent-a")).resolves.toEqual(agentA);
     await expect(store.load("agent-b")).resolves.toEqual(agentB);
-    await expect(store.load("agent-c")).resolves.toEqual({ themes: [], stamps: [] });
+    await expect(store.load("agent-c")).resolves.toEqual({ themes: [], compositions: [] });
   });
 
-  it("putAssets emits an agent_id upsert that replaces all jsonb fields", async () => {
+  it("putAssets emits an agent_id upsert that replaces compositions and never mentions the legacy field", async () => {
     const { pool, calls } = fakePool();
     await new PostgresAssets(pool).putAssets("agent", {
       themes: [],
-      stamps: [],
+      compositions: [],
       catalog: customCatalog,
     });
 
@@ -274,22 +289,38 @@ describe("PostgresAssets", () => {
     expect(sql).toContain("on conflict (agent_id)");
     expect(sql).toContain("do update set");
     expect(sql).toContain("themes = excluded.themes");
-    expect(sql).toContain("stamps = excluded.stamps");
+    expect(sql).toContain("compositions = excluded.compositions");
     expect(sql).toContain("catalog = excluded.catalog");
     expect(sql).toContain("initial_tree = excluded.initial_tree");
     expect(sql).toContain("updated_at = now()");
+    expect(sql).not.toContain(legacy);
   });
 
-  it("loadAssets drops malformed raw docs from PostgresAssets without throwing", async () => {
+  it("load queries only composition columns and returns no legacy field", async () => {
+    const { pool, calls } = fakePool([
+      { themes: [validTheme], compositions: [validComposition], initial_tree: null },
+    ]);
+    const docs = await new PostgresAssets(pool).load("agent");
+
+    const sql = normalizeSql(calls[0]?.text ?? "");
+    expect(sql).toContain("compositions");
+    expect(sql).not.toContain(legacy);
+    expect(`${legacy}s` in docs).toBe(false);
+    expect(docs.compositions).toEqual([validComposition]);
+  });
+
+  it("loadAssets drops malformed raw composition docs from PostgresAssets without throwing", async () => {
     const { pool } = fakePool([
-      { themes: [validTheme], stamps: [invalidStamp], initial_tree: null },
+      { themes: [validTheme], compositions: [invalidComposition], initial_tree: null },
     ]);
     const loaded = await loadAssets(new PostgresAssets(pool), "agent");
 
     expect(loaded.themes.map((theme) => theme.name)).toContain("midnight");
-    expect(loaded.stamps.map((stamp) => stamp.name)).not.toContain("broken");
-    expect(loaded.stamps.length).toBeGreaterThan(0);
-    expect(loaded.issues.some((issue) => issue.includes("stamp document skipped"))).toBe(true);
+    expect(loaded.compositions.map((composition) => composition.name)).not.toContain("broken");
+    expect(loaded.compositions.length).toBeGreaterThan(0);
+    expect(loaded.issues.some((issue) => issue.includes("composition document skipped"))).toBe(
+      true,
+    );
   });
 
   it("loadAssets swallows Postgres load failures and falls back to defaults", async () => {

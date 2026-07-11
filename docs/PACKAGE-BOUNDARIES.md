@@ -48,7 +48,7 @@ These packages are the reusable core of Facet:
 | `@facet/core` | Closed stage contract: primitive bricks, Facet-owned intrinsic components, catalog/component/composition policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
 | `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, and `AssetsStore` interfaces and memory/file references for catalog/theme/composition/initial-tree assets. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
 | `@facet/react` | Renderer, recipe/theme-to-CSS mapping, recipe-part rendering for intrinsic components, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
-| `@facet/assets` | Default catalog, component recipes/parts, and legacy stamp/composition metadata/value maps. | Catalog/theme/composition schemas need fuller authoring docs and editor-facing examples. |
+| `@facet/assets` | Default catalog, component recipes/parts, and default composition definitions with metadata (`DEFAULT_COMPOSITIONS`). | Catalog/theme/composition schemas need fuller authoring docs and editor-facing examples. |
 
 ### Agent Authoring
 

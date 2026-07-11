@@ -35,17 +35,13 @@ export interface CatalogComponent {
   readonly guidance?: string;
 }
 
-export type CatalogStampsPolicy =
+export type CatalogCompositionsPolicy =
   { readonly mode: "all" } | { readonly mode: "allow"; readonly names: readonly string[] };
 
-export type CatalogCompositionsPolicy = CatalogStampsPolicy;
-
-export type CatalogLegacyUsageOrder = readonly ["stamp", "brick", "primitive"];
-export type CatalogComponentUsageOrder = readonly ["composition", "component", "primitive"];
+export type CatalogUsageOrder = readonly ["composition", "component", "primitive"];
 
 export interface CatalogUsagePolicy {
-  readonly order: CatalogLegacyUsageOrder;
-  readonly componentOrder?: CatalogComponentUsageOrder;
+  readonly order: CatalogUsageOrder;
   readonly editBeforeAppend: boolean;
   readonly compactScreens: boolean;
   readonly maxScreenSections?: number;
@@ -57,8 +53,7 @@ export interface FacetCatalog {
   readonly theme: CatalogThemePolicy;
   readonly bricks: readonly CatalogBrick[];
   readonly components?: readonly CatalogComponent[];
-  readonly stamps: CatalogStampsPolicy;
-  readonly compositions?: CatalogCompositionsPolicy;
+  readonly compositions: CatalogCompositionsPolicy;
   readonly primitiveFallback: "allowed" | "discouraged";
   readonly policy: CatalogUsagePolicy;
 }
@@ -72,8 +67,7 @@ const MAX_CATALOG_ITEMS = 128;
 const MAX_CATALOG_POLICY_COUNT = 32;
 const MAX_SCREEN_SECTIONS = 20;
 
-const LEGACY_USAGE_ORDER = ["stamp", "brick", "primitive"] as const;
-const COMPONENT_USAGE_ORDER = ["composition", "component", "primitive"] as const;
+const CANONICAL_USAGE_ORDER = ["composition", "component", "primitive"] as const;
 
 const DEFAULT_COMPONENTS: readonly CatalogComponent[] = [
   {
@@ -168,12 +162,10 @@ export const DEFAULT_CATALOG: FacetCatalog = {
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
   bricks: DEFAULT_BRICKS,
   components: DEFAULT_COMPONENTS,
-  stamps: { mode: "all" },
   compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: LEGACY_USAGE_ORDER,
-    componentOrder: COMPONENT_USAGE_ORDER,
+    order: CANONICAL_USAGE_ORDER,
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 6,
@@ -219,25 +211,25 @@ function cloneCatalogComponents(
   return components.map(cloneCatalogComponent);
 }
 
-function cloneStampsPolicy(stamps: CatalogStampsPolicy): CatalogStampsPolicy {
-  return stamps.mode === "all" ? { mode: "all" } : { mode: "allow", names: [...stamps.names] };
+function cloneCompositionsPolicy(
+  compositions: CatalogCompositionsPolicy,
+): CatalogCompositionsPolicy {
+  return compositions.mode === "all"
+    ? { mode: "all" }
+    : { mode: "allow", names: [...compositions.names] };
 }
 
 function cloneUsagePolicy(policy: CatalogUsagePolicy): CatalogUsagePolicy {
   const cloned: {
-    order: CatalogLegacyUsageOrder;
-    componentOrder?: CatalogComponentUsageOrder;
+    order: CatalogUsageOrder;
     editBeforeAppend: boolean;
     compactScreens: boolean;
     maxScreenSections?: number;
   } = {
-    order: [...policy.order] as CatalogLegacyUsageOrder,
+    order: [...policy.order] as CatalogUsageOrder,
     editBeforeAppend: policy.editBeforeAppend,
     compactScreens: policy.compactScreens,
   };
-  if (policy.componentOrder !== undefined) {
-    cloned.componentOrder = [...policy.componentOrder] as CatalogComponentUsageOrder;
-  }
   if (policy.maxScreenSections !== undefined) cloned.maxScreenSections = policy.maxScreenSections;
   return cloned;
 }
@@ -249,15 +241,14 @@ function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
     theme: CatalogThemePolicy;
     bricks: readonly CatalogBrick[];
     components?: readonly CatalogComponent[];
-    stamps: CatalogStampsPolicy;
-    compositions?: CatalogCompositionsPolicy;
+    compositions: CatalogCompositionsPolicy;
     primitiveFallback: "allowed" | "discouraged";
     policy: CatalogUsagePolicy;
   } = {
     name: catalog.name,
     theme: cloneThemePolicy(catalog.theme),
     bricks: cloneCatalogBricks(catalog.bricks),
-    stamps: cloneStampsPolicy(catalog.stamps),
+    compositions: cloneCompositionsPolicy(catalog.compositions),
     primitiveFallback: catalog.primitiveFallback,
     policy: cloneUsagePolicy(catalog.policy),
   };
@@ -265,8 +256,6 @@ function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
   if (catalog.components !== undefined) {
     cloned.components = cloneCatalogComponents(catalog.components);
   }
-  if (catalog.compositions !== undefined)
-    cloned.compositions = cloneStampsPolicy(catalog.compositions);
   return cloned;
 }
 
@@ -282,24 +271,50 @@ function isCatalogComponentType(value: unknown): value is ComponentNodeType {
   return typeof value === "string" && (COMPONENT_NODE_TYPES as readonly string[]).includes(value);
 }
 
-function themeNameList(
+function boundedNameList(
   raw: unknown,
   field: string,
+  label: "name" | "variant",
   issues: BoundedIssues,
 ): readonly string[] | undefined {
-  if (!Array.isArray(raw)) return undefined;
+  // Distinguish absent from provided-with-wrong-shape. An ABSENT field stays
+  // undefined (unrestricted). A PROVIDED-but-non-array field is a broken
+  // restriction: fail closed to [] (allow nothing) with an issue, never open it
+  // back up to "anything allowed" by returning undefined.
+  if (raw === undefined) return undefined;
+  if (!Array.isArray(raw)) {
+    issues.push(`catalog ${field}: expected an array of ${label}s; restriction kept empty`);
+    return [];
+  }
   const out: string[] = [];
   for (const value of raw.slice(0, MAX_CATALOG_POLICY_COUNT)) {
     if (typeof value === "string" && isValidThemeName(value)) {
       out.push(value);
     } else {
-      issues.push(`catalog ${field}: malformed name ${printableValue(value)} dropped`);
+      issues.push(`catalog ${field}: malformed ${label} ${printableValue(value)} dropped`);
     }
   }
   if (raw.length > MAX_CATALOG_POLICY_COUNT) {
     issues.push(`catalog ${field}: exceeded the ${MAX_CATALOG_POLICY_COUNT}-item cap`);
   }
-  return out.length > 0 ? out : undefined;
+  // Fail closed: an author who PROVIDED a restriction list (even []) whose valid
+  // entries come out empty gets an empty restriction (allow nothing), never
+  // undefined (unrestricted). Returning undefined here would invert the intended
+  // restriction into "anything allowed" downstream. An ABSENT/non-array field
+  // stays undefined (unrestricted) via the guard at the top.
+  if (out.length === 0) {
+    issues.push(`catalog ${field}: no valid entries — restriction kept empty`);
+    return [];
+  }
+  return out;
+}
+
+function themeNameList(
+  raw: unknown,
+  field: string,
+  issues: BoundedIssues,
+): readonly string[] | undefined {
+  return boundedNameList(raw, field, "name", issues);
 }
 
 function variantList(
@@ -307,19 +322,7 @@ function variantList(
   field: string,
   issues: BoundedIssues,
 ): readonly string[] | undefined {
-  if (!Array.isArray(raw)) return undefined;
-  const out: string[] = [];
-  for (const value of raw.slice(0, MAX_CATALOG_POLICY_COUNT)) {
-    if (typeof value === "string" && isValidThemeName(value)) {
-      out.push(value);
-    } else {
-      issues.push(`catalog ${field}: malformed variant ${printableValue(value)} dropped`);
-    }
-  }
-  if (raw.length > MAX_CATALOG_POLICY_COUNT) {
-    issues.push(`catalog ${field}: exceeded the ${MAX_CATALOG_POLICY_COUNT}-item cap`);
-  }
-  return out.length > 0 ? out : undefined;
+  return boundedNameList(raw, field, "variant", issues);
 }
 
 function validateCatalogTheme(raw: unknown, issues: BoundedIssues): CatalogThemePolicy {
@@ -378,7 +381,16 @@ function validateCatalogBricks(raw: unknown, issues: BoundedIssues): readonly Ca
   if (raw.length > MAX_CATALOG_ITEMS) {
     issues.push(`catalog bricks: exceeded the ${MAX_CATALOG_ITEMS}-item cap`);
   }
-  return bricks.length > 0 ? bricks : cloneCatalogBricks(DEFAULT_CATALOG.bricks);
+  // Fail closed: a PROVIDED bricks array (empty or all-invalid) that validates to
+  // empty allows nothing — never substitute the permissive default, which would
+  // invert a restriction into "everything allowed". An ABSENT field never reaches
+  // here (the caller guards on Array.isArray before invoking).
+  if (bricks.length === 0) {
+    issues.push(
+      "catalog bricks: provided restriction list validated to empty; no catalog bricks allowed (primitives follow primitiveFallback)",
+    );
+  }
+  return bricks;
 }
 
 function validateCatalogComponents(
@@ -413,7 +425,14 @@ function validateCatalogComponents(
   if (raw.length > MAX_CATALOG_ITEMS) {
     issues.push(`catalog components: exceeded the ${MAX_CATALOG_ITEMS}-item cap`);
   }
-  return components.length > 0 ? components : cloneCatalogComponents(DEFAULT_COMPONENTS);
+  // Fail closed (mirrors validateCatalogBricks): a PROVIDED components array that
+  // validates to empty allows nothing, rather than reopening the full default set.
+  if (components.length === 0) {
+    issues.push(
+      "catalog components: provided restriction list validated to empty; no catalog components allowed (primitives follow primitiveFallback)",
+    );
+  }
+  return components;
 }
 
 function componentsFromBricks(bricks: readonly CatalogBrick[]): readonly CatalogComponent[] {
@@ -429,43 +448,37 @@ function bricksFromComponents(components: readonly CatalogComponent[]): readonly
   return components.map((component) => cloneCatalogBrick({ ...component, type: component.type }));
 }
 
-function validateCatalogNamedPolicy(
-  raw: unknown,
-  label: "stamps" | "compositions",
-  issues: BoundedIssues,
-): CatalogStampsPolicy {
-  if (!isPlainObject(raw)) return cloneStampsPolicy(DEFAULT_CATALOG.stamps);
-  if (raw.mode === "all") return { mode: "all" };
-  if (raw.mode !== "allow") {
-    issues.push(`catalog ${label}: invalid mode ${printableValue(raw.mode)}; defaulted to all`);
-    return cloneStampsPolicy(DEFAULT_CATALOG.stamps);
-  }
-  const names = themeNameList(raw.names, `${label}.names`, issues);
-  return { mode: "allow", names: names ?? [] };
-}
-
-function validateCatalogStamps(raw: unknown, issues: BoundedIssues): CatalogStampsPolicy {
-  return validateCatalogNamedPolicy(raw, "stamps", issues);
-}
-
 function validateCatalogCompositions(
   raw: unknown,
   issues: BoundedIssues,
 ): CatalogCompositionsPolicy {
-  return validateCatalogNamedPolicy(raw, "compositions", issues);
+  // Absent → the allow-all default (a composition policy is opt-in). A PROVIDED
+  // policy of the wrong shape (e.g. an array) is a broken restriction: fail
+  // closed to an empty allow-list, never silently fall back to allow-all.
+  if (raw === undefined) return cloneCompositionsPolicy(DEFAULT_CATALOG.compositions);
+  if (!isPlainObject(raw)) {
+    issues.push("catalog compositions: expected a policy object; restriction kept empty");
+    return { mode: "allow", names: [] };
+  }
+  if (raw.mode === "all") return { mode: "all" };
+  if (raw.mode !== "allow") {
+    issues.push(
+      `catalog compositions: invalid mode ${printableValue(raw.mode)}; restriction kept empty`,
+    );
+    return { mode: "allow", names: [] };
+  }
+  const names = themeNameList(raw.names, "compositions.names", issues);
+  // An allow-list with no valid names allows nothing — diagnose the silent
+  // allow-nothing rather than emitting an unremarked empty restriction. A
+  // mistyped `names` already pushed its own issue via boundedNameList.
+  if (names === undefined) {
+    issues.push("catalog compositions.names: no valid entries — restriction kept empty");
+    return { mode: "allow", names: [] };
+  }
+  return { mode: "allow", names };
 }
 
-function isLegacyUsageOrder(value: unknown): value is CatalogLegacyUsageOrder {
-  return (
-    Array.isArray(value) &&
-    value.length === 3 &&
-    value[0] === "stamp" &&
-    value[1] === "brick" &&
-    value[2] === "primitive"
-  );
-}
-
-function isComponentUsageOrder(value: unknown): value is CatalogComponentUsageOrder {
+function isCanonicalUsageOrder(value: unknown): value is CatalogUsageOrder {
   return (
     Array.isArray(value) &&
     value.length === 3 &&
@@ -478,14 +491,12 @@ function isComponentUsageOrder(value: unknown): value is CatalogComponentUsageOr
 function validateUsagePolicy(raw: unknown, issues: BoundedIssues): CatalogUsagePolicy {
   if (!isPlainObject(raw)) return cloneUsagePolicy(DEFAULT_CATALOG.policy);
   const policy: {
-    order: CatalogLegacyUsageOrder;
-    componentOrder?: CatalogComponentUsageOrder;
+    order: CatalogUsageOrder;
     editBeforeAppend: boolean;
     compactScreens: boolean;
     maxScreenSections?: number;
   } = {
-    order: [...LEGACY_USAGE_ORDER] as CatalogLegacyUsageOrder,
-    componentOrder: [...COMPONENT_USAGE_ORDER] as CatalogComponentUsageOrder,
+    order: [...CANONICAL_USAGE_ORDER] as CatalogUsageOrder,
     editBeforeAppend:
       typeof raw.editBeforeAppend === "boolean"
         ? raw.editBeforeAppend
@@ -495,22 +506,8 @@ function validateUsagePolicy(raw: unknown, issues: BoundedIssues): CatalogUsageP
         ? raw.compactScreens
         : DEFAULT_CATALOG.policy.compactScreens,
   };
-  if (isLegacyUsageOrder(raw.order)) {
-    policy.order = [...LEGACY_USAGE_ORDER] as CatalogLegacyUsageOrder;
-  } else if (isComponentUsageOrder(raw.order)) {
-    policy.order = [...LEGACY_USAGE_ORDER] as CatalogLegacyUsageOrder;
-    policy.componentOrder = [...COMPONENT_USAGE_ORDER] as CatalogComponentUsageOrder;
-  } else if (raw.order !== undefined) {
+  if (raw.order !== undefined && !isCanonicalUsageOrder(raw.order)) {
     issues.push("catalog policy: invalid order defaulted to composition > component > primitive");
-  }
-  if (isComponentUsageOrder(raw.componentOrder)) {
-    policy.componentOrder = [...COMPONENT_USAGE_ORDER] as CatalogComponentUsageOrder;
-  } else if (isLegacyUsageOrder(raw.componentOrder)) {
-    policy.componentOrder = [...COMPONENT_USAGE_ORDER] as CatalogComponentUsageOrder;
-  } else if (raw.componentOrder !== undefined) {
-    issues.push(
-      "catalog policy: invalid componentOrder defaulted to composition > component > primitive",
-    );
   }
   if (
     typeof raw.maxScreenSections === "number" &&
@@ -547,25 +544,41 @@ function validateCatalogUnsafe(input: unknown, issues: BoundedIssues): CatalogVa
     return { catalog: defaultCatalog(), issues: issues.list };
   }
 
-  const hasBricks = Array.isArray(input.bricks);
-  const componentItems = Array.isArray(input.components)
-    ? validateCatalogComponents(input.components, issues)
-    : undefined;
-  const bricks = hasBricks
-    ? validateCatalogBricks(input.bricks, issues)
-    : componentItems !== undefined
-      ? bricksFromComponents(componentItems)
-      : cloneCatalogBricks(DEFAULT_CATALOG.bricks);
+  // Distinguish absent (fall back to the default vocabulary) from
+  // provided-but-not-an-array (a broken restriction — fail closed to nothing)
+  // for BOTH restriction fields. A mistyped restriction must never silently
+  // reopen the full default set.
+  const bricksProvided = input.bricks !== undefined;
+  const componentsProvided = input.components !== undefined;
+  let componentItems: readonly CatalogComponent[] | undefined;
+  if (Array.isArray(input.components)) {
+    componentItems = validateCatalogComponents(input.components, issues);
+  } else if (componentsProvided) {
+    issues.push(
+      "catalog components: expected an array; restriction kept empty (primitives follow primitiveFallback)",
+    );
+    componentItems = [];
+  } else {
+    componentItems = undefined;
+  }
+  let bricks: readonly CatalogBrick[];
+  if (Array.isArray(input.bricks)) {
+    bricks = validateCatalogBricks(input.bricks, issues);
+  } else if (bricksProvided) {
+    issues.push(
+      "catalog bricks: expected an array; restriction kept empty (primitives follow primitiveFallback)",
+    );
+    bricks = [];
+  } else {
+    bricks =
+      componentItems !== undefined
+        ? bricksFromComponents(componentItems)
+        : cloneCatalogBricks(DEFAULT_CATALOG.bricks);
+  }
   const components =
     componentItems ??
-    (hasBricks ? componentsFromBricks(bricks) : cloneCatalogComponents(DEFAULT_COMPONENTS));
-  const stamps =
-    isPlainObject(input.stamps) || !isPlainObject(input.compositions)
-      ? validateCatalogStamps(input.stamps, issues)
-      : validateCatalogCompositions(input.compositions, issues);
-  const compositions = isPlainObject(input.compositions)
-    ? validateCatalogCompositions(input.compositions, issues)
-    : cloneStampsPolicy(stamps);
+    (bricksProvided ? componentsFromBricks(bricks) : cloneCatalogComponents(DEFAULT_COMPONENTS));
+  const compositions = validateCatalogCompositions(input.compositions, issues);
 
   const catalog: {
     name: string;
@@ -573,7 +586,6 @@ function validateCatalogUnsafe(input: unknown, issues: BoundedIssues): CatalogVa
     theme: CatalogThemePolicy;
     bricks: readonly CatalogBrick[];
     components: readonly CatalogComponent[];
-    stamps: CatalogStampsPolicy;
     compositions: CatalogCompositionsPolicy;
     primitiveFallback: "allowed" | "discouraged";
     policy: CatalogUsagePolicy;
@@ -585,7 +597,6 @@ function validateCatalogUnsafe(input: unknown, issues: BoundedIssues): CatalogVa
     theme: validateCatalogTheme(input.theme, issues),
     bricks,
     components,
-    stamps,
     compositions,
     primitiveFallback:
       input.primitiveFallback === "allowed" || input.primitiveFallback === "discouraged"

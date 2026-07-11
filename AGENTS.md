@@ -52,12 +52,12 @@ imports, and release metadata all benefit from the physical move.
 
 | Group | Path | Package | Role |
 | --- | --- | --- | --- |
-| Core | `packages/core/core` | `@facet/core` | Contract: closed brick vocabulary, tokens, RFC 6902 patch, `validateTree`, session/event types. Depends on nothing. |
-| Core | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (per-agent theme/stamp/initial-tree registry; `MemoryAssets` + `loadAssets`, `withInitialStage`). File-backed Node references (`FileAssets`) via `@facet/runtime/node`. |
+| Core | `packages/core/core` | `@facet/core` | Contract: closed brick vocabulary, catalog/composition policy, tokens, RFC 6902 patch, `validateTree`/`validateComposition`, `expandComposition`, session/event types. Depends on nothing. |
+| Core | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (per-agent theme/composition/initial-tree registry; `MemoryAssets` + `loadAssets`, `withInitialStage`). File-backed Node references (`FileAssets`) via `@facet/runtime/node`. |
 | Core | `packages/core/server` | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | Core | `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
 | Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| Core | `packages/core/assets` | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_CATALOG`, `DEFAULT_THEME`, and `DEFAULT_STAMPS`/compositions (token/component recipe and composition value maps, not code). Depends only on `@facet/core`. |
+| Core | `packages/core/assets` | `@facet/assets` | Node-free default-asset **data**: `DEFAULT_CATALOG`, `DEFAULT_THEME`, and `DEFAULT_COMPOSITIONS` (token/component recipe and composition value maps, not code). Depends only on `@facet/core`. |
 | Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, and reusable Facet prompt kit. |
 | Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters, prompt, streaming tool loop, deterministic test fixture. |
 | Agent Stack | `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |

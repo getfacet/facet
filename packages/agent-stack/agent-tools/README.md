@@ -56,7 +56,7 @@ const system = buildFacetAgentSystemPrompt({
   assets: {
     themes,
     catalog,
-    stamps,
+    compositions,
   },
 });
 ```
@@ -65,8 +65,10 @@ Asset sections expose only prompt-safe metadata: theme names/descriptions,
 catalog policy, composition names/descriptions, slot names, and whitelisted
 composition metadata such as category, use/avoid guidance, tags, variants,
 repeatability, preferred parent, composition, data requirements, and follow-up
-edit hints. They never expose theme CSS values, stamp node JSON, slot default
-values, provider keys, visitor ids, secrets, or unknown asset fields.
+edit hints. They never expose theme CSS values, composition node JSON, slot
+default values, provider keys, visitor ids, secrets, or unknown asset fields.
+The advertised compositions are expanded server-side when the model calls the
+`use_composition` tool; their node JSON never enters the prompt.
 
 The component-model guidance tells agents to try advertised compositions first,
 then intrinsic components and catalog-advertised variants, before falling back to
@@ -74,7 +76,7 @@ primitive bricks. It names product-quality defaults such as sections, cards,
 fields, buttons, tabs, nav, tables, charts, metrics, key-value rows, badges,
 progress, alerts, lists, dividers, forms, search, filters, empty states, and
 loading states without exposing renderer recipe parts, theme token values, or
-stamp node JSON as stage syntax.
+composition node JSON as stage syntax.
 
 The catalog prompt section is active UI authoring policy. It tells the model the
 active theme, whether theme switching is a locked theme or explicitly allowed,
@@ -94,9 +96,17 @@ Pass the same catalog into `executeStageTool` through `StageToolAssets`:
 ```ts
 const result = executeStageTool(call, {
   shadow,
-  assets: { themes, catalog, stamps },
+  assets: { themes, catalog, compositions },
 });
 ```
+
+`StageToolAssets.compositions` is the executor's composition library: the
+`use_composition` tool (input type `UseCompositionToolInput` — a composition
+`name`, string slot `params`, and `at.parent`) expands one of those documents
+server-side into ordinary validated patches with fresh ids. An unknown name, a
+name outside the catalog allow-list, or a failed expansion is a structured
+rejection (`invalid_composition`) with zero patches; a missing or non-container
+`at.parent` is `invalid_parent`.
 
 The executor enforces catalog policy before it emits patches:
 
@@ -104,7 +114,8 @@ The executor enforces catalog policy before it emits patches:
   disallowed variants. For tone-capable components, a `tone` used without
   an allowed `variant` is treated as a recipe selector and is rejected unless
   the catalog advertises that name.
-- `use_stamp` rejects composition/stamp names outside an allow-list catalog before expansion.
+- `use_composition` rejects composition names outside an allow-list catalog
+  before expansion.
 - `set_theme` rejects locked theme changes and names outside an allowed theme
   list.
 

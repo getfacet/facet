@@ -82,8 +82,8 @@ or escape its parent without an explicit bounded scroll region is at least P1.
 - **consistency** — duplication, cross-package drift, dev-vs-published resolution
   (`publishConfig`/`exports`), barrel usage, naming, docs/prompts that hard-code
   primitive fallback nodes as the full permanent vocabulary or still describe
-  the old stamp/brick hierarchy as the primary model instead of
-  `composition -> component -> primitive`.
+  the removed pre-composition hierarchy (or its legacy API names) as the
+  primary model instead of `composition -> component -> primitive`.
 - **test-gaps** — changed behavior without a test; critical pure logic
   (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
   coverage; untested testable surface (`@facet/cli`); tautological
