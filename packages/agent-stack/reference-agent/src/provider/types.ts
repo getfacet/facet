@@ -6,10 +6,19 @@ export type ToolSpec = AgentToolSpec;
 /** One tool call the model wants to make, with its arguments already parsed. */
 export type ToolCall = AgentToolCall;
 
+/** Provider-reported token counts for one step. Both fields are optional: a
+ * provider may report neither, one, or both, and a custom adapter may omit
+ * usage entirely. */
+export interface ProviderUsage {
+  readonly inputTokens?: number;
+  readonly outputTokens?: number;
+}
+
 /** One model step: any prose it emitted plus the tool calls it requested. */
 export interface ProviderStep {
   readonly text: string;
   readonly toolCalls: readonly ToolCall[];
+  readonly usage?: ProviderUsage;
 }
 
 /**
@@ -35,6 +44,8 @@ export interface ProviderTurn {
 export interface QuickstartProvider {
   readonly name: "openai" | "anthropic";
   readonly model: string;
+  /** The model's total context window in tokens, when the adapter knows it. */
+  readonly contextWindowTokens?: number;
   /** One tool-use step. Rejects on HTTP error, malformed body, or the timeout. */
   run(turn: ProviderTurn, tools: readonly ToolSpec[]): Promise<ProviderStep>;
 }
@@ -51,6 +62,43 @@ export type FetchImpl = typeof fetch;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/**
+ * Read a `ProviderUsage` out of a provider-specific usage record, given the
+ * wire field names for the input/output counts. Only finite numbers survive;
+ * missing or malformed counts are simply absent (this NEVER throws), and a
+ * record with no usable count at all yields `undefined`.
+ *
+ * `additionalInputFields` are summed into `inputTokens` alongside `inputField`
+ * (each term counted only when it is a finite number). Anthropic reports its
+ * cached prefix in separate `cache_creation_input_tokens` /
+ * `cache_read_input_tokens` fields that `input_tokens` excludes, so the
+ * inclusive total must add them back; OpenAI's `prompt_tokens` already includes
+ * cached tokens and passes no additional fields.
+ */
+export function readProviderUsage(
+  usage: unknown,
+  inputField: string,
+  outputField: string,
+  additionalInputFields: readonly string[] = [],
+): ProviderUsage | undefined {
+  if (!isRecord(usage)) return undefined;
+  const readFinite = (field: string): number | undefined => {
+    const raw = usage[field];
+    return typeof raw === "number" && Number.isFinite(raw) ? raw : undefined;
+  };
+  const inputParts = [inputField, ...additionalInputFields]
+    .map(readFinite)
+    .filter((value): value is number => value !== undefined);
+  const rawOutput = readFinite(outputField);
+  const hasInput = inputParts.length > 0;
+  const hasOutput = rawOutput !== undefined;
+  if (!hasInput && !hasOutput) return undefined;
+  return {
+    ...(hasInput ? { inputTokens: inputParts.reduce((sum, value) => sum + value, 0) } : {}),
+    ...(hasOutput ? { outputTokens: rawOutput } : {}),
+  };
 }
 
 export async function postJson(

@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   MAX_PATCH_OPS,
   collectMessages,
@@ -15,12 +15,23 @@ import type {
   FacetTheme,
   ServerMessage,
 } from "@facet/core";
-import { FacetRuntime, MemorySink } from "@facet/runtime";
-import { createQuickstartAgent, type QuickstartAgentOptions } from "./agent.js";
+import {
+  FacetRuntime,
+  MemorySink,
+  MemorySummaryStore,
+  type Sink,
+  type SummaryStore,
+} from "@facet/runtime";
+import {
+  createQuickstartAgent,
+  __resetCompactionCooldownForTests,
+  type QuickstartAgentOptions,
+} from "./agent.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
 import { DEFAULT_GUIDE } from "./prompt.js";
 import type { ProviderStep, ProviderTurn, QuickstartProvider, ToolCall } from "./provider.js";
 import type { ReferenceAgentTraceEvent } from "./harness/trace.js";
+import type { ConversationSummary, Summarizer, SummarizerRequest } from "./harness/summary.js";
 
 const SESSION: FacetSession = {
   agentId: "quickstart",
@@ -1558,6 +1569,940 @@ describe("createQuickstartAgent tool loop", () => {
     expect(system).toContain("hero");
     // Theme documents reach the model by NAME only — the raw CSS value never does.
     expect(system).not.toContain("#ff00ff");
+  });
+});
+
+describe("compaction", () => {
+  const SMALL_SUMMARY: ConversationSummary = {
+    version: 1,
+    visitor: "v",
+    pageDecisions: "p",
+    collectedData: "",
+    pending: "",
+    attempts: "",
+    omitted: "",
+  };
+
+  interface SpySummarizer {
+    readonly summarizer: Summarizer;
+    readonly calls: SummarizerRequest[];
+  }
+  function spySummarizer(...args: [] | [ConversationSummary | undefined]): SpySummarizer {
+    // A no-arg call defaults to SMALL_SUMMARY; an explicit `undefined` means the
+    // summarizer produced nothing (default params would otherwise swallow it).
+    const result = args.length === 0 ? SMALL_SUMMARY : args[0];
+    const calls: SummarizerRequest[] = [];
+    return {
+      calls,
+      summarizer: (request: SummarizerRequest) => {
+        calls.push(request);
+        return Promise.resolve(result);
+      },
+    };
+  }
+
+  // Each turn is a user event + agent reply with a long filler so the summarized
+  // text is materially larger than a small summary block (min-gain passes).
+  async function recordLongHistory(sink: MemorySink, count: number, start = 0): Promise<void> {
+    const filler = "x".repeat(200);
+    for (let i = start; i < start + count; i += 1) {
+      await sink.record("quickstart", "v1", {
+        at: i,
+        event: { kind: "message", text: `event-${String(i)} ${filler}` },
+        messages: [{ kind: "say", text: `reply-${String(i)} ${filler}` }],
+      });
+    }
+  }
+
+  let backgroundTasks: Promise<void>[] = [];
+  const onBackgroundTask = (task: Promise<void>): void => {
+    backgroundTasks.push(task);
+  };
+  async function drainBackground(): Promise<void> {
+    const pending = backgroundTasks;
+    backgroundTasks = [];
+    await Promise.all(pending);
+  }
+
+  // The min-gain cooldown marker is module-level and keyed by sessionKey, which is
+  // shared ("quickstart"/"v1") across these tests — clear it so a skip in one test
+  // can never cool down a later one.
+  beforeEach(() => {
+    __resetCompactionCooldownForTests();
+    backgroundTasks = [];
+  });
+
+  // A low token budget makes the cross-turn trigger fire on modest history.
+  const TRIGGERING_BUDGET: QuickstartAgentOptions["budget"] = { maxContextTokens: 100 };
+
+  it("persists a generation-1 summary in the background and injects it next turn", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    const spy = spySummarizer();
+    const events: ReferenceAgentTraceEvent[] = [];
+    const provider = providerOf(toolStep(call("say", { text: "done" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+
+    await runAgent(agent, { kind: "message", text: "hello" });
+    await drainBackground();
+
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.calls[0]).toMatchObject({ kind: "history", generation: 1 });
+    expect(spy.calls[0]?.previous).toBeUndefined();
+    const stored = await summaryStore.get("quickstart", "v1");
+    expect(stored?.generation).toBe(1);
+    expect(stored?.coveredThrough).toBe(4);
+    // The persisted payload is the summary plus its conversation anchor.
+    expect(stored?.payload).toMatchObject(SMALL_SUMMARY);
+    expect((stored?.payload as { anchor?: unknown }).anchor).toBe("0:message");
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: "compaction_triggered", site: "cross_turn" }),
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_done",
+        site: "cross_turn",
+        generation: 1,
+        coveredThrough: 4,
+      }),
+    );
+
+    // Next turn assembles the injected summary block into the provider context.
+    const nextProvider = providerOf(toolStep(call("say", { text: "again" })), END);
+    const nextAgent = createQuickstartAgent({
+      provider: nextProvider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spySummarizer().summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(nextAgent, { kind: "message", text: "again" });
+    await drainBackground();
+
+    expect(providerTurnText(nextProvider.turns[0]!)).toContain("CONVERSATION SUMMARY");
+  });
+
+  it("rolls a generation-2 summary that extends generation-1 and rejects a regressive write", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    const spy = spySummarizer();
+    const provider1 = providerOf(toolStep(call("say", { text: "one" })), END);
+    const agent1 = createQuickstartAgent({
+      provider: provider1,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(agent1, { kind: "message", text: "one" });
+    await drainBackground();
+    expect((await summaryStore.get("quickstart", "v1"))?.generation).toBe(1);
+
+    await recordLongHistory(sink, 4, 8); // total 12 turns now
+
+    const provider2 = providerOf(toolStep(call("say", { text: "two" })), END);
+    const agent2 = createQuickstartAgent({
+      provider: provider2,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(agent2, { kind: "message", text: "two" });
+    await drainBackground();
+
+    expect(spy.calls).toHaveLength(2);
+    expect(spy.calls[1]).toMatchObject({ kind: "history", generation: 2 });
+    expect(spy.calls[1]?.previous).toEqual(SMALL_SUMMARY);
+    const stored = await summaryStore.get("quickstart", "v1");
+    expect(stored?.generation).toBe(2);
+    expect(stored?.coveredThrough).toBe(8);
+
+    // A regressive write loses to the monotonic coveredThrough guard.
+    const rejected = await summaryStore.put("quickstart", "v1", {
+      payload: SMALL_SUMMARY,
+      coveredThrough: 3,
+      generation: 9,
+    });
+    expect(rejected).toBe(false);
+    expect((await summaryStore.get("quickstart", "v1"))?.generation).toBe(2);
+  });
+
+  it("does not summarize when the projected context is below the trigger ratio", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 2);
+    const summaryStore = new MemorySummaryStore();
+    const spy = spySummarizer();
+    const provider = providerOf(toolStep(call("say", { text: "hi" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      onBackgroundTask, // DEFAULT budget → high trigger, small history stays under it
+    });
+    await runAgent(agent, { kind: "message", text: "hi" });
+    await drainBackground();
+
+    expect(spy.calls).toHaveLength(0);
+    expect(await summaryStore.get("quickstart", "v1")).toBeUndefined();
+  });
+
+  it("traces compaction_failed and writes nothing when the summarizer yields no summary", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    const spy = spySummarizer(undefined);
+    const events: ReferenceAgentTraceEvent[] = [];
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+    const out = await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    expect(saysOf(out)).toEqual(["ok"]); // the turn itself completed normally
+    expect(spy.calls).toHaveLength(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_failed",
+        site: "cross_turn",
+        reason: "summarizer_failed",
+      }),
+    );
+    expect(await summaryStore.get("quickstart", "v1")).toBeUndefined();
+  });
+
+  it("skips the write when the summary is not materially smaller (min-gain guard)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    const bigField = "y".repeat(400);
+    const bigSummary: ConversationSummary = {
+      version: 1,
+      visitor: bigField,
+      pageDecisions: bigField,
+      collectedData: bigField,
+      pending: bigField,
+      attempts: bigField,
+      omitted: bigField,
+    };
+    const spy = spySummarizer(bigSummary);
+    const events: ReferenceAgentTraceEvent[] = [];
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    expect(spy.calls).toHaveLength(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_failed",
+        site: "cross_turn",
+        reason: "min_gain",
+      }),
+    );
+    expect(await summaryStore.get("quickstart", "v1")).toBeUndefined();
+  });
+
+  it("never surfaces an unhandled rejection when the store write throws", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const events: ReferenceAgentTraceEvent[] = [];
+    const throwingStore: SummaryStore = {
+      get: () => Promise.resolve(undefined),
+      put: () => Promise.reject(new Error("db down")),
+      delete: () => Promise.resolve(),
+    };
+    const spy = spySummarizer();
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore: throwingStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await expect(drainBackground()).resolves.toBeUndefined();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_failed",
+        site: "cross_turn",
+        reason: "store_error",
+      }),
+    );
+  });
+
+  it("deletes a mismatched durable record and rebuilds at generation 1 (DC-015)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    // A durable record from a previous life of this pair: its marker outruns
+    // the (reset) sink, and its high coveredThrough would win the monotonic
+    // guard against any gen-1 rebuild unless it is deleted first.
+    await summaryStore.put("quickstart", "v1", {
+      payload: SMALL_SUMMARY,
+      coveredThrough: 50,
+      generation: 7,
+    });
+    const spy = spySummarizer();
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    const stored = await summaryStore.get("quickstart", "v1");
+    expect(stored?.generation).toBe(1);
+    expect(stored?.coveredThrough).toBeLessThanOrEqual(8);
+    // The foreign summary was not folded forward as `previous`.
+    expect(spy.calls[0]?.previous).toBeUndefined();
+  });
+
+  it("traces stale_write when the store rejects the put as regressive", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const events: ReferenceAgentTraceEvent[] = [];
+    const staleStore: SummaryStore = {
+      get: () => Promise.resolve(undefined),
+      put: () => Promise.resolve(false),
+      delete: () => Promise.resolve(),
+    };
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore: staleStore,
+      summarizerFactory: () => spySummarizer().summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_failed",
+        site: "cross_turn",
+        reason: "stale_write",
+      }),
+    );
+  });
+
+  it("constructs no summarizer when no summaryStore is configured", async () => {
+    const factory = vi.fn((): Summarizer => spySummarizer().summarizer);
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      summarizerFactory: factory,
+      onBackgroundTask,
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    expect(factory).not.toHaveBeenCalled();
+  });
+
+  it("chunks a long backlog across background runs, capping each summarizer input (Finding 1)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 16);
+    const summaryStore = new MemorySummaryStore();
+    const spy = spySummarizer();
+    // A tiny per-call cap forces the catch-up to fold only a few turns per run.
+    const CHUNK_BUDGET: QuickstartAgentOptions["budget"] = {
+      maxContextTokens: 100,
+      maxSummarizerInputChars: 1000,
+    };
+
+    const provider1 = providerOf(toolStep(call("say", { text: "one" })), END);
+    const agent1 = createQuickstartAgent({
+      provider: provider1,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: CHUNK_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(agent1, { kind: "message", text: "one" });
+    await drainBackground();
+
+    const first = await summaryStore.get("quickstart", "v1");
+    // fullEnd = 16 - minRecentTurnsVerbatim(4) = 12; the cap stops well short of it.
+    expect(first?.coveredThrough).toBeGreaterThan(0);
+    expect(first?.coveredThrough).toBeLessThan(12);
+    expect(spy.calls[0]!.content.length).toBeLessThanOrEqual(1000);
+
+    const provider2 = providerOf(toolStep(call("say", { text: "two" })), END);
+    const agent2 = createQuickstartAgent({
+      provider: provider2,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: CHUNK_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(agent2, { kind: "message", text: "two" });
+    await drainBackground();
+
+    const second = await summaryStore.get("quickstart", "v1");
+    // The second background run folds the remainder incrementally, advancing further.
+    expect(second!.coveredThrough).toBeGreaterThan(first!.coveredThrough);
+    expect(spy.calls[1]!.content.length).toBeLessThanOrEqual(1000);
+    // Gen-2 folds gen-1 forward (the vetted anchor still matches the same sink).
+    expect(spy.calls[1]?.previous).toEqual(SMALL_SUMMARY);
+  });
+
+  it("does not resurface a foreign-anchor summary behind a wiped sink; deletes and rebuilds (Finding 2)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    // A durable record from an OLD conversation: its coveredThrough (2) is <= the
+    // new history length (8), so the index check ALONE would pass — only the
+    // conversation anchor reveals it belongs to a different (wiped) sink.
+    await summaryStore.put("quickstart", "v1", {
+      payload: { ...SMALL_SUMMARY, anchor: "999:message" },
+      coveredThrough: 2,
+      generation: 5,
+    });
+    const spy = spySummarizer();
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    // The foreign summary was NOT folded forward as `previous`.
+    expect(spy.calls[0]?.previous).toBeUndefined();
+    const stored = await summaryStore.get("quickstart", "v1");
+    // Rebuilt fresh at generation 1 carrying the CURRENT conversation's anchor.
+    expect(stored?.generation).toBe(1);
+    expect((stored?.payload as { anchor?: unknown }).anchor).toBe("0:message");
+  });
+
+  it("traces sink_error when the background history read throws (Finding 3a)", async () => {
+    const events: ReferenceAgentTraceEvent[] = [];
+    const failingSink: Sink = {
+      record: () => Promise.resolve(),
+      history: () => Promise.reject(new Error("sink offline")),
+    };
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink: failingSink,
+      agentId: "quickstart",
+      summaryStore: new MemorySummaryStore(),
+      summarizerFactory: () => spySummarizer().summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await runAgent(agent, { kind: "message", text: "ok" });
+      await expect(drainBackground()).resolves.toBeUndefined();
+    } finally {
+      errorSpy.mockRestore();
+    }
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_failed",
+        site: "cross_turn",
+        reason: "sink_error",
+      }),
+    );
+  });
+
+  it("traces store_error when the background summary read throws (Finding 3b)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const events: ReferenceAgentTraceEvent[] = [];
+    const throwingStore: SummaryStore = {
+      get: () => Promise.reject(new Error("db read down")),
+      put: () => Promise.resolve(true),
+      delete: () => Promise.resolve(),
+    };
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore: throwingStore,
+      summarizerFactory: () => spySummarizer().summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await expect(drainBackground()).resolves.toBeUndefined();
+
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_failed",
+        site: "cross_turn",
+        reason: "store_error",
+      }),
+    );
+  });
+
+  it("traces store_error when deleting a mismatched record throws, turn unaffected (Finding 3c)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const events: ReferenceAgentTraceEvent[] = [];
+    // A mismatched record (marker beyond the sink) forces the blocking-delete path.
+    const mismatchedStore: SummaryStore = {
+      get: () => Promise.resolve({ payload: SMALL_SUMMARY, coveredThrough: 50, generation: 7 }),
+      put: () => Promise.resolve(true),
+      delete: () => Promise.reject(new Error("db delete down")),
+    };
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore: mismatchedStore,
+      summarizerFactory: () => spySummarizer().summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+    const out = await runAgent(agent, { kind: "message", text: "ok" });
+    await expect(drainBackground()).resolves.toBeUndefined();
+
+    expect(saysOf(out)).toEqual(["ok"]); // the turn itself is unaffected
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "compaction_failed",
+        site: "cross_turn",
+        reason: "store_error",
+      }),
+    );
+  });
+
+  it("does not re-summarize when a caught-up summary already covers the recent window (R3-1)", async () => {
+    // A stored summary that already folds everything except the verbatim tail: the
+    // NEXT turn injects the block + a tiny tail, so the projected context — not the
+    // full raw history — is what hysteresis must measure. Nothing new to fold in ⇒
+    // the background run must fire zero summarizer calls and no trigger trace.
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 12);
+    const history = await sink.history("quickstart", "v1");
+    const summaryStore = new MemorySummaryStore();
+    await summaryStore.put("quickstart", "v1", {
+      payload: { ...SMALL_SUMMARY, anchor: "0:message" }, // matches recordLongHistory's first entry
+      coveredThrough: history.length - 4, // minRecentTurnsVerbatim = 4 ⇒ fully caught up
+      generation: 3,
+    });
+    const spy = spySummarizer();
+    const events: ReferenceAgentTraceEvent[] = [];
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      trace: (event) => {
+        events.push(event);
+      },
+    });
+
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    expect(spy.calls).toHaveLength(0);
+    expect(events).not.toContainEqual(
+      expect.objectContaining({ type: "compaction_triggered", site: "cross_turn" }),
+    );
+    // The caught-up record is untouched (still generation 3).
+    expect((await summaryStore.get("quickstart", "v1"))?.generation).toBe(3);
+  });
+
+  it("does not loop the summarizer after a min-gain skip until the cooldown elapses (R3-2)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    // A summary too big to be a material gain over the turns it replaces ⇒ min-gain skip.
+    const bigField = "y".repeat(400);
+    const bigSummary: ConversationSummary = {
+      version: 1,
+      visitor: bigField,
+      pageDecisions: bigField,
+      collectedData: bigField,
+      pending: bigField,
+      attempts: bigField,
+      omitted: bigField,
+    };
+    const spy = spySummarizer(bigSummary);
+
+    // Turn 1: the summarizer runs and the write is skipped (min_gain), arming the cooldown.
+    const runTurn = async (): Promise<void> => {
+      const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+      const agent = createQuickstartAgent({
+        provider,
+        sink,
+        agentId: "quickstart",
+        summaryStore,
+        summarizerFactory: () => spy.summarizer,
+        budget: TRIGGERING_BUDGET,
+        onBackgroundTask,
+      });
+      await runAgent(agent, { kind: "message", text: "ok" });
+      await drainBackground();
+    };
+
+    await runTurn();
+    expect(spy.calls).toHaveLength(1);
+    expect(await summaryStore.get("quickstart", "v1")).toBeUndefined();
+
+    // Turn 2, no new history (still 8 turns): within compactionCooldownSteps ⇒ ZERO new calls.
+    await runTurn();
+    expect(spy.calls).toHaveLength(1);
+
+    // After compactionCooldownSteps (4) more turns accumulate, the attempt resumes.
+    await recordLongHistory(sink, 4, 8); // 8 → 12 turns
+    await runTurn();
+    expect(spy.calls).toHaveLength(2);
+  });
+
+  it("renders the backlog lazily and never past the summarizer-input cap (R3-3)", async () => {
+    const sink = new MemorySink();
+    // Distinct per-entry markers so we can pin exactly which entries were rendered.
+    const filler = "x".repeat(200);
+    for (let i = 0; i < 8; i += 1) {
+      await sink.record("quickstart", "v1", {
+        at: i,
+        event: { kind: "message", text: `TURN_${String(i)} ${filler}` },
+        messages: [{ kind: "say", text: `REPLY_${String(i)} ${filler}` }],
+      });
+    }
+    const summaryStore = new MemorySummaryStore();
+    const spy = spySummarizer();
+    // Each rendered entry is ~450 chars, so a 1000-char cap admits exactly two.
+    const CAP_BUDGET: QuickstartAgentOptions["budget"] = {
+      maxContextTokens: 100,
+      maxSummarizerInputChars: 1000,
+    };
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: CAP_BUDGET,
+      onBackgroundTask,
+    });
+
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    const content = spy.calls[0]!.content;
+    expect(content.length).toBeLessThanOrEqual(1000);
+    // The first two entries are rendered; the third (which would blow the cap) is NOT.
+    expect(content).toContain("TURN_0");
+    expect(content).toContain("TURN_1");
+    expect(content).not.toContain("TURN_2");
+    expect((await summaryStore.get("quickstart", "v1"))?.coveredThrough).toBe(2);
+  });
+
+  it("bounds a single oversized history entry to the summarizer-input cap (R4)", async () => {
+    const sink = new MemorySink();
+    // FIRST entry alone dwarfs the cap — it must be truncated, not sent whole,
+    // or the background call would fail identically on every future turn.
+    await sink.record("quickstart", "v1", {
+      at: 0,
+      event: { kind: "message", text: `HUGE_${"z".repeat(20_000)}` },
+      messages: [{ kind: "say", text: "ok" }],
+    });
+    for (let i = 1; i < 6; i += 1) {
+      await sink.record("quickstart", "v1", {
+        at: i,
+        event: { kind: "message", text: `TURN_${String(i)}` },
+        messages: [{ kind: "say", text: `REPLY_${String(i)}` }],
+      });
+    }
+    const summaryStore = new MemorySummaryStore();
+    const spy = spySummarizer();
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: { maxContextTokens: 100, maxSummarizerInputChars: 1000 },
+      onBackgroundTask,
+    });
+
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    const content = spy.calls[0]!.content;
+    expect(content.length).toBeLessThanOrEqual(1000);
+    expect(content).toContain("HUGE_");
+    expect(content).toContain("[truncated:");
+    // Progress is still guaranteed: the oversized entry is covered.
+    expect((await summaryStore.get("quickstart", "v1"))?.coveredThrough).toBeGreaterThanOrEqual(1);
+  });
+
+  it("projects the next turn with the budget's stage bounds, not the 48K default (R5)", async () => {
+    // A ~3000-char stage JSON with maxStageJsonChars: 100 renders as a SUMMARY in
+    // the real assembly. The projection must measure the same rendering: at
+    // maxContextTokens 6800 (trigger 5100) the summary-mode projection (~4.75K
+    // tokens) stays under, while the full-JSON projection (~5.5K) fires.
+    const bigStage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box" as const, children: ["t"] },
+        t: { id: "t", type: "text" as const, value: "s".repeat(3000) },
+      },
+    };
+    const bigSession: FacetSession = {
+      agentId: "quickstart",
+      visitor: { visitorId: "v1" },
+      stage: bigStage,
+    };
+    const seed = async (): Promise<MemorySink> => {
+      const sink = new MemorySink();
+      await recordLongHistory(sink, 5);
+      return sink;
+    };
+    const runWith = async (maxStageJsonChars: number): Promise<number> => {
+      const spy = spySummarizer();
+      const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+      const agent = createQuickstartAgent({
+        provider,
+        sink: await seed(),
+        agentId: "quickstart",
+        summaryStore: new MemorySummaryStore(),
+        summarizerFactory: () => spy.summarizer,
+        budget: { maxContextTokens: 6800, maxStageJsonChars },
+        onBackgroundTask,
+      });
+      await runAgent(agent, { kind: "message", text: "ok" }, bigSession);
+      await drainBackground();
+      return spy.calls.length;
+    };
+
+    // Real assembly renders the stage as a summary -> projection must not trigger.
+    expect(await runWith(100)).toBe(0);
+    // Full-JSON bounds -> projection counts the real 3K stage block and triggers.
+    expect(await runWith(48_000)).toBeGreaterThan(0);
+  });
+
+  it("clears the min-gain cooldown when the sink shrinks (wiped conversation) (R5)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 12);
+    const summaryStore = new MemorySummaryStore();
+    // Summarizer returns a HUGE summary so the min-gain check always skips.
+    const bigSummary: ConversationSummary = {
+      version: 1,
+      visitor: "v".repeat(1900),
+      pageDecisions: "d".repeat(1900),
+      collectedData: "c".repeat(1900),
+      pending: "p".repeat(1900),
+      attempts: "a".repeat(1900),
+      omitted: "o".repeat(1900),
+    };
+    const skipSpy = spySummarizer(bigSummary);
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => skipSpy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+    expect(skipSpy.calls.length).toBe(1); // attempted, then min-gain skipped
+    expect(await summaryStore.get("quickstart", "v1")).toBeUndefined();
+
+    // The sink is wiped and a NEW shorter conversation begins: the stale marker
+    // (recorded at length 12) must not freeze compaction for the new one.
+    const freshSink = new MemorySink();
+    await recordLongHistory(freshSink, 8);
+    const spy = spySummarizer();
+    const freshProvider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const freshAgent = createQuickstartAgent({
+      provider: freshProvider,
+      sink: freshSink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+    await runAgent(freshAgent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    expect(spy.calls.length).toBe(1);
+    expect((await summaryStore.get("quickstart", "v1"))?.generation).toBe(1);
+  });
+
+  it("cleans up a stale stored record even inside the min-gain cooldown window (R6 ordering)", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 12);
+    // Summarizer output too large to clear the min-gain threshold: turn 1 arms
+    // the cooldown marker without writing anything.
+    const bigSummary: ConversationSummary = {
+      version: 1,
+      visitor: "v".repeat(1900),
+      pageDecisions: "d".repeat(1900),
+      collectedData: "c".repeat(1900),
+      pending: "p".repeat(1900),
+      attempts: "a".repeat(1900),
+      omitted: "o".repeat(1900),
+    };
+    let reads = 0;
+    const deleteSpy = vi.fn(() => Promise.resolve());
+    // Each turn reads the store twice (context assembly + background run):
+    // turn 1 (reads 1-2) sees no record; turn 2 sees a stale one (marker
+    // beyond the sink).
+    const staleAfterFirst: SummaryStore = {
+      get: () => {
+        reads += 1;
+        return Promise.resolve(
+          reads <= 2 ? undefined : { payload: SMALL_SUMMARY, coveredThrough: 999, generation: 7 },
+        );
+      },
+      put: () => Promise.resolve(true),
+      delete: deleteSpy,
+    };
+    const skipSpy = spySummarizer(bigSummary);
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink,
+      agentId: "quickstart",
+      summaryStore: staleAfterFirst,
+      summarizerFactory: () => skipSpy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+
+    await runAgent(agent, { kind: "message", text: "one" });
+    await drainBackground();
+    expect(skipSpy.calls.length).toBe(1); // min-gain skip armed the cooldown
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    await runAgent(agent, { kind: "message", text: "two" });
+    await drainBackground();
+    // Inside the cooldown the summarizer must NOT run again…
+    expect(skipSpy.calls.length).toBe(1);
+    // …but the blocking stale record must STILL be repaired: the vet/delete
+    // block runs BEFORE the cooldown early-return (reverting that order makes
+    // this assertion fail).
+    expect(deleteSpy).toHaveBeenCalledWith("quickstart", "v1");
+  });
+
+  it("makes zero summarizer calls and no store writes on an empty-history sink (R3-4)", async () => {
+    // A ForwardSink-style sink that stores nothing: history() is always empty, so
+    // there is no anchor to key a summary on and nothing to compact.
+    const forwardSink: Sink = {
+      record: () => Promise.resolve(),
+      history: () => Promise.resolve([]),
+    };
+    const summaryStore = new MemorySummaryStore();
+    const putSpy = vi.spyOn(summaryStore, "put");
+    const spy = spySummarizer();
+    const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
+    const agent = createQuickstartAgent({
+      provider,
+      sink: forwardSink,
+      agentId: "quickstart",
+      summaryStore,
+      summarizerFactory: () => spy.summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+    });
+
+    await runAgent(agent, { kind: "message", text: "ok" });
+    await drainBackground();
+
+    expect(spy.calls).toHaveLength(0);
+    expect(putSpy).not.toHaveBeenCalled();
+    expect(await summaryStore.get("quickstart", "v1")).toBeUndefined();
   });
 });
 

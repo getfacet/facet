@@ -21,6 +21,7 @@ export type {
   ProviderOptions,
   ProviderStep,
   ProviderTurn,
+  ProviderUsage,
   QuickstartProvider,
   ToolCall,
   ToolSpec,

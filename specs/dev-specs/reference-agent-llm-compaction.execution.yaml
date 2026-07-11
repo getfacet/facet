@@ -1,0 +1,473 @@
+# Execution Manifest: Reference-Agent LLM Context Compaction (compaction v2)
+#
+# Keep synchronized with specs/dev-specs/reference-agent-llm-compaction.md
+# (WU ids, files, deps, checks). Final gate source of truth: AGENTS.md +
+# docs/REVIEW-RULES.md.
+
+feature_slug: "reference-agent-llm-compaction"
+spec_path: "specs/dev-specs/reference-agent-llm-compaction.md"
+context_evidence_path: "specs/context/reference-agent-llm-compaction.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands in the prepared worktree"
+  - concern: "runtime"
+    requirement: "pnpm install done; playground buildable"
+    owner: "main-agent"
+    verification: "pnpm --filter @facet/playground build"
+  - concern: "dependency-boundary"
+    requirement: "@facet/runtime must not gain any agent-stack dependency; SummaryStore payload stays opaque"
+    owner: "main-agent"
+    verification: "packages/core/runtime/package.json review + pnpm --filter @facet/runtime typecheck"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "Runtime SummaryStore interface + MemorySummaryStore (browser-safe)"
+    owner_role: "subagent"
+    packages: ["@facet/runtime"]
+    objective: "Add the brain-agnostic opaque-payload SummaryStore interface and in-memory reference with a monotonic coveredThrough guard, exported from the browser-safe barrel."
+    files:
+      - path: "packages/core/runtime/src/summary-store.ts"
+        change_type: "add"
+        purpose: "SummaryStore interface (keyed get/put via sessionKey, opaque { payload; coveredThrough; generation }) + MemorySummaryStore with monotonic reject-regressive put"
+      - path: "packages/core/runtime/src/summary-store.test.ts"
+        change_type: "add"
+        purpose: "Store contract: keyed get/put, opaque round-trip, monotonic reject, corrupt/absent -> undefined"
+      - path: "packages/core/runtime/src/index.ts"
+        change_type: "update"
+        purpose: "Barrel export (no node:* import)"
+    depends_on: []
+    parallel_group: "par-foundation"
+    red_check:
+      command: "pnpm exec vitest run packages/core/runtime/src/summary-store.test.ts"
+      target: "packages/core/runtime/src/summary-store.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/runtime/src/summary-store.test.ts"
+      - "pnpm --filter @facet/runtime typecheck"
+      - 'node -e "require(''node:fs'').readFileSync(''packages/core/runtime/src/summary-store.ts'',''utf8'').includes(''node:'') && process.exit(1)"'
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/runtime/src/sink.test.ts packages/core/runtime/src/stage-store.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/runtime/src/summary-store.test.ts"
+        covers_dc: ["DC-009", "DC-012"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "Payload is opaque; no reference-agent/LLM type imported into runtime"
+      - "Regressive put (lower/equal coveredThrough) rejected/ignored"
+      - "Barrel exports the new symbols; main entry stays node:*-free"
+      - "No regression: runtime sink/stage-store suites"
+    handoff_format: &handoff
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Runtime FileSummaryStore (node barrel)"
+    owner_role: "subagent"
+    packages: ["@facet/runtime"]
+    objective: "Add the file-backed reference store using node:fs, exported only from the node-only barrel, round-tripping the opaque payload and skipping corrupt files."
+    files:
+      - path: "packages/core/runtime/src/file-summary-store.ts"
+        change_type: "add"
+        purpose: "FileSummaryStore (JSON per key, node:fs, shape guard, corrupt read -> undefined, monotonic coveredThrough) mirroring FileSink"
+      - path: "packages/core/runtime/src/file-summary-store.test.ts"
+        change_type: "add"
+        purpose: "Identical store contract over a temp dir"
+      - path: "packages/core/runtime/src/node.ts"
+        change_type: "update"
+        purpose: "Node barrel export"
+    depends_on: ["WU-1"]
+    parallel_group: "par-stores"
+    red_check:
+      command: "pnpm exec vitest run packages/core/runtime/src/file-summary-store.test.ts"
+      target: "packages/core/runtime/src/file-summary-store.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/runtime/src/file-summary-store.test.ts"
+      - "pnpm --filter @facet/runtime typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/runtime/src/sink.test.ts packages/core/runtime/src/session-file.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/runtime/src/file-summary-store.test.ts"
+        covers_dc: ["DC-012"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "Contract assertions identical to WU-1 (keyed, opaque round-trip, monotonic, corrupt -> undefined)"
+      - "Exported only from node.ts; main barrel unchanged"
+      - "No regression: file-sink/session-file suites"
+    handoff_format: *handoff
+
+  - id: "WU-3"
+    title: "PostgresSummaryStore"
+    owner_role: "subagent"
+    packages: ["@facet/store-postgres"]
+    objective: "Add the durable PostgresSummaryStore alongside the existing stores, with a facet_summary table, monotonic coveredThrough, and corrupt-payload read -> undefined."
+    files:
+      - path: "packages/extensions/store-postgres/src/postgres-summary-store.ts"
+        change_type: "add"
+        purpose: "PostgresSummaryStore(pool), initSchema DDL, opaque payload round-trip, monotonic upsert, corrupt-row parse -> undefined"
+      - path: "packages/extensions/store-postgres/src/postgres-summary-store.test.ts"
+        change_type: "add"
+        purpose: "Pure corrupt-payload parse test (no DB) + env-gated live round-trip (same gating as existing postgres tests)"
+      - path: "packages/extensions/store-postgres/src/index.ts"
+        change_type: "update"
+        purpose: "Barrel export"
+    depends_on: ["WU-1"]
+    parallel_group: "par-stores"
+    red_check:
+      command: 'pnpm exec vitest run packages/extensions/store-postgres/src/postgres-summary-store.test.ts -t "corrupt"'
+      target: "packages/extensions/store-postgres/src/postgres-summary-store.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/extensions/store-postgres/src/postgres-summary-store.test.ts"
+      - "pnpm --filter @facet/store-postgres typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/extensions/store-postgres/src/postgres-store.test.ts packages/extensions/store-postgres/src/postgres-assets.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/extensions/store-postgres/src/postgres-summary-store.test.ts"
+        covers_dc: ["DC-012"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported (corrupt-parse case)"
+      - "Payload stored/read verbatim; no interpretation of summary shape"
+      - "Monotonic coveredThrough enforced; corrupt row -> undefined"
+      - "Barrel exports the store"
+      - "No regression: existing postgres store/assets suites"
+    handoff_format: *handoff
+
+  - id: "WU-4"
+    title: "Provider token accounting + Anthropic cache_control"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Surface provider-reported usage as optional ProviderStep.usage, add optional QuickstartProvider.contextWindowTokens, and add cache_control on the Anthropic stable prefix without changing the OpenAI body."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/provider/types.ts"
+        change_type: "update"
+        purpose: "Add readonly usage? to ProviderStep; add readonly contextWindowTokens? to QuickstartProvider"
+      - path: "packages/agent-stack/reference-agent/src/provider/anthropic.ts"
+        change_type: "update"
+        purpose: "Parse usage.input_tokens/output_tokens in parseAnthropicStep; add cache_control breakpoints on system + tools prefix"
+      - path: "packages/agent-stack/reference-agent/src/provider/openai.ts"
+        change_type: "update"
+        purpose: "Parse body.usage in parseOpenAiStep; body otherwise unchanged"
+      - path: "packages/agent-stack/reference-agent/src/provider.test.ts"
+        change_type: "update"
+        purpose: "Usage-parsing fixtures for both adapters + Anthropic cache_control request-body snapshot + OpenAI body unchanged"
+    depends_on: []
+    parallel_group: "par-foundation"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/provider.test.ts -t "usage"'
+      target: "packages/agent-stack/reference-agent/src/provider.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/provider.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/provider.test.ts"
+        covers_dc: ["DC-008", "DC-013"]
+        action: "update"
+      - type: "e2e"
+        target: "packages/agent-stack/quickstart/e2e/smoke.test.ts (/live-test Tier 2)"
+        covers_dc: ["DC-016"]
+        action: "existing"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "usage/contextWindowTokens OPTIONAL; existing/custom providers still typecheck"
+      - "Both adapters parse usage; missing usage yields undefined (not throw)"
+      - "Anthropic body carries cache_control on the stable prefix only; snapshot valid; OpenAI body byte-unchanged"
+      - "No regression: loop suite"
+    handoff_format: *handoff
+
+  - id: "WU-5"
+    title: "Token budget model + calibrated estimator"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Extend ReferenceAgentBudget additively with the token-based budget model + policy constants (char fields become legacy aliases) and add a calibrated chars-per-token estimator over system + messages + tool schemas."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/budget.ts"
+        change_type: "update"
+        purpose: "Add token fields + trigger/target/cooldown/verbatim/maxSummaryTokens/timeout/retry/window constants; populate all three preset literals; extend MIN/BUDGET_FIELDS/budgetCandidates/normalizeBudget; keep char fields as aliases; 100k default window"
+      - path: "packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+        change_type: "update"
+        purpose: "Preset satisfies coverage, alias back-compat, override normalization"
+      - path: "packages/agent-stack/reference-agent/src/harness/estimate.ts"
+        change_type: "add"
+        purpose: "Estimator (system + messages + tool schemas) + calibrated chars/token clamped 1.5-6 converging toward reported usage"
+      - path: "packages/agent-stack/reference-agent/src/harness/estimate.test.ts"
+        change_type: "add"
+        purpose: "Estimate accuracy + calibration convergence + estimate-only fallback when usage absent"
+    depends_on: ["WU-4"]
+    parallel_group: "par-agent-core"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/estimate.test.ts"
+      target: "packages/agent-stack/reference-agent/src/harness/estimate.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/estimate.test.ts packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/context.test.ts packages/agent-stack/reference-agent/src/harness/compaction.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/estimate.test.ts"
+        covers_dc: ["DC-008"]
+        action: "new"
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/budget.test.ts"
+        covers_dc: ["DC-008"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "No char field removed/renamed; all three presets typecheck under satisfies"
+      - "Estimator counts system + messages + tool schemas; calibration clamped 1.5-6 and converges toward reported usage"
+      - "Missing contextWindowTokens -> 100k default; missing usage -> estimate-only"
+      - "No regression: context/compaction suites"
+    handoff_format: *handoff
+
+  - id: "WU-6"
+    title: "Summary schema + validateSummary + redaction + summarizer call"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Own the summary JSON schema and validation in the reference-agent, redact summarizer output/payload, and provide the injectable forced-tool-call summarizer that builds/extends rolling generations with a self-cap."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/summary.ts"
+        change_type: "add"
+        purpose: "Summary schema, validateSummary (corrupt -> undefined), user-role summary-block message builder, redaction over output + persisted payload, forced-tool-call summarizer over turns/step-groups with maxSummaryTokens deterministic cap + retry-once"
+      - path: "packages/agent-stack/reference-agent/src/harness/summary.test.ts"
+        change_type: "add"
+        purpose: "Schema validation, redaction both directions, retry/fallback, generation build/extend, self-cap"
+      - path: "packages/agent-stack/reference-agent/src/prompt/messages.ts"
+        change_type: "update"
+        purpose: "Export a reusable redactor (SENSITIVE_FIELD_* / redactSensitive) for summary reuse; no behavior change to existing input redaction"
+    depends_on: ["WU-1", "WU-4"]
+    parallel_group: "par-agent-core"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/summary.test.ts"
+      target: "packages/agent-stack/reference-agent/src/harness/summary.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/summary.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/context.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/summary.test.ts"
+        covers_dc: ["DC-005"]
+        action: "new"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "Schema + validation live only in reference-agent; runtime stays opaque"
+      - "sk-.../Bearer .../password fields redacted in output AND persisted payload"
+      - "Summarizer forced-tool-call; retry-once then signal fallback; self-capped to maxSummaryTokens"
+      - "Existing input-redaction behavior in messages.ts unchanged"
+      - "No regression: context suite"
+    handoff_format: *handoff
+
+  - id: "WU-7"
+    title: "Cross-turn assembly - summary injection + stale/mismatch safety"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Load the persisted summary in assembleProviderContext, inject it once as a user-role block at the head of layer three, replay only post-coveredThrough turns, and keep deterministic compaction as the final guard with byte-stable system."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/context.ts"
+        change_type: "update"
+        purpose: "Load via SummaryStore; discard when coveredThrough > sink length (DC-015); inject validated summary once as user-role block at head of history (renderHistoryMessages); make slice coveredThrough-relative (DC-014); keep compactHistoryMessages as final guard; system byte-identical (DC-006)"
+      - path: "packages/agent-stack/reference-agent/src/harness/context.test.ts"
+        change_type: "update"
+        purpose: "Injection placement/count, system byte-identical, stale top-up, marker mismatch discard, deterministic fallback, store READ failure -> assemble without summary + trace"
+    depends_on: ["WU-1", "WU-5", "WU-6"]
+    parallel_group: "serial-agent"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/context.test.ts -t "summary"'
+      target: "packages/agent-stack/reference-agent/src/harness/context.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/context.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/compaction.test.ts packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+    test_plan:
+      - type: "integration"
+        target: "packages/agent-stack/reference-agent/src/harness/context.test.ts"
+        covers_dc: ["DC-001", "DC-003", "DC-006", "DC-014", "DC-015"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "System prompt byte-identical with/without summary; summary appears exactly once as a user-role block at head of layer three"
+      - "Slice is coveredThrough-relative; lagging summary tops up post-marker turns verbatim"
+      - "coveredThrough > sink length discards summary -> deterministic assembly"
+      - "SummaryStore read failure -> assemble without summary (deterministic) + trace"
+      - "compactHistoryMessages remains the final size guard"
+      - "No regression: compaction/loop suites"
+    handoff_format: *handoff
+
+  - id: "WU-8"
+    title: "In-turn tool-transcript compaction + loop hook + fallback"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Replace the mid-turn context_limit hard-stop with in-turn compaction of the oldest whole step groups (pair-safe), refresh CURRENT STAGE from buffer.shadow, and fall back to deterministic step-group truncation then the context_limit last resort."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/harness/loop.ts"
+        change_type: "update"
+        purpose: "At the :175-180 boundary compact oldest whole assistant_tools+tool_result groups (keep last minRecentStepsVerbatim), refresh CURRENT STAGE from buffer.shadow, continue; deterministic step-group truncation fallback; context_limit last resort retained"
+      - path: "packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+        change_type: "update"
+        purpose: "Scripted long tool loop crosses trigger mid-turn -> summary msg + verbatim tail + fresh stage, finishes provider_stop; summarizer-failure fallback path"
+      - path: "packages/agent-stack/reference-agent/src/harness/compaction.ts"
+        change_type: "update"
+        purpose: "Expose reusable whole-pair step-group boundary helper (built on groupTurns) for in-turn use"
+      - path: "packages/agent-stack/reference-agent/src/harness/compaction.test.ts"
+        change_type: "update"
+        purpose: "Boundary sweep over positions maps to valid Anthropic + OpenAI wire shapes (no orphan tool_use/tool_result)"
+    depends_on: ["WU-5", "WU-6", "WU-7"]
+    parallel_group: "serial-agent"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/loop.test.ts -t "in-turn compaction"'
+      target: "packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/loop.test.ts packages/agent-stack/reference-agent/src/harness/compaction.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/context.test.ts packages/agent-stack/reference-agent/src/harness/transcript.test.ts"
+    test_plan:
+      - type: "integration"
+        target: "packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+        covers_dc: ["DC-002", "DC-003"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/harness/compaction.test.ts"
+        covers_dc: ["DC-004"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "Oldest whole step groups replaced by one summary msg; last N verbatim; never a split pair"
+      - "CURRENT STAGE refreshed from buffer.shadow via the same deterministic formatter"
+      - "Crossing turn finishes provider_stop; summarizer failure falls back deterministically; context_limit remains last resort"
+      - "Boundary sweep yields valid Anthropic + OpenAI wire shapes"
+      - "No regression: context/transcript suites"
+    handoff_format: *handoff
+
+  - id: "WU-9"
+    title: "Agent wiring - background lane, options, trace events, barrel"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Wire summaryStore + injectable summarizer factory + compaction options into createQuickstartAgent, spawn the background post-turn compaction on a reference-agent-owned per-(agentId,visitorId) serial lane with hysteresis/cooldown/min-gain, add the trace events coherently, and export the new public types."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/agent.ts"
+        change_type: "update"
+        purpose: "QuickstartAgentOptions gains summaryStore + summarizer factory + compaction options; wire into runReferenceAgentLoop; fire-and-forget background compaction after yield* on a createSerialQueue lane keyed by sessionKey; hysteresis/cooldown/min-gain guard; coveredThrough clamped to history length"
+      - path: "packages/agent-stack/reference-agent/src/agent.test.ts"
+        change_type: "update"
+        purpose: "End-to-end gen-1 persist + next-turn assembly; rolling gen-2 replaces gen-1 + stale write rejected; cooldown/min-gain no re-trigger; compaction_failed fallback trace"
+      - path: "packages/agent-stack/reference-agent/src/harness/trace.ts"
+        change_type: "update"
+        purpose: "Add compaction_triggered/done/failed + token-usage events to the const array, union, and no-default sanitize switch"
+      - path: "packages/agent-stack/reference-agent/src/harness/trace.test.ts"
+        change_type: "update"
+        purpose: "New events sanitize round-trip; token-usage event fields bounded"
+      - path: "packages/agent-stack/reference-agent/src/index.ts"
+        change_type: "update"
+        purpose: "Barrel export the new public types (options, summarizer factory type, trace events)"
+    depends_on: ["WU-1", "WU-6", "WU-7", "WU-8"]
+    parallel_group: "serial-agent"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/reference-agent/src/agent.test.ts -t "compaction"'
+      target: "packages/agent-stack/reference-agent/src/agent.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/agent.test.ts packages/agent-stack/reference-agent/src/harness/trace.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/index.test.ts packages/agent-stack/reference-agent/src/harness/loop.test.ts packages/agent-stack/reference-agent/src/harness/context.test.ts"
+    test_plan:
+      - type: "integration"
+        target: "packages/agent-stack/reference-agent/src/agent.test.ts"
+        covers_dc: ["DC-001", "DC-003", "DC-009", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "Background compaction runs on a per-(agentId,visitorId) serial lane; overlapping turns cannot clobber a newer generation"
+      - "gen-2 extends gen-1; regressive write rejected; cooldown/min-gain prevents re-trigger loops"
+      - "Summarizer failure -> compaction_failed trace, deterministic fallback, turn completes"
+      - "SummaryStore write failure -> dropped + traced; never blocks or fails the turn; detached promise never surfaces an unhandled rejection"
+      - "Trace events added to all three coupled sites; barrel exports new public types"
+      - "No regression: index/loop/context suites"
+    handoff_format: *handoff
+
+  - id: "WU-10"
+    title: "Quickstart default wiring + stub determinism guard"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Wire MemorySummaryStore by default (compaction ON), thread it through the server boot, re-export compaction options, and assert the stub path constructs/calls no summarizer."
+    files:
+      - path: "packages/agent-stack/quickstart/src/cli.ts"
+        change_type: "update"
+        purpose: "Construct new MemorySummaryStore(), pass into createQuickstartAgent + startQuickstart"
+      - path: "packages/agent-stack/quickstart/src/server.ts"
+        change_type: "update"
+        purpose: "Thread the summary store through bootInternalServer/createFacetServer"
+      - path: "packages/agent-stack/quickstart/src/agent.ts"
+        change_type: "update"
+        purpose: "Re-export reference-agent compaction options/types"
+      - path: "packages/agent-stack/quickstart/src/agent.test.ts"
+        change_type: "update"
+        purpose: "Default MemorySummaryStore wired; stub path constructs/calls no summarizer (spy); no-op with NullSink/ForwardSink"
+    depends_on: ["WU-9"]
+    parallel_group: "serial-agent"
+    red_check:
+      command: 'pnpm exec vitest run packages/agent-stack/quickstart/src/agent.test.ts -t "summary store"'
+      target: "packages/agent-stack/quickstart/src/agent.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/agent.test.ts packages/agent-stack/quickstart/src/cli.test.ts"
+      - "pnpm --filter @facet/quickstart typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts"
+    test_plan:
+      - type: "integration"
+        target: "packages/agent-stack/quickstart/src/agent.test.ts"
+        covers_dc: ["DC-007", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported"
+      - "MemorySummaryStore wired by default; threaded through server boot"
+      - "Stub path constructs/calls no summarizer (spy asserts zero calls); Tier-1 stays deterministic"
+      - "NullSink/ForwardSink/no store -> cross-turn path is a no-op"
+      - "No regression: quickstart e2e (deterministic stub) suite"
+    handoff_format: *handoff

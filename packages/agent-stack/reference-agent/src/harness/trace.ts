@@ -10,11 +10,21 @@ export const REFERENCE_AGENT_TRACE_EVENT_TYPES = [
   "batch_yield",
   "stop",
   "turn_error",
+  "compaction_triggered",
+  "compaction_done",
+  "compaction_failed",
 ] as const;
 
 export type ReferenceAgentTraceEventType = (typeof REFERENCE_AGENT_TRACE_EVENT_TYPES)[number];
 
 export type ReferenceAgentTraceStageMode = "json" | "summary";
+
+/** Which compaction surface emitted the event: the cross-turn background lane or in-turn folding. */
+export type ReferenceAgentCompactionSite = "cross_turn" | "in_turn";
+
+/** Why a compaction attempt did not persist a new summary. */
+export type ReferenceAgentCompactionFailReason =
+  "summarizer_failed" | "store_error" | "sink_error" | "min_gain" | "stale_write";
 
 export interface ReferenceAgentTurnStartTraceEvent {
   readonly type: "turn_start";
@@ -94,6 +104,28 @@ export interface ReferenceAgentTurnErrorTraceEvent {
   readonly httpStatus?: number;
 }
 
+export interface ReferenceAgentCompactionTriggeredTraceEvent {
+  readonly type: "compaction_triggered";
+  readonly site: ReferenceAgentCompactionSite;
+  readonly estimatedTokens: number;
+  readonly budgetTokens: number;
+}
+
+export interface ReferenceAgentCompactionDoneTraceEvent {
+  readonly type: "compaction_done";
+  readonly site: ReferenceAgentCompactionSite;
+  readonly generation: number;
+  readonly coveredThrough: number;
+  readonly beforeTokens: number;
+  readonly afterTokens: number;
+}
+
+export interface ReferenceAgentCompactionFailedTraceEvent {
+  readonly type: "compaction_failed";
+  readonly site: ReferenceAgentCompactionSite;
+  readonly reason: ReferenceAgentCompactionFailReason;
+}
+
 export type ReferenceAgentTraceEvent =
   | ReferenceAgentTurnStartTraceEvent
   | ReferenceAgentContextCompactedTraceEvent
@@ -103,7 +135,10 @@ export type ReferenceAgentTraceEvent =
   | ReferenceAgentToolResultTraceEvent
   | ReferenceAgentBatchYieldTraceEvent
   | ReferenceAgentStopTraceEvent
-  | ReferenceAgentTurnErrorTraceEvent;
+  | ReferenceAgentTurnErrorTraceEvent
+  | ReferenceAgentCompactionTriggeredTraceEvent
+  | ReferenceAgentCompactionDoneTraceEvent
+  | ReferenceAgentCompactionFailedTraceEvent;
 
 export type ReferenceAgentTrace = (event: ReferenceAgentTraceEvent) => void | Promise<void>;
 
@@ -241,7 +276,47 @@ function sanitizeKnownReferenceAgentTraceEvent(
         retryable: event.retryable,
         ...optionalTraceInteger("httpStatus", event.httpStatus),
       };
+    case "compaction_triggered":
+      return {
+        type: "compaction_triggered",
+        site: boundCompactionSite(event.site),
+        estimatedTokens: safeTraceInteger(event.estimatedTokens),
+        budgetTokens: safeTraceInteger(event.budgetTokens),
+      };
+    case "compaction_done":
+      return {
+        type: "compaction_done",
+        site: boundCompactionSite(event.site),
+        generation: safeTraceInteger(event.generation),
+        coveredThrough: safeTraceInteger(event.coveredThrough),
+        beforeTokens: safeTraceInteger(event.beforeTokens),
+        afterTokens: safeTraceInteger(event.afterTokens),
+      };
+    case "compaction_failed":
+      return {
+        type: "compaction_failed",
+        site: boundCompactionSite(event.site),
+        reason: boundCompactionFailReason(event.reason),
+      };
   }
+}
+
+function boundCompactionSite(site: ReferenceAgentCompactionSite): ReferenceAgentCompactionSite {
+  return site === "in_turn" ? "in_turn" : "cross_turn";
+}
+
+const COMPACTION_FAIL_REASONS: ReadonlySet<ReferenceAgentCompactionFailReason> = new Set([
+  "summarizer_failed",
+  "store_error",
+  "sink_error",
+  "min_gain",
+  "stale_write",
+]);
+
+function boundCompactionFailReason(
+  reason: ReferenceAgentCompactionFailReason,
+): ReferenceAgentCompactionFailReason {
+  return COMPACTION_FAIL_REASONS.has(reason) ? reason : "summarizer_failed";
 }
 
 function optionalTraceString<Key extends string>(

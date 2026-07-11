@@ -20,6 +20,9 @@ describe("reference-agent trace contract", () => {
       "batch_yield",
       "stop",
       "turn_error",
+      "compaction_triggered",
+      "compaction_done",
+      "compaction_failed",
     ] as const satisfies readonly ReferenceAgentTraceEventType[];
 
     const exactMap = {
@@ -32,6 +35,9 @@ describe("reference-agent trace contract", () => {
       batch_yield: true,
       stop: true,
       turn_error: true,
+      compaction_triggered: true,
+      compaction_done: true,
+      compaction_failed: true,
     } satisfies Record<ReferenceAgentTraceEventType, true>;
 
     expect(REFERENCE_AGENT_TRACE_EVENT_TYPES).toEqual(expected);
@@ -282,6 +288,52 @@ describe("reference-agent trace contract", () => {
     ] as const satisfies readonly ReferenceAgentTraceEvent[];
 
     expect(events.map(sanitizeReferenceAgentTraceEvent)).toEqual(events);
+  });
+
+  it("passes bounded metadata for the compaction trace events", () => {
+    const events = [
+      {
+        type: "compaction_triggered",
+        site: "cross_turn",
+        estimatedTokens: 1200,
+        budgetTokens: 24_000,
+      },
+      {
+        type: "compaction_done",
+        site: "cross_turn",
+        generation: 2,
+        coveredThrough: 8,
+        beforeTokens: 30_000,
+        afterTokens: 12_000,
+      },
+      {
+        type: "compaction_failed",
+        site: "in_turn",
+        reason: "summarizer_failed",
+      },
+    ] as const satisfies readonly ReferenceAgentTraceEvent[];
+
+    expect(events.map(sanitizeReferenceAgentTraceEvent)).toEqual(events);
+  });
+
+  it("bounds and normalizes malformed compaction trace fields", () => {
+    const sanitized = sanitizeReferenceAgentTraceEvent({
+      type: "compaction_done",
+      site: "bogus",
+      generation: -5,
+      coveredThrough: Number.POSITIVE_INFINITY,
+      beforeTokens: 1.9,
+      afterTokens: 10,
+    } as unknown as ReferenceAgentTraceEvent);
+
+    expect(sanitized).toEqual({
+      type: "compaction_done",
+      site: "cross_turn",
+      generation: 0,
+      coveredThrough: 0,
+      beforeTokens: 1,
+      afterTokens: 10,
+    });
   });
 
   it("redacts visitor ids, keys, full prompts, full stage JSON, and raw provider bodies", () => {

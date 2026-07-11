@@ -1,11 +1,18 @@
 # @facet/runtime
 
-The Facet runtime: the event loop that drives stage patches, plus the three
+The Facet runtime: the event loop that drives stage patches, plus the four
 persistence seams — a `StageStore` for the page (always Facet's), a `Sink` for
-the conversation (store, forward, or drop), and an `AssetsStore` for per-agent
-themes, stamps, catalog policy, and an optional initial tree. The default references are
-in-memory (`MemoryStageStore`, `MemorySink`, `MemoryAssets`); file-backed Node
-references live in `@facet/runtime/node`. Load asset documents through
+the conversation (store, forward, or drop), an `AssetsStore` for per-agent
+themes, stamps, catalog policy, and an optional initial tree, and a
+`SummaryStore` for a per-visitor rolling-summary record used by brain-side
+context compaction (the payload is opaque to the runtime — the consuming brain
+owns its schema; `put` advances only on a strictly newer covered-through
+marker, and `delete` lets the brain rebuild after a mismatch). The default references are
+in-memory (`MemoryStageStore`, `MemorySink`, `MemoryAssets`,
+`MemorySummaryStore`); file-backed Node references live in
+`@facet/runtime/node` (`FileSummaryStore` writes `<key>.summary.json`, safe to
+share a state directory with `FileStageStore`/`FileSink` — pair a durable
+summary store with an equally durable sink). Load asset documents through
 `loadAssets`, then use `withInitialStage` when a validated initial tree should
 seed fresh sessions. Asset loading is fail-soft: adapter failures, malformed
 store shapes, hostile accessors/arrays, oversized asset arrays, and invalid

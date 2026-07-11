@@ -1,6 +1,7 @@
 # @facet/store-postgres
 
-A Postgres adapter for Facet: durable `StageStore`, `Sink`, and `AssetsStore`
+A Postgres adapter for Facet: durable `StageStore`, `Sink`, `AssetsStore`, and
+`SummaryStore`
 implementations backed by Postgres/Supabase, so a page, its conversation, and
 per-agent assets survive restarts. `PostgresStageStore` and `PostgresSink` plug
 directly into `createFacetServer`; `PostgresAssets` plugs into any host code that
@@ -22,6 +23,8 @@ then hand a `PostgresStageStore` / `PostgresSink` to the server.
 ```ts
 import { Pool } from "pg";
 import { initSchema, PostgresStageStore, PostgresSink } from "@facet/store-postgres";
+// Rolling-summary store for LLM context compaction (separate schema init):
+// import { initSummarySchema, PostgresSummaryStore } from "@facet/store-postgres";
 import { createFacetServer } from "@facet/server";
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });

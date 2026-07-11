@@ -89,6 +89,56 @@ export function estimateMessagesChars(messages: readonly TurnMessage[]): number 
   return total;
 }
 
+/**
+ * Split an in-turn transcript into step groups. One group is the messages of a
+ * single provider step: an `assistant_tools` message plus every `tool_result`
+ * that immediately follows it, or a lone `assistant`/`user`/orphan `tool_result`
+ * message on its own. Grouping this way guarantees no split ever lands between a
+ * tool_use and its tool_results, for BOTH provider wire formats.
+ */
+export function groupTranscriptSteps(
+  messages: readonly TurnMessage[],
+): readonly (readonly TurnMessage[])[] {
+  const groups: TurnMessage[][] = [];
+  let current: TurnMessage[] | undefined;
+  for (const message of messages) {
+    if (message.role === "assistant_tools") {
+      current = [message];
+      groups.push(current);
+    } else if (message.role === "tool_result" && current !== undefined) {
+      current.push(message);
+    } else {
+      current = undefined;
+      groups.push([message]);
+    }
+  }
+  return groups;
+}
+
+/**
+ * Split at a group boundary that never orphans a pair: keep the last `keepGroups`
+ * step groups verbatim and return the older groups as `compactable`. Both slices
+ * are self-contained, pair-safe message sequences that concatenate back to the
+ * input in order.
+ */
+export function splitStepGroups(
+  messages: readonly TurnMessage[],
+  keepGroups: number,
+): { readonly compactable: readonly TurnMessage[]; readonly verbatim: readonly TurnMessage[] } {
+  const groups = groupTranscriptSteps(messages);
+  const keep = clampKeepGroups(keepGroups, groups.length);
+  const cut = groups.length - keep;
+  return {
+    compactable: groups.slice(0, cut).flat(),
+    verbatim: groups.slice(cut).flat(),
+  };
+}
+
+function clampKeepGroups(keepGroups: number, groupCount: number): number {
+  if (!Number.isFinite(keepGroups) || keepGroups <= 0) return 0;
+  return Math.min(groupCount, Math.floor(keepGroups));
+}
+
 function selectNewestTurns(messages: readonly TurnMessage[], maxChars: number): SelectedTurns {
   if (maxChars <= 0) {
     return {
@@ -261,9 +311,20 @@ function messageText(message: TurnMessage): string {
   }
 }
 
-function truncateText(value: string, maxChars: number): string {
-  if (value.length <= maxChars) return value;
-  if (maxChars <= 0) return "";
+/** Truncated text plus how many source chars the marker stands in for. */
+export interface TruncatedText {
+  readonly content: string;
+  readonly omittedChars: number;
+}
+
+/**
+ * The ONE truncation-with-marker implementation shared by history compaction,
+ * summary field caps, and observation bounding. The marker's exact literal is a
+ * cross-file contract (`MIN_REFERENCE_AGENT_OBSERVATION_CHARS` derives from it).
+ */
+export function truncateWithMarker(value: string, maxChars: number): TruncatedText {
+  if (value.length <= maxChars) return { content: value, omittedChars: 0 };
+  if (maxChars <= 0) return { content: "", omittedChars: value.length };
 
   let omitted = value.length;
   let marker = truncatedMarker(omitted);
@@ -273,17 +334,24 @@ function truncateText(value: string, maxChars: number): string {
     const next = truncatedMarker(omitted);
     if (next === marker) {
       return marker.length > maxChars
-        ? marker.slice(0, maxChars)
-        : `${value.slice(0, prefixChars)}${marker}`;
+        ? { content: marker.slice(0, maxChars), omittedChars: value.length }
+        : { content: `${value.slice(0, prefixChars)}${marker}`, omittedChars: omitted };
     }
     marker = next;
   }
   return marker.length > maxChars
-    ? marker.slice(0, maxChars)
-    : `${value.slice(0, maxChars - marker.length)}${marker}`;
+    ? { content: marker.slice(0, maxChars), omittedChars: value.length }
+    : {
+        content: `${value.slice(0, maxChars - marker.length)}${marker}`,
+        omittedChars: value.length - (maxChars - marker.length),
+      };
 }
 
-function truncatedMarker(omittedChars: number): string {
+function truncateText(value: string, maxChars: number): string {
+  return truncateWithMarker(value, maxChars).content;
+}
+
+export function truncatedMarker(omittedChars: number): string {
   return `[truncated: ${String(Math.max(0, omittedChars))} chars omitted]`;
 }
 

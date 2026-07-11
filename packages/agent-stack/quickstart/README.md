@@ -253,6 +253,12 @@ unauthenticated and each event drives paid provider calls, so:
   field values.
 - Provider keys are read from the environment only, used solely in the request
   auth header, and never logged.
+- **Context compaction is ON by default**: long conversations are folded into a
+  rolling, redacted summary by the same provider model (stored in-memory via
+  `MemorySummaryStore`; lost on restart). Compose with
+  `composeQuickstartAgent({ summaryStore: null, ... })` to opt out, or pass a
+  durable `FileSummaryStore`/`PostgresSummaryStore` paired with an equally
+  durable sink.
 
 It is **not** a multi-tenant server: there is no tenant/project isolation,
 per-visitor rate limit, spend cap, usage metering, admin auth, or global cap on
