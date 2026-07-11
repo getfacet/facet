@@ -1,8 +1,10 @@
 import {
+  COMPONENT_NODE_TYPES,
   EMPTY_TREE,
   MAX_PATCH_OPS,
   MEDIA_KINDS,
-  expandStamp,
+  PRIMITIVE_BRICK_TYPES,
+  expandComposition,
   isContainer,
   isSafeMediaSrc,
   isTreeShaped,
@@ -10,8 +12,8 @@ import {
   treeHasContent,
   validateTree,
   type FacetCatalog,
+  type FacetComposition,
   type FacetNode,
-  type FacetStamp,
   type FacetTree,
   type JsonPatchOperation,
   type NodeId,
@@ -37,8 +39,19 @@ const MAX_INSPECT_NODE_DEPTH = 5;
 const MAX_TEXT_PREVIEW_CHARS = 80;
 const MAX_ID_LIST_PREVIEW = 20;
 const FORBIDDEN_NODE_IDS = new Set(["__proto__", "prototype", "constructor"]);
-const PRIMITIVE_NODE_TYPES = new Set<FacetNode["type"]>(["box", "text", "media", "field"]);
+const PRIMITIVE_NODE_TYPES = new Set<FacetNode["type"]>(PRIMITIVE_BRICK_TYPES);
+const COMPONENT_NODE_TYPE_SET = new Set<FacetNode["type"]>(COMPONENT_NODE_TYPES);
+const FACET_NODE_TYPES_TEXT = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]
+  .map((type) => `"${type}"`)
+  .join(", ");
 const CHART_KINDS = new Set(["bar", "line", "donut"]);
+const MAX_COMPOSITION_METADATA_CHARS = 2000;
+
+interface OkResultOptions {
+  readonly nextAction?: string;
+  readonly visibilityNodeIds?: readonly NodeId[];
+  readonly data?: string;
+}
 
 const TOOL_NAMES = FACET_STAGE_TOOL_NAMES.join(", ");
 
@@ -74,8 +87,8 @@ export function executeStageTool(call: unknown, context: StageToolContext): Stag
       return executeRenderPage(input, shadow, catalog);
     case "append_node":
       return executeAppendNode(input, shadow, catalog);
-    case "use_stamp":
-      return executeUseStamp(input, shadow, context.assets?.stamps ?? [], catalog);
+    case "use_composition":
+      return executeUseComposition(input, shadow, context.assets?.compositions ?? [], catalog);
     case "set_node":
       return executeSetNode(input, shadow, catalog);
     case "remove_node":
@@ -178,6 +191,26 @@ function executeAppendNode(
   const node = parseNodeInput(input["node"], "append_node", shadow);
   if ("error" in node)
     return errorResult("append_node", "invalid_input", node.error, shadow, [], node.nextAction);
+  if (node.facetNode.id === shadow.root) {
+    return errorResult(
+      "append_node",
+      "invalid_input",
+      `error: append_node — cannot replace the stage root "${shadow.root}". Use render_page for root-level restructures.`,
+      shadow,
+      [],
+      "Use render_page for root-level restructures.",
+    );
+  }
+  if (Object.hasOwn(shadow.nodes, node.facetNode.id)) {
+    return errorResult(
+      "append_node",
+      "invalid_input",
+      `error: append_node — node "${node.facetNode.id}" already exists. Use set_node to replace it or choose a new id.`,
+      shadow,
+      [],
+      "Use set_node to replace the existing node, or choose a new id.",
+    );
+  }
   const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
   if (catalogViolation !== undefined) {
     return errorResult(
@@ -202,33 +235,33 @@ function executeAppendNode(
   );
 }
 
-function executeUseStamp(
+function executeUseComposition(
   input: Readonly<Record<string, unknown>>,
   shadow: FacetTree,
-  stamps: readonly FacetStamp[],
+  compositions: readonly FacetComposition[],
   catalog: FacetCatalog | undefined,
 ) {
   const name = input["name"];
   if (typeof name !== "string" || name.length === 0) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_input",
-      'error: use_stamp needs a non-empty string "name" from the STAMPS list',
+      'error: use_composition needs a non-empty string "name" from the COMPOSITIONS list',
       shadow,
       [],
-      "Pick a stamp name from the STAMPS list and pass it as name.",
+      "Pick a composition name from the COMPOSITIONS list and pass it as name.",
     );
   }
 
   const at = input["at"];
   if (!isRecord(at) || typeof at["parent"] !== "string" || at["parent"].length === 0) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_input",
-      'error: use_stamp needs at={ "parent": "<container node id>" }',
+      'error: use_composition needs at={ "parent": "<container node id>" }',
       shadow,
       [],
-      'Pass at={ "parent": "<existing box, section, or card node id>" }.',
+      'Pass at={ "parent": "<existing box, section, card, or form node id>" }.',
     );
   }
 
@@ -236,51 +269,51 @@ function executeUseStamp(
   const parentNode = shadow.nodes[parent];
   if (parentNode === undefined) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_parent",
-      `error: use_stamp — parent "${parent}" does not exist yet`,
+      `error: use_composition — parent "${parent}" does not exist yet`,
       shadow,
       [],
-      "Inspect the stage and choose an existing container parent before using a stamp.",
+      "Inspect the stage and choose an existing container parent before using a composition.",
     );
   }
   if (!isContainer(parentNode)) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "invalid_parent",
-      `error: use_stamp — parent "${parent}" is not a container`,
+      `error: use_composition — parent "${parent}" is not a container`,
       shadow,
       [],
-      "Choose an existing box, section, or card node as at.parent.",
+      "Choose an existing box, section, card, or form node as at.parent.",
     );
   }
 
-  const stampViolation = stampCatalogViolation(name, catalog);
-  if (stampViolation !== undefined) {
+  const policyViolation = compositionCatalogViolation(name, catalog);
+  if (policyViolation !== undefined) {
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
-      stampViolation.message,
+      "use_composition",
+      "invalid_composition",
+      policyViolation.message,
       shadow,
       [],
-      stampViolation.nextAction,
+      policyViolation.nextAction,
     );
   }
 
-  const stamp = stamps.find((candidate) => candidate.name === name);
-  if (stamp === undefined) {
+  const composition = compositions.find((candidate) => candidate.name === name);
+  if (composition === undefined) {
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
-      `error: use_stamp — unknown stamp "${name}". Pick a name from STAMPS.`,
+      "use_composition",
+      "invalid_composition",
+      `error: use_composition — unknown composition "${name}". Pick a name from COMPOSITIONS.`,
       shadow,
       [],
-      "Pick one of the advertised STAMPS names.",
+      "Pick one of the advertised COMPOSITIONS names.",
     );
   }
 
-  const expanded = expandStamp(
-    stamp,
+  const expanded = expandComposition(
+    composition,
     input["params"] ?? {},
     { parent },
     {
@@ -290,20 +323,20 @@ function executeUseStamp(
   if (expanded.root === undefined) {
     const hint = issueHint(expanded.issues);
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
-      `error: use_stamp — could not expand "${name}"${hint.length > 0 ? `: ${hint}` : ""}`,
+      "use_composition",
+      "invalid_composition",
+      `error: use_composition — could not expand "${name}"${hint.length > 0 ? `: ${hint}` : ""}`,
       shadow,
       expanded.issues,
-      "Fix the stamp params or choose another stamp, then retry use_stamp.",
+      "Fix the composition params or choose another composition, then retry use_composition.",
     );
   }
 
   const catalogViolation = nodesCatalogViolation(Object.values(expanded.nodes), catalog);
   if (catalogViolation !== undefined) {
     return errorResult(
-      "use_stamp",
-      "invalid_stamp",
+      "use_composition",
+      "invalid_composition",
       catalogViolation.message,
       shadow,
       expanded.issues,
@@ -314,12 +347,12 @@ function executeUseStamp(
   const expansionPatchOps = Object.keys(expanded.nodes).length + 1;
   if (expansionPatchOps > MAX_PATCH_OPS) {
     return errorResult(
-      "use_stamp",
+      "use_composition",
       "patch_limit",
-      `error: use_stamp — expanded "${name}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`,
+      `error: use_composition — expanded "${name}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`,
       shadow,
       expanded.issues,
-      "Split the page change into smaller edits or use a smaller stamp.",
+      "Split the page change into smaller edits or use a smaller composition.",
     );
   }
 
@@ -331,18 +364,76 @@ function executeUseStamp(
   patches.push({ op: "add", path: childrenPath(parent), value: expanded.root });
 
   const note = expanded.issues.length > 0 ? ` note: ${issueHint(expanded.issues)}` : "";
-  const metadata = JSON.stringify({
-    root: expanded.root,
-    slots: expanded.slots,
-    ids: expanded.ids,
-  });
+  const metadata = compositionMetadata(expanded.root, expanded.slots, expanded.ids);
   return okPatchResult(
-    "use_stamp",
-    `Used stamp "${name}".${note} ${metadata}`,
+    "use_composition",
+    `Used composition "${name}".${note}`,
     shadow,
     patches,
     expanded.issues,
+    { data: metadata },
   );
+}
+
+/**
+ * Serialize the minted composition ids and slots as always-valid JSON bounded to
+ * {@link MAX_COMPOSITION_METADATA_CHARS}. EVERY part of the envelope participates
+ * in the budget — not just `ids` — so a slots-heavy payload can never serialize
+ * past the cap and collapse to `{"truncated":true}` downstream in
+ * `boundedData`. `root` is always kept (a bounded node id); `slots` entries are
+ * added first, then `ids` entries, each one at a time and dropped when it would
+ * push the envelope over the cap. Dropped counts surface as `slotsOmitted` /
+ * `idsOmitted`, INCLUDED ONLY WHEN GREATER THAN ZERO so a payload that fully fits
+ * carries neither counter. Even the first entry of either map can be dropped when
+ * the preceding content already fills the budget. The cap ({@link
+ * MAX_COMPOSITION_METADATA_CHARS} = 2000) sits below the observation layer's 2048
+ * `MAX_DATA_CHARS`, so `boundedData` never fires on this well-formed output and
+ * `observation.data` stays valid JSON ≤ 2048.
+ */
+function compositionMetadata(
+  root: NodeId,
+  slots: Readonly<Record<string, NodeId>>,
+  ids: Readonly<Record<string, NodeId>>,
+): string {
+  const slotEntries = Object.entries(slots);
+  const idEntries = Object.entries(ids);
+  const keptSlots: Record<string, NodeId> = {};
+  const keptIds: Record<string, NodeId> = {};
+  const pack = (): string => {
+    const envelope: {
+      root: NodeId;
+      slots: Record<string, NodeId>;
+      ids: Record<string, NodeId>;
+      slotsOmitted?: number;
+      idsOmitted?: number;
+    } = { root, slots: keptSlots, ids: keptIds };
+    const slotsOmitted = slotEntries.length - Object.keys(keptSlots).length;
+    const idsOmitted = idEntries.length - Object.keys(keptIds).length;
+    if (slotsOmitted > 0) envelope.slotsOmitted = slotsOmitted;
+    if (idsOmitted > 0) envelope.idsOmitted = idsOmitted;
+    return JSON.stringify(envelope);
+  };
+  // Root is always kept. Only theoretical: if even the root-only envelope (with
+  // every slot and id counted as omitted) overflows — root is a bounded node id —
+  // fall back to a minimal valid object instead of an over-cap payload.
+  if (pack().length > MAX_COMPOSITION_METADATA_CHARS) {
+    return JSON.stringify({ root, truncated: true });
+  }
+  for (const [key, value] of slotEntries) {
+    keptSlots[key] = value;
+    if (pack().length > MAX_COMPOSITION_METADATA_CHARS) {
+      delete keptSlots[key];
+      break;
+    }
+  }
+  for (const [key, value] of idEntries) {
+    keptIds[key] = value;
+    if (pack().length > MAX_COMPOSITION_METADATA_CHARS) {
+      delete keptIds[key];
+      break;
+    }
+  }
+  return pack();
 }
 
 function executeSetNode(
@@ -361,6 +452,22 @@ function executeSetNode(
       shadow,
       [],
       "Use render_page for root-level restructures.",
+    );
+  }
+  // The entry screen's root must stay a container: a non-container replacement
+  // would make the fold drop the screen, leaving no renderable entry.
+  const entryTarget =
+    shadow.screens !== undefined && shadow.entry !== undefined
+      ? shadow.screens[shadow.entry]
+      : undefined;
+  if (node.facetNode.id === entryTarget && !isContainer(node.facetNode)) {
+    return errorResult(
+      "set_node",
+      "invalid_input",
+      `error: set_node — node "${node.facetNode.id}" is the entry screen root and must stay a container; render a replacement screen first`,
+      shadow,
+      [],
+      "Replace the entry screen root only with a container node, or use render_page to restructure.",
     );
   }
   const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
@@ -416,7 +523,7 @@ function executeRemoveNode(input: Readonly<Record<string, unknown>>, shadow: Fac
       "Use render_page for root-level restructures.",
     );
   }
-  if (shadow.nodes[nodeId] === undefined) {
+  if (!Object.hasOwn(shadow.nodes, nodeId)) {
     return errorResult(
       "remove_node",
       "invalid_input",
@@ -426,14 +533,49 @@ function executeRemoveNode(input: Readonly<Record<string, unknown>>, shadow: Fac
       "Inspect the stage and remove an existing non-root node.",
     );
   }
-  return okPatchResult(
-    "remove_node",
-    `Removed "${nodeId}".`,
-    shadow,
-    [{ op: "remove", path: nodePath(nodeId) }],
-    [],
-    { visibilityNodeIds: [nodeId] },
-  );
+  // Refuse to remove the entry screen's root: dropping it would leave the page
+  // with no renderable entry, and there is no in-band repair path. The author must
+  // render a replacement screen first.
+  const entryTarget =
+    shadow.screens !== undefined && shadow.entry !== undefined
+      ? shadow.screens[shadow.entry]
+      : undefined;
+  if (entryTarget === nodeId) {
+    return errorResult(
+      "remove_node",
+      "invalid_input",
+      `error: remove_node — node "${nodeId}" is the entry screen root; render a replacement screen first`,
+      shadow,
+      [],
+      "Render a replacement entry screen (render_page or set the entry screen's target) before removing this node.",
+    );
+  }
+  // Detach the node from every parent that references it BEFORE removing it, so
+  // the validated fold never sees a dangling child ref (which it would strip
+  // with a warning, misreporting a fully successful removal). Non-entry screens
+  // whose target is this node get their /screens entry removed for the same
+  // reason — a dangling screen target folds away with a warning otherwise.
+  const patches: JsonPatchOperation[] = [];
+  for (const parent of Object.values(shadow.nodes)) {
+    if (isContainer(parent) && parent.children.includes(nodeId)) {
+      patches.push({
+        op: "replace",
+        path: nodeChildrenPath(parent.id),
+        value: parent.children.filter((childId) => childId !== nodeId),
+      });
+    }
+  }
+  if (shadow.screens !== undefined) {
+    for (const [name, target] of Object.entries(shadow.screens)) {
+      if (target === nodeId) {
+        patches.push({ op: "remove", path: screenPath(name) });
+      }
+    }
+  }
+  patches.push({ op: "remove", path: nodePath(nodeId) });
+  return okPatchResult("remove_node", `Removed "${nodeId}".`, shadow, patches, [], {
+    visibilityNodeIds: [nodeId],
+  });
 }
 
 function executeSay(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
@@ -527,7 +669,7 @@ function executeInspectNode(input: Readonly<Record<string, unknown>>, shadow: Fa
       "Pass nodeId as a non-empty string. Use inspect_stage to find node ids.",
     );
   }
-  if (shadow.nodes[nodeId] === undefined) {
+  if (!Object.hasOwn(shadow.nodes, nodeId)) {
     return errorResult(
       "inspect_node",
       "invalid_input",
@@ -569,7 +711,7 @@ function okPatchResult(
   shadow: FacetTree,
   patches: readonly JsonPatchOperation[],
   issues: readonly string[] = [],
-  options: { readonly nextAction?: string; readonly visibilityNodeIds?: readonly NodeId[] } = {},
+  options: OkResultOptions = {},
 ): StageToolResult {
   if (patches.length > MAX_PATCH_OPS) {
     return errorResult(
@@ -592,7 +734,7 @@ function okMessageResult(
   shadow: FacetTree,
   messages: readonly ServerMessage[],
   extraIssues: readonly string[] = [],
-  options: { readonly nextAction?: string; readonly visibilityNodeIds?: readonly NodeId[] } = {},
+  options: OkResultOptions = {},
 ): StageToolOkResult {
   const folded = foldStageShadow(shadow, messages);
   const issues = [...extraIssues, ...folded.issues];
@@ -620,6 +762,7 @@ function okMessageResult(
       warnings: issues,
       nextAction: options.nextAction ?? nextActionForOutcome(outcome),
       summary: folded.summary,
+      ...(options.data !== undefined ? { data: options.data } : {}),
     }),
     messages,
     patches: folded.patches,
@@ -712,21 +855,25 @@ function nodeCatalogViolation(
   catalog: FacetCatalog | undefined,
 ): CatalogPolicyViolation | undefined {
   if (catalog === undefined) return undefined;
-  const brick = catalog.bricks.find((candidate) => candidate.type === node.type);
-  if (brick === undefined) {
+  const policy = catalogPolicyEntryForNode(node, catalog);
+  if (policy === undefined) {
     if (PRIMITIVE_NODE_TYPES.has(node.type) && catalog.primitiveFallback === "allowed") {
       return undefined;
     }
     return {
       message: `error: catalog policy rejected node type "${node.type}". Allowed node types: ${catalogAllowedNodeTypes(catalog)}.`,
-      nextAction: "Use an allowed catalog brick, stamp, or permitted primitive fallback.",
+      nextAction: "Use an allowed catalog component, composition, or permitted primitive fallback.",
     };
   }
 
   const variant = nodeVariant(node);
-  if (variant !== undefined && brick.variants !== undefined && !brick.variants.includes(variant)) {
+  if (
+    variant !== undefined &&
+    policy.variants !== undefined &&
+    !policy.variants.includes(variant)
+  ) {
     return {
-      message: `error: catalog policy rejected variant "${variant}" for node type "${node.type}". Allowed variants: ${brick.variants.join(", ")}.`,
+      message: `error: catalog policy rejected variant "${variant}" for node type "${node.type}". Allowed variants: ${policy.variants.join(", ")}.`,
       nextAction: `Use an allowed "${node.type}" variant or omit variant for the default recipe.`,
     };
   }
@@ -734,27 +881,39 @@ function nodeCatalogViolation(
   if (
     variant === undefined &&
     tone !== undefined &&
-    brick.variants !== undefined &&
-    !brick.variants.includes(tone)
+    policy.variants !== undefined &&
+    !policy.variants.includes(tone)
   ) {
     return {
-      message: `error: catalog policy rejected tone "${tone}" as a recipe selector for node type "${node.type}". Allowed variants: ${brick.variants.join(", ")}.`,
+      message: `error: catalog policy rejected tone "${tone}" as a recipe selector for node type "${node.type}". Allowed variants: ${policy.variants.join(", ")}.`,
       nextAction: `Use an allowed "${node.type}" variant, or omit tone when the catalog does not advertise that recipe.`,
     };
   }
   return undefined;
 }
 
-function stampCatalogViolation(
+function catalogPolicyEntryForNode(
+  node: FacetNode,
+  catalog: FacetCatalog,
+): FacetCatalog["bricks"][number] | NonNullable<FacetCatalog["components"]>[number] | undefined {
+  if (COMPONENT_NODE_TYPE_SET.has(node.type)) {
+    const component = catalog.components?.find((candidate) => candidate.type === node.type);
+    if (component !== undefined) return component;
+    if (catalog.components !== undefined && node.type !== "stat") return undefined;
+  }
+  return catalog.bricks.find((candidate) => candidate.type === node.type);
+}
+
+function compositionCatalogViolation(
   name: string,
   catalog: FacetCatalog | undefined,
 ): CatalogPolicyViolation | undefined {
-  if (catalog === undefined || catalog.stamps.mode === "all") return undefined;
-  if (catalog.stamps.names.includes(name)) return undefined;
+  if (catalog === undefined || catalog.compositions.mode === "all") return undefined;
+  if (catalog.compositions.names.includes(name)) return undefined;
   return {
-    message: `error: catalog policy rejected stamp "${name}". Allowed stamps: ${catalog.stamps.names.join(", ")}.`,
+    message: `error: catalog policy rejected composition "${name}". Allowed compositions: ${catalog.compositions.names.join(", ")}.`,
     nextAction:
-      "Pick a stamp allowed by the active catalog, or compose the UI from allowed bricks.",
+      "Pick a composition allowed by the active catalog, or compose the UI from allowed components/primitives.",
   };
 }
 
@@ -793,7 +952,15 @@ function nodeTone(node: FacetNode): string | undefined {
 }
 
 function catalogAllowedNodeTypes(catalog: FacetCatalog): string {
-  const allowed = new Set(catalog.bricks.map((brick) => brick.type));
+  const allowed = new Set<string>();
+  if (catalog.components === undefined) {
+    for (const brick of catalog.bricks) allowed.add(brick.type);
+  } else {
+    for (const component of catalog.components) allowed.add(component.type);
+    for (const brick of catalog.bricks) {
+      if (PRIMITIVE_NODE_TYPES.has(brick.type) || brick.type === "stat") allowed.add(brick.type);
+    }
+  }
   if (catalog.primitiveFallback === "allowed") {
     for (const type of PRIMITIVE_NODE_TYPES) allowed.add(type);
   }
@@ -863,7 +1030,7 @@ function sanitizeToolNode(
 
 function toolSanitizeRootId(shadow: FacetTree, nodeId: string): string {
   let id = "__facet_tool_sanitize_root__";
-  while (id === nodeId || shadow.nodes[id] !== undefined) id = `_${id}`;
+  while (id === nodeId || Object.hasOwn(shadow.nodes, id)) id = `_${id}`;
   return id;
 }
 
@@ -993,6 +1160,14 @@ function asNode(
         };
       }
       return { facetNode: value as unknown as FacetNode };
+    case "nav":
+      if (!Array.isArray(value["items"])) {
+        return {
+          error: 'a "nav" node needs "items" as an array',
+          nextAction: 'Pass "items": [] or an array of nav items.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
     case "table":
       if (value["columns"] !== undefined && !Array.isArray(value["columns"])) {
         return {
@@ -1040,11 +1215,20 @@ function asNode(
           series: value["series"] ?? [],
         } as unknown as FacetNode,
       };
+    case "metric":
     case "stat":
       if (typeof value["label"] !== "string" || typeof value["value"] !== "string") {
         return {
-          error: 'a "stat" node needs string "label" and "value"',
-          nextAction: 'Pass string "label" and "value" for stat nodes.',
+          error: `a "${value["type"]}" node needs string "label" and "value"`,
+          nextAction: `Pass string "label" and "value" for ${String(value["type"])} nodes.`,
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "keyValue":
+      if (!Array.isArray(value["items"])) {
+        return {
+          error: 'a "keyValue" node needs "items" as an array',
+          nextAction: 'Pass "items": [] or an array of key/value items.',
         };
       }
       return { facetNode: value as unknown as FacetNode };
@@ -1082,10 +1266,40 @@ function asNode(
       return { facetNode: value as unknown as FacetNode };
     case "divider":
       return { facetNode: value as unknown as FacetNode };
+    case "form": {
+      const children = parseContainerChildren(value["children"], "form");
+      if ("error" in children) return children;
+      return {
+        facetNode: {
+          ...value,
+          id: value["id"],
+          type: "form",
+          children: children.children,
+        } as unknown as FacetNode,
+      };
+    }
+    case "search":
+      if (typeof value["name"] !== "string") {
+        return {
+          error: 'a "search" node needs a string "name"',
+          nextAction: 'Pass a string "name" for search nodes.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "filterBar":
+      if (!Array.isArray(value["filters"])) {
+        return {
+          error: 'a "filterBar" node needs "filters" as an array',
+          nextAction: 'Pass "filters": [] or an array of filter controls.',
+        };
+      }
+      return { facetNode: value as unknown as FacetNode };
+    case "emptyState":
+    case "loading":
+      return { facetNode: value as unknown as FacetNode };
     default:
       return {
-        error:
-          '"type" must be one of the Facet v1 node types: "box", "text", "media", "field", "button", "section", "card", "tabs", "table", "chart", "stat", "badge", "progress", "alert", "list", or "divider"',
+        error: `"type" must be one of the Facet v1 node types: ${FACET_NODE_TYPES_TEXT}`,
         nextAction: "Use one allowed Facet v1 node type.",
       };
   }
@@ -1093,7 +1307,7 @@ function asNode(
 
 function parseContainerChildren(
   value: unknown,
-  nodeType: "section" | "card",
+  nodeType: "section" | "card" | "form",
 ):
   | { readonly children: readonly string[] }
   | { readonly error: string; readonly nextAction: string } {
@@ -1137,7 +1351,7 @@ function nextActionForOutcome(outcome: AgentToolOutcome): string {
 
 function missingChildRefs(facetNode: FacetNode, shadow: FacetTree): readonly NodeId[] {
   if (!isContainer(facetNode)) return [];
-  return facetNode.children.filter((id) => shadow.nodes[id] === undefined);
+  return facetNode.children.filter((id) => !Object.hasOwn(shadow.nodes, id));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1156,8 +1370,16 @@ function nodePath(id: NodeId): string {
   return `/nodes/${pointerEscape(id)}`;
 }
 
+function nodeChildrenPath(parent: NodeId): string {
+  return `${nodePath(parent)}/children`;
+}
+
 function childrenPath(parent: NodeId): string {
-  return `${nodePath(parent)}/children/-`;
+  return `${nodeChildrenPath(parent)}/-`;
+}
+
+function screenPath(name: string): string {
+  return `/screens/${pointerEscape(name)}`;
 }
 
 function isRenderable(tree: FacetTree): boolean {
@@ -1224,12 +1446,18 @@ function describeNode(facetNode: FacetNode): string {
       return `${facetNode.id} card children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
     case "tabs":
       return `${facetNode.id} tabs items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
+    case "nav":
+      return `${facetNode.id} nav items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
     case "table":
       return `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(facetNode.rows.length)}${variantSuffix(facetNode)}`;
     case "chart":
       return `${facetNode.id} chart kind=${facetNode.kind} series=${String(facetNode.series.length)}${variantSuffix(facetNode)}`;
+    case "metric":
+      return `${facetNode.id} metric label="${preview(facetNode.label)}" value="${preview(facetNode.value)}"${variantSuffix(facetNode)}`;
     case "stat":
       return `${facetNode.id} stat label="${preview(facetNode.label)}" value="${preview(facetNode.value)}"${variantSuffix(facetNode)}`;
+    case "keyValue":
+      return `${facetNode.id} keyValue items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
     case "badge":
       return `${facetNode.id} badge label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`;
     case "progress":
@@ -1240,7 +1468,19 @@ function describeNode(facetNode: FacetNode): string {
       return `${facetNode.id} list items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
     case "divider":
       return `${facetNode.id} divider${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
+    case "form":
+      return `${facetNode.id} form children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
+    case "search":
+      return `${facetNode.id} search name="${preview(facetNode.name)}"${variantSuffix(facetNode)}`;
+    case "filterBar":
+      return `${facetNode.id} filterBar filters=${String(facetNode.filters.length)}${variantSuffix(facetNode)}`;
+    case "emptyState":
+      return `${facetNode.id} emptyState${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
+    case "loading":
+      return `${facetNode.id} loading${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
   }
+  const exhaustive: never = facetNode;
+  return exhaustive;
 }
 
 function variantSuffix(node: FacetNode): string {

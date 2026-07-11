@@ -16,6 +16,7 @@ const MAX_WARNING_CHARS = 240;
 const MAX_MESSAGE_CHARS = 500;
 const MAX_NEXT_ACTION_CHARS = 300;
 const MAX_SUMMARY_CHARS = 500;
+const MAX_DATA_CHARS = 2048;
 
 export interface AgentToolObservationInput {
   readonly tool: string;
@@ -31,6 +32,7 @@ export interface AgentToolObservationInput {
   readonly nextAction?: string;
   readonly summary?: string;
   readonly code?: StageToolErrorCode | "pending";
+  readonly data?: string;
 }
 
 export function formatAgentToolObservation(input: AgentToolObservationInput): StageToolObservation {
@@ -39,6 +41,7 @@ export function formatAgentToolObservation(input: AgentToolObservationInput): St
   const facts = outcomeFacts(input);
   const status = statusForOutcome(input.outcome);
   const code = codeForOutcome(input.outcome, input.code);
+  const dataField = boundedData(input.data);
   const data: AgentToolObservationData = {
     version: CONTRACT_VERSION,
     tool: truncate(input.tool, MAX_TOOL_CHARS),
@@ -56,6 +59,7 @@ export function formatAgentToolObservation(input: AgentToolObservationInput): St
     next_action: truncate(input.nextAction ?? "", MAX_NEXT_ACTION_CHARS),
     summary: truncate(input.summary ?? "", MAX_SUMMARY_CHARS),
     ...(code !== undefined ? { code } : {}),
+    ...(dataField !== undefined ? { data: dataField } : {}),
   };
   return { status: data.status, text: JSON.stringify(data), data };
 }
@@ -119,6 +123,16 @@ function boundedNodeIds(items: readonly NodeId[]): {
   return { items: shown, omitted };
 }
 
+/**
+ * Emit `data` only when it stays within the JSON-safe cap. The producer already
+ * bounds it, so an over-cap value means a malformed payload — replace it with a
+ * valid `{"truncated":true}` object rather than slicing mid-JSON.
+ */
+function boundedData(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value.length <= MAX_DATA_CHARS ? value : '{"truncated":true}';
+}
+
 function truncate(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   const suffix = "...";
@@ -150,7 +164,8 @@ function isObservationData(value: unknown): value is AgentToolObservationData {
     typeof value["message"] === "string" &&
     typeof value["next_action"] === "string" &&
     typeof value["summary"] === "string" &&
-    (value["code"] === undefined || isErrorCode(value["code"]))
+    (value["code"] === undefined || isErrorCode(value["code"])) &&
+    (value["data"] === undefined || typeof value["data"] === "string")
   ) {
     return hasCoherentOutcome(value as unknown as AgentToolObservationData);
   }
@@ -282,7 +297,7 @@ function isErrorCode(value: unknown): value is StageToolErrorCode | "pending" {
     value === "invalid_input" ||
     value === "invalid_tree" ||
     value === "invalid_parent" ||
-    value === "invalid_stamp" ||
+    value === "invalid_composition" ||
     value === "patch_limit" ||
     value === "fold_error" ||
     value === "pending"

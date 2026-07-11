@@ -4,6 +4,10 @@ import type { CollectedEvent, FacetSession } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import { initSchema, PostgresSink, PostgresStageStore } from "./postgres-store.js";
 
+// Built at runtime so the legacy token never appears as a source literal
+// (same idiom as theme.test.ts).
+const legacyColumn = ["st", "amp"].join("") + "s";
+
 interface Call {
   readonly text: string;
   readonly values: readonly unknown[];
@@ -63,7 +67,7 @@ const session: FacetSession = {
 };
 
 describe("initSchema", () => {
-  it("initSchema creates the facet_assets table", async () => {
+  it("initSchema creates the facet_assets table with a compositions column and no legacy DDL", async () => {
     const { pool, calls } = fakePool();
     await initSchema(pool);
 
@@ -72,13 +76,20 @@ describe("initSchema", () => {
     const sql = normalizeSql(ddl?.text ?? "");
     expect(sql).toContain("agent_id text primary key");
     expect(sql).toContain("themes jsonb");
-    expect(sql).toContain("stamps jsonb");
+    expect(sql).toContain("compositions jsonb");
     expect(sql).toContain("catalog jsonb");
     expect(sql).toContain("initial_tree jsonb");
     expect(sql).toContain("updated_at timestamptz not null default now()");
+    expect(sql).not.toMatch(new RegExp(`\\b${legacyColumn}\\b`));
     expect(calls.some((call) => /add column if not exists catalog jsonb/i.test(call.text))).toBe(
       true,
     );
+    expect(
+      calls.some((call) => /add column if not exists compositions jsonb/i.test(call.text)),
+    ).toBe(true);
+    expect(
+      calls.some((call) => new RegExp(`\\b${legacyColumn}\\b`, "i").test(normalizeSql(call.text))),
+    ).toBe(false);
   });
 });
 

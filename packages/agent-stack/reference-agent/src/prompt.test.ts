@@ -1,10 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
 import type {
   ClientEvent,
   FacetCatalog,
   FacetSession,
-  FacetStamp,
+  FacetComposition,
   FacetTheme,
   FacetTree,
   ServerMessage,
@@ -66,15 +68,15 @@ function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
   return { at: 0, event: { kind: "message", text }, messages };
 }
 
-function stampSectionOf(system: string): string {
-  const start = system.indexOf("STAMPS");
+function compositionSectionOf(system: string): string {
+  const start = system.indexOf("COMPOSITIONS");
   const end = system.lastIndexOf("PAGE BRIEF");
   return start >= 0 && end > start ? system.slice(start, end) : "";
 }
 
 function catalogSectionOf(system: string): string {
   const start = system.indexOf("CATALOG");
-  const nextSections = ["STAMPS", "PAGE BRIEF"]
+  const nextSections = ["COMPOSITIONS", "PAGE BRIEF"]
     .map((heading) => system.indexOf(heading, start + 1))
     .filter((index) => index > start);
   const end = nextSections.length > 0 ? Math.min(...nextSections) : system.length;
@@ -90,10 +92,10 @@ function catalogFixture(): FacetCatalog {
       { type: "section", variants: ["surface"], guidance: "Use sections for major groups." },
       { type: "button", variants: ["primary"] },
     ],
-    stamps: { mode: "allow", names: ["approved"] },
+    compositions: { mode: "allow", names: ["approved"] },
     primitiveFallback: "allowed",
     policy: {
-      order: ["stamp", "brick", "primitive"],
+      order: ["composition", "component", "primitive"],
       editBeforeAppend: true,
       compactScreens: true,
       maxScreenSections: 4,
@@ -112,13 +114,13 @@ describe("buildSystem", () => {
     expect(system).toContain(FACET_STATE_EDITING_PROMPT);
     expect(system).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
     expect(system).toContain("Default to a compact UX");
-    expect(system).toContain("POLISHED BRICK GUIDANCE");
+    expect(system).toContain("COMPONENT GUIDANCE");
     expect(system).toContain("Default to an edit-before-append strategy");
     expect(system).toContain("render_page: first paint");
     expect(system).toMatch(/reuse .*node ids/i);
   });
 
-  it("polished brick guidance is consumed from agent-tools without leaking asset internals", () => {
+  it("composition metadata privacy: guidance is consumed from agent-tools without leaking asset internals", () => {
     const system = buildSystem(DEFAULT_GUIDE, {
       themes: [
         {
@@ -128,48 +130,66 @@ describe("buildSystem", () => {
           recipeInternals: "reference-recipe-sentinel",
         },
       ] as unknown as readonly FacetTheme[],
-      stamps: [
+      compositions: [
         {
           name: "approved",
-          description: "Approved reference stamp",
+          description: "Approved reference composition",
           slots: { title: "Slot default must stay private" },
-          root: "reference-stamp-root",
+          root: "reference-composition-root",
           nodes: {
-            "reference-stamp-root": {
-              id: "reference-stamp-root",
+            "reference-composition-root": {
+              id: "reference-composition-root",
               type: "text",
-              value: "reference-stamp-json",
+              value: "reference-composition-json",
             },
+          },
+          metadata: {
+            category: "hero",
+            useWhen: "leading a fresh landing page",
+            internalNotes: "reference-metadata-sentinel",
           },
           providerKey: "sk-reference-key",
           visitorId: "reference-visitor-id",
         },
-      ] as unknown as readonly FacetStamp[],
+      ] as unknown as readonly FacetComposition[],
       catalog: catalogFixture(),
     });
 
     expect(system).toMatch(
-      /POLISHED BRICK GUIDANCE[\s\S]*advertised stamp first[\s\S]*high-level bricks with catalog-advertised variants[\s\S]*never write raw CSS/i,
+      /COMPONENT GUIDANCE[\s\S]*catalog-advertised compositions[\s\S]*intrinsic components with catalog-advertised variants[\s\S]*never write raw CSS/i,
     );
     expect(system).toMatch(
-      /product-quality defaults[\s\S]*field for inputs[\s\S]*button for actions/i,
+      /product-quality defaults[\s\S]*field for raw inputs[\s\S]*button for actions/i,
     );
     expect(system).toMatch(/editBeforeAppend is true/i);
-    expect(system).toContain("allowed bricks: section variants: surface");
+    expect(system).toContain("allowed components: section variants: surface");
     expect(system).toContain("button variants: primary");
-    expect(system).toContain("policy order: stamp -> brick -> primitive");
+    expect(system).toContain("policy order: composition -> component -> primitive");
 
     expect(system).not.toContain("#ffffff");
     expect(system).not.toContain("#111111");
     expect(system).not.toContain("reference-recipe-sentinel");
-    expect(system).not.toContain("reference-stamp-root");
-    expect(system).not.toContain("reference-stamp-json");
+    expect(system).not.toContain("reference-composition-root");
+    expect(system).not.toContain("reference-composition-json");
     expect(system).not.toContain("Slot default must stay private");
     expect(system).not.toContain("sk-reference-key");
     expect(system).not.toContain("reference-visitor-id");
-    const stampSection = stampSectionOf(system);
-    expect(stampSection).not.toContain('"nodes"');
-    expect(stampSection).not.toContain('"root"');
+    const compositionSection = compositionSectionOf(system);
+    // Whitelisted composition metadata is advertised; unknown metadata fields are not.
+    expect(compositionSection).toContain("category: hero");
+    expect(compositionSection).toContain("useWhen: leading a fresh landing page");
+    expect(compositionSection).not.toContain("reference-metadata-sentinel");
+    expect(compositionSection).not.toContain('"nodes"');
+    expect(compositionSection).not.toContain('"root"');
+  });
+
+  it("prompt/system.ts declares the canonical composition PromptAssets (no legacy naming)", () => {
+    const source = readFileSync(
+      fileURLToPath(new URL("./prompt/system.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(source).toContain("readonly compositions: readonly FacetComposition[]");
+    expect(source).not.toMatch(new RegExp(["st", "amp"].join(""), "i"));
   });
 
   it("teaches structured pending and visibility outcomes before completion", () => {
@@ -221,16 +241,16 @@ describe("buildSystem", () => {
     expect(HISTORY_TURNS).toBe(20);
   });
 
-  it("with no assets (or empty arrays) adds no THEMES/STAMPS section (DC-008 byte-identity)", () => {
+  it("with no assets (or empty arrays) adds no THEMES/COMPOSITIONS section (DC-008 byte-identity)", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
     const base = buildSystem(guide);
     expect(base).toContain(FACET_ASSET_PRIVACY_PROMPT);
     // Empty assets must produce the byte-identical no-assets string.
-    expect(buildSystem(guide, { themes: [], stamps: [] })).toBe(base);
+    expect(buildSystem(guide, { themes: [], compositions: [] })).toBe(base);
     // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
     // list" in prose — we probe for the section intros this WU adds, not the word).
     expect(base).not.toContain("select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reusable stamps you may expand");
+    expect(base).not.toContain("Reusable catalog compositions you may expand");
   });
 
   it("injects theme names and descriptions never values", () => {
@@ -242,7 +262,7 @@ describe("buildSystem", () => {
       },
       { name: "sunrise", description: "Warm light morning palette", color: { bg: "#fff7ed" } },
     ];
-    const system = buildSystem(DEFAULT_GUIDE, { themes, stamps: [] });
+    const system = buildSystem(DEFAULT_GUIDE, { themes, compositions: [] });
 
     expect(system).toContain("THEMES");
     // Names + one-line descriptions are present.
@@ -258,8 +278,8 @@ describe("buildSystem", () => {
     expect(system).toMatch(/set_theme/);
   });
 
-  it("advertises stamp names, slots, and descriptions without embedding fragment JSON", () => {
-    const stamps: FacetStamp[] = [
+  it("advertises composition names, slots, and descriptions without embedding fragment JSON", () => {
+    const compositions: FacetComposition[] = [
       {
         name: "cta",
         description: "A call-to-action button",
@@ -271,31 +291,31 @@ describe("buildSystem", () => {
         },
       },
     ];
-    const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
-    const stampSection = stampSectionOf(system);
+    const system = buildSystem(DEFAULT_GUIDE, { themes: [], compositions });
+    const compositionSection = compositionSectionOf(system);
 
-    expect(system).toContain("STAMPS");
-    expect(stampSection).toContain("cta");
-    expect(stampSection).toContain("A call-to-action button");
-    expect(stampSection).toContain("label");
-    expect(stampSection).toContain("href");
-    expect(stampSection).toContain("use_stamp");
-    expect(stampSection).not.toContain("cta-label");
-    expect(stampSection).not.toContain('"nodes"');
-    expect(stampSection).not.toContain("Get started");
+    expect(system).toContain("COMPOSITIONS");
+    expect(compositionSection).toContain("cta");
+    expect(compositionSection).toContain("A call-to-action button");
+    expect(compositionSection).toContain("label");
+    expect(compositionSection).toContain("href");
+    expect(compositionSection).toContain("use_composition");
+    expect(compositionSection).not.toContain("cta-label");
+    expect(compositionSection).not.toContain('"nodes"');
+    expect(compositionSection).not.toContain("Get started");
   });
 
-  it("advertises oversized stamps by name without copying their large JSON", () => {
+  it("advertises oversized compositions by name without copying their large JSON", () => {
     const big = "x".repeat(5000);
-    const stamps: FacetStamp[] = [
+    const compositions: FacetComposition[] = [
       { name: "huge", root: "h", nodes: { h: { id: "h", type: "text", value: big } } },
     ];
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      const system = buildSystem(DEFAULT_GUIDE, { themes: [], stamps });
-      const stampSection = stampSectionOf(system);
-      expect(stampSection).toContain("huge");
-      expect(stampSection).not.toContain(big);
+      const system = buildSystem(DEFAULT_GUIDE, { themes: [], compositions });
+      const compositionSection = compositionSectionOf(system);
+      expect(compositionSection).toContain("huge");
+      expect(compositionSection).not.toContain(big);
       expect(warnSpy).not.toHaveBeenCalled();
     } finally {
       warnSpy.mockRestore();
@@ -311,7 +331,7 @@ describe("buildSystem", () => {
           color: { bg: "#ffffff", fg: "#111111" },
         },
       ],
-      stamps: [],
+      compositions: [],
       catalog: catalogFixture(),
     });
     const catalogSection = catalogSectionOf(system);
@@ -320,11 +340,11 @@ describe("buildSystem", () => {
     expect(catalogSection).toContain("reference-catalog");
     expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
     expect(catalogSection).toContain("locked theme guidance");
-    expect(catalogSection).toContain("allowed bricks: section variants: surface");
+    expect(catalogSection).toContain("allowed components: section variants: surface");
     expect(catalogSection).toContain("button variants: primary");
-    expect(catalogSection).toContain("stamp policy: allow approved");
+    expect(catalogSection).toContain("composition policy: allow approved");
     expect(catalogSection).toContain("primitiveFallback: allowed");
-    expect(catalogSection).toContain("policy order: stamp -> brick -> primitive");
+    expect(catalogSection).toContain("policy order: composition -> component -> primitive");
     expect(catalogSection).not.toContain("#ffffff");
     expect(catalogSection).not.toContain("#111111");
     expect(catalogSection).not.toContain('"nodes"');
@@ -347,7 +367,7 @@ describe("TOOLS", () => {
       "say",
       "set_node",
       "set_theme",
-      "use_stamp",
+      "use_composition",
     ]);
     for (const tool of TOOLS) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -364,10 +384,10 @@ describe("TOOLS", () => {
     expect(props["name"]).toMatchObject({ type: "string" });
   });
 
-  it("use_stamp takes a stamp name, params map, and parent location", () => {
-    const useStamp = TOOLS.find((t) => t.name === "use_stamp");
-    expect(useStamp).toBeDefined();
-    const props = useStamp!.parameters["properties"] as Record<string, unknown>;
+  it("use_composition takes a composition name, params map, and parent location", () => {
+    const useComposition = TOOLS.find((t) => t.name === "use_composition");
+    expect(useComposition).toBeDefined();
+    const props = useComposition!.parameters["properties"] as Record<string, unknown>;
     expect(Object.keys(props)).toEqual(["name", "params", "at"]);
     expect(props["name"]).toMatchObject({ type: "string" });
     expect(props["params"]).toMatchObject({ type: "object" });
@@ -743,7 +763,7 @@ describe("buildInitialMessages", () => {
     expect(nodeLines.at(-1)).toContain("node-079");
   });
 
-  it("stage summary covers high-level catalog nodes without full JSON", () => {
+  it("stage summary covers component catalog nodes without full JSON", () => {
     const stage: FacetTree = {
       root: "root",
       nodes: {
@@ -753,13 +773,21 @@ describe("buildInitialMessages", () => {
           children: [
             "section",
             "tabs",
+            "nav",
             "table",
             "chart",
+            "metric",
+            "keyValue",
             "badge",
             "progress",
             "alert",
             "list",
             "divider",
+            "form",
+            "search",
+            "filterBar",
+            "emptyState",
+            "loading",
           ],
         },
         section: {
@@ -778,7 +806,7 @@ describe("buildInitialMessages", () => {
           body: "RAW_JSON_SENTINEL_CARD_BODY",
           variant: "surface",
           tone: "accent",
-          children: ["stat"],
+          children: ["legacy-stat"],
         },
         button: {
           id: "button",
@@ -795,6 +823,15 @@ describe("buildInitialMessages", () => {
           items: [
             { label: "Home", to: "home" },
             { label: "Metrics", to: "metrics" },
+          ],
+        },
+        nav: {
+          id: "nav",
+          type: "nav",
+          variant: "default",
+          items: [
+            { label: "Docs", to: "docs" },
+            { label: "API", to: "api" },
           ],
         },
         table: {
@@ -820,13 +857,30 @@ describe("buildInitialMessages", () => {
           series: [{ label: "Revenue", values: [1, 2, 3] }],
           labels: ["Q1", "Q2", "Q3"],
         },
-        stat: {
-          id: "stat",
-          type: "stat",
+        metric: {
+          id: "metric",
+          type: "metric",
           label: "Revenue",
           value: "$42",
           delta: "+5%",
           tone: "success",
+        },
+        "legacy-stat": {
+          id: "legacy-stat",
+          type: "stat",
+          label: "Legacy",
+          value: "$7",
+          delta: "-1%",
+          tone: "warning",
+        },
+        keyValue: {
+          id: "keyValue",
+          type: "keyValue",
+          items: [
+            { label: "Plan", value: "Pro" },
+            { label: "Region", value: "US", tone: "info" },
+          ],
+          variant: "compact",
         },
         badge: { id: "badge", type: "badge", label: "Live", tone: "info" },
         progress: {
@@ -850,12 +904,43 @@ describe("buildInitialMessages", () => {
           items: [{ title: "One" }, { title: "Two", body: "Second" }],
         },
         divider: { id: "divider", type: "divider", label: "Details" },
+        form: {
+          id: "form",
+          type: "form",
+          title: "Signup",
+          body: "RAW_JSON_SENTINEL_FORM",
+          submitLabel: "Send",
+          children: ["search"],
+        },
+        search: {
+          id: "search",
+          type: "search",
+          name: "q",
+          label: "Search",
+          placeholder: "RAW_JSON_SENTINEL_SEARCH",
+          submitLabel: "Go",
+        },
+        filterBar: {
+          id: "filterBar",
+          type: "filterBar",
+          filters: [
+            { name: "status", label: "Status", input: "select", options: ["Open", "Closed"] },
+          ],
+        },
+        emptyState: {
+          id: "emptyState",
+          type: "emptyState",
+          title: "No results",
+          body: "RAW_JSON_SENTINEL_EMPTY",
+          actionLabel: "Reset",
+        },
+        loading: { id: "loading", type: "loading", label: "Loading results" },
       },
       screens: { home: "root" },
       entry: "home",
     };
 
-    const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 0, maxSummaryNodes: 20 });
+    const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 0, maxSummaryNodes: 30 });
 
     expect(prompt).toContain("CURRENT STAGE SUMMARY");
     expect(prompt).toContain("- section: type=section children=2");
@@ -865,14 +950,22 @@ describe("buildInitialMessages", () => {
     expect(prompt).toContain("- button: type=button labelChars=24");
     expect(prompt).toContain("disabled=true");
     expect(prompt).toContain("- tabs: type=tabs items=2");
+    expect(prompt).toContain("- nav: type=nav items=2");
     expect(prompt).toContain("- table: type=table columns=2 rows=2");
     expect(prompt).toContain("- chart: type=chart kind=bar series=1 points=3");
-    expect(prompt).toContain("- stat: type=stat labelChars=7 valueChars=3");
+    expect(prompt).toContain("- metric: type=metric labelChars=7 valueChars=3");
+    expect(prompt).toContain("- legacy-stat: type=stat labelChars=6 valueChars=2");
+    expect(prompt).toContain("- keyValue: type=keyValue items=2");
     expect(prompt).toContain("- badge: type=badge labelChars=4");
     expect(prompt).toContain("- progress: type=progress value=45");
     expect(prompt).toContain("- alert: type=alert titleChars=8 bodyChars=23");
     expect(prompt).toContain("- list: type=list items=2");
     expect(prompt).toContain("- divider: type=divider labelChars=7");
+    expect(prompt).toContain("- form: type=form children=1");
+    expect(prompt).toContain("- search: type=search name=q");
+    expect(prompt).toContain("- filterBar: type=filterBar filters=1");
+    expect(prompt).toContain("- emptyState: type=emptyState titleChars=10");
+    expect(prompt).toContain("- loading: type=loading labelChars=15");
     expect(prompt).not.toContain("RAW_JSON_SENTINEL");
     expect(prompt).not.toContain('"nodes"');
     expect(prompt).not.toContain('"type":"section"');

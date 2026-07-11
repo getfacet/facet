@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { ChangeEvent, CSSProperties, FormEvent, ReactNode } from "react";
 import {
   FIELD_INPUTS,
   MAX_CHART_POINTS,
@@ -24,6 +24,7 @@ import {
 import { boxStyle, fieldStyle, resolveRecipe, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { resolveRecipePart } from "./recipe-parts.js";
+import { rootContainmentStyle } from "./layout-contract.js";
 
 export interface PressableRenderArgs<Press> {
   readonly press: Press | null;
@@ -49,6 +50,8 @@ export interface BrickRenderContext<Press> {
   readonly navigate: (to: string) => void;
   readonly renderPressable: (args: PressableRenderArgs<Press>) => ReactNode;
 }
+
+const MAX_INTRINSIC_ITEMS = 32;
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -90,6 +93,10 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+function virtualFieldId(nodeId: NodeId, name: string): string {
+  return `${String(nodeId.length)}:${nodeId}${name}`;
+}
+
 function isFieldInput(input: unknown): input is (typeof FIELD_INPUTS)[number] {
   return typeof input === "string" && (FIELD_INPUTS as readonly string[]).includes(input);
 }
@@ -102,6 +109,20 @@ function optionsOf(options: unknown): readonly string[] {
     }
   }
   return kept;
+}
+
+function scalarString(value: unknown): string | undefined {
+  if (typeof value === "string") return value.slice(0, MAX_FIELD_VALUE_CHARS);
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
+}
+
+function defaultInputForOptions(
+  input: unknown,
+  options: readonly string[],
+): (typeof FIELD_INPUTS)[number] {
+  if (isFieldInput(input)) return input;
+  return options.length > 0 ? "select" : "text";
 }
 
 function tableCellText(value: unknown): string {
@@ -203,7 +224,7 @@ function intrinsicBoxStyle(style: CSSProperties | undefined): CSSProperties {
   delete css.overflowY;
   delete css.maxHeight;
   delete css.minHeight;
-  return css;
+  return rootContainmentStyle(css);
 }
 
 function fieldControlStyle(theme: ResolvedTheme, recipe: ComponentRecipe): CSSProperties {
@@ -220,12 +241,13 @@ function fieldControlStyle(theme: ResolvedTheme, recipe: ComponentRecipe): CSSPr
     lineHeight: 1.4,
     minHeight: "40px",
     outline: "none",
+    width: "100%",
     ...(intrinsicBoxStyle(control.box) ?? {}),
     ...(control.field ?? {}),
     ...(intrinsicBoxStyle(input.box) ?? {}),
     ...(input.field ?? {}),
   };
-  return css;
+  return rootContainmentStyle(css);
 }
 
 function fieldChoiceControlStyle(theme: ResolvedTheme): CSSProperties {
@@ -242,6 +264,9 @@ function fieldChoiceOptionStyle(theme: ResolvedTheme): CSSProperties {
     color: theme.color.fg,
     fontFamily: theme.fontFamily.sans,
     fontSize: theme.fontSize.md,
+    minWidth: 0,
+    maxWidth: "100%",
+    overflowWrap: "anywhere",
   };
 }
 
@@ -563,6 +588,64 @@ function renderTabs<Press>(node: FacetNode, context: BrickRenderContext<Press>):
   );
 }
 
+function renderNav<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  const { theme, className, inert } = context;
+  const items = cappedArray(safeOwnValue(node, "items"), MAX_INTRINSIC_ITEMS).flatMap((item) => {
+    const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
+    const to = stringValue(safeOwnValue(item, "to"));
+    return label !== undefined && to !== undefined ? [{ label, to }] : [];
+  });
+  if (items.length === 0) return null;
+  const variant = safeOwnValue(node, "variant");
+  const recipe = componentRecipe(theme, "nav", variant);
+  const style = componentBoxStyle(theme, recipe, {
+    direction: "row",
+    gap: "sm",
+    wrap: true,
+  });
+  const itemPart = resolveRecipePart(recipe, "item", theme);
+  const activePart = resolveRecipePart(recipe, "activeTab", theme);
+  const itemText = componentTextStyle(theme, recipe, { color: "fg", weight: "semibold" }, "item");
+  const activeText: CSSProperties = { ...itemText, ...(activePart.text ?? {}) };
+  return (
+    <nav
+      className={className}
+      aria-hidden={inert ? true : undefined}
+      style={withInert(style, inert)}
+    >
+      {items.map((item) => {
+        const active = context.activeScreen === item.to;
+        return (
+          <button
+            key={`${item.to}:${item.label}`}
+            type="button"
+            aria-current={active ? "page" : undefined}
+            tabIndex={inert ? -1 : undefined}
+            disabled={inert ? true : undefined}
+            onClick={inert ? undefined : () => context.navigate(item.to)}
+            style={{
+              ...rootContainmentStyle({
+                background: "transparent",
+                border: 0,
+                cursor: inert ? undefined : "pointer",
+                font: "inherit",
+                padding: theme.space.sm,
+                borderRadius: theme.radius.md,
+              }),
+              ...intrinsicBoxStyle(itemPart.box),
+              ...(itemPart.text ?? {}),
+              ...(active ? intrinsicBoxStyle(activePart.box) : {}),
+              ...(active ? activeText : itemText),
+            }}
+          >
+            {item.label}
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 function renderTable<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
   const { theme, className, inert } = context;
   const columns = cappedArray(safeOwnValue(node, "columns"), MAX_TABLE_COLUMNS).flatMap(
@@ -596,12 +679,12 @@ function renderTable<Press>(node: FacetNode, context: BrickRenderContext<Press>)
       style={withInert(style, inert)}
     >
       <table
-        style={{
+        style={rootContainmentStyle({
           width: "100%",
           borderCollapse: "collapse",
           ...intrinsicBoxStyle(tablePart.box),
           ...(tablePart.text ?? {}),
-        }}
+        })}
       >
         {caption === undefined ? null : <caption style={captionPart.text}>{caption}</caption>}
         <thead>
@@ -670,7 +753,7 @@ function renderChart<Press>(node: FacetNode, context: BrickRenderContext<Press>)
     <figure
       className={className}
       aria-hidden={inert ? true : undefined}
-      style={withInert({ ...style, margin: 0, maxWidth: "100%", minWidth: 0 }, inert)}
+      style={withInert(rootContainmentStyle({ ...style, margin: 0 }), inert)}
     >
       {title === undefined ? null : (
         <figcaption style={componentTextStyle(theme, recipe, { weight: "semibold" }, "title")}>
@@ -682,15 +765,13 @@ function renderChart<Press>(node: FacetNode, context: BrickRenderContext<Press>)
         aria-label={title ?? "chart"}
         viewBox="0 0 360 140"
         width="100%"
-        style={{
+        style={rootContainmentStyle({
           ...intrinsicBoxStyle(plotPart.box),
           display: "block",
-          boxSizing: "border-box",
           width: "100%",
-          maxWidth: "100%",
           height: "auto",
           overflow: "hidden",
-        }}
+        })}
       >
         {title === undefined ? null : <title>{title}</title>}
         {chart}
@@ -699,14 +780,18 @@ function renderChart<Press>(node: FacetNode, context: BrickRenderContext<Press>)
   );
 }
 
-function renderStat<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+function renderMetricLike<Press>(
+  node: FacetNode,
+  context: BrickRenderContext<Press>,
+  component: "metric" | "stat",
+): ReactNode {
   const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
   const value = cappedString(safeOwnValue(node, "value"), MAX_NODE_LABEL_CHARS);
   if (label === undefined || value === undefined) return null;
   const { theme, className, inert } = context;
   const variant = safeOwnValue(node, "variant");
   const tone = safeOwnValue(node, "tone");
-  const recipe = componentRecipe(theme, "stat", variant, tone);
+  const recipe = componentRecipe(theme, component, variant, tone);
   const style = componentBoxStyle(theme, recipe, {
     gap: "xs",
     pad: "sm",
@@ -737,6 +822,69 @@ function renderStat<Press>(node: FacetNode, context: BrickRenderContext<Press>):
         <p style={componentTextStyle(theme, recipe, { color: "fg-muted" }, "trend")}>{delta}</p>
       )}
     </div>
+  );
+}
+
+function renderMetric<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  return renderMetricLike(node, context, "metric");
+}
+
+function renderStat<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  return renderMetricLike(node, context, "stat");
+}
+
+function renderKeyValue<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  const items = cappedArray(safeOwnValue(node, "items"), MAX_INTRINSIC_ITEMS).flatMap(
+    (item, index) => {
+      const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
+      const value = cappedString(safeOwnValue(item, "value"), MAX_NODE_LABEL_CHARS);
+      if (label === undefined || value === undefined) return [];
+      const key = stringValue(safeOwnValue(item, "key")) ?? `${String(index)}:${label}`;
+      return [{ key, label, value, tone: safeOwnValue(item, "tone") }];
+    },
+  );
+  if (items.length === 0) return null;
+  const { theme, className, inert } = context;
+  const variant = safeOwnValue(node, "variant");
+  const recipe = componentRecipe(theme, "keyValue", variant);
+  const style = componentBoxStyle(theme, recipe, {
+    gap: "sm",
+    pad: "sm",
+    bg: "surface",
+    border: true,
+    radius: "md",
+  });
+  const itemStyle = partBoxStyle(theme, recipe, "item", {
+    direction: "row",
+    justify: "between",
+    gap: "md",
+    wrap: true,
+  });
+  return (
+    <dl
+      className={className}
+      aria-hidden={inert ? true : undefined}
+      style={withInert({ ...style, margin: 0 }, inert)}
+    >
+      {items.map((item) => (
+        <div key={item.key} style={itemStyle}>
+          <dt style={partTextStyle(theme, recipe, "label", { color: "fg-muted", size: "sm" })}>
+            {item.label}
+          </dt>
+          <dd
+            style={{
+              ...partTextStyle(theme, recipe, "value", {
+                color: item.tone === "success" ? "success" : "fg",
+                weight: "semibold",
+              }),
+              margin: 0,
+            }}
+          >
+            {item.value}
+          </dd>
+        </div>
+      ))}
+    </dl>
   );
 }
 
@@ -808,23 +956,21 @@ function renderProgress<Press>(node: FacetNode, context: BrickRenderContext<Pres
         aria-valuenow={value}
         aria-valuemin={0}
         aria-valuemax={100}
-        style={{
+        style={rootContainmentStyle({
           ...trackStyle,
           display: "block",
-          boxSizing: "border-box",
           width: "100%",
           height: theme.space.sm,
           overflow: "hidden",
-        }}
+        })}
       >
         <div
-          style={{
+          style={rootContainmentStyle({
             ...fillStyle,
             display: "block",
-            boxSizing: "border-box",
             width: `${String(value)}%`,
             height: "100%",
-          }}
+          })}
         />
       </div>
     </label>
@@ -907,18 +1053,363 @@ function renderDivider<Press>(node: FacetNode, context: BrickRenderContext<Press
       role="separator"
       className={className}
       aria-hidden={inert ? true : undefined}
-      style={inert ? { pointerEvents: "none" } : undefined}
+      style={withInert(rootContainmentStyle(), inert)}
     >
       <hr
-        style={{
+        style={rootContainmentStyle({
           border: 0,
           borderTop: `1px solid ${theme.color.border}`,
           ...(rulePart.box ?? {}),
-        }}
+        })}
       />
       {label === undefined ? null : (
         <span style={componentTextStyle(theme, recipe, {}, "label")}>{label}</span>
       )}
+    </div>
+  );
+}
+
+function renderForm<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  const { theme, className, inert } = context;
+  const variant = safeOwnValue(node, "variant");
+  const recipe = componentRecipe(theme, "form", variant);
+  const style = componentBoxStyle(theme, recipe, {
+    gap: "sm",
+    pad: "md",
+    bg: "surface",
+    border: true,
+    radius: "md",
+    width: "full",
+  });
+  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
+  const body = cappedString(safeOwnValue(node, "body"), MAX_NODE_BODY_CHARS);
+  const submitLabel = cappedString(safeOwnValue(node, "submitLabel"), MAX_NODE_LABEL_CHARS);
+  const submit = context.classifyPress(safeOwnValue(node, "onSubmit"));
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    if (!inert && submit !== null) context.dispatch(submit);
+  };
+  return (
+    <form
+      className={className}
+      aria-hidden={inert ? true : undefined}
+      style={withInert(style, inert)}
+      onSubmit={submit === null ? (event) => event.preventDefault() : handleSubmit}
+    >
+      {title === undefined && body === undefined ? null : (
+        <div style={partBoxStyle(theme, recipe, "header", { gap: "xs" })}>
+          {title === undefined ? null : (
+            <h3 style={componentTextStyle(theme, recipe, { weight: "bold" }, "title")}>{title}</h3>
+          )}
+          {body === undefined ? null : (
+            <p style={componentTextStyle(theme, recipe, { color: "fg-muted" }, "body")}>{body}</p>
+          )}
+        </div>
+      )}
+      {context.children}
+      {submitLabel === undefined ? null : (
+        <button
+          type="submit"
+          disabled={inert || submit === null ? true : undefined}
+          tabIndex={inert ? -1 : undefined}
+          style={{
+            ...rootContainmentStyle({
+              alignSelf: "flex-start",
+              background: theme.color.accent,
+              border: 0,
+              borderRadius: theme.radius.md,
+              color: theme.color["accent-fg"],
+              cursor: inert || submit === null ? undefined : "pointer",
+              font: "inherit",
+              fontWeight: theme.fontWeight.semibold,
+              padding: `${theme.space.sm} ${theme.space.md}`,
+            }),
+            ...(resolveRecipePart(recipe, "actions", theme).box ?? {}),
+            ...(resolveRecipePart(recipe, "actions", theme).text ?? {}),
+          }}
+        >
+          {submitLabel}
+        </button>
+      )}
+    </form>
+  );
+}
+
+function renderSearch<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  const { theme, className, inert, nodeId } = context;
+  const name = cappedString(safeOwnValue(node, "name"), MAX_FIELD_VALUE_CHARS);
+  if (name === undefined) return null;
+  const variant = safeOwnValue(node, "variant");
+  const recipe = componentRecipe(theme, "search", variant);
+  const style = componentBoxStyle(theme, recipe, {
+    direction: "row",
+    gap: "sm",
+    align: "end",
+    wrap: true,
+    width: "full",
+  });
+  const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
+  const placeholder = cappedString(safeOwnValue(node, "placeholder"), MAX_NODE_LABEL_CHARS);
+  const value = cappedString(safeOwnValue(node, "value"), MAX_FIELD_VALUE_CHARS);
+  const submitLabel =
+    cappedString(safeOwnValue(node, "submitLabel"), MAX_NODE_LABEL_CHARS) ?? "Search";
+  const submit = context.classifyPress(safeOwnValue(node, "onSubmit"));
+  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    if (!inert && submit !== null) context.dispatch(submit);
+  };
+  return (
+    <form
+      role="search"
+      className={className}
+      aria-hidden={inert ? true : undefined}
+      style={withInert(style, inert)}
+      onSubmit={submit === null ? (event) => event.preventDefault() : handleSubmit}
+    >
+      <label style={{ ...partBoxStyle(theme, recipe, "control", { gap: "xs", grow: true }) }}>
+        {label === undefined ? null : (
+          <span style={componentTextStyle(theme, recipe, {}, "label")}>{label}</span>
+        )}
+        <input
+          type="search"
+          name={inert ? undefined : name}
+          placeholder={placeholder}
+          defaultValue={value}
+          data-facet-field-id={inert ? undefined : virtualFieldId(nodeId, name)}
+          style={fieldControlStyle(theme, recipe)}
+          disabled={inert ? true : undefined}
+          tabIndex={inert ? -1 : undefined}
+        />
+      </label>
+      <button
+        type="submit"
+        disabled={inert || submit === null ? true : undefined}
+        tabIndex={inert ? -1 : undefined}
+        style={rootContainmentStyle({
+          background: theme.color.accent,
+          border: 0,
+          borderRadius: theme.radius.md,
+          color: theme.color["accent-fg"],
+          cursor: inert || submit === null ? undefined : "pointer",
+          font: "inherit",
+          fontWeight: theme.fontWeight.semibold,
+          padding: `${theme.space.sm} ${theme.space.md}`,
+        })}
+      >
+        {submitLabel}
+      </button>
+    </form>
+  );
+}
+
+interface FilterRenderModel<Press> {
+  readonly id: string;
+  readonly name: string;
+  readonly label: string;
+  readonly input: (typeof FIELD_INPUTS)[number];
+  readonly options: readonly string[];
+  readonly value: unknown;
+  readonly action: Press | null;
+}
+
+function renderFilterControl<Press>(
+  model: FilterRenderModel<Press>,
+  context: BrickRenderContext<Press>,
+  recipe: ComponentRecipe,
+): ReactNode {
+  const { theme, inert } = context;
+  const controlProps = {
+    name: inert ? undefined : model.name,
+    "data-facet-field-id": inert ? undefined : model.id,
+    disabled: inert ? true : undefined,
+    tabIndex: inert ? -1 : undefined,
+    onChange:
+      inert || model.action === null
+        ? undefined
+        : (_event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+            context.dispatch(model.action as Press);
+          },
+  };
+  if (model.input === "select") {
+    return (
+      <select
+        {...controlProps}
+        defaultValue={scalarString(model.value)}
+        style={fieldControlStyle(theme, recipe)}
+      >
+        {model.options.map((option, index) => (
+          <option key={`${String(index)}:${option}`} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    );
+  }
+  if (model.input === "checkbox" || model.input === "switch") {
+    return (
+      <input
+        {...controlProps}
+        type="checkbox"
+        role={model.input === "switch" ? "switch" : undefined}
+        defaultChecked={model.value === true}
+        style={fieldChoiceControlStyle(theme)}
+      />
+    );
+  }
+  return (
+    <input
+      {...controlProps}
+      type={model.input === "radio" ? "text" : model.input}
+      defaultValue={scalarString(model.value)}
+      style={fieldControlStyle(theme, recipe)}
+    />
+  );
+}
+
+function renderFilterBar<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  const { theme, className, inert, nodeId } = context;
+  const action = context.classifyPress(safeOwnValue(node, "onChange"));
+  const filters = cappedArray(safeOwnValue(node, "filters"), MAX_INTRINSIC_ITEMS).flatMap(
+    (item) => {
+      const name = cappedString(safeOwnValue(item, "name"), MAX_FIELD_VALUE_CHARS);
+      const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
+      if (name === undefined || label === undefined) return [];
+      const options = optionsOf(safeOwnValue(item, "options"));
+      return [
+        {
+          id: virtualFieldId(nodeId, name),
+          name,
+          label,
+          input: defaultInputForOptions(safeOwnValue(item, "input"), options),
+          options,
+          value: safeOwnValue(item, "value"),
+          action,
+        },
+      ];
+    },
+  );
+  if (filters.length === 0) return null;
+  const variant = safeOwnValue(node, "variant");
+  const recipe = componentRecipe(theme, "filterBar", variant);
+  const style = componentBoxStyle(theme, recipe, {
+    direction: "row",
+    gap: "sm",
+    align: "end",
+    wrap: true,
+    width: "full",
+  });
+  return (
+    <div
+      role="group"
+      className={className}
+      aria-hidden={inert ? true : undefined}
+      style={withInert(style, inert)}
+    >
+      {filters.map((filter) => (
+        <label
+          key={filter.id}
+          style={partBoxStyle(theme, recipe, "item", { gap: "xs", grow: true })}
+        >
+          <span style={componentTextStyle(theme, recipe, {}, "label")}>{filter.label}</span>
+          {renderFilterControl(filter, context, recipe)}
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function renderEmptyState<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  const { theme, className, inert } = context;
+  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
+  const body = cappedString(safeOwnValue(node, "body"), MAX_NODE_BODY_CHARS);
+  const actionLabel = cappedString(safeOwnValue(node, "actionLabel"), MAX_NODE_LABEL_CHARS);
+  if (title === undefined && body === undefined && actionLabel === undefined) return null;
+  const variant = safeOwnValue(node, "variant");
+  const recipe = componentRecipe(theme, "emptyState", variant);
+  const style = componentBoxStyle(theme, recipe, {
+    gap: "sm",
+    pad: "md",
+    align: "center",
+    bg: "surface",
+    border: true,
+    radius: "md",
+    width: "full",
+  });
+  const press = context.classifyPress(safeOwnValue(node, "onPress"));
+  return (
+    <section
+      className={className}
+      aria-hidden={inert ? true : undefined}
+      style={withInert(style, inert)}
+    >
+      {title === undefined ? null : (
+        <h3 style={componentTextStyle(theme, recipe, { align: "center", weight: "bold" }, "title")}>
+          {title}
+        </h3>
+      )}
+      {body === undefined ? null : (
+        <p
+          style={componentTextStyle(theme, recipe, { align: "center", color: "fg-muted" }, "body")}
+        >
+          {body}
+        </p>
+      )}
+      {actionLabel === undefined ? null : (
+        <button
+          type="button"
+          disabled={inert || press === null ? true : undefined}
+          tabIndex={inert ? -1 : undefined}
+          onClick={inert || press === null ? undefined : () => context.dispatch(press)}
+          style={rootContainmentStyle({
+            background: theme.color.accent,
+            border: 0,
+            borderRadius: theme.radius.md,
+            color: theme.color["accent-fg"],
+            cursor: inert || press === null ? undefined : "pointer",
+            font: "inherit",
+            fontWeight: theme.fontWeight.semibold,
+            padding: `${theme.space.sm} ${theme.space.md}`,
+          })}
+        >
+          {actionLabel}
+        </button>
+      )}
+    </section>
+  );
+}
+
+function renderLoading<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+  const { theme, className, inert } = context;
+  const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS) ?? "Loading";
+  const variant = safeOwnValue(node, "variant");
+  const recipe = componentRecipe(theme, "loading", variant);
+  const style = componentBoxStyle(theme, recipe, {
+    direction: "row",
+    gap: "sm",
+    align: "center",
+    pad: "sm",
+    width: "full",
+  });
+  return (
+    <div
+      role="status"
+      className={className}
+      aria-hidden={inert ? true : undefined}
+      aria-live={inert ? undefined : "polite"}
+      style={withInert(style, inert)}
+    >
+      <span
+        aria-hidden={true}
+        style={rootContainmentStyle({
+          display: "inline-block",
+          width: theme.space.md,
+          height: theme.space.md,
+          borderRadius: theme.radius.full,
+          background: theme.color["surface-2"],
+          flexShrink: 0,
+        })}
+      />
+      <span style={componentTextStyle(theme, recipe, { color: "fg-muted" }, "label")}>{label}</span>
     </div>
   );
 }
@@ -1099,12 +1590,18 @@ export function renderBrickNode<Press>(
       return renderButton(node, context);
     case "tabs":
       return renderTabs(node, context);
+    case "nav":
+      return renderNav(node, context);
     case "table":
       return renderTable(node, context);
     case "chart":
       return renderChart(node, context);
+    case "metric":
+      return renderMetric(node, context);
     case "stat":
       return renderStat(node, context);
+    case "keyValue":
+      return renderKeyValue(node, context);
     case "badge":
       return renderBadge(node, context);
     case "progress":
@@ -1115,6 +1612,16 @@ export function renderBrickNode<Press>(
       return renderList(node, context);
     case "divider":
       return renderDivider(node, context);
+    case "form":
+      return renderForm(node, context);
+    case "search":
+      return renderSearch(node, context);
+    case "filterBar":
+      return renderFilterBar(node, context);
+    case "emptyState":
+      return renderEmptyState(node, context);
+    case "loading":
+      return renderLoading(node, context);
     case "field":
       return renderField(node, context);
     default:

@@ -1,8 +1,8 @@
 # @facet/react
 
 The Facet React renderer: `StageRenderer` turns the declarative stage spec into a
-sandboxed component tree built from the closed Facet vocabulary: v1 high-level
-bricks plus the primitive `box`, `text`, `media`, and `field` fallback.
+sandboxed component tree built from the closed Facet vocabulary: primitive
+bricks plus intrinsic components from the active catalog.
 `useFacet(transport)` keeps that tree in sync by applying patches live. It also
 ships token→CSS and recipe resolution for color, spacing, typography, component
 variants, tones, and renderer-owned recipe parts
@@ -15,13 +15,14 @@ it.)
 npm install @facet/react @facet/client @facet/core react
 ```
 
-`StageRenderer` is the security + fail-safe boundary: only known brick types are
+`StageRenderer` is the security + fail-safe boundary: only known brick/component types are
 rendered, no node carries raw HTML/JS/CSS, and unresolvable ids are skipped
-rather than thrown on. High-level bricks render through token-only theme recipes;
+rather than thrown on. Intrinsic components render through token-only theme recipes;
 unknown recipes, variants, tones, parts, or theme names fall back to defaults.
-The renderer owns the internal DOM for polished bricks such as `section`, `card`,
-`button`, `tabs`, `table`, `chart`, `stat`, `badge`, `progress`, `alert`,
-`list`, `divider`, and `field`; recipe parts style their internal labels,
+The renderer owns the internal DOM for components such as `section`, `card`,
+`button`, `tabs`, `nav`, `table`, `chart`, `metric`, `keyValue`, `badge`,
+`progress`, `alert`, `list`, `divider`, `form`, `search`, `filterBar`,
+`emptyState`, and `loading`; recipe parts style their internal labels,
 controls, rows, tracks, fills, and rules without exposing those part names as
 stage node fields. Primitive nodes remain the base rendering path for custom
 composition. Wire it to a transport with `useFacet` and pass `send` through

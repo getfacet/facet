@@ -47,9 +47,10 @@ freely, guided by a catalog when a project wants stronger design-system policy.
 The trick that makes this safe *and* one-shot-reliable is that freedom and
 fragility are separated onto different axes:
 
-- Freedom comes from **composition**: v1 high-level bricks cover common
-  product/app UI, stamps provide reusable fragments, and primitive bricks remain
-  the fallback for custom flow composition.
+- Freedom comes from **composition**: primitive bricks stay the universal base,
+  intrinsic components cover common product/app UI, catalog compositions provide
+  reusable fragments, and recipe components can expand to ordinary validated
+  nodes.
 - Safety comes from **constraining the vocabulary, not handing over markup**:
   nodes are typed data (no raw HTML/JS), style values are **tokens** not scalars,
   layout is **flow-only** (no absolute positioning), every prop has a
@@ -59,10 +60,10 @@ So "broken" splits into two kinds, and both are designed out: *crashes /
 injection / overlap* are made structurally impossible; *ugliness* is prevented
 because tokens and recipes force every choice onto a coherent scale. One-shot
 leverage (the thing semantic catalogs were good at) comes from catalog policy,
-theme recipes, and stamp metadata, while primitive fallback keeps the system from
+theme recipes, and composition metadata, while primitive fallback keeps the system from
 becoming an opaque widget-only catalog.
 
-## The brick palette
+## Primitive Bricks And Components
 
 `FacetNode` is a closed union in `packages/core/core/src/nodes.ts`. The union can
 grow only by adding typed node shapes, validators, tool policy, and renderer
@@ -80,7 +81,17 @@ The primitive base remains valid as fallback:
 - `field` — a native input (`name`, `input` kind, capped `options` for
   select/radio, token styles).
 
-The v1 high-level bricks are still just typed stage data:
+Components are split by ownership:
+
+- **Intrinsic components** are Facet-core vocabulary. They must be generic across
+  app domains, useful as familiar agent-facing nouns, renderer-owned, safe
+  without client-side business logic, and hard enough to reproduce from
+  primitives that a typed node materially improves reliability.
+- **Recipe components/compositions** are operator or catalog data. They expand
+  to ordinary validated nodes and theme recipes; they do not add new raw code or
+  new client-side behavior.
+
+The v1 intrinsic components are still just typed stage data:
 
 - `button` — a leaf action brick with `label`, optional `variant`/`tone`,
   `disabled`, `onPress`, and `onHold`.
@@ -90,15 +101,41 @@ The v1 high-level bricks are still just typed stage data:
   `tone`, `onPress`/`onHold`, and `children`.
 - `tabs` — local navigation over existing screen/view-state semantics. It does
   not write stage content or call the agent.
+- `nav` — app or section navigation over the same local screen/view-state
+  semantics.
 - `table` — display-only tabular data with capped columns, rows, and cells.
 - `chart` — display-only chart data with capped series and points.
-- `stat`, `badge`, `progress`, `alert`, `list`, and `divider` — compact display
-  and feedback bricks with bounded payloads.
+- `metric`, `keyValue`, `badge`, `progress`, `alert`, `list`, `divider`,
+  `emptyState`, and `loading` — compact display and feedback components with
+  bounded payloads. `stat` remains a legacy alias for `metric`.
+- `form`, `search`, and `filterBar` — input/control surfaces only. Backend work
+  stays with the agent through actions and later patches.
 
-Only `box`, `section`, and `card` are containers in v1. Tables and charts are
-display-only; there is no client fetch, sort/filter state, backend binding, or
-inline script. Overlay-class modal/drawer/popover bricks are intentionally out of
+Only `box`, `section`, `card`, and `form` are containers in v1. Tables, charts,
+search, and filter bars are display/control-only; there is no client fetch,
+sort/filter engine, backend binding, resolver, expression language, or inline
+script. Overlay-class modal/drawer/popover components are intentionally out of
 v1 so normal-flow layout stays the invariant.
+
+## Renderer Layout Contract
+
+The renderer enforces the containment rule for every primitive brick, intrinsic
+component, and expanded recipe component:
+
+- **Parent owns placement.** A parent's direction, gap, align, justify, columns,
+  and wrap place only its immediate children.
+- **Child owns internal layout.** A child can choose its own internal structure
+  and variant, but only inside the placement slot its parent gives it.
+- **Renderer owns containment.** Children may not force the parent wider than
+  its own box. Default horizontal overflow is hidden/bounded; long text wraps;
+  media, charts, tables, and controls get `max-width: 100%` and `min-width: 0`.
+- Horizontal scrolling is allowed only in renderer-owned bounded regions such as
+  tables or an explicit `scroll: "x"` box.
+- Absolute/fixed positioning remains outside the stage vocabulary.
+
+This contract is intentionally central: component renderers must satisfy it at
+their root element, and recipe components satisfy it after expansion because they
+become ordinary validated nodes.
 
 `onPress` is a small **behavior language** — a discriminated union so the agent
 can pre-declare what an interaction does:
@@ -127,11 +164,14 @@ are kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
 ## Catalog policy
 
 `FacetCatalog` is the agent-facing usage manual for the active project. It says
-which bricks and variants are allowed, which stamps may be used, whether
-primitive fallback is allowed or discouraged, whether theme switching is locked,
-and whether the agent should prefer compact screens or edit-before-append
-behavior. Missing or malformed catalog input falls back to `DEFAULT_CATALOG` with
-bounded issues.
+which primitive bricks, components, variants, and compositions are allowed,
+whether primitive fallback is allowed or discouraged, whether theme switching is
+locked, and whether the agent should prefer compact screens or
+edit-before-append behavior. Missing or malformed catalog input falls back to
+`DEFAULT_CATALOG` with bounded issues. The normalized model exposes `bricks`,
+`components`, a required `compositions` policy (`{ mode: "all" }` by default, or
+`{ mode: "allow", names }`), `primitiveFallback`, and a usage `policy` whose
+canonical `order` is `["composition", "component", "primitive"]`.
 
 The catalog is deliberately neutral UI vocabulary/policy. It is not LiveFrame and
 it is not a hosted control plane. Tenant/project lookup, browser auth, agent
@@ -139,7 +179,7 @@ auth, billing, usage metering, rate limits, abuse operations, audit logs, secret
 management, and custom-domain routing stay outside Facet in the platform edge or
 operator environment.
 
-## Catalog, themes, stamps, and seeds: reskin as data
+## Catalog, Themes, Compositions, And Seeds: Reskin As Data
 
 The renderer-owns-the-CSS rule above makes a reskin a one-file change; the theme
 layer makes it a **data** change — without moving the pixel boundary into the
@@ -185,23 +225,24 @@ The document library itself is a **pluggable adapter, exactly like `StageStore`*
 `@facet/runtime/node` (so a browser bundle never drags in `node:fs`); a database
 adapter would live outside, the `@facet/store-postgres` precedent. `loadAssets`
 runs the core validators once at boot (no hot reload), resolves catalog, theme,
-stamp, and initial-tree assets fail-soft, caps hostile asset/issue arrays before
+composition, and initial-tree assets fail-soft, caps hostile asset/issue arrays before
 iterating them, and skips any invalid document with a logged issue — the same
 skip-and-log posture the file stage store already uses.
 
-**Stamps** — validated `{ root, nodes, slots? }` brick fragments — reach the
-quickstart LLM as names, slot names, descriptions, and bounded metadata such as
-`category`, `useWhen`, `avoidWhen`, `tags`, `preferredParent`, `composedOf`, and
-`followUpEdits`. Full stamp JSON, `root`, `nodes`, slot defaults, and unknown
-fields are not prompt surface. The model calls `use_stamp`; the server resolves
-the name from the immutable per-agent stamp snapshot, fills whole-value
-`{{slot}}` markers, remaps every internal id to a fresh id, drops unreachable
-nodes and stamped actions that point outside the expanded subtree, and emits
-ordinary JSON Patch ops through the same closure buffer as hand-authored nodes.
-The parent must be a known container (`box`, `section`, or `card`), and an
-expansion that would overflow one patch batch is refused before any partial
-patch is emitted. There is **no client-side stamp expansion** anywhere:
-`validateTree` and the fail-safe renderer see only normal bricks.
+**Compositions** — `*.composition.json` validated `{ root, nodes, slots? }`
+fragments — reach the quickstart LLM as names, slot names, descriptions, and
+bounded metadata such as `category`, `useWhen`, `avoidWhen`, `tags`,
+`preferredParent`, `composedOf`, and `followUpEdits`. Full composition JSON,
+`root`, `nodes`, slot defaults, and unknown fields are not prompt surface. The
+model calls the `use_composition` tool; the server resolves the name from the
+immutable per-agent composition snapshot, fills whole-value `{{slot}}` markers,
+remaps every internal id to a fresh id, drops unreachable nodes and composition
+actions that point outside the expanded subtree, and emits ordinary JSON Patch
+ops through the same closure buffer as hand-authored nodes. The parent must be a
+known container (`box`, `section`, `card`, or `form`), and an expansion that
+would overflow one patch batch is refused before any partial patch is emitted.
+There is **no client-side composition expansion** anywhere: `validateTree` and
+the fail-safe renderer see only normal bricks.
 
 Seeding a page before the first model call is a `StageStore` **decorator**,
 `withInitialStage`, that opens a fresh session on a validated initial tree
@@ -211,7 +252,7 @@ is inside the same serialized stage-write path (the server stays the only writer
 and is visible to that first turn, which then refines it. The seed also
 **travels the patch channel**: the browser's first connection rehydrated before
 the session existed, so the store reports the fresh seed once (`takeSeeded`) and
-the runtime prepends a root `replace` as that turn's first frame — stamped,
+the runtime prepends a root `replace` as that turn's first frame — ordered,
 replayable, and applied by the same `applyPatch` on both sides. The frame is
 consumed only when the turn persists; a failed first turn re-emits it, and a
 durable commit-then-reject first save can recover the seed report even after the
@@ -387,8 +428,8 @@ the shared fail-safe fold never permanently prunes content that arrives in a
 later batch. Replace the hand-written branches with an LLM call that emits the
 same operations and nothing else in the stack changes. The shared prompt kit
 covers Facet-specific guidance such as compact page UX, edit-before-append
-behavior, bounded `render_page` use, visible-completion rules, and theme/stamp
-metadata privacy; the consuming agent still owns the page brief, provider
+behavior, bounded `render_page` use, visible-completion rules, and
+theme/composition metadata privacy; the consuming agent still owns the page brief, provider
 context, history, budgets, retries, stop policy, and any business/domain tools.
 
 ## Reference brain: `@facet/reference-agent`
@@ -511,8 +552,8 @@ would pull in a dependency or Node built-in, lives in that package instead.
 
 ## Boundaries and what's still out of scope
 
-The current repo implements the **core model** (closed brick vocabulary,
-primitive fallback, catalog policy, tokens/recipes, RFC 6902 patches), sessions
+The current repo implements the **core model** (closed primitive/component
+vocabulary, catalog policy, tokens/recipes, RFC 6902 patches), sessions
 and the event loop, a React renderer, reference SSE+POST transports,
 browser-side transports, the optional AG-UI adapter/event layer, local agent
 surfaces (CLI/bridge), default asset data, file/in-memory asset references, a

@@ -1,6 +1,7 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { STAGE_SPEC } from "@facet/core";
-import type { FacetCatalog, FacetStamp, FacetTheme } from "@facet/core";
+import type { FacetCatalog, FacetComposition, FacetTheme } from "@facet/core";
 import {
   FACET_AGENT_ROLE_PROMPT,
   FACET_ASSET_PRIVACY_PROMPT,
@@ -14,16 +15,20 @@ import {
 
 const PAGE_BRIEF = "# Northstar Studio\n\nBuild a compact product-planning page.";
 
+// Built at runtime so the legacy token never appears as a source literal
+// (same idiom as theme.test.ts).
+const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
+
 function sectionBetween(system: string, start: string, end: string): string {
   const startIndex = system.indexOf(start);
   const endIndex = system.indexOf(end, startIndex + start.length);
   return startIndex >= 0 && endIndex > startIndex ? system.slice(startIndex, endIndex) : "";
 }
 
-function promptSection(system: string, heading: "CATALOG" | "THEMES" | "STAMPS"): string {
+function promptSection(system: string, heading: "CATALOG" | "THEMES" | "COMPOSITIONS"): string {
   const start = system.indexOf(heading);
   if (start < 0) return "";
-  const nextHeadings = ["CATALOG", "THEMES", "STAMPS", FACET_PAGE_BRIEF_HEADING]
+  const nextHeadings = ["CATALOG", "THEMES", "COMPOSITIONS", FACET_PAGE_BRIEF_HEADING]
     .filter((candidate) => candidate !== heading)
     .map((candidate) => system.indexOf(candidate, start + heading.length))
     .filter((index) => index > start);
@@ -31,7 +36,7 @@ function promptSection(system: string, heading: "CATALOG" | "THEMES" | "STAMPS")
   return system.slice(start, end);
 }
 
-function assetSection(system: string, heading: "THEMES" | "STAMPS"): string {
+function assetSection(system: string, heading: "THEMES" | "COMPOSITIONS"): string {
   return promptSection(system, heading);
 }
 
@@ -53,10 +58,10 @@ function catalogFixture(): FacetCatalog {
       { type: "card", variants: ["metric"], guidance: "Use for grouped records." },
       { type: "button", variants: ["primary"] },
     ],
-    stamps: { mode: "allow", names: ["pricing-grid", "onboarding-flow"] },
+    compositions: { mode: "allow", names: ["pricing-grid", "onboarding-flow"] },
     primitiveFallback: "discouraged",
     policy: {
-      order: ["stamp", "brick", "primitive"],
+      order: ["composition", "component", "primitive"],
       editBeforeAppend: true,
       compactScreens: true,
       maxScreenSections: 4,
@@ -64,8 +69,18 @@ function catalogFixture(): FacetCatalog {
   };
 }
 
+describe("prompt-kit canonical composition surface", () => {
+  it("is the canonical composition prompt surface with no old asset names", () => {
+    const source = readFileSync(new URL("./prompt-kit.ts", import.meta.url), "utf8");
+
+    expect(source).toContain("use_composition");
+    expect(source).toContain("compositions");
+    expect(source).not.toMatch(legacyNaming);
+  });
+});
+
 describe("buildFacetAgentSystemPrompt catalog guidance", () => {
-  it("polished brick guidance prefers stamps, high-level variants, and edits before primitive sprawl without leaking assets", () => {
+  it("component guidance prefers compositions, components, and edits before primitive fallback without leaking assets", () => {
     const system = buildFacetAgentSystemPrompt({
       pageBrief: PAGE_BRIEF,
       assets: {
@@ -78,38 +93,38 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
             recipeInternals: "recipe-internal-sentinel",
           },
         ] as unknown as readonly FacetTheme[],
-        stamps: [
+        compositions: [
           {
             name: "pricing-grid",
-            description: "Pricing grid stamp",
+            description: "Pricing grid composition",
             slots: { title: "Private title default" },
-            root: "stamp-root-private",
+            root: "composition-root-private",
             nodes: {
-              "stamp-root-private": {
-                id: "stamp-root-private",
+              "composition-root-private": {
+                id: "composition-root-private",
                 type: "text",
-                value: "stamp-node-json",
+                value: "composition-node-json",
               },
             },
             providerKey: "sk-provider-secret",
             visitorId: "visitor-private-id",
           },
-        ] as unknown as readonly FacetStamp[],
+        ] as unknown as readonly FacetComposition[],
       },
     });
 
-    expect(system).toContain("POLISHED BRICK GUIDANCE");
-    expect(system).toMatch(/polished hierarchy/i);
-    expect(system).toMatch(/advertised stamp first/i);
-    expect(system).toMatch(/high-level bricks with catalog-advertised variants/i);
+    expect(system).toContain("COMPONENT GUIDANCE");
+    expect(system).toMatch(/Primitive Brick -> Component -> Catalog/i);
+    expect(system).toMatch(/catalog-advertised compositions/i);
+    expect(system).toMatch(/intrinsic components with catalog-advertised variants/i);
     expect(system).toMatch(/primitive fallback/i);
     expect(system).toMatch(/product-quality defaults/i);
-    expect(system).toMatch(/field for inputs/i);
+    expect(system).toMatch(/field for raw inputs/i);
     expect(system).toMatch(/button for actions/i);
-    expect(system).toMatch(/tabs for local navigation/i);
+    expect(system).toMatch(/tabs\/nav for local navigation/i);
     expect(system).toMatch(/editBeforeAppend is true/i);
     expect(system).toMatch(
-      /recipe parts and concrete theme token values as renderer\/operator internals/i,
+      /component recipes, composition internals, and concrete theme token values as renderer\/operator internals/i,
     );
     expect(system).toMatch(/never write raw CSS/i);
 
@@ -117,25 +132,34 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(section).toContain("section variants: surface, hero");
     expect(section).toContain("card variants: metric");
     expect(section).toContain("button variants: primary");
-    expect(section).toContain("policy order: stamp -> brick -> primitive");
+    expect(section).toContain("policy order: composition -> component -> primitive");
 
-    const stampSection = assetSection(system, "STAMPS");
+    const compositionsSection = assetSection(system, "COMPOSITIONS");
     expect(system).not.toContain("#123456");
     expect(system).not.toContain("recipe-internal-sentinel");
-    expect(system).not.toContain("stamp-root-private");
-    expect(system).not.toContain("stamp-node-json");
+    expect(system).not.toContain("composition-root-private");
+    expect(system).not.toContain("composition-node-json");
     expect(system).not.toContain("Private title default");
     expect(system).not.toContain("sk-provider-secret");
     expect(system).not.toContain("visitor-private-id");
-    expect(stampSection).not.toContain('"nodes"');
-    expect(stampSection).not.toContain('"root"');
+    expect(compositionsSection).not.toContain('"nodes"');
+    expect(compositionsSection).not.toContain('"root"');
   });
 
   it("teaches append_node against all container parents, not only boxes", () => {
     expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain(
-      "existing container parent (box, section, or card)",
+      "existing container parent (box, section, card, or form)",
     );
     expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toContain("existing box parent");
+  });
+
+  it("teaches the canonical use_composition tool and no old tool names", () => {
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("use_composition");
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toMatch(legacyNaming);
+    expect(FACET_STATE_EDITING_PROMPT).toContain("use_composition");
+    expect(FACET_STATE_EDITING_PROMPT).not.toMatch(legacyNaming);
+    expect(FACET_ASSET_PRIVACY_PROMPT).toContain("composition");
+    expect(FACET_ASSET_PRIVACY_PROMPT).not.toMatch(legacyNaming);
   });
 
   it("serializes compact catalog policy without leaking theme values or unknown fields", () => {
@@ -166,15 +190,15 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(section).toMatch(/active theme:\s*studio/i);
     expect(section).toMatch(/switchPolicy:\s*locked/i);
     expect(section).toMatch(/allowed themes:\s*studio, print/i);
-    expect(section).toMatch(/allowed bricks/i);
+    expect(section).toMatch(/allowed components/i);
     expect(section).toContain("section");
     expect(section).toContain("surface, hero");
     expect(section).toContain("Use for compact screen regions.");
     expect(section).toContain("card");
     expect(section).toContain("metric");
-    expect(section).toMatch(/stamp policy:\s*allow pricing-grid, onboarding-flow/i);
+    expect(section).toMatch(/composition policy:\s*allow pricing-grid, onboarding-flow/i);
     expect(section).toMatch(/primitiveFallback:\s*discouraged/i);
-    expect(section).toMatch(/policy order:\s*stamp -> brick -> primitive/i);
+    expect(section).toMatch(/policy order:\s*composition -> component -> primitive/i);
     expect(section).toMatch(/edit-before-append:\s*true/i);
     expect(section).toMatch(/compact screen:\s*true/i);
     expect(section).toMatch(/max screen sections:\s*4/i);
@@ -195,7 +219,7 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(section).toMatch(/locked/i);
     expect(section).toMatch(/do not call set_theme/i);
     expect(section).toMatch(/keep the active theme/i);
-    expect(section).toMatch(/stamp -> high-level brick -> primitive fallback/i);
+    expect(section).toMatch(/composition -> component -> primitive fallback/i);
     expect(section).toMatch(/edit before you append/i);
     expect(section).toMatch(/compact screen/i);
   });
@@ -221,11 +245,11 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(section).toMatch(/catalog allows broader screens/i);
   });
 
-  it("serializes only whitelisted compact stamp metadata and no stamp JSON", () => {
-    const stamps = [
+  it("serializes composition metadata (whitelisted compact fields only) and no composition JSON", () => {
+    const compositions = [
       {
         name: "metric-card",
-        description: "Metric card stamp",
+        description: "Metric card composition",
         metadata: {
           category: "dashboard",
           useWhen: "Show one KPI with trend context.",
@@ -234,12 +258,12 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
           tags: ["analytics", "kpi"],
           repeatable: true,
           preferredParent: "section",
-          composedOf: ["card", "stat"],
+          composedOf: ["card", "metric"],
           dataRequirements: ["metric label", "current value"],
-          followUpEdits: ["update stat value after data changes"],
+          followUpEdits: ["update metric value after data changes"],
           root: "metadata-root-leak",
           nodes: { leak: true },
-          unknownSecret: "stamp-secret",
+          unknownSecret: "composition-secret",
           themeTokenValues: { accent: "#abcdef" },
         },
         slots: { title: "Revenue", value: "$42k" },
@@ -249,16 +273,18 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
           "metric-title": { id: "metric-title", type: "text", value: "{{title}}" },
         },
       },
-    ] as unknown as readonly FacetStamp[];
+    ] as unknown as readonly FacetComposition[];
 
     const system = buildFacetAgentSystemPrompt({
       pageBrief: PAGE_BRIEF,
-      assets: { stamps },
+      assets: { compositions },
     });
-    const section = assetSection(system, "STAMPS");
+    const section = assetSection(system, "COMPOSITIONS");
 
     expect(section).toContain("metric-card");
-    expect(section).toContain("Metric card stamp");
+    expect(section).toContain("Metric card composition");
+    expect(section).toContain("use_composition");
+    expect(section).not.toMatch(legacyNaming);
     expect(section).toContain("slots: title, value");
     expect(section).toContain("category: dashboard");
     expect(section).toContain("useWhen: Show one KPI with trend context.");
@@ -267,15 +293,15 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(section).toContain("tags: analytics, kpi");
     expect(section).toContain("repeatable: true");
     expect(section).toContain("preferredParent: section");
-    expect(section).toContain("composedOf: card, stat");
+    expect(section).toContain("composedOf: card, metric");
     expect(section).toContain("dataRequirements: metric label, current value");
-    expect(section).toContain("followUpEdits: update stat value after data changes");
+    expect(section).toContain("followUpEdits: update metric value after data changes");
     expect(section).not.toContain("metric-root");
     expect(section).not.toContain("metric-title");
     expect(section).not.toContain("metadata-root-leak");
     expect(section).not.toContain("Revenue");
     expect(section).not.toContain("$42k");
-    expect(section).not.toContain("stamp-secret");
+    expect(section).not.toContain("composition-secret");
     expect(section).not.toContain("#abcdef");
     expect(section).not.toContain('"nodes"');
     expect(section).not.toContain('"root"');
@@ -332,12 +358,14 @@ describe("buildFacetAgentSystemPrompt", () => {
     const base = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
     const empty = buildFacetAgentSystemPrompt({
       pageBrief: PAGE_BRIEF,
-      assets: { themes: [], stamps: [] },
+      assets: { themes: [], compositions: [] },
     });
 
     expect(empty).toBe(base);
     expect(base).not.toContain("Themes you may select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reusable stamps you may expand with the use_stamp tool");
+    expect(base).not.toContain(
+      "Reusable catalog compositions you may expand with the use_composition tool",
+    );
   });
 
   it("serializes theme names and descriptions only, never theme values or unknown fields", () => {
@@ -371,8 +399,8 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(themesSection).not.toContain('"fontFamily"');
   });
 
-  it("serializes stamp names, descriptions, and slot names only, never node JSON", () => {
-    const stamps: readonly FacetStamp[] = [
+  it("serializes composition names, descriptions, and slot names only, never node JSON", () => {
+    const compositions: readonly FacetComposition[] = [
       {
         name: "cta",
         description: "A call-to-action button",
@@ -385,40 +413,44 @@ describe("buildFacetAgentSystemPrompt", () => {
       },
     ];
 
-    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF, assets: { stamps } });
-    const stampsSection = assetSection(system, "STAMPS");
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF, assets: { compositions } });
+    const compositionsSection = assetSection(system, "COMPOSITIONS");
 
-    expect(stampsSection).toContain("cta");
-    expect(stampsSection).toContain("A call-to-action button");
-    expect(stampsSection).toContain("label");
-    expect(stampsSection).toContain("href");
-    expect(stampsSection).toContain("use_stamp");
-    expect(stampsSection).not.toContain("cta-label");
-    expect(stampsSection).not.toContain('"nodes"');
-    expect(stampsSection).not.toContain('"root"');
-    expect(stampsSection).not.toContain("Get started");
-    expect(stampsSection).not.toContain("/signup");
+    expect(compositionsSection).toContain("cta");
+    expect(compositionsSection).toContain("A call-to-action button");
+    expect(compositionsSection).toContain("label");
+    expect(compositionsSection).toContain("href");
+    expect(compositionsSection).toContain("use_composition");
+    expect(compositionsSection).not.toContain("cta-label");
+    expect(compositionsSection).not.toContain('"nodes"');
+    expect(compositionsSection).not.toContain('"root"');
+    expect(compositionsSection).not.toContain("Get started");
+    expect(compositionsSection).not.toContain("/signup");
   });
 
-  it("formats assets without descriptions and slotless stamps cleanly", () => {
+  it("formats assets without descriptions and slotless compositions cleanly", () => {
     const system = buildFacetAgentSystemPrompt({
       pageBrief: PAGE_BRIEF,
       assets: {
         themes: [{ name: "plain" }, { name: "empty-description", description: "" }],
-        stamps: [
-          { name: "plain-stamp", root: "s", nodes: { s: { id: "s", type: "text", value: "x" } } },
+        compositions: [
+          {
+            name: "plain-composition",
+            root: "s",
+            nodes: { s: { id: "s", type: "text", value: "x" } },
+          },
         ],
       },
     });
 
     const themesSection = assetSection(system, "THEMES");
-    const stampsSection = assetSection(system, "STAMPS");
+    const compositionsSection = assetSection(system, "COMPOSITIONS");
     expect(themesSection).toContain("- plain");
     expect(themesSection).toContain("- empty-description");
     expect(themesSection).not.toContain("undefined");
-    expect(stampsSection).toContain("- plain-stamp");
-    expect(stampsSection).toContain("slots: (none)");
-    expect(stampsSection).not.toContain("undefined");
+    expect(compositionsSection).toContain("- plain-composition");
+    expect(compositionsSection).toContain("slots: (none)");
+    expect(compositionsSection).not.toContain("undefined");
   });
 
   it("skips malformed assets and bounds prompt-only asset metadata", () => {
@@ -432,32 +464,32 @@ describe("buildFacetAgentSystemPrompt", () => {
           { name: "has space", description: "invalid" },
           { name: "safe", description: longDescription },
         ] as unknown as FacetTheme[],
-        stamps: [
+        compositions: [
           null,
-          { name: "bad stamp", slots: { ok: "x" } },
+          { name: "bad composition", slots: { ok: "x" } },
           {
-            name: "stamp",
+            name: "composition",
             description: longDescription,
             slots: Object.fromEntries(slotEntries),
             root: "s",
             nodes: { s: { id: "s", type: "text", value: "x" } },
           },
-        ] as unknown as FacetStamp[],
+        ] as unknown as FacetComposition[],
       },
     });
 
     const themesSection = assetSection(system, "THEMES");
-    const stampsSection = assetSection(system, "STAMPS");
+    const compositionsSection = assetSection(system, "COMPOSITIONS");
     expect(themesSection).toContain("- safe:");
     expect(themesSection).not.toContain("has space");
     expect(themesSection).not.toContain(longDescription);
     expect(themesSection).toContain("d".repeat(200));
-    expect(stampsSection).toContain("- stamp:");
-    expect(stampsSection).not.toContain("bad stamp");
-    expect(stampsSection).not.toContain(longDescription);
-    expect(stampsSection).toContain("slot_0");
-    expect(stampsSection).toContain("slot_63");
-    expect(stampsSection).not.toContain("slot_64");
+    expect(compositionsSection).toContain("- composition:");
+    expect(compositionsSection).not.toContain("bad composition");
+    expect(compositionsSection).not.toContain(longDescription);
+    expect(compositionsSection).toContain("slot_0");
+    expect(compositionsSection).toContain("slot_63");
+    expect(compositionsSection).not.toContain("slot_64");
   });
 
   it("keeps asset guidance separate from the final page brief", () => {
@@ -465,11 +497,11 @@ describe("buildFacetAgentSystemPrompt", () => {
       pageBrief: PAGE_BRIEF,
       assets: {
         themes: [{ name: "studio", description: "Clean workspace" }],
-        stamps: [{ name: "hero", slots: { title: "Default" }, root: "h", nodes: {} }],
+        compositions: [{ name: "hero", slots: { title: "Default" }, root: "h", nodes: {} }],
       },
     });
 
-    expect(sectionBetween(system, "THEMES", FACET_PAGE_BRIEF_HEADING)).toContain("STAMPS");
+    expect(sectionBetween(system, "THEMES", FACET_PAGE_BRIEF_HEADING)).toContain("COMPOSITIONS");
     expect(system).toMatch(new RegExp(`${FACET_PAGE_BRIEF_HEADING}\\n\\n# Northstar Studio`));
   });
 });

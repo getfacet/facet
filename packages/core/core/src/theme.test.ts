@@ -1,6 +1,12 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isValidThemeName, MAX_DESCRIPTION_LENGTH, validateTheme } from "./theme.js";
+import { DEFAULT_CATALOG } from "./catalog.js";
+import {
+  isValidThemeName,
+  MAX_DESCRIPTION_LENGTH,
+  RECIPE_COMPONENTS,
+  validateTheme,
+} from "./theme.js";
 import type { FacetTheme } from "./theme.js";
 
 /** Every issue carrying severity "error" refuses the whole document. */
@@ -375,8 +381,8 @@ describe("validateTheme", () => {
   });
 
   // Pins the theme\u2192boundedDescription wiring (label "theme" + MAX_DESCRIPTION_LENGTH
-  // cap); the shared truncate/reject logic is also covered on the stamp path, but
-  // that coverage is label-agnostic and wouldn't catch a wrong label/cap here.
+  // cap); the shared truncate/reject logic is also covered on the composition path,
+  // but that coverage is label-agnostic and wouldn't catch a wrong label/cap here.
   it("drops a non-string description with a labelled warning", () => {
     const { theme, issues } = validateTheme({ name: "x", description: 123 });
     expect(theme?.description).toBeUndefined();
@@ -546,5 +552,74 @@ describe("validateTheme", () => {
     expect(theme?.recipes?.button?.["bad variant"]).toBeUndefined();
     expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, "script")).toBe(false);
     expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("accepts metric, stat, and every catalog-advertised component recipe variant", () => {
+    const recipes: Record<string, Record<string, { box: { bg: "surface" } }>> = {};
+    const defaultComponents = DEFAULT_CATALOG.components ?? [];
+    for (const component of defaultComponents) {
+      const variants = component.variants ?? ["default"];
+      recipes[component.type] = Object.fromEntries(
+        variants.map((variant) => [variant, { box: { bg: "surface" } }]),
+      );
+    }
+    recipes.stat = { default: { box: { bg: "surface" } }, success: { box: { bg: "surface" } } };
+
+    const { theme, issues } = validateTheme({ name: "component-recipes", recipes });
+
+    expect(theme).toBeDefined();
+    expect(hasError(issues)).toBe(false);
+    for (const component of defaultComponents) {
+      for (const variant of component.variants ?? ["default"]) {
+        expect(theme?.recipes?.[component.type]?.[variant]?.box).toEqual({ bg: "surface" });
+      }
+    }
+    expect(theme?.recipes?.metric?.default?.box).toEqual({ bg: "surface" });
+    expect(theme?.recipes?.stat?.success?.box).toEqual({ bg: "surface" });
+    for (const component of defaultComponents) {
+      expect((RECIPE_COMPONENTS as readonly string[]).includes(component.type)).toBe(true);
+    }
+  });
+
+  it("keeps structural composition definitions out of style recipes under canonical names", () => {
+    const { theme, issues } = validateTheme({
+      name: "structural-recipes",
+      recipes: {
+        metric: {
+          default: {
+            box: { bg: "surface", pad: "sm" },
+            root: "root",
+            nodes: {
+              root: { id: "root", type: "text", value: "not a recipe" },
+            },
+            slots: { title: "Title" },
+            [["component", "Definitions"].join("")]: [{ name: "not-a-recipe" }],
+            compositions: [{ name: "not-a-recipe" }],
+          },
+        },
+      },
+    });
+
+    expect(theme).toBeDefined();
+    expect(hasError(issues)).toBe(false);
+    expect(theme?.recipes?.metric?.default).toEqual({ box: { bg: "surface", pad: "sm" } });
+    const recipe = theme?.recipes?.metric?.default ?? {};
+    expect(Object.prototype.hasOwnProperty.call(recipe, "root")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(recipe, "nodes")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(recipe, "slots")).toBe(false);
+    expect(
+      Object.prototype.hasOwnProperty.call(recipe, ["component", "Definitions"].join("")),
+    ).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(recipe, "compositions")).toBe(false);
+    expect(issues.filter((issue) => issue.severity === "warning").length).toBeGreaterThanOrEqual(5);
+
+    // DC-012: the theme surface (validator + this suite) carries canonical
+    // composition naming only. The legacy token is spelled split so this
+    // hygiene check cannot match its own source.
+    const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
+    expect(readFileSync(new URL("./theme.ts", import.meta.url), "utf8")).not.toMatch(legacyNaming);
+    expect(readFileSync(new URL("./theme.test.ts", import.meta.url), "utf8")).not.toMatch(
+      legacyNaming,
+    );
   });
 });

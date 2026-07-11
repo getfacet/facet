@@ -94,7 +94,7 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     expect(container!.querySelectorAll("div").length).toBeLessThan(10);
   });
 
-  it("keeps extracted high-level containers on the shared render budget", () => {
+  it("keeps extracted component containers on the shared render budget", () => {
     const children = Array.from({ length: 200_000 }, (_, index) => `missing-${String(index)}`);
     const hostile: FacetTree = {
       root: "root",

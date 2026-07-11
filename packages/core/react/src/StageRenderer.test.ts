@@ -132,7 +132,7 @@ describe("StageRenderer fail-safe boundary", () => {
     const broken = { id: "root", type: "box", children: "oops" } as unknown as FacetNode;
     expect(() => render(tree({ root: broken }))).not.toThrow();
     expect(render(tree({ root: broken }))).toBe(
-      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere"></div>',
     );
   });
 
@@ -341,7 +341,7 @@ describe("StageRenderer brick-vocab v1", () => {
   });
 });
 
-describe("StageRenderer high-level renderer (static)", () => {
+describe("StageRenderer component renderer (static)", () => {
   const catalogTheme: FacetTheme = {
     name: "catalog",
     color: {
@@ -382,7 +382,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     },
   };
 
-  it("renders high-level layout, action, data, and feedback bricks with recipes", () => {
+  it("renders component layout, action, data, and feedback nodes with recipes", () => {
     const out = renderThemed(
       {
         root: "root",
@@ -474,7 +474,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     expect(out).toContain("<hr");
   });
 
-  it("renders polished high-level brick parts", () => {
+  it("renders component recipe parts", () => {
     const partsTheme: FacetTheme = {
       name: "parts",
       color: {
@@ -735,7 +735,7 @@ describe("StageRenderer high-level renderer (static)", () => {
     );
   });
 
-  it("keeps high-level raw-path malformed data fail-safe", () => {
+  it("keeps component raw-path malformed data fail-safe", () => {
     const noisy = {
       root: {
         id: "root",
@@ -1010,7 +1010,7 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain("width:100%");
   });
 
-  it("renders default text and select fields with polished token-resolved control chrome", () => {
+  it("renders default text and select fields with token-resolved control chrome", () => {
     const out = render(
       tree({
         root: box("root", ["email", "surface"]),
@@ -1063,7 +1063,7 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain("Email");
   });
 
-  it("caps raw high-level and primitive strings before rendering", () => {
+  it("caps raw component and primitive strings before rendering", () => {
     const longLabel = "L".repeat(MAX_NODE_LABEL_CHARS + 10);
     const longBody = "B".repeat(MAX_NODE_BODY_CHARS + 10);
     const out = render(
@@ -1256,10 +1256,10 @@ describe("StageRenderer screens + hidden (static)", () => {
 
 // Appear (DC-001/DC-005): a classifiable appear token maps to a class name and
 // gates ONE per-stage <style> element (detected during the budget-bounded render
-// walk — reachable nodes only); token-free trees stay byte-identical to today
-// (no style element, no class attribute), and raw-path junk — including cyclic
-// trees and null/scalar node VALUES in the nodes record — renders plain, never
-// throws or hangs.
+// walk — reachable nodes only); token-free trees carry no style element or class
+// attribute beyond the renderer's containment guard, and raw-path junk —
+// including cyclic trees and null/scalar node VALUES in the nodes record —
+// renders plain, never throws or hangs.
 describe("StageRenderer appear (static)", () => {
   it("renders the appear class and a single style element for appear tokens", () => {
     const out = render(
@@ -1308,7 +1308,7 @@ describe("StageRenderer appear (static)", () => {
     expect(out).not.toContain("<style");
   });
 
-  it("keeps a token-free tree byte-identical to today (no style element, no class attribute)", () => {
+  it("keeps a token-free tree free of appear CSS while retaining containment", () => {
     const plain = tree({
       root: { id: "root", type: "box", children: ["t", "f"] },
       t: text("t", "hello"),
@@ -1317,10 +1317,10 @@ describe("StageRenderer appear (static)", () => {
     const out = render(plain);
     expect(out).not.toContain("<style");
     expect(out).not.toContain("class=");
-    // The exact-markup pin for a plain box (same string the pre-appear renderer
-    // emitted) — className={undefined} must add nothing.
+    // The exact-markup pin for a plain box — className={undefined} must add
+    // nothing, while root containment remains part of the renderer contract.
     expect(render(tree({ root: { id: "root", type: "box", children: [] } }))).toBe(
-      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere"></div>',
     );
   });
 
@@ -1362,7 +1362,7 @@ describe("StageRenderer appear (static)", () => {
     expect(out).toContain("-webkit-touch-callout:none");
   });
 
-  it("does not add hold-only CSS to press-only or plain boxes (byte-identical to today)", () => {
+  it("does not add hold-only CSS to press-only or plain boxes", () => {
     const pressOnly = tree({
       root: { id: "root", type: "box", children: ["b"] },
       b: { id: "b", type: "box", onPress: { kind: "agent", name: "open" }, children: ["t"] },
@@ -1375,7 +1375,7 @@ describe("StageRenderer appear (static)", () => {
     // A plain box carries no interactivity CSS at all.
     const plain = render(tree({ root: { id: "root", type: "box", children: [] } }));
     expect(plain).toBe(
-      '<div style="display:flex;flex-direction:column;box-sizing:border-box"></div>',
+      '<div style="display:flex;flex-direction:column;box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere"></div>',
     );
   });
 

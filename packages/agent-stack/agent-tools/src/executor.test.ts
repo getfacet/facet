@@ -1,8 +1,21 @@
-import { describe, expect, it } from "vitest";
-import { MAX_CHART_POINTS, MAX_TABLE_ROWS } from "@facet/core";
-import type { FacetCatalog, FacetStamp, FacetTree, JsonPatchOperation } from "@facet/core";
+import { readFileSync } from "node:fs";
+import { describe, expect, it, vi } from "vitest";
+import { MAX_CHART_POINTS, MAX_PATCH_OPS, MAX_TABLE_ROWS } from "@facet/core";
+import type {
+  FacetCatalog,
+  FacetComposition,
+  FacetNode,
+  FacetTree,
+  JsonPatchOperation,
+} from "@facet/core";
 import { executeStageTool } from "./executor.js";
+import { foldStageShadow } from "./stage-shadow.js";
 import { parseAgentToolObservation } from "./observation.js";
+
+// Legacy vocabulary is built at runtime so the removed tokens never appear as
+// source literals (same idiom as theme.test.ts).
+const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
+const legacyTool = ["use_", "st", "amp"].join("");
 
 const ROOT_TREE: FacetTree = {
   root: "root",
@@ -26,14 +39,33 @@ const CATALOG_POLICY: FacetCatalog = {
     { type: "section", variants: ["surface"] },
     { type: "button", variants: ["primary"] },
   ],
-  stamps: { mode: "allow", names: ["approved"] },
+  compositions: { mode: "allow", names: ["approved"] },
   primitiveFallback: "allowed",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
   },
 };
+
+const CARD_COMPOSITION: FacetComposition = {
+  name: "card",
+  slots: { title: "Fallback" },
+  root: "card",
+  nodes: {
+    card: { id: "card", type: "box", children: ["title"] },
+    title: { id: "title", type: "text", value: "{{title}}" },
+  },
+};
+
+function boxWithLeaves(nodeCount: number): FacetComposition {
+  const children = Array.from({ length: nodeCount - 1 }, (_, index) => `leaf-${String(index)}`);
+  const nodes: Record<string, FacetNode> = {
+    big: { id: "big", type: "box", children },
+  };
+  for (const id of children) nodes[id] = { id, type: "text", value: id };
+  return { name: "big", root: "big", nodes };
+}
 
 describe("executeStageTool", () => {
   it("valid append returns an ok observation patch metadata and updated shadow", () => {
@@ -87,6 +119,44 @@ describe("executeStageTool", () => {
       children: ["greeting"],
     });
     expect(result.issues).toEqual([]);
+  });
+
+  it("append_node refuses to replace the stage root and refuses to overwrite an existing id", () => {
+    const replaceRoot = executeStageTool(
+      {
+        id: "call-append-root",
+        name: "append_node",
+        input: { parentId: "root", node: { id: "root", type: "box", children: [] } },
+      },
+      { shadow: TREE_WITH_TEXT },
+    );
+    expect(replaceRoot.status).toBe("error");
+    if (replaceRoot.status === "error") expect(replaceRoot.code).toBe("invalid_input");
+    expect(replaceRoot.patches).toEqual([]);
+    expect(replaceRoot.patchCount).toBe(0);
+    expect(replaceRoot.shadow).toBe(TREE_WITH_TEXT);
+    expect(replaceRoot.observation.text).toContain("cannot replace the stage root");
+
+    const collision = executeStageTool(
+      {
+        id: "call-append-collision",
+        name: "append_node",
+        input: { parentId: "root", node: { id: "title", type: "text", value: "dup" } },
+      },
+      { shadow: TREE_WITH_TEXT },
+    );
+    expect(collision.status).toBe("error");
+    if (collision.status === "error") expect(collision.code).toBe("invalid_input");
+    expect(collision.patches).toEqual([]);
+    expect(collision.patchCount).toBe(0);
+    expect(collision.shadow).toBe(TREE_WITH_TEXT);
+    expect(parseAgentToolObservation(collision.observation.text)).toMatchObject({
+      tool: "append_node",
+      status: "error",
+      outcome: "rejected",
+      message:
+        'error: append_node — node "title" already exists. Use set_node to replace it or choose a new id.',
+    });
   });
 
   it("sanitizes direct node tool payloads before returning messages and patches", () => {
@@ -424,48 +494,575 @@ describe("executeStageTool", () => {
     expect(result.shadow.theme).toBe("brand");
   });
 
-  it("use_stamp expands a known stamp with fresh ids and appends it under the parent", () => {
-    const stamp: FacetStamp = {
-      name: "card",
-      slots: { title: "Fallback" },
-      root: "card",
-      nodes: {
-        card: { id: "card", type: "box", children: ["title"] },
-        title: { id: "title", type: "text", value: "{{title}}" },
-      },
-    };
+  describe("use_composition", () => {
+    it("use_composition is the canonical executor surface with no old-tool compatibility branch", () => {
+      const source = readFileSync(new URL("./executor.ts", import.meta.url), "utf8");
 
-    const result = executeStageTool(
-      {
-        id: "call-7",
-        name: "use_stamp",
-        input: { name: "card", params: { title: "Hello" }, at: { parent: "root" } },
-      },
-      { shadow: ROOT_TREE, assets: { stamps: [stamp] } },
-    );
-
-    expect(result.status).toBe("ok");
-    expect(result.patchCount).toBe(3);
-    expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
-      tool: "use_stamp",
-      status: "ok",
-      outcome: "applied_visible",
-      visible_to_visitor: true,
-      patch_count: 3,
+      expect(source).toContain('"use_composition"');
+      expect(source).toContain("expandComposition");
+      expect(source).toContain("invalid_composition");
+      expect(source).not.toMatch(legacyNaming);
     });
-    const rootChildren =
-      result.shadow.nodes["root"]?.type === "box" ? result.shadow.nodes["root"].children : [];
-    const cardId = rootChildren[0];
-    expect(cardId).toBeDefined();
-    expect(cardId).not.toBe("card");
-    const card = cardId === undefined ? undefined : result.shadow.nodes[cardId];
-    expect(card?.type).toBe("box");
-    const titleId = card?.type === "box" ? card.children[0] : undefined;
-    expect(titleId).toBeDefined();
-    expect(titleId).not.toBe("title");
-    expect(titleId === undefined ? undefined : result.shadow.nodes[titleId]).toMatchObject({
-      type: "text",
-      value: "Hello",
+
+    it("use_composition expands a known composition with fresh ids and appends it under the parent", () => {
+      const result = executeStageTool(
+        {
+          id: "call-7",
+          name: "use_composition",
+          input: { name: "card", params: { title: "Hello" }, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+
+      expect(result.status).toBe("ok");
+      expect(result.patchCount).toBe(3);
+      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
+        tool: "use_composition",
+        status: "ok",
+        outcome: "applied_visible",
+        visible_to_visitor: true,
+        patch_count: 3,
+      });
+      const rootChildren =
+        result.shadow.nodes["root"]?.type === "box" ? result.shadow.nodes["root"].children : [];
+      const cardId = rootChildren[0];
+      expect(cardId).toBeDefined();
+      expect(cardId).not.toBe("card");
+      const card = cardId === undefined ? undefined : result.shadow.nodes[cardId];
+      expect(card?.type).toBe("box");
+      const titleId = card?.type === "box" ? card.children[0] : undefined;
+      expect(titleId).toBeDefined();
+      expect(titleId).not.toBe("title");
+      expect(titleId === undefined ? undefined : result.shadow.nodes[titleId]).toMatchObject({
+        type: "text",
+        value: "Hello",
+      });
+    });
+
+    it("use_composition emits minted ids as valid JSON in data, not embedded in the human message", () => {
+      const slotCount = 12;
+      const slots: Record<string, string> = {};
+      const nodes: Record<string, FacetNode> = {
+        panel: {
+          id: "panel",
+          type: "box",
+          children: Array.from({ length: slotCount }, (_, i) => `line-${String(i)}`),
+        },
+      };
+      for (let i = 0; i < slotCount; i += 1) {
+        slots[`line-${String(i)}`] = `Default copy for slot number ${String(i)}`;
+        nodes[`line-${String(i)}`] = {
+          id: `line-${String(i)}`,
+          type: "text",
+          value: `{{line-${String(i)}}}`,
+        };
+      }
+      const composition: FacetComposition = { name: "wide", slots, root: "panel", nodes };
+
+      const result = executeStageTool(
+        {
+          id: "call-wide",
+          name: "use_composition",
+          input: { name: "wide", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [composition] } },
+      );
+
+      expect(result.status).toBe("ok");
+      const observation = parseAgentToolObservation(result.observation.text);
+      expect(observation?.message).toBe('Used composition "wide".');
+      expect(observation?.message).not.toContain("{");
+      expect(observation?.data).toBeDefined();
+      const meta = JSON.parse(observation?.data ?? "") as {
+        readonly root: string;
+        readonly slots: Readonly<Record<string, string>>;
+        readonly ids: Readonly<Record<string, string>>;
+      };
+      expect(typeof meta.root).toBe("string");
+      expect(meta.ids["panel"]).toBe(meta.root);
+      expect(Object.keys(meta.slots)).toHaveLength(slotCount);
+      for (const slotName of Object.keys(slots)) {
+        expect(typeof meta.slots[slotName]).toBe("string");
+      }
+    });
+
+    it("use_composition keeps composition metadata valid JSON when the ids map overflows the cap", () => {
+      const nodeCount = 90;
+      const nodes: Record<string, FacetNode> = {
+        "overflow-root-container": {
+          id: "overflow-root-container",
+          type: "box",
+          children: Array.from(
+            { length: nodeCount },
+            (_, i) => `overflow-child-node-number-${String(i)}`,
+          ),
+        },
+      };
+      for (let i = 0; i < nodeCount; i += 1) {
+        const id = `overflow-child-node-number-${String(i)}`;
+        nodes[id] = { id, type: "text", value: `Row ${String(i)}` };
+      }
+      const composition: FacetComposition = {
+        name: "overflow",
+        root: "overflow-root-container",
+        nodes,
+      };
+
+      const result = executeStageTool(
+        {
+          id: "call-overflow",
+          name: "use_composition",
+          input: { name: "overflow", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [composition] } },
+      );
+
+      expect(result.status).toBe("ok");
+      const observation = parseAgentToolObservation(result.observation.text);
+      expect(observation?.data).toBeDefined();
+      const raw = observation?.data ?? "";
+      expect(raw.length).toBeLessThanOrEqual(2048);
+      const meta = JSON.parse(raw) as {
+        readonly root: string;
+        readonly ids: Readonly<Record<string, string>>;
+        readonly idsOmitted?: number;
+      };
+      expect(typeof meta.root).toBe("string");
+      expect(meta.idsOmitted).toBeGreaterThan(0);
+      expect(Object.keys(meta.ids).length + (meta.idsOmitted ?? 0)).toBe(nodeCount + 1);
+    });
+
+    it("use_composition keeps a slots-dominated composition's metadata valid JSON under the cap", () => {
+      const slotCount = 60;
+      const slots: Record<string, string> = {};
+      const nodes: Record<string, FacetNode> = {
+        "slots-heavy-root-container-node": {
+          id: "slots-heavy-root-container-node",
+          type: "box",
+          children: Array.from(
+            { length: slotCount },
+            (_, i) => `slots-heavy-source-text-node-number-${String(i)}`,
+          ),
+        },
+      };
+      for (let i = 0; i < slotCount; i += 1) {
+        const id = `slots-heavy-source-text-node-number-${String(i)}`;
+        const slotName = `descriptive-slot-marker-placeholder-name-number-${String(i)}`;
+        slots[slotName] = `Default copy for ${slotName}`;
+        nodes[id] = { id, type: "text", value: `{{${slotName}}}` };
+      }
+      const composition: FacetComposition = {
+        name: "slots-heavy",
+        root: "slots-heavy-root-container-node",
+        slots,
+        nodes,
+      };
+
+      const result = executeStageTool(
+        {
+          id: "call-slots-heavy",
+          name: "use_composition",
+          input: { name: "slots-heavy", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [composition] } },
+      );
+
+      expect(result.status).toBe("ok");
+      const observation = parseAgentToolObservation(result.observation.text);
+      expect(observation?.data).toBeDefined();
+      const raw = observation?.data ?? "";
+      expect(raw).not.toBe('{"truncated":true}');
+      expect(raw.length).toBeLessThanOrEqual(2048);
+      const meta = JSON.parse(raw) as {
+        readonly root: string;
+        readonly slots: Readonly<Record<string, string>>;
+        readonly ids: Readonly<Record<string, string>>;
+        readonly slotsOmitted?: number;
+        readonly idsOmitted?: number;
+      };
+      expect(typeof meta.root).toBe("string");
+      expect(meta.slotsOmitted).toBeGreaterThan(0);
+      expect(Object.keys(meta.slots).length + (meta.slotsOmitted ?? 0)).toBe(slotCount);
+    });
+
+    it("use_composition drops even the first ids entry when preceding metadata fills the cap", () => {
+      const slotCount = 44;
+      const slots: Record<string, string> = {};
+      const nodes: Record<string, FacetNode> = {
+        "budget-filling-root-container-node-with-a-long-identifier": {
+          id: "budget-filling-root-container-node-with-a-long-identifier",
+          type: "box",
+          children: Array.from(
+            { length: slotCount },
+            (_, i) => `budget-filling-slot-source-text-node-with-long-id-number-${String(i)}`,
+          ),
+        },
+      };
+      for (let i = 0; i < slotCount; i += 1) {
+        const id = `budget-filling-slot-source-text-node-with-long-id-number-${String(i)}`;
+        const slotName = `budget-filling-descriptive-slot-marker-name-number-${String(i)}`;
+        slots[slotName] = `Default copy for ${slotName}`;
+        nodes[id] = { id, type: "text", value: `{{${slotName}}}` };
+      }
+      const composition: FacetComposition = {
+        name: "budget-filling",
+        root: "budget-filling-root-container-node-with-a-long-identifier",
+        slots,
+        nodes,
+      };
+
+      const result = executeStageTool(
+        {
+          id: "call-budget-filling",
+          name: "use_composition",
+          input: { name: "budget-filling", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [composition] } },
+      );
+
+      expect(result.status).toBe("ok");
+      const observation = parseAgentToolObservation(result.observation.text);
+      expect(observation?.data).toBeDefined();
+      const raw = observation?.data ?? "";
+      expect(raw).not.toBe('{"truncated":true}');
+      expect(raw.length).toBeLessThanOrEqual(2048);
+      const meta = JSON.parse(raw) as {
+        readonly root: string;
+        readonly ids: Readonly<Record<string, string>>;
+        readonly idsOmitted?: number;
+      };
+      expect(typeof meta.root).toBe("string");
+      // The slots map alone fills the budget, so not even the first ids entry
+      // fits: the old `> 1` escape hatch would have force-kept it.
+      expect(Object.keys(meta.ids)).toHaveLength(0);
+      expect(meta.idsOmitted).toBe(slotCount + 1);
+    });
+
+    it("use_composition rejects malformed name and at inputs with zero patch ops and an unchanged shadow", () => {
+      const missingName = executeStageTool(
+        {
+          id: "comp-no-name",
+          name: "use_composition",
+          input: { params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+      expect(missingName.status).toBe("error");
+      if (missingName.status === "error") expect(missingName.code).toBe("invalid_input");
+      expect(missingName.messages).toEqual([]);
+      expect(missingName.patches).toEqual([]);
+      expect(missingName.patchCount).toBe(0);
+      expect(missingName.shadow).toBe(ROOT_TREE);
+
+      const missingAt = executeStageTool(
+        { id: "comp-no-at", name: "use_composition", input: { name: "card", params: {} } },
+        { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+      expect(missingAt.status).toBe("error");
+      if (missingAt.status === "error") expect(missingAt.code).toBe("invalid_input");
+      expect(missingAt.messages).toEqual([]);
+      expect(missingAt.patches).toEqual([]);
+      expect(missingAt.patchCount).toBe(0);
+      expect(missingAt.shadow).toBe(ROOT_TREE);
+    });
+
+    it("use_composition rejects a missing or non-container parent without patches", () => {
+      const ghostParent = executeStageTool(
+        {
+          id: "comp-ghost-parent",
+          name: "use_composition",
+          input: { name: "card", params: {}, at: { parent: "ghost" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+      expect(ghostParent.status).toBe("error");
+      if (ghostParent.status === "error") expect(ghostParent.code).toBe("invalid_parent");
+      expect(ghostParent.messages).toEqual([]);
+      expect(ghostParent.patches).toEqual([]);
+      expect(ghostParent.patchCount).toBe(0);
+      expect(ghostParent.shadow).toBe(ROOT_TREE);
+
+      const nonContainer = executeStageTool(
+        {
+          id: "comp-text-parent",
+          name: "use_composition",
+          input: { name: "card", params: {}, at: { parent: "title" } },
+        },
+        { shadow: TREE_WITH_TEXT, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+      expect(nonContainer.status).toBe("error");
+      if (nonContainer.status === "error") expect(nonContainer.code).toBe("invalid_parent");
+      expect(nonContainer.messages).toEqual([]);
+      expect(nonContainer.patches).toEqual([]);
+      expect(nonContainer.patchCount).toBe(0);
+      expect(nonContainer.shadow).toBe(TREE_WITH_TEXT);
+    });
+
+    it("use_composition rejects an unknown composition name with invalid_composition and no patches", () => {
+      const result = executeStageTool(
+        {
+          id: "comp-unknown",
+          name: "use_composition",
+          input: { name: "missing", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_composition");
+      expect(result.messages).toEqual([]);
+      expect(result.patches).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(result.observation.data).toMatchObject({
+        tool: "use_composition",
+        outcome: "rejected",
+        patch_count: 0,
+        code: "invalid_composition",
+      });
+      expect(result.observation.data?.message).toContain('unknown composition "missing"');
+    });
+
+    it("use_composition enforces the canonical catalog compositions allow-list", () => {
+      const approved: FacetComposition = {
+        name: "approved",
+        root: "approved",
+        nodes: {
+          approved: { id: "approved", type: "section", title: "Approved", children: [] },
+        },
+      };
+      const banned: FacetComposition = {
+        name: "banned",
+        root: "banned",
+        nodes: {
+          banned: { id: "banned", type: "section", title: "Banned", children: [] },
+        },
+      };
+
+      const rejected = executeStageTool(
+        {
+          id: "comp-banned",
+          name: "use_composition",
+          input: { name: "banned", params: {}, at: { parent: "root" } },
+        },
+        {
+          shadow: ROOT_TREE,
+          assets: { catalog: CATALOG_POLICY, compositions: [approved, banned] },
+        },
+      );
+      expect(rejected.status).toBe("error");
+      if (rejected.status === "error") expect(rejected.code).toBe("invalid_composition");
+      expect(rejected.messages).toEqual([]);
+      expect(rejected.patches).toEqual([]);
+      expect(rejected.patchCount).toBe(0);
+      expect(rejected.shadow).toBe(ROOT_TREE);
+      expect(rejected.observation.data).toMatchObject({
+        outcome: "rejected",
+        patch_count: 0,
+        code: "invalid_composition",
+      });
+      expect(rejected.observation.data?.message).toContain("catalog policy");
+      expect(rejected.observation.data?.message).toContain("banned");
+
+      const allowed = executeStageTool(
+        {
+          id: "comp-approved",
+          name: "use_composition",
+          input: { name: "approved", params: {}, at: { parent: "root" } },
+        },
+        {
+          shadow: ROOT_TREE,
+          assets: { catalog: CATALOG_POLICY, compositions: [approved, banned] },
+        },
+      );
+      expect(allowed.status).toBe("ok");
+      expect(allowed.patches.length).toBeGreaterThan(0);
+    });
+
+    it("use_composition rejects allowed compositions whose expanded nodes violate catalog policy", () => {
+      const allowedButInvalid: FacetComposition = {
+        name: "approved",
+        root: "chart",
+        nodes: {
+          chart: {
+            id: "chart",
+            type: "chart",
+            kind: "bar",
+            series: [{ label: "Usage", values: [3, 4] }],
+          },
+        },
+      };
+
+      const result = executeStageTool(
+        {
+          id: "comp-expanded-violation",
+          name: "use_composition",
+          input: { name: "approved", params: {}, at: { parent: "root" } },
+        },
+        {
+          shadow: ROOT_TREE,
+          assets: { catalog: CATALOG_POLICY, compositions: [allowedButInvalid] },
+        },
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_composition");
+      expect(result.messages).toEqual([]);
+      expect(result.patches).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(result.observation.data?.message).toContain("catalog policy");
+      expect(result.observation.data?.message).toContain("chart");
+    });
+
+    it("use_composition returns zero patch ops for an over-cap composition and expands at the cap boundary", () => {
+      const overCap = executeStageTool(
+        {
+          id: "comp-over-cap",
+          name: "use_composition",
+          input: { name: "big", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [boxWithLeaves(MAX_PATCH_OPS)] } },
+      );
+      expect(overCap.status).toBe("error");
+      if (overCap.status === "error") expect(overCap.code).toBe("invalid_composition");
+      expect(overCap.messages).toEqual([]);
+      expect(overCap.patches).toEqual([]);
+      expect(overCap.patchCount).toBe(0);
+      expect(overCap.shadow).toBe(ROOT_TREE);
+      expect(overCap.issues.some((issue) => issue.includes("node cap"))).toBe(true);
+
+      const atCap = executeStageTool(
+        {
+          id: "comp-at-cap",
+          name: "use_composition",
+          input: { name: "big", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [boxWithLeaves(MAX_PATCH_OPS - 1)] } },
+      );
+      expect(atCap.status).toBe("ok");
+      expect(atCap.patchCount).toBe(MAX_PATCH_OPS);
+    });
+
+    it("use_composition normalizes a hostile caught detail into a bounded control-free no-op", () => {
+      const sentinel = new Error("boom");
+      Object.defineProperty(sentinel, "message", {
+        get(): string {
+          throw new Error("SENTINEL_LEAK");
+        },
+      });
+      const hostileComposition = {
+        name: "hostile",
+        root: "r",
+        get nodes(): Readonly<Record<string, FacetNode>> {
+          throw sentinel;
+        },
+      } as unknown as FacetComposition;
+      const assets = { compositions: [hostileComposition, CARD_COMPOSITION] };
+
+      const hostile = executeStageTool(
+        {
+          id: "comp-hostile",
+          name: "use_composition",
+          input: { name: "hostile", params: {}, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets },
+      );
+
+      expect(hostile.status).toBe("error");
+      if (hostile.status === "error") expect(hostile.code).toBe("invalid_composition");
+      expect(hostile.messages).toEqual([]);
+      expect(hostile.patches).toEqual([]);
+      expect(hostile.patchCount).toBe(0);
+      expect(hostile.shadow).toBe(ROOT_TREE);
+      const serialized = JSON.stringify(hostile);
+      expect(serialized).not.toContain("SENTINEL_LEAK");
+      expect(serialized).not.toContain("boom");
+      expect(hostile.observation.text.length).toBeLessThan(4000);
+      expect(hostile.observation.text).not.toMatch(
+        // eslint-disable-next-line no-control-regex
+        /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/,
+      );
+
+      const followUp = executeStageTool(
+        {
+          id: "comp-hostile-follow",
+          name: "use_composition",
+          input: { name: "card", params: { title: "Recovered" }, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets },
+      );
+      expect(followUp.status).toBe("ok");
+      expect(followUp.patchCount).toBe(3);
+    });
+
+    it("use_composition treats a mint failure as a bounded no-op and a following valid call succeeds", () => {
+      const mint = vi.spyOn(globalThis.crypto, "randomUUID").mockImplementation(() => {
+        const failure = new Error("mint boom");
+        Object.defineProperty(failure, "message", {
+          get(): string {
+            throw new Error("SENTINEL_MINT");
+          },
+        });
+        throw failure;
+      });
+      try {
+        const result = executeStageTool(
+          {
+            id: "comp-mint-failure",
+            name: "use_composition",
+            input: { name: "card", params: { title: "Hello" }, at: { parent: "root" } },
+          },
+          { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+        );
+
+        expect(result.status).toBe("error");
+        if (result.status === "error") expect(result.code).toBe("invalid_composition");
+        expect(result.messages).toEqual([]);
+        expect(result.patches).toEqual([]);
+        expect(result.patchCount).toBe(0);
+        expect(result.shadow).toBe(ROOT_TREE);
+        const serialized = JSON.stringify(result);
+        expect(serialized).not.toContain("SENTINEL_MINT");
+        expect(serialized).not.toContain("mint boom");
+        expect(result.issues.some((issue) => issue.includes("mintId failed"))).toBe(true);
+      } finally {
+        mint.mockRestore();
+      }
+
+      const followUp = executeStageTool(
+        {
+          id: "comp-mint-follow",
+          name: "use_composition",
+          input: { name: "card", params: { title: "Recovered" }, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+      expect(followUp.status).toBe("ok");
+      expect(followUp.patchCount).toBe(3);
+    });
+
+    it(`use_composition replaces the old tool: ${legacyTool} is unknown and never an alias`, () => {
+      const result = executeStageTool(
+        {
+          id: "comp-old-tool",
+          name: legacyTool,
+          input: { name: "card", params: { title: "Hello" }, at: { parent: "root" } },
+        },
+        { shadow: ROOT_TREE, assets: { compositions: [CARD_COMPOSITION] } },
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("unknown_tool");
+      expect(result.messages).toEqual([]);
+      expect(result.patches).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
+      const message = result.observation.data?.message ?? "";
+      expect(message).toContain(`unknown tool "${legacyTool}"`);
+      const availableTools = message.split("Available tools:")[1] ?? "";
+      expect(availableTools).toContain("use_composition");
+      expect(availableTools).not.toContain(legacyTool);
     });
   });
 
@@ -510,7 +1107,10 @@ describe("executeStageTool", () => {
       { shadow: TREE_WITH_TEXT },
     );
     expect(removed.status).toBe("ok");
-    expect(removed.patches).toEqual([{ op: "remove", path: "/nodes/title" }]);
+    expect(removed.patches).toEqual([
+      { op: "replace", path: "/nodes/root/children", value: [] },
+      { op: "remove", path: "/nodes/title" },
+    ]);
     expect(removed.shadow.nodes["title"]).toBeUndefined();
 
     const say = executeStageTool(
@@ -562,6 +1162,188 @@ describe("executeStageTool", () => {
       next_action:
         "Attach the changed node to a visible box with append_node, or inspect_stage to find a visible parent.",
     });
+  });
+
+  it("remove_node detaches the parent child ref so a full removal reports no dangling warning", () => {
+    const removed = executeStageTool(
+      { id: "call-remove-parented", name: "remove_node", input: { nodeId: "title" } },
+      { shadow: TREE_WITH_TEXT },
+    );
+
+    expect(removed.status).toBe("ok");
+    expect(removed.patches).toEqual([
+      { op: "replace", path: "/nodes/root/children", value: [] },
+      { op: "remove", path: "/nodes/title" },
+    ]);
+    expect(removed.shadow.nodes["title"]).toBeUndefined();
+    expect(removed.shadow.nodes["root"]).toMatchObject({ children: [] });
+    expect(removed.issues).toEqual([]);
+    expect(removed.observation.text).not.toContain("dangling");
+    const observation = parseAgentToolObservation(removed.observation.text);
+    expect(observation?.outcome).not.toBe("applied_with_warnings");
+    expect(observation?.warnings).toEqual([]);
+  });
+
+  it("remove_node cleans the child ref from every parent that references the node", () => {
+    const twoParents: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["p1", "p2"] },
+        p1: { id: "p1", type: "box", children: ["shared", "keep"] },
+        p2: { id: "p2", type: "box", children: ["shared"] },
+        shared: { id: "shared", type: "text", value: "Shared" },
+        keep: { id: "keep", type: "text", value: "Keep" },
+      },
+    };
+
+    const removed = executeStageTool(
+      { id: "call-remove-shared", name: "remove_node", input: { nodeId: "shared" } },
+      { shadow: twoParents },
+    );
+
+    expect(removed.status).toBe("ok");
+    expect(removed.patches).toEqual([
+      { op: "replace", path: "/nodes/p1/children", value: ["keep"] },
+      { op: "replace", path: "/nodes/p2/children", value: [] },
+      { op: "remove", path: "/nodes/shared" },
+    ]);
+    expect(removed.shadow.nodes["shared"]).toBeUndefined();
+    expect(removed.shadow.nodes["p1"]).toMatchObject({ children: ["keep"] });
+    expect(removed.shadow.nodes["p2"]).toMatchObject({ children: [] });
+    expect(removed.issues).toEqual([]);
+    expect(removed.observation.text).not.toContain("dangling");
+  });
+
+  it("remove_node drops a non-entry screen whose root is the removed node, with no warning", () => {
+    const withScreens: FacetTree = {
+      root: "home",
+      entry: "home",
+      screens: { home: "home", about: "about" },
+      nodes: {
+        home: { id: "home", type: "box", children: ["homeCopy"] },
+        homeCopy: { id: "homeCopy", type: "text", value: "Home" },
+        about: { id: "about", type: "box", children: [] },
+      },
+    };
+
+    const removed = executeStageTool(
+      { id: "call-remove-screen-root", name: "remove_node", input: { nodeId: "about" } },
+      { shadow: withScreens },
+    );
+
+    expect(removed.status).toBe("ok");
+    expect(removed.patches).toEqual([
+      { op: "remove", path: "/screens/about" },
+      { op: "remove", path: "/nodes/about" },
+    ]);
+    expect(removed.shadow.screens).toEqual({ home: "home" });
+    expect(removed.shadow.nodes["about"]).toBeUndefined();
+    expect(removed.issues).toEqual([]);
+    const observation = parseAgentToolObservation(removed.observation.text);
+    expect(observation?.outcome).not.toBe("applied_with_warnings");
+    expect(observation?.warnings).toEqual([]);
+  });
+
+  it("remove_node refuses to remove the entry screen's root", () => {
+    // The entry screen root is distinct from the tree root here, so the refusal
+    // comes from the entry-screen guard (not the stage-root guard).
+    const withScreens: FacetTree = {
+      root: "shell",
+      entry: "home",
+      screens: { home: "home", about: "about" },
+      nodes: {
+        shell: { id: "shell", type: "box", children: [] },
+        home: { id: "home", type: "box", children: ["homeCopy"] },
+        homeCopy: { id: "homeCopy", type: "text", value: "Home" },
+        about: { id: "about", type: "box", children: ["aboutCopy"] },
+        aboutCopy: { id: "aboutCopy", type: "text", value: "About" },
+      },
+    };
+
+    const refused = executeStageTool(
+      { id: "call-remove-entry-root", name: "remove_node", input: { nodeId: "home" } },
+      { shadow: withScreens },
+    );
+
+    expect(refused.status).toBe("error");
+    expect(refused.patches).toEqual([]);
+    expect(refused.shadow).toBe(withScreens);
+    expect(parseAgentToolObservation(refused.observation.text)).toMatchObject({
+      tool: "remove_node",
+      status: "error",
+      outcome: "rejected",
+      message:
+        'error: remove_node — node "home" is the entry screen root; render a replacement screen first',
+    });
+  });
+
+  it("set_node refuses a non-container replacement of the entry screen's root", () => {
+    const withScreens: FacetTree = {
+      root: "shell",
+      entry: "home",
+      screens: { home: "home" },
+      nodes: {
+        shell: { id: "shell", type: "box", children: [] },
+        home: { id: "home", type: "box", children: ["homeCopy"] },
+        homeCopy: { id: "homeCopy", type: "text", value: "Home" },
+      },
+    };
+
+    const refused = executeStageTool(
+      {
+        id: "call-set-entry-root",
+        name: "set_node",
+        input: { ["node"]: { id: "home", type: "text", value: "boom" } },
+      },
+      { shadow: withScreens },
+    );
+
+    expect(refused.status).toBe("error");
+    expect(refused.patches).toEqual([]);
+    expect(refused.shadow).toBe(withScreens);
+    expect(parseAgentToolObservation(refused.observation.text)).toMatchObject({
+      tool: "set_node",
+      status: "error",
+      outcome: "rejected",
+      message:
+        'error: set_node — node "home" is the entry screen root and must stay a container; render a replacement screen first',
+    });
+
+    // Replacing the entry screen root with another container stays allowed.
+    const replaced = executeStageTool(
+      {
+        id: "call-set-entry-root-box",
+        name: "set_node",
+        input: { ["node"]: { id: "home", type: "box", children: [] } },
+      },
+      { shadow: withScreens },
+    );
+    expect(replaced.status).toBe("ok");
+  });
+
+  it("append_node treats prototype-inherited ids as fresh, then rejects a real duplicate", () => {
+    const first = executeStageTool(
+      {
+        id: "call-append-tostring",
+        name: "append_node",
+        input: { parentId: "root", ["node"]: { id: "toString", type: "text", value: "ok" } },
+      },
+      { shadow: ROOT_TREE },
+    );
+    expect(first.status).toBe("ok");
+
+    const evolved = foldStageShadow(ROOT_TREE, [{ kind: "patch", patches: first.patches }]).shadow;
+    expect(Object.hasOwn(evolved.nodes, "toString")).toBe(true);
+    const duplicate = executeStageTool(
+      {
+        id: "call-append-tostring-again",
+        name: "append_node",
+        input: { parentId: "root", ["node"]: { id: "toString", type: "text", value: "again" } },
+      },
+      { shadow: evolved },
+    );
+    expect(duplicate.status).toBe("error");
+    expect(duplicate.observation.text).toContain("already exists");
   });
 
   it("escapes slash and tilde node ids in JSON Patch paths", () => {
@@ -657,7 +1439,7 @@ describe("executeStageTool", () => {
   });
 
   describe("catalog policy", () => {
-    it("catalog policy allows catalog-listed v1 bricks and primitive fallback", () => {
+    it("catalog policy allows catalog-listed components and primitive fallback", () => {
       const section = executeStageTool(
         {
           id: "catalog-section",
@@ -730,7 +1512,7 @@ describe("executeStageTool", () => {
       expect(primitive.patches).toHaveLength(2);
     });
 
-    it("catalog policy rejects disallowed brick types and variants without patches", () => {
+    it("catalog policy rejects disallowed component types and variants without patches", () => {
       const chart = executeStageTool(
         {
           id: "catalog-chart",
@@ -782,6 +1564,114 @@ describe("executeStageTool", () => {
       });
       expect(variant.observation.text).toContain("variant");
       expect(variant.observation.text).toContain("danger");
+    });
+
+    it("catalog policy enforces component aliases before divergent legacy bricks", () => {
+      const catalog: FacetCatalog = {
+        ...CATALOG_POLICY,
+        bricks: [{ type: "button", variants: ["primary"] }],
+        components: [{ type: "metric", variants: ["success"] }],
+        compositions: { mode: "all" },
+      };
+
+      const metric = executeStageTool(
+        {
+          id: "catalog-component-metric",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: {
+              id: "metric",
+              type: "metric",
+              label: "ARR",
+              value: "$24k",
+              variant: "success",
+            },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog } },
+      );
+
+      expect(metric.status).toBe("ok");
+      expect(metric.patches).toHaveLength(2);
+
+      const legacyOnlyButton = executeStageTool(
+        {
+          id: "catalog-component-button",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "button", type: "button", label: "Legacy only", variant: "primary" },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog } },
+      );
+
+      expect(legacyOnlyButton.status).toBe("error");
+      expect(legacyOnlyButton.patches).toEqual([]);
+      expect(legacyOnlyButton.observation.text).toContain("metric");
+      expect(legacyOnlyButton.observation.text).not.toContain("Allowed node types: button");
+    });
+
+    it("catalog policy falls a legacy stat node through to the bricks list when components omit it", () => {
+      const catalog: FacetCatalog = {
+        ...CATALOG_POLICY,
+        bricks: [{ type: "stat" }],
+        components: [{ type: "button", variants: ["primary"] }],
+        compositions: { mode: "all" },
+      };
+
+      // (a) stat is a component type absent from `components`, but the legacy
+      // carve-out lets it fall through to the bricks entry that permits it.
+      const stat = executeStageTool(
+        {
+          id: "catalog-stat-fallthrough",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "kpi", type: "stat", label: "ARR", value: "$24k" },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog } },
+      );
+      expect(stat.status).toBe("ok");
+      expect(stat.patches).toHaveLength(2);
+
+      // (b) a different component type absent from `components` gets no carve-out.
+      const metricNode = executeStageTool(
+        {
+          id: "catalog-metric-rejected",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "arr", type: "metric", label: "ARR", value: "$24k" },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog } },
+      );
+      expect(metricNode.status).toBe("error");
+      expect(metricNode.patches).toEqual([]);
+
+      // (c) the carve-out only reaches the bricks list; a bricks list that omits
+      // stat still rejects it.
+      const statNoBrick: FacetCatalog = {
+        ...catalog,
+        bricks: [{ type: "button", variants: ["primary"] }],
+        primitiveFallback: "discouraged",
+      };
+      const statRejected = executeStageTool(
+        {
+          id: "catalog-stat-rejected",
+          name: "append_node",
+          input: {
+            parentId: "root",
+            ["node"]: { id: "kpi", type: "stat", label: "ARR", value: "$24k" },
+          },
+        },
+        { shadow: ROOT_TREE, assets: { catalog: statNoBrick } },
+      );
+      expect(statRejected.status).toBe("error");
+      expect(statRejected.patches).toEqual([]);
     });
 
     it("catalog policy rejects tone-only recipe selectors not listed as variants", () => {
@@ -906,91 +1796,6 @@ describe("executeStageTool", () => {
       );
 
       expect(result.status).toBe("error");
-      expect(result.patches).toEqual([]);
-      expect(result.messages).toEqual([]);
-      expect(result.shadow).toBe(ROOT_TREE);
-      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(result.observation.text).toContain("catalog policy");
-      expect(result.observation.text).toContain("chart");
-    });
-
-    it("catalog policy rejects disallowed stamps before expansion", () => {
-      const approved: FacetStamp = {
-        name: "approved",
-        root: "approved",
-        nodes: {
-          approved: { id: "approved", type: "section", title: "Approved", children: [] },
-        },
-      };
-      const banned: FacetStamp = {
-        name: "banned",
-        root: "banned",
-        nodes: {
-          banned: { id: "banned", type: "section", title: "Banned", children: [] },
-        },
-      };
-
-      const rejected = executeStageTool(
-        {
-          id: "catalog-stamp-banned",
-          name: "use_stamp",
-          input: { name: "banned", params: {}, at: { parent: "root" } },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY, stamps: [approved, banned] } },
-      );
-
-      expect(rejected.status).toBe("error");
-      expect(rejected.patches).toEqual([]);
-      expect(rejected.messages).toEqual([]);
-      expect(rejected.shadow).toBe(ROOT_TREE);
-      expect(parseAgentToolObservation(rejected.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(rejected.observation.text).toContain("catalog policy");
-      expect(rejected.observation.text).toContain("banned");
-
-      const allowed = executeStageTool(
-        {
-          id: "catalog-stamp-approved",
-          name: "use_stamp",
-          input: { name: "approved", params: {}, at: { parent: "root" } },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY, stamps: [approved, banned] } },
-      );
-
-      expect(allowed.status).toBe("ok");
-      expect(allowed.patches.length).toBeGreaterThan(0);
-    });
-
-    it("catalog policy rejects allowed stamps whose expanded nodes violate brick policy", () => {
-      const allowedButInvalid: FacetStamp = {
-        name: "approved",
-        root: "chart",
-        nodes: {
-          chart: {
-            id: "chart",
-            type: "chart",
-            kind: "bar",
-            series: [{ label: "Usage", values: [3, 4] }],
-          },
-        },
-      };
-
-      const result = executeStageTool(
-        {
-          id: "catalog-stamp-expanded",
-          name: "use_stamp",
-          input: { name: "approved", params: {}, at: { parent: "root" } },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY, stamps: [allowedButInvalid] } },
-      );
-
-      expect(result.status).toBe("error");
-      if (result.status === "error") expect(result.code).toBe("invalid_stamp");
       expect(result.patches).toEqual([]);
       expect(result.messages).toEqual([]);
       expect(result.shadow).toBe(ROOT_TREE);

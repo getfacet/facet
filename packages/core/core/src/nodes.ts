@@ -1,13 +1,13 @@
 /**
- * The closed brick palette an agent uses to build a stage. Primitive bricks
- * (`box`, `text`, `media`, `field`) remain the universal fallback; high-level
- * bricks provide safer common UI shapes without allowing raw HTML/JS/CSS.
+ * The closed vocabulary an agent uses to build a stage. Primitive bricks
+ * (`box`, `text`, `media`, `field`) remain the universal fallback; intrinsic
+ * components provide safer common UI shapes without allowing raw HTML/JS/CSS.
  *
- * These are Lego bricks, not finished furniture. A "card" is a `box` with a
- * border; a "button" is a `box` with `onPress`; a "heading" is a big `text`. The
- * agent composes everything from these four, so the set of producible pages is
- * unbounded — while every brick stays a typed, token-styled data value (never
- * raw HTML/JS), so nothing can be injected and nothing can render broken.
+ * Primitive bricks stay the base and escape hatch; intrinsic components are
+ * typed shortcuts for common, renderer-owned UI shapes. The agent can fall back
+ * to primitives whenever a component is too specific, while every node remains a
+ * typed, token-styled data value (never raw HTML/JS), so nothing can be injected
+ * and nothing can render broken.
  *
  * The vocabulary grows only by adding typed node shapes here and matching
  * validation/rendering support on purpose.
@@ -208,6 +208,42 @@ export interface FieldNode {
   readonly style?: FieldStyle;
 }
 
+export const PRIMITIVE_BRICK_TYPES = ["box", "text", "media", "field"] as const;
+export type PrimitiveBrickType = (typeof PRIMITIVE_BRICK_TYPES)[number];
+export type PrimitiveBrickNode = BoxNode | TextNode | MediaNode | FieldNode;
+
+export const INTRINSIC_COMPONENT_TYPES = [
+  "button",
+  "section",
+  "card",
+  "tabs",
+  "nav",
+  "table",
+  "chart",
+  "metric",
+  "keyValue",
+  "badge",
+  "progress",
+  "alert",
+  "list",
+  "divider",
+  "form",
+  "search",
+  "filterBar",
+  "emptyState",
+  "loading",
+] as const;
+export type IntrinsicComponentType = (typeof INTRINSIC_COMPONENT_TYPES)[number];
+
+export const LEGACY_COMPONENT_TYPES = ["stat"] as const;
+export type LegacyComponentType = (typeof LEGACY_COMPONENT_TYPES)[number];
+
+export const COMPONENT_NODE_TYPES = [
+  ...INTRINSIC_COMPONENT_TYPES,
+  ...LEGACY_COMPONENT_TYPES,
+] as const;
+export type ComponentNodeType = (typeof COMPONENT_NODE_TYPES)[number];
+
 export const HIGH_LEVEL_NODE_TYPES = [
   "button",
   "section",
@@ -221,7 +257,7 @@ export const HIGH_LEVEL_NODE_TYPES = [
   "alert",
   "list",
   "divider",
-] as const;
+] as const satisfies readonly ComponentNodeType[];
 export type HighLevelNodeType = (typeof HIGH_LEVEL_NODE_TYPES)[number];
 
 export const TONES = ["neutral", "accent", "info", "success", "warning", "danger"] as const;
@@ -272,6 +308,18 @@ export interface TabsNode {
   readonly variant?: string;
 }
 
+export interface NavItem {
+  readonly label: string;
+  readonly to: string;
+}
+
+export interface NavNode {
+  readonly id: NodeId;
+  readonly type: "nav";
+  readonly items: readonly NavItem[];
+  readonly variant?: string;
+}
+
 export interface TableColumn {
   readonly key: string;
   readonly label: string;
@@ -308,13 +356,34 @@ export interface ChartNode {
   readonly variant?: string;
 }
 
-export interface StatNode {
+interface MetricFields {
   readonly id: NodeId;
-  readonly type: "stat";
   readonly label: string;
   readonly value: string;
   readonly delta?: string;
   readonly tone?: Tone;
+  readonly variant?: string;
+}
+
+export interface MetricNode extends MetricFields {
+  readonly type: "metric";
+}
+
+export interface StatNode extends MetricFields {
+  readonly type: "stat";
+}
+
+export interface KeyValueItem {
+  readonly key?: string;
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: Tone;
+}
+
+export interface KeyValueNode {
+  readonly id: NodeId;
+  readonly type: "keyValue";
+  readonly items: readonly KeyValueItem[];
   readonly variant?: string;
 }
 
@@ -363,28 +432,94 @@ export interface DividerNode {
   readonly variant?: string;
 }
 
-/** Any brick the agent may place on a stage. */
-export type FacetNode =
-  | BoxNode
-  | TextNode
-  | MediaNode
-  | FieldNode
+export interface FormNode {
+  readonly id: NodeId;
+  readonly type: "form";
+  readonly title?: string;
+  readonly body?: string;
+  readonly submitLabel?: string;
+  readonly variant?: string;
+  readonly onSubmit?: FacetAction;
+  readonly children: readonly NodeId[];
+}
+
+export interface SearchNode {
+  readonly id: NodeId;
+  readonly type: "search";
+  readonly name: string;
+  readonly label?: string;
+  readonly placeholder?: string;
+  readonly value?: string;
+  readonly submitLabel?: string;
+  readonly variant?: string;
+  readonly onSubmit?: FacetAction;
+}
+
+export interface FilterBarFilter {
+  readonly name: string;
+  readonly label: string;
+  readonly input?: FieldInput;
+  readonly options?: readonly string[];
+  readonly value?: string | number | boolean;
+}
+
+export interface FilterBarNode {
+  readonly id: NodeId;
+  readonly type: "filterBar";
+  readonly filters: readonly FilterBarFilter[];
+  readonly variant?: string;
+  readonly onChange?: FacetAction;
+}
+
+export interface EmptyStateNode {
+  readonly id: NodeId;
+  readonly type: "emptyState";
+  readonly title?: string;
+  readonly body?: string;
+  readonly actionLabel?: string;
+  readonly variant?: string;
+  readonly onPress?: FacetAction;
+}
+
+export interface LoadingNode {
+  readonly id: NodeId;
+  readonly type: "loading";
+  readonly label?: string;
+  readonly variant?: string;
+}
+
+export type IntrinsicComponentNode =
   | ButtonNode
   | SectionNode
   | CardNode
   | TabsNode
+  | NavNode
   | TableNode
   | ChartNode
-  | StatNode
+  | MetricNode
+  | KeyValueNode
   | BadgeNode
   | ProgressNode
   | AlertNode
   | ListNode
-  | DividerNode;
+  | DividerNode
+  | FormNode
+  | SearchNode
+  | FilterBarNode
+  | EmptyStateNode
+  | LoadingNode;
 
-export type ContainerNode = BoxNode | SectionNode | CardNode;
+export type LegacyComponentNode = StatNode;
+export type ComponentNode = IntrinsicComponentNode | LegacyComponentNode;
+
+/** Any brick the agent may place on a stage. */
+export type FacetNode = PrimitiveBrickNode | ComponentNode;
+
+export type ContainerNode = BoxNode | SectionNode | CardNode | FormNode;
 
 /** Narrows a node to the bricks that can hold children. */
 export function isContainer(node: FacetNode): node is ContainerNode {
-  return node.type === "box" || node.type === "section" || node.type === "card";
+  return (
+    node.type === "box" || node.type === "section" || node.type === "card" || node.type === "form"
+  );
 }

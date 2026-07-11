@@ -29,6 +29,9 @@ describe("boxStyle", () => {
       display: "flex",
       flexDirection: "column",
       boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
     });
   });
 
@@ -104,12 +107,15 @@ describe("boxStyle", () => {
   });
 
   // appear is renderer-bound (class + <style> in StageRenderer, not this
-  // token→CSS map) and a token-free box must stay byte-identical to today.
-  it("leaves token-free output unchanged (appear adds nothing here)", () => {
+  // token→CSS map); token-free boxes still carry renderer containment guards.
+  it("keeps token-free output contained (appear adds nothing here)", () => {
     expect(boxStyle({ appear: "fade" } as BoxStyle)).toEqual({
       display: "flex",
       flexDirection: "column",
       boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
     });
   });
 });
@@ -118,7 +124,12 @@ describe("textStyle", () => {
   it("defaults to zero margin and the sans font family", () => {
     expect(textStyle()).toEqual({
       margin: 0,
+      wordBreak: "break-word",
       fontFamily: "Nunito, sans-serif",
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
     });
   });
 
@@ -175,7 +186,15 @@ describe("textStyle", () => {
 
 describe("mediaStyle", () => {
   it("defaults to a cover block", () => {
-    expect(mediaStyle()).toEqual({ display: "block", objectFit: "cover" });
+    expect(mediaStyle()).toEqual({
+      display: "block",
+      objectFit: "cover",
+      height: "auto",
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
+    });
   });
 
   it("maps radius, width, and ratio tokens", () => {
@@ -187,8 +206,13 @@ describe("mediaStyle", () => {
 });
 
 describe("fieldStyle", () => {
-  it("defaults to empty", () => {
-    expect(fieldStyle()).toEqual({});
+  it("defaults to containment guards", () => {
+    expect(fieldStyle()).toEqual({
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
+    });
   });
 
   it("maps full width", () => {
@@ -406,7 +430,13 @@ describe("recipe resolution", () => {
       borderRadius: "14px",
       padding: "10px",
     });
-    expect(control.field).toEqual({ width: "100%" });
+    expect(control.field).toEqual({
+      width: "100%",
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
+    });
     expect(resolveRecipePart(fallbackField, "unknown", resolved)).toEqual({});
     expect(
       resolveRecipePart({ parts: "junk" } as unknown as ComponentRecipe, "label", resolved),
@@ -423,8 +453,22 @@ describe("recipe resolution", () => {
     expect(() => resolveRecipePart(hostileRecipe, "label", resolved)).not.toThrow();
     expect(resolveRecipePart(hostileRecipe, "label", resolved)).toEqual({});
 
-    expect(mediaStyle(undefined, resolved)).toEqual({ display: "block", objectFit: "cover" });
-    expect(fieldStyle(fallbackField.field, resolved)).toEqual({ width: "100%" });
+    expect(mediaStyle(undefined, resolved)).toEqual({
+      display: "block",
+      objectFit: "cover",
+      height: "auto",
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
+    });
+    expect(fieldStyle(fallbackField.field, resolved)).toEqual({
+      width: "100%",
+      boxSizing: "border-box",
+      minWidth: 0,
+      maxWidth: "100%",
+      overflowWrap: "anywhere",
+    });
   });
 
   it("resolves component recipes through the active theme token maps", () => {

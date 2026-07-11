@@ -4,8 +4,8 @@ import type {
   ClientEvent,
   FacetAgent,
   FacetCatalog,
+  FacetComposition,
   FacetSession,
-  FacetStamp,
   FacetTheme,
   ServerMessage,
 } from "@facet/core";
@@ -129,8 +129,8 @@ export interface QuickstartAgentOptions {
   /** Operator themes offered to the model by NAME in prompt ② (validated by the
    * caller). The model selects one with `set_theme`; values never reach it. */
   readonly themes?: readonly FacetTheme[];
-  /** Operator stamps (reusable fragments) advertised by name for server-side expansion. */
-  readonly stamps?: readonly FacetStamp[];
+  /** Operator compositions (reusable fragments) advertised by name for server-side expansion. */
+  readonly compositions?: readonly FacetComposition[];
   /** Active catalog policy advertised to the model and enforced by stage tools. */
   readonly catalog?: FacetCatalog;
   /**
@@ -157,15 +157,19 @@ function sayBatch(text: string): readonly ServerMessage[] {
 }
 
 export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAgent {
-  const stamps = (options.stamps ?? []).map((stamp) => structuredClone(stamp));
+  // Snapshot once at creation: later mutation of the caller's composition
+  // documents must never alter execution (DC-009).
+  const compositions = (options.compositions ?? []).map((composition) =>
+    structuredClone(composition),
+  );
   const catalog = options.catalog === undefined ? undefined : structuredClone(options.catalog);
   const assets: StageToolAssets = {
-    stamps,
+    compositions,
     ...(catalog !== undefined ? { catalog } : {}),
   };
   const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
     themes: options.themes ?? [],
-    stamps,
+    compositions,
     ...(catalog !== undefined ? { catalog } : {}),
   });
   const budget = normalizeBudget({

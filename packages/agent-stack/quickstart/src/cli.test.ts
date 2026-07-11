@@ -18,7 +18,7 @@ vi.mock("./agent.js", async (importOriginal) => {
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FacetCatalog } from "@facet/core";
+import type { FacetCatalog, FacetComposition } from "@facet/core";
 import * as referenceAgent from "@facet/reference-agent";
 import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
@@ -38,10 +38,10 @@ const CATALOG_FIXTURE: FacetCatalog = {
     { type: "section", variants: ["surface"] },
     { type: "button", variants: ["primary"] },
   ],
-  stamps: { mode: "allow", names: ["pricing"] },
+  compositions: { mode: "allow", names: ["pricing"] },
   primitiveFallback: "allowed",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 3,
@@ -286,28 +286,82 @@ describe("runCli — --assets (DC-009)", () => {
     }
   });
 
-  it("default asset library reaches the agent with no --assets", async () => {
-    // WU-7: with no --assets the CLI still resolves through `loadAssets` (an
-    // empty `MemoryAssets`), so the `@facet/assets` default theme + stamp
+  it("no-assets boot resolves the canonical default composition snapshot", async () => {
+    // With no --assets the CLI still resolves through `loadAssets` (an empty
+    // `MemoryAssets`), so the `@facet/assets` default theme + composition
     // library seeds and reaches BOTH the agent and the shell on every boot.
     // `onResolvedAssets` is the observable seam for what was handed downstream.
     let resolvedThemes = 0;
-    let resolvedStamps = 0;
+    let resolvedCompositionNames: readonly string[] = [];
     let resolvedCatalog: FacetCatalog | undefined;
     const { running } = await bootCli([], {
-      onResolvedAssets: ({ themes, stamps, catalog }) => {
-        resolvedThemes = themes.length;
-        resolvedStamps = stamps.length;
-        resolvedCatalog = catalog;
+      onResolvedAssets: (assets) => {
+        resolvedThemes = assets.themes.length;
+        resolvedCompositionNames = (assets.compositions ?? []).map((c) => c.name);
+        resolvedCatalog = assets.catalog;
       },
     });
     try {
       expect(resolvedThemes).toBeGreaterThan(0);
-      expect(resolvedStamps).toBeGreaterThan(0);
+      expect(resolvedCompositionNames).toEqual(
+        expect.arrayContaining(["hero", "card", "pricing-section"]),
+      );
       expect(resolvedCatalog?.name).toBe("default");
       expect(resolvedCatalog?.theme.switchPolicy).toBe("locked");
     } finally {
       await running.close();
+    }
+  });
+
+  it("custom *.composition.json documents layer onto the default composition snapshot", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    try {
+      writeFileSync(
+        join(dir, "panel.composition.json"),
+        JSON.stringify({
+          name: "qs-operator-panel",
+          description: "Operator panel band",
+          slots: { title: "Operator default title" },
+          root: "qs-operator-root",
+          nodes: {
+            "qs-operator-root": {
+              id: "qs-operator-root",
+              type: "box",
+              children: ["qs-operator-title"],
+            },
+            "qs-operator-title": { id: "qs-operator-title", type: "text", value: "{{title}}" },
+          },
+        }),
+      );
+      // A custom doc that reuses a seeded default name shadows it (one entry).
+      writeFileSync(
+        join(dir, "hero.composition.json"),
+        JSON.stringify({
+          name: "hero",
+          root: "hero-root",
+          nodes: { "hero-root": { id: "hero-root", type: "text", value: "Custom hero" } },
+        }),
+      );
+      let resolved: readonly FacetComposition[] = [];
+      const { captured, running } = await bootCli(["--assets", dir], {
+        onResolvedAssets: (assets) => {
+          resolved = assets.compositions ?? [];
+        },
+      });
+      try {
+        const names = resolved.map((c) => c.name);
+        expect(names).toContain("qs-operator-panel");
+        expect(names).toContain("pricing-section"); // defaults still seed underneath
+        expect(names.filter((name) => name === "hero")).toHaveLength(1);
+        expect(resolved.find((c) => c.name === "hero")?.root).toBe("hero-root");
+        expect(captured.err.join("\n")).toContain(
+          'custom composition "hero" shadows the seeded default',
+        );
+      } finally {
+        await running.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 
@@ -326,7 +380,7 @@ describe("runCli — --assets (DC-009)", () => {
           name: "quickstart-catalog",
           description: "Quickstart catalog policy",
           theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-          stamps: { mode: "allow", names: ["pricing"] },
+          compositions: { mode: "allow", names: ["pricing"] },
           primitiveFallback: "allowed",
         });
         expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["section", "button"]);
@@ -339,7 +393,7 @@ describe("runCli — --assets (DC-009)", () => {
     }
   });
 
-  it("malformed catalog.json falls back to the default catalog with a concise issue", async () => {
+  it("malformed catalog.json keeps defaults per section and fails provided lists closed", async () => {
     const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
     try {
       writeFileSync(
@@ -359,7 +413,9 @@ describe("runCli — --assets (DC-009)", () => {
       try {
         expect(resolvedCatalog?.name).toBe("default");
         expect(resolvedCatalog?.theme.switchPolicy).toBe("locked");
-        expect(resolvedCatalog?.bricks.length).toBeGreaterThan(2);
+        // A provided bricks list whose entries are all invalid fails closed to
+        // an empty allow-list instead of reopening the default vocabulary.
+        expect(resolvedCatalog?.bricks).toEqual([]);
         const issues = captured.err.join("\n");
         expect(issues).toContain("[facet-quickstart]");
         expect(issues).toContain("catalog:");
@@ -386,8 +442,8 @@ describe("runCli — --assets (DC-009)", () => {
   });
 });
 
-describe("runCli — quickstart polished default", () => {
-  it("quickstart polished default CLI inlines the seeded first paint on the built-in guide path", async () => {
+describe("runCli — quickstart component default", () => {
+  it("quickstart component default CLI inlines the seeded first paint on the built-in guide path", async () => {
     const { captured, running } = await bootCli();
     try {
       expect(captured.err).toEqual([]);
@@ -408,7 +464,7 @@ describe("runCli — quickstart polished default", () => {
         "chart",
         "field",
         "button",
-        "stat",
+        "metric",
         "badge",
         "progress",
         "alert",

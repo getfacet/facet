@@ -1,16 +1,16 @@
 import {
   validateCatalog,
+  validateComposition,
   treeHasContent,
-  validateStamp,
   validateTheme,
   validateTree,
+  type FacetComposition,
   type FacetCatalog,
   type FacetSession,
-  type FacetStamp,
   type FacetTheme,
   type FacetTree,
 } from "@facet/core";
-import { DEFAULT_CATALOG, DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_COMPOSITIONS, DEFAULT_THEME } from "@facet/assets";
 import { sessionKey, type StageStore } from "./stage-store.js";
 
 /** Hygiene cap on `withInitialStage`'s armed-but-unconsumed seed keys — mirrors
@@ -23,56 +23,13 @@ const MAX_ASSET_ISSUES = 64;
 const MAX_ASSET_ISSUE_CHARS = 200;
 const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
 
-function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
-  const theme: {
-    active?: string;
-    switchPolicy: "locked" | "allowed";
-    allowed?: readonly string[];
-  } = {
-    switchPolicy: catalog.theme.switchPolicy,
-  };
-  if (catalog.theme.active !== undefined) theme.active = catalog.theme.active;
-  if (catalog.theme.allowed !== undefined) theme.allowed = [...catalog.theme.allowed];
-  const bricks = catalog.bricks.map((brick) => {
-    const clonedBrick: {
-      type: FacetCatalog["bricks"][number]["type"];
-      variants?: readonly string[];
-      guidance?: string;
-    } = { type: brick.type };
-    if (brick.variants !== undefined) clonedBrick.variants = [...brick.variants];
-    if (brick.guidance !== undefined) clonedBrick.guidance = brick.guidance;
-    return clonedBrick;
-  });
-  const cloned: {
-    name: string;
-    description?: string;
-    theme: FacetCatalog["theme"];
-    bricks: FacetCatalog["bricks"];
-    stamps: FacetCatalog["stamps"];
-    primitiveFallback: FacetCatalog["primitiveFallback"];
-    policy: FacetCatalog["policy"];
-  } = {
-    name: catalog.name,
-    theme,
-    bricks,
-    stamps:
-      catalog.stamps.mode === "all"
-        ? { mode: "all" }
-        : { mode: "allow", names: [...catalog.stamps.names] },
-    primitiveFallback: catalog.primitiveFallback,
-    policy: {
-      ...catalog.policy,
-      order: [...catalog.policy.order] as FacetCatalog["policy"]["order"],
-    },
-  };
-  if (catalog.description !== undefined) cloned.description = catalog.description;
-  return cloned;
-}
+type AssetArrayField = "issues" | "themes" | "compositions";
 
 /**
- * The operator's per-agent asset library — themes, stamps, and an optional
+ * The operator's per-agent asset library — themes, compositions, and an optional
  * initial tree — as RAW documents straight from the backend, BEFORE any
- * `@facet/core` validation. `loadAssets` is the one gate they pass.
+ * `@facet/core` validation. `loadAssets` is the one gate they pass. Legacy
+ * pre-canonicalization input fields are ignored, never executed.
  *
  * This is the `StageStore` posture exactly: an interface plus a browser-safe
  * `MemoryAssets` reference here, with the Node/file reference (`FileAssets`)
@@ -80,7 +37,7 @@ function cloneCatalog(catalog: FacetCatalog): FacetCatalog {
  */
 export interface AssetDocuments {
   readonly themes: readonly unknown[];
-  readonly stamps: readonly unknown[];
+  readonly compositions: readonly unknown[];
   readonly catalog?: unknown;
   readonly initialTree?: unknown;
   /** Backend-level problems (unreadable file, bad JSON) — surfaced, never thrown. */
@@ -103,29 +60,11 @@ export class MemoryAssets implements AssetsStore {
   }
 }
 
-type AssetField = "issues" | "themes" | "stamps" | "catalog" | "initialTree";
+type AssetField = "issues" | "themes" | "compositions" | "catalog" | "initialTree";
 type FieldRead = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
   return typeof value === "object" && value !== null;
-}
-
-function isObjectRecord(value: unknown): value is Record<PropertyKey, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isCompleteCatalogDocument(value: unknown): boolean {
-  try {
-    if (!isObjectRecord(value)) return false;
-    return (
-      isObjectRecord(value.theme) &&
-      isAssetArray(value.bricks) &&
-      isObjectRecord(value.stamps) &&
-      isObjectRecord(value.policy)
-    );
-  } catch {
-    return false;
-  }
 }
 
 function isAssetArray(value: unknown): value is readonly unknown[] {
@@ -205,7 +144,7 @@ function pushAssetIssue(issues: string[], issue: string): void {
 
 function readAssetArrayLength(
   value: readonly unknown[],
-  label: "themes" | "stamps" | "issues",
+  label: AssetArrayField,
   issues: string[],
   maxItems: number,
 ): number {
@@ -231,7 +170,7 @@ function readAssetArrayLength(
 function readAssetArrayItem(
   value: readonly unknown[],
   index: number,
-  label: "themes" | "stamps" | "issues",
+  label: AssetArrayField,
   issues: string[],
 ): FieldRead {
   try {
@@ -246,10 +185,12 @@ function readAssetArrayItem(
 }
 
 /** The result of validating an `AssetDocuments` set: only documents that cleared
- * their core validator survive; everything skipped or fixed is named in `issues`. */
+ * their core validator survive; everything skipped or fixed is named in `issues`.
+ * The `themes` and `compositions` lists are frozen — defaults and customs share
+ * one immutable validated list each. */
 export interface LoadedAssets {
   readonly themes: readonly FacetTheme[];
-  readonly stamps: readonly FacetStamp[];
+  readonly compositions: readonly FacetComposition[];
   readonly catalog: FacetCatalog;
   readonly initialTree?: FacetTree;
   readonly issues: readonly string[];
@@ -259,10 +200,10 @@ export interface LoadedAssets {
  * Runs the core validators once, at boot (Decision Lock: no hot reload).
  *
  * The `@facet/assets` defaults are seeded as the BASE LAYER at the head of both
- * the theme and the stamp loop and run through the SAME `validateTheme` /
- * `validateStamp` gate as custom docs (never trusted-in): a bad default is dropped
- * with a recorded issue while the remaining defaults + customs survive. With an
- * empty/absent store the default base layer still resolves (DC-001).
+ * the theme and the composition loop and run through the SAME `validateTheme` /
+ * `validateComposition` gate as custom docs (never trusted-in): a bad default is
+ * dropped with a recorded issue while the remaining defaults + customs survive.
+ * With an empty/absent store the default base layer still resolves (DC-001).
  *
  * Collision rules are SYMMETRIC across both kinds:
  *  - defaults-first, then custom docs;
@@ -271,8 +212,8 @@ export interface LoadedAssets {
  *    recorded issue, so the list holds exactly one entry for that name (the
  *    custom). This is a load-time LIST swap, NOT a merge: for themes, render's
  *    `resolveTheme` stays the single merge site that overlays the shadowing custom
- *    onto the imported default value-map floor (DC-007); for stamps the custom
- *    simply replaces the default (DC-003);
+ *    onto the imported default value-map floor (DC-007); for compositions the
+ *    custom simply replaces the default (DC-003);
  *  - custom-vs-custom (neither a seeded default) stays first-wins + issue.
  *
  * The initial tree passes `validateTree` PLUS `isSeedableTree` — the EMPTY_TREE
@@ -292,7 +233,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   } catch (err) {
     rawDocs = {
       themes: [],
-      stamps: [],
+      compositions: [],
     };
     pushAssetIssue(issues, `assets load failed: ${describeAssetError(err)}`);
   }
@@ -318,15 +259,18 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   // Coerce the trusted array fields so a malformed `{ themes: null }` from a
   // custom adapter can't throw at the spread sites below (skip-and-log, never
   // crash boot). Defaults still seed, so an empty/bad store yields the defaults.
+  // Only the canonical fields are read — legacy pre-canonicalization arrays
+  // never execute.
   const rawThemes = readAssetField(docs, "themes", issues);
   const themeDocs = rawThemes.ok && isAssetArray(rawThemes.value) ? rawThemes.value : [];
   if (rawThemes.ok && !isAssetArray(rawThemes.value)) {
     pushAssetIssue(issues, "assets `themes` was not an array — ignored");
   }
-  const rawStamps = readAssetField(docs, "stamps", issues);
-  const stampDocs = rawStamps.ok && isAssetArray(rawStamps.value) ? rawStamps.value : [];
-  if (rawStamps.ok && !isAssetArray(rawStamps.value)) {
-    pushAssetIssue(issues, "assets `stamps` was not an array — ignored");
+  const rawCompositions = readAssetField(docs, "compositions", issues);
+  const compositionDocs =
+    rawCompositions.ok && isAssetArray(rawCompositions.value) ? rawCompositions.value : [];
+  if (rawCompositions.ok && !isAssetArray(rawCompositions.value)) {
+    pushAssetIssue(issues, "assets `compositions` was not an array — ignored");
   }
   const rawCatalog = readAssetField(docs, "catalog", issues);
   const catalogInput =
@@ -390,88 +334,103 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   // gate — a bad default is dropped with an issue, exactly like a bad custom.
   loadTheme(DEFAULT_THEME, true);
   const themeCount = readAssetArrayLength(themeDocs, "themes", issues, MAX_ASSET_DOCUMENTS);
-  const stampCount = readAssetArrayLength(stampDocs, "stamps", issues, MAX_ASSET_DOCUMENTS);
+  const compositionCount = readAssetArrayLength(
+    compositionDocs,
+    "compositions",
+    issues,
+    MAX_ASSET_DOCUMENTS,
+  );
   for (let i = 0; i < themeCount; i += 1) {
     const raw = readAssetArrayItem(themeDocs, i, "themes", issues);
     if (raw.ok) loadTheme(raw.value, false);
   }
 
-  const stamps: FacetStamp[] = [];
-  const seenStampNames = new Set<string>();
-  const seededStampNames = new Set<string>();
-  const loadStamp = (raw: unknown, seeded: boolean): void => {
-    let result: ReturnType<typeof validateStamp>;
+  // The ONE composition path: defaults and custom docs run through the same
+  // validate/dedupe/shadow loop into the same list (DC-006).
+  const compositions: FacetComposition[] = [];
+  const seenCompositionNames = new Set<string>();
+  const seededCompositionNames = new Set<string>();
+  const loadComposition = (raw: unknown, seeded: boolean): void => {
+    let result: ReturnType<typeof validateComposition>;
     try {
-      result = validateStamp(raw);
+      result = validateComposition(raw);
     } catch {
-      pushAssetIssue(issues, `${seeded ? "default " : ""}stamp document skipped: validation threw`);
-      return;
-    }
-    const { stamp, issues: stampIssues } = result;
-    if (stamp === undefined) {
       pushAssetIssue(
         issues,
-        `${seeded ? "default " : ""}stamp document skipped: ${stampIssues.join("; ") || "invalid"}`,
+        `${seeded ? "default " : ""}composition document skipped: validation threw`,
       );
       return;
     }
-    if (seenStampNames.has(stamp.name)) {
-      if (!seeded && seededStampNames.has(stamp.name)) {
+    const { composition, issues: compositionIssues } = result;
+    if (composition === undefined) {
+      pushAssetIssue(
+        issues,
+        `${seeded ? "default " : ""}composition document skipped: ${
+          compositionIssues.join("; ") || "invalid"
+        }`,
+      );
+      return;
+    }
+    if (seenCompositionNames.has(composition.name)) {
+      if (!seeded && seededCompositionNames.has(composition.name)) {
         // Custom shadows a seeded default: drop the seeded entry, append the custom
-        // (symmetric with the theme loop). The name already passed validateStamp's
-        // isValidThemeName gate, so it's safe to echo.
-        const at = stamps.findIndex((s) => s.name === stamp.name);
-        if (at !== -1) stamps.splice(at, 1);
-        seededStampNames.delete(stamp.name);
-        pushAssetIssue(issues, `custom stamp "${stamp.name}" shadows the seeded default`);
-        for (const note of stampIssues) {
-          pushAssetIssue(issues, `stamp "${stamp.name}": ${note}`);
+        // (symmetric with the theme loop). The name already passed
+        // validateComposition's isValidThemeName gate, so it's safe to echo.
+        const at = compositions.findIndex((c) => c.name === composition.name);
+        if (at !== -1) compositions.splice(at, 1);
+        seededCompositionNames.delete(composition.name);
+        pushAssetIssue(
+          issues,
+          `custom composition "${composition.name}" shadows the seeded default`,
+        );
+        for (const note of compositionIssues) {
+          pushAssetIssue(issues, `composition "${composition.name}": ${note}`);
         }
-        stamps.push(stamp);
+        compositions.push(composition);
         return;
       }
       // Custom-vs-custom (or a duplicate default): first wins. Two same-named
-      // stamps would inject contradictory entries into the prompt's STAMPS section.
-      pushAssetIssue(issues, `duplicate stamp name "${stamp.name}" ignored (first wins)`);
+      // compositions would inject contradictory entries into the prompt's
+      // COMPOSITIONS section.
+      pushAssetIssue(
+        issues,
+        `duplicate composition name "${composition.name}" ignored (first wins)`,
+      );
       return;
     }
-    seenStampNames.add(stamp.name);
-    if (seeded) seededStampNames.add(stamp.name);
-    for (const note of stampIssues) {
-      pushAssetIssue(issues, `stamp "${stamp.name}": ${note}`);
+    seenCompositionNames.add(composition.name);
+    if (seeded) seededCompositionNames.add(composition.name);
+    for (const note of compositionIssues) {
+      pushAssetIssue(issues, `composition "${composition.name}": ${note}`);
     }
-    stamps.push(stamp);
+    compositions.push(composition);
   };
   // Defaults first (seeded), then custom docs — the same symmetric layering the
-  // theme loop uses, through the same validateStamp gate.
-  for (const raw of DEFAULT_STAMPS) loadStamp(raw, true);
-  for (let i = 0; i < stampCount; i += 1) {
-    const raw = readAssetArrayItem(stampDocs, i, "stamps", issues);
-    if (raw.ok) loadStamp(raw.value, false);
+  // theme loop uses, through the same validateComposition gate.
+  for (const raw of DEFAULT_COMPOSITIONS) loadComposition(raw, true);
+  for (let i = 0; i < compositionCount; i += 1) {
+    const raw = readAssetArrayItem(compositionDocs, i, "compositions", issues);
+    if (raw.ok) loadComposition(raw.value, false);
   }
 
-  let catalog: FacetCatalog = cloneCatalog(DEFAULT_CATALOG);
+  // `validateCatalog(undefined)` returns a FRESH default catalog per call and
+  // never throws — the single source of a default clone, so runtime no longer
+  // duplicates core's private clone helpers (which had to be edited in lockstep).
+  let catalog: FacetCatalog = validateCatalog(undefined).catalog;
   try {
     const result = validateCatalog(catalogInput);
     catalog = result.catalog;
     for (const note of result.issues) {
       pushAssetIssue(issues, `catalog: ${note}`);
     }
-    if (catalogInput !== DEFAULT_CATALOG && !isCompleteCatalogDocument(catalogInput)) {
-      pushAssetIssue(issues, "catalog: incomplete catalog document; using bundled default catalog");
-      catalog = cloneCatalog(DEFAULT_CATALOG);
-    } else if (
-      catalogInput !== DEFAULT_CATALOG &&
-      isRecord(catalogInput) &&
-      catalogInput.name !== undefined &&
-      catalog.name === DEFAULT_CATALOG.name &&
-      catalogInput.name !== DEFAULT_CATALOG.name
-    ) {
-      catalog = cloneCatalog(DEFAULT_CATALOG);
-    }
+    // Keep validateCatalog's output verbatim: it already fills per-section defaults
+    // while PRESERVING any provided restriction (a partial doc loads as
+    // authored-sections + defaults-for-the-rest). Do NOT wholesale-replace a
+    // partial-but-restrictive custom catalog with the permissive bundled default —
+    // that would fail open, swapping a stricter custom policy for a looser one.
   } catch {
     pushAssetIssue(issues, "catalog skipped: validation threw; using default catalog");
-    catalog = cloneCatalog(DEFAULT_CATALOG);
+    catalog = validateCatalog(undefined).catalog;
   }
 
   let rawInitialTree: unknown;
@@ -505,8 +464,8 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   }
 
   const loaded: { -readonly [K in keyof LoadedAssets]: LoadedAssets[K] } = {
-    themes,
-    stamps,
+    themes: Object.freeze(themes),
+    compositions: Object.freeze(compositions),
     catalog,
     issues,
   };

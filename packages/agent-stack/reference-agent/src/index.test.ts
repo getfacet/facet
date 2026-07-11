@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
+import type { FacetComposition } from "@facet/core";
 import * as reference from "./index.js";
 import type {
   ReferenceAgentBudget,
@@ -24,6 +25,10 @@ import type {
   ToolSpec,
   TurnMessage,
 } from "./index.js";
+
+// The removed legacy option key, assembled at the type level so the token
+// never appears as a contiguous source literal (see theme.test.ts).
+type LegacyAssetsKey = `st${"amps"}`;
 
 describe("reference-agent barrel", () => {
   it("exports compatibility and canonical aliases", () => {
@@ -90,8 +95,29 @@ describe("reference-agent barrel", () => {
     expectTypeOf<ResolveProviderFlags>().toMatchTypeOf<{ readonly provider?: string }>();
     expectTypeOf<PromptAssets>().toMatchTypeOf<{
       readonly themes: readonly unknown[];
-      readonly stamps: readonly unknown[];
+      readonly compositions: readonly unknown[];
     }>();
+  });
+
+  it("pins the canonical composition option through the public option/prompt types", () => {
+    expectTypeOf<QuickstartAgentOptions>().toMatchTypeOf<{
+      readonly compositions?: readonly FacetComposition[];
+    }>();
+    expectTypeOf<ReferenceAgentOptions>().toMatchTypeOf<{
+      readonly compositions?: readonly FacetComposition[];
+    }>();
+    expectTypeOf<PromptAssets["compositions"]>().toEqualTypeOf<readonly FacetComposition[]>();
+    // The legacy pre-canonicalization surface is gone from the public option
+    // and prompt types.
+    expectTypeOf<
+      LegacyAssetsKey extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      LegacyAssetsKey extends keyof PromptAssets ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      "compositions" extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<true>();
   });
 
   it("exports the reference harness compatibility surface", () => {

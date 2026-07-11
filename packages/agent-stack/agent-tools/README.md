@@ -43,8 +43,8 @@ authors without pulling in the reference agent or a Node-only provider stack.
 `buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
 most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
 from `@facet/core`, compact page UX guidance, edit-before-append rules, the
-polished brick hierarchy, the tool playbook, the structured tool-result
-contract, and optional theme, catalog, and stamp metadata.
+Primitive Brick -> Component -> Catalog model, the tool playbook, the structured
+tool-result contract, and optional theme, catalog, and composition metadata.
 
 The prompt kit is not a complete agent. Your loop still owns the page brief,
 business logic, domain tools, provider messages, history, current event,
@@ -56,30 +56,33 @@ const system = buildFacetAgentSystemPrompt({
   assets: {
     themes,
     catalog,
-    stamps,
+    compositions,
   },
 });
 ```
 
 Asset sections expose only prompt-safe metadata: theme names/descriptions,
-catalog policy, stamp names/descriptions, stamp slot names, and whitelisted
-stamp metadata such as category, use/avoid guidance, tags, variants,
+catalog policy, composition names/descriptions, slot names, and whitelisted
+composition metadata such as category, use/avoid guidance, tags, variants,
 repeatability, preferred parent, composition, data requirements, and follow-up
-edit hints. They never expose theme CSS values, stamp node JSON, slot default
-values, provider keys, visitor ids, secrets, or unknown asset fields.
+edit hints. They never expose theme CSS values, composition node JSON, slot
+default values, provider keys, visitor ids, secrets, or unknown asset fields.
+The advertised compositions are expanded server-side when the model calls the
+`use_composition` tool; their node JSON never enters the prompt.
 
-The polished brick guidance tells agents to try advertised stamps first, then
-high-level bricks and catalog-advertised variants, before falling back to raw
-`box`/`text`/`media` primitives. It names product-quality defaults such as
-sections, cards, fields, buttons, tabs, tables, charts, stats, badges, progress,
-alerts, lists, and dividers without exposing renderer recipe parts, theme token
-values, or stamp node JSON as stage syntax.
+The component-model guidance tells agents to try advertised compositions first,
+then intrinsic components and catalog-advertised variants, before falling back to
+primitive bricks. It names product-quality defaults such as sections, cards,
+fields, buttons, tabs, nav, tables, charts, metrics, key-value rows, badges,
+progress, alerts, lists, dividers, forms, search, filters, empty states, and
+loading states without exposing renderer recipe parts, theme token values, or
+composition node JSON as stage syntax.
 
 The catalog prompt section is active UI authoring policy. It tells the model the
 active theme, whether theme switching is a locked theme or explicitly allowed,
-which brick types and variants are allowed, whether all stamps or only named
-stamps may be used, whether primitive fallback is allowed, and the preferred
-order: `stamp -> high-level brick -> primitive fallback`.
+which components and variants are allowed, whether all compositions or only named
+compositions may be used, whether primitive fallback is allowed, and the preferred
+order: `composition -> component -> primitive`.
 
 Catalog policy is deliberately narrower than hosted platform policy. It guides
 and gates the UI the model may author; it does not define tenant isolation,
@@ -93,24 +96,34 @@ Pass the same catalog into `executeStageTool` through `StageToolAssets`:
 ```ts
 const result = executeStageTool(call, {
   shadow,
-  assets: { themes, catalog, stamps },
+  assets: { themes, catalog, compositions },
 });
 ```
+
+`StageToolAssets.compositions` is the executor's composition library: the
+`use_composition` tool (input type `UseCompositionToolInput` — a composition
+`name`, string slot `params`, and `at.parent`) expands one of those documents
+server-side into ordinary validated patches with fresh ids. An unknown name, a
+name outside the catalog allow-list, or a failed expansion is a structured
+rejection (`invalid_composition`) with zero patches; a missing or non-container
+`at.parent` is `invalid_parent`.
 
 The executor enforces catalog policy before it emits patches:
 
 - `render_page`, `append_node`, and `set_node` reject disallowed node types and
-  disallowed variants. For tone-capable polished bricks, a `tone` used without
+  disallowed variants. For tone-capable components, a `tone` used without
   an allowed `variant` is treated as a recipe selector and is rejected unless
   the catalog advertises that name.
-- `use_stamp` rejects stamp names outside an allow-list catalog before expansion.
+- `use_composition` rejects composition names outside an allow-list catalog
+  before expansion.
 - `set_theme` rejects locked theme changes and names outside an allowed theme
   list.
 
 These are catalog_policy rejections: the structured observation has
 `outcome: "rejected"`, `applied: false`, `patch_count: 0`, a catalog-policy
-message, and a `next_action` telling the model to use an allowed stamp, brick,
-variant, or theme. Treat them as repair instructions, not as visible success.
+message, and a `next_action` telling the model to use an allowed composition,
+component, primitive, variant, or theme. Treat them as repair instructions, not
+as visible success.
 
 ## LLM-facing observations
 

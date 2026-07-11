@@ -51,8 +51,13 @@ function detail(node: FacetNode): string {
       return `${node.caption === undefined ? "" : `: ${quote(node.caption)} `}(${count("column", node.columns.length)}, ${count("row", node.rows.length)})`;
     case "chart":
       return `(${node.kind})${node.title === undefined ? "" : `: ${quote(node.title)} `}(${count("series", node.series.length)}, ${count("label", node.labels?.length ?? 0)})`;
+    case "metric":
     case "stat":
       return `: ${node.label} = ${node.value}${node.delta === undefined ? "" : ` (${node.delta})`}`;
+    case "keyValue":
+      return `: ${count("item", node.items.length)}`;
+    case "nav":
+      return `: ${count("item", node.items.length)}`;
     case "badge":
       return `: ${quote(node.label)}`;
     case "progress":
@@ -63,13 +68,31 @@ function detail(node: FacetNode): string {
       return `: ${count("item", node.items.length)}`;
     case "divider":
       return node.label === undefined ? "" : `: ${quote(node.label)}`;
+    case "form":
+      return labeledCount(node.title ?? node.body, "child", node.children.length);
+    case "search":
+      return `: ${node.name}`;
+    case "filterBar":
+      return `: ${count("filter", node.filters.length)}`;
+    case "emptyState": {
+      const label = joinedLabel([node.title, node.body, node.actionLabel]);
+      return label === undefined ? "" : `: ${quote(label)}`;
+    }
+    case "loading":
+      return node.label === undefined ? "" : `: ${quote(node.label)}`;
     case "box":
       return "";
   }
 }
 
 function nodePress(node: FacetNode): FacetAction | undefined {
-  if (node.type === "box" || node.type === "button" || node.type === "card") return node.onPress;
+  if (
+    node.type === "box" ||
+    node.type === "button" ||
+    node.type === "card" ||
+    node.type === "emptyState"
+  )
+    return node.onPress;
   return undefined;
 }
 

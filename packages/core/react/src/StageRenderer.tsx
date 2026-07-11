@@ -52,6 +52,7 @@ const EMPTY_EXIT_RECORDS_BY_PARENT: ReadonlyMap<NodeId, readonly ExitRecord[]> =
   readonly ExitRecord[]
 >();
 const DISPLAY_CONTENTS_STYLE: CSSProperties = { display: "contents" };
+const MAX_INTRINSIC_ITEMS = 32;
 
 function useMotionLayoutEffect(
   effect: Parameters<typeof useEffect>[0],
@@ -96,6 +97,33 @@ function childIdsOf(node: FacetNode): readonly NodeId[] {
   return Array.isArray((node as { readonly children?: unknown }).children)
     ? (node as { readonly children: readonly NodeId[] }).children
     : [];
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function safeOwnValue(record: unknown, key: string): unknown {
+  if (!isObjectRecord(record)) return undefined;
+  try {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) return undefined;
+    return record[key];
+  } catch {
+    return undefined;
+  }
+}
+
+function cappedArray(value: unknown, max: number): readonly unknown[] {
+  if (!Array.isArray(value)) return [];
+  try {
+    return value.slice(0, max);
+  } catch {
+    return [];
+  }
+}
+
+function virtualFieldId(nodeId: NodeId, name: string): string {
+  return `${String(nodeId.length)}:${nodeId}${name}`;
 }
 
 function isContainerValue(value: unknown): value is FacetNode {
@@ -341,14 +369,21 @@ function collectVisibleInfo(
         return;
       case "button":
       case "tabs":
+      case "nav":
       case "table":
       case "chart":
+      case "metric":
       case "stat":
+      case "keyValue":
       case "badge":
       case "progress":
       case "alert":
       case "list":
       case "divider":
+      case "search":
+      case "filterBar":
+      case "emptyState":
+      case "loading":
         ids.add(id);
         nodes.set(id, { parentId, index, ancestors, depth });
         return;
@@ -511,7 +546,7 @@ type ClassifiedPress =
  */
 function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode): FieldValues {
   const target = tree.nodes[collectId];
-  if (target == null || !isContainer(target)) {
+  if (target == null) {
     return {};
   }
 
@@ -521,6 +556,30 @@ function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode
   // first) lets the DOM pass pick a MOUNTED one, so a hidden/off-screen field
   // can't shadow a visible same-named field and drop its value.
   const idsByName = new Map<string, NodeId[]>();
+  const addFieldId = (name: string, id: NodeId): void => {
+    const cappedName = name.slice(0, MAX_FIELD_VALUE_CHARS);
+    const ids = idsByName.get(cappedName);
+    if (ids === undefined) idsByName.set(cappedName, [id]);
+    else ids.push(id);
+  };
+  const addSearchField = (nodeId: NodeId, node: FacetNode): void => {
+    const name = cappedString(safeOwnValue(node, "name"), MAX_FIELD_VALUE_CHARS);
+    if (name !== undefined) {
+      addFieldId(name, virtualFieldId(nodeId, name));
+    }
+  };
+  const addFilterFields = (nodeId: NodeId, node: FacetNode): void => {
+    for (const filter of cappedArray(safeOwnValue(node, "filters"), MAX_INTRINSIC_ITEMS)) {
+      const input = safeOwnValue(filter, "input");
+      if (input === "password") {
+        continue;
+      }
+      const name = cappedString(safeOwnValue(filter, "name"), MAX_FIELD_VALUE_CHARS);
+      if (name !== undefined) {
+        addFieldId(name, virtualFieldId(nodeId, name));
+      }
+    }
+  };
   // Total-visit budget for THIS invocation: `ancestors` breaks cycles but a raw
   // shared-child DAG (no validateTree on the live path) has an exponential number
   // of paths, so cap total gather steps the way renderNode caps total renders.
@@ -551,6 +610,14 @@ function collectFieldValues(tree: FacetTree, collectId: NodeId, root: ParentNode
         if (ids === undefined) idsByName.set(name, [id]);
         else ids.push(id);
       }
+      return;
+    }
+    if (node.type === "search") {
+      addSearchField(id, node);
+      return;
+    }
+    if (node.type === "filterBar") {
+      addFilterFields(id, node);
       return;
     }
     if (!isContainer(node)) {
@@ -1961,16 +2028,42 @@ function renderNode({
           activeScreen,
         }),
       );
+    case "form":
+      return renderBrick(
+        renderContainerChildren({
+          tree,
+          parentId: id,
+          childIds: childIdsOf(node),
+          onPress,
+          visibilityOverrides,
+          theme,
+          ancestors,
+          budget,
+          appearSeen,
+          depth,
+          renderMode,
+          motionClassById,
+          exitRecordsByParent,
+          activeScreen,
+        }),
+      );
     case "button":
     case "tabs":
+    case "nav":
     case "table":
     case "chart":
+    case "metric":
     case "stat":
+    case "keyValue":
     case "badge":
     case "progress":
     case "alert":
     case "list":
     case "divider":
+    case "search":
+    case "filterBar":
+    case "emptyState":
+    case "loading":
       return renderBrick();
     case "text": {
       // A non-string value (an object would make React itself throw) is skipped.

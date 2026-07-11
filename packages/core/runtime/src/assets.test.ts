@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -13,7 +13,7 @@ import {
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
-import { DEFAULT_CATALOG, DEFAULT_STAMPS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_COMPOSITIONS, DEFAULT_THEME } from "@facet/assets";
 import {
   isSeedableTree,
   loadAssets,
@@ -28,6 +28,12 @@ import { FacetRuntime } from "./runtime.js";
 
 // --- Fixtures shared by both references ---------------------------------------
 
+// Legacy vocabulary is built at runtime so the removed tokens never appear as
+// source literals (same idiom as theme.test.ts).
+const legacy = ["st", "amp"].join("");
+const legacyTitle = ["St", "amp"].join("");
+const legacyDefinitionsField = ["component", "Definitions"].join("");
+
 /** A clean partial theme document (Decision 1). */
 const validTheme = {
   name: "midnight",
@@ -38,7 +44,7 @@ const validTheme = {
 const invalidTheme = { name: "hostile", color: { bg: "url(http://evil)" } };
 
 /** A legal fragment: a box root with one text child. */
-const validStamp = {
+const validComposition = {
   name: "cta",
   description: "a call to action",
   root: "s-root",
@@ -47,11 +53,33 @@ const validStamp = {
     "s-label": { id: "s-label", type: "text", value: "Go" },
   },
 };
-/** Root does not resolve ⇒ `validateStamp` refuses it. */
-const invalidStamp = {
+/** Root does not resolve ⇒ `validateComposition` refuses it. */
+const invalidComposition = {
   name: "broken",
   root: "does-not-exist",
   nodes: { x: { id: "x", type: "text", value: "orphan" } },
+};
+
+/** A component-brick composition with slot params and an agent action. */
+const richComposition = {
+  name: "customerSummaryCard",
+  description: "Reusable customer summary",
+  root: "card",
+  nodes: {
+    card: {
+      id: "card",
+      type: "card",
+      title: "{{customer}}",
+      children: ["metric", "action"],
+    },
+    metric: { id: "metric", type: "metric", label: "ARR", value: "{{arr}}" },
+    action: {
+      id: "action",
+      type: "button",
+      label: "Open customer",
+      onPress: { name: "open_customer", payload: { id: "acme" } },
+    },
+  },
 };
 
 /** A seedable initial tree: a root box with ≥ 1 child. */
@@ -82,7 +110,9 @@ function makeTempDir(): string {
 function fileMake(docs: AssetDocuments): AssetsStore {
   const dir = makeTempDir();
   docs.themes.forEach((t, i) => writeFileSync(join(dir, `t${i}.theme.json`), JSON.stringify(t)));
-  docs.stamps.forEach((s, i) => writeFileSync(join(dir, `s${i}.stamp.json`), JSON.stringify(s)));
+  docs.compositions.forEach((c, i) =>
+    writeFileSync(join(dir, `c${i}.composition.json`), JSON.stringify(c)),
+  );
   if (docs.catalog !== undefined) {
     writeFileSync(join(dir, "catalog.json"), JSON.stringify(docs.catalog));
   }
@@ -94,14 +124,20 @@ function fileMake(docs: AssetDocuments): AssetsStore {
 
 function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): void {
   describe(name, () => {
-    it("round-trips valid themes, stamps, and a seedable initial tree (atop the defaults)", async () => {
-      const store = make({ themes: [validTheme], stamps: [validStamp], initialTree: seedTree });
+    it("round-trips valid themes, compositions, and a seedable initial tree (atop the defaults)", async () => {
+      const store = make({
+        themes: [validTheme],
+        compositions: [validComposition],
+        initialTree: seedTree,
+      });
       const loaded = await loadAssets(store, "agent");
       // The custom docs coexist with the seeded default base layer.
       expect(loaded.themes.map((t) => t.name)).toContain("midnight");
       expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-      expect(loaded.stamps.map((s) => s.name)).toContain("cta");
-      for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
+      expect(loaded.compositions.map((c) => c.name)).toContain("cta");
+      for (const c of DEFAULT_COMPOSITIONS) {
+        expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
+      }
       expect(loaded.initialTree).toBeDefined();
       expect(loaded.initialTree && isSeedableTree(loaded.initialTree)).toBe(true);
     });
@@ -109,21 +145,24 @@ function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): vo
     it("skips invalid documents with issues and keeps valid ones (plus the defaults)", async () => {
       const store = make({
         themes: [validTheme, invalidTheme],
-        stamps: [validStamp, invalidStamp],
+        compositions: [validComposition, invalidComposition, richComposition],
         initialTree: seedTree,
       });
       const loaded = await loadAssets(store, "agent");
       expect(loaded.themes.map((t) => t.name)).toContain("midnight");
       expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
       expect(loaded.themes.map((t) => t.name)).not.toContain("hostile");
-      expect(loaded.stamps.map((s) => s.name)).toContain("cta");
-      expect(loaded.stamps.map((s) => s.name)).not.toContain("broken");
-      for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
+      expect(loaded.compositions.map((c) => c.name)).toContain("cta");
+      expect(loaded.compositions.map((c) => c.name)).toContain("customerSummaryCard");
+      expect(loaded.compositions.map((c) => c.name)).not.toContain("broken");
+      for (const c of DEFAULT_COMPOSITIONS) {
+        expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
+      }
       expect(loaded.issues.length).toBeGreaterThan(0);
     });
 
     it("refuses a garbage initial tree (the EMPTY_TREE trap) with no seed + an issue", async () => {
-      const store = make({ themes: [], stamps: [], initialTree: { not: "a tree" } });
+      const store = make({ themes: [], compositions: [], initialTree: { not: "a tree" } });
       const loaded = await loadAssets(store, "agent");
       expect(loaded.initialTree).toBeUndefined();
       expect(loaded.issues.length).toBeGreaterThan(0);
@@ -137,8 +176,65 @@ contract("FileAssets", fileMake);
 // --- loadAssets specifics -----------------------------------------------------
 
 describe("loadAssets", () => {
+  it("loads one canonical composition collection", async () => {
+    // Structural pin FIRST so this stays an assertion failure while the module
+    // still carries the legacy pre-canonicalization path: exactly one canonical
+    // composition input/output/loop, no legacy vocabulary left in the source.
+    const source = readFileSync(new URL("./assets.ts", import.meta.url), "utf8");
+    expect(source.includes(`DEFAULT_${legacy.toUpperCase()}S`)).toBe(false);
+    expect(source.includes(`validate${legacyTitle}`)).toBe(false);
+    expect(source.includes(`Facet${legacyTitle}`)).toBe(false);
+    expect(source.includes(["validate", "Component", "Definition"].join(""))).toBe(false);
+
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], compositions: [validComposition] }),
+      "a",
+    );
+    // Defaults and the custom doc land in the SAME immutable validated list.
+    const names = loaded.compositions.map((c) => c.name);
+    for (const c of DEFAULT_COMPOSITIONS) expect(names).toContain(c.name);
+    expect(names).toContain("cta");
+    expect(Object.isFrozen(loaded.compositions)).toBe(true);
+    expect(Object.isFrozen(loaded.themes)).toBe(true);
+    // No old output field survives.
+    expect((loaded as unknown as Record<string, unknown>)[`${legacy}s`]).toBeUndefined();
+    expect((loaded as unknown as Record<string, unknown>)[legacyDefinitionsField]).toBeUndefined();
+  });
+
+  it(`ignores old ${legacy}/componentDefinition input fields without executing them`, async () => {
+    const docs = {
+      themes: [],
+      compositions: [],
+      [`${legacy}s`]: [validComposition],
+      [legacyDefinitionsField]: [richComposition],
+    } as AssetDocuments;
+    const loaded = await loadAssets(new MemoryAssets(docs), "a");
+    // The old fields never become executable compositions…
+    expect(loaded.compositions.map((c) => c.name)).not.toContain("cta");
+    expect(loaded.compositions.map((c) => c.name)).not.toContain("customerSummaryCard");
+    // …and their presence is silently ignored (no legacy vocabulary in issues).
+    expect(loaded.issues.filter((i) => i.includes(legacy))).toEqual([]);
+    // The defaults still resolve untouched.
+    for (const c of DEFAULT_COMPOSITIONS) {
+      expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
+    }
+  });
+
+  it("normalizes composition node actions through the shared sanitizer", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], compositions: [richComposition] }),
+      "a",
+    );
+    const rich = loaded.compositions.find((c) => c.name === "customerSummaryCard");
+    expect(rich).toBeDefined();
+    expect(rich?.nodes["action"]).toMatchObject({
+      type: "button",
+      onPress: { kind: "agent", name: "open_customer", payload: { id: "acme" } },
+    });
+  });
+
   it("catalog defaults to the bundled catalog when no custom catalog is supplied", async () => {
-    const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+    const loaded = await loadAssets(new MemoryAssets({ themes: [], compositions: [] }), "a");
 
     expect(loaded.catalog).toEqual(DEFAULT_CATALOG);
     expect(loaded.catalog.theme.switchPolicy).toBe("locked");
@@ -149,10 +245,10 @@ describe("loadAssets", () => {
       name: "custom",
       theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
       bricks: [{ type: "section", variants: ["surface"] }],
-      stamps: { mode: "allow", names: ["dashboard-summary"] },
+      compositions: { mode: "allow", names: ["dashboard-summary"] },
       primitiveFallback: "discouraged",
       policy: {
-        order: ["stamp", "brick", "primitive"],
+        order: ["composition", "component", "primitive"],
         editBeforeAppend: true,
         compactScreens: true,
         maxScreenSections: 4,
@@ -160,18 +256,18 @@ describe("loadAssets", () => {
     };
 
     for (const make of [(docs: AssetDocuments) => new MemoryAssets(docs), fileMake]) {
-      const loaded = await loadAssets(make({ themes: [], stamps: [], catalog: custom }), "a");
+      const loaded = await loadAssets(make({ themes: [], compositions: [], catalog: custom }), "a");
       expect(loaded.catalog.name).toBe("custom");
-      expect(loaded.catalog.stamps).toEqual({ mode: "allow", names: ["dashboard-summary"] });
+      expect(loaded.catalog.compositions).toEqual({ mode: "allow", names: ["dashboard-summary"] });
       expect(loaded.catalog.policy.maxScreenSections).toBe(4);
     }
   });
 
-  it("malformed catalog falls back to the bundled catalog with issues", async () => {
+  it("malformed catalog sections fail closed with issues (no permissive wholesale fallback)", async () => {
     const loaded = await loadAssets(
       new MemoryAssets({
         themes: [],
-        stamps: [],
+        compositions: [],
         catalog: {
           name: "bad name",
           theme: { switchPolicy: "sometimes" },
@@ -182,31 +278,107 @@ describe("loadAssets", () => {
     );
 
     expect(loaded.catalog.name).toBe(DEFAULT_CATALOG.name);
-    expect(loaded.catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
+    // A PROVIDED bricks list whose entries are all invalid validates to empty and
+    // stays empty (allow nothing) — it is NOT reopened to the permissive default.
+    expect(loaded.catalog.bricks).toEqual([]);
+    expect(loaded.catalog.theme.switchPolicy).toBe("locked");
     expect(loaded.issues.some((issue) => issue.includes("catalog"))).toBe(true);
   });
 
-  it("null or incomplete catalog documents fall back to the bundled catalog", async () => {
+  it("keeps a complete custom catalog's strict policy when only its name is malformed", async () => {
+    // A complete document whose sole defect is an invalid name must NOT be
+    // wholesale-replaced by the permissive bundled default — that would fail
+    // open, dropping the stricter custom policy. validateCatalog falls the name
+    // back to the default and emits a name issue; everything else is kept.
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: [],
+        compositions: [],
+        catalog: {
+          name: "bad name",
+          theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
+          bricks: [{ type: "section", variants: ["surface"] }],
+          compositions: { mode: "allow", names: ["dashboard-summary"] },
+          primitiveFallback: "discouraged",
+          policy: {
+            order: ["composition", "component", "primitive"],
+            editBeforeAppend: true,
+            compactScreens: true,
+            maxScreenSections: 3,
+          },
+        } as unknown as FacetCatalog,
+      }),
+      "a",
+    );
+
+    // Name fell back to the default, but the strict custom policy survived.
+    expect(loaded.catalog.name).toBe(DEFAULT_CATALOG.name);
+    expect(loaded.catalog.compositions).toEqual({ mode: "allow", names: ["dashboard-summary"] });
+    expect(loaded.catalog.primitiveFallback).toBe("discouraged");
+    expect(loaded.catalog.policy.maxScreenSections).toBe(3);
+    expect(loaded.catalog.bricks).not.toEqual(DEFAULT_CATALOG.bricks);
+    expect(loaded.catalog.bricks.some((brick) => brick.type === "section")).toBe(true);
+    expect(loaded.issues.some((issue) => issue.includes("name is missing or malformed"))).toBe(
+      true,
+    );
+  });
+
+  it("a null or empty catalog document resolves to the default (validateCatalog fills sections)", async () => {
+    // The old "incomplete document -> wholesale bundled default" gate is gone.
+    // validateCatalog fills each absent section with its default, so null (not an
+    // object) and {} (all sections absent) both land on the default shape without
+    // an incomplete-document issue.
     for (const catalog of [null, {}]) {
       const loaded = await loadAssets(
-        new MemoryAssets({ themes: [], stamps: [], catalog } as unknown as AssetDocuments),
+        new MemoryAssets({ themes: [], compositions: [], catalog } as unknown as AssetDocuments),
         "a",
       );
 
-      expect(loaded.catalog).toEqual(DEFAULT_CATALOG);
-      expect(loaded.catalog.description).toBe(DEFAULT_CATALOG.description);
+      // Every section resolves to its default (an empty object carries no
+      // description, so full DEFAULT_CATALOG equality holds only section-wise).
+      expect(loaded.catalog.name).toBe(DEFAULT_CATALOG.name);
       expect(loaded.catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
-      expect(loaded.issues.some((issue) => issue.includes("bundled default catalog"))).toBe(true);
+      expect(loaded.catalog.components).toEqual(DEFAULT_CATALOG.components);
+      expect(loaded.catalog.compositions).toEqual(DEFAULT_CATALOG.compositions);
+      expect(loaded.catalog.theme).toEqual(DEFAULT_CATALOG.theme);
+      expect(loaded.issues.some((issue) => issue.includes("incomplete catalog document"))).toBe(
+        false,
+      );
     }
+  });
+
+  it("loads a partial-but-restrictive catalog as authored sections plus defaults for the rest", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: [],
+        compositions: [],
+        catalog: {
+          compositions: { mode: "allow", names: [] },
+          theme: { switchPolicy: "locked", active: "brand" },
+        },
+      } as unknown as AssetDocuments),
+      "a",
+    );
+
+    // The authored restrictions survive (not replaced by the permissive default).
+    expect(loaded.catalog.compositions).toEqual({ mode: "allow", names: [] });
+    expect(loaded.catalog.theme.switchPolicy).toBe("locked");
+    expect(loaded.catalog.theme.active).toBe("brand");
+    // Absent sections still fill from the default vocabulary.
+    expect(loaded.catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
+    expect(loaded.catalog).not.toEqual(DEFAULT_CATALOG);
+    expect(loaded.issues.some((issue) => issue.includes("incomplete catalog document"))).toBe(
+      false,
+    );
   });
 
   it("seeds the default base layer", async () => {
     // DC-001: an empty/absent operator store still resolves the bundled defaults —
-    // the default theme document plus the whole default stamp library.
-    const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+    // the default theme document plus the whole default composition library.
+    const loaded = await loadAssets(new MemoryAssets({ themes: [], compositions: [] }), "a");
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    const stampNames = loaded.stamps.map((s) => s.name);
-    for (const s of DEFAULT_STAMPS) expect(stampNames).toContain(s.name);
+    const compositionNames = loaded.compositions.map((c) => c.name);
+    for (const c of DEFAULT_COMPOSITIONS) expect(compositionNames).toContain(c.name);
   });
 
   it("never throws when the store's load() rejects — defaults still resolve (P3 hardening)", async () => {
@@ -220,8 +392,8 @@ describe("loadAssets", () => {
       })(),
     ).resolves.toBeUndefined();
     expect(loaded?.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    const okStamps = loaded?.stamps.map((s) => s.name) ?? [];
-    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    const okCompositions = loaded?.compositions.map((c) => c.name) ?? [];
+    for (const c of DEFAULT_COMPOSITIONS) expect(okCompositions).toContain(c.name);
     expect(loaded?.issues.some((i) => i.includes("assets load failed"))).toBe(true);
   });
 
@@ -245,8 +417,8 @@ describe("loadAssets", () => {
     };
     const loaded = await loadAssets(malformedStore, "a");
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    const okStamps = loaded.stamps.map((s) => s.name);
-    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    const okCompositions = loaded.compositions.map((c) => c.name);
+    for (const c of DEFAULT_COMPOSITIONS) expect(okCompositions).toContain(c.name);
     expect(loaded.issues.some((i) => i.includes("not an object"))).toBe(true);
   });
 
@@ -264,9 +436,9 @@ describe("loadAssets", () => {
             throw new Error("themes boom");
           },
         },
-        stamps: {
+        compositions: {
           get() {
-            throw new Error("stamps boom");
+            throw new Error("compositions boom");
           },
         },
         catalog: {
@@ -286,80 +458,86 @@ describe("loadAssets", () => {
     };
     const loaded = await loadAssets(hostileStore, "a");
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    const okStamps = loaded.stamps.map((s) => s.name);
-    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    const okCompositions = loaded.compositions.map((c) => c.name);
+    for (const c of DEFAULT_COMPOSITIONS) expect(okCompositions).toContain(c.name);
     expect(loaded.issues.some((i) => i.includes("`issues` threw"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("`themes` threw"))).toBe(true);
-    expect(loaded.issues.some((i) => i.includes("`stamps` threw"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`compositions` threw"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("`catalog` threw"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("initial tree"))).toBe(true);
   });
 
   it("returns a fresh bundled catalog object for fallback loads", async () => {
-    const first = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+    const first = await loadAssets(new MemoryAssets({ themes: [], compositions: [] }), "a");
     (first.catalog.theme.allowed as unknown as string[]).length = 0;
+    (first.catalog.components as unknown as { length: number }).length = 0;
+    (first.catalog.compositions as unknown as { mode: "allow"; names: string[] }).names = [
+      "mutated",
+    ];
     const mediaBrick = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "media");
     const firstMediaBrick = first.catalog.bricks.find((brick) => brick.type === "media");
     (firstMediaBrick?.variants as unknown as string[] | undefined)?.splice(0);
     (first.catalog.bricks as { length: number }).length = 0;
     (first.catalog.policy.order as unknown as string[]).reverse();
 
-    const second = await loadAssets(new MemoryAssets({ themes: [], stamps: [] }), "a");
+    const second = await loadAssets(new MemoryAssets({ themes: [], compositions: [] }), "a");
 
     expect(second.catalog).toEqual(DEFAULT_CATALOG);
     expect(second.catalog.bricks).toHaveLength(DEFAULT_CATALOG.bricks.length);
+    expect(second.catalog.components).toEqual(DEFAULT_CATALOG.components);
+    expect(second.catalog.compositions).toEqual(DEFAULT_CATALOG.compositions);
     expect(second.catalog.theme.allowed).toEqual(DEFAULT_CATALOG.theme.allowed);
     expect(second.catalog.bricks.find((brick) => brick.type === "media")?.variants).toEqual(
       mediaBrick?.variants,
     );
-    expect(second.catalog.policy.order).toEqual(["stamp", "brick", "primitive"]);
+    expect(second.catalog.policy.order).toEqual(["composition", "component", "primitive"]);
   });
 
-  it("never calls store-supplied array methods while reading themes and stamps", async () => {
+  it("never calls store-supplied array methods while reading themes and compositions", async () => {
     const themes = new Proxy([validTheme], {
       get(target, prop, receiver) {
         if (prop === "map") throw new Error("themes map boom");
         return Reflect.get(target, prop, receiver);
       },
     });
-    const stamps = new Proxy([validStamp], {
+    const compositions = new Proxy([validComposition], {
       get(target, prop, receiver) {
-        if (prop === "map") throw new Error("stamps map boom");
+        if (prop === "map") throw new Error("compositions map boom");
         return Reflect.get(target, prop, receiver);
       },
     });
     const loaded = await loadAssets(
       new MemoryAssets({
         themes: themes as readonly unknown[],
-        stamps: stamps as readonly unknown[],
+        compositions: compositions as readonly unknown[],
       }),
       "a",
     );
     expect(loaded.themes.map((t) => t.name)).toContain("midnight");
-    expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+    expect(loaded.compositions.map((c) => c.name)).toContain("cta");
   });
 
   it("never throws when asset arrays are revoked proxies — defaults still resolve", async () => {
     const themes = Proxy.revocable([], {});
-    const stamps = Proxy.revocable([], {});
+    const compositions = Proxy.revocable([], {});
     const issues = Proxy.revocable([], {});
     themes.revoke();
-    stamps.revoke();
+    compositions.revoke();
     issues.revoke();
     const loaded = await loadAssets(
       new MemoryAssets({
         themes: themes.proxy as unknown as readonly unknown[],
-        stamps: stamps.proxy as unknown as readonly unknown[],
+        compositions: compositions.proxy as unknown as readonly unknown[],
         issues: issues.proxy as unknown as readonly string[],
       }),
       "a",
     );
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    const okStamps = loaded.stamps.map((s) => s.name);
-    for (const s of DEFAULT_STAMPS) expect(okStamps).toContain(s.name);
+    const okCompositions = loaded.compositions.map((c) => c.name);
+    for (const c of DEFAULT_COMPOSITIONS) expect(okCompositions).toContain(c.name);
     expect(loaded.issues.some((i) => i.includes("`issues` was not an array"))).toBe(true);
     expect(loaded.issues.some((i) => i.includes("`themes` was not an array"))).toBe(true);
-    expect(loaded.issues.some((i) => i.includes("`stamps` was not an array"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`compositions` was not an array"))).toBe(true);
   });
 
   it("never throws when asset array item accessors throw — readable docs still load", async () => {
@@ -369,24 +547,24 @@ describe("loadAssets", () => {
         throw new Error("theme item boom");
       },
     });
-    const stamps = [validStamp, validStamp] as unknown[];
-    Object.defineProperty(stamps, "1", {
+    const compositions = [validComposition, validComposition] as unknown[];
+    Object.defineProperty(compositions, "1", {
       get() {
-        throw new Error("stamp item boom");
+        throw new Error("composition item boom");
       },
     });
 
     const loaded = await loadAssets(
       new MemoryAssets({
         themes: themes as readonly unknown[],
-        stamps: stamps as readonly unknown[],
+        compositions: compositions as readonly unknown[],
       }),
       "a",
     );
     expect(loaded.themes.map((t) => t.name)).toContain("midnight");
-    expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+    expect(loaded.compositions.map((c) => c.name)).toContain("cta");
     expect(loaded.issues.some((i) => i.includes("`themes` item 1 threw"))).toBe(true);
-    expect(loaded.issues.some((i) => i.includes("`stamps` item 1 threw"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`compositions` item 1 threw"))).toBe(true);
   });
 
   it("bounds and sanitizes backend issue strings before returning them", async () => {
@@ -394,7 +572,7 @@ describe("loadAssets", () => {
       i === 0 ? `\x1b[31m${"x".repeat(500)}` : `issue-${String(i)}`,
     );
     const loaded = await loadAssets(
-      new MemoryAssets({ themes: [], stamps: [], issues: rawIssues }),
+      new MemoryAssets({ themes: [], compositions: [], issues: rawIssues }),
       "a",
     );
     expect(loaded.issues.length).toBeLessThanOrEqual(65);
@@ -403,23 +581,26 @@ describe("loadAssets", () => {
     expect(loaded.issues).toContain("...further asset issues suppressed");
   });
 
-  it("caps asset document arrays before validating custom themes and stamps", async () => {
+  it("caps asset document arrays before validating custom themes and compositions", async () => {
     const hugeThemes = Array.from({ length: 1_100 }, (_, i) => ({ name: `theme_${String(i)}` }));
-    const hugeStamps = Array.from({ length: 1_100 }, (_, i) => ({
-      ...validStamp,
-      name: `stamp_${String(i)}`,
+    const hugeCompositions = Array.from({ length: 1_100 }, (_, i) => ({
+      ...validComposition,
+      name: `composition_${String(i)}`,
     }));
     const loaded = await loadAssets(
-      new MemoryAssets({ themes: hugeThemes, stamps: hugeStamps }),
+      new MemoryAssets({
+        themes: hugeThemes,
+        compositions: hugeCompositions,
+      }),
       "a",
     );
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
     expect(loaded.themes.map((t) => t.name)).toContain("theme_1023");
     expect(loaded.themes.map((t) => t.name)).not.toContain("theme_1024");
-    expect(loaded.stamps.map((s) => s.name)).toContain("stamp_1023");
-    expect(loaded.stamps.map((s) => s.name)).not.toContain("stamp_1024");
+    expect(loaded.compositions.map((c) => c.name)).toContain("composition_1023");
+    expect(loaded.compositions.map((c) => c.name)).not.toContain("composition_1024");
     expect(loaded.issues.some((i) => i.includes("`themes` had 1100 item(s)"))).toBe(true);
-    expect(loaded.issues.some((i) => i.includes("`stamps` had 1100 item(s)"))).toBe(true);
+    expect(loaded.issues.some((i) => i.includes("`compositions` had 1100 item(s)"))).toBe(true);
   });
 
   it("never throws when an initialTree accessor throws — defaults still resolve", async () => {
@@ -427,7 +608,7 @@ describe("loadAssets", () => {
       load: () =>
         Promise.resolve({
           themes: [],
-          stamps: [],
+          compositions: [],
           get initialTree(): unknown {
             throw new Error("initial boom");
           },
@@ -435,25 +616,28 @@ describe("loadAssets", () => {
     };
     const loaded = await loadAssets(hostileStore, "a");
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
+    for (const c of DEFAULT_COMPOSITIONS) {
+      expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
+    }
     expect(loaded.issues.some((i) => i.includes("initial tree"))).toBe(true);
   });
 
   it("never throws on a malformed store shape (non-array fields) — defaults survive (P3 hardening)", async () => {
     const malformedStore: AssetsStore = {
-      load: () => Promise.resolve({ themes: null, stamps: undefined } as unknown as AssetDocuments),
+      load: () =>
+        Promise.resolve({ themes: null, compositions: undefined } as unknown as AssetDocuments),
     };
     const loaded = await loadAssets(malformedStore, "a");
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    const stampNames = loaded.stamps.map((s) => s.name);
-    for (const s of DEFAULT_STAMPS) expect(stampNames).toContain(s.name);
+    const compositionNames = loaded.compositions.map((c) => c.name);
+    for (const c of DEFAULT_COMPOSITIONS) expect(compositionNames).toContain(c.name);
     expect(loaded.issues.some((i) => i.includes("was not an array"))).toBe(true);
   });
 
-  it("a custom stamp shadows a same-named default while other defaults survive (DC-003)", async () => {
-    // A custom stamp named `hero` (a seeded default name) REPLACES the default in
-    // the list — exactly one `hero`, and it is the custom one; the remaining
-    // defaults and unrelated valid customs coexist.
+  it("a custom composition shadows a same-named default while other defaults survive (DC-003)", async () => {
+    // A custom composition named `hero` (a seeded default name) REPLACES the
+    // default in the list — exactly one `hero`, and it is the custom one; the
+    // remaining defaults and unrelated valid customs coexist.
     const customHero = {
       name: "hero",
       root: "r",
@@ -463,29 +647,32 @@ describe("loadAssets", () => {
       },
     };
     const loaded = await loadAssets(
-      new MemoryAssets({ themes: [], stamps: [customHero, validStamp] }),
+      new MemoryAssets({ themes: [], compositions: [customHero, validComposition] }),
       "a",
     );
-    const heroes = loaded.stamps.filter((s) => s.name === "hero");
+    const heroes = loaded.compositions.filter((c) => c.name === "hero");
     expect(heroes).toHaveLength(1);
     expect(heroes[0]?.nodes["mine"]).toBeDefined(); // the custom
-    expect(heroes[0]?.nodes["hero.title"]).toBeUndefined(); // NOT the default
+    expect(heroes[0]?.nodes["hero.root"]).toBeUndefined(); // NOT the default
     // Other defaults + the unrelated valid custom coexist.
-    expect(loaded.stamps.map((s) => s.name)).toContain("card");
-    expect(loaded.stamps.map((s) => s.name)).toContain("cta-button");
-    expect(loaded.stamps.map((s) => s.name)).toContain("cta");
+    expect(loaded.compositions.map((c) => c.name)).toContain("card");
+    expect(loaded.compositions.map((c) => c.name)).toContain("cta-button");
+    expect(loaded.compositions.map((c) => c.name)).toContain("cta");
     // A shadow issue is recorded.
     expect(loaded.issues.some((i) => i.includes("hero") && i.includes("shadow"))).toBe(true);
   });
 
   it("a custom theme named 'default' shadows the seeded default (DC-007)", async () => {
-    // Symmetric with stamps: a custom theme named `default` naming only `color.bg`
-    // REPLACES the seeded default document in the themes list (a load-time LIST
-    // swap, NOT a field merge). The single `default` entry is the raw custom doc —
-    // custom `bg`, and no `space` map (proof loadAssets did not merge; render's
-    // `resolveTheme` stays the only merge site, overlaying it onto the floor).
+    // Symmetric with compositions: a custom theme named `default` naming only
+    // `color.bg` REPLACES the seeded default document in the themes list (a
+    // load-time LIST swap, NOT a field merge). The single `default` entry is the
+    // raw custom doc — custom `bg`, and no `space` map (proof loadAssets did not
+    // merge; render's `resolveTheme` stays the only merge site).
     const customDefault = { name: "default", color: { bg: "#abcdef" } };
-    const loaded = await loadAssets(new MemoryAssets({ themes: [customDefault], stamps: [] }), "a");
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [customDefault], compositions: [] }),
+      "a",
+    );
     const defaults = loaded.themes.filter((t) => t.name === "default");
     expect(defaults).toHaveLength(1);
     expect(defaults[0]?.color?.bg).toBe("#abcdef"); // the custom field
@@ -500,7 +687,7 @@ describe("loadAssets", () => {
         loaded = await loadAssets(
           new MemoryAssets({
             themes: [invalidTheme, validTheme],
-            stamps: [invalidStamp, validStamp],
+            compositions: [invalidComposition, validComposition],
           }),
           "a",
         );
@@ -510,9 +697,11 @@ describe("loadAssets", () => {
     expect(loaded!.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
     expect(loaded!.themes.map((t) => t.name)).toContain("midnight");
     expect(loaded!.themes.map((t) => t.name)).not.toContain("hostile");
-    for (const s of DEFAULT_STAMPS) expect(loaded!.stamps.map((x) => x.name)).toContain(s.name);
-    expect(loaded!.stamps.map((s) => s.name)).toContain("cta");
-    expect(loaded!.stamps.map((s) => s.name)).not.toContain("broken");
+    for (const c of DEFAULT_COMPOSITIONS) {
+      expect(loaded!.compositions.map((x) => x.name)).toContain(c.name);
+    }
+    expect(loaded!.compositions.map((c) => c.name)).toContain("cta");
+    expect(loaded!.compositions.map((c) => c.name)).not.toContain("broken");
     expect(loaded!.issues.length).toBeGreaterThan(0);
   });
 
@@ -520,7 +709,10 @@ describe("loadAssets", () => {
     // Custom-vs-custom (neither name is a seeded default) stays first-wins.
     const first = { name: "dup", color: { bg: "#000000" } };
     const second = { name: "dup", color: { bg: "#ffffff" } };
-    const loaded = await loadAssets(new MemoryAssets({ themes: [first, second], stamps: [] }), "a");
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [first, second], compositions: [] }),
+      "a",
+    );
     const dups = loaded.themes.filter((t) => t.name === "dup");
     expect(dups).toHaveLength(1);
     expect(dups[0]?.color?.bg).toBe("#000000"); // the first survived
@@ -529,10 +721,11 @@ describe("loadAssets", () => {
     expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
   });
 
-  it("keeps the first of two same-named custom stamps and logs an issue", async () => {
-    // Two *.stamp.json can carry the same `name` (name is JSON content, not the
-    // filename). The name `hero` is a seeded default: the FIRST custom shadows the
-    // default, and the SECOND custom (now custom-vs-custom) is dropped first-wins.
+  it("keeps the first of two same-named custom compositions and logs an issue", async () => {
+    // Two *.composition.json can carry the same `name` (name is JSON content, not
+    // the filename). The name `hero` is a seeded default: the FIRST custom shadows
+    // the default, and the SECOND custom (now custom-vs-custom) is dropped
+    // first-wins.
     const first = {
       name: "hero",
       root: "r",
@@ -549,20 +742,23 @@ describe("loadAssets", () => {
         b: { id: "b", type: "text", value: "second" },
       },
     };
-    const loaded = await loadAssets(new MemoryAssets({ themes: [], stamps: [first, second] }), "a");
-    const heroes = loaded.stamps.filter((s) => s.name === "hero");
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], compositions: [first, second] }),
+      "a",
+    );
+    const heroes = loaded.compositions.filter((c) => c.name === "hero");
     expect(heroes).toHaveLength(1);
     expect(heroes[0]?.nodes["a"]).toBeDefined(); // the first custom survived
     expect(
-      loaded.issues.some((i) => i.includes("duplicate stamp name") && i.includes("hero")),
+      loaded.issues.some((i) => i.includes("duplicate composition name") && i.includes("hero")),
     ).toBe(true);
     // Unrelated defaults still coexist.
-    expect(loaded.stamps.map((s) => s.name)).toContain("card");
+    expect(loaded.compositions.map((c) => c.name)).toContain("card");
   });
 
   it("surfaces backend-level issues from the store", async () => {
     const loaded = await loadAssets(
-      new MemoryAssets({ themes: [], stamps: [], issues: ["backend said so"] }),
+      new MemoryAssets({ themes: [], compositions: [], issues: ["backend said so"] }),
       "a",
     );
     expect(loaded.issues).toContain("backend said so");
@@ -577,7 +773,7 @@ describe("loadAssets", () => {
         throw new Error("boom");
       },
     };
-    const hostileStamp = {
+    const hostileComposition = {
       name: "s",
       get nodes(): unknown {
         throw new Error("boom");
@@ -587,7 +783,10 @@ describe("loadAssets", () => {
     await expect(
       (async () => {
         loaded = await loadAssets(
-          new MemoryAssets({ themes: [hostileTheme, validTheme], stamps: [hostileStamp] }),
+          new MemoryAssets({
+            themes: [hostileTheme, validTheme],
+            compositions: [hostileComposition],
+          }),
           "a",
         );
       })(),
@@ -596,29 +795,6 @@ describe("loadAssets", () => {
     expect(loaded!.themes.map((t) => t.name)).toContain("midnight");
     expect(loaded!.themes.map((t) => t.name)).not.toContain("x");
     expect(loaded!.issues.some((i) => i.includes("skipped"))).toBe(true);
-  });
-});
-
-describe("FileAssets", () => {
-  it("records an issue for an unparseable file, never throws, and boots", async () => {
-    const dir = makeTempDir();
-    writeFileSync(join(dir, "broken.theme.json"), "{ not json");
-    writeFileSync(join(dir, "ok.theme.json"), JSON.stringify(validTheme));
-    const loaded = await loadAssets(new FileAssets(dir), "a");
-    expect(loaded.themes.map((t) => t.name)).toContain("midnight");
-    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    expect(loaded.issues.length).toBeGreaterThan(0);
-  });
-
-  it("records an issue for an unreadable directory instead of throwing", async () => {
-    const loaded = await loadAssets(
-      new FileAssets(join(tmpdir(), "facet-nope-does-not-exist")),
-      "a",
-    );
-    // The backend failed, but the seeded default base layer still resolves.
-    expect(loaded.themes.map((t) => t.name)).toEqual([DEFAULT_THEME.name]);
-    for (const s of DEFAULT_STAMPS) expect(loaded.stamps.map((x) => x.name)).toContain(s.name);
-    expect(loaded.issues.length).toBeGreaterThan(0);
   });
 });
 

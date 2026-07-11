@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as validationModule from "./validate.js";
 import {
   isPrimitiveRecord,
   isSafeMediaSrc,
@@ -8,10 +9,58 @@ import {
   MAX_SCREENS,
   MAX_TABS_ITEMS,
   sanitizeActionPayload,
-  validateStamp,
+  validateComposition,
   validateTree,
 } from "./validate.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
+import { MAX_DESCRIPTION_LENGTH } from "./theme.js";
+
+describe("canonical composition validation surface", () => {
+  it("validates canonical compositions", () => {
+    const exports = validationModule as Record<string, unknown>;
+    const candidate = exports["validateComposition"];
+
+    expect(typeof candidate).toBe("function");
+    expect(exports).not.toHaveProperty(["validate", "Sta", "mp"].join(""));
+    if (typeof candidate !== "function") return;
+
+    const validateComposition = candidate as (input: unknown) => {
+      readonly composition?: { readonly nodes: Readonly<Record<string, unknown>> };
+      readonly issues: readonly string[];
+    };
+    const forbidden = validateComposition({
+      name: "leadCapture",
+      root: "form",
+      nodes: {
+        form: {
+          id: "form",
+          type: "form",
+          children: [],
+          html: "<form></form>",
+          js: "alert(1)",
+          css: ".lead { display: none }",
+          dataSource: "leads",
+          query: "select * from leads",
+          endpoint: "https://api.example.test/leads",
+        },
+      },
+    });
+    expect(forbidden.composition).toBeUndefined();
+    expect(
+      forbidden.issues.filter((issue) => issue.includes("not allowed in compositions")),
+    ).toHaveLength(6);
+
+    const nodes = Object.fromEntries(
+      Array.from({ length: 1024 }, (_, index) => {
+        const id = index === 0 ? "root" : `n${String(index)}`;
+        return [id, { id, type: "text", value: id }];
+      }),
+    );
+    const oversized = validateComposition({ name: "oversized", root: "root", nodes });
+    expect(oversized.composition).toBeUndefined();
+    expect(oversized.issues.length).toBeLessThanOrEqual(65);
+  });
+});
 
 describe("validateTree", () => {
   it("keeps a valid tree unchanged", () => {
@@ -114,6 +163,17 @@ describe("validateTree", () => {
       },
     };
     const root = validateTree(input).tree.nodes["root"] as unknown as { children: string[] };
+    expect(root.children).toEqual(["t"]);
+  });
+
+  it("drops an empty-string node id and strips references to it", () => {
+    const input = JSON.parse(
+      '{"root":"root","nodes":{"root":{"id":"root","type":"box","children":["","t"]},"":{"id":"","type":"text","value":"x"},"t":{"id":"t","type":"text","value":"y"}}}',
+    ) as unknown;
+    const { tree, issues } = validateTree(input);
+    expect(Object.keys(tree.nodes)).toEqual(["root", "t"]);
+    expect(issues.filter((i) => i.includes("empty node id")).length).toBe(1);
+    const root = tree.nodes["root"] as unknown as { children: string[] };
     expect(root.children).toEqual(["t"]);
   });
 
@@ -221,8 +281,136 @@ describe("validateTree", () => {
   });
 });
 
-describe("validateTree high-level bricks", () => {
-  it("keeps v1 high-level leaf and container nodes with sanitized token fields", () => {
+describe("validateTree component nodes", () => {
+  it("keeps new intrinsic component nodes and legacy stat compatibility", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: [
+            "metric",
+            "stat",
+            "keyValue",
+            "nav",
+            "form",
+            "search",
+            "filterBar",
+            "emptyState",
+            "loading",
+          ],
+        },
+        metric: { id: "metric", type: "metric", label: "ARR", value: "$24k", tone: "success" },
+        stat: { id: "stat", type: "stat", label: "MRR", value: "$2k", tone: "info" },
+        keyValue: {
+          id: "keyValue",
+          type: "keyValue",
+          items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+        },
+        nav: {
+          id: "nav",
+          type: "nav",
+          items: [{ label: "Customers", to: "customers" }],
+        },
+        form: {
+          id: "form",
+          type: "form",
+          title: "Update customer",
+          submitLabel: "Save",
+          onSubmit: { name: "save_customer", collect: "form" },
+          children: [],
+        },
+        search: {
+          id: "search",
+          type: "search",
+          name: "q",
+          placeholder: "Search customers",
+          onSubmit: { name: "search_customers" },
+        },
+        filterBar: {
+          id: "filterBar",
+          type: "filterBar",
+          filters: [{ name: "status", label: "Status", options: ["Open"] }],
+          onChange: { name: "filter_customers" },
+        },
+        emptyState: {
+          id: "emptyState",
+          type: "emptyState",
+          title: "No customers",
+          actionLabel: "Create customer",
+          onPress: { name: "create_customer" },
+        },
+        loading: { id: "loading", type: "loading", label: "Loading customers" },
+      },
+    });
+
+    expect(issues).toHaveLength(0);
+    expect(tree.nodes["metric"]).toMatchObject({ type: "metric", label: "ARR", value: "$24k" });
+    expect(tree.nodes["stat"]).toMatchObject({ type: "stat", label: "MRR", value: "$2k" });
+    expect(tree.nodes["keyValue"]).toMatchObject({
+      type: "keyValue",
+      items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+    });
+    expect(tree.nodes["nav"]).toMatchObject({
+      type: "nav",
+      items: [{ label: "Customers", to: "customers" }],
+    });
+    expect(tree.nodes["form"]).toMatchObject({
+      type: "form",
+      onSubmit: { kind: "agent", name: "save_customer", collect: "form" },
+    });
+    expect(tree.nodes["search"]).toMatchObject({
+      type: "search",
+      onSubmit: { kind: "agent", name: "search_customers" },
+    });
+    expect(tree.nodes["filterBar"]).toMatchObject({
+      type: "filterBar",
+      onChange: { kind: "agent", name: "filter_customers" },
+    });
+    expect(tree.nodes["emptyState"]).toMatchObject({
+      type: "emptyState",
+      onPress: { kind: "agent", name: "create_customer" },
+    });
+    expect(tree.nodes["loading"]).toMatchObject({ type: "loading", label: "Loading customers" });
+  });
+
+  it("skips malformed new intrinsic nodes and strips forbidden backend fields", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["form", "badMetric", "badSearch"] },
+        form: {
+          id: "form",
+          type: "form",
+          title: "Lead capture",
+          endpoint: "https://api.example.test/leads",
+          html: "<form></form>",
+          css: ".lead { display: none }",
+          children: [],
+        },
+        badMetric: { id: "badMetric", type: "metric", label: "ARR" },
+        badSearch: { id: "badSearch", type: "search", placeholder: "Missing name" },
+      },
+    });
+
+    expect(tree.nodes["form"]).toMatchObject({ type: "form", title: "Lead capture" });
+    expect(tree.nodes["form"]).not.toHaveProperty("endpoint");
+    expect(tree.nodes["form"]).not.toHaveProperty("html");
+    expect(tree.nodes["form"]).not.toHaveProperty("css");
+    expect(tree.nodes["badMetric"]).toBeUndefined();
+    expect(tree.nodes["badSearch"]).toBeUndefined();
+    expect((tree.nodes["root"] as unknown as { children: readonly string[] }).children).toEqual([
+      "form",
+    ]);
+    expect(issues.filter((issue) => issue.includes("not allowed on component nodes"))).toHaveLength(
+      3,
+    );
+    expect(issues.some((issue) => issue.includes("value must be a string"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("name must be a string"))).toBe(true);
+  });
+
+  it("keeps component leaf and container nodes with sanitized token fields", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
@@ -334,7 +522,7 @@ describe("validateTree high-level bricks", () => {
     expect(issues.some((issue) => issue.includes("points exceeded"))).toBe(true);
   });
 
-  it("caps high-level table chart and list payloads fail-safely", () => {
+  it("caps component table chart and list payloads fail-safely", () => {
     const rows = Array.from({ length: 250 }, (_, index) => ({ value: `row-${String(index)}` }));
     const values = Array.from({ length: 2000 }, (_, index) => index);
     const items = Array.from({ length: 200 }, (_, index) => `item-${String(index)}`);
@@ -357,7 +545,7 @@ describe("validateTree high-level bricks", () => {
     expect(issues.some((issue) => issue.includes("cap"))).toBe(true);
   });
 
-  it("sanitizes malformed high-level tabs, progress, and required text fields", () => {
+  it("sanitizes malformed component tabs, progress, and required text fields", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
@@ -453,9 +641,9 @@ describe("validateTree theme", () => {
   });
 });
 
-describe("validateStamp", () => {
-  it("never throws on a hostile stamp nodes getter", () => {
-    const run = validateStamp({
+describe("validateComposition", () => {
+  it("never throws on a hostile composition nodes getter", () => {
+    const run = validateComposition({
       name: "bad",
       root: "root",
       get nodes(): unknown {
@@ -463,12 +651,12 @@ describe("validateStamp", () => {
       },
     });
 
-    expect(run.stamp).toBeUndefined();
-    expect(run.issues).toContain("stamp could not be read safely; refused");
+    expect(run.composition).toBeUndefined();
+    expect(run.issues).toContain("composition could not be read safely; refused");
   });
 
   it("keeps a valid fragment with a resolving root and one-line description", () => {
-    const { stamp, issues } = validateStamp({
+    const { composition, issues } = validateComposition({
       name: "hero",
       description: "a big hero",
       root: "h",
@@ -478,32 +666,91 @@ describe("validateStamp", () => {
       },
     });
     expect(issues).toHaveLength(0);
-    expect(stamp).toBeDefined();
-    expect(stamp?.name).toBe("hero");
-    expect(stamp?.description).toBe("a big hero");
-    expect(stamp?.root).toBe("h");
-    expect(stamp?.nodes["t"]).toMatchObject({ type: "text", value: "hi" });
+    expect(composition).toBeDefined();
+    expect(composition?.name).toBe("hero");
+    expect(composition?.description).toBe("a big hero");
+    expect(composition?.root).toBe("h");
+    expect(composition?.nodes["t"]).toMatchObject({ type: "text", value: "hi" });
+    expect(Object.getPrototypeOf(composition?.nodes)).toBeNull();
+  });
+
+  it("normalizes safe intrinsic nodes and refuses unknown component names", () => {
+    const safe = validateComposition({
+      name: "customerSummaryCard",
+      root: "card",
+      nodes: {
+        card: { id: "card", type: "card", title: "Summary", children: ["metric"] },
+        metric: { id: "metric", type: "metric", label: "ARR", value: "$24k" },
+      },
+    });
+    expect(safe.issues).toHaveLength(0);
+    expect(safe.composition?.nodes["metric"]).toMatchObject({
+      type: "metric",
+      label: "ARR",
+      value: "$24k",
+    });
+
+    const unknown = validateComposition({
+      name: "badSummary",
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["custom"] },
+        custom: { id: "custom", type: "customerSummaryCard", children: [] },
+      },
+    });
+    expect(unknown.composition).toBeUndefined();
+    expect(unknown.issues.some((issue) => issue.includes("unknown component type"))).toBe(true);
+  });
+
+  it("accepts 1023 raw nodes and rejects 1024 before sanitization", () => {
+    const nodes: Record<string, unknown> = Object.fromEntries(
+      Array.from({ length: 1023 }, (_, index) => {
+        const id = index === 0 ? "root" : `n${String(index)}`;
+        return [id, { id, type: "text", value: id }];
+      }),
+    );
+    const accepted = validateComposition({ name: "bounded", root: "root", nodes });
+    expect(accepted.composition).toBeDefined();
+    expect(Object.keys(accepted.composition?.nodes ?? {})).toHaveLength(1023);
+
+    nodes["overflow"] = { id: "overflow", type: "text", value: "overflow" };
+    const rejected = validateComposition({ name: "oversized", root: "root", nodes });
+    expect(rejected.composition).toBeUndefined();
+    expect(rejected.issues).toContain("composition nodes exceeded the 1023-node cap; refused");
+  });
+
+  it("bounds issues while refusing hostile node vocabulary", () => {
+    const nodes = Object.fromEntries(
+      Array.from({ length: 100 }, (_, index) => {
+        const id = index === 0 ? "root" : `n${String(index)}`;
+        return [id, { id, type: `unknown-${String(index)}` }];
+      }),
+    );
+    const run = validateComposition({ name: "hostile", root: "root", nodes });
+    expect(run.composition).toBeUndefined();
+    expect(run.issues).toHaveLength(65);
+    expect(run.issues.at(-1)).toBe("...further issues suppressed");
   });
 
   it("refuses a fragment whose root does not resolve", () => {
-    const { stamp, issues } = validateStamp({
+    const { composition, issues } = validateComposition({
       name: "x",
       root: "ghost",
       nodes: { a: { id: "a", type: "box", children: [] } },
     });
-    expect(stamp).toBeUndefined();
+    expect(composition).toBeUndefined();
     expect(issues.length).toBeGreaterThan(0);
   });
 
   it("accepts a single text node as the root (the root need not be a box)", () => {
-    const { stamp, issues } = validateStamp({
+    const { composition, issues } = validateComposition({
       name: "label",
       root: "t",
       nodes: { t: { id: "t", type: "text", value: "solo" } },
     });
     expect(issues).toHaveLength(0);
-    expect(stamp?.root).toBe("t");
-    expect(stamp?.nodes["t"]).toMatchObject({ type: "text", value: "solo" });
+    expect(composition?.root).toBe("t");
+    expect(composition?.nodes["t"]).toMatchObject({ type: "text", value: "solo" });
   });
 
   it("refuses input with no string name", () => {
@@ -512,8 +759,8 @@ describe("validateStamp", () => {
       42,
       null,
     ]) {
-      const { stamp, issues } = validateStamp(bad);
-      expect(stamp).toBeUndefined();
+      const { composition, issues } = validateComposition(bad);
+      expect(composition).toBeUndefined();
       expect(issues.length).toBeGreaterThan(0);
     }
   });
@@ -522,29 +769,29 @@ describe("validateStamp", () => {
     const input = JSON.parse(
       '{"name":"h","root":"root","nodes":{"root":{"id":"root","type":"box","children":["value"]},"__proto__":{"id":"__proto__","type":"text","value":"x"}}}',
     ) as unknown;
-    const { stamp, issues } = validateStamp(input);
-    expect(Object.keys(stamp?.nodes ?? {})).toEqual(["root"]);
+    const { composition, issues } = validateComposition(input);
+    expect(Object.keys(composition?.nodes ?? {})).toEqual(["root"]);
     expect(issues.some((issue) => issue.includes("forbidden node id"))).toBe(true);
-    const root = stamp?.nodes["root"] as unknown as { children: string[] };
+    const root = composition?.nodes["root"] as unknown as { children: string[] };
     expect(root.children).toEqual([]);
   });
 
-  it("sanitizes junk style tokens on stamp nodes", () => {
-    const { stamp } = validateStamp({
+  it("sanitizes junk style tokens on composition nodes", () => {
+    const { composition } = validateComposition({
       name: "s",
       root: "root",
       nodes: {
         root: { id: "root", type: "box", style: { gap: "HUGE", pad: "md" }, children: [] },
       },
     });
-    const root = stamp?.nodes["root"] as unknown as { style?: Record<string, unknown> };
+    const root = composition?.nodes["root"] as unknown as { style?: Record<string, unknown> };
     expect(root.style?.["gap"]).toBeUndefined();
     expect(root.style?.["pad"]).toBe("md");
   });
 
   it("breaks a cyclic fragment a -> b -> a with an issue and no throw", () => {
-    const run = (): ReturnType<typeof validateStamp> =>
-      validateStamp({
+    const run = (): ReturnType<typeof validateComposition> =>
+      validateComposition({
         name: "cyc",
         root: "a",
         nodes: {
@@ -553,8 +800,8 @@ describe("validateStamp", () => {
         },
       });
     expect(run).not.toThrow();
-    const { stamp, issues } = run();
-    const b = stamp?.nodes["b"] as unknown as { children: string[] };
+    const { composition, issues } = run();
+    const b = composition?.nodes["b"] as unknown as { children: string[] };
     expect(b.children).toEqual([]); // the back-edge b -> a is removed
     expect(issues.some((issue) => issue.includes("cyclic"))).toBe(true);
   });
@@ -563,22 +810,22 @@ describe("validateStamp", () => {
     const nodes: Record<string, unknown> = {
       root: { id: "root", type: "box", children: ["n0"] },
     };
-    for (let i = 0; i < 5000; i += 1) {
+    for (let i = 0; i < 150; i += 1) {
       nodes[`n${String(i)}`] = {
         id: `n${String(i)}`,
         type: "box",
-        children: i < 4999 ? [`n${String(i + 1)}`] : [],
+        children: i < 149 ? [`n${String(i + 1)}`] : [],
       };
     }
-    const run = (): ReturnType<typeof validateStamp> =>
-      validateStamp({ name: "deep", root: "root", nodes });
+    const run = (): ReturnType<typeof validateComposition> =>
+      validateComposition({ name: "deep", root: "root", nodes });
     expect(run).not.toThrow();
     const { issues } = run();
     expect(issues.some((issue) => issue.includes("max depth"))).toBe(true);
   });
 
-  it("keeps bounded prompt-safe stamp metadata", () => {
-    const { stamp, issues } = validateStamp({
+  it("keeps bounded prompt-safe composition metadata", () => {
+    const { composition, issues } = validateComposition({
       name: "dashboard-summary",
       description: "Dashboard cards",
       metadata: {
@@ -598,7 +845,7 @@ describe("validateStamp", () => {
     });
 
     expect(issues).toHaveLength(0);
-    expect(stamp?.metadata).toEqual({
+    expect(composition?.metadata).toEqual({
       category: "dashboard",
       useWhen: "Summarizing KPIs",
       avoidWhen: "Long narrative content",
@@ -610,6 +857,65 @@ describe("validateStamp", () => {
       dataRequirements: ["metric_label", "current_value"],
       followUpEdits: ["refresh_value"],
     });
+  });
+
+  it("keeps every intrinsic component type in composedOf, not just the high-level shortlist", () => {
+    const composedOf = [
+      "metric",
+      "nav",
+      "keyValue",
+      "form",
+      "search",
+      "filterBar",
+      "emptyState",
+      "loading",
+      "stat",
+      "box",
+    ];
+    const { composition, issues } = validateComposition({
+      name: "component-heavy",
+      metadata: { composedOf: [...composedOf, "not-a-node"] },
+      root: "card",
+      nodes: { card: { id: "card", type: "card", children: [] } },
+    });
+
+    expect(issues).toHaveLength(0);
+    expect(composition?.metadata?.composedOf).toEqual(composedOf);
+  });
+
+  it("keeps sentence-like dataRequirements/followUpEdits as free text after bounded sanitation", () => {
+    const longEntry = "x".repeat(MAX_DESCRIPTION_LENGTH + 50);
+    const { composition, issues } = validateComposition({
+      name: "free-text-metadata",
+      metadata: {
+        dataRequirements: [
+          "The current account balance in USD.",
+          "A list of recent transactions with dates.",
+          "tab\tbedentry",
+          longEntry,
+          42,
+          "   ",
+        ],
+        followUpEdits: ["Add a refresh button to reload the balance."],
+      },
+      root: "card",
+      nodes: { card: { id: "card", type: "card", children: [] } },
+    });
+
+    const dataRequirements = composition?.metadata?.dataRequirements ?? [];
+    expect(dataRequirements).toContain("The current account balance in USD.");
+    expect(dataRequirements).toContain("A list of recent transactions with dates.");
+    // C0/DEL/C1 control chars are stripped; the surviving text is kept.
+    expect(dataRequirements).toContain("tabbedentry");
+    // Over-long entry truncated to the description cap; whitespace-only dropped.
+    expect(dataRequirements.some((entry) => entry.length === MAX_DESCRIPTION_LENGTH)).toBe(true);
+    expect(dataRequirements).not.toContain(longEntry);
+    expect(dataRequirements).not.toContain("   ");
+    expect(composition?.metadata?.followUpEdits).toEqual([
+      "Add a refresh button to reload the balance.",
+    ]);
+    expect(issues.some((issue) => issue.includes("truncated"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("is not a string"))).toBe(true);
   });
 });
 
@@ -674,15 +980,15 @@ describe("validateTree shared-child DAG (single-parent per walk root)", () => {
   });
 });
 
-describe("validateStamp caps (name + description)", () => {
-  it("rejects a stamp name that is not a valid theme-name (too long / bad chars)", () => {
+describe("validateComposition caps (name + description)", () => {
+  it("rejects a composition name that is not a valid theme-name (too long / bad chars)", () => {
     for (const bad of ["x".repeat(65), "has space", "-lead"]) {
-      const { stamp, issues } = validateStamp({
+      const { composition, issues } = validateComposition({
         name: bad,
         root: "t",
         nodes: { t: { id: "t", type: "text", value: "x" } },
       });
-      expect(stamp, bad).toBeUndefined();
+      expect(composition, bad).toBeUndefined();
       expect(issues.length).toBeGreaterThan(0);
     }
   });
@@ -693,12 +999,12 @@ describe("validateStamp caps (name + description)", () => {
     const huge = "x".repeat(5_000_000);
     const escape = "\x1b[2Jwipe";
     for (const bad of [huge, escape]) {
-      const { stamp, issues } = validateStamp({
+      const { composition, issues } = validateComposition({
         name: bad,
         root: "t",
         nodes: { t: { id: "t", type: "text", value: "x" } },
       });
-      expect(stamp).toBeUndefined();
+      expect(composition).toBeUndefined();
       const joined = issues.join("; ");
       // Contains neither the raw bytes nor a length anywhere near the input.
       expect(joined.includes(bad)).toBe(false);
@@ -707,14 +1013,14 @@ describe("validateStamp caps (name + description)", () => {
     }
   });
 
-  it("truncates an over-long stamp description to the shared 200-char cap with an issue", () => {
-    const { stamp, issues } = validateStamp({
+  it("truncates an over-long composition description to the shared 200-char cap with an issue", () => {
+    const { composition, issues } = validateComposition({
       name: "hero",
       description: "d".repeat(5000),
       root: "t",
       nodes: { t: { id: "t", type: "text", value: "x" } },
     });
-    expect(stamp?.description).toHaveLength(200);
+    expect(composition?.description).toHaveLength(200);
     expect(issues.some((i) => i.includes("description truncated"))).toBe(true);
   });
 });
@@ -903,25 +1209,25 @@ describe("validate issue echo is bounded and never throws", () => {
   });
 });
 
-describe("validateStamp description", () => {
+describe("validateComposition description", () => {
   it("drops a non-string description WITH an issue (mirrors validateTheme)", () => {
     for (const bad of [123, {}, null, [1]]) {
-      const { stamp, issues } = validateStamp({
+      const { composition, issues } = validateComposition({
         name: "hero",
         description: bad,
         root: "t",
         nodes: { t: { id: "t", type: "text", value: "x" } },
       });
-      expect(stamp).toBeDefined();
-      expect(stamp?.description).toBeUndefined();
+      expect(composition).toBeDefined();
+      expect(composition?.description).toBeUndefined();
       expect(issues.some((i) => i.includes("description is not a string"))).toBe(true);
     }
   });
 });
 
-describe("validateStamp stamp slots", () => {
-  it("sanitizes optional stamp slots with bounded string defaults", () => {
-    const { stamp, issues } = validateStamp({
+describe("validateComposition composition slots", () => {
+  it("sanitizes optional composition slots with bounded string defaults", () => {
+    const { composition, issues } = validateComposition({
       name: "hero",
       slots: {
         title: "Hello",
@@ -936,7 +1242,7 @@ describe("validateStamp stamp slots", () => {
       },
     });
 
-    expect(stamp?.slots).toEqual({
+    expect(composition?.slots).toEqual({
       title: "Hello",
       empty: "",
       body: "b".repeat(MAX_FIELD_VALUE_CHARS),
@@ -949,8 +1255,8 @@ describe("validateStamp stamp slots", () => {
     );
   });
 
-  it("accepts whole-value stamp slot markers in stamp string leaves only", () => {
-    const { stamp, issues } = validateStamp({
+  it("accepts whole-value composition slot markers in composition string leaves only", () => {
+    const { composition, issues } = validateComposition({
       name: "card",
       slots: {
         title: "Title",
@@ -980,15 +1286,15 @@ describe("validateStamp stamp slots", () => {
       },
     });
 
-    expect(stamp).toBeDefined();
-    expect(stamp?.nodes["title"]).toMatchObject({ type: "text", value: "{{title}}" });
-    expect(stamp?.nodes["image"]).toMatchObject({
+    expect(composition).toBeDefined();
+    expect(composition?.nodes["title"]).toMatchObject({ type: "text", value: "{{title}}" });
+    expect(composition?.nodes["image"]).toMatchObject({
       type: "media",
       src: "{{image}}",
       alt: "{{title}}",
       poster: "{{poster}}",
     });
-    expect(stamp?.nodes["field"]).toMatchObject({
+    expect(composition?.nodes["field"]).toMatchObject({
       type: "field",
       label: "{{label}}",
       placeholder: "{{title}}",
@@ -1252,7 +1558,7 @@ describe("validateTree action normalization", () => {
     const { tree, issues } = validateTree(pressBox({ name: "go", payload: { id: 7 } }));
     const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
     expect(root.onPress).toEqual({ kind: "agent", name: "go", payload: { id: 7 } });
-    expect(issues).toHaveLength(0); // the legacy stamp is silent normalization
+    expect(issues).toHaveLength(0); // the legacy action is silent normalization
   });
 
   it("keeps an explicit kind agent action", () => {
@@ -1282,7 +1588,7 @@ describe("validateTree action normalization", () => {
     expect(issues).toHaveLength(0);
   });
 
-  it("keeps collect on a legacy bare {name} action alongside the kind stamp", () => {
+  it("keeps collect on a legacy bare {name} action alongside the kind discriminator", () => {
     const { tree, issues } = validateTree(pressBox({ name: "submit", collect: "signup" }));
     const root = tree.nodes["root"] as unknown as { onPress?: Record<string, unknown> };
     expect(root.onPress).toEqual({ kind: "agent", name: "submit", collect: "signup" });
@@ -1394,7 +1700,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     expect(holdJunk.issues.some((i) => i.includes("onHold"))).toBe(true);
     expect(holdJunk.issues.some((i) => i.includes("onPress"))).toBe(false);
 
-    // Legacy bare {name} onHold gets the canonical kind:"agent" stamp, silently
+    // Legacy bare {name} onHold gets the canonical kind:"agent" discriminator, silently
     // (same rule as onPress — it is the same action, not a mistake).
     const legacy = validateTree({
       root: "root",
@@ -1404,8 +1710,8 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     expect(legacyRoot.onHold).toEqual({ kind: "agent", name: "peek" });
     expect(legacy.issues).toHaveLength(0);
 
-    // validateStamp parity: the shared sanitizeNode strips the same junk.
-    const { stamp, issues: stampIssues } = validateStamp({
+    // validateComposition parity: the shared sanitizeNode strips the same junk.
+    const { composition, issues: compositionIssues } = validateComposition({
       name: "junky",
       root: "b",
       nodes: {
@@ -1418,15 +1724,15 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
         },
       },
     });
-    const stampRoot = stamp?.nodes["b"] as unknown as {
+    const compositionRoot = composition?.nodes["b"] as unknown as {
       style?: Record<string, unknown>;
       onHold?: unknown;
     };
-    expect(stampRoot.style?.["appear"]).toBeUndefined();
-    expect(stampRoot.style?.["scroll"]).toBeUndefined();
-    expect(stampRoot.onHold).toBeUndefined();
-    expect(stampIssues.some((i) => i.includes("onHold"))).toBe(true);
-    expect(stampIssues.some((i) => i.includes("onPress"))).toBe(false);
+    expect(compositionRoot.style?.["appear"]).toBeUndefined();
+    expect(compositionRoot.style?.["scroll"]).toBeUndefined();
+    expect(compositionRoot.onHold).toBeUndefined();
+    expect(compositionIssues.some((i) => i.includes("onHold"))).toBe(true);
+    expect(compositionIssues.some((i) => i.includes("onPress"))).toBe(false);
 
     // A pre-D tree (none of the new fields) passes through byte-identical.
     const preD = {
@@ -1640,7 +1946,7 @@ describe("validateTree legacy pass-through", () => {
     expect("entry" in tree).toBe(false);
   });
 
-  it("passes a bare-onPress tree through identical except the silent kind stamp", () => {
+  it("passes a bare-onPress tree through identical except the silent kind discriminator", () => {
     const input = {
       root: "root",
       nodes: {

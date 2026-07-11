@@ -10,7 +10,7 @@ import type {
   ClientEvent,
   FacetCatalog,
   FacetSession,
-  FacetStamp,
+  FacetComposition,
   FacetTheme,
   ServerMessage,
 } from "@facet/core";
@@ -43,10 +43,10 @@ const CATALOG_POLICY: FacetCatalog = {
     { type: "section", variants: ["surface"] },
     { type: "button", variants: ["primary"] },
   ],
-  stamps: { mode: "allow", names: ["approved"] },
+  compositions: { mode: "allow", names: ["approved"] },
   primitiveFallback: "allowed",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 3,
@@ -79,6 +79,7 @@ interface ToolObservationData {
   readonly next_action: string;
   readonly summary: string;
   readonly warnings: readonly string[];
+  readonly data?: string;
 }
 
 /** A scripted provider: returns steps in order; the last entry repeats. */
@@ -109,7 +110,7 @@ function makeAgent(
     sink?: MemorySink;
     historyTurns?: number;
     maxSteps?: number;
-    stamps?: readonly FacetStamp[];
+    compositions?: readonly FacetComposition[];
     catalog?: FacetCatalog;
   } = {},
 ): ReturnType<typeof createQuickstartAgent> {
@@ -120,7 +121,7 @@ function makeAgent(
     ...(extra.guide !== undefined ? { guide: extra.guide } : {}),
     ...(extra.historyTurns !== undefined ? { historyTurns: extra.historyTurns } : {}),
     ...(extra.maxSteps !== undefined ? { maxSteps: extra.maxSteps } : {}),
-    ...(extra.stamps !== undefined ? { stamps: extra.stamps } : {}),
+    ...(extra.compositions !== undefined ? { compositions: extra.compositions } : {}),
     ...(extra.catalog !== undefined ? { catalog: extra.catalog } : {}),
   });
 }
@@ -162,6 +163,7 @@ function toolResultData(turn: ProviderTurn): ToolObservationData[] {
       next_action: parsed.next_action,
       summary: parsed.summary,
       warnings: parsed.warnings.filter((warning): warning is string => typeof warning === "string"),
+      ...(typeof parsed.data === "string" ? { data: parsed.data } : {}),
     };
   });
 }
@@ -195,8 +197,8 @@ async function batchesOf(
 }
 
 describe("createQuickstartAgent tool loop", () => {
-  it("use_stamp expands a stamp through the closure into one referentially closed batch", async () => {
-    const stamp: FacetStamp = {
+  it("use_composition expands a composition through the closure into one referentially closed batch", async () => {
+    const composition: FacetComposition = {
       name: "card",
       description: "A reusable card",
       slots: { title: "Default title" },
@@ -208,11 +210,15 @@ describe("createQuickstartAgent tool loop", () => {
     };
     const provider = providerOf(
       toolStep(
-        call("use_stamp", { name: "card", params: { title: "Hello" }, at: { parent: "root" } }),
+        call("use_composition", {
+          name: "card",
+          params: { title: "Hello" },
+          at: { parent: "root" },
+        }),
       ),
       END,
     );
-    const agent = makeAgent(provider, { stamps: [stamp] });
+    const agent = makeAgent(provider, { compositions: [composition] });
 
     const batches = await batchesOf(agent, { kind: "message", text: "use card" });
 
@@ -238,8 +244,8 @@ describe("createQuickstartAgent tool loop", () => {
       expect(childId).toBeDefined();
       expect(nodeAdds.some((op) => op.path === `/nodes/${String(childId)}`)).toBe(true);
       const observation = toolResultData(provider.turns[1]!)[0]!;
-      const metadataStart = observation.message.indexOf("{");
-      const idsJson = JSON.parse(observation.message.slice(metadataStart)) as {
+      expect(observation.data).toBeDefined();
+      const idsJson = JSON.parse(observation.data ?? "") as {
         readonly root: string;
         readonly slots: Readonly<Record<string, string>>;
         readonly ids: Readonly<Record<string, string>>;
@@ -256,12 +262,12 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
-  it("use_stamp reports an unknown stamp name as a no-op observation", async () => {
+  it("use_composition reports an unknown composition name as a no-op observation", async () => {
     const provider = providerOf(
-      toolStep(call("use_stamp", { name: "missing", params: {}, at: { parent: "root" } })),
+      toolStep(call("use_composition", { name: "missing", params: {}, at: { parent: "root" } })),
       END,
     );
-    const agent = makeAgent(provider, { stamps: [] });
+    const agent = makeAgent(provider, { compositions: [] });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const out = await runAgent(agent, { kind: "message", text: "use missing" });
@@ -270,26 +276,28 @@ describe("createQuickstartAgent tool loop", () => {
       const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
         m.role === "tool_result" ? m.content : "",
       );
-      expect(obs.some((o) => o.includes("unknown stamp") && o.includes("missing"))).toBe(true);
+      expect(obs.some((o) => o.includes("unknown composition") && o.includes("missing"))).toBe(
+        true,
+      );
     } finally {
       errorSpy.mockRestore();
     }
   });
 
-  it("use_stamp twice remaps ids disjointly in the same turn", async () => {
-    const stamp: FacetStamp = {
+  it("use_composition twice remaps ids disjointly in the same turn", async () => {
+    const composition: FacetComposition = {
       name: "label",
       root: "label",
       nodes: { label: { id: "label", type: "text", value: "Badge" } },
     };
     const provider = providerOf(
       toolStep(
-        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
-        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+        call("use_composition", { name: "label", params: {}, at: { parent: "root" } }),
+        call("use_composition", { name: "label", params: {}, at: { parent: "root" } }),
       ),
       END,
     );
-    const agent = makeAgent(provider, { stamps: [stamp] });
+    const agent = makeAgent(provider, { compositions: [composition] });
 
     const out = await runAgent(agent, { kind: "message", text: "twice" });
     const patch = out.find((m) => m.kind === "patch");
@@ -307,24 +315,24 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
-  it("use_stamp resolves from the immutable stamp snapshot captured at agent creation", async () => {
-    const stamp: FacetStamp = {
+  it("use_composition resolves from the immutable composition snapshot captured at agent creation", async () => {
+    const composition: FacetComposition = {
       name: "label",
       slots: { title: "Original" },
       root: "label",
       nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
     };
     const provider = providerOf(
-      toolStep(call("use_stamp", { name: "label", params: {}, at: { parent: "root" } })),
+      toolStep(call("use_composition", { name: "label", params: {}, at: { parent: "root" } })),
       END,
     );
-    const agent = makeAgent(provider, { stamps: [stamp] });
-    const mutableStamp = stamp as {
-      slots?: FacetStamp["slots"];
-      nodes: Record<string, FacetStamp["nodes"][string]>;
+    const agent = makeAgent(provider, { compositions: [composition] });
+    const mutableComposition = composition as {
+      slots?: FacetComposition["slots"];
+      nodes: Record<string, FacetComposition["nodes"][string]>;
     };
-    mutableStamp.slots = { title: "Mutated" };
-    mutableStamp.nodes["label"] = { id: "label", type: "text", value: "Mutated" };
+    mutableComposition.slots = { title: "Mutated" };
+    mutableComposition.nodes["label"] = { id: "label", type: "text", value: "Mutated" };
 
     const out = await runAgent(agent, { kind: "message", text: "snapshot" });
 
@@ -335,20 +343,20 @@ describe("createQuickstartAgent tool loop", () => {
     expect(JSON.stringify(patch.patches)).not.toContain("Mutated");
   });
 
-  it("use_stamp is a no-op for malformed stamps and unknown parents", async () => {
+  it("use_composition is a no-op for malformed compositions and unknown parents", async () => {
     const malformed = {
       name: "broken",
       root: "missing",
       nodes: { text: { id: "text", type: "text", value: "x" } },
-    } as unknown as FacetStamp;
+    } as unknown as FacetComposition;
     const provider = providerOf(
       toolStep(
-        call("use_stamp", { name: "broken", params: {}, at: { parent: "root" } }),
-        call("use_stamp", { name: "broken", params: {}, at: { parent: "ghost" } }),
+        call("use_composition", { name: "broken", params: {}, at: { parent: "root" } }),
+        call("use_composition", { name: "broken", params: {}, at: { parent: "ghost" } }),
       ),
       END,
     );
-    const agent = makeAgent(provider, { stamps: [malformed] });
+    const agent = makeAgent(provider, { compositions: [malformed] });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const out = await runAgent(agent, { kind: "message", text: "broken" });
@@ -364,14 +372,14 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
-  it("use_stamp rejects a parent that exists but is not a container", async () => {
-    const stamp: FacetStamp = {
+  it("use_composition rejects a parent that exists but is not a container", async () => {
+    const composition: FacetComposition = {
       name: "label",
       root: "label",
       nodes: { label: { id: "label", type: "text", value: "Inside" } },
     };
     const provider = providerOf(
-      toolStep(call("use_stamp", { name: "label", params: {}, at: { parent: "title" } })),
+      toolStep(call("use_composition", { name: "label", params: {}, at: { parent: "title" } })),
       END,
     );
     const sessionWithTextParent: FacetSession = {
@@ -385,7 +393,7 @@ describe("createQuickstartAgent tool loop", () => {
         },
       },
     };
-    const agent = makeAgent(provider, { stamps: [stamp] });
+    const agent = makeAgent(provider, { compositions: [composition] });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const out = await runAgent(
@@ -399,7 +407,7 @@ describe("createQuickstartAgent tool loop", () => {
         expect.objectContaining({
           status: "error",
           outcome: "rejected",
-          message: 'error: use_stamp — parent "title" is not a container',
+          message: 'error: use_composition — parent "title" is not a container',
         }),
       );
     } finally {
@@ -450,8 +458,11 @@ describe("createQuickstartAgent tool loop", () => {
     }
   });
 
-  it("use_stamp rejects expansions that would exceed the current patch batch cap", async () => {
-    const nodes: Record<string, FacetStamp["nodes"][string]> = {
+  it("use_composition refuses an expansion beyond the node output cap without emitting patches", async () => {
+    // MAX_PATCH_OPS children + the composition root exceed the canonical
+    // 1023-node output cap, so the expansion refuses with zero partial state
+    // before the executor's patch-op accounting even runs.
+    const nodes: Record<string, FacetComposition["nodes"][string]> = {
       root: { id: "root", type: "box", children: [] },
     };
     const children: string[] = [];
@@ -461,12 +472,12 @@ describe("createQuickstartAgent tool loop", () => {
       nodes[id] = { id, type: "text", value: id };
     }
     nodes["root"] = { id: "root", type: "box", children };
-    const stamp: FacetStamp = { name: "huge", root: "root", nodes };
+    const composition: FacetComposition = { name: "huge", root: "root", nodes };
     const provider = providerOf(
-      toolStep(call("use_stamp", { name: "huge", params: {}, at: { parent: "root" } })),
+      toolStep(call("use_composition", { name: "huge", params: {}, at: { parent: "root" } })),
       END,
     );
-    const agent = makeAgent(provider, { stamps: [stamp] });
+    const agent = makeAgent(provider, { compositions: [composition] });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       const out = await runAgent(agent, { kind: "message", text: "huge" });
@@ -475,14 +486,16 @@ describe("createQuickstartAgent tool loop", () => {
       const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
         m.role === "tool_result" ? m.content : "",
       );
-      expect(obs[0]).toContain("would exceed the patch op cap");
+      expect(obs[0]).toContain("could not expand");
+      expect(obs[0]).toContain("1023-node cap");
+      expect(obs[0]).toContain("invalid_composition");
     } finally {
       errorSpy.mockRestore();
     }
   });
 
-  it("use_stamp counts patch ops already flushed before say in the same provider step", async () => {
-    const largeNodes: Record<string, FacetStamp["nodes"][string]> = {
+  it("use_composition counts patch ops already flushed before say in the same provider step", async () => {
+    const largeNodes: Record<string, FacetComposition["nodes"][string]> = {
       root: { id: "root", type: "box", children: [] },
     };
     const children: string[] = [];
@@ -492,7 +505,7 @@ describe("createQuickstartAgent tool loop", () => {
       largeNodes[id] = { id, type: "text", value: id };
     }
     largeNodes["root"] = { id: "root", type: "box", children };
-    const stamps: FacetStamp[] = [
+    const compositions: FacetComposition[] = [
       { name: "large", root: "root", nodes: largeNodes },
       {
         name: "label",
@@ -502,13 +515,13 @@ describe("createQuickstartAgent tool loop", () => {
     ];
     const provider = providerOf(
       toolStep(
-        call("use_stamp", { name: "large", params: {}, at: { parent: "root" } }),
+        call("use_composition", { name: "large", params: {}, at: { parent: "root" } }),
         call("say", { text: "between" }),
-        call("use_stamp", { name: "label", params: {}, at: { parent: "root" } }),
+        call("use_composition", { name: "label", params: {}, at: { parent: "root" } }),
       ),
       END,
     );
-    const agent = makeAgent(provider, { stamps });
+    const agent = makeAgent(provider, { compositions });
 
     const out = await runAgent(agent, { kind: "message", text: "mixed" });
 
@@ -520,18 +533,18 @@ describe("createQuickstartAgent tool loop", () => {
     expect(obs[2]).toContain("would exceed the patch op cap");
   });
 
-  it("use_stamp reports non-fatal expansion issues in a successful observation", async () => {
-    const stamp: FacetStamp = {
+  it("use_composition reports non-fatal expansion issues in a successful observation", async () => {
+    const composition: FacetComposition = {
       name: "label",
       slots: { title: "Fallback" },
       root: "label",
       nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
     };
     const provider = providerOf(
-      toolStep(call("use_stamp", { name: "label", params: 42, at: { parent: "root" } })),
+      toolStep(call("use_composition", { name: "label", params: 42, at: { parent: "root" } })),
       END,
     );
-    const agent = makeAgent(provider, { stamps: [stamp] });
+    const agent = makeAgent(provider, { compositions: [composition] });
 
     await runAgent(agent, { kind: "message", text: "bad params" });
 
@@ -589,7 +602,7 @@ describe("createQuickstartAgent tool loop", () => {
       expect(transcript).toContain("catalog policy locked theme");
       expect(transcript).toContain('rejected theme "midnight"');
       expect(transcript).toContain('catalog policy rejected node type "chart"');
-      expect(transcript).toContain("Use an allowed catalog brick");
+      expect(transcript).toContain("Use an allowed catalog component");
     } finally {
       errorSpy.mockRestore();
     }
@@ -1228,14 +1241,14 @@ describe("createQuickstartAgent tool loop", () => {
     expect(provider.turns[0]!.system).toContain(DEFAULT_GUIDE);
   });
 
-  it("threads operator themes and stamps into the system prompt (names only, no theme CSS)", async () => {
+  it("threads operator themes and compositions into the system prompt (names only, no theme CSS)", async () => {
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
     const theme: FacetTheme = {
       name: "neon",
       description: "a bright neon look",
       color: { bg: "#ff00ff" },
     };
-    const stamp: FacetStamp = {
+    const composition: FacetComposition = {
       name: "hero",
       description: "a hero band",
       root: "h-root",
@@ -1249,14 +1262,14 @@ describe("createQuickstartAgent tool loop", () => {
       sink: new MemorySink(),
       agentId: "quickstart",
       themes: [theme],
-      stamps: [stamp],
+      compositions: [composition],
     });
     await runAgent(agent, { kind: "message", text: "draw" }, SESSION);
 
     const system = provider.turns[0]!.system;
     expect(system).toContain("THEMES");
     expect(system).toContain("neon");
-    expect(system).toContain("STAMPS");
+    expect(system).toContain("COMPOSITIONS");
     expect(system).toContain("hero");
     // Theme documents reach the model by NAME only — the raw CSS value never does.
     expect(system).not.toContain("#ff00ff");

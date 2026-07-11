@@ -3,7 +3,7 @@
  * tool workflow, operator assets, and deployer page brief.
  */
 import { FACET_STAGE_TOOL_SPECS, buildFacetAgentSystemPrompt } from "@facet/agent-tools";
-import type { FacetCatalog, FacetStamp, FacetTheme } from "@facet/core";
+import type { FacetCatalog, FacetComposition, FacetTheme } from "@facet/core";
 
 import type { ToolSpec } from "../provider.js";
 
@@ -38,10 +38,10 @@ like a real service page an agent developer could ship to visitors.
   acknowledgement alongside the page change.`;
 
 /** Operator assets injected into prompt layer 2: themes offered to the model by
- * NAME and stamps it may expand by name. */
+ * NAME and compositions it may expand by name. */
 export interface PromptAssets {
   readonly themes: readonly FacetTheme[];
-  readonly stamps: readonly FacetStamp[];
+  readonly compositions: readonly FacetComposition[];
   readonly catalog?: FacetCatalog;
 }
 

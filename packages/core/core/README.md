@@ -1,8 +1,8 @@
 # @facet/core
 
-The Facet contract: the declarative stage spec (v1 high-level bricks plus the
-primitive `box`, `text`, `media`, and `field` fallback), catalog policy, style
-tokens and theme recipes, reusable stamp expansion/metadata, the
+The Facet contract: the declarative stage spec in the Primitive Brick ->
+Component -> Catalog model, catalog policy, style tokens and theme recipes,
+reusable composition validation/expansion and metadata, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
 `applyPatch`, validators, and the session/event types. It depends on nothing —
 every other Facet package builds on it.
@@ -22,20 +22,22 @@ npm install @facet/core
 
 Core helpers do the heavy lifting: `validateTree` turns arbitrary input (e.g. an
 LLM's JSON) into a guaranteed-renderable tree, preserving valid primitive
-fallback and high-level nodes while dropping malformed payloads; `validateCatalog`
-turns untrusted catalog data into bounded UI policy; `validateTheme` gates
+fallback and intrinsic component nodes while dropping malformed payloads;
+`validateCatalog` turns untrusted catalog data into bounded UI policy; `validateTheme` gates
 token-value maps, component recipes, and recipe parts as operator data;
-`expandStamp` fills
-validated stamp slots, preserves bounded metadata, prunes the root-reachable
-subtree, drops stamped actions that point outside that subtree, and remaps ids
-before a caller emits ordinary patches. `applyPatch` is the one patch function
-that runs identically on server and client.
+`validateComposition` turns an untrusted composition document into a validated
+`FacetComposition` (with optional `CompositionMetadata`) or refuses it whole — a
+raw node map above 1023 nodes rejects the entire composition; `expandComposition`
+fills validated composition slots, preserves bounded metadata, prunes the
+root-reachable subtree, drops expanded actions that point outside that subtree,
+and remaps ids before a caller emits ordinary patches. `applyPatch` is the one
+patch function that runs identically on server and client.
 
 ```ts
 import {
   applyPatch,
   EMPTY_TREE,
-  expandStamp,
+  expandComposition,
   validateCatalog,
   validateTree,
 } from "@facet/core";
@@ -47,11 +49,11 @@ const { tree, issues } = validateTree(EMPTY_TREE);
 const { catalog } = validateCatalog({
   name: "product-ui",
   theme: { active: "default", switchPolicy: "locked" },
-  bricks: [{ type: "section", variants: ["surface"] }, { type: "card" }],
-  stamps: { mode: "all" },
+  components: [{ type: "section", variants: ["surface"] }, { type: "card" }],
+  compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
   },
@@ -67,7 +69,7 @@ const next = applyPatch(tree, [
   { op: "add", path: "/nodes/root/children/-", value: "hello" },
 ]);
 
-const expanded = expandStamp(
+const expanded = expandComposition(
   {
     name: "card",
     slots: { title: "Card title" },
@@ -83,10 +85,20 @@ const expanded = expandStamp(
 );
 ```
 
-`expandStamp` is fail-safe: malformed params become issues and defaults, unknown
-parents return no ops, and the returned ids are fresh only for the nodes that
-will actually be emitted. Stamps may carry bounded metadata for prompt guidance,
-but expansion still emits ordinary nodes and JSON Patch operations. `applyPatch`
+`expandComposition` is fail-safe and hard-capped: malformed params become issues
+and defaults; an unknown parent returns no nodes; output is at most 1023 nodes;
+at most 5000 `existingIds` are read before expansion refuses; all id minting
+shares one 4096-attempt budget; issues stop at 64 entries plus one suppression
+tail; and a caught error's detail is sanitized (C0/DEL/C1 control characters
+removed) to at most 256 characters, so a throwing `message` getter reports only
+`unknown error`. Slot markers are also filled inside action strings (navigate
+targets, agent action names and string payload values), and a marker that
+survives fill anywhere — including non-fillable node-id references — refuses
+the whole expansion instead of shipping a node the validated fold would drop.
+Every over-cap or throwing path is a bounded no-op — the
+returned ids are fresh only for the nodes that will actually be emitted.
+Composition assets may carry bounded metadata for
+prompt guidance, but expansion still emits ordinary nodes and JSON Patch operations. `applyPatch`
 enforces JSON Pointer reads for source operations (`move`, `copy`, and `test`)
 and requires object-member `replace`/`remove` targets to exist before mutating,
 so stale ops do not leave partial object members behind or count as stage edits.

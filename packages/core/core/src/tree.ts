@@ -8,6 +8,8 @@ const TREE_RENDERABLE_MAX_CHART_POINTS = 200;
 const TREE_RENDERABLE_MAX_LIST_ITEMS = 50;
 const TREE_RENDERABLE_MAX_TABS_ITEMS = 12;
 const TREE_RENDERABLE_MAX_FIELD_OPTIONS = 64;
+const TREE_RENDERABLE_MAX_KEY_VALUE_ITEMS = 50;
+const TREE_RENDERABLE_MAX_FILTERS = 32;
 
 interface RenderableBudget {
   left: number;
@@ -70,7 +72,7 @@ export function isTreeShaped(value: unknown): value is FacetTree {
 /**
  * Does this tree "show something real"? True iff at least one render root has a
  * visible, renderable descendant. A root that only points at a dangling id, a
- * hidden subtree, or a high-level data brick with no renderable data (empty
+ * hidden subtree, or a component data node with no renderable data (empty
  * table/chart/tabs/list) is NOT content.
  *
  * The single canonical form: the server's offline path (`hasBuiltStage` — should
@@ -176,6 +178,8 @@ function nodeRendersItself(node: Record<string, unknown>): boolean {
       return typeof node.label === "string";
     case "tabs":
       return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
+    case "nav":
+      return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
     case "table":
       return hasRenderableArray(
         node.columns,
@@ -184,8 +188,15 @@ function nodeRendersItself(node: Record<string, unknown>): boolean {
       );
     case "chart":
       return chartHasRenderableData(node);
+    case "metric":
     case "stat":
       return typeof node.label === "string" && typeof node.value === "string";
+    case "keyValue":
+      return hasRenderableArray(
+        node.items,
+        TREE_RENDERABLE_MAX_KEY_VALUE_ITEMS,
+        isRenderableKeyValueItem,
+      );
     case "badge":
       return typeof node.label === "string";
     case "progress":
@@ -195,6 +206,16 @@ function nodeRendersItself(node: Record<string, unknown>): boolean {
     case "list":
       return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_LIST_ITEMS, isRenderableListItem);
     case "divider":
+      return true;
+    case "form":
+      return hasString(node.title) || hasString(node.body) || hasString(node.submitLabel);
+    case "search":
+      return typeof node.name === "string";
+    case "filterBar":
+      return hasRenderableArray(node.filters, TREE_RENDERABLE_MAX_FILTERS, isRenderableFilter);
+    case "emptyState":
+      return hasString(node.title) || hasString(node.body) || hasString(node.actionLabel);
+    case "loading":
       return true;
     default:
       return false;
@@ -244,6 +265,14 @@ function isRenderableTableColumn(column: unknown): boolean {
 function isRenderableListItem(item: unknown): boolean {
   if (typeof item === "string") return true;
   return isRecord(item) && typeof item.title === "string";
+}
+
+function isRenderableKeyValueItem(item: unknown): boolean {
+  return isRecord(item) && typeof item.label === "string" && typeof item.value === "string";
+}
+
+function isRenderableFilter(item: unknown): boolean {
+  return isRecord(item) && typeof item.name === "string" && typeof item.label === "string";
 }
 
 function fieldHasRenderableControl(node: Record<string, unknown>): boolean {

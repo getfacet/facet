@@ -7,6 +7,10 @@ import {
   visibleStageNodeIds,
 } from "./observation.js";
 
+// Legacy vocabulary is built at runtime so the removed tokens never appear as
+// source literals (same idiom as theme.test.ts).
+const legacyCode = ["invalid_", "st", "amp"].join("");
+
 const TREE: FacetTree = {
   root: "root",
   nodes: {
@@ -103,6 +107,50 @@ describe("agent tool observation contract", () => {
     expect(data?.patch_count).toBe(0);
   });
 
+  it("round-trips a bounded data payload and rejects non-string data", () => {
+    const payload = JSON.stringify({ root: "r1", slots: {}, ids: { card: "r1" } });
+    const observation = formatAgentToolObservation({
+      tool: "use_composition",
+      status: "ok",
+      outcome: "applied_visible",
+      message: "Used composition.",
+      data: payload,
+    });
+
+    const parsed = parseAgentToolObservation(observation.text);
+    expect(parsed?.data).toBe(payload);
+    expect(JSON.parse(parsed?.data ?? "")).toMatchObject({ root: "r1", ids: { card: "r1" } });
+
+    const withNonStringData = JSON.stringify({ ...parsed, data: { root: "r1" } });
+    expect(parseAgentToolObservation(withNonStringData)).toBeUndefined();
+  });
+
+  it("replaces an over-cap data payload with a valid truncated marker", () => {
+    const observation = formatAgentToolObservation({
+      tool: "use_composition",
+      status: "ok",
+      outcome: "applied_visible",
+      message: "Used composition.",
+      data: `{"pad":"${"z".repeat(4_000)}"}`,
+    });
+
+    const parsed = parseAgentToolObservation(observation.text);
+    expect(parsed?.data).toBe('{"truncated":true}');
+    expect(JSON.parse(parsed?.data ?? "")).toEqual({ truncated: true });
+  });
+
+  it("omits the data field entirely when no payload is supplied", () => {
+    const observation = formatAgentToolObservation({
+      tool: "set_node",
+      status: "ok",
+      outcome: "applied_visible",
+      message: "Set a node.",
+    });
+
+    expect(parseAgentToolObservation(observation.text)?.data).toBeUndefined();
+    expect(observation.text).not.toContain('"data"');
+  });
+
   it("defaults outcome facts coherently when callers omit booleans", () => {
     const observation = formatAgentToolObservation({
       tool: "append_node",
@@ -163,6 +211,30 @@ describe("agent tool observation contract", () => {
     });
   });
 
+  it(`accepts the canonical invalid_composition code and rejects ${legacyCode}`, () => {
+    const rejected = formatAgentToolObservation({
+      tool: "use_composition",
+      status: "error",
+      outcome: "rejected",
+      code: "invalid_composition",
+      message: 'error: use_composition — unknown composition "nope".',
+    });
+
+    const data = parseAgentToolObservation(rejected.text);
+    expect(data).toMatchObject({
+      tool: "use_composition",
+      status: "error",
+      outcome: "rejected",
+      code: "invalid_composition",
+      patch_count: 0,
+    });
+    if (data === undefined) throw new Error("expected canonical observation");
+
+    expect(
+      parseAgentToolObservation(JSON.stringify({ ...data, code: legacyCode })),
+    ).toBeUndefined();
+  });
+
   it("rejects malformed parsed observations", () => {
     const valid = formatAgentToolObservation({
       tool: "append_node",
@@ -219,7 +291,7 @@ describe("agent tool observation contract", () => {
     expect(isVisitorVisibleStageChange(TREE, afterOrphan, ["orphan"])).toBe(false);
   });
 
-  it("classifies high-level section and card descendants as visible while skipping blank data bricks", () => {
+  it("classifies component section and card descendants as visible while skipping blank data components", () => {
     const highLevelTree: FacetTree = {
       root: "section",
       nodes: {

@@ -7,7 +7,14 @@ export * from "./patch.js";
 export * from "./protocol.js";
 export * from "./agent-result.js";
 export * from "./validate.js";
-export * from "./expand-stamp.js";
+export { expandComposition } from "./expand-composition.js";
+export type {
+  CompositionParams,
+  ExpandAt,
+  UseCompositionResult,
+  ExpandCompositionResult,
+  ExpandCompositionOptions,
+} from "./expand-composition.js";
 export * from "./stage-fold.js";
 export * from "./serial-queue.js";
 export * from "./semaphore.js";

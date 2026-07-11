@@ -16,7 +16,7 @@ import { connect } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FacetCatalog, FacetTheme, FacetTree } from "@facet/core";
+import type { FacetCatalog, FacetComposition, FacetTheme, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { MemorySink } from "@facet/runtime";
 import * as referenceAgent from "@facet/reference-agent";
@@ -41,15 +41,27 @@ const CATALOG_E2E: FacetCatalog = {
     { type: "section", variants: ["surface"] },
     { type: "card", variants: ["interactive"] },
     { type: "button", variants: ["primary"] },
-    { type: "stat" },
+    { type: "metric" },
   ],
-  stamps: { mode: "all" },
+  compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: ["stamp", "brick", "primitive"],
+    order: ["composition", "component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 3,
+  },
+};
+
+/** Operator composition for `--assets` paths — expanded server-side; its document internals never cross the browser (DC-013). */
+const OPERATOR_COMPOSITION: FacetComposition = {
+  name: "qs-operator-panel",
+  description: "Operator panel band",
+  slots: { title: "Operator default title" },
+  root: "qs-operator-root",
+  nodes: {
+    "qs-operator-root": { id: "qs-operator-root", type: "box", children: ["qs-operator-title"] },
+    "qs-operator-title": { id: "qs-operator-title", type: "text", value: "{{title}}" },
   },
 };
 
@@ -66,7 +78,7 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
     },
     "catalog-arr": {
       id: "catalog-arr",
-      type: "stat",
+      type: "metric",
       label: "ARR",
       value: "$1.2M",
       delta: "+18%",
@@ -86,34 +98,6 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
       label: "View pricing",
       variant: "primary",
       onPress: { kind: "agent", name: "view_pricing", payload: { plan: "pro" } },
-    },
-  },
-};
-
-const CATALOG_PRICING_TREE: FacetTree = {
-  root: "catalog-pricing-screen",
-  nodes: {
-    "catalog-pricing-screen": {
-      id: "catalog-pricing-screen",
-      type: "section",
-      title: "Catalog pricing",
-      variant: "surface",
-      children: ["catalog-pro-plan", "catalog-pro-cta"],
-    },
-    "catalog-pro-plan": {
-      id: "catalog-pro-plan",
-      type: "card",
-      title: "Pro",
-      body: "$49 per seat, built for growing teams.",
-      variant: "interactive",
-      children: [],
-    },
-    "catalog-pro-cta": {
-      id: "catalog-pro-cta",
-      type: "button",
-      label: "Start Pro",
-      variant: "primary",
-      onPress: { kind: "agent", name: "start_plan", payload: { plan: "pro" } },
     },
   },
 };
@@ -175,7 +159,7 @@ function openAiResponse(toolCalls: readonly MockOpenAiToolCall[]): Response {
   });
 }
 
-function installOpenAiMock(steps: readonly (readonly MockOpenAiToolCall[])[]): {
+function installOpenAiMock(steps: readonly (readonly MockOpenAiToolCall[] | Error)[]): {
   readonly bodies: unknown[];
   restore(): void;
 } {
@@ -187,6 +171,7 @@ function installOpenAiMock(steps: readonly (readonly MockOpenAiToolCall[])[]): {
       bodies.push(parseFetchBody(init));
       const step = steps[Math.min(next, steps.length - 1)] ?? [];
       next += 1;
+      if (step instanceof Error) return Promise.reject(step); // offline provider
       return Promise.resolve(openAiResponse(step));
     }
     return realFetch(input, init);
@@ -788,7 +773,7 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         const providerRequest = JSON.stringify(openAi.bodies[0]);
         expect(providerRequest).toContain("CATALOG");
         expect(providerRequest).toContain("quickstart-catalog");
-        expect(providerRequest).toContain("policy order: stamp -> brick -> primitive");
+        expect(providerRequest).toContain("policy order: composition -> component -> primitive");
 
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
@@ -810,25 +795,28 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
     }
   });
 
-  it("serializes rapid catalog-guided visitor events without throwing or drifting stage output", async () => {
+  it("serializes rapid composition-guided visitor events into ordered ordinary patch frames", async () => {
+    const panelCall = (title: string): MockOpenAiToolCall =>
+      mockCall("use_composition", {
+        name: "qs-operator-panel",
+        params: { title },
+        at: { parent: QUICKSTART_INITIAL_STAGE.root },
+      });
     const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
     const openAi = installOpenAiMock([
-      [
-        mockCall("set_theme", { name: "midnight" }),
-        mockCall("render_page", { tree: CATALOG_DASHBOARD_TREE }),
-        mockCall("say", { text: "catalog dashboard ready" }),
-      ],
+      [panelCall("Dashboard band"), mockCall("say", { text: "composition dashboard ready" })],
       [],
-      [
-        mockCall("set_theme", { name: "midnight" }),
-        mockCall("render_page", { tree: CATALOG_PRICING_TREE }),
-        mockCall("say", { text: "catalog pricing ready" }),
-      ],
+      [panelCall("Pricing band"), mockCall("say", { text: "composition pricing ready" })],
       [],
     ]);
     let running: RunningQuickstart | undefined;
     try {
       await writeFile(join(dir, "catalog.json"), JSON.stringify(CATALOG_E2E), "utf8");
+      await writeFile(
+        join(dir, "panel.composition.json"),
+        JSON.stringify(OPERATOR_COMPOSITION),
+        "utf8",
+      );
       const booted = await bootCli(["--assets", dir]);
       running = booted.running;
 
@@ -837,11 +825,12 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
       try {
         await stream.next(1); // reset
         const [dashboardPost, pricingPost] = await Promise.all([
-          postEvent(running.url, visitorId, { kind: "message", text: "catalog dashboard" }),
-          postEvent(running.url, visitorId, { kind: "message", text: "catalog pricing" }),
+          postEvent(running.url, visitorId, { kind: "message", text: "composition dashboard" }),
+          postEvent(running.url, visitorId, { kind: "message", text: "composition pricing" }),
         ]);
         expect([dashboardPost.status, pricingPost.status]).toEqual([202, 202]);
 
+        // Ordered, ordinary frames only: seed patch, then per-turn patch + say.
         const frames = await stream.next(5);
         expect(frames.map((frame) => kindOf(frame.data))).toEqual([
           "patch",
@@ -850,15 +839,24 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
           "patch",
           "say",
         ]);
-        expect(sayTexts(frames)).toEqual(["catalog dashboard ready", "catalog pricing ready"]);
+        expect(sayTexts(frames)).toEqual([
+          "composition dashboard ready",
+          "composition pricing ready",
+        ]);
 
         const frameText = JSON.stringify(frames);
         expect(frameText).toContain(QUICKSTART_INITIAL_STAGE.root);
-        expect(frameText).toContain("catalog-dashboard");
-        expect(frameText).toContain("catalog-pricing-screen");
-        expect(frameText).not.toContain("midnight");
+        // Server-side expansion: slot params filled; the document never crosses
+        // (no template markers, no document node ids, no composition kind).
+        expect(frameText).toContain("Dashboard band");
+        expect(frameText).toContain("Pricing band");
+        expect(frameText).not.toContain("{{title}}");
+        expect(frameText).not.toContain("qs-operator-root");
+        expect(frameText).not.toContain('"kind":"composition"');
         for (const body of openAi.bodies) {
+          // The composition is advertised to the model by NAME with the catalog.
           expect(JSON.stringify(body)).toContain("quickstart-catalog");
+          expect(JSON.stringify(body)).toContain("qs-operator-panel");
         }
         expect(booted.captured.err.join("\n")).not.toContain("turn failed");
       } finally {
@@ -870,10 +868,88 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  it("keeps the stage coherent while the agent is offline and leaks no composition document to the browser", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-offline-"));
+    const openAi = installOpenAiMock([new Error("connect ECONNREFUSED (provider offline)")]);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let running: RunningQuickstart | undefined;
+    try {
+      await writeFile(
+        join(dir, "panel.composition.json"),
+        JSON.stringify(OPERATOR_COMPOSITION),
+        "utf8",
+      );
+      let resolvedCompositionNames: readonly string[] = [];
+      const booted = await bootCli(["--assets", dir], {
+        onResolvedAssets: (assets) => {
+          resolvedCompositionNames = (assets.compositions ?? []).map((c) => c.name);
+        },
+      });
+      running = booted.running;
+
+      // The canonical snapshot reached the CLI seam: operator doc + defaults.
+      expect(resolvedCompositionNames).toContain("qs-operator-panel");
+      expect(resolvedCompositionNames).toContain("pricing-section");
+
+      // DC-013: the boot script materializes ONLY the two known globals — no
+      // composition document, default library, global, or resolver.
+      const shell = await (await fetch(`${running.url}/`)).text();
+      const bootTag = (shell.match(/<script>[\s\S]*?<\/script>/g) ?? []).find((tag) =>
+        tag.includes("__FACET_"),
+      );
+      expect(bootTag).toBeDefined();
+      const fakeWindow: Record<string, unknown> = {};
+      new Function("window", bootTag!.slice("<script>".length, -"</script>".length))(fakeWindow);
+      expect(Object.keys(fakeWindow).sort()).toEqual([
+        "__FACET_INITIAL_STAGE__",
+        "__FACET_THEMES__",
+      ]);
+      expect(shell).not.toContain("qs-operator-root");
+      expect(shell).not.toContain("Operator default title");
+      expect(shell).not.toContain("__FACET_COMPOSITIONS__");
+      expect(shell).not.toContain("use_composition");
+
+      // Offline turn: the event is accepted, the turn fails SOFTLY, and the
+      // browser still gets ordinary frames (seed patch + apology say).
+      const visitorId = "e2e-offline";
+      const stream = await openStream(running.url, visitorId);
+      try {
+        await stream.next(1); // reset
+        const post = await postEvent(running.url, visitorId, { kind: "message", text: "hello?" });
+        expect(post.status).toBe(202);
+        const frames = await stream.next(2);
+        expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "say"]);
+        expect(JSON.stringify(frames[0]?.data)).toContain(QUICKSTART_INITIAL_STAGE.root);
+        expect(sayTexts(frames)[0]).toMatch(/sorry/i);
+
+        // The server stays healthy and keeps accepting events after the outage.
+        const health = await fetch(`${running.url}/health`);
+        expect(health.status).toBe(200);
+        expect(await health.text()).toContain("ok agent=local");
+        const again = await postEvent(running.url, visitorId, { kind: "message", text: "again" });
+        expect(again.status).toBe(202);
+        expect(kindOf((await stream.next(1))[0]?.data)).toBe("say");
+      } finally {
+        await stream.close();
+      }
+
+      // Reconnect: the rehydrated stage is still the coherent seed tree.
+      const reconnect = await fetch(`${running.url}/stream?visitorId=${visitorId}`);
+      const snap = await readEvents(reconnect, 2); // reset + snapshot patch
+      expect(kindOf(snap[1]?.data)).toBe("patch");
+      expect(JSON.stringify(snap[1]?.data)).toContain(QUICKSTART_INITIAL_STAGE.root);
+    } finally {
+      await running?.close();
+      openAi.restore();
+      errorSpy.mockRestore();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
 
-describe("quickstart E2E — quickstart polished default", () => {
-  it("quickstart polished default ships the seed before provider output on the CLI path", async () => {
+describe("quickstart E2E — quickstart component default", () => {
+  it("quickstart component default ships the seed before provider output on the CLI path", async () => {
     const openAi = installOpenAiMock([[mockCall("say", { text: "quickstart seed ready" })], []]);
     let running: RunningQuickstart | undefined;
     try {
@@ -884,7 +960,7 @@ describe("quickstart E2E — quickstart polished default", () => {
       expect(shell).toContain("window.__FACET_INITIAL_STAGE__ = ");
       expect(shell).toContain(QUICKSTART_INITIAL_STAGE.root);
 
-      const visitorId = "e2e-polished-default";
+      const visitorId = "e2e-component-default";
       const stream = await openStream(running.url, visitorId);
       try {
         await stream.next(1); // reset
@@ -909,7 +985,7 @@ describe("quickstart E2E — quickstart polished default", () => {
           "chart",
           "field",
           "button",
-          "stat",
+          "metric",
           "badge",
           "progress",
           "alert",
@@ -922,7 +998,7 @@ describe("quickstart E2E — quickstart polished default", () => {
         const providerRequest = JSON.stringify(openAi.bodies[0]);
         expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
         expect(providerRequest).toContain("# Facet quickstart tour");
-        expect(providerRequest).toContain("polished hierarchy");
+        expect(providerRequest).toContain("Primitive Brick -> Component -> Catalog");
         expect(providerRequest).not.toContain("STUB_TREE");
         expect(booted.captured.out.join("\n")).toContain("openai");
       } finally {

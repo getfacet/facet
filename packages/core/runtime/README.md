@@ -3,7 +3,7 @@
 The Facet runtime: the event loop that drives stage patches, plus the four
 persistence seams — a `StageStore` for the page (always Facet's), a `Sink` for
 the conversation (store, forward, or drop), an `AssetsStore` for per-agent
-themes, stamps, catalog policy, and an optional initial tree, and a
+themes, compositions, catalog policy, and an optional initial tree, and a
 `SummaryStore` for a per-visitor rolling-summary record used by brain-side
 context compaction (the payload is opaque to the runtime — the consuming brain
 owns its schema; `put` advances only on a strictly newer covered-through
@@ -54,27 +54,38 @@ const messages = await runtime.handle({ visitorId: "alice" }, { kind: "visit" })
 
 ## Assets
 
-`AssetsStore` returns raw operator documents. `loadAssets(store, agentId)` is the
-single validation gate that turns those documents into:
+`AssetsStore` returns raw operator documents as `AssetDocuments` — a `themes`
+array, a `compositions` array, an optional `catalog`, and an optional
+`initialTree`. `loadAssets(store, agentId)` is the single validation gate that
+turns those documents into `LoadedAssets`:
 
 - `themes`: `DEFAULT_THEME` plus valid custom `*.theme.json` documents.
-- `stamps`: `DEFAULT_STAMPS` plus valid custom `*.stamp.json` documents.
+- `compositions`: `DEFAULT_COMPOSITIONS` plus valid custom `*.composition.json`
+  documents.
 - `catalog`: a validated catalog document, or `DEFAULT_CATALOG`.
 - `initialTree`: an optional seed tree only when it validates and renders content.
 - `issues`: bounded warnings for skipped, shadowed, or sanitized documents.
 
 The Node-only `FileAssets` reference, imported from `@facet/runtime/node`, reads
-`*.theme.json`, `*.stamp.json`, optional `catalog.json`, and optional
-`initial.tree.json` from a directory. Missing `catalog.json`, malformed catalog
-shape, invalid catalog names, unreadable stores, or validator throws all fall
-back to `DEFAULT_CATALOG`; boot continues and the issue list records the
-fallback. `MemoryAssets({ themes: [], stamps: [] })` goes through the same path,
-so an empty registry still resolves the default theme, default stamps, and the
-locked theme default catalog.
+`*.theme.json`, `*.composition.json`, optional `catalog.json`, and optional
+`initial.tree.json` from a directory. Directory reading is bounded: discovery
+enumerates at most 4096 entries and a larger directory fails the whole raw
+document set closed (empty collections plus a bounded issue, before any asset
+file is opened); after discovery, at most 1024 sorted files are opened per
+collection (themes, compositions) and each file is read at most 1 MiB — the
+byte after the cap rejects that file before decode/parse. A missing
+`catalog.json` or a validator throw falls back to `DEFAULT_CATALOG`; a partial
+or malformed catalog document keeps its validated sections as authored (with
+per-section defaults for the rest), and a provided-but-invalid restriction list
+fails closed to an empty allow-list. Boot continues and the issue list records
+every fallback.
+`MemoryAssets({ themes: [], compositions: [] })` goes through the same path, so
+an empty registry still resolves the default theme, default compositions, and
+the locked theme default catalog.
 
 Catalog policy is UI authoring policy for the agent stack: active theme,
-theme-switch allowance, allowed brick types/variants, stamp allow-list, primitive
-fallback, and the `stamp -> high-level brick -> primitive fallback` authoring
+theme-switch allowance, allowed components/variants, composition allow-list,
+primitive fallback, and the `composition -> component -> primitive` authoring
 order. The runtime only loads and validates that policy. Hosted platform policy
 such as auth, tenant isolation, billing, usage metering, rate limits, and spend
 caps belongs to the platform around Facet, not to `AssetsStore`.

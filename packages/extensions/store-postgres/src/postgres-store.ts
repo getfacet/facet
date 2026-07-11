@@ -41,13 +41,14 @@ export async function initSchema(pool: Pool): Promise<void> {
     create table if not exists facet_assets (
       agent_id text primary key,
       themes jsonb,
-      stamps jsonb,
+      compositions jsonb,
       catalog jsonb,
       initial_tree jsonb,
       updated_at timestamptz not null default now()
     )
   `);
   await pool.query("alter table facet_assets add column if not exists catalog jsonb");
+  await pool.query("alter table facet_assets add column if not exists compositions jsonb");
 }
 
 export class PostgresStageStore implements StageStore {

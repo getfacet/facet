@@ -60,5 +60,5 @@ export type {
   ToolCall,
   ToolInputByName,
   ToolSpec,
-  UseStampToolInput,
+  UseCompositionToolInput,
 } from "./types.js";

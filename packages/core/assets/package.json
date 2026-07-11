@@ -1,7 +1,7 @@
 {
   "name": "@facet/assets",
   "version": "0.0.0",
-  "description": "Facet default asset data — the node-free default theme + stamp value maps (deps = @facet/core only).",
+  "description": "Facet default asset data — the node-free default theme + composition definitions (deps = @facet/core only).",
   "license": "MIT",
   "repository": {
     "type": "git",

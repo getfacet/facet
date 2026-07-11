@@ -6,10 +6,10 @@
 
 Facet is a TypeScript framework for UI a language model renders itself — safe,
 live, and different for every user. You give the model a closed, typed UI
-vocabulary: reusable stamps and high-level bricks for common shapes, plus
-low-level primitive fallback when it needs custom composition. It keeps changing
-the interface as the conversation goes and can build a different one for each
-person, all without ever emitting unsafe or broken markup.
+vocabulary: primitive bricks as the universal fallback, intrinsic components for
+common UI, and catalog compositions/recipes for one-shot polish. It keeps
+changing the interface as the conversation goes and can build a different one
+for each person, all without ever emitting unsafe or broken markup.
 
 > Status: **pre-1.0.** The spec, patch protocol, runtime, renderer, the SSE/POST
 > transport (browser + external agents), a browser playground, durable stores,
@@ -30,7 +30,7 @@ OPENAI_API_KEY=sk-… npx facet-quickstart
 That boots a live Facet server at `http://localhost:5292` whose page is drawn by
 a **built-in LLM agent**: it reads a guide markdown brief (your `./facet.md` if
 present, otherwise the built-in quickstart tour brief), starts from a compact
-polished four-tab seed stage on the default path, and keeps patching it as
+component-rich four-tab seed stage on the default path, and keeps patching it as
 visitors chat.
 `ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). Flags
 and details:
@@ -51,8 +51,8 @@ they all hurt:
 
 Facet is the missing middle: the model works inside a **closed core vocabulary**
 instead of raw HTML/JS/CSS, but the vocabulary is not an opaque component
-catalog. Operators can expose a catalog policy, stamps, and theme recipes for
-one-shot quality; the model can still fall back to primitives for custom flow
+catalog. Operators can expose a catalog policy, compositions, and theme recipes
+for one-shot quality; the model can still fall back to primitives for custom flow
 composition. It **can't inject or break the layout**, and it updates **live, per
 user**.
 
@@ -72,39 +72,57 @@ the user speaks in the Chat  →  the model rebuilds the Stage
 The Stage can also diverge *before* anyone says a word: who showed up (referrer,
 locale, prior context) is enough to make the first paint different.
 
-## Catalog-guided bricks, with primitive fallback
+## Primitive Bricks, Components, And Catalog
 
 The model builds the Stage from a **closed Facet vocabulary**, never raw
 HTML/JS/CSS. In v1 that vocabulary has three layers:
 
-1. **Stamps** — validated reusable fragments such as hero sections, pricing
-   blocks, dashboards, and empty states.
-2. **High-level bricks** — typed common UI shapes the renderer knows how to draw.
-3. **Primitive fallback** — the base bricks for custom composition when a stamp
-   or high-level brick is not the right fit.
+1. **Primitive bricks** — `box`, `text`, `media`, and `field`, the universal
+   fallback for structure, copy, media, and raw inputs.
+2. **Components** — typed common UI shapes the renderer knows how to draw.
+   Intrinsic components are owned by Facet core; recipe components expand to
+   ordinary validated nodes before render.
+3. **Catalog** — the active policy and asset metadata: allowed components,
+   variants, compositions, primitive fallback, and theme switching.
 
 The built-in catalog tells the agent to try those layers in that order:
-`stamp -> brick -> primitive`. A project can narrow the allowed bricks, variants,
-stamps, and theme switching through catalog data, but the catalog is still just
-UI vocabulary and usage policy. It is not LiveFrame, and it is not hosted
-platform auth, billing, tenant, rate-limit, or abuse policy.
+`composition -> component -> primitive`. Catalog compositions are expanded
+server-side through the `use_composition` tool, arriving in the browser as
+ordinary validated nodes. A project can narrow the allowed components, variants,
+compositions, and theme switching through catalog data, but the catalog is still
+just UI vocabulary and usage policy. It is not hosted-platform auth, billing,
+tenant, rate-limit, or abuse policy.
 
-The v1 high-level bricks cover common product/app UI while remaining typed data:
+An intrinsic component belongs in Facet core only when it is generic across
+apps, useful to many agents as a familiar UI noun, renderer-owned, safe without
+client-side business logic, and hard for agents to reproduce reliably from
+primitives alone. Domain-specific or tenant-specific UI should be a recipe
+component/composition instead.
 
-| Brick      | It is...                                                        |
-| ---------- | --------------------------------------------------------------- |
-| `button`   | a leaf action brick with label, variant/tone, and press/hold actions. |
-| `section`  | a normal-flow page region with optional title, eyebrow, body, and children. |
-| `card`     | a grouped content/action container with optional title, body, tone, and children. |
-| `tabs`     | local screen navigation over pre-drawn screens.                 |
-| `table`    | display-only tabular data with capped rows, columns, and cells. |
-| `chart`    | display-only chart data with capped series and points.          |
-| `stat`     | compact metric display.                                         |
-| `badge`    | compact status or label.                                        |
-| `progress` | bounded progress display.                                       |
-| `alert`    | feedback, warning, or notice block.                             |
-| `list`     | capped list display.                                            |
-| `divider`  | visual/content separator.                                       |
+The v1 intrinsic components cover common product/app UI while remaining typed
+data:
+
+| Component    | It is...                                                        |
+| ------------ | --------------------------------------------------------------- |
+| `button`     | a leaf action component with label, variant/tone, and press/hold actions. |
+| `section`    | a normal-flow page region with optional title, eyebrow, body, and children. |
+| `card`       | a grouped content/action container with optional title, body, tone, and children. |
+| `tabs`       | local screen navigation over pre-drawn screens.                 |
+| `nav`        | app or section navigation over pre-drawn screens.               |
+| `table`      | display-only tabular data with capped rows, columns, and cells. |
+| `chart`      | display-only chart data with capped series and points.          |
+| `metric`     | compact KPI/metric display. `stat` remains a legacy alias.      |
+| `keyValue`   | compact label/value details.                                    |
+| `badge`      | compact status or label.                                        |
+| `progress`   | bounded progress display.                                       |
+| `alert`      | feedback, warning, or notice block.                             |
+| `list`       | capped list display.                                            |
+| `divider`    | visual/content separator.                                       |
+| `form`       | grouped visitor input and submission.                           |
+| `search`     | search input and submission UI only.                            |
+| `filterBar`  | compact filtering controls UI only.                             |
+| `emptyState` | no-data or no-result state.                                     |
+| `loading`    | pending/busy state.                                             |
 
 The primitive base remains valid everywhere:
 
@@ -115,10 +133,9 @@ The primitive base remains valid everywhere:
 | `media` | image or video media with a static, safe URL.                                    |
 | `field` | a native text/select/checkbox/radio/switch input.                                |
 
-A *card* is a `box` with a border. A *button* is a `box` with `onPress`. A
-*heading* is a big `text`. High-level bricks are convenience nodes over that
-same safe model, not an escape hatch. Everything stays safe and unbreakable
-because:
+A *card* is still equivalent to a `box` with a border. A *button* is still a
+pressable box. Components are convenience nodes over that same safe model, not
+an escape hatch. Everything stays safe and unbreakable because:
 
 An `onPress` can also be declarative — `{kind:"navigate", to}` to switch between
 pre-drawn **screens** or `{kind:"toggle", target}` to show/hide a node — and the
@@ -133,15 +150,16 @@ token (`2`/`3`/`4`) — all still tokens, never raw values.
 2. **Style values are tokens, not raw scalars** (`gap: "md"`, not `gap: 23`) →
    any combination lands on a coherent scale; the model can't produce visual
    chaos, and good output comes out in one shot.
-3. **Layout is flow-only** (row/col, no absolute positioning) → children stack or
-   wrap; they can't overlap or fall off the page.
+3. **Layout is flow-only** (row/col/grid columns, no absolute positioning) →
+   children stack or wrap; they can't overlap or fall off the page.
 4. **The renderer is fail-safe** → unknown or dangling nodes are skipped, so a
    partial stage renders as "plain", never broken.
 
-Catalog entries and stamp metadata give the model one-shot guidance without
-giving up the primitive foundation: a catalog can say which variants are allowed,
-which stamps are available, whether primitive fallback is allowed or merely
-discouraged, and whether the active theme is locked.
+Catalog entries and composition metadata give the model one-shot guidance
+without giving up the primitive foundation: a catalog can say which components
+and variants are allowed, which compositions are available, whether primitive
+fallback is allowed or merely discouraged, and whether the active theme is
+locked.
 
 ## Reskin with data, not code
 
@@ -156,7 +174,7 @@ OPENAI_API_KEY=sk-… npx facet-quickstart --assets ./assets
 where `./assets` holds any mix of:
 
 - **`catalog.json`** — a validated `FacetCatalog` describing active theme policy,
-  allowed bricks/variants, allowed stamps, primitive fallback, and usage guidance
+  allowed components/variants, allowed compositions, primitive fallback, and usage guidance
   such as compact-screen and edit-before-append preferences. This is neutral UI
   vocabulary policy; tenant/project lookup, auth, billing, rate limits, and abuse
   operations stay outside Facet.
@@ -172,19 +190,20 @@ where `./assets` holds any mix of:
   never become stage node fields. The renderer resolves the selected recipe
   through the active theme. An unknown or missing name simply falls back to the
   default look — nothing throws.
-- **`*.stamp.json`** — a reusable `{ root, nodes, slots? }` brick fragment (a
-  hero, a card) offered to the model by name. Stamps can include bounded
+- **`*.composition.json`** — a reusable catalog composition: a validated
+  `{ root, nodes, slots? }` fragment (a hero, a card) offered to the
+  model by name. Compositions can include bounded
   metadata (`category`, `useWhen`, `avoidWhen`, `tags`, `preferredParent`,
   `composedOf`, and similar prompt-safe fields) so the agent knows when to use
-  them without seeing full stamp JSON. The quickstart model calls `use_stamp`
-  with string slot params and the server expands the stamp into ordinary patches
+  them without seeing full composition JSON. The quickstart model calls the
+  `use_composition` tool with string slot params and the server expands the composition into ordinary patches
   with fresh ids, under a known container parent and within the patch batch cap;
-  there is **no client-side stamp expansion**.
+  there is **no client-side composition expansion**.
 - **`initial.tree.json`** — a starting stage the first visit opens on *before*
   the model's first turn: a fast, non-blank first paint the agent then refines.
 
 Every document passes one validator at boot (`validateCatalog` /
-`validateTheme` / `validateStamp` / `validateTree`): a value that smuggles CSS
+`validateTheme` / `validateComposition` / `validateTree`): a value that smuggles CSS
 (`url()`, `var()`, `expression()`, `javascript:`) is refused, dimensions are
 clamped so a theme can't push content off-screen, and a low-contrast
 text/background pair is **flagged as a warning, never rejected** (Facet measures
@@ -233,7 +252,7 @@ model instead, there are three jacks — see
 Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
 *conversation* is a `Sink` you choose: store it for replay, forward it to your
 own system (e.g. a chat platform that already keeps it), or drop it. The
-per-agent asset library (themes, stamps, and an optional initial tree) is an
+per-agent asset library (themes, compositions, and an optional initial tree) is an
 `AssetsStore` (memory, file, or Postgres).
 
 **Each visitor is a `visitorId`, and you decide where it comes from.** For an
@@ -268,17 +287,17 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/core` | `@facet/core` | The contract: closed brick vocabulary (v1 high-level bricks plus primitive fallback), catalog policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, `expandStamp`, session/event types. |
-| `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/stamp/initial-tree loading, `withInitialStage`) + `SummaryStore` (opaque rolling-summary records for brain-side context compaction). File-backed Node references via `@facet/runtime/node`. |
-| `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for high-level and primitive bricks, token→CSS and recipe/part resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with polished recipes/parts, and `DEFAULT_STAMPS` with metadata. Depends only on `@facet/core`. |
+| `packages/core/core` | `@facet/core` | The contract: closed primitive/component vocabulary, catalog/component/composition policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, `expandComposition`, session/event types. |
+| `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/composition/initial-tree loading, `withInitialStage`) + `SummaryStore` (opaque rolling-summary records for brain-side context compaction). File-backed Node references via `@facet/runtime/node`. |
+| `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for primitive bricks and intrinsic components, token→CSS and recipe/part resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
+| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with component recipes/parts, and `DEFAULT_COMPOSITIONS` with metadata. Depends only on `@facet/core`. |
 
 ### Agent Authoring
 
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, and reusable prompt kit for custom LLM/tool loops. |
-| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useStamp`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
+| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useComposition`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
 
 ### Integration Adapters
 
@@ -300,7 +319,7 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper with a polished seeded first paint that composes `@facet/reference-agent`. |
+| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper with a component-based seeded first paint that composes `@facet/reference-agent`. |
 | `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
 | `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
 
@@ -363,13 +382,13 @@ back-compatible helper.
 
 ## Roadmap
 
-- [x] Core spec (closed brick vocabulary, primitive fallback, catalog policy,
-      tokens, and recipes) + RFC 6902 patches + in-process demo
+- [x] Core spec (closed primitive/component vocabulary, catalog policy, tokens,
+      and recipes) + RFC 6902 patches + in-process demo
 - [x] SSE/POST transport + a browser playground
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
 - [x] Durable `StageStore`/`Sink`/`AssetsStore` + a Postgres adapter
-- [x] `@facet/assets` default catalog + theme recipes + stamp data (node-free
-      value maps)
+- [x] `@facet/assets` default catalog + theme recipes + composition data
+      (node-free value maps)
 - [x] One-command quickstart (`facet-quickstart`) composing `@facet/reference-agent`
 - [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint

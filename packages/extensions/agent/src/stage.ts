@@ -1,16 +1,16 @@
 import {
   MAX_PATCH_OPS,
-  expandStamp,
+  expandComposition,
   isContainer,
+  type CompositionParams,
   type ExpandAt,
-  type FacetStamp,
+  type FacetComposition,
   type FacetNode,
   type FacetTree,
   type JsonPatchOperation,
   type NodeId,
   type ServerMessage,
-  type StampParams,
-  type UseStampResult,
+  type UseCompositionResult,
 } from "@facet/core";
 
 /** Escapes a token for use in an RFC 6901 JSON Pointer. */
@@ -70,10 +70,14 @@ export class Stage {
     return this;
   }
 
-  /** Expand a resolved stamp under a known parent as ordinary patch ops. */
-  useStamp(stamp: FacetStamp | undefined, params: StampParams, at: ExpandAt): UseStampResult {
+  /** Expand a resolved composition under a known parent as ordinary patch ops. */
+  useComposition(
+    composition: FacetComposition | undefined,
+    params: CompositionParams,
+    at: ExpandAt,
+  ): UseCompositionResult {
     if (!this.knownContainerIds.has(at.parent)) return { slots: {}, ids: {} };
-    const expanded = expandStamp(stamp, params, at, { existingIds: this.knownIds });
+    const expanded = expandComposition(composition, params, at, { existingIds: this.knownIds });
     if (expanded.root === undefined) return { slots: expanded.slots, ids: expanded.ids };
 
     const patchOps = Object.keys(expanded.nodes).length + 1;

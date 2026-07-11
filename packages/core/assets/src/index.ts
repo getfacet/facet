@@ -1,3 +1,3 @@
 export * from "./theme.js";
-export * from "./stamps.js";
+export * from "./compositions.js";
 export * from "./catalog.js";

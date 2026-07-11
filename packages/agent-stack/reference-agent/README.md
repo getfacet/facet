@@ -26,7 +26,7 @@ agent without the quickstart CLI/server/page wrapper.
 
 ```ts
 import { MemorySink } from "@facet/runtime";
-import { DEFAULT_CATALOG } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_COMPOSITIONS } from "@facet/assets";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
 
 const provider = resolveProvider({}, process.env);
@@ -38,6 +38,7 @@ const agent = createReferenceAgent({
   agentId: "reference",
   guide: "# My Facet page",
   catalog: DEFAULT_CATALOG,
+  compositions: DEFAULT_COMPOSITIONS,
   budgetPreset: "quickstart",
   trace: (event) => console.debug("[facet-reference-agent]", event),
 });
@@ -138,17 +139,25 @@ the model to inspect `outcome`, `visible_to_visitor`, `warnings`, and
 success. This keeps false-success cases, such as creating an unattached node
 with `set_node`, inside the repair loop.
 
+`ReferenceAgentOptions.compositions` is the operator's composition library.
+`createReferenceAgent` snapshots those documents (and the `catalog`) once at
+creation with a structured clone — later mutation of the caller's composition
+objects never alters the prompt or execution of any turn.
+
 Reference-agent catalog consumption has two paths:
 
-- Prompt path: `buildSystem(guide, assets?)` delegates to the agent-tools prompt
-  kit and includes theme names, the active catalog, stamp names, slot names, and
-  whitelisted stamp metadata. Catalog guidance includes locked theme behavior,
-  allowed brick variants, stamp policy, primitive fallback, compact-screen
-  guidance, product-quality polished brick defaults, and
-  `stamp -> high-level brick -> primitive fallback`.
-- Executor path: the same `catalog` and immutable stamp snapshot are passed as
-  stage-tool assets to the buffered executor. That makes catalog policy
-  enforceable, not just prompt text: disallowed bricks/variants/stamps, tone-only
+- Prompt path: `buildSystem(guide, assets?)` takes `PromptAssets` (`themes`,
+  `compositions`, optional `catalog`) and delegates to the agent-tools prompt
+  kit, which includes theme names, the active catalog, composition names,
+  slot names, and whitelisted composition metadata — never composition node
+  JSON or slot default values. Catalog guidance includes
+  locked theme behavior, allowed component variants, composition policy,
+  primitive fallback, compact-screen guidance, product-quality component
+  defaults, and `composition -> component -> primitive`.
+- Executor path: the same `catalog` and the immutable composition snapshot are
+  passed as stage-tool assets to the buffered executor, where `use_composition`
+  expands them server-side. That makes catalog policy
+  enforceable, not just prompt text: disallowed components/variants/compositions, tone-only
   recipe selectors outside the advertised variants, and locked theme changes are
   rejected before any patch is yielded to the runtime.
 
@@ -160,9 +169,9 @@ caps, secrets operations, or admin workflows.
 but its fixed Facet guidance now comes from `@facet/agent-tools`. This package
 still owns the reference `DEFAULT_GUIDE`, provider adapters, context assembly,
 history compaction, budgets, retries, trace events, and fallback behavior.
-The reference prompt consumes the reusable polished brick guidance from
-agent-tools; it does not duplicate renderer recipes, theme token values, stamp
-node JSON, provider keys, or visitor ids.
+The reference prompt consumes the reusable component-model guidance from
+agent-tools; it does not duplicate renderer recipes, theme token values,
+composition node JSON, provider keys, or visitor ids.
 
 Use `@facet/reference-agent` when you want Facet's runnable reference brain.
 
