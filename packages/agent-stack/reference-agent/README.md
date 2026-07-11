@@ -52,9 +52,9 @@ const agent = createReferenceAgent({
   plus event/history transcript messages and bounded current-stage summaries.
   The package root keeps the prompt helpers used by quickstart, including
   `TOOLS`, without exporting the raw agent-tools executor.
-- `harness/`: context assembly, deterministic compaction, budget normalization,
-  retry/stop classification, transcript observations, trace events, and the
-  streaming loop.
+- `harness/`: context assembly, token-calibrated sizing, LLM + deterministic
+  compaction, budget normalization, retry/stop classification, transcript
+  observations, trace events, and the streaming loop.
 - `stub.ts`: deterministic agent fixture for local tests and live-link gates.
 
 The harness is bounded by default. It compacts sink history, includes full stage
@@ -64,14 +64,46 @@ provider failures, and emits one fallback chat line when a turn otherwise
 produces no useful output. Corrupt sink history rows and malformed stage
 metadata degrade to placeholders/summaries instead of aborting prompt assembly.
 
+## LLM context compaction
+
+Pass a `summaryStore` (any `@facet/runtime` `SummaryStore`; quickstart wires
+`MemorySummaryStore` by default) and the harness compacts with the same
+provider/model it acts with, sized in tokens calibrated from provider-reported
+usage (the Anthropic adapter also enables `cache_control` prefix caching on the
+stable system+tools prefix):
+
+- **Cross-turn** — after a turn, a background task on a per-visitor serial lane
+  folds older sink history (chunked under `maxSummarizerInputChars`) into a
+  rolling, redacted, schema-validated conversation summary. It persists with a
+  monotonic covered-through marker plus a conversation-identity anchor, so a
+  wiped/reset sink rebuilds at generation 1 instead of resurrecting a foreign
+  summary. The next turn injects it as a pinned user-role data block ahead of
+  the verbatim recent turns.
+- **In-turn** — when the tool transcript passes `compactionTriggerRatio` of the
+  effective token budget, the oldest whole tool step-groups fold into one
+  summary message (pair-safe for both provider wire formats) and the stage
+  block refreshes from the tool-buffer shadow under a never-inflate guard, so
+  the turn continues instead of hard-stopping at `context_limit`.
+
+Every summarizer failure (throw, timeout, invalid output, store error,
+insufficient gain) degrades to the deterministic truncation pipeline — a turn
+is never blocked or failed by compaction. Without a `summaryStore`, no
+summarizer is constructed and behavior is exactly the deterministic pipeline.
+Compaction emits `compaction_triggered` / `compaction_done` /
+`compaction_failed` trace events with the site (`cross_turn` / `in_turn`).
+
 ## Budgets and tracing
 
 `createReferenceAgent` accepts additive budget options:
 
 - `budgetPreset`: `"quickstart"` (default), `"hosted"`, or `"local-dev"`.
 - `budget`: field-level overrides for steps, tool calls, context/history/stage
-  character limits, observation/final-text caps, provider retries, and retry
-  backoff.
+  character limits, observation/final-text caps, provider retries, retry
+  backoff, and the token/compaction model (`maxContextTokens`,
+  `compactionTriggerRatio`/`compactionTargetRatio`,
+  `minRecentTurnsVerbatim`/`minRecentStepsVerbatim`, `maxSummaryTokens`,
+  `maxSummarizerInputChars`, `summarizerTimeoutMs`/`summarizerRetries`,
+  `compactionCooldownSteps`, `contextWindowTokensDefault`).
 - Legacy `maxSteps` and `historyTurns` still work when the corresponding
   explicit budget override is absent.
 

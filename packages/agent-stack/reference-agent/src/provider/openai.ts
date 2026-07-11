@@ -2,6 +2,7 @@ import {
   TURN_TIMEOUT_MS,
   isRecord,
   postJson,
+  readProviderUsage,
   type FetchImpl,
   type ProviderOptions,
   type ProviderStep,
@@ -13,6 +14,7 @@ import {
 export const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
 
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
+const OPENAI_CONTEXT_WINDOW_TOKENS = 128_000;
 
 /** Translate provider-agnostic messages into OpenAI chat messages. */
 function toOpenAiMessages(system: string, messages: readonly TurnMessage[]): unknown[] {
@@ -72,7 +74,8 @@ function parseOpenAiStep(body: unknown): ProviderStep {
     }
     toolCalls.push({ id, name, input });
   }
-  return { text, toolCalls };
+  const usage = readProviderUsage(body["usage"], "prompt_tokens", "completion_tokens");
+  return { text, toolCalls, ...(usage !== undefined ? { usage } : {}) };
 }
 
 export function createOpenAiProvider(
@@ -85,6 +88,7 @@ export function createOpenAiProvider(
   return {
     name: "openai",
     model,
+    contextWindowTokens: OPENAI_CONTEXT_WINDOW_TOKENS,
     async run(turn, tools) {
       const json = await postJson(
         fetchImpl,

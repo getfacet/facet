@@ -46,7 +46,7 @@ These packages are the reusable core of Facet:
 | Package | Role | Current gap |
 | --- | --- | --- |
 | `@facet/core` | Closed stage contract: primitive bricks, Facet-owned intrinsic components, catalog/component/composition policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
-| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, and `AssetsStore` interfaces and memory/file references for catalog/theme/composition/initial-tree assets. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
+| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` interfaces and memory/file references for catalog/theme/composition/initial-tree assets and opaque rolling-summary records. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
 | `@facet/react` | Renderer, recipe/theme-to-CSS mapping, recipe-part rendering for intrinsic components, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
 | `@facet/assets` | Default catalog, component recipes/parts, and default composition definitions with metadata (`DEFAULT_COMPOSITIONS`). | Catalog/theme/composition schemas need fuller authoring docs and editor-facing examples. |
 
@@ -91,7 +91,7 @@ path.
 | `@facet/server` | Reference SSE/POST transport for local/self-hosted single-operator use. | Not a public multi-tenant edge: no tenant/project isolation, browser auth, default agent auth, metering, rate limits, billing, abuse controls, admin auth, audit log, secrets handling, or custom-domain routing. |
 | `@facet/client` | Reference browser transports for `@facet/server` plus the `FacetTransport` usage pattern. | `SseTransport` has no credential seam by design; sensitive or multi-tenant deployments should implement their own `FacetTransport`. |
 | `@facet/agent-client` | Reference external-agent dial-in SDK for the reference SSE/POST agent channel. | Uses reference server auth semantics; hosted platforms should add project-scoped tokens or provide a platform-specific client. |
-| `@facet/store-postgres` | Reference durable `StageStore`, `Sink`, and `AssetsStore` adapter backed by Postgres. | This is Facet persistence only, not a platform schema; hosted products need their own tenant/project/page/token/usage/audit schema. |
+| `@facet/store-postgres` | Reference durable `StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` adapter backed by Postgres. | This is Facet persistence only, not a platform schema; hosted products need their own tenant/project/page/token/usage/audit schema. |
 | `@facet/reference-agent` | Reference LLM brain: providers, prompt policy, bounded harness, and deterministic test fixture. | Not a customer production brain. It should stay a reference harness and test surface. |
 
 The quickstart/playground native consumers are local/reference fallback paths:

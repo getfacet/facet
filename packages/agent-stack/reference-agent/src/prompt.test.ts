@@ -12,6 +12,8 @@ import type {
   ServerMessage,
 } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
+import type { TurnMessage } from "./provider.js";
+import { redactSensitiveText } from "./prompt/messages.js";
 import type { CollectedEvent } from "@facet/core";
 import {
   FACET_ASSET_PRIVACY_PROMPT,
@@ -967,5 +969,62 @@ describe("buildInitialMessages", () => {
     expect(prompt).not.toContain("RAW_JSON_SENTINEL");
     expect(prompt).not.toContain('"nodes"');
     expect(prompt).not.toContain('"type":"section"');
+  });
+});
+
+describe("redactSensitiveText", () => {
+  it("redacts bearer tokens, sk- keys, and sensitive name/value pairs, keeping plain text", () => {
+    const input =
+      'send sk-abc123 and Bearer xyz.789 plus {"password": "hunter2"} and {"api_key": "topsecret"} but keep hello';
+    const out = redactSensitiveText(input);
+    expect(out).not.toContain("sk-abc123");
+    expect(out).not.toContain("xyz.789");
+    expect(out).not.toContain("hunter2");
+    expect(out).not.toContain("topsecret");
+    expect(out).toContain("[redacted]");
+    expect(out).toContain("hello");
+  });
+
+  it("returns non-sensitive text unchanged", () => {
+    const input = "the visitor wants a pricing table with three tiers";
+    expect(redactSensitiveText(input)).toBe(input);
+  });
+
+  it("stays linear on a pathological unclosed-quote input (no regex backtracking stall)", () => {
+    // 200K chars of `"tokentokentoken…` with no closing quote: the unbounded
+    // pattern took seconds here; the bounded one must stay well under 500ms.
+    const hostile = `"${"token".repeat(40_000)}`;
+    const startedAt = performance.now();
+    expect(() => redactSensitiveText(hostile)).not.toThrow();
+    expect(performance.now() - startedAt).toBeLessThan(500);
+  });
+});
+
+describe("buildInitialMessages stage options", () => {
+  it("passes stage bounds through to the final message's stage rendering", () => {
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box" as const, children: ["t"] },
+        t: { id: "t", type: "text" as const, value: "x".repeat(300) },
+      },
+    };
+    const session: FacetSession = {
+      agentId: "quickstart",
+      visitor: { visitorId: "v1" },
+      stage,
+    };
+    const event: ClientEvent = { kind: "message", text: "hi" };
+
+    const dflt = buildInitialMessages(event, session, [], 0);
+    const bounded = buildInitialMessages(event, session, [], 0, { maxJsonChars: 100 });
+
+    const last = (messages: readonly TurnMessage[]): string => {
+      const message = messages[messages.length - 1];
+      return message !== undefined && "content" in message ? message.content : "";
+    };
+    // Default bounds fit the ~400-char JSON; a 100-char cap forces summary mode.
+    expect(last(dflt)).toContain("CURRENT STAGE: {");
+    expect(last(bounded)).toContain("CURRENT STAGE SUMMARY");
   });
 });

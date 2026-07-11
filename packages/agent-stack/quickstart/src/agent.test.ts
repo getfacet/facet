@@ -15,7 +15,8 @@ import type {
   ServerMessage,
 } from "@facet/core";
 import { FacetRuntime, MemorySink } from "@facet/runtime";
-import { createQuickstartAgent } from "./agent.js";
+import { composeQuickstartAgent, createQuickstartAgent } from "./agent.js";
+import type { ConversationSummary, Summarizer } from "./agent.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
 import { DEFAULT_GUIDE } from "./prompt.js";
 import type { ProviderStep, ProviderTurn, QuickstartProvider, ToolCall } from "./provider.js";
@@ -1272,6 +1273,108 @@ describe("createQuickstartAgent tool loop", () => {
     expect(system).toContain("hero");
     // Theme documents reach the model by NAME only — the raw CSS value never does.
     expect(system).not.toContain("#ff00ff");
+  });
+});
+
+const NOOP_SUMMARY: ConversationSummary = {
+  version: 1,
+  visitor: "",
+  pageDecisions: "",
+  collectedData: "",
+  pending: "",
+  attempts: "",
+  omitted: "",
+};
+const noopSummarizer: Summarizer = () => Promise.resolve(NOOP_SUMMARY);
+
+describe("quickstart default summary store wiring (compaction)", () => {
+  it("composeQuickstartAgent wires a MemorySummaryStore by default, constructing the summarizer", () => {
+    const factory = vi.fn(() => noopSummarizer);
+    const agent = composeQuickstartAgent({
+      provider: providerOf(END),
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      summarizerFactory: factory,
+    });
+    // The reference agent constructs the summarizer eagerly only when a store is
+    // present, so a single call proves the default MemorySummaryStore was wired.
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(agent).toBeTypeOf("function");
+  });
+
+  it("passes a caller-supplied (BYO) summary store through untouched (R5)", async () => {
+    // A durable store supplied by the deployer must never be silently swapped
+    // for a fresh MemorySummaryStore (that would downgrade persisted compaction
+    // memory to volatile state).
+    const getCalls: string[] = [];
+    const byoStore: import("@facet/runtime").SummaryStore = {
+      get: (agentId: string, visitorId: string) => {
+        getCalls.push(`${agentId}/${visitorId}`);
+        return Promise.resolve(undefined);
+      },
+      put: () => Promise.resolve(true),
+      delete: () => Promise.resolve(),
+    };
+    const factory = vi.fn(() => noopSummarizer);
+    const agent = composeQuickstartAgent({
+      provider: providerOf(END),
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      summaryStore: byoStore,
+      summarizerFactory: factory,
+    });
+    expect(factory).toHaveBeenCalledTimes(1);
+
+    // Drive one turn: context assembly reads the summary via the BYO store —
+    // proof the wrapper passed OUR instance through instead of its default.
+    await runAgent(agent, { kind: "message", text: "hi" });
+    expect(getCalls.length).toBeGreaterThan(0);
+    expect(getCalls[0]).toBe("quickstart/v1");
+  });
+
+  it("summaryStore: null opts out — no summarizer is constructed, and a turn schedules no compaction", async () => {
+    const factory = vi.fn(() => noopSummarizer);
+    const tasks: Promise<void>[] = [];
+    const agent = composeQuickstartAgent({
+      provider: providerOf(toolStep(call("say", { text: "ok" })), END),
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      summaryStore: null,
+      summarizerFactory: factory,
+      onBackgroundTask: (task) => tasks.push(task),
+    });
+    // Not constructed at creation …
+    expect(factory).not.toHaveBeenCalled();
+    // … and running a turn schedules no background compaction (no store ⇒ no task).
+    await runAgent(agent, { kind: "message", text: "hi" });
+    await Promise.all(tasks);
+    expect(factory).not.toHaveBeenCalled();
+    expect(tasks).toHaveLength(0);
+  });
+
+  it("the deterministic stub path constructs no summarizer and stays deterministic", async () => {
+    const factory = vi.fn(() => noopSummarizer);
+    // The stub is a separate agent with no compaction seam: it is never composed
+    // through composeQuickstartAgent, so it wires no store and builds no
+    // summarizer — the deterministic Tier-1 boot stays byte-stable.
+    async function run(): Promise<ServerMessage[][]> {
+      const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
+      const visitor = { visitorId: "v" };
+      const events: ClientEvent[] = [
+        { kind: "visit", visitor },
+        { kind: "message", text: "hello" },
+        {
+          kind: "tap",
+          action: { kind: "agent", name: "submit", collect: "signup" },
+          fields: { name: "Ada", email: "a@b.c" },
+        },
+      ];
+      const out: ServerMessage[][] = [];
+      for (const event of events) out.push([...(await rt.handle(visitor, event)).messages]);
+      return out;
+    }
+    expect(await run()).toEqual(await run());
+    expect(factory).not.toHaveBeenCalled();
   });
 });
 

@@ -1,12 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_TREE, type ClientEvent, type FacetSession, type ServerMessage } from "@facet/core";
-import type { Sink, StoredEvent } from "@facet/runtime";
+import {
+  EMPTY_TREE,
+  type ClientEvent,
+  type FacetNode,
+  type FacetSession,
+  type FacetTree,
+  type ServerMessage,
+} from "@facet/core";
+import type { Sink, StoredEvent, SummaryStore } from "@facet/runtime";
 import type { StageToolBuffer, StageToolBufferOutcome, ToolSpec } from "@facet/agent-tools";
 
 import { normalizeBudget, type ReferenceAgentBudget } from "./budget.js";
 import { runReferenceAgentLoop, type ReferenceAgentLoopBufferFactory } from "./loop.js";
+import type { ConversationSummary, Summarizer, SummarizerRequest } from "./summary.js";
 import type { ReferenceAgentTraceEvent } from "./trace.js";
-import type { ProviderStep, ProviderTurn, QuickstartProvider, ToolCall } from "../provider.js";
+import type {
+  ProviderStep,
+  ProviderTurn,
+  QuickstartProvider,
+  ToolCall,
+  TurnMessage,
+} from "../provider.js";
 
 const SESSION: FacetSession = {
   agentId: "quickstart",
@@ -34,6 +48,10 @@ interface RunLoopOptions {
   readonly session?: FacetSession;
   readonly sink?: Sink;
   readonly system?: string;
+  readonly tools?: readonly ToolSpec[];
+  readonly summarizer?: Summarizer;
+  readonly contextWindowTokens?: number;
+  readonly summaryStore?: Pick<SummaryStore, "get">;
 }
 
 function call(id: string, name: string, input: unknown = {}): ToolCall {
@@ -114,6 +132,12 @@ async function runLoop(options: RunLoopOptions): Promise<{
     agentId: "quickstart",
     budget: options.budget ?? testBudget(),
     bufferFactory: options.bufferFactory ?? (() => bufferWith()),
+    ...(options.tools !== undefined ? { tools: options.tools } : {}),
+    ...(options.summarizer !== undefined ? { summarizer: options.summarizer } : {}),
+    ...(options.contextWindowTokens !== undefined
+      ? { contextWindowTokens: options.contextWindowTokens }
+      : {}),
+    ...(options.summaryStore !== undefined ? { summaryStore: options.summaryStore } : {}),
     trace: (event) => {
       traceEvents.push(event);
     },
@@ -513,5 +537,563 @@ describe("runReferenceAgentLoop", () => {
 
     expect(saysOf(result.messages)).toEqual(["final final final final "]);
     expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+});
+
+const TRANSCRIPT_MARKER = "[transcript compacted:";
+const SUMMARY_MARKER = "CONVERSATION SUMMARY";
+
+function bigObservationBuffer(chars = 200): FakeStageToolBuffer {
+  return bufferWith([outcomeWith("x".repeat(chars))]);
+}
+
+function toolSteps(count: number): ProviderStep[] {
+  return Array.from({ length: count }, (_, index) =>
+    toolStep(call(`t-${String(index)}`, "inspect_stage")),
+  );
+}
+
+/** Tool steps that each carry a provider-reported `inputTokens` usage count. */
+function usageToolSteps(count: number, inputTokens: number): ProviderStep[] {
+  return Array.from({ length: count }, (_, index) => ({
+    text: "tool step",
+    toolCalls: [call(`t-${String(index)}`, "inspect_stage")],
+    usage: { inputTokens },
+  }));
+}
+
+/** A box root with `nodeCount` text children — a tree large enough to render as
+ * full JSON (well past a small char cap) yet summarize to a bounded block. */
+function wideTree(nodeCount: number, valuePrefix: string): FacetTree {
+  const childIds = Array.from({ length: nodeCount }, (_, index) => `n${String(index)}`);
+  const nodes: Record<string, FacetNode> = {
+    root: { id: "root", type: "box", children: childIds },
+  };
+  for (const id of childIds) {
+    nodes[id] = { id, type: "text", value: `${valuePrefix}-${id}-node-value` };
+  }
+  return { root: "root", nodes };
+}
+
+function hasCompactionTriggered(traceEvents: readonly ReferenceAgentTraceEvent[]): boolean {
+  return traceEvents.some((event) => event.type === "compaction_triggered");
+}
+
+function summarizerOf(
+  result: ConversationSummary | undefined,
+  requests: SummarizerRequest[],
+): Summarizer {
+  return async (request) => {
+    requests.push(request);
+    return result;
+  };
+}
+
+function rejectingSummarizer(requests: SummarizerRequest[]): Summarizer {
+  return async (request) => {
+    requests.push(request);
+    throw new Error("summarizer boom");
+  };
+}
+
+function sampleSummary(): ConversationSummary {
+  return {
+    version: 1,
+    visitor: "returning visitor Ada",
+    pageDecisions: "built a dashboard",
+    collectedData: "",
+    pending: "",
+    attempts: "",
+    omitted: "",
+  };
+}
+
+function userContentsOf(turn: ProviderTurn | undefined): readonly string[] {
+  return (turn?.messages ?? []).flatMap((message) =>
+    message.role === "user" ? [message.content] : [],
+  );
+}
+
+function turnWith(provider: MockProvider, needle: string): ProviderTurn | undefined {
+  return provider.turns.find((turn) =>
+    userContentsOf(turn).some((content) => content.includes(needle)),
+  );
+}
+
+/** Every `tool_result` in a sent turn must sit under an open `assistant_tools`. */
+function assertTurnPairIntegrity(messages: readonly TurnMessage[]): void {
+  let openToolUse = false;
+  for (const message of messages) {
+    if (message.role === "assistant_tools") {
+      openToolUse = true;
+    } else if (message.role === "tool_result") {
+      expect(openToolUse).toBe(true);
+    } else {
+      openToolUse = false;
+    }
+  }
+}
+
+function compactionBudget(overrides: Partial<ReferenceAgentBudget> = {}): ReferenceAgentBudget {
+  return testBudget({
+    maxContextTokens: 300,
+    minRecentStepsVerbatim: 2,
+    compactionCooldownSteps: 50,
+    ...overrides,
+  });
+}
+
+describe("in-turn compaction", () => {
+  it("compacts the oldest step groups mid-turn and finishes with provider_stop, not context_limit", async () => {
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    const compactedTurn = turnWith(provider, TRANSCRIPT_MARKER);
+    expect(compactedTurn).toBeDefined();
+    // Exactly one injected marker replaces the compacted groups.
+    expect(
+      userContentsOf(compactedTurn).filter((content) => content.includes(TRANSCRIPT_MARKER)),
+    ).toHaveLength(1);
+    // The most recent step groups survive verbatim as real tool_result messages.
+    expect((compactedTurn?.messages ?? []).some((m) => m.role === "tool_result")).toBe(true);
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+    expect(saysOf(result.messages)).toEqual(["done"]);
+  });
+
+  it("calls a summarizer with kind 'transcript' and injects the returned summary block", async () => {
+    const requests: SummarizerRequest[] = [];
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+      summarizer: summarizerOf(sampleSummary(), requests),
+    });
+
+    expect(requests).not.toHaveLength(0);
+    expect(requests[0]?.kind).toBe("transcript");
+    expect(requests[0]?.content).toContain("inspect_stage");
+
+    const summaryTurn = turnWith(provider, SUMMARY_MARKER);
+    expect(summaryTurn).toBeDefined();
+    expect(userContentsOf(summaryTurn).join("\n")).toContain("returning visitor Ada");
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  it("falls back to a deterministic marker when the summarizer returns undefined", async () => {
+    const requests: SummarizerRequest[] = [];
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+      summarizer: summarizerOf(undefined, requests),
+    });
+
+    expect(requests).not.toHaveLength(0);
+    expect(turnWith(provider, TRANSCRIPT_MARKER)).toBeDefined();
+    expect(turnWith(provider, SUMMARY_MARKER)).toBeUndefined();
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  it("falls back to a deterministic marker when the summarizer rejects", async () => {
+    const requests: SummarizerRequest[] = [];
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+      summarizer: rejectingSummarizer(requests),
+    });
+
+    expect(requests).not.toHaveLength(0);
+    expect(turnWith(provider, TRANSCRIPT_MARKER)).toBeDefined();
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  it("leaves the post-compaction transcript pair-safe (no orphan tool_result)", async () => {
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    const compactedTurn = turnWith(provider, TRANSCRIPT_MARKER);
+    expect(compactedTurn).toBeDefined();
+    const messages = compactedTurn?.messages ?? [];
+    // The first tool_result in the sent turn is never dangling.
+    assertTurnPairIntegrity(messages);
+  });
+
+  it("emits compaction_triggered and compaction_done trace events for the in-turn site", async () => {
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+      summarizer: summarizerOf(sampleSummary(), []),
+    });
+
+    const triggered = result.traceEvents.find((event) => event.type === "compaction_triggered");
+    expect(triggered).toMatchObject({ site: "in_turn" });
+    if (triggered?.type === "compaction_triggered") {
+      expect(triggered.estimatedTokens).toBeGreaterThan(0);
+      expect(triggered.budgetTokens).toBeGreaterThan(0);
+    }
+    const done = result.traceEvents.find((event) => event.type === "compaction_done");
+    expect(done).toMatchObject({ site: "in_turn", generation: 1 });
+    if (done?.type === "compaction_done") {
+      expect(done.coveredThrough).toBeGreaterThan(0);
+      expect(done.afterTokens).toBeLessThan(done.beforeTokens);
+    }
+    expect(result.traceEvents.filter((event) => event.type === "compaction_failed")).toHaveLength(
+      0,
+    );
+  });
+
+  it("emits compaction_failed for the in-turn site when the summarizer yields nothing", async () => {
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+      summarizer: summarizerOf(undefined, []),
+    });
+
+    const failed = result.traceEvents.find((event) => event.type === "compaction_failed");
+    expect(failed).toMatchObject({ site: "in_turn", reason: "summarizer_failed" });
+    expect(result.traceEvents.filter((event) => event.type === "compaction_done")).toHaveLength(0);
+  });
+
+  it("suppresses a second compaction within the cooldown window", async () => {
+    const provider = providerOf(...toolSteps(8), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget({ compactionCooldownSteps: 40 }),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    expect(
+      result.traceEvents.filter((event) => event.type === "compaction_triggered"),
+    ).toHaveLength(1);
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  it("compacts again once the cooldown has elapsed", async () => {
+    const provider = providerOf(...toolSteps(8), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget({ compactionCooldownSteps: 0 }),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    expect(
+      result.traceEvents.filter((event) => event.type === "compaction_triggered").length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("traces deterministic marker compaction as compaction_done when no summarizer is configured", async () => {
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    expect(result.traceEvents.some((event) => event.type === "compaction_done")).toBe(true);
+    expect(result.traceEvents.filter((event) => event.type === "compaction_failed")).toHaveLength(
+      0,
+    );
+  });
+
+  it("refreshes the CURRENT STAGE block from the buffer's mutated shadow tree", async () => {
+    const provider = providerOf(...toolSteps(4), textStep("done"));
+    const shadowTree: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["beacon"] },
+        beacon: { id: "beacon", type: "text", value: "shadow-beacon-value" },
+      },
+    };
+    // The initial session stage renders as full JSON and is STRICTLY LARGER than
+    // the shadow refresh, so the never-inflate guard takes the full-JSON refresh
+    // path (an empty initial stage would force a summary-mode refresh). Its stale
+    // beacon value must NOT survive the refresh — the current shadow does.
+    const staleSession: FacetSession = {
+      ...SESSION,
+      stage: {
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["beacon"] },
+          beacon: {
+            id: "beacon",
+            type: "text",
+            value: "stale-beacon-value-strictly-longer-than-the-shadow-value",
+          },
+        },
+      },
+    };
+    const base = bigObservationBuffer();
+    const buffer: StageToolBuffer = {
+      run: (callToRun) => base.run(callToRun),
+      resetEmittedPatchOps: () => {
+        base.resetEmittedPatchOps();
+      },
+      drainUnresolved: () => base.drainUnresolved(),
+      get shadow() {
+        return shadowTree;
+      },
+    };
+
+    await runLoop({
+      provider,
+      session: staleSession,
+      bufferFactory: bufferFactoryFor(buffer),
+      budget: compactionBudget(),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    const compactedTurn = turnWith(provider, TRANSCRIPT_MARKER);
+    expect(compactedTurn).toBeDefined();
+    const contents = userContentsOf(compactedTurn);
+    // The refreshed stage block renders the CURRENT shadow, not the stale turn-start tree...
+    expect(contents.join("\n")).toContain("shadow-beacon-value");
+    // ...and REPLACES the original event+stage message instead of duplicating it.
+    expect(contents.filter((content) => content.includes("CURRENT STAGE")).length).toBe(1);
+  });
+
+  it("keeps more recent step groups verbatim when the landing target allows it", async () => {
+    const run = async (compactionTargetRatio: number): Promise<number> => {
+      const provider = providerOf(...toolSteps(7), textStep("done"));
+      await runLoop({
+        provider,
+        bufferFactory: bufferFactoryFor(bigObservationBuffer(60)),
+        budget: compactionBudget({ compactionTargetRatio, maxSummaryTokens: 25 }),
+        contextWindowTokens: 300,
+        tools: [],
+      });
+      const compactedTurn = turnWith(provider, TRANSCRIPT_MARKER);
+      expect(compactedTurn).toBeDefined();
+      return (compactedTurn?.messages ?? []).filter((m) => m.role === "tool_result").length;
+    };
+
+    const generous = await run(0.7);
+    const tight = await run(0.05);
+    expect(generous).toBeGreaterThan(tight);
+  });
+
+  it("stops with context_limit when compaction cannot bring the turn under the hard budget", async () => {
+    const provider = providerOf(...toolSteps(6));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer()),
+      budget: compactionBudget({ maxContextTokens: 150, minRecentStepsVerbatim: 3 }),
+      contextWindowTokens: 150,
+      tools: [],
+    });
+
+    expect(provider.turns).toHaveLength(4);
+    expect(stopReasons(result.traceEvents)).toEqual(["context_limit"]);
+  });
+
+  // Calibration wiring: `step.usage.inputTokens` must reach the estimator as the
+  // reported-tokens argument. A huge inputTokens count drives the chars/token
+  // ratio to its LOW clamp, so token estimates RISE and compaction triggers;
+  // a tiny count drives it HIGH, so estimates SHRINK and compaction stays away.
+  // The two runs share one budget so ONLY the reported usage differs — deleting
+  // the `calibrate` call (cpt frozen at the default) or swapping its arguments
+  // flips at least one assertion.
+  it("feeds provider inputTokens into the estimator so a LOW chars-per-token calibration triggers compaction", async () => {
+    const provider = providerOf(...usageToolSteps(8, 5000), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer(150)),
+      budget: compactionBudget({ maxContextTokens: 800 }),
+      contextWindowTokens: 800,
+      tools: [],
+    });
+
+    expect(hasCompactionTriggered(result.traceEvents)).toBe(true);
+  });
+
+  it("feeds provider inputTokens into the estimator so a HIGH chars-per-token calibration suppresses compaction", async () => {
+    const provider = providerOf(...usageToolSteps(8, 1), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer(150)),
+      budget: compactionBudget({ maxContextTokens: 800 }),
+      contextWindowTokens: 800,
+      tools: [],
+    });
+
+    expect(hasCompactionTriggered(result.traceEvents)).toBe(false);
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  // Never-inflate guard: the initial assembly falls back to a small stage SUMMARY
+  // (full JSON of a large stage does not fit the small context cap), but the
+  // buffer's mutated shadow is large. A refresh that re-rendered full JSON would
+  // GROW the turn past budget; the guard downgrades the refresh to summary mode
+  // so compaction only ever shrinks. The turn finishes cleanly and no
+  // compaction_done reports afterTokens above beforeTokens.
+  it("never inflates the turn when refreshing a summary-mode stage from a large shadow", async () => {
+    const largeStage = wideTree(40, "session");
+    const largerShadow = wideTree(48, "shadow");
+    const base = bigObservationBuffer(200);
+    const buffer: StageToolBuffer = {
+      run: (callToRun) => base.run(callToRun),
+      resetEmittedPatchOps: () => {
+        base.resetEmittedPatchOps();
+      },
+      drainUnresolved: () => base.drainUnresolved(),
+      get shadow() {
+        return largerShadow;
+      },
+    };
+    const provider = providerOf(...toolSteps(8), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      session: { ...SESSION, stage: largeStage },
+      bufferFactory: bufferFactoryFor(buffer),
+      budget: testBudget({
+        maxContextChars: 2000,
+        maxStageJsonChars: 20000,
+        maxStageSummaryNodes: 8,
+        maxContextTokens: 300,
+        minRecentStepsVerbatim: 2,
+        compactionCooldownSteps: 0,
+      }),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+    const doneEvents = result.traceEvents.filter((event) => event.type === "compaction_done");
+    expect(doneEvents).not.toHaveLength(0);
+    for (const event of doneEvents) {
+      if (event.type === "compaction_done") {
+        expect(event.afterTokens).toBeLessThanOrEqual(event.beforeTokens);
+      }
+    }
+  });
+
+  // Char-trigger path (Finding 2): the token budget is set high enough that the
+  // token trigger does NOT fire as the char cap is crossed, so only the char cap
+  // being exceeded mid-turn can drive the first compaction. Compaction runs (a
+  // deterministic marker appears) and the loop continues to a clean stop instead
+  // of hard-stopping the instant chars crossed the cap.
+  it("compacts on the char cap alone when the token trigger has not fired, then continues", async () => {
+    const provider = providerOf(...toolSteps(8), textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(bigObservationBuffer(200)),
+      budget: testBudget({
+        maxContextChars: 1500,
+        maxContextTokens: 600,
+        maxStageSummaryNodes: 8,
+        minRecentStepsVerbatim: 2,
+        compactionCooldownSteps: 0,
+      }),
+      contextWindowTokens: 600,
+      tools: [],
+    });
+
+    expect(hasCompactionTriggered(result.traceEvents)).toBe(true);
+    expect(turnWith(provider, TRANSCRIPT_MARKER)).toBeDefined();
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+});
+
+describe("context_compacted trace accounting", () => {
+  const historyEntries = (count: number): StoredEvent[] =>
+    Array.from({ length: count }, (_, index) => ({
+      at: index,
+      event: { kind: "message", text: `turn ${String(index)}` },
+      messages: [{ kind: "say", text: `reply ${String(index)}` }],
+    }));
+
+  it("counts included turns excluding the compaction note", async () => {
+    const provider = providerOf(textStep("done"));
+    const result = await runLoop({
+      provider,
+      sink: sinkWith(historyEntries(6)),
+      budget: testBudget({ maxHistoryTurns: 3 }),
+    });
+
+    const event = result.traceEvents.find((traced) => traced.type === "context_compacted");
+    expect(event).toMatchObject({
+      includedHistoryTurns: 3,
+      droppedHistoryTurns: 3,
+      originalHistoryTurns: 6,
+    });
+  });
+
+  it("counts included turns excluding the pinned summary block and the note", async () => {
+    const payload = {
+      version: 1,
+      visitor: "v",
+      pageDecisions: "d",
+      collectedData: "c",
+      pending: "p",
+      attempts: "a",
+      omitted: "o",
+      anchor: "0:message",
+    };
+    const summaryStore: Pick<SummaryStore, "get"> = {
+      get: () => Promise.resolve({ payload, coveredThrough: 4, generation: 1 }),
+    };
+    const provider = providerOf(textStep("done"));
+    const result = await runLoop({
+      provider,
+      sink: sinkWith(historyEntries(8)),
+      summaryStore,
+      budget: testBudget({ maxHistoryTurns: 2 }),
+    });
+
+    const event = result.traceEvents.find((traced) => traced.type === "context_compacted");
+    // 7 messages = summary block + note + 2 turns (4 msgs) + final event/stage:
+    // exactly 2 replayed turns, never 3 (the pre-fix over-count).
+    expect(event).toMatchObject({ includedHistoryTurns: 2, droppedHistoryTurns: 2 });
   });
 });

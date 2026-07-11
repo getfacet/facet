@@ -195,6 +195,9 @@ describe("reference-agent barrel", () => {
       | "batch_yield"
       | "stop"
       | "turn_error"
+      | "compaction_triggered"
+      | "compaction_done"
+      | "compaction_failed"
     >();
     expectTypeOf<ReferenceAgentTraceEvent>().toMatchTypeOf<{
       readonly type: ReferenceAgentTraceEventType;

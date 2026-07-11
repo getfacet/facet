@@ -10,7 +10,7 @@ export function sessionFilePath(
   dir: string,
   agentId: string,
   visitorId: string,
-  ext: "json" | "jsonl",
+  ext: "json" | "jsonl" | "summary.json",
 ): string {
   const name = Buffer.from(sessionKey(agentId, visitorId)).toString("base64url");
   return join(dir, `${name}.${ext}`);

@@ -18,9 +18,10 @@ import type {
   FacetTheme,
   FacetTree,
 } from "@facet/core";
-import { createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
+import { resolveProvider } from "@facet/reference-agent";
 import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
+import { composeQuickstartAgent } from "./agent.js";
 import { QUICKSTART_INITIAL_STAGE, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 
@@ -207,7 +208,12 @@ export async function runCli(
     error(NO_KEY_MESSAGE);
     return 1;
   }
-  const agent: FacetAgent = createQuickstartAgent({
+  // Compaction ON by default: composeQuickstartAgent seeds a fresh
+  // MemorySummaryStore so a long local conversation compacts instead of
+  // replaying in full. The summary store lives entirely inside the agent
+  // closure (background lane + Sink history), so the server boot needs no
+  // summary parameter — it only forwards events to this agent.
+  const agent: FacetAgent = composeQuickstartAgent({
     provider,
     guide,
     sink,

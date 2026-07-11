@@ -158,7 +158,9 @@ const anthropicCase: AdapterCase = {
   toolResponse: (id, name, input) => ({ content: [{ type: "tool_use", id, name, input }] }),
   malformed: {},
   assertRequest: (body, turn) => {
-    expect(body["system"]).toBe(turn.system);
+    expect(body["system"]).toEqual([
+      { type: "text", text: turn.system, cache_control: { type: "ephemeral" } },
+    ]);
     expect(body["messages"]).toEqual(turn.messages);
     expect(typeof body["max_tokens"]).toBe("number");
     expect(body["max_tokens"]).toBeGreaterThan(0);
@@ -450,6 +452,181 @@ describe("anthropic tool-loop wire translation", () => {
     for (let i = 1; i < roles.length; i += 1) {
       expect(roles[i] === "user" && roles[i - 1] === "user").toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provider-reported usage + context window (WU-4)
+// ---------------------------------------------------------------------------
+
+interface UsageCase {
+  readonly label: "openai" | "anthropic";
+  readonly create: (apiKey: string, fetchImpl?: typeof fetch) => QuickstartProvider;
+  readonly contextWindowTokens: number;
+  /** An ok text response carrying provider usage. */
+  readonly usageResponse: (inputTokens: number, outputTokens: number) => unknown;
+  /** An ok text response whose usage fields are the wrong types. */
+  readonly malformedUsageResponse: unknown;
+  /** An ok text response with a usage field where only the input count is valid. */
+  readonly partialUsageResponse: unknown;
+  /** An ok text response with no usage field at all. */
+  readonly noUsageResponse: unknown;
+}
+
+const openaiUsageCase: UsageCase = {
+  label: "openai",
+  create: createOpenAiProvider,
+  contextWindowTokens: 128_000,
+  usageResponse: (inputTokens, outputTokens) => ({
+    choices: [{ message: { content: "ok" } }],
+    usage: { prompt_tokens: inputTokens, completion_tokens: outputTokens },
+  }),
+  malformedUsageResponse: {
+    choices: [{ message: { content: "ok" } }],
+    usage: { prompt_tokens: "120", completion_tokens: null },
+  },
+  partialUsageResponse: {
+    choices: [{ message: { content: "ok" } }],
+    usage: { prompt_tokens: 77, completion_tokens: "nope" },
+  },
+  noUsageResponse: { choices: [{ message: { content: "ok" } }] },
+};
+
+const anthropicUsageCase: UsageCase = {
+  label: "anthropic",
+  create: createAnthropicProvider,
+  contextWindowTokens: 200_000,
+  usageResponse: (inputTokens, outputTokens) => ({
+    content: [{ type: "text", text: "ok" }],
+    usage: { input_tokens: inputTokens, output_tokens: outputTokens },
+  }),
+  malformedUsageResponse: {
+    content: [{ type: "text", text: "ok" }],
+    usage: { input_tokens: "120", output_tokens: null },
+  },
+  partialUsageResponse: {
+    content: [{ type: "text", text: "ok" }],
+    usage: { input_tokens: 77, output_tokens: "nope" },
+  },
+  noUsageResponse: { content: [{ type: "text", text: "ok" }] },
+};
+
+describe.each([openaiUsageCase, anthropicUsageCase])(
+  "$label provider usage + context window",
+  (adapter) => {
+    it("reports its contextWindowTokens", () => {
+      const provider = adapter.create(API_KEY, hangingFetch);
+      expect(provider.contextWindowTokens).toBe(adapter.contextWindowTokens);
+    });
+
+    it("maps present usage numbers onto the step", async () => {
+      const { fetchImpl } = createCapturingFetch(okJson(adapter.usageResponse(123, 45)));
+      const step = await adapter.create(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+      expect(step.usage).toEqual({ inputTokens: 123, outputTokens: 45 });
+    });
+
+    it("leaves usage absent when the response omits it", async () => {
+      const { fetchImpl } = createCapturingFetch(okJson(adapter.noUsageResponse));
+      const step = await adapter.create(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+      expect(step.usage).toBeUndefined();
+    });
+
+    it("never throws on fully malformed usage and drops the bad fields", async () => {
+      const { fetchImpl } = createCapturingFetch(okJson(adapter.malformedUsageResponse));
+      const step = await adapter.create(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+      expect(step.usage).toBeUndefined();
+    });
+
+    it("keeps a valid usage field and drops a malformed sibling", async () => {
+      const { fetchImpl } = createCapturingFetch(okJson(adapter.partialUsageResponse));
+      const step = await adapter.create(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+      expect(step.usage).toEqual({ inputTokens: 77 });
+    });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Anthropic input_tokens is INCLUSIVE of the cached prefix: with prompt caching
+// on, `input_tokens` reports only the uncached suffix, so the adapter must add
+// cache_creation_input_tokens + cache_read_input_tokens back for the estimator
+// to calibrate on the real prompt size.
+// ---------------------------------------------------------------------------
+
+describe("anthropic usage is inclusive of cached tokens", () => {
+  it("sums input_tokens + cache creation + cache read into inputTokens", async () => {
+    const { fetchImpl } = createCapturingFetch(
+      okJson({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 100,
+          cache_creation_input_tokens: 900,
+          cache_read_input_tokens: 0,
+          output_tokens: 45,
+        },
+      }),
+    );
+    const step = await createAnthropicProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+    expect(step.usage).toEqual({ inputTokens: 1000, outputTokens: 45 });
+  });
+
+  it("counts cache_read alone when input_tokens is missing", async () => {
+    const { fetchImpl } = createCapturingFetch(
+      okJson({
+        content: [{ type: "text", text: "ok" }],
+        usage: { cache_read_input_tokens: 1500, output_tokens: 12 },
+      }),
+    );
+    const step = await createAnthropicProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+    expect(step.usage).toEqual({ inputTokens: 1500, outputTokens: 12 });
+  });
+
+  it("ignores non-finite cache fields and keeps the base input_tokens", async () => {
+    const { fetchImpl } = createCapturingFetch(
+      okJson({
+        content: [{ type: "text", text: "ok" }],
+        usage: {
+          input_tokens: 200,
+          cache_creation_input_tokens: "nope",
+          cache_read_input_tokens: null,
+        },
+      }),
+    );
+    const step = await createAnthropicProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+    expect(step.usage).toEqual({ inputTokens: 200 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anthropic prompt-caching request body: ONE cache breakpoint on the stable
+// tools+system prefix; OpenAI request body stays byte-shape identical.
+// ---------------------------------------------------------------------------
+
+describe("anthropic prompt-caching request body", () => {
+  it("sends system as one ephemeral cache breakpoint and leaves tools untouched", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(anthropicCase.textResponse("ok")));
+    await createAnthropicProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+    const body = bodyOf(calls[0]!);
+
+    expect(body["system"]).toEqual([
+      { type: "text", text: TURN.system, cache_control: { type: "ephemeral" } },
+    ]);
+    const tools = body["tools"] as Array<Record<string, unknown>>;
+    for (const tool of tools) {
+      expect(Object.keys(tool).sort()).toEqual(["description", "input_schema", "name"]);
+    }
+  });
+});
+
+describe("openai request body has no cache fields (usage change is response-only)", () => {
+  it("keeps the request body keys unchanged and system folded into messages", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(openaiCase.textResponse("ok")));
+    await createOpenAiProvider(API_KEY, fetchImpl).run(TURN, PROVIDER_TOOLS);
+    const body = bodyOf(calls[0]!);
+
+    expect(Object.keys(body).sort()).toEqual(["messages", "model", "tool_choice", "tools"]);
+    expect("system" in body).toBe(false);
+    const messages = body["messages"] as Array<Record<string, unknown>>;
+    expect(messages[0]).toEqual({ role: "system", content: TURN.system });
   });
 });
 

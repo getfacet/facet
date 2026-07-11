@@ -456,12 +456,30 @@ around that mechanism.
 Inside `@facet/reference-agent`, `provider/` holds the OpenAI/Anthropic adapters
 and provider turn types, `prompt/` holds the system prompt plus event/history and
 stage-summary text, and `harness/` owns the bounded turn machinery: transcript
-assembly, context sizing, deterministic compaction, budget presets, retry/stop
-classification, fallback policy, and sanitized trace events. The harness reads
-sink history, keeps the current visitor event, includes full stage JSON only
-after a bounded length check says it can fit, otherwise sends a deterministic
-bounded stage summary, and stops before a provider call if compaction still
-cannot fit the configured context budget. Corrupt sink history rows and
+assembly, token-calibrated context sizing, LLM + deterministic compaction,
+budget presets, retry/stop classification, fallback policy, and sanitized trace
+events. Context is sized in **tokens**: the adapters report provider usage
+(Anthropic's count includes the cache-creation/read tokens of the
+`cache_control` prefix caching the adapter enables on the stable system+tools
+prefix), and a clamped chars-per-token estimator calibrates against it. When a
+`SummaryStore` is configured, the harness **compacts with the same LLM** on two
+surfaces. Cross-turn: after a turn, a background task on a per-visitor serial
+lane folds older sink history (chunked under an input cap) into a rolling,
+redacted, schema-validated conversation summary, persisted with a monotonic
+covered-through marker plus a conversation-identity anchor so a wiped sink
+rebuilds from scratch instead of resurrecting a foreign summary; the next
+assembly injects it as a pinned user-role data block ahead of the verbatim
+tail. In-turn: when the transcript passes the trigger ratio, the oldest whole
+tool step-groups fold into one summary message — pair-safe for both provider
+wire formats, with the stage block refreshed from the tool-buffer shadow under
+a never-inflate guard — so the turn continues instead of hard-stopping. Every
+summarizer failure degrades to the deterministic char-budget truncation, which
+remains the final guard; without a store the behavior is exactly the
+deterministic pipeline. The harness reads sink history, keeps the current
+visitor event, includes full stage JSON only after a bounded length check says
+it can fit, otherwise sends a deterministic bounded stage summary, and stops
+before a provider call if compaction still cannot fit the configured context
+budget. Corrupt sink history rows and
 malformed stage metadata degrade to placeholders/summaries instead of aborting
 prompt assembly. Tool observations are appended to the transcript before the
 next provider step as bounded JSON emitted by `@facet/agent-tools`. The model

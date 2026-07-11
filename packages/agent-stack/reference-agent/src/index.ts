@@ -24,6 +24,18 @@ export * from "./agent.js";
 export * from "./stub.js";
 export * from "./harness/budget.js";
 export * from "./harness/trace.js";
+export {
+  createProviderSummarizer,
+  summaryBlockMessage,
+  validateSummary,
+} from "./harness/summary.js";
+export type { ConversationSummary, Summarizer, SummarizerRequest } from "./harness/summary.js";
+export {
+  CHARS_PER_TOKEN_DEFAULT,
+  createTokenEstimator,
+  estimateTurnChars,
+} from "./harness/estimate.js";
+export type { TokenEstimator } from "./harness/estimate.js";
 export { REFERENCE_AGENT_FAILURE_SAY } from "./harness/loop.js";
 export type { ReferenceAgentLoopSummary } from "./harness/loop.js";
 export {
