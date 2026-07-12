@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
@@ -997,6 +997,138 @@ describe("redactSensitiveText", () => {
     const startedAt = performance.now();
     expect(() => redactSensitiveText(hostile)).not.toThrow();
     expect(performance.now() - startedAt).toBeLessThan(500);
+  });
+});
+
+describe("describeEvent visitor view line", () => {
+  it("renders an inert [visitor view] line from a message event's view (DC-001)", () => {
+    const event: ClientEvent = {
+      kind: "message",
+      text: "make the plan clearer",
+      view: {
+        screen: "pricing",
+        toggled: { "faq-3": "shown", promo: "hidden" },
+        viewport: "narrow",
+        scheme: "dark",
+      },
+    };
+    const line = describeEvent(event);
+    expect(line).toContain("make the plan clearer");
+    expect(line).toContain("[visitor view]");
+    expect(line).toContain('screen: "pricing"');
+    expect(line).toContain("shown: faq-3");
+    expect(line).toContain("hidden: promo");
+    expect(line).toContain("device: narrow, dark");
+  });
+
+  it("renders the view line for a tap event (DC-001)", () => {
+    const event: ClientEvent = {
+      kind: "tap",
+      action: { kind: "agent", name: "submit" },
+      view: { screen: "checkout", viewport: "wide" },
+    };
+    const line = describeEvent(event);
+    expect(line).toContain("submit");
+    expect(line).toContain('[visitor view] screen: "checkout"; device: wide');
+  });
+
+  it("phrases a visit event's view as the last-known revisit view (DC-001)", () => {
+    const event: ClientEvent = {
+      kind: "visit",
+      visitor: { visitorId: "v1", referrer: "news.example.com" },
+      view: { screen: "dashboard", scheme: "light" },
+    };
+    const line = describeEvent(event);
+    expect(line).toContain("(visit)");
+    expect(line).toContain('[visitor view, last visit] screen: "dashboard"; device: light');
+    expect(line).not.toContain("[visitor view]\n"); // never the current-view label
+  });
+
+  it("omits the view line entirely when the event carries no view (DC-007 byte-identity)", () => {
+    const message: ClientEvent = { kind: "message", text: "hello" };
+    const tap: ClientEvent = { kind: "tap", action: { kind: "agent", name: "go" } };
+    const visit: ClientEvent = { kind: "visit", visitor: { visitorId: "v1" } };
+    for (const event of [message, tap, visit]) {
+      expect(describeEvent(event)).not.toContain("visitor view");
+    }
+    // Byte-identical to the pre-feature rendering.
+    expect(describeEvent(message)).toBe("hello");
+    expect(describeEvent(tap)).toBe("(action go payload={} fields={})");
+  });
+
+  it("bounds the rendered toggle list defensively", () => {
+    const toggled: Record<string, "shown" | "hidden"> = {};
+    for (let i = 0; i < 200; i += 1) toggled[`n${i}`] = "shown";
+    const event: ClientEvent = { kind: "message", text: "hi", view: { toggled } };
+    const line = describeEvent(event);
+    expect(line).toContain("[visitor view]");
+    // Not every one of the 200 keys is rendered inline.
+    const rendered = line.split("shown: ")[1] ?? "";
+    expect(rendered.split(", ").length).toBeLessThan(200);
+  });
+
+  it("never throws on a malformed view and still renders the base event", () => {
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    const poisoned = {
+      kind: "message",
+      text: "hi",
+      view: cyclic,
+    } as unknown as CollectedEvent;
+    expect(() => describeEvent(poisoned)).not.toThrow();
+    expect(describeEvent(poisoned)).toContain("hi");
+  });
+});
+
+function referenceAgentAndAgentToolsSources(): { path: string; source: string }[] {
+  const roots = [
+    new URL("./", import.meta.url),
+    new URL("../../agent-tools/src/", import.meta.url),
+  ];
+  const out: { path: string; source: string }[] = [];
+  const walk = (dir: URL): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === "node_modules" || entry.name === "dist") continue;
+      const child = new URL(`${entry.name}${entry.isDirectory() ? "/" : ""}`, dir);
+      if (entry.isDirectory()) {
+        walk(child);
+      } else if (entry.name.endsWith(".ts") && !entry.name.endsWith(".test.ts")) {
+        out.push({ path: fileURLToPath(child), source: readFileSync(child, "utf8") });
+      }
+    }
+  };
+  for (const root of roots) walk(root);
+  return out;
+}
+
+describe("view never reaches a patch/executor path (DC-005 structural fence)", () => {
+  // A property-style reference to event `view` — `"view"`, `'view'`, or `.view` —
+  // distinguishes handling event view DATA from the incidental English word
+  // "view" (e.g. "the executor's local view of the stage").
+  const VIEW_DATA_REF = /["']view["']|\.view\b/;
+  const ALLOWED = new Set(["messages.ts", "prompt-kit.ts"]);
+
+  it("references event view only in messages.ts across reference-agent + agent-tools", () => {
+    const files = referenceAgentAndAgentToolsSources();
+    const offenders = files
+      .filter((file) => VIEW_DATA_REF.test(file.source))
+      .map((file) => file.path.split("/").pop() ?? "")
+      .filter((name) => !ALLOWED.has(name));
+    expect(offenders).toEqual([]);
+
+    // The fence is meaningful only if messages.ts actually handles event view data.
+    const messages = files.find((file) => file.path.endsWith("/messages.ts"));
+    expect(messages?.source).toMatch(VIEW_DATA_REF);
+  });
+
+  it("the executor never routes event view into a patch/tool call site (RISK-INV-2)", () => {
+    const executor = readFileSync(
+      fileURLToPath(new URL("../../agent-tools/src/executor-node.ts", import.meta.url)),
+      "utf8",
+    );
+    expect(executor).not.toContain("event.view");
+    expect(executor).not.toContain('event["view"]');
+    expect(executor).not.toMatch(VIEW_DATA_REF);
   });
 });
 

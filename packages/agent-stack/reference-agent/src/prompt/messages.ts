@@ -32,11 +32,66 @@ function normalizeLegacyEvent(event: unknown): unknown {
   };
 }
 
+/**
+ * How many `toggled` entries the inert view line renders inline. The boundary
+ * sanitizer already caps `toggled` at `MAX_VIEW_TOGGLED_KEYS`; this is a second,
+ * prompt-side bound so the line stays short regardless of upstream.
+ */
+const MAX_VIEW_TOGGLES_RENDERED = 16;
+
+/**
+ * Render the visitor's browser-owned `view` snapshot as ONE bounded, inert prompt
+ * line (or "" when nothing renderable is present). Pure descriptive text the agent
+ * reads to target its next patch at the screen the visitor is actually on — it is
+ * NEVER routed to any executor/patch/fold call site (DC-005). Fail-safe: reads only
+ * known flat fields and never throws, mirroring `describeEvent`'s contract.
+ */
+function describeView(view: unknown, revisit: boolean): string {
+  if (!isRecord(view)) return "";
+  const parts: string[] = [];
+
+  const screen = view["screen"];
+  if (typeof screen === "string") parts.push(`screen: ${JSON.stringify(screen)}`);
+
+  const toggled = view["toggled"];
+  if (isRecord(toggled)) {
+    const shown: string[] = [];
+    const hidden: string[] = [];
+    for (const [key, value] of Object.entries(toggled)) {
+      if (shown.length + hidden.length >= MAX_VIEW_TOGGLES_RENDERED) break;
+      if (value === "shown") shown.push(key);
+      else if (value === "hidden") hidden.push(key);
+    }
+    if (shown.length > 0) parts.push(`shown: ${shown.join(", ")}`);
+    if (hidden.length > 0) parts.push(`hidden: ${hidden.join(", ")}`);
+  }
+
+  const device: string[] = [];
+  const viewport = view["viewport"];
+  if (typeof viewport === "string") device.push(viewport);
+  const scheme = view["scheme"];
+  if (typeof scheme === "string") device.push(scheme);
+  if (device.length > 0) parts.push(`device: ${device.join(", ")}`);
+
+  if (parts.length === 0) return "";
+  const label = revisit ? "[visitor view, last visit]" : "[visitor view]";
+  return `${label} ${parts.join("; ")}`;
+}
+
 /** One visitor event as a compact user-side line. */
 export function describeEvent(raw: CollectedEvent): string {
   const event = normalizeLegacyEvent(raw);
   if (!isRecord(event) || typeof event["kind"] !== "string") return "(unknown event)";
 
+  const base = describeEventBase(event);
+  // A malformed event stays a bare "(unknown event)"; only decorate a real render.
+  if (base === "(unknown event)") return base;
+  const viewLine = describeView(event["view"], event["kind"] === "visit");
+  return viewLine === "" ? base : `${base}\n${viewLine}`;
+}
+
+/** The per-kind base rendering; `describeEvent` appends the inert view line. */
+function describeEventBase(event: Record<string, unknown>): string {
   switch (event["kind"]) {
     case "visit": {
       const visitor = event["visitor"];
