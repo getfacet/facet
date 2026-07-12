@@ -12,7 +12,8 @@ import type {
 import { MAX_FIELDS_KEYS, MAX_FIELD_VALUE_CHARS } from "@facet/core";
 import { describe, expect, it, vi } from "vitest";
 
-import { AgUiTransport, createHttpAgUiTransport } from "./transport.js";
+import { createHttpAgUiTransport } from "./transport-http.js";
+import { AgUiTransport } from "./transport.js";
 import type { FacetAgUiForwardedProps } from "./transport.js";
 
 const visitor: VisitorContext = {
@@ -1174,7 +1175,7 @@ describe("AgUiTransport", () => {
     expect(messages).toEqual([{ kind: "say", text: "http" }]);
     expect(transport).toBeInstanceOf(AgUiTransport);
 
-    const source = readFileSync(new URL("./transport.ts", import.meta.url), "utf8");
+    const source = readFileSync(new URL("./transport-http.ts", import.meta.url), "utf8");
     expect(source).toContain('from "@ag-ui/client"');
     expect(source).toContain("new HttpAgent");
     expect(source).not.toMatch(

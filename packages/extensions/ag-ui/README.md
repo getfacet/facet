@@ -51,6 +51,11 @@ authority, and streams AG-UI `RUN_STARTED`, text, state, and terminal events.
 Same visitor work stays serialized through the runtime lane; different resolved
 visitors can run concurrently after authorization.
 
+Browser event conversion and transport internals remain separate from the Node
+adapter implementation. Only the documented root entry point and
+`@facet/ag-ui/server` subpath are public; the responsibility-focused source
+modules behind them are private implementation details.
+
 ## Safety Boundary
 
 Only Facet state under `/facet/stage` is accepted from AG-UI

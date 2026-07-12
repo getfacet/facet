@@ -16,6 +16,7 @@ import type { RuntimeFrameContext } from "@facet/runtime";
 import { describe, expect, it, vi } from "vitest";
 
 import { handleAgUiRequest, runFacetAsAgUi, writeAgUiSseEvent } from "./server.js";
+import * as serverExports from "./server.js";
 
 const visitor: VisitorContext = {
   visitorId: "visitor-1",
@@ -231,6 +232,15 @@ function parseSseEvents(body: string): readonly AGUIEvent[] {
 }
 
 describe("AG-UI server adapter", () => {
+  it("keeps the exact Node server runtime export surface", () => {
+    expect(Object.keys(serverExports).sort()).toEqual([
+      "facetInputFromRunAgentInput",
+      "handleAgUiRequest",
+      "runFacetAsAgUi",
+      "writeAgUiSseEvent",
+    ]);
+  });
+
   it("writes a safe SSE error for non-JSON AG-UI event payloads", () => {
     const res = new FakeResponse();
 

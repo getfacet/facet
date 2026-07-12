@@ -12,6 +12,22 @@ function sourceText(path: string): string {
 }
 
 describe("@facet/ag-ui package entrypoint", () => {
+  it("keeps the exact browser runtime export surface", () => {
+    expect(Object.keys(rootExports).sort()).toEqual([
+      "AgUiServerMessageAccumulator",
+      "AgUiTransport",
+      "FACET_RESET_EVENT_NAME",
+      "FACET_STAGE_STATE_PATH",
+      "agUiEventToServerMessages",
+      "agUiEventsToServerMessages",
+      "createHttpAgUiTransport",
+      "facetPatchToStateDelta",
+      "facetStageToStateSnapshot",
+      "serverMessageToAgUiEvents",
+      "serverMessagesToAgUiEvents",
+    ]);
+  });
+
   it("exposes browser-safe event and transport exports from the root", () => {
     expect(rootExports).toHaveProperty("AgUiTransport");
     expect(rootExports).toHaveProperty("createHttpAgUiTransport");
