@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FacetAction, FieldValues, VisitorContext } from "@facet/core";
+import type { FacetAction, FieldValues, ViewSnapshot, VisitorContext } from "@facet/core";
 import { ChatDock, StageRenderer, useFacet } from "@facet/react";
 import { browserVisitorId, SseTransport } from "@facet/client";
 
@@ -35,6 +35,13 @@ export function LiveView(): React.ReactNode {
   const [pending, setPending] = useState(false);
   const seen = useRef(0);
 
+  // Latest renderer-published view snapshot, sampled at send time. Storing
+  // only — a snapshot change never sends.
+  const viewRef = useRef<ViewSnapshot | undefined>(undefined);
+  const onViewSnapshot = useCallback((snap: ViewSnapshot): void => {
+    viewRef.current = snap;
+  }, []);
+
   useEffect(() => {
     send({ kind: "visit", visitor: VISITOR });
   }, [send]);
@@ -55,13 +62,24 @@ export function LiveView(): React.ReactNode {
   const onSend = (text: string): void => {
     setLog((current) => [...current, { who: "You", text }]);
     setPending(true);
-    send({ kind: "message", text });
+    const view = viewRef.current;
+    send({
+      kind: "message",
+      text,
+      ...(view !== undefined && Object.keys(view).length > 0 ? { view } : {}),
+    });
   };
 
   const onAction = (action: FacetAction, fields?: FieldValues): void => {
-    // Conditional construction: exactOptionalPropertyTypes forbids an explicit
-    // `fields: undefined` on the event.
-    send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });
+    // Conditional spread: exactOptionalPropertyTypes forbids an explicit
+    // `fields: undefined` / `view: undefined` on the event — absent stays absent.
+    const view = viewRef.current;
+    send({
+      kind: "tap",
+      action,
+      ...(fields !== undefined ? { fields } : {}),
+      ...(view !== undefined && Object.keys(view).length > 0 ? { view } : {}),
+    });
   };
 
   return (
@@ -75,7 +93,12 @@ export function LiveView(): React.ReactNode {
       </div>
 
       <div style={styles.stage}>
-        <StageRenderer tree={tree} onAction={onAction} transition={transition} />
+        <StageRenderer
+          tree={tree}
+          onAction={onAction}
+          transition={transition}
+          onViewSnapshot={onViewSnapshot}
+        />
       </div>
 
       <ChatDock messages={log} onSend={onSend} pending={pending} placeholder="describe a page…" />

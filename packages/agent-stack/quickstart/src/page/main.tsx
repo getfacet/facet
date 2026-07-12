@@ -7,12 +7,21 @@
  * the page only ever speaks the existing SSE+POST protocol back to the wrapper
  * that served it — no new client network capability (invariant #7).
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { isTreeShaped } from "@facet/core";
-import type { FacetAction, FacetTheme, FacetTree, FieldValues, VisitorContext } from "@facet/core";
-import { browserVisitorId, SseTransport } from "@facet/client";
+import type {
+  ClientEvent,
+  FacetAction,
+  FacetTheme,
+  FacetTree,
+  FieldValues,
+  ViewSnapshot,
+  VisitorContext,
+} from "@facet/core";
+import { browserVisitorId, loadPersistedView, persistView, SseTransport } from "@facet/client";
+import { withView } from "./view-attach.js";
 import {
   ChatDock,
   DEFAULT_THEME,
@@ -59,6 +68,17 @@ function readInitialStage(): FacetTree | undefined {
   return isTreeShaped(raw) ? raw : undefined;
 }
 
+/**
+ * What identifies THIS agent link from inside the page. The quickstart page is
+ * same-origin by construction (the transport dials `""`), and one quickstart
+ * server hosts exactly one agent, so the serving host is the agent-link
+ * identity available to the browser — the server does not inline an agent id.
+ * Used only as the `persistView`/`loadPersistedView` storage-key input.
+ */
+function agentLinkId(): string {
+  return window.location.host;
+}
+
 function makeVisitor(): VisitorContext {
   const referrer = document.referrer;
   const locale = navigator.language;
@@ -83,10 +103,32 @@ function Page(): ReactNode {
   const [log, setLog] = useState<readonly ChatMessage[]>([]);
   const seen = useRef(0);
 
-  // Fire the initial visit → first paint.
+  // The latest renderer-published view snapshot, sampled at send time (spec
+  // WU-7). A ref, not state: a snapshot change must never re-render or send —
+  // it only rides the NEXT event the visitor causes.
+  const viewRef = useRef<ViewSnapshot | undefined>(undefined);
+  const agentId = useMemo(agentLinkId, []);
+  // Last session's persisted view, read ONCE at first render — before the
+  // renderer's own publish effect overwrites storage with this session's fresh
+  // (screenless) snapshot. Revisit semantics are report-only: the value seeds
+  // the `visit` event below and is never applied back to the renderer.
+  const persistedView = useMemo(() => loadPersistedView(agentId), [agentId]);
+  const onViewSnapshot = useCallback(
+    (snap: ViewSnapshot): void => {
+      viewRef.current = snap;
+      // Best-effort persistence (persistView swallows storage failures); this
+      // callback only stores — it never sends.
+      persistView(agentId, snap);
+    },
+    [agentId],
+  );
+
+  // Fire the initial visit → first paint. A returning visitor's visit reports
+  // their last-known view; a first visit falls back to the live snapshot (the
+  // renderer's publish effect runs before this parent effect), if any.
   useEffect(() => {
-    send({ kind: "visit", visitor });
-  }, [send, visitor]);
+    send(withView<ClientEvent>({ kind: "visit", visitor }, persistedView ?? viewRef.current));
+  }, [send, visitor, persistedView]);
 
   // Paint the page CANVAS (document.body, outside the tree) with the resolved
   // theme's bg/fg so a dark theme actually darkens the whole page, not just the
@@ -121,12 +163,14 @@ function Page(): ReactNode {
   const onAction = (action: FacetAction, fields?: FieldValues): void => {
     // Conditional construction: exactOptionalPropertyTypes forbids an explicit
     // `fields: undefined` on the event (the Decision-2 shape).
-    send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });
+    const event: ClientEvent =
+      fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields };
+    send(withView(event, viewRef.current));
   };
 
   const onSend = (text: string): void => {
     setLog((current) => [...current, { who: "You", text }]);
-    send({ kind: "message", text });
+    send(withView<ClientEvent>({ kind: "message", text }, viewRef.current));
   };
 
   return (
@@ -140,6 +184,7 @@ function Page(): ReactNode {
           onAction={onAction}
           onRecord={record}
           transition={transition}
+          onViewSnapshot={onViewSnapshot}
           {...(themes !== undefined ? { themes } : {})}
         />
       </div>

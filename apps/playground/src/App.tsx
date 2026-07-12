@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FacetAction, FieldValues, VisitorContext } from "@facet/core";
+import type { FacetAction, FieldValues, ViewSnapshot, VisitorContext } from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
 import { StageRenderer, useFacet } from "@facet/react";
 import { LocalTransport } from "@facet/client";
@@ -109,6 +109,14 @@ function VisitorPane({
   const [draft, setDraft] = useState("");
   const seen = useRef(0);
 
+  // Latest renderer-published view snapshot, sampled at send time. A ref PER
+  // PANE (Alice and Bob must not cross-read each other's view); storing only —
+  // a snapshot change never sends.
+  const viewRef = useRef<ViewSnapshot | undefined>(undefined);
+  const onViewSnapshot = useCallback((snap: ViewSnapshot): void => {
+    viewRef.current = snap;
+  }, []);
+
   // Fire the initial visit → first paint.
   useEffect(() => {
     send({ kind: "visit", visitor });
@@ -124,9 +132,15 @@ function VisitorPane({
   }, [chat]);
 
   const onAction = (action: FacetAction, fields?: FieldValues): void => {
-    // Conditional spread-free construction: exactOptionalPropertyTypes forbids
-    // an explicit `fields: undefined` on the event.
-    send(fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields });
+    // Conditional spread: exactOptionalPropertyTypes forbids an explicit
+    // `fields: undefined` / `view: undefined` on the event — absent stays absent.
+    const view = viewRef.current;
+    send({
+      kind: "tap",
+      action,
+      ...(fields !== undefined ? { fields } : {}),
+      ...(view !== undefined && Object.keys(view).length > 0 ? { view } : {}),
+    });
   };
 
   const submit = (): void => {
@@ -143,7 +157,12 @@ function VisitorPane({
 
       {/* The Stage — dynamic, agent-owned */}
       <div style={styles.stage}>
-        <StageRenderer tree={tree} onAction={onAction} transition={transition} />
+        <StageRenderer
+          tree={tree}
+          onAction={onAction}
+          transition={transition}
+          onViewSnapshot={onViewSnapshot}
+        />
       </div>
 
       {/* The Chat dock — persistent, app chrome, not agent-generated */}
