@@ -45,7 +45,15 @@ smoke turn; under-verifying defeats the gate.
 
 ## Step 2 — Tier 1 (ALWAYS run, blocking)
 
-**1a — deterministic stub E2E** (no keys, no network beyond localhost):
+**1a — deterministic journey verdict policy** (no keys, no I/O):
+
+```bash
+pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/journey/verdict.test.ts
+```
+
+This pins the HARD/SOFT/quorum aggregation rule. Any failure ⇒ Tier 1 FAIL.
+
+**1b — deterministic stub E2E** (no keys, no network beyond localhost):
 
 ```bash
 pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts
@@ -55,12 +63,21 @@ pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts 
 Run it **twice**; both runs must pass with identical results (determinism,
 DC-008). Any failure or run-to-run difference ⇒ Tier 1 FAIL.
 
-**1b — the REAL page bundle executes** (build first — 1b tests the artifact):
+**1c — the REAL page bundle executes** (build first — 1c tests the artifact):
 
 ```bash
 pnpm --filter @facet/quickstart build
 pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/bundle.test.ts
 ```
+
+**1d — deterministic journey harness** (uses the build from 1c, localhost only):
+
+```bash
+pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/journey/harness.test.ts
+```
+
+This exercises boot/teardown, bind retry, provider resolution without keys, and
+the built-bin smoke result contract. Any failure ⇒ Tier 1 FAIL.
 
 Tier 1 failing blocks everything — do not proceed to a verdict of PASS, fix
 the cause and rerun from Step 2.
@@ -104,18 +121,25 @@ Codex runs this directly; do not invoke `.claude/workflows/live-journey.js`.
    ```bash
    pnpm --filter @facet/quickstart build
    ```
-2. Start the real-provider quickstart on a free port:
+2. Install Chromium if needed, then run the deterministic browser preflight:
+   ```bash
+   pnpm exec playwright install chromium
+   pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/journey/journey.selftest.test.ts
+   ```
+   A preflight failure makes the journey tier FAIL; do not start a paid provider
+   run until it passes.
+3. Start the real-provider quickstart on a free port:
    ```bash
    pnpm exec tsx packages/agent-stack/quickstart/src/cli.ts --provider <openai|anthropic> --port <port>
    ```
-3. Use Playwright or the in-app browser to open the page, send at least three
+4. Use Playwright or the in-app browser to open the page, send at least three
    fresh-visitor messages, and capture screenshots.
-4. Judge the screenshots and interaction logs for blocking failures:
+5. Judge the screenshots and interaction logs for blocking failures:
    - render failure or blank page
    - unsafe/broken UI
    - no response to user input
    - agent/provider crash
-5. Tear down the server even on failure.
+6. Tear down the server even on failure.
 
 Report `PASS`, `FAIL`, `WARNING`, or `SKIPPED(why)`. Missing provider key is
 `SKIPPED`, not a Tier-2-style failure, because this tier is owner-run.
@@ -127,8 +151,10 @@ Report a per-tier table, then the overall verdict:
 ```
 | Tier | What                          | Result                     |
 |------|-------------------------------|----------------------------|
-| 1a   | stub E2E (run twice)          | PASS / FAIL                |
-| 1b   | real bundle in jsdom          | PASS / FAIL                |
+| 1a   | journey verdict policy        | PASS / FAIL                |
+| 1b   | stub E2E (run twice)          | PASS / FAIL                |
+| 1c   | real bundle in jsdom          | PASS / FAIL                |
+| 1d   | journey harness               | PASS / FAIL                |
 | 2    | provider smoke (required=yes) | PASS / FAIL / SKIPPED(why) |
 | 3    | both providers (pre-merge)    | PASS / FAIL / SKIPPED(why) |
 | journey | live browser + LLM (owner-run) | PASS / FAIL / WARNING / SKIPPED(why) |

@@ -14,7 +14,8 @@ description: >
 
 Facet tests are **vitest**, one project per grouped package
 (`packages/{core,agent-stack,extensions}/*/src/**/*.test.ts`). Run all:
-`pnpm test`. Run one package: `pnpm -C packages/<group>/<name> test`.
+`pnpm test`. Run one package from the repository root:
+`pnpm exec vitest run packages/<group>/<name>/src`.
 
 ## Pass/Fail policy
 - A changed production file with no covering test and no accountability row → FAIL.
@@ -39,22 +40,25 @@ config/build change → do NOT skip.
 ## Workflow
 1. **Map to packages.** `packages/<group>/<name>/src/**` → that package.
    `apps/playground/**` → playground (integration/manual — note if no unit
-   suite). `.agents/**`, `.codex/**`, root `*.md` → infra/docs (skip unit
+   suite). `.agents/**`, `.claude/**`, `.codex/**`, root `*.md` → infra/docs (skip unit
    tests).
 2. **Build an obligation ledger** — one row per changed non-test source file:
    `{ package, source_file, test_target, behavior, status: PENDING }`.
    Every changed source file must produce a row; an unmapped file needs an
    explicit manual row or it's a FAIL.
 3. **Cover each row.** Add or update the vitest test that exercises the changed
-   behavior. Prefer testing pure logic directly (the four bricks' behavior lives
-   in `@facet/core`: patch/validate/tokens; the runtime, stores, serial-queue,
-   agent Stage, cli commands, agent-client parseSseFrames are all unit-testable).
+   behavior. Prefer testing pure logic directly. The closed `@facet/core`
+   vocabulary includes the primitive `box`/`text`/`media`/`field` fallback plus
+   deliberately added intrinsic components; patching, validation, tokens,
+   component sanitizers, runtime stores/queues, agent Stage operations, CLI
+   command builders, and agent-client SSE parsing are all unit-testable.
    For `@facet/react`, split by what the test needs:
    - static output + fail-safe (renders X, degrades to plain, never throws) →
      `renderToStaticMarkup` in a `.test.ts` (node env) — see `StageRenderer.test.ts`.
-   - **interaction / hook behavior** (a click reaching `onAction`, the `useFacet`
-     patch/say/fail-safe loop, field rendering, and — once it lands — field-value
-     capture and local `kind:"patch"` execution) → a **jsdom render test** with
+   - **interaction / hook behavior** (an agent action reaching `onAction`, the
+     `useFacet` patch/say/fail-safe loop, field rendering/value capture, and
+     browser-local `navigate`/`toggle` resolution plus tap recording) → a
+     **jsdom render test** with
      `@testing-library/react` in a `.test.tsx` file that starts with
      `// @vitest-environment jsdom` — see `StageRenderer.interaction.test.tsx` and
      `useFacet.test.tsx`. This is Facet's "QA": the render loop unit tests can't
@@ -62,7 +66,7 @@ config/build change → do NOT skip.
      pixel-visual concerns.
    - **Fail-safe obligations (Facet-specific):** if the change touches
      `@facet/core` validate/patch or `@facet/react` StageRenderer, include a
-     boundary test (malformed / empty / deep / cyclic input, unsafe image src) —
+     boundary test (malformed / empty / deep / cyclic input, unsafe `media.src`) —
      the "never throws, degrades to plain" invariant must stay covered.
    - **Vocabulary obligation:** if the brick/token/action vocabulary changed
      (`nodes.ts`/`tokens.ts`/`protocol.ts`), ensure `validate.test.ts` covers the
@@ -73,7 +77,7 @@ config/build change → do NOT skip.
 ## Mandatory commands by change
 | Changed | Command |
 |---|---|
-| `packages/<group>/<name>/src/**` | `pnpm -C packages/<group>/<name> test` (+ `pnpm -C packages/<group>/<name> typecheck` if the package has it) |
+| `packages/<group>/<name>/src/**` | `pnpm exec vitest run packages/<group>/<name>/src` (from the repository root) |
 | multiple packages | `pnpm test` (root — runs the whole vitest workspace) |
 | `apps/playground/**` | note manual/integration check (no blocking unit gate) |
 

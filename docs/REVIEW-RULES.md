@@ -102,4 +102,6 @@ or escape its parent without an explicit bounded scroll region is at least P1.
 
 ## Commands
 
-`pnpm typecheck` · `pnpm test` · `pnpm lint` · `pnpm format:check` · `pnpm build`
+Run the canonical mechanical gate with `pnpm verify`: typecheck, tests, lint,
+format-check, build, and a source NUL-byte scan. Use the individual commands only
+for scoped diagnosis.

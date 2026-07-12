@@ -12,7 +12,29 @@ permissions:
   id-token: write # npm provenance / trusted publishing via OIDC
 
 jobs:
+  package-smoke:
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Runs third-party registry code only in this read-only, token-free job.
+      - run: pnpm package:smoke
+
   release:
+    needs: package-smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -28,7 +50,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       # Opens/maintains a "Version Packages" PR as changesets land; when that PR
-      # is merged, runs `pnpm release` (build + changeset publish) to npm.
+      # is merged, runs `pnpm release` (build + changeset publish) to npm. The
+      # token-free package-smoke job above must pass before this job can start.
       - name: Create Release PR or publish
         uses: changesets/action@v1
         with:

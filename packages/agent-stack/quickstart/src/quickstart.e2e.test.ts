@@ -1,5 +1,5 @@
 /**
- * /live-test Tier 1a (spec Decision 7, DC-001 + DC-008) — the deterministic
+ * /live-test Tier 1b (spec Decision 7, DC-001 + DC-008) — the deterministic
  * stub E2E over the REAL boot path: `startQuickstart` (wrapper + loopback
  * proxy) driven by `createStubAgent`, a fixture page bundle injected via
  * `pageBundlePath`. Lives inside the root vitest glob on purpose, so plain
@@ -7,9 +7,9 @@
  * random ports (parallel-safe), and no clock-derived assertions (run-twice
  * must be identical).
  *
- * The SSE frame plumbing is ADAPTED from packages/server/src/server.test.ts
- * (parseBlock/drainFrames/readEvents) — copied locally, never imported across
- * packages from a test.
+ * The SSE frame plumbing is ADAPTED from
+ * packages/core/server/src/server.test.ts (parseBlock/drainFrames/readEvents)
+ * — copied locally, never imported across packages from a test.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { connect } from "node:net";

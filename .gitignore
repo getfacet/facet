@@ -13,4 +13,4 @@ generated/
 .vscode/
 
 # live-journey tier screenshots + GIF (not committed)
-packages/quickstart/e2e/journey/artifacts/
+packages/agent-stack/quickstart/e2e/journey/artifacts/

@@ -75,14 +75,16 @@ sets. For each WU, spawn a `general-purpose` subagent with this work order
 ## Stage 2 — Feature hard gate
 Run in order; on any FAIL, fix and restart the inner loop from the top:
 1. **`/update-tests`** — every changed production file is covered; required suites run.
-2. **`/verify`** — typecheck + test + lint + format:check + build all pass.
+2. **`/verify`** — typecheck + test + lint + format:check + build + source NUL
+   scan all pass.
 3. **`/code-review`** — PASS = P0–P2 = 0 (P3 nits non-blocking). Fix findings,
    re-run `/verify`, then re-run `/code-review` (never declare PASS on the strength
    of the fixes alone).
-4. **`/live-test`** — Tier 1 always blocks; Tier 2 blocks when quickstart changed;
-   Tier 3/journey per `/live-test` policy.
+4. **`/live-test`** — Tier 1 always blocks; Tier 2 blocks when quickstart or the
+   reference-agent provider loop changed; Tier 3/journey per `/live-test`
+   policy.
 5. **`/update-docs`** — reflect every triggered doc (esp.
-   `packages/core/src/spec.ts` STAGE_SPEC when the brick/token/action vocabulary
+   `packages/core/core/src/spec.ts` STAGE_SPEC when the brick/token/action vocabulary
    changed), or mark intentionally unchanged with `file:line` evidence.
 
 ## Stage 3 — Land it

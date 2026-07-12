@@ -9,7 +9,7 @@ so nothing can be injected. Test that claim, and the trust boundaries around it:
 - **Injection / escape** — can any path get raw HTML/JS/attributes into the
   rendered DOM (the React renderer), or arbitrary keys into the tree? Does
   `validateTree` actually strip everything unknown? Is any style value or `src`
-  (e.g. `image.src`, a `javascript:` URL) rendered unsanitized?
+  (e.g. `media.src`, a `javascript:` URL) rendered unsanitized?
 - **Trust boundaries** — client-supplied `visitorId` is trusted as-is (a session
   key): is that a leak where the data is sensitive? The server trusts the
   connected agent; the bridge runs the brain with `--dangerously-skip-permissions`

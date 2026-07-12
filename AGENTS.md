@@ -100,8 +100,10 @@ on `apps/playground`.
 
 ```bash
 pnpm install
+pnpm verify         # typecheck + test + lint + format:check + build + NUL scan
 pnpm typecheck      # tsc --noEmit across all packages
-pnpm test           # vitest run (unit tests live in packages/**/src/*.test.ts)
+pnpm test           # unit suites + the deterministic journey-verdict policy
+pnpm package:smoke  # build + pack/install every public package in a clean consumer
 pnpm demo           # in-process terminal demo
 pnpm --filter @facet/playground dev     # browser playground (port 5290)
 pnpm --filter @facet/playground serve   # live server (port 5291)
@@ -109,19 +111,19 @@ pnpm --filter @facet/quickstart build   # then: OPENAI_API_KEY=sk-... pnpm exec 
                                         # (published as the facet-quickstart bin, port 5292)
 ```
 
-The `/live-test` tiers are vitest runs: Tier 1a
-`pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts`
-(twice), Tier 1b/2/3 use
-`--config packages/agent-stack/quickstart/e2e/vitest.config.ts` against
-`e2e/bundle.test.ts` / `e2e/smoke.test.ts` — see the active agent skill for the
-exact commands and policy (`.agents/skills/live-test/SKILL.md` for Codex,
-`.claude/skills/live-test/SKILL.md` for Claude Code).
+The `/live-test` tiers are vitest runs: Tier 1a pins journey verdict policy;
+Tier 1b runs the deterministic stub E2E twice; Tier 1c executes the built page
+bundle; Tier 1d exercises the journey harness. Tier 2/3 run the key-gated
+provider smoke. See the active agent skill for the exact commands and policy
+(`.agents/skills/live-test/SKILL.md` for Codex, `.claude/skills/live-test/SKILL.md`
+for Claude Code).
 
 ## Definition of Done (before you commit)
 
-- **`/verify`** passes — typecheck, test, lint, format:check, build (or run those
-  `pnpm` commands directly). Add/adjust tests for any behavior change; core logic
-  (`validateTree`, `applyPatch`, `Stage` op-generation) must stay covered.
+- **`/verify`** passes — run `pnpm verify` for typecheck, test, lint,
+  format:check, build, and the source NUL-byte scan. Add/adjust tests for any
+  behavior change; core logic (`validateTree`, `applyPatch`, `Stage`
+  op-generation) must stay covered.
 - **`/code-review`** on a non-trivial change — P0–P2 = 0 (P3 nits non-blocking).
 - Run the gate profile for the flow: **feature development** and **refactoring**
   have different hard gates (below).
