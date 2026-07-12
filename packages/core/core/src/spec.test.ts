@@ -126,10 +126,20 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/bounded overflow/i);
     expect(STAGE_SPEC).toMatch(/flow-only/i);
     expect(STAGE_SPEC).toMatch(/no client-side fetch/i);
-    expect(STAGE_SPEC).toMatch(/data-binding/i);
     expect(STAGE_SPEC).toMatch(/backend[^.]*agent/i);
     expect(STAGE_SPEC).not.toMatch(/<script|innerHTML|dangerouslySetInnerHTML/i);
     expect(STAGE_SPEC).not.toMatch(/position:\s*absolute/i);
+  });
+
+  it("teaches the safe data warehouse + from binding (names only, no fetch/compute)", () => {
+    // The vocabulary now supports data binding — but only the safe, names-only
+    // kind (no URL/endpoint/query/expression/resolver, no computed column).
+    expect(STAGE_SPEC).toMatch(/"data"\??:\s*{/); // the top-level warehouse shape
+    expect(STAGE_SPEC).toMatch(/"from"\??:datasetName/); // binding field on nodes
+    expect(STAGE_SPEC).toMatch(/author once, bind many/i);
+    expect(STAGE_SPEC).toMatch(/"from" wins over inline/i);
+    expect(STAGE_SPEC).toMatch(/never a URL\/endpoint\/query\/expression\/resolver/i);
+    expect(STAGE_SPEC).toMatch(/no fetch or computed column/i);
   });
 
   it("teaches a composition-only vocabulary with no legacy or tool-specific guidance", () => {

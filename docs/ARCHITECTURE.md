@@ -113,9 +113,12 @@ The v1 intrinsic components are still just typed stage data:
 
 Only `box`, `section`, `card`, and `form` are containers in v1. Tables, charts,
 search, and filter bars are display/control-only; there is no client fetch,
-sort/filter engine, backend binding, resolver, expression language, or inline
-script. Overlay-class modal/drawer/popover components are intentionally out of
-v1 so normal-flow layout stays the invariant.
+sort/filter engine, data-source/resolver/query binding, expression language, or
+inline script. (Binding a data-bearing node to the in-tree `data` warehouse by
+NAME via `from` is allowed and is not a data source — see "Data warehouse +
+bindings"; it stays agent-authored declared content.) Overlay-class
+modal/drawer/popover components are intentionally out of v1 so normal-flow layout
+stays the invariant.
 
 ## Renderer Layout Contract
 
@@ -283,12 +286,33 @@ interface FacetTree {
   nodes: Record<NodeId, FacetNode>;
   screens?: Record<string, NodeId>; // named screens → their root node id
   entry?: string; // which screen shows first
+  data?: Record<string, Dataset>; // named datasets; bind by name via node `from`
 }
 ```
 
 The flat-list-with-id-references shape (the same idea as Google A2UI) lets an
 agent stream and patch a tree incrementally — adding one node at a time — instead
 of re-emitting a whole page on every change.
+
+**Data warehouse + bindings.** A `data`-bearing node (`table`, `chart`, `list`,
+`keyValue`, `metric`, `stat`) may carry inline data (`table.rows`,
+`chart.series`, …) OR reference a named dataset in the optional top-level `data`
+warehouse via `from: "<name>"` — so one dataset feeds many views and a single
+`/data/<name>` (or `/data/<name>/<i>/<col>`) patch updates every bound view at
+once. A dataset is a closed `Array<Record<string, string | number | boolean>>`
+(row-records) — the same cell type as `table.rows`, never nested/arbitrary JSON.
+`from` wins over inline; a dangling/absent/malformed `from` renders the node
+empty (never throws), and fills in when a later patch adds the data. This is
+data as **declared, agent-authored content** (UI-OUT), NOT a fetch/resolver/query
+— Facet adds no client data source, no binding-expression language, and no
+client-side sort/filter engine (local sort/filter is a deliberate follow-up).
+`data` is sanitized inside `validateTree`, so the one pure `applyPatch`/fold keeps
+it identical on server and client; the single `resolveNodeData` helper does the
+name→dataset projection for BOTH the "shows content?" gate and the renderer, so
+the two never diverge. Deliberately unlike A2UI (which converged on the same
+structure↔data split), Facet keeps the schema closed, travels only RFC-6902
+deltas rather than whole-model snapshots, stays server-sole-writer (no two-way
+binding), and ships no repeater/template/`${…}` expression layer.
 
 **Screens** are named roots INTO the same flat `nodes` map (not separate trees),
 so every `/nodes/<id>` patch path, `applyPatch`, and existing consumer keeps
