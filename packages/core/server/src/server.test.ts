@@ -614,6 +614,33 @@ describe("browser channel", () => {
     });
   });
 
+  it("clamps a hostile view on /record before it reaches the Sink (never a 400)", async () => {
+    const sink = new MemorySink();
+    const { server, base } = await start({ agentId: "a", agent: sayAgent, sink });
+    running = server;
+    const response = await postRecord(base, "v", {
+      kind: "tap",
+      target: "cta",
+      effect: { navigate: "about" },
+      view: {
+        screen: "pricing",
+        toggled: { "faq-3": "shown", junk: "sideways" },
+        viewport: "4k-ultrawide",
+        scheme: "dark",
+        nested: { deep: true },
+      },
+    });
+    expect(response.status).toBe(202);
+    await waitFor(async () => (await sink.history("a", "v")).length >= 1);
+    const history = await sink.history("a", "v");
+    const stored = history[0]?.event as { view?: unknown };
+    expect(stored.view).toEqual({
+      screen: "pricing",
+      toggled: { "faq-3": "shown" },
+      scheme: "dark",
+    });
+  });
+
   it("delivers the agent's reply over the visitor's SSE stream", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;

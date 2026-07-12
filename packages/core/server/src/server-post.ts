@@ -120,7 +120,11 @@ export function handleRecord(
         res.end();
         return;
       }
-      const { visitor, event } = body;
+      const { visitor } = body;
+      // Same untrusted-boundary view clamp as /event: `isRecordBody` ignores
+      // `view`, so a hostile client could otherwise persist an unbounded `view`
+      // to the Sink and have it replayed into the agent prompt.
+      const event = sanitizeEventView(body.event);
       res.writeHead(202);
       res.end();
       // Same per-visitor lane as /event so `runtime.record` is CALLED in lane/arrival

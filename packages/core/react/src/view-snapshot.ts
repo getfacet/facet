@@ -59,7 +59,7 @@ export function captureViewSnapshot(
   return snapshot;
 }
 
-interface DeviceClasses {
+export interface DeviceClasses {
   viewport?: Viewport;
   scheme?: Scheme;
 }

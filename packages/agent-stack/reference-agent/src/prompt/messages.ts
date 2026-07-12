@@ -62,8 +62,11 @@ function describeView(view: unknown, revisit: boolean): string {
       if (value === "shown") shown.push(key);
       else if (value === "hidden") hidden.push(key);
     }
-    if (shown.length > 0) parts.push(`shown: ${shown.join(", ")}`);
-    if (hidden.length > 0) parts.push(`hidden: ${hidden.join(", ")}`);
+    // Toggled keys are visitor-controlled node ids; escape each (as `screen` is)
+    // so attacker text — newlines, fake role markers — cannot break out of this
+    // inert line into the surrounding prompt.
+    if (shown.length > 0) parts.push(`shown: ${shown.map((k) => JSON.stringify(k)).join(", ")}`);
+    if (hidden.length > 0) parts.push(`hidden: ${hidden.map((k) => JSON.stringify(k)).join(", ")}`);
   }
 
   const device: string[] = [];

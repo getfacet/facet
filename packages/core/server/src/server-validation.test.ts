@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { MAX_FIELD_VALUE_CHARS, MAX_VIEW_TOGGLED_KEYS, type ClientEvent } from "@facet/core";
+import {
+  MAX_FIELD_VALUE_CHARS,
+  MAX_VIEW_TOGGLED_KEYS,
+  type ClientEvent,
+  type CollectedEvent,
+} from "@facet/core";
 import { sanitizeEventView } from "./server-validation.js";
 
 /**
@@ -114,5 +119,23 @@ describe("sanitizeEventView — view boundary clamp", () => {
     expect(result).not.toBe(original);
     // Input untouched (the bad `scheme` still present on the original).
     expect(original).toEqual(snapshot);
+  });
+
+  it("clamps view on a CollectedEvent (the /record path) too (DC-003)", () => {
+    const event = {
+      kind: "tap",
+      target: "cta",
+      effect: { navigate: "about" },
+      view: { screen: "pricing", toggled: { a: "shown", b: "sideways" }, viewport: "bogus" },
+    } as unknown as CollectedEvent;
+
+    const result = sanitizeEventView(event);
+
+    expect(result).toEqual({
+      kind: "tap",
+      target: "cta",
+      effect: { navigate: "about" },
+      view: { screen: "pricing", toggled: { a: "shown" } },
+    });
   });
 });

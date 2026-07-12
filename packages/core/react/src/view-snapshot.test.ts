@@ -111,19 +111,22 @@ describe("useViewportScheme fires no transport traffic (DC-006)", () => {
     }
   });
 
-  it("firing a media-query change only updates state, never a transport-like callback", () => {
-    const transport = vi.fn();
+  it("firing a media-query change only updates state (re-reads device classes)", () => {
+    let wide = true;
     const changeListeners: Array<() => void> = [];
-    stubMatchMedia((q) => q.includes("min-width"), changeListeners);
+    stubMatchMedia((q) => (q.includes("min-width") ? wide : false), changeListeners);
 
     const { result } = renderHook(() => useViewportScheme());
     expect(result.current.viewport).toBe("wide");
 
+    // The listener re-reads fresh device classes; it must never fire transport
+    // traffic (DC-006 — that "no send/record/fetch" property is proven
+    // structurally by the source-grep test below).
+    wide = false;
     act(() => {
       for (const fire of changeListeners) fire();
     });
-
-    expect(transport).not.toHaveBeenCalled();
+    expect(result.current.viewport).toBe("medium");
   });
 
   it("view-snapshot.ts source references no send/record/fetch API", () => {
