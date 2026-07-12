@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 
 import { EventType } from "@ag-ui/core";
 import type { AGUIEvent, RunAgentInput, StateSnapshotEvent } from "@ag-ui/core";
+import { MAX_VIEW_TOGGLED_KEYS } from "@facet/core";
 import type {
   ClientEvent,
   CollectedEvent,
@@ -2292,5 +2293,127 @@ describe("AG-UI server adapter", () => {
     );
     expect(largeRes.statusCode).toBe(413);
     expect(parseSseEvents(largeRes.body())[0]).toMatchObject({ code: "PAYLOAD_TOO_LARGE" });
+  });
+
+  it("passes a clamped view through to FacetRuntime.handle for a message event (view DC-001)", async () => {
+    const runtime = new MemoryRuntime();
+
+    await runTrusted(
+      runtime,
+      runInput({
+        visitor,
+        event: {
+          kind: "message",
+          text: "hello",
+          seq: 4,
+          view: {
+            screen: "checkout",
+            viewport: "gigantic", // outside the closed enum → dropped
+            scheme: "dark", // kept
+            toggled: {
+              "panel-a": "shown", // kept
+              "panel-b": "sideways", // not "shown"/"hidden" → dropped
+            },
+            extra: "ignored", // unknown field → dropped
+          },
+        },
+      }),
+    );
+
+    expect(runtime.handled).toEqual([
+      {
+        visitor,
+        event: {
+          kind: "message",
+          text: "hello",
+          seq: 4,
+          view: { screen: "checkout", scheme: "dark", toggled: { "panel-a": "shown" } },
+        },
+      },
+    ]);
+  });
+
+  it("clamps an over-cap toggled view to the newest entries via core semantics (view DC-001)", async () => {
+    const runtime = new MemoryRuntime();
+    const overCap = MAX_VIEW_TOGGLED_KEYS + 50;
+    const toggled: Record<string, "shown" | "hidden"> = {};
+    for (let i = 0; i < overCap; i++) toggled[`node-${i}`] = "shown";
+
+    await runTrusted(
+      runtime,
+      runInput({ visitor, event: { kind: "message", text: "hi", view: { toggled } } }),
+    );
+
+    const handledView = runtime.handled[0]?.event.view;
+    expect(handledView).toBeDefined();
+    const keys = Object.keys(handledView?.toggled ?? {});
+    expect(keys).toHaveLength(MAX_VIEW_TOGGLED_KEYS);
+    // drop-oldest: the very first entries are gone, the newest are kept.
+    expect(keys).not.toContain("node-0");
+    expect(keys).toContain(`node-${overCap - 1}`);
+  });
+
+  it("passes a clamped view through to FacetRuntime.record for a collected tap event (view DC-001)", async () => {
+    const runtime = new MemoryRuntime();
+
+    await runTrusted(
+      runtime,
+      runInput({
+        visitor,
+        record: {
+          kind: "tap",
+          target: "panel",
+          effect: { toggle: "panel" },
+          seq: 3,
+          view: {
+            screen: "settings",
+            scheme: "bogus", // outside the closed enum → dropped
+            viewport: "narrow", // kept
+          },
+        },
+      }),
+    );
+
+    expect(runtime.recorded).toEqual([
+      {
+        visitor,
+        event: {
+          kind: "tap",
+          target: "panel",
+          effect: { toggle: "panel" },
+          seq: 3,
+          view: { screen: "settings", viewport: "narrow" },
+        },
+      },
+    ]);
+  });
+
+  it("normalizes a message event without a view identically to today (no view key added) (view DC-007)", async () => {
+    const runtime = new MemoryRuntime();
+
+    await runTrusted(
+      runtime,
+      runInput({ visitor, event: { kind: "message", text: "hello", seq: 7 } }),
+    );
+
+    expect(runtime.handled).toEqual([
+      { visitor, event: { kind: "message", text: "hello", seq: 7 } },
+    ]);
+    expect(runtime.handled[0]?.event).not.toHaveProperty("view");
+  });
+
+  it("normalizes a collected event without a view identically to today (no view key added) (view DC-007)", async () => {
+    const runtime = new MemoryRuntime();
+    const record: CollectedEvent = {
+      kind: "tap",
+      target: "panel",
+      effect: { toggle: "panel" },
+      seq: 3,
+    };
+
+    await runTrusted(runtime, runInput({ visitor, record }));
+
+    expect(runtime.recorded).toEqual([{ visitor, event: record }]);
+    expect(runtime.recorded[0]?.event).not.toHaveProperty("view");
   });
 });

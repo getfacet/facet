@@ -2,7 +2,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { TurnResult } from "@facet/runtime";
 import type { AgentChannel } from "./agent-channel.js";
 import { isStaleLateResult, type LateWindow } from "./late.js";
-import { isControlBody, isEventBody, isRecordBody, readJson } from "./server-validation.js";
+import {
+  isControlBody,
+  isEventBody,
+  isRecordBody,
+  readJson,
+  sanitizeEventView,
+} from "./server-validation.js";
 import {
   addHandlingTurn,
   handlingTurnHasFrames,
@@ -27,7 +33,11 @@ export function handleEvent(
         res.end();
         return;
       }
-      const { visitor, event } = body;
+      const { visitor } = body;
+      // Clamp the browser-owned `view` at the untrusted boundary before the
+      // runtime sees it. Never rejects the event for view reasons — a hostile or
+      // absent view is dropped and the turn runs as if it never carried one.
+      const event = sanitizeEventView(body.event);
       res.writeHead(202);
       res.end();
       // Stamp a per-visitor arrival {index, era} pair NOW (the true order, before
@@ -110,7 +120,11 @@ export function handleRecord(
         res.end();
         return;
       }
-      const { visitor, event } = body;
+      const { visitor } = body;
+      // Same untrusted-boundary view clamp as /event: `isRecordBody` ignores
+      // `view`, so a hostile client could otherwise persist an unbounded `view`
+      // to the Sink and have it replayed into the agent prompt.
+      const event = sanitizeEventView(body.event);
       res.writeHead(202);
       res.end();
       // Same per-visitor lane as /event so `runtime.record` is CALLED in lane/arrival

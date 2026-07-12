@@ -335,6 +335,11 @@ ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[] | AsyncIte
   `tap` (a pressed box's agent action). It is the **forward** subset — a subtype of
   `CollectedEvent`, the log currency (`visit | message | tap`, where a local
   navigate/toggle `tap` carries a resolved `effect` instead of an `action`).
+- Every event may also carry an optional **`view`** snapshot — the visitor's
+  current browser view-state (`screen`, per-node `toggled` overrides, `viewport`
+  size class, color `scheme`). Like `fields`, it is inert data riding the event,
+  never part of the tree; it lets the agent target the screen the visitor is
+  actually on. See the view-snapshot paragraph below.
 - Local `navigate`/`toggle` taps never reach the agent, but they are still recorded
   for an **ordered replay log**: the browser fires them at `POST /record` (log-only,
   no agent turn), which `runtime.record` appends to the `Sink` on the same
@@ -525,6 +530,26 @@ serves the page itself (HTML shell + prebuilt client bundle), composes
 `@facet/reference-agent` with a provider-backed reference agent, and proxies the
 protocol routes to an internal loopback `createFacetServer` with a random
 per-boot agent token, never exposing `/agent/*`.
+
+The **view snapshot** is the read-side counterpart of the field snapshot: the
+same browser view-state Facet already resolves locally (which `screen` is
+showing, which nodes are `toggled`) plus a `viewport` size class and color
+`scheme`, sampled at send time and attached as an optional `view` on the
+forwarded event — no extra round-trip (`navigate`/`toggle`/resize/scheme-change
+never send on their own). The single pure `sanitizeView` in `@facet/core` is the
+one bounds source: it drops unknown enum values, length-caps `screen`/keys, and
+caps `toggled` at `MAX_VIEW_TOGGLED_KEYS`; every untrusted boundary that accepts
+`view` — `@facet/server`'s `/event` and `/record`, and the `@facet/ag-ui`
+normalizers — clamps through it, so a hostile `view` is bounded (never rejecting
+the event) before it reaches the Sink or the agent. `view` is UI-IN inert data:
+it rides browser→agent events only, is provably unable to reach any
+patch/fold/executor path, and the renderer never writes stage view-state from it
+(the server stays the sole stage writer — no auto-restore). `@facet/react`'s
+`StageRenderer` publishes the live snapshot read-only via an optional
+`onViewSnapshot` callback; `@facet/client` persists it per agent link in
+`localStorage` and replays it on the next `visit` as report-only revisit context;
+`@facet/reference-agent` renders it as one inert, escaped prompt line so the
+model can target the visitor's current screen.
 
 ## What we adopt vs build (and why)
 

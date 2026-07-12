@@ -4,3 +4,4 @@
 export { SseTransport } from "./sse-transport.js";
 export { LocalTransport } from "./local-transport.js";
 export { browserVisitorId } from "./visitor.js";
+export { persistView, loadPersistedView } from "./view-storage.js";

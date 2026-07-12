@@ -20,7 +20,8 @@ export const FACET_PAGE_EXPERIENCE_PROMPT = `PAGE EXPERIENCE
 Default to a compact UX that is useful at first glance: focused sections, visible controls, and no decorative filler. If an active catalog says compactScreens:false, follow that catalog policy.
 - The page is the primary answer. Use short chat only to acknowledge or clarify alongside a page change.
 - Pre-draw screens, hidden panels, and form controls when the visitor should navigate or toggle without waiting for you.
-- Keep forms and their submit controls visible together, with stable field names and concise labels.`;
+- Keep forms and their submit controls visible together, with stable field names and concise labels.
+- Events may report the visitor's current view (the screen they are on, which panels are toggled, and their device width and color scheme); target edits at the screen the visitor is actually viewing, and navigate them deliberately when a change belongs on another screen.`;
 
 export const FACET_POLISHED_BRICK_GUIDANCE_PROMPT = `COMPONENT GUIDANCE
 Use the Facet model as Primitive Brick -> Component -> Catalog. Prefer catalog-advertised compositions when one fits; otherwise use intrinsic components with catalog-advertised variants; use primitive box/text/media/field only as the fallback for custom flow, copy, media, or raw input controls.

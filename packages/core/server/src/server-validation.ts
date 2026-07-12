@@ -5,6 +5,7 @@ import {
   MAX_FIELD_VALUE_CHARS,
   MAX_FIELDS_KEYS,
   MAX_PATCH_OPS,
+  sanitizeView,
   type AgentControlFrame,
   type ClientEvent,
   type CollectedEvent,
@@ -133,6 +134,26 @@ export function isEventBody(
     return isFinitePrimitiveRecord(payload);
   }
   return false;
+}
+
+/**
+ * Clamp the browser-owned `view` on an accepted event at an untrusted boundary —
+ * WITHOUT ever rejecting the event for view reasons. `isEventBody`/`isRecordBody`
+ * stay pure accept/reject guards that ignore `view`; this runs AFTER one passes
+ * and replaces `view` with the core `sanitizeView` result (the single source of
+ * the bounds — never re-implemented here). Returns a NEW event object (no
+ * mutation of the input); the `view` key is omitted entirely when the sanitizer
+ * returns `undefined`, so a wholly-hostile or absent `view` yields an event that
+ * processes exactly as if it never carried one. Symmetric with the ag-ui
+ * normalizer's conditional-spread of a clamped `view`. Generic over the event
+ * shape so both `/event` (`ClientEvent`) and `/record` (`CollectedEvent`) clamp
+ * through the one helper.
+ */
+export function sanitizeEventView<E extends ClientEvent | CollectedEvent>(event: E): E {
+  const view = sanitizeView((event as { view?: unknown }).view);
+  const rest = { ...event } as E & { view?: unknown };
+  delete rest.view;
+  return view === undefined ? (rest as E) : ({ ...rest, view } as E);
 }
 
 function isFinitePrimitiveRecord(value: unknown): boolean {

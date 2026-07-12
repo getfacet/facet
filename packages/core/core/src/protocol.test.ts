@@ -14,6 +14,7 @@ import type {
   FacetTransport,
   TapEffect,
 } from "./protocol.js";
+import type { ViewSnapshot } from "./view.js";
 
 /**
  * Compile-time "value is assignable to B" assertion: the parameter is typed as
@@ -109,6 +110,54 @@ describe("protocol event contract (type-level)", () => {
 
   it("exports the shared field options cap", () => {
     expect(MAX_FIELD_OPTIONS).toBe(64);
+  });
+
+  it("an optional view snapshot rides every ClientEvent variant", () => {
+    const view: ViewSnapshot = {
+      screen: "pricing",
+      toggled: { faq: "shown" },
+      viewport: "narrow",
+      scheme: "dark",
+    };
+    const action: FacetAction = { kind: "agent", name: "submit" };
+    const visit = {
+      kind: "visit",
+      visitor: { visitorId: "v" },
+      view,
+    } as const satisfies ClientEvent;
+    const message = { kind: "message", text: "hi", view } as const satisfies ClientEvent;
+    const tap = { kind: "tap", action, view } as const satisfies ClientEvent;
+    expect([visit.view, message.view, tap.view]).toEqual([view, view, view]);
+  });
+
+  it("an optional view snapshot rides every CollectedEvent variant", () => {
+    const view: ViewSnapshot = { screen: "home" };
+    const visit = {
+      kind: "visit",
+      visitor: { visitorId: "v" },
+      view,
+    } as const satisfies CollectedEvent;
+    const message = { kind: "message", text: "hi", view } as const satisfies CollectedEvent;
+    const localTap = {
+      kind: "tap",
+      target: "cta-box",
+      effect: { navigate: "pricing" },
+      view,
+    } as const satisfies CollectedEvent;
+    expect([visit.view, message.view, localTap.view]).toEqual([view, view, view]);
+  });
+
+  it("a ClientEvent carrying view stays assignable to CollectedEvent (forward ⊆ collected)", () => {
+    const view: ViewSnapshot = { screen: "pricing", scheme: "light" };
+    const events: ClientEvent[] = [
+      { kind: "visit", visitor: { visitorId: "v" }, view },
+      { kind: "message", text: "hi", view },
+      { kind: "tap", action: { kind: "agent", name: "go" }, view },
+    ];
+    for (const event of events) {
+      expectAssignableTo<CollectedEvent>(event);
+    }
+    expect(events).toHaveLength(3);
   });
 });
 
