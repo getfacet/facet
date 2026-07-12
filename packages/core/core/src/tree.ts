@@ -1,4 +1,14 @@
 import { isContainer, type FacetNode, type NodeId } from "./nodes.js";
+import type {
+  ChartNode,
+  DataWarehouse,
+  KeyValueNode,
+  ListNode,
+  MetricNode,
+  StatNode,
+  TableNode,
+} from "./component-nodes.js";
+import { resolveNodeData } from "./data-binding.js";
 
 const TREE_RENDERABLE_NODE_BUDGET = 5_000;
 const TREE_RENDERABLE_MAX_DEPTH = 100;
@@ -38,6 +48,14 @@ export interface FacetTree {
   readonly screens?: Readonly<Record<string, NodeId>>;
   /** Screen shown first (a key of `screens`). Meaningless without `screens`. */
   readonly entry?: string;
+  /**
+   * Optional per-tree DATA WAREHOUSE — a named section of agent-authored data
+   * (`datasetName → rows`) that data-bearing nodes bind to by NAME via `from`.
+   * Same trust tier as inline `rows`, just relocated so many nodes can share one
+   * source. Sanitized inside `validateTree` (`sanitizeDataWarehouse`) and read at
+   * render/content time via `resolveNodeData`; never a URL/resolver.
+   */
+  readonly data?: DataWarehouse;
   /**
    * Optional theme NAME — a select-by-name handle into an operator-authored
    * theme registry, never a CSS value. The agent sets it to a name it was given
@@ -145,7 +163,7 @@ function collectRenderableNode(
   budget.left -= 1;
   const node = tree.nodes[id];
   if (!isRecord(node) || node.hidden === true) return false;
-  let renders = nodeRendersItself(node);
+  let renders = nodeRendersItself(node, tree.data);
   if (isContainer(node as FacetNode) && Array.isArray(node.children)) {
     const limit = Math.min(node.children.length, budget.left);
     for (let i = 0; i < limit && budget.left > 0; i += 1) {
@@ -158,7 +176,35 @@ function collectRenderableNode(
   return renders;
 }
 
-function nodeRendersItself(node: Record<string, unknown>): boolean {
+function nodeRendersItself(
+  node: Record<string, unknown>,
+  warehouse: DataWarehouse | undefined,
+): boolean {
+  // A data-bearing node with a `from` binding shows content iff the SHARED
+  // `resolveNodeData` (the same precedence + projection the renderer runs, so
+  // "shows something" and the render never diverge — RISK-INV-5) yields a
+  // non-empty projection. Dangling/absent/empty `from` ⇒ non-content. Nodes
+  // without `from` fall through to the inline predicates below.
+  if (typeof node.from === "string") {
+    switch (node.type) {
+      case "table":
+        return resolveNodeData(node as unknown as TableNode, warehouse).length > 0;
+      case "chart":
+        return resolveNodeData(node as unknown as ChartNode, warehouse).length > 0;
+      case "list":
+        return resolveNodeData(node as unknown as ListNode, warehouse).length > 0;
+      case "keyValue":
+        return resolveNodeData(node as unknown as KeyValueNode, warehouse).length > 0;
+      case "metric":
+      case "stat":
+        return (
+          typeof node.label === "string" &&
+          resolveNodeData(node as unknown as MetricNode | StatNode, warehouse).length > 0
+        );
+      default:
+        break;
+    }
+  }
   switch (node.type) {
     case "box":
       return false;

@@ -1,5 +1,9 @@
 import { isPlainObject, printableKey, printableValue, type IssueSink } from "./issues.js";
-import { sanitizeClassicComponentNode } from "./classic-component-validation.js";
+import {
+  sanitizeClassicComponentNode,
+  setColumnRow,
+  setFrom,
+} from "./classic-component-validation.js";
 import {
   COMPONENT_NODE_TYPES,
   FIELD_INPUTS,
@@ -163,9 +167,14 @@ function metricNode(
     delta?: string;
     tone?: Tone;
     variant?: string;
+    from?: string;
+    column?: string;
+    row?: number;
   } = { id, type, label, value };
   setText(raw.delta, id, "delta", node, "delta", MAX_COMPONENT_LABEL_CHARS, issues);
   setVariantTone(raw, id, node, issues);
+  setFrom(raw, id, node, issues);
+  setColumnRow(raw, node);
   return node;
 }
 
@@ -182,12 +191,19 @@ function keyValueNode(id: string, raw: Record<string, unknown>, issues: IssueSin
     if (tone !== undefined) next.tone = tone;
     items.push(next);
   }
-  const node: { id: string; type: "keyValue"; items: readonly KeyValueItem[]; variant?: string } = {
+  const node: {
+    id: string;
+    type: "keyValue";
+    items: readonly KeyValueItem[];
+    variant?: string;
+    from?: string;
+  } = {
     id,
     type: "keyValue",
     items,
   };
   setVariant(raw, id, node, issues);
+  setFrom(raw, id, node, issues);
   return node;
 }
 

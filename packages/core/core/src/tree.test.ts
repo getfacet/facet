@@ -384,6 +384,58 @@ describe("treeHasContent", () => {
     }
   });
 
+  // ---- DC-003: from-bound content is judged via the resolved warehouse ----
+
+  const boundTree = (child: unknown, data?: unknown): FacetTree =>
+    ({
+      root: "r",
+      nodes: { r: { id: "r", type: "box", children: ["child"] }, child },
+      ...(data !== undefined ? { data } : {}),
+    }) as unknown as FacetTree;
+
+  const boundChildren = [
+    {
+      id: "child",
+      type: "table",
+      columns: [{ key: "month", label: "Month" }],
+      rows: [],
+      from: "sales",
+    },
+    { id: "child", type: "chart", kind: "bar", series: [], from: "sales" },
+    { id: "child", type: "list", items: [], from: "sales" },
+    { id: "child", type: "keyValue", items: [], from: "sales" },
+    { id: "child", type: "metric", label: "Revenue", from: "sales", column: "revenue" },
+    { id: "child", type: "stat", label: "Revenue", from: "sales", column: "revenue" },
+  ];
+
+  it("populated from counts as content", () => {
+    const data = { sales: [{ month: "Jan", revenue: 100 }] };
+    for (const child of boundChildren) {
+      expect(treeHasContent(boundTree(child, data))).toBe(true);
+    }
+  });
+
+  it("dangling from (names an absent dataset) is non-content", () => {
+    const data = { other: [{ a: 1 }] };
+    for (const child of boundChildren) {
+      expect(treeHasContent(boundTree(child, data))).toBe(false);
+    }
+  });
+
+  it("absent data with a from node is non-content", () => {
+    for (const child of boundChildren) {
+      expect(() => treeHasContent(boundTree(child))).not.toThrow();
+      expect(treeHasContent(boundTree(child))).toBe(false);
+    }
+  });
+
+  it("empty from dataset is non-content", () => {
+    const data = { sales: [] };
+    for (const child of boundChildren) {
+      expect(treeHasContent(boundTree(child, data))).toBe(false);
+    }
+  });
+
   it("does not read component chart data beyond its caps", () => {
     const values: unknown[] = [1];
     values.length = 250;
