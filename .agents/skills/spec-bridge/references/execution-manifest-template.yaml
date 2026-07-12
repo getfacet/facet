@@ -51,13 +51,13 @@ work_units:
     red_check:
       # TDD-first. FAIL before impl, PASS after. Required for prod-code WUs.
       # Deletion/docs/move-only: command = "N/A" + justification.
-      command: "cd packages/<group>/<pkg> && pnpm exec vitest run src/<file>.test.ts -t '<name>'"
+      command: "pnpm exec vitest run packages/<group>/<pkg>/src/<file>.test.ts -t '<name>'"
       target: "packages/<group>/<pkg>/src/<file>.test.ts"
       justification: "" # required only when command == "N/A"
     quick_checks:
       - "[first re-runs red_check, then any scoped check]"
     no_regression_checks:
-      - "pnpm -C packages/<group>/<pkg> test"
+      - "pnpm exec vitest run packages/<group>/<pkg>/src"
     test_plan:
       - type: "unit" # unit | integration | e2e
         target: "packages/<group>/<pkg>/src/<file>.test.ts"

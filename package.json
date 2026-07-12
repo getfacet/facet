@@ -16,6 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "build": "pnpm -r --filter \"./packages/*/*\" build",
+    "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm build && node scripts/check-source-nuls.mjs",
+    "package:smoke": "pnpm build && node scripts/package-smoke.mjs",
     "release": "pnpm build && changeset publish",
     "demo": "pnpm --filter @facet/playground demo"
   },

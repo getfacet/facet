@@ -92,9 +92,10 @@ real but downgraded/non-blocking. Evidence in the PR #3 review record.
 - ~~chat dock palette drift~~ — RESOLVED by refactor-audit-cleanup-1: the dock
   background and input border now use the shared COLOR map, so a palette reskin
   reaches the whole component.
-- **packages/{react,runtime,server}/README.md** — install lines omit packages
-  their own snippet imports (`@facet/client`, `@facet/agent`); copy-pasting the
-  quickstart fails to resolve. *Fix:* align install lines with the snippets.
+- ~~packages/{react,runtime,server}/README.md install lines~~ — RESOLVED before
+  gate-release-hygiene, recorded here on 2026-07-12: each install command now
+  includes the packages imported by its snippet (`@facet/client` for React;
+  `@facet/agent` for runtime/server).
 
 ## P3 — residuals from Bundle D's review (appear-hold-scroll; track, fix opportunistically)
 
@@ -207,12 +208,14 @@ Bundle B PR review record.
   error observation naming the available themes (append_node precedent).
 - ~~runtime/assets.ts (composition dedup)~~ — RESOLVED in-branch (review r6):
   first-wins + issue, mirroring themes; pinned by an assets test.
-- **core/validate.ts (sanitizeScreens)** — `kept` is a plain object: a screen
-  keyed `__proto__` drops silently and `entry:"constructor"` resolves through
-  the prototype chain into the output. *Fix:* null-proto map + own-key check.
-- **runtime/assets.ts vs server/offline.ts** — `isSeedableTree` duplicates
-  `hasBuiltStage` (already divergent: `isContainer` vs `"children" in`). *Fix:*
-  server imports the runtime helper.
+- ~~core/validate.ts (sanitizeScreens)~~ — RESOLVED before
+  gate-release-hygiene, recorded here on 2026-07-12: screens accumulate in a
+  null-prototype map, forbidden prototype keys are rejected with an issue, and
+  entry lookup cannot resolve through `Object.prototype`.
+- ~~runtime/assets.ts vs server/offline.ts tree-content duplication~~ —
+  RESOLVED before gate-release-hygiene, recorded here on 2026-07-12: runtime
+  seeding and server offline selection both delegate to core's fail-safe
+  `treeHasContent`; its invariant matrix is covered directly in `tree.test.ts`.
 - ~~local theme action surface drift~~ — RESOLVED by refactor-audit-cleanup-1:
   the CLI and bridge now expose validated, name-only theme selection.
 - ~~core font-size clamp naming~~ — RESOLVED by refactor-audit-cleanup-1:

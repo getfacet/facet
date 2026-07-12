@@ -39,8 +39,11 @@ work_units:
     owner_role: "subagent" # subagent | main-agent
     packages: ["@facet/core"] # affected Facet package(s)
     objective: "[one sentence]"
+    module_shape:
+      decision: "preserve" # preserve | sibling-helper | role-directory | package-shared | public-surface | no-split
+      rationale: "[why this shape fits; include public/private boundary, import direction, and test placement when splitting or adding scaffold]"
     files:
-      - path: "packages/<pkg>/src/<file>.ts"
+      - path: "packages/<group>/<pkg>/src/<file>.ts"
         change_type: "update" # add | update | delete
         purpose: "[why]"
     depends_on: []
@@ -48,16 +51,16 @@ work_units:
     red_check:
       # TDD-first. FAIL before impl, PASS after. Required for prod-code WUs.
       # Deletion/docs/move-only: command = "N/A" + justification.
-      command: "cd packages/<pkg> && pnpm exec vitest run src/<file>.test.ts -t '<name>'"
-      target: "packages/<pkg>/src/<file>.test.ts"
+      command: "pnpm exec vitest run packages/<group>/<pkg>/src/<file>.test.ts -t '<name>'"
+      target: "packages/<group>/<pkg>/src/<file>.test.ts"
       justification: "" # required only when command == "N/A"
     quick_checks:
       - "[first re-runs red_check, then any scoped check]"
     no_regression_checks:
-      - "pnpm -C packages/<pkg> test"
+      - "pnpm exec vitest run packages/<group>/<pkg>/src"
     test_plan:
       - type: "unit" # unit | integration | e2e
-        target: "packages/<pkg>/src/<file>.test.ts"
+        target: "packages/<group>/<pkg>/src/<file>.test.ts"
         covers_dc: ["DC-001"]
         action: "new" # new | update
     done_conditions:

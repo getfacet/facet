@@ -9,17 +9,25 @@ For a library, the tests ARE the contract. Check that behavior is protected:
   covered by a new/updated test (missing test for changed behavior = P2).
 - **Critical pure logic** — the invariant-carrying code MUST stay covered:
   `validateTree` (fail-safe sanitizing), `applyPatch` (RFC 6902 + purity), `Stage`
-  op-generation, the stores (durability), `createSerialQueue` (serial/parallel).
-  A gap here is P1–P2.
-- **Untested testable surface** — packages with pure, easily-testable logic and no
-  tests: `@facet/cli` (op building),
-  the persistent driver's coordination. Flag the specific untested function.
+  op-generation, `foldPatchIntoStage`, component sanitizers, stores (durability),
+  queues/semaphores/LRU structures, CLI command builders, provider/prompt
+  builders, and asset validators. A gap here is P1–P2. When component validation
+  has more than one entry path, require parity evidence through the public
+  `validateTree` API rather than accepting isolated helper tests.
+- **Renderer interaction contracts** — do not exempt testable behavior as
+  "UI-render code." Changes to `media.src` safety, field capture, agent-action
+  routing, or browser-local `navigate`/`toggle` resolution and tap recording need
+  focused static/jsdom tests. Pixel-only styling may remain visual coverage.
+- **Untested testable surface** — discover it from changed production files and
+  package barrels; do not repeat an old known-gap list after coverage lands.
+  Flag the specific untested function and prove absence after checking adjacent
+  tests, broader package tests, public exports, and bin/runtime entry paths.
 - **Bad tests** — tautological assertions, tests that don't exercise the claimed
   behavior, snapshot-only where logic should be asserted.
 
-Do NOT demand tests for glue/demo/UI-render code where a unit test adds little
-(say so). Prefer "this specific function has no test and is bug-prone because X"
-over "coverage is low".
+Do NOT demand tests for glue, demos, passive React view composition, or Node
+process wrappers where a unit test adds little (say so). Prefer "this specific
+function has no test and is bug-prone because X" over "coverage is low".
 
 Return findings ONLY, each as
 `{title, file, line, severity, evidence (what's untested), why}`. Cite the

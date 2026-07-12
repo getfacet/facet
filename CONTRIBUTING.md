@@ -6,8 +6,7 @@ Thanks for your interest! Facet is early — issues, discussion, and PRs are wel
 
 ```bash
 pnpm install
-pnpm typecheck
-pnpm test
+pnpm verify
 ```
 
 Node ≥ 20 and pnpm 9 (`corepack enable`).
@@ -17,12 +16,12 @@ Node ≥ 20 and pnpm 9 (`corepack enable`).
 1. Branch from `main`.
 2. Make your change. Keep it focused — one concern per PR.
 3. Before pushing, make sure the **Definition of Done** passes (see
-   [AGENTS.md](AGENTS.md)): `pnpm typecheck` and `pnpm test` are green, and any
-   behavior change to core logic (`validateTree`, `applyPatch`, `Stage`) has a
-   test.
+   [AGENTS.md](AGENTS.md)): `pnpm verify` is green, and any behavior change to
+   core logic (`validateTree`, `applyPatch`, `Stage`) has a test.
 4. Open a PR describing the change and why.
 
-CI runs typecheck + tests on every PR.
+CI runs the same `pnpm verify` gate on every PR: typecheck, tests, lint,
+format-check, build, and a source NUL-byte scan.
 
 ## Design principles
 
@@ -42,7 +41,11 @@ pnpm changeset   # pick a bump type + write a one-line summary
 
 All `@facet/*` packages are versioned together (a fixed group), so they always
 share one version. On merge to `main`, a bot opens/updates a "Version Packages"
-PR; merging that PR builds and publishes to npm. You don't publish manually.
+PR. A separate token-free release job builds and packs every published package,
+installs the tarballs in a clean consumer, and checks ESM/CJS/types/bin entry
+points before the credentialed publish job can start. Run `pnpm package:smoke`
+locally when changing package metadata or release wiring. You don't publish
+manually.
 
 Changesets are the changelog source of truth: each package's `CHANGELOG.md` is
 generated from the changeset entries, so write the summary for the reader of that

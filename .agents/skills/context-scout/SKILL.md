@@ -49,12 +49,13 @@ Merge into one changed-files list.
 | `packages/agent-stack/quickstart/**` | `@facet/quickstart` |
 | `packages/extensions/agent/**` | `@facet/agent` |
 | `packages/extensions/agent-client/**` | `@facet/agent-client` |
+| `packages/extensions/ag-ui/**` | `@facet/ag-ui` |
 | `packages/extensions/cli/**` | `@facet/cli` |
 | `packages/extensions/bridge/**` | `@facet/bridge` |
 | `packages/extensions/store-postgres/**` | `@facet/store-postgres` |
 | `packages/labs/**` | labs (experimental, unpublished) |
 | `apps/playground/**` | playground (integration surface) |
-| `.agents/**`, `.codex/**`, `specs/**`, `.changeset/**`, root `*.md`, `docs/**` | infra/docs/planning |
+| `.agents/**`, `.claude/**`, `.codex/**`, `specs/**`, `.changeset/**`, root `*.md`, `docs/**` | infra/docs/planning |
 
 ### Step 3 — Gather evidence per affected package
 For each affected package, collect (as `file:line`):

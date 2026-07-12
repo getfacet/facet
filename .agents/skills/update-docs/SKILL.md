@@ -43,7 +43,7 @@ Merge the three lists.
 | New / renamed / removed `@facet/*` package | root `README.md` (package list) + `AGENTS.md` (package list) + a Changeset |
 | `packages/extensions/cli` / `packages/extensions/bridge` commands or env vars | `README.md` / `CONTRIBUTING.md` usage + the package `README.md` + the CLI `--help` text |
 | `packages/core/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + `packages/core/server` docstring |
-| `.agents/skills/**`, `.codex/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
+| `.agents/skills/**`, `.claude/**`, `.codex/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
 | Release/versioning setup | `CONTRIBUTING.md`, `CHANGELOG.md` |
 
 ## Workflow

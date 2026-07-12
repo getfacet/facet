@@ -15,10 +15,10 @@ allowed-tools: Bash(git diff:*), Bash(git status:*), Bash(git ls-files:*), Read,
 > without evidence is a FAIL.
 
 ## The Facet-specific one that's easy to forget
-`packages/core/src/spec.ts` exports **`STAGE_SPEC`** — the canonical brick/token/
-action vocabulary the LLM reads to draw pages. It is single-sourced (the bridge
-spawn prompt, the persistent SYSTEM prompt, and the playground generator all embed
-it). **Any change to the brick/token/action vocabulary MUST update `STAGE_SPEC`**,
+`packages/core/core/src/spec.ts` exports **`STAGE_SPEC`** — the canonical
+brick/token/action vocabulary the LLM reads to draw pages. It is single-sourced
+(the bridge spawn prompt, the persistent SYSTEM prompt, and the playground
+generator all embed it). **Any change to the brick/token/action vocabulary MUST update `STAGE_SPEC`**,
 or agents will keep drawing with the old vocabulary. Treat it as a doc surface.
 
 ## Detect changes
@@ -37,13 +37,13 @@ Merge the three lists.
 ## Doc map (changed file → triggered doc)
 | Changed code | Triggered doc(s) |
 |---|---|
-| `packages/core/src/{nodes,tokens,protocol}.ts` (brick/token/action vocabulary) | **`packages/core/src/spec.ts` (STAGE_SPEC)** + `docs/ARCHITECTURE.md` |
-| `packages/core/src/{validate,patch}.ts` (fail-safe behavior) | `docs/ARCHITECTURE.md` (invariants) + `README.md` if a headline guarantee changed |
+| `packages/core/core/src/{nodes,tokens,protocol}.ts` (brick/token/action vocabulary) | **`packages/core/core/src/spec.ts` (STAGE_SPEC)** + `docs/ARCHITECTURE.md` |
+| `packages/core/core/src/{validate,patch}.ts` (fail-safe behavior) | `docs/ARCHITECTURE.md` (invariants) + `README.md` if a headline guarantee changed |
 | A published `@facet/*` public API (exports/signatures) | that package's `README.md` (bridge/client have one; add one if the surface is user-facing) + root `README.md` if it's a headline capability |
 | New / renamed / removed `@facet/*` package | root `README.md` (package list) + `AGENTS.md` (package list) + a Changeset |
-| `packages/cli` / `packages/bridge` commands or env vars | `README.md` / `CONTRIBUTING.md` usage + the package `README.md` + the CLI `--help` text |
-| `packages/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + `packages/server` docstring |
-| `.claude/skills/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
+| `packages/extensions/cli` / `packages/extensions/bridge` commands or env vars | `README.md` / `CONTRIBUTING.md` usage + the package `README.md` + the CLI `--help` text |
+| `packages/core/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + `packages/core/server` docstring |
+| `.agents/skills/**`, `.claude/**`, `.codex/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
 | Release/versioning setup | `CONTRIBUTING.md`, `CHANGELOG.md` |
 
 ## Workflow

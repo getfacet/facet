@@ -55,9 +55,11 @@ The maintainer approves scope; then execute item by item through
 `/worktree-prep` in refactor mode using branch `refactor/<slug>`. Apply only the
 approved cleanup scope and run the refactor hard gate:
 `/update-tests` → `/verify` → `/code-review` → `/update-docs`. Also run
-`/live-test` if the cleanup touches a live-link surface (`packages/quickstart`,
-`packages/server`, `packages/client`, `packages/agent-client`, `packages/runtime`,
-`packages/bridge`, `packages/react` renderer/useFacet/ChatDock paths, or core
+`/live-test` if the cleanup touches a live-link surface
+(`packages/agent-stack/quickstart`, `packages/core/server`,
+`packages/core/client`, `packages/extensions/agent-client`,
+`packages/core/runtime`, `packages/extensions/bridge`, `packages/core/react`
+renderer/useFacet/ChatDock paths, or `packages/core/core`
 patch/protocol/stage vocabulary) or the owner requests it.
 
 Bias toward a few high-value consolidations (real duplication, a misplaced
