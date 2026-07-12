@@ -12,7 +12,7 @@ import {
   type SummarizerRequest,
 } from "./summary.js";
 import type { StoredEvent, StoredSummary } from "@facet/runtime";
-import type { ProviderStep, ProviderTurn, QuickstartProvider, ToolSpec } from "../provider.js";
+import type { ProviderStep, ProviderTurn, ReferenceProvider, ToolSpec } from "../provider.js";
 
 const VALID_INPUT = {
   visitor: "returning visitor, wants a booking page",
@@ -47,7 +47,7 @@ function textStep(text = "no tool"): ProviderStep {
 type ScriptedStep = ProviderStep | Error | "hang";
 
 interface StubProvider {
-  readonly provider: QuickstartProvider;
+  readonly provider: ReferenceProvider;
   readonly turns: ProviderTurn[];
   readonly toolSpecs: ToolSpec[][];
 }
@@ -56,7 +56,7 @@ function stubProvider(...steps: readonly ScriptedStep[]): StubProvider {
   const turns: ProviderTurn[] = [];
   const toolSpecs: ToolSpec[][] = [];
   let next = 0;
-  const provider: QuickstartProvider = {
+  const provider: ReferenceProvider = {
     name: "openai",
     model: "stub-model",
     run(turn, tools) {

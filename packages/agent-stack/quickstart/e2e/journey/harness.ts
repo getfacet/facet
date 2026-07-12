@@ -21,7 +21,7 @@
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import type { FacetAgent } from "@facet/core";
-import { resolveProvider, type QuickstartProvider } from "@facet/reference-agent";
+import { resolveProvider, type ReferenceProvider } from "@facet/reference-agent";
 import { startQuickstart, type RunningQuickstart } from "../../src/index.js";
 
 /** Options for {@link bootJourney}. */
@@ -160,6 +160,6 @@ export async function runBinSmoke(): Promise<BinSmokeResult> {
  */
 export function resolveJourneyProvider(
   env: Readonly<Record<string, string | undefined>>,
-): QuickstartProvider | null {
+): ReferenceProvider | null {
   return resolveProvider({}, env);
 }

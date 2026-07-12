@@ -33,6 +33,9 @@ type LegacyAssetsKey = `st${"amps"}`;
 describe("reference-agent barrel", () => {
   it("exports compatibility and canonical aliases", () => {
     expect(reference.createReferenceAgent).toBe(reference.createQuickstartAgent);
+    expect(reference).not.toHaveProperty("__resetCompactionCooldownForTests");
+    expect(reference).not.toHaveProperty("resetBackgroundCompactionForTests");
+    expect(reference).not.toHaveProperty("createReferenceAgentWithDependencies");
 
     const runtimeExports = [
       "createQuickstartAgent",
@@ -61,6 +64,12 @@ describe("reference-agent barrel", () => {
   it("types every compatibility and canonical export row", () => {
     expectTypeOf<ReferenceAgentOptions>().toEqualTypeOf<QuickstartAgentOptions>();
     expectTypeOf<ReferenceProvider>().toEqualTypeOf<QuickstartProvider>();
+    expectTypeOf<
+      "summarizerFactory" extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      "onBackgroundTask" extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<false>();
 
     expectTypeOf<ToolSpec>().toMatchTypeOf<{
       readonly name: string;

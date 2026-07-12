@@ -438,8 +438,9 @@ The brain is out of scope for Facet — the user brings the LLM/rules — but a
 *reference* brain ships anyway, exactly as a reference transport does:
 `@facet/reference-agent` is to brains what `@facet/server` is to transports. Its
 agent is an ordinary `FacetAgent` handed to the existing `createFacetServer({
-agent })` seam, its LLM calls sit behind a small `QuickstartProvider`/
-`ReferenceProvider` interface (OpenAI/Anthropic adapters), and core/runtime/
+agent })` seam, its LLM calls sit behind a small `ReferenceProvider` interface
+(with `QuickstartProvider` retained as a compatibility type alias for existing
+consumers; OpenAI/Anthropic adapters implement the canonical interface), and core/runtime/
 server gain zero LLM awareness — any user brain drops into the same slot, so the
 boundary stays intact while `npx facet-quickstart` gives a one-command first run
 by composing it. The package also keeps a deterministic stub agent as a test

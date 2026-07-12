@@ -199,10 +199,11 @@ Bundle B PR review record.
   `validateComposition`)~~ — RESOLVED in-branch (review r5+r6): composition
   names share `isValidThemeName`, descriptions truncate at the shared 200-char
   cap, and the refusal issue never echoes the raw name.
-- **quickstart/prompt.ts (composition budget)** — the 4000-char cap measures only the
-  fragment JSON, not the `- name: description` head, and there is no aggregate
-  section cap. *Fix:* measure head+fragment; add a COMPOSITIONS section cap.
-- **quickstart/agent.ts (set_theme)** — an unknown theme name returns
+- ~~quickstart/prompt.ts (composition budget)~~ — OBSOLETE after the component
+  model: the canonical `@facet/agent-tools` prompt advertises bounded composition
+  metadata only and never places fragment JSON in the prompt. The unpublished
+  quickstart prompt shim was removed by the agent-stack ownership cleanup.
+- **agent-tools/executor-node.ts (set_theme)** — an unknown theme name returns
   `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
   error observation naming the available themes (append_node precedent).
 - ~~runtime/assets.ts (composition dedup)~~ — RESOLVED in-branch (review r6):
@@ -220,8 +221,11 @@ Bundle B PR review record.
   spacing range name.
 - **core/theme.ts** — redundant `theme as FacetTheme` cast at the return
   (compiles clean without it).
-- **tests** — prompt.test.ts: no assertion that an all-oversized composition set
-  suppresses the COMPOSITIONS section; theme.test.ts: negative-dimension clamp floor
+- ~~reference prompt oversized-composition suppression test~~ — OBSOLETE with
+  the composition metadata model: valid composition names remain advertised
+  while descriptions/metadata are bounded and fragment JSON is excluded; the
+  canonical reference-agent prompt suite pins that contract.
+- **tests** — `core/src/theme.test.ts`: negative-dimension clamp floor
   (`"-20px"` → `"0px"`) untested.
 - ~~server/server.ts:385 (seed frame vs lastApplied)~~ — RESOLVED in-branch
   (review r6, upgraded to P2): `FacetRuntime.handle`/`applyMessages` return

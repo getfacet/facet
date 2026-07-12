@@ -1,5 +1,6 @@
 import { MAX_PATCH_OPS, foldPatchIntoStage } from "@facet/core";
 import type { FacetTree, JsonPatchOperation, NodeId, ServerMessage } from "@facet/core";
+import { stableJson } from "./stable-json.js";
 
 export interface StageTreeSummary {
   readonly root: NodeId;
@@ -155,19 +156,4 @@ function metadataChanges(before: FacetTree, after: FacetTree): readonly string[]
   if (beforeCount !== afterCount)
     changes.push(`node count ${String(beforeCount)} -> ${String(afterCount)}`);
   return changes;
-}
-
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") {
-    return JSON.stringify(value) ?? "undefined";
-  }
-  if (Array.isArray(value)) {
-    return `[${value.map((item) => stableJson(item)).join(",")}]`;
-  }
-  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
-    left.localeCompare(right),
-  );
-  return `{${entries
-    .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-    .join(",")}}`;
 }

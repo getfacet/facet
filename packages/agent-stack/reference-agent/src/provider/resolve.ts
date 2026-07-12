@@ -1,6 +1,6 @@
 import { createAnthropicProvider } from "./anthropic.js";
 import { createOpenAiProvider } from "./openai.js";
-import type { QuickstartProvider } from "./types.js";
+import type { ReferenceProvider } from "./types.js";
 
 export interface ResolveProviderFlags {
   readonly provider?: string;
@@ -16,7 +16,7 @@ export interface ResolveProviderFlags {
 export function resolveProvider(
   flags: ResolveProviderFlags,
   env: Readonly<Record<string, string | undefined>>,
-): QuickstartProvider | null {
+): ReferenceProvider | null {
   const openaiKey = env["OPENAI_API_KEY"];
   const anthropicKey = env["ANTHROPIC_API_KEY"];
 

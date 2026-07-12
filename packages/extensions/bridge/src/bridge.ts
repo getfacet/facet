@@ -4,19 +4,14 @@ import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import type { ClientEvent, FacetAgent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
-import {
-  collectMessages,
-  createLruMap,
-  createSemaphore,
-  createSerialQueue,
-  STAGE_SPEC,
-} from "@facet/core";
+import type { ClientEvent, FacetAgent, FacetSession, ServerMessage } from "@facet/core";
+import { collectMessages, createLruMap, createSemaphore, createSerialQueue } from "@facet/core";
 import type { CmdFrame } from "@facet/core";
 import { connectAgent } from "@facet/agent-client";
 import { createPersistentDriver } from "./persistent.js";
 import { BRIDGE_DEFAULTS } from "./defaults.js";
 import { safeEnv } from "./env.js";
+import { buildSpawnPrompt } from "./prompt.js";
 
 /** Cap on the spawn-runner per-visitor `--resume` session-id map (LRU eviction). */
 const MAX_SESSION_IDS = 500;
@@ -89,28 +84,6 @@ function makeFacetShim(): string {
   writeFileSync(join(shimDir, "facet"), `#!/bin/sh\nexec ${runner} "${binPath}" "$@"\n`);
   chmodSync(join(shimDir, "facet"), 0o755);
   return shimDir;
-}
-
-const SPEC = `You control a live web page via the \`facet\` command. Change the page by running:
-  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet theme <name>   facet say <text>
-
-${STAGE_SPEC}
-
-Run facet commands now; do not print anything else.`;
-
-function promptFor(event: ClientEvent, stage: FacetTree): string {
-  const current = `The page THIS visitor currently sees (a Facet stage tree): ${JSON.stringify(stage)}`;
-  if (event.kind === "visit") {
-    return `${SPEC}\n\nA visitor just arrived. Render a short welcome page with \`facet render\`.`;
-  }
-  if (event.kind === "message") {
-    return `${SPEC}\n\n${current}\n\nThe visitor said: "${event.text}". MODIFY the current page — prefer \`facet append\`/\`set\`/\`remove\` on existing node ids to change just what's needed (only \`facet render\` a fresh page if they ask for something totally new). Optionally \`facet say\` a short reply.`;
-  }
-  // Defense-in-depth parity with persistent.ts's `userText`: a malformed action
-  // event (no action object) must not throw while building the prompt. Guard the
-  // name the same way both twins do.
-  const name = typeof event.action?.name === "string" ? event.action.name : "(unknown)";
-  return `${SPEC}\n\n${current}\n\nThe visitor pressed "${name}". React with facet commands on the current page.`;
 }
 
 export function createBridge(options: BridgeOptions = {}): Bridge {
@@ -289,7 +262,7 @@ function createSpawnAgent(options: BridgeOptions): { agent: FacetAgent; close: (
   ): Promise<readonly ServerMessage[]> => {
     const token = String((counter += 1));
     buffers.set(token, []);
-    await runBrain(promptFor(event, session.stage), session.visitor.visitorId, token);
+    await runBrain(buildSpawnPrompt(event, session.stage), session.visitor.visitorId, token);
     const messages = buffers.get(token) ?? [];
     buffers.delete(token);
     options.onEvent?.(event.kind, session.visitor.visitorId, messages.length);

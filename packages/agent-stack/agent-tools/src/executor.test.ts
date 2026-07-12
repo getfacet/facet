@@ -496,7 +496,9 @@ describe("executeStageTool", () => {
 
   describe("use_composition", () => {
     it("use_composition is the canonical executor surface with no old-tool compatibility branch", () => {
-      const source = readFileSync(new URL("./executor.ts", import.meta.url), "utf8");
+      const source = ["./executor.ts", "./executor-page.ts"]
+        .map((file) => readFileSync(new URL(file, import.meta.url), "utf8"))
+        .join("\n");
 
       expect(source).toContain('"use_composition"');
       expect(source).toContain("expandComposition");

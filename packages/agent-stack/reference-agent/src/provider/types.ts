@@ -41,7 +41,7 @@ export interface ProviderTurn {
   readonly messages: readonly TurnMessage[];
 }
 
-export interface QuickstartProvider {
+export interface ReferenceProvider {
   readonly name: "openai" | "anthropic";
   readonly model: string;
   /** The model's total context window in tokens, when the adapter knows it. */
