@@ -175,7 +175,9 @@ describe("DEFAULT_THEME recipes", () => {
     visit(recipeData);
     expect(seenForbiddenKeys).toEqual([]);
 
-    const source = readFileSync(new URL("./theme.ts", import.meta.url), "utf8");
+    const source = ["./theme.ts", "./theme-tokens.ts"]
+      .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
+      .join("\n");
     expect(source).not.toMatch(
       /\bfrom\s+["@']@facet\/(react|runtime|server|client|reference-agent|quickstart)["']/,
     );

@@ -1,0 +1,28 @@
+import type { CSSProperties, ReactNode } from "react";
+import type { NodeId } from "@facet/core";
+import type { ResolvedTheme } from "./theme.js";
+
+export interface PressableRenderArgs<Press> {
+  readonly press: Press | null;
+  readonly hold: Press | null;
+  readonly dispatch: (press: Press) => void;
+  readonly style: CSSProperties;
+  readonly className: string | undefined;
+  readonly inert?: boolean;
+  readonly disabled?: boolean;
+  readonly buttonRole?: boolean;
+  readonly children: ReactNode;
+}
+
+export interface BrickRenderContext<Press> {
+  readonly theme: ResolvedTheme;
+  readonly className: string | undefined;
+  readonly inert: boolean;
+  readonly nodeId: NodeId;
+  readonly activeScreen: string | null;
+  readonly children?: ReactNode;
+  readonly classifyPress: (value: unknown) => Press | null;
+  readonly dispatch: (press: Press) => void;
+  readonly navigate: (to: string) => void;
+  readonly renderPressable: (args: PressableRenderArgs<Press>) => ReactNode;
+}

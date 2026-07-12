@@ -97,7 +97,9 @@ describe("DEFAULT_COMPOSITIONS", () => {
     expect(serialized).not.toContain(legacyDefinitionsField);
     expect(serialized).not.toMatch(legacyNaming);
 
-    const source = readFileSync(moduleUrl, "utf8");
+    const source = [moduleUrl, new URL("./composition-chart-table.ts", import.meta.url)]
+      .map((url) => readFileSync(url, "utf8"))
+      .join("\n");
     expect(source).not.toMatch(/\bfrom\s+["@'](?:node:|@facet\/(react|runtime|server|client))\b/);
     expect(source).not.toMatch(new RegExp(`\\b${legacyDefinitionsField}\\b`));
     expect(source).not.toMatch(legacyNaming);

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import * as catalogExports from "./catalog.js";
 import {
   CATALOG_BRICK_TYPES,
   CATALOG_COMPONENT_TYPES,
@@ -14,6 +15,17 @@ const legacy = ["st", "amp"].join("");
 const legacyPolicyField = `${legacy}s`;
 const legacyOrderField = ["component", "Order"].join("");
 const legacyDefinitionsField = ["component", "Definitions"].join("");
+
+describe("catalog module boundary", () => {
+  it("keeps the exact runtime export surface", () => {
+    expect(Object.keys(catalogExports).sort()).toEqual([
+      "CATALOG_BRICK_TYPES",
+      "CATALOG_COMPONENT_TYPES",
+      "DEFAULT_CATALOG",
+      "validateCatalog",
+    ]);
+  });
+});
 
 describe("validateCatalog", () => {
   it("defaults missing catalog input to a locked safe catalog", () => {

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CATALOG } from "./catalog.js";
+import * as themeExports from "./theme.js";
 import {
   isValidThemeName,
   MAX_DESCRIPTION_LENGTH,
@@ -13,6 +14,19 @@ import type { FacetTheme } from "./theme.js";
 function hasError(issues: readonly { severity: "error" | "warning" }[]): boolean {
   return issues.some((i) => i.severity === "error");
 }
+
+describe("theme module boundary", () => {
+  it("keeps the exact runtime export surface", () => {
+    expect(Object.keys(themeExports).sort()).toEqual([
+      "DEFAULT_COLORS",
+      "MAX_DESCRIPTION_LENGTH",
+      "RECIPE_COMPONENTS",
+      "RECIPE_PARTS",
+      "isValidThemeName",
+      "validateTheme",
+    ]);
+  });
+});
 
 describe("isValidThemeName", () => {
   it("accepts short filename-safe identifiers and rejects the rest", () => {
@@ -34,7 +48,10 @@ describe("isValidThemeName", () => {
 
 describe("theme clamp constant names", () => {
   it("keeps spacing and font-size clamp bounds separately named", () => {
-    const source = readFileSync(new URL("./theme.ts", import.meta.url), "utf8");
+    const source = [
+      readFileSync(new URL("./theme-token-validation.ts", import.meta.url), "utf8"),
+      readFileSync(new URL("./theme-validation.ts", import.meta.url), "utf8"),
+    ].join("\n");
     expect(source).toMatch(/const SPACE_PX_RANGE/);
     expect(source).toMatch(/const FONT_SIZE_PX_RANGE/);
     expect(source).toMatch(

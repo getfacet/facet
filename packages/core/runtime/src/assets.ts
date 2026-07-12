@@ -1,64 +1,25 @@
 import {
   validateCatalog,
   validateComposition,
-  treeHasContent,
   validateTheme,
   validateTree,
   type FacetComposition,
   type FacetCatalog,
-  type FacetSession,
   type FacetTheme,
   type FacetTree,
 } from "@facet/core";
 import { DEFAULT_CATALOG, DEFAULT_COMPOSITIONS, DEFAULT_THEME } from "@facet/assets";
-import { sessionKey, type StageStore } from "./stage-store.js";
+import type { AssetsStore } from "./asset-store.js";
+import { isSeedableTree } from "./initial-stage.js";
 
-/** Hygiene cap on `withInitialStage`'s armed-but-unconsumed seed keys — mirrors
- * `FacetRuntime`'s `MAX_PENDING_SEEDS`. A visitor whose first turn never persists
- * (agent throw / save reject) leaves its key armed until it returns; a stream of
- * one-off broken-agent visitors would otherwise leak this in-process Set. */
-const MAX_SEEDED = 10_000;
+export { MemoryAssets, type AssetDocuments, type AssetsStore } from "./asset-store.js";
+export { isSeedableTree, withInitialStage } from "./initial-stage.js";
 const MAX_ASSET_DOCUMENTS = 1024;
 const MAX_ASSET_ISSUES = 64;
 const MAX_ASSET_ISSUE_CHARS = 200;
 const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
 
 type AssetArrayField = "issues" | "themes" | "compositions";
-
-/**
- * The operator's per-agent asset library — themes, compositions, and an optional
- * initial tree — as RAW documents straight from the backend, BEFORE any
- * `@facet/core` validation. `loadAssets` is the one gate they pass. Legacy
- * pre-canonicalization input fields are ignored, never executed.
- *
- * This is the `StageStore` posture exactly: an interface plus a browser-safe
- * `MemoryAssets` reference here, with the Node/file reference (`FileAssets`)
- * behind `@facet/runtime/node` so a browser bundle never drags in `node:fs`.
- */
-export interface AssetDocuments {
-  readonly themes: readonly unknown[];
-  readonly compositions: readonly unknown[];
-  readonly catalog?: unknown;
-  readonly initialTree?: unknown;
-  /** Backend-level problems (unreadable file, bad JSON) — surfaced, never thrown. */
-  readonly issues?: readonly string[];
-}
-
-/** Serves an agent's raw asset documents. `agentId` carries for adapter parity
- * (a DB adapter keys on it); the memory and file references ignore it and serve
- * their one constructed document set / directory. */
-export interface AssetsStore {
-  load(agentId: string): Promise<AssetDocuments>;
-}
-
-/** In-memory asset store — the zero-config reference; serves its constructed docs. */
-export class MemoryAssets implements AssetsStore {
-  constructor(private readonly docs: AssetDocuments) {}
-
-  async load(_agentId: string): Promise<AssetDocuments> {
-    return this.docs;
-  }
-}
 
 type AssetField = "issues" | "themes" | "compositions" | "catalog" | "initialTree";
 type FieldRead = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
@@ -471,118 +432,4 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
   };
   if (initialTree !== undefined) loaded.initialTree = initialTree;
   return loaded;
-}
-
-/**
- * A tree worth seeding a fresh session with — it already shows something.
- * Delegates to core's `treeHasContent`, the single canonical "shows something"
- * predicate (the initial render root has a visible, renderable descendant).
- * Empty containers, blank entry screens, and empty table/chart/tabs/list leaves
- * are NOT seedable — refusing them here is what closes the EMPTY_TREE trap in
- * `loadAssets`.
- */
-export function isSeedableTree(tree: FacetTree): boolean {
-  return treeHasContent(tree);
-}
-
-/**
- * Decorates a `StageStore` so a FRESH session opens with `initialStage` instead
- * of `EMPTY_TREE`; an EXISTING session is returned untouched; `get`/`save`
- * delegate. Because every `open()` runs under `FacetRuntime`'s per-(agent,
- * visitor) serial queue and before the first agent turn, the seed is inside the
- * same serialized stage-write path and visible to the agent's first turn (it
- * "refines the seeded stage"). It reaches the browser as the FIRST stamped patch
- * frame of that turn — `FacetRuntime` prepends a root `replace` when `open()`
- * reports a fresh seed via `takeSeeded` (the first connection's rehydrate ran
- * before the session existed, so a bare reset carried no snapshot); a later
- * reconnect gets the seed the normal way, through the rehydrate snapshot.
- *
- * INTENTIONAL interaction (recorded): a valid seeded tree counts as "built"
- * (`hasBuiltStage`), so the offline face will NOT overwrite it — desired, the
- * seeded skeleton IS the page.
- *
- * Pass-through: with no `initialStage`, or one that isn't seedable, the original
- * store is returned unchanged — today's model-first paint, exactly.
- */
-export function withInitialStage(store: StageStore, initialStage?: FacetTree): StageStore {
-  if (initialStage === undefined || !isSeedableTree(initialStage)) return store;
-  const seed = initialStage;
-  const seedFingerprint = stableTreeFingerprint(seed);
-  // Keys of sessions this decorator just seeded, awaiting a single `takeSeeded`
-  // report to the runtime. If a durable save commits the seed but rejects before
-  // runtime can call `takeSeeded`, and the pending key is later evicted, the key
-  // moves to `recoverable`: only sessions this decorator actually tried to seed
-  // can be re-armed, so unrelated pre-existing seed-shaped sessions stay quiet.
-  const seeded = new Set<string>();
-  const recoverable = new Set<string>();
-  const remember = (set: Set<string>, key: string): void => {
-    if (set.has(key)) return;
-    if (set.size >= MAX_SEEDED) {
-      const oldest = set.values().next().value;
-      if (oldest !== undefined) set.delete(oldest);
-    }
-    set.add(key);
-  };
-  const armSeed = (key: string): void => {
-    recoverable.delete(key);
-    if (seeded.size >= MAX_SEEDED && !seeded.has(key)) {
-      const oldest = seeded.values().next().value;
-      if (oldest !== undefined) {
-        seeded.delete(oldest);
-        remember(recoverable, oldest);
-      }
-    }
-    remember(seeded, key);
-  };
-  return {
-    get: (agentId, visitorId) => store.get(agentId, visitorId),
-    save: (session) => store.save(session),
-    async open(agentId, visitor) {
-      // Get-then-create, seeding on miss — the `openSession` shape, but with the
-      // seed in place of EMPTY_TREE. Safe because the runtime serializes opens
-      // per (agent, visitor), so the get→save window can't be raced through it.
-      const key = sessionKey(agentId, visitor.visitorId);
-      const existing = await store.get(agentId, visitor.visitorId);
-      if (existing !== undefined) {
-        if (
-          !seeded.has(key) &&
-          recoverable.has(key) &&
-          stageMatchesFingerprint(existing.stage, seedFingerprint)
-        ) {
-          armSeed(key);
-        }
-        return existing;
-      }
-      const session: FacetSession = { agentId, visitor, stage: seed };
-      // Arm before save. A DB adapter can commit the seed then lose the ack; the
-      // next turn must still receive the seed frame so the browser catches up to
-      // the already-persisted seeded session.
-      armSeed(key);
-      await store.save(session);
-      return session;
-    },
-    takeSeeded(agentId, visitorId) {
-      const key = sessionKey(agentId, visitorId);
-      const wasSeeded = seeded.delete(key);
-      if (wasSeeded) recoverable.delete(key);
-      return wasSeeded;
-    },
-  };
-}
-
-function stableTreeFingerprint(tree: FacetTree): string | undefined {
-  try {
-    return JSON.stringify(tree);
-  } catch {
-    return undefined;
-  }
-}
-
-function stageMatchesFingerprint(tree: FacetTree, fingerprint: string | undefined): boolean {
-  if (fingerprint === undefined) return false;
-  try {
-    return JSON.stringify(tree) === fingerprint;
-  } catch {
-    return false;
-  }
 }
