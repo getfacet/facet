@@ -30,6 +30,13 @@ Use the Facet model as Primitive Brick -> Component -> Catalog. Prefer catalog-a
 - Follow catalog policy while editing: when editBeforeAppend is true, update existing components, compositions, and variants before appending new primitive clusters.
 - Treat component recipes, composition internals, and concrete theme token values as renderer/operator internals, not stage syntax: never write raw CSS, token values, recipe part names as node fields, composition node JSON, provider keys, visitor ids, secrets, or unknown asset fields into the page.`;
 
+export const FACET_DATA_BINDING_PROMPT = `DATA BINDING
+Author shared data once, then bind many views to it. Put rows the whole page reuses in the tree's top-level "data" warehouse: a map of dataset NAME -> an array of flat row records (each value a string, number, or boolean; no nested objects). Then bind a data-bearing node to a dataset by NAME with its "from" field instead of repeating the rows inline.
+- "from" bindable nodes: table, chart, list, keyValue, metric, and stat. Set "from":"<datasetName>" and omit that node's own inline array (or scalar); "from" wins over inline.
+- Projection is fixed per node type: a table shows the dataset rows and its own columns[].key pick the cells; a chart draws one series per NUMERIC column; a list and keyValue take the first columns in order; a metric or stat reads ONE cell via "column":"<name>" plus an optional "row":<index> (defaults to 0).
+- Update a dataset once (or a single cell) and every node bound to it updates together — the reason to bind rather than duplicate rows.
+- "from", "column", and dataset names are plain NAMES, never a URL, endpoint, query, expression, or resolver: there is no fetch, computed column, or formula. A "from" naming a missing dataset simply renders empty until you author that data.`;
+
 export const FACET_STATE_EDITING_PROMPT = `STATE EDITING
 Default to an edit-before-append strategy: edit before you append, reuse existing node ids, and change the smallest node that satisfies the request. If an active catalog says editBeforeAppend:false, follow that catalog policy.
 - Use render_page only for the first paint or a major restructure.
@@ -302,6 +309,7 @@ export function buildFacetAgentSystemPrompt(options: FacetAgentSystemPromptOptio
     STAGE_SPEC,
     FACET_PAGE_EXPERIENCE_PROMPT,
     FACET_POLISHED_BRICK_GUIDANCE_PROMPT,
+    FACET_DATA_BINDING_PROMPT,
     FACET_STATE_EDITING_PROMPT,
     FACET_TOOL_PLAYBOOK_PROMPT,
     FACET_TOOL_RESULT_CONTRACT_PROMPT,

@@ -3,6 +3,7 @@ import {
   expandComposition,
   isContainer,
   type CompositionParams,
+  type Dataset,
   type ExpandAt,
   type FacetComposition,
   type FacetNode,
@@ -26,6 +27,10 @@ function childrenPath(parent: NodeId): string {
   return `/nodes/${escape(parent)}/children/-`;
 }
 
+function dataPath(name: string): string {
+  return `/data/${escape(name)}`;
+}
+
 /**
  * The agent's control surface for its page — the "CLI" the agent drives to build
  * and mutate the stage as a conversation unfolds.
@@ -41,6 +46,7 @@ export class Stage {
   private emittedPatchOps = 0;
   private knownIds: Set<NodeId>;
   private knownContainerIds: Set<NodeId>;
+  private dataInitialized = false;
 
   constructor(initialStage?: FacetTree) {
     this.knownIds = new Set(["root"]);
@@ -91,6 +97,29 @@ export class Stage {
     }
     this.pending.push({ op: "add", path: childrenPath(at.parent), value: expanded.root });
     return { root: expanded.root, slots: expanded.slots, ids: expanded.ids };
+  }
+
+  /**
+   * Author a named dataset in the tree's DATA WAREHOUSE so many nodes can bind
+   * to one source by NAME via their `from` field (author once, bind many).
+   *
+   * Records an `add` op at `/data/<name>` (an upsert per RFC 6902 — replaces the
+   * dataset if the name already exists, creates it otherwise), so `setData`
+   * updates a bound view in place. The first data write in a session also emits
+   * a one-time `add /data {}` so the nested `/data/<name>` op has a parent to
+   * land in — subsequent writes and a session stage that already carries `data`
+   * skip it, never clobbering existing datasets. `rows` are agent-authored
+   * declared data (the same trust tier as inline `rows`) and are sanitized by
+   * `validateTree` on the fold, exactly like node values; there is no fetch,
+   * resolver, or query here — just a name and its rows.
+   */
+  setData(name: string, rows: Dataset): this {
+    if (!this.dataInitialized) {
+      this.pending.push({ op: "add", path: "/data", value: {} });
+      this.dataInitialized = true;
+    }
+    this.pending.push({ op: "add", path: dataPath(name), value: rows });
+    return this;
   }
 
   /**
@@ -163,6 +192,10 @@ export class Stage {
         .filter((node) => node != null && isContainer(node))
         .map((node) => node.id),
     );
+    // A tree that already carries `data` has the `/data` container present, so
+    // the next `setData` must NOT re-emit the init op (it would clobber it); a
+    // tree without `data` resets the flag so the next write recreates `/data`.
+    this.dataInitialized = tree.data !== undefined;
   }
 
   private rememberNode(node: FacetNode): void {

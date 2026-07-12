@@ -2405,9 +2405,9 @@ describe("compaction", () => {
   it("projects the next turn with the budget's stage bounds, not the 48K default (R5)", async () => {
     // A ~3000-char stage JSON with maxStageJsonChars: 100 renders as a SUMMARY in
     // the real assembly. The projection must measure the same rendering: at
-    // maxContextTokens 7600 (trigger 5700) the summary-mode projection stays
+    // maxContextTokens 8600 (trigger 6450) the summary-mode projection stays
     // under, while the full-JSON projection (+~750 tokens of stage JSON) fires.
-    // (Retuned from 6800 when the composition-canonical system prompt grew.)
+    // (Retuned from 7600 when the data-binding teaching grew the system prompt.)
     const bigStage = {
       root: "root",
       nodes: {
@@ -2434,7 +2434,7 @@ describe("compaction", () => {
         agentId: "quickstart",
         summaryStore: new MemorySummaryStore(),
         summarizerFactory: () => spy.summarizer,
-        budget: { maxContextTokens: 7600, maxStageJsonChars },
+        budget: { maxContextTokens: 8600, maxStageJsonChars },
         onBackgroundTask,
       });
       await runAgent(agent, { kind: "message", text: "ok" }, bigSession);

@@ -29,6 +29,10 @@ like a real service page an agent developer could ship to visitors.
   - "Choose the next experiment" — suggest a practical validation step.
 - Add a short intake section with fields for "Project idea", "Audience", and
   "Timeline", plus a pressable box that sends those fields to the agent.
+- Author any rows more than one view reuses once in the tree's "data" warehouse
+  and bind views to it by name with "from" rather than repeating rows inline —
+  for example a small milestones dataset shown as both a table and a chart that
+  bind to the same dataset name, so updating it once refreshes both.
 - Pre-draw two screens, "home" and "process", with an in-page navigation control
   between them. The process screen should show a short ordered flow:
   visitor shares context, assistant reshapes the page, next actions become
