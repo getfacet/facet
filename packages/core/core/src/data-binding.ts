@@ -41,13 +41,7 @@ import type {
   TableNode,
   TableRow,
 } from "./component-nodes.js";
-import {
-  isForbiddenKey,
-  isPlainObject,
-  nullMap,
-  printableKey,
-  type IssueSink,
-} from "./issues.js";
+import { isForbiddenKey, isPlainObject, nullMap, printableKey, type IssueSink } from "./issues.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 
 /** Max distinct datasets kept per tree (mirrors the small component-array cap). */
@@ -114,7 +108,11 @@ export function sanitizeDataWarehouse(
       issues?.push(`data exceeded the ${String(MAX_DATASETS)}-dataset cap; extra datasets dropped`);
       break;
     }
-    if (isForbiddenKey(name) || name.length > MAX_DATASET_NAME_CHARS || !DATASET_NAME_RE.test(name)) {
+    if (
+      isForbiddenKey(name) ||
+      name.length > MAX_DATASET_NAME_CHARS ||
+      !DATASET_NAME_RE.test(name)
+    ) {
       issues?.push(`dataset "${printableKey(name)}" has an invalid name; dropped`);
       continue;
     }
@@ -130,11 +128,7 @@ export function sanitizeDataWarehouse(
   return kept > 0 ? out : undefined;
 }
 
-function sanitizeDataset(
-  rawRows: readonly unknown[],
-  name: string,
-  issues?: IssueSink,
-): Dataset {
+function sanitizeDataset(rawRows: readonly unknown[], name: string, issues?: IssueSink): Dataset {
   const rows: DataRow[] = [];
   let capped = rawRows;
   if (rawRows.length > MAX_TABLE_ROWS) {
@@ -150,11 +144,7 @@ function sanitizeDataset(
   return rows;
 }
 
-function sanitizeRow(
-  rawRow: unknown,
-  name: string,
-  issues?: IssueSink,
-): DataRow | undefined {
+function sanitizeRow(rawRow: unknown, name: string, issues?: IssueSink): DataRow | undefined {
   if (!isPlainObject(rawRow)) return undefined;
   const row = nullMap<DataCell>();
   let cols = 0;
@@ -165,11 +155,7 @@ function sanitizeRow(
       );
       break;
     }
-    if (
-      isForbiddenKey(key) ||
-      FORBIDDEN_DATASET_COLUMN_KEYS.has(key) ||
-      !SLOT_NAME_RE.test(key)
-    ) {
+    if (isForbiddenKey(key) || FORBIDDEN_DATASET_COLUMN_KEYS.has(key) || !SLOT_NAME_RE.test(key)) {
       continue;
     }
     const cell = sanitizeCell(rawRow[key]);
@@ -216,7 +202,12 @@ export function resolveNodeData(
 export function resolveNodeData(
   node: TableNode | ChartNode | ListNode | KeyValueNode | MetricNode | StatNode,
   warehouse: DataWarehouse | undefined,
-): readonly TableRow[] | readonly ChartSeries[] | readonly ListItem[] | readonly KeyValueItem[] | string {
+):
+  | readonly TableRow[]
+  | readonly ChartSeries[]
+  | readonly ListItem[]
+  | readonly KeyValueItem[]
+  | string {
   switch (node.type) {
     case "table":
       return resolveTable(node, warehouse);
@@ -245,7 +236,10 @@ function resolveTable(node: TableNode, warehouse: DataWarehouse | undefined): re
   return lookupDataset(warehouse, node.from) ?? [];
 }
 
-function resolveChart(node: ChartNode, warehouse: DataWarehouse | undefined): readonly ChartSeries[] {
+function resolveChart(
+  node: ChartNode,
+  warehouse: DataWarehouse | undefined,
+): readonly ChartSeries[] {
   if (node.from === undefined) return node.series;
   const dataset = lookupDataset(warehouse, node.from);
   if (dataset === undefined || dataset.length === 0) return [];

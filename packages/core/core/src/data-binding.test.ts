@@ -125,7 +125,7 @@ describe("sanitizeDataWarehouse (DC-004 hostile input)", () => {
     const out = sanitizeDataWarehouse({
       [tooLong]: [{ a: 1 }],
       "bad name": [{ a: 1 }],
-      "__proto__": [{ a: 1 }],
+      __proto__: [{ a: 1 }],
       good: [{ a: 1 }],
     });
     expect(out?.[tooLong]).toBeUndefined();
@@ -297,7 +297,9 @@ describe("resolveNodeData metric/stat selectors (DC-004 hostile)", () => {
     expect(
       resolveNodeData(metricNode({ from: "metrics", column: "total", row: Infinity }), wh),
     ).toBe("");
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "total", row: 1e9 }), wh)).toBe("");
+    expect(resolveNodeData(metricNode({ from: "metrics", column: "total", row: 1e9 }), wh)).toBe(
+      "",
+    );
   });
 
   it("yields empty for missing / forbidden / non-string column, never throws", () => {
@@ -305,10 +307,7 @@ describe("resolveNodeData metric/stat selectors (DC-004 hostile)", () => {
     expect(resolveNodeData(metricNode({ from: "metrics", column: "missing" }), wh)).toBe("");
     expect(resolveNodeData(metricNode({ from: "metrics", column: "__proto__" }), wh)).toBe("");
     expect(
-      resolveNodeData(
-        metricNode({ from: "metrics", column: 123 as unknown as string }),
-        wh,
-      ),
+      resolveNodeData(metricNode({ from: "metrics", column: 123 as unknown as string }), wh),
     ).toBe("");
     expect(resolveNodeData(statNode({ from: "metrics", column: "total" }), undefined)).toBe("");
   });

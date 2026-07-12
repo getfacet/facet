@@ -66,7 +66,13 @@ describe("describeNode resolves from-bound counts (RISK-API-4)", () => {
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["t"] },
-        t: { id: "t", type: "table", columns: [{ key: "a", label: "A" }], rows: [], from: "missing" },
+        t: {
+          id: "t",
+          type: "table",
+          columns: [{ key: "a", label: "A" }],
+          rows: [],
+          from: "missing",
+        },
       },
     };
     const result = executeInspectStage({ maxNodes: 40 }, dangling);

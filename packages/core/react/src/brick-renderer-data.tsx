@@ -97,15 +97,13 @@ export function renderKeyValue<Press>(
     node.type === "keyValue" && node.from !== undefined
       ? resolveNodeData(node, context.data)
       : safeOwnValue(node, "items");
-  const items = cappedArray(source, MAX_INTRINSIC_ITEMS).flatMap(
-    (item, index) => {
-      const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
-      const value = cappedString(safeOwnValue(item, "value"), MAX_NODE_LABEL_CHARS);
-      if (label === undefined || value === undefined) return [];
-      const key = stringValue(safeOwnValue(item, "key")) ?? `${String(index)}:${label}`;
-      return [{ key, label, value, tone: safeOwnValue(item, "tone") }];
-    },
-  );
+  const items = cappedArray(source, MAX_INTRINSIC_ITEMS).flatMap((item, index) => {
+    const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
+    const value = cappedString(safeOwnValue(item, "value"), MAX_NODE_LABEL_CHARS);
+    if (label === undefined || value === undefined) return [];
+    const key = stringValue(safeOwnValue(item, "key")) ?? `${String(index)}:${label}`;
+    return [{ key, label, value, tone: safeOwnValue(item, "tone") }];
+  });
   if (items.length === 0) return null;
   const { theme, className, inert } = context;
   const variant = safeOwnValue(node, "variant");
