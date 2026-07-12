@@ -5,50 +5,19 @@ import type {
   FacetSession,
   FieldValues,
 } from "@facet/core";
-import type { StoredEvent } from "@facet/runtime";
+import {
+  REDACTED_SENSITIVE_VALUE,
+  shouldRedactSensitiveField,
+  type StoredEvent,
+} from "@facet/runtime";
 
 import type { TurnMessage } from "../provider.js";
 import { formatCurrentStageForPrompt, type StageSummaryOptions } from "./stage-summary.js";
 
+export { redactSensitiveText } from "@facet/runtime";
+
 /** How many sink entries (visitor event + agent reply pairs) layer 3 replays. */
 export const HISTORY_TURNS = 20;
-
-const REDACTED_PROMPT_VALUE = "[redacted]";
-const SENSITIVE_FIELD_NAME =
-  /(?:password|passcode|secret|token|api[_-]?key|authorization|bearer|provider[_-]?key)/i;
-const SENSITIVE_FIELD_VALUE = /\b(?:sk-[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+)\b/i;
-
-const SENSITIVE_FIELD_VALUE_GLOBAL = new RegExp(SENSITIVE_FIELD_VALUE.source, "gi");
-// The key-name quantifiers are BOUNDED ({0,256}): with unbounded `[^"]*` on both
-// sides of the alternation, an unclosed quote followed by repeated sensitive
-// words backtracks quadratically (seconds of synchronous event-loop work at a
-// few hundred KB). No realistic secret field name exceeds 256 chars.
-const SENSITIVE_FIELD_PAIR_GLOBAL = new RegExp(
-  `("[^"]{0,256}(?:${SENSITIVE_FIELD_NAME.source})[^"]{0,256}"\\s*:\\s*)"(?:[^"\\\\]|\\\\.)*"`,
-  "gi",
-);
-
-/** Ceiling on text fed to the redaction regexes. Summary fields are capped far
- * below this later (`MAX_SUMMARY_FIELD_CHARS`), so truncating a pathological
- * pre-cap input loses nothing that would survive validation. */
-const MAX_REDACTION_INPUT_CHARS = 100_000;
-
-/**
- * Redact sensitive substrings (`sk-…` / `Bearer …`) and the quoted values of
- * sensitive field names (`"password": "…"`) inside free text. Reuses the same
- * private patterns that gate input-field redaction so summary output and input
- * are scrubbed to the same rule. Pure; never throws.
- */
-export function redactSensitiveText(text: string): string {
-  const bounded =
-    text.length > MAX_REDACTION_INPUT_CHARS ? text.slice(0, MAX_REDACTION_INPUT_CHARS) : text;
-  return bounded
-    .replace(
-      SENSITIVE_FIELD_PAIR_GLOBAL,
-      (_match, prefix: string) => `${prefix}"${REDACTED_PROMPT_VALUE}"`,
-    )
-    .replace(SENSITIVE_FIELD_VALUE_GLOBAL, REDACTED_PROMPT_VALUE);
-}
 
 function normalizeLegacyEvent(event: unknown): unknown {
   if (!isRecord(event) || event["kind"] !== "action") return event;
@@ -146,16 +115,11 @@ function safeFieldsJson(value: unknown): string {
   if (!isRecord(value)) return "{}";
   const fields: Record<string, unknown> = {};
   for (const [name, fieldValue] of Object.entries(value)) {
-    fields[name] = shouldRedactField(name, fieldValue) ? REDACTED_PROMPT_VALUE : fieldValue;
+    fields[name] = shouldRedactSensitiveField(name, fieldValue)
+      ? REDACTED_SENSITIVE_VALUE
+      : fieldValue;
   }
   return safeJson(fields);
-}
-
-function shouldRedactField(name: string, value: unknown): boolean {
-  return (
-    SENSITIVE_FIELD_NAME.test(name) ||
-    (typeof value === "string" && SENSITIVE_FIELD_VALUE.test(value))
-  );
 }
 
 /**

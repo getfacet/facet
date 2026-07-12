@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import * as nodeModule from "./nodes.js";
 import {
   canonicalComponentType,
   isComponentNodeType,
@@ -8,11 +9,8 @@ import {
   MAX_COMPONENT_ARRAY_ITEMS,
   sanitizeComponentNode,
 } from "./component-validation.js";
-import {
-  HIGH_LEVEL_NODE_TYPES,
-  INTRINSIC_COMPONENT_TYPES,
-  PRIMITIVE_BRICK_TYPES,
-} from "./nodes.js";
+import { INTRINSIC_COMPONENT_TYPES, PRIMITIVE_BRICK_TYPES } from "./nodes.js";
+import { validateTree } from "./validate.js";
 
 const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
   "button",
@@ -50,8 +48,6 @@ describe("component vocabulary", () => {
   it("locks the intrinsic component set and keeps stat as a legacy metric alias", () => {
     expect(INTRINSIC_COMPONENT_TYPES).toEqual(EXPECTED_INTRINSIC_COMPONENT_TYPES);
     expect(INTRINSIC_COMPONENT_TYPES).not.toContain("stat");
-    expect(HIGH_LEVEL_NODE_TYPES).toContain("stat");
-
     expect(isIntrinsicComponentType("metric")).toBe(true);
     expect(isIntrinsicComponentType("stat")).toBe(false);
     expect(isComponentNodeType("metric")).toBe(true);
@@ -59,10 +55,60 @@ describe("component vocabulary", () => {
     expect(canonicalComponentType("metric")).toBe("metric");
     expect(canonicalComponentType("stat")).toBe("metric");
     expect(canonicalComponentType("marquee")).toBeUndefined();
+    expect(nodeModule).not.toHaveProperty("HIGH_LEVEL_NODE_TYPES");
   });
 });
 
 describe("sanitizeComponentNode", () => {
+  it("matches validateTree's established behavior for every legacy high-level component", () => {
+    const fixtures = [
+      { type: "button", label: "Run", tone: "invented" },
+      { type: "section", title: "Section", children: [] },
+      { type: "card", title: "Card", children: [] },
+      {
+        type: "tabs",
+        items: Array.from({ length: 13 }, (_, index) => ({
+          label: `Tab ${String(index)}`,
+          to: "x",
+        })),
+      },
+      {
+        type: "table",
+        columns: [{ key: "name", label: "Name", align: "end" }],
+        rows: [{ name: "Facet", ignored: "drop" }],
+      },
+      {
+        type: "chart",
+        series: Array.from({ length: 9 }, (_, index) => ({
+          label: `Series ${String(index)}`,
+          values: [index],
+        })),
+      },
+      { type: "stat", label: "ARR", value: "$1m", tone: "success" },
+      { type: "badge", label: "Ready", tone: "success" },
+      { type: "progress", value: 101, label: "Done" },
+      { type: "alert", body: "Heads up", tone: "warning" },
+      { type: "list", items: Array.from({ length: 51 }, (_, index) => `Item ${String(index)}`) },
+      { type: "divider", label: "Next" },
+    ] as const;
+
+    for (const [index, fixture] of fixtures.entries()) {
+      const id = `component-${String(index)}`;
+      const directIssues: string[] = [];
+      const direct = sanitizeComponentNode(id, fixture, directIssues);
+      const validated = validateTree({
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: [id] },
+          [id]: { id, ...fixture },
+        },
+      });
+
+      expect(direct, fixture.type).toEqual(validated.tree.nodes[id]);
+      expect(directIssues, fixture.type).toEqual(validated.issues);
+    }
+  });
+
   it("bounds component arrays without reading past the cap", () => {
     const items: unknown[] = Array.from({ length: MAX_COMPONENT_ARRAY_ITEMS }, (_, index) => ({
       label: `Label ${String(index)}`,

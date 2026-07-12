@@ -343,7 +343,9 @@ ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[] | AsyncIte
   `StoredEvent.event` body is log-safe: duplicate `visitorId` values are redacted
   inside visit events, and sensitive collected field names (`password`, `token`,
   `api_key`, provider-key-like names) or key-looking field values store
-  `[redacted]`.
+  `[redacted]`. The browser-safe rule is owned by `@facet/runtime` and reused by
+  downstream prompt/history boundaries; those boundaries still redact again so
+  legacy or externally supplied Sink entries receive the same defense.
 - `FacetRuntime.handle(visitor, event)` opens (or finds) the session for that
   `(agent, visitor)` pair, runs the agent, applies each returned batch to the
   stored stage, and ships that batch over the visitor's connection before
@@ -515,7 +517,8 @@ view-state like screen/toggle state (inputs are uncontrolled; there is no value
 property on a field node to write), and the server re-validates `fields` at the
 boundary, so the two-writers rule holds: the server stays the only writer of
 stage content. The reference-agent prompt redacts sensitive field names and
-key-looking field values again when rendering current events or Sink history.
+key-looking field values again when rendering current events or Sink history,
+using the runtime-owned redaction rule rather than a duplicated pattern set.
 The `facet-quickstart` bin stays in `@facet/quickstart`: it loads guides/assets,
 serves the page itself (HTML shell + prebuilt client bundle), composes
 `@facet/reference-agent` with a provider-backed reference agent, and proxies the

@@ -229,6 +229,31 @@ describe("validateTree", () => {
     expect(run.issues).toContain("input could not be read safely; empty tree used");
   });
 
+  it("reads a component type discriminator only once", () => {
+    let reads = 0;
+    const button: Record<string, unknown> = { id: "button", label: "Run" };
+    Object.defineProperty(button, "type", {
+      enumerable: true,
+      get() {
+        reads += 1;
+        if (reads > 1) throw new Error("component type read twice");
+        return "button";
+      },
+    });
+
+    const run = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["button"] },
+        button,
+      },
+    });
+
+    expect(reads).toBe(1);
+    expect(run.tree.nodes["button"]).toMatchObject({ type: "button", label: "Run" });
+    expect(run.issues).toEqual([]);
+  });
+
   it("breaks a self-referencing cycle (root child = root)", () => {
     const input = {
       root: "root",

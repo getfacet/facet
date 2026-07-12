@@ -210,8 +210,11 @@ provider SDK dependency is bundled here.
 The prompt formatter includes normal collected fields so actions can use form
 context, but field names that look sensitive (`password`, `token`, `api_key`,
 provider-key-like names) and key-looking field values are rendered as
-`[redacted]`. Visit prompts include non-secret context such as referrer/locale
-and omit the `visitorId` bearer key.
+`[redacted]`. This prompt/history boundary deliberately applies the same
+runtime-owned rule a second time, so legacy or externally supplied Sink entries
+are scrubbed without maintaining a second set of secret patterns. Visit prompts
+include non-secret context such as referrer/locale and omit the `visitorId`
+bearer key.
 
 ## Stub
 
