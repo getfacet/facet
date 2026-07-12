@@ -1,0 +1,503 @@
+# Execution Manifest: Tree Data Section + Bindings
+#
+# Keep synchronized with specs/dev-specs/tree-data-bindings.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "tree-data-bindings"
+spec_path: "specs/dev-specs/tree-data-bindings.md"
+context_evidence_path: "specs/context/tree-data-bindings.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; playground buildable; monorepo typechecks at baseline"
+    owner: "main-agent"
+    verification: "pnpm install && pnpm typecheck"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "Core data model, sanitizer, and shared resolve/precedence helper"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add the data warehouse types + from/column/row node fields, sanitizeDataWarehouse, and the ONE shared resolveNodeData (precedence + projection) helper — no wiring yet."
+    module_shape:
+      decision: "sibling-helper"
+      rationale: "New pure module data-binding.ts holds the sanitizer + resolve/projection helper so BOTH the content gate (tree.ts) and the renderer (@facet/react) import ONE precedence source (RISK-INV-5). Public via the core barrel; tests co-located as data-binding.test.ts. Types live on component-nodes.ts next to the node interfaces they extend."
+    files:
+      - path: "packages/core/core/src/component-nodes.ts"
+        change_type: "update"
+        purpose: "Add Dataset/DataRow/DataCell/DataWarehouse types; from? on Table/Chart/List/KeyValue; from?+column?+row? on MetricFields."
+      - path: "packages/core/core/src/data-binding.ts"
+        change_type: "add"
+        purpose: "DATASET_NAME_RE, caps, sanitizeDataWarehouse (hostile-input, non-recursive, bounded), resolveNodeData (pure precedence + Projection Contract)."
+      - path: "packages/core/core/src/index.ts"
+        change_type: "update"
+        purpose: "Export new types + sanitizeDataWarehouse/resolveNodeData."
+      - path: "packages/core/core/src/data-binding.test.ts"
+        change_type: "add"
+        purpose: "Red_check host for sanitizer + resolver."
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/data-binding.test.ts"
+      target: "packages/core/core/src/data-binding.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/data-binding.test.ts"
+      - "pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/data-binding.test.ts"
+        covers_dc: ["DC-004"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/data-binding.test.ts"
+        covers_dc: ["DC-005"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/data-binding.test.ts"
+        covers_dc: ["DC-001"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/data-binding.test.ts"
+        covers_dc: ["DC-004"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "sanitizeDataWarehouse never throws on hostile input; caps + forbidden keys enforced"
+      - "resolveNodeData pure, total, deterministic precedence"
+      - "No regression: pnpm exec vitest run packages/core/core/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Core wiring — validateTree sanitize + content gates + per-node from"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Sanitize data inside validateTree and copy it onto the tree; validate per-node from/column/row; thread the warehouse through the content gates."
+    module_shape:
+      decision: "preserve"
+      rationale: "Edits stay in the existing validation + tree modules; sanitizer/resolver imported from WU-1's data-binding.ts. FacetTree.data field lives on tree.ts beside the interface; content-gate signature change is internal to tree.ts."
+    files:
+      - path: "packages/core/core/src/tree.ts"
+        change_type: "update"
+        purpose: "Add data? to FacetTree; thread tree.data through treeRenderableNodeIds/collectRenderableNode/nodeRendersItself; call resolveNodeData for data-bearing types inside the existing try/catch."
+      - path: "packages/core/core/src/tree-validation.ts"
+        change_type: "update"
+        purpose: "Call sanitizeDataWarehouse in validateTreeUnsafe; copy survivor onto the returned tree literal (325-349)."
+      - path: "packages/core/core/src/classic-component-validation.ts"
+        change_type: "update"
+        purpose: "Copy validated from onto table/chart/list/stat via shared setFrom; also parse column/row on the classic-registry stat (same closed selectors as component-validation.ts) so a from-bound classic stat can resolve a cell."
+      - path: "packages/core/core/src/component-validation.ts"
+        change_type: "update"
+        purpose: "Copy from onto metric/keyValue; from+column+row on metric/stat; confirm fetch-like keys rejected."
+      - path: "packages/core/core/src/tree-data.test.ts"
+        change_type: "add"
+        purpose: "Red_check host."
+    depends_on: ["WU-1"]
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/tree-data.test.ts"
+      target: "packages/core/core/src/tree-data.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/tree-data.test.ts"
+      - "pnpm exec vitest run packages/core/core/src/tree.test.ts packages/core/core/src/component-validation.test.ts"
+      - "pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/tree-data.test.ts"
+        covers_dc: ["DC-001"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/tree-data.test.ts"
+        covers_dc: ["DC-004"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/tree.test.ts"
+        covers_dc: ["DC-003"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/tree-data.test.ts"
+        covers_dc: ["DC-007"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/core/src/tree-data.test.ts"
+        covers_dc: ["DC-008"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "data survives validateTree and a fold round-trip; from/column/row carried only when valid"
+      - "Content gate uses the same resolveNodeData as the renderer"
+      - "No regression: pnpm exec vitest run packages/core/core/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "React renderer — thread data into context; resolve chart/list/keyValue/metric/stat"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Add a read-only data field to the render context and resolve from in the chart and metric/stat/list/keyValue renderers; no client-side data writer."
+    module_shape:
+      decision: "preserve"
+      rationale: "BrickRenderContext gains one internal read-only field (not barrel-exported); renderer-render.tsx populates it from the already-threaded tree.data; each renderer calls core resolveNodeData. No new module."
+    files:
+      - path: "packages/core/react/src/brick-renderer-types.ts"
+        change_type: "update"
+        purpose: "Add readonly data?: DataWarehouse to BrickRenderContext."
+      - path: "packages/core/react/src/renderer-render.tsx"
+        change_type: "update"
+        purpose: "Populate data: tree.data when constructing the brick context."
+      - path: "packages/core/react/src/brick-renderer-chart.tsx"
+        change_type: "update"
+        purpose: "Resolve series via resolveNodeData(node, context.data)."
+      - path: "packages/core/react/src/brick-renderer-data.tsx"
+        change_type: "update"
+        purpose: "Resolve list/keyValue/metric/stat via resolveNodeData."
+      - path: "packages/core/react/src/StageRenderer.data.test.tsx"
+        change_type: "add"
+        purpose: "Red_check host."
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/StageRenderer.data.test.tsx"
+      target: "packages/core/react/src/StageRenderer.data.test.tsx"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/StageRenderer.data.test.tsx"
+      - "pnpm --filter @facet/react typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src"
+      - "grep -rn 'useState\\|useEffect' packages/core/react/src/brick-renderer-data.tsx packages/core/react/src/brick-renderer-chart.tsx"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/StageRenderer.data.test.tsx"
+        covers_dc: ["DC-001"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/react/src/StageRenderer.data.test.tsx"
+        covers_dc: ["DC-003"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/react/src/StageRenderer.data.test.tsx"
+        covers_dc: ["DC-005"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/react/src/StageRenderer.data.test.tsx"
+        covers_dc: ["DC-006"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Bound chart/list/keyValue/metric/stat render from data; dangling ⇒ empty, no throw"
+      - "No new client-side data/stage writer (grep clean)"
+      - "No regression: pnpm exec vitest run packages/core/react/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "React renderer — table binding"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Resolve from in the table renderer and prove a single /data patch updates a table and a chart bound to the same dataset."
+    module_shape:
+      decision: "preserve"
+      rationale: "renderTable in brick-renderer-layout.tsx calls the same core resolveNodeData; test lives in the existing component-layout.test.tsx."
+    files:
+      - path: "packages/core/react/src/brick-renderer-layout.tsx"
+        change_type: "update"
+        purpose: "renderTable resolves rows via resolveNodeData(node, context.data)."
+      - path: "packages/core/react/src/component-layout.test.tsx"
+        change_type: "update"
+        purpose: "Table binding + single-source-update assertions."
+    depends_on: ["WU-1", "WU-2", "WU-3"]
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/component-layout.test.tsx -t 'from'"
+      target: "packages/core/react/src/component-layout.test.tsx"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/component-layout.test.tsx"
+      - "pnpm --filter @facet/react typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/component-layout.test.tsx"
+        covers_dc: ["DC-001"]
+        action: "update"
+      - type: "integration"
+        target: "packages/core/react/src/component-layout.test.tsx"
+        covers_dc: ["DC-002"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "Table binding + single-source update proven"
+      - "No regression: pnpm exec vitest run packages/core/react/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "Agent-tools observability — resolve from in describeNode"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools"]
+    objective: "Make the agent's structured inspection report RESOLVED counts for from-bound nodes, not inline 0s (RISK-API-4)."
+    module_shape:
+      decision: "preserve"
+      rationale: "describeNode gains the tree/warehouse argument and calls core resolveNodeData; internal to @facet/agent-tools. observation.ts needs no edit (inherits the core predicate)."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/executor-inspect.ts"
+        change_type: "update"
+        purpose: "describeNode resolves from against the warehouse via resolveNodeData before reporting rows/series/items counts."
+      - path: "packages/agent-stack/agent-tools/src/executor-inspect.test.ts"
+        change_type: "add"
+        purpose: "Red_check host."
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor-inspect.test.ts"
+      target: "packages/agent-stack/agent-tools/src/executor-inspect.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor-inspect.test.ts"
+      - "pnpm --filter @facet/agent-tools typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/executor-inspect.test.ts"
+        covers_dc: ["DC-001"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "describeNode reports resolved counts for bound nodes; inline unchanged"
+      - "No regression: pnpm exec vitest run packages/agent-stack/agent-tools/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-6"
+    title: "Agent authoring surface + prompt/STAGE_SPEC teaching"
+    owner_role: "subagent"
+    packages: ["@facet/agent", "@facet/agent-tools", "@facet/reference-agent"]
+    objective: "Add an optional Stage.setData convenience and teach the agent brain to author data + from."
+    module_shape:
+      decision: "preserve"
+      rationale: "setData added to the existing Stage control API; prompt/STAGE_SPEC text edited in place in prompt-kit.ts and system.ts. No new modules or public reshaping."
+    files:
+      - path: "packages/extensions/agent/src/stage.ts"
+        change_type: "update"
+        purpose: "Add setData(name, rows) emitting a /data/<name> patch through the coalescing path."
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.ts"
+        change_type: "update"
+        purpose: "Document the data warehouse + from binding + projection rules in the reusable prompt kit / STAGE_SPEC."
+      - path: "packages/agent-stack/reference-agent/src/prompt/system.ts"
+        change_type: "update"
+        purpose: "Teach data+from authoring (author once, bind many)."
+      - path: "packages/extensions/agent/src/stage.test.ts"
+        change_type: "update"
+        purpose: "Red_check host for setData."
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/extensions/agent/src/stage.test.ts -t 'setData'"
+      target: "packages/extensions/agent/src/stage.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/extensions/agent/src/stage.test.ts"
+      - "pnpm --filter @facet/agent typecheck"
+      - "pnpm --filter @facet/agent-tools --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/extensions/agent/src packages/agent-stack/agent-tools/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/extensions/agent/src/stage.test.ts"
+        covers_dc: ["DC-002"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported"
+      - "setData emits correct /data/... patch; prompt/STAGE_SPEC teach data+from (no fetch/DSL)"
+      - "No regression: agent + agent-tools suites"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-7"
+    title: "Runtime seed gate + server offline gate regression (behavior-change consumers)"
+    owner_role: "subagent"
+    packages: ["@facet/runtime", "@facet/server"]
+    objective: "Prove the two RISK-API-1 behavior-changed consumers handle data-bound trees correctly and are unchanged for inline-only trees (DC-007)."
+    module_shape:
+      decision: "preserve"
+      rationale: "Test-only WU: new co-located test files beside the consumers they guard; no production code changes (the predicate edit is delivered by WU-2)."
+    files:
+      - path: "packages/core/runtime/src/initial-stage.test.ts"
+        change_type: "add"
+        purpose: "A populated data-bound initial tree IS seedable; inline-only unchanged."
+      - path: "packages/core/server/src/offline.test.ts"
+        change_type: "add"
+        purpose: "The offline gate does NOT overwrite a populated data-bound built stage; still overwrites an empty one."
+    depends_on: ["WU-2"]
+    parallel_group: "par-1"
+    red_check:
+      command: "N/A"
+      target: "packages/core/runtime/src/initial-stage.test.ts"
+      justification: "Characterization/regression tests for a behavior change delivered by the single core predicate edit in WU-2; the RED→GREEN transition is owned by WU-2's tree.test.ts. No production code changes here — these guard the two named consumers against future drift and are GREEN on write."
+    quick_checks:
+      - "pnpm exec vitest run packages/core/runtime/src/initial-stage.test.ts packages/core/server/src/offline.test.ts"
+      - "pnpm --filter @facet/runtime --filter @facet/server typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/runtime/src packages/core/server/src"
+    test_plan:
+      - type: "integration"
+        target: "packages/core/runtime/src/initial-stage.test.ts"
+        covers_dc: ["DC-007"]
+        action: "new"
+      - type: "integration"
+        target: "packages/core/server/src/offline.test.ts"
+        covers_dc: ["DC-007"]
+        action: "new"
+    done_conditions:
+      - "Both consumers proven (data-bound handled + inline unchanged)"
+      - "N/A red_check justification acknowledged (behavior owned by WU-2)"
+      - "No regression: runtime + server suites"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-8"
+    title: "Client fold + ag-ui snapshot passthrough regression"
+    owner_role: "subagent"
+    packages: ["@facet/client", "@facet/ag-ui"]
+    objective: "Prove data rides the client fold (DC-002 / DC-008 flow) and survives the ag-ui snapshot round-trip unchanged (additive-safe, no production edit)."
+    module_shape:
+      decision: "preserve"
+      rationale: "Test-only WU extending existing test files; no production code changes — data rides the shared applyPatch (client) and the whole-tree structuredClone passthrough (ag-ui)."
+    files:
+      - path: "packages/core/client/src/local-transport.test.ts"
+        change_type: "update"
+        purpose: "A /data/<name> patch folded client-side updates the tree; a node bound before its data lands resolves once a later /data patch arrives."
+      - path: "packages/extensions/ag-ui/src/events.test.ts"
+        change_type: "update"
+        purpose: "A tree carrying data survives snapshotStage/state-snapshot passthrough unchanged."
+    depends_on: ["WU-2"]
+    parallel_group: "par-1"
+    red_check:
+      command: "N/A"
+      target: "packages/core/client/src/local-transport.test.ts"
+      justification: "Additive-safe surfaces with no production change — data rides the existing pure applyPatch/foldPatchIntoStage (client) and the whole-tree structuredClone passthrough (ag-ui events.ts:164). These regression tests confirm the additive claim; the load-bearing RED→GREEN lives in WU-1/WU-2."
+    quick_checks:
+      - "pnpm exec vitest run packages/core/client/src/local-transport.test.ts packages/extensions/ag-ui/src/events.test.ts"
+      - "pnpm --filter @facet/client --filter @facet/ag-ui typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/client/src packages/extensions/ag-ui/src"
+    test_plan:
+      - type: "integration"
+        target: "packages/core/client/src/local-transport.test.ts"
+        covers_dc: ["DC-002"]
+        action: "update"
+      - type: "integration"
+        target: "packages/core/client/src/local-transport.test.ts"
+        covers_dc: ["DC-008"]
+        action: "update"
+      - type: "integration"
+        target: "packages/extensions/ag-ui/src/events.test.ts"
+        covers_dc: ["DC-007"]
+        action: "update"
+    done_conditions:
+      - "Client fold + ag-ui passthrough proven for data"
+      - "N/A red_check justification acknowledged (additive, no prod edit)"
+      - "No regression: client + ag-ui suites"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
