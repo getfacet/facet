@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CollectedEvent, FacetAgent, ServerMessage, VisitorContext } from "@facet/core";
+import { foldPatchIntoStage, resolveNodeData, treeHasContent } from "@facet/core";
+import type {
+  CollectedEvent,
+  FacetAgent,
+  FacetTree,
+  JsonPatchOperation,
+  ServerMessage,
+  TableNode,
+  VisitorContext,
+} from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
 import { LocalTransport } from "./local-transport.js";
 
@@ -101,5 +110,109 @@ describe("LocalTransport", () => {
     await flush();
 
     expect(received).toHaveLength(1);
+  });
+
+  // A `/data/<name>` patch delivered over the transport must fold through the
+  // SAME pure `foldPatchIntoStage` the runtime uses, so the single data source
+  // updates and every `from`-bound view reflects it client-side (DC-002).
+  it("folds a /data patch client-side so a bound view reflects the single source", async () => {
+    const salesTable: TableNode = {
+      id: "sales",
+      type: "table",
+      from: "sales",
+      columns: [
+        { key: "region", label: "Region" },
+        { key: "revenue", label: "Revenue" },
+      ],
+      rows: [],
+    };
+    const base: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["sales"] },
+        sales: salesTable,
+      },
+      data: {
+        sales: [
+          { region: "West", revenue: 100 },
+          { region: "East", revenue: 200 },
+        ],
+      },
+    };
+
+    // The agent edits ONE cell of the single source; the patch travels the transport.
+    const patch: JsonPatchOperation = { op: "replace", path: "/data/sales/1/revenue", value: 999 };
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "patch", patches: [patch] }),
+    });
+    const transport = new LocalTransport(runtime, visitor);
+    const received: ServerMessage[] = [];
+    transport.subscribe((message) => received.push(message));
+
+    transport.send({ kind: "message", text: "bump revenue" });
+    await flush();
+
+    const [message] = received;
+    expect(message).toEqual({ kind: "patch", patches: [patch] });
+    const folded = foldPatchIntoStage(
+      base,
+      (message as { readonly patches: readonly JsonPatchOperation[] }).patches,
+    );
+
+    // The single /data source updated, and the from-bound table resolves the new cell.
+    expect(folded.tree.data?.["sales"]?.[1]?.["revenue"]).toBe(999);
+    expect(resolveNodeData(folded.tree.nodes["sales"] as TableNode, folded.tree.data)).toEqual([
+      { region: "West", revenue: 100 },
+      { region: "East", revenue: 999 },
+    ]);
+  });
+
+  // A node bound to a dataset that has not arrived yet shows nothing; once a
+  // later `/data` patch folds in client-side, the buffered forward reference
+  // resolves and the bound node becomes content (DC-008).
+  it("resolves a node bound before its data lands once a later /data patch arrives", async () => {
+    const salesTable: TableNode = {
+      id: "sales",
+      type: "table",
+      from: "sales",
+      columns: [{ key: "region", label: "Region" }],
+      rows: [],
+    };
+    const base: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["sales"] },
+        sales: salesTable,
+      },
+    };
+
+    // Bound before its dataset exists: the table has nothing to show yet.
+    expect(treeHasContent(base)).toBe(false);
+
+    const dataset = [{ region: "West" }, { region: "East" }];
+    const patch: JsonPatchOperation = { op: "add", path: "/data", value: { sales: dataset } };
+    const runtime = new FacetRuntime({
+      agentId: "a",
+      agent: agentOf({ kind: "patch", patches: [patch] }),
+    });
+    const transport = new LocalTransport(runtime, visitor);
+    const received: ServerMessage[] = [];
+    transport.subscribe((message) => received.push(message));
+
+    transport.send({ kind: "message", text: "here is the data" });
+    await flush();
+
+    const [message] = received;
+    const folded = foldPatchIntoStage(
+      base,
+      (message as { readonly patches: readonly JsonPatchOperation[] }).patches,
+    );
+
+    // The forward reference now resolves: the bound node is content and shows the rows.
+    expect(treeHasContent(folded.tree)).toBe(true);
+    expect(resolveNodeData(folded.tree.nodes["sales"] as TableNode, folded.tree.data)).toEqual(
+      dataset,
+    );
   });
 });
