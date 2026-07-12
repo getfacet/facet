@@ -3,6 +3,7 @@ import {
   MAX_LIST_ITEMS,
   MAX_NODE_BODY_CHARS,
   MAX_NODE_LABEL_CHARS,
+  resolveNodeData,
   type FacetNode,
 } from "@facet/core";
 import { resolveRecipePart } from "./recipe-parts.js";
@@ -30,7 +31,13 @@ function renderMetricLike<Press>(
   component: "metric" | "stat",
 ): ReactNode {
   const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
-  const value = cappedString(safeOwnValue(node, "value"), MAX_NODE_LABEL_CHARS);
+  // A `from`-bound metric/stat reads its value from one dataset cell via the ONE
+  // core helper (precedence: from wins over inline; a dangling/absent binding
+  // resolves to "" ⇒ an empty node, matching the content gate). A pure read.
+  const value =
+    (node.type === "metric" || node.type === "stat") && node.from !== undefined
+      ? cappedString(resolveNodeData(node, context.data), MAX_NODE_LABEL_CHARS) || undefined
+      : cappedString(safeOwnValue(node, "value"), MAX_NODE_LABEL_CHARS);
   if (label === undefined || value === undefined) return null;
   const { theme, className, inert } = context;
   const variant = safeOwnValue(node, "variant");
@@ -84,7 +91,13 @@ export function renderKeyValue<Press>(
   node: FacetNode,
   context: BrickRenderContext<Press>,
 ): ReactNode {
-  const items = cappedArray(safeOwnValue(node, "items"), MAX_INTRINSIC_ITEMS).flatMap(
+  // `from`-bound keyValue projects `{label, value}` per dataset row through the
+  // ONE core helper (precedence: from wins; dangling ⇒ []); unbound reads inline.
+  const source =
+    node.type === "keyValue" && node.from !== undefined
+      ? resolveNodeData(node, context.data)
+      : safeOwnValue(node, "items");
+  const items = cappedArray(source, MAX_INTRINSIC_ITEMS).flatMap(
     (item, index) => {
       const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
       const value = cappedString(safeOwnValue(item, "value"), MAX_NODE_LABEL_CHARS);
@@ -262,7 +275,13 @@ export function renderAlert<Press>(node: FacetNode, context: BrickRenderContext<
 
 export function renderList<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
   const { theme, className, inert } = context;
-  const items = cappedArray(safeOwnValue(node, "items"), MAX_LIST_ITEMS).flatMap((item) => {
+  // `from`-bound list projects one item per dataset row through the ONE core
+  // helper (precedence: from wins; dangling ⇒ []); unbound reads inline items.
+  const source =
+    node.type === "list" && node.from !== undefined
+      ? resolveNodeData(node, context.data)
+      : safeOwnValue(node, "items");
+  const items = cappedArray(source, MAX_LIST_ITEMS).flatMap((item) => {
     if (typeof item === "string") {
       return [{ title: item.slice(0, MAX_NODE_LABEL_CHARS), body: undefined }];
     }

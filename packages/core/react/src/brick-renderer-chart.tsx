@@ -3,6 +3,8 @@ import {
   MAX_CHART_POINTS,
   MAX_CHART_SERIES,
   MAX_NODE_LABEL_CHARS,
+  resolveNodeData,
+  type ChartSeries,
   type FacetNode,
 } from "@facet/core";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
@@ -148,12 +150,20 @@ export function renderChart<Press>(node: FacetNode, context: BrickRenderContext<
   const { theme, className, inert } = context;
   const kind = safeOwnValue(node, "kind");
   if (kind !== "bar" && kind !== "line" && kind !== "donut") return null;
+  // Resolve the effective series through the ONE core helper: a `from` binding
+  // projects one numeric-column series per dataset row (precedence: from wins,
+  // dangling ⇒ empty chart), while an unbound chart returns its inline series
+  // unchanged. The `{ series }` wrapper feeds the existing `safeOwnValue`-based
+  // cap/validation pass below — a pure read, no state.
+  const series: readonly ChartSeries[] =
+    node.type === "chart" ? resolveNodeData(node, context.data) : [];
+  const source = { series };
   const chart =
     kind === "bar"
-      ? renderChartBars(node, theme)
+      ? renderChartBars(source, theme)
       : kind === "line"
-        ? renderChartLines(node, theme)
-        : renderChartDonut(node, theme);
+        ? renderChartLines(source, theme)
+        : renderChartDonut(source, theme);
   if (chart === null) return null;
   const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
   const variant = safeOwnValue(node, "variant");

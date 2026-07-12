@@ -273,6 +273,7 @@ export function renderNode({
       inert,
       nodeId: id,
       activeScreen,
+      data: tree.data,
       children,
       classifyPress,
       dispatch: dispatchBrickPress,
