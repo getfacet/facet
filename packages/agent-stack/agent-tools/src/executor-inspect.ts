@@ -1,4 +1,11 @@
-import { isContainer, type FacetNode, type FacetTree, type NodeId } from "@facet/core";
+import {
+  isContainer,
+  resolveNodeData,
+  type DataWarehouse,
+  type FacetNode,
+  type FacetTree,
+  type NodeId,
+} from "@facet/core";
 import { nodeVariant } from "./executor-policy.js";
 import { errorResult, okMessageResult } from "./executor-result.js";
 import { summarizeStageTree } from "./stage-shadow.js";
@@ -18,7 +25,7 @@ export function executeInspectStage(input: Readonly<Record<string, unknown>>, sh
   );
   const entries = Object.entries(shadow.nodes).slice(0, maxNodes);
   const summary = summarizeStageTree(shadow);
-  const nodeLines = entries.map(([, node]) => `- ${describeNode(node)}`).join("\n");
+  const nodeLines = entries.map(([, node]) => `- ${describeNode(node, shadow.data)}`).join("\n");
   const hiddenCount = Math.max(0, summary.nodeCount - entries.length);
   const suffix = hiddenCount > 0 ? `\n... ${String(hiddenCount)} more node(s)` : "";
   return okMessageResult(
@@ -104,7 +111,7 @@ function collectNodeLines(
     return lines.length >= maxLines;
   }
   seen.add(nodeId);
-  lines.push(`${"  ".repeat(depth)}- ${describeNode(node)}`);
+  lines.push(`${"  ".repeat(depth)}- ${describeNode(node, tree.data)}`);
   if (lines.length >= maxLines) return true;
   if (!isContainer(node) || depth >= maxDepth) return false;
   for (const childId of node.children) {
@@ -115,7 +122,7 @@ function collectNodeLines(
   return false;
 }
 
-function describeNode(facetNode: FacetNode): string {
+function describeNode(facetNode: FacetNode, warehouse: DataWarehouse | undefined): string {
   switch (facetNode.type) {
     case "box":
       return `${facetNode.id} box children=${String(facetNode.children.length)}${facetNode.hidden === true ? " hidden" : ""}`;
@@ -136,15 +143,15 @@ function describeNode(facetNode: FacetNode): string {
     case "nav":
       return `${facetNode.id} nav items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
     case "table":
-      return `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(facetNode.rows.length)}${variantSuffix(facetNode)}`;
+      return `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
     case "chart":
-      return `${facetNode.id} chart kind=${facetNode.kind} series=${String(facetNode.series.length)}${variantSuffix(facetNode)}`;
+      return `${facetNode.id} chart kind=${facetNode.kind} series=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
     case "metric":
-      return `${facetNode.id} metric label="${preview(facetNode.label)}" value="${preview(facetNode.value)}"${variantSuffix(facetNode)}`;
+      return `${facetNode.id} metric label="${preview(facetNode.label)}" value="${preview(resolveNodeData(facetNode, warehouse))}"${variantSuffix(facetNode)}`;
     case "stat":
-      return `${facetNode.id} stat label="${preview(facetNode.label)}" value="${preview(facetNode.value)}"${variantSuffix(facetNode)}`;
+      return `${facetNode.id} stat label="${preview(facetNode.label)}" value="${preview(resolveNodeData(facetNode, warehouse))}"${variantSuffix(facetNode)}`;
     case "keyValue":
-      return `${facetNode.id} keyValue items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
+      return `${facetNode.id} keyValue items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
     case "badge":
       return `${facetNode.id} badge label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`;
     case "progress":
@@ -152,7 +159,7 @@ function describeNode(facetNode: FacetNode): string {
     case "alert":
       return `${facetNode.id} alert body="${preview(facetNode.body)}"${variantSuffix(facetNode)}`;
     case "list":
-      return `${facetNode.id} list items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
+      return `${facetNode.id} list items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
     case "divider":
       return `${facetNode.id} divider${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
     case "form":
