@@ -46,10 +46,12 @@ landed, the exhaustive matrix did not.
 - ~~[P3] naming~~ — RESOLVED by refactor-audit-1 (2026-07-03): viewer→visitor
   swept everywhere (28 lines); `mode`/`method` renamed to `runner`/`continuity`
   (env `FACET_RUNNER`/`FACET_CONTINUITY`, invalid values now fail fast).
-- ~~[P3] server/server.ts (hygiene)~~ — RESOLVED by refactor-audit-1
-  (2026-07-03): `createFacetServer` decomposed into `frame-log.ts` /
-  `late.ts` / `agent-channel.ts` / `offline.ts` (non-barreled) + a flat route
-  table; 530→180 lines; the LRU/era/FIFO seams gained direct unit tests.
+- ~~[P3] server/server.ts (hygiene)~~ — RESOLVED and re-audited. The first
+  pass (2026-07-03) extracted frame-log, late-result, agent-channel, and offline
+  seams. The 2026-07-12 consolidation pass also separated request validation,
+  rehydration, turn tracking, and POST handling after later features had grown
+  the assembly module again. Every `@facet/server` production module is now
+  below 500 lines, while the public entry point and route behavior stay fixed.
 
 ## P3 — residuals from campaign 1's review (track, fix opportunistically)
 

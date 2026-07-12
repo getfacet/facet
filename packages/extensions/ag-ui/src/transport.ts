@@ -1,4 +1,3 @@
-import { HttpAgent } from "@ag-ui/client";
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
 import { MAX_FIELD_VALUE_CHARS, MAX_FIELDS_KEYS } from "@facet/core";
 import type {
@@ -80,11 +79,6 @@ export interface AgUiTransportOptions {
   readonly maxQueue?: number;
 }
 
-export interface CreateHttpAgUiTransportOptions extends AgUiTransportOptions {
-  readonly headers?: Record<string, string>;
-  readonly fetch?: (url: string, requestInit: RequestInit) => Promise<Response>;
-}
-
 type AgUiTransportSource =
   AgUiAbortableAgentLike | AgUiAgentLike | AgUiRunFunction | AgUiEventStream;
 type Submission =
@@ -94,7 +88,6 @@ type Submission =
 const DEFAULT_RUN_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_QUEUE = 100;
 const SYNC_ITERABLE_YIELD_EVERY = 64;
-type HttpAgentConfig = ConstructorParameters<typeof HttpAgent>[0];
 
 interface RunState {
   active: boolean;
@@ -456,54 +449,6 @@ export class AgUiTransport implements FacetTransport {
   private emitAll(messages: readonly ServerMessage[]): void {
     for (const message of messages) this.emit(message);
   }
-}
-
-export function createHttpAgUiTransport(
-  url: string,
-  options: CreateHttpAgUiTransportOptions,
-): AgUiTransport {
-  const agentConfig: HttpAgentConfig = {
-    url,
-    ...(options.headers === undefined ? {} : { headers: options.headers }),
-    fetch: normalizeAgUiFetch(options.fetch),
-  };
-  return new AgUiTransport(new PerRunHttpAgentSource(agentConfig), options);
-}
-
-class PerRunHttpAgentSource implements AgUiAbortableAgentLike {
-  private activeAgent: HttpAgent | undefined;
-
-  constructor(private readonly config: HttpAgentConfig) {}
-
-  run(input: FacetAgUiRunInput): AgUiRunResult {
-    const agent = new HttpAgent(this.config);
-    this.activeAgent = agent;
-    return agent.run(input);
-  }
-
-  abortRun(): void {
-    this.activeAgent?.abortRun();
-    this.activeAgent = undefined;
-  }
-}
-
-function normalizeAgUiFetch(
-  fetchImpl: CreateHttpAgUiTransportOptions["fetch"],
-): (url: string, requestInit: RequestInit) => Promise<Response> {
-  const runFetch = fetchImpl ?? ((requestUrl, requestInit) => fetch(requestUrl, requestInit));
-  return async (requestUrl, requestInit) => {
-    const response = await runFetch(requestUrl, requestInit);
-    if (response.ok || !isEventStreamResponse(response)) return response;
-    return new Response(response.body, {
-      status: 200,
-      statusText: "OK",
-      headers: response.headers,
-    });
-  };
-}
-
-function isEventStreamResponse(response: Response): boolean {
-  return response.headers.get("Content-Type")?.toLowerCase().includes("text/event-stream") === true;
 }
 
 function isLocalTapRecord(event: CollectedEvent): event is FacetAgUiRecordSubmission {

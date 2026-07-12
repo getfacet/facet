@@ -47,6 +47,11 @@ re-reads from a stable point instead of replaying over a stale snapshot. Tune
 `agentTimeoutMs` (interim-note threshold) and `agentStaleMs` (dead-agent reaper)
 via `FacetServerOptions`.
 
+The package keeps route assembly, request validation, stream rehydration, POST
+handling, and turn tracking in private modules. These are implementation seams,
+not additional package entry points; the supported API remains
+`createFacetServer` and the `FacetServer` option/result types.
+
 ## Trust model (read before hosting)
 
 This is a REFERENCE transport for local/self-hosted single-operator use with
