@@ -6,7 +6,7 @@ import { CHARS_PER_TOKEN_DEFAULT } from "./estimate.js";
 import type {
   ProviderStep,
   ProviderTurn,
-  QuickstartProvider,
+  ReferenceProvider,
   ToolCall,
   ToolSpec,
   TurnMessage,
@@ -317,7 +317,7 @@ function escapeDataFence(content: string): string {
 }
 
 function runWithTimeout(
-  provider: QuickstartProvider,
+  provider: ReferenceProvider,
   turn: ProviderTurn,
   tools: readonly ToolSpec[],
   timeoutMs: number,
@@ -348,7 +348,7 @@ function firstEmitCall(step: ProviderStep): ToolCall | undefined {
  * then resolves `undefined` so the caller can fall back deterministically. NEVER
  * throws out of the returned `Summarizer`.
  */
-export function createProviderSummarizer(provider: QuickstartProvider): Summarizer {
+export function createProviderSummarizer(provider: ReferenceProvider): Summarizer {
   return async (request) => {
     const turn: ProviderTurn = {
       system: SUMMARIZER_SYSTEM,

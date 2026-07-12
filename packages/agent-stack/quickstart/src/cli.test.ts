@@ -8,7 +8,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 // Spy on the compaction-ON composition so a regression back to the bare
-// createQuickstartAgent (compaction OFF) fails a test instead of shipping.
+// createReferenceAgent (compaction OFF) fails a test instead of shipping.
 const { composeSpy } = vi.hoisted(() => ({ composeSpy: vi.fn() }));
 vi.mock("./agent.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./agent.js")>();
@@ -24,7 +24,7 @@ import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
 import { QUICKSTART_INITIAL_STAGE } from "./guide.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
-import { createStubAgent } from "./stub.js";
+import { createStubAgent } from "@facet/reference-agent";
 
 const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
 
@@ -498,7 +498,7 @@ describe("runCli — provider-backed boot (DC-004)", () => {
     const { running } = await bootCli();
     try {
       // The CLI must compose via composeQuickstartAgent (default MemorySummaryStore),
-      // not the bare createQuickstartAgent whose default is compaction OFF.
+      // not the bare createReferenceAgent whose default is compaction OFF.
       expect(composeSpy).toHaveBeenCalledTimes(1);
       const options = composeSpy.mock.calls[0]?.[0] as { summaryStore?: unknown } | undefined;
       // No explicit opt-out slipped in: the default (undefined) wires the store.

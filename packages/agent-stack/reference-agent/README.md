@@ -52,9 +52,10 @@ const agent = createReferenceAgent({
   plus event/history transcript messages and bounded current-stage summaries.
   The package root keeps the prompt helpers used by quickstart, including
   `TOOLS`, without exporting the raw agent-tools executor.
-- `harness/`: context assembly, token-calibrated sizing, LLM + deterministic
+- `harness/`: context assembly, token-calibrated sizing, background and in-turn
   compaction, budget normalization, retry/stop classification, transcript
-  observations, trace events, and the streaming loop.
+  observations, trace events, and the streaming loop. Test-only compaction
+  controls remain internal to this harness rather than the package API.
 - `stub.ts`: deterministic agent fixture for local tests and live-link gates.
 
 The harness is bounded by default. It compacts sink history, includes full stage

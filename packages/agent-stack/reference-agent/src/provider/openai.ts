@@ -6,7 +6,7 @@ import {
   type FetchImpl,
   type ProviderOptions,
   type ProviderStep,
-  type QuickstartProvider,
+  type ReferenceProvider,
   type ToolCall,
   type TurnMessage,
 } from "./types.js";
@@ -82,7 +82,7 @@ export function createOpenAiProvider(
   apiKey: string,
   fetchImpl: FetchImpl = fetch,
   options: ProviderOptions = {},
-): QuickstartProvider {
+): ReferenceProvider {
   const timeoutMs = options.timeoutMs ?? TURN_TIMEOUT_MS;
   const model = DEFAULT_OPENAI_MODEL;
   return {

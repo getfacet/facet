@@ -1,7 +1,7 @@
 /**
  * /live-test Tier 2/3 (spec Decision 7, DC-004 + DC-009) — one REAL provider
  * turn per available key: boot `startQuickstart` with the reference
- * `createQuickstartAgent`, post a visit, and wait for a patch frame.
+ * `createReferenceAgent`, post a visit, and wait for a patch frame.
  *
  * LOOSE assertions only, by design: LLM output is nondeterministic, so the
  * test pins the machinery (a patch arrives, its tree passes `validateTree`,
@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { validateTree } from "@facet/core";
-import { createQuickstartAgent, resolveProvider } from "@facet/reference-agent";
+import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
 import { MemorySink } from "@facet/runtime";
 import { startQuickstart, type RunningQuickstart } from "../src/index.js";
 
@@ -72,7 +72,7 @@ async function boot(providerName: "openai" | "anthropic"): Promise<RunningQuicks
   if (provider === null) throw new Error(`no provider resolved for ${providerName}`);
   const sink = new MemorySink();
   const agentId = `quickstart-smoke-${providerName}`;
-  const agent = createQuickstartAgent({ provider, sink, agentId });
+  const agent = createReferenceAgent({ provider, sink, agentId });
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     try {

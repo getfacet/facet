@@ -23,15 +23,26 @@ import {
   type SummaryStore,
 } from "@facet/runtime";
 import {
-  createQuickstartAgent,
-  __resetCompactionCooldownForTests,
-  type QuickstartAgentOptions,
+  createReferenceAgentWithDependencies,
+  type ReferenceAgentDependencies,
+  type ReferenceAgentOptions,
 } from "./agent.js";
+import { resetBackgroundCompactionForTests } from "./harness/background-compaction.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
 import { DEFAULT_GUIDE } from "./prompt.js";
-import type { ProviderStep, ProviderTurn, QuickstartProvider, ToolCall } from "./provider.js";
+import type { ProviderStep, ProviderTurn, ReferenceProvider, ToolCall } from "./provider.js";
 import type { ReferenceAgentTraceEvent } from "./harness/trace.js";
 import type { ConversationSummary, Summarizer, SummarizerRequest } from "./harness/summary.js";
+
+function createReferenceAgent(
+  options: ReferenceAgentOptions & ReferenceAgentDependencies,
+): ReturnType<typeof createReferenceAgentWithDependencies> {
+  const { summarizerFactory, onBackgroundTask, ...agentOptions } = options;
+  return createReferenceAgentWithDependencies(agentOptions, {
+    ...(summarizerFactory !== undefined ? { summarizerFactory } : {}),
+    ...(onBackgroundTask !== undefined ? { onBackgroundTask } : {}),
+  });
+}
 
 const SESSION: FacetSession = {
   agentId: "quickstart",
@@ -91,7 +102,7 @@ function textStep(text: string): ProviderStep {
 }
 const END = textStep("");
 
-interface MockProvider extends QuickstartProvider {
+interface MockProvider extends ReferenceProvider {
   readonly turns: ProviderTurn[];
 }
 
@@ -117,20 +128,20 @@ function providerOf(...steps: ReadonlyArray<ProviderStep | Error>): MockProvider
 }
 
 function makeAgent(
-  provider: QuickstartProvider,
+  provider: ReferenceProvider,
   extra: {
     guide?: string;
     sink?: MemorySink;
     historyTurns?: number;
     maxSteps?: number;
-    budgetPreset?: QuickstartAgentOptions["budgetPreset"];
-    budget?: QuickstartAgentOptions["budget"];
-    trace?: QuickstartAgentOptions["trace"];
+    budgetPreset?: ReferenceAgentOptions["budgetPreset"];
+    budget?: ReferenceAgentOptions["budget"];
+    trace?: ReferenceAgentOptions["trace"];
     compositions?: readonly FacetComposition[];
     catalog?: FacetCatalog;
   } = {},
-): ReturnType<typeof createQuickstartAgent> {
-  return createQuickstartAgent({
+): ReturnType<typeof createReferenceAgent> {
+  return createReferenceAgent({
     provider,
     sink: extra.sink ?? new MemorySink(),
     agentId: "quickstart",
@@ -189,7 +200,7 @@ function toolResultSearchText(turn: ProviderTurn): string {
 }
 
 async function runAgent(
-  agent: ReturnType<typeof createQuickstartAgent>,
+  agent: ReturnType<typeof createReferenceAgent>,
   event: ClientEvent,
   session: FacetSession = SESSION,
 ): Promise<readonly ServerMessage[]> {
@@ -197,7 +208,7 @@ async function runAgent(
 }
 
 async function batchesOf(
-  agent: ReturnType<typeof createQuickstartAgent>,
+  agent: ReturnType<typeof createReferenceAgent>,
   event: ClientEvent,
   session: FacetSession = SESSION,
 ): Promise<readonly (readonly ServerMessage[])[]> {
@@ -208,7 +219,7 @@ async function batchesOf(
   return batches;
 }
 
-describe("createQuickstartAgent tool loop", () => {
+describe("createReferenceAgent tool loop", () => {
   it("use_composition expands a composition through the closure into one referentially closed batch", async () => {
     const composition: FacetComposition = {
       name: "card",
@@ -797,7 +808,7 @@ describe("createQuickstartAgent tool loop", () => {
       expect(patchesOf(out)).toHaveLength(1);
       expect(saysOf(out)[0]).toMatch(/sorry/i);
       expect(errorSpy).toHaveBeenCalledWith(
-        "[facet-quickstart] unresolved buffered edits:",
+        "[facet-reference-agent] unresolved buffered edits:",
         "1 unresolved edit(s)",
       );
       expect(errorSpy).toHaveBeenCalledTimes(1);
@@ -910,7 +921,7 @@ describe("createQuickstartAgent tool loop", () => {
       ),
       END,
     );
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink: new MemorySink(),
       agentId: "quickstart",
@@ -1571,7 +1582,7 @@ describe("createQuickstartAgent tool loop", () => {
 
   it("trace receives stop/tool/provider events and callback failures do not break the turn", async () => {
     const events: ReferenceAgentTraceEvent[] = [];
-    const trace: QuickstartAgentOptions["trace"] = (event) => {
+    const trace: ReferenceAgentOptions["trace"] = (event) => {
       events.push(event);
       if (event.type === "provider_attempt") throw new Error("trace sync failure");
       if (event.type === "tool_result") return Promise.reject(new Error("trace async failure"));
@@ -1621,7 +1632,7 @@ describe("createQuickstartAgent tool loop", () => {
         "h-title": { id: "h-title", type: "text", value: "Welcome" },
       },
     };
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink: new MemorySink(),
       agentId: "quickstart",
@@ -1696,12 +1707,12 @@ describe("compaction", () => {
   // shared ("quickstart"/"v1") across these tests — clear it so a skip in one test
   // can never cool down a later one.
   beforeEach(() => {
-    __resetCompactionCooldownForTests();
+    resetBackgroundCompactionForTests();
     backgroundTasks = [];
   });
 
   // A low token budget makes the cross-turn trigger fire on modest history.
-  const TRIGGERING_BUDGET: QuickstartAgentOptions["budget"] = { maxContextTokens: 100 };
+  const TRIGGERING_BUDGET: ReferenceAgentOptions["budget"] = { maxContextTokens: 100 };
 
   it("persists a generation-1 summary in the background and injects it next turn", async () => {
     const sink = new MemorySink();
@@ -1710,7 +1721,7 @@ describe("compaction", () => {
     const spy = spySummarizer();
     const events: ReferenceAgentTraceEvent[] = [];
     const provider = providerOf(toolStep(call("say", { text: "done" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -1749,7 +1760,7 @@ describe("compaction", () => {
 
     // Next turn assembles the injected summary block into the provider context.
     const nextProvider = providerOf(toolStep(call("say", { text: "again" })), END);
-    const nextAgent = createQuickstartAgent({
+    const nextAgent = createReferenceAgent({
       provider: nextProvider,
       sink,
       agentId: "quickstart",
@@ -1770,7 +1781,7 @@ describe("compaction", () => {
     const summaryStore = new MemorySummaryStore();
     const spy = spySummarizer();
     const provider1 = providerOf(toolStep(call("say", { text: "one" })), END);
-    const agent1 = createQuickstartAgent({
+    const agent1 = createReferenceAgent({
       provider: provider1,
       sink,
       agentId: "quickstart",
@@ -1786,7 +1797,7 @@ describe("compaction", () => {
     await recordLongHistory(sink, 4, 8); // total 12 turns now
 
     const provider2 = providerOf(toolStep(call("say", { text: "two" })), END);
-    const agent2 = createQuickstartAgent({
+    const agent2 = createReferenceAgent({
       provider: provider2,
       sink,
       agentId: "quickstart",
@@ -1821,7 +1832,7 @@ describe("compaction", () => {
     const summaryStore = new MemorySummaryStore();
     const spy = spySummarizer();
     const provider = providerOf(toolStep(call("say", { text: "hi" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -1843,7 +1854,7 @@ describe("compaction", () => {
     const spy = spySummarizer(undefined);
     const events: ReferenceAgentTraceEvent[] = [];
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -1887,7 +1898,7 @@ describe("compaction", () => {
     const spy = spySummarizer(bigSummary);
     const events: ReferenceAgentTraceEvent[] = [];
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -1924,7 +1935,7 @@ describe("compaction", () => {
     };
     const spy = spySummarizer();
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -1962,7 +1973,7 @@ describe("compaction", () => {
     });
     const spy = spySummarizer();
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -1991,7 +2002,7 @@ describe("compaction", () => {
       delete: () => Promise.resolve(),
     };
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2018,7 +2029,7 @@ describe("compaction", () => {
   it("constructs no summarizer when no summaryStore is configured", async () => {
     const factory = vi.fn((): Summarizer => spySummarizer().summarizer);
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink: new MemorySink(),
       agentId: "quickstart",
@@ -2037,13 +2048,13 @@ describe("compaction", () => {
     const summaryStore = new MemorySummaryStore();
     const spy = spySummarizer();
     // A tiny per-call cap forces the catch-up to fold only a few turns per run.
-    const CHUNK_BUDGET: QuickstartAgentOptions["budget"] = {
+    const CHUNK_BUDGET: ReferenceAgentOptions["budget"] = {
       maxContextTokens: 100,
       maxSummarizerInputChars: 1000,
     };
 
     const provider1 = providerOf(toolStep(call("say", { text: "one" })), END);
-    const agent1 = createQuickstartAgent({
+    const agent1 = createReferenceAgent({
       provider: provider1,
       sink,
       agentId: "quickstart",
@@ -2062,7 +2073,7 @@ describe("compaction", () => {
     expect(spy.calls[0]!.content.length).toBeLessThanOrEqual(1000);
 
     const provider2 = providerOf(toolStep(call("say", { text: "two" })), END);
-    const agent2 = createQuickstartAgent({
+    const agent2 = createReferenceAgent({
       provider: provider2,
       sink,
       agentId: "quickstart",
@@ -2096,7 +2107,7 @@ describe("compaction", () => {
     });
     const spy = spySummarizer();
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2123,7 +2134,7 @@ describe("compaction", () => {
       history: () => Promise.reject(new Error("sink offline")),
     };
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink: failingSink,
       agentId: "quickstart",
@@ -2162,7 +2173,7 @@ describe("compaction", () => {
       delete: () => Promise.resolve(),
     };
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2197,7 +2208,7 @@ describe("compaction", () => {
       delete: () => Promise.reject(new Error("db delete down")),
     };
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2239,7 +2250,7 @@ describe("compaction", () => {
     const spy = spySummarizer();
     const events: ReferenceAgentTraceEvent[] = [];
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2283,7 +2294,7 @@ describe("compaction", () => {
     // Turn 1: the summarizer runs and the write is skipped (min_gain), arming the cooldown.
     const runTurn = async (): Promise<void> => {
       const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-      const agent = createQuickstartAgent({
+      const agent = createReferenceAgent({
         provider,
         sink,
         agentId: "quickstart",
@@ -2324,12 +2335,12 @@ describe("compaction", () => {
     const summaryStore = new MemorySummaryStore();
     const spy = spySummarizer();
     // Each rendered entry is ~450 chars, so a 1000-char cap admits exactly two.
-    const CAP_BUDGET: QuickstartAgentOptions["budget"] = {
+    const CAP_BUDGET: ReferenceAgentOptions["budget"] = {
       maxContextTokens: 100,
       maxSummarizerInputChars: 1000,
     };
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2370,7 +2381,7 @@ describe("compaction", () => {
     const summaryStore = new MemorySummaryStore();
     const spy = spySummarizer();
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2417,7 +2428,7 @@ describe("compaction", () => {
     const runWith = async (maxStageJsonChars: number): Promise<number> => {
       const spy = spySummarizer();
       const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-      const agent = createQuickstartAgent({
+      const agent = createReferenceAgent({
         provider,
         sink: await seed(),
         agentId: "quickstart",
@@ -2453,7 +2464,7 @@ describe("compaction", () => {
     };
     const skipSpy = spySummarizer(bigSummary);
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2473,7 +2484,7 @@ describe("compaction", () => {
     await recordLongHistory(freshSink, 8);
     const spy = spySummarizer();
     const freshProvider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const freshAgent = createQuickstartAgent({
+    const freshAgent = createReferenceAgent({
       provider: freshProvider,
       sink: freshSink,
       agentId: "quickstart",
@@ -2520,7 +2531,7 @@ describe("compaction", () => {
     };
     const skipSpy = spySummarizer(bigSummary);
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink,
       agentId: "quickstart",
@@ -2556,7 +2567,7 @@ describe("compaction", () => {
     const putSpy = vi.spyOn(summaryStore, "put");
     const spy = spySummarizer();
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const agent = createQuickstartAgent({
+    const agent = createReferenceAgent({
       provider,
       sink: forwardSink,
       agentId: "quickstart",

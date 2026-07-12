@@ -17,7 +17,7 @@ import type { ReferenceAgentTraceEvent } from "./trace.js";
 import type {
   ProviderStep,
   ProviderTurn,
-  QuickstartProvider,
+  ReferenceProvider,
   ToolCall,
   TurnMessage,
 } from "../provider.js";
@@ -30,7 +30,7 @@ const SESSION: FacetSession = {
 
 const EVENT: ClientEvent = { kind: "message", text: "update the page" };
 
-interface MockProvider extends QuickstartProvider {
+interface MockProvider extends ReferenceProvider {
   readonly turns: ProviderTurn[];
   readonly toolsByAttempt: readonly ToolSpec[][];
 }
@@ -41,7 +41,7 @@ interface FakeStageToolBuffer extends StageToolBuffer {
 }
 
 interface RunLoopOptions {
-  readonly provider: QuickstartProvider;
+  readonly provider: ReferenceProvider;
   readonly budget?: ReferenceAgentBudget;
   readonly bufferFactory?: ReferenceAgentLoopBufferFactory;
   readonly event?: ClientEvent;

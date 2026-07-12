@@ -7,7 +7,7 @@ import {
   createOpenAiProvider,
   resolveProvider,
   type ProviderTurn,
-  type QuickstartProvider,
+  type ReferenceProvider,
   type ToolSpec,
 } from "./provider.js";
 
@@ -94,7 +94,7 @@ interface AdapterCase {
     apiKey: string,
     fetchImpl?: typeof fetch,
     options?: { readonly timeoutMs?: number },
-  ) => QuickstartProvider;
+  ) => ReferenceProvider;
   readonly url: string;
   readonly defaultModel: string;
   readonly authHeader: string;
@@ -461,7 +461,7 @@ describe("anthropic tool-loop wire translation", () => {
 
 interface UsageCase {
   readonly label: "openai" | "anthropic";
-  readonly create: (apiKey: string, fetchImpl?: typeof fetch) => QuickstartProvider;
+  readonly create: (apiKey: string, fetchImpl?: typeof fetch) => ReferenceProvider;
   readonly contextWindowTokens: number;
   /** An ok text response carrying provider usage. */
   readonly usageResponse: (inputTokens: number, outputTokens: number) => unknown;

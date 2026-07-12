@@ -6,6 +6,7 @@ import type {
   StageToolErrorCode,
   StageToolObservation,
 } from "./types.js";
+import { stableJson } from "./stable-json.js";
 
 const CONTRACT_VERSION = 1;
 const MAX_TOOL_CHARS = 80;
@@ -310,15 +311,4 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stableJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "undefined";
-  if (Array.isArray(value)) return `[${value.map((item) => stableJson(item)).join(",")}]`;
-  const entries = Object.entries(value as Record<string, unknown>).sort(([left], [right]) =>
-    left.localeCompare(right),
-  );
-  return `{${entries
-    .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
-    .join(",")}}`;
 }

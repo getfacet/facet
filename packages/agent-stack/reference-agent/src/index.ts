@@ -20,7 +20,11 @@ export type {
   StageSummaryOptions,
   ToolInputByName,
 } from "./prompt.js";
-export * from "./agent.js";
+export { createReferenceAgent, createReferenceAgent as createQuickstartAgent } from "./agent.js";
+export type {
+  ReferenceAgentOptions,
+  ReferenceAgentOptions as QuickstartAgentOptions,
+} from "./agent.js";
 export * from "./stub.js";
 export * from "./harness/budget.js";
 export * from "./harness/trace.js";
@@ -43,7 +47,3 @@ export {
   FACET_STAGE_TOOL_SPECS,
   getStageToolSpec,
 } from "@facet/agent-tools";
-
-export { createQuickstartAgent as createReferenceAgent } from "./agent.js";
-export type { QuickstartAgentOptions as ReferenceAgentOptions } from "./agent.js";
-export type { QuickstartProvider as ReferenceProvider } from "./provider.js";

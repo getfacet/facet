@@ -7,8 +7,8 @@ import {
 import { z } from "zod";
 import { Stage } from "@facet/agent";
 import { safeEnv } from "./env.js";
+import { PERSISTENT_SYSTEM_PROMPT, buildPersistentTurnPrompt } from "./prompt.js";
 import {
-  STAGE_SPEC,
   isValidThemeName,
   validateTree,
   type ClientEvent,
@@ -28,18 +28,6 @@ import {
  * Uses the local Claude Code auth (no API key needed), same as the spawn runner.
  */
 
-const SYSTEM = `You own a live web page and update it as visitors interact. Use the facet tools to change the page:
-- render(tree): replace the whole page with a stage tree
-- append(parentId, node): add a node under a parent
-- set(node): add or replace a node by id
-- remove(id): delete a node
-- theme(name): select a validated theme name
-- say(text): send a short chat reply
-
-${STAGE_SPEC}
-
-On a fresh visit, render a page. On a message, prefer append/set/remove to change just what's needed; render a fresh page only for a totally new request. Keep pages polished and complete.`;
-
 interface Turn {
   readonly event: ClientEvent;
   readonly session: FacetSession;
@@ -50,22 +38,6 @@ interface Turn {
 /** Models sometimes pass tree/node args as a JSON string; accept either. */
 function asJson<T>(value: unknown): T {
   return (typeof value === "string" ? JSON.parse(value) : value) as T;
-}
-
-function userText(event: ClientEvent, stage: FacetTree): string {
-  const current = `The visitor's current page: ${JSON.stringify(stage)}`;
-  if (event.kind === "visit") {
-    return `A new visitor arrived. Render a welcoming page with the facet tools.`;
-  }
-  if (event.kind === "message") {
-    return `${current}\n\nThe visitor said: "${event.text}". Update their page with the facet tools; optionally say() a short reply.`;
-  }
-  // Defensive: a malformed action event (no action object) must not throw here —
-  // this runs inside the input() generator, where an uncaught TypeError would
-  // end the SDK query stream and permanently kill the session for ALL visitors.
-  // The spawn twin's `promptFor` (bridge.ts) mirrors this same guard.
-  const name = typeof event.action?.name === "string" ? event.action.name : "(unknown)";
-  return `${current}\n\nThe visitor pressed "${name}". React by updating their page with the facet tools.`;
 }
 
 export interface PersistentDriver {
@@ -146,7 +118,7 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
       // whose event can't be rendered settles alone instead.
       let content: string;
       try {
-        content = userText(turn.event, turn.session.stage);
+        content = buildPersistentTurnPrompt(turn.event, turn.session.stage);
       } catch (error) {
         console.error("[facet] skipping malformed event:", error);
         turn.resolve([{ kind: "say", text: "(could not process that interaction)" }]);
@@ -185,7 +157,7 @@ export function createPersistentDriver(options: { model?: string } = {}): Persis
       for await (const message of query({
         prompt: input(),
         options: {
-          systemPrompt: SYSTEM,
+          systemPrompt: PERSISTENT_SYSTEM_PROMPT,
           mcpServers: { facet: facetServer },
           // Disable ALL built-in tools (Bash/Read/WebFetch/…); the brain gets only
           // the in-process facet_* tools. Stops a prompt-injected visitor from
