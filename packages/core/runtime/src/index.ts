@@ -2,5 +2,6 @@
 export * from "./stage-store.js";
 export * from "./sink.js";
 export * from "./summary-store.js";
+export * from "./redaction.js";
 export * from "./runtime.js";
 export * from "./assets.js";

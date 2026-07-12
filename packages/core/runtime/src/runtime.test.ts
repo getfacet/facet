@@ -256,7 +256,7 @@ describe("FacetRuntime.handle", () => {
   });
 
   it("never throws on a turn whose patch message carries a huge junk-op array", async () => {
-    // An in-process agent can hand applyToSession a message the wire cap never
+    // An in-process agent can hand the turn fold a message the wire cap never
     // saw. The fold caps its issue list and the runtime pushes issues one at a
     // time, so an oversize op array can't RangeError the never-throwing turn.
     const junk: ServerMessage = {
@@ -1249,7 +1249,7 @@ describe("FacetRuntime.applyMessages", () => {
   });
 });
 
-describe("FacetRuntime.applyToSession fail-soft", () => {
+describe("FacetRuntime turn-fold fail-soft", () => {
   it("salvages good ops when one op in a batch is bad (mixed batch)", async () => {
     const mixed: ServerMessage = {
       kind: "patch",

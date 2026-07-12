@@ -33,7 +33,12 @@ so adapters can emit full repair snapshots without rereading future state.
 Sessions are isolated and serialized per `(agent, visitor)`. The `Sink` is keyed
 by visitor id, but the stored event body redacts duplicate `visitorId` values and
 sensitive collected field names such as `password`, `token`, and `api_key`, plus
-key-looking field values.
+key-looking field values. `@facet/runtime` owns this browser-safe redaction rule
+and exports `shouldRedactSensitiveField` and `redactSensitiveText` so downstream
+prompt/history boundaries can apply the same defense again without duplicating
+secret patterns. The optional `RuntimeRecordSettlementObserver` callback reports
+when the fire-and-forget Sink record promise settles; it is an observer, not a
+conversation `Sink`.
 `FacetRuntime.applyMessages` applies an already-produced result (e.g. one that
 arrived after the transport's wait ended) through the same queue and salvage.
 

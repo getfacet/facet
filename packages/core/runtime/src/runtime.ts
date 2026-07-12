@@ -1,32 +1,26 @@
 import {
   createSerialQueue,
   asAgentServerMessage,
-  foldPatchIntoStage,
   isTestOnlyServerMessageBatch,
   iterateAgentResult,
-  MAX_PATCH_OPS,
   type ClientEvent,
   type CollectedEvent,
   type FacetAgent,
   type FacetSession,
   type FacetTree,
-  type FieldValues,
-  type JsonPatchOperation,
   type ServerMessage,
   type VisitorContext,
 } from "@facet/core";
 import { MemoryStageStore, sessionKey, type StageStore } from "./stage-store.js";
 import { MemorySink, type Sink, type StoredEvent } from "./sink.js";
+import { sanitizeEventForSink } from "./sink-event-redaction.js";
+import { foldTurnIntoSession } from "./turn-fold.js";
 
 /** Hygiene cap on armed-but-undelivered seed keys (see `pendingSeeds`). */
 const MAX_PENDING_SEEDS = 10_000;
 
 /** Defensive cap on save-time re-validation issues logged per turn (log-flood belt). */
 const MAX_LOGGED_ISSUES = 64;
-const REDACTED_LOG_VALUE = "[redacted]";
-const SENSITIVE_FIELD_NAME =
-  /(?:password|passcode|secret|token|api[_-]?key|authorization|bearer|provider[_-]?key)/i;
-const SENSITIVE_FIELD_VALUE = /\b(?:sk-[A-Za-z0-9_-]+|Bearer\s+[A-Za-z0-9._~+/=-]+)\b/i;
 
 export interface FacetRuntimeOptions {
   readonly agentId: string;
@@ -61,7 +55,8 @@ export type RuntimeFrameSink = (
   messages: readonly ServerMessage[],
   context?: RuntimeFrameContext,
 ) => void;
-export type RuntimeRecordSink = (settled: Promise<void>) => void;
+/** Observes the non-throwing completion promise for a turn's conversation record. */
+export type RuntimeRecordSettlementObserver = (settled: Promise<void>) => void;
 
 interface RecordSlot {
   readonly resolve: (entry: StoredEvent | null) => void;
@@ -148,7 +143,7 @@ export class FacetRuntime {
     visitor: VisitorContext,
     event: ClientEvent,
     onFrame?: RuntimeFrameSink,
-    onRecordSettled?: RuntimeRecordSink,
+    onRecordSettled?: RuntimeRecordSettlementObserver,
   ): Promise<TurnResult> {
     // Reserve this turn's Sink-write slot on serializeRecord NOW, in call order,
     // BEFORE the (async) turn runs — otherwise a record() called during the turn
@@ -248,7 +243,7 @@ export class FacetRuntime {
     visitor: VisitorContext,
     event: ClientEvent,
     messages: readonly ServerMessage[],
-    onRecordSettled?: RuntimeRecordSink,
+    onRecordSettled?: RuntimeRecordSettlementObserver,
   ): Promise<TurnResult> {
     // Reserve the Sink-write slot synchronously (same reason as `handle`): this
     // path also persists, so a later `record` must not overtake its write.
@@ -278,7 +273,7 @@ export class FacetRuntime {
     recordEvent: CollectedEvent,
     recordSlot: RecordSlot,
     onFrame: RuntimeFrameSink | undefined,
-    onRecordSettled: RuntimeRecordSink | undefined,
+    onRecordSettled: RuntimeRecordSettlementObserver | undefined,
   ): Promise<TurnResult> {
     const session = await this.stageStore.open(this.agentId, visitor);
     const result = this.agent(event, session);
@@ -308,7 +303,7 @@ export class FacetRuntime {
     result: Parameters<typeof iterateAgentResult>[0],
     recordSlot: RecordSlot,
     onFrame?: RuntimeFrameSink,
-    onRecordSettled?: RuntimeRecordSink,
+    onRecordSettled?: RuntimeRecordSettlementObserver,
   ): Promise<TurnResult> {
     const key = sessionKey(this.agentId, visitor.visitorId);
     if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
@@ -386,7 +381,7 @@ export class FacetRuntime {
           messages: delivered,
           recordMessages,
           mutated,
-        } = this.applyToSession(session, batch);
+        } = foldTurnIntoSession(session, batch);
         try {
           await this.stageStore.save(applied);
         } catch (error) {
@@ -459,153 +454,4 @@ export class FacetRuntime {
       );
     }
   }
-
-  /**
-   * Folds a turn's patch messages into the open session with the shared
-   * `foldPatchIntoStage` — the SAME pure function the client runs in useFacet —
-   * returning the sanitized session, any issues raised, AND the message list to
-   * deliver. Because both sides fold identically, the stored stage this produces
-   * equals the client's tree by construction; there is no separate divergence
-   * signal to compute or converge (invariant #2).
-   *
-   * A single turn can legitimately carry MULTIPLE patch messages (Stage.say()
-   * flushes pending ops mid-turn), and a later message may reference a node an
-   * earlier one only appended a child ref for. Folding each message separately
-   * would run validateTree's dangling-ref pruning on that intermediate state and
-   * orphan the forward reference. So the turn's patch ops are CONCATENATED in
-   * order and folded ONCE, and the delivered list replaces the turn's patch
-   * messages with a single coalesced patch frame at the FIRST patch message's
-   * position (say/other messages keep their relative order). The client folds that
-   * one frame, so it prunes exactly what the server pruned — no drift, and the
-   * final rendered state is the one the operator intended. Never throws.
-   */
-  private applyToSession(
-    session: FacetSession,
-    messages: readonly ServerMessage[],
-  ): {
-    readonly session: FacetSession;
-    readonly issues: readonly string[];
-    readonly messages: readonly ServerMessage[];
-    readonly recordMessages: readonly ServerMessage[];
-    // Whether the fold actually changed the stage (effect-based). False for a
-    // patch-free turn and the over-cap reject, threaded from foldPatchIntoStage
-    // otherwise. persistWithSeed surfaces this as TurnResult.agentMutated.
-    readonly mutated: boolean;
-  } {
-    // Concatenate every patch message's ops in order (explicit loop, never
-    // spread-push: a message could carry a huge op array and `push(...ops)` would
-    // blow the call stack). foldPatchIntoStage's own MAX_PATCH_OPS cap then bounds
-    // the coalesced batch.
-    const turnOps: JsonPatchOperation[] = [];
-    let sawPatchMessage = false;
-    let droppedPatchMessage = false;
-    let hasPatch = false;
-    for (const message of messages) {
-      if (message.kind === "patch") {
-        sawPatchMessage = true;
-        // A wire/in-process patch message can carry a non-array `patches` field
-        // (untyped JS agent, unsafe cast). The concatenation runs BEFORE the fold,
-        // so the fold's own non-array guard is unreachable here — drop the bad
-        // message fail-soft (rest of the turn, says included, still applies and
-        // delivers) instead of letting `for...of` throw through the never-throws seam.
-        if (!Array.isArray(message.patches)) {
-          console.error("[facet] dropped a patch message with non-array patches");
-          droppedPatchMessage = true;
-          continue;
-        }
-        hasPatch = true;
-        for (const op of message.patches) turnOps.push(op);
-      }
-    }
-    if (!hasPatch) {
-      const cleanMessages = sawPatchMessage ? messages.filter((m) => m.kind !== "patch") : messages;
-      return {
-        session,
-        issues: [],
-        messages: cleanMessages,
-        recordMessages: cleanMessages,
-        mutated: false,
-      };
-    }
-
-    // Enforce the op cap on the per-TURN aggregate, mirroring the wire boundary
-    // (server `isControlBody`) and the fold's own per-batch cap. Individually
-    // wire-valid patch messages can coalesce past MAX_PATCH_OPS; folding that batch
-    // would reject it WHOLE, losing every edit while the multi-megabyte coalesced
-    // frame still fanned out and was stored in the replay ring. Skip the fold, leave
-    // the session unchanged, surface the issue, and OMIT the coalesced patch frame
-    // from the delivered list (deliver only the non-patch messages).
-    if (turnOps.length > MAX_PATCH_OPS) {
-      return {
-        session,
-        issues: [
-          `patch turn dropped: ${String(turnOps.length)} ops exceeds the ${String(MAX_PATCH_OPS)}-op cap`,
-        ],
-        messages: messages.filter((m) => m.kind !== "patch"),
-        recordMessages: messages.filter((m) => m.kind !== "patch"),
-        mutated: false,
-      };
-    }
-
-    const { tree, issues, mutated } = foldPatchIntoStage(session.stage, turnOps);
-    const allIssues: string[] = [];
-    for (const issue of issues) allIssues.push(issue);
-
-    const coalescedPatch: ServerMessage = { kind: "patch", patches: turnOps };
-    const delivered: ServerMessage[] = [];
-    const recordMessages: ServerMessage[] = [];
-    let placed = false;
-    for (const message of messages) {
-      if (message.kind === "patch") {
-        if (!Array.isArray(message.patches)) continue;
-        // Replace the turn's patch messages with the single coalesced frame,
-        // emitted once at the first patch message's slot.
-        if (!placed) {
-          delivered.push(coalescedPatch);
-          placed = true;
-        }
-      } else {
-        delivered.push(message);
-      }
-      recordMessages.push(message);
-    }
-    return {
-      session: { ...session, stage: tree },
-      issues: allIssues,
-      messages: delivered,
-      recordMessages: droppedPatchMessage ? recordMessages : messages,
-      mutated,
-    };
-  }
-}
-
-function sanitizeEventForSink(event: CollectedEvent): CollectedEvent {
-  if (event.kind === "visit") {
-    return {
-      ...event,
-      visitor: { ...event.visitor, visitorId: REDACTED_LOG_VALUE },
-    };
-  }
-  if (event.kind === "message") return { ...event };
-  if (event.fields === undefined) return { ...event };
-  return { ...event, fields: sanitizeFieldsForSink(event.fields) };
-}
-
-function sanitizeFieldsForSink(fields: FieldValues): FieldValues {
-  const sanitized: Record<string, string | boolean> = {};
-  for (const [name, value] of Object.entries(fields)) {
-    if (shouldRedactField(name, value)) {
-      sanitized[name] = REDACTED_LOG_VALUE;
-    } else {
-      sanitized[name] = value;
-    }
-  }
-  return sanitized;
-}
-
-function shouldRedactField(name: string, value: string | boolean): boolean {
-  return (
-    SENSITIVE_FIELD_NAME.test(name) ||
-    (typeof value === "string" && SENSITIVE_FIELD_VALUE.test(value))
-  );
 }

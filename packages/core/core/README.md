@@ -22,7 +22,8 @@ npm install @facet/core
 
 Core helpers do the heavy lifting: `validateTree` turns arbitrary input (e.g. an
 LLM's JSON) into a guaranteed-renderable tree, preserving valid primitive
-fallback and intrinsic component nodes while dropping malformed payloads;
+fallback and routing every intrinsic/legacy component through one canonical
+component validator while dropping malformed payloads;
 `validateCatalog` turns untrusted catalog data into bounded UI policy; `validateTheme` gates
 token-value maps, component recipes, and recipe parts as operator data;
 `validateComposition` turns an untrusted composition document into a validated
