@@ -28,6 +28,10 @@ stage node fields. Primitive nodes remain the base rendering path for custom
 composition. Wire it to a transport with `useFacet` and pass `send` through
 `onAction`.
 
+`StageRenderer` delegates safe-tree handling, motion, hold/press collection, and
+intrinsic rendering to private responsibility modules. These modules do not add
+deep-import APIs; the supported surface remains the package root exports.
+
 ```tsx
 import { SseTransport } from "@facet/client";
 import { StageRenderer, useFacet } from "@facet/react";

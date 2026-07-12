@@ -97,6 +97,11 @@ survives fill anywhere — including non-fillable node-id references — refuses
 the whole expansion instead of shipping a node the validated fold would drop.
 Every over-cap or throwing path is a bounded no-op — the
 returned ids are fresh only for the nodes that will actually be emitted.
+
+The theme, catalog, and composition-expansion implementations are organized as
+private responsibility modules behind these same root exports. Their validator
+and expansion helpers are not additional package entry points; the public API
+remains the contract exported from `@facet/core`.
 Composition assets may carry bounded metadata for
 prompt guidance, but expansion still emits ordinary nodes and JSON Patch operations. `applyPatch`
 enforces JSON Pointer reads for source operations (`move`, `copy`, and `test`)

@@ -49,3 +49,7 @@ const lockedTheme = DEFAULT_CATALOG.theme.switchPolicy === "locked";
 
 The package contains no renderer or Node runtime code. It is safe to use anywhere
 that can consume the `@facet/core` contract.
+
+Token maps, recipe data, and larger composition records live in private source
+modules so each data file stays reviewable. `@facet/assets` still exposes only
+the same root data values and preserves their ordering.

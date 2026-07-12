@@ -83,6 +83,10 @@ every fallback.
 an empty registry still resolves the default theme, default compositions, and
 the locked theme default catalog.
 
+Raw document storage, validation/loading, and initial-stage seeding are separate
+private modules behind the unchanged `@facet/runtime` root exports. This keeps
+the fail-soft loader and seed recovery lifecycle independently reviewable.
+
 Catalog policy is UI authoring policy for the agent stack: active theme,
 theme-switch allowance, allowed components/variants, composition allow-list,
 primitive fallback, and the `composition -> component -> primitive` authoring

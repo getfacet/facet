@@ -17,6 +17,7 @@ import {
   type NodeId,
 } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
+import * as stageRendererExports from "./StageRenderer.js";
 import { MOTION_CLASS_NAMES } from "./motion.js";
 
 function render(tree: FacetTree): string {
@@ -39,6 +40,12 @@ function tree(nodes: Record<NodeId, FacetNode>, root: NodeId = "root"): FacetTre
 
 const text = (id: NodeId, value: string): FacetNode => ({ id, type: "text", value });
 const box = (id: NodeId, children: readonly NodeId[]): FacetNode => ({ id, type: "box", children });
+
+describe("StageRenderer module boundary", () => {
+  it("keeps the exact runtime export surface", () => {
+    expect(Object.keys(stageRendererExports).sort()).toEqual(["StageRenderer"]);
+  });
+});
 
 // The renderer is the fail-safe boundary (invariant #2): the live patch path
 // reaches it WITHOUT passing validateTree, so every malformed shape below must
