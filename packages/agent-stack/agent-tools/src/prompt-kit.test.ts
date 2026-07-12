@@ -327,7 +327,9 @@ describe("buildFacetAgentSystemPrompt", () => {
   it("primes the agent to target the visitor's current view (screen/toggles/device)", () => {
     const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
     expect(FACET_PAGE_EXPERIENCE_PROMPT).toContain("visitor's current view");
-    expect(FACET_PAGE_EXPERIENCE_PROMPT).toMatch(/target[^.]*screen the visitor is (?:actually )?viewing/i);
+    expect(FACET_PAGE_EXPERIENCE_PROMPT).toMatch(
+      /target[^.]*screen the visitor is (?:actually )?viewing/i,
+    );
     expect(FACET_PAGE_EXPERIENCE_PROMPT).toMatch(/navigate them deliberately/i);
     expect(system).toContain("visitor's current view");
   });

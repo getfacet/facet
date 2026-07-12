@@ -213,7 +213,12 @@ function normalizeClientEvent(value: unknown): ClientEvent | undefined {
   if (kind === "message") {
     const text = value["text"];
     return typeof text === "string"
-      ? { kind, text, ...(view === undefined ? {} : { view }), ...(seq === undefined ? {} : { seq }) }
+      ? {
+          kind,
+          text,
+          ...(view === undefined ? {} : { view }),
+          ...(seq === undefined ? {} : { seq }),
+        }
       : undefined;
   }
   if (kind === "tap") {

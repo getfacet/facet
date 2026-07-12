@@ -83,9 +83,7 @@ describe("useViewportScheme", () => {
 
   it("detects viewport and scheme from a mocked matchMedia", () => {
     // max-width query matches ⇒ narrow; dark scheme query matches ⇒ dark.
-    stubMatchMedia(
-      (q) => q.includes("max-width") || q.includes("prefers-color-scheme: dark"),
-    );
+    stubMatchMedia((q) => q.includes("max-width") || q.includes("prefers-color-scheme: dark"));
     const { result } = renderHook(() => useViewportScheme());
     expect(result.current).toEqual({ viewport: "narrow", scheme: "dark" });
   });

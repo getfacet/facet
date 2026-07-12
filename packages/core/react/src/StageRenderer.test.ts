@@ -1531,7 +1531,12 @@ describe("StageRenderer onViewSnapshot (jsdom)", () => {
         onViewSnapshot,
         tree: tree({
           root: box("root", ["btn", "panel"]),
-          btn: { id: "btn", type: "box", onPress: { kind: "toggle", target: "panel" }, children: [] },
+          btn: {
+            id: "btn",
+            type: "box",
+            onPress: { kind: "toggle", target: "panel" },
+            children: [],
+          },
           panel: box("panel", ["p"]),
           p: text("p", "panel content"),
         }),

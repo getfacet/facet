@@ -149,7 +149,8 @@ export function isEventBody(
  */
 export function sanitizeEventView(event: ClientEvent): ClientEvent {
   const view = sanitizeView((event as { view?: unknown }).view);
-  const { view: _dropped, ...rest } = event as ClientEvent & { view?: unknown };
+  const rest = { ...event } as ClientEvent & { view?: unknown };
+  delete rest.view;
   return view === undefined ? (rest as ClientEvent) : ({ ...rest, view } as ClientEvent);
 }
 
