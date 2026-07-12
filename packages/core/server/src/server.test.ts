@@ -579,6 +579,41 @@ describe("browser channel", () => {
     ).toBe(400);
   });
 
+  it("clamps a hostile view on /event before the agent sees it (never a 400)", async () => {
+    const received: ClientEvent[] = [];
+    const captureAgent: FacetAgent = (event) => {
+      received.push(event);
+      return [];
+    };
+    const { server, base } = await start({ agentId: "a", agent: captureAgent });
+    running = server;
+    const response = await fetch(`${base}/event`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        visitor: { visitorId: "v" },
+        event: {
+          kind: "message",
+          text: "hi",
+          view: {
+            screen: "pricing",
+            toggled: { "faq-3": "shown", junk: "sideways" },
+            viewport: "4k-ultrawide",
+            scheme: "dark",
+            nested: { deep: true },
+          },
+        },
+      }),
+    });
+    expect(response.status).toBe(202);
+    await waitFor(async () => received.length > 0);
+    expect(received[0]).toEqual({
+      kind: "message",
+      text: "hi",
+      view: { screen: "pricing", toggled: { "faq-3": "shown" }, scheme: "dark" },
+    });
+  });
+
   it("delivers the agent's reply over the visitor's SSE stream", async () => {
     const { server, base } = await start({ agentId: "a", agent: sayAgent });
     running = server;
