@@ -1,7 +1,7 @@
 import type { IncomingMessage } from "node:http";
 
 import type { RunAgentInput } from "@ag-ui/core";
-import { MAX_FIELD_VALUE_CHARS, MAX_FIELDS_KEYS } from "@facet/core";
+import { MAX_FIELD_VALUE_CHARS, MAX_FIELDS_KEYS, sanitizeView } from "@facet/core";
 import type {
   ClientEvent,
   CollectedEvent,
@@ -197,17 +197,23 @@ function normalizeClientEvent(value: unknown): ClientEvent | undefined {
   const kind = value["kind"];
   const seq = optionalSeq(value);
   if (seq === null) return undefined;
+  const view = sanitizeView(value["view"]);
 
   if (kind === "visit") {
     const eventVisitor = normalizeVisitor(value["visitor"]);
     return eventVisitor === undefined
       ? undefined
-      : { kind: "visit", visitor: eventVisitor, ...(seq === undefined ? {} : { seq }) };
+      : {
+          kind: "visit",
+          visitor: eventVisitor,
+          ...(view === undefined ? {} : { view }),
+          ...(seq === undefined ? {} : { seq }),
+        };
   }
   if (kind === "message") {
     const text = value["text"];
     return typeof text === "string"
-      ? { kind, text, ...(seq === undefined ? {} : { seq }) }
+      ? { kind, text, ...(view === undefined ? {} : { view }), ...(seq === undefined ? {} : { seq }) }
       : undefined;
   }
   if (kind === "tap") {
@@ -220,6 +226,7 @@ function normalizeClientEvent(value: unknown): ClientEvent | undefined {
       kind,
       action,
       ...(fields === undefined ? {} : { fields }),
+      ...(view === undefined ? {} : { view }),
       ...(seq === undefined ? {} : { seq }),
     };
   }
@@ -241,12 +248,14 @@ function normalizeCollectedEvent(value: unknown): CollectedEvent | undefined {
   if (effect === undefined || effect === null || fields === null || target === null) {
     return undefined;
   }
+  const view = sanitizeView(value["view"]);
 
   return {
     kind,
     ...(target === undefined ? {} : { target }),
     effect,
     ...(fields === undefined ? {} : { fields }),
+    ...(view === undefined ? {} : { view }),
     ...(seq === undefined ? {} : { seq }),
   };
 }
