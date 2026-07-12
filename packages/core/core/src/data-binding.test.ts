@@ -238,6 +238,37 @@ describe("resolveNodeData (DC-005 precedence + projection)", () => {
     expect(resolveNodeData(metricNode({ from: "nope", column: "total" }), warehouse)).toBe("");
     expect(resolveNodeData(tableNode({ from: "sales" }), undefined)).toEqual([]);
   });
+
+  it("is TOTAL on an UNSANITIZED warehouse with non-object rows — never throws (fail-safe)", () => {
+    // The renderer calls resolveNodeData on unvalidated trees (host initialTree,
+    // direct StageRenderer tree={…}, CLI path), so a warehouse whose rows are
+    // null/undefined/sparse-holes must not crash any projection. Bypass
+    // sanitizeDataWarehouse deliberately to feed the raw shape.
+    const raw = { sales: [null, undefined, { month: "Jan", revenue: 5 }] } as unknown as Parameters<
+      typeof resolveNodeData
+    >[1];
+    // A genuine sparse array (index 0 is a hole), built programmatically to avoid
+    // a sparse-array literal — for-of yields `undefined` for the hole.
+    const sparseRows: unknown[] = [];
+    sparseRows[1] = { a: "x", b: "y" };
+    const sparse = { sales: sparseRows } as unknown as typeof raw;
+    for (const wh of [raw, sparse]) {
+      expect(() => resolveNodeData(chartNode({ from: "sales" }), wh)).not.toThrow();
+      expect(() => resolveNodeData(listNode({ from: "sales" }), wh)).not.toThrow();
+      expect(() => resolveNodeData(keyValueNode({ from: "sales" }), wh)).not.toThrow();
+      expect(() =>
+        resolveNodeData(metricNode({ from: "sales", column: "revenue" }), wh),
+      ).not.toThrow();
+      expect(() => resolveNodeData(tableNode({ from: "sales" }), wh)).not.toThrow();
+    }
+    // The valid row still projects; the null/hole rows are simply dropped.
+    expect(resolveNodeData(chartNode({ from: "sales" }), raw)).toEqual([
+      { label: "revenue", values: [5] },
+    ]);
+    expect(resolveNodeData(tableNode({ from: "sales" }), raw)).toEqual([
+      { month: "Jan", revenue: 5 },
+    ]);
+  });
 });
 
 // =========================================================================

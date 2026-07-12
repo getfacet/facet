@@ -41,46 +41,25 @@ import type {
   TableNode,
   TableRow,
 } from "./component-nodes.js";
-import { isForbiddenKey, isPlainObject, nullMap, printableKey, type IssueSink } from "./issues.js";
-import { SLOT_NAME_RE } from "./slot-marker.js";
+import {
+  FORBIDDEN_DATA_KEYS,
+  isForbiddenKey,
+  isPlainObject,
+  nullMap,
+  printableKey,
+  type IssueSink,
+} from "./issues.js";
+import { DATASET_NAME_RE, SLOT_NAME_RE } from "./slot-marker.js";
+
+// Public re-export (barrel compat): the regex lives in the leaf `slot-marker`
+// module to keep this module's dependency on the component validators one-way.
+export { DATASET_NAME_RE } from "./slot-marker.js";
 
 /** Max distinct datasets kept per tree (mirrors the small component-array cap). */
 export const MAX_DATASETS = 32;
 
 /** Max dataset-name length (mirrors the 64-char slot-name / key-echo bound). */
 export const MAX_DATASET_NAME_CHARS = 64;
-
-/**
- * A conforming dataset NAME — a bounded slot-name-style token (mirrors
- * `SLOT_NAME_RE`). Never a URL/source/path: `from` and warehouse keys are names,
- * not resolvers (RISK-INV-2).
- */
-export const DATASET_NAME_RE = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
-
-/**
- * Fetch-like column keys rejected on dataset rows, mirroring
- * `FORBIDDEN_COMPONENT_FIELDS` in `component-validation.ts` (invariant #1: no
- * URL/fetch/resolver surface may ride in as data). Kept as a local constant
- * because that list is not exported; WU-2 confirms/reconciles the two sites.
- */
-const FORBIDDEN_DATASET_COLUMN_KEYS: ReadonlySet<string> = new Set([
-  "html",
-  "rawHtml",
-  "innerHTML",
-  "script",
-  "javascript",
-  "js",
-  "css",
-  "fetch",
-  "fetchUrl",
-  "endpoint",
-  "url",
-  "dataSource",
-  "query",
-  "queryExpr",
-  "expression",
-  "resolver",
-]);
 
 // =========================================================================
 // sanitizeDataWarehouse
@@ -155,7 +134,7 @@ function sanitizeRow(rawRow: unknown, name: string, issues?: IssueSink): DataRow
       );
       break;
     }
-    if (isForbiddenKey(key) || FORBIDDEN_DATASET_COLUMN_KEYS.has(key) || !SLOT_NAME_RE.test(key)) {
+    if (isForbiddenKey(key) || FORBIDDEN_DATA_KEYS.has(key) || !SLOT_NAME_RE.test(key)) {
       continue;
     }
     const cell = sanitizeCell(rawRow[key]);
@@ -223,12 +202,21 @@ export function resolveNodeData(
   }
 }
 
-/** Safe own-property dataset lookup: forbidden names and non-arrays yield `undefined`. */
+/**
+ * Safe own-property dataset lookup: forbidden names and non-arrays yield
+ * `undefined`. Also drops non-object rows (null / undefined / sparse holes) so
+ * every projection helper below is TOTAL even on an UNSANITIZED warehouse — the
+ * renderer calls `resolveNodeData` on unvalidated trees (host `initialTree`,
+ * direct `StageRenderer tree={…}`, the CLI render path) and must never throw
+ * (fail-safe invariant). A sanitized warehouse is already object-only, so this
+ * returns the same rows; cell values are re-checked at each read site.
+ */
 function lookupDataset(warehouse: DataWarehouse | undefined, name: string): Dataset | undefined {
   if (warehouse === undefined || isForbiddenKey(name)) return undefined;
   if (!Object.prototype.hasOwnProperty.call(warehouse, name)) return undefined;
   const dataset = warehouse[name];
-  return Array.isArray(dataset) ? dataset : undefined;
+  if (!Array.isArray(dataset)) return undefined;
+  return dataset.filter((row) => isPlainObject(row)) as Dataset;
 }
 
 function resolveTable(node: TableNode, warehouse: DataWarehouse | undefined): readonly TableRow[] {

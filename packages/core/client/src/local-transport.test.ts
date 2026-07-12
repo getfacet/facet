@@ -3,6 +3,7 @@ import { foldPatchIntoStage, resolveNodeData, treeHasContent } from "@facet/core
 import type {
   CollectedEvent,
   FacetAgent,
+  ChartNode,
   FacetTree,
   JsonPatchOperation,
   ServerMessage,
@@ -172,25 +173,28 @@ describe("LocalTransport", () => {
   // later `/data` patch folds in client-side, the buffered forward reference
   // resolves and the bound node becomes content (DC-008).
   it("resolves a node bound before its data lands once a later /data patch arrives", async () => {
-    const salesTable: TableNode = {
+    // A CHART renders nothing until its series resolve, so it exercises the
+    // "non-content before the data lands, content after" transition (a from-bound
+    // table shows a header from its columns and is content immediately).
+    const salesChart: ChartNode = {
       id: "sales",
-      type: "table",
+      type: "chart",
+      kind: "bar",
       from: "sales",
-      columns: [{ key: "region", label: "Region" }],
-      rows: [],
+      series: [],
     };
     const base: FacetTree = {
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["sales"] },
-        sales: salesTable,
+        sales: salesChart,
       },
     };
 
-    // Bound before its dataset exists: the table has nothing to show yet.
+    // Bound before its dataset exists: the chart has nothing to show yet.
     expect(treeHasContent(base)).toBe(false);
 
-    const dataset = [{ region: "West" }, { region: "East" }];
+    const dataset = [{ revenue: 10 }, { revenue: 20 }];
     const patch: JsonPatchOperation = { op: "add", path: "/data", value: { sales: dataset } };
     const runtime = new FacetRuntime({
       agentId: "a",
@@ -209,10 +213,10 @@ describe("LocalTransport", () => {
       (message as { readonly patches: readonly JsonPatchOperation[] }).patches,
     );
 
-    // The forward reference now resolves: the bound node is content and shows the rows.
+    // The forward reference now resolves: the bound node is content and projects a series.
     expect(treeHasContent(folded.tree)).toBe(true);
-    expect(resolveNodeData(folded.tree.nodes["sales"] as TableNode, folded.tree.data)).toEqual(
-      dataset,
-    );
+    expect(resolveNodeData(folded.tree.nodes["sales"] as ChartNode, folded.tree.data)).toEqual([
+      { label: "revenue", values: [10, 20] },
+    ]);
   });
 });

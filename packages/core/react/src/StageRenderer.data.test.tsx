@@ -104,6 +104,44 @@ describe("StageRenderer data bindings (jsdom)", () => {
     expect(html).not.toContain("DanglingLabel");
   });
 
+  // RISK-INV-5: the content gate must agree with the renderer. A from-bound table
+  // renders a HEADER from its columns even while its dataset is dangling/loading —
+  // so treeHasContent must count it as content (asserted in @facet/core tree.test);
+  // here we pin the renderer half: the header renders and nothing throws.
+  it("renders a from-bound table header while its dataset is dangling", () => {
+    const tree = stage(
+      [
+        {
+          id: "tbl",
+          type: "table",
+          columns: [{ key: "month", label: "Month" }],
+          rows: [],
+          from: "missing",
+        },
+      ],
+      SALES,
+    );
+    let html = "";
+    expect(() => {
+      html = render(tree);
+    }).not.toThrow();
+    expect(html).toContain("<table");
+    expect(html).toContain("Month"); // the column header is visible
+  });
+
+  // Totality on an UNSANITIZED tree: StageRenderer renders `initialTree` without
+  // validateTree, so a warehouse with non-object rows must not crash the render.
+  it("does not throw when a from-bound node resolves over non-object rows", () => {
+    const tree = stage(
+      [
+        { id: "chart", type: "chart", kind: "bar", series: [], from: "sales" },
+        { id: "list", type: "list", items: [], from: "sales" },
+      ],
+      { sales: [null, { month: "Jan", revenue: 5 }] } as unknown as DataWarehouse,
+    );
+    expect(() => render(tree)).not.toThrow();
+  });
+
   // DC-005: precedence — a present `from` wins over inline.
   it("prefers the warehouse over inline arrays/values when from is present", () => {
     const tree = stage(

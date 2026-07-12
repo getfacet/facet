@@ -196,31 +196,35 @@ describe("validateTree is additive for inline-only trees (DC-007)", () => {
 
 describe("buffered forward reference (DC-008)", () => {
   it("keeps a from node with no matching dataset; a later /data patch makes it content", () => {
+    // A chart renders nothing until its series resolve, so it cleanly exercises
+    // the "non-content until the data lands" transition (a table would show a
+    // header from its columns and be content immediately — covered in tree.test).
     const { tree } = validateTree({
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", children: ["tbl"] },
-        tbl: {
-          id: "tbl",
-          type: "table",
-          columns: [{ key: "month", label: "Month" }],
+        root: { id: "root", type: "box", children: ["cht"] },
+        cht: {
+          id: "cht",
+          type: "chart",
+          kind: "bar",
+          series: [],
           from: "sales",
         },
       },
-      // `other` exists so `/data` is present, but `tbl` is not bound to it.
+      // `other` exists so `/data` is present, but `cht` is not bound to it.
       data: { other: [{ x: 1 }] },
     });
 
-    expect((tree.nodes["tbl"] as TableNode).from).toBe("sales");
+    expect((tree.nodes["cht"] as ChartNode).from).toBe("sales");
     expect(tree.data?.["other"]).toEqual([{ x: 1 }]);
     // Bound to an absent dataset ⇒ non-content until the data lands.
     expect(treeHasContent(tree)).toBe(false);
 
     const folded = foldPatchIntoStage(tree, [
-      { op: "add", path: "/data/sales", value: [{ month: "Jan" }] },
+      { op: "add", path: "/data/sales", value: [{ month: "Jan", revenue: 10 }] },
     ]);
 
-    expect(folded.tree.data?.["sales"]).toEqual([{ month: "Jan" }]);
+    expect(folded.tree.data?.["sales"]).toEqual([{ month: "Jan", revenue: 10 }]);
     expect(treeHasContent(folded.tree)).toBe(true);
   });
 });

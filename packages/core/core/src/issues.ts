@@ -194,3 +194,28 @@ export class BoundedIssues implements IssueSink {
     return this.items;
   }
 }
+
+/**
+ * Fetch-like field/column keys rejected on both component nodes and `data`
+ * warehouse rows — a single source so the two validators (component-validation
+ * and data-binding) can never drift on this security denylist (invariant #1: no
+ * URL/fetch/resolver surface may ride in as a field or column name).
+ */
+export const FORBIDDEN_DATA_KEYS: ReadonlySet<string> = new Set([
+  "html",
+  "rawHtml",
+  "innerHTML",
+  "script",
+  "javascript",
+  "js",
+  "css",
+  "fetch",
+  "fetchUrl",
+  "endpoint",
+  "url",
+  "dataSource",
+  "query",
+  "queryExpr",
+  "expression",
+  "resolver",
+]);

@@ -40,16 +40,22 @@ const populatedDataBoundTree = (): FacetTree =>
     data: { sales: [{ month: "Jan", revenue: 100 }] },
   }).tree;
 
-/** Same shape, but `from` names an ABSENT dataset — a dangling binding. */
+/**
+ * A `from` that names an ABSENT dataset — a dangling binding. Uses a CHART (which
+ * renders nothing until its series resolve) rather than a table: a from-bound
+ * table shows a header from its columns and is content immediately, so it would
+ * not exercise the "dangling ⇒ not seedable" path.
+ */
 const danglingFromTree = (): FacetTree =>
   validateTree({
     root: "root",
     nodes: {
-      root: { id: "root", type: "box", children: ["t"] },
-      t: {
-        id: "t",
-        type: "table",
-        columns: [{ key: "month", label: "Month" }],
+      root: { id: "root", type: "box", children: ["c"] },
+      c: {
+        id: "c",
+        type: "chart",
+        kind: "bar",
+        series: [],
         from: "sales",
       },
     },

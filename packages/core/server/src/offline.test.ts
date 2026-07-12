@@ -45,15 +45,18 @@ const dataBoundStage = (): FacetTree =>
   }).tree;
 
 /** A from-bound page whose dataset is absent — no real content. */
+// A dangling `from` that renders nothing — a CHART (a from-bound table would show
+// a header from its columns and count as content, so it wouldn't be "dangling-only").
 const danglingStage = (): FacetTree =>
   validateTree({
     root: "root",
     nodes: {
-      root: { id: "root", type: "box", children: ["t"] },
-      t: {
-        id: "t",
-        type: "table",
-        columns: [{ key: "month", label: "Month" }],
+      root: { id: "root", type: "box", children: ["c"] },
+      c: {
+        id: "c",
+        type: "chart",
+        kind: "bar",
+        series: [],
         from: "sales",
       },
     },

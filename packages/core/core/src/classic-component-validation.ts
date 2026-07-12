@@ -6,7 +6,6 @@ import {
   printableValue,
   type IssueSink,
 } from "./issues.js";
-import { DATASET_NAME_RE } from "./data-binding.js";
 import {
   CHART_KINDS,
   TONES,
@@ -17,7 +16,7 @@ import {
   type TableRow,
   type Tone,
 } from "./nodes.js";
-import { SLOT_NAME_RE } from "./slot-marker.js";
+import { DATASET_NAME_RE, SLOT_NAME_RE } from "./slot-marker.js";
 import { TEXT_ALIGNS } from "./tokens.js";
 
 export const MAX_NODE_LABEL_CHARS = 200;

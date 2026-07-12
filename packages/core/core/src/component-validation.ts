@@ -1,4 +1,10 @@
-import { isPlainObject, printableKey, printableValue, type IssueSink } from "./issues.js";
+import {
+  FORBIDDEN_DATA_KEYS,
+  isPlainObject,
+  printableKey,
+  printableValue,
+  type IssueSink,
+} from "./issues.js";
 import {
   sanitizeClassicComponentNode,
   setColumnRow,
@@ -42,25 +48,6 @@ const CLASSIC_COMPONENT_TYPES = new Set([
   "list",
   "divider",
 ]);
-
-const FORBIDDEN_COMPONENT_FIELDS = [
-  "html",
-  "rawHtml",
-  "innerHTML",
-  "script",
-  "javascript",
-  "js",
-  "css",
-  "fetch",
-  "fetchUrl",
-  "endpoint",
-  "url",
-  "dataSource",
-  "query",
-  "queryExpr",
-  "expression",
-  "resolver",
-] as const;
 
 export function isPrimitiveBrickType(value: unknown): value is PrimitiveBrickType {
   return typeof value === "string" && (PRIMITIVE_BRICK_TYPES as readonly string[]).includes(value);
@@ -124,7 +111,7 @@ export function sanitizeComponentNode(
 }
 
 function reportForbiddenFields(id: string, raw: Record<string, unknown>, issues: IssueSink): void {
-  for (const field of FORBIDDEN_COMPONENT_FIELDS) {
+  for (const field of FORBIDDEN_DATA_KEYS) {
     if (Object.prototype.hasOwnProperty.call(raw, field)) {
       issues.push(
         `node "${printableKey(id)}": ${field} is not allowed on component nodes; dropped`,

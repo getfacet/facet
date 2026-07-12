@@ -6,7 +6,6 @@ import type {
   ListNode,
   MetricNode,
   StatNode,
-  TableNode,
 } from "./component-nodes.js";
 import { resolveNodeData } from "./data-binding.js";
 
@@ -188,9 +187,18 @@ function nodeRendersItself(
   if (typeof node.from === "string") {
     switch (node.type) {
       case "table":
-        return resolveNodeData(node as unknown as TableNode, warehouse).length > 0;
-      case "chart":
-        return resolveNodeData(node as unknown as ChartNode, warehouse).length > 0;
+        // A table's visibility is decided by its (inline) COLUMNS, not the
+        // resolved rows — the renderer shows a header table whenever columns
+        // exist, even while a bound dataset is still loading. Fall through to the
+        // inline column predicate below so the gate matches the renderer.
+        break;
+      case "chart": {
+        // Apply the SAME per-kind predicate the renderer uses (donut drops
+        // non-positive slices), not a generic "series non-empty" — evaluate it
+        // on the RESOLVED series.
+        const series = resolveNodeData(node as unknown as ChartNode, warehouse);
+        return chartHasRenderableData({ ...(node as unknown as ChartNode), series });
+      }
       case "list":
         return resolveNodeData(node as unknown as ListNode, warehouse).length > 0;
       case "keyValue":
