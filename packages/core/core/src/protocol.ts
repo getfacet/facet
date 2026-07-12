@@ -2,6 +2,7 @@ import type { FacetAction, NodeId } from "./nodes.js";
 import type { JsonPatchOperation } from "./patch.js";
 import type { FacetTree } from "./tree.js";
 import type { FacetAgentResult } from "./agent-result.js";
+import type { ViewSnapshot } from "./view.js";
 
 /**
  * Who is viewing. This is the context an agent uses to diverge the very first
@@ -74,11 +75,23 @@ export type TapEffect = { readonly navigate: string } | { readonly toggle: NodeI
  * box's `target`); a **forwarded agent** tap carries `action` (its `name`/
  * `payload` are read off `action`). Every variant may carry an optional
  * per-session monotonic `seq` — a forward-compatible wire field for gap
- * detection during replay.
+ * detection during replay. Every variant may also carry an optional `view` —
+ * the browser-owned view-state snapshot at send time (see `ViewSnapshot`):
+ * inert data riding the event, like `fields`.
  */
 export type CollectedEvent =
-  | { readonly kind: "visit"; readonly visitor: VisitorContext; readonly seq?: number }
-  | { readonly kind: "message"; readonly text: string; readonly seq?: number }
+  | {
+      readonly kind: "visit";
+      readonly visitor: VisitorContext;
+      readonly view?: ViewSnapshot;
+      readonly seq?: number;
+    }
+  | {
+      readonly kind: "message";
+      readonly text: string;
+      readonly view?: ViewSnapshot;
+      readonly seq?: number;
+    }
   | {
       readonly kind: "tap";
       /** The pressed box's node id (present on a local tap). */
@@ -93,6 +106,8 @@ export type CollectedEvent =
        * stage tree, never interpreted or rendered back by Facet.
        */
       readonly fields?: FieldValues;
+      /** Browser-owned view-state snapshot at send time (inert, like fields). */
+      readonly view?: ViewSnapshot;
       readonly seq?: number;
     };
 
@@ -103,8 +118,18 @@ export type CollectedEvent =
  * value can be both forwarded to the agent and recorded to the log.
  */
 export type ClientEvent =
-  | { readonly kind: "visit"; readonly visitor: VisitorContext; readonly seq?: number }
-  | { readonly kind: "message"; readonly text: string; readonly seq?: number }
+  | {
+      readonly kind: "visit";
+      readonly visitor: VisitorContext;
+      readonly view?: ViewSnapshot;
+      readonly seq?: number;
+    }
+  | {
+      readonly kind: "message";
+      readonly text: string;
+      readonly view?: ViewSnapshot;
+      readonly seq?: number;
+    }
   | {
       readonly kind: "tap";
       readonly action: FacetAction;
@@ -114,6 +139,8 @@ export type ClientEvent =
        * stage tree, never interpreted or rendered back by Facet.
        */
       readonly fields?: FieldValues;
+      /** Browser-owned view-state snapshot at send time (inert, like fields). */
+      readonly view?: ViewSnapshot;
       readonly seq?: number;
     };
 

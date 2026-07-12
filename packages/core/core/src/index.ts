@@ -5,6 +5,7 @@ export * from "./theme.js";
 export * from "./catalog.js";
 export * from "./patch.js";
 export * from "./protocol.js";
+export * from "./view.js";
 export * from "./agent-result.js";
 export * from "./validate.js";
 export { expandComposition } from "./expand-composition.js";
