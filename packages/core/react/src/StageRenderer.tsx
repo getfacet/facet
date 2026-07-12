@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type {
   CollectedEvent,
@@ -7,7 +7,9 @@ import type {
   FacetTree,
   FieldValues,
   NodeId,
+  ViewSnapshot,
 } from "@facet/core";
+import { captureViewSnapshot, useViewportScheme } from "./view-snapshot.js";
 import { APPEAR_CSS } from "./appear.js";
 import {
   MOTION_CSS,
@@ -64,6 +66,16 @@ export interface StageRendererProps {
    * boundary; `resolveTheme` floor-guards the lookup regardless.
    */
   readonly themes?: readonly FacetTheme[];
+  /**
+   * Read-only publish of the browser's live view snapshot
+   * (`{screen, toggled, viewport, scheme}`) — the counterpart of how `fields`
+   * rides `onAction`. Sampled after each commit whenever screen/overrides or
+   * the detected device classes change; the host attaches it to an OUTGOING
+   * event, exactly like `fields`. Optional (narrower props stay assignable);
+   * it NEVER writes stage state — the renderer's setters stay private to
+   * `handlePress`, and no server/patch path can drive it.
+   */
+  readonly onViewSnapshot?: (snapshot: ViewSnapshot) => void;
 }
 
 /**
@@ -89,6 +101,7 @@ export function StageRenderer({
   onAction,
   onRecord,
   themes,
+  onViewSnapshot,
 }: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
   // A Map, not a plain object: node ids like "toString"/"valueOf" pass
@@ -112,6 +125,9 @@ export function StageRenderer({
       ? (tree as { readonly theme?: unknown }).theme
       : undefined;
   const theme = useMemo(() => resolveTheme(themeName, themes), [themeName, themes]);
+  // Report-only device classes (RISK-INV-5): they ride ONLY the published
+  // snapshot below, never layout/boxStyle resolution.
+  const { viewport, scheme } = useViewportScheme();
   const { motionState, normalizedTransition, renderable, currentRootId, activeScreen } =
     useStageMotion({
       tree,
@@ -120,6 +136,19 @@ export function StageRenderer({
       visibilityOverrides,
       theme,
     });
+
+  // Publish the live view snapshot AFTER commit whenever the browser-owned
+  // view-state (screen/overrides) or the detected device classes change. This
+  // is a read-only sample the host attaches to an outgoing event; it writes no
+  // stage state and cannot be driven by a server/patch path.
+  useEffect(() => {
+    if (onViewSnapshot === undefined) {
+      return;
+    }
+    onViewSnapshot(
+      captureViewSnapshot(currentScreen ?? undefined, visibilityOverrides, viewport, scheme),
+    );
+  }, [onViewSnapshot, currentScreen, visibilityOverrides, viewport, scheme]);
 
   // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
   // the unvalidated CLI path — renders as nothing, never a crash.
