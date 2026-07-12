@@ -125,6 +125,41 @@ describe("AG-UI event conversion", () => {
     });
   });
 
+  it("preserves a tree's data warehouse through the snapshot round-trip", () => {
+    const stageWithData: FacetTree = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["sales"] },
+        sales: {
+          id: "sales",
+          type: "table",
+          from: "sales",
+          columns: [
+            { key: "region", label: "Region" },
+            { key: "revenue", label: "Revenue" },
+          ],
+          rows: [],
+        },
+      },
+      data: {
+        sales: [
+          { region: "West", revenue: 100 },
+          { region: "East", revenue: 200 },
+        ],
+      },
+    };
+
+    // Outbound: the whole tree — data included — rides the snapshot unchanged.
+    const event = facetStageToStateSnapshot(stageWithData);
+    expect(event.snapshot.facet.stage).toEqual(stageWithData);
+    expect(event.snapshot.facet.stage.data).toEqual(stageWithData.data);
+
+    // Inbound: the snapshot converts back to a root-replace patch with data intact.
+    expect(agUiEventToServerMessages(event)).toEqual([
+      { kind: "patch", patches: [{ op: "replace", path: "", value: stageWithData }] },
+    ]);
+  });
+
   it("maps Facet say text to AG-UI text message start/content/end in order", () => {
     const events = serverMessageToAgUiEvents({ kind: "say", text: "Hello from Facet" });
 

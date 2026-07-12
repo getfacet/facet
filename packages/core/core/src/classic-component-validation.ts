@@ -1,4 +1,11 @@
-import { isPlainObject, nullMap, printableKey, printableValue, type IssueSink } from "./issues.js";
+import {
+  isForbiddenKey,
+  isPlainObject,
+  nullMap,
+  printableKey,
+  printableValue,
+  type IssueSink,
+} from "./issues.js";
 import {
   CHART_KINDS,
   TONES,
@@ -9,7 +16,7 @@ import {
   type TableRow,
   type Tone,
 } from "./nodes.js";
-import { SLOT_NAME_RE } from "./slot-marker.js";
+import { DATASET_NAME_RE, SLOT_NAME_RE } from "./slot-marker.js";
 import { TEXT_ALIGNS } from "./tokens.js";
 
 export const MAX_NODE_LABEL_CHARS = 200;
@@ -110,9 +117,11 @@ export function sanitizeClassicComponentNode(
         rows: readonly TableRow[];
         caption?: string;
         variant?: string;
+        from?: string;
       } = { id, type: "table", columns, rows: tableRows(raw.rows, columns, id, issues) };
       setText(raw.caption, id, "caption", node, "caption", MAX_NODE_LABEL_CHARS, issues);
       setVariant(raw.variant, id, node, issues);
+      setFrom(raw, id, node, issues);
       return node;
     }
     case "chart": {
@@ -125,11 +134,13 @@ export function sanitizeClassicComponentNode(
         labels?: readonly string[];
         title?: string;
         variant?: string;
+        from?: string;
       } = { id, type: "chart", kind, series: chartSeries(raw.series, id, issues) };
       const labels = stringList(raw.labels, id, "labels", issues);
       if (labels !== undefined) node.labels = labels;
       setText(raw.title, id, "title", node, "title", MAX_NODE_LABEL_CHARS, issues);
       setVariant(raw.variant, id, node, issues);
+      setFrom(raw, id, node, issues);
       return node;
     }
     case "stat":
@@ -188,8 +199,10 @@ export function sanitizeClassicComponentNode(
         type: "list";
         items: ReturnType<typeof listItems>;
         variant?: string;
+        from?: string;
       } = { id, type: "list", items: listItems(raw.items, id, issues) };
       setVariant(raw.variant, id, node, issues);
+      setFrom(raw, id, node, issues);
       return node;
     }
     case "divider": {
@@ -225,10 +238,15 @@ function metricNode(
     delta?: string;
     tone?: Tone;
     variant?: string;
+    from?: string;
+    column?: string;
+    row?: number;
   } = { id, type: "stat", label, value };
   setText(raw.delta, id, "delta", node, "delta", MAX_NODE_LABEL_CHARS, issues);
   setTone(raw.tone, id, node, issues);
   setVariant(raw.variant, id, node, issues);
+  setFrom(raw, id, node, issues);
+  setColumnRow(raw, node);
   return node;
 }
 
@@ -303,6 +321,51 @@ function childRefs(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((child): child is string => typeof child === "string")
     : [];
+}
+
+/**
+ * Copy a validated `from` dataset-NAME binding onto a data-bearing node. `from`
+ * is a bounded NAME only (`DATASET_NAME_RE`) — never a URL/source/resolver
+ * (RISK-INV-2). A present-but-malformed `from` is dropped WITH an issue; the node
+ * stays and simply falls back to its inline value. Shared by the classic
+ * (table/chart/list/stat) and component (metric/keyValue) sanitizers so the one
+ * name rule can never drift between the two per-node paths.
+ */
+export function setFrom(
+  raw: Record<string, unknown>,
+  id: string,
+  node: { from?: string },
+  issues: IssueSink,
+): void {
+  if (raw.from === undefined) return;
+  if (typeof raw.from === "string" && DATASET_NAME_RE.test(raw.from)) {
+    node.from = raw.from;
+    return;
+  }
+  issues.push(`node "${printableKey(id)}": malformed from dropped`);
+}
+
+/**
+ * Copy the closed metric/stat cell selector used ONLY with `from`: `column` (a
+ * bounded slot-name naming the dataset column that supplies the value) and `row`
+ * (a finite non-negative integer index, default 0 at resolve time). Non-conforming
+ * values are dropped — the node then resolves an empty value rather than throwing.
+ * These are the only fields beyond `from`; neither is an expression/DSL.
+ */
+export function setColumnRow(
+  raw: Record<string, unknown>,
+  node: { column?: string; row?: number },
+): void {
+  if (
+    typeof raw.column === "string" &&
+    !isForbiddenKey(raw.column) &&
+    SLOT_NAME_RE.test(raw.column)
+  ) {
+    node.column = raw.column;
+  }
+  if (typeof raw.row === "number" && Number.isInteger(raw.row) && raw.row >= 0) {
+    node.row = raw.row;
+  }
 }
 
 function capArray<T>(

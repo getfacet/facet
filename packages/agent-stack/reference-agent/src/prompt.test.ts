@@ -120,6 +120,15 @@ describe("buildSystem", () => {
     expect(system).toMatch(/reuse .*node ids/i);
   });
 
+  it("teaches data-warehouse authoring (author once, bind many via from)", () => {
+    const system = buildSystem(DEFAULT_GUIDE);
+    // agent-tools DATA BINDING section is composed in…
+    expect(system).toContain("DATA BINDING");
+    // …and the reference-agent nudge to author shared rows once and bind by name.
+    expect(system).toMatch(/"data" warehouse/i);
+    expect(system).toMatch(/bind[^.]*by name with "from"/i);
+  });
+
   it("composition metadata privacy: guidance is consumed from agent-tools without leaking asset internals", () => {
     const system = buildSystem(DEFAULT_GUIDE, {
       themes: [

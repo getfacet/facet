@@ -102,6 +102,20 @@ export interface TableColumn {
 export type TableCell = string | number | boolean;
 export type TableRow = Readonly<Record<string, TableCell>>;
 
+/**
+ * The per-tree data warehouse (`FacetTree.data`). A closed, declarative section
+ * of agent-authored data — the same trust tier as inline `rows`, just relocated
+ * to a named section so many nodes can bind to one source (`node.from`). A
+ * `DataCell` is a scalar only (no nested objects/arrays); a `DataRow` is a flat
+ * scalar record; a `Dataset` is an array of rows; a `DataWarehouse` maps a
+ * bounded dataset NAME to a dataset. There is no URL/source/resolver — `from` is
+ * only a name (see `sanitizeDataWarehouse`/`resolveNodeData` in `data-binding.ts`).
+ */
+export type DataCell = string | number | boolean;
+export type DataRow = Readonly<Record<string, DataCell>>;
+export type Dataset = readonly DataRow[];
+export type DataWarehouse = Readonly<Record<string, Dataset>>;
+
 export interface TableNode {
   readonly id: NodeId;
   readonly type: "table";
@@ -109,6 +123,8 @@ export interface TableNode {
   readonly rows: readonly TableRow[];
   readonly caption?: string;
   readonly variant?: string;
+  /** Optional binding: project rows from `FacetTree.data[from]` instead of inline `rows`. */
+  readonly from?: string;
 }
 
 export const CHART_KINDS = ["bar", "line", "donut"] as const;
@@ -127,6 +143,8 @@ export interface ChartNode {
   readonly labels?: readonly string[];
   readonly title?: string;
   readonly variant?: string;
+  /** Optional binding: derive one series per numeric column of `FacetTree.data[from]`. */
+  readonly from?: string;
 }
 
 interface MetricFields {
@@ -136,6 +154,12 @@ interface MetricFields {
   readonly delta?: string;
   readonly tone?: Tone;
   readonly variant?: string;
+  /** Optional binding: read `value` from a single cell of `FacetTree.data[from]`. */
+  readonly from?: string;
+  /** The dataset column supplying the cell value (used only with `from`). */
+  readonly column?: string;
+  /** The dataset row index (default 0) supplying the cell value (used only with `from`). */
+  readonly row?: number;
 }
 
 export interface MetricNode extends MetricFields {
@@ -158,6 +182,8 @@ export interface KeyValueNode {
   readonly type: "keyValue";
   readonly items: readonly KeyValueItem[];
   readonly variant?: string;
+  /** Optional binding: project `{label, value}` per row from `FacetTree.data[from]`. */
+  readonly from?: string;
 }
 
 export interface BadgeNode {
@@ -196,6 +222,8 @@ export interface ListNode {
   readonly type: "list";
   readonly items: readonly ListItem[];
   readonly variant?: string;
+  /** Optional binding: project one item per row from `FacetTree.data[from]`. */
+  readonly from?: string;
 }
 
 export interface DividerNode {

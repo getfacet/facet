@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_PATCH_OPS, type FacetComposition, type FacetTree } from "@facet/core";
+import { MAX_PATCH_OPS, type Dataset, type FacetComposition, type FacetTree } from "@facet/core";
 import { Stage } from "./stage.js";
 
 const STAGE_SOURCE = readFileSync(fileURLToPath(new URL("./stage.ts", import.meta.url)), "utf8");
@@ -145,6 +145,76 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
     const message = stage.flush()[0];
     if (message?.kind !== "patch") throw new Error("expected patch");
     expect(message.patches[0]).toEqual({ op: "remove", path: "/nodes/a~1b~0c" });
+  });
+
+  describe("setData", () => {
+    const SALES: Dataset = [
+      { region: "US", revenue: 100 },
+      { region: "EU", revenue: 80 },
+    ];
+
+    it("emits a /data/<name> add plus a one-time /data init on the first write", () => {
+      const stage = new Stage();
+      stage.setData("sales", SALES);
+      const messages = stage.flush();
+      expect(messages).toHaveLength(1);
+      const message = messages[0];
+      if (message?.kind !== "patch") throw new Error("expected patch");
+      expect(message.patches).toEqual([
+        { op: "add", path: "/data", value: {} },
+        { op: "add", path: "/data/sales", value: SALES },
+      ]);
+    });
+
+    it("skips the /data init when the session stage already carries data", () => {
+      const stage = new Stage({ root: "root", nodes: {}, data: { existing: [] } });
+      stage.setData("sales", SALES);
+      const messages = stage.flush();
+      expect(messages).toHaveLength(1);
+      const message = messages[0];
+      if (message?.kind !== "patch") throw new Error("expected patch");
+      expect(message.patches).toEqual([{ op: "add", path: "/data/sales", value: SALES }]);
+    });
+
+    it("inits /data only once across several datasets in the same turn", () => {
+      const stage = new Stage();
+      stage.setData("sales", SALES).setData("costs", []);
+      const message = stage.flush()[0];
+      if (message?.kind !== "patch") throw new Error("expected patch");
+      expect(message.patches).toEqual([
+        { op: "add", path: "/data", value: {} },
+        { op: "add", path: "/data/sales", value: SALES },
+        { op: "add", path: "/data/costs", value: [] },
+      ]);
+    });
+
+    it("coalesces with other edits and flushes before say", () => {
+      const stage = new Stage({ root: "root", nodes: {}, data: {} });
+      stage
+        .set({ id: "chart", type: "chart", kind: "bar", series: [], from: "sales" })
+        .setData("sales", SALES)
+        .say("data ready");
+      const messages = stage.flush();
+      expect(messages.map((m) => m.kind)).toEqual(["patch", "say"]);
+      const message = messages[0];
+      if (message?.kind !== "patch") throw new Error("expected patch");
+      expect(message.patches).toEqual([
+        {
+          op: "add",
+          path: "/nodes/chart",
+          value: { id: "chart", type: "chart", kind: "bar", series: [], from: "sales" },
+        },
+        { op: "add", path: "/data/sales", value: SALES },
+      ]);
+    });
+
+    it("escapes the dataset name in the JSON pointer", () => {
+      const stage = new Stage({ root: "root", nodes: {}, data: {} });
+      stage.setData("a/b~c", SALES);
+      const message = stage.flush()[0];
+      if (message?.kind !== "patch") throw new Error("expected patch");
+      expect(message.patches[0]).toEqual({ op: "add", path: "/data/a~1b~0c", value: SALES });
+    });
   });
 
   describe("useComposition", () => {

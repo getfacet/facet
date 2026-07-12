@@ -334,6 +334,22 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(system).toContain("visitor's current view");
   });
 
+  it("teaches data-warehouse authoring and from binding without fetch or a DSL", () => {
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+    // The data-binding section is composed into the system prompt (not dead).
+    expect(system).toContain("DATA BINDING");
+    // Author once, bind many by name via `from`.
+    expect(system).toMatch(/"data" warehouse/i);
+    expect(system).toMatch(/bind[^.]*by NAME with its "from"/i);
+    expect(system).toMatch(/"from" wins over inline/i);
+    // Closed projection, no computation.
+    expect(system).toMatch(/chart draws one series per NUMERIC column/i);
+    expect(system).toMatch(/metric or stat reads ONE cell via "column"/i);
+    // Hard boundary: names only — no fetch/resolver/expression (invariant #1/#7).
+    expect(system).toMatch(/never a URL, endpoint, query, expression, or resolver/i);
+    expect(system).toMatch(/no fetch, computed column, or formula/i);
+  });
+
   it("guides compact UX, edit-before-append, bounded render_page use, and short chat", () => {
     const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
 

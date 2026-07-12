@@ -11,6 +11,8 @@ import {
 } from "./issues.js";
 import { sanitizeNode, type SanitizeNodeOptions } from "./primitive-node-validation.js";
 import { isValidThemeName } from "./theme.js";
+import { sanitizeDataWarehouse } from "./data-binding.js";
+import type { DataWarehouse } from "./component-nodes.js";
 
 export interface ValidationResult {
   readonly tree: FacetTree;
@@ -328,7 +330,17 @@ function validateTreeUnsafe(input: unknown, issues: BoundedIssues): ValidationRe
     theme?: string;
     screens?: Record<string, string>;
     entry?: string;
+    data?: DataWarehouse;
   } = { root: rootId, nodes };
+  // Sanitize the per-tree data warehouse HERE (not in the renderer) and copy the
+  // survivor onto the returned tree, so the ONE `foldPatchIntoStage` that runs
+  // this validateTree on BOTH server and client keeps `data` identically
+  // (RISK-INV-1). Absent/all-invalid input leaves `data` off entirely — an
+  // additive optional, so inline-only trees serialize unchanged (DC-007).
+  const data = sanitizeDataWarehouse(input.data, issues);
+  if (data !== undefined) {
+    tree.data = data;
+  }
   // Keep the theme NAME only when it is a string that passes the theme-name rule
   // (`isValidThemeName`, the same floor `validateTheme` applies to a document's
   // own name) — otherwise it is dropped with an issue (else the save-time

@@ -384,6 +384,78 @@ describe("treeHasContent", () => {
     }
   });
 
+  // ---- DC-003: from-bound content is judged via the resolved warehouse ----
+
+  const boundTree = (child: unknown, data?: unknown): FacetTree =>
+    ({
+      root: "r",
+      nodes: { r: { id: "r", type: "box", children: ["child"] }, child },
+      ...(data !== undefined ? { data } : {}),
+    }) as unknown as FacetTree;
+
+  // Nodes that render NOTHING when their dataset is empty/absent (chart bar/line,
+  // list, keyValue, metric, stat) — so a dangling `from` is genuinely non-content.
+  // The table is excluded: it renders a header from its columns regardless of
+  // rows, so its content follows columns, asserted separately below.
+  const boundChildren = [
+    { id: "child", type: "chart", kind: "bar", series: [], from: "sales" },
+    { id: "child", type: "list", items: [], from: "sales" },
+    { id: "child", type: "keyValue", items: [], from: "sales" },
+    { id: "child", type: "metric", label: "Revenue", from: "sales", column: "revenue" },
+    { id: "child", type: "stat", label: "Revenue", from: "sales", column: "revenue" },
+  ];
+
+  const boundTable = (data?: unknown, columns: unknown = [{ key: "month", label: "Month" }]) =>
+    boundTree({ id: "child", type: "table", columns, rows: [], from: "sales" }, data);
+
+  it("populated from counts as content", () => {
+    const data = { sales: [{ month: "Jan", revenue: 100 }] };
+    for (const child of boundChildren) {
+      expect(treeHasContent(boundTree(child, data))).toBe(true);
+    }
+  });
+
+  it("dangling from (names an absent dataset) is non-content", () => {
+    const data = { other: [{ a: 1 }] };
+    for (const child of boundChildren) {
+      expect(treeHasContent(boundTree(child, data))).toBe(false);
+    }
+  });
+
+  it("absent data with a from node is non-content", () => {
+    for (const child of boundChildren) {
+      expect(() => treeHasContent(boundTree(child))).not.toThrow();
+      expect(treeHasContent(boundTree(child))).toBe(false);
+    }
+  });
+
+  it("empty from dataset is non-content", () => {
+    const data = { sales: [] };
+    for (const child of boundChildren) {
+      expect(treeHasContent(boundTree(child, data))).toBe(false);
+    }
+  });
+
+  it("from-bound table content follows its columns, matching the renderer (RISK-INV-5)", () => {
+    // The renderer shows a header table whenever columns exist, even while the
+    // bound dataset is still loading — so the gate must agree (columns = content).
+    expect(treeHasContent(boundTable({ sales: [{ month: "Jan" }] }))).toBe(true); // populated
+    expect(treeHasContent(boundTable({ other: [{ a: 1 }] }))).toBe(true); // dangling, header still shows
+    expect(treeHasContent(boundTable())).toBe(true); // absent data, header still shows
+    expect(treeHasContent(boundTable({ sales: [] }))).toBe(true); // empty dataset, header still shows
+    // A from-bound table with NO renderable columns renders nothing → non-content.
+    expect(treeHasContent(boundTable({ sales: [{ month: "Jan" }] }, []))).toBe(false);
+  });
+
+  it("from-bound donut chart with only non-positive values is non-content, matching the renderer", () => {
+    // renderChartDonut drops non-positive slices → renders null; the gate must
+    // apply the same donut rule to the RESOLVED series, not a generic count.
+    const donut = { id: "child", type: "chart", kind: "donut", series: [], from: "share" };
+    expect(treeHasContent(boundTree(donut, { share: [{ share: 0 }, { share: 0 }] }))).toBe(false);
+    // A positive value makes the donut render → content.
+    expect(treeHasContent(boundTree(donut, { share: [{ share: 3 }, { share: 0 }] }))).toBe(true);
+  });
+
   it("does not read component chart data beyond its caps", () => {
     const values: unknown[] = [1];
     values.length = 250;

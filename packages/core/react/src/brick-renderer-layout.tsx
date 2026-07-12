@@ -5,7 +5,9 @@ import {
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
   MAX_TABS_ITEMS,
+  resolveNodeData,
   type FacetNode,
+  type TableRow,
 } from "@facet/core";
 import { boxStyle } from "./theme.js";
 import { resolveRecipePart } from "./recipe-parts.js";
@@ -300,7 +302,14 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
     },
   );
   if (columns.length === 0) return null;
-  const rows = cappedArray(safeOwnValue(node, "rows"), MAX_TABLE_ROWS).filter(isObjectRecord);
+  // Resolve the effective rows through the ONE core helper: a `from` binding
+  // projects the named warehouse dataset (precedence: from wins, dangling ⇒
+  // empty table), while an unbound table returns its inline `rows` unchanged.
+  // The result still flows through the existing cap/`isObjectRecord` filter — a
+  // pure read of (node, ctx.data), no state.
+  const resolvedRows: readonly TableRow[] =
+    node.type === "table" ? resolveNodeData(node, context.data) : [];
+  const rows = cappedArray(resolvedRows, MAX_TABLE_ROWS).filter(isObjectRecord);
   const caption = cappedString(safeOwnValue(node, "caption"), MAX_NODE_LABEL_CHARS);
   const variant = safeOwnValue(node, "variant");
   const recipe = componentRecipe(theme, "table", variant);

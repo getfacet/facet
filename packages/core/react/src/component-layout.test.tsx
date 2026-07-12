@@ -3,7 +3,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render as renderDom, screen } from "@testing-library/react";
-import type { FacetNode, FacetTree, NodeId } from "@facet/core";
+import type { DataWarehouse, FacetNode, FacetTree, NodeId } from "@facet/core";
+import { foldPatchIntoStage } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 
 afterEach(cleanup);
@@ -295,5 +296,90 @@ describe("StageRenderer component layout contract", () => {
     expect(out).toContain("Team");
     expect(out).not.toContain("[object Object]");
     expect(out).not.toContain("<script");
+  });
+});
+
+describe("StageRenderer table data bindings", () => {
+  // One dataset every bound view resolves against (author once, bind many).
+  const SALES: DataWarehouse = {
+    sales: [
+      { region: "West", revenue: 50 },
+      { region: "East", revenue: 100 },
+    ],
+  };
+
+  // DC-001: a from-bound table projects the named dataset rows through its own
+  // `columns[].key`, ignoring the (omitted/empty) inline `rows`.
+  it("renders a from:'sales' table's dataset rows via its own columns[].key", () => {
+    const app: FacetTree = {
+      root: "root",
+      nodes: {
+        root: box("root", ["table"]),
+        table: {
+          id: "table",
+          type: "table",
+          columns: [
+            { key: "region", label: "Region" },
+            { key: "revenue", label: "Revenue" },
+          ],
+          rows: [],
+          from: "sales",
+        },
+      },
+      data: SALES,
+    };
+
+    const out = render(app);
+    // Cells resolved from data.sales via the table's own column keys (anchored to
+    // element text so a stray digit inside a style value can't satisfy it).
+    expect(out).toContain(">West<");
+    expect(out).toContain(">East<");
+    expect(out).toContain(">50<");
+    expect(out).toContain(">100<");
+  });
+
+  // DC-002: single source → many views. ONE `replace /data/sales/1/revenue` op,
+  // folded through the SAME core `foldPatchIntoStage` both sides run, updates
+  // BOTH a bound table cell and a bound chart series.
+  it("reflects one /data patch in both a from-bound table and chart", () => {
+    const base: FacetTree = {
+      root: "root",
+      nodes: {
+        root: box("root", ["table", "chart"]),
+        table: {
+          id: "table",
+          type: "table",
+          columns: [
+            { key: "region", label: "Region" },
+            { key: "revenue", label: "Revenue" },
+          ],
+          rows: [],
+          from: "sales",
+        },
+        chart: { id: "chart", type: "chart", kind: "bar", series: [], from: "sales" },
+      },
+      data: SALES,
+    };
+
+    // Baseline: table cell shows 100; chart series [50,100] → max 100, so row 0's
+    // bar is scaled to height 50.
+    const before = render(base);
+    expect(before).toContain(">100<");
+    expect(before).toContain('height="50"');
+
+    // ONE cell update through the shared fold.
+    const { tree: updated } = foldPatchIntoStage(base, [
+      { op: "replace", path: "/data/sales/1/revenue", value: 200 },
+    ]);
+
+    const after = render(updated);
+    // Table reflects the new cell value...
+    expect(after).toContain(">200<");
+    expect(after).not.toContain(">100<");
+    // ...and the SAME dataset reshapes the chart: series is now [50,200] → max
+    // 200, so row 0's bar rescales to height 25 (only possible if the chart read
+    // the updated dataset, not the old one).
+    expect(after).toContain('height="25"');
+    expect(after).not.toContain('height="50"');
   });
 });
