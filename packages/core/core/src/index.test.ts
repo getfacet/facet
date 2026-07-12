@@ -43,6 +43,7 @@ describe("core barrel", () => {
       "./view.js",
       "./agent-result.js",
       "./validate.js",
+      "./data-binding.js",
       "./expand-composition.js",
       "./expand-composition.js",
       "./stage-fold.js",
