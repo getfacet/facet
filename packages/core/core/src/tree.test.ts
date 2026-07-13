@@ -475,6 +475,28 @@ describe("treeHasContent", () => {
     expect(treeHasContent(boundTree(donut, { share: [{ share: 3 }, { share: 0 }] }))).toBe(true);
   });
 
+  // ---- DC-002/DC-008: from-bound text content via the resolved cell ----
+
+  it("from-bound text with a resolving cell counts as content (DC-002)", () => {
+    const data = { labels: [{ headline: "Live" }] };
+    // Empty inline value — content must come from the store cell.
+    const child = { id: "child", type: "text", value: "", from: "labels", column: "headline" };
+    expect(treeHasContent(boundTree(child, data))).toBe(true);
+  });
+
+  it("from-bound text with dangling from / empty cell is non-content, never throws (DC-002)", () => {
+    const child = { id: "child", type: "text", value: "", from: "labels", column: "headline" };
+    expect(() => treeHasContent(boundTree(child, { other: [{ a: 1 }] }))).not.toThrow();
+    expect(treeHasContent(boundTree(child, { other: [{ a: 1 }] }))).toBe(false); // dangling dataset
+    expect(treeHasContent(boundTree(child))).toBe(false); // absent data entirely
+    expect(treeHasContent(boundTree(child, { labels: [{ headline: "" }] }))).toBe(false); // empty cell
+  });
+
+  it("plain text without from is unchanged: inline value drives content (DC-008)", () => {
+    expect(treeHasContent(boundTree({ id: "child", type: "text", value: "shown" }))).toBe(true);
+    expect(treeHasContent(boundTree({ id: "child", type: "text", value: "" }))).toBe(false);
+  });
+
   it("does not read component chart data beyond its caps", () => {
     const values: unknown[] = [1];
     values.length = 250;

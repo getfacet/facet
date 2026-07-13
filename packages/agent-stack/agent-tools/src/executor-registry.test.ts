@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { COMPONENT_NODE_TYPES, PRIMITIVE_BRICK_TYPES, type FacetNode } from "@facet/core";
+import {
+  COMPONENT_NODE_TYPES,
+  PRIMITIVE_BRICK_TYPES,
+  type DataWarehouse,
+  type FacetNode,
+} from "@facet/core";
 
 import {
   COMPONENT_NODE_TYPE_SET,
@@ -43,5 +48,55 @@ describe("describeNode prototype-chain lookup guard", () => {
     const junk = { id: "x", type: "constructor" } as unknown as FacetNode;
     expect(() => describeNode(junk, undefined)).not.toThrow();
     expect(describeNode(junk, undefined)).toBe("type=constructor");
+  });
+});
+
+// RISK-INV-6 — the brain's local `text` shadow must reflect the SAME resolved
+// store cell the renderer prints. A `from`-bound `text` describe must project
+// its cell through `resolveNodeData` (metric/stat parity), not read the raw
+// inline `value`, or the agent's view drifts from the visitor's.
+describe("text from", () => {
+  const boundText = {
+    id: "kpi",
+    type: "text",
+    value: "",
+    from: "sales",
+    column: "revenue",
+    row: 1,
+  } as unknown as FacetNode;
+  const boundMetric = {
+    id: "kpiMetric",
+    type: "metric",
+    label: "Revenue",
+    value: "",
+    from: "sales",
+    column: "revenue",
+    row: 1,
+  } as unknown as FacetNode;
+
+  it("DC-001: a from-bound text's describe shows the resolved cell, matching the metric shadow", () => {
+    const warehouse: DataWarehouse = {
+      sales: [
+        { month: "Jan", revenue: 10 },
+        { month: "Feb", revenue: 20 },
+      ],
+    };
+    // Resolved cell (row 1, column "revenue") = 20 — NOT the empty inline value.
+    expect(describeNode(boundText, warehouse)).toBe('kpi text value="20"');
+    // Parity: the metric shadow of the same binding resolves the same cell.
+    expect(describeNode(boundMetric, warehouse)).toContain('value="20"');
+  });
+
+  it("DC-003: the text describe reflects the store after a data change", () => {
+    const before: DataWarehouse = { sales: [{ revenue: 10 }, { revenue: 20 }] };
+    const after: DataWarehouse = { sales: [{ revenue: 10 }, { revenue: 99 }] };
+    expect(describeNode(boundText, before)).toBe('kpi text value="20"');
+    expect(describeNode(boundText, after)).toBe('kpi text value="99"');
+  });
+
+  it("DC-002 parity: a dangling from resolves to empty, never throws", () => {
+    const warehouse: DataWarehouse = { other: [{ revenue: 5 }] };
+    expect(() => describeNode(boundText, warehouse)).not.toThrow();
+    expect(describeNode(boundText, warehouse)).toBe('kpi text value=""');
   });
 });

@@ -290,6 +290,57 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
     expect(screen.queryByText("home content")).toBeNull();
     expect(onAction).not.toHaveBeenCalled();
   });
+
+  // Enabler B (DC-004/DC-007): a `{screen}` active-look highlight MOVES with a
+  // local navigate and fires ZERO transport — no onAction and no onRecord. The
+  // predicate evaluation is read-only; only the browser-local screen switch runs.
+  it("moves an active-look highlight on navigate with no onAction/onRecord (DC-004/DC-007)", () => {
+    const onAction = vi.fn();
+    const onRecord = vi.fn();
+    render(
+      <StageRenderer
+        onAction={onAction}
+        onRecord={onRecord}
+        tree={{
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: ["banner", "goAbout"] },
+            home: { id: "home", type: "box", children: ["banner", "goAbout"] },
+            about: { id: "about", type: "box", children: ["banner"] },
+            banner: {
+              id: "banner",
+              type: "text",
+              value: "Nav",
+              active: { screen: "about" },
+              activeStyle: { weight: "bold" },
+            } as FacetNode,
+            goAbout: {
+              id: "goAbout",
+              type: "box",
+              onPress: { kind: "navigate", to: "about" },
+              children: ["gt"],
+            },
+            gt: { id: "gt", type: "text", value: "Go about" },
+          },
+          screens: { home: "home", about: "about" },
+          entry: "home",
+        }}
+      />,
+    );
+
+    expect((screen.getByText("Nav") as HTMLElement).style.fontWeight).toBe("");
+    fireEvent.click(screen.getByText("Go about"));
+    expect((screen.getByText("Nav") as HTMLElement).style.fontWeight).toBe("700");
+    // No agent event; the only record is the navigate's own pre-existing tap —
+    // moving the highlight fired nothing extra.
+    expect(onAction).not.toHaveBeenCalled();
+    expect(onRecord).toHaveBeenCalledTimes(1);
+    expect(onRecord).toHaveBeenCalledWith({
+      kind: "tap",
+      target: "goAbout",
+      effect: { navigate: "about" },
+    });
+  });
 });
 
 describe("StageRenderer component button and tabs (jsdom)", () => {

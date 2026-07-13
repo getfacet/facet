@@ -156,3 +156,91 @@ export function sanitizeView(value: unknown): ViewSnapshot | undefined {
     return undefined;
   }
 }
+
+/**
+ * A CLOSED, EXTENSIBLE tagged union naming ONE view-state condition an
+ * active-look brick reacts to (enabler B). Read-only: the renderer evaluates it
+ * against the already-threaded snapshot view-state to select a variant/style —
+ * it never writes view-state and never evaluates an expression. Deliberately a
+ * closed union (like the enums above and `ViewSnapshot`), not a DSL: mechanism
+ * vs policy — the vocabulary grows only by adding a member on purpose.
+ *
+ * - `{ screen }` — active when the visitor is on that agent-authored screen.
+ * - `{ toggled }` — active when that node id has been locally toggled-shown.
+ *
+ * `toggled` is a plain `string` (a node id by convention) rather than the
+ * `NodeId` alias so this module need not import `nodes.ts`; the dependency stays
+ * one-way (`nodes.ts` → `view.ts`), avoiding an import cycle.
+ */
+export type ViewPredicate = { readonly screen: string } | { readonly toggled: string };
+
+/**
+ * The read-only view-state an active-look predicate is evaluated against — the
+ * SAME snapshot fields threaded through the renderer (`activeScreen` and the raw
+ * `visibilityOverrides` map), never a live read. Consuming the threaded snapshot
+ * keeps the inert exiting-screen clone coherent with its own captured view-state
+ * (invariant #6).
+ */
+export interface ViewPredicateContext {
+  /** The screen the visitor is currently on, or `null` for the base stage. */
+  readonly activeScreen: string | null;
+  /**
+   * The RAW local toggle override map (node id → shown/hidden), NOT effective
+   * visibility. A never-toggled node has no entry, so it reads as not-active —
+   * byte-coherent with the reported `view.toggled` the agent sees.
+   */
+  readonly visibilityOverrides: ReadonlyMap<string, boolean>;
+}
+
+/**
+ * FILTERING boundary clamp for an untrusted `active` predicate value (mirrors
+ * `sanitizeView`'s discipline). Returns a cleaned `ViewPredicate`, or `undefined`
+ * when the input is not a plain object or does not match a known kind — the
+ * validator then omits `active` and the brick renders its default look.
+ *
+ * Rules: a `{ screen }` shape keeps a string `screen` within
+ * `MAX_FIELD_VALUE_CHARS`; a `{ toggled }` shape keeps a string `toggled` within
+ * the same cap (`screen` checked first when both are present). Any other shape —
+ * unknown/future kind, non-string discriminant, over-cap, non-object — is
+ * dropped. Pure, dependency-free, and never throws (cyclic input yields at most
+ * a cleaned flat predicate or `undefined`).
+ */
+export function sanitizeViewPredicate(value: unknown): ViewPredicate | undefined {
+  try {
+    if (!isPlainObject(value)) return undefined;
+    const screen = value["screen"];
+    if (typeof screen === "string" && screen.length <= MAX_FIELD_VALUE_CHARS) {
+      return { screen };
+    }
+    const toggled = value["toggled"];
+    if (typeof toggled === "string" && toggled.length <= MAX_FIELD_VALUE_CHARS) {
+      return { toggled };
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * PURE, total evaluation of an active-look predicate against the threaded
+ * snapshot view-state. Returns `false` — the default look — for an absent
+ * predicate, an unrecognized kind, a `{ screen }` whose screen is not the
+ * `activeScreen` (including when `activeScreen` is `null`), and a `{ toggled }`
+ * whose node id is not RAW-toggled to exactly `true` (undefined/`false` ⇒
+ * false). Only an exact screen match or a raw override of `true` is active.
+ * Reads no live state, writes nothing, and never throws.
+ */
+export function evaluateViewPredicate(
+  predicate: ViewPredicate | undefined,
+  context: ViewPredicateContext,
+): boolean {
+  if (!isPlainObject(predicate)) return false;
+  if ("screen" in predicate && typeof predicate.screen === "string") {
+    return context.activeScreen === predicate.screen;
+  }
+  if ("toggled" in predicate && typeof predicate.toggled === "string") {
+    return context.visibilityOverrides.get(predicate.toggled) === true;
+  }
+  return false;
+}

@@ -1,5 +1,10 @@
 import type { IssueSink } from "./issues.js";
-import { PRIMITIVE_BRICK_TYPES, type FacetNode, type PrimitiveBrickType } from "./nodes.js";
+import {
+  PRIMITIVE_BRICK_TYPES,
+  type FacetNode,
+  type PrimitiveBrickType,
+  type TextNode,
+} from "./nodes.js";
 import {
   COMPONENT_NODE_TYPES,
   type ChartNode,
@@ -33,6 +38,7 @@ import {
   fromKeyValue,
   fromList,
   fromMetricStat,
+  fromText,
   rendersAlert,
   rendersAlways,
   rendersBadge,
@@ -125,7 +131,7 @@ export const CORE_NODE_TYPES: readonly CoreNodeType[] = [
 export type ComponentRole = "control" | "data" | "feedback" | "layout";
 
 export type DataBearingNode =
-  TableNode | ChartNode | ListNode | KeyValueNode | MetricNode | StatNode;
+  TableNode | ChartNode | ListNode | KeyValueNode | MetricNode | StatNode | TextNode;
 
 export type NodeDataResolver = (
   node: DataBearingNode,
@@ -186,6 +192,8 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     kind: "primitive",
     established: false,
     validate: validateText,
+    resolve: (node, warehouse) => resolveScalar(node as TextNode, warehouse),
+    resolveFromContent: fromText,
     rendersSelf: rendersText,
     fill: fillText,
     stringLeaves: leavesText,

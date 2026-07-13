@@ -354,7 +354,13 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(system).toMatch(/"from" wins over inline/i);
     // Closed projection, no computation.
     expect(system).toMatch(/chart draws one series per NUMERIC column/i);
-    expect(system).toMatch(/metric or stat reads ONE cell via "column"/i);
+    expect(system).toMatch(/metric, stat, or text reads ONE cell via "column"/i);
+    // Enabler A: `text` joins the from-bindable family.
+    expect(system).toMatch(/"from" bindable nodes:[^.]*text/i);
+    // Enabler B: the closed, read-only active-look predicate is taught.
+    expect(system).toMatch(/active look[^]*\{"screen":/i);
+    expect(system).toMatch(/\{"toggled":/i);
+    expect(system).toMatch(/"activeVariant"[^]*prefer this/i);
     // Hard boundary: names only — no fetch/resolver/expression (invariant #1/#7).
     expect(system).toMatch(/never a URL, endpoint, query, expression, or resolver/i);
     expect(system).toMatch(/no fetch, computed column, or formula/i);

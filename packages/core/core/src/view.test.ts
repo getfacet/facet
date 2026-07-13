@@ -1,13 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  evaluateViewPredicate,
   MAX_VIEW_SORT_KEYS,
   MAX_VIEW_TOGGLED_KEYS,
   sanitizeView,
+  sanitizeViewPredicate,
   SCHEMES,
   SORT_DIRECTIONS,
   VIEWPORTS,
 } from "./view.js";
-import type { ViewSnapshot } from "./view.js";
+import type { ViewPredicate, ViewSnapshot } from "./view.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 
 describe("sanitizeView", () => {
@@ -188,5 +190,109 @@ describe("sanitizeView sort", () => {
     expect(sanitizeView({ sort: {} })).toBeUndefined();
     expect(sanitizeView({ sort: { a: { column: "name", direction: "nope" } } })).toBeUndefined();
     expect(sanitizeView({ screen: "s", sort: { a: null } })).toEqual({ screen: "s" });
+  });
+});
+
+describe("view predicate", () => {
+  const emptyOverrides: ReadonlyMap<string, boolean> = new Map();
+
+  describe("sanitizeViewPredicate", () => {
+    it("keeps a valid {screen} predicate", () => {
+      expect(sanitizeViewPredicate({ screen: "pricing" })).toEqual({ screen: "pricing" });
+    });
+
+    it("keeps a valid {toggled} predicate (plain string, not a NodeId type)", () => {
+      expect(sanitizeViewPredicate({ toggled: "faq" })).toEqual({ toggled: "faq" });
+    });
+
+    it("drops an unknown/malformed shape (returns undefined), never throws", () => {
+      expect(sanitizeViewPredicate(undefined)).toBeUndefined();
+      expect(sanitizeViewPredicate(null)).toBeUndefined();
+      expect(sanitizeViewPredicate(42)).toBeUndefined();
+      expect(sanitizeViewPredicate("screen")).toBeUndefined();
+      expect(sanitizeViewPredicate([])).toBeUndefined();
+      // unknown kind: neither `screen` nor `toggled`
+      expect(sanitizeViewPredicate({ mystery: "x" })).toBeUndefined();
+      expect(sanitizeViewPredicate({})).toBeUndefined();
+      // present but non-string discriminant
+      expect(sanitizeViewPredicate({ screen: 5 })).toBeUndefined();
+      expect(sanitizeViewPredicate({ toggled: 3 })).toBeUndefined();
+      // over-cap string discriminant is dropped
+      const overCap = "s".repeat(MAX_FIELD_VALUE_CHARS + 1);
+      expect(sanitizeViewPredicate({ screen: overCap })).toBeUndefined();
+      expect(sanitizeViewPredicate({ toggled: overCap })).toBeUndefined();
+    });
+
+    it("never recurses or throws on a cyclic payload", () => {
+      const cyclic: Record<string, unknown> = { screen: "home" };
+      cyclic["self"] = cyclic;
+      expect(() => sanitizeViewPredicate(cyclic)).not.toThrow();
+      expect(sanitizeViewPredicate(cyclic)).toEqual({ screen: "home" });
+    });
+  });
+
+  describe("evaluateViewPredicate", () => {
+    it("{screen} is active only when activeScreen === screen", () => {
+      expect(
+        evaluateViewPredicate(
+          { screen: "home" },
+          { activeScreen: "home", visibilityOverrides: emptyOverrides },
+        ),
+      ).toBe(true);
+      expect(
+        evaluateViewPredicate(
+          { screen: "home" },
+          { activeScreen: "pricing", visibilityOverrides: emptyOverrides },
+        ),
+      ).toBe(false);
+    });
+
+    it("{screen} is false when activeScreen is null", () => {
+      expect(
+        evaluateViewPredicate(
+          { screen: "home" },
+          { activeScreen: null, visibilityOverrides: emptyOverrides },
+        ),
+      ).toBe(false);
+    });
+
+    it("{toggled} is active only when the RAW override is exactly true", () => {
+      expect(
+        evaluateViewPredicate(
+          { toggled: "faq" },
+          { activeScreen: null, visibilityOverrides: new Map([["faq", true]]) },
+        ),
+      ).toBe(true);
+      // toggled=false → not active
+      expect(
+        evaluateViewPredicate(
+          { toggled: "faq" },
+          { activeScreen: null, visibilityOverrides: new Map([["faq", false]]) },
+        ),
+      ).toBe(false);
+      // never toggled (undefined override) → not active (raw map, NOT effective visibility)
+      expect(
+        evaluateViewPredicate(
+          { toggled: "faq" },
+          { activeScreen: null, visibilityOverrides: emptyOverrides },
+        ),
+      ).toBe(false);
+    });
+
+    it("returns false for an undefined predicate and an unknown kind, never throws", () => {
+      expect(
+        evaluateViewPredicate(undefined, {
+          activeScreen: "home",
+          visibilityOverrides: emptyOverrides,
+        }),
+      ).toBe(false);
+      const unknownKind = { mystery: "x" } as unknown as ViewPredicate;
+      expect(
+        evaluateViewPredicate(unknownKind, {
+          activeScreen: "home",
+          visibilityOverrides: emptyOverrides,
+        }),
+      ).toBe(false);
+    });
   });
 });
