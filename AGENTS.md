@@ -193,6 +193,8 @@ fixes can skip straight to `/verify` → `/code-review`.
 
 ## Conventions
 
+- Keep responses concise by default. Provide longer explanations only when the
+  user explicitly asks for detail or the task requires it for correctness.
 - TypeScript strict (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,
   `verbatimModuleSyntax`). Use `import type` for types; import with `.js`
   extensions (bundler resolution).
