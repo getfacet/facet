@@ -2,7 +2,20 @@ import { readFileSync } from "node:fs";
 import type { Color, FacetTheme, FontFamily, RecipePartName, Shadow, Space } from "@facet/core";
 import { DEFAULT_CATALOG, validateTheme } from "@facet/core";
 import { describe, expect, it } from "vitest";
-import { COLOR, DEFAULT_THEME, FONT_FAMILY } from "./theme.js";
+import {
+  COLOR,
+  COLOR_DARK,
+  DEFAULT_THEME,
+  FONT_FAMILY,
+  FONT_SIZE,
+  GRADIENT,
+  HIGHLIGHT,
+  LEADING,
+  MAX_WIDTH,
+  MIN_HEIGHT,
+  SCRIM,
+  TRACKING,
+} from "./theme.js";
 
 // COLOR is the single source of truth for the palette (ChatDock consumes it via
 // the renderer re-export), so its values are pinned here — byte-identical to the
@@ -35,20 +48,29 @@ describe("DEFAULT_THEME", () => {
     expect(result.issues).toEqual([]);
   });
 
-  // Pinned shape: exactly the name + the eight token groups + recipes, nothing else.
-  it("keeps exactly the name + eight token groups + recipes", () => {
+  // Pinned shape: the name + the eight base token groups + recipes, plus the
+  // validator-legal landing-grade groups (tracking/gradient/scrim/highlight/
+  // colorDark). The landing-grade dimension groups (minHeight/maxWidth/leading)
+  // are intentionally NOT part of the document (their svh/ch/unitless defaults
+  // are not document-expressible); they resolve via @facet/react's fallback.
+  it("keeps the name + base token groups + recipes + validator-legal landing groups", () => {
     expect(Object.keys(DEFAULT_THEME).sort()).toEqual(
       [
         "color",
+        "colorDark",
         "fontFamily",
         "fontSize",
         "fontWeight",
+        "gradient",
+        "highlight",
         "name",
         "radius",
         "ratio",
         "recipes",
+        "scrim",
         "shadow",
         "space",
+        "tracking",
       ].sort(),
     );
   });
@@ -267,5 +289,79 @@ describe("DEFAULT_THEME recipes", () => {
         ).toBeDefined();
       }
     }
+  });
+});
+
+// WU-4 (DC-005 + DC-001): concrete default CSS for every new landing-grade token
+// group + the 3 new FONT_SIZE keys (RISK-API-1 repair). The dimension groups
+// (minHeight/maxWidth/leading) carry viewport/character/unitless CSS that WU-2's
+// strict dimensionHandler cannot express, so their defaults live only in the raw
+// maps that @facet/react's DEFAULT_RESOLVED imports directly; DEFAULT_THEME wires
+// in only the validator-legal groups (tracking/gradient/scrim/highlight/colorDark)
+// and must still round-trip through validateTheme with zero issues.
+describe("landing-grade-vocab", () => {
+  it("extends FONT_SIZE to a 10-step display ramp (RISK-API-1 repair)", () => {
+    expect(Object.keys(FONT_SIZE).sort()).toEqual(
+      ["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl"].sort(),
+    );
+    expect(FONT_SIZE["4xl"]).toBe("64px");
+    expect(FONT_SIZE["5xl"]).toBe("80px");
+    expect(FONT_SIZE["6xl"]).toBe("96px");
+    expect(Object.getPrototypeOf(FONT_SIZE)).toBeNull();
+  });
+
+  it("provides resolvable min-height + max-width defaults", () => {
+    expect(MIN_HEIGHT.auto).toBe("auto");
+    expect(MIN_HEIGHT.half).toBe("50svh");
+    expect(MIN_HEIGHT.screen).toBe("100svh");
+    expect(MAX_WIDTH.none).toBe("none");
+    expect(MAX_WIDTH.prose).toBe("65ch");
+    expect(MAX_WIDTH.narrow).toBe("640px");
+    expect(MAX_WIDTH.wide).toBe("1200px");
+  });
+
+  it("provides tracking + leading defaults", () => {
+    expect(TRACKING.tight).toBe("-0.02em");
+    expect(TRACKING.normal).toBe("0");
+    expect(TRACKING.wide).toBe("0.04em");
+    expect(LEADING.tight).toBe("1.1");
+    expect(LEADING.normal).toBe("1.5");
+    expect(LEADING.relaxed).toBe("1.75");
+  });
+
+  it("provides gradient / scrim / highlight CSS defaults", () => {
+    expect(GRADIENT.none).toBe("none");
+    expect(GRADIENT.accent).toMatch(/^linear-gradient\(/);
+    expect(GRADIENT.dusk).toMatch(/^linear-gradient\(/);
+    expect(GRADIENT.dawn).toMatch(/^linear-gradient\(/);
+    expect(SCRIM.none).toBe("transparent");
+    expect(SCRIM.light).toMatch(/^rgba\(/);
+    expect(SCRIM.dark).toMatch(/^rgba\(/);
+    expect(HIGHLIGHT.none).toBe("none");
+    expect(HIGHLIGHT.accent).toMatch(/^linear-gradient\(/);
+    expect(HIGHLIGHT.band).toMatch(/^linear-gradient\(/);
+  });
+
+  it("provides a full dark-scheme palette with the same Color keys", () => {
+    expect(Object.keys(COLOR_DARK).sort()).toEqual(Object.keys(COLOR).sort());
+    expect(COLOR_DARK.bg).toBe("#0b0b0f");
+    expect(COLOR_DARK.fg).toBe("#f5f5f7");
+    expect(COLOR_DARK.bg).not.toBe(COLOR.bg);
+    expect(COLOR_DARK.fg).not.toBe(COLOR.fg);
+  });
+
+  it("uses null-prototype maps for every new group", () => {
+    for (const map of [MIN_HEIGHT, MAX_WIDTH, TRACKING, LEADING, GRADIENT, SCRIM, HIGHLIGHT, COLOR_DARK]) {
+      expect(Object.getPrototypeOf(map)).toBeNull();
+    }
+  });
+
+  it("wires the validator-legal groups into DEFAULT_THEME and still validates clean", () => {
+    expect(DEFAULT_THEME.tracking).toBe(TRACKING);
+    expect(DEFAULT_THEME.gradient).toBe(GRADIENT);
+    expect(DEFAULT_THEME.scrim).toBe(SCRIM);
+    expect(DEFAULT_THEME.highlight).toBe(HIGHLIGHT);
+    expect(DEFAULT_THEME.colorDark).toBe(COLOR_DARK);
+    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
   });
 });
