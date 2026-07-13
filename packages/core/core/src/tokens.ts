@@ -17,7 +17,18 @@ export const SPACES = ["none", "xs", "sm", "md", "lg", "xl", "2xl"] as const;
 export type Space = (typeof SPACES)[number];
 
 /** Font size scale. */
-export const FONT_SIZES = ["xs", "sm", "md", "lg", "xl", "2xl", "3xl"] as const;
+export const FONT_SIZES = [
+  "xs",
+  "sm",
+  "md",
+  "lg",
+  "xl",
+  "2xl",
+  "3xl",
+  "4xl",
+  "5xl",
+  "6xl",
+] as const;
 export type FontSize = (typeof FONT_SIZES)[number];
 
 /** Font family scale. */
@@ -95,3 +106,51 @@ export type Columns = (typeof COLUMNS)[number];
  */
 export const APPEARS = ["none", "fade", "slide"] as const;
 export type Appear = (typeof APPEARS)[number];
+
+/**
+ * Minimum-height scale for landing-grade sections. Concrete lengths (e.g.
+ * `50svh`/`100svh`) live in a theme — the tree carries only the token name.
+ */
+export const MIN_HEIGHTS = ["auto", "half", "screen"] as const;
+export type MinHeight = (typeof MIN_HEIGHTS)[number];
+
+/**
+ * Bounded max-width scale for readable content columns. Concrete lengths live
+ * in a theme; layout stays flow-only and never overflows the viewport.
+ */
+export const MAX_WIDTHS = ["none", "prose", "narrow", "wide"] as const;
+export type MaxWidth = (typeof MAX_WIDTHS)[number];
+
+/** Letter-spacing (tracking) scale for text. Concrete values live in a theme. */
+export const TRACKINGS = ["tight", "normal", "wide"] as const;
+export type Tracking = (typeof TRACKINGS)[number];
+
+/** Line-height (leading) scale for text. Concrete values live in a theme. */
+export const LEADINGS = ["tight", "normal", "relaxed"] as const;
+export type Leading = (typeof LEADINGS)[number];
+
+/**
+ * Named background gradients for a box. The theme maps each name to a concrete
+ * CSS gradient — no raw gradient string ever enters the tree.
+ */
+export const GRADIENTS = ["none", "accent", "dusk", "dawn"] as const;
+export type Gradient = (typeof GRADIENTS)[number];
+
+/**
+ * Scrim overlay strength painted over a box's backdrop layer so foreground text
+ * stays legible. The theme owns the concrete overlay color/opacity.
+ */
+export const SCRIMS = ["none", "light", "dark"] as const;
+export type Scrim = (typeof SCRIMS)[number];
+
+// NOTE: the box-subtree color `scheme` reuses the pre-existing closed set
+// `SCHEMES`/`Scheme` (`["light","dark"]`) from `view.ts` — the same closed
+// light/dark vocabulary — rather than redeclaring an identical export here
+// (a second `export *` of `SCHEMES` would break the `@facet/core` barrel).
+
+/**
+ * Text highlight treatment (decoration/background behind a text run). The theme
+ * owns the concrete decoration — the tree carries only the token name.
+ */
+export const HIGHLIGHTS = ["none", "accent", "band"] as const;
+export type Highlight = (typeof HIGHLIGHTS)[number];

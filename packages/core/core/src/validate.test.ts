@@ -2135,3 +2135,177 @@ describe("validateTree issue hardening (shared printableKey + bounded list)", ()
     expect(issues.some((i) => i.includes("fell back to"))).toBe(true);
   });
 });
+
+describe("landing-grade-vocab", () => {
+  /** Validate a single box node with the given style, returning its sanitized shape + issues. */
+  function runBox(style: Record<string, unknown>): {
+    node: { style?: Record<string, unknown>; backdrop?: unknown };
+    issues: readonly string[];
+  } {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", style, children: [] } },
+    });
+    return {
+      node: tree.nodes["root"] as unknown as {
+        style?: Record<string, unknown>;
+        backdrop?: unknown;
+      },
+      issues,
+    };
+  }
+
+  /** Validate a single text node with the given style, returning its sanitized shape + issues. */
+  function runText(style: Record<string, unknown>): {
+    style: Record<string, unknown> | undefined;
+    issues: readonly string[];
+  } {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["t"] },
+        t: { id: "t", type: "text", value: "hi", style },
+      },
+    });
+    return {
+      style: (tree.nodes["t"] as unknown as { style?: Record<string, unknown> }).style,
+      issues,
+    };
+  }
+
+  // DC-002 — new BoxStyle tokens: accepted when valid.
+  const boxTokenCases: ReadonlyArray<readonly [string, string]> = [
+    ["minHeight", "screen"],
+    ["maxWidth", "prose"],
+    ["gradient", "dusk"],
+    ["backdropScrim", "dark"],
+    ["scheme", "dark"],
+  ];
+  for (const [key, valid] of boxTokenCases) {
+    it(`DC-002 accepts a valid ${key} box token`, () => {
+      const { node, issues } = runBox({ [key]: valid });
+      expect(node.style?.[key]).toBe(valid);
+      expect(issues).toHaveLength(0);
+    });
+
+    it(`DC-002 drops an unknown ${key} box token WITH an issue`, () => {
+      const { node, issues } = runBox({ [key]: "NOPE" });
+      expect(node.style?.[key]).toBeUndefined();
+      expect(issues.some((i) => i.includes(key))).toBe(true);
+    });
+  }
+
+  // DC-002 — sticky boolean flag.
+  it("DC-002 accepts sticky:true and drops a non-boolean sticky WITH an issue", () => {
+    const ok = runBox({ sticky: true });
+    expect(ok.node.style?.["sticky"]).toBe(true);
+    expect(ok.issues).toHaveLength(0);
+
+    const bad = runBox({ sticky: "yes" });
+    expect(bad.node.style?.["sticky"]).toBeUndefined();
+    expect(bad.issues.some((i) => i.includes("sticky"))).toBe(true);
+  });
+
+  // DC-002 — new TextStyle tokens.
+  const textTokenCases: ReadonlyArray<readonly [string, string]> = [
+    ["tracking", "wide"],
+    ["leading", "relaxed"],
+    ["highlight", "band"],
+  ];
+  for (const [key, valid] of textTokenCases) {
+    it(`DC-002 accepts a valid ${key} text token`, () => {
+      const { style, issues } = runText({ [key]: valid });
+      expect(style?.[key]).toBe(valid);
+      expect(issues).toHaveLength(0);
+    });
+
+    it(`DC-002 drops an unknown ${key} text token WITH an issue`, () => {
+      const { style, issues } = runText({ [key]: "NOPE" });
+      expect(style?.[key]).toBeUndefined();
+      expect(issues.some((i) => i.includes(key))).toBe(true);
+    });
+  }
+
+  // DC-002 — extended FONT_SIZES accept the new display sizes.
+  for (const size of ["4xl", "5xl", "6xl"] as const) {
+    it(`DC-002 accepts extended font size ${size}`, () => {
+      const { style, issues } = runText({ size });
+      expect(style?.["size"]).toBe(size);
+      expect(issues).toHaveLength(0);
+    });
+  }
+
+  // DC-003 — backdrop is a node-id STRING passthrough (not token membership).
+  it("DC-003 keeps a string backdrop and drops a non-string backdrop WITH an issue", () => {
+    const kept = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", backdrop: "hero-media", children: [] },
+      },
+    });
+    expect((kept.tree.nodes["root"] as unknown as { backdrop?: unknown }).backdrop).toBe(
+      "hero-media",
+    );
+
+    const dropped = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", backdrop: { id: "x" }, children: [] },
+      },
+    });
+    const node = dropped.tree.nodes["root"] as unknown as { backdrop?: unknown };
+    expect(node.backdrop).toBeUndefined();
+    expect(dropped.issues.some((i) => i.includes("backdrop"))).toBe(true);
+  });
+
+  // DC-003 — hostile / unknown token values never throw.
+  it("DC-003 never throws on hostile unknown token values or a non-string backdrop", () => {
+    const hostile: Record<string, unknown> = {
+      minHeight: { toString() {
+        throw new Error("boom");
+      } },
+      maxWidth: 42,
+      gradient: [],
+      backdropScrim: null,
+      scheme: Symbol("x") as unknown,
+      sticky: { nope: true },
+    };
+    expect(() =>
+      validateTree({
+        root: "root",
+        nodes: {
+          root: {
+            id: "root",
+            type: "box",
+            style: hostile,
+            backdrop: 123,
+            children: [],
+          },
+        },
+      }),
+    ).not.toThrow();
+    expect(() => runText({ tracking: 3, leading: false, highlight: [] })).not.toThrow();
+  });
+
+  // DC-006 — a tree with NO new tokens / no backdrop validates byte-identically.
+  it("DC-006 back-compat: a box with only legacy vocabulary is byte-identical, no new keys injected", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", style: { gap: "md", pad: "lg" }, children: ["t"] },
+        t: { id: "t", type: "text", value: "hi", style: { size: "xl", weight: "bold" } },
+      },
+    };
+    const { tree, issues } = validateTree(input);
+    expect(issues).toHaveLength(0);
+    const box = tree.nodes["root"] as unknown as {
+      style?: Record<string, unknown>;
+      backdrop?: unknown;
+    };
+    const text = tree.nodes["t"] as unknown as { style?: Record<string, unknown> };
+    // No backdrop own-property, and style keys are exactly the legacy set.
+    expect(Object.prototype.hasOwnProperty.call(box, "backdrop")).toBe(false);
+    expect(box.style).toEqual({ gap: "md", pad: "lg" });
+    expect(text.style).toEqual({ size: "xl", weight: "bold" });
+  });
+});

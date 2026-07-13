@@ -7,15 +7,24 @@ import {
   FONT_FAMILIES,
   FONT_SIZES,
   FONT_WEIGHTS,
+  GRADIENTS,
+  HIGHLIGHTS,
   JUSTIFIES,
+  LEADINGS,
+  MAX_WIDTHS,
+  MIN_HEIGHTS,
   RADII,
   RATIOS,
+  SCRIMS,
   SCROLL_AXES,
   SHADOWS,
   SIZINGS,
   SPACES,
   TEXT_ALIGNS,
+  TRACKINGS,
 } from "./tokens.js";
+// `scheme` reuses the pre-existing closed light/dark set from view.ts.
+import { SCHEMES } from "./view.js";
 import {
   FIELD_INPUTS,
   MEDIA_KINDS,
@@ -229,11 +238,36 @@ function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
     if (border !== undefined) style.border = border;
     const grow = asBool(value.grow);
     if (grow !== undefined) style.grow = grow;
+    // Landing-grade tokens: like appear/scroll above, a wrong value is a
+    // teachable agent mistake, so unknowns drop WITH a (bounded) issue.
+    const setStrict = (key: string, allowed: readonly string[]): void => {
+      const token = asToken(value[key], allowed);
+      if (token !== undefined) {
+        style[key] = token;
+      } else if (value[key] !== undefined) {
+        issues.push(
+          `node "${printableKey(nodeId)}": unknown ${key} token ${printableValue(value[key])} dropped`,
+        );
+      }
+    };
+    setStrict("minHeight", MIN_HEIGHTS);
+    setStrict("maxWidth", MAX_WIDTHS);
+    setStrict("gradient", GRADIENTS);
+    setStrict("backdropScrim", SCRIMS);
+    setStrict("scheme", SCHEMES);
+    const sticky = asBool(value.sticky);
+    if (sticky !== undefined) {
+      style.sticky = sticky;
+    } else if (value.sticky !== undefined) {
+      issues.push(
+        `node "${printableKey(nodeId)}": unknown sticky flag ${printableValue(value.sticky)} dropped`,
+      );
+    }
   }
   return style as BoxStyle;
 }
 
-function textStyle(value: unknown): TextStyle {
+function textStyle(value: unknown, nodeId: string, issues: IssueSink): TextStyle {
   const style: Record<string, unknown> = {};
   if (isObject(value)) {
     const family = asToken(value.family, FONT_FAMILIES);
@@ -246,6 +280,20 @@ function textStyle(value: unknown): TextStyle {
     if (color !== undefined) style.color = color;
     const align = asToken(value.align, TEXT_ALIGNS);
     if (align !== undefined) style.align = align;
+    // Landing-grade text tokens: unknowns drop WITH a (bounded) issue.
+    const setStrict = (key: string, allowed: readonly string[]): void => {
+      const token = asToken(value[key], allowed);
+      if (token !== undefined) {
+        style[key] = token;
+      } else if (value[key] !== undefined) {
+        issues.push(
+          `node "${printableKey(nodeId)}": unknown ${key} token ${printableValue(value[key])} dropped`,
+        );
+      }
+    };
+    setStrict("tracking", TRACKINGS);
+    setStrict("leading", LEADINGS);
+    setStrict("highlight", HIGHLIGHTS);
   }
   return style as TextStyle;
 }
@@ -330,9 +378,20 @@ export function sanitizeNode(
         onHold?: FacetAction;
         hidden?: boolean;
         variant?: string;
+        backdrop?: string;
       } = { id, type: "box", style: boxStyle(raw.style, id, issues), children };
       const variant = asVariant(raw.variant, id, issues);
       if (variant !== undefined) node.variant = variant;
+      // `backdrop` is a node-id STRING (resolved to a media node fail-safe at
+      // render time in WU-6), NOT a token: kept iff a string, else dropped with
+      // a (bounded) issue.
+      if (typeof raw.backdrop === "string") {
+        node.backdrop = raw.backdrop;
+      } else if (raw.backdrop !== undefined) {
+        issues.push(
+          `node "${key}": backdrop is not a string ${printableValue(raw.backdrop)} dropped`,
+        );
+      }
       const onPress = asAction(raw.onPress, id, "onPress", issues);
       if (onPress !== undefined) node.onPress = onPress;
       const onHold = asAction(raw.onHold, id, "onHold", issues);
@@ -354,7 +413,7 @@ export function sanitizeNode(
           id,
           type: "text",
           value,
-          style: textStyle(raw.style),
+          style: textStyle(raw.style, id, issues),
         };
       const variant = asVariant(raw.variant, id, issues);
       if (variant !== undefined) node.variant = variant;
