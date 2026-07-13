@@ -6,6 +6,7 @@ import {
   MAX_RENDER_NODES,
   type FacetTree,
   type NodeId,
+  type SortDirection,
 } from "@facet/core";
 import { appearClass } from "./appear.js";
 import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
@@ -31,6 +32,23 @@ const EMPTY_EXIT_RECORDS_BY_PARENT: ReadonlyMap<NodeId, readonly ExitRecord[]> =
   NodeId,
   readonly ExitRecord[]
 >();
+
+/**
+ * The browser-private table-sort view-state, threaded from `StageRenderer`
+ * exactly like `visibilityOverrides` (the read map) and `onPress` (a StageRenderer
+ * setter passed down). `overrides` maps a table node id to its active
+ * column/direction; `onSort` cycles a table's sort (asc → desc → unsorted). It is
+ * VIEW-STATE only — `onSort` fires no transport/agent event (RISK-INV-2). Omitted
+ * on inert render paths (exit records / the previous-screen clone) so those never
+ * read or write sort state.
+ */
+interface SortControl {
+  readonly overrides: ReadonlyMap<
+    NodeId,
+    { readonly column: string; readonly direction: SortDirection }
+  >;
+  readonly onSort: (nodeId: NodeId, column: string) => void;
+}
 
 interface RenderArgs {
   readonly tree: FacetTree;
@@ -66,6 +84,12 @@ interface RenderArgs {
   readonly motionClassById: ReadonlyMap<NodeId, string>;
   readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
   readonly activeScreen: string | null;
+  /**
+   * Browser-private table-sort view-state (read map + cycle setter). Optional so
+   * the inert exit/previous-screen paths can omit it — a `renderTable` then reads
+   * no sort and renders natural order.
+   */
+  readonly sortControl?: SortControl | undefined;
 }
 
 interface ExitRenderArgs {
@@ -89,6 +113,7 @@ interface ContainerChildrenRenderArgs {
   readonly motionClassById: ReadonlyMap<NodeId, string>;
   readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
   readonly activeScreen: string | null;
+  readonly sortControl?: SortControl | undefined;
 }
 
 function renderContainerChildren({
@@ -106,6 +131,7 @@ function renderContainerChildren({
   motionClassById,
   exitRecordsByParent,
   activeScreen,
+  sortControl,
 }: ContainerChildrenRenderArgs): ReactNode[] {
   // Fail-safe (invariant #2): skip a child that points back to an ancestor so
   // a cyclic tree (which never passes through validateTree on the live path)
@@ -185,6 +211,7 @@ function renderContainerChildren({
           motionClassById,
           exitRecordsByParent,
           activeScreen,
+          sortControl,
         })}
       </Fragment>,
     );
@@ -232,6 +259,7 @@ export function renderNode({
   motionClassById,
   exitRecordsByParent,
   activeScreen,
+  sortControl,
 }: RenderArgs): ReactNode {
   const node = tree.nodes[id];
   // == null also skips a node a patch replaced with JSON null (not just missing
@@ -268,6 +296,15 @@ export function renderNode({
     <BoxElement {...args} />
   );
   const dispatchBrickPress = (classified: ClassifiedPress): void => onPress(classified, id);
+  // Sort view-state for THIS node: the inert clone reads/writes none (undefined),
+  // so a mid-transition previous screen shows natural order and never becomes a
+  // second sort writer (RISK-INV-5). `onHeaderSort` fires no transport (RISK-INV-2).
+  const sortForNode =
+    inert || sortControl === undefined ? undefined : sortControl.overrides.get(id);
+  const onHeaderSort =
+    inert || sortControl === undefined
+      ? undefined
+      : (column: string): void => sortControl.onSort(id, column);
   const renderBrick = (children?: ReactNode): ReactNode =>
     renderBrickNode(node, {
       theme,
@@ -280,6 +317,8 @@ export function renderNode({
       classifyPress,
       dispatch: dispatchBrickPress,
       navigate: (to: string): void => onPress({ kind: "navigate", to }, id),
+      sort: sortForNode,
+      onHeaderSort,
       renderPressable,
     });
 
@@ -314,6 +353,7 @@ export function renderNode({
         motionClassById,
         exitRecordsByParent,
         activeScreen,
+        sortControl,
       });
       // `backdrop` (RISK-INV-2/3/4): resolve a STANDALONE media node id READ-ONLY
       // to a background COVER layer. It resolves to a MEDIA node ONLY — a
@@ -425,6 +465,7 @@ export function renderNode({
           motionClassById,
           exitRecordsByParent,
           activeScreen,
+          sortControl,
         }),
       );
     case "card":
@@ -444,6 +485,7 @@ export function renderNode({
           motionClassById,
           exitRecordsByParent,
           activeScreen,
+          sortControl,
         }),
       );
     case "form":
@@ -463,6 +505,7 @@ export function renderNode({
           motionClassById,
           exitRecordsByParent,
           activeScreen,
+          sortControl,
         }),
       );
     case "button":

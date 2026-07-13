@@ -97,6 +97,7 @@ export interface TableColumn {
   readonly key: string;
   readonly label: string;
   readonly align?: TextAlign;
+  readonly sortable?: boolean;
 }
 
 export type TableCell = string | number | boolean;
