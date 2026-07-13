@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import type { DataWarehouse, NodeId } from "@facet/core";
+import type { DataWarehouse, NodeId, SortDirection } from "@facet/core";
 import type { ResolvedTheme } from "./theme.js";
 
 export interface PressableRenderArgs<Press> {
@@ -32,5 +32,20 @@ export interface BrickRenderContext<Press> {
   readonly classifyPress: (value: unknown) => Press | null;
   readonly dispatch: (press: Press) => void;
   readonly navigate: (to: string) => void;
+  /**
+   * The browser-private sort view-state for THIS node (`nodeId`), or `undefined`
+   * when the visitor has not sorted it. READ-ONLY: `renderTable` applies it to
+   * the freshly-resolved rows as a pure reorder; it never mutates `data`/`rows`
+   * (invariant #6, server stays sole writer). Absent on the inert clone so a
+   * mid-transition previous screen shows natural order.
+   */
+  readonly sort?: { readonly column: string; readonly direction: SortDirection } | undefined;
+  /**
+   * Cycles this table's sort for a column (asc → desc → unsorted), threaded from
+   * `StageRenderer` exactly like `navigate`. VIEW-STATE ONLY — it fires no
+   * `onRecord`/`onAction`/transport; the sort rides only the `view` snapshot.
+   * `undefined` on the inert clone so it never writes sort state.
+   */
+  readonly onHeaderSort?: ((column: string) => void) | undefined;
   readonly renderPressable: (args: PressableRenderArgs<Press>) => ReactNode;
 }

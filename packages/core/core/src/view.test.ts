@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { MAX_VIEW_TOGGLED_KEYS, sanitizeView, SCHEMES, VIEWPORTS } from "./view.js";
+import {
+  MAX_VIEW_SORT_KEYS,
+  MAX_VIEW_TOGGLED_KEYS,
+  sanitizeView,
+  SCHEMES,
+  SORT_DIRECTIONS,
+  VIEWPORTS,
+} from "./view.js";
 import type { ViewSnapshot } from "./view.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 
@@ -91,5 +98,95 @@ describe("sanitizeView", () => {
     expect(sanitizeView({ screen: 42, viewport: "huge", scheme: "sepia" })).toBeUndefined();
     expect(sanitizeView({ toggled: {} })).toBeUndefined();
     expect(sanitizeView({ toggled: { a: "nope" } })).toBeUndefined();
+  });
+});
+
+describe("sanitizeView sort", () => {
+  it("exports the closed sort-direction enum and the sort-entry cap", () => {
+    expect(SORT_DIRECTIONS).toEqual(["asc", "desc"]);
+    expect(MAX_VIEW_SORT_KEYS).toBe(256);
+  });
+
+  it("keeps a valid sort map keyed by table node id", () => {
+    const snapshot: ViewSnapshot = {
+      screen: "orders",
+      sort: {
+        "table-a": { column: "created", direction: "desc" },
+        "table-b": { column: "name", direction: "asc" },
+      },
+    };
+    expect(sanitizeView(snapshot)).toEqual(snapshot);
+  });
+
+  it("keeps only entries at exactly the key/column length cap", () => {
+    const key = "k".repeat(MAX_FIELD_VALUE_CHARS);
+    const column = "c".repeat(MAX_FIELD_VALUE_CHARS);
+    expect(sanitizeView({ sort: { [key]: { column, direction: "asc" } } })).toEqual({
+      sort: { [key]: { column, direction: "asc" } },
+    });
+  });
+
+  it("drops entries with an over-cap key, a bad column, or a bad direction", () => {
+    const overCapKey = "k".repeat(MAX_FIELD_VALUE_CHARS + 1);
+    const overCapColumn = "c".repeat(MAX_FIELD_VALUE_CHARS + 1);
+    expect(
+      sanitizeView({
+        sort: {
+          ok: { column: "name", direction: "asc" },
+          [overCapKey]: { column: "name", direction: "asc" },
+          badColumnType: { column: 7, direction: "asc" },
+          overCapColumn: { column: overCapColumn, direction: "asc" },
+          badDirection: { column: "name", direction: "sideways" },
+          missingDirection: { column: "name" },
+          missingColumn: { direction: "asc" },
+        },
+      }),
+    ).toEqual({ sort: { ok: { column: "name", direction: "asc" } } });
+  });
+
+  it("drops non-plain-object entry values (null, nested, array, scalar) and a non-record sort", () => {
+    expect(
+      sanitizeView({
+        sort: {
+          ok: { column: "name", direction: "desc" },
+          nullValue: null,
+          scalar: "asc",
+          arr: ["name", "asc"],
+          nested: { column: { deep: "name" }, direction: "asc" },
+        },
+      }),
+    ).toEqual({ sort: { ok: { column: "name", direction: "desc" } } });
+    expect(sanitizeView({ screen: "s", sort: ["asc"] })).toEqual({ screen: "s" });
+    expect(sanitizeView({ screen: "s", sort: "asc" })).toEqual({ screen: "s" });
+  });
+
+  it("clamps over-cap sort to the LAST entries in insertion order (drop-oldest)", () => {
+    const sort: Record<string, unknown> = {};
+    for (let i = 0; i < MAX_VIEW_SORT_KEYS + 10; i += 1) {
+      sort[`table-${i}`] = { column: "name", direction: "asc" };
+    }
+    const cleaned = sanitizeView({ sort });
+    const keys = Object.keys(cleaned?.sort ?? {});
+    expect(keys).toHaveLength(MAX_VIEW_SORT_KEYS);
+    expect(keys[0]).toBe("table-10");
+    expect(keys.at(-1)).toBe(`table-${MAX_VIEW_SORT_KEYS + 9}`);
+  });
+
+  it("never recurses or throws on a hostile/cyclic sort payload", () => {
+    const cyclic: Record<string, unknown> = { screen: "home" };
+    const entry: Record<string, unknown> = { column: "name", direction: "asc" };
+    entry["self"] = entry;
+    cyclic["sort"] = { good: entry, bad: cyclic };
+    expect(() => sanitizeView(cyclic)).not.toThrow();
+    expect(sanitizeView(cyclic)).toEqual({
+      screen: "home",
+      sort: { good: { column: "name", direction: "asc" } },
+    });
+  });
+
+  it("omits sort entirely when nothing valid remains", () => {
+    expect(sanitizeView({ sort: {} })).toBeUndefined();
+    expect(sanitizeView({ sort: { a: { column: "name", direction: "nope" } } })).toBeUndefined();
+    expect(sanitizeView({ screen: "s", sort: { a: null } })).toEqual({ screen: "s" });
   });
 });

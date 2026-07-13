@@ -40,6 +40,14 @@ function normalizeLegacyEvent(event: unknown): unknown {
 const MAX_VIEW_TOGGLES_RENDERED = 16;
 
 /**
+ * How many `sort` entries the inert view line renders inline. The boundary
+ * sanitizer already caps `sort` at `MAX_VIEW_SORT_KEYS`; this is a second,
+ * prompt-side bound so the line stays short regardless of upstream (mirrors
+ * `MAX_VIEW_TOGGLES_RENDERED`).
+ */
+const MAX_VIEW_SORTS_RENDERED = 16;
+
+/**
  * Render the visitor's browser-owned `view` snapshot as ONE bounded, inert prompt
  * line (or "" when nothing renderable is present). Pure descriptive text the agent
  * reads to target its next patch at the screen the visitor is actually on — it is
@@ -67,6 +75,23 @@ function describeView(view: unknown, revisit: boolean): string {
     // inert line into the surrounding prompt.
     if (shown.length > 0) parts.push(`shown: ${shown.map((k) => JSON.stringify(k)).join(", ")}`);
     if (hidden.length > 0) parts.push(`hidden: ${hidden.map((k) => JSON.stringify(k)).join(", ")}`);
+  }
+
+  const sort = view["sort"];
+  if (isRecord(sort)) {
+    let rendered = 0;
+    for (const [table, entry] of Object.entries(sort)) {
+      if (rendered >= MAX_VIEW_SORTS_RENDERED) break;
+      if (!isRecord(entry)) continue;
+      const column = entry["column"];
+      const direction = entry["direction"];
+      if (typeof column !== "string") continue;
+      if (direction !== "asc" && direction !== "desc") continue;
+      // Table id and column are visitor-controlled; escape each (as `screen`/
+      // `toggled` keys are) so attacker text cannot break out of this inert line.
+      parts.push(`sorted: ${JSON.stringify(table)} by ${JSON.stringify(column)} ${direction}`);
+      rendered += 1;
+    }
   }
 
   const device: string[] = [];

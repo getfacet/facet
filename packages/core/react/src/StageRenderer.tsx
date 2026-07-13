@@ -7,6 +7,7 @@ import type {
   FacetTree,
   FieldValues,
   NodeId,
+  SortDirection,
   ViewSnapshot,
 } from "@facet/core";
 import { captureViewSnapshot, useViewportScheme } from "./view-snapshot.js";
@@ -112,6 +113,15 @@ export function StageRenderer({
   const [visibilityOverrides, setVisibilityOverrides] = useState<ReadonlyMap<NodeId, boolean>>(
     () => new Map(),
   );
+  // The THIRD browser-private view-state holder (sibling of currentScreen /
+  // visibilityOverrides): a per-table-node sort override. A Map, not a plain
+  // object, for the same prototype-safety reason as visibilityOverrides — a node
+  // id like "toString" must never resolve through Object.prototype. Mutated ONLY
+  // in `handleHeaderSort` below (no server/patch path can reach it), and the sort
+  // rides only the read-only `view` snapshot — it fires NO transport/agent event.
+  const [sortOverrides, setSortOverrides] = useState<
+    ReadonlyMap<NodeId, { column: string; direction: SortDirection }>
+  >(() => new Map());
   // Scope handle for collectFieldValues — reads stay inside THIS renderer
   // instance so two stages on one page never cross-read each other's inputs.
   const stageRootRef = useRef<HTMLDivElement>(null);
@@ -146,9 +156,15 @@ export function StageRenderer({
       return;
     }
     onViewSnapshot(
-      captureViewSnapshot(currentScreen ?? undefined, visibilityOverrides, viewport, scheme),
+      captureViewSnapshot(
+        currentScreen ?? undefined,
+        visibilityOverrides,
+        viewport,
+        scheme,
+        sortOverrides,
+      ),
     );
-  }, [onViewSnapshot, currentScreen, visibilityOverrides, viewport, scheme]);
+  }, [onViewSnapshot, currentScreen, visibilityOverrides, viewport, scheme, sortOverrides]);
 
   // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
   // the unvalidated CLI path — renders as nothing, never a crash.
@@ -220,6 +236,27 @@ export function StageRenderer({
     }
   };
 
+  // Cycle a table's local sort for one column: asc → desc → unsorted (entry
+  // removed). CRITICAL (RISK-INV-2): this is pure browser VIEW-STATE — it fires
+  // NO recordLocalTap/onRecord/onAction and NO transport, unlike navigate/toggle.
+  // The sort rides only the next `view` snapshot. The functional updater form
+  // makes rapid clicks deterministic (last click wins), and a Map keeps node-id
+  // keys off the prototype chain.
+  const handleHeaderSort = (tableId: NodeId, column: string): void => {
+    setSortOverrides((prev) => {
+      const current = prev.get(tableId);
+      const next = new Map(prev);
+      if (current === undefined || current.column !== column) {
+        next.set(tableId, { column, direction: "asc" });
+      } else if (current.direction === "asc") {
+        next.set(tableId, { column, direction: "desc" });
+      } else {
+        next.delete(tableId); // desc → unsorted
+      }
+      return next;
+    });
+  };
+
   // Appear detection (Decision 4, folded into the render walk in review r7):
   // `renderNode` flips `appearSeen.used` when a REACHABLE box renders with an
   // appear class, so the one-per-stage <style> is gated on the SAME
@@ -255,6 +292,10 @@ export function StageRenderer({
     motionClassById: motionPlan.motionClassById,
     exitRecordsByParent: motionPlan.exitRecordsByParent,
     activeScreen,
+    // The live path carries the sort read map + the cycle setter. The inert
+    // previous-screen clone below deliberately omits this, so it reads no sort and
+    // never becomes a second sort writer mid-transition (RISK-INV-5).
+    sortControl: { overrides: sortOverrides, onSort: handleHeaderSort },
   });
   const rootExitNodes = motionPlan.rootExitRecords.map((record) => (
     <Fragment key={`exit:${record.id}`}>

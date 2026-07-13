@@ -113,10 +113,13 @@ The v1 intrinsic components are still just typed stage data:
 
 Only `box`, `section`, `card`, and `form` are containers in v1. Tables, charts,
 search, and filter bars are display/control-only; there is no client fetch,
-sort/filter engine, data-source/resolver/query binding, expression language, or
-inline script. (Binding a data-bearing node to the in-tree `data` warehouse by
-NAME via `from` is allowed and is not a data source — see "Data warehouse +
-bindings"; it stays agent-authored declared content.) Overlay-class
+agent-authored sort/filter engine, data-source/resolver/query binding, expression
+language, or inline script. (Binding a data-bearing node to the in-tree `data`
+warehouse by NAME via `from` is allowed and is not a data source — see "Data
+warehouse + bindings"; it stays agent-authored declared content. A table column
+opted into `sortable` reorders locally, but the comparator is a closed
+renderer-owned mechanism, not a sort engine the agent writes — see "Local table
+sort".) Overlay-class
 modal/drawer/popover components are intentionally out of v1 so normal-flow layout
 stays the invariant. The one sanctioned overlap is a `box`'s `backdrop` — a
 bounded two-layer background behind normal-flow content (see "Landing-grade
@@ -156,7 +159,9 @@ renderer owns that view-state (which screen is showing, per-node visibility)
 while the server stays the only writer of stage content, so the two never
 contend. Pre-draw the reachable screens (how deep is the agent's call) and let
 the browser flip between them for free; reserve `kind:"agent"` for anything that
-needs new reasoning.
+needs new reasoning. Clicking a `sortable` table column header is the same shape
+of local view-state (a per-table sort spec the renderer applies at render time —
+see "Local table sort"): no event kind, no transport, no agent turn.
 
 Style values are **tokens** defined in `packages/core/core/src/tokens.ts`
 (`Space`, `FontFamily`, `FontSize`, `Color`, `Radius`, …). Token names are the
@@ -324,7 +329,9 @@ once. A dataset is a closed `Array<Record<string, string | number | boolean>>`
 empty (never throws), and fills in when a later patch adds the data. This is
 data as **declared, agent-authored content** (UI-OUT), NOT a fetch/resolver/query
 — Facet adds no client data source, no binding-expression language, and no
-client-side sort/filter engine (local sort/filter is a deliberate follow-up).
+agent-authored sort/filter engine. The one built-in local view operation is table
+sort (opt-in per column via `sortable`; see "Local table sort" below); local
+*filter* is still a deliberate follow-up.
 `data` is sanitized inside `validateTree`, so the one pure `applyPatch`/fold keeps
 it identical on server and client; the single `resolveNodeData` helper does the
 name→dataset projection for BOTH the "shows content?" gate and the renderer, so
@@ -332,6 +339,21 @@ the two never diverge. Deliberately unlike A2UI (which converged on the same
 structure↔data split), Facet keeps the schema closed, travels only RFC-6902
 deltas rather than whole-model snapshots, stays server-sole-writer (no two-way
 binding), and ships no repeater/template/`${…}` expression layer.
+
+**Local table sort.** A `table` column marked `sortable: true` lets the visitor
+click its header to reorder the rows locally — ascending → descending → unsorted
+on repeat clicks — with **no agent turn and no transport**, the same
+two-writers-safe discipline as `navigate`/`toggle`. The sort is pure browser
+**view-state** (a per-table `{ column, direction }` spec keyed by node id, held
+in `StageRenderer` beside `screen`/`toggled`); the renderer applies a closed,
+renderer-owned, TOTAL, STABLE comparator (`applySort`: numeric < string <
+boolean < empty, ties by original index) to the freshly-resolved+capped rows at
+render time. The browser never writes `data`/`rows`, so the server stays the sole
+content writer and a later `data` patch simply re-applies the current spec to the
+new rows (no drift, no cached sorted array). The agent authors no sort logic — only
+the `sortable` flag — and the current spec rides the visitor's next event on the
+`view` snapshot (below), so the brain can see how they sorted. Filtering is
+deliberately deferred: it would open a predicate/expression surface v1 avoids.
 
 **Screens** are named roots INTO the same flat `nodes` map (not separate trees),
 so every `/nodes/<id>` patch path, `applyPatch`, and existing consumer keeps
@@ -576,12 +598,14 @@ per-boot agent token, never exposing `/agent/*`.
 
 The **view snapshot** is the read-side counterpart of the field snapshot: the
 same browser view-state Facet already resolves locally (which `screen` is
-showing, which nodes are `toggled`) plus a `viewport` size class and color
-`scheme`, sampled at send time and attached as an optional `view` on the
-forwarded event — no extra round-trip (`navigate`/`toggle`/resize/scheme-change
-never send on their own). The single pure `sanitizeView` in `@facet/core` is the
-one bounds source: it drops unknown enum values, length-caps `screen`/keys, and
-caps `toggled` at `MAX_VIEW_TOGGLED_KEYS`; every untrusted boundary that accepts
+showing, which nodes are `toggled`, and each sorted table's `sort` spec) plus a
+`viewport` size class and color `scheme`, sampled at send time and attached as an
+optional `view` on the forwarded event — no extra round-trip
+(`navigate`/`toggle`/sort/resize/scheme-change never send on their own). The
+single pure `sanitizeView` in `@facet/core` is the one bounds source: it drops
+unknown enum values (including a `sort` direction outside the closed
+`SORT_DIRECTIONS`), length-caps `screen`/keys, and caps `toggled` at
+`MAX_VIEW_TOGGLED_KEYS` and `sort` at `MAX_VIEW_SORT_KEYS` (drop-oldest); every untrusted boundary that accepts
 `view` — `@facet/server`'s `/event` and `/record`, and the `@facet/ag-ui`
 normalizers — clamps through it, so a hostile `view` is bounded (never rejecting
 the event) before it reaches the Sink or the agent. `view` is UI-IN inert data:

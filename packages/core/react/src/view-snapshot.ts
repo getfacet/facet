@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { NodeId, Scheme, ViewSnapshot, Viewport } from "@facet/core";
+import type { NodeId, Scheme, SortDirection, ViewSnapshot, Viewport } from "@facet/core";
 
 /**
  * Renderer-owned viewport breakpoints. Report-only: they decide which closed
@@ -16,21 +16,26 @@ const DARK_QUERY = "(prefers-color-scheme: dark)";
 
 /**
  * Pure builder for the browser's read-only view snapshot. Maps the renderer's
- * private `currentScreen`/`visibilityOverrides` (plus detected device classes)
- * into the wire-shape `ViewSnapshot`, dropping empty parts so an untouched page
- * reports `{}`. `visibilityOverrides` stores effective visibility (`true` =
- * shown), which becomes the `"shown"`/`"hidden"` value per node id. Never reads
- * `window` or storage — the caller supplies everything.
+ * private `currentScreen`/`visibilityOverrides`/`sortOverrides` (plus detected
+ * device classes) into the wire-shape `ViewSnapshot`, dropping empty parts so an
+ * untouched page reports `{}`. `visibilityOverrides` stores effective visibility
+ * (`true` = shown), which becomes the `"shown"`/`"hidden"` value per node id;
+ * `sortOverrides` maps a locally-sorted table node id to its active
+ * column/direction, emitted as `sort` (omitted when the holder is empty, exactly
+ * like `toggled`). Never reads `window` or storage — the caller supplies
+ * everything.
  */
 export function captureViewSnapshot(
   currentScreen: string | undefined,
   visibilityOverrides: ReadonlyMap<NodeId, boolean>,
   viewport?: Viewport,
   scheme?: Scheme,
+  sortOverrides?: ReadonlyMap<NodeId, { column: string; direction: SortDirection }>,
 ): ViewSnapshot {
   const snapshot: {
     screen?: string;
     toggled?: Record<string, "shown" | "hidden">;
+    sort?: Record<string, { column: string; direction: SortDirection }>;
     viewport?: Viewport;
     scheme?: Scheme;
   } = {};
@@ -47,6 +52,18 @@ export function captureViewSnapshot(
   }
   if (hasToggled) {
     snapshot.toggled = toggled;
+  }
+
+  if (sortOverrides !== undefined) {
+    const sort: Record<string, { column: string; direction: SortDirection }> = {};
+    let hasSort = false;
+    for (const [id, spec] of sortOverrides) {
+      sort[id] = { column: spec.column, direction: spec.direction };
+      hasSort = true;
+    }
+    if (hasSort) {
+      snapshot.sort = sort;
+    }
   }
 
   if (viewport !== undefined) {

@@ -384,18 +384,35 @@ function capArray<T>(
 
 function tableColumns(value: unknown, id: string, issues: IssueSink) {
   if (!Array.isArray(value)) return [];
-  const columns: { key: string; label: string; align?: "start" | "center" | "end" }[] = [];
+  const columns: {
+    key: string;
+    label: string;
+    align?: "start" | "center" | "end";
+    sortable?: boolean;
+  }[] = [];
   for (const raw of capArray(value, MAX_TABLE_COLUMNS, id, "columns", issues)) {
     if (!isPlainObject(raw)) continue;
     const key = typeof raw.key === "string" && SLOT_NAME_RE.test(raw.key) ? raw.key : undefined;
     const label = boundedString(raw.label, id, "column label", MAX_NODE_LABEL_CHARS, issues);
     if (key === undefined || label === undefined) continue;
-    const column: { key: string; label: string; align?: "start" | "center" | "end" } = {
+    const column: {
+      key: string;
+      label: string;
+      align?: "start" | "center" | "end";
+      sortable?: boolean;
+    } = {
       key,
       label,
     };
     const align = tokenValue<"start" | "center" | "end">(raw.align, TEXT_ALIGNS);
     if (align !== undefined) column.align = align;
+    if (raw.sortable !== undefined) {
+      if (typeof raw.sortable === "boolean") column.sortable = raw.sortable;
+      else
+        issues.push(
+          `node "${printableKey(id)}": non-boolean sortable ${printableValue(raw.sortable)} dropped`,
+        );
+    }
     columns.push(column);
   }
   return columns;

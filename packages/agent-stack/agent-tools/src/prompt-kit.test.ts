@@ -334,6 +334,16 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(system).toContain("visitor's current view");
   });
 
+  it("teaches the per-column sortable opt-in and the view.sort report (DC-005)", () => {
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+    // A table column may opt into local sorting with sortable: true (no agent turn).
+    expect(system).toMatch(/sortable/i);
+    expect(system).toMatch(/sortable: true/);
+    expect(system).toMatch(/no agent turn|without.*agent/i);
+    // The view line teaches that an event's view.sort reports the visitor's sort.
+    expect(system).toMatch(/view\.sort/);
+  });
+
   it("teaches data-warehouse authoring and from binding without fetch or a DSL", () => {
     const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
     // The data-binding section is composed into the system prompt (not dead).

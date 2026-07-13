@@ -1,0 +1,299 @@
+# Execution Manifest: Local Table Sort (v1)
+#
+# Keep synchronized with specs/dev-specs/local-table-sort.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "local-table-sort"
+spec_path: "specs/dev-specs/local-table-sort.md"
+context_evidence_path: "specs/context/local-table-sort.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; playground buildable; no live server/bridge needed (all WU red_checks are vitest/jsdom)"
+    owner: "main-agent"
+    verification: "pnpm --filter @facet/playground build"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "core — TableColumn.sortable flag + validation"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add the additive sortable?: boolean field to TableColumn and validate it bounded-boolean with drop-with-issue on a non-boolean."
+    module_shape:
+      decision: "preserve"
+      rationale: "Extends the existing TableColumn interface + tableColumns validator in place; the closed-field/drop-with-issue pattern already lives here (align precedent). No new module."
+    files:
+      - path: "packages/core/core/src/component-nodes.ts"
+        change_type: "update"
+        purpose: "Add readonly sortable?: boolean to TableColumn."
+      - path: "packages/core/core/src/classic-component-validation.ts"
+        change_type: "update"
+        purpose: "tableColumns reads sortable bounded-boolean, drop-with-issue on non-boolean; isRenderableTableColumn untouched."
+      - path: "packages/core/core/src/component-validation.test.ts"
+        change_type: "update"
+        purpose: "Assert boolean sortable retained and non-boolean dropped-with-issue."
+    depends_on: []
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/component-validation.test.ts -t 'sortable'"
+      target: "packages/core/core/src/component-validation.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/component-validation.test.ts -t 'sortable'"
+      - "pnpm exec vitest run packages/core/core/src/component-validation.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/component-validation.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "sortable retained as boolean; non-boolean dropped-with-issue; isRenderableTableColumn untouched"
+      - "No regression: packages/core/core/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "core — ViewSnapshot.sort + SortDirection + sanitizeView"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add the closed SortDirection enum and an optional, capped, sanitized sort map to ViewSnapshot, mirroring the toggled bound."
+    module_shape:
+      decision: "preserve"
+      rationale: "Extends view.ts in place: ViewSnapshot is the single view-state type and sanitizeView is the single bounds source (#36). Adding a sort clause mirrors the existing toggled clause; no new module."
+    files:
+      - path: "packages/core/core/src/view.ts"
+        change_type: "update"
+        purpose: "Add SortDirection closed enum, ViewSnapshot.sort? map, MAX_VIEW_SORT_KEYS, and a sanitizeView sort clause (bounded key/column, closed direction, capped oldest-dropped, in the existing try/catch)."
+      - path: "packages/core/core/src/view.test.ts"
+        change_type: "update"
+        purpose: "Assert sort sanitize: valid kept, invalid dropped, cap enforced, absent omitted, never throws."
+    depends_on: []
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/view.test.ts -t 'sort'"
+      target: "packages/core/core/src/view.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/view.test.ts -t 'sort'"
+      - "pnpm exec vitest run packages/core/core/src/view.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/view.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "sort sanitized/capped/bounded, never throws; SortDirection closed enum exported through the barrel"
+      - "No regression: packages/core/core/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3a"
+    title: "react — pure sort comparator + captureViewSnapshot emit"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Add a renderer-owned closed total stable comparator/apply helper and make captureViewSnapshot emit the current sort map."
+    module_shape:
+      decision: "sibling-helper"
+      rationale: "table-sort.ts is a new pure sibling module in the react src (private, imported by brick-renderer-layout in WU-3b) with its own colocated test — keeps the comparator a pure total function isolated from the renderer wiring. view-snapshot.ts extended in place."
+    files:
+      - path: "packages/core/react/src/table-sort.ts"
+        change_type: "add"
+        purpose: "Pure total stable comparator (numeric/string/boolean/empty + mixed; fixed type-rank + original-index tie-break) and a guarded applySort(rows, spec, columns) that returns natural order for a non-sortable/absent/malformed column."
+      - path: "packages/core/react/src/table-sort.test.ts"
+        change_type: "add"
+        purpose: "Comparator totality/stability, mixed-type + empty cells never throw, invalid-spec → natural order."
+      - path: "packages/core/react/src/view-snapshot.ts"
+        change_type: "update"
+        purpose: "Extend captureViewSnapshot signature to accept the sort holder and emit sort (omit when empty)."
+      - path: "packages/core/react/src/view-snapshot.test.ts"
+        change_type: "update"
+        purpose: "Assert sort emitted when present, omitted when empty."
+    depends_on: ["WU-1", "WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/table-sort.test.ts"
+      target: "packages/core/react/src/table-sort.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/table-sort.test.ts"
+      - "pnpm exec vitest run packages/core/react/src/view-snapshot.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/table-sort.test.ts"
+        covers_dc: ["DC-004"]
+        action: "new"
+      - type: "unit"
+        target: "packages/core/react/src/view-snapshot.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "comparator is total + stable + never throws; captureViewSnapshot emits/omits sort correctly"
+      - "No regression: packages/core/react/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3b"
+    title: "react — sort view-state holder, header-click wiring, renderTable"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Add the third StageRenderer view-state holder + header-click setter, thread it through BrickRenderContext to renderTable, make sortable headers clickable with the cycle + comparator, and publish the sort on the view snapshot — firing zero transport/agent events."
+    module_shape:
+      decision: "preserve"
+      rationale: "Extends the existing StageRenderer view-state family (third useState + setter), the BrickRenderContext threading (like navigate), and renderTable in place. No new module — wiring belongs with the existing holders/context."
+    files:
+      - path: "packages/core/react/src/brick-renderer-types.ts"
+        change_type: "update"
+        purpose: "Thread the current-sort read + a header-click dispatcher through BrickRenderContext (like navigate); no-op when inert."
+      - path: "packages/core/react/src/brick-renderer-layout.tsx"
+        change_type: "update"
+        purpose: "renderTable: sortable <th> clickable with an inline direction glyph; apply applySort to the resolved+capped rows (after line 312); no cache; unsorted ⇒ byte-identical output."
+      - path: "packages/core/react/src/StageRenderer.tsx"
+        change_type: "update"
+        purpose: "Add the Map<NodeId,{column,direction}> holder + header-click setter (cycle asc→desc→unsorted; NO onRecord/onAction/transport); pass setter/read into the render context; add the holder to the publish useEffect dep array and the captureViewSnapshot call."
+      - path: "packages/core/react/src/StageRenderer.interaction.test.tsx"
+        change_type: "update"
+        purpose: "click→sorted DOM order, cycle, different-header switch, invalid-spec fallback, re-apply after a data patch, and ZERO transport.record/onRecord/onAction/event."
+    depends_on: ["WU-1", "WU-2", "WU-3a"]
+    parallel_group: "serial-c"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/StageRenderer.interaction.test.tsx -t 'sort'"
+      target: "packages/core/react/src/StageRenderer.interaction.test.tsx"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/StageRenderer.interaction.test.tsx -t 'sort'"
+      - "pnpm exec vitest run packages/core/react/src/StageRenderer.interaction.test.tsx"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/StageRenderer.interaction.test.tsx"
+        covers_dc: ["DC-001", "DC-002", "DC-003", "DC-004", "DC-006", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "click sorts locally with ZERO transport/agent events; cycle + switch correct; invalid-spec → natural order; re-apply after data patch; no-sortable output byte-identical; inert dispatcher is a no-op"
+      - "No regression: packages/core/react/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "agent — prompt/observation surface (sortable + view.sort)"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools", "@facet/reference-agent"]
+    objective: "Teach the LLM-facing prompt-kit and the reference-agent describeView line about the per-column sortable opt-in and the current view.sort."
+    module_shape:
+      decision: "preserve"
+      rationale: "Additive prompt/observation text in the existing prompt-kit constant and describeView renderer; no typed contract or new module. Two packages because reference-agent's describeView is the agent-visible half and prompt-kit is the shared guidance half."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.ts"
+        change_type: "update"
+        purpose: "Column guidance mentions the sortable opt-in; the view line mentions view.sort."
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        change_type: "update"
+        purpose: "Assert the guidance mentions sortable/sort."
+      - path: "packages/agent-stack/reference-agent/src/prompt/messages.ts"
+        change_type: "update"
+        purpose: "describeView renders the current sort inline, escaped like screen/toggled, bounded, never throws."
+      - path: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "Assert describeView reports a sort and omits when absent."
+    depends_on: ["WU-2"]
+    parallel_group: "par-2"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/agent-tools/src/prompt-kit.test.ts -t 'sort'"
+      target: "packages/agent-stack/reference-agent/src/prompt.test.ts + packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt.test.ts -t 'sort'"
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src packages/agent-stack/reference-agent/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        covers_dc: ["DC-005"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "prompt-kit mentions sortable/view.sort; describeView reports the sort inline (escaped), omits when absent, never throws"
+      - "No regression: packages/agent-stack/agent-tools/src, packages/agent-stack/reference-agent/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"

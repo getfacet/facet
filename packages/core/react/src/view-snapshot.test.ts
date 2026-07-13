@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import type { NodeId } from "@facet/core";
+import type { NodeId, SortDirection } from "@facet/core";
 import { captureViewSnapshot, useViewportScheme } from "./view-snapshot.js";
 
 afterEach(cleanup);
@@ -58,6 +58,35 @@ describe("captureViewSnapshot", () => {
   it("keeps toggled alone when only overrides exist (no viewport/scheme)", () => {
     expect(captureViewSnapshot(undefined, new Map<NodeId, boolean>([["a", true]]))).toEqual({
       toggled: { a: "shown" },
+    });
+  });
+
+  it("emits sort from the holder and omits it when the holder is empty", () => {
+    const sort = new Map<NodeId, { column: string; direction: SortDirection }>([
+      ["orders", { column: "total", direction: "desc" }],
+      ["people", { column: "name", direction: "asc" }],
+    ]);
+    expect(captureViewSnapshot(undefined, new Map(), undefined, undefined, sort)).toEqual({
+      sort: {
+        orders: { column: "total", direction: "desc" },
+        people: { column: "name", direction: "asc" },
+      },
+    });
+    // Empty holder ⇒ sort omitted entirely.
+    expect(captureViewSnapshot(undefined, new Map(), undefined, undefined, new Map())).toEqual({});
+  });
+
+  it("carries sort alongside screen/toggled/viewport/scheme", () => {
+    const overrides = new Map<NodeId, boolean>([["menu", false]]);
+    const sort = new Map<NodeId, { column: string; direction: SortDirection }>([
+      ["t1", { column: "age", direction: "asc" }],
+    ]);
+    expect(captureViewSnapshot("home", overrides, "wide", "light", sort)).toEqual({
+      screen: "home",
+      toggled: { menu: "hidden" },
+      viewport: "wide",
+      scheme: "light",
+      sort: { t1: { column: "age", direction: "asc" } },
     });
   });
 });

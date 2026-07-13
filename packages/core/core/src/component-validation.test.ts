@@ -214,3 +214,76 @@ describe("sanitizeComponentNode", () => {
     );
   });
 });
+
+describe("sortable table columns", () => {
+  it("retains a boolean sortable flag on a validated column", () => {
+    const issues: string[] = [];
+    const node = sanitizeComponentNode(
+      "sortableTable",
+      {
+        type: "table",
+        columns: [
+          { key: "name", label: "Name", sortable: true },
+          { key: "age", label: "Age", sortable: false },
+        ],
+        rows: [{ name: "Facet", age: 1 }],
+      },
+      issues,
+    );
+
+    if (node?.type !== "table") throw new Error("expected table node");
+    expect(node.columns[0]).toMatchObject({ key: "name", label: "Name", sortable: true });
+    expect(node.columns[1]).toMatchObject({ key: "age", label: "Age", sortable: false });
+    expect(issues).toEqual([]);
+  });
+
+  it("drops a non-boolean sortable with an issue and still renders the column", () => {
+    const badValues: readonly unknown[] = ["yes", 1, {}, null];
+    for (const bad of badValues) {
+      const issues: string[] = [];
+      const node = sanitizeComponentNode(
+        "badSortable",
+        {
+          type: "table",
+          columns: [{ key: "name", label: "Name", sortable: bad }],
+          rows: [{ name: "Facet" }],
+        },
+        issues,
+      );
+
+      if (node?.type !== "table") throw new Error("expected table node");
+      expect(node.columns).toHaveLength(1);
+      expect(node.columns[0]).toMatchObject({ key: "name", label: "Name" });
+      expect(node.columns[0]).not.toHaveProperty("sortable");
+      expect(issues.some((issue) => issue.includes("sortable"))).toBe(true);
+    }
+  });
+
+  it("omits sortable when absent and never throws on a malformed flag", () => {
+    expect(() =>
+      validateTree({
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["t"] },
+          t: {
+            id: "t",
+            type: "table",
+            columns: [{ key: "name", label: "Name", sortable: "bogus" }],
+            rows: [{ name: "Facet" }],
+          },
+        },
+      }),
+    ).not.toThrow();
+
+    const issues: string[] = [];
+    const node = sanitizeComponentNode(
+      "plainTable",
+      { type: "table", columns: [{ key: "name", label: "Name" }], rows: [] },
+      issues,
+    );
+
+    if (node?.type !== "table") throw new Error("expected table node");
+    expect(node.columns[0]).not.toHaveProperty("sortable");
+    expect(issues).toEqual([]);
+  });
+});

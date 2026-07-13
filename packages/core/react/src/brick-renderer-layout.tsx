@@ -13,6 +13,7 @@ import { boxStyle } from "./theme.js";
 import { resolveRecipePart } from "./recipe-parts.js";
 import { rootContainmentStyle } from "./layout-contract.js";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
+import { applySort } from "./table-sort.js";
 import {
   MAX_INTRINSIC_ITEMS,
   cappedArray,
@@ -296,8 +297,9 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
     (column) => {
       const key = stringValue(safeOwnValue(column, "key"));
       const label = cappedString(safeOwnValue(column, "label"), MAX_NODE_LABEL_CHARS);
+      const sortable = safeOwnValue(column, "sortable") === true;
       return key !== undefined && label !== undefined
-        ? [{ key, label, align: textAlignStyle(safeOwnValue(column, "align")) }]
+        ? [{ key, label, align: textAlignStyle(safeOwnValue(column, "align")), sortable }]
         : [];
     },
   );
@@ -310,6 +312,20 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
   const resolvedRows: readonly TableRow[] =
     node.type === "table" ? resolveNodeData(node, context.data) : [];
   const rows = cappedArray(resolvedRows, MAX_TABLE_ROWS).filter(isObjectRecord);
+  // Local sort is a PURE render-time reorder of the freshly-resolved+capped rows
+  // — never cached, so a later server `data` patch re-resolves and re-sorts
+  // automatically (two-writers coherence). `applySort` returns the SAME array in
+  // natural order for an absent/non-sortable/malformed spec, so an unsorted table
+  // is byte-identical to today. `context.sort` is undefined on the inert clone.
+  // `applySort` keys off `key`/`sortable`, so pass those (the mapped `align` is a
+  // resolved CSS value, not the `TableColumn.align` token).
+  const sortedRows = applySort(
+    // `rows` is a filtered record array; the cells match `TableRow` and `applySort`
+    // is total over any value, so this narrowing assertion is safe.
+    rows as readonly TableRow[],
+    context.sort,
+    columns.map((column) => ({ key: column.key, label: column.label, sortable: column.sortable })),
+  );
   const caption = cappedString(safeOwnValue(node, "caption"), MAX_NODE_LABEL_CHARS);
   const variant = safeOwnValue(node, "variant");
   const recipe = componentRecipe(theme, "table", variant);
@@ -340,24 +356,55 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
         {caption === undefined ? null : <caption style={captionPart.text}>{caption}</caption>}
         <thead>
           <tr style={intrinsicBoxStyle(headerRowPart.box)}>
-            {columns.map((column) => (
-              <th
-                key={column.key}
-                style={{
-                  borderBottom: `1px solid ${theme.color.border}`,
-                  color: theme.color["fg-muted"],
-                  ...intrinsicBoxStyle(headerCellPart.box),
-                  ...(headerCellPart.text ?? {}),
-                  textAlign: column.align,
-                }}
-              >
-                {column.label}
-              </th>
-            ))}
+            {columns.map((column) => {
+              const headerStyle: CSSProperties = {
+                borderBottom: `1px solid ${theme.color.border}`,
+                color: theme.color["fg-muted"],
+                ...intrinsicBoxStyle(headerCellPart.box),
+                ...(headerCellPart.text ?? {}),
+                textAlign: column.align,
+              };
+              // A non-sortable header stays exactly today's plain cell (DC-006).
+              if (!column.sortable) {
+                return (
+                  <th key={column.key} style={headerStyle}>
+                    {column.label}
+                  </th>
+                );
+              }
+              // Inline direction glyph — flow text only, never a positioned caret
+              // (RISK-INV-5). Shown ONLY when THIS column is the active sort, so an
+              // unsorted sortable table keeps byte-identical header text.
+              const activeDirection =
+                context.sort?.column === column.key ? context.sort.direction : undefined;
+              const glyph =
+                activeDirection === "asc" ? " ▲" : activeDirection === "desc" ? " ▼" : "";
+              return (
+                <th
+                  key={column.key}
+                  aria-sort={
+                    activeDirection === "asc"
+                      ? "ascending"
+                      : activeDirection === "desc"
+                        ? "descending"
+                        : "none"
+                  }
+                  onClick={inert ? undefined : () => context.onHeaderSort?.(column.key)}
+                  style={{
+                    ...headerStyle,
+                    cursor: inert ? undefined : "pointer",
+                    userSelect: "none",
+                  }}
+                >
+                  {column.label}
+                  {glyph}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, rowIndex) => (
+          {sortedRows.map((row, rowIndex) => (
             <tr key={String(rowIndex)} style={intrinsicBoxStyle(rowPart.box)}>
               {columns.map((column) => (
                 <td
