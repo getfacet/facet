@@ -1,24 +1,37 @@
 import type { ComponentRecipe, ComponentRecipes, FacetTheme } from "@facet/core";
 import {
   COLOR,
+  COLOR_DARK,
   FONT_FAMILY,
   FONT_SIZE,
   FONT_WEIGHT,
+  GRADIENT,
+  HIGHLIGHT,
   RADIUS,
   RATIO,
+  SCRIM,
   SHADOW,
   SPACE,
+  TRACKING,
 } from "./theme-tokens.js";
 
 export {
   COLOR,
+  COLOR_DARK,
   FONT_FAMILY,
   FONT_SIZE,
   FONT_WEIGHT,
+  GRADIENT,
+  HIGHLIGHT,
+  LEADING,
+  MAX_WIDTH,
+  MIN_HEIGHT,
   RADIUS,
   RATIO,
+  SCRIM,
   SHADOW,
   SPACE,
+  TRACKING,
 } from "./theme-tokens.js";
 
 const recipeVariants = <T extends Record<string, ComponentRecipe>>(variants: T): Readonly<T> =>
@@ -425,5 +438,18 @@ export const DEFAULT_THEME: FacetTheme = {
   radius: RADIUS,
   ratio: RATIO,
   shadow: SHADOW,
+  // Landing-grade groups whose default values are expressible in — and validate
+  // cleanly through — the operator theme document. The dimension groups
+  // (minHeight/maxWidth/leading) are intentionally omitted: their
+  // semantically-correct defaults (`auto`/`50svh`/`65ch`/unitless line-heights)
+  // are not accepted by core's dimension handler (0/px/rem/em only), so they ship
+  // as resolved defaults via @facet/react's DEFAULT_RESOLVED (the MIN_HEIGHT/
+  // MAX_WIDTH/LEADING maps) and resolveTheme falls back to them when a document
+  // omits the group. Operators may still override those groups with px/rem/em.
+  tracking: TRACKING,
+  gradient: GRADIENT,
+  scrim: SCRIM,
+  highlight: HIGHLIGHT,
+  colorDark: COLOR_DARK,
   recipes: RECIPES,
 };

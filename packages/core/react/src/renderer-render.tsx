@@ -10,6 +10,7 @@ import {
 import { appearClass } from "./appear.js";
 import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
 import { MOTION_CLASS_NAMES, composeMotionClassName } from "./motion.js";
+import { backdropHostStyle, scrimStyle } from "./layout-contract.js";
 import { boxStyle, resolveRecipe, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { BoxElement } from "./renderer-hold.js";
@@ -22,6 +23,7 @@ import {
   cappedString,
   childIdsOf,
   isHiddenByDefault,
+  isRenderableMedia,
   styleOf,
 } from "./renderer-safe.js";
 
@@ -283,13 +285,27 @@ export function renderNode({
 
   switch (node.type) {
     case "box": {
+      const boxStyleValue = styleOf(node.style) as
+        { readonly scheme?: unknown; readonly backdropScrim?: unknown } | undefined;
+      // `scheme` (pinned): a bounded, READ-ONLY per-subtree color-map swap.
+      // Children render with the light/dark palette this box selects; it writes
+      // no stage state, cannot leak upward, and a nested `scheme:"light"` island
+      // restores the light map. An unknown/absent scheme leaves the map
+      // unchanged (light default).
+      const scheme = boxStyleValue?.scheme;
+      const childTheme: ResolvedTheme =
+        scheme === "dark"
+          ? { ...theme, color: theme.colorDark }
+          : scheme === "light"
+            ? { ...theme, color: theme.colorLight }
+            : theme;
       const children = renderContainerChildren({
         tree,
         parentId: id,
         childIds: childIdsOf(node),
         onPress,
         visibilityOverrides,
-        theme,
+        theme: childTheme,
         ancestors,
         budget,
         appearSeen,
@@ -299,6 +315,44 @@ export function renderNode({
         exitRecordsByParent,
         activeScreen,
       });
+      // `backdrop` (RISK-INV-2/3/4): resolve a STANDALONE media node id READ-ONLY
+      // to a background COVER layer. It resolves to a MEDIA node ONLY — a
+      // dangling id, a non-media/container node (never recursed into, so a
+      // backdrop→box or self-cycle cannot loop), or an unsafe/blank src paints
+      // NOTHING and never throws. The resolved node DECREMENTS the render budget
+      // so it can't escape MAX_RENDER_NODES. Node-consumption is render-both (no
+      // de-dupe): an id also present in `children` renders in BOTH places.
+      let backdropLayers: ReactNode = null;
+      const backdropId = (node as { readonly backdrop?: unknown }).backdrop;
+      if (typeof backdropId === "string") {
+        const backdropNode = tree.nodes[backdropId];
+        if (backdropNode != null && isRenderableMedia(backdropNode)) {
+          // The backdrop is a followed reference AND a rendered node: count it
+          // against both budgets; the paint decision gates on the render budget
+          // (`left`) so the layer can never exceed MAX_RENDER_NODES.
+          budget.refsLeft -= 1;
+          if (--budget.left < 0) {
+            if (budget.warned !== true) {
+              budget.warned = true;
+              console.warn(
+                `[facet] render budget of ${MAX_RENDER_NODES} nodes exceeded; the excess is truncated`,
+              );
+            }
+          } else {
+            const scrimToken = boxStyleValue?.backdropScrim;
+            const scrimKey = scrimToken === "light" || scrimToken === "dark" ? scrimToken : "none";
+            // Exactly two renderer-synthesized layers: the media cover layer
+            // (the ONLY `position:absolute`, via `renderMediaNode` COVER) and the
+            // scrim tint sibling. Both aria-hidden; flow children render on top.
+            backdropLayers = (
+              <>
+                {renderMediaNode(backdropNode, theme, undefined, false, true)}
+                <div aria-hidden={true} style={scrimStyle(theme.scrim[scrimKey])} />
+              </>
+            );
+          }
+        }
+      }
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.
       const press = classifyPress(node.onPress);
@@ -320,7 +374,14 @@ export function renderNode({
       }
       const variant = (node as { readonly variant?: unknown }).variant;
       const recipe = resolveRecipe(theme, "box", variant);
-      const boxCss = boxStyle({ ...(recipe.box ?? {}), ...(styleOf(node.style) ?? {}) }, theme);
+      // Resolve the box's OWN style against `childTheme` too, so a `scheme:"dark"`
+      // box paints its own `bg`/`border` from the dark palette — a "dark band"
+      // must be dark itself, not just its descendants (else near-white bg + dark
+      // text = illegible). `childTheme` aliases `theme` when no scheme is set.
+      const boxCss = boxStyle(
+        { ...(recipe.box ?? {}), ...(styleOf(node.style) ?? {}) },
+        childTheme,
+      );
       // ONE element type for every box (review r6): a live patch that adds or
       // removes onPress/onHold changes only BoxElement's props, never the
       // element type at this position — so React updates in place instead of
@@ -329,15 +390,20 @@ export function renderNode({
       // Bind the pressed box's id so press AND hold (both route through the ONE
       // dispatch) record a local navigate/toggle with this box as `target`.
       const dispatch = (classified: ClassifiedPress): void => onPress(classified, id);
+      // Only a resolved backdrop wraps the box in the `position:relative` host;
+      // a box with no (or an unresolved) backdrop renders byte-identically to
+      // today's output (`backdropLayers` is null ⇒ no extra element, no host
+      // style). This keeps DC-006 back-compat.
       return (
         <BoxElement
           press={inert ? null : press}
           hold={inert ? null : hold}
           dispatch={dispatch}
           className={composeMotionClassName(appear, motionClassName)}
-          style={boxCss}
+          style={backdropLayers === null ? boxCss : backdropHostStyle(boxCss)}
           inert={inert}
         >
+          {backdropLayers}
           {children}
         </BoxElement>
       );

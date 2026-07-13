@@ -1,12 +1,20 @@
+import type { Color } from "./tokens.js";
 import {
   COLORS,
   FONT_FAMILIES,
   FONT_SIZES,
   FONT_WEIGHTS,
+  GRADIENTS,
+  HIGHLIGHTS,
+  LEADINGS,
+  MAX_WIDTHS,
+  MIN_HEIGHTS,
   RADII,
   RATIOS,
+  SCRIMS,
   SHADOWS,
   SPACES,
+  TRACKINGS,
 } from "./tokens.js";
 import { boundedDescription, isPlainObject, printableKey } from "./issues.js";
 import { IssueList } from "./theme-issues.js";
@@ -14,10 +22,15 @@ import { CONTRAST_PAIRS, MIN_CONTRAST, contrastRatio, parseSrgb } from "./theme-
 import { validateRecipes } from "./theme-recipe-validation.js";
 import {
   FONT_SIZE_PX_RANGE,
+  LEADING_PX_RANGE,
+  MAX_WIDTH_PX_RANGE,
+  MIN_HEIGHT_PX_RANGE,
   RADIUS_PX_RANGE,
   SPACE_PX_RANGE,
+  TRACKING_PX_RANGE,
   dimensionHandler,
   handleColor,
+  handleCssShape,
   handleFontFamily,
   handleRatio,
   handleShadow,
@@ -38,8 +51,48 @@ const KNOWN_KEYS = new Set([
   "radius",
   "ratio",
   "shadow",
+  "minHeight",
+  "maxWidth",
+  "tracking",
+  "leading",
+  "gradient",
+  "scrim",
+  "highlight",
+  "colorDark",
   "recipes",
 ]);
+
+/**
+ * Warn (never reject) on a low-contrast fg/bg pair in a color map. For the light
+ * `color` map, `fillLightDefault` mixes an un-set member with the light default
+ * (so overriding one side still checks). For `colorDark`, core has no dark
+ * default palette, so a pair is checked only when the operator set BOTH members.
+ */
+function checkContrast(
+  map: Partial<Record<Color, string>>,
+  label: string,
+  fillLightDefault: boolean,
+  issues: IssueList,
+): void {
+  for (const [a, b] of CONTRAST_PAIRS) {
+    const oa = map[a];
+    const ob = map[b];
+    if (
+      fillLightDefault ? oa === undefined && ob === undefined : oa === undefined || ob === undefined
+    )
+      continue;
+    const sa = parseSrgb(oa ?? DEFAULT_COLORS[a]);
+    const sb = parseSrgb(ob ?? DEFAULT_COLORS[b]);
+    if (sa === undefined || sb === undefined) continue;
+    const ratio = contrastRatio(sa, sb);
+    if (ratio < MIN_CONTRAST) {
+      issues.push({
+        severity: "warning",
+        message: `low contrast for ${label} (${a}, ${b}): ratio ${ratio.toFixed(2)} is below ${MIN_CONTRAST}`,
+      });
+    }
+  }
+}
 
 /**
  * Validate an untrusted operator theme document. Returns a `FacetTheme` (partial
@@ -70,6 +123,14 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     radius?: Record<string, string>;
     ratio?: Record<string, string>;
     shadow?: Record<string, string>;
+    minHeight?: Record<string, string>;
+    maxWidth?: Record<string, string>;
+    tracking?: Record<string, string>;
+    leading?: Record<string, string>;
+    gradient?: Record<string, string>;
+    scrim?: Record<string, string>;
+    highlight?: Record<string, string>;
+    colorDark?: Record<string, string>;
     recipes?: ComponentRecipes;
   } = { name };
 
@@ -148,6 +209,62 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     const group = validateGroup(input.shadow, SHADOWS, "shadow", handleShadow, issues);
     if (group !== undefined) theme.shadow = group;
   }
+  if (input.minHeight !== undefined) {
+    const group = validateGroup(
+      input.minHeight,
+      MIN_HEIGHTS,
+      "minHeight",
+      dimensionHandler(MIN_HEIGHT_PX_RANGE.lo, MIN_HEIGHT_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.minHeight = group;
+  }
+  if (input.maxWidth !== undefined) {
+    const group = validateGroup(
+      input.maxWidth,
+      MAX_WIDTHS,
+      "maxWidth",
+      dimensionHandler(MAX_WIDTH_PX_RANGE.lo, MAX_WIDTH_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.maxWidth = group;
+  }
+  if (input.tracking !== undefined) {
+    const group = validateGroup(
+      input.tracking,
+      TRACKINGS,
+      "tracking",
+      dimensionHandler(TRACKING_PX_RANGE.lo, TRACKING_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.tracking = group;
+  }
+  if (input.leading !== undefined) {
+    const group = validateGroup(
+      input.leading,
+      LEADINGS,
+      "leading",
+      dimensionHandler(LEADING_PX_RANGE.lo, LEADING_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.leading = group;
+  }
+  if (input.gradient !== undefined) {
+    const group = validateGroup(input.gradient, GRADIENTS, "gradient", handleCssShape, issues);
+    if (group !== undefined) theme.gradient = group;
+  }
+  if (input.scrim !== undefined) {
+    const group = validateGroup(input.scrim, SCRIMS, "scrim", handleCssShape, issues);
+    if (group !== undefined) theme.scrim = group;
+  }
+  if (input.highlight !== undefined) {
+    const group = validateGroup(input.highlight, HIGHLIGHTS, "highlight", handleCssShape, issues);
+    if (group !== undefined) theme.highlight = group;
+  }
+  if (input.colorDark !== undefined) {
+    const group = validateGroup(input.colorDark, COLORS, "colorDark", handleColor, issues);
+    if (group !== undefined) theme.colorDark = group;
+  }
   if (input.recipes !== undefined) {
     const recipes = validateRecipes(input.recipes, issues);
     if (recipes !== undefined) theme.recipes = recipes;
@@ -159,21 +276,16 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
   // a pair (the most common low-contrast mistake, e.g. bg #000 on default fg) must
   // still be checked — skip a pair only when NEITHER member is overridden.
   if (theme.color !== undefined) {
-    for (const [a, b] of CONTRAST_PAIRS) {
-      const oa = theme.color[a];
-      const ob = theme.color[b];
-      if (oa === undefined && ob === undefined) continue;
-      const sa = parseSrgb(oa ?? DEFAULT_COLORS[a]);
-      const sb = parseSrgb(ob ?? DEFAULT_COLORS[b]);
-      if (sa === undefined || sb === undefined) continue;
-      const ratio = contrastRatio(sa, sb);
-      if (ratio < MIN_CONTRAST) {
-        issues.push({
-          severity: "warning",
-          message: `low contrast for (${a}, ${b}): ratio ${ratio.toFixed(2)} is below ${MIN_CONTRAST}`,
-        });
-      }
-    }
+    // Light palette: an override of one member of a pair mixes with the light
+    // default for the other, so fall back to DEFAULT_COLORS for the un-set side.
+    checkContrast(theme.color, "color", true, issues);
+  }
+  if (theme.colorDark !== undefined) {
+    // Dark palette (`scheme:"dark"`): core has no dark default palette (it lives
+    // in @facet/assets, which core cannot import), so only check pairs where the
+    // operator set BOTH members — mixing a dark override with a LIGHT default
+    // would produce false low-contrast warnings.
+    checkContrast(theme.colorDark, "colorDark", false, issues);
   }
 
   // Gate on `hasError` (tracked before the cap) — NOT a scan of the retained

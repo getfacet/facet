@@ -168,6 +168,40 @@ describe("STAGE_SPEC", () => {
     }
   });
 
+  it("landing-grade-vocab teaches the new landing tokens + backdrop, names only", () => {
+    // DC-007: STAGE_SPEC teaches the landing-grade vocabulary as CLOSED token
+    // NAMES (resolved by the theme) — never raw CSS values.
+    // FontSize enumeration extended with the three large display sizes.
+    expect(STAGE_SPEC).toContain("size(xs|sm|md|lg|xl|2xl|3xl|4xl|5xl|6xl)");
+    // New BoxStyle tokens (closed sets, names only).
+    expect(STAGE_SPEC).toContain("minHeight(auto|half|screen)");
+    expect(STAGE_SPEC).toContain("maxWidth(none|prose|narrow|wide)");
+    expect(STAGE_SPEC).toContain("sticky(bool)");
+    expect(STAGE_SPEC).toContain("gradient(none|accent|dusk|dawn)");
+    expect(STAGE_SPEC).toContain("backdropScrim(none|light|dark)");
+    expect(STAGE_SPEC).toMatch(/scrim/i);
+    expect(STAGE_SPEC).toContain("scheme(light|dark)");
+    // New TextStyle tokens.
+    expect(STAGE_SPEC).toContain("tracking(tight|normal|wide)");
+    expect(STAGE_SPEC).toContain("leading(tight|normal|relaxed)");
+    expect(STAGE_SPEC).toContain("highlight(none|accent|band)");
+    // Box gains a backdrop attribute referencing a media node id.
+    expect(STAGE_SPEC).toContain('"backdrop"?');
+    expect(STAGE_SPEC).toMatch(/backdrop[^.]*media node/i);
+    expect(STAGE_SPEC).toMatch(/background layer/i);
+    // Teaching note: these are landing/hero token names resolved by the theme.
+    expect(STAGE_SPEC).toMatch(/landing/i);
+    expect(STAGE_SPEC).toMatch(/hero/i);
+    // The invariant survives: styles stay tokens, never raw CSS values.
+    expect(STAGE_SPEC).toMatch(/Style values MUST be tokens/i);
+    expect(STAGE_SPEC).toMatch(/never pixels or hex/i);
+    // No raw CSS values leak into the teaching (names only).
+    expect(STAGE_SPEC).not.toMatch(/100svh|50svh|65ch/);
+    expect(STAGE_SPEC).not.toMatch(/linear-gradient\(/);
+    expect(STAGE_SPEC).not.toMatch(/#[0-9a-fA-F]{6}/);
+    expect(STAGE_SPEC).not.toMatch(/position:\s*sticky/i);
+  });
+
   it("teaches collect and press-time field snapshots", () => {
     // Agent action shape gains an optional collect container id.
     expect(STAGE_SPEC).toContain('"collect"?:<containerId>');

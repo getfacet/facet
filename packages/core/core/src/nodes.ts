@@ -21,14 +21,22 @@ import type {
   FontFamily,
   FontSize,
   FontWeight,
+  Gradient,
+  ColorScheme,
+  Highlight,
   Justify,
+  Leading,
+  MaxWidth,
+  MinHeight,
   Radius,
   Ratio,
+  Scrim,
   ScrollAxis,
   Shadow,
   Sizing,
   Space,
   TextAlign,
+  Tracking,
 } from "./tokens.js";
 
 /** Identifier for a node within a stage tree. */
@@ -112,6 +120,26 @@ export interface BoxStyle {
    */
   readonly columns?: Columns;
   readonly shadow?: Shadow;
+  /** Bounded minimum height for landing-grade sections (theme-mapped length). */
+  readonly minHeight?: MinHeight;
+  /** Bounded max content width for readable columns (theme-mapped length). */
+  readonly maxWidth?: MaxWidth;
+  /**
+   * Keeps the box stuck within its scroll container. The renderer owns the top
+   * offset as a framework constant — flow-compatible, no author offset/z-index.
+   */
+  readonly sticky?: boolean;
+  /** Named background gradient (theme maps the name to a concrete CSS gradient). */
+  readonly gradient?: Gradient;
+  /** Scrim overlay strength painted over this box's backdrop layer. */
+  readonly backdropScrim?: Scrim;
+  /**
+   * Authored color scheme for this box's subtree (a dark/light section) — the
+   * renderer swaps the color-token map read-only for the subtree (never leaks
+   * upward). Unknown value → unchanged. `ColorScheme` is deliberately distinct
+   * from view-state's report-only device `Scheme`.
+   */
+  readonly scheme?: ColorScheme;
 }
 
 export interface TextStyle {
@@ -120,6 +148,12 @@ export interface TextStyle {
   readonly weight?: FontWeight;
   readonly color?: Color;
   readonly align?: TextAlign;
+  /** Letter-spacing token (theme-mapped). */
+  readonly tracking?: Tracking;
+  /** Line-height token (theme-mapped). */
+  readonly leading?: Leading;
+  /** Highlight treatment behind the text run (theme-mapped decoration). */
+  readonly highlight?: Highlight;
 }
 
 export interface MediaStyle {
@@ -155,6 +189,14 @@ export interface BoxNode {
    * override wins after first interaction; only literal `true` hides.
    */
   readonly hidden?: boolean;
+  /**
+   * Node-id reference to a standalone MEDIA node used as this box's background.
+   * At render time the renderer resolves it READ-ONLY to a media node and paints
+   * it as a bounded background layer (renderer-synthesized, `position:absolute`
+   * confined to that layer); it never absolute-positions a flow child. A
+   * dangling/non-media/unsafe reference paints no layer (fail-safe).
+   */
+  readonly backdrop?: NodeId;
   readonly children: readonly NodeId[];
 }
 

@@ -1,5 +1,6 @@
 import type { CSSProperties, ReactNode } from "react";
 import { isSafeMediaSrc, MAX_NODE_LABEL_CHARS } from "@facet/core";
+import { backdropLayerStyle } from "./layout-contract.js";
 import { mediaStyle, resolveRecipe } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { cappedString, styleOf } from "./renderer-safe.js";
@@ -9,6 +10,13 @@ export function renderMediaNode(
   theme: ResolvedTheme,
   className?: string,
   inert = false,
+  /**
+   * COVER fill mode: paint this media as a renderer-owned backdrop cover layer
+   * (absolute inset-0, object-fit cover, aria-hidden, non-interactive). The
+   * SAME `isSafeMediaSrc` gate below still applies — an unsafe/blank src paints
+   * nothing. The default mode (flow media) is unchanged.
+   */
+  cover = false,
 ): ReactNode {
   const rawMedia = raw as {
     readonly type?: unknown;
@@ -29,12 +37,16 @@ export function renderMediaNode(
   if (kind !== "image" && kind !== "video") {
     return null;
   }
-  const recipe = resolveRecipe(theme, "media", rawMedia.variant);
-  const baseStyle = mediaStyle(
-    { ...(recipe.media ?? {}), ...(styleOf(rawMedia.style) ?? {}) },
-    theme,
-  );
-  const style: CSSProperties = inert ? { ...baseStyle, pointerEvents: "none" } : baseStyle;
+  // COVER mode ignores the authored/recipe media style: it is a renderer-owned
+  // background layer (the ONLY place `position:absolute` is introduced), always
+  // aria-hidden and non-interactive so it never intercepts a flow-child press.
+  const recipe = cover ? undefined : resolveRecipe(theme, "media", rawMedia.variant);
+  const baseStyle = cover
+    ? { ...backdropLayerStyle(), pointerEvents: "none" as const }
+    : mediaStyle({ ...(recipe?.media ?? {}), ...(styleOf(rawMedia.style) ?? {}) }, theme);
+  const style: CSSProperties =
+    !cover && inert ? { ...baseStyle, pointerEvents: "none" } : baseStyle;
+  const ariaHidden = cover || inert ? true : undefined;
   if (kind === "video") {
     const poster =
       typeof rawMedia.poster === "string" && isSafeMediaSrc(rawMedia.poster)
@@ -44,9 +56,9 @@ export function renderMediaNode(
       <video
         src={rawMedia.src}
         poster={poster}
-        controls={!inert && rawMedia.controls === true ? true : undefined}
+        controls={!cover && !inert && rawMedia.controls === true ? true : undefined}
         className={className}
-        aria-hidden={inert ? true : undefined}
+        aria-hidden={ariaHidden}
         style={style}
       />
     );
@@ -54,9 +66,9 @@ export function renderMediaNode(
   return (
     <img
       src={rawMedia.src}
-      alt={cappedString(rawMedia.alt, MAX_NODE_LABEL_CHARS) ?? ""}
+      alt={cover ? "" : (cappedString(rawMedia.alt, MAX_NODE_LABEL_CHARS) ?? "")}
       className={className}
-      aria-hidden={inert ? true : undefined}
+      aria-hidden={ariaHidden}
       style={style}
     />
   );

@@ -137,22 +137,24 @@ describe("useViewportScheme fires no transport traffic (DC-006)", () => {
   });
 });
 
-// RISK-INV-5 structural fence: viewport/scheme are report-only. They flow ONLY
-// into the send path, never into layout resolution — so neither the layout
-// module nor the boxStyle module (theme.ts) may import view-snapshot.ts or read
-// a viewport/scheme identifier.
+// RISK-INV-5 structural fence: the view-state DEVICE signal — the visitor's
+// viewport size class + browser-reported color scheme carried in `ViewSnapshot`
+// (view-snapshot.ts) — is report-only inert event data that must NEVER drive
+// layout. So layout code must not import view-snapshot.ts nor read a `viewport`
+// device field. NOTE: `scheme` is deliberately NOT banned — landing-grade's
+// `BoxStyle.scheme` is an AUTHORED layout PALETTE token (`ColorScheme`, a
+// separate type from the device `Scheme`) that legitimately drives the subtree
+// color swap in `renderer-render.tsx`. The real property this fence protects is
+// "the device signal doesn't reach layout", not the word "scheme".
 describe("view-snapshot layout fence (RISK-INV-5)", () => {
-  it("brick-renderer-layout.tsx neither imports view-snapshot nor reads viewport/scheme", () => {
-    const src = readSrc("./brick-renderer-layout.tsx");
-    expect(src).not.toContain("view-snapshot");
-    expect(src).not.toMatch(/\bviewport\b/);
-    expect(src).not.toMatch(/\bscheme\b/);
-  });
-
-  it("the boxStyle module (theme.ts) neither imports view-snapshot nor reads viewport/scheme", () => {
-    const src = readSrc("./theme.ts");
-    expect(src).not.toContain("view-snapshot");
-    expect(src).not.toMatch(/\bviewport\b/);
-    expect(src).not.toMatch(/\bscheme\b/);
-  });
+  // Include renderer-render.tsx (where the authored `scheme` palette swap lives)
+  // so the fence covers the file that actually resolves per-box color, closing
+  // the gap where the swap could have imported the device signal unnoticed.
+  for (const file of ["./brick-renderer-layout.tsx", "./theme.ts", "./renderer-render.tsx"]) {
+    it(`${file} does not import the view-state device signal or read a viewport device field`, () => {
+      const src = readSrc(file);
+      expect(src).not.toContain("view-snapshot");
+      expect(src).not.toMatch(/\bviewport\b/);
+    });
+  }
 });
