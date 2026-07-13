@@ -1,13 +1,8 @@
 import { isContainer, type FacetNode, type NodeId } from "./nodes.js";
-import type {
-  ChartNode,
-  DataWarehouse,
-  KeyValueNode,
-  ListNode,
-  MetricNode,
-  StatNode,
-} from "./component-nodes.js";
+import type { ChartNode, KeyValueNode, ListNode, MetricNode, StatNode } from "./component-nodes.js";
+import type { DataWarehouse } from "./data-types.js";
 import { resolveNodeData } from "./data-binding.js";
+import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 
 const TREE_RENDERABLE_NODE_BUDGET = 5_000;
 const TREE_RENDERABLE_MAX_DEPTH = 100;
@@ -179,101 +174,139 @@ function nodeRendersItself(
   node: Record<string, unknown>,
   warehouse: DataWarehouse | undefined,
 ): boolean {
+  const type = node.type;
+  // Own-property check: a bare `BRICK_REGISTRY[type]` returns an inherited
+  // `Object.prototype` member for a junk type like "constructor" (a truthy
+  // non-entry), whose `.rendersSelf`/`.resolveFromContent` would throw and, via
+  // the `treeRenderableNodeIds` catch, wipe the whole result set. The former
+  // `switch` sent such names to `default: return false` — preserve that.
+  const entry =
+    typeof type === "string" && Object.hasOwn(BRICK_REGISTRY, type)
+      ? (BRICK_REGISTRY as Record<string, BrickEntry | undefined>)[type]
+      : undefined;
   // A data-bearing node with a `from` binding shows content iff the SHARED
   // `resolveNodeData` (the same precedence + projection the renderer runs, so
   // "shows something" and the render never diverge — RISK-INV-5) yields a
   // non-empty projection. Dangling/absent/empty `from` ⇒ non-content. Nodes
-  // without `from` fall through to the inline predicates below.
-  if (typeof node.from === "string") {
-    switch (node.type) {
-      case "table":
-        // A table's visibility is decided by its (inline) COLUMNS, not the
-        // resolved rows — the renderer shows a header table whenever columns
-        // exist, even while a bound dataset is still loading. Fall through to the
-        // inline column predicate below so the gate matches the renderer.
-        break;
-      case "chart": {
-        // Apply the SAME per-kind predicate the renderer uses (donut drops
-        // non-positive slices), not a generic "series non-empty" — evaluate it
-        // on the RESOLVED series.
-        const series = resolveNodeData(node as unknown as ChartNode, warehouse);
-        return chartHasRenderableData({ ...(node as unknown as ChartNode), series });
-      }
-      case "list":
-        return resolveNodeData(node as unknown as ListNode, warehouse).length > 0;
-      case "keyValue":
-        return resolveNodeData(node as unknown as KeyValueNode, warehouse).length > 0;
-      case "metric":
-      case "stat":
-        return (
-          typeof node.label === "string" &&
-          resolveNodeData(node as unknown as MetricNode | StatNode, warehouse).length > 0
-        );
-      default:
-        break;
-    }
+  // without a `from` predicate (e.g. table — decided by inline COLUMNS) fall
+  // through to the inline `rendersSelf` predicate below.
+  if (typeof node.from === "string" && entry?.resolveFromContent !== undefined) {
+    return entry.resolveFromContent(node, warehouse);
   }
-  switch (node.type) {
-    case "box":
-      return false;
-    case "section":
-    case "card":
-      return hasString(node.eyebrow) || hasString(node.title) || hasString(node.body);
-    case "text":
-      return hasString(node.value);
-    case "image":
-      return typeof node.src === "string" && isRenderableMediaSrc(node.src);
-    case "media":
-      if (node.kind !== undefined && node.kind !== "image" && node.kind !== "video") return false;
-      return typeof node.src === "string" && isRenderableMediaSrc(node.src);
-    case "field":
-      return fieldHasRenderableControl(node);
-    case "button":
-      return typeof node.label === "string";
-    case "tabs":
-      return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
-    case "nav":
-      return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
-    case "table":
-      return hasRenderableArray(
-        node.columns,
-        TREE_RENDERABLE_MAX_TABLE_COLUMNS,
-        isRenderableTableColumn,
-      );
-    case "chart":
-      return chartHasRenderableData(node);
-    case "metric":
-    case "stat":
-      return typeof node.label === "string" && typeof node.value === "string";
-    case "keyValue":
-      return hasRenderableArray(
-        node.items,
-        TREE_RENDERABLE_MAX_KEY_VALUE_ITEMS,
-        isRenderableKeyValueItem,
-      );
-    case "badge":
-      return typeof node.label === "string";
-    case "progress":
-      return typeof node.value === "number" && Number.isFinite(node.value);
-    case "alert":
-      return typeof node.body === "string";
-    case "list":
-      return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_LIST_ITEMS, isRenderableListItem);
-    case "divider":
-      return true;
-    case "form":
-      return hasString(node.title) || hasString(node.body) || hasString(node.submitLabel);
-    case "search":
-      return typeof node.name === "string";
-    case "filterBar":
-      return hasRenderableArray(node.filters, TREE_RENDERABLE_MAX_FILTERS, isRenderableFilter);
-    case "emptyState":
-      return hasString(node.title) || hasString(node.body) || hasString(node.actionLabel);
-    case "loading":
-      return true;
-    default:
-      return false;
-  }
+  if (entry !== undefined) return entry.rendersSelf(node, warehouse);
+  // `image` is a raw media alias that only appears in UNSANITIZED trees; it is
+  // not a canonical node type (`media` is), so the registry has no entry for it
+  // and it is handled here as a fail-safe with its own predicate.
+  if (type === "image") return typeof node.src === "string" && isRenderableMediaSrc(node.src);
+  return false;
+}
+
+// Per-brick `rendersSelf` predicates — the former `nodeRendersItself` main
+// switch cases, verbatim, referenced by the brick registry. Hoisted function
+// declarations so the registry can reference them across the import cycle.
+export function rendersBox(): boolean {
+  return false;
+}
+export function rendersSectionCard(node: Record<string, unknown>): boolean {
+  return hasString(node.eyebrow) || hasString(node.title) || hasString(node.body);
+}
+export function rendersText(node: Record<string, unknown>): boolean {
+  return hasString(node.value);
+}
+export function rendersMedia(node: Record<string, unknown>): boolean {
+  if (node.kind !== undefined && node.kind !== "image" && node.kind !== "video") return false;
+  return typeof node.src === "string" && isRenderableMediaSrc(node.src);
+}
+export function rendersField(node: Record<string, unknown>): boolean {
+  return fieldHasRenderableControl(node);
+}
+export function rendersButton(node: Record<string, unknown>): boolean {
+  return typeof node.label === "string";
+}
+export function rendersTabsNav(node: Record<string, unknown>): boolean {
+  return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
+}
+export function rendersTable(node: Record<string, unknown>): boolean {
+  return hasRenderableArray(
+    node.columns,
+    TREE_RENDERABLE_MAX_TABLE_COLUMNS,
+    isRenderableTableColumn,
+  );
+}
+export function rendersChart(node: Record<string, unknown>): boolean {
+  return chartHasRenderableData(node);
+}
+export function rendersMetricStat(node: Record<string, unknown>): boolean {
+  return typeof node.label === "string" && typeof node.value === "string";
+}
+export function rendersKeyValue(node: Record<string, unknown>): boolean {
+  return hasRenderableArray(
+    node.items,
+    TREE_RENDERABLE_MAX_KEY_VALUE_ITEMS,
+    isRenderableKeyValueItem,
+  );
+}
+export function rendersBadge(node: Record<string, unknown>): boolean {
+  return typeof node.label === "string";
+}
+export function rendersProgress(node: Record<string, unknown>): boolean {
+  return typeof node.value === "number" && Number.isFinite(node.value);
+}
+export function rendersAlert(node: Record<string, unknown>): boolean {
+  return typeof node.body === "string";
+}
+export function rendersList(node: Record<string, unknown>): boolean {
+  return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_LIST_ITEMS, isRenderableListItem);
+}
+export function rendersAlways(): boolean {
+  return true;
+}
+export function rendersForm(node: Record<string, unknown>): boolean {
+  return hasString(node.title) || hasString(node.body) || hasString(node.submitLabel);
+}
+export function rendersSearch(node: Record<string, unknown>): boolean {
+  return typeof node.name === "string";
+}
+export function rendersFilterBar(node: Record<string, unknown>): boolean {
+  return hasRenderableArray(node.filters, TREE_RENDERABLE_MAX_FILTERS, isRenderableFilter);
+}
+export function rendersEmptyState(node: Record<string, unknown>): boolean {
+  return hasString(node.title) || hasString(node.body) || hasString(node.actionLabel);
+}
+
+// Per-brick `resolveFromContent` predicates — the former `from`-binding switch
+// cases (chart/list/keyValue/metric/stat), verbatim. `table` deliberately has no
+// entry (its visibility is inline COLUMNS, not resolved rows).
+export function fromChart(
+  node: Record<string, unknown>,
+  warehouse: DataWarehouse | undefined,
+): boolean {
+  // Apply the SAME per-kind predicate the renderer uses (donut drops
+  // non-positive slices), not a generic "series non-empty" — evaluate it on the
+  // RESOLVED series.
+  const series = resolveNodeData(node as unknown as ChartNode, warehouse);
+  return chartHasRenderableData({ ...(node as unknown as ChartNode), series });
+}
+export function fromList(
+  node: Record<string, unknown>,
+  warehouse: DataWarehouse | undefined,
+): boolean {
+  return resolveNodeData(node as unknown as ListNode, warehouse).length > 0;
+}
+export function fromKeyValue(
+  node: Record<string, unknown>,
+  warehouse: DataWarehouse | undefined,
+): boolean {
+  return resolveNodeData(node as unknown as KeyValueNode, warehouse).length > 0;
+}
+export function fromMetricStat(
+  node: Record<string, unknown>,
+  warehouse: DataWarehouse | undefined,
+): boolean {
+  return (
+    typeof node.label === "string" &&
+    resolveNodeData(node as unknown as MetricNode | StatNode, warehouse).length > 0
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

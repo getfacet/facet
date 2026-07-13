@@ -10,6 +10,7 @@ import {
 } from "@facet/core";
 import { appearClass } from "./appear.js";
 import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
+import { brickRendererEntry } from "./brick-render-registry.js";
 import { MOTION_CLASS_NAMES, composeMotionClassName } from "./motion.js";
 import { backdropHostStyle, scrimStyle } from "./layout-contract.js";
 import { boxStyle, resolveRecipe, textStyle } from "./theme.js";
@@ -448,84 +449,6 @@ export function renderNode({
         </BoxElement>
       );
     }
-    case "section":
-      return renderBrick(
-        renderContainerChildren({
-          tree,
-          parentId: id,
-          childIds: childIdsOf(node),
-          onPress,
-          visibilityOverrides,
-          theme,
-          ancestors,
-          budget,
-          appearSeen,
-          depth,
-          renderMode,
-          motionClassById,
-          exitRecordsByParent,
-          activeScreen,
-          sortControl,
-        }),
-      );
-    case "card":
-      return renderBrick(
-        renderContainerChildren({
-          tree,
-          parentId: id,
-          childIds: childIdsOf(node),
-          onPress,
-          visibilityOverrides,
-          theme,
-          ancestors,
-          budget,
-          appearSeen,
-          depth,
-          renderMode,
-          motionClassById,
-          exitRecordsByParent,
-          activeScreen,
-          sortControl,
-        }),
-      );
-    case "form":
-      return renderBrick(
-        renderContainerChildren({
-          tree,
-          parentId: id,
-          childIds: childIdsOf(node),
-          onPress,
-          visibilityOverrides,
-          theme,
-          ancestors,
-          budget,
-          appearSeen,
-          depth,
-          renderMode,
-          motionClassById,
-          exitRecordsByParent,
-          activeScreen,
-          sortControl,
-        }),
-      );
-    case "button":
-    case "tabs":
-    case "nav":
-    case "table":
-    case "chart":
-    case "metric":
-    case "stat":
-    case "keyValue":
-    case "badge":
-    case "progress":
-    case "alert":
-    case "list":
-    case "divider":
-    case "search":
-    case "filterBar":
-    case "emptyState":
-    case "loading":
-      return renderBrick();
     case "text": {
       // A non-string value (an object would make React itself throw) is skipped.
       // No appear class here: appear is BoxStyle-only (Decision 2) — validateTree
@@ -549,5 +472,39 @@ export function renderNode({
       return renderMediaNode(node, theme, motionClassName, inert);
     case "field":
       return renderBrick();
+    default: {
+      // Registry dispatch for the renderBrick set (every component). A container
+      // brick (section/card/form) renders its children first and passes them in;
+      // every other brick is a leaf and calls renderBrick() with none. box/text/
+      // media/field keep their bespoke cases above. An unknown/junk type has no
+      // entry and renders nothing — the same no-default fail-safe degrade as
+      // before (the switch previously fell through to `undefined`).
+      const entry = brickRendererEntry(node.type);
+      if (entry === undefined) {
+        return null;
+      }
+      if (entry.container) {
+        return renderBrick(
+          renderContainerChildren({
+            tree,
+            parentId: id,
+            childIds: childIdsOf(node),
+            onPress,
+            visibilityOverrides,
+            theme,
+            ancestors,
+            budget,
+            appearSeen,
+            depth,
+            renderMode,
+            motionClassById,
+            exitRecordsByParent,
+            activeScreen,
+            sortControl,
+          }),
+        );
+      }
+      return renderBrick();
+    }
   }
 }

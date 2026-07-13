@@ -1,4 +1,9 @@
-import { EMPTY_TREE, type FacetTree } from "@facet/core";
+import {
+  EMPTY_TREE,
+  type ComponentNodeType,
+  type FacetTree,
+  type PrimitiveBrickType,
+} from "@facet/core";
 
 export const DEFAULT_STAGE_JSON_CHAR_LIMIT = 48_000;
 export const DEFAULT_STAGE_SUMMARY_NODE_LIMIT = 80;
@@ -55,154 +60,176 @@ export function summarizeStageForPrompt(
   return lines.join("\n");
 }
 
+/** The core node-type identifiers this summarizer recognizes. */
+type SummarizableNodeType = PrimitiveBrickType | ComponentNodeType;
+
+/** Per-brick summary handler — receives a raw (already `isRecord`-checked) node. */
+type NodeSummarizer = (node: Record<string, unknown>) => string;
+
+/**
+ * The per-brick summary registry: one entry per core node type → its (unchanged)
+ * summary handler. This de-scatters the former `summarizeNode` `switch`; the
+ * handler BODIES are identical, only the dispatch now reads this table.
+ *
+ * SOFT lookup: this is a partial map, NOT an exhaustive `Record`. A miss (a type
+ * absent here — e.g. an unrecognized/malformed `type`, or the raw `image` media
+ * alias) falls through to the `type=unknown` default in `summarizeNode`, exactly
+ * as the original `switch`'s trailing `return "type=unknown"` did.
+ */
+const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarizer>> = {
+  box: (node) => {
+    const children = Array.isArray(node["children"]) ? node["children"].length : 0;
+    return `type=box children=${String(children)}${node["hidden"] === true ? " hidden=true" : ""}`;
+  },
+  text: (node) => {
+    const value = typeof node["value"] === "string" ? node["value"] : "";
+    return `type=text chars=${String(value.length)}`;
+  },
+  media: (node) => {
+    const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
+    const src = typeof node["src"] === "string" ? node["src"] : "";
+    const alt = typeof node["alt"] === "string" ? ` altChars=${String(node["alt"].length)}` : "";
+    return `type=media kind=${kind} srcChars=${String(src.length)}${alt}`;
+  },
+  field: (node) => {
+    const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
+    const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
+    const options = Array.isArray(node["options"])
+      ? ` options=${String(node["options"].length)}`
+      : "";
+    return `type=field name=${name}${input}${options}`;
+  },
+  section: (node) => summarizeContainer("section", node, ["title", "eyebrow", "body"], ["variant"]),
+  card: (node) => summarizeContainer("card", node, ["title", "body"], ["variant", "tone"]),
+  button: (node) =>
+    compactSummary([
+      "type=button",
+      charSummary(node["label"], "labelChars"),
+      safeStringSummary(node["variant"], "variant"),
+      safeStringSummary(node["tone"], "tone"),
+      node["disabled"] === true ? "disabled=true" : undefined,
+    ]),
+  tabs: (node) =>
+    compactSummary([
+      "type=tabs",
+      `items=${String(arrayCount(node["items"]))}`,
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  nav: (node) =>
+    compactSummary([
+      "type=nav",
+      `items=${String(arrayCount(node["items"]))}`,
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  table: (node) =>
+    compactSummary([
+      "type=table",
+      `columns=${String(arrayCount(node["columns"]))}`,
+      `rows=${String(arrayCount(node["rows"]))}`,
+      charSummary(node["caption"], "captionChars"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  chart: (node) => {
+    const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
+    return compactSummary([
+      `type=chart kind=${kind}`,
+      `series=${String(arrayCount(node["series"]))}`,
+      `points=${String(chartPointCount(node["series"]))}`,
+      `labels=${String(arrayCount(node["labels"]))}`,
+      charSummary(node["title"], "titleChars"),
+      safeStringSummary(node["variant"], "variant"),
+    ]);
+  },
+  metric: (node) => summarizeMetric("metric", node),
+  stat: (node) => summarizeMetric("stat", node),
+  keyValue: (node) =>
+    compactSummary([
+      "type=keyValue",
+      `items=${String(arrayCount(node["items"]))}`,
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  badge: (node) =>
+    compactSummary([
+      "type=badge",
+      charSummary(node["label"], "labelChars"),
+      safeStringSummary(node["tone"], "tone"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  progress: (node) =>
+    compactSummary([
+      "type=progress",
+      numberSummary(node["value"], "value"),
+      charSummary(node["label"], "labelChars"),
+      safeStringSummary(node["tone"], "tone"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  alert: (node) =>
+    compactSummary([
+      "type=alert",
+      charSummary(node["title"], "titleChars"),
+      charSummary(node["body"], "bodyChars"),
+      safeStringSummary(node["tone"], "tone"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  list: (node) =>
+    compactSummary([
+      "type=list",
+      `items=${String(arrayCount(node["items"]))}`,
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  divider: (node) =>
+    compactSummary([
+      "type=divider",
+      charSummary(node["label"], "labelChars"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  form: (node) => summarizeContainer("form", node, ["title", "body", "submitLabel"], ["variant"]),
+  search: (node) => {
+    const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
+    return compactSummary([
+      `type=search name=${name}`,
+      charSummary(node["label"], "labelChars"),
+      charSummary(node["placeholder"], "placeholderChars"),
+      charSummary(node["value"], "valueChars"),
+      charSummary(node["submitLabel"], "submitLabelChars"),
+      safeStringSummary(node["variant"], "variant"),
+    ]);
+  },
+  filterBar: (node) =>
+    compactSummary([
+      "type=filterBar",
+      `filters=${String(arrayCount(node["filters"]))}`,
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  emptyState: (node) =>
+    compactSummary([
+      "type=emptyState",
+      charSummary(node["title"], "titleChars"),
+      charSummary(node["body"], "bodyChars"),
+      charSummary(node["actionLabel"], "actionLabelChars"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+  loading: (node) =>
+    compactSummary([
+      "type=loading",
+      charSummary(node["label"], "labelChars"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
+};
+
+/** Exposed for the registry-exhaustiveness test; not part of the package barrel. */
+export { STAGE_SUMMARY_REGISTRY };
+
 function summarizeNode(node: FacetTree["nodes"][string] | undefined): string {
   if (!isRecord(node)) return "type=unknown";
   const type = typeof node["type"] === "string" ? node["type"] : "unknown";
-  switch (type) {
-    case "box": {
-      const children = Array.isArray(node["children"]) ? node["children"].length : 0;
-      return `type=box children=${String(children)}${node["hidden"] === true ? " hidden=true" : ""}`;
-    }
-    case "text": {
-      const value = typeof node["value"] === "string" ? node["value"] : "";
-      return `type=text chars=${String(value.length)}`;
-    }
-    case "media": {
-      const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
-      const src = typeof node["src"] === "string" ? node["src"] : "";
-      const alt = typeof node["alt"] === "string" ? ` altChars=${String(node["alt"].length)}` : "";
-      return `type=media kind=${kind} srcChars=${String(src.length)}${alt}`;
-    }
-    case "field": {
-      const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
-      const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
-      const options = Array.isArray(node["options"])
-        ? ` options=${String(node["options"].length)}`
-        : "";
-      return `type=field name=${name}${input}${options}`;
-    }
-    case "section":
-      return summarizeContainer(type, node, ["title", "eyebrow", "body"], ["variant"]);
-    case "card":
-      return summarizeContainer(type, node, ["title", "body"], ["variant", "tone"]);
-    case "button":
-      return compactSummary([
-        "type=button",
-        charSummary(node["label"], "labelChars"),
-        safeStringSummary(node["variant"], "variant"),
-        safeStringSummary(node["tone"], "tone"),
-        node["disabled"] === true ? "disabled=true" : undefined,
-      ]);
-    case "tabs":
-      return compactSummary([
-        "type=tabs",
-        `items=${String(arrayCount(node["items"]))}`,
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "nav":
-      return compactSummary([
-        "type=nav",
-        `items=${String(arrayCount(node["items"]))}`,
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "table":
-      return compactSummary([
-        "type=table",
-        `columns=${String(arrayCount(node["columns"]))}`,
-        `rows=${String(arrayCount(node["rows"]))}`,
-        charSummary(node["caption"], "captionChars"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "chart": {
-      const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
-      return compactSummary([
-        `type=chart kind=${kind}`,
-        `series=${String(arrayCount(node["series"]))}`,
-        `points=${String(chartPointCount(node["series"]))}`,
-        `labels=${String(arrayCount(node["labels"]))}`,
-        charSummary(node["title"], "titleChars"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    }
-    case "metric":
-    case "stat":
-      return summarizeMetric(type, node);
-    case "keyValue":
-      return compactSummary([
-        "type=keyValue",
-        `items=${String(arrayCount(node["items"]))}`,
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "badge":
-      return compactSummary([
-        "type=badge",
-        charSummary(node["label"], "labelChars"),
-        safeStringSummary(node["tone"], "tone"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "progress":
-      return compactSummary([
-        "type=progress",
-        numberSummary(node["value"], "value"),
-        charSummary(node["label"], "labelChars"),
-        safeStringSummary(node["tone"], "tone"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "alert":
-      return compactSummary([
-        "type=alert",
-        charSummary(node["title"], "titleChars"),
-        charSummary(node["body"], "bodyChars"),
-        safeStringSummary(node["tone"], "tone"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "list":
-      return compactSummary([
-        "type=list",
-        `items=${String(arrayCount(node["items"]))}`,
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "divider":
-      return compactSummary([
-        "type=divider",
-        charSummary(node["label"], "labelChars"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "form":
-      return summarizeContainer(type, node, ["title", "body", "submitLabel"], ["variant"]);
-    case "search": {
-      const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
-      return compactSummary([
-        `type=search name=${name}`,
-        charSummary(node["label"], "labelChars"),
-        charSummary(node["placeholder"], "placeholderChars"),
-        charSummary(node["value"], "valueChars"),
-        charSummary(node["submitLabel"], "submitLabelChars"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    }
-    case "filterBar":
-      return compactSummary([
-        "type=filterBar",
-        `filters=${String(arrayCount(node["filters"]))}`,
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "emptyState":
-      return compactSummary([
-        "type=emptyState",
-        charSummary(node["title"], "titleChars"),
-        charSummary(node["body"], "bodyChars"),
-        charSummary(node["actionLabel"], "actionLabelChars"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-    case "loading":
-      return compactSummary([
-        "type=loading",
-        charSummary(node["label"], "labelChars"),
-        safeStringSummary(node["variant"], "variant"),
-      ]);
-  }
-  return "type=unknown";
+  // Own-property check: a bare lookup returns an inherited `Object.prototype`
+  // member for a type like "constructor"/"toString", so `summarize(node)` would
+  // emit `[object Object]` instead of the former switch's `type=unknown`.
+  const summarize = Object.hasOwn(STAGE_SUMMARY_REGISTRY, type)
+    ? (STAGE_SUMMARY_REGISTRY as Record<string, NodeSummarizer | undefined>)[type]
+    : undefined;
+  return summarize ? summarize(node) : "type=unknown";
 }
 
 function summarizeMetric(type: "metric" | "stat", node: Record<string, unknown>): string {

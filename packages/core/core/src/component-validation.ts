@@ -27,50 +27,32 @@ import {
   sanitizeLayoutComponentNode,
   type LayoutComponentType,
 } from "./component-validation-layout.js";
+import { BRICK_REGISTRY, type ComponentRole } from "./brick-registry.js";
 
 export { MAX_COMPONENT_ARRAY_ITEMS } from "./component-validation-shared.js";
 
-const CONTROL_TYPES = new Set<ComponentNodeType>([
-  "button",
-  "tabs",
-  "nav",
-  "form",
-  "search",
-  "filterBar",
-]);
-const DATA_TYPES = new Set<ComponentNodeType>([
-  "table",
-  "chart",
-  "stat",
-  "metric",
-  "keyValue",
-  "list",
-]);
-const FEEDBACK_TYPES = new Set<ComponentNodeType>([
-  "badge",
-  "progress",
-  "alert",
-  "emptyState",
-  "loading",
-]);
-const LAYOUT_TYPES = new Set<ComponentNodeType>(["section", "card", "divider"]);
+// The 4 role Sets, the ESTABLISHED set, and the role dispatch that used to live
+// here are now the `role`/`established` fields of the brick registry. Routing to
+// each role sanitizer stays a thin wrapper (the sanitizer BODIES are untouched);
+// the wrapper only narrows the registry's `ComponentNodeType` to the sanitizer's
+// role-specific type.
+type RoleSanitizer = (
+  id: string,
+  raw: Record<string, unknown>,
+  type: ComponentNodeType,
+  issues: IssueSink,
+) => ComponentNode | undefined;
 
-// These established component shapes predate the forbidden-field diagnostic;
-// preserve their exact validation output while routing them through role modules.
-const ESTABLISHED_COMPONENT_TYPES = new Set<ComponentNodeType>([
-  "button",
-  "section",
-  "card",
-  "tabs",
-  "table",
-  "chart",
-  "stat",
-  "badge",
-  "progress",
-  "alert",
-  "list",
-  "divider",
-]);
+const ROLE_SANITIZERS: Record<ComponentRole, RoleSanitizer> = {
+  control: (id, raw, type, issues) =>
+    sanitizeControlComponentNode(id, raw, type as ControlComponentType, issues),
+  data: (id, raw, type, issues) =>
+    sanitizeDataComponentNode(id, raw, type as DataComponentType, issues),
+  feedback: (id, raw, type, issues) =>
+    sanitizeFeedbackComponentNode(id, raw, type as FeedbackComponentType, issues),
+  layout: (id, raw, type, issues) =>
+    sanitizeLayoutComponentNode(id, raw, type as LayoutComponentType, issues),
+};
 
 export function isPrimitiveBrickType(value: unknown): value is PrimitiveBrickType {
   return typeof value === "string" && (PRIMITIVE_BRICK_TYPES as readonly string[]).includes(value);
@@ -108,21 +90,10 @@ export function sanitizeComponentNode(
     );
     return undefined;
   }
-  if (!ESTABLISHED_COMPONENT_TYPES.has(rawType)) reportForbiddenFields(id, raw, issues);
-
-  if (CONTROL_TYPES.has(rawType)) {
-    return sanitizeControlComponentNode(id, raw, rawType as ControlComponentType, issues);
-  }
-  if (DATA_TYPES.has(rawType)) {
-    return sanitizeDataComponentNode(id, raw, rawType as DataComponentType, issues);
-  }
-  if (FEEDBACK_TYPES.has(rawType)) {
-    return sanitizeFeedbackComponentNode(id, raw, rawType as FeedbackComponentType, issues);
-  }
-  if (LAYOUT_TYPES.has(rawType)) {
-    return sanitizeLayoutComponentNode(id, raw, rawType as LayoutComponentType, issues);
-  }
-  return undefined;
+  const entry = BRICK_REGISTRY[rawType];
+  if (!entry.established) reportForbiddenFields(id, raw, issues);
+  if (entry.role === undefined) return undefined;
+  return ROLE_SANITIZERS[entry.role](id, raw, rawType, issues);
 }
 
 function reportForbiddenFields(id: string, raw: Record<string, unknown>, issues: IssueSink): void {

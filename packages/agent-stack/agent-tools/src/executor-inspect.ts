@@ -1,12 +1,5 @@
-import {
-  isContainer,
-  resolveNodeData,
-  type DataWarehouse,
-  type FacetNode,
-  type FacetTree,
-  type NodeId,
-} from "@facet/core";
-import { nodeVariant } from "./executor-policy.js";
+import { isContainer, type FacetTree, type NodeId } from "@facet/core";
+import { describeNode } from "./executor-registry.js";
 import { errorResult, okMessageResult } from "./executor-result.js";
 import { summarizeStageTree } from "./stage-shadow.js";
 
@@ -14,7 +7,6 @@ const DEFAULT_INSPECT_STAGE_NODES = 40;
 const MAX_INSPECT_STAGE_NODES = 200;
 const DEFAULT_INSPECT_NODE_DEPTH = 2;
 const MAX_INSPECT_NODE_DEPTH = 5;
-const MAX_TEXT_PREVIEW_CHARS = 80;
 
 export function executeInspectStage(input: Readonly<Record<string, unknown>>, shadow: FacetTree) {
   const maxNodes = boundedInteger(
@@ -120,71 +112,4 @@ function collectNodeLines(
     }
   }
   return false;
-}
-
-function describeNode(facetNode: FacetNode, warehouse: DataWarehouse | undefined): string {
-  switch (facetNode.type) {
-    case "box":
-      return `${facetNode.id} box children=${String(facetNode.children.length)}${facetNode.hidden === true ? " hidden" : ""}`;
-    case "text":
-      return `${facetNode.id} text value="${preview(facetNode.value)}"`;
-    case "media":
-      return `${facetNode.id} media kind=${facetNode.kind} src="${preview(facetNode.src)}"`;
-    case "field":
-      return `${facetNode.id} field name="${preview(facetNode.name)}"`;
-    case "button":
-      return `${facetNode.id} button label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`;
-    case "section":
-      return `${facetNode.id} section children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
-    case "card":
-      return `${facetNode.id} card children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
-    case "tabs":
-      return `${facetNode.id} tabs items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
-    case "nav":
-      return `${facetNode.id} nav items=${String(facetNode.items.length)}${variantSuffix(facetNode)}`;
-    case "table":
-      return `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
-    case "chart":
-      return `${facetNode.id} chart kind=${facetNode.kind} series=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
-    case "metric":
-      return `${facetNode.id} metric label="${preview(facetNode.label)}" value="${preview(resolveNodeData(facetNode, warehouse))}"${variantSuffix(facetNode)}`;
-    case "stat":
-      return `${facetNode.id} stat label="${preview(facetNode.label)}" value="${preview(resolveNodeData(facetNode, warehouse))}"${variantSuffix(facetNode)}`;
-    case "keyValue":
-      return `${facetNode.id} keyValue items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
-    case "badge":
-      return `${facetNode.id} badge label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`;
-    case "progress":
-      return `${facetNode.id} progress value=${String(facetNode.value)}${variantSuffix(facetNode)}`;
-    case "alert":
-      return `${facetNode.id} alert body="${preview(facetNode.body)}"${variantSuffix(facetNode)}`;
-    case "list":
-      return `${facetNode.id} list items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`;
-    case "divider":
-      return `${facetNode.id} divider${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
-    case "form":
-      return `${facetNode.id} form children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
-    case "search":
-      return `${facetNode.id} search name="${preview(facetNode.name)}"${variantSuffix(facetNode)}`;
-    case "filterBar":
-      return `${facetNode.id} filterBar filters=${String(facetNode.filters.length)}${variantSuffix(facetNode)}`;
-    case "emptyState":
-      return `${facetNode.id} emptyState${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`;
-    case "loading":
-      return `${facetNode.id} loading${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`;
-  }
-  const exhaustive: never = facetNode;
-  return exhaustive;
-}
-
-function variantSuffix(node: FacetNode): string {
-  const variant = nodeVariant(node);
-  return variant === undefined ? "" : ` variant=${variant}`;
-}
-
-function preview(value: string): string {
-  const collapsed = value.replace(/\s+/g, " ").trim();
-  return collapsed.length > MAX_TEXT_PREVIEW_CHARS
-    ? `${collapsed.slice(0, MAX_TEXT_PREVIEW_CHARS)}...`
-    : collapsed;
 }

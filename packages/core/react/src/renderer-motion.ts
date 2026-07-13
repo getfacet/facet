@@ -1,4 +1,5 @@
 import { isContainer, MAX_DEPTH, treeHasContent, type FacetTree, type NodeId } from "@facet/core";
+import { participatesInMotionSnapshot } from "./brick-render-registry.js";
 import { MOTION_CLASS_NAMES } from "./motion.js";
 import type { ResolvedTheme } from "./theme.js";
 import {
@@ -185,25 +186,15 @@ export function collectVisibleInfo(
         ids.add(id);
         nodes.set(id, { parentId, index, ancestors, depth });
         return;
-      case "button":
-      case "tabs":
-      case "nav":
-      case "table":
-      case "chart":
-      case "metric":
-      case "stat":
-      case "keyValue":
-      case "badge":
-      case "progress":
-      case "alert":
-      case "list":
-      case "divider":
-      case "search":
-      case "filterBar":
-      case "emptyState":
-      case "loading":
-        ids.add(id);
-        nodes.set(id, { parentId, index, ancestors, depth });
+      default:
+        // The leaf-brick fallthrough, now registry-driven: every component leaf
+        // participates unconditionally in the visibility snapshot. Containers
+        // (box/section/card/form) and `image` are handled above; an unknown/junk
+        // type does not participate — the same as the former no-default switch.
+        if (participatesInMotionSnapshot(node.type)) {
+          ids.add(id);
+          nodes.set(id, { parentId, index, ancestors, depth });
+        }
         return;
     }
   };

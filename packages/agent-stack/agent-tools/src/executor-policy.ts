@@ -1,13 +1,5 @@
-import {
-  COMPONENT_NODE_TYPES,
-  PRIMITIVE_BRICK_TYPES,
-  type FacetCatalog,
-  type FacetNode,
-  type FacetTree,
-} from "@facet/core";
-
-const PRIMITIVE_NODE_TYPES = new Set<FacetNode["type"]>(PRIMITIVE_BRICK_TYPES);
-const COMPONENT_NODE_TYPE_SET = new Set<FacetNode["type"]>(COMPONENT_NODE_TYPES);
+import { type FacetCatalog, type FacetNode, type FacetTree } from "@facet/core";
+import { COMPONENT_NODE_TYPE_SET, PRIMITIVE_NODE_TYPES, nodeVariant } from "./executor-registry.js";
 
 interface CatalogPolicyViolation {
   readonly message: string;
@@ -141,10 +133,6 @@ export function themeCatalogViolation(
     };
   }
   return undefined;
-}
-
-export function nodeVariant(node: FacetNode): string | undefined {
-  return "variant" in node && typeof node.variant === "string" ? node.variant : undefined;
 }
 
 function nodeTone(node: FacetNode): string | undefined {
