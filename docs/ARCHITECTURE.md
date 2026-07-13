@@ -118,7 +118,9 @@ inline script. (Binding a data-bearing node to the in-tree `data` warehouse by
 NAME via `from` is allowed and is not a data source — see "Data warehouse +
 bindings"; it stays agent-authored declared content.) Overlay-class
 modal/drawer/popover components are intentionally out of v1 so normal-flow layout
-stays the invariant.
+stays the invariant. The one sanctioned overlap is a `box`'s `backdrop` — a
+bounded two-layer background behind normal-flow content (see "Landing-grade
+vocabulary"), never a general z-index/absolute-positioning escape hatch.
 
 ## Renderer Layout Contract
 
@@ -163,6 +165,23 @@ agent-facing vocabulary; the concrete default token values live in
 resolves those data maps to CSS at render time. Reskinning every page is a data
 change and the agent never deals in pixels, hex, or font stacks. The token names
 are kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
+
+**Landing-grade vocabulary.** The token set reaches beyond dashboard scale so an
+agent can compose a landing/marketing page (a full-height hero, dark bands,
+gradients) without pixels or raw CSS. `FontSize` extends to `4xl/5xl/6xl` for
+display type, and closed token groups add `minHeight` (`half`/`screen`),
+`maxWidth` (a centered content column), `tracking` (letter-spacing), `leading`
+(line-height), `gradient`, `backdropScrim`, `scheme`, and `highlight`. Two are
+not plain token swaps: `scheme:"dark"` selects a per-subtree dark color palette
+(`ColorScheme`, a distinct authored token from view-state's report-only device
+`Scheme`), and a `box`'s optional `backdrop: "<mediaNodeId>"` paints a referenced
+media node as a **bounded background layer** behind the box's normal-flow
+children. Layering stays flow-safe by construction: the backdrop yields exactly
+two renderer-synthesized layers (the media cover + a readability scrim) at
+NEGATIVE z-index inside a stacking-context host, so the flow children always
+paint above them and no author z-index/absolute-positioning is ever emitted onto
+content. The backdrop resolves read-only to a MEDIA node only (never recurses)
+through the existing safe-`src` gate, and it counts against the render budget.
 
 ## Catalog policy
 
