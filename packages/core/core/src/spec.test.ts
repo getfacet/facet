@@ -172,9 +172,7 @@ describe("STAGE_SPEC", () => {
     // DC-007: STAGE_SPEC teaches the landing-grade vocabulary as CLOSED token
     // NAMES (resolved by the theme) — never raw CSS values.
     // FontSize enumeration extended with the three large display sizes.
-    expect(STAGE_SPEC).toContain(
-      "size(xs|sm|md|lg|xl|2xl|3xl|4xl|5xl|6xl)",
-    );
+    expect(STAGE_SPEC).toContain("size(xs|sm|md|lg|xl|2xl|3xl|4xl|5xl|6xl)");
     // New BoxStyle tokens (closed sets, names only).
     expect(STAGE_SPEC).toContain("minHeight(auto|half|screen)");
     expect(STAGE_SPEC).toContain("maxWidth(none|prose|narrow|wide)");

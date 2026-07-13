@@ -44,7 +44,8 @@ export function renderMediaNode(
   const baseStyle = cover
     ? { ...backdropLayerStyle(), pointerEvents: "none" as const }
     : mediaStyle({ ...(recipe?.media ?? {}), ...(styleOf(rawMedia.style) ?? {}) }, theme);
-  const style: CSSProperties = !cover && inert ? { ...baseStyle, pointerEvents: "none" } : baseStyle;
+  const style: CSSProperties =
+    !cover && inert ? { ...baseStyle, pointerEvents: "none" } : baseStyle;
   const ariaHidden = cover || inert ? true : undefined;
   if (kind === "video") {
     const poster =

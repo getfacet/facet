@@ -351,7 +351,16 @@ describe("landing-grade-vocab", () => {
   });
 
   it("uses null-prototype maps for every new group", () => {
-    for (const map of [MIN_HEIGHT, MAX_WIDTH, TRACKING, LEADING, GRADIENT, SCRIM, HIGHLIGHT, COLOR_DARK]) {
+    for (const map of [
+      MIN_HEIGHT,
+      MAX_WIDTH,
+      TRACKING,
+      LEADING,
+      GRADIENT,
+      SCRIM,
+      HIGHLIGHT,
+      COLOR_DARK,
+    ]) {
       expect(Object.getPrototypeOf(map)).toBeNull();
     }
   });

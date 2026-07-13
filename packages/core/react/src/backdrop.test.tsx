@@ -19,8 +19,6 @@ function tree(nodes: Record<NodeId, FacetNode>, root: NodeId = "root"): FacetTre
 const SAFE_SRC = "https://cdn.example.com/hero.jpg";
 const media = (id: NodeId, src: string = SAFE_SRC): FacetNode =>
   ({ id, type: "media", kind: "image", src }) as FacetNode;
-const box = (id: NodeId, extra: Partial<Record<string, unknown>> = {}): FacetNode =>
-  ({ id, type: "box", children: [], ...extra }) as FacetNode;
 
 function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
@@ -114,7 +112,12 @@ describe("backdrop fail-safe (DC-003)", () => {
     expect(() => {
       markup = render(
         tree({
-          root: { id: "root", type: "box", backdrop: "ghost", children: [] } as unknown as FacetNode,
+          root: {
+            id: "root",
+            type: "box",
+            backdrop: "ghost",
+            children: [],
+          } as unknown as FacetNode,
         }),
       );
     }).not.toThrow();
@@ -165,7 +168,12 @@ describe("backdrop fail-safe (DC-003)", () => {
     expect(() => {
       markup = render(
         tree({
-          root: { id: "root", type: "box", backdrop: "root", children: ["a"] } as unknown as FacetNode,
+          root: {
+            id: "root",
+            type: "box",
+            backdrop: "root",
+            children: ["a"],
+          } as unknown as FacetNode,
           a: { id: "a", type: "box", backdrop: "b", children: [] } as unknown as FacetNode,
           b: { id: "b", type: "box", backdrop: "a", children: [] } as unknown as FacetNode,
         }),
@@ -216,7 +224,12 @@ describe("backdrop flow-only discipline (DC-004)", () => {
           children: ["nav", "headline"],
         } as unknown as FacetNode,
         bg: media("bg"),
-        nav: { id: "nav", type: "box", style: { sticky: true }, children: [] } as unknown as FacetNode,
+        nav: {
+          id: "nav",
+          type: "box",
+          style: { sticky: true },
+          children: [],
+        } as unknown as FacetNode,
         headline: { id: "headline", type: "text", value: "Ship faster" } as unknown as FacetNode,
       }),
     );

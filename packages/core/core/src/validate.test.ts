@@ -2261,9 +2261,11 @@ describe("landing-grade-vocab", () => {
   // DC-003 — hostile / unknown token values never throw.
   it("DC-003 never throws on hostile unknown token values or a non-string backdrop", () => {
     const hostile: Record<string, unknown> = {
-      minHeight: { toString() {
-        throw new Error("boom");
-      } },
+      minHeight: {
+        toString() {
+          throw new Error("boom");
+        },
+      },
       maxWidth: 42,
       gradient: [],
       backdropScrim: null,

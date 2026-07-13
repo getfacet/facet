@@ -286,8 +286,7 @@ export function renderNode({
   switch (node.type) {
     case "box": {
       const boxStyleValue = styleOf(node.style) as
-        | { readonly scheme?: unknown; readonly backdropScrim?: unknown }
-        | undefined;
+        { readonly scheme?: unknown; readonly backdropScrim?: unknown } | undefined;
       // `scheme` (pinned): a bounded, READ-ONLY per-subtree color-map swap.
       // Children render with the light/dark palette this box selects; it writes
       // no stage state, cannot leak upward, and a nested `scheme:"light"` island
@@ -341,8 +340,7 @@ export function renderNode({
             }
           } else {
             const scrimToken = boxStyleValue?.backdropScrim;
-            const scrimKey =
-              scrimToken === "light" || scrimToken === "dark" ? scrimToken : "none";
+            const scrimKey = scrimToken === "light" || scrimToken === "dark" ? scrimToken : "none";
             // Exactly two renderer-synthesized layers: the media cover layer
             // (the ONLY `position:absolute`, via `renderMediaNode` COVER) and the
             // scrim tint sibling. Both aria-hidden; flow children render on top.
