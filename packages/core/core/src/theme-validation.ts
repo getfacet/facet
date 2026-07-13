@@ -3,10 +3,17 @@ import {
   FONT_FAMILIES,
   FONT_SIZES,
   FONT_WEIGHTS,
+  GRADIENTS,
+  HIGHLIGHTS,
+  LEADINGS,
+  MAX_WIDTHS,
+  MIN_HEIGHTS,
   RADII,
   RATIOS,
+  SCRIMS,
   SHADOWS,
   SPACES,
+  TRACKINGS,
 } from "./tokens.js";
 import { boundedDescription, isPlainObject, printableKey } from "./issues.js";
 import { IssueList } from "./theme-issues.js";
@@ -14,10 +21,15 @@ import { CONTRAST_PAIRS, MIN_CONTRAST, contrastRatio, parseSrgb } from "./theme-
 import { validateRecipes } from "./theme-recipe-validation.js";
 import {
   FONT_SIZE_PX_RANGE,
+  LEADING_PX_RANGE,
+  MAX_WIDTH_PX_RANGE,
+  MIN_HEIGHT_PX_RANGE,
   RADIUS_PX_RANGE,
   SPACE_PX_RANGE,
+  TRACKING_PX_RANGE,
   dimensionHandler,
   handleColor,
+  handleCssShape,
   handleFontFamily,
   handleRatio,
   handleShadow,
@@ -38,6 +50,14 @@ const KNOWN_KEYS = new Set([
   "radius",
   "ratio",
   "shadow",
+  "minHeight",
+  "maxWidth",
+  "tracking",
+  "leading",
+  "gradient",
+  "scrim",
+  "highlight",
+  "colorDark",
   "recipes",
 ]);
 
@@ -70,6 +90,14 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     radius?: Record<string, string>;
     ratio?: Record<string, string>;
     shadow?: Record<string, string>;
+    minHeight?: Record<string, string>;
+    maxWidth?: Record<string, string>;
+    tracking?: Record<string, string>;
+    leading?: Record<string, string>;
+    gradient?: Record<string, string>;
+    scrim?: Record<string, string>;
+    highlight?: Record<string, string>;
+    colorDark?: Record<string, string>;
     recipes?: ComponentRecipes;
   } = { name };
 
@@ -147,6 +175,62 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
   if (input.shadow !== undefined) {
     const group = validateGroup(input.shadow, SHADOWS, "shadow", handleShadow, issues);
     if (group !== undefined) theme.shadow = group;
+  }
+  if (input.minHeight !== undefined) {
+    const group = validateGroup(
+      input.minHeight,
+      MIN_HEIGHTS,
+      "minHeight",
+      dimensionHandler(MIN_HEIGHT_PX_RANGE.lo, MIN_HEIGHT_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.minHeight = group;
+  }
+  if (input.maxWidth !== undefined) {
+    const group = validateGroup(
+      input.maxWidth,
+      MAX_WIDTHS,
+      "maxWidth",
+      dimensionHandler(MAX_WIDTH_PX_RANGE.lo, MAX_WIDTH_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.maxWidth = group;
+  }
+  if (input.tracking !== undefined) {
+    const group = validateGroup(
+      input.tracking,
+      TRACKINGS,
+      "tracking",
+      dimensionHandler(TRACKING_PX_RANGE.lo, TRACKING_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.tracking = group;
+  }
+  if (input.leading !== undefined) {
+    const group = validateGroup(
+      input.leading,
+      LEADINGS,
+      "leading",
+      dimensionHandler(LEADING_PX_RANGE.lo, LEADING_PX_RANGE.hi),
+      issues,
+    );
+    if (group !== undefined) theme.leading = group;
+  }
+  if (input.gradient !== undefined) {
+    const group = validateGroup(input.gradient, GRADIENTS, "gradient", handleCssShape, issues);
+    if (group !== undefined) theme.gradient = group;
+  }
+  if (input.scrim !== undefined) {
+    const group = validateGroup(input.scrim, SCRIMS, "scrim", handleCssShape, issues);
+    if (group !== undefined) theme.scrim = group;
+  }
+  if (input.highlight !== undefined) {
+    const group = validateGroup(input.highlight, HIGHLIGHTS, "highlight", handleCssShape, issues);
+    if (group !== undefined) theme.highlight = group;
+  }
+  if (input.colorDark !== undefined) {
+    const group = validateGroup(input.colorDark, COLORS, "colorDark", handleColor, issues);
+    if (group !== undefined) theme.colorDark = group;
   }
   if (input.recipes !== undefined) {
     const recipes = validateRecipes(input.recipes, issues);

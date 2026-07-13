@@ -640,3 +640,135 @@ describe("validateTheme", () => {
     );
   });
 });
+
+describe("landing-grade-vocab", () => {
+  // DC-005: each new landing-grade token group is operator-overridable through
+  // the SAME fail-safe theme machinery — a valid override survives, a malformed
+  // value is clamped or dropped WITH an issue, an unknown key still warns, and
+  // the validator never throws.
+
+  it("accepts a valid override for each new dimension group and keeps the document", () => {
+    const { theme, issues } = validateTheme({
+      name: "landing",
+      minHeight: { screen: "600px" },
+      maxWidth: { wide: "1200px" },
+      tracking: { wide: "0.05em" },
+      leading: { relaxed: "1.5rem" },
+    });
+    expect(theme).toBeDefined();
+    const t = theme as FacetTheme;
+    expect(t.minHeight!.screen).toBe("600px");
+    expect(t.maxWidth!.wide).toBe("1200px");
+    expect(t.tracking!.wide).toBe("0.05em");
+    expect(t.leading!.relaxed).toBe("1.5rem");
+    expect(hasError(issues)).toBe(false);
+  });
+
+  it("accepts a valid override for each new CSS-shape group", () => {
+    const { theme, issues } = validateTheme({
+      name: "landing",
+      gradient: { accent: "linear-gradient(180deg, #000000, #4f46e5)" },
+      scrim: { dark: "rgba(0, 0, 0, 0.4)" },
+      highlight: { band: "linear-gradient(transparent 60%, #fde68a 60%)" },
+    });
+    expect(theme).toBeDefined();
+    const t = theme as FacetTheme;
+    expect(t.gradient!.accent).toBe("linear-gradient(180deg, #000000, #4f46e5)");
+    expect(t.scrim!.dark).toBe("rgba(0, 0, 0, 0.4)");
+    expect(t.highlight!.band).toBe("linear-gradient(transparent 60%, #fde68a 60%)");
+    expect(hasError(issues)).toBe(false);
+  });
+
+  it("accepts a valid colorDark palette override into a null-proto map", () => {
+    const { theme, issues } = validateTheme({
+      name: "landing",
+      colorDark: { bg: "#0b0b0f", fg: "#f5f5f7" },
+    });
+    expect(theme).toBeDefined();
+    const colorDark = (theme as FacetTheme).colorDark!;
+    expect(colorDark.bg).toBe("#0b0b0f");
+    expect(colorDark.fg).toBe("#f5f5f7");
+    expect(Object.getPrototypeOf(colorDark)).toBeNull();
+    expect(hasError(issues)).toBe(false);
+  });
+
+  it("clamps an out-of-range dimension override with a warning but keeps the document", () => {
+    const { theme, issues } = validateTheme({ name: "x", minHeight: { screen: "9999999px" } });
+    expect(theme).toBeDefined();
+    expect((theme as FacetTheme).minHeight!.screen).toBe("9999px");
+    expect(issues.some((i) => i.severity === "warning")).toBe(true);
+    expect(hasError(issues)).toBe(false);
+  });
+
+  it("refuses a hostile CSS value in a new CSS-shape group as an error", () => {
+    const hostile: unknown[] = [
+      { name: "x", gradient: { accent: "url(https://evil)" } },
+      { name: "x", scrim: { dark: "rgba(0,0,0,0.4);background:red" } },
+      { name: "x", highlight: { band: "var(--x)" } },
+      { name: "x", gradient: { accent: "javascript:alert(1)" } },
+    ];
+    for (const doc of hostile) {
+      const result = validateTheme(doc);
+      expect(result.theme, JSON.stringify(doc)).toBeUndefined();
+      expect(hasError(result.issues), JSON.stringify(doc)).toBe(true);
+    }
+  });
+
+  it("refuses a hostile colorDark value as an error (reuses the color handler)", () => {
+    const result = validateTheme({ name: "x", colorDark: { bg: "url(https://evil)" } });
+    expect(result.theme).toBeUndefined();
+    expect(hasError(result.issues)).toBe(true);
+  });
+
+  it("drops an unknown token within a new group with a warning but keeps the document", () => {
+    const { theme, issues } = validateTheme({
+      name: "x",
+      minHeight: { screen: "600px", bogus: "10px" },
+      gradient: {
+        accent: "linear-gradient(180deg, #000000, #ffffff)",
+        nope: "linear-gradient(0deg, #000000, #ffffff)",
+      },
+    });
+    expect(theme).toBeDefined();
+    const t = theme as FacetTheme;
+    expect(t.minHeight!.screen).toBe("600px");
+    expect(Object.prototype.hasOwnProperty.call(t.minHeight!, "bogus")).toBe(false);
+    expect(Object.prototype.hasOwnProperty.call(t.gradient!, "nope")).toBe(false);
+    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(2);
+    expect(hasError(issues)).toBe(false);
+  });
+
+  it("warns and drops an unknown top-level group key alongside the new groups", () => {
+    const { theme, issues } = validateTheme({
+      name: "x",
+      leading: { relaxed: "1.6rem" },
+      bogusGroup: { anything: 1 },
+    });
+    expect(theme).toBeDefined();
+    expect((theme as FacetTheme).leading!.relaxed).toBe("1.6rem");
+    expect(issues.some((i) => i.message.includes("bogusGroup"))).toBe(true);
+    expect(hasError(issues)).toBe(false);
+  });
+
+  it("never throws when the new groups carry junk shapes", () => {
+    const junkDocs: unknown[] = [
+      { name: "x", minHeight: 42 },
+      { name: "x", gradient: [] },
+      { name: "x", colorDark: "nope" },
+      { name: "x", tracking: { wide: 5 } },
+      {
+        name: "x",
+        get scrim() {
+          throw new Error("boom");
+        },
+      },
+    ];
+    for (const doc of junkDocs) {
+      let result: ReturnType<typeof validateTheme> | undefined;
+      expect(() => {
+        result = validateTheme(doc);
+      }).not.toThrow();
+      expect(result).toBeDefined();
+    }
+  });
+});

@@ -14,8 +14,23 @@ const SPACE_PX_RANGE = { lo: 0, hi: 512 } as const;
 const FONT_SIZE_PX_RANGE = { lo: 0, hi: 512 } as const;
 const RADIUS_PX_RANGE = { lo: 0, hi: 9999 } as const;
 const WEIGHT_RANGE = { lo: 1, hi: 1000 } as const;
+// Landing-grade dimension groups. Heights/widths span section-scale lengths;
+// tracking (letter-spacing) is small and may be negative; leading (line-height)
+// stays modest.
+const MIN_HEIGHT_PX_RANGE = { lo: 0, hi: 9999 } as const;
+const MAX_WIDTH_PX_RANGE = { lo: 0, hi: 9999 } as const;
+const TRACKING_PX_RANGE = { lo: -64, hi: 64 } as const;
+const LEADING_PX_RANGE = { lo: 0, hi: 512 } as const;
 
-export { SPACE_PX_RANGE, FONT_SIZE_PX_RANGE, RADIUS_PX_RANGE };
+export {
+  SPACE_PX_RANGE,
+  FONT_SIZE_PX_RANGE,
+  RADIUS_PX_RANGE,
+  MIN_HEIGHT_PX_RANGE,
+  MAX_WIDTH_PX_RANGE,
+  TRACKING_PX_RANGE,
+  LEADING_PX_RANGE,
+};
 
 function unsafeValue(value: string): string | undefined {
   if (value.length > MAX_VALUE_LENGTH) return `value exceeds ${MAX_VALUE_LENGTH} characters`;
@@ -164,12 +179,23 @@ export function handleRatio(value: unknown): Handled<string> {
   return { value };
 }
 
-export function handleShadow(value: unknown): Handled<string> {
+/**
+ * A non-empty, injection-free CSS value string (the same safe-value gate used
+ * for shadows): rejects `url(`/`var(`/`expression(`/`javascript:` and the
+ * `;{}<>\`` injection characters via `unsafeValue`, but allows the CSS function
+ * shapes an operator legitimately needs (e.g. `linear-gradient(...)`,
+ * `rgba(...)`). Reused for `gradient`/`scrim`/`highlight`.
+ */
+export function handleCssShape(value: unknown): Handled<string> {
   if (typeof value !== "string") return { error: "value is not a string" };
   const unsafe = unsafeValue(value);
   if (unsafe !== undefined) return { error: unsafe };
-  if (value.trim() === "") return { error: "shadow value is empty" };
+  if (value.trim() === "") return { error: "value is empty" };
   return { value };
+}
+
+export function handleShadow(value: unknown): Handled<string> {
+  return handleCssShape(value);
 }
 
 export function tokenValue<T extends string | number>(

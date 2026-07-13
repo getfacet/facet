@@ -8,14 +8,21 @@ import type {
   FontFamily,
   FontSize,
   FontWeight,
+  Gradient,
+  Highlight,
   Justify,
+  Leading,
+  MaxWidth,
+  MinHeight,
   Radius,
   Ratio,
+  Scrim,
   ScrollAxis,
   Shadow,
   Sizing,
   Space,
   TextAlign,
+  Tracking,
 } from "./tokens.js";
 import { COMPONENT_NODE_TYPES, PRIMITIVE_BRICK_TYPES, type FacetNode } from "./nodes.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
@@ -36,6 +43,15 @@ export interface FacetTheme {
   readonly radius?: Readonly<Partial<Record<Radius, string>>>;
   readonly ratio?: Readonly<Partial<Record<Ratio, string>>>;
   readonly shadow?: Readonly<Partial<Record<Shadow, string>>>;
+  readonly minHeight?: Readonly<Partial<Record<MinHeight, string>>>;
+  readonly maxWidth?: Readonly<Partial<Record<MaxWidth, string>>>;
+  readonly tracking?: Readonly<Partial<Record<Tracking, string>>>;
+  readonly leading?: Readonly<Partial<Record<Leading, string>>>;
+  readonly gradient?: Readonly<Partial<Record<Gradient, string>>>;
+  readonly scrim?: Readonly<Partial<Record<Scrim, string>>>;
+  readonly highlight?: Readonly<Partial<Record<Highlight, string>>>;
+  /** Dark-scheme palette (same token space as `color`), used by `scheme:"dark"`. */
+  readonly colorDark?: Readonly<Partial<Record<Color, string>>>;
   readonly recipes?: ComponentRecipes;
 }
 
