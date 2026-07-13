@@ -37,6 +37,8 @@ import {
   type TextStyle,
 } from "./nodes.js";
 import { isComponentNodeType, sanitizeComponentNode } from "./component-validation.js";
+import { setColumnRow, setFrom } from "./component-validation-shared.js";
+import { sanitizeViewPredicate, type ViewPredicate } from "./view.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import {
@@ -248,6 +250,29 @@ function asVariant(value: unknown, nodeId: string, issues: IssueSink): string | 
   return undefined;
 }
 
+/**
+ * Enabler B: sanitize the `active` view-state predicate through the closed
+ * `sanitizeViewPredicate` (drops an unknown/future kind WITH an issue), so a
+ * hostile/unknown predicate degrades to the default look and never becomes an
+ * expression eval.
+ */
+function setActivePredicate(
+  raw: Record<string, unknown>,
+  id: string,
+  node: { active?: ViewPredicate },
+  issues: IssueSink,
+): void {
+  if (raw.active === undefined) return;
+  const active = sanitizeViewPredicate(raw.active);
+  if (active !== undefined) {
+    node.active = active;
+    return;
+  }
+  issues.push(
+    `node "${printableKey(id)}": unknown active predicate ${printableValue(raw.active)} dropped`,
+  );
+}
+
 export interface SanitizeNodeOptions {
   readonly allowSlotMarkers?: boolean;
 }
@@ -287,9 +312,22 @@ export function validateBox(
     hidden?: boolean;
     variant?: string;
     backdrop?: string;
+    activeVariant?: string;
+    activeStyle?: BoxStyle;
+    active?: ViewPredicate;
   } = { id, type: "box", style: boxStyle(raw.style, id, issues), children };
   const variant = asVariant(raw.variant, id, issues);
   if (variant !== undefined) node.variant = variant;
+  // Enabler B active look: `activeVariant` is a recipe name; `activeStyle` runs
+  // through the SAME boxStyle() token sanitizer as base `style` (no token
+  // bypass); `active` is the closed predicate. All additive optionals.
+  const activeVariant = asVariant(raw.activeVariant, id, issues);
+  if (activeVariant !== undefined) node.activeVariant = activeVariant;
+  if (raw.activeStyle !== undefined) {
+    const activeStyle = boxStyle(raw.activeStyle, id, issues);
+    if (Object.keys(activeStyle).length > 0) node.activeStyle = activeStyle;
+  }
+  setActivePredicate(raw, id, node, issues);
   // `backdrop` is a node-id STRING (resolved to a media node fail-safe at
   // render time in WU-6), NOT a token: kept iff a string, else dropped with
   // a (bounded) issue.
@@ -320,7 +358,19 @@ export function validateText(
     issues.push(`node "${key}": text has no string value`);
     return undefined;
   }
-  const node: { id: string; type: "text"; value: string; style: TextStyle; variant?: string } = {
+  const node: {
+    id: string;
+    type: "text";
+    value: string;
+    style: TextStyle;
+    variant?: string;
+    from?: string;
+    column?: string;
+    row?: number;
+    activeVariant?: string;
+    activeStyle?: TextStyle;
+    active?: ViewPredicate;
+  } = {
     id,
     type: "text",
     value,
@@ -328,6 +378,18 @@ export function validateText(
   };
   const variant = asVariant(raw.variant, id, issues);
   if (variant !== undefined) node.variant = variant;
+  // Enabler A store binding: same name/row-clamp rules as metric/stat.
+  setFrom(raw, id, node, issues);
+  setColumnRow(raw, node);
+  // Enabler B active look: `activeStyle` routes through the SAME textStyle()
+  // token sanitizer as base `style`; `active` is the closed predicate.
+  const activeVariant = asVariant(raw.activeVariant, id, issues);
+  if (activeVariant !== undefined) node.activeVariant = activeVariant;
+  if (raw.activeStyle !== undefined) {
+    const activeStyle = textStyle(raw.activeStyle, id, issues);
+    if (Object.keys(activeStyle).length > 0) node.activeStyle = activeStyle;
+  }
+  setActivePredicate(raw, id, node, issues);
   return node;
 }
 

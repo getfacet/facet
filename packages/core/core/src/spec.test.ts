@@ -219,4 +219,25 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/never captured/i);
     expect(STAGE_SPEC).toMatch(/password fields/i);
   });
+
+  it("teaches store-bound text and the closed active-look predicate", () => {
+    // DC-001: text becomes a from-bindable node reading ONE cell via from+column+row.
+    expect(STAGE_SPEC).toMatch(/text:[^\n]*"from"\?:datasetName/);
+    expect(STAGE_SPEC).toMatch(/text:[^\n]*"column"\?:name/);
+    expect(STAGE_SPEC).toMatch(/text:[^\n]*"row"\?:number/);
+    // The data-binding paragraph lists text in the from-bindable family.
+    expect(STAGE_SPEC).toMatch(/metric\/stat\/text reads ONE cell/i);
+    // DC-006: the active-look predicate is a CLOSED union — screen | toggled —
+    // preferring activeVariant, and an unknown/dangling predicate keeps the default look.
+    expect(STAGE_SPEC).toContain('"activeVariant"?');
+    expect(STAGE_SPEC).toContain('"activeStyle"?');
+    expect(STAGE_SPEC).toContain('"active"?');
+    expect(STAGE_SPEC).toMatch(/\{\s*"screen":/);
+    expect(STAGE_SPEC).toMatch(/\{\s*"toggled":/);
+    expect(STAGE_SPEC).toMatch(/prefer[^.]*activeVariant/i);
+    expect(STAGE_SPEC).toMatch(/unknown[^.]*default look/i);
+    // Read-only: evaluating the active look runs no agent turn / fires no event.
+    expect(STAGE_SPEC).toMatch(/read-only/i);
+    expect(STAGE_SPEC).toMatch(/no agent turn/i);
+  });
 });

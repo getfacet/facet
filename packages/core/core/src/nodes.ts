@@ -38,6 +38,7 @@ import type {
   TextAlign,
   Tracking,
 } from "./tokens.js";
+import type { ViewPredicate } from "./view.js";
 
 /** Identifier for a node within a stage tree. */
 export type NodeId = string;
@@ -197,6 +198,24 @@ export interface BoxNode {
    * dangling/non-media/unsafe reference paints no layer (fail-safe).
    */
   readonly backdrop?: NodeId;
+  /**
+   * Recipe name applied ONLY while `active` evaluates true (enabler B). The
+   * renderer folds it over `variant` read-only via `resolveRecipe`; token-only
+   * by construction. Prefer this over `activeStyle`.
+   */
+  readonly activeVariant?: string;
+  /**
+   * Extra style tokens applied ONLY while `active` evaluates true (enabler B).
+   * Routed through the SAME `boxStyle()` token sanitizer as `style`, so it can
+   * carry only tokens — never a raw-CSS bypass.
+   */
+  readonly activeStyle?: BoxStyle;
+  /**
+   * Closed view-state predicate selecting when the active look applies (enabler
+   * B). Read-only, evaluated against the threaded snapshot view-state; an
+   * unknown/dangling predicate degrades to the default look.
+   */
+  readonly active?: ViewPredicate;
   readonly children: readonly NodeId[];
 }
 
@@ -206,6 +225,32 @@ export interface TextNode {
   readonly value: string;
   readonly variant?: string;
   readonly style?: TextStyle;
+  /**
+   * Optional binding: read `value` from a single cell of `FacetTree.data[from]`
+   * (enabler A). Mirrors `MetricFields`; `from` wins over the inline `value`, a
+   * dangling reference or absent column yields empty — never throws.
+   */
+  readonly from?: string;
+  /** The dataset column supplying the cell value (used only with `from`). */
+  readonly column?: string;
+  /** The dataset row index (default 0) supplying the cell value (used only with `from`). */
+  readonly row?: number;
+  /**
+   * Recipe name applied ONLY while `active` evaluates true (enabler B). Folded
+   * over `variant` read-only via `resolveRecipe`; token-only. Prefer this over
+   * `activeStyle`.
+   */
+  readonly activeVariant?: string;
+  /**
+   * Extra style tokens applied ONLY while `active` evaluates true (enabler B).
+   * Routed through the SAME `textStyle()` token sanitizer as `style`.
+   */
+  readonly activeStyle?: TextStyle;
+  /**
+   * Closed view-state predicate selecting when the active look applies (enabler
+   * B). Read-only; an unknown/dangling predicate degrades to the default look.
+   */
+  readonly active?: ViewPredicate;
 }
 
 export const MEDIA_KINDS = ["image", "video"] as const;

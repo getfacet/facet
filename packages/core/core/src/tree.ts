@@ -1,4 +1,4 @@
-import { isContainer, type FacetNode, type NodeId } from "./nodes.js";
+import { isContainer, type FacetNode, type NodeId, type TextNode } from "./nodes.js";
 import type { ChartNode, KeyValueNode, ListNode, MetricNode, StatNode } from "./component-nodes.js";
 import type { DataWarehouse } from "./data-types.js";
 import { resolveNodeData } from "./data-binding.js";
@@ -275,8 +275,8 @@ export function rendersEmptyState(node: Record<string, unknown>): boolean {
 }
 
 // Per-brick `resolveFromContent` predicates — the former `from`-binding switch
-// cases (chart/list/keyValue/metric/stat), verbatim. `table` deliberately has no
-// entry (its visibility is inline COLUMNS, not resolved rows).
+// cases (chart/list/keyValue/metric/stat/text), verbatim. `table` deliberately
+// has no entry (its visibility is inline COLUMNS, not resolved rows).
 export function fromChart(
   node: Record<string, unknown>,
   warehouse: DataWarehouse | undefined,
@@ -307,6 +307,15 @@ export function fromMetricStat(
     typeof node.label === "string" &&
     resolveNodeData(node as unknown as MetricNode | StatNode, warehouse).length > 0
   );
+}
+export function fromText(
+  node: Record<string, unknown>,
+  warehouse: DataWarehouse | undefined,
+): boolean {
+  // A store-bound text shows content iff the SHARED scalar projection yields a
+  // non-empty cell (the same value the renderer prints), so the empty-inline
+  // `value:""` case does not vanish. Dangling/absent/empty cell ⇒ non-content.
+  return resolveNodeData(node as unknown as TextNode, warehouse).length > 0;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -36,6 +36,7 @@ import type {
   StatNode,
   TableNode,
 } from "./component-nodes.js";
+import type { TextNode } from "./nodes.js";
 import type { DataCell, DataRow, Dataset, DataWarehouse, TableRow } from "./data-types.js";
 import {
   FORBIDDEN_DATA_KEYS,
@@ -172,11 +173,11 @@ export function resolveNodeData(
   warehouse: DataWarehouse | undefined,
 ): readonly KeyValueItem[];
 export function resolveNodeData(
-  node: MetricNode | StatNode,
+  node: MetricNode | StatNode | TextNode,
   warehouse: DataWarehouse | undefined,
 ): string;
 export function resolveNodeData(
-  node: TableNode | ChartNode | ListNode | KeyValueNode | MetricNode | StatNode,
+  node: TableNode | ChartNode | ListNode | KeyValueNode | MetricNode | StatNode | TextNode,
   warehouse: DataWarehouse | undefined,
 ):
   | readonly TableRow[]
@@ -247,7 +248,7 @@ export function resolveKeyValue(
 }
 
 export function resolveScalar(
-  node: MetricNode | StatNode,
+  node: MetricNode | StatNode | TextNode,
   warehouse: DataWarehouse | undefined,
 ): string {
   if (node.from === undefined) return node.value;

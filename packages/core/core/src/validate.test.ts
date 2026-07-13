@@ -2163,3 +2163,87 @@ describe("landing-grade-vocab", () => {
     expect(text.style).toEqual({ size: "xl", weight: "bold" });
   });
 });
+
+describe("text from active", () => {
+  // DC-002 — enabler A (store-bound text) + enabler B (active look) validation.
+  it("DC-002: keeps valid from/column/row + activeVariant, drops a non-token activeStyle value and an unknown-kind active with issues", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["t"] },
+        t: {
+          id: "t",
+          type: "text",
+          value: "fallback",
+          from: "kpis",
+          column: "arr",
+          row: 2,
+          activeVariant: "highlighted",
+          // color is a real text token (kept); tracking carries a non-token
+          // value + boxShadow is a raw-CSS key — both must be rejected because
+          // activeStyle routes through the SAME textStyle() sanitizer as style.
+          activeStyle: { color: "accent", tracking: "ginormous", boxShadow: "0 0 5px red" },
+          active: { totallyUnknownKind: "nope" },
+        },
+      },
+    });
+    const t = tree.nodes["t"] as unknown as {
+      from?: string;
+      column?: string;
+      row?: number;
+      activeVariant?: string;
+      activeStyle?: Record<string, unknown>;
+      active?: unknown;
+    };
+    expect(t.from).toBe("kpis");
+    expect(t.column).toBe("arr");
+    expect(t.row).toBe(2);
+    expect(t.activeVariant).toBe("highlighted");
+    // RISK-INV-4: activeStyle is token-only — a valid token survives, a non-token
+    // value / raw-CSS key is dropped exactly like base style (no token bypass).
+    expect(t.activeStyle?.["color"]).toBe("accent");
+    expect(t.activeStyle).not.toHaveProperty("tracking");
+    expect(t.activeStyle).not.toHaveProperty("boxShadow");
+    expect(issues.some((issue) => issue.includes("unknown tracking token"))).toBe(true);
+    // An unknown-kind predicate degrades to no predicate, dropped with an issue.
+    expect(t.active).toBeUndefined();
+    expect(issues.some((issue) => issue.includes("unknown active predicate"))).toBe(true);
+  });
+
+  it("DC-006: an unknown-kind active degrades while a valid closed predicate is kept (box + text)", () => {
+    const { tree } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          active: { kind: "future-thing", foo: 1 },
+          children: ["t"],
+        },
+        t: { id: "t", type: "text", value: "hi", active: { screen: "home" } },
+      },
+    });
+    const root = tree.nodes["root"] as unknown as { active?: unknown };
+    const t = tree.nodes["t"] as unknown as { active?: { screen?: string } };
+    expect(root.active).toBeUndefined();
+    expect(t.active).toEqual({ screen: "home" });
+  });
+
+  it("DC-008: a text without the new fields validates byte-identically (no keys injected)", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["t"] },
+        t: { id: "t", type: "text", value: "plain" },
+      },
+    });
+    expect(issues).toHaveLength(0);
+    const text = tree.nodes["t"] as object;
+    expect(Object.keys(text).sort()).toEqual(["id", "style", "type", "value"]);
+    expect(text).toEqual({ id: "t", type: "text", value: "plain", style: {} });
+    expect(text).not.toHaveProperty("from");
+    expect(text).not.toHaveProperty("active");
+    expect(text).not.toHaveProperty("activeVariant");
+    expect(text).not.toHaveProperty("activeStyle");
+  });
+});

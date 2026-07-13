@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup } from "@testing-library/react";
+import { cleanup, render as mountClient, screen } from "@testing-library/react";
 import type { DataWarehouse, FacetNode, FacetTree, NodeId } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 
@@ -198,5 +198,81 @@ describe("StageRenderer data bindings (jsdom)", () => {
       SALES,
     );
     expect(render(tree)).toContain(">8<");
+  });
+});
+
+// Enabler A (WU-4): a primitive `text` gains `from`/`column`/`row` mirroring
+// MetricFields, projected through the ONE shared `resolveNodeData` at the core
+// walker's `text` case — `from` wins over the inline `value`, a dangling ref
+// yields empty, and a text WITHOUT `from` is byte-identical to today.
+describe("StageRenderer store-bound text (jsdom)", () => {
+  const boundText = (
+    id: NodeId,
+    value: string,
+    binding: { from?: string; column?: string; row?: number },
+  ): FacetNode => ({ id, type: "text", value, ...binding }) as unknown as FacetNode;
+
+  // DC-001: a store-bound text renders the cell, overriding the inline `value`.
+  it("renders the store cell and ignores the inline value (DC-001)", () => {
+    const html = render(
+      stage(
+        [boundText("t", "INLINE_IGNORED", { from: "sales", column: "revenue", row: 0 })],
+        SALES,
+      ),
+    );
+    expect(html).toContain(">100<");
+    expect(html).not.toContain("INLINE_IGNORED");
+  });
+
+  // DC-002: a dangling `from` (or absent column) yields empty text, never throws.
+  it("renders empty for a dangling from without throwing (DC-002)", () => {
+    let html = "";
+    expect(() => {
+      html = render(
+        stage([boundText("t", "INLINE_IGNORED", { from: "missing", column: "revenue" })], SALES),
+      );
+    }).not.toThrow();
+    expect(html).not.toContain("INLINE_IGNORED");
+    expect(html).toContain("<p"); // the node still renders (as an empty paragraph)
+  });
+
+  // DC-008: a text WITHOUT `from` renders byte-identically to a text authored
+  // with no binding fields at all — the enabler is a pure additive optional.
+  it("renders a text without from byte-identically to today (DC-008)", () => {
+    const plain = render(stage([{ id: "t", type: "text", value: "hello" }]));
+    const withUnusedFields = render(stage([boundText("t", "hello", {})]));
+    expect(withUnusedFields).toBe(plain);
+    expect(plain).toContain(">hello<");
+  });
+
+  // DC-003: a server `data` patch re-renders EVERY bound text (two texts, one
+  // dataset) with no re-emit — the renderer never caches the projected cell.
+  it("re-renders two store-bound texts on a data patch (DC-003)", () => {
+    const build = (data: DataWarehouse): FacetTree =>
+      stage(
+        [
+          boundText("a", "", { from: "sales", column: "revenue", row: 0 }),
+          boundText("b", "", { from: "sales", column: "revenue", row: 1 }),
+        ],
+        data,
+      );
+    const { rerender } = mountClient(createElement(StageRenderer, { tree: build(SALES) }));
+    expect(screen.getByText("100")).toBeTruthy();
+    expect(screen.getByText("200")).toBeTruthy();
+
+    // A server data patch swaps the dataset; both bound texts re-project.
+    rerender(
+      createElement(StageRenderer, {
+        tree: build({
+          sales: [
+            { month: "Jan", revenue: 111, units: 5 },
+            { month: "Feb", revenue: 222, units: 8 },
+          ],
+        }),
+      }),
+    );
+    expect(screen.getByText("111")).toBeTruthy();
+    expect(screen.getByText("222")).toBeTruthy();
+    expect(screen.queryByText("100")).toBeNull();
   });
 });

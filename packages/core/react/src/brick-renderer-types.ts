@@ -21,6 +21,15 @@ export interface BrickRenderContext<Press> {
   readonly nodeId: NodeId;
   readonly activeScreen: string | null;
   /**
+   * The browser-private RAW toggle override map (node id → shown/hidden),
+   * threaded straight through exactly like `activeScreen`. READ-ONLY: a
+   * `{ toggled }` active-look predicate reads `get(id) === true` directly
+   * (never-toggled ⇒ false), so it stays byte-coherent with the reported
+   * `view.toggled` (invariant #6). On the inert exit/previous-screen clone this
+   * carries the SNAPSHOT's overrides, keeping that clone's look snapshot-coherent.
+   */
+  readonly visibilityOverrides: ReadonlyMap<NodeId, boolean>;
+  /**
    * The validated per-tree data warehouse (`FacetTree.data`), threaded straight
    * through from the tree so a node's `from` binding resolves at render time via
    * the ONE core `resolveNodeData`. READ-ONLY: resolution is a pure function of

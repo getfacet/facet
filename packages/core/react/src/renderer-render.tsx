@@ -4,9 +4,14 @@ import {
   MAX_DEPTH,
   MAX_NODE_BODY_CHARS,
   MAX_RENDER_NODES,
+  evaluateViewPredicate,
+  resolveNodeData,
+  type BoxStyle,
   type FacetTree,
   type NodeId,
   type SortDirection,
+  type TextStyle,
+  type ViewPredicate,
 } from "@facet/core";
 import { appearClass } from "./appear.js";
 import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
@@ -313,6 +318,7 @@ export function renderNode({
       inert,
       nodeId: id,
       activeScreen,
+      visibilityOverrides,
       data: tree.data,
       children,
       classifyPress,
@@ -322,6 +328,20 @@ export function renderNode({
       onHeaderSort,
       renderPressable,
     });
+
+  // Enabler B (active look): evaluate the closed `active` predicate READ-ONLY
+  // against the ALREADY-THREADED snapshot view-state (`activeScreen` +
+  // `visibilityOverrides`) — never a live/`useFacet` read, so the inert exit
+  // clone (which carries its OWN snapshot's screen/overrides) keeps the OLD
+  // highlight instead of flashing the live one (RISK-INV-1). This writes
+  // nothing: it only SELECTS whether the active variant/style folds into the
+  // pure style merge below (RISK-INV-2).
+  const looks = node as {
+    readonly active?: ViewPredicate;
+    readonly activeVariant?: unknown;
+    readonly activeStyle?: unknown;
+  };
+  const activeLook = evaluateViewPredicate(looks.active, { activeScreen, visibilityOverrides });
 
   switch (node.type) {
     case "box": {
@@ -415,12 +435,29 @@ export function renderNode({
       }
       const variant = (node as { readonly variant?: unknown }).variant;
       const recipe = resolveRecipe(theme, "box", variant);
+      // Active look folds in ONLY when the predicate is true (else both are
+      // empty and the merge below is byte-identical to today — DC-008).
+      // `activeVariant` resolves via `resolveRecipe` like the base variant;
+      // `activeStyle` merges like the base inline style. Both OVERLAY the base
+      // (active last) so the highlight wins while active.
+      const activeRecipe =
+        activeLook && typeof looks.activeVariant === "string"
+          ? resolveRecipe(theme, "box", looks.activeVariant)
+          : undefined;
+      const activeStyleTokens = activeLook
+        ? styleOf(looks.activeStyle as BoxStyle | undefined)
+        : undefined;
       // Resolve the box's OWN style against `childTheme` too, so a `scheme:"dark"`
       // box paints its own `bg`/`border` from the dark palette — a "dark band"
       // must be dark itself, not just its descendants (else near-white bg + dark
       // text = illegible). `childTheme` aliases `theme` when no scheme is set.
       const boxCss = boxStyle(
-        { ...(recipe.box ?? {}), ...(styleOf(node.style) ?? {}) },
+        {
+          ...(recipe.box ?? {}),
+          ...(styleOf(node.style) ?? {}),
+          ...(activeRecipe?.box ?? {}),
+          ...(activeStyleTokens ?? {}),
+        },
         childTheme,
       );
       // ONE element type for every box (review r6): a live patch that adds or
@@ -450,14 +487,33 @@ export function renderNode({
       );
     }
     case "text": {
-      // A non-string value (an object would make React itself throw) is skipped.
-      // No appear class here: appear is BoxStyle-only (Decision 2) — validateTree
-      // strips it from non-box styles, so the raw path must render it as absent.
-      const value = cappedString(node.value, MAX_NODE_BODY_CHARS);
+      // Enabler A: project `from` through the ONE shared `resolveNodeData` — the
+      // store cell wins over the inline `value`, a dangling ref/absent column
+      // yields "" (never throws), and a text WITHOUT `from` returns `node.value`
+      // unchanged (byte-identical — DC-008). A non-string result (an object would
+      // make React itself throw) is then skipped by `cappedString`.
+      const value = cappedString(resolveNodeData(node, tree.data), MAX_NODE_BODY_CHARS);
       if (value === undefined) return null;
       const variant = (node as { readonly variant?: unknown }).variant;
       const recipe = resolveRecipe(theme, "text", variant);
-      const textCss = textStyle({ ...(recipe.text ?? {}), ...(styleOf(node.style) ?? {}) }, theme);
+      // Active look (enabler B): same read-only overlay discipline as the box
+      // case — active variant/style fold in only while the predicate is true.
+      const activeRecipe =
+        activeLook && typeof looks.activeVariant === "string"
+          ? resolveRecipe(theme, "text", looks.activeVariant)
+          : undefined;
+      const activeStyleTokens = activeLook
+        ? styleOf(looks.activeStyle as TextStyle | undefined)
+        : undefined;
+      const textCss = textStyle(
+        {
+          ...(recipe.text ?? {}),
+          ...(styleOf(node.style) ?? {}),
+          ...(activeRecipe?.text ?? {}),
+          ...(activeStyleTokens ?? {}),
+        },
+        theme,
+      );
       return (
         <p
           className={motionClassName}

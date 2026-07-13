@@ -10,6 +10,7 @@ import type {
   StatNode,
   TableNode,
 } from "./component-nodes.js";
+import type { TextNode } from "./nodes.js";
 import {
   DATASET_NAME_RE,
   MAX_DATASET_NAME_CHARS,
@@ -62,6 +63,10 @@ function metricNode(overrides: Partial<MetricNode> = {}): MetricNode {
 
 function statNode(overrides: Partial<StatNode> = {}): StatNode {
   return { id: "s1", type: "stat", label: "Total", value: "inline", ...overrides };
+}
+
+function textNode(overrides: Partial<TextNode> = {}): TextNode {
+  return { id: "tx1", type: "text", value: "inline", ...overrides };
 }
 
 // =========================================================================
@@ -341,5 +346,44 @@ describe("resolveNodeData metric/stat selectors (DC-004 hostile)", () => {
       resolveNodeData(metricNode({ from: "metrics", column: 123 as unknown as string }), wh),
     ).toBe("");
     expect(resolveNodeData(statNode({ from: "metrics", column: "total" }), undefined)).toBe("");
+  });
+});
+
+// =========================================================================
+// text from — enabler A store-bound text (DC-001, DC-002, DC-008)
+// =========================================================================
+
+describe("text from", () => {
+  const wh: DataWarehouse = sanitizeDataWarehouse({
+    metrics: [
+      { total: 100, label: "a" },
+      { total: 200, label: "b" },
+    ],
+  })!;
+
+  it("returns the store cell for a from-bound text (DC-001)", () => {
+    expect(resolveNodeData(textNode({ from: "metrics", column: "total" }), wh)).toBe("100");
+    expect(resolveNodeData(textNode({ from: "metrics", column: "total", row: 1 }), wh)).toBe("200");
+  });
+
+  it("from wins over the inline value (DC-002)", () => {
+    expect(
+      resolveNodeData(textNode({ value: "inline", from: "metrics", column: "total" }), wh),
+    ).toBe("100");
+  });
+
+  it("dangling from / absent column / bad row → '', never throws (DC-002)", () => {
+    expect(() => resolveNodeData(textNode({ from: "nope", column: "total" }), wh)).not.toThrow();
+    expect(resolveNodeData(textNode({ from: "nope", column: "total" }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "metrics" }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "metrics", column: "missing" }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "metrics", column: "__proto__" }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "metrics", column: "total", row: 1e9 }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "metrics", column: "total" }), undefined)).toBe("");
+  });
+
+  it("a plain text with no from returns its inline value, unchanged (DC-008)", () => {
+    expect(resolveNodeData(textNode({ value: "hello" }), wh)).toBe("hello");
+    expect(resolveNodeData(textNode(), wh)).toBe("inline");
   });
 });

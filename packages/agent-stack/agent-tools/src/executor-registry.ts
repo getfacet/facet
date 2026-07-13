@@ -136,7 +136,8 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
       }
       return { facetNode: value as unknown as FacetNode };
     },
-    describe: (facetNode) => `${facetNode.id} text value="${preview(facetNode.value)}"`,
+    describe: (facetNode, warehouse) =>
+      `${facetNode.id} text value="${preview(resolveNodeData(facetNode, warehouse))}"`,
   },
   media: {
     policy: { kind: "primitive" },

@@ -319,9 +319,11 @@ agent stream and patch a tree incrementally — adding one node at a time — in
 of re-emitting a whole page on every change.
 
 **Data warehouse + bindings.** A `data`-bearing node (`table`, `chart`, `list`,
-`keyValue`, `metric`, `stat`) may carry inline data (`table.rows`,
-`chart.series`, …) OR reference a named dataset in the optional top-level `data`
-warehouse via `from: "<name>"` — so one dataset feeds many views and a single
+`keyValue`, `metric`, `stat`, and — for a single cell — `text`) may carry inline
+data (`table.rows`, `chart.series`, a `text.value`, …) OR reference a named
+dataset in the optional top-level `data` warehouse via `from: "<name>"` (a
+single-cell node adds `column`/`row`, default row 0, exactly like `metric`) —
+so one dataset feeds many views and a single
 `/data/<name>` (or `/data/<name>/<i>/<col>`) patch updates every bound view at
 once. A dataset is a closed `Array<Record<string, string | number | boolean>>`
 (row-records) — the same cell type as `table.rows`, never nested/arbitrary JSON.
@@ -354,6 +356,23 @@ new rows (no drift, no cached sorted array). The agent authors no sort logic —
 the `sortable` flag — and the current spec rides the visitor's next event on the
 `view` snapshot (below), so the brain can see how they sorted. Filtering is
 deliberately deferred: it would open a predicate/expression surface v1 avoids.
+
+**Active-look binding.** A `box`/`text` may carry an `activeVariant`/`activeStyle`
+plus a closed `active` **view-state predicate** — `{ screen: "<name>" }` or
+`{ toggled: "<nodeId>" }` — so the brick highlights *itself* when that view-state
+holds, **with no agent turn**: a tab authored as a `box` + `onPress:{navigate}`
+self-highlights while its screen is current; a box `{ toggled }` marks a selected/
+open item. This is a **read-only** binding — the renderer evaluates the predicate
+(the single `evaluateViewPredicate` in `@facet/core`) against the *already-threaded*
+snapshot view-state (`activeScreen` + the raw `visibilityOverrides` map, so the
+inert previous-screen clone keeps its OLD highlight through a crossfade) and folds
+the active variant/style into the same pure token merge as the base look. It writes
+nothing (the browser stays the sole owner of view-state; the server the sole writer
+of the tree). The predicate is a **closed, extensible tagged union** (unknown/future
+kinds degrade to the default look, never a DSL); `activeStyle` passes the identical
+token allowlist as base `style`, so it is token-only by construction. This is the
+brick-level primitive that lets `tabs`/`nav`-style active highlighting be authored
+from `box`+`text` instead of a renderer-owned component.
 
 **Screens** are named roots INTO the same flat `nodes` map (not separate trees),
 so every `/nodes/<id>` patch path, `applyPatch`, and existing consumer keeps
