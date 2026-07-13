@@ -28,8 +28,9 @@ receives security fixes.
 Different parts of Facet assume different trust levels — know which you're in.
 
 **`@facet/core` renderer/validator — fail-safe, untrusted input.** The renderer
-and `validateTree` are the safety boundary: only the four declarative bricks ever
-reach the DOM (no raw HTML/JS), unsafe image URL schemes are dropped, and
+and `validateTree` are the safety boundary: only the closed, validated
+primitive/component vocabulary reaches the DOM (no raw HTML/JS), unsafe image
+URL schemes are dropped, and
 malformed/cyclic/too-deep input renders as "plain", never a crash. Model output
 is untrusted and is treated as such here.
 

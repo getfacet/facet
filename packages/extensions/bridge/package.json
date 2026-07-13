@@ -16,7 +16,7 @@
   "type": "module",
   "sideEffects": false,
   "bin": {
-    "facet-bridge": "./src/cli.ts"
+    "facet-bridge": "./src/dev-bin.mjs"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
@@ -34,6 +34,9 @@
     "@facet/cli": "workspace:*",
     "@facet/core": "workspace:*",
     "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
   },
   "files": [
     "dist"

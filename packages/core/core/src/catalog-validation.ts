@@ -13,6 +13,7 @@ import {
   DEFAULT_COMPONENTS,
   defaultCatalog,
 } from "./catalog-defaults.js";
+import { CANONICAL_CATALOG_USAGE_ORDER } from "./catalog-policy.js";
 import {
   CATALOG_BRICK_TYPES,
   type CatalogBrick,
@@ -27,8 +28,6 @@ import {
 const MAX_CATALOG_ITEMS = 128;
 const MAX_CATALOG_POLICY_COUNT = 32;
 const MAX_SCREEN_SECTIONS = 20;
-
-const CANONICAL_USAGE_ORDER = ["composition", "component", "primitive"] as const;
 
 function isBrickType(value: unknown): value is FacetNode["type"] {
   return typeof value === "string" && (CATALOG_BRICK_TYPES as readonly string[]).includes(value);
@@ -248,10 +247,8 @@ function validateCatalogCompositions(
 function isCanonicalUsageOrder(value: unknown): value is CatalogUsageOrder {
   return (
     Array.isArray(value) &&
-    value.length === 3 &&
-    value[0] === "composition" &&
-    value[1] === "component" &&
-    value[2] === "primitive"
+    value.length === CANONICAL_CATALOG_USAGE_ORDER.length &&
+    CANONICAL_CATALOG_USAGE_ORDER.every((item, index) => value[index] === item)
   );
 }
 
@@ -263,7 +260,7 @@ function validateUsagePolicy(raw: unknown, issues: BoundedIssues): CatalogUsageP
     compactScreens: boolean;
     maxScreenSections?: number;
   } = {
-    order: [...CANONICAL_USAGE_ORDER] as CatalogUsageOrder,
+    order: [...CANONICAL_CATALOG_USAGE_ORDER],
     editBeforeAppend:
       typeof raw.editBeforeAppend === "boolean"
         ? raw.editBeforeAppend

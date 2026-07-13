@@ -72,6 +72,9 @@ importers:
         specifier: ^19.0.0
         version: 19.2.7(react@19.2.7)
     devDependencies:
+      '@facet/bridge':
+        specifier: workspace:*
+        version: link:../../packages/extensions/bridge
       '@types/react':
         specifier: ^19.0.0
         version: 19.2.17
@@ -257,6 +260,10 @@ importers:
       zod:
         specifier: ^4.0.0
         version: 4.4.3
+    devDependencies:
+      tsx:
+        specifier: ^4.19.0
+        version: 4.22.4
 
   packages/extensions/cli:
     dependencies:

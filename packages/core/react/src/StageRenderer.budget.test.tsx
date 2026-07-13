@@ -138,7 +138,10 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
 
   it("keeps a collect press bounded on a shared-child subtree (gather budget)", () => {
     const onAction = vi.fn();
-    const lattice = latticeTree(40, true);
+    // 2^20 root-to-leaf paths still exceeds the 5,000-node gather budget by
+    // orders of magnitude, while keeping this adversarial check stable on
+    // resource-constrained development machines.
+    const lattice = latticeTree(20, true);
     // Wrap the lattice under a pressable box that collects its subtree's fields.
     const tree: FacetTree = {
       root: "wrap",

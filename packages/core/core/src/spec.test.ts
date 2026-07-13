@@ -96,8 +96,8 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).not.toContain('"type":"image"');
   });
 
-  it("teaches Primitive Brick -> Component -> Catalog and the locked component vocabulary", () => {
-    expect(STAGE_SPEC).toMatch(/Primitive Brick -> Component -> Catalog/);
+  it("teaches composition -> component -> primitive fallback and the locked component vocabulary", () => {
+    expect(STAGE_SPEC).toMatch(/composition -> component -> primitive fallback/);
     expect(STAGE_SPEC).toMatch(/primitive bricks/i);
     for (const type of PRIMITIVE_BRICK_TYPES) {
       expect(STAGE_SPEC).toContain(`"type":"${type}"`);

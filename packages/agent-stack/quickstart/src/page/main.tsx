@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import { isTreeShaped } from "@facet/core";
 import type {
   ClientEvent,
+  CollectedEvent,
   FacetAction,
   FacetTheme,
   FacetTree,
@@ -20,8 +21,13 @@ import type {
   ViewSnapshot,
   VisitorContext,
 } from "@facet/core";
-import { browserVisitorId, loadPersistedView, persistView, SseTransport } from "@facet/client";
-import { withView } from "./view-attach.js";
+import {
+  browserVisitorId,
+  loadPersistedView,
+  persistView,
+  SseTransport,
+  withView,
+} from "@facet/client";
 import {
   ChatDock,
   DEFAULT_THEME,
@@ -127,7 +133,7 @@ function Page(): ReactNode {
   // their last-known view; a first visit falls back to the live snapshot (the
   // renderer's publish effect runs before this parent effect), if any.
   useEffect(() => {
-    send(withView<ClientEvent>({ kind: "visit", visitor }, persistedView ?? viewRef.current));
+    send(withView({ kind: "visit", visitor }, persistedView ?? viewRef.current));
   }, [send, visitor, persistedView]);
 
   // Paint the page CANVAS (document.body, outside the tree) with the resolved
@@ -168,9 +174,13 @@ function Page(): ReactNode {
     send(withView(event, viewRef.current));
   };
 
+  const onRecord = (event: CollectedEvent): void => {
+    record(withView(event, viewRef.current));
+  };
+
   const onSend = (text: string): void => {
     setLog((current) => [...current, { who: "You", text }]);
-    send(withView<ClientEvent>({ kind: "message", text }, viewRef.current));
+    send(withView({ kind: "message", text }, viewRef.current));
   };
 
   return (
@@ -182,7 +192,7 @@ function Page(): ReactNode {
         <StageRenderer
           tree={tree}
           onAction={onAction}
-          onRecord={record}
+          onRecord={onRecord}
           transition={transition}
           onViewSnapshot={onViewSnapshot}
           {...(themes !== undefined ? { themes } : {})}

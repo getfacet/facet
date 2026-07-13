@@ -984,7 +984,7 @@ describe("quickstart E2E — quickstart component default", () => {
         const providerRequest = JSON.stringify(openAi.bodies[0]);
         expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
         expect(providerRequest).toContain("# Facet quickstart tour");
-        expect(providerRequest).toContain("Primitive Brick -> Component -> Catalog");
+        expect(providerRequest).toContain("composition -> component -> primitive fallback");
         expect(providerRequest).not.toContain("STUB_TREE");
         expect(booted.captured.out.join("\n")).toContain("openai");
       } finally {

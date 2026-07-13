@@ -21,5 +21,5 @@ export {
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
   MAX_TABS_ITEMS,
-} from "./classic-component-validation.js";
+} from "./component-validation-shared.js";
 export { SLOT_MARKER_RE, SLOT_NAME_RE } from "./slot-marker.js";

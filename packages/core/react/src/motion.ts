@@ -92,19 +92,6 @@ export function composeMotionClassName(...classNames: MotionClassValue[]): strin
   return parts.length === 0 ? undefined : parts.join(" ");
 }
 
-export function withBrickEnterClass(className?: string): string {
-  return (
-    composeMotionClassName(className, MOTION_CLASS_NAMES.brickEnter) ??
-    MOTION_CLASS_NAMES.brickEnter
-  );
-}
-
-export function withBrickExitClass(className?: string): string {
-  return (
-    composeMotionClassName(className, MOTION_CLASS_NAMES.brickExit) ?? MOTION_CLASS_NAMES.brickExit
-  );
-}
-
 export function stageFrameClassName(crossfade: boolean): string {
   return (
     composeMotionClassName(

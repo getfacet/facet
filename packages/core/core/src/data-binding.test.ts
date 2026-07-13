@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { MAX_TABLE_ROWS } from "./classic-component-validation.js";
+import { MAX_TABLE_ROWS } from "./component-validation-shared.js";
 import type {
   ChartNode,
   DataWarehouse,

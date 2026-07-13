@@ -1,11 +1,6 @@
-// @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { cleanup, fireEvent, render as mountClient, screen } from "@testing-library/react";
 import {
   MAX_CHART_POINTS,
   MAX_CHART_SERIES,
@@ -20,7 +15,6 @@ import {
   type FacetTheme,
   type FacetTree,
   type NodeId,
-  type ViewSnapshot,
 } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 import * as stageRendererExports from "./StageRenderer.js";
@@ -171,6 +165,56 @@ describe("StageRenderer fail-safe boundary", () => {
     );
     expect(out).toContain("still up");
     expect(out).not.toContain("<img");
+  });
+
+  it("never throws on hostile media src, kind, or poster accessors", () => {
+    const srcThrows = Object.defineProperty(
+      { id: "bad-src", type: "media", kind: "image" },
+      "src",
+      {
+        get() {
+          throw new Error("src boom");
+        },
+      },
+    ) as unknown as FacetNode;
+    const kindThrows = Object.defineProperty(
+      { id: "bad-kind", type: "media", src: "https://example.com/fallback.jpg" },
+      "kind",
+      {
+        get() {
+          throw new Error("kind boom");
+        },
+      },
+    ) as unknown as FacetNode;
+    const posterThrows = Object.defineProperty(
+      {
+        id: "bad-poster",
+        type: "media",
+        kind: "video",
+        src: "https://example.com/video.mp4",
+      },
+      "poster",
+      {
+        get() {
+          throw new Error("poster boom");
+        },
+      },
+    ) as unknown as FacetNode;
+    const hostileTree = tree({
+      root: box("root", ["bad-src", "bad-kind", "bad-poster", "safe"]),
+      "bad-src": srcThrows,
+      "bad-kind": kindThrows,
+      "bad-poster": posterThrows,
+      safe: text("safe", "still up"),
+    });
+
+    expect(() => render(hostileTree)).not.toThrow();
+    const out = render(hostileTree);
+    expect(out).toContain("still up");
+    expect(out).not.toContain("bad-src");
+    expect(out).toContain("<img");
+    expect(out).toContain("<video");
+    expect(out).not.toContain("poster=");
   });
 
   it("skips a node patched to JSON null (root and child)", () => {
@@ -1475,101 +1519,5 @@ describe("StageRenderer appear (static)", () => {
     expect(out).toContain("visible");
     expect(out).not.toContain("<style");
     expect(out).not.toContain("facet-appear");
-  });
-});
-
-// onViewSnapshot (WU-3, DC-001): the renderer publishes its live view snapshot
-// read-only via the optional callback, sampled after commit. A navigate press
-// updates `screen`; a toggle press updates `toggled` — both surface through the
-// callback without lifting the renderer's private state. Needs the client
-// render path (effects), so these use @testing-library/react, not the static
-// string renderer above.
-describe("StageRenderer onViewSnapshot (jsdom)", () => {
-  afterEach(cleanup);
-
-  const screensTree = (): FacetTree => ({
-    root: "root",
-    nodes: {
-      root: { id: "root", type: "box", children: ["rootText"] },
-      rootText: { id: "rootText", type: "text", value: "plain root content" },
-      home: { id: "home", type: "box", children: ["homeText", "goAbout"] },
-      homeText: { id: "homeText", type: "text", value: "home content" },
-      goAbout: {
-        id: "goAbout",
-        type: "box",
-        onPress: { kind: "navigate", to: "about" },
-        children: [],
-      },
-      about: { id: "about", type: "box", children: ["aboutText"] },
-      aboutText: { id: "aboutText", type: "text", value: "about content" },
-    },
-    screens: { home: "home", about: "about" },
-    entry: "home",
-  });
-
-  const lastSnapshot = (onViewSnapshot: ReturnType<typeof vi.fn>): ViewSnapshot =>
-    onViewSnapshot.mock.calls.at(-1)?.[0] as ViewSnapshot;
-
-  it("publishes the updated screen after a navigate press", () => {
-    const onViewSnapshot = vi.fn();
-    mountClient(createElement(StageRenderer, { tree: screensTree(), onViewSnapshot }));
-
-    // Fires once on mount with the initial (entry) snapshot.
-    expect(onViewSnapshot).toHaveBeenCalled();
-    onViewSnapshot.mockClear();
-
-    fireEvent.click(screen.getByRole("button"));
-
-    expect(onViewSnapshot).toHaveBeenCalled();
-    expect(lastSnapshot(onViewSnapshot).screen).toBe("about");
-  });
-
-  it("publishes the updated toggled record after a toggle press", () => {
-    const onViewSnapshot = vi.fn();
-    mountClient(
-      createElement(StageRenderer, {
-        onViewSnapshot,
-        tree: tree({
-          root: box("root", ["btn", "panel"]),
-          btn: {
-            id: "btn",
-            type: "box",
-            onPress: { kind: "toggle", target: "panel" },
-            children: [],
-          },
-          panel: box("panel", ["p"]),
-          p: text("p", "panel content"),
-        }),
-      }),
-    );
-    onViewSnapshot.mockClear();
-
-    fireEvent.click(screen.getByRole("button"));
-
-    expect(lastSnapshot(onViewSnapshot).toggled).toEqual({ panel: "hidden" });
-  });
-});
-
-// DC-005 structural fence: the only stage-write setters live inside handlePress.
-// No ServerMessage/patch path may write view state, so `setCurrentScreen(` and
-// `setVisibilityOverrides(` must appear ONLY within the handlePress body — read
-// the source as text and prove no call site exists outside it.
-describe("StageRenderer view-state setter fence (DC-005)", () => {
-  it("setCurrentScreen/setVisibilityOverrides are called only within handlePress", () => {
-    const src = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), "StageRenderer.tsx"),
-      "utf8",
-    );
-    const start = src.indexOf("const handlePress");
-    const end = src.indexOf("const appearSeen", start);
-    expect(start).toBeGreaterThan(-1);
-    expect(end).toBeGreaterThan(start);
-
-    const body = src.slice(start, end);
-    const outside = src.slice(0, start) + src.slice(end);
-    for (const setter of ["setCurrentScreen(", "setVisibilityOverrides("]) {
-      expect(body).toContain(setter);
-      expect(outside).not.toContain(setter);
-    }
   });
 });

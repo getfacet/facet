@@ -24,7 +24,7 @@ import {
   MAX_TABLE_CELL_CHARS,
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
-} from "./classic-component-validation.js";
+} from "./component-validation-shared.js";
 import type {
   ChartNode,
   ChartSeries,

@@ -109,13 +109,15 @@ surface for hosted products.
 | --- | --- | --- |
 | `@facet/quickstart` | Local first-run CLI/server/page wrapper around `@facet/reference-agent`, with a provider-backed component seed for the default path. | No spend caps, per-visitor rate limits, or production hosting policy. Keep it local. |
 | `@facet/bridge` | Local bridge from Claude/Codex-style coding agents to a Facet link. | Local/operator tool only; not a hosted worker fleet. |
-| `@facet/cli` | Local command surface used by `@facet/bridge`. | Bin publish metadata exists; still needs a package-level pack/install smoke before npm release. |
+| `@facet/cli` | Local command surface used by `@facet/bridge`. | Bin and clean-consumer install behavior are covered by the repository package smoke gate. |
 
 ## Cross-Package Gaps
 
 - **Publish smoke:** packages use dev-time `src` entrypoints plus
-  `publishConfig` overrides for built `dist` output. Before npm publishing, run
-  package-level `pnpm pack` / install smoke tests for library exports and bins.
+  `publishConfig` overrides for built `dist` output. `pnpm package:smoke` builds,
+  packs, installs, and exercises every public package in a clean consumer,
+  including ESM/CJS/type surfaces and published bins. The release workflow
+  requires that token-free gate before publishing.
 - **Hosted wrappers:** Facet intentionally does not provide project-scoped API
   keys, billing, metering, admin auth, or tenant isolation. Those belong outside
   this repo.

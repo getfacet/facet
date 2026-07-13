@@ -1,7 +1,7 @@
 # @facet/core
 
-The Facet contract: the declarative stage spec in the Primitive Brick ->
-Component -> Catalog model, catalog policy, style tokens and theme recipes,
+The Facet contract: the declarative stage spec in the Composition -> Component
+-> Primitive Fallback authoring model, catalog policy, style tokens and theme recipes,
 reusable composition validation/expansion and metadata, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
 `applyPatch`, validators, and the session/event types. It depends on nothing —
@@ -33,6 +33,12 @@ fills validated composition slots, preserves bounded metadata, prunes the
 root-reachable subtree, drops expanded actions that point outside that subtree,
 and remaps ids before a caller emits ordinary patches. `applyPatch` is the one
 patch function that runs identically on server and client.
+
+The public `normalizeVisitorContext`, `normalizeClientEvent`, and
+`normalizeLocalCollectedEvent` helpers give every transport the same rejecting,
+closed-shape boundary for untrusted browser input. They drop unknown keys, apply
+the shared field/action bounds, and clamp optional view snapshots through
+`sanitizeView` before an event reaches an agent or Sink.
 
 ```ts
 import {

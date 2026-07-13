@@ -1,8 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FacetAction, FieldValues, ViewSnapshot, VisitorContext } from "@facet/core";
+import type {
+  CollectedEvent,
+  FacetAction,
+  FieldValues,
+  ViewSnapshot,
+  VisitorContext,
+} from "@facet/core";
 import { ChatDock, StageRenderer, useFacet } from "@facet/react";
-import { browserVisitorId, SseTransport } from "@facet/client";
+import { browserVisitorId, SseTransport, withView } from "@facet/client";
 
 const SERVER = "http://localhost:5291";
 // A stable anonymous id for this browser (persisted in localStorage), so a
@@ -30,7 +36,7 @@ export function LiveView(): React.ReactNode {
   }, []);
 
   const transport = useMemo(() => new SseTransport(SERVER, VISITOR), []);
-  const { tree, chat, send, transition } = useFacet(transport);
+  const { tree, chat, send, record, transition } = useFacet(transport);
   const [log, setLog] = useState<readonly LogLine[]>([]);
   const [pending, setPending] = useState(false);
   const seen = useRef(0);
@@ -43,7 +49,7 @@ export function LiveView(): React.ReactNode {
   }, []);
 
   useEffect(() => {
-    send({ kind: "visit", visitor: VISITOR });
+    send(withView({ kind: "visit", visitor: VISITOR }, viewRef.current));
   }, [send]);
 
   useEffect(() => {
@@ -62,24 +68,26 @@ export function LiveView(): React.ReactNode {
   const onSend = (text: string): void => {
     setLog((current) => [...current, { who: "You", text }]);
     setPending(true);
-    const view = viewRef.current;
-    send({
-      kind: "message",
-      text,
-      ...(view !== undefined && Object.keys(view).length > 0 ? { view } : {}),
-    });
+    send(withView({ kind: "message", text }, viewRef.current));
   };
 
   const onAction = (action: FacetAction, fields?: FieldValues): void => {
     // Conditional spread: exactOptionalPropertyTypes forbids an explicit
     // `fields: undefined` / `view: undefined` on the event — absent stays absent.
-    const view = viewRef.current;
-    send({
-      kind: "tap",
-      action,
-      ...(fields !== undefined ? { fields } : {}),
-      ...(view !== undefined && Object.keys(view).length > 0 ? { view } : {}),
-    });
+    send(
+      withView(
+        {
+          kind: "tap",
+          action,
+          ...(fields !== undefined ? { fields } : {}),
+        },
+        viewRef.current,
+      ),
+    );
+  };
+
+  const onRecord = (event: CollectedEvent): void => {
+    record(withView(event, viewRef.current));
   };
 
   return (
@@ -96,6 +104,7 @@ export function LiveView(): React.ReactNode {
         <StageRenderer
           tree={tree}
           onAction={onAction}
+          onRecord={onRecord}
           transition={transition}
           onViewSnapshot={onViewSnapshot}
         />

@@ -1,5 +1,5 @@
 import type { BaseEvent, RunAgentInput } from "@ag-ui/core";
-import { MAX_FIELD_VALUE_CHARS, MAX_FIELDS_KEYS } from "@facet/core";
+import { normalizeLocalCollectedEvent } from "@facet/core";
 import type {
   ClientEvent,
   CollectedEvent,
@@ -181,7 +181,7 @@ export class AgUiTransport implements FacetTransport {
   record(event: CollectedEvent): void {
     let record: FacetAgUiRecordSubmission | undefined;
     try {
-      if (isLocalTapRecord(event)) record = event;
+      record = normalizeLocalCollectedEvent(event);
     } catch {
       record = undefined;
     }
@@ -449,42 +449,4 @@ export class AgUiTransport implements FacetTransport {
   private emitAll(messages: readonly ServerMessage[]): void {
     for (const message of messages) this.emit(message);
   }
-}
-
-function isLocalTapRecord(event: CollectedEvent): event is FacetAgUiRecordSubmission {
-  if (event.kind !== "tap") return false;
-  if (event.action !== undefined) return false;
-  if (event.effect === undefined || !isTapEffect(event.effect)) return false;
-  if (event.target !== undefined && !isBoundedString(event.target)) return false;
-  if (event.fields !== undefined && !isFieldsRecord(event.fields)) return false;
-  if (event.seq !== undefined && !Number.isFinite(event.seq)) return false;
-  return true;
-}
-
-function isTapEffect(effect: unknown): boolean {
-  if (!isObject(effect)) return false;
-  const navigate = effect["navigate"];
-  const toggle = effect["toggle"];
-  if (navigate !== undefined) {
-    return isBoundedString(navigate) && toggle === undefined;
-  }
-  if (toggle !== undefined) {
-    return isBoundedString(toggle) && navigate === undefined;
-  }
-  return false;
-}
-
-function isFieldsRecord(fields: unknown): boolean {
-  if (!isObject(fields) || Array.isArray(fields)) return false;
-  const entries = Object.entries(fields);
-  if (entries.length > MAX_FIELDS_KEYS) return false;
-  return entries.every(
-    ([key, value]) =>
-      isBoundedString(key) &&
-      (typeof value === "boolean" || (typeof value === "string" && isBoundedString(value))),
-  );
-}
-
-function isBoundedString(value: unknown): value is string {
-  return typeof value === "string" && value.length <= MAX_FIELD_VALUE_CHARS;
 }

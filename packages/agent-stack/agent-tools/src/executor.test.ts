@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { MAX_CHART_POINTS, MAX_PATCH_OPS, MAX_TABLE_ROWS } from "@facet/core";
+import { CHART_KINDS, MAX_CHART_POINTS, MAX_PATCH_OPS, MAX_TABLE_ROWS } from "@facet/core";
 import type {
   FacetCatalog,
   FacetComposition,
@@ -319,6 +319,44 @@ describe("executeStageTool", () => {
     if (nonBoxParent.status === "error") expect(nonBoxParent.code).toBe("invalid_parent");
     expect(nonBoxParent.patches).toEqual([]);
     expect(nonBoxParent.shadow).toBe(TREE_WITH_TEXT);
+  });
+
+  it("accepts every core chart kind and rejects values outside the shared set", () => {
+    for (const kind of CHART_KINDS) {
+      const result = executeStageTool(
+        {
+          id: `call-chart-${kind}`,
+          name: "set_node",
+          input: {
+            node: { id: `chart-${kind}`, type: "chart", kind, series: [] },
+          },
+        },
+        { shadow: ROOT_TREE },
+      );
+
+      expect(result.status).toBe("ok");
+      expect(result.shadow.nodes[`chart-${kind}`]).toMatchObject({ type: "chart", kind });
+    }
+
+    const invalid = executeStageTool(
+      {
+        id: "call-chart-invalid",
+        name: "set_node",
+        input: {
+          node: { id: "chart-invalid", type: "chart", kind: "radar", series: [] },
+        },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(invalid.status).toBe("error");
+    if (invalid.status === "error") expect(invalid.code).toBe("invalid_input");
+    expect(invalid.patches).toEqual([]);
+    expect(invalid.shadow).toBe(ROOT_TREE);
+    const observation = parseAgentToolObservation(invalid.observation.text);
+    expect(observation).toMatchObject({ status: "error", code: "invalid_input" });
+    if (observation === undefined) throw new Error("expected a structured chart observation");
+    for (const kind of CHART_KINDS) expect(observation.message).toContain(`"${kind}"`);
   });
 
   it("rejects root-breaking missing and forbidden-id mutations without patches", () => {

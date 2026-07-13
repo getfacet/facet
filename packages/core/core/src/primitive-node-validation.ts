@@ -45,38 +45,8 @@ import {
   type IssueSink,
 } from "./issues.js";
 import { SLOT_MARKER_RE, SLOT_NAME_RE } from "./slot-marker.js";
-
-function isPrimitive(value: unknown): value is string | number | boolean {
-  return typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-}
-
-/**
- * FILTERING form of the action-payload rule: a plain (non-array) object keeps
- * only its primitive-valued entries; anything else yields `undefined`. Used by
- * the fail-safe path (`asAction`) that salvages a partial payload. For the
- * REJECTING form (validators that discard the whole thing on any non-primitive
- * value) use `isPrimitiveRecord`.
- */
-export function sanitizeActionPayload(
-  value: unknown,
-): Record<string, string | number | boolean> | undefined {
-  if (!isObject(value)) return undefined;
-  const payload: Record<string, string | number | boolean> = {};
-  for (const [key, raw] of Object.entries(value)) {
-    if (isPrimitive(raw)) payload[key] = raw;
-  }
-  return payload;
-}
-
-/**
- * PREDICATE form of the action-payload rule: true iff `value` is a plain
- * (non-array) object whose every value is a primitive. Unlike
- * `sanitizeActionPayload`, this rejects rather than filters — for callers that
- * discard an action wholesale on any non-primitive value.
- */
-export function isPrimitiveRecord(value: unknown): boolean {
-  return isObject(value) && Object.values(value).every(isPrimitive);
-}
+import { normalizeFacetAction } from "./action-validation.js";
+export { isPrimitiveRecord, sanitizeActionPayload } from "./action-validation.js";
 
 function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -102,75 +72,6 @@ function isValidSlotName(name: string): boolean {
 
 function isSlotMarker(value: string): boolean {
   return SLOT_MARKER_RE.test(value);
-}
-
-/**
- * Normalizes an action value (`onPress`/`onHold`) to the FacetAction union. A
- * bare legacy `{name}` (kind absent) or explicit `kind: "agent"` gets the
- * canonical `kind: "agent"` discriminator SILENTLY (no issue — it is the same action,
- * not a mistake). Malformed or unknown-kind actions are stripped with an issue
- * naming `field` (the node property being normalized), so the box degrades to
- * a plain non-pressable box.
- */
-function asAction(
-  value: unknown,
-  nodeId: string,
-  field: "onPress" | "onHold",
-  issues: IssueSink,
-): FacetAction | undefined {
-  const node = printableKey(nodeId);
-  if (value === undefined) return undefined;
-  if (!isObject(value)) {
-    issues.push(`node "${node}": ${field} is not an action object`);
-    return undefined;
-  }
-  const kind = value.kind;
-  if (kind === undefined || kind === "agent") {
-    const name = asString(value.name);
-    if (name === undefined) {
-      issues.push(`node "${node}": ${field} agent action has no string name`);
-      return undefined;
-    }
-    const action: {
-      kind: "agent";
-      name: string;
-      payload?: Record<string, string | number | boolean>;
-      collect?: string;
-    } = { kind: "agent", name };
-    const payload = sanitizeActionPayload(value.payload);
-    if (payload !== undefined) {
-      action.payload = payload;
-    }
-    if (typeof value.collect === "string") {
-      action.collect = value.collect;
-    } else if (value.collect !== undefined) {
-      issues.push(`node "${node}": ${field} collect is not a string; dropped`);
-    }
-    return action;
-  }
-  if (kind === "navigate") {
-    const to = asString(value.to);
-    if (to === undefined) {
-      issues.push(`node "${node}": ${field} navigate action needs a string "to"`);
-      return undefined;
-    }
-    return { kind: "navigate", to };
-  }
-  if (kind === "toggle") {
-    const target = asString(value.target);
-    if (target === undefined) {
-      issues.push(`node "${node}": ${field} toggle action needs a string "target"`);
-      return undefined;
-    }
-    return { kind: "toggle", target };
-  }
-  // `kind` is untrusted (any property of an isObject-checked action): a string
-  // goes through the key cap, primitives echo verbatim, and everything else
-  // becomes a constant placeholder — NEVER JSON.stringify an arbitrary untrusted
-  // value into an issue string (a cyclic object/BigInt would throw, breaching
-  // the never-throws boundary; a huge value would flood the operator log).
-  issues.push(`node "${node}": unknown ${field} kind ${printableValue(kind)} dropped`);
-  return undefined;
 }
 
 /** Only render media from safe URL schemes — never `javascript:`, `data:text/html`, etc. */
@@ -338,7 +239,7 @@ export {
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
   MAX_TABS_ITEMS,
-} from "./classic-component-validation.js";
+} from "./component-validation-shared.js";
 function asVariant(value: unknown, nodeId: string, issues: IssueSink): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value === "string" && isValidSlotName(value)) return value;
@@ -391,9 +292,9 @@ export function sanitizeNode(
           `node "${key}": backdrop is not a string ${printableValue(raw.backdrop)} dropped`,
         );
       }
-      const onPress = asAction(raw.onPress, id, "onPress", issues);
+      const onPress = normalizeFacetAction(raw.onPress, id, "onPress", issues);
       if (onPress !== undefined) node.onPress = onPress;
-      const onHold = asAction(raw.onHold, id, "onHold", issues);
+      const onHold = normalizeFacetAction(raw.onHold, id, "onHold", issues);
       if (onHold !== undefined) node.onHold = onHold;
       // Only a literal boolean is a visibility default; anything else is stripped
       // (silent, like invalid style tokens — the box just stays visible).

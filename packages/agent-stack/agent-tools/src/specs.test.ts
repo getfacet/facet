@@ -92,7 +92,9 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
 
     expect(renderPage.description).toMatch(/catalog policy/i);
     expect(appendNode.description).toMatch(/box, section, card, or form/i);
-    expect(nodeSchemaText).toMatch(/Primitive Brick -> Component -> Catalog/);
+    expect(nodeSchemaText).toMatch(/composition -> component -> primitive fallback/);
+    expect(nodeSchemaText).toMatch(/tree\.data datasets/);
+    expect(nodeSchemaText).not.toMatch(/no data-binding/i);
     for (const type of PRIMITIVE_BRICK_TYPES) {
       expect(nodeSchemaText).toContain(type);
     }

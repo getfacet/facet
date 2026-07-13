@@ -10,7 +10,7 @@
     "gen": "tsx src/gen.ts",
     "serve": "tsx src/server.ts",
     "agent": "tsx src/agent-client.ts",
-    "bridge": "tsx ../../packages/extensions/bridge/src/cli.ts",
+    "bridge": "facet-bridge",
     "dev": "vite",
     "build": "vite build",
     "typecheck": "tsc --noEmit"
@@ -27,6 +27,7 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@facet/bridge": "workspace:*",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",

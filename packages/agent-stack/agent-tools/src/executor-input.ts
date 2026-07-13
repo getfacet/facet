@@ -1,4 +1,5 @@
 import {
+  CHART_KINDS,
   COMPONENT_NODE_TYPES,
   MEDIA_KINDS,
   PRIMITIVE_BRICK_TYPES,
@@ -17,7 +18,8 @@ const MAX_ID_LIST_PREVIEW = 20;
 const FACET_NODE_TYPES_TEXT = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]
   .map((type) => `"${type}"`)
   .join(", ");
-const CHART_KINDS = new Set(["bar", "line", "donut"]);
+const CHART_KIND_SET = new Set<string>(CHART_KINDS);
+const CHART_KINDS_TEXT = CHART_KINDS.map((kind) => `"${kind}"`).join(", ");
 
 export function parseToolCall(
   call: unknown,
@@ -245,11 +247,11 @@ function asNode(
     case "chart":
       if (
         value["kind"] !== undefined &&
-        (typeof value["kind"] !== "string" || !CHART_KINDS.has(value["kind"]))
+        (typeof value["kind"] !== "string" || !CHART_KIND_SET.has(value["kind"]))
       ) {
         return {
-          error: 'a "chart" node kind must be "bar", "line", or "donut"',
-          nextAction: 'Use kind "bar", "line", or "donut".',
+          error: `a "chart" node kind must be one of ${CHART_KINDS_TEXT}`,
+          nextAction: `Use one of the core chart kinds: ${CHART_KINDS_TEXT}.`,
         };
       }
       if (value["series"] !== undefined && !Array.isArray(value["series"])) {

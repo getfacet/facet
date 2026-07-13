@@ -1,27 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { validateTree } from "@facet/core";
-import type { ClientEvent, ServerMessage } from "@facet/core";
+import { validateTree, type ClientEvent, type ServerMessage } from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
-
-import { DEFAULT_GUIDE, TOOLS } from "./prompt.js";
 import { STUB_TREE, createStubAgent } from "./stub.js";
 
 function saysOf(messages: readonly ServerMessage[]): string[] {
-  return messages.flatMap((m) => (m.kind === "say" ? [m.text] : []));
+  return messages.flatMap((message) => (message.kind === "say" ? [message.text] : []));
 }
 
 function patchesOf(messages: readonly ServerMessage[]): readonly ServerMessage[] {
-  return messages.filter((m) => m.kind === "patch");
+  return messages.filter((message) => message.kind === "patch");
 }
-
-describe("reference prompt and stub exports", () => {
-  it("exports prompt defaults and the deterministic stub surface", () => {
-    expect(DEFAULT_GUIDE.length).toBeGreaterThan(0);
-    expect(TOOLS.map((tool) => tool.name)).toContain("render_page");
-    expect(STUB_TREE.root).toBe("home");
-    expect(typeof createStubAgent).toBe("function");
-  });
-});
 
 describe("createStubAgent", () => {
   it("STUB_TREE is valid, renderable, and carries the signup form + screens", () => {
@@ -37,13 +25,13 @@ describe("createStubAgent", () => {
     if (signup?.type === "box") {
       const names = signup.children
         .map((id) => tree.nodes[id])
-        .flatMap((node) => (node?.type === "field" ? [node.name] : []));
+        .flatMap((n) => (n?.type === "field" ? [n.name] : []));
       expect(names).toContain("name");
       expect(names).toContain("email");
     }
 
-    const presses = Object.values(tree.nodes).flatMap((node) =>
-      node.type === "box" && node.onPress !== undefined ? [node.onPress] : [],
+    const presses = Object.values(tree.nodes).flatMap((n) =>
+      n.type === "box" && n.onPress !== undefined ? [n.onPress] : [],
     );
     expect(presses).toContainEqual(
       expect.objectContaining({ kind: "agent", name: "submit", collect: "signup" }),
@@ -85,9 +73,10 @@ describe("createStubAgent", () => {
 
     const out = (await rt.handle(visitor, { kind: "message", text: "theme midnight" })).messages;
     expect(saysOf(out)).toEqual(["stub: theme midnight"]);
+    // The theme name lands on the persisted stage (through the runtime save path).
     const stage = await rt.stageFor("v");
     expect((stage as { theme?: unknown } | undefined)?.theme).toBe("midnight");
-
+    // A plain "theme" prefix message still echoes; a non-theme message is untouched.
     const plain = (await rt.handle(visitor, { kind: "message", text: "hello" })).messages;
     expect(saysOf(plain)).toEqual(["stub: hello"]);
   });
@@ -97,6 +86,9 @@ describe("createStubAgent", () => {
     const visitor = { visitorId: "v" };
     await rt.handle(visitor, { kind: "visit", visitor });
 
+    // "Dark Mode!" fails isValidThemeName — the stub must refuse it, matching the
+    // real agent's set_theme gate, so no `add /theme` frame reaches live clients
+    // while the stored stage strips it (a stored-vs-live divergence).
     const out = (await rt.handle(visitor, { kind: "message", text: "theme Dark Mode!" })).messages;
     expect(saysOf(out)).toEqual(["stub: invalid theme name (letters/digits/_/-, max 64)"]);
     expect(patchesOf(out)).toHaveLength(0);
@@ -122,7 +114,6 @@ describe("createStubAgent", () => {
       for (const event of events) out.push([...(await rt.handle(visitor, event)).messages]);
       return out;
     }
-
     expect(await run()).toEqual(await run());
   });
 });

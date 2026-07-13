@@ -43,7 +43,7 @@ authors without pulling in the reference agent or a Node-only provider stack.
 `buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
 most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
 from `@facet/core`, compact page UX guidance, edit-before-append rules, the
-Primitive Brick -> Component -> Catalog model, the tool playbook, the structured
+catalog-guided `composition -> component -> primitive` model, the tool playbook, the structured
 tool-result contract, and optional theme, catalog, and composition metadata.
 
 The prompt kit is not a complete agent. Your loop still owns the page brief,

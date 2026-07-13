@@ -287,7 +287,7 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/core` | `@facet/core` | The contract: closed primitive/component vocabulary, catalog/component/composition policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, `expandComposition`, session/event types. |
+| `packages/core/core` | `@facet/core` | The contract: closed primitive/component vocabulary, catalog/component/composition policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators and untrusted event normalizers, `expandComposition`, session/event types. |
 | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/composition/initial-tree loading, `withInitialStage`) + `SummaryStore` (opaque rolling-summary records for brain-side context compaction). File-backed Node references via `@facet/runtime/node`. |
 | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for primitive bricks and intrinsic components, token→CSS and recipe/part resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
 | `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with component recipes/parts, and `DEFAULT_COMPOSITIONS` with metadata. Depends only on `@facet/core`. |
@@ -310,7 +310,7 @@ reference packages only when they match your integration shape.
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/core/server` | `@facet/server` | Reference SSE/POST transport for local/self-hosted single-operator use; not a production multi-tenant edge. |
-| `packages/core/client` | `@facet/client` | Reference browser-side transports (`SseTransport`, `LocalTransport`) for `useFacet`; hosted platforms usually implement their own `FacetTransport`. |
+| `packages/core/client` | `@facet/client` | Reference browser-side transports (`SseTransport`, `LocalTransport`) plus the shared `withView` event helper for `useFacet`; hosted platforms usually implement their own `FacetTransport`. |
 | `packages/extensions/agent-client` | `@facet/agent-client` | Reference external-agent dial-in client for `@facet/server`'s agent channel (SSE + heartbeat + reconnect). |
 | `packages/extensions/store-postgres` | `@facet/store-postgres` | Reference durable `StageStore`/`Sink`/`AssetsStore`/`SummaryStore` adapter backed by Postgres; not a hosted-platform product schema. |
 | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming tool loop, and deterministic test fixture. |

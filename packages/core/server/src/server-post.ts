@@ -4,10 +4,9 @@ import type { AgentChannel } from "./agent-channel.js";
 import { isStaleLateResult, type LateWindow } from "./late.js";
 import {
   isControlBody,
-  isEventBody,
-  isRecordBody,
+  normalizeEventBody,
+  normalizeRecordBody,
   readJson,
-  sanitizeEventView,
 } from "./server-validation.js";
 import {
   addHandlingTurn,
@@ -28,16 +27,13 @@ export function handleEvent(
   const { lane, runtime, frameLog, deliver, handling } = deps;
   readJson(req)
     .then((body) => {
-      if (!isEventBody(body)) {
+      const normalized = normalizeEventBody(body);
+      if (normalized === undefined) {
         res.writeHead(400);
         res.end();
         return;
       }
-      const { visitor } = body;
-      // Clamp the browser-owned `view` at the untrusted boundary before the
-      // runtime sees it. Never rejects the event for view reasons — a hostile or
-      // absent view is dropped and the turn runs as if it never carried one.
-      const event = sanitizeEventView(body.event);
+      const { visitor, event } = normalized;
       res.writeHead(202);
       res.end();
       // Stamp a per-visitor arrival {index, era} pair NOW (the true order, before
@@ -115,16 +111,13 @@ export function handleRecord(
   const { lane, runtime } = deps;
   readJson(req)
     .then((body) => {
-      if (!isRecordBody(body)) {
+      const normalized = normalizeRecordBody(body);
+      if (normalized === undefined) {
         res.writeHead(400);
         res.end();
         return;
       }
-      const { visitor } = body;
-      // Same untrusted-boundary view clamp as /event: `isRecordBody` ignores
-      // `view`, so a hostile client could otherwise persist an unbounded `view`
-      // to the Sink and have it replayed into the agent prompt.
-      const event = sanitizeEventView(body.event);
+      const { visitor, event } = normalized;
       res.writeHead(202);
       res.end();
       // Same per-visitor lane as /event so `runtime.record` is CALLED in lane/arrival

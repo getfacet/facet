@@ -140,7 +140,9 @@ For new feature work or any approved `/spec-bridge` implementation:
 vitest tiers: Tier 1 (deterministic stub E2E + real-bundle run) always blocks;
 Tier 2 (key-gated provider smoke) **blocks whenever
 `packages/agent-stack/quickstart/` changed, or when
-`packages/agent-stack/reference-agent/src/{agent,provider}.ts` or
+`packages/agent-stack/reference-agent/src/agent.ts`,
+`packages/agent-stack/reference-agent/src/provider.ts`, anything under
+`packages/agent-stack/reference-agent/src/provider/`, or
 `packages/agent-stack/reference-agent/package.json` changed** — a missing key is
 then a FAIL, not a skip; Tier 3 (both providers) runs pre-merge/release. Plus an
 **owner-run "live journey" tier** (real headless browser + real LLM +

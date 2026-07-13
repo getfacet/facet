@@ -110,18 +110,45 @@ export function isRenderableTree(tree: FacetTree): boolean {
   return root !== undefined && nodes !== undefined && isTreeShaped(tree) && nodes[root] != null;
 }
 
-export function isRenderableMedia(raw: unknown): boolean {
-  const rawMedia = raw as {
-    readonly type?: unknown;
-    readonly kind?: unknown;
-    readonly src?: unknown;
+export interface RenderableMediaValue {
+  readonly kind: "image" | "video";
+  readonly src: string;
+  readonly alt?: unknown;
+  readonly poster?: string;
+  readonly controls: boolean;
+  readonly variant?: unknown;
+  readonly style?: object;
+}
+
+/** Safely read and normalize the renderer's raw-path media shape once. */
+export function readRenderableMedia(raw: unknown): RenderableMediaValue | undefined {
+  const src = safeOwnValue(raw, "src");
+  if (typeof src !== "string" || !isSafeMediaSrc(src)) return undefined;
+
+  const type = safeOwnValue(raw, "type");
+  const rawKind = safeOwnValue(raw, "kind");
+  const kind = type === "image" ? "image" : rawKind === undefined ? "image" : rawKind;
+  if (kind !== "image" && kind !== "video") return undefined;
+
+  const posterValue = safeOwnValue(raw, "poster");
+  const poster =
+    typeof posterValue === "string" && isSafeMediaSrc(posterValue) ? posterValue : undefined;
+  const styleValue = safeOwnValue(raw, "style");
+  const style = typeof styleValue === "object" && styleValue !== null ? styleValue : undefined;
+
+  return {
+    kind,
+    src,
+    alt: safeOwnValue(raw, "alt"),
+    ...(poster === undefined ? {} : { poster }),
+    controls: safeOwnValue(raw, "controls") === true,
+    variant: safeOwnValue(raw, "variant"),
+    ...(style === undefined ? {} : { style }),
   };
-  if (typeof rawMedia.src !== "string" || !isSafeMediaSrc(rawMedia.src)) {
-    return false;
-  }
-  const kind =
-    rawMedia.type === "image" ? "image" : rawMedia.kind === undefined ? "image" : rawMedia.kind;
-  return kind === "image" || kind === "video";
+}
+
+export function isRenderableMedia(raw: unknown): boolean {
+  return readRenderableMedia(raw) !== undefined;
 }
 
 export function isHiddenByDefault(node: FacetNode): boolean {

@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { FacetAction, FieldValues, ViewSnapshot, VisitorContext } from "@facet/core";
+import type {
+  CollectedEvent,
+  FacetAction,
+  FieldValues,
+  ViewSnapshot,
+  VisitorContext,
+} from "@facet/core";
 import { FacetRuntime } from "@facet/runtime";
 import { StageRenderer, useFacet } from "@facet/react";
-import { LocalTransport } from "@facet/client";
+import { LocalTransport, withView } from "@facet/client";
 import { nova } from "./nova.js";
 import { Gallery } from "./gallery.js";
 import { GeneratedView } from "./generated.js";
@@ -15,7 +21,7 @@ const SUBTITLES: Record<View, string> = {
   gallery:
     "Six very different pages — all from four bricks (box/text/media/field) + tokens. No LLM.",
   generated:
-    "The page an LLM just built from the four bricks via the CLI generator, validated and rendered.",
+    "The page an LLM built from Facet's closed composition → component → primitive vocabulary, validated and rendered.",
   live: "Talk to a real @facet/server: type a request and the LLM agent builds the page live over SSE.",
   visitors:
     "One agent (Nova), two visitors. Rule-based — no LLM. Type in a chat dock and watch only that visitor's stage rebuild.",
@@ -104,7 +110,7 @@ function VisitorPane({
     return new LocalTransport(runtime, visitor);
   }, [visitor]);
 
-  const { tree, chat, send, transition } = useFacet(transport);
+  const { tree, chat, send, record, transition } = useFacet(transport);
   const [log, setLog] = useState<readonly LogLine[]>([]);
   const [draft, setDraft] = useState("");
   const seen = useRef(0);
@@ -119,7 +125,7 @@ function VisitorPane({
 
   // Fire the initial visit → first paint.
   useEffect(() => {
-    send({ kind: "visit", visitor });
+    send(withView({ kind: "visit", visitor }, viewRef.current));
   }, [send, visitor]);
 
   // Fold new agent replies into the conversation log.
@@ -134,20 +140,27 @@ function VisitorPane({
   const onAction = (action: FacetAction, fields?: FieldValues): void => {
     // Conditional spread: exactOptionalPropertyTypes forbids an explicit
     // `fields: undefined` / `view: undefined` on the event — absent stays absent.
-    const view = viewRef.current;
-    send({
-      kind: "tap",
-      action,
-      ...(fields !== undefined ? { fields } : {}),
-      ...(view !== undefined && Object.keys(view).length > 0 ? { view } : {}),
-    });
+    send(
+      withView(
+        {
+          kind: "tap",
+          action,
+          ...(fields !== undefined ? { fields } : {}),
+        },
+        viewRef.current,
+      ),
+    );
+  };
+
+  const onRecord = (event: CollectedEvent): void => {
+    record(withView(event, viewRef.current));
   };
 
   const submit = (): void => {
     const text = draft.trim();
     if (text === "") return;
     setLog((current) => [...current, { who: "You", text }]);
-    send({ kind: "message", text });
+    send(withView({ kind: "message", text }, viewRef.current));
     setDraft("");
   };
 
@@ -160,6 +173,7 @@ function VisitorPane({
         <StageRenderer
           tree={tree}
           onAction={onAction}
+          onRecord={onRecord}
           transition={transition}
           onViewSnapshot={onViewSnapshot}
         />

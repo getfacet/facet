@@ -40,6 +40,7 @@ describe("core barrel", () => {
       "./catalog.js",
       "./patch.js",
       "./protocol.js",
+      "./event-validation.js",
       "./view.js",
       "./agent-result.js",
       "./validate.js",

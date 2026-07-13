@@ -14,6 +14,9 @@ routes, credentials, and tenant policy.
   sent before the stream opens are queued and flushed on connect.
 - **`LocalTransport`** — no network: the client talks to a `FacetRuntime` in the
   same process. For embedding, demos, and tests.
+- **`withView`** — immutably attaches a browser-owned `ViewSnapshot` to a
+  forwarded or locally recorded event, while preserving the event's inferred
+  discriminant and exact optional-property shape.
 
 ```bash
 npm install @facet/client @facet/react @facet/core
@@ -36,6 +39,30 @@ const { tree, send, record, transition } = useFacet(transport);
   onAction={(action) => send({ kind: "tap", action })}
 />;
 ```
+
+## Attaching current view context
+
+Sample the browser view through `StageRenderer`'s `onViewSnapshot` callback,
+then use the same helper for forwarded and record-only events:
+
+```tsx
+import { withView } from "@facet/client";
+import type { ViewSnapshot } from "@facet/core";
+
+let snapshot: ViewSnapshot | undefined;
+
+send(withView({ kind: "message", text: "Show annual revenue" }, snapshot));
+record(
+  withView(
+    { kind: "tap", target: "pricing", effect: { navigate: "pricing" } },
+    snapshot,
+  ),
+);
+```
+
+`withView` does not mutate the event. An absent or empty snapshot leaves the
+original event unchanged; untrusted transports still normalize and bound the
+snapshot at their core event boundary.
 
 ## Trust model (read before hosting)
 

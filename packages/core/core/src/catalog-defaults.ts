@@ -8,8 +8,7 @@ import type {
   CatalogUsagePolicy,
   FacetCatalog,
 } from "./catalog-types.js";
-
-const CANONICAL_USAGE_ORDER = ["composition", "component", "primitive"] as const;
+import { CANONICAL_CATALOG_USAGE_ORDER } from "./catalog-policy.js";
 
 export const DEFAULT_COMPONENTS: readonly CatalogComponent[] = [
   {
@@ -107,7 +106,7 @@ export const DEFAULT_CATALOG: FacetCatalog = {
   compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: CANONICAL_USAGE_ORDER,
+    order: CANONICAL_CATALOG_USAGE_ORDER,
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 6,

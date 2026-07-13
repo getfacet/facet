@@ -40,8 +40,9 @@ smoke turn; under-verifying defeats the gate.
 **provider-smoke-required** ⇔ any candidate path starts with
 `packages/agent-stack/quickstart/`, is
 `packages/agent-stack/reference-agent/package.json`, or is
-`packages/agent-stack/reference-agent/src/agent.ts` or
-`packages/agent-stack/reference-agent/src/provider.ts`.
+`packages/agent-stack/reference-agent/src/agent.ts`, or starts with
+`packages/agent-stack/reference-agent/src/provider/` (the top-level
+`src/provider.ts` compatibility barrel is included as well).
 
 ## Step 2 — Tier 1 (ALWAYS run, blocking)
 

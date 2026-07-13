@@ -614,9 +614,16 @@ patch/fold/executor path, and the renderer never writes stage view-state from it
 (the server stays the sole stage writer — no auto-restore). `@facet/react`'s
 `StageRenderer` publishes the live snapshot read-only via an optional
 `onViewSnapshot` callback; `@facet/client` persists it per agent link in
-`localStorage` and replays it on the next `visit` as report-only revisit context;
+`localStorage`, exposes `withView` to attach it without mutating an event, and
+replays it on the next `visit` as report-only revisit context;
 `@facet/reference-agent` renders it as one inert, escaped prompt line so the
 model can target the visitor's current screen.
+
+`@facet/core` also owns the closed untrusted-input normalizers
+(`normalizeVisitorContext`, `normalizeClientEvent`, and
+`normalizeLocalCollectedEvent`). The native server and AG-UI adapter reuse
+those functions, so visitor, action, field, sequence, local-effect, and view
+rules cannot drift between transport edges.
 
 ## What we adopt vs build (and why)
 

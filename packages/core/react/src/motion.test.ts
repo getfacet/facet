@@ -10,8 +10,6 @@ import {
   stageCurrentClassName,
   stageFrameClassName,
   stagePreviousClassName,
-  withBrickEnterClass,
-  withBrickExitClass,
 } from "./motion.js";
 
 describe("MOTION_CSS", () => {
@@ -76,10 +74,6 @@ describe("MOTION_CSS", () => {
     ).toBe("facet-appear-fade facet-motion-brick-enter");
     expect(composeMotionClassName(undefined, false, "", null)).toBeUndefined();
 
-    expect(withBrickEnterClass("facet-appear-slide")).toBe(
-      "facet-appear-slide facet-motion-brick-enter",
-    );
-    expect(withBrickExitClass()).toBe("facet-motion-brick-exit");
     expect(stageFrameClassName(false)).toBe("facet-motion-stage-frame");
     expect(stageFrameClassName(true)).toBe("facet-motion-stage-frame facet-motion-stage-crossfade");
     expect(stageCurrentClassName()).toBe("facet-motion-stage-current");

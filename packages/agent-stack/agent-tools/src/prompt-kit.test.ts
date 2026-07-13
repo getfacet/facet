@@ -114,7 +114,7 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     });
 
     expect(system).toContain("COMPONENT GUIDANCE");
-    expect(system).toMatch(/Primitive Brick -> Component -> Catalog/i);
+    expect(system).toMatch(/composition -> component -> primitive fallback/i);
     expect(system).toMatch(/catalog-advertised compositions/i);
     expect(system).toMatch(/intrinsic components with catalog-advertised variants/i);
     expect(system).toMatch(/primitive fallback/i);
