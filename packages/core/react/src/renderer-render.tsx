@@ -374,7 +374,14 @@ export function renderNode({
       }
       const variant = (node as { readonly variant?: unknown }).variant;
       const recipe = resolveRecipe(theme, "box", variant);
-      const boxCss = boxStyle({ ...(recipe.box ?? {}), ...(styleOf(node.style) ?? {}) }, theme);
+      // Resolve the box's OWN style against `childTheme` too, so a `scheme:"dark"`
+      // box paints its own `bg`/`border` from the dark palette — a "dark band"
+      // must be dark itself, not just its descendants (else near-white bg + dark
+      // text = illegible). `childTheme` aliases `theme` when no scheme is set.
+      const boxCss = boxStyle(
+        { ...(recipe.box ?? {}), ...(styleOf(node.style) ?? {}) },
+        childTheme,
+      );
       // ONE element type for every box (review r6): a live patch that adds or
       // removes onPress/onHold changes only BoxElement's props, never the
       // element type at this position — so React updates in place instead of

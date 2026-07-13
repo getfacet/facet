@@ -15,6 +15,7 @@ import {
   MIN_HEIGHTS,
   RADII,
   RATIOS,
+  COLOR_SCHEMES,
   SCRIMS,
   SCROLL_AXES,
   SHADOWS,
@@ -23,8 +24,6 @@ import {
   TEXT_ALIGNS,
   TRACKINGS,
 } from "./tokens.js";
-// `scheme` reuses the pre-existing closed light/dark set from view.ts.
-import { SCHEMES } from "./view.js";
 import {
   FIELD_INPUTS,
   MEDIA_KINDS,
@@ -254,7 +253,7 @@ function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
     setStrict("maxWidth", MAX_WIDTHS);
     setStrict("gradient", GRADIENTS);
     setStrict("backdropScrim", SCRIMS);
-    setStrict("scheme", SCHEMES);
+    setStrict("scheme", COLOR_SCHEMES);
     const sticky = asBool(value.sticky);
     if (sticky !== undefined) {
       style.sticky = sticky;

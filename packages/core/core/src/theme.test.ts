@@ -222,6 +222,29 @@ describe("validateTheme", () => {
     expect(warning).toBeDefined();
   });
 
+  it("warns on a low-contrast colorDark pair (the dark-scheme palette is guarded too)", () => {
+    // `scheme:"dark"` swaps a subtree onto colorDark, so its fg/bg must also be
+    // legible. Core has no dark-default palette, so BOTH members must be set to
+    // trigger the check (mixing a dark override with a LIGHT default would be a
+    // false warning). Near-black fg on near-black bg → far below the floor.
+    const { theme, issues } = validateTheme({
+      name: "dk",
+      colorDark: { fg: "#050505", bg: "#000000" },
+    });
+    expect(theme).toBeDefined();
+    expect(
+      issues.some((i) => i.severity === "warning" && i.message.toLowerCase().includes("contrast")),
+    ).toBe(true);
+  });
+
+  it("does not warn on a high-contrast colorDark pair", () => {
+    const { issues } = validateTheme({
+      name: "dk",
+      colorDark: { fg: "#ffffff", bg: "#000000" },
+    });
+    expect(issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(false);
+  });
+
   it("does not warn when every EFFECTIVE pair is high-contrast", () => {
     // All pair members are overridden to high-contrast values, so no pair — not
     // even one measured against a default partner — falls below the floor.

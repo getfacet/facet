@@ -1,3 +1,4 @@
+import type { Color } from "./tokens.js";
 import {
   COLORS,
   FONT_FAMILIES,
@@ -60,6 +61,38 @@ const KNOWN_KEYS = new Set([
   "colorDark",
   "recipes",
 ]);
+
+/**
+ * Warn (never reject) on a low-contrast fg/bg pair in a color map. For the light
+ * `color` map, `fillLightDefault` mixes an un-set member with the light default
+ * (so overriding one side still checks). For `colorDark`, core has no dark
+ * default palette, so a pair is checked only when the operator set BOTH members.
+ */
+function checkContrast(
+  map: Partial<Record<Color, string>>,
+  label: string,
+  fillLightDefault: boolean,
+  issues: IssueList,
+): void {
+  for (const [a, b] of CONTRAST_PAIRS) {
+    const oa = map[a];
+    const ob = map[b];
+    if (
+      fillLightDefault ? oa === undefined && ob === undefined : oa === undefined || ob === undefined
+    )
+      continue;
+    const sa = parseSrgb(oa ?? DEFAULT_COLORS[a]);
+    const sb = parseSrgb(ob ?? DEFAULT_COLORS[b]);
+    if (sa === undefined || sb === undefined) continue;
+    const ratio = contrastRatio(sa, sb);
+    if (ratio < MIN_CONTRAST) {
+      issues.push({
+        severity: "warning",
+        message: `low contrast for ${label} (${a}, ${b}): ratio ${ratio.toFixed(2)} is below ${MIN_CONTRAST}`,
+      });
+    }
+  }
+}
 
 /**
  * Validate an untrusted operator theme document. Returns a `FacetTheme` (partial
@@ -243,21 +276,16 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
   // a pair (the most common low-contrast mistake, e.g. bg #000 on default fg) must
   // still be checked — skip a pair only when NEITHER member is overridden.
   if (theme.color !== undefined) {
-    for (const [a, b] of CONTRAST_PAIRS) {
-      const oa = theme.color[a];
-      const ob = theme.color[b];
-      if (oa === undefined && ob === undefined) continue;
-      const sa = parseSrgb(oa ?? DEFAULT_COLORS[a]);
-      const sb = parseSrgb(ob ?? DEFAULT_COLORS[b]);
-      if (sa === undefined || sb === undefined) continue;
-      const ratio = contrastRatio(sa, sb);
-      if (ratio < MIN_CONTRAST) {
-        issues.push({
-          severity: "warning",
-          message: `low contrast for (${a}, ${b}): ratio ${ratio.toFixed(2)} is below ${MIN_CONTRAST}`,
-        });
-      }
-    }
+    // Light palette: an override of one member of a pair mixes with the light
+    // default for the other, so fall back to DEFAULT_COLORS for the un-set side.
+    checkContrast(theme.color, "color", true, issues);
+  }
+  if (theme.colorDark !== undefined) {
+    // Dark palette (`scheme:"dark"`): core has no dark default palette (it lives
+    // in @facet/assets, which core cannot import), so only check pairs where the
+    // operator set BOTH members — mixing a dark override with a LIGHT default
+    // would produce false low-contrast warnings.
+    checkContrast(theme.colorDark, "colorDark", false, issues);
   }
 
   // Gate on `hasError` (tracked before the cap) — NOT a scan of the retained

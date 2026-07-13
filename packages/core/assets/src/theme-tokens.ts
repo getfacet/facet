@@ -171,7 +171,9 @@ export const COLOR_DARK: Record<Color, string> = Object.assign(
     bg: "#0b0b0f",
     surface: "#16161c",
     "surface-2": "#1f1f27",
-    accent: "#6366f1",
+    // indigo-600 (darker than -500) so white accent-fg clears the 4.5 contrast
+    // floor the new colorDark contrast check enforces (−500 measured 4.47).
+    accent: "#4f46e5",
     "accent-fg": "#ffffff",
     border: "#2a2a33",
     neutral: "#94a3b8",

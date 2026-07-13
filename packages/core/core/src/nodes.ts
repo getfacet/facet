@@ -22,6 +22,7 @@ import type {
   FontSize,
   FontWeight,
   Gradient,
+  ColorScheme,
   Highlight,
   Justify,
   Leading,
@@ -37,9 +38,6 @@ import type {
   TextAlign,
   Tracking,
 } from "./tokens.js";
-// `scheme` reuses the pre-existing closed light/dark set from view.ts (same
-// vocabulary as the browser-reported color scheme) — see tokens.ts note.
-import type { Scheme } from "./view.js";
 
 /** Identifier for a node within a stage tree. */
 export type NodeId = string;
@@ -136,10 +134,12 @@ export interface BoxStyle {
   /** Scrim overlay strength painted over this box's backdrop layer. */
   readonly backdropScrim?: Scrim;
   /**
-   * Color scheme for this box's subtree — the renderer swaps the color-token map
-   * read-only for the subtree (never leaks upward). Unknown value → unchanged.
+   * Authored color scheme for this box's subtree (a dark/light section) — the
+   * renderer swaps the color-token map read-only for the subtree (never leaks
+   * upward). Unknown value → unchanged. `ColorScheme` is deliberately distinct
+   * from view-state's report-only device `Scheme`.
    */
-  readonly scheme?: Scheme;
+  readonly scheme?: ColorScheme;
 }
 
 export interface TextStyle {

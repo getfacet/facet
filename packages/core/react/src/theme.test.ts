@@ -514,29 +514,44 @@ describe("landing-grade-vocab", () => {
     });
   });
 
-  // DC-004: the flow-only layer helpers. `position:absolute` is confined to the
-  // synthesized backdrop LAYER helper — no other helper emits it.
+  // DC-004: the flow-only backdrop layers. `position:absolute` is confined to the
+  // two renderer-SYNTHESIZED layers (media + scrim), never a flow child; both
+  // layers carry NEGATIVE z-index so flow children paint above them, and the host
+  // is its own stacking context so the negative-z layers stay contained.
   describe("layout-contract backdrop/scrim/sticky helpers (DC-004)", () => {
-    it("backdropHostStyle is position:relative and preserves the base style", () => {
+    it("backdropHostStyle is position:relative + isolation and preserves the base style", () => {
       const host = backdropHostStyle({ display: "flex", gap: "8px" });
       expect(host.position).toBe("relative");
+      // isolation:isolate makes the host its own stacking context so the
+      // negative-z backdrop layers can't leak behind ancestor content.
+      expect(host.isolation).toBe("isolate");
       expect(host.display).toBe("flex");
       expect(host.gap).toBe("8px");
     });
 
-    it("backdropLayerStyle is the two-layer absolute cover layer", () => {
+    it("backdropLayerStyle is the absolute cover media layer at a negative z-index", () => {
       const layer = backdropLayerStyle();
       expect(layer.position).toBe("absolute");
       expect(layer.inset).toBe(0);
       expect(layer.objectFit).toBe("cover");
       expect(layer.width).toBe("100%");
       expect(layer.height).toBe("100%");
+      // Negative z ⇒ paints BEHIND the box's in-flow children (the bug fix).
+      expect(typeof layer.zIndex).toBe("number");
+      expect(layer.zIndex as number).toBeLessThan(0);
     });
 
-    it("scrimStyle is an overlay tint with NO position of its own", () => {
+    it("scrimStyle is an absolute tint layer ABOVE the media but BELOW content", () => {
       const scrim = scrimStyle("rgba(0, 0, 0, 0.5)");
       expect(scrim.background).toBe("rgba(0, 0, 0, 0.5)");
-      expect(scrim.position).toBeUndefined();
+      // The scrim MUST be positioned for inset:0 to fill the host (the earlier
+      // no-position version collapsed to a 0-height no-op).
+      expect(scrim.position).toBe("absolute");
+      expect(scrim.inset).toBe(0);
+      // Negative z (still behind content) but ABOVE the media layer, so it tints
+      // the image while the flow copy stays legible on top.
+      expect(scrim.zIndex as number).toBeLessThan(0);
+      expect(scrim.zIndex as number).toBeGreaterThan(backdropLayerStyle().zIndex as number);
     });
 
     it("stickyStyle is position:sticky with the framework-owned top constant", () => {
@@ -546,17 +561,17 @@ describe("landing-grade-vocab", () => {
       expect(STICKY_TOP).not.toBe("absolute");
     });
 
-    it("emits position:absolute ONLY in backdropLayerStyle (structural, mirrors motion.test.ts)", () => {
-      const helpers: Record<string, CSSProperties> = {
+    it("emits position:absolute ONLY on the synthesized backdrop layers, never a flow-box helper", () => {
+      const flowHelpers: Record<string, CSSProperties> = {
         backdropHostStyle: backdropHostStyle(),
-        backdropLayerStyle: backdropLayerStyle(),
-        scrimStyle: scrimStyle("rgba(0, 0, 0, 0.5)"),
         stickyStyle: stickyStyle(),
       };
-      const absolute = Object.entries(helpers)
-        .filter(([, css]) => css.position === "absolute")
-        .map(([name]) => name);
-      expect(absolute).toEqual(["backdropLayerStyle"]);
+      // No flow-box helper is ever absolutely positioned…
+      for (const css of Object.values(flowHelpers)) expect(css.position).not.toBe("absolute");
+      // …while both synthesized backdrop layers are (they are renderer-owned,
+      // aria-hidden background layers, not authored flow children).
+      expect(backdropLayerStyle().position).toBe("absolute");
+      expect(scrimStyle("rgba(0,0,0,0.5)").position).toBe("absolute");
     });
   });
 });

@@ -143,10 +143,17 @@ export type Gradient = (typeof GRADIENTS)[number];
 export const SCRIMS = ["none", "light", "dark"] as const;
 export type Scrim = (typeof SCRIMS)[number];
 
-// NOTE: the box-subtree color `scheme` reuses the pre-existing closed set
-// `SCHEMES`/`Scheme` (`["light","dark"]`) from `view.ts` — the same closed
-// light/dark vocabulary — rather than redeclaring an identical export here
-// (a second `export *` of `SCHEMES` would break the `@facet/core` barrel).
+/**
+ * Authored color-scheme selection for a box subtree — a dark/light SECTION the
+ * agent draws (`BoxStyle.scheme`). Deliberately DISTINCT from view-state's
+ * `Scheme` in `view.ts`, which is the browser-REPORTED device preference: that
+ * one is report-only inert event data that must never drive layout, this one is
+ * an authored layout token that intentionally does. Same `["light","dark"]`
+ * values, separate types so the two concepts can never be conflated (a future
+ * edit wiring the device signal into the palette swap would be a type mismatch).
+ */
+export const COLOR_SCHEMES = ["light", "dark"] as const;
+export type ColorScheme = (typeof COLOR_SCHEMES)[number];
 
 /**
  * Text highlight treatment (decoration/background behind a text run). The theme

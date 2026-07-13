@@ -237,10 +237,77 @@ describe("backdrop flow-only discipline (DC-004)", () => {
     // Exactly two renderer-synthesized layers (the cover media + the scrim),
     // both aria-hidden; the flow children are not.
     expect(count(markup, 'aria-hidden="true"')).toBe(2);
-    // position:absolute is confined to the single synthesized cover layer.
-    expect(count(markup, "position:absolute")).toBe(1);
+    // position:absolute is confined to the TWO synthesized layers (media + scrim);
+    // no authored flow child (nav, headline) ever receives it.
+    expect(count(markup, "position:absolute")).toBe(2);
+    // Both synthesized layers carry a NEGATIVE z-index so the flow children paint
+    // ABOVE them (the "layer painted over content" fix); the host isolates them.
+    expect(markup).toContain("z-index:-2"); // media layer
+    expect(markup).toContain("z-index:-1"); // scrim layer
+    expect(markup).toContain("isolation:isolate"); // host stacking context
+    // The headline flow child is NOT absolutely positioned — it renders in flow
+    // on top of the negative-z backdrop.
+    expect(markup).toContain("Ship faster");
     // The sticky flow child stays IN flow (position:sticky, never absolute).
     expect(markup).toContain("position:sticky");
+  });
+});
+
+// ── video backdrop + scheme-own-bg (regressions the review caught) ───────────
+describe("backdrop video cover mode + scheme own background", () => {
+  it("paints a kind:video backdrop as an aria-hidden, controls-suppressed cover layer", () => {
+    const markup = render(
+      tree({
+        root: {
+          id: "root",
+          type: "box",
+          backdrop: "bgv",
+          children: ["headline"],
+        } as unknown as FacetNode,
+        bgv: {
+          id: "bgv",
+          type: "media",
+          kind: "video",
+          src: "https://cdn.example.com/loop.mp4",
+          controls: true, // authored controls must be SUPPRESSED in cover mode
+        } as unknown as FacetNode,
+        headline: { id: "headline", type: "text", value: "Motion hero" } as unknown as FacetNode,
+      }),
+    );
+    // A real gated <video> layer (through the safe media path), not a CSS bg.
+    expect(markup).toContain("<video");
+    expect(markup).toContain("https://cdn.example.com/loop.mp4");
+    // Cover mode: aria-hidden, no interactive controls over the flow copy, and
+    // the absolute negative-z cover layer.
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).not.toContain("controls");
+    expect(markup).toContain("position:absolute");
+    expect(markup).toContain("z-index:-2");
+    expect(markup).toContain("Motion hero");
+  });
+
+  it("scheme:dark paints the declaring box's OWN background from the dark palette (legible band)", () => {
+    const markup = render(
+      tree({
+        root: {
+          id: "root",
+          type: "box",
+          style: { scheme: "dark", bg: "bg" },
+          children: ["copy"],
+        } as unknown as FacetNode,
+        copy: {
+          id: "copy",
+          type: "text",
+          value: "dark band",
+          style: { color: "fg" },
+        } as unknown as FacetNode,
+      }),
+    );
+    // The box's OWN bg resolves to the DARK palette (#0b0b0f), not the light
+    // default — so the section is dark under its dark-palette (#f5f5f7) text.
+    expect(markup).toContain("#0b0b0f"); // dark bg on the box itself
+    expect(markup).toContain("#f5f5f7"); // dark-palette fg on the child copy
+    // (near-white text on near-black bg = legible, the "dark band" the token means)
   });
 });
 
