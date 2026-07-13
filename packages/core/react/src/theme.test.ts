@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import type {
   BoxStyle,
   Color,
@@ -19,6 +20,13 @@ import {
   resolveTheme,
   textStyle,
 } from "./theme.js";
+import {
+  STICKY_TOP,
+  backdropHostStyle,
+  backdropLayerStyle,
+  scrimStyle,
+  stickyStyle,
+} from "./layout-contract.js";
 
 // The theme is where token NAMES become concrete CSS (invariant #1's trusted
 // side): agents only ever emit tokens, so these maps are the single place a
@@ -357,6 +365,199 @@ describe("resolveTheme", () => {
     expect(Object.getPrototypeOf(resolved.color)).toBeNull();
     expect(Object.getPrototypeOf(resolved.space)).toBeNull();
     expect(Object.getPrototypeOf(resolved.fontFamily)).toBeNull();
+  });
+});
+
+// Landing-grade vocabulary (WU-5): the new closed token groups resolve/overlay
+// through the SAME machinery as every other group, map to concrete CSS in
+// boxStyle/textStyle, and the flow-only layer helpers keep `position:absolute`
+// confined to the synthesized backdrop layer (RISK-INV-1 / DC-004 / DC-001 /
+// DC-005).
+describe("landing-grade-vocab", () => {
+  // DC-005: every new operator-overridable group overlays from a document and
+  // falls back to the shipped default when the document omits (or supplies an
+  // unknown) member — exactly like the pre-existing groups.
+  describe("resolveTheme overlays the new groups (DC-005)", () => {
+    it("overlays each new group while keeping un-overridden members at their default", () => {
+      const doc: FacetTheme = {
+        name: "land",
+        minHeight: { screen: "90vh" },
+        maxWidth: { prose: "72ch" },
+        tracking: { tight: "-0.05em" },
+        leading: { relaxed: "2" },
+        gradient: { accent: "linear-gradient(90deg, red, blue)" },
+        scrim: { dark: "rgba(0,0,0,0.8)" },
+        highlight: { accent: "linear-gradient(transparent 50%, pink 50%)" },
+        colorDark: { bg: "#000000" },
+      };
+      const t = resolveTheme("land", [doc]);
+      expect(t.minHeight.screen).toBe("90vh"); // overridden
+      expect(t.minHeight.half).toBe("50svh"); // default kept in the same group
+      expect(t.maxWidth.prose).toBe("72ch");
+      expect(t.maxWidth.wide).toBe("1200px");
+      expect(t.tracking.tight).toBe("-0.05em");
+      expect(t.leading.relaxed).toBe("2");
+      expect(t.leading.tight).toBe("1.1");
+      expect(t.gradient.accent).toBe("linear-gradient(90deg, red, blue)");
+      expect(t.scrim.dark).toBe("rgba(0,0,0,0.8)");
+      expect(t.highlight.accent).toBe("linear-gradient(transparent 50%, pink 50%)");
+      expect(t.colorDark.bg).toBe("#000000"); // overridden
+      expect(t.colorDark.fg).toBe("#f5f5f7"); // default dark palette kept
+    });
+
+    it("falls back to the shipped defaults when a document omits the new groups", () => {
+      const t = resolveTheme("bare", [{ name: "bare", space: { md: "99px" } }]);
+      expect(t.minHeight.screen).toBe("100svh");
+      expect(t.minHeight.auto).toBe("auto");
+      expect(t.maxWidth.prose).toBe("65ch");
+      expect(t.tracking.wide).toBe("0.04em");
+      expect(t.leading.normal).toBe("1.5");
+      expect(t.gradient.none).toBe("none");
+      expect(t.scrim.dark).toBe("rgba(0, 0, 0, 0.5)");
+      expect(t.highlight.band).toBe("linear-gradient(transparent 55%, #fde68a 55%)");
+      expect(t.colorDark.bg).toBe("#0b0b0f");
+    });
+
+    it("keeps the new group maps null-proto and ignores hostile keys", () => {
+      const hostile = JSON.parse(
+        '{"name":"evil","gradient":{"__proto__":"bad","constructor":"bad","accent":"linear-gradient(1deg, a, b)","dusk":9}}',
+      ) as FacetTheme;
+      const t = resolveTheme("evil", [hostile]);
+      expect(t.gradient.accent).toBe("linear-gradient(1deg, a, b)"); // valid member + string
+      expect(t.gradient.dusk).toBe("linear-gradient(180deg, #1e293b, #4f46e5)"); // non-string 9 dropped
+      expect(t.gradient["__proto__" as keyof typeof t.gradient]).toBeUndefined();
+      expect(Object.getPrototypeOf(t.gradient)).toBeNull();
+      expect(Object.getPrototypeOf(t.minHeight)).toBeNull();
+      expect(Object.getPrototypeOf(t.colorDark)).toBeNull();
+    });
+
+    it("mirrors the active color map into colorLight (scheme mechanism)", () => {
+      const t = resolveTheme("default", [DEFAULT_THEME]);
+      expect(t.colorLight.bg).toBe("#ffffff");
+      expect(t.colorLight.bg).toBe(t.color.bg); // color IS the light scheme by default
+      expect(t.colorDark.bg).toBe("#0b0b0f");
+      // An operator light-palette override lands in BOTH color and colorLight.
+      const branded = resolveTheme("brand", [{ name: "brand", color: { bg: "#101010" } }]);
+      expect(branded.color.bg).toBe("#101010");
+      expect(branded.colorLight.bg).toBe("#101010");
+    });
+  });
+
+  // DC-001 / DC-004: the new tokens map to concrete CSS on the default theme.
+  describe("boxStyle maps the new box tokens (DC-001)", () => {
+    it("maps minHeight to min-height", () => {
+      expect(boxStyle({ minHeight: "screen" }).minHeight).toBe("100svh");
+      expect(boxStyle({ minHeight: "half" }).minHeight).toBe("50svh");
+      expect(boxStyle({ minHeight: "auto" }).minHeight).toBe("auto");
+    });
+
+    it("maps maxWidth to max-width and centers a constrained column", () => {
+      const prose = boxStyle({ maxWidth: "prose" });
+      expect(prose.maxWidth).toBe("65ch");
+      expect(prose.marginInline).toBe("auto");
+      const wide = boxStyle({ maxWidth: "wide" });
+      expect(wide.maxWidth).toBe("1200px");
+      expect(wide.marginInline).toBe("auto");
+      // `none` releases the constraint and is NOT centered.
+      const none = boxStyle({ maxWidth: "none" });
+      expect(none.maxWidth).toBe("none");
+      expect(none.marginInline).toBeUndefined();
+    });
+
+    it("maps sticky to position:sticky with the framework-owned top offset", () => {
+      const css = boxStyle({ sticky: true });
+      expect(css.position).toBe("sticky");
+      expect(css.top).toBe(STICKY_TOP);
+      // No sticky token → no position emitted on a flow box.
+      expect(boxStyle({}).position).toBeUndefined();
+    });
+
+    it("maps gradient to a background image", () => {
+      expect(boxStyle({ gradient: "accent" }).backgroundImage).toBe(
+        "linear-gradient(180deg, #4f46e5, #7c3aed)",
+      );
+      expect(boxStyle({ gradient: "dawn" }).backgroundImage).toBe(
+        "linear-gradient(135deg, #f59e0b, #db2777)",
+      );
+    });
+
+    it("never emits position:absolute for a flow box", () => {
+      for (const style of [
+        { minHeight: "screen" },
+        { maxWidth: "prose" },
+        { sticky: true },
+        { gradient: "accent" },
+      ] as const) {
+        expect(boxStyle(style).position).not.toBe("absolute");
+      }
+    });
+  });
+
+  describe("textStyle maps the new text tokens (DC-001)", () => {
+    it("maps tracking to letter-spacing", () => {
+      expect(textStyle({ tracking: "tight" }).letterSpacing).toBe("-0.02em");
+      expect(textStyle({ tracking: "wide" }).letterSpacing).toBe("0.04em");
+    });
+
+    it("maps leading to line-height", () => {
+      expect(textStyle({ leading: "relaxed" }).lineHeight).toBe("1.75");
+      expect(textStyle({ leading: "tight" }).lineHeight).toBe("1.1");
+    });
+
+    it("maps highlight to a background image behind the text run", () => {
+      expect(textStyle({ highlight: "accent" }).backgroundImage).toBe(
+        "linear-gradient(transparent 60%, #c7d2fe 60%)",
+      );
+      expect(textStyle({ highlight: "band" }).backgroundImage).toBe(
+        "linear-gradient(transparent 55%, #fde68a 55%)",
+      );
+    });
+  });
+
+  // DC-004: the flow-only layer helpers. `position:absolute` is confined to the
+  // synthesized backdrop LAYER helper — no other helper emits it.
+  describe("layout-contract backdrop/scrim/sticky helpers (DC-004)", () => {
+    it("backdropHostStyle is position:relative and preserves the base style", () => {
+      const host = backdropHostStyle({ display: "flex", gap: "8px" });
+      expect(host.position).toBe("relative");
+      expect(host.display).toBe("flex");
+      expect(host.gap).toBe("8px");
+    });
+
+    it("backdropLayerStyle is the two-layer absolute cover layer", () => {
+      const layer = backdropLayerStyle();
+      expect(layer.position).toBe("absolute");
+      expect(layer.inset).toBe(0);
+      expect(layer.objectFit).toBe("cover");
+      expect(layer.width).toBe("100%");
+      expect(layer.height).toBe("100%");
+    });
+
+    it("scrimStyle is an overlay tint with NO position of its own", () => {
+      const scrim = scrimStyle("rgba(0, 0, 0, 0.5)");
+      expect(scrim.background).toBe("rgba(0, 0, 0, 0.5)");
+      expect(scrim.position).toBeUndefined();
+    });
+
+    it("stickyStyle is position:sticky with the framework-owned top constant", () => {
+      const css = stickyStyle();
+      expect(css.position).toBe("sticky");
+      expect(css.top).toBe(STICKY_TOP);
+      expect(STICKY_TOP).not.toBe("absolute");
+    });
+
+    it("emits position:absolute ONLY in backdropLayerStyle (structural, mirrors motion.test.ts)", () => {
+      const helpers: Record<string, CSSProperties> = {
+        backdropHostStyle: backdropHostStyle(),
+        backdropLayerStyle: backdropLayerStyle(),
+        scrimStyle: scrimStyle("rgba(0, 0, 0, 0.5)"),
+        stickyStyle: stickyStyle(),
+      };
+      const absolute = Object.entries(helpers)
+        .filter(([, css]) => css.position === "absolute")
+        .map(([name]) => name);
+      expect(absolute).toEqual(["backdropLayerStyle"]);
+    });
   });
 });
 

@@ -4,12 +4,19 @@ import {
   FONT_FAMILIES,
   FONT_SIZES,
   FONT_WEIGHTS,
+  GRADIENTS,
+  HIGHLIGHTS,
+  LEADINGS,
+  MAX_WIDTHS,
+  MIN_HEIGHTS,
   RADII,
   RATIOS,
   RECIPE_COMPONENTS,
   RECIPE_PARTS,
+  SCRIMS,
   SHADOWS,
   SPACES,
+  TRACKINGS,
 } from "@facet/core";
 import type {
   Align,
@@ -24,15 +31,22 @@ import type {
   FontFamily,
   FontSize,
   FontWeight,
+  Gradient,
+  Highlight,
   Justify,
+  Leading,
+  MaxWidth,
   MediaStyle,
+  MinHeight,
   Radius,
   Ratio,
   RecipeComponentName,
   RecipePartName,
+  Scrim,
   Shadow,
   Space,
   TextStyle,
+  Tracking,
 } from "@facet/core";
 // The default token VALUES live in `@facet/assets` (node-free, deps = core) — the
 // SINGLE source of default-theme truth. react imports them as its render floor and
@@ -40,16 +54,24 @@ import type {
 // that could drift (RISK-INV-1 / RISK-API-2).
 import {
   COLOR,
+  COLOR_DARK,
   DEFAULT_THEME,
   FONT_FAMILY,
   FONT_SIZE,
   FONT_WEIGHT,
+  GRADIENT,
+  HIGHLIGHT,
+  LEADING,
+  MAX_WIDTH,
+  MIN_HEIGHT,
   RADIUS,
   RATIO,
+  SCRIM,
   SHADOW as DEFAULT_SHADOW,
   SPACE,
+  TRACKING,
 } from "@facet/assets";
-import { rootContainmentStyle, scrollContainmentStyle } from "./layout-contract.js";
+import { rootContainmentStyle, scrollContainmentStyle, stickyStyle } from "./layout-contract.js";
 
 export { COLOR, DEFAULT_THEME };
 
@@ -68,6 +90,20 @@ export interface ResolvedTheme {
   readonly color: Record<Color, string>;
   readonly ratio: Record<Ratio, string>;
   readonly shadow: Record<Shadow, string>;
+  // Landing-grade groups. `color` above is the ACTIVE palette (defaults to
+  // `colorLight`); the renderer swaps a subtree onto `colorDark` for a dark
+  // section at render time. `minHeight`/`maxWidth`/`leading` ship their defaults
+  // here (not through DEFAULT_THEME — their svh/ch/unitless values are not
+  // accepted by core's operator dimension handler), yet stay operator-overridable.
+  readonly minHeight: Record<MinHeight, string>;
+  readonly maxWidth: Record<MaxWidth, string>;
+  readonly tracking: Record<Tracking, string>;
+  readonly leading: Record<Leading, string>;
+  readonly gradient: Record<Gradient, string>;
+  readonly scrim: Record<Scrim, string>;
+  readonly highlight: Record<Highlight, string>;
+  readonly colorLight: Record<Color, string>;
+  readonly colorDark: Record<Color, string>;
   readonly recipes?: ComponentRecipes;
 }
 
@@ -193,6 +229,18 @@ const DEFAULT_RESOLVED: ResolvedTheme = {
   color: COLOR,
   ratio: RATIO,
   shadow: DEFAULT_SHADOW,
+  // MIN_HEIGHT/MAX_WIDTH/LEADING come straight from @facet/assets: DEFAULT_THEME
+  // omits them (svh/ch/unitless aren't valid operator-doc dimensions), so the
+  // resolved floor is sourced from the raw maps here (WU-4 handoff).
+  minHeight: MIN_HEIGHT,
+  maxWidth: MAX_WIDTH,
+  tracking: TRACKING,
+  leading: LEADING,
+  gradient: GRADIENT,
+  scrim: SCRIM,
+  highlight: HIGHLIGHT,
+  colorLight: COLOR,
+  colorDark: COLOR_DARK,
   recipes: mergeRecipes(undefined) ?? (Object.create(null) as ComponentRecipes),
 };
 
@@ -241,15 +289,27 @@ export function resolveTheme(name: unknown, themes?: readonly FacetTheme[]): Res
   if (typeof name !== "string" || themes === undefined) return DEFAULT_RESOLVED;
   const doc = themes.find((t) => (t as { name?: unknown } | null)?.name === name);
   if (doc === undefined) return DEFAULT_RESOLVED;
+  // `color` is the ACTIVE (light) palette; `colorLight` mirrors it so a nested
+  // light-palette island restores exactly the operator's light overrides.
+  const color = overlayGroup(COLOR, doc.color, COLORS, "string");
   const resolved: ResolvedTheme = {
     space: overlayGroup(SPACE, doc.space, SPACES, "string"),
     fontFamily: overlayGroup(FONT_FAMILY, doc.fontFamily, FONT_FAMILIES, "string"),
     fontSize: overlayGroup(FONT_SIZE, doc.fontSize, FONT_SIZES, "string"),
     fontWeight: overlayGroup(FONT_WEIGHT, doc.fontWeight, FONT_WEIGHTS, "number"),
     radius: overlayGroup(RADIUS, doc.radius, RADII, "string"),
-    color: overlayGroup(COLOR, doc.color, COLORS, "string"),
+    color,
     ratio: overlayGroup(RATIO, doc.ratio, RATIOS, "string"),
     shadow: overlayGroup(DEFAULT_SHADOW, doc.shadow, SHADOWS, "string"),
+    minHeight: overlayGroup(MIN_HEIGHT, doc.minHeight, MIN_HEIGHTS, "string"),
+    maxWidth: overlayGroup(MAX_WIDTH, doc.maxWidth, MAX_WIDTHS, "string"),
+    tracking: overlayGroup(TRACKING, doc.tracking, TRACKINGS, "string"),
+    leading: overlayGroup(LEADING, doc.leading, LEADINGS, "string"),
+    gradient: overlayGroup(GRADIENT, doc.gradient, GRADIENTS, "string"),
+    scrim: overlayGroup(SCRIM, doc.scrim, SCRIMS, "string"),
+    highlight: overlayGroup(HIGHLIGHT, doc.highlight, HIGHLIGHTS, "string"),
+    colorLight: color,
+    colorDark: overlayGroup(COLOR_DARK, doc.colorDark, COLORS, "string"),
   };
   const recipes = mergeRecipes((doc as { readonly recipes?: unknown }).recipes);
   return recipes === undefined ? resolved : { ...resolved, recipes };
@@ -333,6 +393,17 @@ export function boxStyle(
   if (style.shadow) css.boxShadow = theme.shadow[style.shadow];
   if (style.grow) css.flexGrow = 1;
   if (style.width === "full") css.width = "100%";
+  if (style.minHeight) css.minHeight = theme.minHeight[style.minHeight];
+  if (style.maxWidth) {
+    const resolved = theme.maxWidth[style.maxWidth];
+    css.maxWidth = resolved;
+    // A constrained section column centers itself; `none` releases the guard.
+    if (style.maxWidth !== "none") css.marginInline = "auto";
+  }
+  if (style.gradient) css.backgroundImage = theme.gradient[style.gradient];
+  // `sticky` → `position:sticky` with a framework-owned top (stays in flow; no
+  // author offset). `position:absolute` is never emitted for a flow box.
+  if (style.sticky) Object.assign(css, stickyStyle());
   // `scroll:"x"` deliberately supersedes the old "never overflow-x" guard, but
   // only as a bounded internal region: maxWidth/minWidth keep the page from
   // widening while children clip inside the box. `true` is legacy vertical.
@@ -356,6 +427,10 @@ export function textStyle(
   if (style.size) css.fontSize = theme.fontSize[style.size];
   if (style.weight) css.fontWeight = theme.fontWeight[style.weight];
   if (style.color) css.color = theme.color[style.color];
+  if (style.tracking) css.letterSpacing = theme.tracking[style.tracking];
+  if (style.leading) css.lineHeight = theme.leading[style.leading];
+  // A named highlight paints a decoration/band behind the text run.
+  if (style.highlight) css.backgroundImage = theme.highlight[style.highlight];
   if (style.align) {
     css.textAlign = style.align === "start" ? "left" : style.align === "end" ? "right" : "center";
   }
