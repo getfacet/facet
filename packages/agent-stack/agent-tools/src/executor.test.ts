@@ -359,6 +359,62 @@ describe("executeStageTool", () => {
     for (const kind of CHART_KINDS) expect(observation.message).toContain(`"${kind}"`);
   });
 
+  it("accepts a safe media node and lands it on the shadow", () => {
+    const result = executeStageTool(
+      {
+        id: "call-media-ok",
+        name: "append_node",
+        input: {
+          parentId: "root",
+          node: {
+            id: "hero",
+            type: "media",
+            kind: "image",
+            src: "https://example.com/hero.png",
+            alt: "Hero",
+          },
+        },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(result.status).toBe("ok");
+    expect(result.shadow.nodes["hero"]).toMatchObject({
+      id: "hero",
+      type: "media",
+      kind: "image",
+      src: "https://example.com/hero.png",
+    });
+  });
+
+  it("rejects a media node with an unsafe src via the media-src safety branch", () => {
+    const result = executeStageTool(
+      {
+        id: "call-media-unsafe",
+        name: "append_node",
+        input: {
+          parentId: "root",
+          node: { id: "bad", type: "media", kind: "image", src: "javascript:alert(1)" },
+        },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.code).toBe("invalid_input");
+    expect(result.patches).toEqual([]);
+    expect(result.patchCount).toBe(0);
+    expect(result.shadow).toBe(ROOT_TREE);
+    const observation = parseAgentToolObservation(result.observation.text);
+    expect(observation).toMatchObject({
+      tool: "append_node",
+      status: "error",
+      outcome: "rejected",
+      next_action: "Use a safe static media src.",
+    });
+    expect(observation?.message).toContain('a "media" node needs a safe static "src"');
+  });
+
   it("rejects root-breaking missing and forbidden-id mutations without patches", () => {
     const setRoot = executeStageTool(
       {

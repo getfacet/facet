@@ -37,6 +37,7 @@ import {
   type TextStyle,
 } from "./nodes.js";
 import { isComponentNodeType, sanitizeComponentNode } from "./component-validation.js";
+import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import {
   isPlainObject as isObject,
@@ -251,6 +252,182 @@ export interface SanitizeNodeOptions {
   readonly allowSlotMarkers?: boolean;
 }
 
+/**
+ * Per-primitive validate handlers. Bodies are the former `sanitizeNode` switch
+ * cases verbatim — the brick registry (`brick-registry.ts`) references these so
+ * `sanitizeNode` is a registry lookup, not a hardcoded switch. `rawType` carries
+ * the original input type so the media handler preserves the `image` alias.
+ */
+export type PrimitiveValidator = (
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+  options: SanitizeNodeOptions,
+  rawType: string,
+) => FacetNode | undefined;
+
+// Hoisted function declarations (not const arrows) so the brick registry can
+// reference them safely across the registry↔module import cycle.
+export function validateBox(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): FacetNode | undefined {
+  const key = printableKey(id);
+  const children = Array.isArray(raw.children)
+    ? raw.children.filter((child): child is string => typeof child === "string")
+    : [];
+  const node: {
+    id: string;
+    type: "box";
+    style: BoxStyle;
+    children: string[];
+    onPress?: FacetAction;
+    onHold?: FacetAction;
+    hidden?: boolean;
+    variant?: string;
+    backdrop?: string;
+  } = { id, type: "box", style: boxStyle(raw.style, id, issues), children };
+  const variant = asVariant(raw.variant, id, issues);
+  if (variant !== undefined) node.variant = variant;
+  // `backdrop` is a node-id STRING (resolved to a media node fail-safe at
+  // render time in WU-6), NOT a token: kept iff a string, else dropped with
+  // a (bounded) issue.
+  if (typeof raw.backdrop === "string") {
+    node.backdrop = raw.backdrop;
+  } else if (raw.backdrop !== undefined) {
+    issues.push(`node "${key}": backdrop is not a string ${printableValue(raw.backdrop)} dropped`);
+  }
+  const onPress = normalizeFacetAction(raw.onPress, id, "onPress", issues);
+  if (onPress !== undefined) node.onPress = onPress;
+  const onHold = normalizeFacetAction(raw.onHold, id, "onHold", issues);
+  if (onHold !== undefined) node.onHold = onHold;
+  // Only a literal boolean is a visibility default; anything else is stripped
+  // (silent, like invalid style tokens — the box just stays visible).
+  const hidden = asBool(raw.hidden);
+  if (hidden !== undefined) node.hidden = hidden;
+  return node;
+}
+
+export function validateText(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): FacetNode | undefined {
+  const key = printableKey(id);
+  const value = asString(raw.value);
+  if (value === undefined) {
+    issues.push(`node "${key}": text has no string value`);
+    return undefined;
+  }
+  const node: { id: string; type: "text"; value: string; style: TextStyle; variant?: string } = {
+    id,
+    type: "text",
+    value,
+    style: textStyle(raw.style, id, issues),
+  };
+  const variant = asVariant(raw.variant, id, issues);
+  if (variant !== undefined) node.variant = variant;
+  return node;
+}
+
+export function validateMedia(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+  options: SanitizeNodeOptions,
+  rawType: string,
+): FacetNode | undefined {
+  const key = printableKey(id);
+  const src = asString(raw.src);
+  if (src === undefined) {
+    issues.push(`node "${key}": media needs a string src`);
+    return undefined;
+  }
+  if (!isSafeMediaSrc(src) && !(options.allowSlotMarkers === true && isSlotMarker(src))) {
+    issues.push(`node "${key}": unsafe media src dropped`);
+    return undefined;
+  }
+  const kind =
+    rawType === "image"
+      ? "image"
+      : raw.kind === undefined
+        ? "image"
+        : asToken<MediaKind>(raw.kind, MEDIA_KINDS);
+  if (kind === undefined) {
+    issues.push(`node "${key}": unknown media kind ${printableValue(raw.kind)} dropped`);
+    return undefined;
+  }
+  const node: {
+    id: string;
+    type: "media";
+    kind: MediaKind;
+    src: string;
+    variant?: string;
+    alt?: string;
+    poster?: string;
+    controls?: boolean;
+    style: MediaStyle;
+  } = { id, type: "media", kind, src, style: mediaStyle(raw.style) };
+  const variant = asVariant(raw.variant, id, issues);
+  if (variant !== undefined) node.variant = variant;
+  const alt = asString(raw.alt);
+  node.alt = alt ?? "";
+  const poster = asString(raw.poster);
+  if (
+    poster !== undefined &&
+    (isSafeMediaSrc(poster) || (options.allowSlotMarkers === true && isSlotMarker(poster)))
+  ) {
+    node.poster = poster;
+  }
+  const controls = asBool(raw.controls);
+  if (controls !== undefined) node.controls = controls;
+  return node;
+}
+
+export function validateField(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): FacetNode | undefined {
+  const name = asString(raw.name);
+  if (name === undefined) {
+    issues.push(`node "${printableKey(id)}": field has no name`);
+    return undefined;
+  }
+  const node: {
+    id: string;
+    type: "field";
+    name: string;
+    variant?: string;
+    input?: FieldInput;
+    label?: string;
+    placeholder?: string;
+    options?: readonly string[];
+    style?: FieldStyle;
+  } = { id, type: "field", name };
+  const variant = asVariant(raw.variant, id, issues);
+  if (variant !== undefined) node.variant = variant;
+  const input = asToken<FieldInput>(raw.input, FIELD_INPUTS);
+  if (input !== undefined) node.input = input;
+  const options = fieldOptions(raw.options);
+  if (options !== undefined) node.options = options;
+  if ((input === "select" || input === "radio") && options === undefined) {
+    issues.push(
+      `node "${printableKey(id)}": ${printableValue(input)} field has no valid options — rendered control will be empty`,
+    );
+  }
+  const label = asString(raw.label);
+  if (label !== undefined) node.label = label;
+  const placeholder = asString(raw.placeholder);
+  if (placeholder !== undefined) node.placeholder = placeholder;
+  // Field style was silently stripped before — kit emits it and the
+  // renderer consumes it, so sanitize it through like every other style.
+  const style = fieldStyle(raw.style);
+  if (style !== undefined) node.style = style;
+  return node;
+}
+
 export function sanitizeNode(
   id: string,
   raw: unknown,
@@ -264,148 +441,11 @@ export function sanitizeNode(
     return undefined;
   }
   if (isComponentNodeType(type)) return sanitizeComponentNode(id, raw, issues, type);
-  switch (type) {
-    case "box": {
-      const children = Array.isArray(raw.children)
-        ? raw.children.filter((child): child is string => typeof child === "string")
-        : [];
-      const node: {
-        id: string;
-        type: "box";
-        style: BoxStyle;
-        children: string[];
-        onPress?: FacetAction;
-        onHold?: FacetAction;
-        hidden?: boolean;
-        variant?: string;
-        backdrop?: string;
-      } = { id, type: "box", style: boxStyle(raw.style, id, issues), children };
-      const variant = asVariant(raw.variant, id, issues);
-      if (variant !== undefined) node.variant = variant;
-      // `backdrop` is a node-id STRING (resolved to a media node fail-safe at
-      // render time in WU-6), NOT a token: kept iff a string, else dropped with
-      // a (bounded) issue.
-      if (typeof raw.backdrop === "string") {
-        node.backdrop = raw.backdrop;
-      } else if (raw.backdrop !== undefined) {
-        issues.push(
-          `node "${key}": backdrop is not a string ${printableValue(raw.backdrop)} dropped`,
-        );
-      }
-      const onPress = normalizeFacetAction(raw.onPress, id, "onPress", issues);
-      if (onPress !== undefined) node.onPress = onPress;
-      const onHold = normalizeFacetAction(raw.onHold, id, "onHold", issues);
-      if (onHold !== undefined) node.onHold = onHold;
-      // Only a literal boolean is a visibility default; anything else is stripped
-      // (silent, like invalid style tokens — the box just stays visible).
-      const hidden = asBool(raw.hidden);
-      if (hidden !== undefined) node.hidden = hidden;
-      return node;
-    }
-    case "text": {
-      const value = asString(raw.value);
-      if (value === undefined) {
-        issues.push(`node "${key}": text has no string value`);
-        return undefined;
-      }
-      const node: { id: string; type: "text"; value: string; style: TextStyle; variant?: string } =
-        {
-          id,
-          type: "text",
-          value,
-          style: textStyle(raw.style, id, issues),
-        };
-      const variant = asVariant(raw.variant, id, issues);
-      if (variant !== undefined) node.variant = variant;
-      return node;
-    }
-    case "image":
-    case "media": {
-      const src = asString(raw.src);
-      if (src === undefined) {
-        issues.push(`node "${key}": media needs a string src`);
-        return undefined;
-      }
-      if (!isSafeMediaSrc(src) && !(options.allowSlotMarkers === true && isSlotMarker(src))) {
-        issues.push(`node "${key}": unsafe media src dropped`);
-        return undefined;
-      }
-      const kind =
-        type === "image"
-          ? "image"
-          : raw.kind === undefined
-            ? "image"
-            : asToken<MediaKind>(raw.kind, MEDIA_KINDS);
-      if (kind === undefined) {
-        issues.push(`node "${key}": unknown media kind ${printableValue(raw.kind)} dropped`);
-        return undefined;
-      }
-      const node: {
-        id: string;
-        type: "media";
-        kind: MediaKind;
-        src: string;
-        variant?: string;
-        alt?: string;
-        poster?: string;
-        controls?: boolean;
-        style: MediaStyle;
-      } = { id, type: "media", kind, src, style: mediaStyle(raw.style) };
-      const variant = asVariant(raw.variant, id, issues);
-      if (variant !== undefined) node.variant = variant;
-      const alt = asString(raw.alt);
-      node.alt = alt ?? "";
-      const poster = asString(raw.poster);
-      if (
-        poster !== undefined &&
-        (isSafeMediaSrc(poster) || (options.allowSlotMarkers === true && isSlotMarker(poster)))
-      ) {
-        node.poster = poster;
-      }
-      const controls = asBool(raw.controls);
-      if (controls !== undefined) node.controls = controls;
-      return node;
-    }
-    case "field": {
-      const name = asString(raw.name);
-      if (name === undefined) {
-        issues.push(`node "${key}": field has no name`);
-        return undefined;
-      }
-      const node: {
-        id: string;
-        type: "field";
-        name: string;
-        variant?: string;
-        input?: FieldInput;
-        label?: string;
-        placeholder?: string;
-        options?: readonly string[];
-        style?: FieldStyle;
-      } = { id, type: "field", name };
-      const variant = asVariant(raw.variant, id, issues);
-      if (variant !== undefined) node.variant = variant;
-      const input = asToken<FieldInput>(raw.input, FIELD_INPUTS);
-      if (input !== undefined) node.input = input;
-      const options = fieldOptions(raw.options);
-      if (options !== undefined) node.options = options;
-      if ((input === "select" || input === "radio") && options === undefined) {
-        issues.push(
-          `node "${printableKey(id)}": ${printableValue(input)} field has no valid options — rendered control will be empty`,
-        );
-      }
-      const label = asString(raw.label);
-      if (label !== undefined) node.label = label;
-      const placeholder = asString(raw.placeholder);
-      if (placeholder !== undefined) node.placeholder = placeholder;
-      // Field style was silently stripped before — kit emits it and the
-      // renderer consumes it, so sanitize it through like every other style.
-      const style = fieldStyle(raw.style);
-      if (style !== undefined) node.style = style;
-      return node;
-    }
-    default:
-      issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
-      return undefined;
-  }
+  // The primitive brick registry keys off canonical node types; `image` is an
+  // input alias for the `media` primitive (kind defaulted from the raw type).
+  const lookupType = type === "image" ? "media" : type;
+  const entry = (BRICK_REGISTRY as Record<string, BrickEntry | undefined>)[lookupType];
+  if (entry?.validate !== undefined) return entry.validate(id, raw, issues, options, type);
+  issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
+  return undefined;
 }

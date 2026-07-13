@@ -28,10 +28,6 @@ import {
 import type {
   ChartNode,
   ChartSeries,
-  DataCell,
-  DataRow,
-  Dataset,
-  DataWarehouse,
   KeyValueItem,
   KeyValueNode,
   ListItem,
@@ -39,8 +35,8 @@ import type {
   MetricNode,
   StatNode,
   TableNode,
-  TableRow,
 } from "./component-nodes.js";
+import type { DataCell, DataRow, Dataset, DataWarehouse, TableRow } from "./data-types.js";
 import {
   FORBIDDEN_DATA_KEYS,
   isForbiddenKey,
@@ -50,6 +46,7 @@ import {
   type IssueSink,
 } from "./issues.js";
 import { DATASET_NAME_RE, SLOT_NAME_RE } from "./slot-marker.js";
+import { BRICK_REGISTRY } from "./brick-registry.js";
 
 // Public re-export (barrel compat): the regex lives in the leaf `slot-marker`
 // module to keep this module's dependency on the component validators one-way.
@@ -187,19 +184,11 @@ export function resolveNodeData(
   | readonly ListItem[]
   | readonly KeyValueItem[]
   | string {
-  switch (node.type) {
-    case "table":
-      return resolveTable(node, warehouse);
-    case "chart":
-      return resolveChart(node, warehouse);
-    case "list":
-      return resolveList(node, warehouse);
-    case "keyValue":
-      return resolveKeyValue(node, warehouse);
-    case "metric":
-    case "stat":
-      return resolveScalar(node, warehouse);
-  }
+  // Registry lookup replaces the former per-type switch: every data-bearing
+  // brick declares its `resolve` handler in `brick-registry.ts`. `resolve` is
+  // present for exactly the data-bearing types (the exhaustiveness test guards
+  // this), and `node` is one of them here.
+  return BRICK_REGISTRY[node.type].resolve!(node, warehouse);
 }
 
 /**
@@ -219,12 +208,15 @@ function lookupDataset(warehouse: DataWarehouse | undefined, name: string): Data
   return dataset.filter((row) => isPlainObject(row)) as Dataset;
 }
 
-function resolveTable(node: TableNode, warehouse: DataWarehouse | undefined): readonly TableRow[] {
+export function resolveTable(
+  node: TableNode,
+  warehouse: DataWarehouse | undefined,
+): readonly TableRow[] {
   if (node.from === undefined) return node.rows;
   return lookupDataset(warehouse, node.from) ?? [];
 }
 
-function resolveChart(
+export function resolveChart(
   node: ChartNode,
   warehouse: DataWarehouse | undefined,
 ): readonly ChartSeries[] {
@@ -234,14 +226,17 @@ function resolveChart(
   return projectSeries(dataset);
 }
 
-function resolveList(node: ListNode, warehouse: DataWarehouse | undefined): readonly ListItem[] {
+export function resolveList(
+  node: ListNode,
+  warehouse: DataWarehouse | undefined,
+): readonly ListItem[] {
   if (node.from === undefined) return node.items;
   const dataset = lookupDataset(warehouse, node.from);
   if (dataset === undefined || dataset.length === 0) return [];
   return projectList(dataset);
 }
 
-function resolveKeyValue(
+export function resolveKeyValue(
   node: KeyValueNode,
   warehouse: DataWarehouse | undefined,
 ): readonly KeyValueItem[] {
@@ -251,7 +246,10 @@ function resolveKeyValue(
   return projectKeyValue(dataset);
 }
 
-function resolveScalar(node: MetricNode | StatNode, warehouse: DataWarehouse | undefined): string {
+export function resolveScalar(
+  node: MetricNode | StatNode,
+  warehouse: DataWarehouse | undefined,
+): string {
   if (node.from === undefined) return node.value;
   const dataset = lookupDataset(warehouse, node.from);
   if (dataset === undefined) return "";

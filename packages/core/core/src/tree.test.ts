@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { EMPTY_TREE, isTreeShaped, treeHasContent } from "./tree.js";
+import { EMPTY_TREE, isTreeShaped, treeHasContent, treeRenderableNodeIds } from "./tree.js";
 import type { FacetTree } from "./tree.js";
 
 describe("isTreeShaped", () => {
@@ -69,6 +69,25 @@ describe("treeHasContent", () => {
 
   it("false for a non-container (text) root", () => {
     expect(treeHasContent(tree({ r: { id: "r", type: "text", value: "x" } }))).toBe(false);
+  });
+
+  it("keeps the valid siblings when a node's type is an Object.prototype member name", () => {
+    // "constructor" indexes the plain BRICK_REGISTRY to an inherited FUNCTION;
+    // pre-fix `nodeRendersItself` called `.rendersSelf` on it, threw, and the
+    // `treeRenderableNodeIds` catch WIPED the whole set (content collapsed to
+    // false / no renderable ids). The junk node must simply be non-renderable
+    // without taking its valid siblings down with it.
+    const t = tree({
+      r: { id: "r", type: "box", children: ["a", "junk"] },
+      a: { id: "a", type: "text", value: "A" },
+      junk: { id: "junk", type: "constructor", value: "evil" },
+    });
+    expect(() => treeHasContent(t)).not.toThrow();
+    expect(treeHasContent(t)).toBe(true);
+    const ids = treeRenderableNodeIds(t);
+    expect(ids.has("a")).toBe(true);
+    expect(ids.has("r")).toBe(true);
+    expect(ids.has("junk")).toBe(false);
   });
 
   it("false when the root node is missing", () => {

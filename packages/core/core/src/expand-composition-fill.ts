@@ -1,7 +1,36 @@
 import type { IssueSink } from "./issues.js";
-import type { FacetAction, FacetNode, NodeId } from "./nodes.js";
+import type {
+  AlertNode,
+  BadgeNode,
+  BoxNode,
+  ButtonNode,
+  CardNode,
+  ChartNode,
+  DividerNode,
+  EmptyStateNode,
+  FacetAction,
+  FacetNode,
+  FieldNode,
+  FilterBarNode,
+  FormNode,
+  KeyValueNode,
+  ListNode,
+  LoadingNode,
+  MediaNode,
+  MetricNode,
+  NavNode,
+  NodeId,
+  ProgressNode,
+  SearchNode,
+  SectionNode,
+  StatNode,
+  TableNode,
+  TabsNode,
+  TextNode,
+} from "./nodes.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { SLOT_MARKER_RE, type FacetComposition } from "./validate.js";
+import { BRICK_REGISTRY } from "./brick-registry.js";
 
 const EMPTY_SLOTS: Readonly<Record<string, string>> = Object.freeze(
   Object.create(null),
@@ -37,206 +66,329 @@ function fillNode(
   params: Readonly<Record<string, unknown>>,
   issues: IssueSink,
 ): FacetNode {
-  switch (node.type) {
-    case "box":
-      return node;
-    case "text":
-      return { ...node, value: fillString(node.value, defaults, params, issues) };
-    case "media": {
-      const next = { ...node, src: fillString(node.src, defaults, params, issues) };
-      if (node.alt !== undefined) next.alt = fillString(node.alt, defaults, params, issues);
-      if (node.poster !== undefined) {
-        next.poster = fillString(node.poster, defaults, params, issues);
-      }
-      return next;
-    }
-    case "field": {
-      const next = { ...node, name: fillString(node.name, defaults, params, issues) };
-      if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-      if (node.placeholder !== undefined) {
-        next.placeholder = fillString(node.placeholder, defaults, params, issues);
-      }
-      if (node.options !== undefined) {
-        next.options = node.options.map((option) => fillString(option, defaults, params, issues));
-      }
-      return next;
-    }
-    case "button": {
-      return { ...node, label: fillString(node.label, defaults, params, issues) };
-    }
-    case "section": {
-      const next = { ...node };
-      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
-      if (node.eyebrow !== undefined) {
-        next.eyebrow = fillString(node.eyebrow, defaults, params, issues);
-      }
-      if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
-      return next;
-    }
-    case "card": {
-      const next = { ...node };
-      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
-      if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
-      return next;
-    }
-    case "tabs": {
-      return {
-        ...node,
-        items: node.items.map((item) => ({
-          label: fillString(item.label, defaults, params, issues),
-          to: fillString(item.to, defaults, params, issues),
-        })),
-      };
-    }
-    case "nav": {
-      return {
-        ...node,
-        items: node.items.map((item) => ({
-          label: fillString(item.label, defaults, params, issues),
-          to: fillString(item.to, defaults, params, issues),
-        })),
-      };
-    }
-    case "table": {
-      const next = {
-        ...node,
-        columns: node.columns.map((column) => ({
-          ...column,
-          label: fillString(column.label, defaults, params, issues),
-        })),
-        rows: node.rows.map((row) => {
-          const next: Record<string, string | number | boolean> = {};
-          for (const [key, value] of Object.entries(row)) {
-            next[key] =
-              typeof value === "string" ? fillString(value, defaults, params, issues) : value;
-          }
-          return next;
-        }),
-      };
-      if (node.caption !== undefined) {
-        next.caption = fillString(node.caption, defaults, params, issues);
-      }
-      return next;
-    }
-    case "chart": {
-      const next = { ...node };
-      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
-      if (node.labels !== undefined) {
-        next.labels = node.labels.map((label) => fillString(label, defaults, params, issues));
-      }
-      next.series = node.series.map((series) => ({
-        ...series,
-        label: fillString(series.label, defaults, params, issues),
-      }));
-      return next;
-    }
-    case "metric":
-    case "stat": {
-      const next = {
-        ...node,
-        label: fillString(node.label, defaults, params, issues),
-        value: fillString(node.value, defaults, params, issues),
-      };
-      if (node.delta !== undefined) next.delta = fillString(node.delta, defaults, params, issues);
-      return next;
-    }
-    case "keyValue": {
-      return {
-        ...node,
-        items: node.items.map((item) => {
-          const next = {
-            ...item,
-            label: fillString(item.label, defaults, params, issues),
-            value: fillString(item.value, defaults, params, issues),
-          };
-          if (item.key !== undefined) next.key = fillString(item.key, defaults, params, issues);
-          return next;
-        }),
-      };
-    }
-    case "badge":
-      return { ...node, label: fillString(node.label, defaults, params, issues) };
-    case "progress": {
-      const next = { ...node };
-      if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-      return next;
-    }
-    case "alert": {
-      const next = { ...node, body: fillString(node.body, defaults, params, issues) };
-      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
-      return next;
-    }
-    case "list": {
-      return {
-        ...node,
-        items: node.items.map((item) => {
-          const next = { ...item, title: fillString(item.title, defaults, params, issues) };
-          if (item.body !== undefined) next.body = fillString(item.body, defaults, params, issues);
-          return next;
-        }),
-      };
-    }
-    case "divider": {
-      const next = { ...node };
-      if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-      return next;
-    }
-    case "form": {
-      const next = { ...node };
-      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
-      if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
-      if (node.submitLabel !== undefined) {
-        next.submitLabel = fillString(node.submitLabel, defaults, params, issues);
-      }
-      return next;
-    }
-    case "search": {
-      const next = { ...node, name: fillString(node.name, defaults, params, issues) };
-      if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-      if (node.placeholder !== undefined) {
-        next.placeholder = fillString(node.placeholder, defaults, params, issues);
-      }
-      if (node.value !== undefined) next.value = fillString(node.value, defaults, params, issues);
-      if (node.submitLabel !== undefined) {
-        next.submitLabel = fillString(node.submitLabel, defaults, params, issues);
-      }
-      return next;
-    }
-    case "filterBar": {
-      return {
-        ...node,
-        filters: node.filters.map((filter) => ({
-          ...filter,
-          name: fillString(filter.name, defaults, params, issues),
-          label: fillString(filter.label, defaults, params, issues),
-          ...(filter.options === undefined
-            ? {}
-            : {
-                options: filter.options.map((option) =>
-                  fillString(option, defaults, params, issues),
-                ),
-              }),
-          ...(typeof filter.value === "string"
-            ? { value: fillString(filter.value, defaults, params, issues) }
-            : {}),
-        })),
-      };
-    }
-    case "emptyState": {
-      const next = { ...node };
-      if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
-      if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
-      if (node.actionLabel !== undefined) {
-        next.actionLabel = fillString(node.actionLabel, defaults, params, issues);
-      }
-      return next;
-    }
-    case "loading": {
-      const next = { ...node };
-      if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-      return next;
-    }
+  // Registry lookup replaces the former per-type switch; each brick declares its
+  // `fill` handler in `brick-registry.ts`.
+  return BRICK_REGISTRY[node.type].fill(node, defaults, params, issues);
+}
+
+// Per-brick `fill` handlers — the former `fillNode` switch cases, verbatim. The
+// uniform `raw: FacetNode` signature (with a one-line narrowing alias) lets the
+// registry store them directly; hoisted so they are safe across the import
+// cycle.
+export function fillBox(raw: FacetNode): FacetNode {
+  const node = raw as BoxNode;
+  return node;
+}
+export function fillText(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as TextNode;
+  return { ...node, value: fillString(node.value, defaults, params, issues) };
+}
+export function fillMedia(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as MediaNode;
+  const next = { ...node, src: fillString(node.src, defaults, params, issues) };
+  if (node.alt !== undefined) next.alt = fillString(node.alt, defaults, params, issues);
+  if (node.poster !== undefined) {
+    next.poster = fillString(node.poster, defaults, params, issues);
   }
+  return next;
+}
+export function fillField(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as FieldNode;
+  const next = { ...node, name: fillString(node.name, defaults, params, issues) };
+  if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
+  if (node.placeholder !== undefined) {
+    next.placeholder = fillString(node.placeholder, defaults, params, issues);
+  }
+  if (node.options !== undefined) {
+    next.options = node.options.map((option) => fillString(option, defaults, params, issues));
+  }
+  return next;
+}
+export function fillButton(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as ButtonNode;
+  return { ...node, label: fillString(node.label, defaults, params, issues) };
+}
+export function fillSection(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as SectionNode;
+  const next = { ...node };
+  if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+  if (node.eyebrow !== undefined) {
+    next.eyebrow = fillString(node.eyebrow, defaults, params, issues);
+  }
+  if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
+  return next;
+}
+export function fillCard(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as CardNode;
+  const next = { ...node };
+  if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+  if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
+  return next;
+}
+export function fillTabsNav(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as TabsNode | NavNode;
+  return {
+    ...node,
+    items: node.items.map((item) => ({
+      label: fillString(item.label, defaults, params, issues),
+      to: fillString(item.to, defaults, params, issues),
+    })),
+  };
+}
+export function fillTable(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as TableNode;
+  const next = {
+    ...node,
+    columns: node.columns.map((column) => ({
+      ...column,
+      label: fillString(column.label, defaults, params, issues),
+    })),
+    rows: node.rows.map((row) => {
+      const next: Record<string, string | number | boolean> = {};
+      for (const [key, value] of Object.entries(row)) {
+        next[key] = typeof value === "string" ? fillString(value, defaults, params, issues) : value;
+      }
+      return next;
+    }),
+  };
+  if (node.caption !== undefined) {
+    next.caption = fillString(node.caption, defaults, params, issues);
+  }
+  return next;
+}
+export function fillChart(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as ChartNode;
+  const next = { ...node };
+  if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+  if (node.labels !== undefined) {
+    next.labels = node.labels.map((label) => fillString(label, defaults, params, issues));
+  }
+  next.series = node.series.map((series) => ({
+    ...series,
+    label: fillString(series.label, defaults, params, issues),
+  }));
+  return next;
+}
+export function fillMetricStat(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as MetricNode | StatNode;
+  const next = {
+    ...node,
+    label: fillString(node.label, defaults, params, issues),
+    value: fillString(node.value, defaults, params, issues),
+  };
+  if (node.delta !== undefined) next.delta = fillString(node.delta, defaults, params, issues);
+  return next;
+}
+export function fillKeyValue(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as KeyValueNode;
+  return {
+    ...node,
+    items: node.items.map((item) => {
+      const next = {
+        ...item,
+        label: fillString(item.label, defaults, params, issues),
+        value: fillString(item.value, defaults, params, issues),
+      };
+      if (item.key !== undefined) next.key = fillString(item.key, defaults, params, issues);
+      return next;
+    }),
+  };
+}
+export function fillBadge(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as BadgeNode;
+  return { ...node, label: fillString(node.label, defaults, params, issues) };
+}
+export function fillProgress(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as ProgressNode;
+  const next = { ...node };
+  if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
+  return next;
+}
+export function fillAlert(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as AlertNode;
+  const next = { ...node, body: fillString(node.body, defaults, params, issues) };
+  if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+  return next;
+}
+export function fillList(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as ListNode;
+  return {
+    ...node,
+    items: node.items.map((item) => {
+      const next = { ...item, title: fillString(item.title, defaults, params, issues) };
+      if (item.body !== undefined) next.body = fillString(item.body, defaults, params, issues);
+      return next;
+    }),
+  };
+}
+export function fillDivider(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as DividerNode;
+  const next = { ...node };
+  if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
+  return next;
+}
+export function fillForm(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as FormNode;
+  const next = { ...node };
+  if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+  if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
+  if (node.submitLabel !== undefined) {
+    next.submitLabel = fillString(node.submitLabel, defaults, params, issues);
+  }
+  return next;
+}
+export function fillSearch(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as SearchNode;
+  const next = { ...node, name: fillString(node.name, defaults, params, issues) };
+  if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
+  if (node.placeholder !== undefined) {
+    next.placeholder = fillString(node.placeholder, defaults, params, issues);
+  }
+  if (node.value !== undefined) next.value = fillString(node.value, defaults, params, issues);
+  if (node.submitLabel !== undefined) {
+    next.submitLabel = fillString(node.submitLabel, defaults, params, issues);
+  }
+  return next;
+}
+export function fillFilterBar(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as FilterBarNode;
+  return {
+    ...node,
+    filters: node.filters.map((filter) => ({
+      ...filter,
+      name: fillString(filter.name, defaults, params, issues),
+      label: fillString(filter.label, defaults, params, issues),
+      ...(filter.options === undefined
+        ? {}
+        : {
+            options: filter.options.map((option) => fillString(option, defaults, params, issues)),
+          }),
+      ...(typeof filter.value === "string"
+        ? { value: fillString(filter.value, defaults, params, issues) }
+        : {}),
+    })),
+  };
+}
+export function fillEmptyState(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as EmptyStateNode;
+  const next = { ...node };
+  if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
+  if (node.body !== undefined) next.body = fillString(node.body, defaults, params, issues);
+  if (node.actionLabel !== undefined) {
+    next.actionLabel = fillString(node.actionLabel, defaults, params, issues);
+  }
+  return next;
+}
+export function fillLoading(
+  raw: FacetNode,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): FacetNode {
+  const node = raw as LoadingNode;
+  const next = { ...node };
+  if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
+  return next;
 }
 
 function fillString(
@@ -373,85 +525,126 @@ function fillNodeActions(
 }
 
 export function nodeStringLeaves(node: FacetNode): readonly string[] {
-  switch (node.type) {
-    case "box":
-      return [];
-    case "text":
-      return [node.value];
-    case "media":
-      return [node.src, node.alt, node.poster].filter(
-        (value): value is string => value !== undefined,
-      );
-    case "field":
-      return [node.name, node.label, node.placeholder, ...(node.options ?? [])].filter(
-        (value): value is string => value !== undefined,
-      );
-    case "button":
-      return [node.label];
-    case "section":
-      return [node.title, node.eyebrow, node.body].filter(
-        (value): value is string => value !== undefined,
-      );
-    case "card":
-      return [node.title, node.body].filter((value): value is string => value !== undefined);
-    case "tabs":
-    case "nav":
-      return node.items.flatMap((item) => [item.label, item.to]);
-    case "table":
-      return [
-        node.caption,
-        ...node.columns.map((column) => column.label),
-        ...node.rows.flatMap((row) =>
-          Object.values(row).filter((value): value is string => typeof value === "string"),
-        ),
-      ].filter((value): value is string => value !== undefined);
-    case "chart":
-      return [
-        node.title,
-        ...(node.labels ?? []),
-        ...node.series.map((series) => series.label),
-      ].filter((value): value is string => value !== undefined);
-    case "metric":
-    case "stat":
-      return [node.label, node.value, node.delta].filter(
-        (value): value is string => value !== undefined,
-      );
-    case "keyValue":
-      return node.items.flatMap((item) =>
-        [item.key, item.label, item.value].filter((value): value is string => value !== undefined),
-      );
-    case "badge":
-      return [node.label];
-    case "progress":
-      return [node.label].filter((value): value is string => value !== undefined);
-    case "alert":
-      return [node.title, node.body].filter((value): value is string => value !== undefined);
-    case "list":
-      return node.items.flatMap((item) =>
-        [item.title, item.body].filter((value): value is string => value !== undefined),
-      );
-    case "divider":
-      return [node.label].filter((value): value is string => value !== undefined);
-    case "form":
-      return [node.title, node.body, node.submitLabel].filter(
-        (value): value is string => value !== undefined,
-      );
-    case "search":
-      return [node.name, node.label, node.placeholder, node.value, node.submitLabel].filter(
-        (value): value is string => value !== undefined,
-      );
-    case "filterBar":
-      return node.filters.flatMap((filter) => [
-        filter.name,
-        filter.label,
-        ...(filter.options ?? []),
-        ...(typeof filter.value === "string" ? [filter.value] : []),
-      ]);
-    case "emptyState":
-      return [node.title, node.body, node.actionLabel].filter(
-        (value): value is string => value !== undefined,
-      );
-    case "loading":
-      return [node.label].filter((value): value is string => value !== undefined);
-  }
+  // Registry lookup replaces the former per-type switch; each brick declares its
+  // `stringLeaves` handler in `brick-registry.ts`.
+  return BRICK_REGISTRY[node.type].stringLeaves(node);
+}
+
+// Per-brick `stringLeaves` handlers — the former `nodeStringLeaves` switch
+// cases, verbatim (uniform `raw: FacetNode` signature + narrowing alias).
+export function leavesBox(): readonly string[] {
+  return [];
+}
+export function leavesText(raw: FacetNode): readonly string[] {
+  const node = raw as TextNode;
+  return [node.value];
+}
+export function leavesMedia(raw: FacetNode): readonly string[] {
+  const node = raw as MediaNode;
+  return [node.src, node.alt, node.poster].filter((value): value is string => value !== undefined);
+}
+export function leavesField(raw: FacetNode): readonly string[] {
+  const node = raw as FieldNode;
+  return [node.name, node.label, node.placeholder, ...(node.options ?? [])].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+export function leavesButton(raw: FacetNode): readonly string[] {
+  const node = raw as ButtonNode;
+  return [node.label];
+}
+export function leavesSection(raw: FacetNode): readonly string[] {
+  const node = raw as SectionNode;
+  return [node.title, node.eyebrow, node.body].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+export function leavesCard(raw: FacetNode): readonly string[] {
+  const node = raw as CardNode;
+  return [node.title, node.body].filter((value): value is string => value !== undefined);
+}
+export function leavesTabsNav(raw: FacetNode): readonly string[] {
+  const node = raw as TabsNode | NavNode;
+  return node.items.flatMap((item) => [item.label, item.to]);
+}
+export function leavesTable(raw: FacetNode): readonly string[] {
+  const node = raw as TableNode;
+  return [
+    node.caption,
+    ...node.columns.map((column) => column.label),
+    ...node.rows.flatMap((row) =>
+      Object.values(row).filter((value): value is string => typeof value === "string"),
+    ),
+  ].filter((value): value is string => value !== undefined);
+}
+export function leavesChart(raw: FacetNode): readonly string[] {
+  const node = raw as ChartNode;
+  return [node.title, ...(node.labels ?? []), ...node.series.map((series) => series.label)].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+export function leavesMetricStat(raw: FacetNode): readonly string[] {
+  const node = raw as MetricNode | StatNode;
+  return [node.label, node.value, node.delta].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+export function leavesKeyValue(raw: FacetNode): readonly string[] {
+  const node = raw as KeyValueNode;
+  return node.items.flatMap((item) =>
+    [item.key, item.label, item.value].filter((value): value is string => value !== undefined),
+  );
+}
+export function leavesBadge(raw: FacetNode): readonly string[] {
+  const node = raw as BadgeNode;
+  return [node.label];
+}
+export function leavesProgress(raw: FacetNode): readonly string[] {
+  const node = raw as ProgressNode;
+  return [node.label].filter((value): value is string => value !== undefined);
+}
+export function leavesAlert(raw: FacetNode): readonly string[] {
+  const node = raw as AlertNode;
+  return [node.title, node.body].filter((value): value is string => value !== undefined);
+}
+export function leavesList(raw: FacetNode): readonly string[] {
+  const node = raw as ListNode;
+  return node.items.flatMap((item) =>
+    [item.title, item.body].filter((value): value is string => value !== undefined),
+  );
+}
+export function leavesDivider(raw: FacetNode): readonly string[] {
+  const node = raw as DividerNode;
+  return [node.label].filter((value): value is string => value !== undefined);
+}
+export function leavesForm(raw: FacetNode): readonly string[] {
+  const node = raw as FormNode;
+  return [node.title, node.body, node.submitLabel].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+export function leavesSearch(raw: FacetNode): readonly string[] {
+  const node = raw as SearchNode;
+  return [node.name, node.label, node.placeholder, node.value, node.submitLabel].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+export function leavesFilterBar(raw: FacetNode): readonly string[] {
+  const node = raw as FilterBarNode;
+  return node.filters.flatMap((filter) => [
+    filter.name,
+    filter.label,
+    ...(filter.options ?? []),
+    ...(typeof filter.value === "string" ? [filter.value] : []),
+  ]);
+}
+export function leavesEmptyState(raw: FacetNode): readonly string[] {
+  const node = raw as EmptyStateNode;
+  return [node.title, node.body, node.actionLabel].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+export function leavesLoading(raw: FacetNode): readonly string[] {
+  const node = raw as LoadingNode;
+  return [node.label].filter((value): value is string => value !== undefined);
 }

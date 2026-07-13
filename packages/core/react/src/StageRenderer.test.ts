@@ -133,6 +133,18 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(out.match(/<p/g)).toHaveLength(1); // the alien node produced no output
   });
 
+  it("skips a node whose type is an Object.prototype member name instead of throwing", () => {
+    // "constructor" (and siblings) name inherited FUNCTIONS on a plain object;
+    // a bare `REGISTRY[type]` returned one and the renderer threw dereferencing
+    // it. The prototype-safe lookup must degrade this to nothing, like any junk.
+    const junk = { id: "x", type: "constructor", code: "evil()" } as unknown as FacetNode;
+    const junkTree = tree({ root: box("root", ["x", "a"]), x: junk, a: text("a", "safe") });
+    expect(() => render(junkTree)).not.toThrow();
+    const out = render(junkTree);
+    expect(out).toContain("safe");
+    expect(out.match(/<p/g)).toHaveLength(1); // the constructor-typed node produced no output
+  });
+
   // A raw patch can replace any node FIELD with arbitrary JSON — these exact
   // shapes made the renderer throw before the guards existed.
   it("renders a box whose children were patched to a non-array as empty", () => {

@@ -12,7 +12,7 @@ import {
 import { sanitizeNode, type SanitizeNodeOptions } from "./primitive-node-validation.js";
 import { isValidThemeName } from "./theme.js";
 import { sanitizeDataWarehouse } from "./data-binding.js";
-import type { DataWarehouse } from "./component-nodes.js";
+import type { DataWarehouse } from "./data-types.js";
 
 export interface ValidationResult {
   readonly tree: FacetTree;
