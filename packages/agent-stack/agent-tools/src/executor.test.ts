@@ -58,6 +58,26 @@ const CARD_COMPOSITION: FacetComposition = {
   },
 };
 
+// A composition whose subtree nests a `{ use }` reference to another composition.
+// Resolving it requires the loaded registry to be threaded into expandComposition.
+const BADGE_COMPOSITION: FacetComposition = {
+  name: "badge",
+  root: "chip",
+  nodes: {
+    chip: { id: "chip", type: "text", value: "Chip" },
+  },
+};
+
+const CARD_WITH_BADGE_COMPOSITION: FacetComposition = {
+  name: "card",
+  root: "card",
+  nodes: {
+    card: { id: "card", type: "box", children: ["title", "badgeRef"] },
+    title: { id: "title", type: "text", value: "Header" },
+    badgeRef: { use: "badge" },
+  },
+};
+
 function boxWithLeaves(nodeCount: number): FacetComposition {
   const children = Array.from({ length: nodeCount - 1 }, (_, index) => `leaf-${String(index)}`);
   const nodes: Record<string, FacetNode> = {
@@ -633,6 +653,30 @@ describe("executeStageTool", () => {
         type: "text",
         value: "Hello",
       });
+    });
+
+    it("use_composition resolves a nested composition reference to child primitives (nested composition)", () => {
+      const result = executeStageTool(
+        {
+          id: "call-nested",
+          name: "use_composition",
+          input: { name: "card", params: {}, at: { parent: "root" } },
+        },
+        {
+          shadow: ROOT_TREE,
+          assets: { compositions: [CARD_WITH_BADGE_COMPOSITION, BADGE_COMPOSITION] },
+        },
+      );
+
+      expect(result.status).toBe("ok");
+      const nodes = Object.values(result.shadow.nodes);
+      // No residual CompositionRef ({ use } without a brick type) reached the stage.
+      for (const node of nodes) {
+        expect(node).toHaveProperty("type");
+        expect(node).not.toHaveProperty("use");
+      }
+      // The nested badge reference expanded to its own text primitive (the chip).
+      expect(nodes.some((node) => node.type === "text" && node.value === "Chip")).toBe(true);
     });
 
     it("use_composition emits minted ids as valid JSON in data, not embedded in the human message", () => {

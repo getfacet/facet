@@ -150,6 +150,10 @@ export function executeUseComposition(
     { parent },
     {
       existingIds: Object.keys(shadow.nodes),
+      // Thread the loaded registry so a nested `{ use }` reference resolves to
+      // primitives; the `nodesCatalogViolation` re-check below stays the
+      // defensive backstop for any RESIDUAL unresolved reference.
+      compositions,
     },
   );
   if (expanded.root === undefined) {
