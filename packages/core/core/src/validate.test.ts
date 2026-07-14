@@ -1364,6 +1364,67 @@ describe("validateComposition composition slots", () => {
   });
 });
 
+describe("validateComposition composition reference", () => {
+  it("admits a bounded composition reference node inside a composition definition", () => {
+    const { composition, issues } = validateComposition({
+      name: "wrapper",
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["ref"] },
+        ref: {
+          use: "badge",
+          slots: { label: "x", huge: "y".repeat(MAX_FIELD_VALUE_CHARS + 3) },
+          // Extra keys must NOT survive — the reference is a closed { use, slots }.
+          id: "ref",
+          extra: "should-be-stripped",
+          children: ["nope"],
+        },
+      },
+    });
+
+    expect(composition).toBeDefined();
+    // Only { use, slots } survives; every other key is dropped, and the slot
+    // values are bounded through the same slot-string path as slot defaults.
+    expect(composition?.nodes["ref"]).toEqual({
+      use: "badge",
+      slots: { label: "x", huge: "y".repeat(MAX_FIELD_VALUE_CHARS) },
+    });
+    // The reference is a childless leaf, so the root's child ref is NOT dangling.
+    expect(composition?.nodes["root"]).toMatchObject({ type: "box", children: ["ref"] });
+    expect(issues.some((issue) => issue.includes("truncated"))).toBe(true);
+  });
+
+  it("refuses a composition whose reference carries a forbidden field", () => {
+    const { composition, issues } = validateComposition({
+      name: "wrapper",
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["ref"] },
+        ref: { use: "badge", url: "https://evil.example/exfil" },
+      },
+    });
+
+    expect(composition).toBeUndefined();
+    expect(issues.some((issue) => issue.includes("url"))).toBe(true);
+  });
+
+  it("drops a composition reference node authored into the live stage tree", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["ref"] },
+        ref: { use: "badge", slots: { label: "x" } },
+      },
+    });
+
+    // A reference node is structurally impossible in the live stage: validateTree
+    // never sets allowReference, so the { use, slots } node is dropped as unknown.
+    expect(tree.nodes["ref"]).toBeUndefined();
+    expect(tree.nodes["root"]).toBeDefined();
+    expect(issues.length).toBeGreaterThan(0);
+  });
+});
+
 describe("isSafeMediaSrc", () => {
   it("accepts data:image/ URLs", () => {
     expect(isSafeMediaSrc("data:image/png;base64,AAAA")).toBe(true);

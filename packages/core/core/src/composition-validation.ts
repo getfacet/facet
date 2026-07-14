@@ -5,21 +5,19 @@ import {
   type NodeId,
 } from "./nodes.js";
 import { isComponentNodeType, isPrimitiveBrickType } from "./component-validation.js";
-import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
 import {
   BoundedIssues,
   boundedDescription,
   isControlChar,
-  isForbiddenKey,
   isPlainObject as isObject,
-  nullMap,
   printableKey,
   printableValue,
   type IssueSink,
 } from "./issues.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import { breakCycles, pruneDanglingChildren, sanitizeNodeMap } from "./tree-validation.js";
+import { isCompositionRefShape, sanitizeSlotMap } from "./primitive-node-validation.js";
 
 const MAX_COMPOSITION_METADATA_ITEMS = 16;
 const MAX_COMPOSITION_NODES = 1023;
@@ -66,7 +64,20 @@ export interface FacetComposition {
   readonly metadata?: CompositionMetadata;
   readonly slots?: Readonly<Record<string, string>>;
   readonly root: NodeId;
-  readonly nodes: Readonly<Record<NodeId, FacetNode>>;
+  readonly nodes: Readonly<Record<NodeId, FacetNode | CompositionRef>>;
+}
+
+/**
+ * A CLOSED reference from one composition's node map to ANOTHER composition,
+ * resolved recursively to primitive/native nodes at expand time. It is the only
+ * non-`FacetNode` value a composition's `nodes` map may hold, and it is admitted
+ * ONLY inside a composition DEFINITION (never the live stage tree — see
+ * `SanitizeNodeOptions.allowReference`). Only `use` and (bounded-string) `slots`
+ * survive sanitation; it carries no `url`/`fetch`/`binding`/`query`/`resolver`.
+ */
+export interface CompositionRef {
+  readonly use: string;
+  readonly slots?: Readonly<Record<string, string>>;
 }
 
 export interface CompositionMetadata {
@@ -141,7 +152,10 @@ function validateCompositionUnsafe(
     return { issues: issues.list };
   }
 
-  const nodes = sanitizeNodeMap(input.nodes, issues, { allowSlotMarkers: true });
+  const nodes = sanitizeNodeMap(input.nodes, issues, {
+    allowSlotMarkers: true,
+    allowReference: true,
+  });
   pruneDanglingChildren(nodes, issues);
 
   const rootId =
@@ -159,7 +173,7 @@ function validateCompositionUnsafe(
     metadata?: CompositionMetadata;
     slots?: Record<string, string>;
     root: string;
-    nodes: Record<string, FacetNode>;
+    nodes: Record<string, FacetNode | CompositionRef>;
   } = { name, root: rootId, nodes };
   if (input.description !== undefined) {
     // Same validate/truncate policy validateTheme applies (shared helper): a
@@ -185,7 +199,11 @@ function inspectCompositionNodes(rawNodes: Record<string, unknown>, issues: Issu
   let safe = true;
   for (const [id, raw] of Object.entries(rawNodes)) {
     if (!isObject(raw)) continue;
-    if (!isAllowedCompositionNodeType(raw.type)) {
+    // A node is either an allowed brick type OR a CLOSED composition reference
+    // `{ use, slots }`. Anything else refuses the whole composition. The
+    // forbidden-field sweep below still applies to references, so a ref carrying
+    // `url`/`fetch`/… is refused too.
+    if (!isAllowedCompositionNodeType(raw.type) && !isCompositionRefShape(raw)) {
       issues.push(
         `node "${printableKey(id)}": unknown component type ${printableValue(raw.type)} in composition`,
       );
@@ -351,38 +369,13 @@ function sanitizeCompositionMetadata(
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
+// Composition slot DEFAULTS and composition-reference slot ARGUMENTS share ONE
+// bounded-string sanitizer (`sanitizeSlotMap`), so a reference's `slots` are
+// bounded exactly like a slot default (MAX_FIELD_VALUE_CHARS truncation,
+// isValidSlotName gate, forbidden-key drop).
 function sanitizeCompositionSlots(
   raw: unknown,
   issues: IssueSink,
 ): Record<string, string> | undefined {
-  if (raw === undefined) return undefined;
-  if (!isObject(raw)) {
-    issues.push("composition slots is not an object map; dropped");
-    return undefined;
-  }
-  const slots = nullMap<string>();
-  for (const [name, value] of Object.entries(raw)) {
-    const key = printableKey(name);
-    if (isForbiddenKey(name)) {
-      issues.push(`composition slot "${key}": forbidden slot name dropped`);
-      continue;
-    }
-    if (!isValidSlotName(name)) {
-      issues.push(`composition slot "${key}": invalid slot name dropped`);
-      continue;
-    }
-    if (typeof value !== "string") {
-      issues.push(`composition slot "${key}": default is not a string; dropped`);
-      continue;
-    }
-    if (value.length > MAX_FIELD_VALUE_CHARS) {
-      slots[name] = value.slice(0, MAX_FIELD_VALUE_CHARS);
-      issues.push(
-        `composition slot "${key}": default truncated to ${MAX_FIELD_VALUE_CHARS} characters`,
-      );
-      continue;
-    }
-    slots[name] = value;
-  }
-  return Object.keys(slots).length > 0 ? slots : undefined;
+  return sanitizeSlotMap(raw, issues, "composition slot");
 }
