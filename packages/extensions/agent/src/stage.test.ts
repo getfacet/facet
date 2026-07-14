@@ -61,10 +61,9 @@ const CARD_WITH_BADGE_COMPOSITION: FacetComposition = {
 
 /** The node objects an `add /nodes/<id>` patch introduces (child-ref adds carry a
  * string value and are excluded). */
-function addedNodeValues(patches: readonly { op: string; value?: unknown }[]): Record<
-  string,
-  unknown
->[] {
+function addedNodeValues(
+  patches: readonly { op: string; value?: unknown }[],
+): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   for (const op of patches) {
     if (op.op === "add" && typeof op.value === "object" && op.value !== null) {
