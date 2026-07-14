@@ -599,7 +599,7 @@ describe("recipe resolution", () => {
               },
             },
           },
-          field: {
+          input: {
             default: {
               field: { width: "full" },
               parts: {
@@ -637,7 +637,7 @@ describe("recipe resolution", () => {
       padding: "6px",
     });
 
-    const fallbackField = resolveRecipe(resolved, "field", "__proto__");
+    const fallbackField = resolveRecipe(resolved, "input", "__proto__");
     expect(fallbackField.field).toEqual({ width: "full" });
     const control = resolveRecipePart(fallbackField, "control", resolved);
     expect(control.box).toMatchObject({

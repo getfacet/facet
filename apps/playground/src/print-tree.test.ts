@@ -86,6 +86,17 @@ describe("printTree", () => {
     expect(out).toContain("  box [→ open_card] [hold ⇄ menu]");
   });
 
+  it("prints an input node with its name", () => {
+    const out = lines({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["q"] },
+        q: { id: "q", type: "input", name: "email", placeholder: "you@example.com" },
+      },
+    });
+    expect(out).toContain("  input: email");
+  });
+
   it("prints media kind and src", () => {
     const out = lines({
       ...tree,
@@ -198,9 +209,9 @@ describe("printTree", () => {
           id: "form",
           type: "form",
           title: "Lead",
-          children: ["search"],
+          children: ["input"],
         },
-        search: { id: "search", type: "search", name: "q", placeholder: "Search" },
+        input: { id: "input", type: "input", name: "q", placeholder: "Search" },
         filterBar: {
           id: "filterBar",
           type: "filterBar",
@@ -235,7 +246,7 @@ describe("printTree", () => {
       "  list: 2 items",
       '  divider: "Next"',
       '  form: "Lead" (1 child)',
-      "    search: q",
+      "    input: q",
       "  filterBar: 1 filter",
       '  emptyState: "No results / Try another query / Clear filters" [→ clear_filters]',
       '  loading: "Loading customers"',

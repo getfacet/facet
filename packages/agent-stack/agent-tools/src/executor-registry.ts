@@ -174,18 +174,18 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     describe: (facetNode) =>
       `${facetNode.id} media kind=${facetNode.kind} src="${preview(facetNode.src)}"`,
   },
-  field: {
+  input: {
     policy: { kind: "primitive" },
     asNode: (value) => {
       if (typeof value["name"] !== "string") {
         return {
-          error: 'a "field" node needs a string "name"',
-          nextAction: 'Pass a string "name" for field nodes.',
+          error: 'an "input" node needs a string "name"',
+          nextAction: 'Pass a string "name" for input nodes.',
         };
       }
       return { facetNode: value as unknown as FacetNode };
     },
-    describe: (facetNode) => `${facetNode.id} field name="${preview(facetNode.name)}"`,
+    describe: (facetNode) => `${facetNode.id} input name="${preview(facetNode.name)}"`,
   },
   richtext: {
     // RISK-API-2: a PRIMITIVE brick, so it is accepted under the catalog's
@@ -451,20 +451,6 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     },
     describe: (facetNode) =>
       `${facetNode.id} form children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`,
-  },
-  search: {
-    policy: { kind: "component" },
-    asNode: (value) => {
-      if (typeof value["name"] !== "string") {
-        return {
-          error: 'a "search" node needs a string "name"',
-          nextAction: 'Pass a string "name" for search nodes.',
-        };
-      }
-      return { facetNode: value as unknown as FacetNode };
-    },
-    describe: (facetNode) =>
-      `${facetNode.id} search name="${preview(facetNode.name)}"${variantSuffix(facetNode)}`,
   },
   filterBar: {
     policy: { kind: "component" },

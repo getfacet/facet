@@ -291,7 +291,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "settings-panel.email": {
         id: "settings-panel.email",
-        type: "field",
+        type: "input",
         name: "email",
         input: "email",
         label: "{{email}}",
@@ -299,7 +299,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "settings-panel.timezone": {
         id: "settings-panel.timezone",
-        type: "field",
+        type: "input",
         name: "timezone",
         input: "select",
         label: "{{timezone}}",
@@ -427,7 +427,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "support-triage.issue": {
         id: "support-triage.issue",
-        type: "field",
+        type: "input",
         name: "issue_type",
         input: "select",
         label: "{{issue}}",
@@ -436,7 +436,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "support-triage.details": {
         id: "support-triage.details",
-        type: "field",
+        type: "input",
         name: "details",
         input: "text",
         label: "{{details}}",

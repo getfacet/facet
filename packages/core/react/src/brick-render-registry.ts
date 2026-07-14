@@ -21,19 +21,19 @@ import {
   renderTable,
   renderTabs,
 } from "./brick-renderer-layout.js";
-import { renderField, renderFilterBar, renderForm, renderSearch } from "./brick-renderer-inputs.js";
+import { renderFilterBar, renderForm, renderInput } from "./brick-renderer-inputs.js";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
 
 /**
  * The core node types dispatched through `renderBrickNode` — every component
- * type plus the `field` primitive. `box`/`text`/`media` are intentionally
+ * type plus the `input` primitive. `box`/`text`/`media` are intentionally
  * ABSENT: they are drawn by bespoke inline paths in `renderer-render.tsx`
  * (box's backdrop/scheme host, text's `<p>`, media via `renderMediaNode`), and
  * the raw `image` alias is handled before the type switch. Keying only the
  * `renderBrick` set keeps this registry a thin table of the existing renderer
  * fns, not a re-home of the bespoke primitives.
  */
-export type BrickRendererType = ComponentNodeType | "field";
+export type BrickRendererType = ComponentNodeType | "input";
 
 /**
  * The uniform brick-renderer signature — every `renderX` shares it, so the
@@ -57,7 +57,7 @@ export interface BrickRendererEntry {
   /**
    * Participates unconditionally in the motion visibility snapshot — the
    * `renderer-motion` leaf fallthrough. Containers are already captured by
-   * `isContainer` upstream, and `field`/`text`/`media` have their own snapshot
+   * `isContainer` upstream, and `input`/`text`/`media` have their own snapshot
    * cases, so those entries are `false`.
    */
   readonly motionSnapshot: boolean;
@@ -89,12 +89,11 @@ export const BRICK_RENDERERS: Record<BrickRendererType, BrickRendererEntry> = {
   alert: { render: renderAlert, container: false, motionSnapshot: true },
   list: { render: renderList, container: false, motionSnapshot: true },
   divider: { render: renderDivider, container: false, motionSnapshot: true },
-  search: { render: renderSearch, container: false, motionSnapshot: true },
   filterBar: { render: renderFilterBar, container: false, motionSnapshot: true },
   emptyState: { render: renderEmptyState, container: false, motionSnapshot: true },
   loading: { render: renderLoading, container: false, motionSnapshot: true },
   // ---- Input primitive (renderBrick(); its own motion-snapshot case) ------
-  field: { render: renderField, container: false, motionSnapshot: false },
+  input: { render: renderInput, container: false, motionSnapshot: false },
 };
 
 /** Total lookup over an UNTRUSTED node type — `undefined` for bespoke/junk. */

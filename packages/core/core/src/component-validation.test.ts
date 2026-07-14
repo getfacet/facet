@@ -28,7 +28,6 @@ const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
   "list",
   "divider",
   "form",
-  "search",
   "filterBar",
   "emptyState",
   "loading",
@@ -36,7 +35,7 @@ const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
 
 describe("component vocabulary", () => {
   it("keeps primitive bricks as the preserved fallback vocabulary", () => {
-    expect(PRIMITIVE_BRICK_TYPES).toEqual(["box", "text", "media", "field", "richtext"]);
+    expect(PRIMITIVE_BRICK_TYPES).toEqual(["box", "text", "media", "input", "richtext"]);
 
     for (const type of PRIMITIVE_BRICK_TYPES) {
       expect(isPrimitiveBrickType(type)).toBe(true);
@@ -56,6 +55,20 @@ describe("component vocabulary", () => {
     expect(canonicalComponentType("stat")).toBe("metric");
     expect(canonicalComponentType("marquee")).toBeUndefined();
     expect(nodeModule).not.toHaveProperty("HIGH_LEVEL_NODE_TYPES");
+  });
+
+  it("search node type removed — no longer a component and fail-safe dropped", () => {
+    expect(isComponentNodeType("search")).toBe(false);
+    expect(isIntrinsicComponentType("search")).toBe(false);
+    expect(INTRINSIC_COMPONENT_TYPES).not.toContain("search");
+    const { tree } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["s"] },
+        s: { id: "s", type: "search", name: "q", placeholder: "Search customers" },
+      },
+    });
+    expect(tree.nodes["s"]).toBeUndefined();
   });
 });
 
@@ -144,7 +157,7 @@ describe("sanitizeComponentNode", () => {
     expect(issues.some((issue) => issue.includes("filters exceeded"))).toBe(true);
   });
 
-  it("does not preserve raw code, CSS, or backend data-fetch fields on form/search/filterBar", () => {
+  it("does not preserve raw code, CSS, or backend data-fetch fields on form/filterBar", () => {
     const issues: string[] = [];
     const form = sanitizeComponentNode(
       "leadForm",
@@ -156,20 +169,6 @@ describe("sanitizeComponentNode", () => {
         endpoint: "https://api.example.test/leads",
         html: "<form></form>",
         css: ".lead { display: none }",
-      },
-      issues,
-    );
-    const search = sanitizeComponentNode(
-      "search",
-      {
-        type: "search",
-        name: "q",
-        placeholder: "Search",
-        onSubmit: { name: "run_search" },
-        fetch: "/api/search",
-        js: "alert(1)",
-        dataSource: "tickets",
-        query: "select * from tickets",
       },
       issues,
     );
@@ -187,16 +186,12 @@ describe("sanitizeComponentNode", () => {
     );
 
     expect(form).toMatchObject({ type: "form", onSubmit: { kind: "agent", name: "submit_lead" } });
-    expect(search).toMatchObject({
-      type: "search",
-      onSubmit: { kind: "agent", name: "run_search" },
-    });
     expect(filterBar).toMatchObject({
       type: "filterBar",
       onChange: { kind: "agent", name: "set_filter" },
     });
 
-    for (const node of [form, search, filterBar]) {
+    for (const node of [form, filterBar]) {
       const record = node as unknown as Record<string, unknown>;
       expect(record).not.toHaveProperty("endpoint");
       expect(record).not.toHaveProperty("fetch");
@@ -210,7 +205,7 @@ describe("sanitizeComponentNode", () => {
       expect(record).not.toHaveProperty("expression");
     }
     expect(issues.filter((issue) => issue.includes("not allowed on component nodes")).length).toBe(
-      10,
+      6,
     );
   });
 });

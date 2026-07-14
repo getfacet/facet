@@ -101,13 +101,13 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       preview.length > 0 ? `text=${safeField(preview)}` : undefined,
     ]);
   },
-  field: (node) => {
+  input: (node) => {
     const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
     const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
     const options = Array.isArray(node["options"])
       ? ` options=${String(node["options"].length)}`
       : "";
-    return `type=field name=${name}${input}${options}`;
+    return `type=input name=${name}${input}${options}`;
   },
   section: (node) => summarizeContainer("section", node, ["title", "eyebrow", "body"], ["variant"]),
   card: (node) => summarizeContainer("card", node, ["title", "body"], ["variant", "tone"]),
@@ -194,17 +194,6 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       safeStringSummary(node["variant"], "variant"),
     ]),
   form: (node) => summarizeContainer("form", node, ["title", "body", "submitLabel"], ["variant"]),
-  search: (node) => {
-    const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
-    return compactSummary([
-      `type=search name=${name}`,
-      charSummary(node["label"], "labelChars"),
-      charSummary(node["placeholder"], "placeholderChars"),
-      charSummary(node["value"], "valueChars"),
-      charSummary(node["submitLabel"], "submitLabelChars"),
-      safeStringSummary(node["variant"], "variant"),
-    ]);
-  },
   filterBar: (node) =>
     compactSummary([
       "type=filterBar",

@@ -1,6 +1,6 @@
 /**
  * The closed vocabulary an agent uses to build a stage. Primitive bricks
- * (`box`, `text`, `media`, `field`) remain the universal fallback; intrinsic
+ * (`box`, `text`, `media`, `input`) remain the universal fallback; intrinsic
  * components provide safer common UI shapes without allowing raw HTML/JS/CSS.
  *
  * Primitive bricks stay the base and escape hatch; intrinsic components are
@@ -163,7 +163,7 @@ export interface MediaStyle {
   readonly ratio?: Ratio;
 }
 
-export interface FieldStyle {
+export interface InputStyle {
   readonly width?: Sizing;
 }
 
@@ -252,7 +252,7 @@ interface Pressable {
  * `validateBox`'s `sanitizeOverlay` (the box renders inline, fail-safe), so a
  * future placement (e.g. `popover`, which would also carry an optional `anchor`)
  * adds as a new tuple entry / union arm with no breaking reshape — mirrors
- * `FIELD_INPUTS`/`MARK_KINDS`.
+ * `INPUT_KINDS`/`MARK_KINDS`.
  */
 export const OVERLAY_KINDS = ["modal", "drawer"] as const;
 export type OverlayKind = (typeof OVERLAY_KINDS)[number];
@@ -321,8 +321,8 @@ export interface MediaNode extends BaseNode, Styleable<MediaStyle> {
   readonly controls?: boolean;
 }
 
-/** Allowed field input types — single source (validator derives its check from this). */
-export const FIELD_INPUTS = [
+/** Allowed input kinds — single source (validator derives its check from this). */
+export const INPUT_KINDS = [
   "text",
   "number",
   "email",
@@ -333,13 +333,13 @@ export const FIELD_INPUTS = [
   "select",
   "switch",
 ] as const;
-export type FieldInput = (typeof FIELD_INPUTS)[number];
+export type InputKind = (typeof INPUT_KINDS)[number];
 
 /** The input primitive. */
-export interface FieldNode extends BaseNode, Styleable<FieldStyle> {
-  readonly type: "field";
+export interface InputNode extends BaseNode, Styleable<InputStyle> {
+  readonly type: "input";
   readonly name: string;
-  readonly input?: FieldInput;
+  readonly input?: InputKind;
   readonly options?: readonly string[];
   readonly label?: string;
   readonly placeholder?: string;
@@ -410,9 +410,9 @@ export interface RichTextNode extends BaseNode, Styleable<TextStyle> {
   readonly blocks: readonly RichTextBlock[];
 }
 
-export const PRIMITIVE_BRICK_TYPES = ["box", "text", "media", "field", "richtext"] as const;
+export const PRIMITIVE_BRICK_TYPES = ["box", "text", "media", "input", "richtext"] as const;
 export type PrimitiveBrickType = (typeof PRIMITIVE_BRICK_TYPES)[number];
-export type PrimitiveBrickNode = BoxNode | TextNode | MediaNode | FieldNode | RichTextNode;
+export type PrimitiveBrickNode = BoxNode | TextNode | MediaNode | InputNode | RichTextNode;
 
 export * from "./component-nodes.js";
 import type { CardNode, ComponentNode, FormNode, SectionNode } from "./component-nodes.js";

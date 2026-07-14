@@ -493,7 +493,7 @@ describe("validateTheme", () => {
     const input = JSON.parse(`{
       "name": "brand",
       "recipes": {
-        "field": {
+        "input": {
           "default": {
             "field": { "width": "full" },
             "parts": {
@@ -519,7 +519,7 @@ describe("validateTheme", () => {
         }
       }
     }`);
-    Object.defineProperty(input.recipes.field.default.parts, "body", {
+    Object.defineProperty(input.recipes.input.default.parts, "body", {
       enumerable: true,
       get() {
         throw new Error("hostile part");
@@ -530,8 +530,8 @@ describe("validateTheme", () => {
 
     expect(theme).toBeDefined();
     expect(hasError(issues)).toBe(false);
-    expect(theme?.recipes?.field?.default?.field).toEqual({ width: "full" });
-    const parts = theme?.recipes?.field?.default?.parts;
+    expect(theme?.recipes?.input?.default?.field).toEqual({ width: "full" });
+    const parts = theme?.recipes?.input?.default?.parts;
     expect(parts?.label?.text).toEqual({
       color: "fg-muted",
       size: "sm",

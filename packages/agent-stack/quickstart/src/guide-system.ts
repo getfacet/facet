@@ -107,7 +107,7 @@ export const QUICKSTART_SYSTEM_NODES = {
     id: "qs.system.bricks",
     type: "section",
     title: "Component gallery",
-    body: "The built-in intrinsic components render through React recipe parts while box, text, media, and field remain the primitive base.",
+    body: "The built-in intrinsic components render through React recipe parts while box, text, media, and input remain the primitive base.",
     variant: "surface",
     children: [
       "qs.system.actions.card",
@@ -209,7 +209,7 @@ export const QUICKSTART_SYSTEM_NODES = {
       { component: "button", contract: "primary, secondary, danger" },
       { component: "table", contract: "display-only rows" },
       { component: "progress", contract: "track and fill" },
-      { component: "field", contract: "primitive browser view-state" },
+      { component: "input", contract: "primitive browser view-state" },
     ],
   },
   "qs.system.form.card": {
@@ -221,7 +221,7 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.form.name": {
     id: "qs.system.form.name",
-    type: "field",
+    type: "input",
     name: "showcase_name",
     label: "Showcase name",
     placeholder: "Design audit",
@@ -229,7 +229,7 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.form.kind": {
     id: "qs.system.form.kind",
-    type: "field",
+    type: "input",
     name: "showcase_kind",
     input: "select",
     label: "Surface type",
@@ -319,7 +319,7 @@ export const QUICKSTART_SYSTEM_NODES = {
       { title: "Theme", body: "default, locked by name" },
       { title: "Component", body: "variant and tone from the catalog only" },
       { title: "Composition", body: "name and slots, never fragment JSON in prompt" },
-      { title: "Primitive", body: "box, text, media, and field as fallback base" },
+      { title: "Primitive", body: "box, text, media, and input as fallback base" },
     ],
   },
 } satisfies FacetTree["nodes"];

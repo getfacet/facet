@@ -512,7 +512,7 @@ describe("expandComposition", () => {
     expect(result.root).toBe("card-1");
     expect(
       Object.values(result.nodes).every((node) =>
-        ["box", "text", "media", "field"].includes(node.type),
+        ["box", "text", "media", "input"].includes(node.type),
       ),
     ).toBe(true);
     expect(Object.values(result.nodes).some((node) => node.type === "media")).toBe(false);
@@ -652,7 +652,6 @@ describe("expandComposition", () => {
           searchName: "query",
           searchLabel: "Search",
           searchPlaceholder: "Find",
-          searchValue: "",
           filterName: "status",
           filterLabel: "Status",
           filterOption: "Active",
@@ -691,12 +690,11 @@ describe("expandComposition", () => {
           },
           search: {
             id: "search",
-            type: "search",
+            type: "input",
             name: "{{searchName}}",
+            input: "search",
             label: "{{searchLabel}}",
             placeholder: "{{searchPlaceholder}}",
-            value: "{{searchValue}}",
-            onSubmit: { kind: "toggle", target: "page" },
           },
           filters: {
             id: "filters",
@@ -722,7 +720,7 @@ describe("expandComposition", () => {
           loading: { id: "loading", type: "loading", label: "{{loadingLabel}}" },
         },
       },
-      { title: "Custom title", metricValue: "$50k", searchValue: "facet" },
+      { title: "Custom title", metricValue: "$50k" },
       { parent: "page" },
       {
         existingIds: new Set(["page"]),
@@ -767,12 +765,12 @@ describe("expandComposition", () => {
       items: [{ key: "mrr", label: "MRR", value: "$42k" }],
     });
     expect(result.nodes["fresh-search"]).toMatchObject({
+      type: "input",
       name: "query",
+      input: "search",
       label: "Search",
       placeholder: "Find",
-      value: "facet",
     });
-    expect(result.nodes["fresh-search"]).not.toHaveProperty("onSubmit");
     expect(result.nodes["fresh-filters"]).toMatchObject({
       filters: [{ name: "status", label: "Status", options: ["Active"], value: "Active" }],
       onChange: { kind: "agent", name: "filter", collect: "fresh-metric" },
@@ -790,7 +788,7 @@ describe("expandComposition", () => {
       navLabel: "fresh-nav",
       metricValue: "fresh-metric",
       keyValue: "fresh-kv",
-      searchValue: "fresh-search",
+      searchName: "fresh-search",
       filterValue: "fresh-filters",
       emptyAction: "fresh-empty",
       loadingLabel: "fresh-loading",

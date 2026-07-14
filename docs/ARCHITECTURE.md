@@ -78,8 +78,10 @@ The primitive base remains valid as fallback:
 - `text` — a string with token text styles.
 - `media` — a static safe `src`, optional `alt`, `kind: "image" | "video"`, and
   token styles. Legacy stored `image` nodes normalize to media images.
-- `field` — a native input (`name`, `input` kind, capped `options` for
-  select/radio, token styles).
+- `input` — a native input (`name`, `input` kind incl. `search`, capped `options`
+  for select/radio, token styles). Consolidates the former `field`/`search`
+  surfaces; a search box is `input:"search"`, and a search-with-submit is an
+  `input`+`button` composition.
 - `richtext` — a flowing block of prose carrying MIXED inline formatting the
   single-string `text` node cannot express. A primitive LEAF: it holds its own
   `blocks` (`paragraph`/`heading`/`listItem`/`quote`) whose `runs` flow inline,
@@ -118,11 +120,11 @@ The v1 intrinsic components are still just typed stage data:
 - `metric`, `keyValue`, `badge`, `progress`, `alert`, `list`, `divider`,
   `emptyState`, and `loading` — compact display and feedback components with
   bounded payloads. `stat` remains a legacy alias for `metric`.
-- `form`, `search`, and `filterBar` — input/control surfaces only. Backend work
+- `form` and `filterBar` — input/control surfaces only. Backend work
   stays with the agent through actions and later patches.
 
 Only `box`, `section`, `card`, and `form` are containers in v1. Tables, charts,
-search, and filter bars are display/control-only; there is no client fetch,
+and filter bars are display/control-only; there is no client fetch,
 agent-authored sort/filter engine, data-source/resolver/query binding, expression
 language, or inline script. (Binding a data-bearing node to the in-tree `data`
 warehouse by NAME via `from` is allowed and is not a data source — see "Data
@@ -211,7 +213,7 @@ the vocabulary grows deliberately instead of by accretion.
 
 - **Axis 1 — DATA (content).** When the ask is to show a NEW KIND of content
   that needs renderer computation `box`+`text` cannot express — draw shapes
-  (`chart`), capture input (`field`), project rows (`table`), carry mixed inline
+  (`chart`), capture input (`input`), project rows (`table`), carry mixed inline
   prose (`richtext`) — add a **new native data brick**. Never pile more fields
   or modes onto `text` to fake it. `text`'s recent growth (`from`, `active`) is
   the exception that proves the rule: those are not text-specific fields but
@@ -275,7 +277,7 @@ The stage tree carries only a **name**: `FacetTree.theme?: string`,
 kept-if-string by `validateTree`. `STAGE_SPEC` teaches the agent to set it to a
 theme name it has been given and nothing else — **the LLM never authors theme
 values**. Nodes carry `variant`/`tone` selectors where supported; primitive
-`box`/`text`/`media`/`field` may also choose a theme recipe variant, while
+`box`/`text`/`media`/`input` may also choose a theme recipe variant, while
 primitive styles still carry token names. Recipe parts are not stage syntax; they
 are renderer-owned subrecipes inside validated operator theme data. Resolution is
 a boot-shipped map plus local lookups: the validated theme documents ship to the

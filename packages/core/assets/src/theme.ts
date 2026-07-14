@@ -101,7 +101,7 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       media: { radius: "lg", ratio: "wide", width: "full" },
     },
   }),
-  field: recipeVariants({
+  input: recipeVariants({
     default: {
       field: { width: "full" },
       parts: {
@@ -363,18 +363,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
           box: { bg: "accent", pad: "sm", radius: "md" },
           text: { color: "accent-fg", weight: "semibold" },
         },
-      },
-    },
-  }),
-  search: recipeVariants({
-    default: {
-      box: { direction: "row", gap: "sm", align: "end", wrap: true, width: "full" },
-      text: { color: "fg" },
-      field: { width: "full" },
-      parts: {
-        label: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
-        control: { box: { gap: "xs", grow: true }, field: { width: "full" } },
-        input: { field: { width: "full" } },
       },
     },
   }),

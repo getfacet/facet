@@ -291,7 +291,7 @@ describe("treeHasContent", () => {
       treeHasContent(
         tree({
           r: { id: "r", type: "box", children: ["choice"] },
-          choice: { id: "choice", type: "field", name: "plan", input: "radio", options: [] },
+          choice: { id: "choice", type: "input", name: "plan", input: "radio", options: [] },
         }),
       ),
     ).toBe(false);
@@ -302,7 +302,7 @@ describe("treeHasContent", () => {
           r: { id: "r", type: "box", children: ["choice"] },
           choice: {
             id: "choice",
-            type: "field",
+            type: "input",
             name: "plan",
             input: "radio",
             options: ["pro"],

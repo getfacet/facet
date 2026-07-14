@@ -127,7 +127,7 @@ describe("StageRenderer interactions (jsdom)", () => {
       <StageRenderer
         tree={tree({
           root: { id: "root", type: "box", children: ["f"] },
-          f: { id: "f", type: "field", name: "email", input: "email", placeholder: "you@x.com" },
+          f: { id: "f", type: "input", name: "email", input: "email", placeholder: "you@x.com" },
         })}
       />,
     );
@@ -622,8 +622,8 @@ describe("StageRenderer collect (jsdom)", () => {
     tree({
       root: { id: "root", type: "box", children: ["form", "submit"] },
       form: { id: "form", type: "box", children: ["nameF", "emailF"] },
-      nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
-      emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+      nameF: { id: "nameF", type: "input", name: "name", placeholder: "your name" },
+      emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
       submit: {
         id: "submit",
         type: "box",
@@ -663,7 +663,7 @@ describe("StageRenderer collect (jsdom)", () => {
             title: "Contact",
             children: ["emailF"],
           },
-          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
           submit: {
             id: "submit",
             type: "button",
@@ -704,8 +704,8 @@ describe("StageRenderer collect (jsdom)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["hiddenBox", "visibleF", "submit"] },
           hiddenBox: { id: "hiddenBox", type: "box", hidden: true, children: ["dupHidden"] },
-          dupHidden: { id: "dupHidden", type: "field", name: "email", placeholder: "hidden dup" },
-          visibleF: { id: "visibleF", type: "field", name: "email", placeholder: "visible email" },
+          dupHidden: { id: "dupHidden", type: "input", name: "email", placeholder: "hidden dup" },
+          visibleF: { id: "visibleF", type: "input", name: "email", placeholder: "visible email" },
           submit: {
             id: "submit",
             type: "box",
@@ -737,10 +737,10 @@ describe("StageRenderer collect (jsdom)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["form", "submit"] },
           form: { id: "form", type: "box", children: ["userF", "passF"] },
-          userF: { id: "userF", type: "field", name: "user", placeholder: "user" },
+          userF: { id: "userF", type: "input", name: "user", placeholder: "user" },
           passF: {
             id: "passF",
-            type: "field",
+            type: "input",
             name: "password",
             input: "password",
             placeholder: "secret",
@@ -828,7 +828,7 @@ describe("StageRenderer collect (jsdom)", () => {
             alt: "pic",
           },
           inner: { id: "inner", type: "box", children: ["emailF"] },
-          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
           submit: {
             id: "submit",
             type: "box",
@@ -861,16 +861,16 @@ describe("StageRenderer collect (jsdom)", () => {
           },
           plan: {
             id: "plan",
-            type: "field",
+            type: "input",
             name: "plan",
             input: "select",
             options: ["Free", "Pro"],
           },
-          agree: { id: "agree", type: "field", name: "agree", input: "checkbox" },
-          alerts: { id: "alerts", type: "field", name: "alerts", input: "switch" },
+          agree: { id: "agree", type: "input", name: "agree", input: "checkbox" },
+          alerts: { id: "alerts", type: "input", name: "alerts", input: "switch" },
           size: {
             id: "size",
-            type: "field",
+            type: "input",
             name: "size",
             input: "radio",
             options: ["Small", "Large"],
@@ -912,14 +912,14 @@ describe("StageRenderer collect (jsdom)", () => {
           },
           emptySize: {
             id: "emptySize",
-            type: "field",
+            type: "input",
             name: "size",
             input: "radio",
             options: ["Small", "Medium"],
           },
           chosenSize: {
             id: "chosenSize",
-            type: "field",
+            type: "input",
             name: "size",
             input: "radio",
             options: ["Large", "XL"],
@@ -948,9 +948,9 @@ describe("StageRenderer collect (jsdom)", () => {
         onAction={onAction}
         tree={tree({
           root: { id: "root", type: "box", children: ["outsideF", "form", "submit"] },
-          outsideF: { id: "outsideF", type: "field", name: "email", placeholder: "outside" },
+          outsideF: { id: "outsideF", type: "input", name: "email", placeholder: "outside" },
           form: { id: "form", type: "box", children: ["emailF"] },
-          emailF: { id: "emailF", type: "field", name: "email", placeholder: "inside" },
+          emailF: { id: "emailF", type: "input", name: "email", placeholder: "inside" },
           submit: {
             id: "submit",
             type: "box",
@@ -976,9 +976,9 @@ describe("StageRenderer collect (jsdom)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["form", "submit"] },
           form: { id: "form", type: "box", children: ["first", "inner"] },
-          first: { id: "first", type: "field", name: "email", placeholder: "first" },
+          first: { id: "first", type: "input", name: "email", placeholder: "first" },
           inner: { id: "inner", type: "box", children: ["second"] },
-          second: { id: "second", type: "field", name: "email", placeholder: "second" },
+          second: { id: "second", type: "input", name: "email", placeholder: "second" },
           submit: {
             id: "submit",
             type: "box",
@@ -1020,7 +1020,7 @@ describe("StageRenderer collect (jsdom)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["form", "submit"] },
           form: { id: "form", type: "box", children: ["f"] },
-          f: { id: "f", type: "field", name: longName, placeholder: "x" },
+          f: { id: "f", type: "input", name: longName, placeholder: "x" },
           submit: {
             id: "submit",
             type: "box",
@@ -1050,14 +1050,14 @@ describe("StageRenderer collect (jsdom)", () => {
           root: { id: "root", type: "box", children: ["left", "right"] },
           left: {
             id: "left",
-            type: "field",
+            type: "input",
             name: leftName,
             input: "radio",
             options: ["Yes"],
           },
           right: {
             id: "right",
-            type: "field",
+            type: "input",
             name: rightName,
             input: "radio",
             options: ["Yes"],
@@ -1081,9 +1081,9 @@ describe("StageRenderer collect (jsdom)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["form", "submit"] },
           form: { id: "form", type: "box", children: ["nameF", "loop"] },
-          nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+          nameF: { id: "nameF", type: "input", name: "name", placeholder: "your name" },
           loop: { id: "loop", type: "box", children: ["form", "extraF"] },
-          extraF: { id: "extraF", type: "field", name: "extra", placeholder: "extra" },
+          extraF: { id: "extraF", type: "input", name: "extra", placeholder: "extra" },
           submit: {
             id: "submit",
             type: "box",
@@ -1113,7 +1113,7 @@ describe("StageRenderer collect (jsdom)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["form", "submit"] },
           form: { id: "form", type: "box", children: ["nameF"] },
-          nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+          nameF: { id: "nameF", type: "input", name: "name", placeholder: "your name" },
           submit: {
             id: "submit",
             type: "box",
@@ -1153,7 +1153,7 @@ describe("StageRenderer collect (jsdom)", () => {
             st: { id: "st", type: "text", value: "Send" },
             about: { id: "about", type: "box", children: ["aboutForm"] },
             aboutForm: { id: "aboutForm", type: "box", children: ["secretF"] },
-            secretF: { id: "secretF", type: "field", name: "secret", placeholder: "secret" },
+            secretF: { id: "secretF", type: "input", name: "secret", placeholder: "secret" },
           },
           screens: { home: "home", about: "about" },
           entry: "home",
@@ -1182,8 +1182,8 @@ describe("StageRenderer collect (jsdom)", () => {
           },
           ht: { id: "ht", type: "text", value: "Hide" },
           form: { id: "form", type: "box", children: ["nameF", "emailF"] },
-          nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
-          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          nameF: { id: "nameF", type: "input", name: "name", placeholder: "your name" },
+          emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
           submit: {
             id: "submit",
             type: "box",
@@ -1224,7 +1224,7 @@ describe("StageRenderer collect (jsdom)", () => {
             panel: { id: "panel", type: "box", children: ["pt"] },
             pt: { id: "pt", type: "text", value: "panel content" },
             form: { id: "form", type: "box", children: ["nameF"] },
-            nameF: { id: "nameF", type: "field", name: "name", placeholder: "your name" },
+            nameF: { id: "nameF", type: "input", name: "name", placeholder: "your name" },
             goBtn: {
               id: "goBtn",
               type: "box",
@@ -1428,7 +1428,7 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["form", "btn"] },
           form: { id: "form", type: "box", children: ["emailF"] },
-          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
           btn: { id: "btn", type: "box", onPress: action, onHold: action, children: ["bt"] },
           bt: { id: "bt", type: "text", value: "dual" },
         })}
@@ -1589,7 +1589,7 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
         tree={tree({
           root: { id: "root", type: "box", children: ["form", "btn"] },
           form: { id: "form", type: "box", children: ["emailF"] },
-          emailF: { id: "emailF", type: "field", name: "email", placeholder: "your email" },
+          emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
           btn: {
             id: "btn",
             type: "box",
@@ -2322,7 +2322,7 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
         },
         list: { id: "list", type: "box", style: { scroll: true }, children: ["row"] },
         row: { id: "row", type: "text", value: "row content" },
-        f: { id: "f", type: "field", name: "email", label: "Email" },
+        f: { id: "f", type: "input", name: "email", label: "Email" },
       });
     const { rerender } = render(<StageRenderer onAction={onAction} tree={cardTree(false)} />);
 
@@ -2354,7 +2354,7 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
           ...(withHold ? { onHold: { kind: "agent", name: "peek" } } : {}),
           children: ["f"],
         },
-        f: { id: "f", type: "field", name: "email", label: "Email" },
+        f: { id: "f", type: "input", name: "email", label: "Email" },
       });
     const { rerender } = render(<StageRenderer onAction={onAction} tree={cardTree(true)} />);
     const input = screen.getByLabelText("Email") as HTMLInputElement;
@@ -2385,7 +2385,7 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
             : {}),
           children: ["f"],
         },
-        f: { id: "f", type: "field", name: "email", label: "Email" },
+        f: { id: "f", type: "input", name: "email", label: "Email" },
       });
     const { rerender } = render(<StageRenderer onAction={onAction} tree={boxTree(false)} />);
     const input = screen.getByLabelText("Email") as HTMLInputElement;

@@ -9,9 +9,9 @@ import { BRICK_RENDERERS, brickRendererEntry } from "./brick-render-registry.js"
 // the core vocabulary so an added core type can't silently slip the registry.
 describe("BRICK_RENDERERS", () => {
   it("has exactly one entry per drawable-via-renderBrick core node type", () => {
-    // renderBrickNode dispatches every component type plus the `field`
+    // renderBrickNode dispatches every component type plus the `input`
     // primitive; box/text/media/richtext are drawn by bespoke inline paths.
-    const expected = [...COMPONENT_NODE_TYPES, "field"].sort();
+    const expected = [...COMPONENT_NODE_TYPES, "input"].sort();
     expect(Object.keys(BRICK_RENDERERS).sort()).toEqual(expected);
   });
 
@@ -31,7 +31,7 @@ describe("BRICK_RENDERERS", () => {
 
   it("marks every component leaf as a motion-snapshot participant", () => {
     for (const [type, entry] of Object.entries(BRICK_RENDERERS)) {
-      const isLeafComponent = !entry.container && type !== "field";
+      const isLeafComponent = !entry.container && type !== "input";
       expect(entry.motionSnapshot).toBe(isLeafComponent);
     }
   });

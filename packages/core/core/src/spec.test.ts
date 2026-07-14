@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BLOCK_TYPES,
-  FIELD_INPUTS,
+  INPUT_KINDS,
   INTRINSIC_COMPONENT_TYPES,
   LEGACY_COMPONENT_TYPES,
   MARK_KINDS,
@@ -73,7 +73,7 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).not.toContain("fontFamily");
   });
 
-  it("brick-vocab v1 teaches media, native field inputs, columns, and scroll axes", () => {
+  it("brick-vocab v1 teaches media, native input kinds, columns, and scroll axes", () => {
     expect(STAGE_SPEC).toContain('"type":"media"');
     expect(STAGE_SPEC).toContain('"kind"');
     expect(STAGE_SPEC).toMatch(/"image"\|"video"/);
@@ -82,8 +82,8 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toContain('"controls"?');
     expect(STAGE_SPEC).toMatch(/MediaStyle/);
 
-    expect(STAGE_SPEC).toMatch(/field:[^\n]*"variant"\?:name/);
-    for (const input of FIELD_INPUTS) {
+    expect(STAGE_SPEC).toMatch(/input:[^\n]*"variant"\?:name/);
+    for (const input of INPUT_KINDS) {
       expect(STAGE_SPEC).toContain(`"${input}"`);
     }
     expect(STAGE_SPEC).toContain('"options"?');
@@ -133,9 +133,15 @@ describe("STAGE_SPEC", () => {
       expect(STAGE_SPEC).toContain(`"type":"${type}"`);
     }
     expect(STAGE_SPEC).toMatch(/intrinsic components are locked/i);
-    for (const type of INTRINSIC_COMPONENT_TYPES) {
+    // "search" is retired as a node type by the input consolidation — STAGE_SPEC
+    // no longer teaches a search node line (its type leaves ComponentNodeType in
+    // WU-2). Cast to string[] so the literal filter stays legal once "search" is
+    // gone from the type. "search + submit" is now an input+button composition.
+    for (const type of INTRINSIC_COMPONENT_TYPES as readonly string[]) {
+      if (type === "search") continue;
       expect(STAGE_SPEC).toContain(`"type":"${type}"`);
     }
+    expect(STAGE_SPEC).not.toContain('"type":"search"');
     for (const type of LEGACY_COMPONENT_TYPES) {
       expect(STAGE_SPEC).toContain(`"type":"${type}"`);
     }

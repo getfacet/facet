@@ -35,13 +35,13 @@ export const STUB_TREE: FacetTree = {
     },
     "signup-name": {
       id: "signup-name",
-      type: "field",
+      type: "input",
       name: "name",
       label: "Name",
     },
     "signup-email": {
       id: "signup-email",
-      type: "field",
+      type: "input",
       name: "email",
       input: "email",
       label: "Email",

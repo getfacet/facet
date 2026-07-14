@@ -33,7 +33,7 @@ function detail(node: FacetNode): string {
       return `: ${quote(node.value)}`;
     case "media":
       return `(${node.kind}): ${node.src}`;
-    case "field":
+    case "input":
       return `: ${node.name}`;
     case "button":
       return `: ${quote(node.label)}`;
@@ -70,8 +70,6 @@ function detail(node: FacetNode): string {
       return node.label === undefined ? "" : `: ${quote(node.label)}`;
     case "form":
       return labeledCount(node.title ?? node.body, "child", node.children.length);
-    case "search":
-      return `: ${node.name}`;
     case "filterBar":
       return `: ${count("filter", node.filters.length)}`;
     case "emptyState": {

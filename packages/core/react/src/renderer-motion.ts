@@ -215,7 +215,7 @@ export function collectVisibleInfo(
           nodes.set(id, { parentId, index, ancestors, depth });
         }
         return;
-      case "field":
+      case "input":
         ids.add(id);
         nodes.set(id, { parentId, index, ancestors, depth });
         return;

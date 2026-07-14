@@ -1,10 +1,10 @@
 import { normalizeFacetAction } from "./action-validation.js";
 import { isPlainObject, printableKey, type IssueSink } from "./issues.js";
 import {
-  FIELD_INPUTS,
+  INPUT_KINDS,
   type ComponentNode,
   type FacetAction,
-  type FieldInput,
+  type InputKind,
   type FilterBarFilter,
   type NavItem,
   type Tone,
@@ -19,14 +19,13 @@ import {
   capArray,
   childRefs,
   isScalar,
-  requiredText,
   setText,
   setTone,
   setVariant,
   tokenValue,
 } from "./component-validation-shared.js";
 
-export type ControlComponentType = "button" | "tabs" | "nav" | "form" | "search" | "filterBar";
+export type ControlComponentType = "button" | "tabs" | "nav" | "form" | "filterBar";
 
 export function sanitizeControlComponentNode(
   id: string,
@@ -120,45 +119,6 @@ export function sanitizeControlComponentNode(
       if (onSubmit !== undefined) node.onSubmit = onSubmit;
       return node;
     }
-    case "search": {
-      const name = requiredText(raw.name, id, "name", issues);
-      if (name === undefined) return undefined;
-      const node: {
-        id: string;
-        type: "search";
-        name: string;
-        label?: string;
-        placeholder?: string;
-        value?: string;
-        submitLabel?: string;
-        variant?: string;
-        onSubmit?: FacetAction;
-      } = { id, type, name };
-      setText(raw.label, id, "label", node, "label", MAX_NODE_LABEL_CHARS, issues);
-      setText(
-        raw.placeholder,
-        id,
-        "placeholder",
-        node,
-        "placeholder",
-        MAX_NODE_LABEL_CHARS,
-        issues,
-      );
-      setText(raw.value, id, "value", node, "value", MAX_NODE_LABEL_CHARS, issues);
-      setText(
-        raw.submitLabel,
-        id,
-        "submitLabel",
-        node,
-        "submitLabel",
-        MAX_NODE_LABEL_CHARS,
-        issues,
-      );
-      setVariant(raw.variant, id, node, issues);
-      const onSubmit = normalizeFacetAction(raw.onSubmit, id, "onSubmit", issues);
-      if (onSubmit !== undefined) node.onSubmit = onSubmit;
-      return node;
-    }
     case "filterBar": {
       const filters: FilterBarFilter[] = [];
       for (const item of boundedArray(raw.filters, id, "filters", issues)) {
@@ -169,11 +129,11 @@ export function sanitizeControlComponentNode(
         const filter: {
           name: string;
           label: string;
-          input?: FieldInput;
+          input?: InputKind;
           options?: readonly string[];
           value?: string | number | boolean;
         } = { name, label };
-        const input = tokenValue<FieldInput>(item.input, FIELD_INPUTS);
+        const input = tokenValue<InputKind>(item.input, INPUT_KINDS);
         if (input !== undefined) filter.input = input;
         const options = stringList(item.options, id, "filter options", issues);
         if (options !== undefined) filter.options = options;

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type { BoxNode, FacetNode, FieldNode, MediaNode, TextNode } from "./nodes.js";
+import type { BoxNode, FacetNode, InputNode, MediaNode, TextNode } from "./nodes.js";
 
 /**
  * Preservation test for the `node-mixins` PURE REFACTOR.
@@ -146,20 +146,20 @@ describe("node discriminated-union preservation (exhaustiveness guard)", () => {
     expectTypeOf<BoxNode["type"]>().toEqualTypeOf<"box">();
     expectTypeOf<TextNode["type"]>().toEqualTypeOf<"text">();
     expectTypeOf<MediaNode["type"]>().toEqualTypeOf<"media">();
-    expectTypeOf<FieldNode["type"]>().toEqualTypeOf<"field">();
+    expectTypeOf<InputNode["type"]>().toEqualTypeOf<"input">();
   });
 
   it("resolves Extract<FacetNode,{type:K}> back to each concrete primitive interface", () => {
     expectTypeOf<Extract<FacetNode, { type: "box" }>>().toEqualTypeOf<BoxNode>();
     expectTypeOf<Extract<FacetNode, { type: "text" }>>().toEqualTypeOf<TextNode>();
     expectTypeOf<Extract<FacetNode, { type: "media" }>>().toEqualTypeOf<MediaNode>();
-    expectTypeOf<Extract<FacetNode, { type: "field" }>>().toEqualTypeOf<FieldNode>();
+    expectTypeOf<Extract<FacetNode, { type: "input" }>>().toEqualTypeOf<InputNode>();
   });
 
   it("keeps the FacetNode union's `type` members exactly the expected literal set", () => {
-    // The four primitives are exactly box/text/media/field.
-    expectTypeOf<(BoxNode | TextNode | MediaNode | FieldNode)["type"]>().toEqualTypeOf<
-      "box" | "text" | "media" | "field"
+    // The four primitives are exactly box/text/media/input.
+    expectTypeOf<(BoxNode | TextNode | MediaNode | InputNode)["type"]>().toEqualTypeOf<
+      "box" | "text" | "media" | "input"
     >();
 
     // The full FacetNode discriminant set (primitives + intrinsic/legacy
@@ -168,7 +168,7 @@ describe("node discriminated-union preservation (exhaustiveness guard)", () => {
       | "box"
       | "text"
       | "media"
-      | "field"
+      | "input"
       | "richtext"
       | "button"
       | "section"
@@ -185,7 +185,8 @@ describe("node discriminated-union preservation (exhaustiveness guard)", () => {
       | "list"
       | "divider"
       | "form"
-      | "search"
+      // "search" is retired as a node type by this consolidation (removed from
+      // ComponentNodeType in WU-2); the "search" token survives only as an input KIND.
       | "filterBar"
       | "emptyState"
       | "loading"
@@ -232,7 +233,7 @@ describe("node field-set preservation (regression guard)", () => {
       "id" | "type" | "kind" | "src" | "variant" | "alt" | "poster" | "controls" | "style"
     >();
 
-    expectTypeOf<keyof FieldNode>().toEqualTypeOf<
+    expectTypeOf<keyof InputNode>().toEqualTypeOf<
       "id" | "type" | "name" | "variant" | "input" | "options" | "label" | "placeholder" | "style"
     >();
   });

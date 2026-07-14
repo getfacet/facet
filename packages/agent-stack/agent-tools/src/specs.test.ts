@@ -103,7 +103,9 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     }
     expect(nodeSchemaText).toMatch(/metric/);
     expect(nodeSchemaText).toMatch(/legacy stat/i);
-    expect(nodeSchemaText).toMatch(/box, text, media, field, richtext/);
+    expect(nodeSchemaText).toMatch(/box, text, media, input, richtext/);
+    // DC-003: the search intrinsic component is removed from the node schema.
+    expect(nodeSchemaText).not.toContain("search");
     expect(JSON.stringify(propertiesOf(setNode)["node"])).toMatch(/section|card|table|chart/);
     expect(setTheme.description).toMatch(/locked/i);
     expect(setTheme.description).toMatch(/catalog/i);

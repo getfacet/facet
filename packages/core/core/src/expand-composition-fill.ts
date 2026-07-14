@@ -10,7 +10,7 @@ import type {
   EmptyStateNode,
   FacetAction,
   FacetNode,
-  FieldNode,
+  InputNode,
   FilterBarNode,
   FormNode,
   KeyValueNode,
@@ -21,7 +21,6 @@ import type {
   NavNode,
   NodeId,
   ProgressNode,
-  SearchNode,
   SectionNode,
   StatNode,
   TableNode,
@@ -108,7 +107,7 @@ export function fillField(
   params: Readonly<Record<string, unknown>>,
   issues: IssueSink,
 ): FacetNode {
-  const node = raw as FieldNode;
+  const node = raw as InputNode;
   const next = { ...node, name: fillString(node.name, defaults, params, issues) };
   if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
   if (node.placeholder !== undefined) {
@@ -322,24 +321,6 @@ export function fillForm(
   }
   return next;
 }
-export function fillSearch(
-  raw: FacetNode,
-  defaults: Readonly<Record<string, string>>,
-  params: Readonly<Record<string, unknown>>,
-  issues: IssueSink,
-): FacetNode {
-  const node = raw as SearchNode;
-  const next = { ...node, name: fillString(node.name, defaults, params, issues) };
-  if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-  if (node.placeholder !== undefined) {
-    next.placeholder = fillString(node.placeholder, defaults, params, issues);
-  }
-  if (node.value !== undefined) next.value = fillString(node.value, defaults, params, issues);
-  if (node.submitLabel !== undefined) {
-    next.submitLabel = fillString(node.submitLabel, defaults, params, issues);
-  }
-  return next;
-}
 export function fillFilterBar(
   raw: FacetNode,
   defaults: Readonly<Record<string, string>>,
@@ -544,7 +525,7 @@ export function leavesMedia(raw: FacetNode): readonly string[] {
   return [node.src, node.alt, node.poster].filter((value): value is string => value !== undefined);
 }
 export function leavesField(raw: FacetNode): readonly string[] {
-  const node = raw as FieldNode;
+  const node = raw as InputNode;
   return [node.name, node.label, node.placeholder, ...(node.options ?? [])].filter(
     (value): value is string => value !== undefined,
   );
@@ -620,12 +601,6 @@ export function leavesDivider(raw: FacetNode): readonly string[] {
 export function leavesForm(raw: FacetNode): readonly string[] {
   const node = raw as FormNode;
   return [node.title, node.body, node.submitLabel].filter(
-    (value): value is string => value !== undefined,
-  );
-}
-export function leavesSearch(raw: FacetNode): readonly string[] {
-  const node = raw as SearchNode;
-  return [node.name, node.label, node.placeholder, node.value, node.submitLabel].filter(
     (value): value is string => value !== undefined,
   );
 }

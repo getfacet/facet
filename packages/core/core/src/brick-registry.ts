@@ -22,7 +22,7 @@ import type { DataWarehouse, TableRow } from "./data-types.js";
 import type { PrimitiveValidator } from "./primitive-node-validation.js";
 import {
   validateBox,
-  validateField,
+  validateInput,
   validateMedia,
   validateRichText,
   validateText,
@@ -55,7 +55,6 @@ import {
   rendersMedia,
   rendersMetricStat,
   rendersProgress,
-  rendersSearch,
   rendersSectionCard,
   rendersTable,
   rendersTabsNav,
@@ -79,7 +78,6 @@ import {
   fillMedia,
   fillMetricStat,
   fillProgress,
-  fillSearch,
   fillSection,
   fillTable,
   fillTabsNav,
@@ -101,7 +99,6 @@ import {
   leavesMedia,
   leavesMetricStat,
   leavesProgress,
-  leavesSearch,
   leavesSection,
   leavesTable,
   leavesTabsNav,
@@ -228,10 +225,10 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     fill: fillMedia,
     stringLeaves: leavesMedia,
   },
-  field: {
+  input: {
     kind: "primitive",
     established: false,
-    validate: validateField,
+    validate: validateInput,
     rendersSelf: rendersField,
     fill: fillField,
     stringLeaves: leavesField,
@@ -279,14 +276,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     rendersSelf: rendersForm,
     fill: fillForm,
     stringLeaves: leavesForm,
-  },
-  search: {
-    kind: "component",
-    role: "control",
-    established: false,
-    rendersSelf: rendersSearch,
-    fill: fillSearch,
-    stringLeaves: leavesSearch,
   },
   filterBar: {
     kind: "component",

@@ -369,7 +369,6 @@ describe("validateTree component nodes", () => {
             "keyValue",
             "nav",
             "form",
-            "search",
             "filterBar",
             "emptyState",
             "loading",
@@ -394,13 +393,6 @@ describe("validateTree component nodes", () => {
           submitLabel: "Save",
           onSubmit: { name: "save_customer", collect: "form" },
           children: [],
-        },
-        search: {
-          id: "search",
-          type: "search",
-          name: "q",
-          placeholder: "Search customers",
-          onSubmit: { name: "search_customers" },
         },
         filterBar: {
           id: "filterBar",
@@ -434,10 +426,6 @@ describe("validateTree component nodes", () => {
       type: "form",
       onSubmit: { kind: "agent", name: "save_customer", collect: "form" },
     });
-    expect(tree.nodes["search"]).toMatchObject({
-      type: "search",
-      onSubmit: { kind: "agent", name: "search_customers" },
-    });
     expect(tree.nodes["filterBar"]).toMatchObject({
       type: "filterBar",
       onChange: { kind: "agent", name: "filter_customers" },
@@ -453,7 +441,7 @@ describe("validateTree component nodes", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", children: ["form", "badMetric", "badSearch"] },
+        root: { id: "root", type: "box", children: ["form", "badMetric"] },
         form: {
           id: "form",
           type: "form",
@@ -464,7 +452,6 @@ describe("validateTree component nodes", () => {
           children: [],
         },
         badMetric: { id: "badMetric", type: "metric", label: "ARR" },
-        badSearch: { id: "badSearch", type: "search", placeholder: "Missing name" },
       },
     });
 
@@ -473,7 +460,6 @@ describe("validateTree component nodes", () => {
     expect(tree.nodes["form"]).not.toHaveProperty("html");
     expect(tree.nodes["form"]).not.toHaveProperty("css");
     expect(tree.nodes["badMetric"]).toBeUndefined();
-    expect(tree.nodes["badSearch"]).toBeUndefined();
     expect((tree.nodes["root"] as unknown as { children: readonly string[] }).children).toEqual([
       "form",
     ]);
@@ -481,7 +467,6 @@ describe("validateTree component nodes", () => {
       3,
     );
     expect(issues.some((issue) => issue.includes("value must be a string"))).toBe(true);
-    expect(issues.some((issue) => issue.includes("name must be a string"))).toBe(true);
   });
 
   it("keeps component leaf and container nodes with sanitized token fields", () => {
@@ -939,7 +924,6 @@ describe("validateComposition", () => {
       "nav",
       "keyValue",
       "form",
-      "search",
       "filterBar",
       "emptyState",
       "loading",
@@ -1355,7 +1339,7 @@ describe("validateComposition composition slots", () => {
         },
         field: {
           id: "field",
-          type: "field",
+          type: "input",
           name: "email",
           label: "{{label}}",
           placeholder: "{{title}}",
@@ -1372,7 +1356,7 @@ describe("validateComposition composition slots", () => {
       poster: "{{poster}}",
     });
     expect(composition?.nodes["field"]).toMatchObject({
-      type: "field",
+      type: "input",
       label: "{{label}}",
       placeholder: "{{title}}",
     });
@@ -1519,45 +1503,45 @@ describe("brick-vocab v1 core validation", () => {
     expect(issues.join("\n").length).toBeLessThan(500);
   });
 
-  it("sanitizes field inputs and options", () => {
+  it("sanitizes input inputs and options", () => {
     const long = "x".repeat(5000);
     const { tree, issues } = validateTree(
       rootWith({
         select: {
           id: "select",
-          type: "field",
+          type: "input",
           name: "plan",
           variant: "default",
           input: "select",
           options: ["Free", 7, "Pro", long],
         },
-        checkbox: { id: "checkbox", type: "field", name: "tos", input: "checkbox" },
-        radio: { id: "radio", type: "field", name: "size", input: "radio", options: [] },
-        emptySelect: { id: "emptySelect", type: "field", name: "empty", input: "select" },
-        switcher: { id: "switcher", type: "field", name: "alerts", input: "switch" },
-        unknown: { id: "unknown", type: "field", name: "mystery", input: "colorwheel" },
+        checkbox: { id: "checkbox", type: "input", name: "tos", input: "checkbox" },
+        radio: { id: "radio", type: "input", name: "size", input: "radio", options: [] },
+        emptySelect: { id: "emptySelect", type: "input", name: "empty", input: "select" },
+        switcher: { id: "switcher", type: "input", name: "alerts", input: "switch" },
+        unknown: { id: "unknown", type: "input", name: "mystery", input: "colorwheel" },
       }),
     );
 
     expect(issues).toEqual([
-      'node "radio": "radio" field has no valid options — rendered control will be empty',
-      'node "emptySelect": "select" field has no valid options — rendered control will be empty',
+      'node "radio": "radio" input has no valid options — rendered control will be empty',
+      'node "emptySelect": "select" input has no valid options — rendered control will be empty',
     ]);
     expect(tree.nodes["select"]).toMatchObject({
-      type: "field",
+      type: "input",
       variant: "default",
       input: "select",
       options: ["Free", "Pro", "x".repeat(2000)],
     });
-    expect(tree.nodes["checkbox"]).toMatchObject({ type: "field", input: "checkbox" });
+    expect(tree.nodes["checkbox"]).toMatchObject({ type: "input", input: "checkbox" });
     expect(tree.nodes["radio"]).not.toHaveProperty("options");
-    expect(tree.nodes["emptySelect"]).toMatchObject({ type: "field", input: "select" });
+    expect(tree.nodes["emptySelect"]).toMatchObject({ type: "input", input: "select" });
     expect(tree.nodes["emptySelect"]).not.toHaveProperty("options");
-    expect(tree.nodes["switcher"]).toMatchObject({ type: "field", input: "switch" });
+    expect(tree.nodes["switcher"]).toMatchObject({ type: "input", input: "switch" });
     expect(tree.nodes["unknown"]).not.toHaveProperty("input");
   });
 
-  it("drops malformed media and field variants", () => {
+  it("drops malformed media and input variants", () => {
     const { tree, issues } = validateTree(
       rootWith({
         media: {
@@ -1569,7 +1553,7 @@ describe("brick-vocab v1 core validation", () => {
         },
         field: {
           id: "field",
-          type: "field",
+          type: "input",
           name: "email",
           variant: "bad variant",
         },
@@ -1752,7 +1736,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
         },
         f: {
           id: "f",
-          type: "field",
+          type: "input",
           name: "email",
           style: { scroll: true },
         },
@@ -1762,7 +1746,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     const f = run.tree.nodes["f"] as unknown as { style?: Record<string, unknown> };
     expect(t.style?.["appear"]).toBeUndefined(); // stripped from a text style
     expect(t.style?.["size"]).toBe("lg"); // a real text token survives
-    expect(f.style?.["scroll"]).toBeUndefined(); // stripped from a field style
+    expect(f.style?.["scroll"]).toBeUndefined(); // stripped from an input style
   });
 });
 
@@ -1955,31 +1939,64 @@ describe("validateTree legacy pass-through", () => {
   });
 });
 
-describe("validateTree field style", () => {
-  it("keeps a valid field style instead of stripping it", () => {
+describe("validateTree input style", () => {
+  it("keeps a valid input style instead of stripping it", () => {
     const input = {
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["f"] },
-        f: { id: "f", type: "field", name: "email", style: { width: "full" } },
+        f: { id: "f", type: "input", name: "email", style: { width: "full" } },
       },
     };
     const { tree } = validateTree(input);
     expect(tree.nodes["f"]).toMatchObject({ style: { width: "full" } });
   });
 
-  it("strips an invalid field style token but keeps the field", () => {
+  it("strips an invalid input style token but keeps the input", () => {
     const input = {
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["f"] },
-        f: { id: "f", type: "field", name: "q", style: { width: "97vw" } },
+        f: { id: "f", type: "input", name: "q", style: { width: "97vw" } },
       },
     };
     const { tree } = validateTree(input);
     const field = tree.nodes["f"] as unknown as { style?: unknown };
     expect(field).toBeDefined();
     expect(field.style).toBeUndefined();
+  });
+});
+
+// WU-1 (field→input rename): the primitive input brick replaces the old field
+// brick. `input` is the canonical node type (keeping the "search" input KIND);
+// a stale `type:"field"` node is now an UNKNOWN type and fail-safe dropped.
+describe("input primitive", () => {
+  it("keeps an input node and its search input kind (field renamed to input)", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["q"] },
+        q: { id: "q", type: "input", name: "query", input: "search", placeholder: "Search" },
+      },
+    });
+    expect(tree.nodes["q"]).toMatchObject({
+      type: "input",
+      name: "query",
+      input: "search",
+      placeholder: "Search",
+    });
+    expect(issues).toHaveLength(0);
+  });
+
+  it('fail-safe drops a stale type:"field" node as an unknown type (hard cutover)', () => {
+    const { tree } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["f"] },
+        f: { id: "f", type: "field", name: "email" },
+      },
+    });
+    expect(tree.nodes["f"]).toBeUndefined();
   });
 });
 

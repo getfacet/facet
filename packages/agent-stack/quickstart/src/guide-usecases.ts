@@ -16,7 +16,7 @@ export const QUICKSTART_INTAKE_NODES = {
   },
   "qs.intake.goal": {
     id: "qs.intake.goal",
-    type: "field",
+    type: "input",
     name: "goal",
     label: "What should the agent build?",
     placeholder: "A customer onboarding flow",
@@ -24,7 +24,7 @@ export const QUICKSTART_INTAKE_NODES = {
   },
   "qs.intake.surface": {
     id: "qs.intake.surface",
-    type: "field",
+    type: "input",
     name: "surface",
     input: "select",
     label: "Surface",

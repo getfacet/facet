@@ -1084,13 +1084,13 @@ describe("createReferenceAgent tool loop", () => {
     expect(patchesOf(out)).toHaveLength(1);
   });
 
-  it("removes a node and rejects media/field nodes missing required fields", async () => {
+  it("removes a node and rejects media/input nodes missing required fields", async () => {
     const provider = providerOf(
       toolStep(
         call("render_page", { tree: VALID_TREE }),
         call("remove_node", { nodeId: "greet" }),
         call("set_node", { node: { id: "i", type: "media", kind: "image" } }), // no src
-        call("set_node", { node: { id: "f", type: "field" } }), // no name
+        call("set_node", { node: { id: "f", type: "input" } }), // no name
       ),
       END,
     );
@@ -1104,7 +1104,7 @@ describe("createReferenceAgent tool loop", () => {
     }
     const obs = toolResultSearchText(provider.turns[1]!);
     expect(obs.includes('"media" node needs string "src"')).toBe(true);
-    expect(obs.includes('"field" node needs a string "name"')).toBe(true);
+    expect(obs.includes('"input" node needs a string "name"')).toBe(true);
   });
 
   it("brick-vocab v1 accepts media nodes and rejects old image nodes", async () => {

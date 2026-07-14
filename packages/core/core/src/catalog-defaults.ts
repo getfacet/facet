@@ -58,7 +58,6 @@ export const DEFAULT_COMPONENTS: readonly CatalogComponent[] = [
   },
   { type: "divider", variants: ["default"], guidance: "Use to separate dense content." },
   { type: "form", variants: ["default"], guidance: "Use for grouped visitor input." },
-  { type: "search", variants: ["default"], guidance: "Use for search input and submission." },
   {
     type: "filterBar",
     variants: ["default"],
@@ -80,7 +79,7 @@ const DEFAULT_PRIMITIVE_BRICKS: readonly CatalogBrick[] = [
     variants: ["default", "hero"],
     guidance: "Use for bounded image/video media.",
   },
-  { type: "field", variants: ["default"], guidance: "Use for visitor input controls." },
+  { type: "input", variants: ["default"], guidance: "Use for visitor input controls." },
   {
     type: "richtext",
     guidance: "formatted prose — blocks of runs with inline marks + links",

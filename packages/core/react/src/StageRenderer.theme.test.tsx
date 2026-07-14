@@ -34,7 +34,7 @@ const POLISHED_PARTS: FacetTheme = {
     badge: {
       success: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
     },
-    field: {
+    input: {
       default: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
     },
   },
@@ -140,7 +140,7 @@ describe("StageRenderer theming (jsdom)", () => {
         root: { id: "root", type: "box", children: ["save", "status", "email"] },
         save: { id: "save", type: "button", label: "Save", variant: "missing" },
         status: { id: "status", type: "badge", label: "Ready", tone: "success" },
-        email: { id: "email", type: "field", name: "email", label: "Email" },
+        email: { id: "email", type: "input", name: "email", label: "Email" },
       },
     };
 

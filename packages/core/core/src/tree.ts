@@ -264,9 +264,6 @@ export function rendersAlways(): boolean {
 export function rendersForm(node: Record<string, unknown>): boolean {
   return hasString(node.title) || hasString(node.body) || hasString(node.submitLabel);
 }
-export function rendersSearch(node: Record<string, unknown>): boolean {
-  return typeof node.name === "string";
-}
 export function rendersFilterBar(node: Record<string, unknown>): boolean {
   return hasRenderableArray(node.filters, TREE_RENDERABLE_MAX_FILTERS, isRenderableFilter);
 }

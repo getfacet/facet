@@ -1,12 +1,12 @@
 import type { ChangeEvent, CSSProperties, FormEvent, ReactNode } from "react";
 import {
-  FIELD_INPUTS,
+  INPUT_KINDS,
   MAX_FIELD_VALUE_CHARS,
   MAX_NODE_BODY_CHARS,
   MAX_NODE_LABEL_CHARS,
   type ComponentRecipe,
   type FacetNode,
-  type FieldStyle,
+  type InputStyle,
   type NodeId,
 } from "@facet/core";
 import { fieldStyle } from "./theme.js";
@@ -100,81 +100,11 @@ export function renderForm<Press>(node: FacetNode, context: BrickRenderContext<P
   );
 }
 
-export function renderSearch<Press>(
-  node: FacetNode,
-  context: BrickRenderContext<Press>,
-): ReactNode {
-  const { theme, className, inert, nodeId } = context;
-  const name = cappedString(safeOwnValue(node, "name"), MAX_FIELD_VALUE_CHARS);
-  if (name === undefined) return null;
-  const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "search", variant);
-  const style = componentBoxStyle(theme, recipe, {
-    direction: "row",
-    gap: "sm",
-    align: "end",
-    wrap: true,
-    width: "full",
-  });
-  const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
-  const placeholder = cappedString(safeOwnValue(node, "placeholder"), MAX_NODE_LABEL_CHARS);
-  const value = cappedString(safeOwnValue(node, "value"), MAX_FIELD_VALUE_CHARS);
-  const submitLabel =
-    cappedString(safeOwnValue(node, "submitLabel"), MAX_NODE_LABEL_CHARS) ?? "Search";
-  const submit = context.classifyPress(safeOwnValue(node, "onSubmit"));
-  const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
-    event.preventDefault();
-    if (!inert && submit !== null) context.dispatch(submit);
-  };
-  return (
-    <form
-      role="search"
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(style, inert)}
-      onSubmit={submit === null ? (event) => event.preventDefault() : handleSubmit}
-    >
-      <label style={{ ...partBoxStyle(theme, recipe, "control", { gap: "xs", grow: true }) }}>
-        {label === undefined ? null : (
-          <span style={componentTextStyle(theme, recipe, {}, "label")}>{label}</span>
-        )}
-        <input
-          type="search"
-          name={inert ? undefined : name}
-          placeholder={placeholder}
-          defaultValue={value}
-          data-facet-field-id={inert ? undefined : virtualFieldId(nodeId, name)}
-          style={fieldControlStyle(theme, recipe)}
-          disabled={inert ? true : undefined}
-          tabIndex={inert ? -1 : undefined}
-        />
-      </label>
-      <button
-        type="submit"
-        disabled={inert || submit === null ? true : undefined}
-        tabIndex={inert ? -1 : undefined}
-        style={rootContainmentStyle({
-          background: theme.color.accent,
-          border: 0,
-          borderRadius: theme.radius.md,
-          color: theme.color["accent-fg"],
-          cursor: inert || submit === null ? undefined : "pointer",
-          font: "inherit",
-          fontWeight: theme.fontWeight.semibold,
-          padding: `${theme.space.sm} ${theme.space.md}`,
-        })}
-      >
-        {submitLabel}
-      </button>
-    </form>
-  );
-}
-
 interface FilterRenderModel<Press> {
   readonly id: string;
   readonly name: string;
   readonly label: string;
-  readonly input: (typeof FIELD_INPUTS)[number];
+  readonly input: (typeof INPUT_KINDS)[number];
   readonly options: readonly string[];
   readonly value: unknown;
   readonly action: Press | null;
@@ -375,7 +305,7 @@ function renderBooleanField(model: FieldRenderModel, role?: "switch"): ReactNode
 
 function renderTextField(
   model: FieldRenderModel,
-  input: Exclude<(typeof FIELD_INPUTS)[number], "checkbox" | "radio" | "select" | "switch">,
+  input: Exclude<(typeof INPUT_KINDS)[number], "checkbox" | "radio" | "select" | "switch">,
 ): ReactNode {
   return (
     <label
@@ -396,7 +326,7 @@ function renderTextField(
   );
 }
 
-export function renderField<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
+export function renderInput<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
   const { theme, className, inert, nodeId } = context;
   const rawInput = safeOwnValue(node, "input");
   const input = isFieldInput(rawInput) ? rawInput : "text";
@@ -404,7 +334,7 @@ export function renderField<Press>(node: FacetNode, context: BrickRenderContext<
   const placeholder = cappedString(safeOwnValue(node, "placeholder"), MAX_NODE_LABEL_CHARS);
   const options = optionsOf(safeOwnValue(node, "options"));
   const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "field", variant);
+  const recipe = componentRecipe(theme, "input", variant);
   const wrapperStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
@@ -412,7 +342,7 @@ export function renderField<Press>(node: FacetNode, context: BrickRenderContext<
     ...fieldStyle(
       {
         ...(recipe.field ?? {}),
-        ...(styleOf<FieldStyle>(safeOwnValue(node, "style")) ?? {}),
+        ...(styleOf<InputStyle>(safeOwnValue(node, "style")) ?? {}),
       },
       theme,
     ),
