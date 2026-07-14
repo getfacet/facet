@@ -3,7 +3,7 @@ import type {
   FacetAction,
   FacetNode,
   FacetTree,
-  FieldInput,
+  InputKind,
   MediaKind,
   MediaStyle,
   NodeId,
@@ -82,13 +82,13 @@ export class TreeBuilder {
     name: string,
     label: string,
     placeholder: string,
-    input?: FieldInput,
+    input?: InputKind,
     options?: readonly string[],
   ): NodeId {
     const id = this.next();
     this.nodes[id] = {
       id,
-      type: "field",
+      type: "input",
       name,
       label,
       placeholder,

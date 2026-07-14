@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { BoxNode, FieldNode, MediaNode } from "@facet/core";
+import type { BoxNode, InputNode, MediaNode } from "@facet/core";
 import { validateTree } from "@facet/core";
 import { appearHoldScroll, brickVocabV1Demo } from "./gallery.js";
 
@@ -34,7 +34,7 @@ describe("gallery", () => {
     const tree = brickVocabV1Demo();
     const nodes = Object.values(tree.nodes);
     const boxes = nodes.filter((n): n is BoxNode => n.type === "box");
-    const fields = nodes.filter((n): n is FieldNode => n.type === "field");
+    const fields = nodes.filter((n): n is InputNode => n.type === "input");
     const media = nodes.filter((n): n is MediaNode => n.type === "media");
 
     expect(media.some((node) => node.kind === "video" && node.controls === true)).toBe(true);

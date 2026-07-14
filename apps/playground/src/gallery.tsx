@@ -5,7 +5,7 @@ import { TreeBuilder } from "./tree-builder.js";
 
 /**
  * A gallery of very different pages — all built from the SAME four bricks
- * (box/text/media/field) and token styles. No LLM: these are hand-authored to
+ * (box/text/media/input) and token styles. No LLM: these are hand-authored to
  * show the *expressive range* of the low-level spec. A real agent (composing via
  * the local `bricks.ts` helper, or seeding from `@facet/assets` defaults) would
  * emit trees exactly like these.

@@ -19,7 +19,7 @@ type View = "gallery" | "generated" | "live" | "visitors";
 
 const SUBTITLES: Record<View, string> = {
   gallery:
-    "Six very different pages — all from four bricks (box/text/media/field) + tokens. No LLM.",
+    "Six very different pages — all from four bricks (box/text/media/input) + tokens. No LLM.",
   generated:
     "The page an LLM built from Facet's closed composition → component → primitive vocabulary, validated and rendered.",
   live: "Talk to a real @facet/server: type a request and the LLM agent builds the page live over SSE.",
