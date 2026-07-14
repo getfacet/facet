@@ -798,6 +798,96 @@ describe("loadAssets", () => {
   });
 });
 
+// --- composition reference graph (load-time gate, WU-4) ----------------------
+
+// A reusable single-node child composition whose slot fills a text primitive.
+const badgeComposition = {
+  name: "badge",
+  slots: { label: "Default label" },
+  root: "text",
+  nodes: {
+    text: { id: "text", type: "text", value: "{{label}}" },
+  },
+};
+
+/** A parent composition that references `badge` via `{ use, slots }`. */
+const cardWithBadge = {
+  name: "card",
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["ref"] },
+    ref: { use: "badge", slots: { label: "Hi" } },
+  },
+};
+
+/** Two compositions that reference each other (a → b → a). */
+const cyclePairA = {
+  name: "cyc-a",
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["ref"] },
+    ref: { use: "cyc-b", slots: {} },
+  },
+};
+const cyclePairB = {
+  name: "cyc-b",
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["ref"] },
+    ref: { use: "cyc-a", slots: {} },
+  },
+};
+
+/** A parent whose reference names a composition that is not in the set. */
+const cardWithDanglingRef = {
+  name: "card",
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["ref"] },
+    ref: { use: "ghost", slots: {} },
+  },
+};
+
+describe("loadAssets composition reference graph", () => {
+  it("loads both compositions of a valid nested pair", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], compositions: [cardWithBadge, badgeComposition] }),
+      "a",
+    );
+    const names = loaded.compositions.map((c) => c.name);
+    expect(names).toContain("card");
+    expect(names).toContain("badge");
+  });
+
+  it("refuses a cyclic composition pair at load — neither registers", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], compositions: [cyclePairA, cyclePairB] }),
+      "a",
+    );
+    const names = loaded.compositions.map((c) => c.name);
+    expect(names).not.toContain("cyc-a");
+    expect(names).not.toContain("cyc-b");
+    // The refusal is surfaced through the existing issue channel, bounded.
+    expect(loaded.issues.some((i) => i.includes("cyc-a") || i.includes("cyc-b"))).toBe(true);
+  });
+
+  it("drops a composition with a dangling reference, keeping the rest", async () => {
+    const loaded = await loadAssets(
+      new MemoryAssets({
+        themes: [],
+        compositions: [cardWithDanglingRef, validComposition],
+      }),
+      "a",
+    );
+    const names = loaded.compositions.map((c) => c.name);
+    // The dangling parent is refused…
+    expect(names).not.toContain("card");
+    // …while the unrelated clean composition still loads.
+    expect(names).toContain("cta");
+    expect(loaded.issues.some((i) => i.includes("card"))).toBe(true);
+  });
+});
+
 // --- isSeedableTree truth table ----------------------------------------------
 
 describe("isSeedableTree", () => {
