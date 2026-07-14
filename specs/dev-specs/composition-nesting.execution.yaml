@@ -1,0 +1,303 @@
+# Execution Manifest: Composition Nesting (a composition can reference another composition)
+#
+# Keep synchronized with specs/dev-specs/composition-nesting.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "composition-nesting"
+spec_path: "specs/dev-specs/composition-nesting.md"
+context_evidence_path: "specs/context/composition-nesting.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; @facet/core, @facet/runtime, @facet/agent-tools, @facet/agent build; playground buildable"
+    owner: "main-agent"
+    verification: "pnpm --filter @facet/core --filter @facet/runtime --filter @facet/agent-tools --filter @facet/agent build"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "Reference shape — type, admission, and stage-rejection"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Define the closed CompositionRef, widen FacetComposition.nodes, and admit the reference shape ONLY inside composition definitions (never the live tree)."
+    module_shape:
+      decision: "preserve"
+      rationale: "Reference admission belongs in the existing composition/tree/primitive sanitizers; the new CompositionRef type co-locates with FacetComposition in composition-validation.ts (intra-core importable now; barrel export deferred to WU-3). No new module needed."
+    files:
+      - path: "packages/core/core/src/composition-validation.ts"
+        change_type: "update"
+        purpose: "Export CompositionRef; widen FacetComposition.nodes; admit {use,slots} in inspectCompositionNodes/isAllowedCompositionNodeType; sanitize ref slots via the bounded-string path; keep FORBIDDEN_COMPOSITION_FIELDS; pass allowReference."
+      - path: "packages/core/core/src/primitive-node-validation.ts"
+        change_type: "update"
+        purpose: "Add allowReference?: boolean to SanitizeNodeOptions; sanitizeNode branch returns a CompositionRef only under allowReference (only use+slots survive)."
+      - path: "packages/core/core/src/tree-validation.ts"
+        change_type: "update"
+        purpose: "Widen sanitizeNodeMap/pruneDanglingChildren/breakCycles to carry FacetNode | CompositionRef (refs are childless leaves); validateTree's option-less call stays FacetNode-only and drops a {use} node."
+      - path: "packages/core/core/src/validate.test.ts"
+        change_type: "update"
+        purpose: "RED tests: validateComposition admits a bounded {use,slots} reference; validateTree drops a stage-authored reference node."
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/validate.test.ts -t 'composition reference'"
+      target: "packages/core/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/validate.test.ts -t 'composition reference'"
+      - "pnpm exec vitest run packages/core/core/src/validate.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+      - "pnpm --filter @facet/core typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/validate.test.ts"
+        covers_dc: ["DC-005", "DC-006", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "validateTree rejects a reference node (fail-safe skip)"
+      - "No regression: packages/core/core/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Recursive reference resolution at expand"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Resolve {use} references recursively to primitive nodes during expansion, threading the reference's slots, with a depth-cap + visited-set backstop; output stays FacetNode-only."
+    module_shape:
+      decision: "preserve"
+      rationale: "Resolution belongs inside the existing expand-composition-core pipeline (validate→fill→mint); fill gains ref handling; the public options type widens additively. No new module."
+    files:
+      - path: "packages/core/core/src/expand-composition.ts"
+        change_type: "update"
+        purpose: "Add optional compositions?: readonly FacetComposition[] to ExpandCompositionOptions; result node maps stay Record<NodeId, FacetNode>."
+      - path: "packages/core/core/src/expand-composition-core.ts"
+        change_type: "update"
+        purpose: "resolveCompositionRefs inside expandCompositionInner: registry lookup, fill ref slots against outer params, recursive child expansion to primitives, splice+rewire; MAX_COMPOSITION_NEST_DEPTH + visited-set; absent registry/unresolved → drop + issue; never throw."
+      - path: "packages/core/core/src/expand-composition-fill.ts"
+        change_type: "update"
+        purpose: "Handle CompositionRef in fillComposition loop, collectSlotSources, and string-leaves helpers so outer markers in ref slots are seen and no BRICK_REGISTRY[undefined] lookup occurs."
+      - path: "packages/core/core/src/expand-composition.test.ts"
+        change_type: "update"
+        purpose: "RED tests: nested composition expands to child primitives with slots filled at the right place; depth/size over-cap guarded and never throws; absent registry drops ref safely."
+    depends_on: ["WU-1"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/expand-composition.test.ts -t 'nested composition'"
+      target: "packages/core/core/src/expand-composition.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/expand-composition.test.ts -t 'nested composition'"
+      - "pnpm exec vitest run packages/core/core/src/expand-composition.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+      - "pnpm --filter @facet/core typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/expand-composition.test.ts"
+        covers_dc: ["DC-001", "DC-004", "DC-005", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Expanded output contains only FacetNode (no reference type)"
+      - "Depth/size backstop never throws"
+      - "No regression: packages/core/core/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "Catalog reference-graph validator (load-time gate)"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add a pure catalog-level validateCompositionGraph that prunes cycle/dangling/over-depth/over-size compositions, and thread all new public names through the barrel."
+    module_shape:
+      decision: "public-surface"
+      rationale: "Catalog-wide graph validation is a NEW pure function that cannot live in the per-comp validateComposition; a dedicated composition-graph.ts module (public via validate.ts barrel) keeps it pure and dependency-free. Test co-located as composition-graph.test.ts."
+    files:
+      - path: "packages/core/core/src/composition-graph.ts"
+        change_type: "add"
+        purpose: "validateCompositionGraph(compositions): build the reference graph; prune (fixpoint) any comp on a cycle, with a dangling ref, over MAX_COMPOSITION_NEST_DEPTH, or over MAX_COMPOSITION_NODES transitive expansion; return accepted subset + bounded issues; never throw."
+      - path: "packages/core/core/src/validate.ts"
+        change_type: "update"
+        purpose: "Export CompositionRef (from composition-validation.js) and validateCompositionGraph + ValidateCompositionGraphResult (from composition-graph.js)."
+      - path: "packages/core/core/src/composition-graph.test.ts"
+        change_type: "add"
+        purpose: "RED tests: cycle/dangling/over-depth/over-size refused; hostile input never throws; clean nested pair accepted unchanged."
+    depends_on: ["WU-1"]
+    parallel_group: "serial-b"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/composition-graph.test.ts -t 'cycle'"
+      target: "packages/core/core/src/composition-graph.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/composition-graph.test.ts"
+      - "pnpm exec vitest run packages/core/core/src/index.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+      - "pnpm --filter @facet/core typecheck"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/composition-graph.test.ts"
+        covers_dc: ["DC-002", "DC-003", "DC-004", "DC-007"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "CompositionRef, validateCompositionGraph, ValidateCompositionGraphResult surface through index.ts"
+      - "Never throws on hostile input"
+      - "No regression: packages/core/core/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "Wire the graph validator into the runtime load path"
+    owner_role: "subagent"
+    packages: ["@facet/runtime"]
+    objective: "After the compose loop assembles the array, run validateCompositionGraph, replace the array with the accepted subset, and surface pruned-comp issues."
+    module_shape:
+      decision: "preserve"
+      rationale: "A single call added after the existing compose loop in assets.ts; no restructure. runtime→core direction preserved."
+    files:
+      - path: "packages/core/runtime/src/assets.ts"
+        change_type: "update"
+        purpose: "After the per-document loop (after line 375), call validateCompositionGraph(compositions), adopt the accepted subset, and pushAssetIssue each returned issue."
+      - path: "packages/core/runtime/src/assets.test.ts"
+        change_type: "update"
+        purpose: "RED tests: cyclic custom catalog refused (both dropped, bounded issue); dangling reference refused; clean nested pair loads and both remain usable."
+    depends_on: ["WU-3"]
+    parallel_group: "serial-c"
+    red_check:
+      command: "pnpm exec vitest run packages/core/runtime/src/assets.test.ts -t 'cyclic composition'"
+      target: "packages/core/runtime/src/assets.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/runtime/src/assets.test.ts -t 'cyclic composition'"
+      - "pnpm exec vitest run packages/core/runtime/src/assets.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/runtime/src"
+      - "pnpm --filter @facet/runtime typecheck"
+    test_plan:
+      - type: "integration"
+        target: "packages/core/runtime/src/assets.test.ts"
+        covers_dc: ["DC-002", "DC-003"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Cyclic/dangling catalog refused at load; clean nested pair loads"
+      - "No regression: packages/core/runtime/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "Thread the composition registry at both live call-sites"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools", "@facet/agent"]
+    objective: "Pass the loaded compositions into expandComposition from the agent-tools executor and the in-process Stage, so nested references resolve live; confirm the agent surface is unchanged."
+    module_shape:
+      decision: "preserve"
+      rationale: "Additive threading of an optional registry at two existing call-sites; no restructure. Stage.useComposition gains an optional trailing arg."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/executor-page.ts"
+        change_type: "update"
+        purpose: "Thread the compositions param into expandComposition(..., { existingIds, compositions }) at line 147; keep nodesCatalogViolation backstop."
+      - path: "packages/extensions/agent/src/stage.ts"
+        change_type: "update"
+        purpose: "Add optional compositions?: readonly FacetComposition[] argument to Stage.useComposition and thread into expandComposition options (absent → refs skip)."
+      - path: "packages/agent-stack/agent-tools/src/executor.test.ts"
+        change_type: "update"
+        purpose: "RED test: use_composition on a nested composition expands to child primitives; non-nested behavior unchanged."
+      - path: "packages/extensions/agent/src/stage.test.ts"
+        change_type: "update"
+        purpose: "RED test: useComposition with a registry resolves a nested reference; without a registry it degrades safely (never throws)."
+    depends_on: ["WU-2"]
+    parallel_group: "serial-d"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts -t 'nested composition'"
+      target: "packages/agent-stack/agent-tools/src/executor.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts -t 'nested composition'"
+      - "pnpm exec vitest run packages/extensions/agent/src/stage.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src packages/extensions/agent/src"
+      - "pnpm --filter @facet/agent-tools --filter @facet/agent typecheck"
+    test_plan:
+      - type: "integration"
+        target: "packages/agent-stack/agent-tools/src/executor.test.ts"
+        covers_dc: ["DC-001", "DC-006"]
+        action: "update"
+      - type: "integration"
+        target: "packages/extensions/agent/src/stage.test.ts"
+        covers_dc: ["DC-001", "DC-007"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Nested use_composition resolves through the executor; agent surface unchanged (no new tool)"
+      - "Stage without a registry degrades safely"
+      - "No regression: packages/agent-stack/agent-tools/src, packages/extensions/agent/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
