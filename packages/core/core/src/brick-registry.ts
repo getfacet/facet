@@ -22,7 +22,7 @@ import type { DataWarehouse, TableRow } from "./data-types.js";
 import type { PrimitiveValidator } from "./primitive-node-validation.js";
 import {
   validateBox,
-  validateField,
+  validateInput,
   validateMedia,
   validateRichText,
   validateText,
@@ -228,10 +228,10 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     fill: fillMedia,
     stringLeaves: leavesMedia,
   },
-  field: {
+  input: {
     kind: "primitive",
     established: false,
-    validate: validateField,
+    validate: validateInput,
     rendersSelf: rendersField,
     fill: fillField,
     stringLeaves: leavesField,

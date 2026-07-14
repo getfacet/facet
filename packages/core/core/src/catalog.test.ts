@@ -450,18 +450,25 @@ describe("validateCatalog", () => {
   });
 
   it("includes every v1 brick type in the default catalog", () => {
-    const types = new Set(DEFAULT_CATALOG.bricks.map((brick) => brick.type));
-    for (const type of CATALOG_BRICK_TYPES) {
+    const types = new Set<string>(DEFAULT_CATALOG.bricks.map((brick) => brick.type));
+    // "search" is retired from the catalog by the input consolidation (its type
+    // leaves CATALOG_BRICK_TYPES in WU-2); the default catalog covers all others.
+    for (const type of CATALOG_BRICK_TYPES as readonly string[]) {
+      if (type === "search") continue;
       expect(types.has(type), type).toBe(true);
     }
+    expect(types.has("search")).toBe(false);
   });
 
   it("exposes every intrinsic component in the default component catalog", () => {
     const defaultComponents = DEFAULT_CATALOG.components ?? [];
-    const types = new Set(defaultComponents.map((component) => component.type));
-    for (const type of CATALOG_COMPONENT_TYPES) {
+    const types = new Set<string>(defaultComponents.map((component) => component.type));
+    // "search" is retired from the catalog (its type leaves CATALOG_COMPONENT_TYPES in WU-2).
+    for (const type of CATALOG_COMPONENT_TYPES as readonly string[]) {
+      if (type === "search") continue;
       expect(types.has(type), type).toBe(true);
     }
+    expect(types.has("search")).toBe(false);
     expect(types.has("stat")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(DEFAULT_CATALOG, legacyDefinitionsField)).toBe(
       false,
@@ -473,12 +480,17 @@ describe("validateCatalog", () => {
       DEFAULT_CATALOG.bricks.map((brick) => [brick.type, brick.variants ?? []]),
     );
 
-    expect(DEFAULT_CATALOG.bricks).toHaveLength(CATALOG_BRICK_TYPES.length);
+    // The default catalog covers every catalog brick type EXCEPT the retired
+    // `search` node (its type leaves CATALOG_BRICK_TYPES in WU-2). Cast so the
+    // "search" filter stays legal once the literal is gone from the type.
+    expect(DEFAULT_CATALOG.bricks.length).toBe(
+      (CATALOG_BRICK_TYPES as readonly string[]).filter((t) => t !== "search").length,
+    );
     expect(variants).toEqual({
       box: [],
       text: [],
       media: ["default", "hero"],
-      field: ["default"],
+      input: ["default"],
       richtext: [],
       button: ["primary", "secondary", "danger"],
       section: ["default", "surface"],
@@ -496,7 +508,6 @@ describe("validateCatalog", () => {
       list: ["default", "compact"],
       divider: ["default"],
       form: ["default"],
-      search: ["default"],
       filterBar: ["default"],
       emptyState: ["default"],
       loading: ["default"],

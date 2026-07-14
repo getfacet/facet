@@ -26,7 +26,7 @@ import {
 } from "./tokens.js";
 import {
   BLOCK_TYPES,
-  FIELD_INPUTS,
+  INPUT_KINDS,
   MARK_KINDS,
   MEDIA_KINDS,
   OVERLAY_KINDS,
@@ -34,8 +34,8 @@ import {
   type BoxStyle,
   type FacetAction,
   type FacetNode,
-  type FieldInput,
-  type FieldStyle,
+  type InputKind,
+  type InputStyle,
   type LinkTarget,
   type Mark,
   type MarkKind,
@@ -243,13 +243,13 @@ function mediaStyle(value: unknown): MediaStyle {
   return style as MediaStyle;
 }
 
-function fieldStyle(value: unknown): FieldStyle | undefined {
+function inputStyle(value: unknown): InputStyle | undefined {
   if (!isObject(value)) return undefined;
   const width = asToken<(typeof SIZINGS)[number]>(value.width, SIZINGS);
   return width !== undefined ? { width } : undefined;
 }
 
-function fieldOptions(value: unknown): readonly string[] | undefined {
+function inputOptions(value: unknown): readonly string[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const options: string[] = [];
   for (const option of value) {
@@ -505,45 +505,45 @@ export function validateMedia(
   return node;
 }
 
-export function validateField(
+export function validateInput(
   id: string,
   raw: Record<string, unknown>,
   issues: IssueSink,
 ): FacetNode | undefined {
   const name = asString(raw.name);
   if (name === undefined) {
-    issues.push(`node "${printableKey(id)}": field has no name`);
+    issues.push(`node "${printableKey(id)}": input has no name`);
     return undefined;
   }
   const node: {
     id: string;
-    type: "field";
+    type: "input";
     name: string;
     variant?: string;
-    input?: FieldInput;
+    input?: InputKind;
     label?: string;
     placeholder?: string;
     options?: readonly string[];
-    style?: FieldStyle;
-  } = { id, type: "field", name };
+    style?: InputStyle;
+  } = { id, type: "input", name };
   const variant = asVariant(raw.variant, id, issues);
   if (variant !== undefined) node.variant = variant;
-  const input = asToken<FieldInput>(raw.input, FIELD_INPUTS);
+  const input = asToken<InputKind>(raw.input, INPUT_KINDS);
   if (input !== undefined) node.input = input;
-  const options = fieldOptions(raw.options);
+  const options = inputOptions(raw.options);
   if (options !== undefined) node.options = options;
   if ((input === "select" || input === "radio") && options === undefined) {
     issues.push(
-      `node "${printableKey(id)}": ${printableValue(input)} field has no valid options — rendered control will be empty`,
+      `node "${printableKey(id)}": ${printableValue(input)} input has no valid options — rendered control will be empty`,
     );
   }
   const label = asString(raw.label);
   if (label !== undefined) node.label = label;
   const placeholder = asString(raw.placeholder);
   if (placeholder !== undefined) node.placeholder = placeholder;
-  // Field style was silently stripped before — kit emits it and the
+  // Input style was silently stripped before — kit emits it and the
   // renderer consumes it, so sanitize it through like every other style.
-  const style = fieldStyle(raw.style);
+  const style = inputStyle(raw.style);
   if (style !== undefined) node.style = style;
   return node;
 }
