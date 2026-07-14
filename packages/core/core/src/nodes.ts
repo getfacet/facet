@@ -234,14 +234,10 @@ interface DataBound {
 }
 
 /**
- * The universal container and the only brick that holds children. Flow layout
- * only (row/col), so children stack or wrap — they cannot overlap or fall off
- * the page. A box with `onPress` IS the button primitive; a box with a border is
- * a card; nested boxes are any layout.
+ * The press-gesture pair. A box that carries these IS the button primitive —
+ * pointer/keyboard press and secondary long-press, both the same action union.
  */
-export interface BoxNode
-  extends BaseNode, Styleable<BoxStyle>, ActiveLook<BoxStyle>, ContainerFields {
-  readonly type: "box";
+interface Pressable {
   /** Makes the box pressable. Any box can be a button — or a clickable card. */
   readonly onPress?: FacetAction;
   /**
@@ -249,11 +245,10 @@ export interface BoxNode
    * hold is a secondary path; never make it the only way to critical content.
    */
   readonly onHold?: FacetAction;
-  /**
-   * Content-declared default visibility (server-written). The browser's toggle
-   * override wins after first interaction; only literal `true` hides.
-   */
-  readonly hidden?: boolean;
+}
+
+/** The bounded background-layer slot (distinct from visibility). */
+interface Layered {
   /**
    * Node-id reference to a standalone MEDIA node used as this box's background.
    * At render time the renderer resolves it READ-ONLY to a media node and paints
@@ -262,6 +257,22 @@ export interface BoxNode
    * dangling/non-media/unsafe reference paints no layer (fail-safe).
    */
   readonly backdrop?: NodeId;
+}
+
+/**
+ * The universal container and the only brick that holds children. Flow layout
+ * only (row/col), so children stack or wrap — they cannot overlap or fall off
+ * the page. A box with `onPress` IS the button primitive; a box with a border is
+ * a card; nested boxes are any layout.
+ */
+export interface BoxNode
+  extends BaseNode, Styleable<BoxStyle>, ActiveLook<BoxStyle>, ContainerFields, Pressable, Layered {
+  readonly type: "box";
+  /**
+   * Content-declared default visibility (server-written). The browser's toggle
+   * override wins after first interaction; only literal `true` hides.
+   */
+  readonly hidden?: boolean;
 }
 
 export interface TextNode extends BaseNode, Styleable<TextStyle>, ActiveLook<TextStyle>, DataBound {
