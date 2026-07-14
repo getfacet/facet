@@ -201,4 +201,8 @@ fixes can skip straight to `/verify` → `/code-review`.
 - No `any`. Prefer `unknown` + narrowing (see `validate.ts`).
 - Barrel exports only (`index.ts`); the `facet` bin is the one exception.
 - Keep the primitive base stable and small; grow intrinsic components/tokens
-  deliberately in `@facet/core`, never via raw markup.
+  deliberately in `@facet/core`, never via raw markup. See
+  [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) "The brick-vs-field growth rule
+  (two axes)" for when to add a capability as a new data brick vs a named `box`
+  concern pack (new content → new data brick; new `box` behavior → a named
+  concern pack).
