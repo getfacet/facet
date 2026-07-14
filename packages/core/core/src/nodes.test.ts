@@ -207,6 +207,7 @@ describe("node field-set preservation (regression guard)", () => {
       | "onHold"
       | "hidden"
       | "backdrop"
+      | "overlay"
       | "activeVariant"
       | "activeStyle"
       | "active"
