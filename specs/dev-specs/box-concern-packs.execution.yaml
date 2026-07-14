@@ -1,0 +1,153 @@
+# Execution Manifest: Box Concern Packs + the Brick-vs-Field Growth Rule
+#
+# Keep synchronized with specs/dev-specs/box-concern-packs.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "box-concern-packs"
+spec_path: "specs/dev-specs/box-concern-packs.md"
+context_evidence_path: "specs/context/box-concern-packs.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts; the existing nodes.test.ts field-set + dedup guards (the oracle) already pass"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "repo installed (pnpm install done); @facet/core buildable. No live server/bridge needed — compile-time + docs change only."
+    owner: "main-agent"
+    verification: "pnpm build"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+# Intentionally unmodified (accounted for so the file-to-WU mapping is complete):
+# packages/core/core/src/index.ts re-exports `* from "./nodes.js"`; the BoxNode
+# recompose keeps its exported name/shape, so no barrel edit is needed (DC-005).
+unmodified_entrypoints:
+  - path: "packages/core/core/src/index.ts"
+    reason: "BoxNode stays exported with a byte-identical resolved type; packs are module-private (not re-exported). No barrel change (DC-005)."
+
+work_units:
+  - id: "WU-1"
+    title: "Extract Pressable/Layered concern packs + pin single-source & privacy"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Recompose BoxNode from module-private Pressable/Layered packs with a byte-identical resolved field-set, and add source-AST guards pinning the single-source + privacy structure."
+    module_shape:
+      decision: "preserve"
+      rationale: "Pure type-space refactor within nodes.ts (public/private boundary unchanged: packs are module-private, non-exported; BoxNode stays the exported public type). Tests stay co-located in nodes.test.ts reusing the existing interfaceOwnMembers AST helper. No new module/file. Import direction unchanged (FacetAction/NodeId already imported)."
+    files:
+      - path: "packages/core/core/src/nodes.test.ts"
+        change_type: "update"
+        purpose: "RED-first: new describe('box concern packs …') asserts onPress/onHold/backdrop are not direct BoxNode members (single-sourced via extends), Pressable/Layered are declared without export (module-private), and type/hidden remain direct members. Existing field-set/exhaustiveness/dedup guards left intact."
+      - path: "packages/core/core/src/nodes.ts"
+        change_type: "update"
+        purpose: "Add module-private interface Pressable { onPress?; onHold? } and Layered { backdrop? }; recompose BoxNode via extends BaseNode, Styleable<BoxStyle>, ActiveLook<BoxStyle>, ContainerFields, Pressable, Layered; remove now-inherited onPress/onHold/backdrop direct members; keep type:'box' and hidden?:boolean direct; relocate JSDoc onto pack members. No new imports; BoxStyle (incl. backdropScrim) unchanged."
+    depends_on: []
+    parallel_group: "par-1"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/nodes.test.ts -t 'concern pack'"
+      target: "packages/core/core/src/nodes.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/nodes.test.ts -t 'concern pack'"
+      - "pnpm exec vitest run packages/core/core/src/nodes.test.ts"
+      - "pnpm typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src"
+      - "pnpm build"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/nodes.test.ts"
+        covers_dc: ["DC-003", "DC-005"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/nodes.test.ts"
+        covers_dc: ["DC-001"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src"
+        covers_dc: ["DC-002"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "keyof BoxNode field-set guard + discriminant/exhaustiveness guard stay green with no rewrite (DC-001)"
+      - "Pressable/Layered declared without export; type/hidden stay direct on BoxNode (DC-005, RISK-HIDDEN)"
+      - "backdropScrim unchanged in BoxStyle (RISK-SCRIM); components untouched (RISK-SCOPE)"
+      - "No regression: pnpm exec vitest run packages/core/core/src + pnpm build"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "Write the brick-vs-field growth rule (ARCHITECTURE) + AGENTS pointer"
+    owner_role: "subagent"
+    packages: ["docs"]
+    objective: "Document the two-axis brick-vs-field growth rule once in docs/ARCHITECTURE.md and add a single-line pointer from AGENTS.md Conventions, with no duplicated rule body."
+    module_shape:
+      decision: "no-split"
+      rationale: "Docs-only prose edit to two existing files; no code module involved. Rule body single-sourced in ARCHITECTURE (the file that already owns the vocabulary story); AGENTS carries only a pointer to avoid drift."
+    files:
+      - path: "docs/ARCHITECTURE.md"
+        change_type: "update"
+        purpose: "In 'Primitive Bricks And Components', add the two-axis growth rule (Axis 1: new kind of computed content box+text can't express → new native data brick; Axis 2: new way box behaves/presents → a named concern pack on box, deliberate like a token, never a loose field) + one fuzzy-middle line with overlay→Layered as the worked example."
+      - path: "AGENTS.md"
+        change_type: "update"
+        purpose: "In '## Conventions', add ONE line pointing to the ARCHITECTURE growth-rule section; no duplicated rule body."
+    depends_on: []
+    parallel_group: "par-1"
+    red_check:
+      command: "N/A"
+      target: "docs/ARCHITECTURE.md"
+      justification: "Docs-only prose change; no vitest can assert the rule's meaning. Verified by grep (rule body once in ARCHITECTURE, pointer once in AGENTS) and by /code-review + /update-docs in the final gate."
+    quick_checks:
+      - "git grep -n 'concern pack\\|brick-vs-field\\|two-axis\\|fuzzy' docs/ARCHITECTURE.md"
+      - "git grep -n 'growth rule\\|brick-vs-field\\|ARCHITECTURE' AGENTS.md"
+    no_regression_checks:
+      - "pnpm format:check"
+    test_plan:
+      - type: "docs"
+        target: "docs/ARCHITECTURE.md"
+        covers_dc: ["DC-004"]
+        action: "update"
+      - type: "docs"
+        target: "AGENTS.md"
+        covers_dc: ["DC-004"]
+        action: "update"
+    done_conditions:
+      - "Rule body (2-axis test + one fuzzy-middle line) appears exactly once, in docs/ARCHITECTURE.md (DC-004)"
+      - "AGENTS.md Conventions has one pointer line, no duplicated rule body (DC-004)"
+      - "pnpm format:check clean"
+      - "red_check N/A justification acknowledged (docs-only)"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"

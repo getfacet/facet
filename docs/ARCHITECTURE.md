@@ -198,6 +198,34 @@ paint above them and no author z-index/absolute-positioning is ever emitted onto
 content. The backdrop resolves read-only to a MEDIA node only (never recurses)
 through the existing safe-`src` gate, and it counts against the render budget.
 
+### The brick-vs-field growth rule (two axes)
+
+New capability requests hit one recurring question: does this become a **new
+brick**, or a **field on an existing brick**? Facet answers it on two axes, so
+the vocabulary grows deliberately instead of by accretion.
+
+- **Axis 1 — DATA (content).** When the ask is to show a NEW KIND of content
+  that needs renderer computation `box`+`text` cannot express — draw shapes
+  (`chart`), capture input (`field`), project rows (`table`), carry mixed inline
+  prose (`richtext`) — add a **new native data brick**. Never pile more fields
+  or modes onto `text` to fake it. `text`'s recent growth (`from`, `active`) is
+  the exception that proves the rule: those are not text-specific fields but
+  cross-cutting mixin packs (`DataBound`, `ActiveLook`) applied uniformly, so
+  `text` itself accretes no ad-hoc surface.
+- **Axis 2 — STRUCTURE (behavior/presentation).** When `box` gains a new WAY IT
+  BEHAVES OR PRESENTS — pressable, layered/overlapping, hidden — add it as a
+  **named concern pack on `box`** (a deliberate act, like adding a token), never
+  a loose ad-hoc field. `box` today composes as
+  `BaseNode & Styleable & ActiveLook & ContainerFields & Pressable & Layered`
+  (plus a direct `hidden`), each pack a bounded, named unit rather than a
+  scatter of one-off props.
+- **The fuzzy-middle tie-breaker.** If a capability needs a renderer
+  COMPUTATION that `box`+`text` cannot express, it is a **brick**; if it is just
+  a way `box` overlaps, decorates, or behaves, it is a **box concern (a pack)**.
+  Worked example: a planned `overlay` requires no new content computation — only
+  a bounded way `box` floats over its siblings — so it is a `box` concern and
+  would join the `Layered` pack, not become a new brick.
+
 ## Catalog policy
 
 `FacetCatalog` is the agent-facing usage manual for the active project. It says

@@ -84,6 +84,61 @@ describe("node interface packs — active-look/style single-source (dedup)", () 
   });
 });
 
+// --- 1b. Box concern packs (source-AST single-source) — RED ARTIFACT --------
+
+/** True iff an interface with `name` is declared in nodes.ts. */
+function interfaceExists(name: string): boolean {
+  return NODES_AST.statements.some(
+    (statement): statement is ts.InterfaceDeclaration =>
+      ts.isInterfaceDeclaration(statement) && statement.name.text === name,
+  );
+}
+
+/** True iff the interface `name` is declared with an `export` modifier. */
+function interfaceIsExported(name: string): boolean {
+  const decl = NODES_AST.statements.find(
+    (statement): statement is ts.InterfaceDeclaration =>
+      ts.isInterfaceDeclaration(statement) && statement.name.text === name,
+  );
+  return (
+    decl?.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword) ?? false
+  );
+}
+
+describe("box concern packs — Pressable/Layered single-source (dedup)", () => {
+  it("moves onPress/onHold/backdrop out of BoxNode's direct body into extends packs", () => {
+    const boxOwn = interfaceOwnMembers("BoxNode");
+    // These three now come via the Pressable/Layered packs (single-sourced), so
+    // they must NOT be declared directly inside the BoxNode body. Against the
+    // current flat BoxNode (which declares all three directly) this FAILS — the
+    // valid RED. WU-1's GREEN change flips it.
+    for (const field of ["onPress", "onHold", "backdrop"] as const) {
+      expect(
+        boxOwn,
+        `"${field}" is declared directly inside interface BoxNode; it must be single-sourced in the Pressable/Layered concern pack (extends), not repeated on the primitive`,
+      ).not.toContain(field);
+    }
+  });
+
+  it("declares Pressable and Layered as module-private (not exported) concern packs", () => {
+    for (const pack of ["Pressable", "Layered"] as const) {
+      expect(interfaceExists(pack), `interface ${pack} must be declared in nodes.ts`).toBe(true);
+      expect(
+        interfaceIsExported(pack),
+        `interface ${pack} must be module-private (declared without \`export\`)`,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps `type` and `hidden` as direct own members of BoxNode", () => {
+    const boxOwn = interfaceOwnMembers("BoxNode");
+    expect(boxOwn, "`type` must stay a direct literal member of BoxNode").toContain("type");
+    expect(boxOwn, "`hidden` must stay a direct member of BoxNode (not a pack)").toContain(
+      "hidden",
+    );
+  });
+});
+
 // --- 2. Discriminant + exhaustiveness (type-level, GREEN now) ---------------
 
 describe("node discriminated-union preservation (exhaustiveness guard)", () => {
