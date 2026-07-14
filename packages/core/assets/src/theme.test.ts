@@ -153,13 +153,13 @@ describe("DEFAULT_THEME recipes", () => {
       radius: "md",
       shadow: "sm",
     });
-    expect(DEFAULT_THEME.recipes?.field?.default?.parts?.control?.box).toEqual({
+    expect(DEFAULT_THEME.recipes?.input?.default?.parts?.control?.box).toEqual({
       bg: "bg",
       border: true,
       pad: "sm",
       radius: "sm",
     });
-    expect(DEFAULT_THEME.recipes?.field?.default?.parts?.control?.field).toEqual({
+    expect(DEFAULT_THEME.recipes?.input?.default?.parts?.control?.field).toEqual({
       width: "full",
     });
     expect(DEFAULT_THEME.recipes?.stat?.default?.text).toEqual({
@@ -213,7 +213,7 @@ describe("DEFAULT_THEME recipes", () => {
       readonly parts: readonly RecipePartName[];
     }> = [
       {
-        component: "field",
+        component: "input",
         variant: "default",
         parts: ["label", "control", "input", "helpText", "errorText"],
       },
@@ -238,7 +238,6 @@ describe("DEFAULT_THEME recipes", () => {
       { component: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
       { component: "divider", variant: "default", parts: ["label", "rule"] },
       { component: "form", variant: "default", parts: ["header", "title", "body", "actions"] },
-      { component: "search", variant: "default", parts: ["label", "control", "input"] },
       { component: "filterBar", variant: "default", parts: ["item", "label", "control", "input"] },
       { component: "emptyState", variant: "default", parts: ["title", "body"] },
       { component: "loading", variant: "default", parts: ["label"] },
