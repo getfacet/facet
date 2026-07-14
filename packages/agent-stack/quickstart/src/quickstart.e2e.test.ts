@@ -969,7 +969,7 @@ describe("quickstart E2E — quickstart component default", () => {
           "tabs",
           "table",
           "chart",
-          "field",
+          "input",
           "button",
           "metric",
           "badge",

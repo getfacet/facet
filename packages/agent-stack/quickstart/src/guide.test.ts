@@ -107,7 +107,7 @@ describe("quickstart guide", () => {
 
     expect(serialized).toHaveLength(18_381);
     expect(createHash("sha256").update(serialized).digest("hex")).toBe(
-      "5d2007fc72ee77e20ffdcc42c4c3fc203d2e56e84dff01224c6e20e5ab091b9f",
+      "793e6595cbd4c398903868af5e655f152b86fb6e8d312f6b45637d063a86a030",
     );
   });
 
