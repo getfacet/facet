@@ -313,6 +313,20 @@ actions that point outside the expanded subtree, and emits ordinary JSON Patch
 ops through the same closure buffer as hand-authored nodes. The parent must be a
 known container (`box`, `section`, `card`, or `form`), and an expansion that
 would overflow one patch batch is refused before any partial patch is emitted.
+
+A composition may also **reference another composition** — a closed
+`{ use: <name>, slots? }` node inside its `nodes` map — so shared structure stays
+DRY instead of being inlined. This is operator/catalog data only: the reference
+shape is admitted solely inside composition definitions (never in the live stage
+tree — `validateTree` drops it), its `slots` are the same bounded static strings
+as slot defaults (no expressions — the no-DSL line holds), and it expands
+recursively to **primitive/native-brick nodes only**, so a reference node can
+never reach the visitor. Because the catalog is operator-authored and loaded
+once, the whole reference graph is validated at **load** (`validateCompositionGraph`):
+a cycle, a dangling reference, or an over-depth/over-size chain refuses the
+affected compositions before any agent can use them, never a live-expansion
+hazard. The agent surface is unchanged — it still calls `use_composition` by
+name; nesting is invisible to it.
 There is **no client-side composition expansion** anywhere: `validateTree` and
 the fail-safe renderer see only normal bricks.
 
