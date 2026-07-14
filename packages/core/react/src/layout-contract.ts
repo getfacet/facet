@@ -26,9 +26,18 @@ export function rootContainmentStyle(style: CSSProperties = {}): CSSProperties {
 // legibility. `sticky` is `position:sticky` with a FRAMEWORK-owned top constant,
 // so it stays in normal flow with no author-settable offset.
 //
+// The `overlay` band (modal / drawer, below) is the ONE sanctioned POSITIVE-z
+// exception: a valid overlay floats a rendered box ABOVE flow content over a
+// scrim. It stays renderer-OWNED in the exact same way as the backdrop band —
+// `position:fixed`, the placement, the scrim tint, and the z values are all
+// FRAMEWORK constants selected purely by `kind`; the author supplies NO
+// z/inset/coordinate/position (DC-002 / DC-004). Positive z (frame above scrim,
+// both above flow) is the deliberate inverse of the backdrop's negative band.
+//
 // NOTE: stacking order is a real-browser property that string SSR tests cannot
-// verify — the z-index values below are asserted by unit tests but the visible
-// result must be confirmed by the live-journey (real-browser) tier.
+// verify — the z-index values below (negative backdrop band AND positive overlay
+// band) are asserted by unit tests but the visible result must be confirmed by
+// the live-journey (real-browser) tier.
 
 /** Framework-owned sticky offset. Agents never author a sticky offset. */
 export const STICKY_TOP = "0px";
@@ -77,6 +86,65 @@ export function scrimStyle(scrim: string): CSSProperties {
 /** `sticky` → `position:sticky` with the framework-owned top offset (in flow). */
 export function stickyStyle(): CSSProperties {
   return { position: "sticky", top: STICKY_TOP };
+}
+
+// ── Overlay band (modal / drawer): the sanctioned POSITIVE-z exception ──
+// Mirrors the backdrop band but inverts the sign: the scrim floats ABOVE flow
+// content and the frame floats ABOVE the scrim. Both z values are FRAMEWORK
+// constants shared across the presets — never author-settable (DC-004). Kept in
+// a bounded high band so the overlay clears ordinary page content without a
+// runaway z-index war.
+
+/** z-index of the overlay scrim tint: positive so it floats above flow content,
+ * but below the frame. */
+export const OVERLAY_SCRIM_Z = 100;
+/** z-index of the overlay frame: positive and ABOVE the scrim, so the floated
+ * box paints over the tint and the underlying page. */
+export const OVERLAY_FRAME_Z = 101;
+
+/** Framework-owned overlay scrim tint. The author never authors this — the
+ * modal/drawer dimming is a renderer decision, like the backdrop scrim. */
+const OVERLAY_SCRIM = "rgba(0, 0, 0, 0.5)";
+
+/**
+ * `overlay:{kind:"modal"}` → a `position:fixed`, screen-centered frame at the
+ * positive frame z. Centering is done with a framework translate, not an author
+ * offset; no author top/left/inset/z/position exists to leak (DC-002 / DC-004).
+ */
+export function modalFrameStyle(): CSSProperties {
+  return {
+    position: "fixed",
+    top: "50%",
+    left: "50%",
+    transform: "translate(-50%, -50%)",
+    zIndex: OVERLAY_FRAME_Z,
+  };
+}
+
+/**
+ * `overlay:{kind:"drawer"}` → a `position:fixed` panel pinned to the logical END
+ * (right) edge, full viewport height, at the positive frame z. The start (left)
+ * edge is intentionally left free so the drawer hugs the end edge. All values
+ * are framework constants — no author placement input (DC-002 / DC-004).
+ */
+export function drawerFrameStyle(): CSSProperties {
+  return {
+    position: "fixed",
+    top: 0,
+    right: 0,
+    bottom: 0,
+    height: "100%",
+    zIndex: OVERLAY_FRAME_Z,
+  };
+}
+
+/**
+ * The overlay scrim: a `position:fixed`, full-viewport (`inset:0`) tint that
+ * fills the screen behind the frame at the positive scrim z (just below the
+ * frame). Framework-owned tint and z — the author supplies nothing (DC-004).
+ */
+export function overlayScrimStyle(): CSSProperties {
+  return { position: "fixed", inset: 0, background: OVERLAY_SCRIM, zIndex: OVERLAY_SCRIM_Z };
 }
 
 export function scrollContainmentStyle(axis: RendererScrollAxis): CSSProperties {
