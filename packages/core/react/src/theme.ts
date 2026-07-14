@@ -27,12 +27,12 @@ import type {
   ComponentRecipeParts,
   ComponentRecipes,
   FacetTheme,
-  FieldStyle,
   FontFamily,
   FontSize,
   FontWeight,
   Gradient,
   Highlight,
+  InputStyle,
   Justify,
   Leading,
   MaxWidth,
@@ -545,7 +545,7 @@ export function mediaStyle(
 // keeps the trailing theme parameter for call-site symmetry with the other three
 // and so a future themed field affordance is a non-breaking addition.
 export function fieldStyle(
-  style: FieldStyle = {},
+  style: InputStyle = {},
   _theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
   const css: CSSProperties = {};

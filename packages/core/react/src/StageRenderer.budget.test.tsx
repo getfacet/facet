@@ -44,8 +44,8 @@ function latticeTree(levels: number, leafFields = false): FacetTree {
     nodes[`L${String(i)}_a`] = { id: `L${String(i)}_a`, type: "box", children: [...children] };
     nodes[`L${String(i)}_b`] = { id: `L${String(i)}_b`, type: "box", children: [...children] };
     if (last && leafFields) {
-      nodes[`f${String(i)}_a`] = { id: `f${String(i)}_a`, type: "field", name: "shared" };
-      nodes[`f${String(i)}_b`] = { id: `f${String(i)}_b`, type: "field", name: "shared" };
+      nodes[`f${String(i)}_a`] = { id: `f${String(i)}_a`, type: "input", name: "shared" };
+      nodes[`f${String(i)}_b`] = { id: `f${String(i)}_b`, type: "input", name: "shared" };
     }
   }
   return { root: "root", nodes };

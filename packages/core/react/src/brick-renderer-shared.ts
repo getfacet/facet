@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import {
-  FIELD_INPUTS,
+  INPUT_KINDS,
   MAX_FIELD_OPTIONS,
   MAX_FIELD_VALUE_CHARS,
   MAX_TABLE_CELL_CHARS,
@@ -62,8 +62,8 @@ export function virtualFieldId(nodeId: NodeId, name: string): string {
   return `${String(nodeId.length)}:${nodeId}${name}`;
 }
 
-export function isFieldInput(input: unknown): input is (typeof FIELD_INPUTS)[number] {
-  return typeof input === "string" && (FIELD_INPUTS as readonly string[]).includes(input);
+export function isFieldInput(input: unknown): input is (typeof INPUT_KINDS)[number] {
+  return typeof input === "string" && (INPUT_KINDS as readonly string[]).includes(input);
 }
 
 export function optionsOf(options: unknown): readonly string[] {
@@ -85,7 +85,7 @@ export function scalarString(value: unknown): string | undefined {
 export function defaultInputForOptions(
   input: unknown,
   options: readonly string[],
-): (typeof FIELD_INPUTS)[number] {
+): (typeof INPUT_KINDS)[number] {
   if (isFieldInput(input)) return input;
   return options.length > 0 ? "select" : "text";
 }

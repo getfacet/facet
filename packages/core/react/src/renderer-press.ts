@@ -62,12 +62,6 @@ export function collectFieldValues(
     if (ids === undefined) idsByName.set(cappedName, [id]);
     else ids.push(id);
   };
-  const addSearchField = (nodeId: NodeId, node: FacetNode): void => {
-    const name = cappedString(safeOwnValue(node, "name"), MAX_FIELD_VALUE_CHARS);
-    if (name !== undefined) {
-      addFieldId(name, virtualFieldId(nodeId, name));
-    }
-  };
   const addFilterFields = (nodeId: NodeId, node: FacetNode): void => {
     for (const filter of cappedArray(safeOwnValue(node, "filters"), MAX_INTRINSIC_ITEMS)) {
       const input = safeOwnValue(filter, "input");
@@ -93,7 +87,7 @@ export function collectFieldValues(
     if (node == null) {
       return;
     }
-    if (node.type === "field") {
+    if (node.type === "input") {
       // Never harvest secrets: a password field's value is excluded from
       // collection outright, so it can't ride the action event into an agent
       // (and, for the reference brain, into a third-party LLM + history replay).
@@ -110,10 +104,6 @@ export function collectFieldValues(
         if (ids === undefined) idsByName.set(name, [id]);
         else ids.push(id);
       }
-      return;
-    }
-    if (node.type === "search") {
-      addSearchField(id, node);
       return;
     }
     if (node.type === "filterBar") {
