@@ -440,6 +440,15 @@ describe("validateCatalog", () => {
     expect(run.issues).toContain("catalog could not be read safely; default catalog used");
   });
 
+  it("advertises the richtext primitive brick with guidance in the default catalog", () => {
+    const richtext = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "richtext");
+    expect(richtext, "richtext brick advertised in default catalog").toBeDefined();
+    expect(typeof richtext?.guidance).toBe("string");
+    expect(richtext?.guidance).toBeTruthy();
+    // Stays in lockstep with the closed brick-set widened by WU-1.
+    expect(CATALOG_BRICK_TYPES).toContain("richtext");
+  });
+
   it("includes every v1 brick type in the default catalog", () => {
     const types = new Set(DEFAULT_CATALOG.bricks.map((brick) => brick.type));
     for (const type of CATALOG_BRICK_TYPES) {
@@ -470,6 +479,7 @@ describe("validateCatalog", () => {
       text: [],
       media: ["default", "hero"],
       field: ["default"],
+      richtext: [],
       button: ["primary", "secondary", "danger"],
       section: ["default", "surface"],
       card: ["default", "interactive"],

@@ -114,6 +114,7 @@ describe("node discriminated-union preservation (exhaustiveness guard)", () => {
       | "text"
       | "media"
       | "field"
+      | "richtext"
       | "button"
       | "section"
       | "card"

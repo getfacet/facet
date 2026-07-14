@@ -80,6 +80,16 @@ The primitive base remains valid as fallback:
   token styles. Legacy stored `image` nodes normalize to media images.
 - `field` — a native input (`name`, `input` kind, capped `options` for
   select/radio, token styles).
+- `richtext` — a flowing block of prose carrying MIXED inline formatting the
+  single-string `text` node cannot express. A primitive LEAF: it holds its own
+  `blocks` (`paragraph`/`heading`/`listItem`/`quote`) whose `runs` flow inline,
+  each run carrying CLOSED semantic `marks` (`bold`/`italic`/`underline`/
+  `strike`/`code`/`link`) — never raw HTML/markdown/CSS; an unknown mark drops
+  and the text is kept. Heading `level` (1–3) and list `depth` (0–5) are clamped
+  to renderer-owned flow indent, never author pixels. A `link` mark targets
+  either an INTERNAL Action (the same union as `onPress`) or a gated EXTERNAL
+  `{ href }` (only http(s)/protocol-relative/local; `javascript:`/`data:` and
+  other schemes drop to inert text) — a link is navigated, never fetched.
 
 Components are split by ownership:
 

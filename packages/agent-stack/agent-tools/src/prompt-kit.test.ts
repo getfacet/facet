@@ -7,6 +7,7 @@ import {
   FACET_ASSET_PRIVACY_PROMPT,
   FACET_PAGE_BRIEF_HEADING,
   FACET_PAGE_EXPERIENCE_PROMPT,
+  FACET_POLISHED_BRICK_GUIDANCE_PROMPT,
   FACET_STATE_EDITING_PROMPT,
   FACET_TOOL_PLAYBOOK_PROMPT,
   FACET_TOOL_RESULT_CONTRACT_PROMPT,
@@ -76,6 +77,23 @@ describe("prompt-kit canonical composition surface", () => {
     expect(source).toContain("use_composition");
     expect(source).toContain("compositions");
     expect(source).not.toMatch(legacyNaming);
+  });
+});
+
+describe("prompt-kit richtext brick teaching", () => {
+  it("teaches the richtext primitive: blocks of runs, closed marks, internal + gated external link", () => {
+    const guidance = FACET_POLISHED_BRICK_GUIDANCE_PROMPT;
+    expect(guidance).toContain("richtext");
+    expect(guidance).toMatch(/blocks[^]*runs/i);
+    // The closed mark set is taught verbatim.
+    expect(guidance).toContain("bold, italic, underline, strike, code, and link");
+    // Both link target kinds: internal FacetAction and a gated external URL.
+    expect(guidance).toMatch(/internal FacetAction/i);
+    expect(guidance).toMatch(/gated external URL/i);
+    expect(guidance).toMatch(/never javascript: or data:/i);
+    // The whole teaching rides into the composed system prompt (not dead copy).
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+    expect(system).toContain(guidance);
   });
 });
 

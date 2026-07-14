@@ -22,6 +22,7 @@ import { boxStyle, resolveRecipe, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { BoxElement } from "./renderer-hold.js";
 import { renderMediaNode } from "./renderer-media.js";
+import { renderRichText } from "./render-richtext.js";
 import type { ExitRecord, RenderMode } from "./renderer-motion.js";
 import { classifyPress, type ClassifiedPress } from "./renderer-press.js";
 import {
@@ -526,6 +527,17 @@ export function renderNode({
     }
     case "media":
       return renderMediaNode(node, theme, motionClassName, inert);
+    case "richtext":
+      // Bespoke leaf path (RISK-API-3): flow blocks/runs, theme-owned mark look +
+      // renderer-owned flow indent, internal links dispatched through the SAME
+      // `onPress` writer (`dispatchBrickPress`), external hrefs re-gated client-side.
+      return renderRichText(node, {
+        theme,
+        className: motionClassName,
+        inert,
+        nodeId: id,
+        dispatch: dispatchBrickPress,
+      });
     case "field":
       return renderBrick();
     default: {

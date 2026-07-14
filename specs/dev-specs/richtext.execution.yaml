@@ -1,0 +1,516 @@
+# Execution Manifest: Rich Text Brick (richtext)
+#
+# Keep synchronized with specs/dev-specs/richtext.md (WU ids, files, deps, checks).
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "richtext"
+spec_path: "specs/dev-specs/richtext.md"
+context_evidence_path: "specs/context/richtext.md"
+
+shared_preflight:
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts"
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "runtime"
+    requirement: "pnpm install done; all packages build"
+    owner: "main-agent"
+    verification: "pnpm build"
+  - concern: "cross-package-compile-window"
+    requirement: "WU-1 widens the FacetNode union, making the mapped EXECUTOR_REGISTRY require a richtext key; full-repo pnpm typecheck is green only after WU-5. Sequence per execution order."
+    owner: "main-agent"
+    verification: "pnpm --filter @facet/agent-tools typecheck after WU-5"
+  - concern: "intra-package-vocab-sync-window"
+    requirement: "WU-1 widens the closed brick-set PRIMITIVE_BRICK_TYPES, which several sibling-owned hand-maintained vocab mirrors assert in lockstep: STAGE_SPEC/spec.test.ts + component-validation.test.ts (core, WU-1b), catalog.test.ts (core, WU-2), react brick-render-registry.test.ts (WU-4), agent-tools specs.test.ts (WU-5b), assets catalog.test.ts (WU-2b). A sibling's lockstep test is RED between WU-1 and the WU that repairs it, so each WU's no_regression command is scoped to EXCLUDE the sibling-owned vocab-sync suites it does not itself repair (exclusions listed per WU). Each WU keeps every other test in its package green; the FULL un-excluded per-package suites are enforced at the final /verify gate after all WUs land."
+    owner: "main-agent"
+    verification: "pnpm test (full suites) at /verify after all WUs"
+
+review_fix_policy:
+  batching_rule: "Group review comments into batches. Subagents apply scoped fixes + quick checks. Main agent re-runs /verify + /code-review once per batch; the full feature hard gate still runs at the end."
+  subagent_scope: "Work Unit files + quick_checks + no_regression_checks only"
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-1"
+    title: "core — richtext node model, validation, safe-href, registry"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Add the richtext node types, validateRichText sanitizer, the stricter isSafeHref gate + barrel re-export, and the exhaustive BRICK_REGISTRY entry."
+    module_shape:
+      decision: "preserve"
+      rationale: "Types live in nodes.ts and validation in primitive-node-validation.ts beside the other primitives (text/box/media/field); the registry entry and barrel re-export sit in their existing owning files. No new module — richtext mirrors the established primitive layout. Public surface (RichTextNode/Mark/BLOCK_TYPES) flows through the existing nodes.js wildcard barrel; isSafeHref through the explicit validate.ts named re-export block (matching isSafeMediaSrc)."
+    files:
+      - path: "packages/core/core/src/nodes.ts"
+        change_type: "update"
+        purpose: "Add RichTextNode, Mark, Run, RichTextBlock, BLOCK_TYPES, MARK_KINDS, LinkTarget; add richtext to PRIMITIVE_BRICK_TYPES and PrimitiveBrickNode."
+      - path: "packages/core/core/src/primitive-node-validation.ts"
+        change_type: "update"
+        purpose: "Add isSafeHref (stricter than isSafeMediaSrc), validateRichText (clamp level/depth, cap arrays + text, drop unknown marks, degrade unknown blocks, route link target via normalizeFacetAction / isSafeHref), caps constants."
+      - path: "packages/core/core/src/validate.ts"
+        change_type: "update"
+        purpose: "Add isSafeHref to the explicit named re-export block (RISK-PKG-1)."
+      - path: "packages/core/core/src/brick-registry.ts"
+        change_type: "update"
+        purpose: "Add the richtext BrickEntry (no resolve/resolveFromContent) (RISK-API-1)."
+      - path: "packages/core/core/src/richtext-validation.test.ts"
+        change_type: "add"
+        purpose: "Validation + safe-href + fail-safe + closed-set + clamp tests."
+    depends_on: []
+    parallel_group: "serial-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/richtext-validation.test.ts"
+      target: "packages/core/core/src/richtext-validation.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/richtext-validation.test.ts"
+      - "pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src --exclude '**/spec.test.ts' --exclude '**/component-validation.test.ts' --exclude '**/catalog.test.ts'"
+    no_regression_note: "The three closed-vocab lockstep suites are intentionally RED between WU-1 and their owning sync WUs (spec.test.ts + component-validation.test.ts -> WU-1b; catalog.test.ts -> WU-2). brick-registry.test.ts stays green because WU-1 adds BRICK_REGISTRY.richtext. Full core suite runs at /verify."
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/richtext-validation.test.ts"
+        covers_dc: ["DC-002", "DC-003", "DC-004", "DC-005", "DC-006", "DC-007"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "isSafeHref rejects data:/javascript:/data:image/svg+xml and every non-allowlisted scheme; accepts http(s)/// /local; exported via the barrel"
+      - "validateRichText clamps level(1-3)/depth(0-5), caps blocks/runs/marks/text, drops unknown mark kinds, degrades unknown block types to paragraph, skips text-less runs, routes internal link via normalizeFacetAction, never throws"
+      - "BRICK_REGISTRY.richtext present (no resolve); @facet/core typechecks"
+      - "No regression (scoped): pnpm exec vitest run packages/core/core/src --exclude '**/spec.test.ts' --exclude '**/component-validation.test.ts' --exclude '**/catalog.test.ts' (vocab-sync suites owned by WU-1b/WU-2; full suite at /verify)"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-1b"
+    title: "core — STAGE_SPEC + brick-set vocab sync"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Teach STAGE_SPEC the richtext JSON shape and sync the hand-maintained closed-brick-set assertions so the closed-vocabulary lockstep tests stay green after WU-1 widens PRIMITIVE_BRICK_TYPES (RISK-API-9). WU-1 is at the 5-file cap, so spec.ts + spec.test.ts (orphans the spec itself says must change) and component-validation.test.ts land here."
+    module_shape:
+      decision: "preserve"
+      rationale: "STAGE_SPEC lives in the existing spec.ts beside the other primitive brick shapes; the two tests are updated in place. No new module — this is a lockstep vocab sync forced by the 5-file cap on WU-1."
+    files:
+      - path: "packages/core/core/src/spec.ts"
+        change_type: "update"
+        purpose: "Teach STAGE_SPEC the richtext brick JSON shape (blocks/runs/marks/link kinds), mirroring the box/text/media/field primitive entries."
+      - path: "packages/core/core/src/spec.test.ts"
+        change_type: "update"
+        purpose: "Add an explicit richtext-in-STAGE_SPEC assertion; the existing PRIMITIVE_BRICK_TYPES loop (:102-104) then passes for richtext."
+      - path: "packages/core/core/src/component-validation.test.ts"
+        change_type: "update"
+        purpose: 'Update the hardcoded expect(PRIMITIVE_BRICK_TYPES).toEqual([...]) (:39) to include "richtext" (or derive the expected list) so the exhaustive brick-set equality stays green.'
+    depends_on: ["WU-1"]
+    parallel_group: "par-core"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/spec.test.ts packages/core/core/src/component-validation.test.ts"
+      target: "packages/core/core/src/spec.test.ts"
+      justification: "After WU-1, STAGE_SPEC omits the richtext shape and the toEqual expects 5 types, so both suites FAIL; WU-1b turns them GREEN."
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/spec.test.ts packages/core/core/src/component-validation.test.ts"
+      - "pnpm --filter @facet/core typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src --exclude '**/catalog.test.ts'"
+    no_regression_note: "catalog.test.ts is the sibling suite owned by WU-2 (RED until WU-2); WU-1b's own spec.test.ts + component-validation.test.ts are now green. Full core suite at /verify."
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/spec.test.ts"
+        covers_dc: ["DC-003", "DC-006"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/component-validation.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL post-WU-1/pre-WU-1b + PASS post-impl)"
+      - "STAGE_SPEC teaches the richtext shape; spec.test.ts asserts richtext in STAGE_SPEC and the PRIMITIVE_BRICK_TYPES loop passes"
+      - "component-validation.test.ts:39 brick-set equality includes richtext"
+      - "No regression (scoped): pnpm exec vitest run packages/core/core/src --exclude '**/catalog.test.ts' (catalog owned by WU-2; full suite at /verify)"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2"
+    title: "core — default catalog advertises richtext"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Advertise richtext in the hand-maintained default catalog so the reference agent is told the brick exists."
+    module_shape:
+      decision: "preserve"
+      rationale: "Pure data addition to the existing DEFAULT_PRIMITIVE_BRICKS list; test extends the existing catalog.test.ts. No module change."
+    files:
+      - path: "packages/core/core/src/catalog-defaults.ts"
+        change_type: "update"
+        purpose: "Add the richtext entry to DEFAULT_PRIMITIVE_BRICKS (RISK-API-6)."
+      - path: "packages/core/core/src/catalog.test.ts"
+        change_type: "update"
+        purpose: "Assert the default catalog advertises richtext and stays in sync with PRIMITIVE_BRICK_TYPES."
+    depends_on: ["WU-1"]
+    parallel_group: "par-core"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/catalog.test.ts -t 'richtext'"
+      target: "packages/core/core/src/catalog.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/catalog.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src --exclude '**/spec.test.ts' --exclude '**/component-validation.test.ts'"
+    no_regression_note: "The two sibling suites owned by WU-1b are RED until WU-1b; WU-2's own catalog.test.ts is now green. Full core suite at /verify."
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/catalog.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "DEFAULT_PRIMITIVE_BRICKS includes richtext with guidance copy"
+      - "No regression (scoped): pnpm exec vitest run packages/core/core/src --exclude '**/spec.test.ts' --exclude '**/component-validation.test.ts' (suites owned by WU-1b; full suite at /verify)"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-2b"
+    title: "assets — default-catalog vocab sync (test only)"
+    owner_role: "subagent"
+    packages: ["@facet/assets"]
+    objective: "Keep the @facet/assets DEFAULT_CATALOG test in lockstep with the widened brick-set. @facet/assets catalog.ts re-exports core DEFAULT_CATALOG unchanged, so no production change is needed; once WU-2 advertises richtext the hand-maintained primitive literal in the test goes RED (RISK-API-11)."
+    module_shape:
+      decision: "preserve"
+      rationale: "Test-only fix in the existing assets catalog.test.ts; @facet/assets catalog.ts is a bare re-export of core DEFAULT_CATALOG, so no production change. No module change."
+    files:
+      - path: "packages/core/assets/src/catalog.test.ts"
+        change_type: "update"
+        purpose: 'Include/derive richtext in the hardcoded primitive assertion (expect(["box","text","media","field"]).toContain(brick.type) at :34) so it accepts every PRIMITIVE_BRICK_TYPES member; the CATALOG_BRICK_TYPES loop (:27-29) passes automatically once WU-2 lands.'
+    depends_on: ["WU-2"]
+    parallel_group: "par-assets"
+    red_check:
+      command: "pnpm exec vitest run packages/core/assets/src/catalog.test.ts"
+      target: "packages/core/assets/src/catalog.test.ts"
+      justification: 'After WU-2 advertises richtext in DEFAULT_CATALOG, the richtext brick fails the hardcoded ["box","text","media","field"] literal at :34; WU-2b turns it GREEN.'
+    quick_checks:
+      - "pnpm exec vitest run packages/core/assets/src/catalog.test.ts"
+      - "pnpm --filter @facet/assets typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/assets/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/assets/src/catalog.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL post-WU-2/pre-WU-2b + PASS post-impl)"
+      - "Assets catalog.test.ts accepts richtext as a catalog primitive (no hardcoded 4-brick literal); no production change in @facet/assets"
+      - "No regression: pnpm exec vitest run packages/core/assets/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-3"
+    title: "react — renderRichText + switch case + theme + client href re-gate"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Render richtext (flow blocks/runs, theme mark look, renderer-owned flow indent, single-writer internal link dispatch, re-gated external anchor)."
+    module_shape:
+      decision: "sibling-helper"
+      rationale: "renderRichText is a new bespoke render path with non-trivial per-run/per-block logic; it goes in a new render-richtext.tsx sibling of the existing bespoke paths (private to @facet/react, imported by renderer-render.tsx) rather than inflating the renderer-render.tsx switch body, mirroring renderMediaNode. Test co-located as render-richtext.test.tsx."
+    files:
+      - path: "packages/core/react/src/render-richtext.tsx"
+        change_type: "add"
+        purpose: "renderRichText — blocks→flow, runs→inline marks, internal link dispatch via onPress, external <a href rel=noopener noreferrer> re-gated by isSafeHref, depth→renderer-owned flow indent."
+      - path: "packages/core/react/src/renderer-render.tsx"
+        change_type: "update"
+        purpose: "Add bespoke case 'richtext' (mirror case 'text', thread onPress/inert) (RISK-API-3)."
+      - path: "packages/core/react/src/theme.ts"
+        change_type: "update"
+        purpose: "Map mark kinds (bold→weight, italic, underline, strike, code→mono, link) and heading level / list depth to renderer-owned token looks + flow indent (RISK-INV-3)."
+      - path: "packages/core/react/src/render-richtext.test.tsx"
+        change_type: "add"
+        purpose: "jsdom render: happy mixed-marks + internal link dispatch, fail-safe degrade, external href gating, depth nesting."
+    depends_on: ["WU-1"]
+    parallel_group: "par-react"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/render-richtext.test.tsx"
+      target: "packages/core/react/src/render-richtext.test.tsx"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/render-richtext.test.tsx"
+      - "pnpm --filter @facet/react typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src --exclude '**/brick-render-registry.test.ts'"
+    no_regression_note: "The brick-renderer exhaustiveness guard is the sibling suite owned by WU-4 (RED between WU-1 and WU-4 because richtext is not yet in the bespoke array, RISK-API-12); WU-4 repairs it. Full react suite at /verify."
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/render-richtext.test.tsx"
+        covers_dc: ["DC-001", "DC-002", "DC-004", "DC-007"]
+        action: "new"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Mixed marks render one wrapping block; internal link dispatches through classifyPress → onPress(sourceId) (no second writer) — asserted"
+      - "External href re-gated by isSafeHref (unsafe → plain/inert); rel=noopener noreferrer; no programmatic window.open; no fetch"
+      - "List depth renders renderer-owned flow indent (no absolute/raw-pixel); nested bullets; renderer never throws"
+      - "No regression (scoped): pnpm exec vitest run packages/core/react/src --exclude '**/brick-render-registry.test.ts' (guard owned by WU-4; full suite at /verify)"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-4"
+    title: "react — motion snapshot + registry-sync guard"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Include richtext in the motion/visibility snapshot and keep the brick-renderer exhaustiveness guard green."
+    module_shape:
+      decision: "preserve"
+      rationale: "Both changes are bespoke-case additions to existing switch/list sites (renderer-motion.ts, brick-render-registry.test.ts) mirroring text/media; no new module. motion.test.ts extends the existing snapshot suite."
+    files:
+      - path: "packages/core/react/src/renderer-motion.ts"
+        change_type: "update"
+        purpose: "Add bespoke case 'richtext' (participate when ≥1 valid run) (RISK-API-5)."
+      - path: "packages/core/react/src/brick-render-registry.test.ts"
+        change_type: "update"
+        purpose: "Add 'richtext' to the hardcoded bespoke array (RISK-API-4)."
+      - path: "packages/core/react/src/motion.test.ts"
+        change_type: "update"
+        purpose: "Assert richtext participates in the snapshot (appear/re-show tracking)."
+    depends_on: ["WU-1"]
+    parallel_group: "par-react"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/brick-render-registry.test.ts packages/core/react/src/motion.test.ts"
+      target: "packages/core/react/src/brick-render-registry.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/brick-render-registry.test.ts packages/core/react/src/motion.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/brick-render-registry.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/react/src/motion.test.ts"
+        covers_dc: ["DC-001"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "Registry-sync guard green; richtext in bespoke"
+      - "richtext participates in the motion snapshot (appear + re-show tracked)"
+      - "No regression: pnpm exec vitest run packages/core/react/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5"
+    title: "agent-tools — executor entry + prompt-kit teaches richtext"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools"]
+    objective: "Restore the mapped EXECUTOR_REGISTRY (richtext primitive) and teach the prompt kit the closed richtext shape."
+    module_shape:
+      decision: "preserve"
+      rationale: "richtext ExecutorBrickEntry is added to the existing EXECUTOR_REGISTRY map beside the other primitives; prompt copy extends prompt-kit.ts. No module change. Tests extend existing suites."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/executor-registry.ts"
+        change_type: "update"
+        purpose: "Add the richtext ExecutorBrickEntry (policy.kind:'primitive', passthrough asNode) (RISK-API-2)."
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.ts"
+        change_type: "update"
+        purpose: "Teach the richtext blocks/runs/marks + closed link kinds shape."
+      - path: "packages/agent-stack/agent-tools/src/executor-registry.test.ts"
+        change_type: "update"
+        purpose: "Assert richtext is registered as a primitive."
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        change_type: "update"
+        purpose: "Assert the prompt kit mentions richtext (closed marks/blocks)."
+    depends_on: ["WU-1"]
+    parallel_group: "par-agent"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor-registry.test.ts -t 'richtext'"
+      target: "packages/agent-stack/agent-tools/src/executor-registry.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor-registry.test.ts packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+      - "pnpm --filter @facet/agent-tools typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src --exclude '**/specs.test.ts'"
+    no_regression_note: "specs.test.ts is the sibling suite owned by WU-5b (RED until WU-5b widens the appendNode node-schema copy); WU-5's own executor-registry.test.ts + prompt-kit.test.ts are green. Full agent-tools suite at /verify."
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/executor-registry.test.ts"
+        covers_dc: ["DC-003", "DC-006"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        covers_dc: ["DC-003"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "EXECUTOR_REGISTRY.richtext primitive; @facet/agent-tools typechecks"
+      - "Prompt kit teaches the closed richtext shape (marks/blocks/link kinds)"
+      - "No regression (scoped): pnpm exec vitest run packages/agent-stack/agent-tools/src --exclude '**/specs.test.ts' (suite owned by WU-5b; full suite at /verify)"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-5b"
+    title: "agent-tools — appendNode node-schema vocab sync"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools"]
+    objective: "Sync the hand-maintained appendNode NODE_SCHEMA primitive-brick copy with the widened brick-set so the schema-vocab test stays green after WU-1 (RISK-API-10). WU-5 is at 4/5 files with no room for both specs.ts + specs.test.ts, so they land in this dedicated sibling WU."
+    module_shape:
+      decision: "preserve"
+      rationale: "NODE_SCHEMA lives in the existing specs.ts; its test specs.test.ts is updated in place. No new module — a lockstep vocab sync forced by the 5-file cap on WU-5."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/specs.ts"
+        change_type: "update"
+        purpose: 'Extend the hardcoded "Primitive bricks are box, text, media, field." NODE_SCHEMA description (:8) to append richtext AFTER field, preserving the contiguous "box, text, media, field" substring so @facet/reference-agent''s prompt.test.ts:241 toContain(...) assertion stays green.'
+      - path: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        change_type: "update"
+        purpose: "Add an explicit richtext-in-schema assertion; the existing PRIMITIVE_BRICK_TYPES loop (:98) then passes for richtext."
+    depends_on: ["WU-1"]
+    parallel_group: "par-agent"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/specs.test.ts"
+      target: "packages/agent-stack/agent-tools/src/specs.test.ts"
+      justification: "After WU-1 widens PRIMITIVE_BRICK_TYPES, the loop asserts the schema JSON contains richtext, which it does not, so specs.test.ts FAILS; WU-5b turns it GREEN."
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/specs.test.ts"
+      - "pnpm --filter @facet/agent-tools typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src --exclude '**/executor-registry.test.ts' --exclude '**/prompt-kit.test.ts'"
+    no_regression_note: "The two sibling suites owned by WU-5 are RED until WU-5 adds the executor entry / prompt copy; WU-5b's own specs.test.ts is now green. Full agent-tools suite at /verify."
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        covers_dc: ["DC-003"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL post-WU-1/pre-WU-5b + PASS post-impl)"
+      - 'appendNode NODE_SCHEMA lists richtext among primitives (contiguous "box, text, media, field" substring preserved); specs.test.ts asserts it'
+      - "No regression (scoped): pnpm exec vitest run packages/agent-stack/agent-tools/src --exclude '**/executor-registry.test.ts' --exclude '**/prompt-kit.test.ts' (suites owned by WU-5; full suite at /verify)"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-6"
+    title: "reference-agent — prompt + stage summarizer"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Teach the reference prompt the richtext shape and add a stage summarizer so compaction reflects richtext content."
+    module_shape:
+      decision: "preserve"
+      rationale: "richtext summarizer is added to the existing STAGE_SUMMARY_REGISTRY map; prompt copy extends prompt.ts. No module change. Test extends the existing stage-summary suite."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/prompt.ts"
+        change_type: "update"
+        purpose: "Teach the richtext shape / when to use it."
+      - path: "packages/agent-stack/reference-agent/src/prompt/stage-summary.ts"
+        change_type: "update"
+        purpose: "Add STAGE_SUMMARY_REGISTRY.richtext flattening blocks/runs to a preview (RISK-API-8)."
+      - path: "packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts"
+        change_type: "update"
+        purpose: "Assert a richtext node summarizes to a text preview (not type=unknown)."
+    depends_on: ["WU-1"]
+    parallel_group: "par-agent"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts -t 'richtext'"
+      target: "packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts"
+      - "pnpm --filter @facet/reference-agent typecheck"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts"
+        covers_dc: ["DC-006"]
+        action: "update"
+    done_conditions:
+      - "RED→GREEN evidence reported (red_check FAIL pre-impl + PASS post-impl)"
+      - "richtext summarized as a text preview; prompt teaches the shape"
+      - "No regression: pnpm exec vitest run packages/agent-stack/reference-agent/src"
+    handoff_format:
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"

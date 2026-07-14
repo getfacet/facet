@@ -289,6 +289,57 @@ describe("validateTree", () => {
     expect(tree.nodes["ok"]).toBeDefined();
   });
 
+  it("routes a richtext node through validateTree → validateRichText (deep sanitize wired)", () => {
+    const input = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["rt"] },
+        rt: {
+          id: "rt",
+          type: "richtext",
+          blocks: [
+            // Unknown block type degrades to paragraph; text-less run skipped;
+            // unknown mark dropped (text kept); unsafe-href link mark dropped.
+            {
+              type: "totally-unknown",
+              runs: [
+                {},
+                { text: "keep", marks: [{ kind: "sparkle" }] },
+                {
+                  text: "danger",
+                  marks: [{ kind: "link", target: { href: "javascript:alert(1)" } }],
+                },
+              ],
+            },
+            // Heading level clamped into 1..3.
+            { type: "heading", level: 99, runs: [{ text: "H" }] },
+          ],
+        },
+      },
+    };
+    const { tree } = validateTree(input);
+    const rt = tree.nodes["rt"] as unknown as {
+      type: string;
+      blocks: {
+        type: string;
+        level?: number;
+        runs: { text: string; marks?: { kind: string }[] }[];
+      }[];
+    };
+    expect(rt).toBeDefined();
+    expect(rt.type).toBe("richtext");
+    // Block 0: unknown type degraded to paragraph, text-less run skipped.
+    expect(rt.blocks[0]?.type).toBe("paragraph");
+    expect(rt.blocks[0]?.runs.map((r) => r.text)).toEqual(["keep", "danger"]);
+    // Unknown mark "sparkle" dropped.
+    expect(rt.blocks[0]?.runs[0]?.marks ?? []).toEqual([]);
+    // Unsafe-href link mark dropped → the "danger" run carries no link mark.
+    expect(rt.blocks[0]?.runs[1]?.marks ?? []).toEqual([]);
+    // Heading level 99 clamped to 3 (the h3 ceiling).
+    expect(rt.blocks[1]?.type).toBe("heading");
+    expect(rt.blocks[1]?.level).toBe(3);
+  });
+
   it("does not throw or overflow on a pathologically deep tree", () => {
     const nodes: Record<string, unknown> = {
       root: { id: "root", type: "box", children: ["n0"] },
@@ -894,6 +945,9 @@ describe("validateComposition", () => {
       "loading",
       "stat",
       "box",
+      // Primitive bricks are admitted too — incl. richtext (allowlist derives
+      // from PRIMITIVE_BRICK_TYPES, so a new primitive is not silently dropped).
+      "richtext",
     ];
     const { composition, issues } = validateComposition({
       name: "component-heavy",

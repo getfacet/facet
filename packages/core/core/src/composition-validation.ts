@@ -1,4 +1,9 @@
-import { COMPONENT_NODE_TYPES, type FacetNode, type NodeId } from "./nodes.js";
+import {
+  COMPONENT_NODE_TYPES,
+  PRIMITIVE_BRICK_TYPES,
+  type FacetNode,
+  type NodeId,
+} from "./nodes.js";
 import { isComponentNodeType, isPrimitiveBrickType } from "./component-validation.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
@@ -259,9 +264,11 @@ function boundedMetadataText(value: string, field: string, issues: IssueSink): s
   return stripped.slice(0, MAX_DESCRIPTION_LENGTH);
 }
 
-// Full component vocabulary incl. legacy `stat`, so `composedOf` keeps every real node type.
+// Every real node type, so `composedOf` metadata can name any of them. Derived from
+// the canonical primitive + component lists (NOT a frozen literal) so a newly added
+// primitive brick (e.g. `richtext`) is admitted automatically instead of drifting.
 const COMPOSITION_METADATA_NODE_TYPES = [
-  ...new Set<FacetNode["type"]>(["box", "text", "media", "field", ...COMPONENT_NODE_TYPES]),
+  ...new Set<FacetNode["type"]>([...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]),
 ] as const satisfies readonly FacetNode["type"][];
 
 function metadataNodeTypeList(

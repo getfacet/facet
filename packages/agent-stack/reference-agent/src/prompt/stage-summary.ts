@@ -91,6 +91,16 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
     const alt = typeof node["alt"] === "string" ? ` altChars=${String(node["alt"].length)}` : "";
     return `type=media kind=${kind} srcChars=${String(src.length)}${alt}`;
   },
+  richtext: (node) => {
+    const blocks = Array.isArray(node["blocks"]) ? node["blocks"] : [];
+    const preview = richTextPreview(blocks);
+    return compactSummary([
+      "type=richtext",
+      `blocks=${String(blocks.length)}`,
+      `runs=${String(richTextRunCount(blocks))}`,
+      preview.length > 0 ? `text=${safeField(preview)}` : undefined,
+    ]);
+  },
   field: (node) => {
     const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
     const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
@@ -287,6 +297,34 @@ function chartPointCount(value: unknown): number {
     total += series["values"].length;
   }
   return total;
+}
+
+function richTextRunCount(blocks: readonly unknown[]): number {
+  let total = 0;
+  for (const block of blocks) {
+    if (isRecord(block) && Array.isArray(block["runs"])) total += block["runs"].length;
+  }
+  return total;
+}
+
+/**
+ * Flatten a richtext node's `blocks`/`runs` into a single leading text preview:
+ * concatenate run `text` in document order until enough characters accumulate to
+ * fill the field cap, so the summary reflects the prose instead of `type=unknown`.
+ */
+function richTextPreview(blocks: readonly unknown[]): string {
+  const parts: string[] = [];
+  let length = 0;
+  for (const block of blocks) {
+    if (!isRecord(block) || !Array.isArray(block["runs"])) continue;
+    for (const run of block["runs"]) {
+      if (!isRecord(run) || typeof run["text"] !== "string") continue;
+      parts.push(run["text"]);
+      length += run["text"].length;
+      if (length >= ID_CHAR_LIMIT) return parts.join("");
+    }
+  }
+  return parts.join("");
 }
 
 function safeNonNegativeInteger(value: number | undefined, fallback: number): number {

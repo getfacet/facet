@@ -31,7 +31,7 @@ describe("DEFAULT_CATALOG", () => {
     const primitiveTypes = new Set(PRIMITIVE_BRICK_TYPES);
     for (const brick of catalog.bricks) {
       if (primitiveTypes.has(brick.type as (typeof PRIMITIVE_BRICK_TYPES)[number])) {
-        expect(["box", "text", "media", "field"]).toContain(brick.type);
+        expect([...PRIMITIVE_BRICK_TYPES]).toContain(brick.type);
       }
     }
 

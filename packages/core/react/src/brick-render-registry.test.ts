@@ -10,13 +10,13 @@ import { BRICK_RENDERERS, brickRendererEntry } from "./brick-render-registry.js"
 describe("BRICK_RENDERERS", () => {
   it("has exactly one entry per drawable-via-renderBrick core node type", () => {
     // renderBrickNode dispatches every component type plus the `field`
-    // primitive; box/text/media are drawn by bespoke inline paths.
+    // primitive; box/text/media/richtext are drawn by bespoke inline paths.
     const expected = [...COMPONENT_NODE_TYPES, "field"].sort();
     expect(Object.keys(BRICK_RENDERERS).sort()).toEqual(expected);
   });
 
   it("plus the bespoke primitives accounts for every core node type once", () => {
-    const bespoke = ["box", "text", "media"];
+    const bespoke = ["box", "text", "media", "richtext"];
     const allCoreTypes = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES].sort();
     expect([...Object.keys(BRICK_RENDERERS), ...bespoke].sort()).toEqual(allCoreTypes);
   });
