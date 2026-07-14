@@ -222,9 +222,9 @@ the vocabulary grows deliberately instead of by accretion.
 - **The fuzzy-middle tie-breaker.** If a capability needs a renderer
   COMPUTATION that `box`+`text` cannot express, it is a **brick**; if it is just
   a way `box` overlaps, decorates, or behaves, it is a **box concern (a pack)**.
-  Worked example: `overlay` requires no new content computation — only a bounded
-  way `box` floats over its siblings — so it is a `box` concern and joins the
-  `Layered` pack, not a new brick.
+  Worked example: a planned `overlay` requires no new content computation — only
+  a bounded way `box` floats over its siblings — so it is a `box` concern and
+  would join the `Layered` pack, not become a new brick.
 
 ## Catalog policy
 
