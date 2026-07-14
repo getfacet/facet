@@ -44,7 +44,7 @@ describe("collectFieldValues — input-consolidation seam (RISK-INV-1/2)", () =>
     expect(collectFieldValues(t, "form", root)).toEqual({ email: "ada@lovelace.dev" });
   });
 
-  it("EXCLUDES an `input:\"password\"` value from the harvest (secret never leaks)", () => {
+  it('EXCLUDES an `input:"password"` value from the harvest (secret never leaks)', () => {
     const root = document.createElement("div");
     document.body.appendChild(root);
     const t = tree(
