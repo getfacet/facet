@@ -106,6 +106,12 @@ export const OVERLAY_FRAME_Z = 101;
  * modal/drawer dimming is a renderer decision, like the backdrop scrim. */
 const OVERLAY_SCRIM = "rgba(0, 0, 0, 0.5)";
 
+/** Framework-owned viewport bounds for a floated overlay frame. The frame scrolls
+ * its OWN content past these (the body is scroll-locked while open), so nothing is
+ * ever clipped out of reach. Not author-settable (DC-004). */
+const OVERLAY_MAX_HEIGHT = "90vh";
+const OVERLAY_MAX_WIDTH = "90vw";
+
 /**
  * `overlay:{kind:"modal"}` → a `position:fixed`, screen-centered frame at the
  * positive frame z. Centering is done with a framework translate, not an author
@@ -118,6 +124,13 @@ export function modalFrameStyle(): CSSProperties {
     left: "50%",
     transform: "translate(-50%, -50%)",
     zIndex: OVERLAY_FRAME_Z,
+    // Bounded to the viewport with an internal scroll region: while open the body
+    // is scroll-locked, so a modal taller/wider than the screen must scroll its
+    // OWN content (never clip it out of reach). Framework constants — no author
+    // dimension input (DC-004).
+    maxHeight: OVERLAY_MAX_HEIGHT,
+    maxWidth: OVERLAY_MAX_WIDTH,
+    overflow: "auto",
   };
 }
 
@@ -135,6 +148,11 @@ export function drawerFrameStyle(): CSSProperties {
     bottom: 0,
     height: "100%",
     zIndex: OVERLAY_FRAME_Z,
+    // Bounded width + internal vertical scroll: a drawer taller than the viewport
+    // scrolls its OWN content (the body is scroll-locked while open), and it never
+    // exceeds the viewport width. Framework constants — no author input (DC-004).
+    maxWidth: OVERLAY_MAX_WIDTH,
+    overflowY: "auto",
   };
 }
 

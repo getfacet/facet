@@ -258,13 +258,14 @@ export const OVERLAY_KINDS = ["modal", "drawer"] as const;
 export type OverlayKind = (typeof OVERLAY_KINDS)[number];
 
 /**
- * The overlay descriptor — a closed, EXTENSIBLE tagged union selecting a
- * renderer-owned floating placement. Members carry ONLY a closed `kind` name; the
+ * The overlay descriptor — a renderer-owned floating placement selected by a
+ * closed `kind` name (single-sourced from `OverlayKind`, like `MediaKind`). The
  * concrete placement / z-band lives in the renderer's layout contract, never as
- * author coordinates. Future members add as new arms (e.g. a `popover` arm with
- * an optional `anchor`) with no breaking reshape.
+ * author coordinates. Today every kind carries only `kind`; when a kind needs its
+ * own member (e.g. a future `popover` arm with an optional `anchor`) this becomes
+ * a per-arm tagged union additively, with no breaking reshape.
  */
-export type Overlay = { readonly kind: "modal" } | { readonly kind: "drawer" };
+export type Overlay = { readonly kind: OverlayKind };
 
 /** The bounded background-layer slot (distinct from visibility). */
 interface Layered {

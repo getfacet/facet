@@ -46,6 +46,49 @@ function releaseScrollLock(): void {
   }
 }
 
+// ── Topmost-only Esc dispatch ────────────────────────────────────────────────
+// Every OverlayFrame shares ONE document keydown listener + a LIFO stack of close
+// callbacks, so a single Esc closes ONLY the LAST-MOUNTED overlay — the same
+// one-at-a-time semantics as a scrim-click or the close button, and what native
+// nested modals do. A per-frame listener would collapse the whole stack on one Esc.
+// Module-level on purpose: the stack is shared across every OverlayFrame.
+// NOTE: "last-mounted" equals the visually front-most overlay when overlays open in
+// tree order (all share OVERLAY_FRAME_Z, so paint order = DOM/tree order). They can
+// diverge only if an earlier-in-tree overlay is opened AFTER a later-in-tree one —
+// then Esc closes the later-opened (behind) one. Accepted v1 edge (scrim/button
+// still close the intended one); a tighter version would key off DOM/tree order.
+const escStack: Array<() => void> = [];
+let escListenerInstalled = false;
+
+function handleGlobalEsc(event: KeyboardEvent): void {
+  if (event.key !== "Escape") {
+    return;
+  }
+  const top = escStack[escStack.length - 1];
+  if (top !== undefined) {
+    top();
+  }
+}
+
+/** Push a close callback as the new topmost; returns a remover for unmount. */
+function pushEsc(close: () => void): () => void {
+  escStack.push(close);
+  if (!escListenerInstalled && typeof document !== "undefined") {
+    document.addEventListener("keydown", handleGlobalEsc);
+    escListenerInstalled = true;
+  }
+  return () => {
+    const index = escStack.lastIndexOf(close);
+    if (index !== -1) {
+      escStack.splice(index, 1);
+    }
+    if (escStack.length === 0 && escListenerInstalled && typeof document !== "undefined") {
+      document.removeEventListener("keydown", handleGlobalEsc);
+      escListenerInstalled = false;
+    }
+  };
+}
+
 // Framework-owned close-button chrome. No author input — the overlay author
 // supplies only the `kind`; the renderer owns the scrim, the frame placement,
 // AND this close affordance.
@@ -98,19 +141,11 @@ export function OverlayFrame({ kind, onClose, children }: OverlayFrameProps): Re
     }
     acquireScrollLock();
 
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") {
-        onCloseRef.current();
-      }
-    };
-    if (typeof document !== "undefined") {
-      document.addEventListener("keydown", onKeyDown);
-    }
+    // Register as the new topmost for Esc (calls the CURRENT onClose via the ref).
+    const removeEsc = pushEsc((): void => onCloseRef.current());
 
     return () => {
-      if (typeof document !== "undefined") {
-        document.removeEventListener("keydown", onKeyDown);
-      }
+      removeEsc();
       releaseScrollLock();
       // Restore focus on unmount (best-effort).
       try {

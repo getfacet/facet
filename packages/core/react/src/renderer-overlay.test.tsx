@@ -295,6 +295,58 @@ describe("overlay stacking: two visible overlays (DC-006)", () => {
   });
 });
 
+const twoOverlayTree = (): FacetTree =>
+  tree({
+    root: node({ id: "root", type: "box", children: ["first", "second"] }),
+    first: node({ id: "first", type: "box", overlay: { kind: "modal" }, children: ["ft"] }),
+    ft: text("ft", "First overlay"),
+    second: node({ id: "second", type: "box", overlay: { kind: "drawer" }, children: ["st"] }),
+    st: text("st", "Second overlay"),
+  });
+
+describe("overlay Esc closes ONLY the topmost (nested overlays)", () => {
+  it("one Esc closes the last-opened overlay, leaving the one below open; a second Esc closes it", () => {
+    render(<StageRenderer tree={twoOverlayTree()} onAction={vi.fn()} />);
+    expect(screen.getAllByRole("dialog")).toHaveLength(2);
+
+    // A single Esc must close ONLY the topmost (last in tree/stack order = "second"),
+    // matching scrim/button one-at-a-time semantics — not collapse the whole stack.
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    const remaining = screen.getAllByRole("dialog");
+    expect(remaining).toHaveLength(1);
+    expect(remaining[0]?.textContent).toContain("First overlay");
+
+    // The next Esc closes the now-topmost ("first").
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+});
+
+describe("overlay body scroll-lock is ref-counted across the stack", () => {
+  it("stays locked until the LAST overlay closes, then restores the prior overflow", () => {
+    expect(document.body.style.overflow).toBe("");
+    render(<StageRenderer tree={twoOverlayTree()} onAction={vi.fn()} />);
+    // Two overlays open → body scroll-locked.
+    expect(document.body.style.overflow).toBe("hidden");
+
+    // Closing the topmost leaves one overlay open → still locked (ref-count > 0).
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(document.body.style.overflow).toBe("hidden");
+
+    // Closing the last overlay → lock released, prior overflow restored.
+    act(() => {
+      document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    });
+    expect(document.body.style.overflow).toBe("");
+  });
+});
+
 describe("overlay idempotent close (RISK-INV-4)", () => {
   it("rapid double Esc leaves the overlay HIDDEN — no reopen", () => {
     const onViewSnapshot = vi.fn();

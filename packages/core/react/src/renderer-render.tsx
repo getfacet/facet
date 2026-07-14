@@ -77,14 +77,21 @@ type OverlayClose = (boxId: NodeId) => void;
  * malformed/absent overlay yields `undefined` ⇒ the box renders inline (DC-003).
  */
 function readOverlayKind(node: unknown): OverlayKind | undefined {
-  const overlay = (node as { readonly overlay?: unknown }).overlay;
-  if (typeof overlay !== "object" || overlay === null) {
+  // Guarded like the validator's sanitizeOverlay: the raw live path never passes
+  // through validateTree, so a throwing getter on `.overlay`/`.kind` must degrade
+  // to inline, never propagate out of the box case (fail-safe).
+  try {
+    const overlay = (node as { readonly overlay?: unknown }).overlay;
+    if (typeof overlay !== "object" || overlay === null) {
+      return undefined;
+    }
+    const kind = (overlay as { readonly kind?: unknown }).kind;
+    return (OVERLAY_KINDS as readonly string[]).includes(kind as string)
+      ? (kind as OverlayKind)
+      : undefined;
+  } catch {
     return undefined;
   }
-  const kind = (overlay as { readonly kind?: unknown }).kind;
-  return (OVERLAY_KINDS as readonly string[]).includes(kind as string)
-    ? (kind as OverlayKind)
-    : undefined;
 }
 
 interface RenderArgs {

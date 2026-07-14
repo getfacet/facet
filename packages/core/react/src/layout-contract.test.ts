@@ -44,6 +44,13 @@ describe("modalFrameStyle", () => {
     expect(style.right).toBeUndefined();
     expect(style.bottom).toBeUndefined();
   });
+
+  it("is bounded to the viewport with an internal scroll region (never clips under scroll-lock)", () => {
+    const style = modalFrameStyle();
+    expect(style.maxHeight).toBeDefined();
+    expect(style.maxWidth).toBeDefined();
+    expect(style.overflow).toBe("auto");
+  });
 });
 
 describe("drawerFrameStyle", () => {
@@ -64,6 +71,12 @@ describe("drawerFrameStyle", () => {
   it("does not pin the logical start (left) edge", () => {
     const style = drawerFrameStyle();
     expect(style.left).toBeUndefined();
+  });
+
+  it("bounds its width and scrolls its own overflow (never clips under scroll-lock)", () => {
+    const style = drawerFrameStyle();
+    expect(style.maxWidth).toBeDefined();
+    expect(style.overflowY).toBe("auto");
   });
 });
 
