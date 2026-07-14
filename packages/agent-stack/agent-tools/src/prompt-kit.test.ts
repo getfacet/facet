@@ -137,7 +137,7 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(system).toMatch(/intrinsic components with catalog-advertised variants/i);
     expect(system).toMatch(/primitive fallback/i);
     expect(system).toMatch(/product-quality defaults/i);
-    expect(system).toMatch(/field for raw inputs/i);
+    expect(system).toMatch(/input for raw inputs/i);
     expect(system).toMatch(/button for actions/i);
     expect(system).toMatch(/tabs\/nav for local navigation/i);
     expect(system).toMatch(/editBeforeAppend is true/i);
@@ -162,6 +162,19 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(system).not.toContain("visitor-private-id");
     expect(compositionsSection).not.toContain('"nodes"');
     expect(compositionsSection).not.toContain('"root"');
+  });
+
+  it("DC-005: teaches the input+button submit composition (collect at the input's container) and drops the standalone search node", () => {
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+    // input replaces field as the raw-input primitive.
+    expect(system).toMatch(/input for raw inputs/i);
+    // RISK-INV-3: search+submit is an input+button composition whose button
+    // onPress "collect" points at the container holding the input.
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(/search box with a submit/i);
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(/collect/i);
+    // No standalone search node is taught in the component/primitive guidance.
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).not.toMatch(/form, search, filterBar/);
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).not.toMatch(/form\/search\/filterBar/);
   });
 
   it("teaches append_node against all container parents, not only boxes", () => {

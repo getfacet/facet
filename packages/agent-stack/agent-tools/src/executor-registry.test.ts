@@ -87,6 +87,34 @@ describe("richtext", () => {
   });
 });
 
+// WU-5 (DC-001/DC-003) — the former `field` primitive brick is renamed to
+// `input` and the `search` component is removed. The registry must expose an
+// `input` primitive entry (name-gated asNode, one-line describe) and NO `search`
+// entry — a still-typed `search` node degrades gracefully via describeNode.
+describe("input (field renamed) + search removed", () => {
+  it("DC-001: input is registered as a primitive brick, not a component", () => {
+    expect(EXECUTOR_REGISTRY.input.policy.kind).toBe("primitive");
+    expect(PRIMITIVE_NODE_TYPES.has("input")).toBe(true);
+    expect(COMPONENT_NODE_TYPE_SET.has("input")).toBe(false);
+  });
+
+  it("DC-001: input asNode requires a string name and describe reports it", () => {
+    const ok = EXECUTOR_REGISTRY.input.asNode({ id: "q", type: "input", name: "query" });
+    expect("facetNode" in ok).toBe(true);
+    const bad = EXECUTOR_REGISTRY.input.asNode({ id: "q", type: "input" });
+    expect("error" in bad).toBe(true);
+    const node = { id: "q", type: "input", name: "query" } as unknown as FacetNode;
+    expect(describeNode(node, undefined)).toBe('q input name="query"');
+  });
+
+  it("DC-003: the search node type is gone from the registry and degrades gracefully", () => {
+    expect(Object.hasOwn(EXECUTOR_REGISTRY, "search")).toBe(false);
+    const searchNode = { id: "s", type: "search", name: "q" } as unknown as FacetNode;
+    expect(() => describeNode(searchNode, undefined)).not.toThrow();
+    expect(describeNode(searchNode, undefined)).toBe("type=search");
+  });
+});
+
 // `describeNode` reads a shadow node whose `type` `isTreeShaped` never validated,
 // so it can be an Object.prototype member name. A bare `EXECUTOR_REGISTRY[type]`
 // returned the inherited `Object` FUNCTION and `.describe(...)` on it threw; the
