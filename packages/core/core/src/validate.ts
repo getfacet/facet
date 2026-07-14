@@ -9,9 +9,16 @@ export type { ValidationResult } from "./tree-validation.js";
 export { validateComposition } from "./composition-validation.js";
 export type {
   CompositionMetadata,
+  CompositionRef,
   CompositionValidationResult,
   FacetComposition,
 } from "./composition-validation.js";
+export {
+  MAX_COMPOSITION_GRAPH_NEST_DEPTH,
+  MAX_COMPOSITION_GRAPH_NODES,
+  validateCompositionGraph,
+} from "./composition-graph.js";
+export type { ValidateCompositionGraphResult } from "./composition-graph.js";
 export {
   MAX_CHART_POINTS,
   MAX_CHART_SERIES,

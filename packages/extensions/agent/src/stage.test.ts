@@ -39,6 +39,40 @@ const LABEL_COMPOSITION: FacetComposition = {
   nodes: { label: { id: "label", type: "text", value: "Inside" } },
 };
 
+// A composition whose subtree nests a `{ use }` reference to another composition.
+// Resolving the reference to primitives requires the loaded registry to be
+// threaded into expandComposition; absent a registry it must degrade (drop), not
+// leak a residual reference into the patch.
+const BADGE_COMPOSITION: FacetComposition = {
+  name: "badge",
+  root: "chip",
+  nodes: { chip: { id: "chip", type: "text", value: "Chip" } },
+};
+
+const CARD_WITH_BADGE_COMPOSITION: FacetComposition = {
+  name: "card",
+  root: "card",
+  nodes: {
+    card: { id: "card", type: "box", children: ["title", "badgeRef"] },
+    title: { id: "title", type: "text", value: "Header" },
+    badgeRef: { use: "badge" },
+  },
+};
+
+/** The node objects an `add /nodes/<id>` patch introduces (child-ref adds carry a
+ * string value and are excluded). */
+function addedNodeValues(
+  patches: readonly { op: string; value?: unknown }[],
+): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  for (const op of patches) {
+    if (op.op === "add" && typeof op.value === "object" && op.value !== null) {
+      out.push(op.value as Record<string, unknown>);
+    }
+  }
+  return out;
+}
+
 describe("Stage — ergonomic CLI over RFC 6902", () => {
   it("append emits an add-node op plus an add-child-ref op", () => {
     const stage = new Stage();
@@ -251,6 +285,44 @@ describe("Stage — ergonomic CLI over RFC 6902", () => {
         },
         { op: "add", path: "/nodes/root/children/-", value: result.root },
       ]);
+    });
+
+    it("resolves a nested composition reference to child primitives with a registry (nested composition)", () => {
+      const stage = new Stage();
+      const result = stage.useComposition(CARD_WITH_BADGE_COMPOSITION, {}, { parent: "root" }, [
+        CARD_WITH_BADGE_COMPOSITION,
+        BADGE_COMPOSITION,
+      ]);
+
+      expect(result.root).toBeDefined();
+      const message = stage.flush()[0];
+      if (message?.kind !== "patch") throw new Error("expected patch");
+      const nodes = addedNodeValues(message.patches);
+      // The nested badge reference expanded to its own text primitive (the chip).
+      expect(nodes.some((node) => node["type"] === "text" && node["value"] === "Chip")).toBe(true);
+      // No residual CompositionRef ({ use } without a brick type) reached the patch.
+      for (const node of nodes) {
+        expect(typeof node["use"] === "string" && node["type"] === undefined).toBe(false);
+      }
+    });
+
+    it("degrades safely without a registry — a nested reference is dropped, never thrown", () => {
+      const stage = new Stage();
+      let result: ReturnType<Stage["useComposition"]> | undefined;
+      expect(() => {
+        result = stage.useComposition(CARD_WITH_BADGE_COMPOSITION, {}, { parent: "root" });
+      }).not.toThrow();
+      // The card itself still expands; only the unresolved nested reference drops.
+      expect(result?.root).toBeDefined();
+      const message = stage.flush()[0];
+      if (message?.kind !== "patch") throw new Error("expected patch");
+      const nodes = addedNodeValues(message.patches);
+      // Badge could not resolve (no registry) so no chip primitive appears...
+      expect(nodes.some((node) => node["value"] === "Chip")).toBe(false);
+      // ...and no residual CompositionRef leaked into the patch either.
+      for (const node of nodes) {
+        expect(typeof node["use"] === "string" && node["type"] === undefined).toBe(false);
+      }
     });
 
     it("coalesces with pending edits and flushes before say", () => {

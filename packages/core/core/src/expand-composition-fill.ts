@@ -29,7 +29,13 @@ import type {
 } from "./nodes.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { SLOT_MARKER_RE, type FacetComposition } from "./validate.js";
+import type { CompositionRef } from "./composition-validation.js";
 import { BRICK_REGISTRY } from "./brick-registry.js";
+
+/** A composition-reference node has a `use` and no brick `type`. */
+function isRef(node: FacetNode | CompositionRef): node is CompositionRef {
+  return !("type" in node);
+}
 
 const EMPTY_SLOTS: Readonly<Record<string, string>> = Object.freeze(
   Object.create(null),
@@ -40,9 +46,16 @@ export function fillComposition(
   params: Readonly<Record<string, unknown>>,
   issues: IssueSink,
 ) {
-  const nodes: Record<string, FacetNode> = {};
+  const nodes: Record<string, FacetNode | CompositionRef> = {};
   for (const [id, node] of Object.entries(composition.nodes)) {
     const defaults = composition.slots ?? EMPTY_SLOTS;
+    if (isRef(node)) {
+      // A reference's `slots` are the child's params — fill them against the
+      // OUTER composition's params/defaults first so an outer marker like
+      // `{{status}}` resolves before the referenced child expands.
+      nodes[id] = fillCompositionRef(node, defaults, params, issues);
+      continue;
+    }
     nodes[id] = fillNodeActions(fillNode(node, defaults, params, issues), defaults, params, issues);
   }
   const filled: {
@@ -51,7 +64,7 @@ export function fillComposition(
     metadata?: typeof composition.metadata;
     slots?: Readonly<Record<string, string>>;
     root: NodeId;
-    nodes: Record<string, FacetNode>;
+    nodes: Record<string, FacetNode | CompositionRef>;
   } = { name: composition.name, root: composition.root, nodes };
   if (composition.description !== undefined) filled.description = composition.description;
   if (composition.metadata !== undefined) filled.metadata = composition.metadata;
@@ -68,6 +81,26 @@ function fillNode(
   // Registry lookup replaces the former per-type switch; each brick declares its
   // `fill` handler in `brick-registry.ts`.
   return BRICK_REGISTRY[node.type].fill(node, defaults, params, issues);
+}
+
+/**
+ * Fill a composition reference's slot ARGUMENTS against the outer
+ * params/defaults (the same `fillString` path a brick string uses), so an outer
+ * marker carried into a reference slot resolves before the child expands. Only
+ * `use` and (filled) `slots` survive — the shape stays a closed `CompositionRef`.
+ */
+function fillCompositionRef(
+  ref: CompositionRef,
+  defaults: Readonly<Record<string, string>>,
+  params: Readonly<Record<string, unknown>>,
+  issues: IssueSink,
+): CompositionRef {
+  if (ref.slots === undefined) return ref;
+  const slots: Record<string, string> = {};
+  for (const [name, value] of Object.entries(ref.slots)) {
+    slots[name] = fillString(value, defaults, params, issues);
+  }
+  return { use: ref.use, slots };
 }
 
 // Per-brick `fill` handlers — the former `fillNode` switch cases, verbatim. The
@@ -403,6 +436,9 @@ function fillString(
 export function collectSlotSources(composition: FacetComposition): ReadonlyMap<string, NodeId> {
   const sources = new Map<string, NodeId>();
   for (const [id, node] of Object.entries(composition.nodes)) {
+    // A reference contributes its (as-authored) slot values via `nodeStringLeaves`
+    // so an outer marker carried into a reference slot maps to the reference id —
+    // which becomes the child subtree root after resolution (RISK-INV-2).
     for (const value of [...nodeStringLeaves(node), ...nodeActionStrings(node)]) {
       const name = SLOT_MARKER_RE.exec(value)?.[1];
       if (name !== undefined && !sources.has(name)) sources.set(name, id);
@@ -431,7 +467,9 @@ function nodeActions(node: FacetNode): readonly FacetAction[] {
  * (toggle `target`, agent `collect`), so the unfilled-marker refusal gate
  * sees markers in ref fields too.
  */
-export function nodeActionStrings(node: FacetNode): readonly string[] {
+export function nodeActionStrings(node: FacetNode | CompositionRef): readonly string[] {
+  // A reference carries no actions (only `use`/`slots`) — no marker to surface.
+  if (isRef(node)) return [];
   const out: string[] = [];
   for (const action of nodeActions(node)) {
     if (action.kind === "navigate") {
@@ -505,7 +543,11 @@ function fillNodeActions(
   return next ?? node;
 }
 
-export function nodeStringLeaves(node: FacetNode): readonly string[] {
+export function nodeStringLeaves(node: FacetNode | CompositionRef): readonly string[] {
+  // A reference's fillable strings are its slot values — return them (never a
+  // `BRICK_REGISTRY[undefined]` lookup) so the unfilled-marker gate and
+  // `collectSlotSources` see markers carried into reference slots too.
+  if (isRef(node)) return Object.values(node.slots ?? {});
   // Registry lookup replaces the former per-type switch; each brick declares its
   // `stringLeaves` handler in `brick-registry.ts`.
   return BRICK_REGISTRY[node.type].stringLeaves(node);

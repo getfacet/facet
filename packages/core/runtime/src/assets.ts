@@ -1,6 +1,7 @@
 import {
   validateCatalog,
   validateComposition,
+  validateCompositionGraph,
   validateTheme,
   validateTree,
   type FacetComposition,
@@ -374,6 +375,25 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
     if (raw.ok) loadComposition(raw.value, false);
   }
 
+  // Catalog-level reference-graph gate — the PRIMARY safety pass for composition
+  // nesting. Per-composition validateComposition (above) can only see ONE
+  // document; it cannot see the `{ use }` reference GRAPH. Now that the full,
+  // deduped set is assembled, refuse (drop) any composition on a cycle, with a
+  // dangling reference, or past the depth/size bounds, and surface each refusal
+  // through the same bounded issue channel. Pure + fail-safe (never throws) — a
+  // bad graph refuses those compositions while the rest load normally.
+  let acceptedCompositions: readonly FacetComposition[] = compositions;
+  try {
+    const graph = validateCompositionGraph(compositions);
+    acceptedCompositions = graph.accepted;
+    for (const note of graph.issues) pushAssetIssue(issues, note);
+  } catch {
+    // validateCompositionGraph is contractually fail-safe, but keep boot's
+    // "Never throws" guarantee true even if a future change regresses it: on any
+    // throw, keep the individually-validated set rather than crash.
+    pushAssetIssue(issues, "composition reference graph skipped: validation threw");
+  }
+
   // `validateCatalog(undefined)` returns a FRESH default catalog per call and
   // never throws — the single source of a default clone, so runtime no longer
   // duplicates core's private clone helpers (which had to be edited in lockstep).
@@ -426,7 +446,7 @@ export async function loadAssets(store: AssetsStore, agentId: string): Promise<L
 
   const loaded: { -readonly [K in keyof LoadedAssets]: LoadedAssets[K] } = {
     themes: Object.freeze(themes),
-    compositions: Object.freeze(compositions),
+    compositions: Object.freeze(acceptedCompositions),
     catalog,
     issues,
   };

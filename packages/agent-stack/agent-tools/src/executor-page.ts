@@ -150,6 +150,10 @@ export function executeUseComposition(
     { parent },
     {
       existingIds: Object.keys(shadow.nodes),
+      // Thread the loaded registry so a nested `{ use }` reference resolves to
+      // primitives; the `nodesCatalogViolation` re-check below stays the
+      // defensive backstop for any RESIDUAL unresolved reference.
+      compositions,
     },
   );
   if (expanded.root === undefined) {
@@ -161,6 +165,26 @@ export function executeUseComposition(
       shadow,
       expanded.issues,
       "Fix the composition params or choose another composition, then retry use_composition.",
+    );
+  }
+
+  // Catalog-INDEPENDENT residual-reference backstop (RISK-INV-1), symmetric with
+  // the Stage path's `isResidualReference`: core resolves every `{ use }` to
+  // primitives at expand, so this never fires — but `nodesCatalogViolation` below
+  // is inert when `catalog === undefined`, so a residual reference must be caught
+  // here regardless of catalog presence, never emitted into the patch.
+  const residualRef = Object.values(expanded.nodes).find((node) => {
+    const raw = node as { readonly type?: unknown; readonly use?: unknown };
+    return raw.type === undefined && typeof raw.use === "string";
+  });
+  if (residualRef !== undefined) {
+    return errorResult(
+      "use_composition",
+      "invalid_composition",
+      `error: use_composition — expansion of "${name}" left an unresolved composition reference; refused`,
+      shadow,
+      expanded.issues,
+      "Ensure every referenced composition is in the catalog, then retry use_composition.",
     );
   }
 

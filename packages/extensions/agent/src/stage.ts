@@ -32,6 +32,18 @@ function dataPath(name: string): string {
 }
 
 /**
+ * Whether an expanded node is a RESIDUAL composition reference — a value carrying
+ * a string `use` but no brick `type`. Core resolves every `{ use }` reference to
+ * primitives at expand time, so this should never fire; it is the defensive
+ * backstop keeping a reference out of the stage patch (RISK-INV-1), symmetric
+ * with the executor's `nodesCatalogViolation` re-check.
+ */
+function isResidualReference(node: FacetNode): boolean {
+  const raw = node as { readonly type?: unknown; readonly use?: unknown };
+  return raw.type === undefined && typeof raw.use === "string";
+}
+
+/**
  * The agent's control surface for its page — the "CLI" the agent drives to build
  * and mutate the stage as a conversation unfolds.
  *
@@ -76,15 +88,35 @@ export class Stage {
     return this;
   }
 
-  /** Expand a resolved composition under a known parent as ordinary patch ops. */
+  /**
+   * Expand a resolved composition under a known parent as ordinary patch ops.
+   *
+   * The optional `compositions` registry is the set a nested `{ use }` reference
+   * is resolved against — the caller threads its loaded compositions so a nested
+   * reference expands to primitives. Absent a registry, an unresolved reference
+   * fail-safe-skips (dropped by core, never thrown). Either way a residual
+   * reference can never reach the patch: `isResidualReference` is the defensive
+   * backstop symmetric with the executor's `nodesCatalogViolation` re-check.
+   */
   useComposition(
     composition: FacetComposition | undefined,
     params: CompositionParams,
     at: ExpandAt,
+    compositions?: readonly FacetComposition[],
   ): UseCompositionResult {
     if (!this.knownContainerIds.has(at.parent)) return { slots: {}, ids: {} };
-    const expanded = expandComposition(composition, params, at, { existingIds: this.knownIds });
+    const expanded = expandComposition(composition, params, at, {
+      existingIds: this.knownIds,
+      ...(compositions !== undefined ? { compositions } : {}),
+    });
     if (expanded.root === undefined) return { slots: expanded.slots, ids: expanded.ids };
+
+    // Backstop: a residual `{ use }` reference must NEVER land on the stage. Core
+    // resolves references to primitives at expand time; if any survived, refuse
+    // the whole expansion (fail-safe no-op) rather than leak it into the patch.
+    if (Object.values(expanded.nodes).some(isResidualReference)) {
+      return { slots: {}, ids: {} };
+    }
 
     const patchOps = Object.keys(expanded.nodes).length + 1;
     if (this.emittedPatchOps + this.pending.length + patchOps > MAX_PATCH_OPS) {
