@@ -1,4 +1,4 @@
-import type { FacetAction, FieldInput, NodeId } from "./nodes.js";
+import type { FacetAction, InputKind, NodeId } from "./nodes.js";
 import type { TableColumn, TableRow } from "./data-types.js";
 
 export * from "./data-types.js";
@@ -19,7 +19,6 @@ export const INTRINSIC_COMPONENT_TYPES = [
   "list",
   "divider",
   "form",
-  "search",
   "filterBar",
   "emptyState",
   "loading",
@@ -223,22 +222,10 @@ export interface FormNode {
   readonly children: readonly NodeId[];
 }
 
-export interface SearchNode {
-  readonly id: NodeId;
-  readonly type: "search";
-  readonly name: string;
-  readonly label?: string;
-  readonly placeholder?: string;
-  readonly value?: string;
-  readonly submitLabel?: string;
-  readonly variant?: string;
-  readonly onSubmit?: FacetAction;
-}
-
 export interface FilterBarFilter {
   readonly name: string;
   readonly label: string;
-  readonly input?: FieldInput;
+  readonly input?: InputKind;
   readonly options?: readonly string[];
   readonly value?: string | number | boolean;
 }
@@ -284,7 +271,6 @@ export type IntrinsicComponentNode =
   | ListNode
   | DividerNode
   | FormNode
-  | SearchNode
   | FilterBarNode
   | EmptyStateNode
   | LoadingNode;

@@ -114,7 +114,7 @@ function remapNode(node: FacetNode, id: NodeId, ids: Readonly<Record<NodeId, Nod
       return { ...node, id };
     case "media":
       return { ...node, id };
-    case "field":
+    case "input":
       return { ...node, id };
     case "button": {
       const next = { ...node, id };
@@ -148,13 +148,6 @@ function remapNode(node: FacetNode, id: NodeId, ids: Readonly<Record<NodeId, Nod
           .map((child) => ids[child])
           .filter((child): child is string => child !== undefined),
       };
-      const onSubmit = node.onSubmit === undefined ? undefined : remapAction(node.onSubmit, ids);
-      if (onSubmit !== undefined) next.onSubmit = onSubmit;
-      else delete next.onSubmit;
-      return next;
-    }
-    case "search": {
-      const next = { ...node, id };
       const onSubmit = node.onSubmit === undefined ? undefined : remapAction(node.onSubmit, ids);
       if (onSubmit !== undefined) next.onSubmit = onSubmit;
       else delete next.onSubmit;

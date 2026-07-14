@@ -369,7 +369,6 @@ describe("validateTree component nodes", () => {
             "keyValue",
             "nav",
             "form",
-            "search",
             "filterBar",
             "emptyState",
             "loading",
@@ -394,13 +393,6 @@ describe("validateTree component nodes", () => {
           submitLabel: "Save",
           onSubmit: { name: "save_customer", collect: "form" },
           children: [],
-        },
-        search: {
-          id: "search",
-          type: "search",
-          name: "q",
-          placeholder: "Search customers",
-          onSubmit: { name: "search_customers" },
         },
         filterBar: {
           id: "filterBar",
@@ -434,10 +426,6 @@ describe("validateTree component nodes", () => {
       type: "form",
       onSubmit: { kind: "agent", name: "save_customer", collect: "form" },
     });
-    expect(tree.nodes["search"]).toMatchObject({
-      type: "search",
-      onSubmit: { kind: "agent", name: "search_customers" },
-    });
     expect(tree.nodes["filterBar"]).toMatchObject({
       type: "filterBar",
       onChange: { kind: "agent", name: "filter_customers" },
@@ -453,7 +441,7 @@ describe("validateTree component nodes", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", children: ["form", "badMetric", "badSearch"] },
+        root: { id: "root", type: "box", children: ["form", "badMetric"] },
         form: {
           id: "form",
           type: "form",
@@ -464,7 +452,6 @@ describe("validateTree component nodes", () => {
           children: [],
         },
         badMetric: { id: "badMetric", type: "metric", label: "ARR" },
-        badSearch: { id: "badSearch", type: "search", placeholder: "Missing name" },
       },
     });
 
@@ -473,7 +460,6 @@ describe("validateTree component nodes", () => {
     expect(tree.nodes["form"]).not.toHaveProperty("html");
     expect(tree.nodes["form"]).not.toHaveProperty("css");
     expect(tree.nodes["badMetric"]).toBeUndefined();
-    expect(tree.nodes["badSearch"]).toBeUndefined();
     expect((tree.nodes["root"] as unknown as { children: readonly string[] }).children).toEqual([
       "form",
     ]);
@@ -481,7 +467,6 @@ describe("validateTree component nodes", () => {
       3,
     );
     expect(issues.some((issue) => issue.includes("value must be a string"))).toBe(true);
-    expect(issues.some((issue) => issue.includes("name must be a string"))).toBe(true);
   });
 
   it("keeps component leaf and container nodes with sanitized token fields", () => {
@@ -939,7 +924,6 @@ describe("validateComposition", () => {
       "nav",
       "keyValue",
       "form",
-      "search",
       "filterBar",
       "emptyState",
       "loading",
