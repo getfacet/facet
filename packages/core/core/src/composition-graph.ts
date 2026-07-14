@@ -98,8 +98,12 @@ function validateGraphUnsafe(
       issues.push(`composition "${printableKey(entry.name)}" is a duplicate name; skipped`);
       continue;
     }
-    byName.set(entry.name, entry);
-    ordered.push(entry);
+    // `entry` is a pre-validated FacetComposition (validateComposition ran per
+    // document before this graph pass); the isPlainObject guard above narrows it
+    // to Record<string,unknown> for the fail-safe property reads, so re-assert the
+    // element type when storing.
+    byName.set(entry.name, entry as unknown as FacetComposition);
+    ordered.push(entry as unknown as FacetComposition);
   }
 
   const memo = new Map<string, NodeMetrics>();

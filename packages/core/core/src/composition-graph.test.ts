@@ -23,9 +23,9 @@ function comp(name: string, refs: readonly string[] = [], filler = 0): FacetComp
   for (let i = 0; i < filler; i++) {
     const id = `t${i}`;
     childIds.push(id);
-    nodes[id] = { type: "text", value: "x" };
+    nodes[id] = { id, type: "text", value: "x" };
   }
-  nodes.root = { type: "box", children: childIds };
+  nodes.root = { id: "root", type: "box", children: childIds };
   return { name, root: "root", nodes };
 }
 

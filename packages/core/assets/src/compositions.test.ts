@@ -81,11 +81,11 @@ describe("DEFAULT_COMPOSITIONS", () => {
     const defaults = await loadDefaults();
     const serialized = JSON.stringify(defaults);
     const nodeTypes = defaults.flatMap((composition) =>
-      Object.values(composition.nodes).map((node) => node.type),
+      Object.values(composition.nodes).map((node) => ("type" in node ? node.type : undefined)),
     );
     const legacyStatNodes = defaults.flatMap((composition) =>
       Object.entries(composition.nodes)
-        .filter(([, node]) => node.type === "stat")
+        .filter(([, node]) => "type" in node && node.type === "stat")
         .map(([id, node]) => ({ id, composition: composition.name, node })),
     );
 
