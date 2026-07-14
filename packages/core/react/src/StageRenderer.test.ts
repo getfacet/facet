@@ -999,7 +999,7 @@ describe("StageRenderer sibling dedupe", () => {
 
 // The raw live-patch path can put arbitrary JSON in a field's name/placeholder/
 // input. name/placeholder coerce to strings (omitted otherwise) and input is
-// constrained to the FIELD_INPUTS token set (else "text"), mirroring core.
+// constrained to the INPUT_KINDS token set (else "text"), mirroring core.
 describe("StageRenderer field coercion", () => {
   const field = (extra: Record<string, unknown>): FacetTree =>
     tree({
