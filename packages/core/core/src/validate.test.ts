@@ -945,6 +945,9 @@ describe("validateComposition", () => {
       "loading",
       "stat",
       "box",
+      // Primitive bricks are admitted too — incl. richtext (allowlist derives
+      // from PRIMITIVE_BRICK_TYPES, so a new primitive is not silently dropped).
+      "richtext",
     ];
     const { composition, issues } = validateComposition({
       name: "component-heavy",

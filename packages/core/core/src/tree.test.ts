@@ -71,6 +71,22 @@ describe("treeHasContent", () => {
     expect(treeHasContent(tree({ r: { id: "r", type: "text", value: "x" } }))).toBe(false);
   });
 
+  it("true for a richtext child carrying a non-empty run, false when every run is empty", () => {
+    const withText = tree({
+      r: { id: "r", type: "box", children: ["rt"] },
+      rt: { id: "rt", type: "richtext", blocks: [{ type: "paragraph", runs: [{ text: "hi" }] }] },
+    });
+    expect(treeHasContent(withText)).toBe(true);
+
+    // An all-empty-run richtext renders only invisible elements → must count as
+    // no-content so a composition falls back to its emptyState.
+    const allEmpty = tree({
+      r: { id: "r", type: "box", children: ["rt"] },
+      rt: { id: "rt", type: "richtext", blocks: [{ type: "paragraph", runs: [{ text: "" }] }] },
+    });
+    expect(treeHasContent(allEmpty)).toBe(false);
+  });
+
   it("keeps the valid siblings when a node's type is an Object.prototype member name", () => {
     // "constructor" indexes the plain BRICK_REGISTRY to an inherited FUNCTION;
     // pre-fix `nodeRendersItself` called `.rendersSelf` on it, threw, and the
