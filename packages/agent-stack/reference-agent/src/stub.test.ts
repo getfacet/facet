@@ -25,7 +25,7 @@ describe("createStubAgent", () => {
     if (signup?.type === "box") {
       const names = signup.children
         .map((id) => tree.nodes[id])
-        .flatMap((n) => (n?.type === "field" ? [n.name] : []));
+        .flatMap((n) => (n?.type === "input" ? [n.name] : []));
       expect(names).toContain("name");
       expect(names).toContain("email");
     }

@@ -20,6 +20,34 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
   });
 });
 
+// The `field`→`input` rename (DC-001) + `search` removal (DC-003): the primitive
+// input brick must summarize as `type=input`, and the removed `search` component
+// type must have no handler left in the registry.
+describe("summarizeStageForPrompt input", () => {
+  it("summarizes an input node as type=input with its name and kind", () => {
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["email"] },
+        email: { id: "email", type: "input", name: "email", input: "email" },
+      },
+    } as unknown as FacetTree;
+
+    const summary = summarizeStageForPrompt(stage);
+    expect(summary).toContain("type=input");
+    expect(summary).toContain("name=email");
+    expect(summary).toContain("input=email");
+    expect(summary).not.toContain("type=field");
+    expect(summary).not.toContain("type=unknown");
+  });
+
+  it("has no search handler in the registry (DC-003)", () => {
+    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "search")).toBe(false);
+    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "input")).toBe(true);
+    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "field")).toBe(false);
+  });
+});
+
 // A richtext node is a flowing LEAF brick holding its own `blocks`/`runs`, not
 // child ids. The summarizer must flatten that shape to a text preview so
 // compaction reflects the prose, rather than degrading to `type=unknown`.

@@ -168,7 +168,7 @@ describe("buildSystem", () => {
       /COMPONENT GUIDANCE[\s\S]*catalog-advertised compositions[\s\S]*intrinsic components with catalog-advertised variants[\s\S]*never write raw CSS/i,
     );
     expect(system).toMatch(
-      /product-quality defaults[\s\S]*field for raw inputs[\s\S]*button for actions/i,
+      /product-quality defaults[\s\S]*input for raw inputs[\s\S]*button for actions/i,
     );
     expect(system).toMatch(/editBeforeAppend is true/i);
     expect(system).toContain("allowed components: section variants: surface");
@@ -226,7 +226,7 @@ describe("buildSystem", () => {
     expect(system).not.toMatch(/scroll\(bool\)/);
   });
 
-  it("brick-vocab v1 prompt teaches media, field options, columns, and scroll axes", () => {
+  it("brick-vocab v1 prompt teaches media, input options, columns, and scroll axes", () => {
     const system = buildSystem(DEFAULT_GUIDE);
     expect(system).toContain('"type":"media"');
     expect(system).toMatch(/"image"\|"video"/);
@@ -238,7 +238,7 @@ describe("buildSystem", () => {
     expect(system).not.toContain("(box, text, image, field)");
 
     const tools = JSON.stringify(TOOLS);
-    expect(tools).toContain("box, text, media, field");
+    expect(tools).toContain("box, text, media, input");
     expect(tools).not.toContain("box | text | image | field");
   });
 
@@ -793,7 +793,8 @@ describe("buildInitialMessages", () => {
             "list",
             "divider",
             "form",
-            "search",
+            "search-input",
+            "search-button",
             "filterBar",
             "emptyState",
             "loading",
@@ -919,15 +920,19 @@ describe("buildInitialMessages", () => {
           title: "Signup",
           body: "RAW_JSON_SENTINEL_FORM",
           submitLabel: "Send",
-          children: ["search"],
+          children: ["search-input", "search-button"],
         },
-        search: {
-          id: "search",
-          type: "search",
+        "search-input": {
+          id: "search-input",
+          type: "input",
           name: "q",
           label: "Search",
           placeholder: "RAW_JSON_SENTINEL_SEARCH",
-          submitLabel: "Go",
+        },
+        "search-button": {
+          id: "search-button",
+          type: "button",
+          label: "Go",
         },
         filterBar: {
           id: "filterBar",
@@ -970,8 +975,9 @@ describe("buildInitialMessages", () => {
     expect(prompt).toContain("- alert: type=alert titleChars=8 bodyChars=23");
     expect(prompt).toContain("- list: type=list items=2");
     expect(prompt).toContain("- divider: type=divider labelChars=7");
-    expect(prompt).toContain("- form: type=form children=1");
-    expect(prompt).toContain("- search: type=search name=q");
+    expect(prompt).toContain("- form: type=form children=2");
+    expect(prompt).toContain("- search-input: type=input name=q");
+    expect(prompt).toContain("- search-button: type=button labelChars=2");
     expect(prompt).toContain("- filterBar: type=filterBar filters=1");
     expect(prompt).toContain("- emptyState: type=emptyState titleChars=10");
     expect(prompt).toContain("- loading: type=loading labelChars=15");
