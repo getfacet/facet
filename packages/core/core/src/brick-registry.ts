@@ -1,4 +1,4 @@
-import type { IssueSink } from "./issues.js";
+import { isPlainObject, type IssueSink } from "./issues.js";
 import {
   PRIMITIVE_BRICK_TYPES,
   type FacetNode,
@@ -24,6 +24,7 @@ import {
   validateBox,
   validateField,
   validateMedia,
+  validateRichText,
   validateText,
 } from "./primitive-node-validation.js";
 import {
@@ -178,6 +179,22 @@ export interface BrickEntry {
   readonly stringLeaves: NodeStringLeaves;
 }
 
+/**
+ * richtext content predicate (over the RAW node, mirroring the other renders*
+ * predicates): renders when ≥1 block carries ≥1 run with string text. Used for
+ * composition emptyState fallback and motion-snapshot participation.
+ */
+function rendersRichText(node: Record<string, unknown>): boolean {
+  const blocks = node.blocks;
+  if (!Array.isArray(blocks)) return false;
+  return blocks.some(
+    (block) =>
+      isPlainObject(block) &&
+      Array.isArray(block.runs) &&
+      block.runs.some((run) => isPlainObject(run) && typeof run.text === "string"),
+  );
+}
+
 export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
   // ---- Primitive bricks -------------------------------------------------
   box: {
@@ -213,6 +230,17 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     rendersSelf: rendersField,
     fill: fillField,
     stringLeaves: leavesField,
+  },
+  richtext: {
+    kind: "primitive",
+    established: false,
+    validate: validateRichText,
+    // richtext is a LEAF and NOT `from`-bound (no resolve/resolveFromContent).
+    rendersSelf: rendersRichText,
+    // Not composition-slot-filled and not a slot source in v1, so `fill` is a
+    // passthrough (reusing fillBox) and `stringLeaves` is empty (leavesBox).
+    fill: fillBox,
+    stringLeaves: leavesBox,
   },
   // ---- Control components -----------------------------------------------
   button: {

@@ -305,9 +305,74 @@ export interface FieldNode extends BaseNode, Styleable<FieldStyle> {
   readonly placeholder?: string;
 }
 
-export const PRIMITIVE_BRICK_TYPES = ["box", "text", "media", "field"] as const;
+/** The closed block types richtext supports. Unknown types degrade to `paragraph`. */
+export const BLOCK_TYPES = ["paragraph", "heading", "listItem", "quote"] as const;
+export type BlockType = (typeof BLOCK_TYPES)[number];
+
+/**
+ * The closed, EXTENSIBLE set of per-run emphasis marks. Unknown kinds are dropped
+ * by `validateRichText` (the run text is kept), so future valued marks
+ * (highlight/color) and new block types add as new union members / entries with
+ * no breaking reshape.
+ */
+export const MARK_KINDS = ["bold", "italic", "underline", "strike", "code", "link"] as const;
+export type MarkKind = (typeof MARK_KINDS)[number];
+
+/** An external-URL link destination, gated by `isSafeHref` (navigated, not fetched). */
+export interface ExternalLink {
+  readonly href: string;
+}
+
+/**
+ * A `link` mark's destination: either an INTERNAL `FacetAction` (routed through
+ * the shared `normalizeFacetAction`, dispatched via the single press writer) or a
+ * gated EXTERNAL URL. Validation branches on shape: a `{ href }` object is the
+ * external URL; anything else is normalized as a `FacetAction`.
+ */
+export type LinkTarget = FacetAction | ExternalLink;
+
+/**
+ * A per-run mark — a closed tagged union. Members may carry attributes (`link`
+ * carries `target`); an unknown `kind` degrades (dropped, run text kept).
+ */
+export type Mark =
+  | { readonly kind: "bold" }
+  | { readonly kind: "italic" }
+  | { readonly kind: "underline" }
+  | { readonly kind: "strike" }
+  | { readonly kind: "code" }
+  | { readonly kind: "link"; readonly target: LinkTarget };
+
+/** A contiguous span of text sharing zero or more marks. */
+export interface Run {
+  readonly text: string;
+  readonly marks?: readonly Mark[];
+}
+
+/**
+ * A flat block of runs. `level` is the heading rank (clamped 1–3); `depth` is the
+ * `listItem` nesting depth (clamped 0–5, expressed as renderer-owned flow indent).
+ */
+export interface RichTextBlock {
+  readonly type: BlockType;
+  readonly level?: number;
+  readonly depth?: number;
+  readonly runs: readonly Run[];
+}
+
+/**
+ * A flowing block of mixed-format prose with inline links. A LEAF brick: it holds
+ * its own `blocks`/`runs` (no child ids, no `from` binding) and its block-level
+ * typography is the same `TextStyle` token family as `text`.
+ */
+export interface RichTextNode extends BaseNode, Styleable<TextStyle> {
+  readonly type: "richtext";
+  readonly blocks: readonly RichTextBlock[];
+}
+
+export const PRIMITIVE_BRICK_TYPES = ["box", "text", "media", "field", "richtext"] as const;
 export type PrimitiveBrickType = (typeof PRIMITIVE_BRICK_TYPES)[number];
-export type PrimitiveBrickNode = BoxNode | TextNode | MediaNode | FieldNode;
+export type PrimitiveBrickNode = BoxNode | TextNode | MediaNode | FieldNode | RichTextNode;
 
 export * from "./component-nodes.js";
 import type { CardNode, ComponentNode, FormNode, SectionNode } from "./component-nodes.js";

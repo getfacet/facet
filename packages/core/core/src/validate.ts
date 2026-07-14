@@ -1,5 +1,6 @@
 export {
   isPrimitiveRecord,
+  isSafeHref,
   isSafeMediaSrc,
   sanitizeActionPayload,
 } from "./primitive-node-validation.js";

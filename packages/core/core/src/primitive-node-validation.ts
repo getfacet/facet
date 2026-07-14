@@ -25,19 +25,27 @@ import {
   TRACKINGS,
 } from "./tokens.js";
 import {
+  BLOCK_TYPES,
   FIELD_INPUTS,
+  MARK_KINDS,
   MEDIA_KINDS,
+  type BlockType,
   type BoxStyle,
   type FacetAction,
   type FacetNode,
   type FieldInput,
   type FieldStyle,
+  type LinkTarget,
+  type Mark,
+  type MarkKind,
   type MediaKind,
   type MediaStyle,
+  type RichTextBlock,
+  type Run,
   type TextStyle,
 } from "./nodes.js";
 import { isComponentNodeType, sanitizeComponentNode } from "./component-validation.js";
-import { setColumnRow, setFrom } from "./component-validation-shared.js";
+import { MAX_NODE_BODY_CHARS, setColumnRow, setFrom } from "./component-validation-shared.js";
 import { sanitizeViewPredicate, type ViewPredicate } from "./view.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
@@ -85,6 +93,24 @@ export function isSafeMediaSrc(src: string): boolean {
     s.startsWith("http://") ||
     s.startsWith("//") ||
     s.startsWith("data:image/") ||
+    (s.startsWith("/") && !s.startsWith("//"))
+  );
+}
+
+/**
+ * Gate for a link `href` — deliberately STRICTER than `isSafeMediaSrc`. A media
+ * src is LOADED into `<img>`/`<video>`; an href is NAVIGATED at top level, where
+ * any `data:` URL (including `data:image/svg+xml`, whose SVG can script on
+ * navigation) is a script/exfil vector. So this allows ONLY `http(s)://`,
+ * protocol-relative `//`, and local `/path`, and rejects ALL `data:`,
+ * `javascript:`, and every other scheme. Do NOT reuse `isSafeMediaSrc` here.
+ */
+export function isSafeHref(href: string): boolean {
+  const s = href.trim().toLowerCase();
+  return (
+    s.startsWith("https://") ||
+    s.startsWith("http://") ||
+    s.startsWith("//") ||
     (s.startsWith("/") && !s.startsWith("//"))
   );
 }
@@ -487,6 +513,147 @@ export function validateField(
   // renderer consumes it, so sanitize it through like every other style.
   const style = fieldStyle(raw.style);
   if (style !== undefined) node.style = style;
+  return node;
+}
+
+/** Bounds for the richtext leaf. Over-cap slices/clamps — never throws. */
+export const MAX_RICHTEXT_BLOCKS = 64;
+export const MAX_RUNS_PER_BLOCK = 64;
+export const MAX_MARKS_PER_RUN = 8;
+export const MAX_LIST_DEPTH = 5;
+
+/**
+ * Coerce a numeric token and CLAMP it to `[min, max]` (reusing the numeric
+ * coercion of `asNumberToken`). A missing/non-numeric value yields `fallback`;
+ * an over/under-cap value clamps to the boundary. Never throws.
+ */
+function clampInt(value: unknown, min: number, max: number, fallback: number): number {
+  const numeric =
+    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  if (!Number.isFinite(numeric)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(numeric)));
+}
+
+/**
+ * Sanitize a richtext link target. A `{ href }` object is an EXTERNAL URL gated
+ * by `isSafeHref` (unsafe → dropped); anything else is an INTERNAL target routed
+ * through the SHARED `normalizeFacetAction` — never a parallel action validator.
+ */
+function sanitizeLinkTarget(raw: unknown, id: string, issues: IssueSink): LinkTarget | undefined {
+  const key = printableKey(id);
+  if (!isObject(raw)) {
+    issues.push(`node "${key}": richtext link has no target object; mark dropped`);
+    return undefined;
+  }
+  if (typeof raw.href === "string") {
+    if (isSafeHref(raw.href)) return { href: raw.href.slice(0, MAX_NODE_BODY_CHARS) };
+    issues.push(`node "${key}": unsafe richtext link href dropped`);
+    return undefined;
+  }
+  return normalizeFacetAction(raw, id, "richtext link", issues);
+}
+
+/** Sanitize one mark: drop unknown kinds (run text kept); route `link` targets. */
+function sanitizeMark(raw: unknown, id: string, issues: IssueSink): Mark | undefined {
+  if (!isObject(raw)) return undefined;
+  const kind = asToken<MarkKind>(raw.kind, MARK_KINDS);
+  if (kind === undefined) {
+    issues.push(
+      `node "${printableKey(id)}": unknown richtext mark kind ${printableValue(raw.kind)} dropped`,
+    );
+    return undefined;
+  }
+  if (kind === "link") {
+    const target = sanitizeLinkTarget(raw.target, id, issues);
+    return target === undefined ? undefined : { kind: "link", target };
+  }
+  return { kind };
+}
+
+/** Sanitize one run: skip a run with missing/non-string text; cap + sanitize marks. */
+function sanitizeRun(raw: unknown, id: string, issues: IssueSink): Run | undefined {
+  if (!isObject(raw)) return undefined;
+  const text = asString(raw.text);
+  if (text === undefined) {
+    issues.push(`node "${printableKey(id)}": richtext run has no string text; skipped`);
+    return undefined;
+  }
+  const run: { text: string; marks?: Mark[] } = { text: text.slice(0, MAX_NODE_BODY_CHARS) };
+  if (Array.isArray(raw.marks)) {
+    const marks: Mark[] = [];
+    for (const rawMark of raw.marks) {
+      if (marks.length >= MAX_MARKS_PER_RUN) break;
+      const mark = sanitizeMark(rawMark, id, issues);
+      if (mark !== undefined) marks.push(mark);
+    }
+    if (marks.length > 0) run.marks = marks;
+  }
+  return run;
+}
+
+/**
+ * Sanitize one block: degrade an unknown `type` to `paragraph` (keeping the
+ * text), cap + sanitize runs, clamp heading `level` / list `depth`. A block with
+ * zero valid runs is dropped (nothing to render).
+ */
+function sanitizeRichTextBlock(
+  raw: unknown,
+  id: string,
+  issues: IssueSink,
+): RichTextBlock | undefined {
+  if (!isObject(raw)) return undefined;
+  let type = asToken<BlockType>(raw.type, BLOCK_TYPES);
+  if (type === undefined) {
+    if (raw.type !== undefined) {
+      issues.push(
+        `node "${printableKey(id)}": unknown richtext block type ${printableValue(raw.type)} degraded to paragraph`,
+      );
+    }
+    type = "paragraph";
+  }
+  const runs: Run[] = [];
+  if (Array.isArray(raw.runs)) {
+    for (const rawRun of raw.runs) {
+      if (runs.length >= MAX_RUNS_PER_BLOCK) break;
+      const run = sanitizeRun(rawRun, id, issues);
+      if (run !== undefined) runs.push(run);
+    }
+  }
+  if (runs.length === 0) return undefined;
+  const block: { type: BlockType; level?: number; depth?: number; runs: Run[] } = { type, runs };
+  if (type === "heading") block.level = clampInt(raw.level, 1, 3, 1);
+  if (type === "listItem") block.depth = clampInt(raw.depth, 0, MAX_LIST_DEPTH, 0);
+  return block;
+}
+
+/**
+ * The richtext leaf validator. Holds its own `blocks`/`runs` (no children, no
+ * `from` binding — DC-005). Caps blocks/runs/marks/text, drops unknown marks,
+ * degrades unknown block types, clamps level/depth. NEVER throws and never
+ * returns undefined — a structurally-empty input degrades to `blocks: []`.
+ */
+export function validateRichText(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): FacetNode | undefined {
+  const blocks: RichTextBlock[] = [];
+  if (Array.isArray(raw.blocks)) {
+    for (const rawBlock of raw.blocks) {
+      if (blocks.length >= MAX_RICHTEXT_BLOCKS) break;
+      const block = sanitizeRichTextBlock(rawBlock, id, issues);
+      if (block !== undefined) blocks.push(block);
+    }
+  }
+  const node: {
+    id: string;
+    type: "richtext";
+    blocks: RichTextBlock[];
+    style: TextStyle;
+    variant?: string;
+  } = { id, type: "richtext", blocks, style: textStyle(raw.style, id, issues) };
+  const variant = asVariant(raw.variant, id, issues);
+  if (variant !== undefined) node.variant = variant;
   return node;
 }
 
