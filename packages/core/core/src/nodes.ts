@@ -168,16 +168,80 @@ export interface FieldStyle {
 }
 
 /**
+ * Module-private field packs (mixins). These are shared shape fragments folded
+ * into the primitive interfaces below via `interface … extends …` (mirroring the
+ * `MetricFields` precedent in `component-nodes.ts`). They are DELIBERATELY NOT
+ * exported: the `export * from "./nodes.js"` barrel would otherwise surface them
+ * and collide conceptually with the exported `ContainerNode`/`isContainer`
+ * surface. The literal `type` discriminant is NEVER placed in a pack — each
+ * primitive keeps `type` as a direct own member so `Extract<FacetNode,{type:K}>`
+ * and type-guard narrowing keep resolving.
+ */
+
+/** Common identity fields on all four primitives (`type` stays a direct member). */
+interface BaseNode {
+  readonly id: NodeId;
+  readonly variant?: string;
+}
+
+/** The style slot only — generic per-brick token type. */
+interface Styleable<S> {
+  readonly style?: S;
+}
+
+/**
+ * The active-look trio (folds the PR-1 duplication). Kept separate from
+ * `Styleable` so media/field (which have `style` but no active-look) do not gain
+ * these fields.
+ */
+interface ActiveLook<S> {
+  /**
+   * Recipe name applied ONLY while `active` evaluates true (enabler B). The
+   * renderer folds it over `variant` read-only via `resolveRecipe`; token-only
+   * by construction. Prefer this over `activeStyle`.
+   */
+  readonly activeVariant?: string;
+  /**
+   * Extra style tokens applied ONLY while `active` evaluates true (enabler B).
+   * Routed through the SAME token sanitizer as `style`, so it can carry only
+   * tokens — never a raw-CSS bypass.
+   */
+  readonly activeStyle?: S;
+  /**
+   * Closed view-state predicate selecting when the active look applies (enabler
+   * B). Read-only, evaluated against the threaded snapshot view-state; an
+   * unknown/dangling predicate degrades to the default look.
+   */
+  readonly active?: ViewPredicate;
+}
+
+/** The children slot. Named `ContainerFields` to avoid shadowing `ContainerNode`. */
+interface ContainerFields {
+  readonly children: readonly NodeId[];
+}
+
+/**
+ * The `from`-binding trio: read a value from a single cell of
+ * `FacetTree.data[from]` (enabler A). Mirrors `MetricFields`; `from` wins over an
+ * inline value, a dangling reference or absent column yields empty — never throws.
+ */
+interface DataBound {
+  readonly from?: string;
+  /** The dataset column supplying the cell value (used only with `from`). */
+  readonly column?: string;
+  /** The dataset row index (default 0) supplying the cell value (used only with `from`). */
+  readonly row?: number;
+}
+
+/**
  * The universal container and the only brick that holds children. Flow layout
  * only (row/col), so children stack or wrap — they cannot overlap or fall off
  * the page. A box with `onPress` IS the button primitive; a box with a border is
  * a card; nested boxes are any layout.
  */
-export interface BoxNode {
-  readonly id: NodeId;
+export interface BoxNode
+  extends BaseNode, Styleable<BoxStyle>, ActiveLook<BoxStyle>, ContainerFields {
   readonly type: "box";
-  readonly variant?: string;
-  readonly style?: BoxStyle;
   /** Makes the box pressable. Any box can be a button — or a clickable card. */
   readonly onPress?: FacetAction;
   /**
@@ -198,74 +262,23 @@ export interface BoxNode {
    * dangling/non-media/unsafe reference paints no layer (fail-safe).
    */
   readonly backdrop?: NodeId;
-  /**
-   * Recipe name applied ONLY while `active` evaluates true (enabler B). The
-   * renderer folds it over `variant` read-only via `resolveRecipe`; token-only
-   * by construction. Prefer this over `activeStyle`.
-   */
-  readonly activeVariant?: string;
-  /**
-   * Extra style tokens applied ONLY while `active` evaluates true (enabler B).
-   * Routed through the SAME `boxStyle()` token sanitizer as `style`, so it can
-   * carry only tokens — never a raw-CSS bypass.
-   */
-  readonly activeStyle?: BoxStyle;
-  /**
-   * Closed view-state predicate selecting when the active look applies (enabler
-   * B). Read-only, evaluated against the threaded snapshot view-state; an
-   * unknown/dangling predicate degrades to the default look.
-   */
-  readonly active?: ViewPredicate;
-  readonly children: readonly NodeId[];
 }
 
-export interface TextNode {
-  readonly id: NodeId;
+export interface TextNode extends BaseNode, Styleable<TextStyle>, ActiveLook<TextStyle>, DataBound {
   readonly type: "text";
   readonly value: string;
-  readonly variant?: string;
-  readonly style?: TextStyle;
-  /**
-   * Optional binding: read `value` from a single cell of `FacetTree.data[from]`
-   * (enabler A). Mirrors `MetricFields`; `from` wins over the inline `value`, a
-   * dangling reference or absent column yields empty — never throws.
-   */
-  readonly from?: string;
-  /** The dataset column supplying the cell value (used only with `from`). */
-  readonly column?: string;
-  /** The dataset row index (default 0) supplying the cell value (used only with `from`). */
-  readonly row?: number;
-  /**
-   * Recipe name applied ONLY while `active` evaluates true (enabler B). Folded
-   * over `variant` read-only via `resolveRecipe`; token-only. Prefer this over
-   * `activeStyle`.
-   */
-  readonly activeVariant?: string;
-  /**
-   * Extra style tokens applied ONLY while `active` evaluates true (enabler B).
-   * Routed through the SAME `textStyle()` token sanitizer as `style`.
-   */
-  readonly activeStyle?: TextStyle;
-  /**
-   * Closed view-state predicate selecting when the active look applies (enabler
-   * B). Read-only; an unknown/dangling predicate degrades to the default look.
-   */
-  readonly active?: ViewPredicate;
 }
 
 export const MEDIA_KINDS = ["image", "video"] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
 
-export interface MediaNode {
-  readonly id: NodeId;
+export interface MediaNode extends BaseNode, Styleable<MediaStyle> {
   readonly type: "media";
   readonly kind: MediaKind;
   readonly src: string;
-  readonly variant?: string;
   readonly alt?: string;
   readonly poster?: string;
   readonly controls?: boolean;
-  readonly style?: MediaStyle;
 }
 
 /** Allowed field input types — single source (validator derives its check from this). */
@@ -283,16 +296,13 @@ export const FIELD_INPUTS = [
 export type FieldInput = (typeof FIELD_INPUTS)[number];
 
 /** The input primitive. */
-export interface FieldNode {
-  readonly id: NodeId;
+export interface FieldNode extends BaseNode, Styleable<FieldStyle> {
   readonly type: "field";
   readonly name: string;
-  readonly variant?: string;
   readonly input?: FieldInput;
   readonly options?: readonly string[];
   readonly label?: string;
   readonly placeholder?: string;
-  readonly style?: FieldStyle;
 }
 
 export const PRIMITIVE_BRICK_TYPES = ["box", "text", "media", "field"] as const;
