@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { FacetNode, FacetTree, NodeId } from "@facet/core";
 import {
   MANY_CHANGE_THRESHOLD,
   MOTION_CLASS_NAMES,
@@ -11,6 +12,12 @@ import {
   stageFrameClassName,
   stagePreviousClassName,
 } from "./motion.js";
+import { collectVisibleInfo } from "./renderer-motion.js";
+
+const tree = (nodes: Record<NodeId, FacetNode>, root: NodeId = "root"): FacetTree => ({
+  root,
+  nodes,
+});
 
 describe("MOTION_CSS", () => {
   it("defines scoped motion css with reduced motion", () => {
@@ -78,5 +85,49 @@ describe("MOTION_CSS", () => {
     expect(stageFrameClassName(true)).toBe("facet-motion-stage-frame facet-motion-stage-crossfade");
     expect(stageCurrentClassName()).toBe("facet-motion-stage-current");
     expect(stagePreviousClassName()).toBe("facet-motion-stage-previous");
+  });
+});
+
+// A leaf richtext must join the visibility/appear snapshot like text/media, so it
+// appear-animates and is re-tracked on toggle/navigate re-show — but only when it
+// carries visible prose. An empty/blank richtext participates in nothing.
+describe("collectVisibleInfo richtext participation", () => {
+  const overrides = new Map<NodeId, boolean>();
+
+  it("tracks a richtext leaf that has at least one visible run", () => {
+    const stage = tree({
+      root: { id: "root", type: "box", children: ["prose"] },
+      prose: {
+        id: "prose",
+        type: "richtext",
+        blocks: [{ type: "paragraph", runs: [{ text: "hello" }] }],
+      },
+    } as unknown as Record<NodeId, FacetNode>);
+    const visible = collectVisibleInfo(stage, "root", overrides);
+    expect(visible.ids.has("prose")).toBe(true);
+    expect(visible.nodes.get("prose")?.parentId).toBe("root");
+  });
+
+  it("excludes a richtext leaf whose runs carry no visible text", () => {
+    const stage = tree({
+      root: { id: "root", type: "box", children: ["prose"] },
+      prose: {
+        id: "prose",
+        type: "richtext",
+        blocks: [{ type: "paragraph", runs: [{ text: "" }] }],
+      },
+    } as unknown as Record<NodeId, FacetNode>);
+    const visible = collectVisibleInfo(stage, "root", overrides);
+    expect(visible.ids.has("root")).toBe(true);
+    expect(visible.ids.has("prose")).toBe(false);
+  });
+
+  it("excludes a richtext leaf with no blocks", () => {
+    const stage = tree({
+      root: { id: "root", type: "box", children: ["prose"] },
+      prose: { id: "prose", type: "richtext", blocks: [] },
+    } as unknown as Record<NodeId, FacetNode>);
+    const visible = collectVisibleInfo(stage, "root", overrides);
+    expect(visible.ids.has("prose")).toBe(false);
   });
 });

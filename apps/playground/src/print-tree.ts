@@ -80,6 +80,8 @@ function detail(node: FacetNode): string {
     }
     case "loading":
       return node.label === undefined ? "" : `: ${quote(node.label)}`;
+    case "richtext":
+      return `: ${count("block", node.blocks.length)}`;
     case "box":
       return "";
   }

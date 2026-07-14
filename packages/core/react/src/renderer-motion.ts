@@ -1,4 +1,11 @@
-import { isContainer, MAX_DEPTH, treeHasContent, type FacetTree, type NodeId } from "@facet/core";
+import {
+  isContainer,
+  MAX_DEPTH,
+  treeHasContent,
+  type FacetTree,
+  type NodeId,
+  type RichTextNode,
+} from "@facet/core";
 import { participatesInMotionSnapshot } from "./brick-render-registry.js";
 import { MOTION_CLASS_NAMES } from "./motion.js";
 import type { ResolvedTheme } from "./theme.js";
@@ -113,6 +120,32 @@ export function normalizeTransitionHint(transition: unknown): NormalizedTransiti
   return { revision: raw.revision, rootReplacedRevision };
 }
 
+/**
+ * True when a richtext leaf carries at least one run with visible text.
+ * Defensive against raw-path junk (blocks/runs/text may not be the shapes the
+ * type promises): iterates only real arrays and treats a non-string or empty
+ * `text` as no run, matching the text case's string guard.
+ */
+function richTextHasVisibleRun(node: RichTextNode): boolean {
+  const blocks: unknown = (node as { readonly blocks?: unknown }).blocks;
+  if (!Array.isArray(blocks)) {
+    return false;
+  }
+  for (const block of blocks) {
+    const runs: unknown = (block as { readonly runs?: unknown } | null)?.runs;
+    if (!Array.isArray(runs)) {
+      continue;
+    }
+    for (const run of runs) {
+      const text: unknown = (run as { readonly text?: unknown } | null)?.text;
+      if (typeof text === "string" && text.length > 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 export function collectVisibleInfo(
   tree: FacetTree,
   rootId: NodeId,
@@ -185,6 +218,16 @@ export function collectVisibleInfo(
       case "field":
         ids.add(id);
         nodes.set(id, { parentId, index, ancestors, depth });
+        return;
+      case "richtext":
+        // A leaf richtext participates only when it carries at least one run
+        // with visible text — mirroring the text case's `typeof value === string`
+        // guard so an empty/junk richtext neither appear-animates nor is tracked
+        // as a leaf on toggle/navigate re-show.
+        if (richTextHasVisibleRun(node)) {
+          ids.add(id);
+          nodes.set(id, { parentId, index, ancestors, depth });
+        }
         return;
       default:
         // The leaf-brick fallthrough, now registry-driven: every component leaf

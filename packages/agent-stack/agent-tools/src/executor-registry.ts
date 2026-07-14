@@ -187,6 +187,30 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     },
     describe: (facetNode) => `${facetNode.id} field name="${preview(facetNode.name)}"`,
   },
+  richtext: {
+    // RISK-API-2: a PRIMITIVE brick, so it is accepted under the catalog's
+    // primitive-fallback gate and never mis-routed as a component. asNode is a
+    // light shape gate — the deep clamp/sanitize (levels, depth, unknown marks,
+    // link targets) lives in core's `validateRichText` inside `validateTree`.
+    policy: { kind: "primitive" },
+    asNode: (value) => {
+      if (value["blocks"] !== undefined && !Array.isArray(value["blocks"])) {
+        return {
+          error: 'a "richtext" node needs "blocks" as an array',
+          nextAction: 'Pass "blocks": [] or an array of richtext blocks.',
+        };
+      }
+      return {
+        facetNode: {
+          ...value,
+          id: value["id"],
+          type: "richtext",
+          blocks: value["blocks"] ?? [],
+        } as unknown as FacetNode,
+      };
+    },
+    describe: (facetNode) => `${facetNode.id} richtext blocks=${String(facetNode.blocks.length)}`,
+  },
   // ---- Components -------------------------------------------------------
   button: {
     policy: { kind: "component" },

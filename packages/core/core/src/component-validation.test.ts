@@ -36,7 +36,7 @@ const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
 
 describe("component vocabulary", () => {
   it("keeps primitive bricks as the preserved fallback vocabulary", () => {
-    expect(PRIMITIVE_BRICK_TYPES).toEqual(["box", "text", "media", "field"]);
+    expect(PRIMITIVE_BRICK_TYPES).toEqual(["box", "text", "media", "field", "richtext"]);
 
     for (const type of PRIMITIVE_BRICK_TYPES) {
       expect(isPrimitiveBrickType(type)).toBe(true);

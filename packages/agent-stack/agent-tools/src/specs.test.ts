@@ -103,6 +103,7 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     }
     expect(nodeSchemaText).toMatch(/metric/);
     expect(nodeSchemaText).toMatch(/legacy stat/i);
+    expect(nodeSchemaText).toMatch(/box, text, media, field, richtext/);
     expect(JSON.stringify(propertiesOf(setNode)["node"])).toMatch(/section|card|table|chart/);
     expect(setTheme.description).toMatch(/locked/i);
     expect(setTheme.description).toMatch(/catalog/i);

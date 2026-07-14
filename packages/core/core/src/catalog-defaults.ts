@@ -81,6 +81,10 @@ const DEFAULT_PRIMITIVE_BRICKS: readonly CatalogBrick[] = [
     guidance: "Use for bounded image/video media.",
   },
   { type: "field", variants: ["default"], guidance: "Use for visitor input controls." },
+  {
+    type: "richtext",
+    guidance: "formatted prose — blocks of runs with inline marks + links",
+  },
 ];
 
 const DEFAULT_LEGACY_BRICKS: readonly CatalogBrick[] = [

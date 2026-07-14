@@ -39,6 +39,54 @@ describe("executor registry exhaustiveness", () => {
   });
 });
 
+// WU-5 (RISK-API-2) — richtext must be registered as a PRIMITIVE executor entry
+// so the mapped `ExecutorRegistry` stays exhaustive and the primitive-fallback
+// gate (`PRIMITIVE_NODE_TYPES.has(node.type)`) accepts it — never mis-routed as a
+// component. asNode is a light shape gate (the deep clamp lives in core's
+// validateTree); describe is a one-line inspect summary.
+describe("richtext", () => {
+  it("is registered as a primitive brick (not a component)", () => {
+    expect(EXECUTOR_REGISTRY.richtext.policy.kind).toBe("primitive");
+    expect(PRIMITIVE_NODE_TYPES.has("richtext")).toBe(true);
+    expect(COMPONENT_NODE_TYPE_SET.has("richtext")).toBe(false);
+  });
+
+  it("asNode accepts a valid richtext node", () => {
+    const result = EXECUTOR_REGISTRY.richtext.asNode({
+      id: "prose",
+      type: "richtext",
+      blocks: [
+        {
+          type: "paragraph",
+          runs: [{ text: "Hello ", marks: [{ kind: "bold" }] }, { text: "world" }],
+        },
+      ],
+    });
+    expect("facetNode" in result).toBe(true);
+  });
+
+  it("asNode rejects a non-array blocks field", () => {
+    const result = EXECUTOR_REGISTRY.richtext.asNode({
+      id: "prose",
+      type: "richtext",
+      blocks: "nope",
+    });
+    expect("error" in result).toBe(true);
+  });
+
+  it("describe reports the block count", () => {
+    const node = {
+      id: "prose",
+      type: "richtext",
+      blocks: [
+        { type: "heading", level: 1, runs: [{ text: "Title" }] },
+        { type: "paragraph", runs: [{ text: "Body" }] },
+      ],
+    } as unknown as FacetNode;
+    expect(describeNode(node, undefined)).toBe("prose richtext blocks=2");
+  });
+});
+
 // `describeNode` reads a shadow node whose `type` `isTreeShaped` never validated,
 // so it can be an Object.prototype member name. A bare `EXECUTOR_REGISTRY[type]`
 // returned the inherited `Object` FUNCTION and `.describe(...)` on it threw; the

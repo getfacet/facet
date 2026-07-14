@@ -437,6 +437,99 @@ export function textStyle(
   return rootContainmentStyle(css);
 }
 
+/**
+ * The theme-owned LOOK of each richtext run mark (invariant #4: marks are
+ * semantic NAMES; the theme, not the agent, decides their rendered token look).
+ * Marks compose — several kinds on one run merge into one style — so `underline`
+ * and `strike` accumulate onto a single `textDecorationLine`. An unknown kind
+ * never reaches here (core drops it; the renderer also skips it), so this switch
+ * is total over the closed `MARK_KINDS`. `code` uses renderer-owned relative
+ * (em) insets, not author pixels; `link` gets the accent color + underline
+ * decoration (the interactivity is wired in the renderer, not here).
+ */
+export function markLookCss(
+  kinds: readonly string[],
+  theme: ResolvedTheme = DEFAULT_RESOLVED,
+): CSSProperties {
+  const css: CSSProperties = {};
+  const decorations: string[] = [];
+  for (const kind of kinds) {
+    switch (kind) {
+      case "bold":
+        css.fontWeight = theme.fontWeight.bold;
+        break;
+      case "italic":
+        css.fontStyle = "italic";
+        break;
+      case "underline":
+        if (!decorations.includes("underline")) decorations.push("underline");
+        break;
+      case "strike":
+        if (!decorations.includes("line-through")) decorations.push("line-through");
+        break;
+      case "code":
+        css.fontFamily = theme.fontFamily.mono;
+        css.background = theme.color["surface-2"];
+        css.borderRadius = theme.radius.sm;
+        // Relative (em) insets are renderer-owned, not author pixels (INV #4/#5).
+        css.padding = "0.1em 0.3em";
+        break;
+      case "link":
+        css.color = theme.color.accent;
+        if (!decorations.includes("underline")) decorations.push("underline");
+        break;
+    }
+  }
+  if (decorations.length > 0) css.textDecorationLine = decorations.join(" ");
+  return css;
+}
+
+/** The heading element tag for a (clamped) richtext heading `level` (1–3). */
+export function headingTag(level: number): "h1" | "h2" | "h3" {
+  const clamped = Number.isFinite(level) ? Math.min(3, Math.max(1, Math.round(level))) : 1;
+  return clamped === 1 ? "h1" : clamped === 2 ? "h2" : "h3";
+}
+
+/** Theme-owned heading typography by (clamped) level — a token size/weight scale. */
+export function headingLookCss(
+  level: number,
+  theme: ResolvedTheme = DEFAULT_RESOLVED,
+): CSSProperties {
+  const tag = headingTag(level);
+  const size: FontSize = tag === "h1" ? "2xl" : tag === "h2" ? "xl" : "lg";
+  const weight: FontWeight = tag === "h3" ? "semibold" : "bold";
+  return { fontSize: theme.fontSize[size], fontWeight: theme.fontWeight[weight] };
+}
+
+/** Max nesting the renderer will indent a list item to (mirrors core's MAX_LIST_DEPTH). */
+export const RENDER_MAX_LIST_DEPTH = 5;
+
+/**
+ * Renderer-owned FLOW indent for a nested list item (RISK-INV-3): a
+ * `margin-inline-start` that scales a single theme space step by the CLAMPED
+ * `depth`. Never `position:absolute`, never an author-controlled pixel — layout
+ * stays flow-only. `depth 0` yields no indent.
+ */
+export function listIndentCss(
+  depth: number,
+  theme: ResolvedTheme = DEFAULT_RESOLVED,
+): CSSProperties {
+  const clamped = Number.isFinite(depth)
+    ? Math.min(RENDER_MAX_LIST_DEPTH, Math.max(0, Math.round(depth)))
+    : 0;
+  if (clamped <= 0) return {};
+  return { marginInlineStart: `calc(${theme.space.lg} * ${clamped})` };
+}
+
+/** Theme-owned blockquote look — a leading accent border + muted, padded body. */
+export function quoteLookCss(theme: ResolvedTheme = DEFAULT_RESOLVED): CSSProperties {
+  return {
+    borderInlineStart: `2px solid ${theme.color.border}`,
+    paddingInlineStart: theme.space.md,
+    color: theme.color["fg-muted"],
+  };
+}
+
 export function mediaStyle(
   style: MediaStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,

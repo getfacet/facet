@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  BLOCK_TYPES,
   FIELD_INPUTS,
   INTRINSIC_COMPONENT_TYPES,
   LEGACY_COMPONENT_TYPES,
+  MARK_KINDS,
   PRIMITIVE_BRICK_TYPES,
 } from "./nodes.js";
 import { STAGE_SPEC } from "./spec.js";
@@ -94,6 +96,34 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toContain(`scroll(${SCROLL_AXES.join("|")})`);
     expect(STAGE_SPEC).not.toMatch(/ImageStyle/);
     expect(STAGE_SPEC).not.toContain('"type":"image"');
+  });
+
+  it("teaches the richtext brick shape: closed blocks, marks, and link kinds", () => {
+    // DC-003/DC-006: STAGE_SPEC teaches the richtext primitive as a closed,
+    // no-DSL vocabulary — the loop at :102-104 asserts the "type":"richtext"
+    // token; these drift pins hold the shape (blocks/runs/marks/link) in sync
+    // with nodes.ts so widening the brick set without teaching it fails here.
+    expect(STAGE_SPEC).toContain('"type":"richtext"');
+    // Flat blocks[] of the four closed block types.
+    expect(STAGE_SPEC).toMatch(/richtext:[^\n]*"blocks"/);
+    for (const block of BLOCK_TYPES) {
+      expect(STAGE_SPEC).toContain(`"${block}"`);
+    }
+    // A run is { text, marks } and the marks are the closed semantic kinds.
+    expect(STAGE_SPEC).toMatch(/"runs"/);
+    expect(STAGE_SPEC).toMatch(/"text":string/);
+    for (const mark of MARK_KINDS) {
+      expect(STAGE_SPEC).toContain(`"${mark}"`);
+    }
+    // Marks are closed NAMES, never a parsed markup/markdown/CSS DSL.
+    expect(STAGE_SPEC).toMatch(/never raw HTML, markdown, or CSS/i);
+    // Link target: internal Action OR a gated external { href }.
+    expect(STAGE_SPEC).toMatch(/"kind":"link"/);
+    expect(STAGE_SPEC).toMatch(/"href"/);
+    expect(STAGE_SPEC).toMatch(/navigated, never fetched/i);
+    // Leaf + why it exists (mixed inline formatting the single-string text can't do).
+    expect(STAGE_SPEC).toMatch(/single-string "text" node cannot express/i);
+    expect(STAGE_SPEC).toMatch(/LEAF brick/i);
   });
 
   it("teaches composition -> component -> primitive fallback and the locked component vocabulary", () => {

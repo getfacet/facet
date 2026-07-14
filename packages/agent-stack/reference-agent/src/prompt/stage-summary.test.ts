@@ -20,6 +20,53 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
   });
 });
 
+// A richtext node is a flowing LEAF brick holding its own `blocks`/`runs`, not
+// child ids. The summarizer must flatten that shape to a text preview so
+// compaction reflects the prose, rather than degrading to `type=unknown`.
+describe("summarizeStageForPrompt richtext", () => {
+  it("summarizes a richtext node as a block count plus a text preview", () => {
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["intro"] },
+        intro: {
+          id: "intro",
+          type: "richtext",
+          blocks: [
+            {
+              type: "heading",
+              level: 1,
+              runs: [{ text: "Welcome " }, { text: "aboard", marks: [{ kind: "bold" }] }],
+            },
+            { type: "paragraph", runs: [{ text: "Second block copy." }] },
+          ],
+        },
+      },
+    } as unknown as FacetTree;
+
+    const summary = summarizeStageForPrompt(stage);
+    expect(summary).toContain("type=richtext");
+    expect(summary).toContain("blocks=2");
+    expect(summary).toContain("Welcome aboard");
+    expect(summary).not.toContain("type=unknown");
+  });
+
+  it("summarizes a richtext node with no readable runs without throwing", () => {
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["empty"] },
+        empty: { id: "empty", type: "richtext", blocks: [] },
+      },
+    } as unknown as FacetTree;
+
+    const summary = summarizeStageForPrompt(stage);
+    expect(summary).toContain("type=richtext");
+    expect(summary).toContain("blocks=0");
+    expect(summary).not.toContain("type=unknown");
+  });
+});
+
 // The summarizer reads raw, unvalidated node `type`s, so it can meet
 // "constructor" and other Object.prototype member names. A bare registry lookup
 // returned the inherited `Object` FUNCTION, and `summarize(node)` then produced
