@@ -1,5 +1,6 @@
 import { BoundedIssues, caughtErrorDetail } from "./issues.js";
 import type { FacetNode, NodeId } from "./nodes.js";
+import type { FacetComposition } from "./validate.js";
 import { expandCompositionInner, noOp } from "./expand-composition-core.js";
 
 export type CompositionParams = Readonly<Record<string, unknown>>;
@@ -22,6 +23,16 @@ export interface ExpandCompositionResult extends UseCompositionResult {
 export interface ExpandCompositionOptions {
   readonly existingIds?: Iterable<NodeId>;
   readonly mintId?: () => string;
+  /**
+   * The composition registry a `{ use, slots }` reference is resolved against.
+   * OPTIONAL and ADDITIVE — existing 4-arg `expandComposition` calls compile
+   * unchanged, and an absent registry makes every reference fail-safe-skip
+   * (dropped with a bounded issue, never thrown). Entries are re-validated when
+   * a reference targets them, so a hand-built registry can never inject an
+   * unsanitized node. Output `nodes` stay `Record<NodeId, FacetNode>` — a
+   * reference never survives expansion (RISK-INV-2).
+   */
+  readonly compositions?: readonly FacetComposition[];
 }
 
 export function expandComposition(

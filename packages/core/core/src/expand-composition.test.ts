@@ -4,7 +4,14 @@ import { describe, expect, it } from "vitest";
 import { ISSUES_SUPPRESSED, MAX_ISSUES } from "./issues.js";
 import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { expandComposition } from "./expand-composition.js";
-import { SLOT_MARKER_RE } from "./validate.js";
+import { SLOT_MARKER_RE, type FacetComposition } from "./validate.js";
+
+// The registry entries are authored as loose document literals (like the first
+// `expandComposition` argument, which is `unknown`); they are re-validated by
+// `validateComposition` when a reference targets them, so this cast only relaxes
+// the compile-time shape for the strict `compositions` option.
+const asRegistry = (comps: readonly unknown[]): readonly FacetComposition[] =>
+  comps as unknown as readonly FacetComposition[];
 
 const EXPECTED_TYPE_EXPORTS = [
   "CompositionParams",
@@ -1182,5 +1189,185 @@ describe("expandComposition", () => {
     expect(unknownParent.root).toBeUndefined();
     expect(unknownParent.nodes).toEqual({});
     expect(unknownParent.issues.some((issue) => issue.includes("parent"))).toBe(true);
+  });
+
+  describe("nested composition", () => {
+    // A reusable single-node child composition whose slot fills a text primitive,
+    // so a reference to it splices that text primitive directly into the parent.
+    const badge = {
+      name: "badge",
+      slots: { label: "Default label" },
+      root: "text",
+      nodes: {
+        text: { id: "text", type: "text", value: "{{label}}" },
+      },
+    };
+
+    const counterMint = () => {
+      let index = 0;
+      return () => `fresh-${String((index += 1))}`;
+    };
+
+    const childrenOf = (result: ReturnType<typeof expandComposition>): readonly string[] => {
+      const root = result.nodes[result.root ?? ""] as { children?: string[] } | undefined;
+      return root?.children ?? [];
+    };
+
+    const noReferenceSurvives = (result: ReturnType<typeof expandComposition>): boolean =>
+      Object.values(result.nodes).every((node) => "type" in node && !("use" in node));
+
+    it("resolves a reference to the target's primitives with the slot filled inline", () => {
+      const result = expandComposition(
+        {
+          name: "outer",
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: ["ref"] },
+            ref: { use: "badge", slots: { label: "Hi" } },
+          },
+        },
+        {},
+        { parent: "page" },
+        {
+          existingIds: new Set(["page"]),
+          mintId: counterMint(),
+          compositions: asRegistry([badge]),
+        },
+      );
+
+      expect(result.issues).toHaveLength(0);
+      expect(noReferenceSurvives(result)).toBe(true);
+      expect(result.nodes[result.root ?? ""]).toMatchObject({ type: "box" });
+      const kids = childrenOf(result);
+      expect(kids).toHaveLength(1);
+      // The reference position now holds the child composition's expanded text
+      // primitive, with the reference's slot value filled in.
+      expect(result.nodes[kids[0] ?? ""]).toMatchObject({ type: "text", value: "Hi" });
+    });
+
+    it("threads an outer marker through a reference slot before the child expands", () => {
+      const result = expandComposition(
+        {
+          name: "outer",
+          slots: { status: "Ready" },
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: ["ref"] },
+            ref: { use: "badge", slots: { label: "{{status}}" } },
+          },
+        },
+        { status: "Live" },
+        { parent: "page" },
+        {
+          existingIds: new Set(["page"]),
+          mintId: counterMint(),
+          compositions: asRegistry([badge]),
+        },
+      );
+
+      expect(noReferenceSurvives(result)).toBe(true);
+      const texts = Object.values(result.nodes)
+        .filter((node) => node.type === "text")
+        .map((node) => (node as { value: string }).value);
+      // {{status}} in the reference slot resolved against the OUTER param first.
+      expect(texts).toContain("Live");
+    });
+
+    it("drops an unresolvable reference and never throws", () => {
+      const result = expandComposition(
+        {
+          name: "outer",
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: ["ref"] },
+            ref: { use: "ghost", slots: {} },
+          },
+        },
+        {},
+        { parent: "page" },
+        {
+          existingIds: new Set(["page"]),
+          mintId: counterMint(),
+          compositions: asRegistry([badge]),
+        },
+      );
+
+      expect(result.root).toBeDefined();
+      expect(noReferenceSurvives(result)).toBe(true);
+      // The dropped reference leaves the container with no dangling child pointer.
+      expect(childrenOf(result)).toEqual([]);
+      expect(result.issues.some((issue) => issue.includes("ghost"))).toBe(true);
+    });
+
+    it("drops a reference when no registry is supplied and never throws", () => {
+      const result = expandComposition(
+        {
+          name: "outer",
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: ["ref"] },
+            ref: { use: "badge", slots: { label: "Hi" } },
+          },
+        },
+        {},
+        { parent: "page" },
+        { existingIds: new Set(["page"]), mintId: counterMint() },
+      );
+
+      expect(result.root).toBeDefined();
+      expect(noReferenceSurvives(result)).toBe(true);
+      expect(childrenOf(result)).toEqual([]);
+    });
+
+    it("terminates a self-referential cycle with a bounded issue, never throwing", () => {
+      const loop = {
+        name: "loop",
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["ref"] },
+          ref: { use: "loop", slots: {} },
+        },
+      };
+      const result = expandComposition(
+        loop,
+        {},
+        { parent: "page" },
+        {
+          existingIds: new Set(["page"]),
+          mintId: counterMint(),
+          compositions: asRegistry([loop]),
+        },
+      );
+
+      expect(noReferenceSurvives(result)).toBe(true);
+      expect(result.issues.some((issue) => issue.includes("cycle"))).toBe(true);
+    });
+
+    it("terminates a deep reference chain at the nesting cap without throwing", () => {
+      // A 12-deep chain c0 -> c1 -> ... exceeds MAX_COMPOSITION_NEST_DEPTH (8).
+      const chain = Array.from({ length: 12 }, (_, i) => ({
+        name: `c${String(i)}`,
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["ref"] },
+          ref: { use: `c${String(i + 1)}`, slots: {} },
+        },
+      }));
+      const result = expandComposition(
+        chain[0],
+        {},
+        { parent: "page" },
+        {
+          existingIds: new Set(["page"]),
+          mintId: counterMint(),
+          compositions: asRegistry(chain),
+        },
+      );
+
+      expect(noReferenceSurvives(result)).toBe(true);
+      expect(
+        result.issues.some((issue) => issue.includes("nesting") || issue.includes("cycle")),
+      ).toBe(true);
+    });
   });
 });
