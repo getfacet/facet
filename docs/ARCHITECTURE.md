@@ -129,11 +129,16 @@ warehouse by NAME via `from` is allowed and is not a data source — see "Data
 warehouse + bindings"; it stays agent-authored declared content. A table column
 opted into `sortable` reorders locally, but the comparator is a closed
 renderer-owned mechanism, not a sort engine the agent writes — see "Local table
-sort".) Overlay-class
-modal/drawer/popover components are intentionally out of v1 so normal-flow layout
-stays the invariant. The one sanctioned overlap is a `box`'s `backdrop` — a
-bounded two-layer background behind normal-flow content (see "Landing-grade
-vocabulary"), never a general z-index/absolute-positioning escape hatch.
+sort".) Overlap stays impossible EXCEPT through two bounded, renderer-owned
+descriptors — never a general z-index/absolute-positioning escape hatch:
+
+- a `box`'s `backdrop` — a bounded two-layer background painted BELOW normal-flow
+  content (negative z; see "Landing-grade vocabulary"); and
+- a `box`'s `overlay: { kind: "modal" | "drawer" }` — the box floats ABOVE flow in
+  a renderer-fixed positive-z band (modal centered, drawer at the end edge, each
+  with a scrim), opened/closed via the existing local `toggle`. The author gives
+  only the closed `kind`; the renderer owns placement, scrim, z, focus, and close.
+  (`popover` + an anchored variant remain out of v1, added additively later.)
 
 ## Renderer Layout Contract
 
@@ -222,9 +227,9 @@ the vocabulary grows deliberately instead of by accretion.
 - **The fuzzy-middle tie-breaker.** If a capability needs a renderer
   COMPUTATION that `box`+`text` cannot express, it is a **brick**; if it is just
   a way `box` overlaps, decorates, or behaves, it is a **box concern (a pack)**.
-  Worked example: a planned `overlay` requires no new content computation — only
-  a bounded way `box` floats over its siblings — so it is a `box` concern and
-  would join the `Layered` pack, not become a new brick.
+  Worked example: `overlay` requires no new content computation — only a bounded
+  way `box` floats over its siblings — so it is a `box` concern and lives on the
+  `Layered` pack (alongside `backdrop`), not a new brick.
 
 ## Catalog policy
 

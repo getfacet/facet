@@ -29,6 +29,7 @@ import {
   FIELD_INPUTS,
   MARK_KINDS,
   MEDIA_KINDS,
+  OVERLAY_KINDS,
   type BlockType,
   type BoxStyle,
   type FacetAction,
@@ -40,6 +41,8 @@ import {
   type MarkKind,
   type MediaKind,
   type MediaStyle,
+  type Overlay,
+  type OverlayKind,
   type RichTextBlock,
   type Run,
   type TextStyle,
@@ -317,6 +320,27 @@ export type PrimitiveValidator = (
   rawType: string,
 ) => FacetNode | undefined;
 
+// Admit ONLY a closed overlay descriptor `{ kind }` (kind ∈ OVERLAY_KINDS),
+// reading nothing else so no author positioning key survives (DC-004). A
+// non-object, an unknown/missing kind, or a hostile (throwing-getter) descriptor
+// drops the WHOLE descriptor with a bounded issue and never throws (DC-003).
+function sanitizeOverlay(raw: unknown, key: string, issues: IssueSink): Overlay | undefined {
+  if (raw === undefined) return undefined;
+  if (isObject(raw)) {
+    let kind: unknown;
+    try {
+      kind = (raw as Record<string, unknown>).kind;
+    } catch {
+      kind = undefined;
+    }
+    if (typeof kind === "string" && (OVERLAY_KINDS as readonly string[]).includes(kind)) {
+      return { kind: kind as OverlayKind };
+    }
+  }
+  issues.push(`node "${key}": overlay ${printableValue(raw)} dropped`);
+  return undefined;
+}
+
 // Hoisted function declarations (not const arrows) so the brick registry can
 // reference them safely across the registry↔module import cycle.
 export function validateBox(
@@ -338,6 +362,7 @@ export function validateBox(
     hidden?: boolean;
     variant?: string;
     backdrop?: string;
+    overlay?: Overlay;
     activeVariant?: string;
     activeStyle?: BoxStyle;
     active?: ViewPredicate;
@@ -362,6 +387,13 @@ export function validateBox(
   } else if (raw.backdrop !== undefined) {
     issues.push(`node "${key}": backdrop is not a string ${printableValue(raw.backdrop)} dropped`);
   }
+  // `overlay` is a CLOSED descriptor: admit ONLY `{ kind }` with `kind ∈
+  // OVERLAY_KINDS`, reading nothing else — every extra author key (z/top/inset/
+  // position) is left behind, and the WHOLE descriptor is dropped (bounded issue)
+  // on a non-object / unknown / missing kind. The renderer owns placement/z, so
+  // no author coordinate can leak (DC-004); never throws (DC-003).
+  const overlay = sanitizeOverlay(raw.overlay, key, issues);
+  if (overlay !== undefined) node.overlay = overlay;
   const onPress = normalizeFacetAction(raw.onPress, id, "onPress", issues);
   if (onPress !== undefined) node.onPress = onPress;
   const onHold = normalizeFacetAction(raw.onHold, id, "onHold", issues);

@@ -247,6 +247,26 @@ interface Pressable {
   readonly onHold?: FacetAction;
 }
 
+/**
+ * The closed, EXTENSIBLE set of overlay placements. Unknown kinds are dropped by
+ * `validateBox`'s `sanitizeOverlay` (the box renders inline, fail-safe), so a
+ * future placement (e.g. `popover`, which would also carry an optional `anchor`)
+ * adds as a new tuple entry / union arm with no breaking reshape — mirrors
+ * `FIELD_INPUTS`/`MARK_KINDS`.
+ */
+export const OVERLAY_KINDS = ["modal", "drawer"] as const;
+export type OverlayKind = (typeof OVERLAY_KINDS)[number];
+
+/**
+ * The overlay descriptor — a renderer-owned floating placement selected by a
+ * closed `kind` name (single-sourced from `OverlayKind`, like `MediaKind`). The
+ * concrete placement / z-band lives in the renderer's layout contract, never as
+ * author coordinates. Today every kind carries only `kind`; when a kind needs its
+ * own member (e.g. a future `popover` arm with an optional `anchor`) this becomes
+ * a per-arm tagged union additively, with no breaking reshape.
+ */
+export type Overlay = { readonly kind: OverlayKind };
+
 /** The bounded background-layer slot (distinct from visibility). */
 interface Layered {
   /**
@@ -257,6 +277,15 @@ interface Layered {
    * dangling/non-media/unsafe reference paints no layer (fail-safe).
    */
   readonly backdrop?: NodeId;
+  /**
+   * Floats this box in a renderer-owned, FIXED placement (a renderer-owned
+   * positive-z band) selected purely by `kind` — the one sanctioned overlap in an
+   * otherwise flow-only model. The author supplies ONLY the closed `kind`; the
+   * renderer owns placement/z/scrim (no author coordinates). Open/close reuses the
+   * box's own visibility toggle. An unknown/malformed descriptor is dropped and
+   * the box renders inline (fail-safe).
+   */
+  readonly overlay?: Overlay;
 }
 
 /**

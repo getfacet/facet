@@ -2301,3 +2301,64 @@ describe("text from active", () => {
     expect(text).not.toHaveProperty("activeStyle");
   });
 });
+
+describe("validateTree box overlay (WU-1)", () => {
+  const runOverlay = (overlay: unknown) => {
+    const { tree } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", overlay, children: [] },
+      },
+    });
+    return tree.nodes["root"] as unknown as { overlay?: unknown };
+  };
+
+  // DC-003 / DC-004 — a valid closed kind survives as exactly { kind }.
+  it("DC-004 overlay keeps a valid modal descriptor", () => {
+    expect(runOverlay({ kind: "modal" }).overlay).toEqual({ kind: "modal" });
+  });
+
+  it("DC-004 overlay keeps a valid drawer descriptor", () => {
+    expect(runOverlay({ kind: "drawer" }).overlay).toEqual({ kind: "drawer" });
+  });
+
+  // DC-003 — unknown/malformed overlay → descriptor dropped, never throws.
+  it("DC-003 overlay drops an unknown kind (lightbox) WITH an issue", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", overlay: { kind: "lightbox" }, children: [] },
+      },
+    });
+    const node = tree.nodes["root"] as unknown as { overlay?: unknown };
+    expect(node.overlay).toBeUndefined();
+    expect(issues.some((i) => i.includes("overlay"))).toBe(true);
+  });
+
+  it("DC-003 overlay drops an empty descriptor {} (missing kind)", () => {
+    expect(runOverlay({}).overlay).toBeUndefined();
+  });
+
+  it("DC-003 overlay drops a string 'modal' (wrong type)", () => {
+    expect(runOverlay("modal").overlay).toBeUndefined();
+  });
+
+  it("DC-003 overlay drops a number 42 (wrong type)", () => {
+    expect(runOverlay(42).overlay).toBeUndefined();
+  });
+
+  it("DC-003 overlay never throws on a hostile descriptor", () => {
+    expect(() =>
+      runOverlay({
+        get kind() {
+          throw new Error("boom");
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  // DC-004 — no author-positioning leak: only `kind` survives, extras stripped.
+  it("DC-004 overlay strips extra author keys (z/top) — only kind survives", () => {
+    expect(runOverlay({ kind: "modal", z: 999, top: 10 }).overlay).toEqual({ kind: "modal" });
+  });
+});

@@ -250,6 +250,22 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/password fields/i);
   });
 
+  it("teaches the overlay box capability: closed kind set, renderer-owned placement, toggle open/close, no coords", () => {
+    // DC-007: STAGE_SPEC teaches overlay on box as CLOSED names only — a box
+    // floats ABOVE flow as a modal or drawer; the renderer owns placement/scrim/
+    // z/focus and the author gives ONLY "kind" (never coordinates/size/z).
+    expect(STAGE_SPEC).toContain('"overlay"?');
+    expect(STAGE_SPEC).toContain('"modal"');
+    expect(STAGE_SPEC).toContain('"drawer"');
+    expect(STAGE_SPEC).toMatch(/overlay/i);
+    // Renderer owns the float mechanics; author supplies only the kind.
+    expect(STAGE_SPEC).toMatch(/renderer owns placement/i);
+    expect(STAGE_SPEC).toMatch(/never coordinates/i);
+    // Open/close reuses the EXISTING toggle action on the box id — no agent turn.
+    expect(STAGE_SPEC).toMatch(/toggle/i);
+    expect(STAGE_SPEC).toMatch(/no agent turn/i);
+  });
+
   it("teaches store-bound text and the closed active-look predicate", () => {
     // DC-001: text becomes a from-bindable node reading ONE cell via from+column+row.
     expect(STAGE_SPEC).toMatch(/text:[^\n]*"from"\?:datasetName/);
