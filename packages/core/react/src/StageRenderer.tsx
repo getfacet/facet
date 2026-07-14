@@ -257,6 +257,26 @@ export function StageRenderer({
     });
   };
 
+  // Renderer-owned overlay close (RISK-INV-3 / RISK-INV-4). A DETERMINISTIC
+  // set-to-hidden — `next.set(boxId, false)`, where the override Map stores
+  // EFFECTIVE VISIBILITY (`true` = shown / `false` = hidden, matching the read
+  // convention in renderer-render.tsx and the view-snapshot toggled loop). It is
+  // idempotent: closing twice stays `false` (hidden) and NEVER re-flips open, so
+  // a rapid double Esc/scrim can't reopen the overlay (unlike the blind
+  // `!effective` flip the TRIGGER uses in `handlePress` above). It reuses the
+  // SAME view-state writer + `recordLocalTap` as a trigger toggle, so
+  // `view.toggled` stays single-sourced (the agent never reads a closed overlay
+  // as open); `onAction` NEVER fires for a close. Threaded to the renderer as the
+  // private `overlayClose` — no new public StageRenderer prop.
+  const closeOverlay = (boxId: NodeId): void => {
+    setVisibilityOverrides((prev) => {
+      const next = new Map(prev);
+      next.set(boxId, false);
+      return next;
+    });
+    recordLocalTap({ kind: "tap", target: boxId, effect: { toggle: boxId } });
+  };
+
   // Appear detection (Decision 4, folded into the render walk in review r7):
   // `renderNode` flips `appearSeen.used` when a REACHABLE box renders with an
   // appear class, so the one-per-stage <style> is gated on the SAME
@@ -296,6 +316,11 @@ export function StageRenderer({
     // previous-screen clone below deliberately omits this, so it reads no sort and
     // never becomes a second sort writer mid-transition (RISK-INV-5).
     sortControl: { overrides: sortOverrides, onSort: handleHeaderSort },
+    // The private overlay-close writer (sibling of sortControl.onSort). Present
+    // only on this LIVE path; the inert previous-screen clone below omits it, so
+    // a valid-overlay box mid-transition renders inline instead of a second
+    // fixed frame (RISK-INV-4 idempotency lives in closeOverlay, not here).
+    overlayClose: closeOverlay,
   });
   const rootExitNodes = motionPlan.rootExitRecords.map((record) => (
     <Fragment key={`exit:${record.id}`}>

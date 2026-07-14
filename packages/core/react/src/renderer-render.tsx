@@ -4,11 +4,13 @@ import {
   MAX_DEPTH,
   MAX_NODE_BODY_CHARS,
   MAX_RENDER_NODES,
+  OVERLAY_KINDS,
   evaluateViewPredicate,
   resolveNodeData,
   type BoxStyle,
   type FacetTree,
   type NodeId,
+  type OverlayKind,
   type SortDirection,
   type TextStyle,
   type ViewPredicate,
@@ -18,6 +20,7 @@ import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js"
 import { brickRendererEntry } from "./brick-render-registry.js";
 import { MOTION_CLASS_NAMES, composeMotionClassName } from "./motion.js";
 import { backdropHostStyle, scrimStyle } from "./layout-contract.js";
+import { OverlayFrame } from "./overlay-frame.js";
 import { boxStyle, resolveRecipe, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { BoxElement } from "./renderer-hold.js";
@@ -55,6 +58,33 @@ interface SortControl {
     { readonly column: string; readonly direction: SortDirection }
   >;
   readonly onSort: (nodeId: NodeId, column: string) => void;
+}
+
+/**
+ * The idempotent renderer-owned overlay close, threaded from StageRenderer like
+ * `sortControl.onSort` — internal, never a public StageRenderer prop (RISK-API-3).
+ * Bound to the overlay box's id at the wrap site; every close affordance (Esc,
+ * scrim, framework close button) routes through it. Omitted on inert render
+ * paths (exit records / the previous-screen clone) so those never float a frame.
+ */
+type OverlayClose = (boxId: NodeId) => void;
+
+/**
+ * Read a box's `overlay` descriptor DEFENSIVELY (the raw live path never passes
+ * through validateTree): returns the closed `kind` only when the descriptor is an
+ * object whose `kind` is in `OVERLAY_KINDS`, else `undefined`. Extra author keys
+ * (z/inset/position) are ignored — placement is renderer-owned (DC-004). A
+ * malformed/absent overlay yields `undefined` ⇒ the box renders inline (DC-003).
+ */
+function readOverlayKind(node: unknown): OverlayKind | undefined {
+  const overlay = (node as { readonly overlay?: unknown }).overlay;
+  if (typeof overlay !== "object" || overlay === null) {
+    return undefined;
+  }
+  const kind = (overlay as { readonly kind?: unknown }).kind;
+  return (OVERLAY_KINDS as readonly string[]).includes(kind as string)
+    ? (kind as OverlayKind)
+    : undefined;
 }
 
 interface RenderArgs {
@@ -97,6 +127,12 @@ interface RenderArgs {
    * no sort and renders natural order.
    */
   readonly sortControl?: SortControl | undefined;
+  /**
+   * Renderer-owned overlay close (RISK-INV-3/4). Optional so the inert
+   * exit/previous-screen paths omit it — a valid-overlay box on an inert path
+   * then renders inline (no floating frame) instead of a second fixed overlay.
+   */
+  readonly overlayClose?: OverlayClose | undefined;
 }
 
 interface ExitRenderArgs {
@@ -121,6 +157,7 @@ interface ContainerChildrenRenderArgs {
   readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
   readonly activeScreen: string | null;
   readonly sortControl?: SortControl | undefined;
+  readonly overlayClose?: OverlayClose | undefined;
 }
 
 function renderContainerChildren({
@@ -139,6 +176,7 @@ function renderContainerChildren({
   exitRecordsByParent,
   activeScreen,
   sortControl,
+  overlayClose,
 }: ContainerChildrenRenderArgs): ReactNode[] {
   // Fail-safe (invariant #2): skip a child that points back to an ancestor so
   // a cyclic tree (which never passes through validateTree on the live path)
@@ -219,6 +257,7 @@ function renderContainerChildren({
           exitRecordsByParent,
           activeScreen,
           sortControl,
+          overlayClose,
         })}
       </Fragment>,
     );
@@ -267,6 +306,7 @@ export function renderNode({
   exitRecordsByParent,
   activeScreen,
   sortControl,
+  overlayClose,
 }: RenderArgs): ReactNode {
   const node = tree.nodes[id];
   // == null also skips a node a patch replaced with JSON null (not just missing
@@ -376,6 +416,7 @@ export function renderNode({
         exitRecordsByParent,
         activeScreen,
         sortControl,
+        overlayClose,
       });
       // `backdrop` (RISK-INV-2/3/4): resolve a STANDALONE media node id READ-ONLY
       // to a background COVER layer. It resolves to a MEDIA node ONLY — a
@@ -473,7 +514,7 @@ export function renderNode({
       // a box with no (or an unresolved) backdrop renders byte-identically to
       // today's output (`backdropLayers` is null ⇒ no extra element, no host
       // style). This keeps DC-006 back-compat.
-      return (
+      const boxElement = (
         <BoxElement
           press={inert ? null : press}
           hold={inert ? null : hold}
@@ -486,6 +527,24 @@ export function renderNode({
           {children}
         </BoxElement>
       );
+      // Overlay (the one sanctioned flow-only exception): a VISIBLE box (we
+      // already returned null above when hidden) carrying a VALID overlay floats
+      // in a client `OverlayFrame` — framework scrim + `kind` preset + Esc /
+      // scrim / close-button, every close routing through the idempotent
+      // `overlayClose` (RISK-INV-3/4). Only on the LIVE path (`overlayClose`
+      // present, not inert): a malformed/absent overlay, or an inert clone,
+      // renders the box inline (fail-safe, DC-003). WU-1 already drops malformed
+      // descriptors at validation; `readOverlayKind` stays defensive on the raw
+      // path.
+      const overlayKind = overlayClose !== undefined && !inert ? readOverlayKind(node) : undefined;
+      if (overlayKind !== undefined && overlayClose !== undefined) {
+        return (
+          <OverlayFrame kind={overlayKind} onClose={(): void => overlayClose(id)}>
+            {boxElement}
+          </OverlayFrame>
+        );
+      }
+      return boxElement;
     }
     case "text": {
       // Enabler A: project `from` through the ONE shared `resolveNodeData` — the
@@ -569,6 +628,7 @@ export function renderNode({
             exitRecordsByParent,
             activeScreen,
             sortControl,
+            overlayClose,
           }),
         );
       }
