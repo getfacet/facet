@@ -27,7 +27,6 @@ describe("StageRenderer component layout contract", () => {
         root: box("root", [
           "nav",
           "form",
-          "search",
           "filters",
           "details",
           "metric",
@@ -55,20 +54,11 @@ describe("StageRenderer component layout contract", () => {
         },
         email: {
           id: "email",
-          type: "field",
+          type: "input",
           name: "email",
           input: "email",
           label: "Email",
           placeholder: "you@example.com",
-        },
-        search: {
-          id: "search",
-          type: "search",
-          name: "query",
-          label: "Search",
-          placeholder: "Find accounts",
-          submitLabel: "Find",
-          onSubmit: { kind: "agent", name: "search", collect: "search" },
         },
         filters: {
           id: "filters",
@@ -111,8 +101,6 @@ describe("StageRenderer component layout contract", () => {
     expect(out).toContain("Reports");
     expect(out).toContain("<form");
     expect(out).toContain("Contact");
-    expect(out).toContain('role="search"');
-    expect(out).toContain("Find accounts");
     expect(out).toContain("Status");
     expect(out).toContain("Urgent");
     expect(out).toContain("Owner");
@@ -142,7 +130,7 @@ describe("StageRenderer component layout contract", () => {
         home: {
           id: "home",
           type: "section",
-          children: ["nav", "form", "search", "filters", "empty"],
+          children: ["nav", "form", "filters", "empty"],
         },
         about: { id: "about", type: "section", children: ["aboutText"] },
         aboutText: text("aboutText", "about content"),
@@ -155,15 +143,7 @@ describe("StageRenderer component layout contract", () => {
           onSubmit: { kind: "agent", name: "submit", collect: "form" },
           children: ["email"],
         },
-        email: { id: "email", type: "field", name: "email", placeholder: "email" },
-        search: {
-          id: "search",
-          type: "search",
-          name: "query",
-          placeholder: "search",
-          submitLabel: "Find",
-          onSubmit: { kind: "agent", name: "search", collect: "search" },
-        },
+        email: { id: "email", type: "input", name: "email", placeholder: "email" },
         filters: {
           id: "filters",
           type: "filterBar",
@@ -192,10 +172,6 @@ describe("StageRenderer component layout contract", () => {
       { kind: "agent", name: "submit" },
       { email: "ada@example.com" },
     );
-
-    fireEvent.change(screen.getByPlaceholderText("search"), { target: { value: "pricing" } });
-    fireEvent.click(screen.getByRole("button", { name: "Find" }));
-    expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "search" }, { query: "pricing" });
 
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "Closed" } });
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "filter" }, { status: "Closed" });
@@ -244,7 +220,6 @@ describe("StageRenderer component layout contract", () => {
       root: box("root", [
         "nav",
         "form",
-        "search",
         "filters",
         "details",
         "metric",
@@ -258,12 +233,6 @@ describe("StageRenderer component layout contract", () => {
         type: "form",
         title: { nope: true },
         children: "bad",
-      } as unknown as FacetNode,
-      search: {
-        id: "search",
-        type: "search",
-        name: 42,
-        placeholder: { bad: true },
       } as unknown as FacetNode,
       filters: {
         id: "filters",

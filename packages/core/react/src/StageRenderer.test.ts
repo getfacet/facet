@@ -247,7 +247,7 @@ describe("StageRenderer fail-safe boundary", () => {
     const noisy = {
       root: { id: "root", type: "box", style: null, children: ["t", "f"] },
       t: { id: "t", type: "text", value: "ok", style: null },
-      f: { id: "f", type: "field", name: "n", label: { bad: 1 }, style: null },
+      f: { id: "f", type: "input", name: "n", label: { bad: 1 }, style: null },
     } as unknown as Record<string, FacetNode>;
     expect(() => render(tree(noisy))).not.toThrow();
     const out = render(tree(noisy));
@@ -327,14 +327,14 @@ describe("StageRenderer brick-vocab v1", () => {
         },
         plan: {
           id: "plan",
-          type: "field",
+          type: "input",
           name: "plan",
           input: "select",
           options: ["Free", "Pro"],
         },
-        agree: { id: "agree", type: "field", name: "agree", input: "checkbox" },
-        size: { id: "size", type: "field", name: "size", input: "radio", options: ["S", "M"] },
-        alerts: { id: "alerts", type: "field", name: "alerts", input: "switch" },
+        agree: { id: "agree", type: "input", name: "agree", input: "checkbox" },
+        size: { id: "size", type: "input", name: "size", input: "radio", options: ["S", "M"] },
+        alerts: { id: "alerts", type: "input", name: "alerts", input: "switch" },
       }),
     );
 
@@ -658,7 +658,7 @@ describe("StageRenderer component renderer (static)", () => {
             },
           },
         },
-        field: {
+        input: {
           default: {
             parts: {
               label: { text: { color: "danger", weight: "bold" } },
@@ -742,7 +742,7 @@ describe("StageRenderer component renderer (static)", () => {
           divider: { id: "divider", type: "divider", label: "Details" },
           email: {
             id: "email",
-            type: "field",
+            type: "input",
             name: "email",
             input: "email",
             label: "Email",
@@ -1004,7 +1004,7 @@ describe("StageRenderer field coercion", () => {
   const field = (extra: Record<string, unknown>): FacetTree =>
     tree({
       root: box("root", ["f"]),
-      f: { id: "f", type: "field", ...extra } as unknown as FacetNode,
+      f: { id: "f", type: "input", ...extra } as unknown as FacetNode,
     });
 
   it("falls back to type=text for a junk input value", () => {
@@ -1065,7 +1065,7 @@ describe("StageRenderer happy path", () => {
         },
         email: {
           id: "email",
-          type: "field",
+          type: "input",
           name: "email",
           input: "email",
           variant: "default",
@@ -1085,14 +1085,14 @@ describe("StageRenderer happy path", () => {
         root: box("root", ["email", "surface"]),
         email: {
           id: "email",
-          type: "field",
+          type: "input",
           name: "email",
           input: "email",
           label: "Email",
         },
         surface: {
           id: "surface",
-          type: "field",
+          type: "input",
           name: "surface",
           input: "select",
           options: ["Dashboard", "Pricing"],
@@ -1123,7 +1123,7 @@ describe("StageRenderer happy path", () => {
           src: "https://example.com/a.png",
           alt: "pic",
         },
-        f: { id: "f", type: "field", name: "email", input: "email", label: "Email" },
+        f: { id: "f", type: "input", name: "email", input: "email", label: "Email" },
       }),
     );
     expect(out).toContain("hello");
@@ -1191,7 +1191,7 @@ describe("StageRenderer happy path", () => {
         },
         field: {
           id: "field",
-          type: "field",
+          type: "input",
           name: "field-name",
           label: longLabel,
           placeholder: longLabel,
@@ -1381,7 +1381,7 @@ describe("StageRenderer appear (static)", () => {
     const plain = tree({
       root: { id: "root", type: "box", children: ["t", "f"] },
       t: text("t", "hello"),
-      f: { id: "f", type: "field", name: "email", label: "Email" },
+      f: { id: "f", type: "input", name: "email", label: "Email" },
     });
     const out = render(plain);
     expect(out).not.toContain("<style");
@@ -1477,7 +1477,7 @@ describe("StageRenderer appear (static)", () => {
         alt: "pic",
         style: { appear: "fade" },
       },
-      f: { id: "f", type: "field", name: "n", placeholder: "p", style: { appear: "fade" } },
+      f: { id: "f", type: "input", name: "n", placeholder: "p", style: { appear: "fade" } },
     } as unknown as Record<NodeId, FacetNode>;
     const out = render(tree(noisy));
     expect(out).toContain("plain text");

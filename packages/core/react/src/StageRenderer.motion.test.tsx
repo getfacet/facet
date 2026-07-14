@@ -56,7 +56,7 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
       panelText: { id: "panelText", type: "text", value: "Leaving panel" },
       panelField: {
         id: "panelField",
-        type: "field",
+        type: "input",
         name: "email",
         placeholder: "stale email",
       },
@@ -145,7 +145,7 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
         root: { id: "root", type: "box", children: withBadge ? ["card", "badge"] : ["card"] },
         card: { id: "card", type: "box", children: ["label", "field"] },
         label: { id: "label", type: "text", value: label },
-        field: { id: "field", type: "field", name: "email", label: "Email" },
+        field: { id: "field", type: "input", name: "email", label: "Email" },
         badge: { id: "badge", type: "box", style: { appear: "fade" }, children: ["badgeText"] },
         badgeText: { id: "badgeText", type: "text", value: "New badge" },
       });
@@ -183,7 +183,7 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
         children: ["old"],
       },
       old: { id: "old", type: "text", value: "Old root" },
-      oldField: { id: "oldField", type: "field", name: "email", placeholder: "old email" },
+      oldField: { id: "oldField", type: "input", name: "email", placeholder: "old email" },
       oldVideo: {
         id: "oldVideo",
         type: "media",
@@ -298,12 +298,12 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
   it("keeps the current stage wrapper stable across crossfade so same-id fields keep view-state", () => {
     const first = tree({
       root: { id: "root", type: "box", children: ["field"] },
-      field: { id: "field", type: "field", name: "email", label: "Email" },
+      field: { id: "field", type: "input", name: "email", label: "Email" },
     });
     const second = tree(
       {
         nextRoot: { id: "nextRoot", type: "box", children: ["field"] },
-        field: { id: "field", type: "field", name: "email", label: "Email" },
+        field: { id: "field", type: "input", name: "email", label: "Email" },
       },
       "nextRoot",
     );
