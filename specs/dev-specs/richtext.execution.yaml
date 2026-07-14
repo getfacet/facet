@@ -118,7 +118,7 @@ work_units:
         purpose: "Add an explicit richtext-in-STAGE_SPEC assertion; the existing PRIMITIVE_BRICK_TYPES loop (:102-104) then passes for richtext."
       - path: "packages/core/core/src/component-validation.test.ts"
         change_type: "update"
-        purpose: "Update the hardcoded expect(PRIMITIVE_BRICK_TYPES).toEqual([...]) (:39) to include \"richtext\" (or derive the expected list) so the exhaustive brick-set equality stays green."
+        purpose: 'Update the hardcoded expect(PRIMITIVE_BRICK_TYPES).toEqual([...]) (:39) to include "richtext" (or derive the expected list) so the exhaustive brick-set equality stays green.'
     depends_on: ["WU-1"]
     parallel_group: "par-core"
     red_check:
@@ -215,13 +215,13 @@ work_units:
     files:
       - path: "packages/core/assets/src/catalog.test.ts"
         change_type: "update"
-        purpose: "Include/derive richtext in the hardcoded primitive assertion (expect([\"box\",\"text\",\"media\",\"field\"]).toContain(brick.type) at :34) so it accepts every PRIMITIVE_BRICK_TYPES member; the CATALOG_BRICK_TYPES loop (:27-29) passes automatically once WU-2 lands."
+        purpose: 'Include/derive richtext in the hardcoded primitive assertion (expect(["box","text","media","field"]).toContain(brick.type) at :34) so it accepts every PRIMITIVE_BRICK_TYPES member; the CATALOG_BRICK_TYPES loop (:27-29) passes automatically once WU-2 lands.'
     depends_on: ["WU-2"]
     parallel_group: "par-assets"
     red_check:
       command: "pnpm exec vitest run packages/core/assets/src/catalog.test.ts"
       target: "packages/core/assets/src/catalog.test.ts"
-      justification: "After WU-2 advertises richtext in DEFAULT_CATALOG, the richtext brick fails the hardcoded [\"box\",\"text\",\"media\",\"field\"] literal at :34; WU-2b turns it GREEN."
+      justification: 'After WU-2 advertises richtext in DEFAULT_CATALOG, the richtext brick fails the hardcoded ["box","text","media","field"] literal at :34; WU-2b turns it GREEN.'
     quick_checks:
       - "pnpm exec vitest run packages/core/assets/src/catalog.test.ts"
       - "pnpm --filter @facet/assets typecheck"
@@ -428,7 +428,7 @@ work_units:
     files:
       - path: "packages/agent-stack/agent-tools/src/specs.ts"
         change_type: "update"
-        purpose: "Extend the hardcoded \"Primitive bricks are box, text, media, field.\" NODE_SCHEMA description (:8) to append richtext AFTER field, preserving the contiguous \"box, text, media, field\" substring so @facet/reference-agent's prompt.test.ts:241 toContain(...) assertion stays green."
+        purpose: 'Extend the hardcoded "Primitive bricks are box, text, media, field." NODE_SCHEMA description (:8) to append richtext AFTER field, preserving the contiguous "box, text, media, field" substring so @facet/reference-agent''s prompt.test.ts:241 toContain(...) assertion stays green.'
       - path: "packages/agent-stack/agent-tools/src/specs.test.ts"
         change_type: "update"
         purpose: "Add an explicit richtext-in-schema assertion; the existing PRIMITIVE_BRICK_TYPES loop (:98) then passes for richtext."
@@ -451,7 +451,7 @@ work_units:
         action: "update"
     done_conditions:
       - "RED→GREEN evidence reported (red_check FAIL post-WU-1/pre-WU-5b + PASS post-impl)"
-      - "appendNode NODE_SCHEMA lists richtext among primitives (contiguous \"box, text, media, field\" substring preserved); specs.test.ts asserts it"
+      - 'appendNode NODE_SCHEMA lists richtext among primitives (contiguous "box, text, media, field" substring preserved); specs.test.ts asserts it'
       - "No regression (scoped): pnpm exec vitest run packages/agent-stack/agent-tools/src --exclude '**/executor-registry.test.ts' --exclude '**/prompt-kit.test.ts' (suites owned by WU-5; full suite at /verify)"
     handoff_format:
       - "changed_files"

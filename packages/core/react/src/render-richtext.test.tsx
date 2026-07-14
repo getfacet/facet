@@ -151,6 +151,33 @@ describe("renderRichText (DC-004 external link safety)", () => {
   });
 });
 
+describe("renderRichText (RISK-INV-2 inert clone — links are inert)", () => {
+  it("degrades every link to plain text on the inert path: no anchor, no href, no dispatch", () => {
+    const dispatch = vi.fn<(press: ClassifiedPress) => void>();
+    const node = richtext([
+      {
+        type: "paragraph",
+        runs: [
+          { text: "internal", marks: [{ kind: "link", target: { kind: "agent", name: "go" } }] },
+          { text: "external", marks: [{ kind: "link", target: { href: "https://example.com" } }] },
+        ],
+      },
+    ]);
+    const { container } = render(<>{renderRichText(node, ctx({ inert: true, dispatch }))}</>);
+
+    // The previous-screen clone must NOT attach a live click surface or a navigable
+    // href — otherwise a stale clone could fire an agent action or navigate.
+    expect(container.querySelector("a")).toBeNull();
+    expect(container.querySelector('[role="link"]')).toBeNull();
+    // Text is still shown (degraded to plain).
+    expect(container.textContent).toContain("internal");
+    expect(container.textContent).toContain("external");
+    // Even if some element were clicked, no dispatch writer runs on the inert clone.
+    fireEvent.click(container.firstChild as Element);
+    expect(dispatch).not.toHaveBeenCalled();
+  });
+});
+
 describe("renderRichText (DC-007 list depth = flow indent, clamped)", () => {
   it("renders nested bullets as renderer-owned FLOW indent, clamping over-cap depth, no absolute/pixels", () => {
     const node = richtext([

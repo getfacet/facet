@@ -181,8 +181,11 @@ export interface BrickEntry {
 
 /**
  * richtext content predicate (over the RAW node, mirroring the other renders*
- * predicates): renders when ≥1 block carries ≥1 run with string text. Used for
- * composition emptyState fallback and motion-snapshot participation.
+ * predicates): renders when ≥1 block carries ≥1 run with NON-EMPTY string text.
+ * Used for composition emptyState fallback — an all-empty-run richtext emits only
+ * invisible elements, so it must count as no-content and let the fallback show.
+ * (This matches the renderer's own `richTextHasVisibleRun` visibility test; motion
+ * participation is decided there, not here.)
  */
 function rendersRichText(node: Record<string, unknown>): boolean {
   const blocks = node.blocks;
@@ -191,7 +194,9 @@ function rendersRichText(node: Record<string, unknown>): boolean {
     (block) =>
       isPlainObject(block) &&
       Array.isArray(block.runs) &&
-      block.runs.some((run) => isPlainObject(run) && typeof run.text === "string"),
+      block.runs.some(
+        (run) => isPlainObject(run) && typeof run.text === "string" && run.text.length > 0,
+      ),
   );
 }
 
