@@ -1,12 +1,9 @@
 import type { IssueSink } from "./issues.js";
 import type {
-  AlertNode,
-  BadgeNode,
   BoxNode,
   ButtonNode,
   CardNode,
   ChartNode,
-  DividerNode,
   EmptyStateNode,
   FacetAction,
   FacetNode,
@@ -281,15 +278,6 @@ export function fillKeyValue(
     }),
   };
 }
-export function fillBadge(
-  raw: FacetNode,
-  defaults: Readonly<Record<string, string>>,
-  params: Readonly<Record<string, unknown>>,
-  issues: IssueSink,
-): FacetNode {
-  const node = raw as BadgeNode;
-  return { ...node, label: fillString(node.label, defaults, params, issues) };
-}
 export function fillProgress(
   raw: FacetNode,
   defaults: Readonly<Record<string, string>>,
@@ -299,17 +287,6 @@ export function fillProgress(
   const node = raw as ProgressNode;
   const next = { ...node };
   if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-  return next;
-}
-export function fillAlert(
-  raw: FacetNode,
-  defaults: Readonly<Record<string, string>>,
-  params: Readonly<Record<string, unknown>>,
-  issues: IssueSink,
-): FacetNode {
-  const node = raw as AlertNode;
-  const next = { ...node, body: fillString(node.body, defaults, params, issues) };
-  if (node.title !== undefined) next.title = fillString(node.title, defaults, params, issues);
   return next;
 }
 export function fillList(
@@ -327,17 +304,6 @@ export function fillList(
       return next;
     }),
   };
-}
-export function fillDivider(
-  raw: FacetNode,
-  defaults: Readonly<Record<string, string>>,
-  params: Readonly<Record<string, unknown>>,
-  issues: IssueSink,
-): FacetNode {
-  const node = raw as DividerNode;
-  const next = { ...node };
-  if (node.label !== undefined) next.label = fillString(node.label, defaults, params, issues);
-  return next;
 }
 export function fillForm(
   raw: FacetNode,
@@ -618,27 +584,15 @@ export function leavesKeyValue(raw: FacetNode): readonly string[] {
     [item.key, item.label, item.value].filter((value): value is string => value !== undefined),
   );
 }
-export function leavesBadge(raw: FacetNode): readonly string[] {
-  const node = raw as BadgeNode;
-  return [node.label];
-}
 export function leavesProgress(raw: FacetNode): readonly string[] {
   const node = raw as ProgressNode;
   return [node.label].filter((value): value is string => value !== undefined);
-}
-export function leavesAlert(raw: FacetNode): readonly string[] {
-  const node = raw as AlertNode;
-  return [node.title, node.body].filter((value): value is string => value !== undefined);
 }
 export function leavesList(raw: FacetNode): readonly string[] {
   const node = raw as ListNode;
   return node.items.flatMap((item) =>
     [item.title, item.body].filter((value): value is string => value !== undefined),
   );
-}
-export function leavesDivider(raw: FacetNode): readonly string[] {
-  const node = raw as DividerNode;
-  return [node.label].filter((value): value is string => value !== undefined);
 }
 export function leavesForm(raw: FacetNode): readonly string[] {
   const node = raw as FormNode;

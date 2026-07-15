@@ -246,14 +246,8 @@ export function rendersKeyValue(node: Record<string, unknown>): boolean {
     isRenderableKeyValueItem,
   );
 }
-export function rendersBadge(node: Record<string, unknown>): boolean {
-  return typeof node.label === "string";
-}
 export function rendersProgress(node: Record<string, unknown>): boolean {
   return typeof node.value === "number" && Number.isFinite(node.value);
-}
-export function rendersAlert(node: Record<string, unknown>): boolean {
-  return typeof node.body === "string";
 }
 export function rendersList(node: Record<string, unknown>): boolean {
   return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_LIST_ITEMS, isRenderableListItem);
