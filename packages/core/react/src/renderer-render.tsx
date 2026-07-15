@@ -17,11 +17,11 @@ import {
 } from "@facet/core";
 import { appearClass } from "./appear.js";
 import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
-import { brickRendererEntry } from "./brick-render-registry.js";
+import { brickRecipe } from "./brick-renderer-recipe.js";
 import { MOTION_CLASS_NAMES, composeMotionClassName } from "./motion.js";
 import { backdropHostStyle, scrimStyle } from "./layout-contract.js";
 import { OverlayFrame } from "./overlay-frame.js";
-import { boxStyle, resolveRecipe, textStyle } from "./theme.js";
+import { boxStyle, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { BoxElement } from "./renderer-hold.js";
 import { renderMediaNode } from "./renderer-media.js";
@@ -483,7 +483,7 @@ export function renderNode({
         appearSeen.used = true;
       }
       const variant = (node as { readonly variant?: unknown }).variant;
-      const recipe = resolveRecipe(theme, "box", variant);
+      const recipe = brickRecipe(theme, "box", variant);
       // Active look folds in ONLY when the predicate is true (else both are
       // empty and the merge below is byte-identical to today — DC-008).
       // `activeVariant` resolves via `resolveRecipe` like the base variant;
@@ -491,7 +491,7 @@ export function renderNode({
       // (active last) so the highlight wins while active.
       const activeRecipe =
         activeLook && typeof looks.activeVariant === "string"
-          ? resolveRecipe(theme, "box", looks.activeVariant)
+          ? brickRecipe(theme, "box", looks.activeVariant)
           : undefined;
       const activeStyleTokens = activeLook
         ? styleOf(looks.activeStyle as BoxStyle | undefined)
@@ -562,12 +562,12 @@ export function renderNode({
       const value = cappedString(resolveNodeData(node, tree.data), MAX_NODE_BODY_CHARS);
       if (value === undefined) return null;
       const variant = (node as { readonly variant?: unknown }).variant;
-      const recipe = resolveRecipe(theme, "text", variant);
+      const recipe = brickRecipe(theme, "text", variant);
       // Active look (enabler B): same read-only overlay discipline as the box
       // case — active variant/style fold in only while the predicate is true.
       const activeRecipe =
         activeLook && typeof looks.activeVariant === "string"
-          ? resolveRecipe(theme, "text", looks.activeVariant)
+          ? brickRecipe(theme, "text", looks.activeVariant)
           : undefined;
       const activeStyleTokens = activeLook
         ? styleOf(looks.activeStyle as TextStyle | undefined)
@@ -604,42 +604,9 @@ export function renderNode({
         nodeId: id,
         dispatch: dispatchBrickPress,
       });
-    case "input":
+    default:
+      // Every non-bespoke final brick is a leaf in the own-property registry.
+      // Raw unknown/prototype names reach the same lookup and fail soft to null.
       return renderBrick();
-    default: {
-      // Registry dispatch for the renderBrick set (every component). The form
-      // container renders its children first and passes them in; every other
-      // component is a leaf and calls renderBrick() with none. box/text/
-      // media/input keep their bespoke cases above. An unknown/junk type has no
-      // entry and renders nothing — the same no-default fail-safe degrade as
-      // before (the switch previously fell through to `undefined`).
-      const entry = brickRendererEntry(node.type);
-      if (entry === undefined) {
-        return null;
-      }
-      if (entry.container) {
-        return renderBrick(
-          renderContainerChildren({
-            tree,
-            parentId: id,
-            childIds: childIdsOf(node),
-            onPress,
-            visibilityOverrides,
-            theme,
-            ancestors,
-            budget,
-            appearSeen,
-            depth,
-            renderMode,
-            motionClassById,
-            exitRecordsByParent,
-            activeScreen,
-            sortControl,
-            overlayClose,
-          }),
-        );
-      }
-      return renderBrick();
-    }
   }
 }

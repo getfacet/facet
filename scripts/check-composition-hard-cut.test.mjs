@@ -56,6 +56,34 @@ function retiredSamples() {
     joined("Node", "Filler"),
     joined("Node", "StringLeaves"),
     ["composition", "Catalog", "Violation"].join(""),
+    ["PRIMITIVE", "BRICK", "TYPES"].join("_"),
+    joined("Primitive", "BrickType"),
+    joined("Primitive", "BrickNode"),
+    ["INTRINSIC", "COMPONENT", "TYPES"].join("_"),
+    joined("Intrinsic", "ComponentType"),
+    ["LEGACY", "COMPONENT", "TYPES"].join("_"),
+    joined("Legacy", "ComponentType"),
+    ["COMPONENT", "NODE", "TYPES"].join("_"),
+    ["Component", "Node", "Type"].join(""),
+    ["Intrinsic", "Component", "Node"].join(""),
+    ["Legacy", "Component", "Node"].join(""),
+    joined("Component", "Node"),
+    ["is", "Component", "Node", "Type"].join(""),
+    joined("Catalog", "Component"),
+    joined("Catalog", "UsageOrder"),
+    joined("Button", "Node"),
+    joined("Tabs", "Node"),
+    joined("Nav", "Node"),
+    joined("Metric", "Node"),
+    joined("Stat", "Node"),
+    joined("Form", "Node"),
+    joined("FilterBar", "Node"),
+    joined("Component", "RecipePart"),
+    joined("Component", "Recipe"),
+    joined("Component", "Recipes"),
+    ["RECIPE", "COMPONENTS"].join("_"),
+    joined("Recipe", "ComponentName"),
+    ["MAX", "TABS", "ITEMS"].join("_"),
   ];
 }
 
@@ -78,6 +106,9 @@ function multilineRawUse(name = "card") {
 function legacyDataSamples() {
   const key = ["u", "se"].join("");
   const pluralSlot = ["slo", "ts"].join("");
+  const componentsKey = ["compo", "nents"].join("");
+  const fallbackKey = ["primitive", "Fallback"].join("");
+  const retiredTypes = ["button", "form", "filterBar", "metric", "tabs", "nav", "stat"];
   return [
     slotMarker(),
     `"${pluralSlot}": {}`,
@@ -86,6 +117,28 @@ function legacyDataSamples() {
     inlineRawUse(),
     ["{", `  "${key}": "card"`, "}"].join("\n"),
     multilineRawUse(),
+    `"${componentsKey}": []`,
+    `${componentsKey}: []`,
+    `"${fallbackKey}": "allowed"`,
+    `${fallbackKey}: "allowed"`,
+    ...retiredTypes.map((type) => `{ type: "${type}" }`),
+  ];
+}
+
+function legacyMultilineDataSamples() {
+  const componentTier = ["compo", "nent"].join("");
+  const primitiveTier = ["primi", "tive"].join("");
+  return [
+    `"order": ["${componentTier}", "${primitiveTier}"]`,
+    `order: ["${componentTier}", "${primitiveTier}"]`,
+    [
+      '"policy": {',
+      '  "order": [',
+      `    "${componentTier}",`,
+      `    "${primitiveTier}"`,
+      "  ]",
+      "}",
+    ].join("\n"),
   ];
 }
 
@@ -100,12 +153,48 @@ function semanticSamples() {
     ["prefer", "composition"].join(" the reference "), // composition-hard-cut: allowed-negative
     ["graft", "composition"].join(" this "), // composition-hard-cut: allowed-negative
     ["composition", "metadata", "prompt"].join(" data puts the "), // composition-hard-cut: allowed-negative
+    ["primitive", "fallback"].join(" "), // composition-hard-cut: allowed-negative
+    ["primitive", "base"].join(" "), // composition-hard-cut: allowed-negative
+    ["intrinsic", "components"].join(" "), // composition-hard-cut: allowed-negative
+    ["component", "primitive"].join(" -> "), // composition-hard-cut: allowed-negative
+    ["component", "primitive"].join(" → "), // composition-hard-cut: allowed-negative
+    ["component", "first"].join("-"), // composition-hard-cut: allowed-negative
+    ["primitive", "component"].join("/"), // composition-hard-cut: allowed-negative
+    ["component", "rich four-tab seed stage"].join("-"), // composition-hard-cut: allowed-negative
+    ["component", "based seeded first paint"].join("-"), // composition-hard-cut: allowed-negative
+    ["component", "based four-tab tour seed"].join("-"), // composition-hard-cut: allowed-negative
+    ["`richtext`", "primitive", "brick"].join(" "), // composition-hard-cut: allowed-negative
   ];
 }
 
 test("reports a clean shipping fixture", async (t) => {
   const cwd = await makeFixture(t);
   await writeFixture(cwd, "packages/example/src/index.ts", "export const value = 1;\n");
+
+  const result = scanHardCut({ cwd });
+
+  assert.deepEqual(result.violations, []);
+});
+
+test("allows generic external component prose that makes no Facet tier claim", async (t) => {
+  const cwd = await makeFixture(t);
+  await writeFixture(
+    cwd,
+    "docs/comparison.md",
+    [
+      "This comparison targets component-based React libraries and component-rich design systems.",
+      "Facet can run inside component-based React applications.",
+      "Unlike component-rich design systems, Facet authors closed native bricks.",
+      "The Facet stage can run inside a component-based React application.",
+      "This tour compares component-rich design systems with Facet native bricks.",
+      "A component-based seedling catalog is an external example.",
+      "External catalogs expose allowed components and component recipes.",
+      "An external context primitive brick is not a Facet node claim.",
+      "A mailbox primitive brick belongs to another system.",
+      "A checklist primitive brick is generic external prose.",
+      "",
+    ].join("\n"),
+  );
 
   const result = scanHardCut({ cwd });
 
@@ -190,6 +279,7 @@ test("detects every locked pattern alternative with the specified casing", async
   const cwd = await makeFixture(t);
   const retired = retiredSamples();
   const legacy = legacyDataSamples();
+  const legacyMultiline = legacyMultilineDataSamples();
   const semantic = semanticSamples();
   await Promise.all(
     retired.map((sample, index) =>
@@ -202,6 +292,11 @@ test("detects every locked pattern alternative with the specified casing", async
     ),
   );
   await Promise.all(
+    legacyMultiline.map((sample, index) =>
+      writeFixture(cwd, `docs/legacy-multiline-${index}.md`, `${sample}\n`),
+    ),
+  );
+  await Promise.all(
     semantic.map((sample, index) => writeFixture(cwd, `docs/semantic-${index}.md`, `${sample}\n`)),
   );
 
@@ -211,6 +306,7 @@ test("detects every locked pattern alternative with the specified casing", async
     result.violations.filter((violation) => violation.group === group).length;
   assert.equal(count("retired_symbols"), retired.length);
   assert.equal(count("legacy_data"), legacy.length);
+  assert.equal(count("legacy_multiline_data"), legacyMultiline.length);
   assert.equal(count("semantic_case_insensitive"), semantic.length);
 });
 

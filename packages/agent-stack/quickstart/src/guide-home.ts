@@ -1,6 +1,9 @@
 import type { FacetTree } from "@facet/core";
 import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
 
+const NAV_ITEM_STYLE = { border: true, pad: "sm", radius: "md" } as const;
+const NAV_LABEL_STYLE = { color: "fg", align: "center", weight: "semibold" } as const;
+
 export const QUICKSTART_HOME_NODES = {
   "qs.home.root": {
     id: "qs.home.root",
@@ -10,9 +13,82 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.nav.home": {
     id: "qs.nav.home",
-    type: "tabs",
-    variant: "default",
-    items: QUICKSTART_NAV_ITEMS,
+    type: "box",
+    style: { direction: "row", gap: "xs", wrap: true, width: "full" },
+    children: [
+      "qs.nav.home.what",
+      "qs.nav.home.structure",
+      "qs.nav.home.system",
+      "qs.nav.home.usecases",
+    ],
+  },
+  "qs.nav.home.what": {
+    id: "qs.nav.home.what",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.home.what.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[0].to },
+  },
+  "qs.nav.home.what.label": {
+    id: "qs.nav.home.what.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[0].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.home.structure": {
+    id: "qs.nav.home.structure",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.home.structure.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[1].to },
+  },
+  "qs.nav.home.structure.label": {
+    id: "qs.nav.home.structure.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[1].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.home.system": {
+    id: "qs.nav.home.system",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.home.system.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[2].to },
+  },
+  "qs.nav.home.system.label": {
+    id: "qs.nav.home.system.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[2].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.home.usecases": {
+    id: "qs.nav.home.usecases",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.home.usecases.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[3].to },
+  },
+  "qs.nav.home.usecases.label": {
+    id: "qs.nav.home.usecases.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[3].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
   },
   "qs.hero": {
     id: "qs.hero",
@@ -47,22 +123,33 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.hero.primary": {
     id: "qs.hero.primary",
-    type: "button",
-    label: "Show a live example",
-    variant: "primary",
-    tone: "accent",
+    type: "box",
+    style: { direction: "row", bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+    children: ["qs.hero.primary.label"],
     onPress: {
       kind: "agent",
       name: "show_dynamic_example",
       payload: { example: "workflow" },
     },
   },
+  "qs.hero.primary.label": {
+    id: "qs.hero.primary.label",
+    type: "text",
+    value: "Show a live example",
+    style: { color: "accent-fg", align: "center", weight: "semibold" },
+  },
   "qs.hero.secondary": {
     id: "qs.hero.secondary",
-    type: "button",
-    label: "Try a use case",
-    variant: "secondary",
+    type: "box",
+    style: { direction: "row", bg: "surface", border: true, pad: "sm", radius: "md" },
+    children: ["qs.hero.secondary.label"],
     onPress: { kind: "navigate", to: "usecases" },
+  },
+  "qs.hero.secondary.label": {
+    id: "qs.hero.secondary.label",
+    type: "text",
+    value: "Try a use case",
+    style: { color: "fg", align: "center", weight: "semibold" },
   },
   "qs.metrics": {
     id: "qs.metrics",
@@ -72,12 +159,21 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.metric.patch": {
     id: "qs.metric.patch",
-    type: "metric",
-    label: "Patch loop",
-    value: "Live",
-    delta: "per visitor",
-    tone: "success",
-    variant: "success",
+    type: "box",
+    style: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
+    children: ["qs.metric.patch.label", "qs.metric.patch.value"],
+  },
+  "qs.metric.patch.label": {
+    id: "qs.metric.patch.label",
+    type: "text",
+    value: "Patch loop",
+    style: { color: "fg-muted", size: "sm", weight: "medium" },
+  },
+  "qs.metric.patch.value": {
+    id: "qs.metric.patch.value",
+    type: "text",
+    value: "Live · per visitor",
+    style: { color: "success", size: "xl", weight: "bold" },
   },
   "qs.card.safety": {
     id: "qs.card.safety",
@@ -157,7 +253,7 @@ export const QUICKSTART_HOME_NODES = {
     id: "qs.surface.card.body",
     type: "text",
     value:
-      "Display components stay display-only. Ask the agent to turn this into your own dashboard, pricing path, or workflow.",
+      "Display bricks stay display-only. Ask the agent to turn this into your own dashboard, pricing path, or workflow.",
     style: { color: "fg-muted" },
   },
   "qs.surface.chart": {

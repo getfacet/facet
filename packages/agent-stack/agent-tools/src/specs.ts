@@ -1,17 +1,19 @@
+import { BRICK_TYPES } from "@facet/core";
 import type { FacetStageToolName, ToolSpec } from "./types.js";
 
 export type FacetStageToolSpec = ToolSpec<FacetStageToolName>;
 
+const BRICK_ROSTER = BRICK_TYPES.join(", ");
+
 const NODE_SCHEMA = {
   type: "object",
-  description:
-    "A Facet stage node from the component or primitive layer of the catalog-guided component -> primitive fallback model. Primitive bricks are box, text, media, input, richtext. Intrinsic components are button, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box and form are containers. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a node's from field. Variant names must be allowed by the active catalog policy.",
+  description: `A Facet stage brick. Bricks are ${BRICK_ROSTER}. Box is the only container. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a brick's from field. Variant names must be allowed by the active catalog policy.`,
 } as const;
 
 const TREE_SCHEMA = {
   type: "object",
   description:
-    "The full Facet stage tree: { root, nodes, screens?, entry?, theme? }. Every node and theme must pass the active catalog policy before patches are emitted.",
+    "The full Facet stage tree: { root, nodes, screens?, entry?, theme? }. Every brick and theme must pass the active catalog policy before patches are emitted.",
 } as const;
 
 export const FACET_STAGE_TOOL_NAMES = [
@@ -43,13 +45,13 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "append_node",
     description:
-      "Add one primitive brick or component node as the last child of the existing box or form parentId. Use for small incremental page additions. Catalog policy controls allowed node types and variants.",
+      "Add one brick as the last child of the existing box parentId. Use for small incremental page additions. Catalog policy controls allowed brick types and variants.",
     parameters: {
       type: "object",
       properties: {
         parentId: {
           type: "string",
-          description: "The id of an existing container node: box or form.",
+          description: "The id of an existing box container.",
         },
         ["node"]: NODE_SCHEMA,
       },
@@ -60,7 +62,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "get_composition",
     description:
-      "Read one catalog-exposed composition reference dataset by name. This is read-only: inspect its complete native Facet node JSON, then author the stage separately with native stage tools.",
+      "Optionally read one catalog-exposed reference dataset by name. This is read-only and does not edit the stage: inspect its complete native Facet brick JSON, then author the stage separately with stage tools.",
     parameters: {
       type: "object",
       properties: {
@@ -76,7 +78,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "set_node",
     description:
-      "Insert or replace one primitive brick or component node by id. Reuse an existing id to update that node in place. Catalog policy controls allowed node types and variants.",
+      "Insert or replace one brick by id. Reuse an existing id to update that brick in place. Catalog policy controls allowed brick types and variants.",
     parameters: {
       type: "object",
       properties: {

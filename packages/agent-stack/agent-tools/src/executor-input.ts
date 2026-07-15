@@ -1,6 +1,5 @@
 import {
-  COMPONENT_NODE_TYPES,
-  PRIMITIVE_BRICK_TYPES,
+  BRICK_TYPES,
   isContainer,
   validateTree,
   type FacetNode,
@@ -13,9 +12,7 @@ import { isForbiddenNodeId } from "./executor-paths.js";
 import type { FacetStageToolName } from "./types.js";
 
 const MAX_ID_LIST_PREVIEW = 20;
-const FACET_NODE_TYPES_TEXT = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]
-  .map((type) => `"${type}"`)
-  .join(", ");
+const FACET_BRICK_TYPES_TEXT = BRICK_TYPES.map((type) => `"${type}"`).join(", ");
 
 export function parseToolCall(
   call: unknown,
@@ -112,8 +109,8 @@ function asNode(
       : undefined;
   if (entry === undefined) {
     return {
-      error: `"type" must be one of the Facet v1 node types: ${FACET_NODE_TYPES_TEXT}`,
-      nextAction: "Use one allowed Facet v1 node type.",
+      error: `"type" must be one of the Facet brick types: ${FACET_BRICK_TYPES_TEXT}`,
+      nextAction: "Use one allowed Facet brick type.",
     };
   }
   return entry.asNode(value);

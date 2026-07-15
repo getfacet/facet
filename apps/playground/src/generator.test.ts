@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const spawnMock = vi.hoisted(() => vi.fn());
@@ -74,6 +75,15 @@ describe("extractJson", () => {
 });
 
 describe("generator renderability", () => {
+  it("describes generation with final bricks and optional references", () => {
+    const source = readFileSync(new URL("./gen.ts", import.meta.url), "utf8");
+    const copy = source.replace(/\s*\n\s*\*\s*/g, " ");
+
+    expect(copy).toMatch(/closed brick vocabulary/i);
+    expect(copy).toMatch(/optionally informed[^.]*reference datasets/i);
+    expect(copy).not.toMatch(/component\s*(?:→|->)\s*primitive/i);
+  });
+
   it("accepts a renderable native box root without retrying", async () => {
     mockClaudeResponse(renderableBoxTree("Ready"));
     mockClaudeResponse(renderableBoxTree("fallback"));
@@ -86,8 +96,8 @@ describe("generator renderability", () => {
   });
 
   it.each([
-    ["button", { id: "root", type: "button", label: "Open" }],
-    ["stat", { id: "root", type: "stat", label: "MRR", value: "$42k" }],
+    ["text", { id: "root", type: "text", value: "Loose copy" }],
+    ["loading", { id: "root", type: "loading", label: "Loading" }],
     [
       "table",
       {
@@ -98,7 +108,7 @@ describe("generator renderability", () => {
         rows: [{ name: "Ada" }],
       },
     ],
-  ])("keeps retrying when a non-container component %s is the root", async (_type, root) => {
+  ])("keeps retrying when a non-container brick %s is the root", async (_type, root) => {
     mockClaudeResponse({ root: "root", nodes: { root } });
     mockClaudeResponse(renderableBoxTree("fallback"));
 

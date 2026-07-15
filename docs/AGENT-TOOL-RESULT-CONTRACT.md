@@ -127,7 +127,7 @@ In particular:
 - Buffered edits are `pending`, not success.
 - Rejected edits emit no patch and must include a concrete `next_action`.
 - Catalog policy rejections are `rejected`, not warnings. They emit no patch
-  when the active catalog disallows a node type or component variant, hides a
+  when the active catalog disallows a brick type or variant, hides a
   composition reference, or forbids a theme switch.
 
 ## Visibility Definition
@@ -167,12 +167,10 @@ appears in `next_action`.
 
 When a catalog policy rejection happens:
 
-- disallowed node type or component variant: use an allowed primitive/component,
-  use an allowed variant, or fall back to primitives only when the catalog
-  permits primitive fallback;
+- disallowed brick type or variant: use an allowed brick or allowed variant;
 - hidden composition reference: choose a name advertised by the prompt index for
   `get_composition`, or skip the optional read and author the UI from allowed
-  components/primitives;
+  native bricks;
 - locked theme: keep the active catalog theme and do not call `set_theme`;
 - allowed-theme list miss: pick a theme listed by the active catalog.
 

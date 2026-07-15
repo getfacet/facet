@@ -21,6 +21,5 @@ export {
   MAX_TABLE_CELL_CHARS,
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
-  MAX_TABS_ITEMS,
-} from "./component-validation-shared.js";
+} from "./brick-validation-shared.js";
 export { SLOT_NAME_RE } from "./slot-marker.js";

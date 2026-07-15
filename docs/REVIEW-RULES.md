@@ -8,12 +8,11 @@ bureaucratic.
 
 1. **Declarative closed vocabulary.** Agents/consumers emit only
    `@facet/core`-validated bricks with **token** style values — never raw
-   HTML/JS/CSS, never raw scalars, never absolute positioning. The primitive
-   fallback/base nodes remain `box` and `text` for structure and copy, plus
-   `media`, `input`, and `richtext` for rendered assets, input, and formatted
-   prose. Intrinsic components are valid only when added deliberately to the
-   closed vocabulary in `@facet/core`; theme recipes may only select validated
-   tokens. Composition references are concrete native-node datasets an agent may
+   HTML/JS/CSS, never raw scalars, never absolute positioning. The complete
+   roster is `box`, `text`, `media`, `input`, `richtext`, `table`, `chart`,
+   `list`, `keyValue`, `progress`, and `loading`; only `box` is a container.
+   Theme recipes may only select validated tokens. Composition references are
+   concrete native-node datasets an agent may
    read, not stage syntax or an authoring tier. Bypassing core validation or
    admitting arbitrary markup is an invariant violation.
 2. **Patches-only + fail-safe.** Stage changes travel as RFC 6902 patches; the
@@ -41,18 +40,14 @@ bureaucratic.
 gate on them. (A P2 may only ship unfixed with an explicit maintainer waiver
 recorded in the PR.)
 
-Intrinsic components are not a violation when their node kinds and tokens are
-intentionally defined and validated in `@facet/core`. Theme recipes may style
-those nodes but cannot add behavior or fields. A composition-reference read may
-return only a validated concrete native dataset and must not itself emit stage
-messages or patches. Treat code, prompts, or docs that reject valid intrinsic
-components merely because they are not primitive fallback nodes as a bug; treat
-any path that accepts unvalidated nodes, raw markup, raw scalar styles,
-client-side business logic on display components, or absolute positioning as at
-least P1.
+A theme recipe may style a validated brick but cannot add behavior or fields. A
+composition-reference read may return only a validated concrete native dataset
+and must not itself emit stage messages or patches. Treat any path that accepts
+unvalidated nodes, raw markup, raw scalar styles, client-side business logic on
+display bricks, or absolute positioning as at least P1.
 
 Renderer layout containment is part of the contract. Parent owns placement,
-child owns internal layout, and renderer owns containment. A component renderer
+child owns internal layout, and renderer owns containment. A brick renderer
 that lets a child push horizontal width, overlap siblings, or escape its parent
 without an explicit bounded scroll region is at least P1.
 
@@ -83,11 +78,10 @@ without an explicit bounded scroll region is at least P1.
 - **concurrency** — races (same-visitor events, runtime stage), the bridge queue
   + persistent generator handshake (deadlock/ordering), timeouts, resource leaks.
 - **consistency** — duplication, cross-package drift, dev-vs-published resolution
-  (`publishConfig`/`exports`), barrel usage, naming, docs/prompts that hard-code
-  primitive fallback nodes as the full permanent vocabulary, describe
-  composition references as a functional node tier, or retain retired
-  composition APIs/data shapes. The native authoring order is
-  `component -> primitive`; reference lookup is optional and separate.
+  (`publishConfig`/`exports`), barrel usage, naming, docs/prompts that omit the
+  exact 11-brick roster, describe composition references as a functional node
+  tier, or retain retired component-tier APIs/data shapes. Reference lookup is
+  optional and separate from node authoring.
 - **test-gaps** — changed behavior without a test; critical pure logic
   (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
   coverage; untested testable surface (`@facet/cli`); tautological

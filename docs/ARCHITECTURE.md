@@ -47,10 +47,10 @@ freely, guided by a catalog when a project wants stronger design-system policy.
 The trick that makes this safe *and* one-shot-reliable is that freedom and
 fragility are separated onto different axes:
 
-- Freedom comes from **native composition**: primitive bricks stay the universal
-  base, intrinsic components cover common product/app UI, and the model can
-  combine both freely. Optional catalog reference datasets show validated
-  concrete patterns without becoming stage syntax or an authoring tier.
+- Freedom comes from **native composition**: the model combines one closed
+  11-brick vocabulary freely. Optional catalog reference datasets show
+  validated concrete patterns without becoming stage syntax or an authoring
+  tier.
 - Safety comes from **constraining the vocabulary, not handing over markup**:
   nodes are typed data (no raw HTML/JS), style values are **tokens** not scalars,
   layout is **flow-only** (no absolute positioning), every prop has a
@@ -60,17 +60,17 @@ So "broken" splits into two kinds, and both are designed out: *crashes /
 injection / overlap* are made structurally impossible; *ugliness* is prevented
 because tokens and recipes force every choice onto a coherent scale. One-shot
 leverage (the thing semantic catalogs were good at) comes from catalog policy,
-theme recipes, and optional reference examples, while primitive fallback keeps
-the system from becoming an opaque widget-only catalog.
+brick recipes, and optional reference examples, while the composable brick
+vocabulary keeps the system from becoming an opaque widget-only catalog.
 
-## Primitive Bricks And Components
+## Native Bricks And Reference Compositions
 
 `FacetNode` is a closed union in `packages/core/core/src/nodes.ts`. The union can
 grow only by adding typed node shapes, validators, tool policy, and renderer
-support on purpose; it never accepts raw HTML, JS, CSS, or arbitrary component
+support on purpose; it never accepts raw HTML, JS, CSS, or arbitrary renderer
 code.
 
-The primitive base remains valid as fallback:
+The complete native roster is:
 
 - `box` — the universal flow container. Flow layout (`direction: row|col`),
   token styles (including `appear`, `scroll`, and `columns`), optional
@@ -81,9 +81,9 @@ The primitive base remains valid as fallback:
 - `input` — a native input (`name`, `input` kind incl. `search`, capped `options`
   for select/radio, token styles). Consolidates the former `field`/`search`
   surfaces; a search box is `input:"search"`, and a search-with-submit is an
-  `input`+`button` composition.
+  `input` plus a pressable label box.
 - `richtext` — a flowing block of prose carrying MIXED inline formatting the
-  single-string `text` node cannot express. A primitive LEAF: it holds its own
+  single-string `text` node cannot express. A native leaf: it holds its own
   `blocks` (`paragraph`/`heading`/`listItem`/`quote`) whose `runs` flow inline,
   each run carrying CLOSED semantic `marks` (`bold`/`italic`/`underline`/
   `strike`/`code`/`link`) — never raw HTML/markdown/CSS; an unknown mark drops
@@ -92,43 +92,30 @@ The primitive base remains valid as fallback:
   either an INTERNAL Action (the same union as `onPress`) or a gated EXTERNAL
   `{ href }` (only http(s)/protocol-relative/local; `javascript:`/`data:` and
   other schemes drop to inert text) — a link is navigated, never fetched.
-
-Components are split by ownership:
-
-- **Intrinsic components** are Facet-core vocabulary. They must be generic across
-  app domains, useful as familiar agent-facing nouns, renderer-owned, safe
-  without client-side business logic, and hard enough to reproduce from
-  primitives that a typed node materially improves reliability.
-- **Theme recipes** are operator data that map approved component variants and
-  renderer-owned parts to token-only styles. **Composition references** are
-  concrete, validated native-node examples an LLM may inspect. Neither adds a
-  node kind, stage syntax, automatic insertion, or client-side behavior.
-
-The v1 intrinsic components are still just typed stage data:
-
-- `button` — a leaf action brick with `label`, optional `variant`/`tone`,
-  `disabled`, `onPress`, and `onHold`.
-- `tabs` — local navigation over existing screen/view-state semantics. It does
-  not write stage content or call the agent.
-- `nav` — app or section navigation over the same local screen/view-state
-  semantics.
 - `table` — display-only tabular data with capped columns, rows, and cells.
 - `chart` — display-only chart data with capped series and points.
-- `metric`, `keyValue`, `progress`, `list`, and `loading` — compact display and
-  feedback components with bounded payloads. `stat` remains a legacy alias for
-  `metric`.
-- `form` and `filterBar` — input/control surfaces only. Backend work
-  stays with the agent through actions and later patches.
+- `list` — a capped list display.
+- `keyValue` — bounded label/value details.
+- `progress` — a bounded progress display.
+- `loading` — a pending/busy display.
 
-Sections, cards, and empty states are composition patterns, not node types.
-Default `section`, `card`, and `empty-state` references encode their intended
-appearance as concrete `box`/`text`/`button` trees with closed tokens. Their
-roots have no implicit behavior; an empty-state action exists only on the
-authored child button. Badges and alerts follow the same reference-data model,
-and a visual separator is a plain bordered box.
+Only `box` is a container. The other ten bricks are leaves. Actions, tabs,
+navigation, forms, filter choices, metric-style summaries, sections, cards, and
+empty states are box/text/input composition patterns rather than node types.
+For example, an action is a pressable box containing label text; a form is a box
+of inputs plus a pressable submit box; local navigation combines
+`onPress:{kind:"navigate",to}` with an `active:{screen}` look. Fixed filters can
+use browser-local navigate/toggle actions, while open-ended filtering stays with
+the agent through an ordinary action and later patch.
 
-Only `box` and `form` are containers in v1. Tables, charts, and filter bars are
-display/control-only; there is no client fetch,
+**Theme recipes** are operator data that map approved brick variants and
+renderer-owned parts to token-only styles. **Composition references** are
+concrete, validated native-brick examples an LLM may inspect. Neither adds a
+node kind, stage syntax, automatic insertion, or client-side behavior.
+`DEFAULT_COMPOSITIONS` includes the reusable patterns above, plus badge and alert
+patterns; a visual separator is a plain bordered box.
+
+Tables and charts are display-only; there is no client fetch,
 agent-authored sort/filter engine, data-source/resolver/query binding, expression
 language, or inline script. (Binding a data-bearing node to the in-tree `data`
 warehouse by NAME via `from` is allowed and is not a data source — see "Data
@@ -148,8 +135,7 @@ descriptors — never a general z-index/absolute-positioning escape hatch:
 
 ## Renderer Layout Contract
 
-The renderer enforces the containment rule for every primitive brick and
-intrinsic component:
+The renderer enforces the containment rule for every native brick:
 
 - **Parent owns placement.** A parent's direction, gap, align, justify, columns,
   and wrap place only its immediate children.
@@ -162,7 +148,7 @@ intrinsic component:
   tables or an explicit `scroll: "x"` box.
 - Absolute/fixed positioning remains outside the stage vocabulary.
 
-This contract is intentionally central: component renderers must satisfy it at
+This contract is intentionally central: brick renderers must satisfy it at
 their root element. Theme recipes only select token styles, and any model output
 adapted from a reference dataset still passes the ordinary native-node validator.
 
@@ -240,16 +226,14 @@ the vocabulary grows deliberately instead of by accretion.
 ## Catalog policy
 
 `FacetCatalog` is the agent-facing usage manual for the active project. It says
-which primitive bricks, components, and variants are allowed, which optional
-composition references may be inspected, whether primitive fallback is allowed
-or discouraged, whether theme switching is locked, and whether the agent should
-prefer compact screens or edit-before-append behavior. Missing or malformed
-catalog input falls back to `DEFAULT_CATALOG` with bounded issues. The normalized
-model exposes `bricks`, `components`, a required composition-reference exposure
-policy (`{ mode: "all" }` by default, or `{ mode: "allow", names }`),
-`primitiveFallback`, and a usage `policy` whose canonical native authoring order
-is `["component", "primitive"]`. Reference exposure is independent from that
-order and never creates a third node tier.
+which bricks and variants are allowed, which optional composition references
+may be inspected, whether theme switching is locked, and whether the agent
+should prefer compact screens or edit-before-append behavior. Missing or
+malformed catalog input falls back to `DEFAULT_CATALOG` with bounded issues.
+The normalized model exposes one `bricks` roster, a required
+composition-reference exposure policy (`{ mode: "all" }` by default, or
+`{ mode: "allow", names }`), theme policy, and compact/edit guidance. Reference
+exposure is independent from node authoring and never creates another node tier.
 
 The catalog is deliberately neutral UI vocabulary/policy. It is not LiveFrame and
 it is not a hosted control plane. Tenant/project lookup, browser auth, agent
@@ -264,8 +248,8 @@ layer makes it a **data** change — without moving the pixel boundary into the
 spec. Raw CSS values enter Facet in exactly one place — `validateTheme` in
 `@facet/core` — and only as **operator data**, never as tree content or model
 output. A `FacetTheme` is a partial override document (token name → CSS value)
-plus optional `recipes` for components, variants, and closed internal recipe
-parts such as field labels/controls, tabs, table cells, chart plots, progress
+plus optional `recipes` for bricks, variants, and closed internal recipe parts
+such as field labels/controls, table cells, chart plots, progress
 tracks/fills, and list rows. The validator is the single gate it
 passes: an allowlist per token group, recipe style group, and recipe part name, a deny-list
 (`url()`, `var()`, `expression()`, `javascript:` and injection characters are
@@ -282,14 +266,13 @@ the server and in the browser.
 The stage tree carries only a **name**: `FacetTree.theme?: string`,
 kept-if-string by `validateTree`. `STAGE_SPEC` teaches the agent to set it to a
 theme name it has been given and nothing else — **the LLM never authors theme
-values**. Nodes carry `variant`/`tone` selectors where supported; primitive
-`box`/`text`/`media`/`input` may also choose a theme recipe variant, while
-primitive styles still carry token names. Recipe parts are not stage syntax; they
+values**. Nodes carry `variant`/`tone` selectors where supported, while brick
+styles still carry token names. Recipe parts are not stage syntax; they
 are renderer-owned subrecipes inside validated operator theme data. Resolution is
 a boot-shipped map plus local lookups: the validated theme documents ship to the
 browser **once**, inline in the quickstart HTML shell as an escaped
 `window.__FACET_THEMES__` global, `resolveTheme` (`@facet/react`) maps the
-tree's theme name to a resolved token map, `resolveRecipe` maps a component +
+tree's theme name to a resolved token map, `resolveRecipe` maps a brick +
 variant/tone to token-only style bundles, and the renderer resolves recipe parts
 for internal brick affordances. Unknown theme names, recipes, variants, tones,
 or parts fall back to the default recipe/style path. This is pure lookup — the
@@ -361,14 +344,14 @@ very first paint the quickstart shell also ships the seed (and the resolved
 theme's canvas colors) with the page itself — `useFacet` can start from a
 boot-shipped tree, so nothing waits on the model; the seed frame then applies
 idempotently. The zero-config `facet-quickstart` path uses its own compact
-four-tab quickstart tour seed when no explicit guide or operator initial tree is
+four-screen quickstart tour seed when no explicit guide or operator initial tree is
 present, while custom `initial.tree.json` assets still win. One
 trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
 which would silently seed a blank page and flip the server's offline face, so a
 tree that isn't *seedable* (the initial render root has visible, renderable
-content such as text, media, fields, controls, or data-backed bricks) is refused
+content such as text, media, inputs, or data-backed bricks) is refused
 as a seed and boot falls back to today's model-first paint. Empty containers,
-blank entry screens, empty table/chart/tabs/list leaves, and empty radio groups
+blank entry screens, empty table/chart/list leaves, and empty radio groups
 with no label or options are not seedable.
 
 ## The stage tree
@@ -391,10 +374,10 @@ agent stream and patch a tree incrementally — adding one node at a time — in
 of re-emitting a whole page on every change.
 
 **Data warehouse + bindings.** A `data`-bearing node (`table`, `chart`, `list`,
-`keyValue`, `metric`, `stat`, and — for a single cell — `text`) may carry inline
+`keyValue`, and — for a single cell — `text`) may carry inline
 data (`table.rows`, `chart.series`, a `text.value`, …) OR reference a named
 dataset in the optional top-level `data` warehouse via `from: "<name>"` (a
-single-cell node adds `column`/`row`, default row 0, exactly like `metric`) —
+single-cell node adds `column`/`row`, default row 0) —
 so one dataset feeds many views and a single
 `/data/<name>` (or `/data/<name>/<i>/<col>`) patch updates every bound view at
 once. A dataset is a closed `Array<Record<string, string | number | boolean>>`
@@ -405,7 +388,8 @@ data as **declared, agent-authored content** (UI-OUT), NOT a fetch/resolver/quer
 — Facet adds no client data source, no binding-expression language, and no
 agent-authored sort/filter engine. The one built-in local view operation is table
 sort (opt-in per column via `sortable`; see "Local table sort" below); local
-*filter* is still a deliberate follow-up.
+row-predicate filtering over a bound dataset is still a deliberate follow-up;
+fixed category choices can already navigate among pre-authored screens locally.
 `data` is sanitized inside `validateTree`, so the one pure `applyPatch`/fold keeps
 it identical on server and client; the single `resolveNodeData` helper does the
 name→dataset projection for BOTH the "shows content?" gate and the renderer, so
@@ -443,8 +427,8 @@ nothing (the browser stays the sole owner of view-state; the server the sole wri
 of the tree). The predicate is a **closed, extensible tagged union** (unknown/future
 kinds degrade to the default look, never a DSL); `activeStyle` passes the identical
 token allowlist as base `style`, so it is token-only by construction. This is the
-brick-level primitive that lets `tabs`/`nav`-style active highlighting be authored
-from `box`+`text` instead of a renderer-owned component.
+brick-level capability that lets segmented/navigation-style active highlighting
+be authored from `box`+`text` with no dedicated node type.
 
 **Screens** are named roots INTO the same flat `nodes` map (not separate trees),
 so every `/nodes/<id>` patch path, `applyPatch`, and existing consumer keeps
@@ -671,9 +655,9 @@ provider failure mid-loop keeps whatever the stage already has, and a turn that
 accomplishes nothing degrades to one fallback chat line. External agent authors
 can use `@facet/agent-tools` without importing the reference provider loop.
 
-Quickstart's flagship interaction is the **field snapshot**: a pressable box's
+Quickstart's flagship interaction is the **input snapshot**: a pressable box's
 agent action may declare `collect: "<box id>"`, and at press time the renderer
-takes a synchronous snapshot of the visible `field` controls under that box and
+takes a synchronous snapshot of the visible `input` controls under that box and
 ships them as `fields` on the tap event — the values ride the event, **never the
 tree**. Text-like fields and selects contribute their current string value, a
 radio group contributes only its checked member's string value, checked
@@ -681,7 +665,7 @@ checkbox/switch controls contribute boolean `true`, unchecked checkbox/switch
 controls are omitted, password fields are excluded, and all keys/string values
 stay capped (`MAX_FIELDS_KEYS`, `MAX_FIELD_VALUE_CHARS`). Field state is browser
 view-state like screen/toggle state (inputs are uncontrolled; there is no value
-property on a field node to write), and the server re-validates `fields` at the
+property on an input node to write), and the server re-validates `fields` at the
 boundary, so the two-writers rule holds: the server stays the only writer of
 stage content. The reference-agent prompt redacts sensitive field names and
 key-looking field values again when rendering current events or Sink history,
@@ -751,8 +735,8 @@ would pull in a dependency or Node built-in, lives in that package instead.
 
 ## Boundaries and what's still out of scope
 
-The current repo implements the **core model** (closed primitive/component
-vocabulary, catalog policy, tokens/recipes, RFC 6902 patches), sessions
+The current repo implements the **core model** (closed 11-brick vocabulary,
+catalog policy, tokens/recipes, RFC 6902 patches), sessions
 and the event loop, a React renderer, reference SSE+POST transports,
 browser-side transports, the optional AG-UI adapter/event layer, local agent
 surfaces (CLI/bridge), default asset data, file/in-memory asset references, a

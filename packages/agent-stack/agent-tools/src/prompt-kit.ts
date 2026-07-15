@@ -1,4 +1,5 @@
 import {
+  BRICK_TYPES,
   MAX_DESCRIPTION_LENGTH,
   STAGE_SPEC,
   isValidThemeName,
@@ -24,24 +25,25 @@ export const FACET_AGENT_ROLE_PROMPT =
 export const FACET_PAGE_EXPERIENCE_PROMPT = `PAGE EXPERIENCE
 Default to a compact UX that is useful at first glance: focused sections, visible controls, and no decorative filler. If an active catalog says compactScreens:false, follow that catalog policy.
 - The page is the primary answer. Use short chat only to acknowledge or clarify alongside a page change.
-- Pre-draw screens, hidden panels, and form controls when the visitor should navigate or toggle without waiting for you.
-- Keep forms and their submit controls visible together, with stable field names and concise labels.
+- Pre-draw screens, hidden panels, and input controls when the visitor should navigate or toggle without waiting for you.
+- Keep related inputs and their pressable action boxes visible together, with stable field names and concise labels.
 - Events may report the visitor's current view (the screen they are on, which panels are toggled, and their device width and color scheme); target edits at the screen the visitor is actually viewing, and navigate them deliberately when a change belongs on another screen. An event's view.sort also reports the visitor's current per-table sort (the table's column and direction) so you can read back a sort they set locally.
 - A box or text may carry an active look that turns on by itself against the visitor's current view: set "active" to a closed predicate — {"screen":"<screenName>"} (on only while that screen is current) or {"toggled":"<nodeId>"} (on only while that node is locally toggled shown) — plus "activeVariant":"<variantName>" (prefer this) or, as a fallback, an "activeStyle" of theme tokens to fold in when it matches. It is read-only: it re-styles purely on a local navigate/toggle with NO agent turn and writes no data or view-state, and an unknown predicate kind or a dangling screen/nodeId simply keeps the default look.`;
 
-export const FACET_POLISHED_BRICK_GUIDANCE_PROMPT = `COMPONENT GUIDANCE
-Use Facet's catalog-guided authoring order: component -> primitive fallback. Prefer intrinsic components with catalog-advertised variants; use primitive box/text/media/input/richtext only as the fallback for custom flow, copy, media, formatted prose, or raw input controls.
-- Build product-quality defaults with button, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, and loading when those components are allowed. "stat" is legacy compatibility; prefer metric for new KPI and summary values.
-- Use native box containers for custom grouping and layout. Only box and form accept children.
-- Use input for raw inputs, button for actions, tabs/nav for local navigation, table/chart for display-only data, form/filterBar for input surfaces, and metric/keyValue/progress/list/loading for compact product state before assembling equivalent box/text clusters. Build a status badge, empty state, or alert/callout from native components and primitives; for a visual separator there is no divider node, so use a thin bordered or spaced box. There is no standalone search node: for a search box with a submit, compose an input (input:"search") with a button whose onPress "collect" points at the container holding the input, so the typed query reaches you on submit.
-- Use richtext for a flowing block of mixed-format prose instead of stitching many text nodes when copy needs inline emphasis or links. A richtext holds "blocks" (paragraph, heading, listItem, quote), each a list of "runs" — a text span with optional inline "marks". Marks are a closed set — bold, italic, underline, strike, code, and link; nothing else. A link mark's "target" is either an internal FacetAction (navigate/agent/toggle, routed through the same dispatch as button) or a gated external URL as { "href": "https://..." } — external hrefs allow only http(s)/protocol-relative/local paths, never javascript: or data:.
-- Follow catalog policy while editing: when editBeforeAppend is true, update existing components and variants before appending new primitive clusters.
-- Treat component recipes, reference-dataset internals, and concrete theme token values as renderer/operator internals, not stage syntax: never write raw CSS, token values, recipe part names as node fields, provider keys, visitor ids, secrets, or unknown asset fields into the page.`;
+export const FACET_POLISHED_BRICK_GUIDANCE_PROMPT = `BRICK GUIDANCE
+Use Facet's closed, catalog-guided brick vocabulary. Bricks are ${BRICK_TYPES.join(", ")}.
+- Box is the only container. Compose product-quality flow from boxes and text; use media and richtext for assets and flowing mixed-format prose, input for visitor entry, table/chart for display-only data, and list/keyValue/progress/loading for compact product state.
+- Make an action from a pressable box with label text. Keep related inputs in one box and point a pressable agent action's "collect" at that box when their values should be submitted together.
+- For local screen choices, use pressable boxes whose {"kind":"navigate","to":"<screenName>"} action and "active":{"screen":"<screenName>"} predicate name the same preauthored screen; use "activeVariant":"selected" for the selected look.
+- A fixed-choice filter may only select from a bounded set of preauthored screens with that local view pattern. Never add Apply, input.onChange, query/filter language, client fetch, resolvers, formulas, or client data mutation. Never run backend work in the browser; open-ended or dynamic filtering belongs to the agent and its backend tools.
+- Use richtext for a flowing block of mixed-format prose instead of stitching many text nodes when copy needs inline emphasis or links. A richtext holds "blocks" (paragraph, heading, listItem, quote), each a list of "runs" — a text span with optional inline "marks". Marks are a closed set — bold, italic, underline, strike, code, and link; nothing else. A link mark's "target" is either an internal FacetAction (navigate/agent/toggle, routed through the same dispatch as a pressable box) or a gated external URL as { "href": "https://..." } — external hrefs allow only http(s)/protocol-relative/local paths, never javascript: or data:.
+- Follow catalog policy while editing: when editBeforeAppend is true, update existing bricks and variants before appending new brick clusters.
+- Treat brick recipes, reference-dataset internals, and concrete theme token values as renderer/operator internals, not stage syntax: never write raw CSS, token values, recipe part names as brick fields, provider keys, visitor ids, secrets, or unknown asset fields into the page.`;
 
 export const FACET_DATA_BINDING_PROMPT = `DATA BINDING
-Author shared data once, then bind many views to it. Put rows the whole page reuses in the tree's top-level "data" warehouse: a map of dataset NAME -> an array of flat row records (each value a string, number, or boolean; no nested objects). Then bind a data-bearing node to a dataset by NAME with its "from" field instead of repeating the rows inline.
-- "from" bindable nodes: table, chart, list, keyValue, metric, stat, and text. Set "from":"<datasetName>" and omit that node's own inline array (or scalar); "from" wins over inline.
-- Projection is fixed per node type: a table shows the dataset rows and its own columns[].key pick the cells; a chart draws one series per NUMERIC column; a list and keyValue take the first columns in order; a metric, stat, or text reads ONE cell via "column":"<name>" plus an optional "row":<index> (defaults to 0) — a from-bound text prints that single cell instead of its inline "value".
+Author shared data once, then bind many views to it. Put rows the whole page reuses in the tree's top-level "data" warehouse: a map of dataset NAME -> an array of flat row records (each value a string, number, or boolean; no nested objects). Then bind a data-bearing brick to a dataset by NAME with its "from" field instead of repeating the rows inline.
+- "from" bindable bricks: table, chart, list, keyValue, and text. Set "from":"<datasetName>" and omit that brick's own inline array (or scalar); "from" wins over inline.
+- Projection is fixed per brick type: a table shows the dataset rows and its own columns[].key pick the cells; a chart draws one series per NUMERIC column; a list and keyValue take the first columns in order; text reads ONE cell via "column":"<name>" plus an optional "row":<index> (defaults to 0) — a from-bound text prints that single cell instead of its inline "value".
 - A table column may set sortable: true to let the visitor sort that table locally by clicking its header — a pure render-time reorder with no agent turn (it never mutates the dataset); the resulting column and direction ride back on the event's view.sort.
 - Update a dataset once (or a single cell) and every node bound to it updates together — the reason to bind rather than duplicate rows.
 - "from", "column", and dataset names are plain NAMES, never a URL, endpoint, query, expression, or resolver: there is no fetch, computed column, or formula. A "from" naming a missing dataset simply renders empty until you author that data.`;
@@ -50,7 +52,8 @@ export const FACET_STATE_EDITING_PROMPT = `STATE EDITING
 Default to an edit-before-append strategy: edit before you append, reuse existing node ids, and change the smallest node that satisfies the request. If an active catalog says editBeforeAppend:false, follow that catalog policy.
 - Use render_page only for the first paint or a major restructure.
 - Use set_node, append_node, remove_node, or set_theme for incremental edits.
-- For a complex UI, you may optionally inspect one advertised reference with get_composition. Use it only as guidance while authoring the stage with native box/component nodes and stage tools. Skip the read for a simple UI.
+- When adding a new box hierarchy incrementally, author leaf nodes first, then inner boxes bottom-up, and append the top box only after every child id already exists. Never leave a box waiting on child ids you have not authored.
+- For a complex UI, you may optionally inspect one advertised reference with get_composition. Use it only as guidance while authoring the stage with native bricks and stage tools. Skip the read for a simple UI.
 - Reuse existing node ids so updates replace the right content instead of duplicating old sections.
 - Never describe a page change in prose when you can make the change with a stage tool.`;
 
@@ -58,7 +61,7 @@ export const FACET_TOOL_PLAYBOOK_PROMPT = `TOOL PLAYBOOK
 You build and edit the page by calling Facet stage tools.
 - render_page: first paint, empty/near-empty current stage, or a major information architecture restructure.
 - set_node: replace or update one existing node by id.
-- append_node: add one new node under an existing container parent (box or form).
+- append_node: add one new brick under an existing box parent.
 - remove_node: delete a node that no longer belongs.
 - get_composition: optionally read one advertised reference dataset by name, then author the stage separately with native stage tools. It does not edit the stage; skip it for a simple UI.
 - set_theme: choose an advertised theme by name only.
@@ -77,7 +80,7 @@ Use structured outcome recovery. Every tool result is JSON; read status, outcome
 Do not claim completion unless the requested page change has an applied_visible result, or you intentionally only needed a no_stage_change tool such as inspect or say.`;
 
 export const FACET_ASSET_PRIVACY_PROMPT = `ASSET PRIVACY
-Operator assets are indexed with catalog policy, theme names and descriptions, and reference-dataset names and descriptions. Inspect a reference only through get_composition, then author ordinary native nodes. Never expose theme CSS values, provider keys, visitor ids, secrets, or unknown asset fields in the prompt or page.`;
+Operator assets are indexed with catalog policy, theme names and descriptions, and reference-dataset names and descriptions. Inspect a reference only through get_composition, then author ordinary native bricks. Never expose theme CSS values, provider keys, visitor ids, secrets, or unknown asset fields in the prompt or page.`;
 
 export const FACET_PAGE_BRIEF_HEADING = "PAGE BRIEF";
 
@@ -146,7 +149,7 @@ function catalogThemeLines(value: unknown): readonly string[] {
   return lines;
 }
 
-function catalogComponentLine(value: unknown): string | undefined {
+function catalogBrickLine(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
   const type = assetName(value["type"]);
   if (type === undefined) return undefined;
@@ -157,32 +160,27 @@ function catalogComponentLine(value: unknown): string | undefined {
   return `${type}${variantText}${guidanceText}`;
 }
 
-function catalogComponentsLine(value: unknown, bricks: unknown): string | undefined {
-  const source = assetArray(value).length > 0 ? value : bricks;
-  const components = assetArray(source)
-    .flatMap((component) => {
-      const line = catalogComponentLine(component);
+function catalogBricksLine(value: unknown): string | undefined {
+  const bricks = assetArray(value)
+    .flatMap((brick) => {
+      const line = catalogBrickLine(brick);
       return line === undefined ? [] : [line];
     })
     .slice(0, MAX_PROMPT_CATALOG_ITEMS);
-  return components.length > 0 ? `allowed components: ${components.join("; ")}` : undefined;
+  return bricks.length > 0 ? `allowed bricks: ${bricks.join("; ")}` : undefined;
 }
 
 function catalogCompositionsLine(value: unknown): string | undefined {
   if (!isRecord(value)) return undefined;
-  if (value["mode"] === "all") return "composition policy: all advertised compositions";
+  if (value["mode"] === "all") return "reference policy: all advertised references";
   if (value["mode"] !== "allow") return undefined;
   const names = assetNameList(value["names"]);
-  return `composition policy: allow ${names.length > 0 ? names.join(", ") : "(none)"}`;
+  return `reference policy: allow ${names.length > 0 ? names.join(", ") : "(none)"}`;
 }
 
 function catalogPolicyLines(value: unknown): readonly string[] {
   if (!isRecord(value)) return [];
   const lines: string[] = [];
-  const order = Array.isArray(value["order"])
-    ? value["order"].filter((item): item is string => item === "component" || item === "primitive")
-    : [];
-  if (order.length > 0) lines.push(`policy order: ${order.join(" -> ")}`);
   if (typeof value["editBeforeAppend"] === "boolean") {
     lines.push(`edit-before-append: ${String(value["editBeforeAppend"])}`);
   }
@@ -198,7 +196,7 @@ function catalogPolicyLines(value: unknown): readonly string[] {
   return lines;
 }
 
-function catalogUseOrderGuidance(policy: unknown): string {
+function catalogUseGuidance(policy: unknown): string {
   const editBeforeAppend = isRecord(policy) ? policy["editBeforeAppend"] : undefined;
   const compactScreens = isRecord(policy) ? policy["compactScreens"] : undefined;
   const editGuidance =
@@ -209,7 +207,7 @@ function catalogUseOrderGuidance(policy: unknown): string {
     compactScreens === false
       ? "catalog allows broader screens when appropriate"
       : "keep each screen compact";
-  return `use order: component -> primitive fallback; ${editGuidance}; ${compactGuidance}.`;
+  return `brick use: ${editGuidance}; ${compactGuidance}.`;
 }
 
 function catalogSection(catalog: unknown): string | undefined {
@@ -221,17 +219,12 @@ function catalogSection(catalog: unknown): string | undefined {
     description !== undefined ? `${name}: ${description}` : name,
     ...catalogThemeLines(catalog["theme"]),
   ];
-  const components = catalogComponentsLine(catalog["components"], catalog["bricks"]);
-  if (components !== undefined) lines.push(components);
+  const bricks = catalogBricksLine(catalog["bricks"]);
+  if (bricks !== undefined) lines.push(bricks);
   const compositions = catalogCompositionsLine(catalog["compositions"]);
   if (compositions !== undefined) lines.push(compositions);
-  const primitiveFallback =
-    catalog["primitiveFallback"] === "discouraged" || catalog["primitiveFallback"] === "allowed"
-      ? catalog["primitiveFallback"]
-      : undefined;
-  if (primitiveFallback !== undefined) lines.push(`primitiveFallback: ${primitiveFallback}`);
   lines.push(...catalogPolicyLines(catalog["policy"]));
-  lines.push(catalogUseOrderGuidance(catalog["policy"]));
+  lines.push(catalogUseGuidance(catalog["policy"]));
   return [
     "CATALOG",
     "Active catalog guidance. Use these names and policies only; do not expose catalog internals or theme values.",
@@ -243,7 +236,7 @@ function compositionsSection(compositions: readonly FacetComposition[]): string 
   if (compositions.length === 0) return undefined;
   return [
     "COMPOSITIONS",
-    "Reference datasets available by NAME. For a complex UI, you may call get_composition with exactly one listed name, inspect the concrete native nodes, then author the stage separately with native stage tools. The read does not edit the stage; skip it for a simple UI.",
+    "Reference datasets available by NAME. For a complex UI, you may call get_composition with exactly one listed name, inspect the concrete native bricks, then author the stage separately with native stage tools. The read does not edit the stage; skip it for a simple UI.",
     compositions
       .map((composition) => `- ${composition.name}: ${composition.metadata.description}`)
       .join("\n"),

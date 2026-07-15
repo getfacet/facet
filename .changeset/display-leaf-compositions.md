@@ -20,6 +20,6 @@ separator is now a plain bordered box.
 
 Breaking: the `badge`/`alert`/`divider` node types, their `BadgeNode`/
 `AlertNode`/`DividerNode` interfaces, renderers, executor entries, catalog
-component defaults, theme recipes, and STAGE_SPEC node lines are removed. A stale
+defaults, theme recipes, and STAGE_SPEC node lines are removed. A stale
 tree still carrying one of these types blank-degrades (the renderer skips it, the
 validator drops it, the executor refuses to author it) — never throws.

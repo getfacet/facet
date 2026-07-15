@@ -90,12 +90,10 @@ function catalogFixture(): FacetCatalog {
     theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
     bricks: [
       { type: "box", variants: ["surface"], guidance: "Use boxes for major groups." },
-      { type: "button", variants: ["primary"] },
+      { type: "progress", variants: ["success"] },
     ],
     compositions: { mode: "allow", names: ["approved"] },
-    primitiveFallback: "allowed",
     policy: {
-      order: ["component", "primitive"],
       editBeforeAppend: true,
       compactScreens: true,
       maxScreenSections: 4,
@@ -114,7 +112,7 @@ describe("buildSystem", () => {
     expect(system).toContain(FACET_STATE_EDITING_PROMPT);
     expect(system).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
     expect(system).toContain("Default to a compact UX");
-    expect(system).toContain("COMPONENT GUIDANCE");
+    expect(system).toContain("BRICK GUIDANCE");
     expect(system).toContain("Default to an edit-before-append strategy");
     expect(system).toContain("render_page: first paint");
     expect(system).toMatch(/reuse .*node ids/i);
@@ -164,15 +162,17 @@ describe("buildSystem", () => {
     });
 
     expect(system).toMatch(
-      /COMPONENT GUIDANCE[\s\S]*intrinsic components with catalog-advertised variants[\s\S]*reference-dataset internals[\s\S]*never write raw CSS/i,
+      /BRICK GUIDANCE[\s\S]*closed, catalog-guided brick vocabulary[\s\S]*reference-dataset internals[\s\S]*never write raw CSS/i,
     );
     expect(system).toMatch(
-      /product-quality defaults[\s\S]*input for raw inputs[\s\S]*button for actions/i,
+      /product-quality flow[\s\S]*input for visitor entry[\s\S]*pressable box with label text/i,
     );
     expect(system).toMatch(/editBeforeAppend is true/i);
-    expect(system).toContain("allowed components: box variants: surface");
-    expect(system).toContain("button variants: primary");
-    expect(system).toContain("policy order: component -> primitive");
+    expect(system).toContain("allowed bricks: box variants: surface");
+    expect(system).toContain("progress variants: success");
+    expect(system).not.toContain("allowed components"); // composition-hard-cut: allowed-negative
+    expect(system).not.toContain("primitiveFallback");
+    expect(system).not.toContain("policy order");
 
     expect(system).not.toContain("#ffffff");
     expect(system).not.toContain("#111111");
@@ -357,11 +357,12 @@ describe("buildSystem", () => {
     expect(catalogSection).toContain("reference-catalog");
     expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
     expect(catalogSection).toContain("locked theme guidance");
-    expect(catalogSection).toContain("allowed components: box variants: surface");
-    expect(catalogSection).toContain("button variants: primary");
-    expect(catalogSection).toContain("composition policy: allow approved");
-    expect(catalogSection).toContain("primitiveFallback: allowed");
-    expect(catalogSection).toContain("policy order: component -> primitive");
+    expect(catalogSection).toContain("allowed bricks: box variants: surface");
+    expect(catalogSection).toContain("progress variants: success");
+    expect(catalogSection).toContain("reference policy: allow approved");
+    expect(catalogSection).toContain("edit-before-append: true");
+    expect(catalogSection).not.toContain("primitiveFallback");
+    expect(catalogSection).not.toContain("policy order");
     expect(catalogSection).not.toContain("#ffffff");
     expect(catalogSection).not.toContain("#111111");
     expect(catalogSection).not.toContain('"nodes"');
@@ -789,6 +790,8 @@ describe("buildInitialMessages", () => {
             "overview",
             "tabs",
             "nav",
+            "media",
+            "richtext",
             "table",
             "chart",
             "metric",
@@ -817,29 +820,30 @@ describe("buildInitialMessages", () => {
         },
         button: {
           id: "button",
-          type: "button",
-          label: "RAW_JSON_SENTINEL button",
-          variant: "primary",
-          tone: "success",
-          disabled: true,
+          type: "box",
+          children: [],
         },
         tabs: {
           id: "tabs",
-          type: "tabs",
-          variant: "pills",
-          items: [
-            { label: "Home", to: "home" },
-            { label: "Metrics", to: "metrics" },
-          ],
+          type: "box",
+          children: [],
         },
         nav: {
           id: "nav",
-          type: "nav",
-          variant: "default",
-          items: [
-            { label: "Docs", to: "docs" },
-            { label: "API", to: "api" },
-          ],
+          type: "box",
+          children: [],
+        },
+        media: {
+          id: "media",
+          type: "media",
+          kind: "image",
+          src: "https://example.com/preview.png",
+          alt: "Preview",
+        },
+        richtext: {
+          id: "richtext",
+          type: "richtext",
+          blocks: [{ type: "paragraph", runs: [{ text: "Formatted overview" }] }],
         },
         table: {
           id: "table",
@@ -866,19 +870,13 @@ describe("buildInitialMessages", () => {
         },
         metric: {
           id: "metric",
-          type: "metric",
-          label: "Revenue",
-          value: "$42",
-          delta: "+5%",
-          tone: "success",
+          type: "text",
+          value: "Revenue $42",
         },
         "legacy-stat": {
           id: "legacy-stat",
-          type: "stat",
-          label: "Legacy",
-          value: "$7",
-          delta: "-1%",
-          tone: "warning",
+          type: "text",
+          value: "Legacy $7",
         },
         keyValue: {
           id: "keyValue",
@@ -904,10 +902,7 @@ describe("buildInitialMessages", () => {
         },
         form: {
           id: "form",
-          type: "form",
-          title: "Signup",
-          body: "RAW_JSON_SENTINEL_FORM",
-          submitLabel: "Send",
+          type: "box",
           children: ["search-input", "search-button"],
         },
         "search-input": {
@@ -919,15 +914,13 @@ describe("buildInitialMessages", () => {
         },
         "search-button": {
           id: "search-button",
-          type: "button",
-          label: "Go",
+          type: "box",
+          children: [],
         },
         filterBar: {
           id: "filterBar",
-          type: "filterBar",
-          filters: [
-            { name: "status", label: "Status", input: "select", options: ["Open", "Closed"] },
-          ],
+          type: "box",
+          children: [],
         },
         "no-results": {
           id: "no-results",
@@ -936,7 +929,7 @@ describe("buildInitialMessages", () => {
         },
         "empty-title": { id: "empty-title", type: "text", value: "No results" },
         "empty-body": { id: "empty-body", type: "text", value: "Try another filter." },
-        "empty-action": { id: "empty-action", type: "button", label: "Reset" },
+        "empty-action": { id: "empty-action", type: "box", children: [] },
         loading: { id: "loading", type: "loading", label: "Loading results" },
       },
       screens: { home: "root" },
@@ -948,24 +941,25 @@ describe("buildInitialMessages", () => {
     expect(prompt).toContain("CURRENT STAGE SUMMARY");
     expect(prompt).toContain("- overview: type=box children=2");
     expect(prompt).toContain("- metrics-group: type=box children=1");
-    expect(prompt).toContain("- button: type=button labelChars=24");
-    expect(prompt).toContain("disabled=true");
-    expect(prompt).toContain("- tabs: type=tabs items=2");
-    expect(prompt).toContain("- nav: type=nav items=2");
+    expect(prompt).toContain("- button: type=box children=0");
+    expect(prompt).toContain("- tabs: type=box children=0");
+    expect(prompt).toContain("- nav: type=box children=0");
+    expect(prompt).toContain("- media: type=media kind=image");
+    expect(prompt).toContain("- richtext: type=richtext blocks=1 runs=1 text=Formatted overview");
     expect(prompt).toContain("- table: type=table columns=2 rows=2");
     expect(prompt).toContain("- chart: type=chart kind=bar series=1 points=3");
-    expect(prompt).toContain("- metric: type=metric labelChars=7 valueChars=3");
-    expect(prompt).toContain("- legacy-stat: type=stat labelChars=6 valueChars=2");
+    expect(prompt).toContain("- metric: type=text chars=11");
+    expect(prompt).toContain("- legacy-stat: type=text chars=9");
     expect(prompt).toContain("- keyValue: type=keyValue items=2");
     expect(prompt).toContain("- progress: type=progress value=45");
     expect(prompt).toContain("- list: type=list items=2");
-    expect(prompt).toContain("- form: type=form children=2");
+    expect(prompt).toContain("- form: type=box children=2");
     expect(prompt).toContain("- search-input: type=input name=q");
-    expect(prompt).toContain("- search-button: type=button labelChars=2");
-    expect(prompt).toContain("- filterBar: type=filterBar filters=1");
+    expect(prompt).toContain("- search-button: type=box children=0");
+    expect(prompt).toContain("- filterBar: type=box children=0");
     expect(prompt).toContain("- no-results: type=box children=3");
     expect(prompt).toContain("- empty-title: type=text chars=10");
-    expect(prompt).toContain("- empty-action: type=button labelChars=5");
+    expect(prompt).toContain("- empty-action: type=box children=0");
     expect(prompt).toContain("- loading: type=loading labelChars=15");
     expect(prompt).not.toContain("RAW_JSON_SENTINEL");
     expect(prompt).not.toContain('"nodes"');

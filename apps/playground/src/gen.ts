@@ -1,7 +1,7 @@
 /**
  * CLI generator — the quickest way to test whether an LLM can compose good, valid
- * pages from Facet's closed component → primitive vocabulary, optionally informed
- * by composition reference examples.
+ * pages from Facet's closed brick vocabulary, optionally informed by reference
+ * datasets.
  *
  *   pnpm --filter @facet/playground gen "a portfolio page for a photographer"
  */

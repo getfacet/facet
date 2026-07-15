@@ -1,4 +1,4 @@
-import type { ComponentRecipe, ComponentRecipes, FacetTheme } from "@facet/core";
+import type { BrickRecipe, BrickRecipes, FacetTheme } from "@facet/core";
 import {
   COLOR,
   COLOR_DARK,
@@ -34,38 +34,19 @@ export {
   TRACKING,
 } from "./theme-tokens.js";
 
-const recipeVariants = <T extends Record<string, ComponentRecipe>>(variants: T): Readonly<T> =>
+const recipeVariants = <T extends Record<string, BrickRecipe>>(variants: T): Readonly<T> =>
   Object.assign(Object.create(null) as T, variants);
 
-const metricRecipeVariants = (): Readonly<Record<"default" | "success", ComponentRecipe>> =>
-  recipeVariants({
-    default: {
-      box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md", shadow: "sm" },
-      text: { color: "fg-muted", size: "sm" },
-      parts: {
-        label: { text: { color: "fg-muted", size: "sm" } },
-        value: { text: { color: "fg", size: "xl", weight: "bold" } },
-        trend: { text: { color: "fg-muted", size: "sm", weight: "medium" } },
-      },
-    },
-    success: {
-      box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
-      text: { color: "success", size: "sm", weight: "semibold" },
-      parts: {
-        label: { text: { color: "fg-muted", size: "sm" } },
-        value: { text: { color: "success", size: "xl", weight: "bold" } },
-        trend: { text: { color: "success", size: "sm", weight: "medium" } },
-      },
-    },
-  });
-
-export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as ComponentRecipes, {
+export const RECIPES: BrickRecipes = Object.assign(Object.create(null) as BrickRecipes, {
   box: recipeVariants({
     panel: {
       box: { bg: "surface", border: true, pad: "md", radius: "md", shadow: "sm" },
     },
     inset: {
       box: { bg: "surface-2", pad: "md", radius: "md" },
+    },
+    selected: {
+      box: { bg: "accent", border: true, pad: "sm", radius: "md" },
     },
   }),
   text: recipeVariants({
@@ -102,62 +83,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       },
     },
   }),
-  button: recipeVariants({
-    primary: {
-      box: { bg: "accent", border: true, pad: "sm", radius: "md", shadow: "sm" },
-      text: { color: "accent-fg", weight: "semibold" },
-      parts: {
-        label: { text: { color: "accent-fg", weight: "semibold" } },
-      },
-    },
-    secondary: {
-      box: { bg: "surface", border: true, pad: "sm", radius: "md" },
-      text: { color: "fg", weight: "semibold" },
-      parts: {
-        label: { text: { color: "fg", weight: "semibold" } },
-      },
-    },
-    danger: {
-      box: { bg: "danger", border: true, pad: "sm", radius: "md", shadow: "sm" },
-      text: { color: "accent-fg", weight: "semibold" },
-      parts: {
-        label: { text: { color: "accent-fg", weight: "semibold" } },
-      },
-    },
-  }),
-  tabs: recipeVariants({
-    default: {
-      box: { bg: "surface", border: true, gap: "xs", pad: "xs", radius: "full" },
-      text: { color: "fg-muted", size: "sm", weight: "semibold" },
-      parts: {
-        tabList: { box: { direction: "row", gap: "xs", wrap: true } },
-        tab: {
-          box: { bg: "surface", border: true, pad: "sm", radius: "full" },
-          text: { color: "fg-muted", size: "sm", weight: "semibold" },
-        },
-        activeTab: {
-          box: { bg: "accent", border: true, pad: "sm", radius: "full" },
-          text: { color: "accent-fg", size: "sm", weight: "semibold" },
-        },
-      },
-    },
-  }),
-  nav: recipeVariants({
-    default: {
-      box: { direction: "row", gap: "sm", pad: "xs", width: "full", wrap: true },
-      text: { color: "fg-muted", size: "sm", weight: "semibold" },
-      parts: {
-        item: {
-          box: { pad: "sm", radius: "md" },
-          text: { color: "fg-muted", size: "sm", weight: "semibold" },
-        },
-        activeTab: {
-          box: { bg: "surface-2", pad: "sm", radius: "md" },
-          text: { color: "fg", size: "sm", weight: "semibold" },
-        },
-      },
-    },
-  }),
   table: recipeVariants({
     default: {
       box: { bg: "surface", border: true, pad: "md", radius: "md", scroll: "x" },
@@ -189,7 +114,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       },
     },
   }),
-  metric: metricRecipeVariants(),
   keyValue: recipeVariants({
     default: {
       box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
@@ -201,7 +125,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       },
     },
   }),
-  stat: metricRecipeVariants(),
   progress: recipeVariants({
     default: {
       box: { gap: "xs", width: "full" },
@@ -240,34 +163,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       },
     },
   }),
-  form: recipeVariants({
-    default: {
-      box: { bg: "surface", border: true, gap: "md", pad: "md", radius: "md", width: "full" },
-      text: { color: "fg" },
-      parts: {
-        header: { box: { gap: "xs" } },
-        title: { text: { color: "fg", size: "lg", weight: "bold" } },
-        body: { text: { color: "fg-muted" } },
-        actions: {
-          box: { bg: "accent", pad: "sm", radius: "md" },
-          text: { color: "accent-fg", weight: "semibold" },
-        },
-      },
-    },
-  }),
-  filterBar: recipeVariants({
-    default: {
-      box: { direction: "row", gap: "sm", align: "end", wrap: true, width: "full" },
-      text: { color: "fg" },
-      field: { width: "full" },
-      parts: {
-        item: { box: { gap: "xs", grow: true } },
-        label: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
-        control: { field: { width: "full" } },
-        input: { field: { width: "full" } },
-      },
-    },
-  }),
   loading: recipeVariants({
     default: {
       box: { direction: "row", gap: "sm", align: "center", pad: "sm", width: "full" },
@@ -277,12 +172,12 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       },
     },
   }),
-} satisfies ComponentRecipes);
+} satisfies BrickRecipes);
 
 /**
  * The default theme expressed as an operator DOCUMENT (the `@facet/core`
  * `FacetTheme` shape): token NAMES → today's concrete values, across all eight
- * token groups plus component recipes. It passes `validateTheme` cleanly, so
+ * token groups plus brick recipes. It passes `validateTheme` cleanly, so
  * operators can copy it as the starting point for a reskin, and hosts can
  * register it by name. `@facet/react` and `@facet/runtime` both import this as
  * the default base layer.

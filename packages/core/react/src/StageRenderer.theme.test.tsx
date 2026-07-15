@@ -25,11 +25,12 @@ const DAWN: FacetTheme = {
 };
 
 const POLISHED_PARTS: FacetTheme = {
-  name: "component-parts",
+  name: "brick-parts",
   color: { fg: "#fe0000", bg: "#ababab" },
+  radius: { md: "42px" },
   recipes: {
-    button: {
-      default: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
+    box: {
+      selected: { box: { bg: "bg", radius: "md" } },
     },
     input: {
       default: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
@@ -129,27 +130,38 @@ describe("StageRenderer theming (jsdom)", () => {
     expect(box.style.borderRadius).toBe("10px");
   });
 
-  it("renders component recipe parts with variant and tone fallback", () => {
+  it("renders an ordinary selected box recipe and survivor input parts", () => {
     const tree: FacetTree = {
       root: "root",
-      theme: "component-parts",
+      theme: "brick-parts",
+      screens: { home: "root" },
+      entry: "home",
       nodes: {
-        root: { id: "root", type: "box", children: ["save", "email"] },
-        save: { id: "save", type: "button", label: "Save", variant: "missing" },
+        root: { id: "root", type: "box", children: ["selected", "email"] },
+        selected: {
+          id: "selected",
+          type: "box",
+          active: { screen: "home" },
+          activeVariant: "selected",
+          children: ["selected-label"],
+        },
+        "selected-label": { id: "selected-label", type: "text", value: "Selected" },
         email: { id: "email", type: "input", name: "email", label: "Email" },
       },
     };
 
     const { container } = render(<StageRenderer themes={[POLISHED_PARTS]} tree={tree} />);
-    const save = container.querySelector('[role="button"] span') as HTMLElement;
+    const selected = container.querySelector("p")?.parentElement as HTMLElement;
     const email = Array.from(container.querySelectorAll("span")).find(
       (node) => node.textContent === "Email",
     ) as HTMLElement;
 
-    for (const node of [save, email]) {
-      expect(node.style.color === "#fe0000" || node.style.color === "rgb(254, 0, 0)").toBe(true);
-      expect(node.style.fontWeight).toBe("700");
-    }
+    expect(
+      selected.style.background === "#ababab" || selected.style.background === "rgb(171, 171, 171)",
+    ).toBe(true);
+    expect(selected.style.borderRadius).toBe("42px");
+    expect(email.style.color === "#fe0000" || email.style.color === "rgb(254, 0, 0)").toBe(true);
+    expect(email.style.fontWeight).toBe("700");
   });
 
   it("never throws and never injects for hostile or non-string theme names", () => {

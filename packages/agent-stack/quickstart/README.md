@@ -8,12 +8,13 @@ a tool-calling LLM agent that draws the page from your guide markdown and keeps
 editing it as visitors chat. The brain is a reference implementation of a
 pluggable seam, not the only brain Facet can run.
 
-With no `facet.md`, quickstart opens on a compact, validated four-tab product
+With no `facet.md`, quickstart opens on a compact, validated four-screen product
 tour: **What is Facet?**, **Core Structure**, **Design System**, and **Use
-Cases**. The seed demonstrates the component default kit: sections, cards, tabs,
-table, chart, inputs, buttons, metrics, progress, and lists, plus badge and alert
-patterns. Section, card, badge, and alert layouts are authored from native boxes
-and text rather than dedicated node types. That first paint is not a stub mode;
+Cases**. The seed demonstrates the closed 11-brick vocabulary: boxes, text,
+media, inputs, rich text, tables, charts, lists, key/value details, progress, and
+loading. Screens, local navigation, actions, summaries, cards, sections, badges,
+and alerts are ordinary box/text/input patterns rather than dedicated node
+types. That first paint is not a stub mode;
 the normal path still resolves your provider key and the provider-backed
 reference agent can refine the seeded stage on the first visit.
 
@@ -96,7 +97,7 @@ what to collect. It becomes the "PAGE BRIEF" layer of the agent's prompt (the
 stage vocabulary and output contract are fixed layers above it).
 
 - Default path `./facet.md`; if it doesn't exist, a built-in quickstart tour
-  brief and seeded four-tab first paint are used silently.
+  brief and seeded four-screen first paint are used silently.
 - Passing an explicit guide makes that guide the product brief. Quickstart will
   not use the built-in seed; provide `initial.tree.json` through assets if you
   want an explicit pre-seeded first paint.
@@ -133,11 +134,11 @@ that doesn't match is ignored):
 | --- | --- |
 | `*.theme.json` | A named palette/type/scale document — token names mapped to CSS values, including optional `fontFamily` stacks. Offered to the agent by NAME (a `set_theme` tool); **the model never authors the CSS values**. |
 | `*.composition.json` | The prompt indexes only the reference name and description. The complete concrete dataset has shape `{ name, metadata, root, nodes }` with required `metadata.description`; the provider may retrieve it with `get_composition` and then author ordinary native nodes separately. The read itself never edits the stage. |
-| `catalog.json` | A `FacetCatalog` policy document that tells the agent which theme is active, whether theme switching is locked or allowed, which components/variants it may author, which composition references it may inspect, and whether primitive fallback is allowed. Reference exposure is separate from authoring order. |
+| `catalog.json` | A `FacetCatalog` policy document that tells the agent which theme is active, whether theme switching is locked or allowed, which bricks/variants it may author, which composition references it may inspect, and compact/edit guidance. |
 | `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
 
 If the built-in guide is in use and assets do not provide `initial.tree.json`,
-quickstart supplies its own component-based four-tab tour seed. A valid asset
+quickstart supplies its own native-brick four-screen tour seed. A valid asset
 `initial.tree.json` wins over that built-in seed.
 
 A theme document looks like:
@@ -177,10 +178,15 @@ A composition document is a self-contained native example:
     },
     "launch-card.action": {
       "id": "launch-card.action",
-      "type": "button",
-      "label": "Start",
+      "type": "box",
       "variant": "primary",
-      "onPress": { "kind": "agent", "name": "start" }
+      "onPress": { "kind": "agent", "name": "start" },
+      "children": ["launch-card.action.label"]
+    },
+    "launch-card.action.label": {
+      "id": "launch-card.action.label",
+      "type": "text",
+      "value": "Start"
     }
   }
 }
@@ -188,8 +194,7 @@ A composition document is a self-contained native example:
 
 With no `catalog.json`, quickstart uses `DEFAULT_CATALOG`: a compact product/app
 UI catalog with a locked theme (`default`), all default references advertised,
-the built-in intrinsic component set and variants, primitive fallback allowed,
-and the native authoring order `component -> primitive`.
+and all 11 native bricks with their supported variants.
 
 A catalog document can lock the page to one theme:
 
@@ -198,15 +203,13 @@ A catalog document can lock the page to one theme:
   "name": "launch-catalog",
   "description": "Launch page UI policy",
   "theme": { "active": "midnight", "switchPolicy": "locked", "allowed": ["midnight"] },
-  "components": [
-    { "type": "button", "variants": ["primary", "secondary"] },
-    { "type": "metric" },
+  "bricks": [
+    { "type": "box", "variants": ["primary", "secondary"] },
+    { "type": "text" },
     { "type": "table" }
   ],
   "compositions": { "mode": "all" },
-  "primitiveFallback": "allowed",
   "policy": {
-    "order": ["component", "primitive"],
     "editBeforeAppend": true,
     "compactScreens": true,
     "maxScreenSections": 6
@@ -225,11 +228,9 @@ theme names the model may choose with `set_theme`:
     "switchPolicy": "allowed",
     "allowed": ["midnight", "daylight"]
   },
-  "components": [{ "type": "button", "variants": ["primary", "secondary"] }],
+  "bricks": [{ "type": "box", "variants": ["primary", "secondary"] }],
   "compositions": { "mode": "all" },
-  "primitiveFallback": "allowed",
   "policy": {
-    "order": ["component", "primitive"],
     "editBeforeAppend": true,
     "compactScreens": true
   }
@@ -275,7 +276,7 @@ than sending a partial or summarized reference. Only later ordinary stage
 patches reach the browser.
 
 Catalog-guided behavior is also enforced by the tool executor: a locked theme
-rejects `set_theme`; disallowed component variants and tone-only recipe
+rejects `set_theme`; disallowed brick variants and tone-only recipe
 selectors outside the advertised variants reject before any patch is emitted;
 and catalog composition policy controls which reference names may be read. The
 model gets a structured repair observation instead of a silent no-op. The

@@ -8,8 +8,8 @@ import {
   MAX_MARKS_PER_RUN,
   MAX_LIST_DEPTH,
 } from "./primitive-node-validation.js";
-import { MAX_NODE_BODY_CHARS } from "./component-validation-shared.js";
-import { BRICK_REGISTRY } from "./brick-registry.js";
+import { MAX_NODE_BODY_CHARS } from "./brick-validation-shared.js";
+import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import type { Mark, RichTextBlock, RichTextNode } from "./nodes.js";
 
 // Sanitize a raw richtext value into { node, issues }. `validateRichText` never
@@ -239,14 +239,12 @@ describe("validateRichText bounds (never throws)", () => {
 });
 
 describe("richtext is a leaf brick / not from-bound (DC-005)", () => {
-  it("has a primitive registry entry with a validator and NO resolve/resolveFromContent", () => {
-    const entry = BRICK_REGISTRY.richtext;
-    expect(entry.kind).toBe("primitive");
-    expect(entry.established).toBe(false);
+  it("has a direct brick validator and no data resolver", () => {
+    const entry: BrickEntry = BRICK_REGISTRY.richtext;
     expect(typeof entry.validate).toBe("function");
+    expect(typeof entry.rendersSelf).toBe("function");
     expect(entry.resolve).toBeUndefined();
     expect(entry.resolveFromContent).toBeUndefined();
-    expect(entry.role).toBeUndefined();
   });
 
   it("ignores from-binding / children fields (holds its own blocks)", () => {

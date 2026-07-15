@@ -1,31 +1,13 @@
 import { describe, expect, it } from "vitest";
-import {
-  BLOCK_TYPES,
-  INPUT_KINDS,
-  INTRINSIC_COMPONENT_TYPES,
-  LEGACY_COMPONENT_TYPES,
-  MARK_KINDS,
-  PRIMITIVE_BRICK_TYPES,
-} from "./nodes.js";
+import { BLOCK_TYPES, BRICK_TYPES, INPUT_KINDS, MARK_KINDS } from "./nodes.js";
 import { STAGE_SPEC } from "./spec.js";
 import { APPEARS, COLUMNS, FONT_FAMILIES, SCROLL_AXES } from "./tokens.js";
 
-// Legacy vocabulary is built at runtime so the removed tokens never appear as
-// source literals (same idiom as theme.test.ts).
-const legacy = ["st", "amp"].join("");
-const legacyNaming = new RegExp(legacy, "i");
-
 describe("STAGE_SPEC", () => {
-  it("omits retired container node types", () => {
-    for (const type of ["section", "card", "emptyState"] as const) {
-      expect(STAGE_SPEC).not.toContain(`"type":"${type}"`);
-      expect(STAGE_SPEC).not.toContain(`- ${type}:`);
-    }
-
-    expect(STAGE_SPEC).toMatch(/screen root container: box or form/i);
-    expect(STAGE_SPEC).toMatch(/Containers are box and form/i);
-    expect(STAGE_SPEC).toMatch(/compositions as optional reference datasets/i);
-    expect(STAGE_SPEC).toContain('- stat: { "id", "type":"stat"');
+  it("keeps box as the sole screen root and container brick", () => {
+    expect(STAGE_SPEC).toMatch(/screen root container: box/i);
+    expect(STAGE_SPEC).toMatch(/sole container brick is box/i);
+    expect(STAGE_SPEC).toMatch(/optional concrete reference compositions/i);
   });
 
   it("teaches screens entry navigate toggle and hidden", () => {
@@ -111,7 +93,7 @@ describe("STAGE_SPEC", () => {
   });
 
   it("teaches the richtext brick shape: closed blocks, marks, and link kinds", () => {
-    // DC-003/DC-006: STAGE_SPEC teaches the richtext primitive as a closed,
+    // DC-003/DC-006: STAGE_SPEC teaches richtext as a closed native brick with
     // no-DSL vocabulary — the loop at :102-104 asserts the "type":"richtext"
     // token; these drift pins hold the shape (blocks/runs/marks/link) in sync
     // with nodes.ts so widening the brick set without teaching it fails here.
@@ -138,54 +120,53 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/LEAF brick/i);
   });
 
-  it("reference dataset hard cutover teaches optional reading followed by native authoring", () => {
-    expect(STAGE_SPEC).toMatch(/component -> primitive fallback/);
-    expect(STAGE_SPEC).toMatch(/primitive bricks/i);
-    expect(STAGE_SPEC).toContain("box, text, media, input, richtext");
-    for (const type of PRIMITIVE_BRICK_TYPES) {
-      expect(STAGE_SPEC).toContain(`"type":"${type}"`);
-    }
-    expect(STAGE_SPEC).toMatch(/intrinsic components are locked/i);
-    // "search" is retired as a node type by the input consolidation — STAGE_SPEC
-    // no longer teaches a search node line (its type leaves ComponentNodeType in
-    // WU-2). Cast to string[] so the literal filter stays legal once "search" is
-    // gone from the type. "search + submit" is now an input+button composition.
-    for (const type of INTRINSIC_COMPONENT_TYPES as readonly string[]) {
-      if (type === "search") continue;
-      expect(STAGE_SPEC).toContain(`"type":"${type}"`);
-    }
-    expect(STAGE_SPEC).not.toContain('"type":"search"');
-    for (const type of LEGACY_COMPONENT_TYPES) {
-      expect(STAGE_SPEC).toContain(`"type":"${type}"`);
-    }
-    expect(STAGE_SPEC).toMatch(/prefer metric/i);
-    expect(STAGE_SPEC).toMatch(/stat[^.]*legacy/i);
-    expect(STAGE_SPEC).toMatch(/Catalog/i);
-    expect(STAGE_SPEC).toMatch(/optional reference dataset/i);
-    expect(STAGE_SPEC).toMatch(/read[^.]*by name[^.]*only when useful/i);
-    expect(STAGE_SPEC).toMatch(/author[^.]*native nodes/i);
-    expect(STAGE_SPEC).toMatch(/reference read[^.]*does not mutate/i);
-    expect(STAGE_SPEC).not.toMatch(
-      new RegExp(["composition", "component", "primitive fallback"].join(" -> "), "i"),
+  it("teaches only native bricks and reference compositions", () => {
+    const listedTypes = Array.from(
+      STAGE_SPEC.matchAll(/^- [A-Za-z][A-Za-z0-9]*:\s+\{[^\n]*"type":"([^"]+)"/gm),
+      (match) => match[1],
     );
+    expect(listedTypes).toEqual([...BRICK_TYPES]);
+    for (const type of BRICK_TYPES) expect(STAGE_SPEC).toContain(`"type":"${type}"`);
+
+    const retiredNodeNames = [
+      ["but", "ton"].join(""),
+      ["fo", "rm"].join(""),
+      ["filter", "Bar"].join(""),
+      ["met", "ric"].join(""),
+      ["ta", "bs"].join(""),
+      ["na", "v"].join(""),
+      ["st", "at"].join(""),
+    ];
+    for (const retiredName of retiredNodeNames) {
+      expect(STAGE_SPEC).not.toMatch(new RegExp(`\\b${retiredName}\\b`, "i"));
+    }
+    for (const tierTerm of [
+      ["com", "ponent"].join(""),
+      "intrinsic",
+      "legacy",
+      "primitive fallback", // composition-hard-cut: allowed-negative
+    ]) {
+      expect(STAGE_SPEC).not.toMatch(new RegExp(tierTerm, "i"));
+    }
+
+    expect(STAGE_SPEC).toMatch(/optional concrete reference compositions/i);
+    expect(STAGE_SPEC).toMatch(/read[^.]*by name[^.]*only when useful/i);
+    expect(STAGE_SPEC).toMatch(/author[^.]*ordinary native bricks/i);
+    expect(STAGE_SPEC).toMatch(/reference read[^.]*does not mutate/i);
+    expect(STAGE_SPEC).toMatch(/read-only/i);
+    expect(STAGE_SPEC).toMatch(/does not grant/i);
     expect(STAGE_SPEC).not.toContain(`"${["slo", "ts"].join("")}"`);
     expect(STAGE_SPEC).not.toMatch(/expanded? into|expand by name|filling[^.]*slots/i);
-    expect(STAGE_SPEC).not.toContain(`{ "${["u", "se"].join("")}":"badge" }`);
-    expect(STAGE_SPEC).not.toMatch(/high-level brick/i);
-    expect(STAGE_SPEC).not.toMatch(new RegExp(`${legacy} -> high-level`, "i"));
-  });
+    expect(STAGE_SPEC).not.toMatch(/renderer plugins|automatic insertion/i);
 
-  it("omits demoted display leaves as node types and teaches native construction", () => {
-    for (const type of ["badge", "alert", "divider"] as const) {
-      expect(STAGE_SPEC).not.toContain(`"type":"${type}"`);
-      expect(STAGE_SPEC).not.toContain(`- ${type}:`);
-      expect(INTRINSIC_COMPONENT_TYPES as readonly string[]).not.toContain(type);
-    }
-    // These display shapes are authored from the native vocabulary, never as node types.
-    expect(STAGE_SPEC).not.toContain("divider");
-    expect(STAGE_SPEC).toMatch(/Badges and alerts are NOT node types/i);
-    expect(STAGE_SPEC).toMatch(/author[^.]*native/i);
-    expect(STAGE_SPEC).toMatch(/use a plain box/i);
+    expect(STAGE_SPEC).toMatch(/direct action control[^.]*pressable box[^.]*label text/i);
+    expect(STAGE_SPEC).toMatch(/grouped input pattern[^.]*input bricks[^.]*submit/i);
+    expect(STAGE_SPEC).toMatch(/label\/value summary[^.]*label text[^.]*value text/i);
+    expect(STAGE_SPEC).toMatch(/segmented and app navigation[^.]*local navigate/i);
+    expect(STAGE_SPEC).toMatch(/onPress\.to[^.]*active\.screen[^.]*same/i);
+    expect(STAGE_SPEC).toMatch(/selected recipe/i);
+    expect(STAGE_SPEC).toMatch(/fixed-choice selector[^.]*preauthored screens/i);
+    expect(STAGE_SPEC).toMatch(/no agent action[^.]*no client query[^.]*no fetch/i);
   });
 
   it("documents composition and renderer layout boundaries without backend bindings", () => {
@@ -194,7 +175,7 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/loaded as assets/i);
     expect(STAGE_SPEC).toMatch(/renderer layout contract/i);
     expect(STAGE_SPEC).toMatch(/parent[^.]*placement/i);
-    expect(STAGE_SPEC).toMatch(/component[^.]*internal layout/i);
+    expect(STAGE_SPEC).toMatch(/brick renderer[^.]*internal layout/i);
     expect(STAGE_SPEC).toMatch(/bounded overflow/i);
     expect(STAGE_SPEC).toMatch(/flow-only/i);
     expect(STAGE_SPEC).toMatch(/no client-side fetch/i);
@@ -215,7 +196,6 @@ describe("STAGE_SPEC", () => {
   });
 
   it("keeps reference guidance tool-neutral with no functional composition vocabulary", () => {
-    expect(STAGE_SPEC).not.toMatch(legacyNaming);
     expect(STAGE_SPEC).toMatch(/concrete native node examples/i);
     expect(STAGE_SPEC).toMatch(/optional design guidance/i);
     expect(STAGE_SPEC).not.toMatch(/renderer plugins|automatic insertion/i);
@@ -227,7 +207,6 @@ describe("STAGE_SPEC", () => {
       "remove_node",
       ["use", "composition"].join("_"),
       ["get", "composition"].join("_"),
-      `use_${legacy}`,
       "set_theme",
       "inspect_stage",
       "inspect_node",
@@ -281,9 +260,9 @@ describe("STAGE_SPEC", () => {
     // Values are keyed by each field's "name" — names must be stable.
     expect(STAGE_SPEC).toMatch(/keyed by each field's "name"/i);
     expect(STAGE_SPEC).toMatch(/stable names/i);
-    // Keep a form and its submit button together and visible on one screen;
+    // Keep an input group and its submit control together and visible on one screen;
     // hidden fields, off-screen fields, and password fields are never captured.
-    expect(STAGE_SPEC).toMatch(/submit button together/i);
+    expect(STAGE_SPEC).toMatch(/submit control together/i);
     expect(STAGE_SPEC).toMatch(/never captured/i);
     expect(STAGE_SPEC).toMatch(/password fields/i);
   });
@@ -310,7 +289,7 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/text:[^\n]*"column"\?:name/);
     expect(STAGE_SPEC).toMatch(/text:[^\n]*"row"\?:number/);
     // The data-binding paragraph lists text in the from-bindable family.
-    expect(STAGE_SPEC).toMatch(/metric\/stat\/text reads ONE cell/i);
+    expect(STAGE_SPEC).toMatch(/text reads ONE cell/i);
     // DC-006: the active-look predicate is a CLOSED union — screen | toggled —
     // preferring activeVariant, and an unknown/dangling predicate keeps the default look.
     expect(STAGE_SPEC).toContain('"activeVariant"?');

@@ -8,13 +8,14 @@
 
 Tree data warehouse + bindings: an agent can declare a dataset once in an
 optional top-level `data` map on the stage tree and bind multiple display nodes
-(`table`, `chart`, `list`, `keyValue`, `metric`, `stat`) to it by name via a new
+(`table`, `chart`, `list`, `keyValue`, and single-cell `text`) to it by name via a
+new
 optional `from` field, instead of copying the same rows/series into each node. A
 single `/data/<name>` (or `/data/<name>/<i>/<col>`) patch then updates every
 bound view. Purely additive — inline data stays valid, and `from` is opt-in.
 
 - `@facet/core`: optional `FacetTree.data` (`Record<string, Dataset>`), `from?`
-  on the six data-bearing node types plus `column?`/`row?` on `metric`/`stat`;
+  on the five data-bearing node types plus `column?`/`row?` on `text`;
   new `Dataset`/`DataRow`/`DataCell`/`DataWarehouse` types, the pure
   `sanitizeDataWarehouse` (closed row-record schema, forbidden-key-safe, capped)
   and the single `resolveNodeData` (precedence + fixed per-node projection).
@@ -29,5 +30,6 @@ bound view. Purely additive — inline data stays valid, and `from` is opt-in.
   resolved counts of from-bound nodes, and the prompt kit + system prompt teach
   authoring data once and binding many views.
 
-Local browser-side sort/filter over the shared data is intentionally out of this
-version (it would introduce a second writer of view state); it is a follow-up.
+Local table sort is a later closed renderer capability. Row-predicate filtering
+over shared data remains deferred; fixed choices can navigate pre-authored
+screens locally without adding a second data writer.

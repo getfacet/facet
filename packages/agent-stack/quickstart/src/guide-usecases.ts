@@ -1,6 +1,17 @@
 import type { FacetTree } from "@facet/core";
 import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
 
+const NAV_ITEM_STYLE = { border: true, pad: "sm", radius: "md" } as const;
+const NAV_LABEL_STYLE = { color: "fg", align: "center", weight: "semibold" } as const;
+const ACTION_STYLE = {
+  direction: "row",
+  bg: "surface",
+  border: true,
+  pad: "sm",
+  radius: "md",
+} as const;
+const ACTION_LABEL_STYLE = { color: "fg", align: "center", weight: "semibold" } as const;
+
 /**
  * The intake nodes are assembled before the home summary to preserve the
  * established node insertion order, while ownership stays with the use-case
@@ -29,7 +40,7 @@ export const QUICKSTART_INTAKE_NODES = {
   "qs.intake.body": {
     id: "qs.intake.body",
     type: "text",
-    value: "Field values remain browser view-state until this button collects them.",
+    value: "Field values remain browser view-state until this action collects them.",
     style: { color: "fg-muted" },
   },
   "qs.intake.goal": {
@@ -70,15 +81,20 @@ export const QUICKSTART_INTAKE_NODES = {
   },
   "qs.intake.submit": {
     id: "qs.intake.submit",
-    type: "button",
-    label: "Transform this page",
-    variant: "primary",
-    tone: "accent",
+    type: "box",
+    style: { direction: "row", bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+    children: ["qs.intake.submit.label"],
     onPress: {
       kind: "agent",
       name: "transform_quickstart",
       collect: "qs.intake",
     },
+  },
+  "qs.intake.submit.label": {
+    id: "qs.intake.submit.label",
+    type: "text",
+    value: "Transform this page",
+    style: { color: "accent-fg", align: "center", weight: "semibold" },
   },
 } satisfies FacetTree["nodes"];
 
@@ -91,9 +107,82 @@ export const QUICKSTART_USE_CASE_NODES = {
   },
   "qs.nav.usecases": {
     id: "qs.nav.usecases",
-    type: "tabs",
-    variant: "default",
-    items: QUICKSTART_NAV_ITEMS,
+    type: "box",
+    style: { direction: "row", gap: "xs", wrap: true, width: "full" },
+    children: [
+      "qs.nav.usecases.what",
+      "qs.nav.usecases.structure",
+      "qs.nav.usecases.system",
+      "qs.nav.usecases.usecases",
+    ],
+  },
+  "qs.nav.usecases.what": {
+    id: "qs.nav.usecases.what",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.usecases.what.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[0].to },
+  },
+  "qs.nav.usecases.what.label": {
+    id: "qs.nav.usecases.what.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[0].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.usecases.structure": {
+    id: "qs.nav.usecases.structure",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.usecases.structure.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[1].to },
+  },
+  "qs.nav.usecases.structure.label": {
+    id: "qs.nav.usecases.structure.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[1].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.usecases.system": {
+    id: "qs.nav.usecases.system",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.usecases.system.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[2].to },
+  },
+  "qs.nav.usecases.system.label": {
+    id: "qs.nav.usecases.system.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[2].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.usecases.usecases": {
+    id: "qs.nav.usecases.usecases",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.usecases.usecases.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[3].to },
+  },
+  "qs.nav.usecases.usecases.label": {
+    id: "qs.nav.usecases.usecases.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[3].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
   },
   "qs.usecases.hero": {
     id: "qs.usecases.hero",
@@ -122,7 +211,7 @@ export const QUICKSTART_USE_CASE_NODES = {
     id: "qs.usecases.hero.body",
     type: "text",
     value:
-      "Ask Facet to draw a concrete app surface. The agent should update the page with ordinary native components, primitives, variants, and fields instead of only replying in chat.",
+      "Ask Facet to draw a concrete app surface. The agent should update the page with ordinary native bricks, token styles, and fields instead of only replying in chat.",
     style: { color: "fg" },
   },
   "qs.usecases.alert": {
@@ -191,46 +280,70 @@ export const QUICKSTART_USE_CASE_NODES = {
   },
   "qs.usecases.dashboard": {
     id: "qs.usecases.dashboard",
-    type: "button",
-    label: "Dashboard",
-    variant: "secondary",
+    type: "box",
+    style: ACTION_STYLE,
+    children: ["qs.usecases.dashboard.label"],
     onPress: {
       kind: "agent",
       name: "show_use_case",
       payload: { use_case: "dashboard" },
     },
   },
+  "qs.usecases.dashboard.label": {
+    id: "qs.usecases.dashboard.label",
+    type: "text",
+    value: "Dashboard",
+    style: ACTION_LABEL_STYLE,
+  },
   "qs.usecases.pricing": {
     id: "qs.usecases.pricing",
-    type: "button",
-    label: "Pricing",
-    variant: "secondary",
+    type: "box",
+    style: ACTION_STYLE,
+    children: ["qs.usecases.pricing.label"],
     onPress: {
       kind: "agent",
       name: "show_use_case",
       payload: { use_case: "pricing" },
     },
   },
+  "qs.usecases.pricing.label": {
+    id: "qs.usecases.pricing.label",
+    type: "text",
+    value: "Pricing",
+    style: ACTION_LABEL_STYLE,
+  },
   "qs.usecases.onboarding": {
     id: "qs.usecases.onboarding",
-    type: "button",
-    label: "Onboarding",
-    variant: "secondary",
+    type: "box",
+    style: ACTION_STYLE,
+    children: ["qs.usecases.onboarding.label"],
     onPress: {
       kind: "agent",
       name: "show_use_case",
       payload: { use_case: "onboarding" },
     },
   },
+  "qs.usecases.onboarding.label": {
+    id: "qs.usecases.onboarding.label",
+    type: "text",
+    value: "Onboarding",
+    style: ACTION_LABEL_STYLE,
+  },
   "qs.usecases.replay": {
     id: "qs.usecases.replay",
-    type: "button",
-    label: "Replay view",
-    variant: "secondary",
+    type: "box",
+    style: ACTION_STYLE,
+    children: ["qs.usecases.replay.label"],
     onPress: {
       kind: "agent",
       name: "show_use_case",
       payload: { use_case: "replay" },
     },
+  },
+  "qs.usecases.replay.label": {
+    id: "qs.usecases.replay.label",
+    type: "text",
+    value: "Replay view",
+    style: ACTION_LABEL_STYLE,
   },
 } satisfies FacetTree["nodes"];

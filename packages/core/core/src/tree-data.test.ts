@@ -1,13 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type {
-  ChartNode,
-  KeyValueNode,
-  ListNode,
-  MetricNode,
-  StatNode,
-  TableNode,
-} from "./component-nodes.js";
+import type { ChartNode, KeyValueNode, ListNode, TableNode, TextNode } from "./nodes.js";
 import { foldPatchIntoStage } from "./stage-fold.js";
 import { treeHasContent } from "./tree.js";
 import { validateTree } from "./validate.js";
@@ -20,7 +13,11 @@ describe("validateTree keeps data + from (DC-001)", () => {
   const input = {
     root: "root",
     nodes: {
-      root: { id: "root", type: "box", children: ["tbl", "cht", "lst", "kv", "m", "s"] },
+      root: {
+        id: "root",
+        type: "box",
+        children: ["tbl", "cht", "lst", "kv", "latest", "first"],
+      },
       tbl: {
         id: "tbl",
         type: "table",
@@ -33,21 +30,18 @@ describe("validateTree keeps data + from (DC-001)", () => {
       cht: { id: "cht", type: "chart", kind: "bar", from: "sales" },
       lst: { id: "lst", type: "list", from: "sales" },
       kv: { id: "kv", type: "keyValue", from: "sales" },
-      // `value` stays required (RISK-API-2 (a)) — it is the inline fallback that
-      // `from` overrides at resolve time.
-      m: {
-        id: "m",
-        type: "metric",
-        label: "Total",
+      // Text keeps its required inline fallback while `from` projects one cell.
+      latest: {
+        id: "latest",
+        type: "text",
         value: "-",
         from: "sales",
         column: "revenue",
         row: 1,
       },
-      s: {
-        id: "s",
-        type: "stat",
-        label: "Total",
+      first: {
+        id: "first",
+        type: "text",
         value: "-",
         from: "sales",
         column: "revenue",
@@ -76,14 +70,14 @@ describe("validateTree keeps data + from (DC-001)", () => {
     expect((tree.nodes["cht"] as ChartNode).from).toBe("sales");
     expect((tree.nodes["lst"] as ListNode).from).toBe("sales");
     expect((tree.nodes["kv"] as KeyValueNode).from).toBe("sales");
-    const metric = tree.nodes["m"] as MetricNode;
-    expect(metric.from).toBe("sales");
-    expect(metric.column).toBe("revenue");
-    expect(metric.row).toBe(1);
-    const stat = tree.nodes["s"] as StatNode;
-    expect(stat.from).toBe("sales");
-    expect(stat.column).toBe("revenue");
-    expect(stat.row).toBe(0);
+    const latest = tree.nodes["latest"] as TextNode;
+    expect(latest.from).toBe("sales");
+    expect(latest.column).toBe("revenue");
+    expect(latest.row).toBe(1);
+    const first = tree.nodes["first"] as TextNode;
+    expect(first.from).toBe("sales");
+    expect(first.column).toBe("revenue");
+    expect(first.row).toBe(0);
   });
 
   it("survives a re-validate (fold) round-trip unchanged", () => {

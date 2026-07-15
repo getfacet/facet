@@ -80,7 +80,7 @@ export interface StageRendererProps {
 }
 
 /**
- * Renders a stage tree into React elements from the four low-level bricks.
+ * Renders a stage tree into React elements from the closed brick vocabulary.
  *
  * This is the security boundary and the fail-safe boundary: only known brick
  * types are rendered, there is no node that carries raw HTML/JS, and any id that

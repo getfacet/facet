@@ -16,6 +16,7 @@ import { connect } from "node:net";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { BRICK_TYPES } from "@facet/core";
 import type { FacetCatalog, FacetComposition, FacetTheme, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 import { MemorySink } from "@facet/runtime";
@@ -27,16 +28,24 @@ import { startQuickstart, type QuickstartServerOptions, type RunningQuickstart }
 const FIXTURE_BUNDLE = `console.log("facet quickstart fixture bundle");\n`;
 const OPENAI_URL = "https://api.openai.com/v1/chat/completions";
 const TEST_PROVIDER_ENV = { OPENAI_API_KEY: "sk-test" } as const;
+// Hard-cut negative: these removed node kinds must never appear in a shipped seed or provider page.
+const RETIRED_NODE_TYPES = [
+  ["but", "ton"].join(""),
+  ["fo", "rm"].join(""),
+  ["filter", "Bar"].join(""),
+  ["met", "ric"].join(""),
+  ["ta", "bs"].join(""),
+  ["n", "av"].join(""),
+  ["st", "at"].join(""),
+] as const;
 
 const CATALOG_E2E: FacetCatalog = {
   name: "quickstart-catalog",
   description: "Quickstart catalog policy",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [{ type: "box" }, { type: "button", variants: ["primary"] }, { type: "metric" }],
+  bricks: BRICK_TYPES.map((type) => ({ type })),
   compositions: { mode: "all" },
-  primitiveFallback: "allowed",
   policy: {
-    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 3,
@@ -92,11 +101,27 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
     },
     "catalog-arr": {
       id: "catalog-arr",
-      type: "metric",
-      label: "ARR",
+      type: "box",
+      style: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
+      children: ["catalog-arr.label", "catalog-arr.value", "catalog-arr.delta"],
+    },
+    "catalog-arr.label": {
+      id: "catalog-arr.label",
+      type: "text",
+      value: "ARR",
+      style: { color: "fg-muted", size: "sm", weight: "medium" },
+    },
+    "catalog-arr.value": {
+      id: "catalog-arr.value",
+      type: "text",
       value: "$1.2M",
-      delta: "+18%",
-      tone: "success",
+      style: { color: "fg", size: "xl", weight: "bold" },
+    },
+    "catalog-arr.delta": {
+      id: "catalog-arr.delta",
+      type: "text",
+      value: "+18%",
+      style: { color: "success", size: "sm", weight: "semibold" },
     },
     "catalog-pricing": {
       id: "catalog-pricing",
@@ -125,10 +150,16 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
     },
     "catalog-pricing-cta": {
       id: "catalog-pricing-cta",
-      type: "button",
-      label: "View pricing",
-      variant: "primary",
+      type: "box",
+      style: { bg: "accent", pad: "sm", radius: "md" },
+      children: ["catalog-pricing-cta.label"],
       onPress: { kind: "agent", name: "view_pricing", payload: { plan: "pro" } },
+    },
+    "catalog-pricing-cta.label": {
+      id: "catalog-pricing-cta.label",
+      type: "text",
+      value: "View pricing",
+      style: { color: "accent-fg", weight: "semibold" },
     },
   },
 };
@@ -154,7 +185,7 @@ function nativePanelTree(id: string, title: string): FacetTree {
       [copyId]: {
         id: copyId,
         type: "text",
-        value: `${title} authored with native nodes`,
+        value: `${title} authored with native bricks`,
       },
     },
   };
@@ -788,8 +819,8 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
   });
 });
 
-describe("quickstart E2E — composition references stay provider-only (DC-006, DC-010)", () => {
-  it("reads a composition reference then authors native nodes", async () => {
+describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-010)", () => {
+  it("reads a reference dataset then authors native bricks", async () => {
     const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
     const openAi = installOpenAiMock([
       [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
@@ -833,7 +864,8 @@ describe("quickstart E2E — composition references stay provider-only (DC-006, 
         const firstProviderRequest = JSON.stringify(openAi.bodies[0]);
         expect(firstProviderRequest).toContain("CATALOG");
         expect(firstProviderRequest).toContain("quickstart-catalog");
-        expect(firstProviderRequest).toContain("policy order: component -> primitive");
+        expect(firstProviderRequest).toContain("allowed bricks: box; text; media; input");
+        expect(firstProviderRequest).toContain("reference policy: all advertised references");
         expect(firstProviderRequest).toContain(OPERATOR_COMPOSITION.name);
         expect(firstProviderRequest).not.toContain(OPERATOR_REFERENCE_NODE_ID);
 
@@ -848,7 +880,10 @@ describe("quickstart E2E — composition references stay provider-only (DC-006, 
         expect(patchText).toContain("catalog-dashboard");
         expect(patchText).toContain("catalog-pricing");
         expect(patchText).toContain('"type":"box"');
-        expect(patchText).toContain('"type":"button"');
+        expect(patchText).toContain('"type":"text"');
+        for (const retired of RETIRED_NODE_TYPES) {
+          expect(patchText).not.toContain(`"type":"${retired}"`);
+        }
         frameText = JSON.stringify(frames);
         expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
         expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
@@ -954,7 +989,7 @@ describe("quickstart E2E — composition references stay provider-only (DC-006, 
     }
   });
 
-  it("fails safe when the provider goes offline after a composition read", async () => {
+  it("fails safe when the provider goes offline after a reference read", async () => {
     const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-offline-"));
     const openAi = installOpenAiMock([
       [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
@@ -1043,8 +1078,8 @@ describe("quickstart E2E — composition references stay provider-only (DC-006, 
   });
 });
 
-describe("quickstart E2E — quickstart component default", () => {
-  it("quickstart component default ships the seed before provider output on the CLI path", async () => {
+describe("quickstart E2E — quickstart brick default", () => {
+  it("quickstart brick default ships the 175-node seed before provider output", async () => {
     const openAi = installOpenAiMock([[mockCall("say", { text: "quickstart seed ready" })], []]);
     let running: RunningQuickstart | undefined;
     try {
@@ -1055,7 +1090,7 @@ describe("quickstart E2E — quickstart component default", () => {
       expect(shell).toContain("window.__FACET_INITIAL_STAGE__ = ");
       expect(shell).toContain(QUICKSTART_INITIAL_STAGE.root);
 
-      const visitorId = "e2e-component-default";
+      const visitorId = "e2e-brick-default";
       const stream = await openStream(running.url, visitorId);
       try {
         await stream.next(1); // reset
@@ -1072,27 +1107,24 @@ describe("quickstart E2E — quickstart component default", () => {
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain('"op":"replace"');
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
-        // Demoted visual patterns are expressed with box+text primitives, so
-        // only surviving showcase types are asserted.
-        for (const type of [
-          "box",
-          "text",
-          "tabs",
-          "table",
-          "chart",
-          "input",
-          "button",
-          "metric",
-          "progress",
-          "list",
-        ]) {
+        expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(175);
+        for (const node of Object.values(QUICKSTART_INITIAL_STAGE.nodes)) {
+          expect(BRICK_TYPES).toContain(node.type);
+        }
+        for (const type of ["box", "text", "table", "chart", "input", "progress", "list"]) {
           expect(seedText).toContain(`"type":"${type}"`);
+        }
+        for (const retired of RETIRED_NODE_TYPES) {
+          expect(seedText).not.toContain(`"type":"${retired}"`);
         }
 
         const providerRequest = JSON.stringify(openAi.bodies[0]);
         expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
         expect(providerRequest).toContain("# Facet quickstart tour");
-        expect(providerRequest).toContain("component -> primitive fallback");
+        expect(providerRequest).toContain(
+          "Bricks are box, text, media, input, richtext, table, chart, list, keyValue, progress, loading.",
+        );
+        expect(providerRequest).toContain("optional reference");
         expect(providerRequest).not.toContain("STUB_TREE");
         expect(booted.captured.out.join("\n")).toContain("openai");
       } finally {

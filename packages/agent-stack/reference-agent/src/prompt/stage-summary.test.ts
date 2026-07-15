@@ -1,179 +1,156 @@
 import { describe, expect, it } from "vitest";
-import { COMPONENT_NODE_TYPES, PRIMITIVE_BRICK_TYPES, type FacetTree } from "@facet/core";
+import { BRICK_TYPES, type FacetTree } from "@facet/core";
 
 import { STAGE_SUMMARY_REGISTRY, summarizeStageForPrompt } from "./stage-summary.js";
 
-const RETIRED_CONTAINER_PATTERN_TYPES = [
-  ["sec", "tion"].join(""),
-  ["ca", "rd"].join(""),
-  ["empty", "State"].join(""),
-] as const;
+const RETIRED_TYPES = ["button", "tabs", "nav", "form", "filterBar", "metric", "stat"] as const; // composition-hard-cut: allowed-negative
 
-// Guards the whole point of the registry: if a future PR removes a core node
-// type but leaves its summary entry (or adds a type and forgets the entry), the
-// registry keys drift from the core vocabulary and this test fails. The switch
-// this replaced handled every core node type, so the sets must match exactly.
 describe("STAGE_SUMMARY_REGISTRY", () => {
-  it("covers exactly the core node-type vocabulary", () => {
-    const coreNodeTypes = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES];
-    expect(Object.keys(STAGE_SUMMARY_REGISTRY).sort()).toEqual([...coreNodeTypes].sort());
+  it("summarizes only the final brick roster", () => {
+    expect(Object.keys(STAGE_SUMMARY_REGISTRY)).toEqual([...BRICK_TYPES]);
+    for (const type of BRICK_TYPES) expect(STAGE_SUMMARY_REGISTRY[type]).toBeTypeOf("function");
   });
 
-  it("maps every core node type to a summary handler", () => {
-    for (const type of [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]) {
-      expect(typeof STAGE_SUMMARY_REGISTRY[type]).toBe("function");
-    }
-  });
-
-  it("omits retired container-pattern handlers", () => {
-    for (const type of RETIRED_CONTAINER_PATTERN_TYPES) {
-      expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, type)).toBe(false);
-    }
-
-    const staleNodes = Object.fromEntries(
-      RETIRED_CONTAINER_PATTERN_TYPES.map((type) => [type, { id: type, type }]),
-    );
-    const stage = {
-      root: "root",
+  it("preserves the exact useful formatting for all eleven bricks", () => {
+    const stage: FacetTree = {
+      root: "00-box",
       nodes: {
-        root: { id: "root", type: "box", children: [...RETIRED_CONTAINER_PATTERN_TYPES] },
-        ...staleNodes,
-      },
-    } as unknown as FacetTree;
-    const summary = summarizeStageForPrompt(stage);
-
-    for (const type of RETIRED_CONTAINER_PATTERN_TYPES) {
-      expect(summary).toContain(`- ${type}: type=unknown`);
-      expect(summary).not.toContain(`type=${type}`);
-    }
-  });
-});
-
-// The `field`→`input` rename (DC-001) + `search` removal (DC-003): the primitive
-// input brick must summarize as `type=input`, and the removed `search` component
-// type must have no handler left in the registry.
-describe("summarizeStageForPrompt input", () => {
-  it("summarizes an input node as type=input with its name and kind", () => {
-    const stage = {
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["email"] },
-        email: { id: "email", type: "input", name: "email", input: "email" },
-      },
-    } as unknown as FacetTree;
-
-    const summary = summarizeStageForPrompt(stage);
-    expect(summary).toContain("type=input");
-    expect(summary).toContain("name=email");
-    expect(summary).toContain("input=email");
-    expect(summary).not.toContain("type=field");
-    expect(summary).not.toContain("type=unknown");
-  });
-
-  it("has no search handler in the registry (DC-003)", () => {
-    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "search")).toBe(false);
-    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "input")).toBe(true);
-    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "field")).toBe(false);
-  });
-});
-
-// A richtext node is a flowing LEAF brick holding its own `blocks`/`runs`, not
-// child ids. The summarizer must flatten that shape to a text preview so
-// compaction reflects the prose, rather than degrading to `type=unknown`.
-describe("summarizeStageForPrompt richtext", () => {
-  it("summarizes a richtext node as a block count plus a text preview", () => {
-    const stage = {
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["intro"] },
-        intro: {
-          id: "intro",
-          type: "richtext",
-          blocks: [
-            {
-              type: "heading",
-              level: 1,
-              runs: [{ text: "Welcome " }, { text: "aboard", marks: [{ kind: "bold" }] }],
-            },
-            { type: "paragraph", runs: [{ text: "Second block copy." }] },
+        "00-box": {
+          id: "00-box",
+          type: "box",
+          children: [
+            "01-text",
+            "02-media",
+            "03-input",
+            "04-richtext",
+            "05-table",
+            "06-chart",
+            "07-list",
+            "08-keyValue",
+            "09-progress",
+            "10-loading",
           ],
         },
+        "01-text": { id: "01-text", type: "text", value: "hello" },
+        "02-media": {
+          id: "02-media",
+          type: "media",
+          kind: "image",
+          src: "https://x.dev/a.png",
+          alt: "Preview",
+        },
+        "03-input": {
+          id: "03-input",
+          type: "input",
+          name: "status",
+          input: "select",
+          options: ["Open", "Closed"],
+        },
+        "04-richtext": {
+          id: "04-richtext",
+          type: "richtext",
+          blocks: [
+            { type: "heading", level: 1, runs: [{ text: "Welcome " }, { text: "aboard" }] },
+            { type: "paragraph", runs: [{ text: "More" }] },
+          ],
+        },
+        "05-table": {
+          id: "05-table",
+          type: "table",
+          caption: "Pipeline",
+          columns: [{ key: "name", label: "Name" }],
+          rows: [{ name: "Acme" }, { name: "Beta" }],
+          variant: "compact",
+        },
+        "06-chart": {
+          id: "06-chart",
+          type: "chart",
+          kind: "bar",
+          title: "Trend",
+          labels: ["Jan", "Feb"],
+          series: [
+            { label: "ARR", values: [10, 20] },
+            { label: "MRR", values: [5] },
+          ],
+          variant: "compact",
+        },
+        "07-list": {
+          id: "07-list",
+          type: "list",
+          items: [{ title: "One" }, { title: "Two" }],
+          variant: "compact",
+        },
+        "08-keyValue": {
+          id: "08-keyValue",
+          type: "keyValue",
+          items: [{ label: "Owner", value: "Ada" }],
+          variant: "compact",
+        },
+        "09-progress": {
+          id: "09-progress",
+          type: "progress",
+          value: 72,
+          label: "Migration",
+          tone: "success",
+          variant: "compact",
+        },
+        "10-loading": {
+          id: "10-loading",
+          type: "loading",
+          label: "Loading rows",
+          variant: "compact",
+        },
       },
-    } as unknown as FacetTree;
+    };
 
     const summary = summarizeStageForPrompt(stage);
-    expect(summary).toContain("type=richtext");
-    expect(summary).toContain("blocks=2");
-    expect(summary).toContain("Welcome aboard");
+    expect(summary).toContain("- 00-box: type=box children=10");
+    expect(summary).toContain("- 01-text: type=text chars=5");
+    expect(summary).toContain("- 02-media: type=media kind=image srcChars=19 altChars=7");
+    expect(summary).toContain("- 03-input: type=input name=status input=select options=2");
+    expect(summary).toContain(
+      "- 04-richtext: type=richtext blocks=2 runs=3 text=Welcome aboardMore",
+    );
+    expect(summary).toContain(
+      "- 05-table: type=table columns=1 rows=2 captionChars=8 variant=compact",
+    );
+    expect(summary).toContain(
+      "- 06-chart: type=chart kind=bar series=2 points=3 labels=2 titleChars=5 variant=compact",
+    );
+    expect(summary).toContain("- 07-list: type=list items=2 variant=compact");
+    expect(summary).toContain("- 08-keyValue: type=keyValue items=1 variant=compact");
+    expect(summary).toContain(
+      "- 09-progress: type=progress value=72 labelChars=9 tone=success variant=compact",
+    );
+    expect(summary).toContain("- 10-loading: type=loading labelChars=12 variant=compact");
     expect(summary).not.toContain("type=unknown");
   });
 
-  it("summarizes a richtext node with no readable runs without throwing", () => {
+  it("has no retired or prototype-chain handler and safely summarizes stale raw nodes", () => {
+    const staleTypes = [...RETIRED_TYPES, "constructor", "toString", "prototype"];
+    for (const type of staleTypes) expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, type)).toBe(false);
+
+    const stage = {
+      root: "root",
+      nodes: Object.fromEntries([
+        ["root", { id: "root", type: "box", children: staleTypes }],
+        ...staleTypes.map((type) => [type, { id: type, type }]),
+      ]),
+    } as unknown as FacetTree;
+    const summary = summarizeStageForPrompt(stage);
+    for (const type of staleTypes) expect(summary).toContain(`- ${type}: type=unknown`);
+    expect(summary).not.toContain("[object Object]");
+  });
+
+  it("keeps malformed richtext fail-safe without a compatibility path", () => {
     const stage = {
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["empty"] },
-        empty: { id: "empty", type: "richtext", blocks: [] },
+        empty: { id: "empty", type: "richtext", blocks: [{ runs: [null, { text: 7 }] }] },
       },
     } as unknown as FacetTree;
 
-    const summary = summarizeStageForPrompt(stage);
-    expect(summary).toContain("type=richtext");
-    expect(summary).toContain("blocks=0");
-    expect(summary).not.toContain("type=unknown");
-  });
-});
-
-// DC-002 / DC-005: badge/alert/divider were removed from the core node-type
-// vocabulary and demoted to compositions, so their explicit STAGE_SUMMARY
-// handlers are gone. A stale authored node bearing one of those removed `type`s
-// must fall through the SOFT registry to the generic `type=unknown` summary
-// (fail-safe), never emitting a `type=badge`/`type=alert`/`type=divider` line.
-describe("summarizeStageForPrompt removed display-leaf types", () => {
-  it("summarizes a removed display-leaf generically", () => {
-    const stage = {
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["badge", "alert", "divider"] },
-        badge: { id: "badge", type: "badge", label: "Live", tone: "info" },
-        alert: { id: "alert", type: "alert", title: "Heads up", body: "Something happened here." },
-        divider: { id: "divider", type: "divider", label: "Details" },
-      },
-    } as unknown as FacetTree;
-
-    const summary = summarizeStageForPrompt(stage);
-    expect(summary).not.toContain("type=badge");
-    expect(summary).not.toContain("type=alert");
-    expect(summary).not.toContain("type=divider");
-    expect(summary).toContain("- badge: type=unknown");
-    expect(summary).toContain("- alert: type=unknown");
-    expect(summary).toContain("- divider: type=unknown");
-  });
-
-  it("has no badge/alert/divider handlers in the registry", () => {
-    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "badge")).toBe(false);
-    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "alert")).toBe(false);
-    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "divider")).toBe(false);
-  });
-});
-
-// The summarizer reads raw, unvalidated node `type`s, so it can meet
-// "constructor" and other Object.prototype member names. A bare registry lookup
-// returned the inherited `Object` FUNCTION, and `summarize(node)` then produced
-// `[object Object]`; the `Object.hasOwn` guard must fall through to the
-// `type=unknown` default exactly as the former switch's trailing case did.
-describe("summarizeStageForPrompt prototype-chain lookup guard", () => {
-  it("summarizes an Object.prototype member type as type=unknown, not [object Object]", () => {
-    const stage = {
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["junk"] },
-        junk: { id: "junk", type: "constructor", value: "evil" },
-      },
-    } as unknown as FacetTree;
-
-    const summary = summarizeStageForPrompt(stage);
-    expect(summary).toContain("type=unknown");
-    expect(summary).not.toContain("[object Object]");
+    expect(summarizeStageForPrompt(stage)).toContain("type=richtext blocks=1 runs=2");
   });
 });

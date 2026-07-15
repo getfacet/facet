@@ -18,7 +18,7 @@ npm install @facet/cli
 ```bash
 facet render '<tree-json>'              # replace the whole stage
 facet set '<node-json>'                 # insert/replace one node
-facet append <parentId> '<node-json>'   # add a child (a card, a button…)
+facet append <parentId> '<node-json>'   # add a child (a box, text, input…)
 facet remove <nodeId>                   # remove a node
 facet screens '<map-json>' <entry>      # set the named screens map + entry screen
 facet theme <name>                      # select a validated theme name

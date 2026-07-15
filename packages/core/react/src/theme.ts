@@ -11,7 +11,7 @@ import {
   MIN_HEIGHTS,
   RADII,
   RATIOS,
-  RECIPE_COMPONENTS,
+  RECIPE_BRICKS,
   RECIPE_PARTS,
   SCRIMS,
   SHADOWS,
@@ -22,10 +22,10 @@ import type {
   Align,
   BoxStyle,
   Color,
-  ComponentRecipe,
-  ComponentRecipePart,
-  ComponentRecipeParts,
-  ComponentRecipes,
+  BrickRecipe,
+  BrickRecipePart,
+  BrickRecipeParts,
+  BrickRecipes,
   FacetTheme,
   FontFamily,
   FontSize,
@@ -40,7 +40,7 @@ import type {
   MinHeight,
   Radius,
   Ratio,
-  RecipeComponentName,
+  RecipeBrickName,
   RecipePartName,
   Scrim,
   Shadow,
@@ -104,7 +104,7 @@ export interface ResolvedTheme {
   readonly highlight: Record<Highlight, string>;
   readonly colorLight: Record<Color, string>;
   readonly colorDark: Record<Color, string>;
-  readonly recipes?: ComponentRecipes;
+  readonly recipes?: BrickRecipes;
 }
 
 const MAX_RECIPE_VARIANTS = 64;
@@ -126,85 +126,81 @@ function safeOwnValue(record: Record<string, unknown>, key: string): unknown {
   }
 }
 
-function mergeRecipes(override: unknown): ComponentRecipes | undefined {
+function mergeRecipes(override: unknown): BrickRecipes | undefined {
   const defaults = DEFAULT_THEME.recipes;
-  const out: Partial<Record<RecipeComponentName, Readonly<Record<string, ComponentRecipe>>>> =
-    Object.create(null) as Partial<
-      Record<RecipeComponentName, Readonly<Record<string, ComponentRecipe>>>
-    >;
+  const out: Partial<Record<RecipeBrickName, Readonly<Record<string, BrickRecipe>>>> =
+    Object.create(null) as Partial<Record<RecipeBrickName, Readonly<Record<string, BrickRecipe>>>>;
   const hasOverride = isObjectRecord(override);
-  for (const component of RECIPE_COMPONENTS) {
-    const baseVariants = isObjectRecord(defaults?.[component]) ? defaults[component] : undefined;
+  for (const brick of RECIPE_BRICKS) {
+    const baseVariants = isObjectRecord(defaults?.[brick]) ? defaults[brick] : undefined;
     const overrideVariants =
-      hasOverride && isObjectRecord(override[component]) ? override[component] : undefined;
+      hasOverride && isObjectRecord(override[brick]) ? override[brick] : undefined;
     if (baseVariants === undefined && overrideVariants === undefined) continue;
-    const variants: Record<string, ComponentRecipe> = Object.assign(
-      Object.create(null) as Record<string, ComponentRecipe>,
+    const variants: Record<string, BrickRecipe> = Object.assign(
+      Object.create(null) as Record<string, BrickRecipe>,
       baseVariants,
     );
     if (overrideVariants !== undefined) {
       for (const name of safeObjectKeys(overrideVariants).slice(0, MAX_RECIPE_VARIANTS)) {
         const recipe = safeOwnValue(overrideVariants, name);
         if (!isObjectRecord(recipe)) continue;
-        variants[name] = mergeComponentRecipe(variants[name], recipe);
+        variants[name] = mergeBrickRecipe(variants[name], recipe);
       }
     }
-    out[component] = variants;
+    out[brick] = variants;
   }
-  return Object.keys(out).length > 0 ? (out as ComponentRecipes) : undefined;
+  return Object.keys(out).length > 0 ? (out as BrickRecipes) : undefined;
 }
 
-function mergeComponentRecipe(
-  base: ComponentRecipe | undefined,
+function mergeBrickRecipe(
+  base: BrickRecipe | undefined,
   override: Record<string, unknown>,
-): ComponentRecipe {
-  const styleBundles = mergeComponentRecipePart(base, override);
+): BrickRecipe {
+  const styleBundles = mergeBrickRecipePart(base, override);
   const merged: {
-    box?: ComponentRecipe["box"];
-    text?: ComponentRecipe["text"];
-    media?: ComponentRecipe["media"];
-    field?: ComponentRecipe["field"];
-    parts?: ComponentRecipe["parts"];
+    box?: BrickRecipe["box"];
+    text?: BrickRecipe["text"];
+    media?: BrickRecipe["media"];
+    field?: BrickRecipe["field"];
+    parts?: BrickRecipe["parts"];
   } = { ...(styleBundles ?? {}) };
   const overrideParts = safeOwnValue(override, "parts");
-  const parts = mergeComponentRecipeParts(
+  const parts = mergeBrickRecipeParts(
     isObjectRecord(base?.parts) ? base.parts : undefined,
     isObjectRecord(overrideParts) ? overrideParts : undefined,
   );
   if (parts !== undefined) merged.parts = parts;
-  return Object.keys(merged).length > 0
-    ? (merged as ComponentRecipe)
-    : (override as ComponentRecipe);
+  return Object.keys(merged).length > 0 ? (merged as BrickRecipe) : (override as BrickRecipe);
 }
 
-function mergeComponentRecipeParts(
-  base: ComponentRecipeParts | undefined,
+function mergeBrickRecipeParts(
+  base: BrickRecipeParts | undefined,
   override: Record<string, unknown> | undefined,
-): ComponentRecipeParts | undefined {
+): BrickRecipeParts | undefined {
   if (base === undefined && override === undefined) return undefined;
-  const merged: Partial<Record<RecipePartName, ComponentRecipePart>> = Object.create(
-    null,
-  ) as Partial<Record<RecipePartName, ComponentRecipePart>>;
+  const merged: Partial<Record<RecipePartName, BrickRecipePart>> = Object.create(null) as Partial<
+    Record<RecipePartName, BrickRecipePart>
+  >;
   for (const partName of RECIPE_PARTS) {
     const basePart = isObjectRecord(base?.[partName]) ? base[partName] : undefined;
     const overrideValue = override === undefined ? undefined : safeOwnValue(override, partName);
     const overridePart = isObjectRecord(overrideValue) ? overrideValue : undefined;
-    const part = mergeComponentRecipePart(basePart, overridePart);
+    const part = mergeBrickRecipePart(basePart, overridePart);
     if (part !== undefined) merged[partName] = part;
   }
-  return Object.keys(merged).length > 0 ? (merged as ComponentRecipeParts) : undefined;
+  return Object.keys(merged).length > 0 ? (merged as BrickRecipeParts) : undefined;
 }
 
-function mergeComponentRecipePart(
-  base: ComponentRecipePart | undefined,
+function mergeBrickRecipePart(
+  base: BrickRecipePart | undefined,
   override: Record<string, unknown> | undefined,
-): ComponentRecipePart | undefined {
+): BrickRecipePart | undefined {
   if (base === undefined && override === undefined) return undefined;
   const merged: {
-    box?: ComponentRecipePart["box"];
-    text?: ComponentRecipePart["text"];
-    media?: ComponentRecipePart["media"];
-    field?: ComponentRecipePart["field"];
+    box?: BrickRecipePart["box"];
+    text?: BrickRecipePart["text"];
+    media?: BrickRecipePart["media"];
+    field?: BrickRecipePart["field"];
   } = {};
   for (const key of ["box", "text", "media", "field"] as const) {
     const baseStyle = isObjectRecord(base?.[key]) ? base[key] : undefined;
@@ -213,7 +209,7 @@ function mergeComponentRecipePart(
     if (baseStyle === undefined && overrideStyle === undefined) continue;
     merged[key] = { ...(baseStyle ?? {}), ...(overrideStyle ?? {}) };
   }
-  return Object.keys(merged).length > 0 ? (merged as ComponentRecipePart) : undefined;
+  return Object.keys(merged).length > 0 ? (merged as BrickRecipePart) : undefined;
 }
 
 /**
@@ -241,7 +237,7 @@ const DEFAULT_RESOLVED: ResolvedTheme = {
   highlight: HIGHLIGHT,
   colorLight: COLOR,
   colorDark: COLOR_DARK,
-  recipes: mergeRecipes(undefined) ?? (Object.create(null) as ComponentRecipes),
+  recipes: mergeRecipes(undefined) ?? (Object.create(null) as BrickRecipes),
 };
 
 /**
@@ -315,21 +311,22 @@ export function resolveTheme(name: unknown, themes?: readonly FacetTheme[]): Res
   return recipes === undefined ? resolved : { ...resolved, recipes };
 }
 
-const EMPTY_RECIPE: ComponentRecipe = {};
+const EMPTY_RECIPE: BrickRecipe = Object.freeze({});
 
 export function resolveRecipe(
   theme: ResolvedTheme,
-  component: RecipeComponentName,
+  brick: RecipeBrickName,
   variant?: unknown,
   tone?: unknown,
-): ComponentRecipe {
-  const variants = theme.recipes?.[component];
+): BrickRecipe {
+  const recipes = isObjectRecord(theme.recipes) ? theme.recipes : undefined;
+  if (recipes === undefined) return EMPTY_RECIPE;
+  const variants = safeOwnValue(recipes, brick);
   if (!isObjectRecord(variants)) return EMPTY_RECIPE;
   for (const key of [variant, tone, "default"]) {
     if (typeof key !== "string") continue;
-    if (!Object.prototype.hasOwnProperty.call(variants, key)) continue;
-    const recipe = (variants as Record<string, unknown>)[key];
-    if (isObjectRecord(recipe)) return recipe as ComponentRecipe;
+    const recipe = safeOwnValue(variants, key);
+    if (isObjectRecord(recipe)) return recipe as BrickRecipe;
   }
   return EMPTY_RECIPE;
 }

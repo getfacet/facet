@@ -17,11 +17,6 @@ function quote(value: string): string {
   return JSON.stringify(value);
 }
 
-function labeledCount(label: string | undefined, noun: string, value: number): string {
-  const suffix = `(${count(noun, value)})`;
-  return label === undefined ? ` ${suffix}` : `: ${quote(label)} ${suffix}`;
-}
-
 function detail(node: FacetNode): string {
   switch (node.type) {
     case "text":
@@ -30,29 +25,16 @@ function detail(node: FacetNode): string {
       return `(${node.kind}): ${node.src}`;
     case "input":
       return `: ${node.name}`;
-    case "button":
-      return `: ${quote(node.label)}`;
-    case "tabs":
-      return `: ${count("tab", node.items.length)}`;
     case "table":
       return `${node.caption === undefined ? "" : `: ${quote(node.caption)} `}(${count("column", node.columns.length)}, ${count("row", node.rows.length)})`;
     case "chart":
       return `(${node.kind})${node.title === undefined ? "" : `: ${quote(node.title)} `}(${count("series", node.series.length)}, ${count("label", node.labels?.length ?? 0)})`;
-    case "metric":
-    case "stat":
-      return `: ${node.label} = ${node.value}${node.delta === undefined ? "" : ` (${node.delta})`}`;
     case "keyValue":
-      return `: ${count("item", node.items.length)}`;
-    case "nav":
       return `: ${count("item", node.items.length)}`;
     case "progress":
       return `: ${node.label === undefined ? "" : `${node.label} `}${String(node.value)}%`;
     case "list":
       return `: ${count("item", node.items.length)}`;
-    case "form":
-      return labeledCount(node.title ?? node.body, "child", node.children.length);
-    case "filterBar":
-      return `: ${count("filter", node.filters.length)}`;
     case "loading":
       return node.label === undefined ? "" : `: ${quote(node.label)}`;
     case "richtext":
@@ -64,12 +46,12 @@ function detail(node: FacetNode): string {
 }
 
 function nodePress(node: FacetNode): FacetAction | undefined {
-  if (node.type === "box" || node.type === "button") return node.onPress;
+  if (node.type === "box") return node.onPress;
   return undefined;
 }
 
 function nodeHold(node: FacetNode): FacetAction | undefined {
-  if (node.type === "box" || node.type === "button") return node.onHold;
+  if (node.type === "box") return node.onHold;
   return undefined;
 }
 

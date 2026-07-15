@@ -125,10 +125,16 @@ export const EMPTY_STATE_COMPOSITION: FacetComposition = {
     },
     "empty-state.action": {
       id: "empty-state.action",
-      type: "button",
-      label: "Create project",
-      variant: "primary",
+      type: "box",
+      style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+      children: ["empty-state.action-label"],
       onPress: { kind: "agent", name: "create_item" },
+    },
+    "empty-state.action-label": {
+      id: "empty-state.action-label",
+      type: "text",
+      value: "Create project",
+      style: { color: "accent-fg", align: "center", weight: "semibold" },
     },
   },
 };

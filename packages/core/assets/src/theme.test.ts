@@ -119,13 +119,51 @@ describe("DEFAULT_THEME", () => {
 });
 
 describe("DEFAULT_THEME recipes", () => {
+  it("ships selected brick recipes without retired recipe keys", () => {
+    const recipes = DEFAULT_THEME.recipes;
+    expect(recipes).toBeDefined();
+    expect(Object.keys(recipes ?? {}).sort()).toEqual(
+      [
+        "box",
+        "chart",
+        "input",
+        "keyValue",
+        "list",
+        "loading",
+        "media",
+        "progress",
+        "table",
+        "text",
+      ].sort(),
+    );
+    expect(recipes?.box?.selected).toEqual({
+      box: { bg: "accent", border: true, pad: "sm", radius: "md" },
+    });
+    expect(recipes?.text?.selected).toBeUndefined();
+
+    for (const brick of ["table", "chart", "keyValue", "progress", "list", "loading"] as const) {
+      expect(recipes?.[brick]?.default, brick).toBeDefined();
+    }
+    for (const retired of [
+      "button",
+      "form",
+      "filterBar",
+      "metric",
+      "tabs",
+      "nav",
+      "stat",
+    ] as const) {
+      expect(recipes).not.toHaveProperty(retired);
+    }
+    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
+  });
+
   it("omits retired container-pattern recipes", () => {
     expect(DEFAULT_THEME.recipes).toBeDefined();
     expect(DEFAULT_THEME.recipes).not.toHaveProperty("section");
     expect(DEFAULT_THEME.recipes).not.toHaveProperty("card");
     expect(DEFAULT_THEME.recipes).not.toHaveProperty("emptyState");
 
-    expect(DEFAULT_THEME.recipes?.stat?.default).toBeDefined();
     expect(DEFAULT_THEME.recipes?.loading?.default).toBeDefined();
   });
 
@@ -145,17 +183,13 @@ describe("DEFAULT_THEME recipes", () => {
     expect(DEFAULT_THEME.shadow?.sm).toBe("0 1px 2px rgba(15, 23, 42, 0.08)");
     expect(DEFAULT_THEME.shadow?.md).toBe("0 12px 30px rgba(15, 23, 42, 0.14)");
     expect(DEFAULT_THEME.shadow?.lg).toBe("0 24px 60px rgba(15, 23, 42, 0.18)");
-    expect(DEFAULT_THEME.recipes?.button?.primary?.box).toEqual({
+    expect(DEFAULT_THEME.recipes?.box?.selected?.box).toEqual({
       bg: "accent",
       border: true,
       pad: "sm",
       radius: "md",
-      shadow: "sm",
     });
-    expect(DEFAULT_THEME.recipes?.button?.primary?.text).toEqual({
-      color: "accent-fg",
-      weight: "semibold",
-    });
+    expect(DEFAULT_THEME.recipes?.box?.selected?.text).toBeUndefined();
     expect(DEFAULT_THEME.recipes?.chart?.default?.box).toEqual({
       bg: "surface",
       border: true,
@@ -172,12 +206,6 @@ describe("DEFAULT_THEME recipes", () => {
     expect(DEFAULT_THEME.recipes?.input?.default?.parts?.control?.field).toEqual({
       width: "full",
     });
-    expect(DEFAULT_THEME.recipes?.stat?.default?.text).toEqual({
-      color: "fg-muted",
-      size: "sm",
-    });
-    expect(DEFAULT_THEME.recipes?.metric?.default).toEqual(DEFAULT_THEME.recipes?.stat?.default);
-    expect(DEFAULT_THEME.recipes?.metric?.success).toEqual(DEFAULT_THEME.recipes?.stat?.success);
   });
 
   it("recipes stay node-free and renderer-free", () => {
@@ -216,49 +244,34 @@ describe("DEFAULT_THEME recipes", () => {
     expect(source).not.toMatch(/\b(CSSProperties|React)\b/);
   });
 
-  it("component default recipes define token-only parts for component affordances", () => {
+  it("brick default recipes define token-only parts for survivor affordances", () => {
     const expectedParts: ReadonlyArray<{
-      readonly component: keyof NonNullable<FacetTheme["recipes"]>;
+      readonly brick: keyof NonNullable<FacetTheme["recipes"]>;
       readonly variant: string;
       readonly parts: readonly RecipePartName[];
     }> = [
       {
-        component: "input",
+        brick: "input",
         variant: "default",
         parts: ["label", "control", "input", "helpText", "errorText"],
       },
-      { component: "button", variant: "primary", parts: ["label"] },
-      { component: "button", variant: "secondary", parts: ["label"] },
-      { component: "tabs", variant: "default", parts: ["tabList", "tab", "activeTab"] },
-      { component: "nav", variant: "default", parts: ["item", "activeTab"] },
       {
-        component: "table",
+        brick: "table",
         variant: "default",
         parts: ["title", "table", "headerRow", "headerCell", "row", "cell"],
       },
-      { component: "chart", variant: "default", parts: ["title", "plot", "legend"] },
-      { component: "metric", variant: "default", parts: ["label", "value", "trend"] },
-      { component: "metric", variant: "success", parts: ["label", "value", "trend"] },
-      { component: "keyValue", variant: "default", parts: ["item", "label", "value"] },
-      { component: "stat", variant: "default", parts: ["label", "value", "trend"] },
-      { component: "stat", variant: "success", parts: ["label", "value", "trend"] },
-      // badge/alert/divider recipes were removed in PR-5a — their tokens are now
-      // baked into the per-tone badge*/alert* compositions in @facet/assets.
-      { component: "progress", variant: "default", parts: ["label", "track", "fill"] },
-      { component: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
-      { component: "form", variant: "default", parts: ["header", "title", "body", "actions"] },
-      { component: "filterBar", variant: "default", parts: ["item", "label", "control", "input"] },
-      { component: "loading", variant: "default", parts: ["label"] },
+      { brick: "chart", variant: "default", parts: ["title", "plot", "legend"] },
+      { brick: "keyValue", variant: "default", parts: ["item", "label", "value"] },
+      { brick: "progress", variant: "default", parts: ["label", "track", "fill"] },
+      { brick: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
+      { brick: "loading", variant: "default", parts: ["label"] },
     ];
 
-    for (const { component, variant, parts } of expectedParts) {
-      const recipe = DEFAULT_THEME.recipes?.[component]?.[variant];
-      expect(recipe, `${String(component)}.${variant}`).toBeDefined();
+    for (const { brick, variant, parts } of expectedParts) {
+      const recipe = DEFAULT_THEME.recipes?.[brick]?.[variant];
+      expect(recipe, `${String(brick)}.${variant}`).toBeDefined();
       for (const part of parts) {
-        expect(
-          recipe?.parts?.[part],
-          `${String(component)}.${variant}.parts.${part}`,
-        ).toBeDefined();
+        expect(recipe?.parts?.[part], `${String(brick)}.${variant}.parts.${part}`).toBeDefined();
       }
     }
 
@@ -279,22 +292,7 @@ describe("DEFAULT_THEME recipes", () => {
   });
 
   it("defines every catalog-advertised default variant as a recipe", () => {
-    // Retired node types are demoted to compositions; their recipes are gone even
-    // though the shared @facet/core DEFAULT_CATALOG still advertises them until
-    // the atomic core-removal WU lands. Excluding them here is forward-compatible.
-    const DEMOTED = new Set(["badge", "alert", "divider", "section", "card", "emptyState"]);
-    for (const component of DEFAULT_CATALOG.components ?? []) {
-      if (DEMOTED.has(component.type)) continue;
-      for (const variant of component.variants ?? []) {
-        expect(
-          DEFAULT_THEME.recipes?.[component.type]?.[variant],
-          `${component.type}.${variant}`,
-        ).toBeDefined();
-      }
-    }
-
     for (const brick of DEFAULT_CATALOG.bricks) {
-      if (DEMOTED.has(brick.type)) continue;
       for (const variant of brick.variants ?? []) {
         expect(
           DEFAULT_THEME.recipes?.[brick.type]?.[variant],

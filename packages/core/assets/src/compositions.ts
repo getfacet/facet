@@ -5,6 +5,7 @@ import {
   EMPTY_STATE_COMPOSITION,
   SECTION_COMPOSITION,
 } from "./composition-containers.js";
+import { CONTROL_COMPOSITIONS } from "./composition-controls.js";
 
 /**
  * Default compositions are data-only, self-contained native reference
@@ -47,40 +48,22 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "hero.cta": {
         id: "hero.cta",
-        type: "button",
-        label: "Get started",
-        variant: "primary",
-        tone: "accent",
+        type: "box",
+        style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+        children: ["hero.cta-label"],
         onPress: { kind: "agent", name: "start" },
+      },
+      "hero.cta-label": {
+        id: "hero.cta-label",
+        type: "text",
+        value: "Get started",
+        style: { color: "accent-fg", align: "center", weight: "semibold" },
       },
     },
   },
   CARD_COMPOSITION,
   SECTION_COMPOSITION,
-  {
-    name: "cta-button",
-    metadata: {
-      description: "A single accent call-to-action button that fires an agent action.",
-      category: "action",
-      useWhen: "The user should take one clear next action.",
-      avoidWhen: "The action needs surrounding explanation or fields.",
-      tags: ["button", "cta", "action"],
-      variants: ["primary"],
-      repeatable: true,
-      preferredParent: "box",
-    },
-    root: "cta-button.root",
-    nodes: {
-      "cta-button.root": {
-        id: "cta-button.root",
-        type: "button",
-        label: "Get started",
-        variant: "primary",
-        tone: "accent",
-        onPress: { kind: "agent", name: "start" },
-      },
-    },
-  },
+  ...CONTROL_COMPOSITIONS,
   {
     name: "pricing-section",
     metadata: {
@@ -145,9 +128,21 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "pricing-section.starter-price": {
         id: "pricing-section.starter-price",
-        type: "metric",
-        label: "Monthly",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["pricing-section.starter-price-label", "pricing-section.starter-price-value"],
+      },
+      "pricing-section.starter-price-label": {
+        id: "pricing-section.starter-price-label",
+        type: "text",
+        value: "Monthly",
+        style: { color: "fg-muted", size: "sm" },
+      },
+      "pricing-section.starter-price-value": {
+        id: "pricing-section.starter-price-value",
+        type: "text",
         value: "$19",
+        style: { color: "fg", size: "xl", weight: "bold" },
       },
       "pricing-section.pro": {
         id: "pricing-section.pro",
@@ -186,16 +181,34 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "pricing-section.pro-price": {
         id: "pricing-section.pro-price",
-        type: "metric",
-        label: "Monthly",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["pricing-section.pro-price-label", "pricing-section.pro-price-value"],
+      },
+      "pricing-section.pro-price-label": {
+        id: "pricing-section.pro-price-label",
+        type: "text",
+        value: "Monthly",
+        style: { color: "fg-muted", size: "sm" },
+      },
+      "pricing-section.pro-price-value": {
+        id: "pricing-section.pro-price-value",
+        type: "text",
         value: "$49",
+        style: { color: "fg", size: "xl", weight: "bold" },
       },
       "pricing-section.cta": {
         id: "pricing-section.cta",
-        type: "button",
-        label: "Compare plans",
-        variant: "primary",
+        type: "box",
+        style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+        children: ["pricing-section.cta-label"],
         onPress: { kind: "agent", name: "compare_pricing" },
+      },
+      "pricing-section.cta-label": {
+        id: "pricing-section.cta-label",
+        type: "text",
+        value: "Compare plans",
+        style: { color: "accent-fg", align: "center", weight: "semibold" },
       },
       "pricing-section.enterprise": {
         id: "pricing-section.enterprise",
@@ -312,11 +325,31 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "dashboard-summary.stat": {
         id: "dashboard-summary.stat",
-        type: "stat",
-        label: "Revenue",
+        type: "box",
+        style: { gap: "xs" },
+        children: [
+          "dashboard-summary.stat-label",
+          "dashboard-summary.stat-value",
+          "dashboard-summary.stat-delta",
+        ],
+      },
+      "dashboard-summary.stat-label": {
+        id: "dashboard-summary.stat-label",
+        type: "text",
+        value: "Revenue",
+        style: { color: "fg-muted", size: "sm" },
+      },
+      "dashboard-summary.stat-value": {
+        id: "dashboard-summary.stat-value",
+        type: "text",
         value: "$42k",
-        delta: "+12%",
-        tone: "success",
+        style: { color: "fg", size: "xl", weight: "bold" },
+      },
+      "dashboard-summary.stat-delta": {
+        id: "dashboard-summary.stat-delta",
+        type: "text",
+        value: "+12%",
+        style: { color: "success", size: "sm", weight: "semibold" },
       },
       "dashboard-summary.badge": {
         id: "dashboard-summary.badge",
@@ -402,10 +435,16 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "settings-panel.save": {
         id: "settings-panel.save",
-        type: "button",
-        label: "Save settings",
-        variant: "primary",
+        type: "box",
+        style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+        children: ["settings-panel.save-label"],
         onPress: { kind: "agent", name: "save_settings", collect: "settings-panel.root" },
+      },
+      "settings-panel.save-label": {
+        id: "settings-panel.save-label",
+        type: "text",
+        value: "Save settings",
+        style: { color: "accent-fg", align: "center", weight: "semibold" },
       },
     },
   },
@@ -599,10 +638,16 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "support-triage.submit": {
         id: "support-triage.submit",
-        type: "button",
-        label: "Send request",
-        variant: "primary",
+        type: "box",
+        style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+        children: ["support-triage.submit-label"],
         onPress: { kind: "agent", name: "submit_support", collect: "support-triage.root" },
+      },
+      "support-triage.submit-label": {
+        id: "support-triage.submit-label",
+        type: "text",
+        value: "Send request",
+        style: { color: "accent-fg", align: "center", weight: "semibold" },
       },
     },
   },

@@ -26,7 +26,7 @@ export function isPrimitiveRecord(value: unknown): boolean {
 }
 
 /**
- * Canonical fail-safe action normalization shared by every component family.
+ * Canonical fail-safe action normalization shared by every closed action surface.
  * Malformed actions are removed with bounded diagnostics.
  */
 export function normalizeFacetAction(

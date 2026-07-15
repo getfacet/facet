@@ -1,8 +1,9 @@
 import type { CSSProperties } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import type {
   BoxStyle,
+  BrickRecipe,
   Color,
-  ComponentRecipe,
   FacetTheme,
   FontFamily,
   Space,
@@ -27,6 +28,81 @@ import {
   scrimStyle,
   stickyStyle,
 } from "./layout-contract.js";
+
+it("uses brick recipe terminology and renders chart through the private brick helper", async () => {
+  const { brickRecipe } = await import("./brick-renderer-recipe.js");
+  const { renderChart } = await import("./brick-renderer-chart.js");
+  const theme = resolveTheme("brand", [
+    {
+      name: "brand",
+      color: { danger: "#cc1020", accent: "#1267d6" },
+      recipes: {
+        chart: {
+          spotlight: {
+            box: { bg: "danger", pad: "lg" },
+            parts: { title: { text: { color: "accent", weight: "bold" } } },
+          },
+        },
+      },
+    },
+  ]);
+
+  expect(brickRecipe(theme, "chart", "spotlight").box).toMatchObject({
+    bg: "danger",
+    pad: "lg",
+  });
+  expect(brickRecipe(theme, "constructor" as Parameters<typeof brickRecipe>[1], "default")).toEqual(
+    {},
+  );
+
+  const hostileRecipes = Object.create(null) as Record<string, unknown>;
+  Object.defineProperty(hostileRecipes, "chart", {
+    get() {
+      throw new Error("hostile brick recipe getter");
+    },
+  });
+  expect(() =>
+    brickRecipe(
+      { ...theme, recipes: hostileRecipes as NonNullable<typeof theme.recipes> },
+      "chart",
+      "spotlight",
+    ),
+  ).not.toThrow();
+  expect(
+    brickRecipe(
+      { ...theme, recipes: hostileRecipes as NonNullable<typeof theme.recipes> },
+      "chart",
+      "spotlight",
+    ),
+  ).toEqual({});
+
+  const rendered = renderChart(
+    {
+      id: "sales",
+      type: "chart",
+      kind: "bar",
+      title: "Sales",
+      variant: "spotlight",
+      series: [{ label: "ARR", values: [10, 20] }],
+    },
+    {
+      theme,
+      className: "sales-chart",
+      inert: false,
+      nodeId: "sales",
+      activeScreen: null,
+      visibilityOverrides: new Map(),
+      classifyPress: () => null,
+      dispatch: () => undefined,
+      navigate: () => undefined,
+      renderPressable: () => null,
+    },
+  );
+  const markup = renderToStaticMarkup(rendered);
+  expect(markup).toContain("Sales");
+  expect(markup).toContain("background:#cc1020");
+  expect(markup).toContain("color:#1267d6");
+});
 
 // The theme is where token NAMES become concrete CSS (invariant #1's trusted
 // side): agents only ever emit tokens, so these maps are the single place a
@@ -296,9 +372,9 @@ describe("resolveTheme", () => {
   });
 
   it("keeps default recipes for fallback and partial custom themes", () => {
-    expect(resolveRecipe(resolveTheme(undefined), "button", "primary").box).toMatchObject({
-      bg: "accent",
-      pad: "sm",
+    expect(resolveRecipe(resolveTheme(undefined), "chart", "default").box).toMatchObject({
+      bg: "surface",
+      pad: "md",
     });
 
     const resolved = resolveTheme("brand", [
@@ -306,8 +382,8 @@ describe("resolveTheme", () => {
         name: "brand",
         space: { sm: "10px" },
         recipes: {
-          button: {
-            primary: {
+          chart: {
+            default: {
               box: { bg: "danger", pad: "lg" },
             },
           },
@@ -315,17 +391,17 @@ describe("resolveTheme", () => {
       },
     ]);
 
-    expect(resolveRecipe(resolved, "button", "primary").box).toMatchObject({
+    expect(resolveRecipe(resolved, "chart", "default").box).toMatchObject({
       bg: "danger",
       pad: "lg",
     });
-    expect(resolveRecipe(resolved, "button", "primary").text).toMatchObject({
-      color: "accent-fg",
-      weight: "semibold",
+    expect(resolveRecipe(resolved, "chart", "default").text).toMatchObject({
+      color: "fg-muted",
+      size: "sm",
     });
-    expect(resolveRecipe(resolved, "stat", "default").box).toMatchObject({
-      bg: "surface",
-      border: true,
+    expect(resolveRecipe(resolved, "progress", "success").parts?.fill?.box).toMatchObject({
+      bg: "success",
+      width: "full",
     });
   });
 
@@ -577,7 +653,7 @@ describe("landing-grade-vocab", () => {
 });
 
 describe("recipe resolution", () => {
-  it("resolves component recipe parts", async () => {
+  it("resolves brick recipe parts", async () => {
     const { resolveRecipePart } = await import("./recipe-parts.js");
     const resolved = resolveTheme("brand", [
       {
@@ -590,12 +666,13 @@ describe("recipe resolution", () => {
         space: { xs: "6px", sm: "10px", lg: "30px" },
         radius: { md: "14px" },
         recipes: {
-          button: {
-            primary: {
-              box: { pad: "lg" },
+          chart: {
+            spotlight: {
+              box: { bg: "accent", pad: "lg" },
+              text: { color: "accent-fg", weight: "semibold" },
               parts: {
-                label: { text: { color: "accent-fg", weight: "bold" } },
-                icon: { box: { pad: "xs" } },
+                title: { text: { color: "accent-fg", weight: "bold" } },
+                plot: { box: { pad: "xs" } },
               },
             },
           },
@@ -615,25 +692,25 @@ describe("recipe resolution", () => {
       },
     ]);
 
-    const button = resolveRecipe(resolved, "button", "primary");
-    expect(button.box).toMatchObject({ bg: "accent", pad: "lg" });
-    expect(button.text).toMatchObject({ color: "accent-fg", weight: "semibold" });
-    expect(button.parts?.label?.text).toEqual({ color: "accent-fg", weight: "bold" });
-    expect(boxStyle(button.box, resolved)).toMatchObject({
+    const chart = resolveRecipe(resolved, "chart", "spotlight");
+    expect(chart.box).toMatchObject({ bg: "accent", pad: "lg" });
+    expect(chart.text).toMatchObject({ color: "accent-fg", weight: "semibold" });
+    expect(chart.parts?.title?.text).toEqual({ color: "accent-fg", weight: "bold" });
+    expect(boxStyle(chart.box, resolved)).toMatchObject({
       background: "#123456",
       padding: "30px",
     });
-    expect(textStyle(button.text, resolved)).toMatchObject({
+    expect(textStyle(chart.text, resolved)).toMatchObject({
       color: "#fefefe",
       fontWeight: 600,
     });
 
-    const buttonLabel = resolveRecipePart(button, "label", resolved);
-    expect(buttonLabel.text).toMatchObject({
+    const chartTitle = resolveRecipePart(chart, "title", resolved);
+    expect(chartTitle.text).toMatchObject({
       color: "#fefefe",
       fontWeight: 700,
     });
-    expect(resolveRecipePart(button, "icon", resolved).box).toMatchObject({
+    expect(resolveRecipePart(chart, "plot", resolved).box).toMatchObject({
       padding: "6px",
     });
 
@@ -655,7 +732,7 @@ describe("recipe resolution", () => {
     });
     expect(resolveRecipePart(fallbackField, "unknown", resolved)).toEqual({});
     expect(
-      resolveRecipePart({ parts: "junk" } as unknown as ComponentRecipe, "label", resolved),
+      resolveRecipePart({ parts: "junk" } as unknown as BrickRecipe, "label", resolved),
     ).toEqual({});
 
     const hostileParts = Object.create(null) as Record<string, unknown>;
@@ -665,7 +742,7 @@ describe("recipe resolution", () => {
         throw new Error("hostile part getter");
       },
     });
-    const hostileRecipe = { parts: hostileParts } as unknown as ComponentRecipe;
+    const hostileRecipe = { parts: hostileParts } as unknown as BrickRecipe;
     expect(() => resolveRecipePart(hostileRecipe, "label", resolved)).not.toThrow();
     expect(resolveRecipePart(hostileRecipe, "label", resolved)).toEqual({});
 
@@ -687,7 +764,7 @@ describe("recipe resolution", () => {
     });
   });
 
-  it("resolves component recipes through the active theme token maps", () => {
+  it("resolves brick recipes through the active theme token maps", () => {
     const resolved = resolveTheme("catalog", [
       {
         name: "catalog",
@@ -700,8 +777,8 @@ describe("recipe resolution", () => {
         radius: { lg: "18px" },
         shadow: { md: "0 12px 30px rgba(0, 0, 0, 0.18)" },
         recipes: {
-          button: {
-            primary: {
+          chart: {
+            spotlight: {
               box: { bg: "accent", pad: "lg", radius: "lg", shadow: "md" },
               text: { color: "accent-fg", weight: "bold" },
             },
@@ -710,14 +787,14 @@ describe("recipe resolution", () => {
       },
     ]);
 
-    const button = resolveRecipe(resolved, "button", "primary");
-    expect(boxStyle(button.box, resolved)).toMatchObject({
+    const chart = resolveRecipe(resolved, "chart", "spotlight");
+    expect(boxStyle(chart.box, resolved)).toMatchObject({
       background: "#123456",
       padding: "30px",
       borderRadius: "18px",
       boxShadow: "0 12px 30px rgba(0, 0, 0, 0.18)",
     });
-    expect(textStyle(button.text, resolved)).toMatchObject({
+    expect(textStyle(chart.text, resolved)).toMatchObject({
       color: "#fefefe",
       fontWeight: 700,
     });
@@ -726,17 +803,14 @@ describe("recipe resolution", () => {
   it("does not resolve retired container-pattern recipes", () => {
     const retiredRecipeKeys = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
     const recipes = Object.fromEntries(
-      retiredRecipeKeys.map((component) => [
-        component,
-        { default: { box: { bg: "danger" as const } } },
-      ]),
+      retiredRecipeKeys.map((brick) => [brick, { default: { box: { bg: "danger" as const } } }]),
     );
     const resolved = resolveTheme("stale", [{ name: "stale", recipes } as unknown as FacetTheme]);
 
-    for (const component of retiredRecipeKeys) {
-      const staleComponent = component as unknown as Parameters<typeof resolveRecipe>[1];
-      expect(resolveRecipe(resolveTheme(undefined), staleComponent, "default")).toEqual({});
-      expect(resolveRecipe(resolved, staleComponent, "default")).toEqual({});
+    for (const brick of retiredRecipeKeys) {
+      const staleBrick = brick as unknown as Parameters<typeof resolveRecipe>[1];
+      expect(resolveRecipe(resolveTheme(undefined), staleBrick, "default")).toEqual({});
+      expect(resolveRecipe(resolved, staleBrick, "default")).toEqual({});
     }
   });
 
@@ -745,31 +819,28 @@ describe("recipe resolution", () => {
       {
         name: "catalog",
         recipes: {
-          button: {
+          chart: {
             default: { box: { pad: "sm" } },
           },
         },
       },
     ]);
 
-    expect(resolveRecipe(resolved, "stat", "primary")).toEqual({
-      box: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md", shadow: "sm" },
-      text: { color: "fg-muted", size: "sm" },
-      parts: {
-        label: { text: { color: "fg-muted", size: "sm" } },
-        value: { text: { color: "fg", size: "xl", weight: "bold" } },
-        trend: { text: { color: "fg-muted", size: "sm", weight: "medium" } },
-      },
+    const unknownBrick = "constructor" as Parameters<typeof resolveRecipe>[1];
+    expect(resolveRecipe(resolved, unknownBrick, "default")).toEqual({});
+    expect(resolveRecipe(resolved, "chart", "__proto__").box).toMatchObject({
+      bg: "surface",
+      border: true,
+      pad: "sm",
     });
-    expect(resolveRecipe(resolved, "button", "__proto__")).toEqual({ box: { pad: "sm" } });
   });
 
   it("caps custom recipe variant traversal while keeping defaults", () => {
-    const button = Object.create(null) as Record<string, unknown>;
+    const chart = Object.create(null) as Record<string, unknown>;
     for (let i = 0; i < 80; i += 1) {
-      button[`v${String(i)}`] = { box: { pad: "xs" } };
+      chart[`v${String(i)}`] = { box: { pad: "xs" } };
     }
-    Object.defineProperty(button, "v64", {
+    Object.defineProperty(chart, "v64", {
       get() {
         throw new Error("recipe cap over-read");
       },
@@ -779,7 +850,7 @@ describe("recipe resolution", () => {
       resolveTheme("catalog", [
         {
           name: "catalog",
-          recipes: { button },
+          recipes: { chart },
         } as unknown as FacetTheme,
       ]),
     ).not.toThrow();
@@ -787,14 +858,17 @@ describe("recipe resolution", () => {
     const resolved = resolveTheme("catalog", [
       {
         name: "catalog",
-        recipes: { button },
+        recipes: { chart },
       } as unknown as FacetTheme,
     ]);
-    expect(resolveRecipe(resolved, "button", "v63")).toEqual({ box: { pad: "xs" } });
-    expect(resolveRecipe(resolved, "button", "v64")).toEqual({});
-    expect(resolveRecipe(resolved, "button", "primary").box).toMatchObject({
-      bg: "accent",
-      pad: "sm",
+    expect(resolveRecipe(resolved, "chart", "v63")).toEqual({ box: { pad: "xs" } });
+    expect(resolveRecipe(resolved, "chart", "v64").box).toMatchObject({
+      bg: "surface",
+      pad: "md",
+    });
+    expect(resolveRecipe(resolved, "chart", "missing").box).toMatchObject({
+      bg: "surface",
+      border: true,
     });
   });
 });

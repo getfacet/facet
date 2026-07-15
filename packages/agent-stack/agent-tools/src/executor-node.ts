@@ -29,7 +29,7 @@ export function executeAppendNode(
       'error: append_node needs a non-empty string "parentId" (the container to append into)',
       shadow,
       [],
-      "Pass parentId as an existing box or form node id. Use inspect_stage if you need to find one.",
+      "Pass parentId as an existing box node id. Use inspect_stage if you need to find one.",
     );
   }
 
@@ -41,7 +41,7 @@ export function executeAppendNode(
       `error: append_node — parent "${parentId}" does not exist yet. Create it first with render_page or set_node, or append into an existing node.`,
       shadow,
       [],
-      "Inspect the stage and append under an existing visible box or form, or create the parent first.",
+      "Inspect the stage and append under an existing visible box, or create the parent first.",
     );
   }
   if (!isContainer(parent)) {
@@ -51,7 +51,7 @@ export function executeAppendNode(
       `error: append_node — parent "${parentId}" is not a container`,
       shadow,
       [],
-      "Choose an existing box or form node as parentId.",
+      "Choose an existing box node as parentId.",
     );
   }
 

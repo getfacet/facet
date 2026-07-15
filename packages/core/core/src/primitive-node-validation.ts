@@ -47,12 +47,12 @@ import {
   type Run,
   type TextStyle,
 } from "./nodes.js";
-import { isComponentNodeType, sanitizeComponentNode } from "./component-validation.js";
-import { MAX_NODE_BODY_CHARS, setColumnRow, setFrom } from "./component-validation-shared.js";
+import { MAX_NODE_BODY_CHARS, setFrom } from "./brick-validation-shared.js";
 import { sanitizeViewPredicate, type ViewPredicate } from "./view.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import {
+  isForbiddenKey,
   isPlainObject as isObject,
   printableKey,
   printableValue,
@@ -266,8 +266,21 @@ export {
   MAX_TABLE_CELL_CHARS,
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
-  MAX_TABS_ITEMS,
-} from "./component-validation-shared.js";
+} from "./brick-validation-shared.js";
+
+/** Copy the closed text cell selector used with a valid `from` binding. */
+function setColumnRow(raw: Record<string, unknown>, node: { column?: string; row?: number }): void {
+  if (
+    typeof raw.column === "string" &&
+    !isForbiddenKey(raw.column) &&
+    SLOT_NAME_RE.test(raw.column)
+  ) {
+    node.column = raw.column;
+  }
+  if (typeof raw.row === "number" && Number.isInteger(raw.row) && raw.row >= 0) {
+    node.row = raw.row;
+  }
+}
 function asVariant(value: unknown, nodeId: string, issues: IssueSink): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value === "string" && isValidSlotName(value)) return value;
@@ -299,9 +312,9 @@ function setActivePredicate(
 }
 
 /**
- * Per-primitive validate handlers. Bodies are the former `sanitizeNode` switch
- * cases verbatim — the brick registry (`brick-registry.ts`) references these so
- * `sanitizeNode` is a registry lookup, not a hardcoded switch. `rawType` carries
+ * Validate handlers for the five universal bricks defined in this module. The
+ * brick registry (`brick-registry.ts`) references these so `sanitizeNode` is a
+ * registry lookup, not a hardcoded switch. `rawType` carries
  * the original input type so the media handler preserves the `image` alias.
  */
 export type PrimitiveValidator = (
@@ -427,7 +440,7 @@ export function validateText(
   };
   const variant = asVariant(raw.variant, id, issues);
   if (variant !== undefined) node.variant = variant;
-  // Enabler A store binding: same name/row-clamp rules as metric/stat.
+  // Enabler A store binding: use the shared bounded dataset-cell rules.
   setFrom(raw, id, node, issues);
   setColumnRow(raw, node);
   // Enabler B active look: `activeStyle` routes through the SAME textStyle()
@@ -683,11 +696,12 @@ export function sanitizeNode(id: string, raw: unknown, issues: IssueSink): Facet
     issues.push(`node "${key}": not an object with a type`);
     return undefined;
   }
-  if (isComponentNodeType(type)) return sanitizeComponentNode(id, raw, issues, type);
-  // The primitive brick registry keys off canonical node types; `image` is an
-  // input alias for the `media` primitive (kind defaulted from the raw type).
+  // The final brick registry keys off canonical node types; `image` remains an
+  // input alias for `media` (kind defaulted from the raw type).
   const lookupType = type === "image" ? "media" : type;
-  const entry = (BRICK_REGISTRY as Record<string, BrickEntry | undefined>)[lookupType];
+  const entry = Object.prototype.hasOwnProperty.call(BRICK_REGISTRY, lookupType)
+    ? (BRICK_REGISTRY as Record<string, BrickEntry | undefined>)[lookupType]
+    : undefined;
   if (entry?.validate !== undefined) return entry.validate(id, raw, issues, type);
   issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
   return undefined;

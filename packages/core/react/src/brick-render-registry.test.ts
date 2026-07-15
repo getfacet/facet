@@ -1,57 +1,44 @@
+import { BRICK_TYPES } from "@facet/core";
 import { describe, expect, it } from "vitest";
-import { COMPONENT_NODE_TYPES, PRIMITIVE_BRICK_TYPES } from "@facet/core";
 import { BRICK_RENDERERS, brickRendererEntry } from "./brick-render-registry.js";
 
-// The exhaustiveness guard for the react brick-renderer registry (the point of
-// PR-0): a core node type that the renderer DRAWS but forgets a registry entry
-// must be caught. The `Record<BrickRendererType, …>` typing already makes a
-// missing component key a COMPILE error; this pins the runtime relationship to
-// the core vocabulary so an added core type can't silently slip the registry.
+const BESPOKE_BRICKS = ["box", "text", "media", "richtext"] as const;
+const REGISTERED_BRICKS = [
+  "table",
+  "chart",
+  "list",
+  "keyValue",
+  "progress",
+  "loading",
+  "input",
+] as const;
+const RETIRED_BRICKS = ["button", "tabs", "nav", "metric", "stat", "form", "filterBar"];
+
 describe("BRICK_RENDERERS", () => {
-  it("has exactly one entry per drawable-via-renderBrick core node type", () => {
-    // renderBrickNode dispatches every component type plus the `input`
-    // primitive; box/text/media/richtext are drawn by bespoke inline paths.
-    const expected = [...COMPONENT_NODE_TYPES, "input"].sort();
-    expect(Object.keys(BRICK_RENDERERS).sort()).toEqual(expected);
+  it("has exactly one entry per drawable final brick", () => {
+    expect(Object.keys(BRICK_RENDERERS).sort()).toEqual([...REGISTERED_BRICKS].sort());
+
+    const accountedFor = [...BESPOKE_BRICKS, ...Object.keys(BRICK_RENDERERS)];
+    expect(accountedFor).toHaveLength(BRICK_TYPES.length);
+    expect(new Set(accountedFor).size).toBe(BRICK_TYPES.length);
+    expect(accountedFor.sort()).toEqual([...BRICK_TYPES].sort());
   });
 
-  it("plus the bespoke primitives accounts for every core node type once", () => {
-    const bespoke = ["box", "text", "media", "richtext"];
-    const allCoreTypes = [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES].sort();
-    expect([...Object.keys(BRICK_RENDERERS), ...bespoke].sort()).toEqual(allCoreTypes);
-  });
-
-  it("marks form as the only component container", () => {
-    const containers = Object.entries(BRICK_RENDERERS)
-      .filter(([, entry]) => entry.container)
-      .map(([type]) => type)
-      .sort();
-    expect(containers).toEqual(["form"]);
-  });
-
-  it("has no renderer entry for retired container patterns", () => {
-    for (const type of ["section", "card", "emptyState"]) {
-      expect(brickRendererEntry(type)).toBeUndefined();
+  it("keeps only final leaf bricks in the registry", () => {
+    for (const type of REGISTERED_BRICKS) {
+      expect(Object.hasOwn(BRICK_RENDERERS, type), type).toBe(true);
+      expect(BRICK_RENDERERS[type].motionSnapshot, type).toBe(type !== "input");
     }
-  });
-
-  it("marks every component leaf as a motion-snapshot participant", () => {
-    for (const [type, entry] of Object.entries(BRICK_RENDERERS)) {
-      const isLeafComponent = !entry.container && type !== "input";
-      expect(entry.motionSnapshot).toBe(isLeafComponent);
+    for (const type of RETIRED_BRICKS) {
+      expect(brickRendererEntry(type), type).toBeUndefined();
     }
   });
 });
 
-// A raw/untrusted node type flows into `brickRendererEntry` off the live patch
-// path. `Object.prototype` member names ("constructor"/"toString"/…) index a
-// plain object to an inherited FUNCTION — a bare `BRICK_RENDERERS[type]` would
-// return it and the caller would then dereference `.render` and throw. The
-// `Object.hasOwn` guard must reject every such name as a non-entry (undefined).
 describe("brickRendererEntry prototype-chain lookup guard", () => {
-  it("returns undefined for Object.prototype member names (pre-fix: an inherited function)", () => {
-    for (const junk of ["constructor", "toString", "valueOf", "hasOwnProperty"]) {
-      expect(brickRendererEntry(junk)).toBeUndefined();
+  it("returns undefined for Object.prototype member names", () => {
+    for (const junk of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+      expect(brickRendererEntry(junk), junk).toBeUndefined();
     }
   });
 });

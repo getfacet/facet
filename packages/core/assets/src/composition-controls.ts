@@ -1,0 +1,411 @@
+import type { FacetComposition } from "@facet/core";
+
+const choiceStyle = {
+  border: true,
+  pad: "sm",
+  radius: "md",
+} as const;
+
+const choiceTextStyle = {
+  color: "fg",
+  align: "center",
+  weight: "semibold",
+} as const;
+
+const choiceActiveTextStyle = {
+  color: "accent-fg",
+} as const;
+
+export const CTA_BUTTON_COMPOSITION: FacetComposition = {
+  name: "cta-button",
+  metadata: {
+    description: "A native pressable box and text label for one clear call to action.",
+    category: "action",
+    useWhen: "The user should take one clear next action.",
+    avoidWhen: "The action needs surrounding explanation or fields.",
+    tags: ["button", "cta", "action", "native"],
+    variants: ["primary"],
+    repeatable: true,
+    preferredParent: "box",
+    composedOf: ["box", "text"],
+    followUpEdits: [
+      "Rename the agent action to the consuming agent's supported action name.",
+      "Keep the label inside the pressable box so pointer and keyboard activation share one target.",
+    ],
+  },
+  root: "cta-button.root",
+  nodes: {
+    "cta-button.root": {
+      id: "cta-button.root",
+      type: "box",
+      style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+      children: ["cta-button.label"],
+      onPress: { kind: "agent", name: "start" },
+    },
+    "cta-button.label": {
+      id: "cta-button.label",
+      type: "text",
+      value: "Get started",
+      style: { color: "accent-fg", align: "center", weight: "semibold" },
+    },
+  },
+};
+
+export const FORM_COMPOSITION: FacetComposition = {
+  name: "form",
+  metadata: {
+    description: "A native input group with an explicitly closed agent submit action.",
+    category: "input",
+    useWhen: "Collecting a small set of visitor fields for one agent action.",
+    avoidWhen: "The visitor can complete the interaction with fixed local choices.",
+    tags: ["form", "input", "submit", "native"],
+    variants: ["compact"],
+    repeatable: true,
+    preferredParent: "box",
+    composedOf: ["box", "text", "input"],
+    dataRequirements: ["Stable input names understood by the receiving agent action."],
+    followUpEdits: [
+      "Keep the inputs and submit control under the same collection box.",
+      "Rename submit_form only when the consuming agent exposes a matching closed action.",
+    ],
+  },
+  root: "form.root",
+  nodes: {
+    "form.root": {
+      id: "form.root",
+      type: "box",
+      style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
+      children: ["form.title", "form.email", "form.role", "form.submit"],
+    },
+    "form.title": {
+      id: "form.title",
+      type: "text",
+      value: "Join the workspace",
+      style: { color: "fg", size: "lg", weight: "bold" },
+    },
+    "form.email": {
+      id: "form.email",
+      type: "input",
+      name: "email",
+      input: "email",
+      label: "Work email",
+      placeholder: "you@example.com",
+      style: { width: "full" },
+    },
+    "form.role": {
+      id: "form.role",
+      type: "input",
+      name: "role",
+      input: "select",
+      label: "Role",
+      options: ["Design", "Engineering", "Product"],
+      style: { width: "full" },
+    },
+    "form.submit": {
+      id: "form.submit",
+      type: "box",
+      style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+      children: ["form.submit-label"],
+      onPress: { kind: "agent", name: "submit_form", collect: "form.root" },
+    },
+    "form.submit-label": {
+      id: "form.submit-label",
+      type: "text",
+      value: "Continue",
+      style: { color: "accent-fg", align: "center", weight: "semibold" },
+    },
+  },
+};
+
+export const FIXED_FILTER_COMPOSITION: FacetComposition = {
+  name: "fixed-filter",
+  metadata: {
+    description: "A bounded filter row that navigates among pre-authored local screens.",
+    category: "navigation",
+    useWhen: "A small fixed choice can reveal already-authored result views locally.",
+    avoidWhen: "Filtering requires a new backend query, arbitrary criteria, or agent reasoning.",
+    tags: ["filter", "fixed-choice", "navigate", "native"],
+    variants: ["three-choice"],
+    repeatable: true,
+    preferredParent: "box",
+    composedOf: ["box", "text"],
+    followUpEdits: [
+      "Author one screen for every filter target before presenting these controls.",
+      "Keep onPress.to and active.screen identical when renaming a target.",
+    ],
+  },
+  root: "fixed-filter.root",
+  nodes: {
+    "fixed-filter.root": {
+      id: "fixed-filter.root",
+      type: "box",
+      style: { direction: "row", gap: "xs", width: "full" },
+      children: ["fixed-filter.all", "fixed-filter.open", "fixed-filter.closed"],
+    },
+    "fixed-filter.all": {
+      id: "fixed-filter.all",
+      type: "box",
+      variant: "default",
+      activeVariant: "selected",
+      active: { screen: "filter-all" },
+      style: choiceStyle,
+      children: ["fixed-filter.all-label"],
+      onPress: { kind: "navigate", to: "filter-all" },
+    },
+    "fixed-filter.all-label": {
+      id: "fixed-filter.all-label",
+      type: "text",
+      value: "All",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "filter-all" },
+      style: choiceTextStyle,
+    },
+    "fixed-filter.open": {
+      id: "fixed-filter.open",
+      type: "box",
+      variant: "default",
+      activeVariant: "selected",
+      active: { screen: "filter-open" },
+      style: choiceStyle,
+      children: ["fixed-filter.open-label"],
+      onPress: { kind: "navigate", to: "filter-open" },
+    },
+    "fixed-filter.open-label": {
+      id: "fixed-filter.open-label",
+      type: "text",
+      value: "Open",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "filter-open" },
+      style: choiceTextStyle,
+    },
+    "fixed-filter.closed": {
+      id: "fixed-filter.closed",
+      type: "box",
+      variant: "default",
+      activeVariant: "selected",
+      active: { screen: "filter-closed" },
+      style: choiceStyle,
+      children: ["fixed-filter.closed-label"],
+      onPress: { kind: "navigate", to: "filter-closed" },
+    },
+    "fixed-filter.closed-label": {
+      id: "fixed-filter.closed-label",
+      type: "text",
+      value: "Closed",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "filter-closed" },
+      style: choiceTextStyle,
+    },
+  },
+};
+
+export const METRIC_COMPOSITION: FacetComposition = {
+  name: "metric",
+  metadata: {
+    description: "A native label and data-bound value pair for one key metric.",
+    category: "data-display",
+    useWhen: "Highlighting one important value from an existing stage dataset.",
+    avoidWhen: "The user needs a full comparison table or trend chart.",
+    tags: ["metric", "kpi", "data", "native"],
+    variants: ["default"],
+    repeatable: true,
+    preferredParent: "box",
+    composedOf: ["box", "text"],
+    dataRequirements: ["A summary dataset with a revenue column, or an inline replacement value."],
+    followUpEdits: [
+      "Point from, column, and row at an existing stage dataset cell.",
+      "Remove the binding fields and set value directly when no dataset is present.",
+    ],
+  },
+  root: "metric.root",
+  nodes: {
+    "metric.root": {
+      id: "metric.root",
+      type: "box",
+      style: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
+      children: ["metric.label", "metric.value"],
+    },
+    "metric.label": {
+      id: "metric.label",
+      type: "text",
+      value: "Revenue",
+      style: { color: "fg-muted", size: "sm" },
+    },
+    "metric.value": {
+      id: "metric.value",
+      type: "text",
+      value: "$42k",
+      from: "summary",
+      column: "revenue",
+      row: 0,
+      style: { color: "fg", size: "xl", weight: "bold" },
+    },
+  },
+};
+
+export const TABS_COMPOSITION: FacetComposition = {
+  name: "tabs",
+  metadata: {
+    description: "A native tab row that switches among pre-authored local screens.",
+    category: "navigation",
+    useWhen: "Peer views should remain available without an agent turn.",
+    avoidWhen: "Selecting a tab must compute or retrieve new information.",
+    tags: ["tabs", "navigate", "local", "native"],
+    variants: ["three-tab"],
+    repeatable: true,
+    preferredParent: "box",
+    composedOf: ["box", "text"],
+    followUpEdits: [
+      "Author one screen for every tab target before presenting the tab row.",
+      "Keep onPress.to and active.screen identical when renaming a target.",
+    ],
+  },
+  root: "tabs.root",
+  nodes: {
+    "tabs.root": {
+      id: "tabs.root",
+      type: "box",
+      style: { direction: "row", gap: "xs", width: "full" },
+      children: ["tabs.overview", "tabs.activity", "tabs.settings"],
+    },
+    "tabs.overview": {
+      id: "tabs.overview",
+      type: "box",
+      activeVariant: "selected",
+      active: { screen: "overview" },
+      style: choiceStyle,
+      children: ["tabs.overview-label"],
+      onPress: { kind: "navigate", to: "overview" },
+    },
+    "tabs.overview-label": {
+      id: "tabs.overview-label",
+      type: "text",
+      value: "Overview",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "overview" },
+      style: choiceTextStyle,
+    },
+    "tabs.activity": {
+      id: "tabs.activity",
+      type: "box",
+      activeVariant: "selected",
+      active: { screen: "activity" },
+      style: choiceStyle,
+      children: ["tabs.activity-label"],
+      onPress: { kind: "navigate", to: "activity" },
+    },
+    "tabs.activity-label": {
+      id: "tabs.activity-label",
+      type: "text",
+      value: "Activity",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "activity" },
+      style: choiceTextStyle,
+    },
+    "tabs.settings": {
+      id: "tabs.settings",
+      type: "box",
+      activeVariant: "selected",
+      active: { screen: "settings" },
+      style: choiceStyle,
+      children: ["tabs.settings-label"],
+      onPress: { kind: "navigate", to: "settings" },
+    },
+    "tabs.settings-label": {
+      id: "tabs.settings-label",
+      type: "text",
+      value: "Settings",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "settings" },
+      style: choiceTextStyle,
+    },
+  },
+};
+
+export const NAV_COMPOSITION: FacetComposition = {
+  name: "nav",
+  metadata: {
+    description: "A native navigation row for moving among pre-authored local screens.",
+    category: "navigation",
+    useWhen: "The visitor needs stable movement among a small set of local destinations.",
+    avoidWhen: "A destination is not already represented by an authored screen.",
+    tags: ["nav", "navigate", "local", "native"],
+    variants: ["primary"],
+    repeatable: true,
+    preferredParent: "root",
+    composedOf: ["box", "text"],
+    followUpEdits: [
+      "Author one screen for every navigation target before presenting the navigation row.",
+      "Keep onPress.to and active.screen identical when renaming a target.",
+    ],
+  },
+  root: "nav.root",
+  nodes: {
+    "nav.root": {
+      id: "nav.root",
+      type: "box",
+      style: { direction: "row", gap: "sm", pad: "sm", width: "full" },
+      children: ["nav.home", "nav.projects", "nav.settings"],
+    },
+    "nav.home": {
+      id: "nav.home",
+      type: "box",
+      activeVariant: "selected",
+      active: { screen: "home" },
+      style: choiceStyle,
+      children: ["nav.home-label"],
+      onPress: { kind: "navigate", to: "home" },
+    },
+    "nav.home-label": {
+      id: "nav.home-label",
+      type: "text",
+      value: "Home",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "home" },
+      style: choiceTextStyle,
+    },
+    "nav.projects": {
+      id: "nav.projects",
+      type: "box",
+      activeVariant: "selected",
+      active: { screen: "projects" },
+      style: choiceStyle,
+      children: ["nav.projects-label"],
+      onPress: { kind: "navigate", to: "projects" },
+    },
+    "nav.projects-label": {
+      id: "nav.projects-label",
+      type: "text",
+      value: "Projects",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "projects" },
+      style: choiceTextStyle,
+    },
+    "nav.settings": {
+      id: "nav.settings",
+      type: "box",
+      activeVariant: "selected",
+      active: { screen: "settings" },
+      style: choiceStyle,
+      children: ["nav.settings-label"],
+      onPress: { kind: "navigate", to: "settings" },
+    },
+    "nav.settings-label": {
+      id: "nav.settings-label",
+      type: "text",
+      value: "Settings",
+      activeStyle: choiceActiveTextStyle,
+      active: { screen: "settings" },
+      style: choiceTextStyle,
+    },
+  },
+};
+
+export const CONTROL_COMPOSITIONS: readonly FacetComposition[] = [
+  CTA_BUTTON_COMPOSITION,
+  FORM_COMPOSITION,
+  FIXED_FILTER_COMPOSITION,
+  METRIC_COMPOSITION,
+  TABS_COMPOSITION,
+  NAV_COMPOSITION,
+];

@@ -5,6 +5,7 @@
  * console in production); boot tests receive the running server via `onStarted`
  * and close it immediately.
  */
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 // Spy on the compaction-ON composition so a regression back to the bare
@@ -18,7 +19,7 @@ vi.mock("./agent.js", async (importOriginal) => {
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { FacetCatalog, FacetComposition } from "@facet/core";
+import { BRICK_TYPES, type FacetCatalog, type FacetComposition } from "@facet/core";
 import * as referenceAgent from "@facet/reference-agent";
 import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
@@ -34,11 +35,12 @@ const CATALOG_FIXTURE: FacetCatalog = {
   name: "quickstart-catalog",
   description: "Quickstart catalog policy",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [{ type: "box" }, { type: "button", variants: ["primary"] }],
+  bricks: [
+    { type: "box", variants: ["surface"] },
+    { type: "progress", variants: ["success"] },
+  ],
   compositions: { mode: "allow", names: ["pricing"] },
-  primitiveFallback: "allowed",
   policy: {
-    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 3,
@@ -60,8 +62,8 @@ describe("quickstart guide brief", () => {
     const retiredContainerTerms = /\b(?:sections?|cards?|emptyStates?)\b/i; // composition-hard-cut: allowed-negative
 
     expect(QUICKSTART_PAGE_BRIEF).not.toMatch(retiredContainerTerms);
-    expect(QUICKSTART_PAGE_BRIEF).toContain("optional concrete composition references");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("ordinary native nodes");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("optional concrete reference datasets");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("ordinary native bricks");
   });
 });
 
@@ -396,10 +398,9 @@ describe("runCli — --assets (DC-009)", () => {
           description: "Quickstart catalog policy",
           theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
           compositions: { mode: "allow", names: ["pricing"] },
-          primitiveFallback: "allowed",
         });
-        expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["box", "button"]);
-        expect(resolvedCatalog?.policy.order).toEqual(["component", "primitive"]);
+        expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["box", "progress"]);
+        expect(resolvedCatalog?.bricks[1]?.variants).toEqual(["success"]);
         expect(resolvedCatalog?.policy.maxScreenSections).toBe(3);
       } finally {
         await running.close();
@@ -458,8 +459,8 @@ describe("runCli — --assets (DC-009)", () => {
   });
 });
 
-describe("runCli — quickstart component default", () => {
-  it("quickstart component default CLI inlines the seeded first paint on the built-in guide path", async () => {
+describe("runCli — quickstart brick default", () => {
+  it("inlines the exact post-migration seeded first paint on the built-in guide path", async () => {
     const { captured, running } = await bootCli();
     try {
       expect(captured.err).toEqual([]);
@@ -472,22 +473,16 @@ describe("runCli — quickstart component default", () => {
       expect(seedText).toContain("Core Structure");
       expect(seedText).toContain("Design System");
       expect(seedText).toContain("Use Cases");
-      // Demoted visual patterns are expressed with box+text primitives, so only
-      // surviving showcase brick types are asserted here.
-      for (const type of [
-        "box",
-        "text",
-        "tabs",
-        "table",
-        "chart",
-        "input",
-        "button",
-        "metric",
-        "progress",
-        "list",
-      ]) {
-        expect(seedText).toContain(`"type":"${type}"`);
-      }
+      expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(175);
+      expect(
+        Object.values(QUICKSTART_INITIAL_STAGE.nodes).every((node) =>
+          (BRICK_TYPES as readonly string[]).includes(node.type),
+        ),
+      ).toBe(true);
+      expect(seedText).toHaveLength(38_701);
+      expect(createHash("sha256").update(seedText).digest("hex")).toBe(
+        "e3d701dd9cdc5840dac0ee67ea144eaf45522bb2102f1c5ff17ef0a13e8ae75e",
+      );
     } finally {
       await running.close();
     }

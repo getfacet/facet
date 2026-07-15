@@ -86,13 +86,32 @@ const richComposition = {
       value: "Acme Corp",
       style: { color: "fg", size: "lg", weight: "bold" },
     },
-    metric: { id: "metric", type: "metric", label: "ARR", value: "$24k" },
+    metric: {
+      id: "metric",
+      type: "box",
+      style: { gap: "xs" },
+      children: ["metric-label", "metric-value"],
+    },
+    "metric-label": { id: "metric-label", type: "text", value: "ARR" },
+    "metric-value": { id: "metric-value", type: "text", value: "$24k" },
     action: {
       id: "action",
-      type: "button",
-      label: "Open customer",
+      type: "box",
+      children: ["action-label"],
       onPress: { name: "open_customer", payload: { id: "acme" } },
     },
+    "action-label": { id: "action-label", type: "text", value: "Open customer" },
+  },
+};
+
+/** A stale persisted reference must be skipped without poisoning bundled defaults. */
+const staleComposition = {
+  name: "staleRetired",
+  metadata: { description: "A stale retired-node reference" },
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["metric"] },
+    metric: { id: "metric", type: "metric", label: "ARR", value: "$24k" }, // composition-hard-cut: allowed-negative
   },
 };
 
@@ -162,7 +181,7 @@ function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): vo
     it("skips invalid documents with issues and keeps valid ones (plus the defaults)", async () => {
       const store = make({
         themes: [validTheme, invalidTheme],
-        compositions: [validComposition, invalidComposition, richComposition],
+        compositions: [validComposition, invalidComposition, staleComposition, richComposition],
         initialTree: seedTree,
       });
       const loaded = await loadAssets(store, "agent");
@@ -172,6 +191,7 @@ function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): vo
       expect(loaded.compositions.map((c) => c.name)).toContain("cta");
       expect(loaded.compositions.map((c) => c.name)).toContain("customerSummaryCard");
       expect(loaded.compositions.map((c) => c.name)).not.toContain("broken");
+      expect(loaded.compositions.map((c) => c.name)).not.toContain("staleRetired");
       for (const c of DEFAULT_COMPOSITIONS) {
         expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
       }
@@ -245,7 +265,7 @@ describe("loadAssets", () => {
     const rich = loaded.compositions.find((c) => c.name === "customerSummaryCard");
     expect(rich).toBeDefined();
     expect(rich?.nodes["action"]).toMatchObject({
-      type: "button",
+      type: "box",
       onPress: { kind: "agent", name: "open_customer", payload: { id: "acme" } },
     });
   });
@@ -263,9 +283,7 @@ describe("loadAssets", () => {
       theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
       bricks: [{ type: "box" }],
       compositions: { mode: "allow", names: ["dashboard-summary"] },
-      primitiveFallback: "discouraged",
       policy: {
-        order: ["component", "primitive"],
         editBeforeAppend: true,
         compactScreens: true,
         maxScreenSections: 4,
@@ -316,9 +334,7 @@ describe("loadAssets", () => {
           theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
           bricks: [{ type: "box" }],
           compositions: { mode: "allow", names: ["dashboard-summary"] },
-          primitiveFallback: "discouraged",
           policy: {
-            order: ["component", "primitive"],
             editBeforeAppend: true,
             compactScreens: true,
             maxScreenSections: 3,
@@ -331,7 +347,6 @@ describe("loadAssets", () => {
     // Name fell back to the default, but the strict custom policy survived.
     expect(loaded.catalog.name).toBe(DEFAULT_CATALOG.name);
     expect(loaded.catalog.compositions).toEqual({ mode: "allow", names: ["dashboard-summary"] });
-    expect(loaded.catalog.primitiveFallback).toBe("discouraged");
     expect(loaded.catalog.policy.maxScreenSections).toBe(3);
     expect(loaded.catalog.bricks).not.toEqual(DEFAULT_CATALOG.bricks);
     expect(loaded.catalog.bricks.some((brick) => brick.type === "box")).toBe(true);
@@ -355,7 +370,6 @@ describe("loadAssets", () => {
       // description, so full DEFAULT_CATALOG equality holds only section-wise).
       expect(loaded.catalog.name).toBe(DEFAULT_CATALOG.name);
       expect(loaded.catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
-      expect(loaded.catalog.components).toEqual(DEFAULT_CATALOG.components);
       expect(loaded.catalog.compositions).toEqual(DEFAULT_CATALOG.compositions);
       expect(loaded.catalog.theme).toEqual(DEFAULT_CATALOG.theme);
       expect(loaded.issues.some((issue) => issue.includes("incomplete catalog document"))).toBe(
@@ -393,9 +407,11 @@ describe("loadAssets", () => {
     // DC-001: an empty/absent operator store still resolves the bundled defaults —
     // the default theme document plus the whole default composition library.
     const loaded = await loadAssets(new MemoryAssets({ themes: [], compositions: [] }), "a");
-    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
+    expect(loaded.issues).toEqual([]);
+    expect(loaded.themes.map((t) => t.name)).toEqual([DEFAULT_THEME.name]);
     const compositionNames = loaded.compositions.map((c) => c.name);
-    for (const c of DEFAULT_COMPOSITIONS) expect(compositionNames).toContain(c.name);
+    expect(compositionNames).toEqual(DEFAULT_COMPOSITIONS.map((composition) => composition.name));
+    expect(loaded.catalog).toEqual(DEFAULT_CATALOG);
   });
 
   it("never throws when the store's load() rejects — defaults still resolve (P3 hardening)", async () => {
@@ -487,7 +503,6 @@ describe("loadAssets", () => {
   it("returns a fresh bundled catalog object for fallback loads", async () => {
     const first = await loadAssets(new MemoryAssets({ themes: [], compositions: [] }), "a");
     (first.catalog.theme.allowed as unknown as string[]).length = 0;
-    (first.catalog.components as unknown as { length: number }).length = 0;
     (first.catalog.compositions as unknown as { mode: "allow"; names: string[] }).names = [
       "mutated",
     ];
@@ -495,19 +510,18 @@ describe("loadAssets", () => {
     const firstMediaBrick = first.catalog.bricks.find((brick) => brick.type === "media");
     (firstMediaBrick?.variants as unknown as string[] | undefined)?.splice(0);
     (first.catalog.bricks as { length: number }).length = 0;
-    (first.catalog.policy.order as unknown as string[]).reverse();
+    (first.catalog.policy as { editBeforeAppend: boolean }).editBeforeAppend = false;
 
     const second = await loadAssets(new MemoryAssets({ themes: [], compositions: [] }), "a");
 
     expect(second.catalog).toEqual(DEFAULT_CATALOG);
     expect(second.catalog.bricks).toHaveLength(DEFAULT_CATALOG.bricks.length);
-    expect(second.catalog.components).toEqual(DEFAULT_CATALOG.components);
     expect(second.catalog.compositions).toEqual(DEFAULT_CATALOG.compositions);
     expect(second.catalog.theme.allowed).toEqual(DEFAULT_CATALOG.theme.allowed);
     expect(second.catalog.bricks.find((brick) => brick.type === "media")?.variants).toEqual(
       mediaBrick?.variants,
     );
-    expect(second.catalog.policy.order).toEqual(["component", "primitive"]);
+    expect(second.catalog.policy.editBeforeAppend).toBe(true);
   });
 
   it("never calls store-supplied array methods while reading themes and compositions", async () => {

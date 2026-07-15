@@ -11,12 +11,10 @@ import type { BrickRenderContext } from "./brick-renderer-types.js";
 import type { ResolvedTheme } from "./theme.js";
 import { resolveRecipePart } from "./recipe-parts.js";
 import { rootContainmentStyle } from "./layout-contract.js";
+import { brickBoxStyle, brickRecipe, brickTextStyle } from "./brick-renderer-recipe.js";
 import {
   cappedArray,
   cappedString,
-  componentBoxStyle,
-  componentRecipe,
-  componentTextStyle,
   finiteNumber,
   intrinsicBoxStyle,
   isObjectRecord,
@@ -167,8 +165,8 @@ export function renderChart<Press>(node: FacetNode, context: BrickRenderContext<
   if (chart === null) return null;
   const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
   const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "chart", variant);
-  const style = componentBoxStyle(theme, recipe, {
+  const recipe = brickRecipe(theme, "chart", variant);
+  const style = brickBoxStyle(theme, recipe, {
     gap: "sm",
     pad: "sm",
     width: "full",
@@ -181,7 +179,7 @@ export function renderChart<Press>(node: FacetNode, context: BrickRenderContext<
       style={withInert(rootContainmentStyle({ ...style, margin: 0 }), inert)}
     >
       {title === undefined ? null : (
-        <figcaption style={componentTextStyle(theme, recipe, { weight: "semibold" }, "title")}>
+        <figcaption style={brickTextStyle(theme, recipe, { weight: "semibold" }, "title")}>
           {title}
         </figcaption>
       )}

@@ -26,13 +26,13 @@ import {
   tokenValue,
   warnUnknownStyleKeys,
 } from "./theme-token-validation.js";
-import { RECIPE_COMPONENTS } from "./theme-types.js";
+import { RECIPE_BRICKS } from "./theme-types.js";
 import type {
-  ComponentRecipe,
-  ComponentRecipePart,
-  ComponentRecipes,
+  BrickRecipe,
+  BrickRecipePart,
+  BrickRecipes,
   RecipeBoxStyle,
-  RecipeComponentName,
+  RecipeBrickName,
   RecipeFieldStyle,
   RecipeMediaStyle,
   RecipeTextStyle,
@@ -210,8 +210,8 @@ function validateRecipeFieldStyle(
   return Object.keys(out).length > 0 ? (out as RecipeFieldStyle) : undefined;
 }
 
-const COMPONENT_RECIPE_PART_KEYS = new Set(["box", "text", "media", "field"]);
-const COMPONENT_RECIPE_KEYS = new Set([...COMPONENT_RECIPE_PART_KEYS, "parts"]);
+const BRICK_RECIPE_PART_KEYS = new Set(["box", "text", "media", "field"]);
+const BRICK_RECIPE_KEYS = new Set([...BRICK_RECIPE_PART_KEYS, "parts"]);
 
 function recipeObject(
   raw: unknown,
@@ -265,41 +265,41 @@ function assignRecipeStyleBundles(
   }
 }
 
-function validateComponentRecipePart(
+function validateBrickRecipePart(
   raw: unknown,
   path: string,
   issues: IssueList,
-): ComponentRecipePart | undefined {
+): BrickRecipePart | undefined {
   const input = recipeObject(raw, path, issues);
   if (input === undefined) return undefined;
   const out: Record<string, unknown> = nullMap<unknown>();
-  assignRecipeStyleBundles(input, out, path, issues, COMPONENT_RECIPE_PART_KEYS);
-  return Object.keys(out).length > 0 ? (out as ComponentRecipePart) : undefined;
+  assignRecipeStyleBundles(input, out, path, issues, BRICK_RECIPE_PART_KEYS);
+  return Object.keys(out).length > 0 ? (out as BrickRecipePart) : undefined;
 }
 
-function validateComponentRecipe(
+function validateBrickRecipe(
   raw: unknown,
   path: string,
   issues: IssueList,
-): ComponentRecipe | undefined {
+): BrickRecipe | undefined {
   const input = recipeObject(raw, path, issues);
   if (input === undefined) return undefined;
   const out: Record<string, unknown> = nullMap<unknown>();
-  assignRecipeStyleBundles(input, out, path, issues, COMPONENT_RECIPE_KEYS);
+  assignRecipeStyleBundles(input, out, path, issues, BRICK_RECIPE_KEYS);
   if (input.parts !== undefined) {
     const parts = validateRecipeParts(input.parts, `${path}.parts`, issues, (partRaw, partPath) =>
-      validateComponentRecipePart(partRaw, partPath, issues),
+      validateBrickRecipePart(partRaw, partPath, issues),
     );
     if (parts !== undefined) out.parts = parts;
   }
-  return Object.keys(out).length > 0 ? (out as ComponentRecipe) : undefined;
+  return Object.keys(out).length > 0 ? (out as BrickRecipe) : undefined;
 }
 
-function isRecipeComponentName(value: string): value is RecipeComponentName {
-  return (RECIPE_COMPONENTS as readonly string[]).includes(value);
+function isRecipeBrickName(value: string): value is RecipeBrickName {
+  return (RECIPE_BRICKS as readonly string[]).includes(value);
 }
 
-export function validateRecipes(raw: unknown, issues: IssueList): ComponentRecipes | undefined {
+export function validateRecipes(raw: unknown, issues: IssueList): BrickRecipes | undefined {
   if (!isPlainObject(raw)) {
     issues.push({
       severity: "warning",
@@ -307,56 +307,56 @@ export function validateRecipes(raw: unknown, issues: IssueList): ComponentRecip
     });
     return undefined;
   }
-  const out = nullMap<Readonly<Record<string, ComponentRecipe>>>();
-  for (const component of Object.keys(raw)) {
-    if (isForbiddenKey(component)) {
+  const out = nullMap<Readonly<Record<string, BrickRecipe>>>();
+  for (const brick of Object.keys(raw)) {
+    if (isForbiddenKey(brick)) {
       issues.push({
         severity: "warning",
-        message: `theme "recipes": forbidden component "${printableKey(component)}" dropped`,
+        message: `theme "recipes": forbidden brick "${printableKey(brick)}" dropped`,
       });
       continue;
     }
-    if (!isRecipeComponentName(component)) {
+    if (!isRecipeBrickName(brick)) {
       issues.push({
         severity: "warning",
-        message: `theme "recipes": unknown component "${printableKey(component)}" dropped`,
+        message: `theme "recipes": unknown brick "${printableKey(brick)}" dropped`,
       });
       continue;
     }
-    const variantsRaw = raw[component];
+    const variantsRaw = raw[brick];
     if (!isPlainObject(variantsRaw)) {
       issues.push({
         severity: "warning",
-        message: `theme "recipes.${component}" is not an object; ignored`,
+        message: `theme "recipes.${brick}" is not an object; ignored`,
       });
       continue;
     }
-    const variants = nullMap<ComponentRecipe>();
+    const variants = nullMap<BrickRecipe>();
     for (const variant of Object.keys(variantsRaw)) {
       if (isForbiddenKey(variant)) {
         issues.push({
           severity: "warning",
-          message: `theme "recipes.${component}": forbidden variant "${printableKey(variant)}" dropped`,
+          message: `theme "recipes.${brick}": forbidden variant "${printableKey(variant)}" dropped`,
         });
         continue;
       }
       if (!SLOT_NAME_RE.test(variant)) {
         issues.push({
           severity: "warning",
-          message: `theme "recipes.${component}": malformed variant "${printableKey(variant)}" dropped`,
+          message: `theme "recipes.${brick}": malformed variant "${printableKey(variant)}" dropped`,
         });
         continue;
       }
-      const recipe = validateComponentRecipe(
+      const recipe = validateBrickRecipe(
         variantsRaw[variant],
-        `theme recipes.${component}.${variant}`,
+        `theme recipes.${brick}.${variant}`,
         issues,
       );
       if (recipe !== undefined) variants[variant] = recipe;
     }
-    if (Object.keys(variants).length > 0) out[component] = variants;
+    if (Object.keys(variants).length > 0) out[brick] = variants;
   }
-  return Object.keys(out).length > 0 ? (out as ComponentRecipes) : undefined;
+  return Object.keys(out).length > 0 ? (out as BrickRecipes) : undefined;
 }
 
 /** Parse a safe color value to sRGB channels [0,255]; else undefined. */

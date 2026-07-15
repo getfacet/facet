@@ -1,6 +1,9 @@
 import type { FacetTree } from "@facet/core";
 import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
 
+const NAV_ITEM_STYLE = { border: true, pad: "sm", radius: "md" } as const;
+const NAV_LABEL_STYLE = { color: "fg", align: "center", weight: "semibold" } as const;
+
 export const QUICKSTART_STRUCTURE_NODES = {
   "qs.runtime.root": {
     id: "qs.runtime.root",
@@ -10,9 +13,82 @@ export const QUICKSTART_STRUCTURE_NODES = {
   },
   "qs.nav.runtime": {
     id: "qs.nav.runtime",
-    type: "tabs",
-    variant: "default",
-    items: QUICKSTART_NAV_ITEMS,
+    type: "box",
+    style: { direction: "row", gap: "xs", wrap: true, width: "full" },
+    children: [
+      "qs.nav.runtime.what",
+      "qs.nav.runtime.structure",
+      "qs.nav.runtime.system",
+      "qs.nav.runtime.usecases",
+    ],
+  },
+  "qs.nav.runtime.what": {
+    id: "qs.nav.runtime.what",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.runtime.what.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[0].to },
+  },
+  "qs.nav.runtime.what.label": {
+    id: "qs.nav.runtime.what.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[0].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.runtime.structure": {
+    id: "qs.nav.runtime.structure",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.runtime.structure.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[1].to },
+  },
+  "qs.nav.runtime.structure.label": {
+    id: "qs.nav.runtime.structure.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[1].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.runtime.system": {
+    id: "qs.nav.runtime.system",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.runtime.system.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[2].to },
+  },
+  "qs.nav.runtime.system.label": {
+    id: "qs.nav.runtime.system.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[2].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.runtime.usecases": {
+    id: "qs.nav.runtime.usecases",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.runtime.usecases.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[3].to },
+  },
+  "qs.nav.runtime.usecases.label": {
+    id: "qs.nav.runtime.usecases.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[3].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
   },
   "qs.runtime.section": {
     id: "qs.runtime.section",
@@ -52,7 +128,7 @@ export const QUICKSTART_STRUCTURE_NODES = {
     items: [
       {
         title: "Stage",
-        body: "A validated tree of primitive bricks, components, and local screens.",
+        body: "A validated tree of native bricks and local screens.",
       },
       { title: "Patch loop", body: "Server and browser fold the same JSON Patch stream." },
       { title: "Assets", body: "Themes, compositions, and catalog policy guide visual intent." },
@@ -72,7 +148,7 @@ export const QUICKSTART_STRUCTURE_NODES = {
     rows: [
       { layer: "Contract", package: "@facet/core", owns: "nodes, tokens, patches" },
       { layer: "Assets", package: "@facet/assets", owns: "default recipes, compositions" },
-      { layer: "Renderer", package: "@facet/react", owns: "component rendering" },
+      { layer: "Renderer", package: "@facet/react", owns: "brick rendering" },
       { layer: "Agent tools", package: "@facet/agent-tools", owns: "safe mutations" },
     ],
   },

@@ -38,7 +38,7 @@ import {
   validateGroup,
 } from "./theme-token-validation.js";
 import { DEFAULT_COLORS, MAX_DESCRIPTION_LENGTH, isValidThemeName } from "./theme-types.js";
-import type { ComponentRecipes, FacetTheme, ThemeValidationResult } from "./theme-types.js";
+import type { BrickRecipes, FacetTheme, ThemeValidationResult } from "./theme-types.js";
 
 const KNOWN_KEYS = new Set([
   "name",
@@ -131,7 +131,7 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
     scrim?: Record<string, string>;
     highlight?: Record<string, string>;
     colorDark?: Record<string, string>;
-    recipes?: ComponentRecipes;
+    recipes?: BrickRecipes;
   } = { name };
 
   if (input.description !== undefined) {

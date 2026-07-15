@@ -100,6 +100,38 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
     expect(container.querySelector(`.${MOTION_CLASS_NAMES.stageCrossfade}`)).toBeNull();
   });
 
+  // composition-hard-cut: allowed-negative — a raw pre-cutover form can still
+  // arrive through the live patch path. Its descendants are neither rendered
+  // nor admitted to enter/exit motion after form ceased to be a container.
+  it("keeps a stale raw subtree out of both rendering and motion", () => {
+    const staleTree = tree({
+      root: { id: "root", type: "box", children: ["stale-form", "stay"] },
+      "stale-form": {
+        id: "stale-form",
+        type: "form", // composition-hard-cut: allowed-negative
+        children: ["stale-copy"],
+      } as unknown as FacetNode,
+      "stale-copy": { id: "stale-copy", type: "text", value: "Never animate me" },
+      stay: { id: "stay", type: "text", value: "Staying content" },
+    });
+    const cleanTree = tree({
+      root: { id: "root", type: "box", children: ["stay"] },
+      stay: { id: "stay", type: "text", value: "Staying content" },
+    });
+    const { container, rerender } = render(
+      <StageRenderer tree={staleTree} transition={transition(0)} />,
+    );
+
+    expect(screen.queryByText("Never animate me")).toBeNull();
+    rerender(<StageRenderer tree={cleanTree} transition={transition(1)} />);
+    expect(container.querySelector(`.${MOTION_CLASS_NAMES.brickExit}`)).toBeNull();
+
+    rerender(<StageRenderer tree={staleTree} transition={transition(2)} />);
+    expect(screen.queryByText("Never animate me")).toBeNull();
+    expect(container.querySelector(`.${MOTION_CLASS_NAMES.brickEnter}`)).toBeNull();
+    expect(screen.getByText("Staying content")).toBeTruthy();
+  });
+
   it("keeps a removed brick as inert exit visual until the exit timer completes", () => {
     const onAction = vi.fn();
     const { rerender } = render(

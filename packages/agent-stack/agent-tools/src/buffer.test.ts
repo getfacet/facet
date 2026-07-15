@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PATCH_OPS } from "@facet/core";
 import type { FacetCatalog, FacetComposition, FacetTree } from "@facet/core";
 import { createStageToolBuffer } from "./buffer.js";
 import { parseAgentToolObservation } from "./observation.js";
 
 const retiredCompositionTool = ["use", "composition"].join("_");
 const retiredTestName = `treats retired ${retiredCompositionTool} as unknown without touching pending edits`;
+const retiredPressableType = ["but", "ton"].join("");
 
 const ROOT_TREE: FacetTree = {
   root: "root",
@@ -24,25 +26,20 @@ const TREE_WITH_CHILD: FacetTree = {
 const CATALOG_POLICY: FacetCatalog = {
   name: "buffer-policy-test",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [
-    { type: "box", variants: ["surface"] },
-    { type: "button", variants: ["primary"] },
-  ],
+  bricks: [{ type: "box", variants: ["surface"] }, { type: "text" }],
   compositions: { mode: "all" },
-  primitiveFallback: "allowed",
   policy: {
-    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
   },
 };
 
-const CARD_COMPOSITION: FacetComposition = {
-  name: "card",
-  metadata: { description: "A simple card reference." },
-  root: "card",
+const PANEL_COMPOSITION: FacetComposition = {
+  name: "panel-reference",
+  metadata: { description: "A simple panel reference." },
+  root: "panel",
   nodes: {
-    card: { id: "card", type: "box", children: ["title"] },
+    panel: { id: "panel", type: "box", children: ["title"] },
     title: { id: "title", type: "text", value: "Reference title" },
   },
 };
@@ -54,7 +51,7 @@ describe("createStageToolBuffer", () => {
     const queued = buffer.run({
       id: "call-parent",
       name: "set_node",
-      input: { node: { id: "card", type: "box", children: ["title"] } },
+      input: { node: { id: "panel", type: "box", children: ["title"] } },
     });
     expect(queued.observation).toContain("queued");
     expect(queued.messages).toEqual([]);
@@ -67,54 +64,34 @@ describe("createStageToolBuffer", () => {
 
     const patchMessages = child.messages.filter((message) => message.kind === "patch");
     expect(patchMessages).toHaveLength(2);
-    expect(child.shadow.nodes["card"]).toMatchObject({ type: "box", children: ["title"] });
+    expect(child.shadow.nodes["panel"]).toMatchObject({ type: "box", children: ["title"] });
     expect(child.shadow.nodes["title"]).toMatchObject({ type: "text", value: "Hello" });
   });
 
-  it("does not buffer retired container-pattern nodes", () => {
-    for (const retired of ["section", "card", "emptyState"] as const) {
-      const buffer = createStageToolBuffer(ROOT_TREE);
-      const rejected = buffer.run({
-        id: `call-${retired}`,
-        name: "set_node",
-        input: {
-          node: { id: `retired-${retired}`, type: retired, children: ["missing"] },
-        },
-      });
-
-      expect(parseAgentToolObservation(rejected.observation)).toMatchObject({
-        tool: "set_node",
-        status: "error",
-        outcome: "rejected",
-        code: "invalid_input",
-        patch_count: 0,
-      });
-      expect(rejected.observation).not.toContain("queued");
-      expect(rejected.messages).toEqual([]);
-      expect(rejected.shadow).toBe(ROOT_TREE);
-      expect(buffer.drainUnresolved()).toEqual([]);
-    }
-  });
-
-  it("does not add form buffering for forward references", () => {
+  it("sanitizes and applies child-shaped leaf bricks instead of buffering them", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);
-    const rejected = buffer.run({
-      id: "call-form",
+    const applied = buffer.run({
+      id: "call-copy",
       name: "set_node",
-      input: { node: { id: "contact", type: "form", children: ["missing"] } },
+      input: {
+        node: { id: "copy", type: "text", value: "Copy", children: ["missing"] },
+      },
     });
 
-    expect(parseAgentToolObservation(rejected.observation)).toMatchObject({
+    expect(parseAgentToolObservation(applied.observation)).toMatchObject({
       tool: "set_node",
-      status: "error",
-      outcome: "rejected",
-      code: "invalid_input",
-      patch_count: 0,
-      next_action: "Define the missing child nodes first, or remove those child references.",
+      status: "ok",
+      outcome: "applied_not_visible",
+      patch_count: 1,
     });
-    expect(rejected.observation).not.toContain("queued");
-    expect(rejected.messages).toEqual([]);
-    expect(rejected.shadow).toBe(ROOT_TREE);
+    expect(applied.observation).not.toContain("queued");
+    expect(applied.messages.filter((message) => message.kind === "patch")).toHaveLength(1);
+    expect(applied.shadow.nodes["copy"]).toEqual({
+      id: "copy",
+      type: "text",
+      value: "Copy",
+      style: {},
+    });
     expect(buffer.drainUnresolved()).toEqual([]);
   });
 
@@ -124,7 +101,7 @@ describe("createStageToolBuffer", () => {
     const queued = buffer.run({
       id: "call-parent",
       name: "set_node",
-      input: { node: { id: "card", type: "box", children: ["title"] } },
+      input: { node: { id: "panel", type: "box", children: ["title"] } },
     });
 
     expect(queued.messages).toEqual([]);
@@ -137,6 +114,97 @@ describe("createStageToolBuffer", () => {
       visible_to_visitor: false,
       next_action: "Define the missing child node(s), then continue the edit.",
     });
+  });
+
+  it("keeps pending edits when a same-id retired node is rejected", () => {
+    for (const name of ["set_node", "append_node"] as const) {
+      const buffer = createStageToolBuffer(ROOT_TREE);
+      const queued = buffer.run({
+        id: `queue-panel-${name}`,
+        name: "set_node",
+        input: { node: { id: "panel", type: "box", children: ["leaf"] } },
+      });
+      expect(queued.observation).toContain("queued");
+
+      const rejected = buffer.run({
+        id: `reject-retired-${name}`,
+        name,
+        input: {
+          ...(name === "append_node" ? { parentId: "root" } : {}),
+          node: { id: "panel", type: retiredPressableType },
+        },
+      });
+      expect(parseAgentToolObservation(rejected.observation)).toMatchObject({
+        tool: name,
+        status: "error",
+        outcome: "rejected",
+        patch_count: 0,
+      });
+      expect(rejected.messages).toEqual([]);
+
+      const released = buffer.run({
+        id: `set-leaf-${name}`,
+        name: "set_node",
+        input: { node: { id: "leaf", type: "text", value: "Leaf" } },
+      });
+      expect(released.messages.filter((message) => message.kind === "patch")).toHaveLength(2);
+      expect(released.shadow.nodes["panel"]).toMatchObject({
+        type: "box",
+        children: ["leaf"],
+      });
+      expect(buffer.drainUnresolved()).toEqual([]);
+    }
+  });
+
+  it("keeps pending edits when a same-id replacement exceeds the patch cap", () => {
+    const buffer = createStageToolBuffer(ROOT_TREE);
+    const queued = buffer.run({
+      id: "queue-capped-panel",
+      name: "set_node",
+      input: { node: { id: "panel", type: "box", children: ["leaf"] } },
+    });
+    expect(queued.observation).toContain("queued");
+
+    for (let index = 0; index < MAX_PATCH_OPS / 2; index += 1) {
+      buffer.run({
+        id: `fill-${String(index)}`,
+        name: "append_node",
+        input: {
+          parentId: "root",
+          node: { id: `fill-${String(index)}`, type: "text", value: "Fill" },
+        },
+      });
+    }
+
+    const capped = buffer.run({
+      id: "replace-capped-panel",
+      name: "append_node",
+      input: {
+        parentId: "root",
+        node: { id: "panel", type: "text", value: "Replacement" },
+      },
+    });
+    expect(parseAgentToolObservation(capped.observation)).toMatchObject({
+      tool: "append_node",
+      status: "error",
+      outcome: "rejected",
+      code: "patch_limit",
+      patch_count: 0,
+    });
+    expect(capped.messages).toEqual([]);
+
+    buffer.resetEmittedPatchOps();
+    const released = buffer.run({
+      id: "set-capped-leaf",
+      name: "set_node",
+      input: { node: { id: "leaf", type: "text", value: "Leaf" } },
+    });
+    expect(released.messages.filter((message) => message.kind === "patch")).toHaveLength(2);
+    expect(released.shadow.nodes["panel"]).toMatchObject({
+      type: "box",
+      children: ["leaf"],
+    });
+    expect(buffer.drainUnresolved()).toEqual([]);
   });
 
   it("rejects catalog-invalid forward-referenced containers instead of buffering them", () => {
@@ -223,7 +291,7 @@ describe("createStageToolBuffer", () => {
   });
 
   it("lets get_composition pass through without touching pending edits or accounting", () => {
-    const buffer = createStageToolBuffer(ROOT_TREE, { compositions: [CARD_COMPOSITION] });
+    const buffer = createStageToolBuffer(ROOT_TREE, { compositions: [PANEL_COMPOSITION] });
 
     const queued = buffer.run({
       id: "queue-panel",
@@ -233,9 +301,9 @@ describe("createStageToolBuffer", () => {
     expect(queued.observation).toContain("queued");
 
     const read = buffer.run({
-      id: "read-card",
+      id: "read-panel-reference",
       name: "get_composition",
-      input: { name: "card" },
+      input: { name: "panel-reference" },
     });
 
     expect(parseAgentToolObservation(read.observation)).toMatchObject({
@@ -273,7 +341,7 @@ describe("createStageToolBuffer", () => {
     const retired = buffer.run({
       id: "retired-composition-call",
       name: retiredCompositionTool,
-      input: { name: "card", params: {}, at: { parent: "panel" } },
+      input: { name: "panel-reference", params: {}, at: { parent: "panel" } },
     });
 
     expect(parseAgentToolObservation(retired.observation)).toMatchObject({

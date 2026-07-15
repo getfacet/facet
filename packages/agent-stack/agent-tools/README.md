@@ -49,7 +49,7 @@ authors without pulling in the reference agent or a Node-only provider stack.
 `buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
 most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
 from `@facet/core`, compact page UX guidance, edit-before-append rules, the
-catalog-guided `component -> primitive` model, the tool playbook, the structured
+closed native-brick model, the tool playbook, the structured
 tool-result contract, and optional theme, catalog, and composition metadata.
 
 The prompt kit is not a complete agent. Your loop still owns the page brief,
@@ -73,22 +73,20 @@ catalog policy, and each exposed composition's name plus
 composition metadata, provider keys, visitor ids, secrets, and unknown asset
 fields do not enter the system prompt.
 
-The component-model guidance tells agents to author surviving intrinsic
-components and catalog-advertised variants before falling back to primitive
-bricks. Inputs, buttons, tabs, nav, tables, charts, metrics, key-value rows,
-progress, lists, forms, filters, and loading states remain in that authoring
-vocabulary. Section, card, and empty-state layouts are instead optional
-composition examples built from native boxes, text, and buttons: skip the read
-for a simple UI; for a complex UI, inspect one and then author native nodes
-separately. Renderer recipe parts, theme token values, and composition node JSON
-never become stage syntax.
+The guidance teaches exactly eleven authorable bricks: `box`, `text`, `media`,
+`input`, `richtext`, `table`, `chart`, `list`, `keyValue`, `progress`, and
+`loading`. Actions, navigation, grouped inputs, label/value summaries, fixed
+filters, sections, cards, and empty states are authored from those bricks.
+Optional composition references show concrete examples: skip the read for a
+simple UI; for a complex UI, inspect one and then author native nodes separately.
+Renderer recipe parts, theme token values, and composition node JSON never
+become stage syntax.
 
 The catalog prompt section is active UI authoring policy. It tells the model the
 active theme, whether theme switching is a locked theme or explicitly allowed,
-which components and variants are allowed, whether all compositions or only named
-compositions may be exposed as references, whether primitive fallback is
-allowed, and the authoring order: `component -> primitive`. Composition policy
-controls reference exposure, not a stage authoring layer.
+which bricks and variants are allowed, and whether all compositions or only
+named compositions may be exposed as references. Composition policy controls
+reference exposure, not a stage authoring layer.
 
 Catalog policy is deliberately narrower than hosted platform policy. It guides
 and gates the UI the model may author; it does not define tenant isolation,
@@ -144,7 +142,7 @@ policy.
 The executor enforces catalog policy at both write and reference-read boundaries:
 
 - `render_page`, `append_node`, and `set_node` reject disallowed node types and
-  disallowed variants. For tone-capable components, a `tone` used without
+  disallowed variants. For tone-capable bricks, a `tone` used without
   an allowed `variant` is treated as a recipe selector and is rejected unless
   the catalog advertises that name.
 - `get_composition` rejects names outside the catalog exposure allow-list and
@@ -154,8 +152,8 @@ The executor enforces catalog policy at both write and reference-read boundaries
 
 Catalog-policy rejections from authoring tools have `outcome: "rejected"`,
 `applied: false`, `patch_count: 0`, a catalog-policy message, and a
-`next_action` telling the model to use an allowed component, primitive, variant,
-or theme. An unavailable reference read instead uses the bounded
+`next_action` telling the model to use an allowed brick, variant, or theme. An
+unavailable reference read instead uses the bounded
 `invalid_composition` result described above. Treat every rejection as a repair
 instruction, not as visible success.
 

@@ -5,13 +5,11 @@ import {
   MAX_FIELD_VALUE_CHARS,
   MAX_TABLE_CELL_CHARS,
   type BoxStyle,
-  type ComponentRecipe,
-  type NodeId,
-  type RecipeComponentName,
+  type BrickRecipe,
   type RecipePartName,
   type TextStyle,
 } from "@facet/core";
-import { boxStyle, resolveRecipe, textStyle } from "./theme.js";
+import { boxStyle, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 import { resolveRecipePart } from "./recipe-parts.js";
 import { rootContainmentStyle } from "./layout-contract.js";
@@ -58,10 +56,6 @@ export function finiteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-export function virtualFieldId(nodeId: NodeId, name: string): string {
-  return `${String(nodeId.length)}:${nodeId}${name}`;
-}
-
 export function isFieldInput(input: unknown): input is (typeof INPUT_KINDS)[number] {
   return typeof input === "string" && (INPUT_KINDS as readonly string[]).includes(input);
 }
@@ -74,20 +68,6 @@ export function optionsOf(options: unknown): readonly string[] {
     }
   }
   return kept;
-}
-
-export function scalarString(value: unknown): string | undefined {
-  if (typeof value === "string") return value.slice(0, MAX_FIELD_VALUE_CHARS);
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return undefined;
-}
-
-export function defaultInputForOptions(
-  input: unknown,
-  options: readonly string[],
-): (typeof INPUT_KINDS)[number] {
-  if (isFieldInput(input)) return input;
-  return options.length > 0 ? "select" : "text";
 }
 
 export function tableCellText(value: unknown): string {
@@ -121,38 +101,9 @@ export function withInert(style: CSSProperties, inert: boolean): CSSProperties {
   return inert ? { ...style, pointerEvents: "none" } : style;
 }
 
-export function componentRecipe(
-  theme: ResolvedTheme,
-  component: RecipeComponentName,
-  variant: unknown,
-  tone?: unknown,
-): ComponentRecipe {
-  return resolveRecipe(theme, component, variant, tone);
-}
-
-export function componentBoxStyle(
-  theme: ResolvedTheme,
-  recipe: ComponentRecipe,
-  defaults: BoxStyle,
-): CSSProperties {
-  return boxStyle({ ...defaults, ...(recipe.box ?? {}) }, theme);
-}
-
-export function componentTextStyle(
-  theme: ResolvedTheme,
-  recipe: ComponentRecipe,
-  defaults: TextStyle,
-  partName?: RecipePartName,
-): CSSProperties {
-  const base = textStyle({ ...defaults, ...(recipe.text ?? {}) }, theme);
-  if (partName === undefined) return base;
-  const part = resolveRecipePart(recipe, partName, theme);
-  return part.text === undefined ? base : { ...base, ...part.text };
-}
-
 export function partBoxStyle(
   theme: ResolvedTheme,
-  recipe: ComponentRecipe,
+  recipe: BrickRecipe,
   partName: RecipePartName,
   defaults: BoxStyle = {},
 ): CSSProperties {
@@ -163,7 +114,7 @@ export function partBoxStyle(
 
 export function partTextStyle(
   theme: ResolvedTheme,
-  recipe: ComponentRecipe,
+  recipe: BrickRecipe,
   partName: RecipePartName,
   defaults: TextStyle = {},
 ): CSSProperties {
@@ -192,7 +143,7 @@ export function intrinsicBoxStyle(style: CSSProperties | undefined): CSSProperti
   return rootContainmentStyle(css);
 }
 
-export function fieldControlStyle(theme: ResolvedTheme, recipe: ComponentRecipe): CSSProperties {
+export function fieldControlStyle(theme: ResolvedTheme, recipe: BrickRecipe): CSSProperties {
   const control = resolveRecipePart(recipe, "control", theme);
   const input = resolveRecipePart(recipe, "input", theme);
   const css: CSSProperties = {

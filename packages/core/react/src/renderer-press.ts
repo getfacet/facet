@@ -5,22 +5,12 @@ import {
   MAX_FIELDS_KEYS,
   sanitizeActionPayload,
   type AgentAction,
-  type FacetNode,
   type FacetTree,
   type FieldValue,
   type FieldValues,
   type NodeId,
 } from "@facet/core";
-import {
-  EMPTY_ANCESTORS,
-  MAX_INTRINSIC_ITEMS,
-  RENDER_BUDGET,
-  cappedArray,
-  cappedString,
-  childIdsOf,
-  safeOwnValue,
-  virtualFieldId,
-} from "./renderer-safe.js";
+import { EMPTY_ANCESTORS, RENDER_BUDGET, childIdsOf } from "./renderer-safe.js";
 
 export type ClassifiedPress =
   | { readonly kind: "navigate"; readonly to: string }
@@ -56,24 +46,6 @@ export function collectFieldValues(
   // first) lets the DOM pass pick a MOUNTED one, so a hidden/off-screen field
   // can't shadow a visible same-named field and drop its value.
   const idsByName = new Map<string, NodeId[]>();
-  const addFieldId = (name: string, id: NodeId): void => {
-    const cappedName = name.slice(0, MAX_FIELD_VALUE_CHARS);
-    const ids = idsByName.get(cappedName);
-    if (ids === undefined) idsByName.set(cappedName, [id]);
-    else ids.push(id);
-  };
-  const addFilterFields = (nodeId: NodeId, node: FacetNode): void => {
-    for (const filter of cappedArray(safeOwnValue(node, "filters"), MAX_INTRINSIC_ITEMS)) {
-      const input = safeOwnValue(filter, "input");
-      if (input === "password") {
-        continue;
-      }
-      const name = cappedString(safeOwnValue(filter, "name"), MAX_FIELD_VALUE_CHARS);
-      if (name !== undefined) {
-        addFieldId(name, virtualFieldId(nodeId, name));
-      }
-    }
-  };
   // Total-visit budget for THIS invocation: `ancestors` breaks cycles but a raw
   // shared-child DAG (no validateTree on the live path) has an exponential number
   // of paths, so cap total gather steps the way renderNode caps total renders.
@@ -104,10 +76,6 @@ export function collectFieldValues(
         if (ids === undefined) idsByName.set(name, [id]);
         else ids.push(id);
       }
-      return;
-    }
-    if (node.type === "filterBar") {
-      addFilterFields(id, node);
       return;
     }
     if (!isContainer(node)) {

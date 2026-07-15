@@ -3,7 +3,7 @@
 "@facet/react": minor
 ---
 
-Add the `richtext` primitive brick — a closed, fail-safe leaf for a flowing block
+Add the `richtext` native brick — a closed, fail-safe leaf for a flowing block
 of prose with MIXED inline formatting the single-string `text` node cannot express.
 
 - **Shape (closed):** `richtext` holds `blocks[]`, each a

@@ -127,12 +127,13 @@ export function createStageToolBuffer(
     );
   };
 
-  const execute = (call: ToolCall): StageToolBufferOutcome => {
+  const execute = (call: ToolCall, onAccepted?: () => void): StageToolBufferOutcome => {
     const result = executeStageTool(call, { shadow, assets });
     if (wouldExceedPatchCap(result)) return cumulativePatchLimitOutcome(call);
 
     if (result.status !== "ok") return failedOutcome(formatObservation(result), shadow);
     if (call.name === "render_page") pending.clear();
+    onAccepted?.();
 
     emittedPatchOps += result.patchCount;
     const messages: ServerMessage[] = [];
@@ -163,8 +164,7 @@ export function createStageToolBuffer(
         shadow,
       );
     }
-    if (nodeId !== undefined) pending.delete(nodeId);
-    return execute(call);
+    return execute(call, nodeId !== undefined ? () => pending.delete(nodeId) : undefined);
   };
 
   const runAppendNode = (call: ToolCall): StageToolBufferOutcome => {
@@ -199,11 +199,10 @@ export function createStageToolBuffer(
             shadow,
           );
         }
-        const nodeId = nodeIdCandidate(input["node"]);
-        if (nodeId !== undefined) pending.delete(nodeId);
       }
     }
-    return execute(call);
+    const nodeId = nodeIdCandidate(input["node"]);
+    return execute(call, nodeId !== undefined ? () => pending.delete(nodeId) : undefined);
   };
 
   const runRemoveNode = (call: ToolCall): StageToolBufferOutcome => {

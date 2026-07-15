@@ -24,13 +24,11 @@ const CATALOG_POLICY: FacetCatalog = {
   name: "catalog-policy-test",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
   bricks: [
-    { type: "form", variants: ["surface"] },
-    { type: "button", variants: ["primary"] },
+    { type: "box", variants: ["surface"] },
+    { type: "text", variants: ["body"] },
   ],
   compositions: { mode: "allow", names: ["approved"] },
-  primitiveFallback: "allowed",
   policy: {
-    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
   },
@@ -276,7 +274,7 @@ describe("executeStageTool", () => {
     expect(invalidParent.patches).toEqual([]);
     expect(invalidParent.shadow).toBe(ROOT_TREE);
     expect(parseAgentToolObservation(invalidParent.observation.text)?.next_action).toBe(
-      "Inspect the stage and append under an existing visible box or form, or create the parent first.",
+      "Inspect the stage and append under an existing visible box, or create the parent first.",
     );
 
     const nonBoxParent = executeStageTool(
@@ -292,7 +290,7 @@ describe("executeStageTool", () => {
     expect(nonBoxParent.patches).toEqual([]);
     expect(nonBoxParent.shadow).toBe(TREE_WITH_TEXT);
     expect(parseAgentToolObservation(nonBoxParent.observation.text)?.next_action).toBe(
-      "Choose an existing box or form node as parentId.",
+      "Choose an existing box node as parentId.",
     );
   });
 
@@ -390,74 +388,50 @@ describe("executeStageTool", () => {
     expect(observation?.message).toContain('a "media" node needs a safe static "src"');
   });
 
-  it("refuses a removed display-leaf type at asNode with a clean type error (DC-003)", () => {
-    // badge/alert/divider were removed from the node vocabulary (badge/alert are
-    // now compositions, divider is a box). A set_node authoring one must be
-    // REFUSED at the executor input boundary (asNode clean type-error), never
-    // accepted-then-dropped by validateTree. label/body satisfy the FORMER
-    // badge/alert asNode shape checks, so were the registry entries still present
-    // this would pass asNode — proving the refusal is the missing-registry-key
-    // path (RISK-INV-1), not a shape rejection or a downstream validation drop.
-    for (const removed of ["badge", "alert", "divider"] as const) {
-      const result = executeStageTool(
-        {
-          id: `call-removed-${removed}`,
-          name: "set_node",
-          input: { ["node"]: { id: "status", type: removed, label: "Live", body: "Live" } },
-        },
-        { shadow: ROOT_TREE },
-      );
+  it("clean-rejects retired and prototype types for repeated set/append calls", () => {
+    const rejectedTypes = [
+      ["but", "ton"].join(""),
+      ["fo", "rm"].join(""),
+      ["filter", "Bar"].join(""),
+      ["met", "ric"].join(""),
+      ["ta", "bs"].join(""),
+      ["na", "v"].join(""),
+      ["st", "at"].join(""),
+      "constructor",
+      "toString",
+      "prototype",
+    ] as const;
 
-      expect(result.status).toBe("error");
-      if (result.status === "error") expect(result.code).toBe("invalid_input");
-      expect(result.patches).toEqual([]);
-      expect(result.patchCount).toBe(0);
-      expect(result.shadow).toBe(ROOT_TREE);
-      const observation = parseAgentToolObservation(result.observation.text);
-      expect(observation).toMatchObject({
-        tool: "set_node",
-        status: "error",
-        outcome: "rejected",
-        next_action: "Use one allowed Facet v1 node type.",
-      });
-      // The clean asNode type-error — NOT the "was removed by validation" drop path.
-      expect(observation?.message).toContain("must be one of the Facet v1 node types");
-      expect(observation?.message).not.toContain("was removed by validation");
-    }
-  });
-
-  it("rejects retired container-pattern node types at asNode", () => {
-    for (const retired of ["section", "card", "emptyState"] as const) {
-      const result = executeStageTool(
-        {
-          id: `call-retired-${retired}`,
-          name: "set_node",
-          input: {
-            node: {
-              id: `retired-${retired}`,
-              type: retired,
-              children: [],
-              title: "Retired pattern",
+    for (const name of ["set_node", "append_node"] as const) {
+      for (const type of rejectedTypes) {
+        for (const attempt of [1, 2]) {
+          const node = { id: `rejected-${name}-${type}-${String(attempt)}`, type };
+          const result = executeStageTool(
+            {
+              id: `call-${name}-${type}-${String(attempt)}`,
+              name,
+              input: name === "set_node" ? { node } : { parentId: "root", node },
             },
-          },
-        },
-        { shadow: ROOT_TREE },
-      );
+            { shadow: ROOT_TREE },
+          );
 
-      expect(result.status).toBe("error");
-      if (result.status === "error") expect(result.code).toBe("invalid_input");
-      expect(result.patches).toEqual([]);
-      expect(result.patchCount).toBe(0);
-      expect(result.shadow).toBe(ROOT_TREE);
-      const observation = parseAgentToolObservation(result.observation.text);
-      expect(observation).toMatchObject({
-        tool: "set_node",
-        status: "error",
-        outcome: "rejected",
-        next_action: "Use one allowed Facet v1 node type.",
-      });
-      expect(observation?.message).toContain("must be one of the Facet v1 node types");
-      expect(observation?.message).not.toContain("was removed by validation");
+          expect(result.status).toBe("error");
+          if (result.status === "error") expect(result.code).toBe("invalid_input");
+          expect(result.messages).toEqual([]);
+          expect(result.patches).toEqual([]);
+          expect(result.patchCount).toBe(0);
+          expect(result.shadow).toBe(ROOT_TREE);
+          const observation = parseAgentToolObservation(result.observation.text);
+          expect(observation).toMatchObject({
+            tool: name,
+            status: "error",
+            outcome: "rejected",
+            next_action: "Use one allowed Facet brick type.",
+          });
+          expect(observation?.message).toContain("must be one of the Facet brick types");
+          expect(observation?.message).not.toContain("was removed by validation");
+        }
+      }
     }
   });
 
@@ -557,7 +531,7 @@ describe("executeStageTool", () => {
     for (const node of [
       { id: "data", type: "table", columns: [], rows: [] },
       { id: "data", type: "chart", kind: "bar", series: [] },
-      { id: "data", type: "tabs", items: [] },
+      { id: "data", type: "keyValue", items: [] },
       { id: "data", type: "list", items: [] },
     ]) {
       const result = executeStageTool(
@@ -1007,80 +981,30 @@ describe("executeStageTool", () => {
   });
 
   describe("catalog policy", () => {
-    it("catalog policy allows catalog-listed components and primitive fallback", () => {
-      const form = executeStageTool(
+    it("catalog policy allows a listed brick and advertised variant", () => {
+      const result = executeStageTool(
         {
-          id: "catalog-form",
+          id: "catalog-text",
           name: "append_node",
           input: {
             parentId: "root",
-            ["node"]: {
-              id: "contact",
-              type: "form",
-              title: "Overview",
-              variant: "surface",
-              children: [],
-            },
+            node: { id: "copy", type: "text", value: "Listed", variant: "body" },
           },
         },
         { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
       );
 
-      expect(form.status).toBe("ok");
-      expect(form.patches).toEqual([
-        {
-          op: "add",
-          path: "/nodes/contact",
-          value: {
-            id: "contact",
-            type: "form",
-            title: "Overview",
-            variant: "surface",
-            children: [],
-          },
-        },
-        { op: "add", path: "/nodes/root/children/-", value: "contact" },
-      ]);
-
-      const button = executeStageTool(
-        {
-          id: "catalog-button",
-          name: "append_node",
-          input: {
-            parentId: "contact",
-            ["node"]: { id: "cta", type: "button", label: "Start", variant: "primary" },
-          },
-        },
-        { shadow: form.shadow, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(button.status).toBe("ok");
-      expect(button.patches).toEqual([
-        {
-          op: "add",
-          path: "/nodes/cta",
-          value: { id: "cta", type: "button", label: "Start", variant: "primary" },
-        },
-        { op: "add", path: "/nodes/contact/children/-", value: "cta" },
-      ]);
-
-      const primitive = executeStageTool(
-        {
-          id: "catalog-primitive",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            ["node"]: { id: "copy", type: "text", value: "Primitive fallback stays valid." },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(primitive.status).toBe("ok");
-      expect(primitive.patches).toHaveLength(2);
+      expect(result.status).toBe("ok");
+      expect(result.patches).toHaveLength(2);
+      expect(result.shadow.nodes["copy"]).toMatchObject({
+        id: "copy",
+        type: "text",
+        value: "Listed",
+        variant: "body",
+      });
     });
 
-    it("catalog policy rejects disallowed component types and variants without patches", () => {
+    it("catalog policy rejects disallowed brick types and variants without patches", () => {
       const chart = executeStageTool(
         {
           id: "catalog-chart",
@@ -1117,7 +1041,7 @@ describe("executeStageTool", () => {
           name: "append_node",
           input: {
             parentId: "root",
-            ["node"]: { id: "danger", type: "button", label: "Delete", variant: "danger" },
+            node: { id: "danger", type: "text", value: "Delete", variant: "danger" },
           },
         },
         { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
@@ -1134,118 +1058,35 @@ describe("executeStageTool", () => {
       expect(variant.observation.text).toContain("danger");
     });
 
-    it("catalog policy enforces component aliases before divergent legacy bricks", () => {
-      const catalog: FacetCatalog = {
+    it("uses catalog.bricks as the only node policy lookup", () => {
+      const catalog = {
         ...CATALOG_POLICY,
-        bricks: [{ type: "button", variants: ["primary"] }],
-        components: [{ type: "metric", variants: ["success"] }],
-        compositions: { mode: "all" },
-      };
-
-      const metric = executeStageTool(
+        bricks: [{ type: "box" }, { type: "text" }],
+        [["com", "ponents"].join("")]: [{ type: "chart" }],
+        [["primitive", "Fallback"].join("")]: "allowed",
+      } as unknown as FacetCatalog;
+      const result = executeStageTool(
         {
-          id: "catalog-component-metric",
+          id: "catalog-one-lookup",
           name: "append_node",
           input: {
             parentId: "root",
-            ["node"]: {
-              id: "metric",
-              type: "metric",
-              label: "ARR",
-              value: "$24k",
-              variant: "success",
-            },
+            node: { id: "chart", type: "chart", kind: "bar", series: [] },
           },
         },
         { shadow: ROOT_TREE, assets: { catalog } },
       );
 
-      expect(metric.status).toBe("ok");
-      expect(metric.patches).toHaveLength(2);
-
-      const legacyOnlyButton = executeStageTool(
-        {
-          id: "catalog-component-button",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            ["node"]: { id: "button", type: "button", label: "Legacy only", variant: "primary" },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog } },
-      );
-
-      expect(legacyOnlyButton.status).toBe("error");
-      expect(legacyOnlyButton.patches).toEqual([]);
-      expect(legacyOnlyButton.observation.text).toContain("metric");
-      expect(legacyOnlyButton.observation.text).not.toContain("Allowed node types: button");
-    });
-
-    it("catalog policy falls a legacy stat node through to the bricks list when components omit it", () => {
-      const catalog: FacetCatalog = {
-        ...CATALOG_POLICY,
-        bricks: [{ type: "stat" }],
-        components: [{ type: "button", variants: ["primary"] }],
-        compositions: { mode: "all" },
-      };
-
-      // (a) stat is a component type absent from `components`, but the legacy
-      // carve-out lets it fall through to the bricks entry that permits it.
-      const stat = executeStageTool(
-        {
-          id: "catalog-stat-fallthrough",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            ["node"]: { id: "kpi", type: "stat", label: "ARR", value: "$24k" },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog } },
-      );
-      expect(stat.status).toBe("ok");
-      expect(stat.patches).toHaveLength(2);
-
-      // (b) a different component type absent from `components` gets no carve-out.
-      const metricNode = executeStageTool(
-        {
-          id: "catalog-metric-rejected",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            ["node"]: { id: "arr", type: "metric", label: "ARR", value: "$24k" },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog } },
-      );
-      expect(metricNode.status).toBe("error");
-      expect(metricNode.patches).toEqual([]);
-
-      // (c) the carve-out only reaches the bricks list; a bricks list that omits
-      // stat still rejects it.
-      const statNoBrick: FacetCatalog = {
-        ...catalog,
-        bricks: [{ type: "button", variants: ["primary"] }],
-        primitiveFallback: "discouraged",
-      };
-      const statRejected = executeStageTool(
-        {
-          id: "catalog-stat-rejected",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            ["node"]: { id: "kpi", type: "stat", label: "ARR", value: "$24k" },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: statNoBrick } },
-      );
-      expect(statRejected.status).toBe("error");
-      expect(statRejected.patches).toEqual([]);
+      expect(result.status).toBe("error");
+      expect(result.patches).toEqual([]);
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(result.observation.text).toContain("Allowed brick types: box, text");
     });
 
     it("catalog policy rejects tone-only recipe selectors not listed as variants", () => {
       const toneCatalog: FacetCatalog = {
         ...CATALOG_POLICY,
-        bricks: [{ type: "button", variants: ["neutral"] }],
+        bricks: [{ type: "progress", variants: ["neutral"] }],
       };
 
       const toneRejected = executeStageTool(
@@ -1254,7 +1095,7 @@ describe("executeStageTool", () => {
           name: "append_node",
           input: {
             parentId: "root",
-            ["node"]: { id: "status", type: "button", label: "Healthy", tone: "success" },
+            node: { id: "status", type: "progress", value: 50, tone: "success" },
           },
         },
         { shadow: ROOT_TREE, assets: { catalog: toneCatalog } },
@@ -1278,8 +1119,8 @@ describe("executeStageTool", () => {
             parentId: "root",
             ["node"]: {
               id: "status",
-              type: "button",
-              label: "Healthy",
+              type: "progress",
+              value: 50,
               variant: "neutral",
               tone: "success",
             },
@@ -1323,7 +1164,7 @@ describe("executeStageTool", () => {
         {
           id: "catalog-set-danger",
           name: "set_node",
-          input: { ["node"]: { id: "danger", type: "button", label: "Delete", variant: "danger" } },
+          input: { node: { id: "danger", type: "text", value: "Delete", variant: "danger" } },
         },
         { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
       );

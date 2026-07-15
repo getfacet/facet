@@ -24,7 +24,7 @@ import type {
   TextAlign,
   Tracking,
 } from "./tokens.js";
-import { COMPONENT_NODE_TYPES, PRIMITIVE_BRICK_TYPES, type FacetNode } from "./nodes.js";
+import { BRICK_TYPES } from "./nodes.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import type { RecipePartName } from "./theme-recipes.js";
 
@@ -52,7 +52,7 @@ export interface FacetTheme {
   readonly highlight?: Readonly<Partial<Record<Highlight, string>>>;
   /** Dark-scheme palette (same token space as `color`), used by `scheme:"dark"`. */
   readonly colorDark?: Readonly<Partial<Record<Color, string>>>;
-  readonly recipes?: ComponentRecipes;
+  readonly recipes?: BrickRecipes;
 }
 
 export interface RecipeBoxStyle {
@@ -91,27 +91,24 @@ export interface RecipeFieldStyle {
   readonly width?: Sizing;
 }
 
-export interface ComponentRecipePart {
+export interface BrickRecipePart {
   readonly box?: RecipeBoxStyle;
   readonly text?: RecipeTextStyle;
   readonly media?: RecipeMediaStyle;
   readonly field?: RecipeFieldStyle;
 }
 
-export type ComponentRecipeParts = Readonly<Partial<Record<RecipePartName, ComponentRecipePart>>>;
+export type BrickRecipeParts = Readonly<Partial<Record<RecipePartName, BrickRecipePart>>>;
 
-export interface ComponentRecipe extends ComponentRecipePart {
-  readonly parts?: ComponentRecipeParts;
+export interface BrickRecipe extends BrickRecipePart {
+  readonly parts?: BrickRecipeParts;
 }
 
-export const RECIPE_COMPONENTS = [
-  ...PRIMITIVE_BRICK_TYPES,
-  ...COMPONENT_NODE_TYPES,
-] as const satisfies readonly FacetNode["type"][];
-export type RecipeComponentName = (typeof RECIPE_COMPONENTS)[number];
+export const RECIPE_BRICKS = BRICK_TYPES;
+export type RecipeBrickName = (typeof RECIPE_BRICKS)[number];
 
-export type ComponentRecipes = Readonly<
-  Partial<Record<RecipeComponentName, Readonly<Record<string, ComponentRecipe>>>>
+export type BrickRecipes = Readonly<
+  Partial<Record<RecipeBrickName, Readonly<Record<string, BrickRecipe>>>>
 >;
 
 export interface ThemeIssue {

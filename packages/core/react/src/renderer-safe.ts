@@ -9,7 +9,6 @@ import {
 } from "@facet/core";
 
 export const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
-export const MAX_INTRINSIC_ITEMS = 32;
 export const RENDER_BUDGET = MAX_RENDER_NODES;
 
 export function styleOf<T extends object>(style: T | undefined): T | undefined {

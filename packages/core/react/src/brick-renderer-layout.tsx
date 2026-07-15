@@ -3,23 +3,18 @@ import {
   MAX_NODE_LABEL_CHARS,
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
-  MAX_TABS_ITEMS,
   resolveNodeData,
   type FacetNode,
   type TableRow,
 } from "@facet/core";
-import { boxStyle } from "./theme.js";
 import { resolveRecipePart } from "./recipe-parts.js";
 import { rootContainmentStyle } from "./layout-contract.js";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
+import { brickBoxStyle, brickRecipe } from "./brick-renderer-recipe.js";
 import { applySort } from "./table-sort.js";
 import {
-  MAX_INTRINSIC_ITEMS,
   cappedArray,
   cappedString,
-  componentBoxStyle,
-  componentRecipe,
-  componentTextStyle,
   intrinsicBoxStyle,
   isObjectRecord,
   safeOwnValue,
@@ -28,163 +23,6 @@ import {
   textAlignStyle,
   withInert,
 } from "./brick-renderer-shared.js";
-
-export function renderButton<Press>(
-  node: FacetNode,
-  context: BrickRenderContext<Press>,
-): ReactNode {
-  const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
-  if (label === undefined) return null;
-  const { theme, className, inert } = context;
-  const variant = safeOwnValue(node, "variant");
-  const tone = safeOwnValue(node, "tone");
-  const disabled = safeOwnValue(node, "disabled") === true;
-  const recipe = componentRecipe(theme, "button", variant, tone);
-  const style = componentBoxStyle(theme, recipe, {
-    direction: "row",
-    align: "center",
-    justify: "center",
-    gap: "sm",
-    pad: "sm",
-    bg: "accent",
-    radius: "md",
-  });
-  const press = disabled ? null : context.classifyPress(safeOwnValue(node, "onPress"));
-  const hold = disabled ? null : context.classifyPress(safeOwnValue(node, "onHold"));
-  return context.renderPressable({
-    press: inert ? null : press,
-    hold: inert ? null : hold,
-    dispatch: context.dispatch,
-    className,
-    style,
-    inert,
-    disabled,
-    buttonRole: true,
-    children: (
-      <span
-        style={componentTextStyle(
-          theme,
-          recipe,
-          { color: "accent-fg", weight: "semibold" },
-          "label",
-        )}
-      >
-        {label}
-      </span>
-    ),
-  });
-}
-
-export function renderTabs<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
-  const { theme, className, inert } = context;
-  const items = cappedArray(safeOwnValue(node, "items"), MAX_TABS_ITEMS).flatMap((item) => {
-    const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
-    const to = stringValue(safeOwnValue(item, "to"));
-    return label !== undefined && to !== undefined ? [{ label, to }] : [];
-  });
-  if (items.length === 0) return null;
-  const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "tabs", variant);
-  const style = componentBoxStyle(theme, recipe, {
-    direction: "row",
-    gap: "sm",
-    wrap: true,
-  });
-  const tabPart = resolveRecipePart(recipe, "tab", theme);
-  const activeTabPart = resolveRecipePart(recipe, "activeTab", theme);
-  const tabText = componentTextStyle(theme, recipe, { color: "fg", weight: "semibold" }, "tab");
-  const activeTabText: CSSProperties = { ...tabText, ...(activeTabPart.text ?? {}) };
-  return (
-    <div
-      role="tablist"
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(style, inert)}
-    >
-      {items.map((item) => {
-        const active = context.activeScreen === item.to;
-        return (
-          <button
-            key={`${item.to}:${item.label}`}
-            type="button"
-            role="tab"
-            aria-selected={active}
-            tabIndex={inert ? -1 : undefined}
-            disabled={inert ? true : undefined}
-            onClick={inert ? undefined : () => context.navigate(item.to)}
-            style={{
-              ...boxStyle({ pad: "sm", radius: "md", border: true }, theme),
-              background: "transparent",
-              ...(tabPart.box ?? {}),
-              ...(active ? (activeTabPart.box ?? {}) : {}),
-              ...(active ? activeTabText : tabText),
-            }}
-          >
-            {item.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export function renderNav<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
-  const { theme, className, inert } = context;
-  const items = cappedArray(safeOwnValue(node, "items"), MAX_INTRINSIC_ITEMS).flatMap((item) => {
-    const label = cappedString(safeOwnValue(item, "label"), MAX_NODE_LABEL_CHARS);
-    const to = stringValue(safeOwnValue(item, "to"));
-    return label !== undefined && to !== undefined ? [{ label, to }] : [];
-  });
-  if (items.length === 0) return null;
-  const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "nav", variant);
-  const style = componentBoxStyle(theme, recipe, {
-    direction: "row",
-    gap: "sm",
-    wrap: true,
-  });
-  const itemPart = resolveRecipePart(recipe, "item", theme);
-  const activePart = resolveRecipePart(recipe, "activeTab", theme);
-  const itemText = componentTextStyle(theme, recipe, { color: "fg", weight: "semibold" }, "item");
-  const activeText: CSSProperties = { ...itemText, ...(activePart.text ?? {}) };
-  return (
-    <nav
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(style, inert)}
-    >
-      {items.map((item) => {
-        const active = context.activeScreen === item.to;
-        return (
-          <button
-            key={`${item.to}:${item.label}`}
-            type="button"
-            aria-current={active ? "page" : undefined}
-            tabIndex={inert ? -1 : undefined}
-            disabled={inert ? true : undefined}
-            onClick={inert ? undefined : () => context.navigate(item.to)}
-            style={{
-              ...rootContainmentStyle({
-                background: "transparent",
-                border: 0,
-                cursor: inert ? undefined : "pointer",
-                font: "inherit",
-                padding: theme.space.sm,
-                borderRadius: theme.radius.md,
-              }),
-              ...intrinsicBoxStyle(itemPart.box),
-              ...(itemPart.text ?? {}),
-              ...(active ? intrinsicBoxStyle(activePart.box) : {}),
-              ...(active ? activeText : itemText),
-            }}
-          >
-            {item.label}
-          </button>
-        );
-      })}
-    </nav>
-  );
-}
 
 export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
   const { theme, className, inert } = context;
@@ -223,8 +61,8 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
   );
   const caption = cappedString(safeOwnValue(node, "caption"), MAX_NODE_LABEL_CHARS);
   const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "table", variant);
-  const style = componentBoxStyle(theme, recipe, {
+  const recipe = brickRecipe(theme, "table", variant);
+  const style = brickBoxStyle(theme, recipe, {
     scroll: "x",
     width: "full",
   });

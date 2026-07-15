@@ -1,5 +1,12 @@
-import { isContainer, type FacetNode, type NodeId, type TextNode } from "./nodes.js";
-import type { ChartNode, KeyValueNode, ListNode, MetricNode, StatNode } from "./component-nodes.js";
+import {
+  isContainer,
+  type ChartNode,
+  type FacetNode,
+  type KeyValueNode,
+  type ListNode,
+  type NodeId,
+  type TextNode,
+} from "./nodes.js";
 import type { DataWarehouse } from "./data-types.js";
 import { resolveNodeData } from "./data-binding.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
@@ -10,10 +17,8 @@ const TREE_RENDERABLE_MAX_TABLE_COLUMNS = 12;
 const TREE_RENDERABLE_MAX_CHART_SERIES = 8;
 const TREE_RENDERABLE_MAX_CHART_POINTS = 200;
 const TREE_RENDERABLE_MAX_LIST_ITEMS = 50;
-const TREE_RENDERABLE_MAX_TABS_ITEMS = 12;
 const TREE_RENDERABLE_MAX_FIELD_OPTIONS = 64;
 const TREE_RENDERABLE_MAX_KEY_VALUE_ITEMS = 50;
-const TREE_RENDERABLE_MAX_FILTERS = 32;
 
 interface RenderableBudget {
   left: number;
@@ -84,8 +89,7 @@ export function isTreeShaped(value: unknown): value is FacetTree {
 /**
  * Does this tree "show something real"? True iff at least one render root has a
  * visible, renderable descendant. A root that only points at a dangling id, a
- * hidden subtree, or a component data node with no renderable data (empty
- * table/chart/tabs/list) is NOT content.
+ * hidden subtree, or a data brick with no renderable data is NOT content.
  *
  * The single canonical form: the server's offline path (`hasBuiltStage` — should
  * the offline face overwrite this page?) and the runtime's seed gate
@@ -217,12 +221,6 @@ export function rendersMedia(node: Record<string, unknown>): boolean {
 export function rendersField(node: Record<string, unknown>): boolean {
   return fieldHasRenderableControl(node);
 }
-export function rendersButton(node: Record<string, unknown>): boolean {
-  return typeof node.label === "string";
-}
-export function rendersTabsNav(node: Record<string, unknown>): boolean {
-  return hasRenderableArray(node.items, TREE_RENDERABLE_MAX_TABS_ITEMS, isRenderableTabItem);
-}
 export function rendersTable(node: Record<string, unknown>): boolean {
   return hasRenderableArray(
     node.columns,
@@ -232,9 +230,6 @@ export function rendersTable(node: Record<string, unknown>): boolean {
 }
 export function rendersChart(node: Record<string, unknown>): boolean {
   return chartHasRenderableData(node);
-}
-export function rendersMetricStat(node: Record<string, unknown>): boolean {
-  return typeof node.label === "string" && typeof node.value === "string";
 }
 export function rendersKeyValue(node: Record<string, unknown>): boolean {
   return hasRenderableArray(
@@ -252,16 +247,9 @@ export function rendersList(node: Record<string, unknown>): boolean {
 export function rendersAlways(): boolean {
   return true;
 }
-export function rendersForm(node: Record<string, unknown>): boolean {
-  return hasString(node.title) || hasString(node.body) || hasString(node.submitLabel);
-}
-export function rendersFilterBar(node: Record<string, unknown>): boolean {
-  return hasRenderableArray(node.filters, TREE_RENDERABLE_MAX_FILTERS, isRenderableFilter);
-}
-
 // Per-brick `resolveFromContent` predicates — the former `from`-binding switch
-// cases (chart/list/keyValue/metric/stat/text), verbatim. `table` deliberately
-// has no entry (its visibility is inline COLUMNS, not resolved rows).
+// cases (chart/list/keyValue/text), verbatim. `table` deliberately has no entry
+// (its visibility is inline COLUMNS, not resolved rows).
 export function fromChart(
   node: Record<string, unknown>,
   warehouse: DataWarehouse | undefined,
@@ -283,15 +271,6 @@ export function fromKeyValue(
   warehouse: DataWarehouse | undefined,
 ): boolean {
   return resolveNodeData(node as unknown as KeyValueNode, warehouse).length > 0;
-}
-export function fromMetricStat(
-  node: Record<string, unknown>,
-  warehouse: DataWarehouse | undefined,
-): boolean {
-  return (
-    typeof node.label === "string" &&
-    resolveNodeData(node as unknown as MetricNode | StatNode, warehouse).length > 0
-  );
 }
 export function fromText(
   node: Record<string, unknown>,
@@ -335,10 +314,6 @@ function isRenderableMediaSrc(src: string): boolean {
   );
 }
 
-function isRenderableTabItem(item: unknown): boolean {
-  return isRecord(item) && typeof item.label === "string" && typeof item.to === "string";
-}
-
 function isRenderableTableColumn(column: unknown): boolean {
   return isRecord(column) && typeof column.key === "string" && typeof column.label === "string";
 }
@@ -350,10 +325,6 @@ function isRenderableListItem(item: unknown): boolean {
 
 function isRenderableKeyValueItem(item: unknown): boolean {
   return isRecord(item) && typeof item.label === "string" && typeof item.value === "string";
-}
-
-function isRenderableFilter(item: unknown): boolean {
-  return isRecord(item) && typeof item.name === "string" && typeof item.label === "string";
 }
 
 function fieldHasRenderableControl(node: Record<string, unknown>): boolean {

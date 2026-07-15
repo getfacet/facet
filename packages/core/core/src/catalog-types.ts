@@ -1,19 +1,6 @@
-import {
-  COMPONENT_NODE_TYPES,
-  INTRINSIC_COMPONENT_TYPES,
-  PRIMITIVE_BRICK_TYPES,
-  type ComponentNodeType,
-  type FacetNode,
-} from "./nodes.js";
+import { BRICK_TYPES, type BrickType } from "./nodes.js";
 
-export const CATALOG_COMPONENT_TYPES = [
-  ...INTRINSIC_COMPONENT_TYPES,
-] as const satisfies readonly ComponentNodeType[];
-
-export const CATALOG_BRICK_TYPES = [
-  ...PRIMITIVE_BRICK_TYPES,
-  ...COMPONENT_NODE_TYPES,
-] as const satisfies readonly FacetNode["type"][];
+export const CATALOG_BRICK_TYPES = [...BRICK_TYPES] as const satisfies readonly BrickType[];
 
 export interface CatalogThemePolicy {
   readonly active?: string;
@@ -22,13 +9,7 @@ export interface CatalogThemePolicy {
 }
 
 export interface CatalogBrick {
-  readonly type: FacetNode["type"];
-  readonly variants?: readonly string[];
-  readonly guidance?: string;
-}
-
-export interface CatalogComponent {
-  readonly type: ComponentNodeType;
+  readonly type: BrickType;
   readonly variants?: readonly string[];
   readonly guidance?: string;
 }
@@ -37,10 +18,8 @@ export interface CatalogComponent {
 export type CatalogCompositionsPolicy =
   { readonly mode: "all" } | { readonly mode: "allow"; readonly names: readonly string[] };
 
-export type CatalogUsageOrder = readonly ["component", "primitive"];
-
+/** Editing guidance that does not change the closed brick vocabulary. */
 export interface CatalogUsagePolicy {
-  readonly order: CatalogUsageOrder;
   readonly editBeforeAppend: boolean;
   readonly compactScreens: boolean;
   readonly maxScreenSections?: number;
@@ -51,9 +30,7 @@ export interface FacetCatalog {
   readonly description?: string;
   readonly theme: CatalogThemePolicy;
   readonly bricks: readonly CatalogBrick[];
-  readonly components?: readonly CatalogComponent[];
   readonly compositions: CatalogCompositionsPolicy;
-  readonly primitiveFallback: "allowed" | "discouraged";
   readonly policy: CatalogUsagePolicy;
 }
 

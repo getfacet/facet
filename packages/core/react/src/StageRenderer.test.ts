@@ -10,7 +10,6 @@ import {
   MAX_TABLE_CELL_CHARS,
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
-  MAX_TABS_ITEMS,
   type FacetNode,
   type FacetTheme,
   type FacetTree,
@@ -20,6 +19,7 @@ import { StageRenderer } from "./StageRenderer.js";
 import * as stageRendererExports from "./StageRenderer.js";
 import { brickRendererEntry } from "./brick-render-registry.js";
 import { MOTION_CLASS_NAMES } from "./motion.js";
+import * as rendererSafeExports from "./renderer-safe.js";
 
 function render(tree: FacetTree): string {
   return renderToStaticMarkup(createElement(StageRenderer, { tree }));
@@ -43,6 +43,10 @@ const text = (id: NodeId, value: string): FacetNode => ({ id, type: "text", valu
 const box = (id: NodeId, children: readonly NodeId[]): FacetNode => ({ id, type: "box", children });
 
 describe("StageRenderer module boundary", () => {
+  it("contains no intrinsic renderer limit", () => {
+    expect(rendererSafeExports).not.toHaveProperty("MAX_INTRINSIC_ITEMS");
+  });
+
   it("keeps the exact runtime export surface", () => {
     expect(Object.keys(stageRendererExports).sort()).toEqual(["StageRenderer"]);
   });
@@ -99,93 +103,27 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(render(nodesThrows)).toBe("");
   });
 
-  // DC-003 / RISK-INV-4: badge/alert/divider were demoted to compositions and
-  // their react renderers + BRICK_RENDERERS entries removed. A STALE tree still
-  // carrying one of the removed leaf types (a patch authored before the cutover)
-  // must hit the renderer's unknown-type skip path: no registry entry, no throw,
-  // and NONE of the old component markup (the inline badge `<span>`, the
-  // `role="alert"` panel, the `<hr>`/`role="separator"` rule).
-  it("blank-degrades a removed display-leaf type (badge/alert/divider) without throwing", () => {
-    // The registry no longer maps the removed types — the RED anchor: this holds
-    // only once the renderers + BRICK_RENDERERS entries are gone.
-    expect(brickRendererEntry("badge")).toBeUndefined();
-    expect(brickRendererEntry("alert")).toBeUndefined();
-    expect(brickRendererEntry("divider")).toBeUndefined();
-
-    // A stale tree carrying the removed types (cast past the narrowed union, as a
-    // pre-cutover patch would arrive on the fail-safe render path).
-    const staleTree = tree({
-      root: box("root", ["b", "a", "d"]),
-      b: { id: "b", type: "badge", label: "Healthy", tone: "success" } as unknown as FacetNode,
-      a: {
-        id: "a",
-        type: "alert",
-        title: "Heads up",
-        body: "Review pricing.",
-      } as unknown as FacetNode,
-      d: { id: "d", type: "divider", label: "Details" } as unknown as FacetNode,
-    });
-
-    expect(() => render(staleTree)).not.toThrow();
-    const out = render(staleTree);
-    // Skipped: none of the removed leaves' content or component markup survives.
-    expect(out).not.toContain("Healthy");
-    expect(out).not.toContain("Heads up");
-    expect(out).not.toContain("Review pricing.");
-    expect(out).not.toContain("Details");
-    expect(out).not.toContain('role="alert"');
-    expect(out).not.toContain('role="separator"');
-    expect(out).not.toContain("<hr");
-  });
-
-  // Intentional negative/fail-safe fixtures: these raw pre-cutover node shapes
-  // bypass the narrowed core union and must disappear as WHOLE subtrees. The
-  // valid descendants must not be unwrapped, while an outside sibling survives.
-  it("blank-degrades retired container-pattern subtrees", () => {
-    const staleTree = tree({
-      root: box("root", ["stale-section", "stale-card", "stale-empty", "valid-sibling"]),
-      "stale-section": {
-        id: "stale-section",
-        type: "section",
-        title: "Stale section",
-        children: ["section-child"],
-      } as unknown as FacetNode,
-      "section-child": text("section-child", "Section child must stay hidden"),
-      "stale-card": {
-        id: "stale-card",
-        type: "card",
-        title: "Stale card",
-        children: ["card-child"],
-      } as unknown as FacetNode,
-      "card-child": text("card-child", "Card child must stay hidden"),
-      "stale-empty": {
-        id: "stale-empty",
-        type: "emptyState",
-        title: "Empty state must stay hidden",
-        body: "No stale feedback copy",
-        actionLabel: "No stale action",
-      } as unknown as FacetNode,
+  // composition-hard-cut: allowed-negative — raw pre-cutover patches bypass
+  // core validation. Every retired type must remain an unknown registry entry
+  // and skip its complete subtree deterministically while valid siblings render.
+  it("repeatedly blank-degrades every retired raw subtree", () => {
+    const retiredTypes = ["button", "tabs", "nav", "form", "filterBar", "metric", "stat"];
+    const nodes: Record<NodeId, FacetNode> = {
+      root: box("root", [...retiredTypes, "valid-sibling"]),
       "valid-sibling": text("valid-sibling", "Valid sibling survives"),
-    });
-
-    expect(() => render(staleTree)).not.toThrow();
-    const out = render(staleTree);
-    expect(out).toContain("Valid sibling survives");
-    expect(out.match(/<p/g)).toHaveLength(1);
-    for (const hiddenCopy of [
-      "Stale section",
-      "Section child must stay hidden",
-      "Stale card",
-      "Card child must stay hidden",
-      "Empty state must stay hidden",
-      "No stale feedback copy",
-      "No stale action",
-    ]) {
-      expect(out).not.toContain(hiddenCopy);
+    };
+    for (const type of retiredTypes) {
+      nodes[type] = { id: type, type, children: [`${type}-child`] } as unknown as FacetNode;
+      nodes[`${type}-child`] = text(`${type}-child`, `Hidden ${type} child`);
+      expect(brickRendererEntry(type)).toBeUndefined();
     }
-    expect(out).not.toContain("<section");
-    expect(out).not.toContain("<h2");
-    expect(out).not.toContain("<h3");
+    const staleTree = tree(nodes);
+
+    for (const out of [render(staleTree), render(staleTree)]) {
+      expect(out).toContain("Valid sibling survives");
+      expect(out.match(/<p/g)).toHaveLength(1);
+      for (const type of retiredTypes) expect(out).not.toContain(`Hidden ${type} child`);
+    }
   });
 
   it("falls back safely when raw screen maps throw during resolution", () => {
@@ -500,7 +438,7 @@ describe("StageRenderer brick-vocab v1", () => {
   });
 });
 
-describe("StageRenderer component renderer (static)", () => {
+describe("StageRenderer final brick renderer (static)", () => {
   const catalogTheme: FacetTheme = {
     name: "catalog",
     color: {
@@ -515,7 +453,7 @@ describe("StageRenderer component renderer (static)", () => {
     radius: { lg: "18px", full: "9999px" },
     shadow: { md: "0 14px 36px rgba(0, 0, 0, 0.18)" },
     recipes: {
-      button: {
+      box: {
         primary: {
           box: { bg: "accent", pad: "md", radius: "full" },
           text: { color: "accent-fg", weight: "bold" },
@@ -524,7 +462,7 @@ describe("StageRenderer component renderer (static)", () => {
     },
   };
 
-  it("renders component layout, action, data, and feedback nodes with recipes", () => {
+  it("renders layout, action, and all six survivor bricks with recipes", () => {
     const out = renderThemed(
       {
         root: "root",
@@ -541,9 +479,10 @@ describe("StageRenderer component renderer (static)", () => {
               "card",
               "table",
               "chart",
-              "stat",
+              "details",
               "progress",
               "list",
+              "loading",
             ],
           },
           "dashboard-eyebrow": { id: "dashboard-eyebrow", type: "text", value: "Q3" },
@@ -557,17 +496,18 @@ describe("StageRenderer component renderer (static)", () => {
             id: "card",
             type: "box",
             style: { bg: "bg", border: true, radius: "lg", shadow: "md", pad: "md" },
-            children: ["card-title", "card-body", "button"],
+            children: ["card-title", "card-body", "refresh"],
           },
           "card-title": { id: "card-title", type: "text", value: "Revenue" },
           "card-body": { id: "card-body", type: "text", value: "Current quarter" },
-          button: {
-            id: "button",
-            type: "button",
-            label: "Refresh",
+          refresh: {
+            id: "refresh",
+            type: "box",
             variant: "primary",
             onPress: { kind: "agent", name: "refresh" },
+            children: ["refresh-label"],
           },
+          "refresh-label": { id: "refresh-label", type: "text", value: "Refresh" },
           table: {
             id: "table",
             type: "table",
@@ -586,13 +526,18 @@ describe("StageRenderer component renderer (static)", () => {
             labels: ["Jan", "Feb"],
             series: [{ label: "ARR", values: [10, 20] }],
           },
-          stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", delta: "+12%" },
+          details: {
+            id: "details",
+            type: "keyValue",
+            items: [{ label: "ARR", value: "$24k" }],
+          },
           progress: { id: "progress", type: "progress", label: "Quota", value: 72 },
           list: {
             id: "list",
             type: "list",
             items: [{ title: "Next", body: "Call customer" }],
           },
+          loading: { id: "loading", type: "loading", label: "Refreshing dashboard" },
         },
       },
       [catalogTheme],
@@ -612,9 +557,11 @@ describe("StageRenderer component renderer (static)", () => {
     expect(out).toContain("$24k");
     expect(out).toContain('role="progressbar"');
     expect(out).toContain("Call customer");
+    expect(out).toContain('role="status"');
+    expect(out).toContain("Refreshing dashboard");
   });
 
-  it("renders component recipe parts", () => {
+  it("renders survivor brick recipe parts", () => {
     const partsTheme: FacetTheme = {
       name: "parts",
       color: {
@@ -632,27 +579,6 @@ describe("StageRenderer component renderer (static)", () => {
       space: { xs: "3px", sm: "7px", md: "13px" },
       radius: { sm: "5px", lg: "17px", full: "999px" },
       recipes: {
-        button: {
-          default: {
-            parts: {
-              label: { text: { color: "warning", weight: "bold" } },
-            },
-          },
-        },
-        tabs: {
-          default: {
-            parts: {
-              tab: {
-                box: { bg: "surface-2", pad: "xs", radius: "full" },
-                text: { color: "danger", weight: "bold" },
-              },
-              activeTab: {
-                box: { bg: "accent", pad: "xs", radius: "full" },
-                text: { color: "accent-fg", weight: "bold" },
-              },
-            },
-          },
-        },
         table: {
           default: {
             parts: {
@@ -678,12 +604,12 @@ describe("StageRenderer component renderer (static)", () => {
             },
           },
         },
-        stat: {
+        keyValue: {
           default: {
             parts: {
+              item: { box: { bg: "surface-2", pad: "xs", radius: "sm" } },
               label: { text: { color: "info", weight: "bold" } },
               value: { text: { color: "danger", weight: "bold" } },
-              trend: { text: { color: "warning", weight: "medium" } },
             },
           },
         },
@@ -704,6 +630,13 @@ describe("StageRenderer component renderer (static)", () => {
             },
           },
         },
+        loading: {
+          default: {
+            parts: {
+              label: { text: { color: "warning", weight: "bold" } },
+            },
+          },
+        },
       },
     };
     const out = renderThemed(
@@ -720,33 +653,20 @@ describe("StageRenderer component renderer (static)", () => {
               "overview",
               "internals",
               "card",
-              "tabs",
               "table",
               "chart",
-              "stat",
+              "details",
               "progress",
               "list",
               "email",
+              "loading",
             ],
           },
           overview: { id: "overview", type: "text", value: "Overview" },
           internals: { id: "internals", type: "text", value: "Part-driven internals" },
-          card: {
-            id: "card",
-            type: "box",
-            children: ["revenue", "quarter", "button"],
-          },
+          card: { id: "card", type: "box", children: ["revenue", "quarter"] },
           revenue: { id: "revenue", type: "text", value: "Revenue" },
           quarter: { id: "quarter", type: "text", value: "Current quarter" },
-          button: { id: "button", type: "button", label: "Refresh" },
-          tabs: {
-            id: "tabs",
-            type: "tabs",
-            items: [
-              { label: "Pipeline", to: "pipeline" },
-              { label: "Accounts", to: "accounts" },
-            ],
-          },
           accountsRoot: {
             id: "accountsRoot",
             type: "box",
@@ -769,7 +689,11 @@ describe("StageRenderer component renderer (static)", () => {
             series: [{ label: "ARR", values: [10, 20] }],
           },
           progress: { id: "progress", type: "progress", label: "Completion", value: 72 },
-          stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", delta: "+12%" },
+          details: {
+            id: "details",
+            type: "keyValue",
+            items: [{ label: "ARR", value: "$24k" }],
+          },
           list: {
             id: "list",
             type: "list",
@@ -783,6 +707,7 @@ describe("StageRenderer component renderer (static)", () => {
             label: "Email",
             placeholder: "you@example.com",
           },
+          loading: { id: "loading", type: "loading", label: "Loading rows" },
         },
       },
       [partsTheme],
@@ -792,13 +717,6 @@ describe("StageRenderer component renderer (static)", () => {
     expect(out).toContain("Part-driven internals");
     expect(out).toContain("Revenue");
     expect(out).toContain("Current quarter");
-    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#b45309[^"]*">Refresh/);
-    expect(out).toMatch(
-      /role="tab" aria-selected="true"[^>]*style="(?=[^"]*background:#0f766e)(?=[^"]*border-radius:999px)(?=[^"]*color:#ffffff)[^"]*">Pipeline/,
-    );
-    expect(out).toMatch(
-      /role="tab" aria-selected="false"[^>]*style="(?=[^"]*background:#eef2ff)(?=[^"]*border-radius:999px)(?=[^"]*color:#dc2626)[^"]*">Accounts/,
-    );
     expect(out).toMatch(/<th style="[^"]*color:#2563eb[^"]*font-weight:700[^"]*">Name/);
     expect(out).toMatch(/<td style="[^"]*color:#b45309[^"]*">Acme/);
     expect(out).not.toMatch(/<th[^>]*style="[^"]*display:flex/);
@@ -815,9 +733,8 @@ describe("StageRenderer component renderer (static)", () => {
     );
     expect(out).not.toMatch(/<label[^>]*style="[^"]*background:/);
     expect(out).not.toContain("<progress");
-    expect(out).toMatch(/<p style="(?=[^"]*font-weight:700)(?=[^"]*color:#2563eb)[^"]*">ARR/);
-    expect(out).toMatch(/<p style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)[^"]*">\$24k/);
-    expect(out).toMatch(/<p style="(?=[^"]*font-weight:500)(?=[^"]*color:#b45309)[^"]*">\+12%/);
+    expect(out).toMatch(/<dt style="(?=[^"]*font-weight:700)(?=[^"]*color:#2563eb)[^"]*">ARR/);
+    expect(out).toMatch(/<dd style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)[^"]*">\$24k/);
     expect(out).toMatch(
       /<li style="(?=[^"]*background:#eef2ff)(?=[^"]*padding:3px)(?=[^"]*border-radius:5px)[^"]*"><span style="[^"]*color:#dc2626[^"]*">Next/,
     );
@@ -830,33 +747,47 @@ describe("StageRenderer component renderer (static)", () => {
     expect(out).toMatch(
       /<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*border:1px solid #64748b/,
     );
+    expect(out).toMatch(
+      /role="status"[^>]*><span[^>]*><\/span><span[^>]*color:#b45309[^>]*>Loading rows/,
+    );
   });
 
-  it("keeps component raw-path malformed data fail-safe", () => {
+  it("keeps survivor raw-path malformed data fail-safe", () => {
     const noisy = {
       root: {
         id: "root",
         type: "box",
-        children: ["body", "button", "table", "chart", "list", "text"],
+        children: ["body", "table", "chart", "details", "progress", "list", "loading", "text"],
       },
       body: text("body", "still renders"),
-      button: { id: "button", type: "button", label: { bad: true }, onPress: 99 },
       table: { id: "table", type: "table", columns: "bad", rows: [{ value: { nope: true } }] },
       chart: { id: "chart", type: "chart", kind: "space", series: "bad", title: "Bad chart" },
+      details: {
+        id: "details",
+        type: "keyValue",
+        items: [
+          { label: "Plan", value: "Team" },
+          { label: "Bad", value: { nope: true } },
+        ],
+      },
+      progress: { id: "progress", type: "progress", label: { bad: true }, value: Infinity },
       list: { id: "list", type: "list", items: ["Plain item", { title: 9, body: "bad title" }] },
+      loading: { id: "loading", type: "loading", label: { bad: true } },
       text: text("text", "safe child"),
     } as unknown as Record<NodeId, FacetNode>;
 
     expect(() => render(tree(noisy))).not.toThrow();
     const out = render(tree(noisy));
     expect(out).toContain("still renders");
+    expect(out).toContain("Team");
     expect(out).toContain("Plain item");
+    expect(out).toContain("Loading");
     expect(out).toContain("safe child");
     expect(out).not.toContain("[object Object]");
     expect(out).not.toContain("Bad chart");
   });
 
-  it("caps raw-path table, chart, tabs, and list collections at the core validator limits", () => {
+  it("caps raw-path table, chart, and list collections at the core validator limits", () => {
     const columns = Array.from({ length: MAX_TABLE_COLUMNS + 8 }, (_, index) => ({
       key: `c${String(index)}`,
       label: `Column ${String(index)}`,
@@ -871,17 +802,9 @@ describe("StageRenderer component renderer (static)", () => {
     const longLabel = "x".repeat(MAX_NODE_LABEL_CHARS + 25);
     const out = render(
       tree({
-        root: box("root", ["table", "chart", "tabs", "list"]),
+        root: box("root", ["table", "chart", "list"]),
         table: { id: "table", type: "table", columns, rows } as unknown as FacetNode,
         chart: { id: "chart", type: "chart", kind: "bar", series } as unknown as FacetNode,
-        tabs: {
-          id: "tabs",
-          type: "tabs",
-          items: Array.from({ length: MAX_TABS_ITEMS + 4 }, (_, index) => ({
-            label: `${longLabel}-${String(index)}`,
-            to: `screen-${String(index)}`,
-          })),
-        } as unknown as FacetNode,
         list: {
           id: "list",
           type: "list",
@@ -893,7 +816,6 @@ describe("StageRenderer component renderer (static)", () => {
     expect(out.match(/<th\b/g)).toHaveLength(MAX_TABLE_COLUMNS);
     expect(out.match(/<tr/g)).toHaveLength(MAX_TABLE_ROWS + 1);
     expect(out.match(/<rect/g)).toHaveLength(MAX_CHART_SERIES * MAX_CHART_POINTS);
-    expect(out.match(/role="tab"/g)).toHaveLength(MAX_TABS_ITEMS);
     expect(out.match(/<li/g)).toHaveLength(MAX_LIST_ITEMS);
     expect(out).not.toContain(longLabel);
   });
@@ -941,14 +863,6 @@ describe("StageRenderer component renderer (static)", () => {
       MAX_CHART_SERIES,
       "chart series",
     );
-    const tabs = defineThrowingPastCap(
-      Array.from({ length: MAX_TABS_ITEMS }, (_, index) => ({
-        label: `Tab ${String(index)}`,
-        to: `screen-${String(index)}`,
-      })),
-      MAX_TABS_ITEMS,
-      "tabs",
-    );
     const listItems = defineThrowingPastCap(
       Array.from({ length: MAX_LIST_ITEMS }, (_, index) => `Item ${String(index)}`),
       MAX_LIST_ITEMS,
@@ -959,10 +873,9 @@ describe("StageRenderer component renderer (static)", () => {
     expect(() => {
       out = render(
         tree({
-          root: box("root", ["table", "chart", "tabs", "list"]),
+          root: box("root", ["table", "chart", "list"]),
           table: { id: "table", type: "table", columns, rows } as unknown as FacetNode,
           chart: { id: "chart", type: "chart", kind: "bar", series } as unknown as FacetNode,
-          tabs: { id: "tabs", type: "tabs", items: tabs } as unknown as FacetNode,
           list: { id: "list", type: "list", items: listItems } as unknown as FacetNode,
         }),
       );
@@ -972,7 +885,6 @@ describe("StageRenderer component renderer (static)", () => {
     expect(out.match(/<th\b/g)).toHaveLength(MAX_TABLE_COLUMNS);
     expect(out.match(/<tr/g)).toHaveLength(MAX_TABLE_ROWS + 1);
     expect(out.match(/<rect/g)).toHaveLength(MAX_CHART_SERIES * MAX_CHART_POINTS);
-    expect(out.match(/role="tab"/g)).toHaveLength(MAX_TABS_ITEMS);
     expect(out.match(/<li/g)).toHaveLength(MAX_LIST_ITEMS);
     expect(out).toContain("x".repeat(MAX_TABLE_CELL_CHARS));
     expect(out).not.toContain(longCell);
@@ -1159,22 +1071,22 @@ describe("StageRenderer happy path", () => {
     expect(out).toContain("Email");
   });
 
-  it("caps raw component and primitive strings before rendering", () => {
+  it("caps raw final-brick strings before rendering", () => {
     const longLabel = "L".repeat(MAX_NODE_LABEL_CHARS + 10);
     const longBody = "B".repeat(MAX_NODE_BODY_CHARS + 10);
     const out = render(
       tree({
         root: box("root", [
-          "button",
           "table",
           "chart",
-          "stat",
+          "details",
           "progress",
+          "list",
+          "loading",
           "text",
           "media",
           "field",
         ]),
-        button: { id: "button", type: "button", label: longLabel },
         table: {
           id: "table",
           type: "table",
@@ -1189,8 +1101,14 @@ describe("StageRenderer happy path", () => {
           kind: "bar",
           series: [{ label: "A", values: [1] }],
         },
-        stat: { id: "stat", type: "stat", label: longLabel, value: longLabel, delta: longLabel },
+        details: {
+          id: "details",
+          type: "keyValue",
+          items: [{ label: longLabel, value: longLabel }],
+        },
         progress: { id: "progress", type: "progress", value: 50, label: longLabel },
+        list: { id: "list", type: "list", items: [{ title: longLabel, body: longBody }] },
+        loading: { id: "loading", type: "loading", label: longLabel },
         text: { id: "text", type: "text", value: longBody },
         media: {
           id: "media",

@@ -7,10 +7,14 @@ import {
   type FacetNode,
   type FacetTree,
   type NodeId,
+  type ViewSnapshot,
 } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const tree = (nodes: Record<NodeId, FacetNode>, root: NodeId = "root"): FacetTree => ({
   root,
@@ -343,73 +347,115 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
   });
 });
 
-describe("StageRenderer component button and tabs (jsdom)", () => {
-  const highLevelScreensTree = (): FacetTree => ({
+describe("StageRenderer native local-navigation references (jsdom)", () => {
+  const localControl = (id: NodeId, label: string, to: string): Record<NodeId, FacetNode> => {
+    const labelId = `${id}-label`;
+    return {
+      [id]: {
+        id,
+        type: "box",
+        active: { screen: to },
+        activeVariant: "selected",
+        onPress: { kind: "navigate", to },
+        children: [labelId],
+      },
+      [labelId]: { id: labelId, type: "text", value: label },
+    };
+  };
+
+  const localNavigationTree = (): FacetTree => ({
     root: "root",
+    data: { rows: [{ id: 1, status: "open" }] },
     nodes: {
-      root: { id: "root", type: "box", children: ["tabs", "rootText"] },
+      root: { id: "root", type: "box", children: ["rootText"] },
       rootText: { id: "rootText", type: "text", value: "plain root content" },
-      home: { id: "home", type: "box", children: ["tabs", "homeText", "refresh", "locked"] },
-      tabs: {
-        id: "tabs",
-        type: "tabs",
-        items: [
-          { label: "Home", to: "home" },
-          { label: "About", to: "about" },
-        ],
+      home: { id: "home", type: "box", children: ["controls", "homeText"] },
+      about: { id: "about", type: "box", children: ["controls", "aboutText"] },
+      closed: { id: "closed", type: "box", children: ["controls", "closedText"] },
+      controls: {
+        id: "controls",
+        type: "box",
+        children: ["tab-home", "tab-about", "nav-home", "filter-closed", "dangling"],
       },
+      ...localControl("tab-home", "Tab Home", "home"),
+      ...localControl("tab-about", "Tab About", "about"),
+      ...localControl("nav-home", "Nav Home", "home"),
+      ...localControl("filter-closed", "Filter Closed", "closed"),
+      ...localControl("dangling", "Dangling", "missing"),
       homeText: { id: "homeText", type: "text", value: "home content" },
-      refresh: {
-        id: "refresh",
-        type: "button",
-        label: "Refresh",
-        onPress: { kind: "agent", name: "refresh", payload: { id: "7" } },
-      },
-      locked: {
-        id: "locked",
-        type: "button",
-        label: "Locked",
-        disabled: true,
-        onPress: { kind: "agent", name: "locked" },
-      },
-      about: { id: "about", type: "box", children: ["tabs", "aboutText"] },
       aboutText: { id: "aboutText", type: "text", value: "about content" },
+      closedText: { id: "closedText", type: "text", value: "closed content" },
     },
-    screens: { home: "home", about: "about" },
+    screens: { home: "home", about: "about", closed: "closed" },
     entry: "home",
   });
 
-  it("component button fires agent actions and disabled buttons stay inert", () => {
-    const onAction = vi.fn();
-    render(<StageRenderer onAction={onAction} tree={highLevelScreensTree()} />);
+  it("navigates locally when the agent channel is absent or unavailable", () => {
+    render(<StageRenderer tree={localNavigationTree()} />);
+    expect(() => fireEvent.click(screen.getByText("Tab About"))).not.toThrow();
+    expect(screen.getByText("about content")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
-    fireEvent.click(screen.getByRole("button", { name: "Locked" }));
-
-    expect(onAction).toHaveBeenCalledTimes(1);
-    expect(onAction).toHaveBeenCalledWith({
-      kind: "agent",
-      name: "refresh",
-      payload: { id: "7" },
+    cleanup();
+    const unavailableAgent = vi.fn(() => {
+      throw new Error("agent unavailable");
     });
+    render(<StageRenderer onAction={unavailableAgent} tree={localNavigationTree()} />);
+    expect(() => fireEvent.click(screen.getByText("Tab About"))).not.toThrow();
+    expect(screen.getByText("about content")).toBeTruthy();
+    expect(unavailableAgent).not.toHaveBeenCalled();
   });
 
-  it("component tabs navigate locally without stage writes", () => {
-    const onAction = vi.fn();
-    render(<StageRenderer onAction={onAction} tree={highLevelScreensTree()} />);
+  it("keeps rapid tab/nav/filter clicks local, ordered, and latest-screen coherent", () => {
+    const stage = localNavigationTree();
+    const before = structuredClone(stage);
+    const dataBefore = stage.data;
+    const onAction = vi.fn(() => {
+      throw new Error("agent unavailable");
+    });
+    const onRecord = vi.fn();
+    const onViewSnapshot = vi.fn();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    render(
+      <StageRenderer
+        onAction={onAction}
+        onRecord={onRecord}
+        onViewSnapshot={onViewSnapshot}
+        tree={stage}
+      />,
+    );
 
-    expect(screen.getByText("home content")).toBeTruthy();
-    expect(screen.queryByText("about content")).toBeNull();
-    expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("false");
+    // Active-predicate evaluation is read-only and emits no record on mount.
+    expect(onRecord).not.toHaveBeenCalled();
+    onViewSnapshot.mockClear();
+    fireEvent.click(screen.getByText("Tab About"));
+    fireEvent.click(screen.getByText("Nav Home"));
+    fireEvent.click(screen.getByText("Filter Closed"));
 
-    fireEvent.click(screen.getByRole("tab", { name: "About" }));
-
-    expect(screen.getByText("about content")).toBeTruthy();
+    expect(screen.getByText("closed content")).toBeTruthy();
     expect(screen.queryByText("home content")).toBeNull();
-    expect(screen.getByRole("tab", { name: "Home" }).getAttribute("aria-selected")).toBe("false");
-    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("true");
+    expect(onRecord.mock.calls.map(([record]) => record)).toEqual([
+      { kind: "tap", target: "tab-about", effect: { navigate: "about" } },
+      { kind: "tap", target: "nav-home", effect: { navigate: "home" } },
+      { kind: "tap", target: "filter-closed", effect: { navigate: "closed" } },
+    ]);
+    expect(
+      onViewSnapshot.mock.calls.map(([snapshot]) => (snapshot as ViewSnapshot).screen),
+    ).toEqual(["about", "home", "closed"]);
+    expect((onViewSnapshot.mock.calls.at(-1)?.[0] as ViewSnapshot).screen).toBe("closed");
+
+    // A dangling target is a complete no-op: no view change and no extra record.
+    const snapshotCount = onViewSnapshot.mock.calls.length;
+    fireEvent.click(screen.getByText("Dangling"));
+    expect(screen.getByText("closed content")).toBeTruthy();
+    expect(onRecord).toHaveBeenCalledTimes(3);
+    expect(onViewSnapshot).toHaveBeenCalledTimes(snapshotCount);
+
+    // Local navigation has no action/patch writer: the exact tree/data input is
+    // untouched and there is no browser-side backend call.
     expect(onAction).not.toHaveBeenCalled();
+    expect(stage).toEqual(before);
+    expect(stage.data).toBe(dataBefore);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
@@ -650,7 +696,7 @@ describe("StageRenderer collect (jsdom)", () => {
     );
   });
 
-  it("collects fields from a native box target via a component button", () => {
+  it("collects fields from a native box target via a pressable box", () => {
     const onAction = vi.fn();
     render(
       <StageRenderer
@@ -665,10 +711,11 @@ describe("StageRenderer collect (jsdom)", () => {
           emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
           submit: {
             id: "submit",
-            type: "button",
-            label: "Send",
+            type: "box",
             onPress: { kind: "agent", name: "submit", collect: "panel" },
+            children: ["submit-label"],
           },
+          "submit-label": { id: "submit-label", type: "text", value: "Send" },
         })}
       />,
     );

@@ -18,8 +18,8 @@ nodes with the existing stage tools.
 - `@facet/core` now requires `metadata.description` on `FacetComposition`,
   accepts only self-contained native nodes, and removes the former parameter,
   nested-reference, dependency-graph, and composition-specific stage mutation
-  surfaces. Catalog authoring order is only `component -> primitive`;
-  composition policy controls reference exposure separately.
+  surfaces. Catalog brick policy controls native authoring; composition policy
+  controls reference exposure separately.
 - `@facet/runtime` keeps validated compositions as concrete documents and skips
   invalid legacy shapes individually; `@facet/assets` ships concrete,
   self-contained `DEFAULT_COMPOSITIONS` examples.

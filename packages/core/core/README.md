@@ -1,8 +1,8 @@
 # @facet/core
 
-The Facet contract: the declarative stage spec in the Component -> Primitive
-Fallback authoring model, catalog policy, style tokens and theme recipes,
-validation for concrete composition reference datasets, the
+The Facet contract: one closed native-brick stage vocabulary, catalog policy,
+style tokens and theme recipes, validation for concrete composition reference
+datasets, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
 `applyPatch`, validators, and the session/event types. It depends on nothing —
 every other Facet package builds on it.
@@ -10,10 +10,10 @@ every other Facet package builds on it.
 The style-token vocabulary includes colors, spacing, typography
 (`FontFamily` / `FontSize` / `FontWeight`), radii, media ratios, flow layout,
 and bounded text/media style choices. Theme recipes are token-only style bundles
-for component variants and closed internal recipe parts; concrete CSS values
+for brick variants and closed internal recipe parts; concrete CSS values
 live in validated theme data, not in agent-authored trees. Recipe parts let a
 theme describe renderer-owned affordances such as field labels/controls, table
-cells, tabs, chart plots, progress fills, and list rows without
+cells, chart plots, progress fills, and list rows without
 letting agents emit raw CSS or arbitrary part keys.
 
 ```bash
@@ -21,11 +21,10 @@ npm install @facet/core
 ```
 
 Core helpers do the heavy lifting: `validateTree` turns arbitrary input (e.g. an
-LLM's JSON) into a guaranteed-renderable tree, preserving valid primitive
-fallback and routing every intrinsic/legacy component through one canonical
-component validator while dropping malformed payloads;
+LLM's JSON) into a guaranteed-renderable tree, routing all eleven native brick
+types through the closed brick registry while dropping malformed payloads;
 `validateCatalog` turns untrusted catalog data into bounded UI policy; `validateTheme` gates
-token-value maps, component recipes, and recipe parts as operator data;
+token-value maps, brick recipes, and recipe parts as operator data;
 `validateComposition` turns an untrusted composition document into a validated
 `FacetComposition` or refuses it whole. A composition is a self-contained native
 node dataset with `{ name, metadata: { description, ... }, root, nodes }`; its
@@ -57,11 +56,13 @@ const { tree, issues } = validateTree(EMPTY_TREE);
 const { catalog } = validateCatalog({
   name: "product-ui",
   theme: { active: "default", switchPolicy: "locked" },
-  components: [{ type: "button", variants: ["primary"] }, { type: "metric" }],
+  bricks: [
+    { type: "box", variants: ["surface", "primary"] },
+    { type: "text", variants: ["heading", "label"] },
+    { type: "table", variants: ["default", "compact"] },
+  ],
   compositions: { mode: "all" },
-  primitiveFallback: "allowed",
   policy: {
-    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
   },
@@ -87,9 +88,16 @@ const { composition } = validateComposition({
     },
     start: {
       id: "start",
-      type: "button",
-      label: "Get started",
+      type: "box",
+      children: ["start-label"],
+      variant: "primary",
       onPress: { kind: "agent", name: "start" },
+    },
+    "start-label": {
+      id: "start-label",
+      type: "text",
+      value: "Get started",
+      variant: "label",
     },
   },
 });
@@ -116,8 +124,9 @@ composition-specific stage mutation API in core: a consumer reads the validated
 data and authors ordinary native nodes and patches itself.
 
 `FacetCatalog.compositions` is only an exposure policy for those optional
-datasets (`all` or an allow-list); it is not an authoring tier. The fixed catalog
-authoring order is `component -> primitive`.
+datasets (`all` or an allow-list); it is not an authoring tier. `FacetCatalog.bricks`
+may narrow the same eleven native brick types and their variants, but it cannot
+add another node kind.
 
 The theme, catalog, and composition-validation implementations are organized as
 private responsibility modules behind these same root exports. Their helpers

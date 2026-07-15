@@ -1,16 +1,15 @@
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { MAX_TABLE_ROWS } from "./component-validation-shared.js";
+import { MAX_TABLE_ROWS } from "./brick-validation-shared.js";
 import type {
   ChartNode,
   DataWarehouse,
   KeyValueNode,
   ListNode,
-  MetricNode,
-  StatNode,
   TableNode,
-} from "./component-nodes.js";
-import type { TextNode } from "./nodes.js";
+  TextNode,
+} from "./nodes.js";
 import {
   DATASET_NAME_RE,
   MAX_DATASET_NAME_CHARS,
@@ -57,17 +56,63 @@ function keyValueNode(overrides: Partial<KeyValueNode> = {}): KeyValueNode {
   };
 }
 
-function metricNode(overrides: Partial<MetricNode> = {}): MetricNode {
-  return { id: "m1", type: "metric", label: "Total", value: "inline", ...overrides };
-}
-
-function statNode(overrides: Partial<StatNode> = {}): StatNode {
-  return { id: "s1", type: "stat", label: "Total", value: "inline", ...overrides };
-}
-
 function textNode(overrides: Partial<TextNode> = {}): TextNode {
   return { id: "tx1", type: "text", value: "inline", ...overrides };
 }
+
+describe("final data brick binding surface", () => {
+  it("binds only final data bricks without metric or stat aliases", () => {
+    const warehouse = sanitizeDataWarehouse({
+      sales: [
+        { month: "Jan", revenue: 100 },
+        { month: "Feb", revenue: 120 },
+      ],
+    })!;
+
+    expect(resolveNodeData(tableNode({ from: "sales" }), warehouse)).toEqual([
+      { month: "Jan", revenue: 100 },
+      { month: "Feb", revenue: 120 },
+    ]);
+    expect(resolveNodeData(chartNode({ from: "sales" }), warehouse)).toEqual([
+      { label: "revenue", values: [100, 120] },
+    ]);
+    expect(resolveNodeData(listNode({ from: "sales" }), warehouse)).toEqual([
+      { title: "Jan" },
+      { title: "Feb" },
+    ]);
+    expect(resolveNodeData(keyValueNode({ from: "sales" }), warehouse)).toEqual([
+      { label: "Jan", value: "100" },
+      { label: "Feb", value: "120" },
+    ]);
+    expect(resolveNodeData(textNode({ from: "sales", column: "revenue", row: 1 }), warehouse)).toBe(
+      "120",
+    );
+
+    const bindingSource = readFileSync(new URL("./data-binding.ts", import.meta.url), "utf8");
+    expect(bindingSource).not.toContain("component-nodes");
+    expect(bindingSource).not.toContain("component-validation-shared");
+    expect(bindingSource).not.toMatch(/\b(?:MetricNode|StatNode|metric|stat)\b/); // composition-hard-cut: allowed-negative
+
+    const treeSource = readFileSync(new URL("./tree.ts", import.meta.url), "utf8");
+    for (const retiredPath of [
+      "TREE_RENDERABLE_MAX_TABS_ITEMS", // composition-hard-cut: allowed-negative
+      "TREE_RENDERABLE_MAX_FILTERS",
+      "rendersButton",
+      "rendersTabsNav",
+      "rendersMetricStat",
+      "rendersForm",
+      "rendersFilterBar",
+      "fromMetricStat",
+      "isRenderableTabItem",
+      "isRenderableFilter",
+    ]) {
+      expect(treeSource).not.toContain(retiredPath);
+    }
+
+    expect(existsSync(new URL("./component-validation.ts", import.meta.url))).toBe(false);
+    expect(existsSync(new URL("./component-validation-control.ts", import.meta.url))).toBe(false);
+  });
+});
 
 // =========================================================================
 // DC-004 — sanitizeDataWarehouse hostile input
@@ -184,7 +229,8 @@ describe("resolveNodeData (DC-005 precedence + projection)", () => {
     expect(resolveNodeData(tableNode(), warehouse)).toEqual([{ month: "inline", revenue: 1 }]);
     expect(resolveNodeData(chartNode(), warehouse)).toEqual([{ label: "inline", values: [9] }]);
     expect(resolveNodeData(listNode(), warehouse)).toEqual([{ title: "inline" }]);
-    expect(resolveNodeData(metricNode(), warehouse)).toBe("inline");
+    expect(resolveNodeData(keyValueNode(), warehouse)).toEqual([{ label: "inline", value: "x" }]);
+    expect(resolveNodeData(textNode(), warehouse)).toBe("inline");
   });
 
   it("chart projects one series per numeric column, ignoring non-numeric", () => {
@@ -223,24 +269,12 @@ describe("resolveNodeData (DC-005 precedence + projection)", () => {
     ]);
   });
 
-  it("metric/stat read one cell via column + row", () => {
-    const wh = sanitizeDataWarehouse({
-      metrics: [
-        { total: 100, avg: 10 },
-        { total: 200, avg: 20 },
-      ],
-    })!;
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "total" }), wh)).toBe("100");
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "avg", row: 1 }), wh)).toBe("20");
-    expect(resolveNodeData(statNode({ from: "metrics", column: "total", row: 1 }), wh)).toBe("200");
-  });
-
   it("dangling/empty from yields the node's empty shape", () => {
     expect(resolveNodeData(tableNode({ from: "nope" }), warehouse)).toEqual([]);
     expect(resolveNodeData(chartNode({ from: "nope" }), warehouse)).toEqual([]);
     expect(resolveNodeData(listNode({ from: "nope" }), warehouse)).toEqual([]);
     expect(resolveNodeData(keyValueNode({ from: "nope" }), warehouse)).toEqual([]);
-    expect(resolveNodeData(metricNode({ from: "nope", column: "total" }), warehouse)).toBe("");
+    expect(resolveNodeData(textNode({ from: "nope", column: "total" }), warehouse)).toBe("");
     expect(resolveNodeData(tableNode({ from: "sales" }), undefined)).toEqual([]);
   });
 
@@ -262,7 +296,7 @@ describe("resolveNodeData (DC-005 precedence + projection)", () => {
       expect(() => resolveNodeData(listNode({ from: "sales" }), wh)).not.toThrow();
       expect(() => resolveNodeData(keyValueNode({ from: "sales" }), wh)).not.toThrow();
       expect(() =>
-        resolveNodeData(metricNode({ from: "sales", column: "revenue" }), wh),
+        resolveNodeData(textNode({ from: "sales", column: "revenue" }), wh),
       ).not.toThrow();
       expect(() => resolveNodeData(tableNode({ from: "sales" }), wh)).not.toThrow();
     }
@@ -303,49 +337,45 @@ describe("resolveNodeData (DC-001 projection happy path)", () => {
 });
 
 // =========================================================================
-// DC-004 — hostile metric/stat selectors (never throws, clamps/empties)
+// DC-004 — hostile text selectors (never throws, clamps/empties)
 // =========================================================================
 
-describe("resolveNodeData metric/stat selectors (DC-004 hostile)", () => {
+describe("resolveNodeData text selectors (DC-004 hostile)", () => {
   const wh: DataWarehouse = sanitizeDataWarehouse({
-    metrics: [
+    values: [
       { total: 100, label: "a" },
       { total: 200, label: "b" },
     ],
   })!;
 
   it("clamps negative row to 0", () => {
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "total", row: -1 }), wh)).toBe(
-      "100",
-    );
+    expect(resolveNodeData(textNode({ from: "values", column: "total", row: -1 }), wh)).toBe("100");
   });
 
   it("floors a non-integer row", () => {
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "total", row: 1.5 }), wh)).toBe(
+    expect(resolveNodeData(textNode({ from: "values", column: "total", row: 1.5 }), wh)).toBe(
       "200",
     );
   });
 
   it("yields empty for NaN / Infinity / out-of-window row", () => {
     expect(
-      resolveNodeData(metricNode({ from: "metrics", column: "total", row: Number.NaN }), wh),
+      resolveNodeData(textNode({ from: "values", column: "total", row: Number.NaN }), wh),
     ).toBe("");
-    expect(
-      resolveNodeData(metricNode({ from: "metrics", column: "total", row: Infinity }), wh),
-    ).toBe("");
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "total", row: 1e9 }), wh)).toBe(
+    expect(resolveNodeData(textNode({ from: "values", column: "total", row: Infinity }), wh)).toBe(
       "",
     );
+    expect(resolveNodeData(textNode({ from: "values", column: "total", row: 1e9 }), wh)).toBe("");
   });
 
   it("yields empty for missing / forbidden / non-string column, never throws", () => {
-    expect(resolveNodeData(metricNode({ from: "metrics" }), wh)).toBe("");
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "missing" }), wh)).toBe("");
-    expect(resolveNodeData(metricNode({ from: "metrics", column: "__proto__" }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "values" }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "values", column: "missing" }), wh)).toBe("");
+    expect(resolveNodeData(textNode({ from: "values", column: "__proto__" }), wh)).toBe("");
     expect(
-      resolveNodeData(metricNode({ from: "metrics", column: 123 as unknown as string }), wh),
+      resolveNodeData(textNode({ from: "values", column: 123 as unknown as string }), wh),
     ).toBe("");
-    expect(resolveNodeData(statNode({ from: "metrics", column: "total" }), undefined)).toBe("");
+    expect(resolveNodeData(textNode({ from: "values", column: "total" }), undefined)).toBe("");
   });
 });
 

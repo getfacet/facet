@@ -3,9 +3,14 @@ import {
   CHART_KINDS,
   TONES,
   type ChartKind,
-  type ComponentNode,
+  type ChartNode,
   type KeyValueItem,
+  type KeyValueNode,
+  type ListNode,
+  type LoadingNode,
+  type ProgressNode,
   type TableCell,
+  type TableNode,
   type TableRow,
   type Tone,
 } from "./nodes.js";
@@ -23,158 +28,134 @@ import {
   boundedArray,
   boundedString,
   capArray,
-  requiredText,
-  setColumnRow,
   setFrom,
   setText,
   setTone,
   setVariant,
   tokenValue,
-} from "./component-validation-shared.js";
+} from "./brick-validation-shared.js";
 
-export type DataComponentType = "table" | "chart" | "stat" | "metric" | "keyValue" | "list";
-
-export function sanitizeDataComponentNode(
-  id: string,
-  raw: Record<string, unknown>,
-  type: DataComponentType,
-  issues: IssueSink,
-): ComponentNode | undefined {
-  switch (type) {
-    case "table": {
-      const columns = tableColumns(raw.columns, id, issues);
-      const node: {
-        id: string;
-        type: "table";
-        columns: typeof columns;
-        rows: readonly TableRow[];
-        caption?: string;
-        variant?: string;
-        from?: string;
-      } = { id, type, columns, rows: tableRows(raw.rows, columns, id, issues) };
-      setText(raw.caption, id, "caption", node, "caption", MAX_NODE_LABEL_CHARS, issues);
-      setVariant(raw.variant, id, node, issues);
-      setFrom(raw, id, node, issues);
-      return node;
-    }
-    case "chart": {
-      const kind = tokenValue<ChartKind>(raw.kind, CHART_KINDS) ?? "bar";
-      const node: {
-        id: string;
-        type: "chart";
-        kind: ChartKind;
-        series: ReturnType<typeof chartSeries>;
-        labels?: readonly string[];
-        title?: string;
-        variant?: string;
-        from?: string;
-      } = { id, type, kind, series: chartSeries(raw.series, id, issues) };
-      const labels = stringList(raw.labels, id, "labels", issues);
-      if (labels !== undefined) node.labels = labels;
-      setText(raw.title, id, "title", node, "title", MAX_NODE_LABEL_CHARS, issues);
-      setVariant(raw.variant, id, node, issues);
-      setFrom(raw, id, node, issues);
-      return node;
-    }
-    case "stat":
-      return statNode(id, raw, issues);
-    case "metric":
-      return metricNode(id, raw, issues);
-    case "keyValue": {
-      const items: KeyValueItem[] = [];
-      for (const item of boundedArray(raw.items, id, "items", issues)) {
-        if (!isPlainObject(item)) continue;
-        const label = boundedString(item.label, id, "item label", MAX_NODE_LABEL_CHARS, issues);
-        const value = boundedString(item.value, id, "item value", MAX_NODE_LABEL_CHARS, issues);
-        if (label === undefined || value === undefined) continue;
-        const next: { key?: string; label: string; value: string; tone?: Tone } = { label, value };
-        if (typeof item.key === "string") next.key = item.key;
-        const tone = tokenValue<Tone>(item.tone, TONES);
-        if (tone !== undefined) next.tone = tone;
-        items.push(next);
-      }
-      const node: {
-        id: string;
-        type: "keyValue";
-        items: readonly KeyValueItem[];
-        variant?: string;
-        from?: string;
-      } = { id, type, items };
-      setVariant(raw.variant, id, node, issues);
-      setFrom(raw, id, node, issues);
-      return node;
-    }
-    case "list": {
-      const node: {
-        id: string;
-        type: "list";
-        items: ReturnType<typeof listItems>;
-        variant?: string;
-        from?: string;
-      } = { id, type, items: listItems(raw.items, id, issues) };
-      setVariant(raw.variant, id, node, issues);
-      setFrom(raw, id, node, issues);
-      return node;
-    }
-  }
-}
-
-function statNode(
+export function validateTable(
   id: string,
   raw: Record<string, unknown>,
   issues: IssueSink,
-): ComponentNode | undefined {
-  const label = boundedString(raw.label, id, "label", MAX_NODE_LABEL_CHARS, issues);
-  const value = boundedString(raw.value, id, "value", MAX_NODE_LABEL_CHARS, issues);
-  if (label === undefined || value === undefined) {
-    issues.push(`node "${printableKey(id)}": stat needs string label and value`);
-    return undefined;
-  }
+): TableNode {
+  const columns = tableColumns(raw.columns, id, issues);
   const node: {
     id: string;
-    type: "stat";
-    label: string;
-    value: string;
-    delta?: string;
-    tone?: Tone;
+    type: "table";
+    columns: typeof columns;
+    rows: readonly TableRow[];
+    caption?: string;
     variant?: string;
     from?: string;
-    column?: string;
-    row?: number;
-  } = { id, type: "stat", label, value };
-  setText(raw.delta, id, "delta", node, "delta", MAX_NODE_LABEL_CHARS, issues);
-  setTone(raw.tone, id, node, issues, true);
+  } = { id, type: "table", columns, rows: tableRows(raw.rows, columns, id, issues) };
+  setText(raw.caption, id, "caption", node, "caption", MAX_NODE_LABEL_CHARS, issues);
   setVariant(raw.variant, id, node, issues);
   setFrom(raw, id, node, issues);
-  setColumnRow(raw, node);
   return node;
 }
 
-function metricNode(
+export function validateChart(
   id: string,
   raw: Record<string, unknown>,
   issues: IssueSink,
-): ComponentNode | undefined {
-  const label = requiredText(raw.label, id, "label", issues);
-  const value = requiredText(raw.value, id, "value", issues);
-  if (label === undefined || value === undefined) return undefined;
+): ChartNode {
+  const kind = tokenValue<ChartKind>(raw.kind, CHART_KINDS) ?? "bar";
   const node: {
     id: string;
-    type: "metric";
-    label: string;
-    value: string;
-    delta?: string;
-    tone?: Tone;
+    type: "chart";
+    kind: ChartKind;
+    series: ReturnType<typeof chartSeries>;
+    labels?: readonly string[];
+    title?: string;
     variant?: string;
     from?: string;
-    column?: string;
-    row?: number;
-  } = { id, type: "metric", label, value };
-  setText(raw.delta, id, "delta", node, "delta", MAX_NODE_LABEL_CHARS, issues);
+  } = { id, type: "chart", kind, series: chartSeries(raw.series, id, issues) };
+  const labels = stringList(raw.labels, id, "labels", issues);
+  if (labels !== undefined) node.labels = labels;
+  setText(raw.title, id, "title", node, "title", MAX_NODE_LABEL_CHARS, issues);
   setVariant(raw.variant, id, node, issues);
-  setTone(raw.tone, id, node, issues, false);
   setFrom(raw, id, node, issues);
-  setColumnRow(raw, node);
+  return node;
+}
+
+export function validateList(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): ListNode {
+  const node: {
+    id: string;
+    type: "list";
+    items: ReturnType<typeof listItems>;
+    variant?: string;
+    from?: string;
+  } = { id, type: "list", items: listItems(raw.items, id, issues) };
+  setVariant(raw.variant, id, node, issues);
+  setFrom(raw, id, node, issues);
+  return node;
+}
+
+export function validateKeyValue(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): KeyValueNode {
+  const items: KeyValueItem[] = [];
+  for (const item of boundedArray(raw.items, id, "items", issues)) {
+    if (!isPlainObject(item)) continue;
+    const label = boundedString(item.label, id, "item label", MAX_NODE_LABEL_CHARS, issues);
+    const value = boundedString(item.value, id, "item value", MAX_NODE_LABEL_CHARS, issues);
+    if (label === undefined || value === undefined) continue;
+    const next: { key?: string; label: string; value: string; tone?: Tone } = { label, value };
+    if (typeof item.key === "string") next.key = item.key;
+    const tone = tokenValue<Tone>(item.tone, TONES);
+    if (tone !== undefined) next.tone = tone;
+    items.push(next);
+  }
+  const node: {
+    id: string;
+    type: "keyValue";
+    items: readonly KeyValueItem[];
+    variant?: string;
+    from?: string;
+  } = { id, type: "keyValue", items };
+  setVariant(raw.variant, id, node, issues);
+  setFrom(raw, id, node, issues);
+  return node;
+}
+
+export function validateProgress(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): ProgressNode {
+  const node: {
+    id: string;
+    type: "progress";
+    value: number;
+    label?: string;
+    tone?: Tone;
+    variant?: string;
+  } = { id, type: "progress", value: progressValue(raw.value, id, issues) };
+  setText(raw.label, id, "label", node, "label", MAX_NODE_LABEL_CHARS, issues);
+  setTone(raw.tone, id, node, issues, true);
+  setVariant(raw.variant, id, node, issues);
+  return node;
+}
+
+export function validateLoading(
+  id: string,
+  raw: Record<string, unknown>,
+  issues: IssueSink,
+): LoadingNode {
+  const node: { id: string; type: "loading"; label?: string; variant?: string } = {
+    id,
+    type: "loading",
+  };
+  setText(raw.label, id, "label", node, "label", MAX_NODE_LABEL_CHARS, issues);
+  setVariant(raw.variant, id, node, issues);
   return node;
 }
 
@@ -292,4 +273,13 @@ function listItems(value: unknown, id: string, issues: IssueSink) {
     items.push(item);
   }
   return items;
+}
+
+function progressValue(value: unknown, id: string, issues: IssueSink): number {
+  const raw = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const clamped = Math.min(100, Math.max(0, raw));
+  if (clamped !== raw) {
+    issues.push(`node "${printableKey(id)}": progress value clamped to ${String(clamped)}`);
+  }
+  return clamped;
 }

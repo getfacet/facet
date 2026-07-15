@@ -1,10 +1,9 @@
 # @facet/react
 
 The Facet React renderer: `StageRenderer` turns the declarative stage spec into a
-sandboxed component tree built from the closed Facet vocabulary: primitive
-bricks plus intrinsic components from the active catalog.
+sandboxed React tree built from Facet's closed eleven-brick vocabulary.
 `useFacet(transport)` keeps that tree in sync by applying patches live. It also
-ships token→CSS and recipe resolution for color, spacing, typography, component
+ships token→CSS and recipe resolution for color, spacing, typography, brick
 variants, tones, and renderer-owned recipe parts
 (`boxStyle`/`textStyle`/`mediaStyle`/…, `resolveTheme`, `resolveRecipe`),
 `ChatDock`, and `useFacet`.
@@ -15,24 +14,23 @@ it.)
 npm install @facet/react @facet/client @facet/core react
 ```
 
-`StageRenderer` is the security + fail-safe boundary: only known brick/component types are
+`StageRenderer` is the security + fail-safe boundary: only known brick types are
 rendered, no node carries raw HTML/JS/CSS, and unresolvable ids are skipped
-rather than thrown on. Intrinsic components render through token-only theme recipes;
+rather than thrown on. Bricks render through token-only theme recipes;
 unknown recipes, variants, tones, parts, or theme names fall back to defaults.
-The renderer owns the internal DOM for components such as `button`, `tabs`,
-`nav`, `table`, `chart`, `metric`, `keyValue`, `progress`, `list`, `form`,
-`filterBar`, and `loading`; recipe parts style
-their internal labels, controls, rows, tracks, and fills without exposing those
-part names as stage node fields. Sections, cards, empty states, badges, and
-alerts are ordinary native boxes, text, and buttons—not renderer-owned node
-types; optional composition references may inform their design but never insert
-them. A stale raw node using one of the retired discriminants blank-degrades as
-a whole subtree while valid siblings continue rendering. Primitive nodes remain
-the base rendering path for custom composition. Wire it to a transport with
+The renderer owns the internal DOM for data/display bricks such as `table`,
+`chart`, `keyValue`, `progress`, `list`, and `loading`; recipe parts style their
+internal labels, controls, rows, tracks, and fills without exposing those part
+names as stage node fields. Actions, navigation, grouped inputs, summaries,
+cards, sections, empty states, badges, and alerts are ordinary `box`/`text`/
+`input` composition patterns—not renderer-owned node types. Optional composition
+references may inform their design but never insert them. A stale raw node using
+one of the retired discriminants blank-degrades as a whole subtree while valid
+siblings continue rendering. Wire it to a transport with
 `useFacet` and pass `send` through `onAction`.
 
 `StageRenderer` delegates safe-tree handling, motion, hold/press collection, and
-intrinsic rendering to private responsibility modules. These modules do not add
+brick rendering to private responsibility modules. These modules do not add
 deep-import APIs; the supported surface remains the package root exports.
 
 ```tsx

@@ -1,13 +1,18 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { BRICK_TYPES } from "./nodes.js";
 import * as themeExports from "./theme.js";
-import {
-  isValidThemeName,
-  MAX_DESCRIPTION_LENGTH,
-  RECIPE_COMPONENTS,
-  validateTheme,
+import { isValidThemeName, MAX_DESCRIPTION_LENGTH, validateTheme } from "./theme.js";
+import type {
+  BrickRecipe,
+  BrickRecipePart,
+  BrickRecipeParts,
+  BrickRecipes,
+  FacetTheme,
+  RecipeBrickName,
 } from "./theme.js";
-import type { FacetTheme } from "./theme.js";
+
+const recipeBricks = Reflect.get(themeExports, "RECIPE_BRICKS") as typeof BRICK_TYPES;
 
 /** Every issue carrying severity "error" refuses the whole document. */
 function hasError(issues: readonly { severity: "error" | "warning" }[]): boolean {
@@ -15,15 +20,34 @@ function hasError(issues: readonly { severity: "error" | "warning" }[]): boolean
 }
 
 describe("theme module boundary", () => {
-  it("keeps the exact runtime export surface", () => {
+  it("exports brick recipe terminology only", () => {
     expect(Object.keys(themeExports).sort()).toEqual([
       "DEFAULT_COLORS",
       "MAX_DESCRIPTION_LENGTH",
-      "RECIPE_COMPONENTS",
+      "RECIPE_BRICKS",
       "RECIPE_PARTS",
       "isValidThemeName",
       "validateTheme",
     ]);
+    expect(recipeBricks).toEqual(BRICK_TYPES);
+
+    const part: BrickRecipePart = { box: { bg: "accent" } };
+    const parts: BrickRecipeParts = { label: part };
+    const recipe: BrickRecipe = { ...part, parts };
+    const recipes: BrickRecipes = { box: { selected: recipe } };
+    const name: RecipeBrickName = "box";
+    expect(recipes[name]?.selected).toEqual(recipe);
+
+    const source = readFileSync(new URL("./theme-types.ts", import.meta.url), "utf8");
+    const retiredPublicNames = [
+      ["Component", "RecipePart"].join(""),
+      ["Component", "RecipeParts"].join(""),
+      ["Component", "Recipe"].join(""),
+      ["Component", "Recipes"].join(""),
+      ["RECIPE", "_COMPONENTS"].join(""),
+      ["Recipe", "ComponentName"].join(""),
+    ];
+    for (const retiredName of retiredPublicNames) expect(source).not.toContain(retiredName);
   });
 });
 
@@ -441,13 +465,13 @@ describe("validateTheme", () => {
     );
   });
 
-  it("preserves component recipes with token-only style bundles", () => {
+  it("preserves brick recipes with token-only style bundles", () => {
     const { theme, issues } = validateTheme({
       name: "brand",
       shadow: { md: "0 12px 30px rgba(0, 0, 0, 0.15)" },
       recipes: {
-        button: {
-          primary: {
+        box: {
+          selected: {
             box: { bg: "accent", pad: "md", radius: "lg", border: true, shadow: "md" },
             text: { color: "accent-fg", weight: "semibold" },
           },
@@ -469,14 +493,14 @@ describe("validateTheme", () => {
     expect(theme).toBeDefined();
     expect(hasError(issues)).toBe(false);
     expect(theme?.shadow?.md).toBe("0 12px 30px rgba(0, 0, 0, 0.15)");
-    expect(theme?.recipes?.button?.primary?.box).toEqual({
+    expect(theme?.recipes?.box?.selected?.box).toEqual({
       bg: "accent",
       pad: "md",
       radius: "lg",
       border: true,
       shadow: "md",
     });
-    expect(theme?.recipes?.button?.primary?.text).toEqual({
+    expect(theme?.recipes?.box?.selected?.text).toEqual({
       color: "accent-fg",
       weight: "semibold",
     });
@@ -485,7 +509,7 @@ describe("validateTheme", () => {
       width: "full",
       ratio: "wide",
     });
-    expect(Object.getPrototypeOf(theme?.recipes?.button)).toBeNull();
+    expect(Object.getPrototypeOf(theme?.recipes?.box)).toBeNull();
   });
 
   it("validates token-only recipe parts", () => {
@@ -550,12 +574,12 @@ describe("validateTheme", () => {
     expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(6);
   });
 
-  it("drops invalid component recipe tokens and raw CSS values with warnings", () => {
+  it("drops invalid brick recipe tokens and raw CSS values with warnings", () => {
     const { theme, issues } = validateTheme({
       name: "brand",
       recipes: {
-        button: {
-          primary: {
+        box: {
+          selected: {
             box: {
               bg: "#ffffff",
               pad: "huge",
@@ -583,53 +607,55 @@ describe("validateTheme", () => {
 
     expect(theme).toBeDefined();
     expect(hasError(issues)).toBe(false);
-    expect(theme?.recipes?.button?.primary?.box).toEqual({ width: "full" });
-    expect(theme?.recipes?.button?.primary?.text).toEqual({
+    expect(theme?.recipes?.box?.selected?.box).toEqual({ width: "full" });
+    expect(theme?.recipes?.box?.selected?.text).toEqual({
       color: "accent",
       family: "sans",
     });
-    expect(theme?.recipes?.button?.["bad variant"]).toBeUndefined();
+    expect(theme?.recipes?.box?.["bad variant"]).toBeUndefined();
     expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, "script")).toBe(false);
     expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(5);
   });
 
-  it("accepts every surviving primitive and component recipe key", () => {
+  it("accepts every final brick recipe key", () => {
     const recipes: Record<string, Record<string, { box: { bg: "surface" } }>> = {};
-    for (const component of RECIPE_COMPONENTS) {
-      recipes[component] = { default: { box: { bg: "surface" } } };
+    for (const brick of recipeBricks) {
+      recipes[brick] = { default: { box: { bg: "surface" } } };
     }
-    recipes.stat = { default: { box: { bg: "surface" } }, success: { box: { bg: "surface" } } };
 
-    const { theme, issues } = validateTheme({ name: "component-recipes", recipes });
+    const { theme, issues } = validateTheme({ name: "brick-recipes", recipes });
 
     expect(theme).toBeDefined();
     expect(hasError(issues)).toBe(false);
-    for (const component of RECIPE_COMPONENTS) {
-      expect(theme?.recipes?.[component]?.default?.box).toEqual({ bg: "surface" });
+    for (const brick of recipeBricks) {
+      expect(theme?.recipes?.[brick]?.default?.box).toEqual({ bg: "surface" });
     }
-    expect(theme?.recipes?.metric?.default?.box).toEqual({ bg: "surface" });
-    expect(theme?.recipes?.stat?.success?.box).toEqual({ bg: "surface" });
   });
 
-  it("warning-drops retired container-pattern recipe keys", () => {
-    const retiredRecipeKeys = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
+  it("warning-drops every retired brick recipe key", () => {
+    const retiredRecipeKeys = [
+      "button",
+      "form",
+      "filterBar",
+      "metric",
+      "tabs",
+      "nav",
+      "stat",
+    ] as const; // composition-hard-cut: allowed-negative
     const recipes = Object.fromEntries(
-      retiredRecipeKeys.map((component) => [
-        component,
-        { default: { box: { bg: "surface" as const } } },
-      ]),
+      retiredRecipeKeys.map((brick) => [brick, { default: { box: { bg: "surface" as const } } }]),
     );
 
     const { theme, issues } = validateTheme({ name: "stale-recipes", recipes });
 
     expect(theme).toBeDefined();
-    for (const component of retiredRecipeKeys) {
-      expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, component)).toBe(false);
+    for (const brick of retiredRecipeKeys) {
+      expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, brick)).toBe(false);
       expect(
         issues.some(
           (issue) =>
             issue.severity === "warning" &&
-            issue.message.includes(`unknown component "${component}" dropped`),
+            issue.message.includes(`unknown brick "${brick}" dropped`),
         ),
       ).toBe(true);
     }
@@ -639,8 +665,8 @@ describe("validateTheme", () => {
     const { theme, issues } = validateTheme({
       name: "structural-recipes",
       recipes: {
-        metric: {
-          default: {
+        box: {
+          selected: {
             box: { bg: "surface", pad: "sm" },
             root: "root",
             nodes: {
@@ -656,8 +682,8 @@ describe("validateTheme", () => {
 
     expect(theme).toBeDefined();
     expect(hasError(issues)).toBe(false);
-    expect(theme?.recipes?.metric?.default).toEqual({ box: { bg: "surface", pad: "sm" } });
-    const recipe = theme?.recipes?.metric?.default ?? {};
+    expect(theme?.recipes?.box?.selected).toEqual({ box: { bg: "surface", pad: "sm" } });
+    const recipe = theme?.recipes?.box?.selected ?? {};
     expect(Object.prototype.hasOwnProperty.call(recipe, "root")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(recipe, "nodes")).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(recipe, "slots")).toBe(false);

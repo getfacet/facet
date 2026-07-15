@@ -113,9 +113,7 @@ const customCatalog: FacetCatalog = {
   theme: { active: "midnight", switchPolicy: "locked", allowed: ["midnight"] },
   bricks: [{ type: "box" }],
   compositions: { mode: "allow", names: ["cta"] },
-  primitiveFallback: "discouraged",
   policy: {
-    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 4,
@@ -297,7 +295,7 @@ describe("PostgresAssets", () => {
     expect(loaded.compositions.find((composition) => composition.name === "cta")).toMatchObject(
       validComposition,
     );
-    expect(loaded.catalog.policy.order).toEqual(["component", "primitive"]);
+    expect(loaded.catalog).toEqual(customCatalog);
     expect(loaded.issues.some((issue) => issue.includes("composition document skipped"))).toBe(
       true,
     );

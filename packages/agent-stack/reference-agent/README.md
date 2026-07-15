@@ -155,9 +155,8 @@ Reference-agent catalog consumption has two paths:
   `compositions`, optional `catalog`) and delegates to the agent-tools prompt
   kit. The composition index contains only each exposed reference's `name` and
   short `metadata.description`; it never includes the native node JSON. Catalog
-  guidance also includes locked theme behavior, allowed component variants,
-  reference exposure policy, primitive fallback, compact-screen guidance, and
-  the native authoring order `component -> primitive`.
+  guidance also includes locked theme behavior, allowed brick variants,
+  reference exposure policy, and compact-screen guidance.
 - Lookup path: the same immutable snapshot and catalog are passed as stage-tool
   assets. For a complex UI, the model may call `get_composition` with exactly
   `{ name }`. A successful read returns the complete concrete
@@ -178,8 +177,8 @@ summary in its place.
 Composition JSON stays inside the agent/provider loop. The read does not add a
 browser global, transport payload, asset route, stage node, or provenance field;
 only the later ordinary RFC 6902 stage patches can reach the runtime and client.
-Catalog policy remains enforceable rather than prompt-only: disallowed
-components and variants, tone-only recipe selectors outside the advertised
+Catalog policy remains enforceable rather than prompt-only: disallowed bricks
+and variants, tone-only recipe selectors outside the advertised
 variants, locked theme changes, and unavailable reference names are rejected
 before any patch is yielded.
 
@@ -191,7 +190,7 @@ caps, secrets operations, or admin workflows.
 but its fixed Facet guidance now comes from `@facet/agent-tools`. This package
 still owns the reference `DEFAULT_GUIDE`, provider adapters, context assembly,
 history compaction, budgets, retries, trace events, and fallback behavior.
-The reference prompt consumes the reusable component-model guidance from
+The reference prompt consumes the reusable native-brick guidance from
 agent-tools; it does not duplicate renderer recipes, theme token values,
 provider keys, or visitor ids. Composition node JSON appears only in the exact
 result of an explicit provider-side reference read.

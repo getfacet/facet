@@ -37,26 +37,24 @@ function stage(nodes: readonly FacetNode[], data?: DataWarehouse): FacetTree {
 
 describe("StageRenderer data bindings (jsdom)", () => {
   // DC-001: one shared dataset, many bound views.
-  it("resolves chart + metric/stat/list/keyValue from a shared data.sales", () => {
+  it("resolves chart + text/list/keyValue from a shared data.sales", () => {
     const tree = stage(
       [
         { id: "chart", type: "chart", kind: "bar", series: [], from: "sales" },
         {
-          id: "metric",
-          type: "metric",
-          label: "Revenue",
+          id: "units-jan",
+          type: "text",
           value: "INLINE_IGNORED",
           from: "sales",
-          column: "revenue",
+          column: "units",
           row: 0,
         },
         {
-          id: "stat",
-          type: "stat",
-          label: "Revenue Feb",
+          id: "units-feb",
+          type: "text",
           value: "INLINE_IGNORED",
           from: "sales",
-          column: "revenue",
+          column: "units",
           row: 1,
         },
         { id: "list", type: "list", items: [], from: "sales" },
@@ -67,13 +65,14 @@ describe("StageRenderer data bindings (jsdom)", () => {
     const html = render(tree);
     // chart: one series per numeric column → bars rendered.
     expect(html).toContain("<rect");
-    // metric row 0 revenue and stat row 1 revenue (anchored to text nodes so a
-    // stray digit inside a CSS value can't satisfy the assertion).
-    expect(html).toContain(">100<");
-    expect(html).toContain(">200<");
+    // Bound text projects the third column, which list/keyValue do not use.
+    expect(html).toContain(">5<");
+    expect(html).toContain(">8<");
     // list: title from the first string column (month).
     expect(html).toContain(">Jan<");
     expect(html).toContain(">Feb<");
+    // keyValue renders its own semantic definition list.
+    expect(html).toContain("<dl");
     // inline values are ignored when `from` is present.
     expect(html).not.toContain("INLINE_IGNORED");
   });
@@ -84,10 +83,9 @@ describe("StageRenderer data bindings (jsdom)", () => {
       [
         { id: "chart", type: "chart", kind: "bar", series: [], from: "missing" },
         {
-          id: "metric",
-          type: "metric",
-          label: "DanglingLabel",
-          value: "unused",
+          id: "copy",
+          type: "text",
+          value: "INLINE_IGNORED",
           from: "missing",
           column: "revenue",
         },
@@ -99,9 +97,9 @@ describe("StageRenderer data bindings (jsdom)", () => {
     expect(() => {
       html = render(tree);
     }).not.toThrow();
-    // Empty node: no bars, and the metric collapses to nothing (no label shown).
+    // Empty projection: no bars and no inline text fallback.
     expect(html).not.toContain("<rect");
-    expect(html).not.toContain("DanglingLabel");
+    expect(html).not.toContain("INLINE_IGNORED");
   });
 
   // RISK-INV-5: the content gate must agree with the renderer. A from-bound table
@@ -147,9 +145,8 @@ describe("StageRenderer data bindings (jsdom)", () => {
     const tree = stage(
       [
         {
-          id: "metric",
-          type: "metric",
-          label: "Revenue",
+          id: "revenue",
+          type: "text",
           value: "INLINE_VALUE",
           from: "sales",
           column: "revenue",
@@ -186,9 +183,8 @@ describe("StageRenderer data bindings (jsdom)", () => {
     const tree = stage(
       [
         {
-          id: "metric",
-          type: "metric",
-          label: "Revenue",
+          id: "units",
+          type: "text",
           value: "",
           from: "sales",
           column: "units",
@@ -201,10 +197,10 @@ describe("StageRenderer data bindings (jsdom)", () => {
   });
 });
 
-// Enabler A (WU-4): a primitive `text` gains `from`/`column`/`row` mirroring
-// MetricFields, projected through the ONE shared `resolveNodeData` at the core
-// walker's `text` case — `from` wins over the inline `value`, a dangling ref
-// yields empty, and a text WITHOUT `from` is byte-identical to today.
+// Enabler A (WU-4): `text` supports `from`/`column`/`row`, projected through
+// the ONE shared `resolveNodeData` at the core walker's `text` case — `from`
+// wins over the inline `value`, a dangling ref yields empty, and a text WITHOUT
+// `from` is byte-identical to today.
 describe("StageRenderer store-bound text (jsdom)", () => {
   const boundText = (
     id: NodeId,

@@ -5,9 +5,10 @@ of truth; `CLAUDE.md` points here.
 
 Facet is a TypeScript framework for **UI a language model renders itself** —
 safe, live, and different for every user. The model composes interfaces from
-`@facet/core`'s closed, validated vocabulary of safe bricks and mutates them
-live as the conversation goes. The primitive nodes are the universal base and
-fallback, not the permanent ceiling. (Living, per-visitor pages an agent "owns"
+`@facet/core`'s closed, validated vocabulary of 11 safe bricks and mutates them
+live as the conversation goes. Optional reference compositions demonstrate
+reusable box/text/input patterns without adding node kinds. (Living,
+per-visitor pages an agent "owns"
 are one application.) See [README.md](README.md) and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
@@ -16,11 +17,10 @@ are one application.) See [README.md](README.md) and
 1. **Agents emit a declarative brick spec, never raw HTML/JS/CSS.**
    `@facet/core` owns the closed, validated node and token vocabulary
    (`packages/core/core/src/nodes.ts`). Agents/consumers may emit no node kind or
-   style value unless core intentionally defines and validates it. The primitive
-   fallback/base vocabulary remains `box` and `text` for structure and copy,
-   plus `media`, `input`, and `richtext` for rendered assets, input, and
-   formatted prose; intrinsic components are allowed only when added
-   deliberately in core. Style values are **tokens**, not raw scalars. Layout is
+   style value unless core intentionally defines and validates it. The complete
+   roster is `box`, `text`, `media`, `input`, `richtext`, `table`, `chart`,
+   `list`, `keyValue`, `progress`, and `loading`; only `box` is a container.
+   Style values are **tokens**, not raw scalars. Layout is
    **flow-only** (no absolute positioning). Adding a brick capability means
    adding a node kind or token *on purpose* — never letting a model emit
    arbitrary code.
@@ -201,8 +201,8 @@ fixes can skip straight to `/verify` → `/code-review`.
   extensions (bundler resolution).
 - No `any`. Prefer `unknown` + narrowing (see `validate.ts`).
 - Barrel exports only (`index.ts`); the `facet` bin is the one exception.
-- Keep the primitive base stable and small; grow intrinsic components/tokens
-  deliberately in `@facet/core`, never via raw markup. See
+- Keep the native brick roster stable and small; grow bricks/tokens deliberately
+  in `@facet/core`, never via raw markup. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) "The brick-vs-field growth rule
   (two axes)" for when to add a capability as a new data brick vs a named `box`
   concern pack (new content → new data brick; new `box` behavior → a named

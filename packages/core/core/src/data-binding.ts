@@ -12,9 +12,9 @@
  * Precedence is static: a node that declares a `from` string projects the named
  * warehouse dataset (ignoring inline); a node without `from` returns its inline
  * value. A `from` naming an absent/empty/malformed dataset yields the node
- * type's EMPTY value. Projection is fixed — no DSL, no computed columns, only
- * the minimal `column`/`row` selector on the scalar (metric/stat) case. `from`
- * is a NAME only: there is no URL/source/resolver/fetch anywhere here.
+ * type's EMPTY value. Projection is fixed — no DSL or computed columns; the
+ * minimal `column`/`row` selector applies only to bound text. `from` is a NAME
+ * only: there is no URL/source/resolver/fetch anywhere here.
  */
 
 import {
@@ -24,7 +24,7 @@ import {
   MAX_TABLE_CELL_CHARS,
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
-} from "./component-validation-shared.js";
+} from "./brick-validation-shared.js";
 import type {
   ChartNode,
   ChartSeries,
@@ -32,11 +32,9 @@ import type {
   KeyValueNode,
   ListItem,
   ListNode,
-  MetricNode,
-  StatNode,
   TableNode,
-} from "./component-nodes.js";
-import type { TextNode } from "./nodes.js";
+  TextNode,
+} from "./nodes.js";
 import type { DataCell, DataRow, Dataset, DataWarehouse, TableRow } from "./data-types.js";
 import {
   FORBIDDEN_DATA_KEYS,
@@ -50,10 +48,10 @@ import { DATASET_NAME_RE, SLOT_NAME_RE } from "./slot-marker.js";
 import { BRICK_REGISTRY } from "./brick-registry.js";
 
 // Public re-export (barrel compat): the regex lives in the leaf `slot-marker`
-// module to keep this module's dependency on the component validators one-way.
+// module to keep this module's dependency on the brick validators one-way.
 export { DATASET_NAME_RE } from "./slot-marker.js";
 
-/** Max distinct datasets kept per tree (mirrors the small component-array cap). */
+/** Max distinct datasets kept per tree (mirrors the small brick-array cap). */
 export const MAX_DATASETS = 32;
 
 /** Max dataset-name length (mirrors the 64-char slot-name / key-echo bound). */
@@ -172,12 +170,9 @@ export function resolveNodeData(
   node: KeyValueNode,
   warehouse: DataWarehouse | undefined,
 ): readonly KeyValueItem[];
+export function resolveNodeData(node: TextNode, warehouse: DataWarehouse | undefined): string;
 export function resolveNodeData(
-  node: MetricNode | StatNode | TextNode,
-  warehouse: DataWarehouse | undefined,
-): string;
-export function resolveNodeData(
-  node: TableNode | ChartNode | ListNode | KeyValueNode | MetricNode | StatNode | TextNode,
+  node: TableNode | ChartNode | ListNode | KeyValueNode | TextNode,
   warehouse: DataWarehouse | undefined,
 ):
   | readonly TableRow[]
@@ -247,10 +242,7 @@ export function resolveKeyValue(
   return projectKeyValue(dataset);
 }
 
-export function resolveScalar(
-  node: MetricNode | StatNode | TextNode,
-  warehouse: DataWarehouse | undefined,
-): string {
+export function resolveScalar(node: TextNode, warehouse: DataWarehouse | undefined): string {
   if (node.from === undefined) return node.value;
   const dataset = lookupDataset(warehouse, node.from);
   if (dataset === undefined) return "";

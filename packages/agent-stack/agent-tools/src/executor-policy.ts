@@ -1,5 +1,5 @@
 import { type FacetCatalog, type FacetNode, type FacetTree } from "@facet/core";
-import { COMPONENT_NODE_TYPE_SET, PRIMITIVE_NODE_TYPES, nodeVariant } from "./executor-registry.js";
+import { nodeVariant } from "./executor-registry.js";
 
 interface CatalogPolicyViolation {
   readonly message: string;
@@ -49,12 +49,9 @@ export function nodeCatalogViolation(
   if (catalog === undefined) return undefined;
   const policy = catalogPolicyEntryForNode(node, catalog);
   if (policy === undefined) {
-    if (PRIMITIVE_NODE_TYPES.has(node.type) && catalog.primitiveFallback === "allowed") {
-      return undefined;
-    }
     return {
-      message: `error: catalog policy rejected node type "${node.type}". Allowed node types: ${catalogAllowedNodeTypes(catalog)}.`,
-      nextAction: "Use an allowed catalog component or permitted primitive fallback.",
+      message: `error: catalog policy rejected brick type "${node.type}". Allowed brick types: ${catalogAllowedBrickTypes(catalog)}.`,
+      nextAction: "Use an allowed catalog brick.",
     };
   }
 
@@ -87,12 +84,7 @@ export function nodeCatalogViolation(
 function catalogPolicyEntryForNode(
   node: FacetNode,
   catalog: FacetCatalog,
-): FacetCatalog["bricks"][number] | NonNullable<FacetCatalog["components"]>[number] | undefined {
-  if (COMPONENT_NODE_TYPE_SET.has(node.type)) {
-    const component = catalog.components?.find((candidate) => candidate.type === node.type);
-    if (component !== undefined) return component;
-    if (catalog.components !== undefined && node.type !== "stat") return undefined;
-  }
+): FacetCatalog["bricks"][number] | undefined {
   return catalog.bricks.find((candidate) => candidate.type === node.type);
 }
 
@@ -126,18 +118,6 @@ function nodeTone(node: FacetNode): string | undefined {
   return "tone" in node && typeof node.tone === "string" ? node.tone : undefined;
 }
 
-function catalogAllowedNodeTypes(catalog: FacetCatalog): string {
-  const allowed = new Set<string>();
-  if (catalog.components === undefined) {
-    for (const brick of catalog.bricks) allowed.add(brick.type);
-  } else {
-    for (const component of catalog.components) allowed.add(component.type);
-    for (const brick of catalog.bricks) {
-      if (PRIMITIVE_NODE_TYPES.has(brick.type) || brick.type === "stat") allowed.add(brick.type);
-    }
-  }
-  if (catalog.primitiveFallback === "allowed") {
-    for (const type of PRIMITIVE_NODE_TYPES) allowed.add(type);
-  }
-  return Array.from(allowed).join(", ");
+function catalogAllowedBrickTypes(catalog: FacetCatalog): string {
+  return catalog.bricks.map((brick) => brick.type).join(", ");
 }

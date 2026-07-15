@@ -9,10 +9,8 @@ export function renderBrickNode<Press>(
   node: FacetNode,
   context: BrickRenderContext<Press>,
 ): ReactNode {
-  // Registry dispatch replaces the former per-type switch: the drawable-via-
-  // renderBrick set (every component + `field`) maps to its renderer fn. An
-  // unknown/bespoke type (box/text/media or raw junk) has no entry and renders
-  // nothing — the same fail-safe as the old `default: return null`.
+  // The own-property lookup rejects bespoke types and raw prototype names as
+  // non-entries, preserving the renderer's fail-safe null degradation.
   const entry = brickRendererEntry(node.type);
   return entry === undefined ? null : entry.render(node, context);
 }

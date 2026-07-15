@@ -1,10 +1,4 @@
-import {
-  COMPONENT_NODE_TYPES,
-  PRIMITIVE_BRICK_TYPES,
-  type FacetNode,
-  type NodeId,
-} from "./nodes.js";
-import { isComponentNodeType, isPrimitiveBrickType } from "./component-validation.js";
+import { BRICK_TYPES, type FacetNode, type NodeId } from "./nodes.js";
 import { isValidThemeName, MAX_DESCRIPTION_LENGTH } from "./theme.js";
 import {
   BoundedIssues,
@@ -161,7 +155,7 @@ function inspectCompositionNodes(rawNodes: Record<string, unknown>, issues: Issu
     if (!isObject(raw)) continue;
     if (!isAllowedCompositionNodeType(raw.type)) {
       issues.push(
-        `node "${printableKey(id)}": unknown component type ${printableValue(raw.type)} in composition`,
+        `node "${printableKey(id)}": unknown brick type ${printableValue(raw.type)} in composition`,
       );
       safe = false;
     }
@@ -177,8 +171,7 @@ function inspectCompositionNodes(rawNodes: Record<string, unknown>, issues: Issu
 
 function isAllowedCompositionNodeType(value: unknown): boolean {
   return (
-    isPrimitiveBrickType(value) ||
-    isComponentNodeType(value) ||
+    (typeof value === "string" && (BRICK_TYPES as readonly string[]).includes(value)) ||
     (typeof value === "string" &&
       (LEGACY_COMPOSITION_NODE_TYPES as readonly string[]).includes(value))
   );
@@ -238,12 +231,9 @@ function boundedMetadataText(value: string, field: string, issues: IssueSink): s
   return stripped.slice(0, MAX_DESCRIPTION_LENGTH);
 }
 
-// Every real node type, so `composedOf` metadata can name any of them. Derived from
-// the canonical primitive + component lists (NOT a frozen literal) so a newly added
-// primitive brick (e.g. `richtext`) is admitted automatically instead of drifting.
-const COMPOSITION_METADATA_NODE_TYPES = [
-  ...new Set<FacetNode["type"]>([...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]),
-] as const satisfies readonly FacetNode["type"][];
+// Every final brick type, so `composedOf` metadata stays on the same single roster
+// as tree sanitation and cannot revive a retired authoring tier.
+const COMPOSITION_METADATA_NODE_TYPES = BRICK_TYPES;
 
 function metadataNodeTypeList(
   raw: unknown,

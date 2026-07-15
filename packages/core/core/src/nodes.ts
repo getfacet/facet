@@ -1,15 +1,10 @@
 /**
- * The closed vocabulary an agent uses to build a stage. Primitive bricks
- * (`box`, `text`, `media`, `input`) remain the universal fallback; intrinsic
- * components provide safer common UI shapes without allowing raw HTML/JS/CSS.
+ * The closed brick vocabulary an agent uses to build a stage. `box`, `text`,
+ * `media`, `input`, and `richtext` remain the universal base and fallback; the
+ * data and feedback bricks provide safe, renderer-owned UI shapes without
+ * allowing raw HTML/JS/CSS.
  *
- * Primitive bricks stay the base and escape hatch; intrinsic components are
- * typed shortcuts for common, renderer-owned UI shapes. The agent can fall back
- * to primitives whenever a component is too specific, while every node remains a
- * typed, token-styled data value (never raw HTML/JS), so nothing can be injected
- * and nothing can render broken.
- *
- * The vocabulary grows only by adding typed node shapes here and matching
+ * The vocabulary grows only by adding typed brick shapes here and matching
  * validation/rendering support on purpose.
  */
 import type {
@@ -38,7 +33,10 @@ import type {
   TextAlign,
   Tracking,
 } from "./tokens.js";
+import type { TableColumn, TableRow } from "./data-types.js";
 import type { ViewPredicate } from "./view.js";
+
+export * from "./data-types.js";
 
 /** Identifier for a node within a stage tree. */
 export type NodeId = string;
@@ -169,13 +167,12 @@ export interface InputStyle {
 
 /**
  * Module-private field packs (mixins). These are shared shape fragments folded
- * into the primitive interfaces below via `interface … extends …` (mirroring the
- * `MetricFields` precedent in `component-nodes.ts`). They are DELIBERATELY NOT
- * exported: the `export * from "./nodes.js"` barrel would otherwise surface them
- * and collide conceptually with the exported `ContainerNode`/`isContainer`
- * surface. The literal `type` discriminant is NEVER placed in a pack — each
- * primitive keeps `type` as a direct own member so `Extract<FacetNode,{type:K}>`
- * and type-guard narrowing keep resolving.
+ * into the base brick interfaces below via `interface … extends …`. They are
+ * DELIBERATELY NOT exported: the `export * from "./nodes.js"` barrel would
+ * otherwise surface them and collide conceptually with the exported
+ * `ContainerNode`/`isContainer` surface. The literal `type` discriminant is
+ * NEVER placed in a pack — each brick keeps `type` as a direct own member so
+ * `Extract<FacetNode,{type:K}>` and type-guard narrowing keep resolving.
  */
 
 /** Common identity fields on all four primitives (`type` stays a direct member). */
@@ -410,19 +407,120 @@ export interface RichTextNode extends BaseNode, Styleable<TextStyle> {
   readonly blocks: readonly RichTextBlock[];
 }
 
-export const PRIMITIVE_BRICK_TYPES = ["box", "text", "media", "input", "richtext"] as const;
-export type PrimitiveBrickType = (typeof PRIMITIVE_BRICK_TYPES)[number];
-export type PrimitiveBrickNode = BoxNode | TextNode | MediaNode | InputNode | RichTextNode;
+export const TONES = ["neutral", "accent", "info", "success", "warning", "danger"] as const;
+export type Tone = (typeof TONES)[number];
 
-export * from "./component-nodes.js";
-import type { ComponentNode, FormNode } from "./component-nodes.js";
+export interface TableNode {
+  readonly id: NodeId;
+  readonly type: "table";
+  readonly columns: readonly TableColumn[];
+  readonly rows: readonly TableRow[];
+  readonly caption?: string;
+  readonly variant?: string;
+  /** Optional binding: project rows from `FacetTree.data[from]` instead of inline `rows`. */
+  readonly from?: string;
+}
+
+export const CHART_KINDS = ["bar", "line", "donut"] as const;
+export type ChartKind = (typeof CHART_KINDS)[number];
+
+export interface ChartSeries {
+  readonly label: string;
+  readonly values: readonly number[];
+}
+
+export interface ChartNode {
+  readonly id: NodeId;
+  readonly type: "chart";
+  readonly kind: ChartKind;
+  readonly series: readonly ChartSeries[];
+  readonly labels?: readonly string[];
+  readonly title?: string;
+  readonly variant?: string;
+  /** Optional binding: derive one series per numeric column of `FacetTree.data[from]`. */
+  readonly from?: string;
+}
+
+export interface ListItem {
+  readonly title: string;
+  readonly body?: string;
+}
+
+export interface ListNode {
+  readonly id: NodeId;
+  readonly type: "list";
+  readonly items: readonly ListItem[];
+  readonly variant?: string;
+  /** Optional binding: project one item per row from `FacetTree.data[from]`. */
+  readonly from?: string;
+}
+
+export interface KeyValueItem {
+  readonly key?: string;
+  readonly label: string;
+  readonly value: string;
+  readonly tone?: Tone;
+}
+
+export interface KeyValueNode {
+  readonly id: NodeId;
+  readonly type: "keyValue";
+  readonly items: readonly KeyValueItem[];
+  readonly variant?: string;
+  /** Optional binding: project `{label, value}` per row from `FacetTree.data[from]`. */
+  readonly from?: string;
+}
+
+export interface ProgressNode {
+  readonly id: NodeId;
+  readonly type: "progress";
+  readonly value: number;
+  readonly label?: string;
+  readonly tone?: Tone;
+  readonly variant?: string;
+}
+
+export interface LoadingNode {
+  readonly id: NodeId;
+  readonly type: "loading";
+  readonly label?: string;
+  readonly variant?: string;
+}
+
+/** The sole closed roster of bricks an agent may place on a stage. */
+export const BRICK_TYPES = [
+  "box",
+  "text",
+  "media",
+  "input",
+  "richtext",
+  "table",
+  "chart",
+  "list",
+  "keyValue",
+  "progress",
+  "loading",
+] as const;
+export type BrickType = (typeof BRICK_TYPES)[number];
 
 /** Any brick the agent may place on a stage. */
-export type FacetNode = PrimitiveBrickNode | ComponentNode;
+export type FacetNode =
+  | BoxNode
+  | TextNode
+  | MediaNode
+  | InputNode
+  | RichTextNode
+  | TableNode
+  | ChartNode
+  | ListNode
+  | KeyValueNode
+  | ProgressNode
+  | LoadingNode;
 
-export type ContainerNode = BoxNode | FormNode;
+/** The only brick that can hold child node ids. */
+export type ContainerNode = BoxNode;
 
-/** Narrows a node to the bricks that can hold children. */
+/** Narrows a node to the box-only child-container capability. */
 export function isContainer(node: FacetNode): node is ContainerNode {
-  return node.type === "box" || node.type === "form";
+  return node.type === "box";
 }

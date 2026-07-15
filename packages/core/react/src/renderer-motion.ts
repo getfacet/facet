@@ -230,10 +230,10 @@ export function collectVisibleInfo(
         }
         return;
       default:
-        // The leaf-brick fallthrough, now registry-driven: every component leaf
-        // participates unconditionally in the visibility snapshot. Containers
-        // (box/form) and `image` are handled above; an unknown/junk
-        // type does not participate — the same as the former no-default switch.
+        // The remaining display-brick fallthrough is registry-driven: every
+        // registered leaf participates unconditionally in the visibility
+        // snapshot. The box container and legacy raw `image` are handled above;
+        // an unknown/junk type does not participate.
         if (participatesInMotionSnapshot(node.type)) {
           ids.add(id);
           nodes.set(id, { parentId, index, ancestors, depth });

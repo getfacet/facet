@@ -28,9 +28,9 @@ where Facet is deliberately **stricter and simpler**:
    A2UI has two update grammars (ID-based `updateComponents` + JSON-Pointer
    `updateDataModel`) with no stated shared-reducer guarantee.
 2. **A centrally governed vocabulary vs negotiated catalogs.** Facet's
-   dependency-free core owns a closed vocabulary: `box/text/media/field` remain
-   the universal base, with intrinsic components added deliberately and checked
-   by the same validator. A2UI negotiates versioned developer catalogs. Both
+   dependency-free core owns one closed 11-brick vocabulary, with node kinds
+   added deliberately and checked by the same validator. A2UI negotiates
+   versioned developer catalogs. Both
    recommend graceful degradation for renderer gaps; Facet makes skip-on-unknown
    and skip-on-dangling behavior a library invariant.
 3. **One integrated default vs transport-neutral composition.** Facet ships its
@@ -60,12 +60,12 @@ Primary sources: <https://a2ui.org/>, <https://github.com/google/A2UI>,
 
 | Pillar | Facet | A2UI |
 | --- | --- | --- |
-| **Declarative, not code** | ✅ flat node map with a closed primitive + intrinsic vocabulary, token styling, flow-only | ✅ flat ID-list of catalog components, JSON "intent" |
+| **Declarative, not code** | ✅ flat node map with a closed 11-brick vocabulary, token styling, flow-only | ✅ flat ID-list of catalog components, JSON "intent" |
 | **LLM-authored** | ✅ agent emits the brick spec | ✅ designed for token-by-token generation |
 | **Live updates via diff** | ✅ **RFC-6902 patch only**, shared `applyPatch` both sides | 🔸 two grammars: `updateComponents` (ID ops) + `updateDataModel` (JSON-Pointer upsert), **not** RFC-6902 |
 | **Safe by construction** | ✅ core-governed vocabulary + **fail-safe skip** renderer | ✅ versioned client catalog + validation and graceful-degradation guidance |
 
-Both are declarative-only, safe-primitive, LLM-authored UI specs with a
+Both are declarative-only, safe-vocabulary, LLM-authored UI specs with a
 framework-agnostic core — strong agreement on philosophy. The divergence is in the
 *strictness* of the update channel, the *governance* of the palette, and whether
 the default stack is integrated or assembled from transport-neutral layers.
@@ -75,23 +75,22 @@ the default stack is integrated or assembled from transport-neutral layers.
 | A2UI layer | What it does | Facet counterpart |
 | --- | --- | --- |
 | Protocol / message layer (JSONL, 4 message types) | Wire format between agent and client | `@facet/core` `protocol.ts` (`ServerMessage`: `patch`/`say`/`reset`) |
-| Component model (flat ID adjacency list + catalog) | The declarative UI representation | `@facet/core` `tree.ts` + `nodes.ts` (flat node map with a closed primitive + intrinsic vocabulary) |
-| Data model + JSON-Pointer binding | App state decoupled from UI structure | *(no direct analogue — Facet embeds display data in the brick: `text.value`, `image.src`, `field`)* |
+| Component model (flat ID adjacency list + catalog) | The declarative UI representation | `@facet/core` `tree.ts` + `nodes.ts` (flat node map with a closed 11-brick vocabulary) |
+| Data model + JSON-Pointer binding | App state decoupled from UI structure | `FacetTree.data` + closed `from` projections, updated through ordinary RFC-6902 paths |
 | Rendering runtime (`@a2ui/web_core`) + per-platform renderers | Turn wire format into native UI | `@facet/runtime` (framework-agnostic) + `@facet/react` (single renderer) |
 | Safety / validation (catalog typing, Zod) | Constrain what the agent can render | `@facet/core` `validateTree` + fail-safe renderer |
 | Transport / layering (A2A, AG-UI, …) | Delivery + interaction round-trip | `@facet/server` (SSE + POST) + `@facet/client` + `@facet/agent-client` |
 
 Key structural notes:
 
-- **Data lives in different places.** Facet puts display data *inside* the brick
-  (`text.value`, `image.src`, `field`). A2UI keeps a *separate* data model that
-  components bind to by JSON-Pointer path. A2UI's separation is genuinely nicer
-  for data-heavy / reactive UIs (update one value without touching structure; one
-  value feeds many components). Facet's in-tree model is simpler and pairs with
-  the single patch channel — a granular value change is just a `replace` patch on
-  a deep path, so Facet also does **not** resend the whole tree. This is a
-  **tradeoff**, not a Facet win: Facet trades data-binding ergonomics for a single
-  addressing grammar and provable coherence.
+- **Both separate reusable data from structure, at different power levels.**
+  Facet supports inline display values (`text.value`, `media.src`) plus an
+  optional top-level `FacetTree.data` warehouse of bounded row records. A
+  `table`, `chart`, `list`, `keyValue`, or single-cell `text` binds by dataset
+  name through a closed, type-owned `from` projection. A2UI exposes a more
+  general separate model addressed by JSON Pointer. Facet deliberately keeps
+  the data schema and projection grammar smaller, and every granular data update
+  still travels through the same RFC-6902 patch channel as structure.
 - **The event pipeline.** Both send *structured user interactions* back to the
   agent, not just text. Facet's `ClientEvent` is `visit | message | tap`, where
   an agent-directed tap carries the `FacetAction` plus press-time-snapshotted field values

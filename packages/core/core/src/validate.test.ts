@@ -6,7 +6,6 @@ import {
   MAX_DEPTH,
   MAX_RENDER_NODES,
   MAX_SCREENS,
-  MAX_TABS_ITEMS,
   validateComposition,
   validateTree,
 } from "./validate.js";
@@ -27,11 +26,12 @@ describe("canonical composition validation surface", () => {
     };
     const forbidden = validateComposition({
       name: "leadCapture",
-      root: "form",
+      metadata: { description: "Forbidden composition fields" },
+      root: "root",
       nodes: {
-        form: {
-          id: "form",
-          type: "form",
+        root: {
+          id: "root",
+          type: "box",
           children: [],
           html: "<form></form>",
           js: "alert(1)",
@@ -281,6 +281,91 @@ describe("validateTree", () => {
     expect(validateTree(null).tree.root).toBe("root");
   });
 
+  it("rejects every retired type at every core boundary", () => {
+    const retiredTypes = ["button", "form", "filterBar", "metric", "tabs", "nav", "stat"];
+
+    expect(validationModule).not.toHaveProperty("MAX_TABS_ITEMS"); // composition-hard-cut: allowed-negative
+
+    for (const type of retiredTypes) {
+      const rootRun = validateTree({
+        root: "retired",
+        nodes: { retired: { id: "retired", type, children: [] } },
+      });
+      expect(rootRun.tree.nodes["retired"], `root:${type}`).toBeUndefined();
+      expect(rootRun.issues.some((issue) => issue.includes(`unknown type "${type}"`))).toBe(true);
+
+      const compositionRun = validateComposition({
+        name: `retired-${type}`,
+        metadata: { description: "Retired repeatable reference", repeatable: true },
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["retired", "retired"] },
+          retired: { id: "retired", type },
+        },
+      });
+      expect(compositionRun.composition, `composition:${type}`).toBeUndefined();
+      expect(
+        compositionRun.issues.some((issue) => issue.includes(`unknown brick type "${type}"`)),
+      ).toBe(true);
+    }
+
+    const staleNodes = Object.fromEntries(
+      retiredTypes.map((type) => [type, { id: type, type, children: [] }]),
+    );
+    const boundaryRun = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: [
+            ...retiredTypes,
+            ...retiredTypes,
+            "constructor-node",
+            "prototype-node",
+            "keep",
+          ],
+        },
+        ...staleNodes,
+        "constructor-node": { id: "constructor-node", type: "constructor" },
+        "prototype-node": { id: "prototype-node", type: "toString" },
+        keep: { id: "keep", type: "text", value: "kept" },
+      },
+      screens: Object.fromEntries([
+        ["home", "root"],
+        ...retiredTypes.map((type) => [`screen-${type}`, type]),
+      ]),
+      entry: "home",
+    });
+    expect(Object.keys(boundaryRun.tree.nodes)).toEqual(["root", "keep"]);
+    expect(
+      (boundaryRun.tree.nodes["root"] as unknown as { children: readonly string[] }).children,
+    ).toEqual(["keep"]);
+    expect(boundaryRun.tree.screens).toEqual({ home: "root" });
+    expect(boundaryRun.tree.entry).toBe("home");
+
+    const cycle = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["child"] },
+        child: { id: "child", type: "box", children: ["root"] },
+      },
+    };
+    const deepNodes: Record<string, unknown> = {
+      root: { id: "root", type: "box", children: ["n0"] },
+    };
+    for (let index = 0; index < MAX_DEPTH + 10; index += 1) {
+      deepNodes[`n${String(index)}`] = {
+        id: `n${String(index)}`,
+        type: "box",
+        children: index < MAX_DEPTH + 9 ? [`n${String(index + 1)}`] : [],
+      };
+    }
+    for (const input of [null, {}, { nodes: [] }, cycle, { root: "root", nodes: deepNodes }]) {
+      expect(() => validateTree(input)).not.toThrow();
+    }
+  });
+
   it("never throws on a hostile nodes getter", () => {
     const run = validateTree({
       root: "root",
@@ -293,28 +378,28 @@ describe("validateTree", () => {
     expect(run.issues).toContain("input could not be read safely; empty tree used");
   });
 
-  it("reads a component type discriminator only once", () => {
+  it("reads a brick type discriminator only once", () => {
     let reads = 0;
-    const button: Record<string, unknown> = { id: "button", label: "Run" };
-    Object.defineProperty(button, "type", {
+    const table: Record<string, unknown> = { id: "table", columns: [], rows: [] };
+    Object.defineProperty(table, "type", {
       enumerable: true,
       get() {
         reads += 1;
-        if (reads > 1) throw new Error("component type read twice");
-        return "button";
+        if (reads > 1) throw new Error("brick type read twice");
+        return "table";
       },
     });
 
     const run = validateTree({
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", children: ["button"] },
-        button,
+        root: { id: "root", type: "box", children: ["table"] },
+        table,
       },
     });
 
     expect(reads).toBe(1);
-    expect(run.tree.nodes["button"]).toMatchObject({ type: "button", label: "Run" });
+    expect(run.tree.nodes["table"]).toMatchObject({ type: "table", columns: [], rows: [] });
     expect(run.issues).toEqual([]);
   });
 
@@ -421,101 +506,59 @@ describe("validateTree", () => {
   });
 });
 
-describe("validateTree component nodes", () => {
-  it("keeps new intrinsic component nodes and legacy stat compatibility", () => {
+describe("validateTree data bricks", () => {
+  it("keeps the surviving keyValue and loading bricks", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
         root: {
           id: "root",
           type: "box",
-          children: ["metric", "stat", "keyValue", "nav", "form", "filterBar", "loading"],
+          children: ["keyValue", "loading"],
         },
-        metric: { id: "metric", type: "metric", label: "ARR", value: "$24k", tone: "success" },
-        stat: { id: "stat", type: "stat", label: "MRR", value: "$2k", tone: "info" },
         keyValue: {
           id: "keyValue",
           type: "keyValue",
           items: [{ label: "Plan", value: "Pro", tone: "accent" }],
-        },
-        nav: {
-          id: "nav",
-          type: "nav",
-          items: [{ label: "Customers", to: "customers" }],
-        },
-        form: {
-          id: "form",
-          type: "form",
-          title: "Update customer",
-          submitLabel: "Save",
-          onSubmit: { name: "save_customer", collect: "form" },
-          children: [],
-        },
-        filterBar: {
-          id: "filterBar",
-          type: "filterBar",
-          filters: [{ name: "status", label: "Status", options: ["Open"] }],
-          onChange: { name: "filter_customers" },
         },
         loading: { id: "loading", type: "loading", label: "Loading customers" },
       },
     });
 
     expect(issues).toHaveLength(0);
-    expect(tree.nodes["metric"]).toMatchObject({ type: "metric", label: "ARR", value: "$24k" });
-    expect(tree.nodes["stat"]).toMatchObject({ type: "stat", label: "MRR", value: "$2k" });
     expect(tree.nodes["keyValue"]).toMatchObject({
       type: "keyValue",
       items: [{ label: "Plan", value: "Pro", tone: "accent" }],
     });
-    expect(tree.nodes["nav"]).toMatchObject({
-      type: "nav",
-      items: [{ label: "Customers", to: "customers" }],
-    });
-    expect(tree.nodes["form"]).toMatchObject({
-      type: "form",
-      onSubmit: { kind: "agent", name: "save_customer", collect: "form" },
-    });
-    expect(tree.nodes["filterBar"]).toMatchObject({
-      type: "filterBar",
-      onChange: { kind: "agent", name: "filter_customers" },
-    });
     expect(tree.nodes["loading"]).toMatchObject({ type: "loading", label: "Loading customers" });
   });
 
-  it("skips malformed new intrinsic nodes and strips forbidden backend fields", () => {
+  it("drops retired nodes before their stale backend fields can survive", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["form", "badMetric"] },
         form: {
           id: "form",
-          type: "form",
+          type: "form", // composition-hard-cut: allowed-negative
           title: "Lead capture",
           endpoint: "https://api.example.test/leads",
           html: "<form></form>",
           css: ".lead { display: none }",
           children: [],
         },
-        badMetric: { id: "badMetric", type: "metric", label: "ARR" },
+        badMetric: { id: "badMetric", type: "metric", label: "ARR" }, // composition-hard-cut: allowed-negative
       },
     });
 
-    expect(tree.nodes["form"]).toMatchObject({ type: "form", title: "Lead capture" });
-    expect(tree.nodes["form"]).not.toHaveProperty("endpoint");
-    expect(tree.nodes["form"]).not.toHaveProperty("html");
-    expect(tree.nodes["form"]).not.toHaveProperty("css");
+    expect(tree.nodes["form"]).toBeUndefined();
     expect(tree.nodes["badMetric"]).toBeUndefined();
-    expect((tree.nodes["root"] as unknown as { children: readonly string[] }).children).toEqual([
-      "form",
-    ]);
-    expect(issues.filter((issue) => issue.includes("not allowed on component nodes"))).toHaveLength(
-      3,
-    );
-    expect(issues.some((issue) => issue.includes("value must be a string"))).toBe(true);
+    expect((tree.nodes["root"] as unknown as { children: readonly string[] }).children).toEqual([]);
+    expect(issues.some((issue) => issue.includes('unknown type "form"'))).toBe(true);
+    expect(issues.some((issue) => issue.includes('unknown type "metric"'))).toBe(true);
   });
 
-  it("keeps component leaf and container nodes with sanitized token fields", () => {
+  it("keeps final leaf bricks and boxes with sanitized token fields", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
@@ -524,24 +567,16 @@ describe("validateTree component nodes", () => {
           type: "box",
           variant: "dashboard",
           style: { gap: "md" },
-          children: ["panel", "tabs", "table", "chart", "stat", "progress", "list"],
+          children: ["panel", "table", "chart", "progress", "list"],
         },
         panel: {
           id: "panel",
           type: "box",
           variant: "metric",
           style: { bg: "surface", gap: "sm" },
-          children: ["button"],
+          children: ["label"],
         },
-        button: {
-          id: "button",
-          type: "button",
-          label: "Refresh",
-          tone: "accent",
-          variant: "primary",
-          onPress: { kind: "agent", name: "refresh" },
-        },
-        tabs: { id: "tabs", type: "tabs", items: [{ label: "Home", to: "home" }] },
+        label: { id: "label", type: "text", value: "Refresh", variant: "heading" },
         table: {
           id: "table",
           type: "table",
@@ -554,7 +589,6 @@ describe("validateTree component nodes", () => {
           kind: "line",
           series: [{ label: "ARR", values: [1, 2, 3] }],
         },
-        stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", tone: "success" },
         progress: { id: "progress", type: "progress", label: "Quota", value: 72 },
         list: { id: "list", type: "list", items: [{ title: "Next", body: "Call customer" }] },
       },
@@ -568,9 +602,9 @@ describe("validateTree component nodes", () => {
     expect(tree.nodes["panel"]).toMatchObject({
       type: "box",
       style: { bg: "surface", gap: "sm" },
-      children: ["button"],
+      children: ["label"],
     });
-    expect(tree.nodes["button"]).toMatchObject({ type: "button", label: "Refresh" });
+    expect(tree.nodes["label"]).toMatchObject({ type: "text", value: "Refresh" });
     expect(tree.nodes["table"]).toMatchObject({ type: "table" });
     expect(tree.nodes["chart"]).toMatchObject({ type: "chart", kind: "line" });
     expect(tree.screens).toEqual({ home: "root" });
@@ -608,7 +642,7 @@ describe("validateTree component nodes", () => {
     expect(issues.some((issue) => issue.includes("points exceeded"))).toBe(true);
   });
 
-  it("caps component table chart and list payloads fail-safely", () => {
+  it("caps table chart and list payloads fail-safely", () => {
     const rows = Array.from({ length: 250 }, (_, index) => ({ value: `row-${String(index)}` }));
     const values = Array.from({ length: 2000 }, (_, index) => index);
     const items = Array.from({ length: 200 }, (_, index) => `item-${String(index)}`);
@@ -631,23 +665,14 @@ describe("validateTree component nodes", () => {
     expect(issues.some((issue) => issue.includes("cap"))).toBe(true);
   });
 
-  it("sanitizes malformed component tabs, progress, and required text fields", () => {
+  it("sanitizes malformed progress fields while retired nodes are dropped", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
         root: {
           id: "root",
           type: "box",
-          children: ["tabs", "lowProgress", "highProgress", "badStat", "good"],
-        },
-        tabs: {
-          id: "tabs",
-          type: "tabs",
-          variant: "bad variant",
-          items: Array.from({ length: MAX_TABS_ITEMS + 5 }, (_, index) => ({
-            label: `Tab ${String(index)}`,
-            to: `screen-${String(index)}`,
-          })),
+          children: ["lowProgress", "highProgress", "badStat", "good"],
         },
         lowProgress: { id: "lowProgress", type: "progress", value: -25 },
         highProgress: {
@@ -656,24 +681,19 @@ describe("validateTree component nodes", () => {
           value: 175,
           tone: "not-a-tone",
         },
-        badStat: { id: "badStat", type: "stat", label: "ARR" },
+        badStat: { id: "badStat", type: "stat", label: "ARR" }, // composition-hard-cut: allowed-negative
         good: { id: "good", type: "text", value: "kept" },
       },
     });
 
-    expect(
-      (tree.nodes["tabs"] as { items?: readonly unknown[]; variant?: unknown }).items,
-    ).toHaveLength(MAX_TABS_ITEMS);
-    expect((tree.nodes["tabs"] as { variant?: unknown }).variant).toBeUndefined();
     expect((tree.nodes["lowProgress"] as { value?: unknown }).value).toBe(0);
     expect((tree.nodes["highProgress"] as { value?: unknown; tone?: unknown }).value).toBe(100);
     expect((tree.nodes["highProgress"] as { tone?: unknown }).tone).toBeUndefined();
     expect(tree.nodes["badStat"]).toBeUndefined();
     expect(tree.nodes["good"]).toMatchObject({ type: "text", value: "kept" });
-    expect(issues.some((issue) => issue.includes("items exceeded"))).toBe(true);
     expect(issues.some((issue) => issue.includes("progress value clamped to 0"))).toBe(true);
     expect(issues.some((issue) => issue.includes("progress value clamped to 100"))).toBe(true);
-    expect(issues.some((issue) => issue.includes("stat needs string label and value"))).toBe(true);
+    expect(issues.some((issue) => issue.includes('unknown type "stat"'))).toBe(true);
   });
 
   it("drops a stale demoted display-leaf node (badge/alert/divider) without throwing", () => {
@@ -707,7 +727,7 @@ describe("validateTree component nodes", () => {
     // Dropped display-leaf ids are pruned from the surviving parent's children.
     expect((tree.nodes["root"] as { children?: readonly string[] }).children).toEqual(["keep"]);
     // Each demoted type is reported as an unknown node type (fail-safe feedback):
-    // it is neither a component nor a primitive brick, so validateTree drops it via
+    // it is outside the closed native brick roster, so validateTree drops it via
     // the generic unknown-type path rather than minting a display leaf.
     for (const type of ["badge", "alert", "divider"] as const) {
       expect(issues.some((issue) => issue.includes(`unknown type "${type}"`))).toBe(true);
@@ -750,7 +770,7 @@ describe("retired container-pattern boundaries", () => {
 
     expect(composition).toBeDefined();
     expect(composition?.metadata.preferredParent).toBeUndefined();
-    expect(composition?.metadata.composedOf).toEqual(["box", "stat"]);
+    expect(composition?.metadata.composedOf).toEqual(["box"]);
     expect(
       compositionIssues.some((issue) => issue.includes("preferredParent is invalid; dropped")),
     ).toBe(true);
@@ -826,21 +846,24 @@ describe("validateComposition", () => {
     expect(Object.getPrototypeOf(composition?.nodes)).toBeNull();
   });
 
-  it("normalizes safe intrinsic nodes and refuses unknown component names", () => {
+  it("normalizes safe data bricks and refuses unknown brick names", () => {
     const safe = validateComposition({
       name: "customerSummaryCard",
       metadata: { description: "Customer summary card" },
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", children: ["metric"] },
-        metric: { id: "metric", type: "metric", label: "ARR", value: "$24k" },
+        root: { id: "root", type: "box", children: ["details"] },
+        details: {
+          id: "details",
+          type: "keyValue",
+          items: [{ label: "ARR", value: "$24k" }],
+        },
       },
     });
     expect(safe.issues).toHaveLength(0);
-    expect(safe.composition?.nodes["metric"]).toMatchObject({
-      type: "metric",
-      label: "ARR",
-      value: "$24k",
+    expect(safe.composition?.nodes["details"]).toMatchObject({
+      type: "keyValue",
+      items: [{ label: "ARR", value: "$24k" }],
     });
 
     const unknown = validateComposition({
@@ -852,7 +875,7 @@ describe("validateComposition", () => {
       },
     });
     expect(unknown.composition).toBeUndefined();
-    expect(unknown.issues.some((issue) => issue.includes("unknown component type"))).toBe(true);
+    expect(unknown.issues.some((issue) => issue.includes("unknown brick type"))).toBe(true);
   });
 
   it("accepts 1023 raw nodes and rejects 1024 before sanitization", () => {
@@ -1020,7 +1043,7 @@ describe("validateComposition", () => {
       tags: ["dashboard", "metrics"],
       repeatable: true,
       preferredParent: "box",
-      composedOf: ["box", "stat"],
+      composedOf: ["box"],
       dataRequirements: ["metric_label", "current_value"],
       followUpEdits: ["refresh_value"],
     });
@@ -1033,36 +1056,25 @@ describe("validateComposition", () => {
       "media",
       "input",
       "richtext",
-      "button",
-      "tabs",
-      "nav",
       "table",
       "chart",
-      "metric",
+      "list",
       "keyValue",
       "progress",
-      "list",
-      "form",
-      "filterBar",
       "loading",
-      "stat",
     ];
-    const kept: string[] = [];
-    for (const [index, chunk] of [composedOf.slice(0, 16), composedOf.slice(16)].entries()) {
-      const { composition, issues } = validateComposition({
-        name: `component-heavy-${String(index)}`,
-        metadata: {
-          description: "Component-heavy reference",
-          composedOf: chunk,
-        },
-        root: "root",
-        nodes: { root: { id: "root", type: "box", children: [] } },
-      });
+    const { composition, issues } = validateComposition({
+      name: "brick-heavy",
+      metadata: {
+        description: "Brick-heavy reference",
+        composedOf,
+      },
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+    });
 
-      expect(issues).toHaveLength(0);
-      kept.push(...(composition?.metadata?.composedOf ?? []));
-    }
-    expect(kept).toEqual(composedOf);
+    expect(issues).toHaveLength(0);
+    expect(composition?.metadata.composedOf).toEqual(composedOf);
   });
 
   it("keeps sentence-like dataRequirements/followUpEdits as free text after bounded sanitation", () => {

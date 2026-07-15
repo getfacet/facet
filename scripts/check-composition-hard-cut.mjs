@@ -34,19 +34,59 @@ function buildRetiredSymbolsPattern() {
     joined("Node", "Filler"),
     joined("Node", "StringLeaves"),
     ["composition", "Catalog", "Violation"].join(""),
+    ["PRIMITIVE", "BRICK", "TYPES"].join("_"),
+    joined("Primitive", "BrickType"),
+    joined("Primitive", "BrickNode"),
+    ["INTRINSIC", "COMPONENT", "TYPES"].join("_"),
+    joined("Intrinsic", "ComponentType"),
+    ["LEGACY", "COMPONENT", "TYPES"].join("_"),
+    joined("Legacy", "ComponentType"),
+    ["COMPONENT", "NODE", "TYPES"].join("_"),
+    ["Component", "Node", "Type"].join(""),
+    ["Intrinsic", "Component", "Node"].join(""),
+    ["Legacy", "Component", "Node"].join(""),
+    joined("Component", "Node"),
+    ["is", "Component", "Node", "Type"].join(""),
+    joined("Catalog", "Component"),
+    joined("Catalog", "UsageOrder"),
+    joined("Button", "Node"),
+    joined("Tabs", "Node"),
+    joined("Nav", "Node"),
+    joined("Metric", "Node"),
+    joined("Stat", "Node"),
+    joined("Form", "Node"),
+    joined("FilterBar", "Node"),
+    joined("Component", "RecipePart"),
+    joined("Component", "Recipe"),
+    joined("Component", "Recipes"),
+    ["RECIPE", "COMPONENTS"].join("_"),
+    joined("Recipe", "ComponentName"),
+    ["MAX", "TABS", "ITEMS"].join("_"),
   ].join("|");
 }
 
 function buildLegacyDataPattern() {
   const key = ["u", "se"].join("");
   const pluralSlot = ["slo", "ts"].join("");
+  const componentsKey = ["compo", "nents"].join("");
+  const fallbackKey = ["primitive", "Fallback"].join("");
+  const retiredTypes = ["button", "form", "filterBar", "metric", "tabs", "nav", "stat"].join("|");
   return [
     String.raw`\{\{[A-Za-z_][A-Za-z0-9_-]*\}\}`,
     String.raw`"${pluralSlot}"\s*:`,
     `${pluralSlot}:`,
     String.raw`\{\s*(?:"${key}"|${key})\s*:`,
     String.raw`^\s*(?:"${key}"|${key})\s*:\s*["'\x60]`,
+    String.raw`(?:"${componentsKey}"|${componentsKey})\s*:`,
+    String.raw`(?:"${fallbackKey}"|${fallbackKey})\s*:`,
+    String.raw`(?:"type"|type)\s*:\s*["'](?:${retiredTypes})["']`,
   ].join("|");
+}
+
+function buildLegacyMultilineDataPattern() {
+  const componentTier = ["compo", "nent"].join("");
+  const primitiveTier = ["primi", "tive"].join("");
+  return String.raw`(?:"order"|order)\s*:\s*\[\s*["']${componentTier}["']\s*,\s*["']${primitiveTier}["']`;
 }
 
 function buildSemanticPattern() {
@@ -57,6 +97,8 @@ function buildSemanticPattern() {
   const metadataWord = ["meta", "data"].join("");
   const promptWord = ["pro", "mpt"].join("");
   const wildcard = ".*";
+  const finalBrickName =
+    "(?:box|text|media|input|richtext|table|chart|list|keyValue|progress|loading)";
   const ruleSixParts = [];
   ruleSixParts.push(compositionWord);
   ruleSixParts.push(wildcard);
@@ -87,12 +129,29 @@ function buildSemanticPattern() {
     ruleSevenParts.join(""),
     ruleEightParts.join(""),
     ruleNineParts.join(""),
+    ["primitive", "(fallback|base)"].join("\\s+"),
+    ["intrinsic", "components?"].join("\\s+"),
+    ["component", "primitive"].join("\\s*(?:->|→)\\s*"),
+    ["component", "first"].join("[-\\s]+"),
+    ["primitive", "component"].join("\\s*/\\s*"),
+    ["component", "rich\\s+four[-\\s]+tab\\s+seed\\s+stage"].join("[-\\s]+"),
+    ["component", "based\\s+(?:seeded\\s+first\\s+paint|four[-\\s]+tab\\s+tour\\s+seed)"].join(
+      "[-\\s]+",
+    ),
+    [String.raw`(?<![A-Za-z0-9_])[\x60"']?${finalBrickName}[\x60"']?`, "primitive", "bricks?"].join(
+      "\\s+",
+    ),
   ].join("|");
 }
 
 const PATTERN_GROUPS = [
   { name: "retired_symbols", pattern: buildRetiredSymbolsPattern() },
   { name: "legacy_data", pattern: buildLegacyDataPattern() },
+  {
+    name: "legacy_multiline_data",
+    pattern: buildLegacyMultilineDataPattern(),
+    multiline: true,
+  },
   {
     name: "semantic_case_insensitive",
     pattern: buildSemanticPattern(),
@@ -125,6 +184,7 @@ function searchArguments(group) {
   const args = ["--no-config", "--json", "--pcre2", "--no-ignore", "--hidden", "--text"];
   for (const glob of EXCLUDED_GLOBS) args.push("--glob", glob);
   if (group.caseInsensitive) args.push("--ignore-case");
+  if (group.multiline) args.push("--multiline");
   args.push("--regexp", group.pattern, ...ROOTS);
   return args;
 }

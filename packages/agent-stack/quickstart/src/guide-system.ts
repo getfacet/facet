@@ -1,6 +1,9 @@
 import type { FacetTree } from "@facet/core";
 import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
 
+const NAV_ITEM_STYLE = { border: true, pad: "sm", radius: "md" } as const;
+const NAV_LABEL_STYLE = { color: "fg", align: "center", weight: "semibold" } as const;
+
 export const QUICKSTART_SYSTEM_NODES = {
   "qs.system.root": {
     id: "qs.system.root",
@@ -17,9 +20,82 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.nav.system": {
     id: "qs.nav.system",
-    type: "tabs",
-    variant: "default",
-    items: QUICKSTART_NAV_ITEMS,
+    type: "box",
+    style: { direction: "row", gap: "xs", wrap: true, width: "full" },
+    children: [
+      "qs.nav.system.what",
+      "qs.nav.system.structure",
+      "qs.nav.system.system",
+      "qs.nav.system.usecases",
+    ],
+  },
+  "qs.nav.system.what": {
+    id: "qs.nav.system.what",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.system.what.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[0].to },
+  },
+  "qs.nav.system.what.label": {
+    id: "qs.nav.system.what.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[0].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.system.structure": {
+    id: "qs.nav.system.structure",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.system.structure.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[1].to },
+  },
+  "qs.nav.system.structure.label": {
+    id: "qs.nav.system.structure.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[1].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.system.system": {
+    id: "qs.nav.system.system",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.system.system.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[2].to },
+  },
+  "qs.nav.system.system.label": {
+    id: "qs.nav.system.system.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[2].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
+  },
+  "qs.nav.system.usecases": {
+    id: "qs.nav.system.usecases",
+    type: "box",
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeVariant: "selected",
+    style: NAV_ITEM_STYLE,
+    children: ["qs.nav.system.usecases.label"],
+    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[3].to },
+  },
+  "qs.nav.system.usecases.label": {
+    id: "qs.nav.system.usecases.label",
+    type: "text",
+    value: QUICKSTART_NAV_ITEMS[3].label,
+    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
+    activeStyle: { color: "accent-fg" },
+    style: NAV_LABEL_STYLE,
   },
   "qs.system.hero": {
     id: "qs.system.hero",
@@ -48,7 +124,7 @@ export const QUICKSTART_SYSTEM_NODES = {
     id: "qs.system.hero.body",
     type: "text",
     value:
-      "The agent can introduce the default theme, catalog variants, intrinsic components, fields, and optional composition references through live Facet UI examples.",
+      "The agent can introduce the default theme, brick recipes, fields, and optional reference datasets through live Facet UI examples.",
     style: { color: "fg" },
   },
   "qs.system.hero.alert": {
@@ -188,14 +264,14 @@ export const QUICKSTART_SYSTEM_NODES = {
   "qs.system.bricks.title": {
     id: "qs.system.bricks.title",
     type: "text",
-    value: "Component gallery",
+    value: "Brick gallery",
     style: { color: "fg", size: "xl", weight: "bold" },
   },
   "qs.system.bricks.body": {
     id: "qs.system.bricks.body",
     type: "text",
     value:
-      "The built-in intrinsic components render through React recipe parts while box, text, media, input, and richtext remain the primitive base.",
+      "Every built-in brick renders through React recipe parts while box, text, media, input, and richtext remain the universal base.",
     style: { color: "fg" },
   },
   "qs.system.actions.card": {
@@ -220,7 +296,8 @@ export const QUICKSTART_SYSTEM_NODES = {
   "qs.system.actions.card.body": {
     id: "qs.system.actions.card.body",
     type: "text",
-    value: "Buttons, cards, metrics, badges, progress, dividers, and flow boxes.",
+    value:
+      "Pressable boxes, bordered panels, label/value summaries, badges, progress, dividers, and flow boxes.",
     style: { color: "fg-muted" },
   },
   "qs.system.action.buttons": {
@@ -231,35 +308,60 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.button.primary": {
     id: "qs.system.button.primary",
-    type: "button",
-    label: "Primary",
-    variant: "primary",
-    tone: "accent",
+    type: "box",
+    style: { direction: "row", bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+    children: ["qs.system.button.primary.label"],
     onPress: { kind: "agent", name: "show_primary_action" },
+  },
+  "qs.system.button.primary.label": {
+    id: "qs.system.button.primary.label",
+    type: "text",
+    value: "Primary",
+    style: { color: "accent-fg", align: "center", weight: "semibold" },
   },
   "qs.system.button.secondary": {
     id: "qs.system.button.secondary",
-    type: "button",
-    label: "Secondary",
-    variant: "secondary",
+    type: "box",
+    style: { direction: "row", bg: "surface", border: true, pad: "sm", radius: "md" },
+    children: ["qs.system.button.secondary.label"],
     onPress: { kind: "agent", name: "show_secondary_action" },
+  },
+  "qs.system.button.secondary.label": {
+    id: "qs.system.button.secondary.label",
+    type: "text",
+    value: "Secondary",
+    style: { color: "fg", align: "center", weight: "semibold" },
   },
   "qs.system.button.danger": {
     id: "qs.system.button.danger",
-    type: "button",
-    label: "Danger",
-    variant: "danger",
-    tone: "danger",
+    type: "box",
+    style: { direction: "row", bg: "danger", pad: "sm", radius: "md" },
+    children: ["qs.system.button.danger.label"],
     onPress: { kind: "agent", name: "show_danger_action" },
+  },
+  "qs.system.button.danger.label": {
+    id: "qs.system.button.danger.label",
+    type: "text",
+    value: "Danger",
+    style: { color: "accent-fg", align: "center", weight: "semibold" },
   },
   "qs.system.action.metric": {
     id: "qs.system.action.metric",
-    type: "metric",
-    label: "Interactive components",
-    value: "12",
-    delta: "plus field",
-    variant: "success",
-    tone: "success",
+    type: "box",
+    style: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
+    children: ["qs.system.action.metric.label", "qs.system.action.metric.value"],
+  },
+  "qs.system.action.metric.label": {
+    id: "qs.system.action.metric.label",
+    type: "text",
+    value: "Interactive bricks",
+    style: { color: "fg-muted", size: "sm", weight: "medium" },
+  },
+  "qs.system.action.metric.value": {
+    id: "qs.system.action.metric.value",
+    type: "text",
+    value: "12 · plus field",
+    style: { color: "success", size: "xl", weight: "bold" },
   },
   "qs.system.action.progress": {
     id: "qs.system.action.progress",
@@ -314,14 +416,14 @@ export const QUICKSTART_SYSTEM_NODES = {
     caption: "Catalog variants",
     variant: "default",
     columns: [
-      { key: "component", label: "Component" },
+      { key: "brick", label: "Brick" },
       { key: "contract", label: "Variant / role" },
     ],
     rows: [
-      { component: "button", contract: "primary, secondary, danger" },
-      { component: "table", contract: "display-only rows" },
-      { component: "progress", contract: "track and fill" },
-      { component: "input", contract: "primitive browser view-state" },
+      { brick: "box", contract: "container or pressable action" },
+      { brick: "table", contract: "display-only rows" },
+      { brick: "progress", contract: "track and fill" },
+      { brick: "input", contract: "browser view-state" },
     ],
   },
   "qs.system.form.card": {
@@ -367,10 +469,16 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.form.submit": {
     id: "qs.system.form.submit",
-    type: "button",
-    label: "Collect field values",
-    variant: "secondary",
+    type: "box",
+    style: { direction: "row", bg: "surface", border: true, pad: "sm", radius: "md" },
+    children: ["qs.system.form.submit.label"],
     onPress: { kind: "agent", name: "inspect_showcase_fields", collect: "qs.system.form.card" },
+  },
+  "qs.system.form.submit.label": {
+    id: "qs.system.form.submit.label",
+    type: "text",
+    value: "Collect field values",
+    style: { color: "fg", align: "center", weight: "semibold" },
   },
   "qs.system.feedback.card": {
     id: "qs.system.feedback.card",
@@ -457,7 +565,7 @@ export const QUICKSTART_SYSTEM_NODES = {
       { title: "Read-only", body: "Looking up an example never edits the visitor stage." },
       {
         title: "Native authoring",
-        body: "Write the final page separately with ordinary components and primitives.",
+        body: "Write the final page separately with ordinary native bricks.",
       },
     ],
   },
@@ -477,7 +585,7 @@ export const QUICKSTART_SYSTEM_NODES = {
       },
       {
         name: "dashboard-summary",
-        description: "A KPI summary section with stats and status.",
+        description: "A KPI summary section with label/value rows and status.",
       },
       {
         name: "settings-panel",
@@ -501,7 +609,7 @@ export const QUICKSTART_SYSTEM_NODES = {
     id: "qs.system.catalog.body",
     type: "text",
     value:
-      "The default authoring order is component, then primitive fallback. A separate composition allow-list controls which optional references are advertised.",
+      "The default authoring surface is the final brick roster. A separate composition allow-list controls which optional references are advertised.",
     style: { color: "fg" },
   },
   "qs.system.catalog.list": {
@@ -510,7 +618,7 @@ export const QUICKSTART_SYSTEM_NODES = {
     variant: "default",
     items: [
       { title: "Theme", body: "default, locked by name" },
-      { title: "Component", body: "variant and tone from the catalog only" },
+      { title: "Brick", body: "variant and tone from the catalog only" },
       { title: "Reference", body: "name and short description; full example only on demand" },
       { title: "Primitive", body: "box, text, media, input, and richtext as fallback base" },
     ],

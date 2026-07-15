@@ -332,38 +332,41 @@ describe("agent tool observation contract", () => {
     expect(isVisitorVisibleStageChange(TREE, afterOrphan, ["orphan"])).toBe(false);
   });
 
-  it("classifies nested boxes and populated components as visible while skipping blank data components", () => {
+  it("classifies nested boxes and populated leaf bricks as visible while skipping blank data bricks", () => {
     const highLevelTree: FacetTree = {
       root: "shell",
       nodes: {
         shell: { id: "shell", type: "box", children: ["group"] },
-        group: { id: "group", type: "box", children: ["stat", "table"] },
-        stat: {
-          id: "stat",
-          type: "stat",
-          label: "Revenue",
-          value: "$12k",
+        group: { id: "group", type: "box", children: ["summary", "table"] },
+        summary: {
+          id: "summary",
+          type: "keyValue",
+          items: [{ label: "Revenue", value: "$12k" }],
           children: ["ghost"],
         } as unknown as FacetNode,
         table: { id: "table", type: "table", columns: [], rows: [] },
-        ghost: { id: "ghost", type: "text", value: "Not reachable through stat" },
+        ghost: { id: "ghost", type: "text", value: "Not reachable through a leaf" },
       },
     };
 
     expect(Array.from(visibleStageNodeIds(highLevelTree)).sort()).toEqual([
       "group",
       "shell",
-      "stat",
+      "summary",
     ]);
 
-    const afterStat: FacetTree = {
+    const afterSummary: FacetTree = {
       ...highLevelTree,
       nodes: {
         ...highLevelTree.nodes,
-        stat: { id: "stat", type: "stat", label: "Revenue", value: "$18k" },
+        summary: {
+          id: "summary",
+          type: "keyValue",
+          items: [{ label: "Revenue", value: "$18k" }],
+        },
       },
     };
-    expect(isVisitorVisibleStageChange(highLevelTree, afterStat, ["stat"])).toBe(true);
+    expect(isVisitorVisibleStageChange(highLevelTree, afterSummary, ["summary"])).toBe(true);
 
     const afterGhost: FacetTree = {
       ...highLevelTree,

@@ -79,7 +79,7 @@ describe("treeHasContent", () => {
     expect(treeHasContent(withText)).toBe(true);
 
     // An all-empty-run richtext renders only invisible elements → must count as
-    // no-content so a composition falls back to its emptyState.
+    // no-content so a composition falls back to its empty presentation.
     const allEmpty = tree({
       r: { id: "r", type: "box", children: ["rt"] },
       rt: { id: "rt", type: "richtext", blocks: [{ type: "paragraph", runs: [{ text: "" }] }] },
@@ -178,12 +178,16 @@ describe("treeHasContent", () => {
     expect(treeHasContent(t)).toBe(false);
   });
 
-  it("false for component data nodes with no renderable data", () => {
+  it("false for final bricks with no renderable payload", () => {
     for (const child of [
       { id: "child", type: "table", columns: [], rows: [] },
       { id: "child", type: "chart", kind: "bar", series: [] },
-      { id: "child", type: "tabs", items: [] },
       { id: "child", type: "list", items: [] },
+      { id: "child", type: "keyValue", items: [] },
+      { id: "child", type: "text", value: "" },
+      { id: "child", type: "input" },
+      { id: "child", type: "richtext", blocks: [] },
+      { id: "child", type: "progress", value: Number.POSITIVE_INFINITY },
     ]) {
       expect(
         treeHasContent(
@@ -196,44 +200,21 @@ describe("treeHasContent", () => {
     }
   });
 
-  it("true for component data nodes with renderable data", () => {
+  it("true for every final leaf brick with renderable content", () => {
     for (const child of [
+      { id: "child", type: "text", value: "Copy" },
+      { id: "child", type: "media", kind: "image", src: "/hero.png" },
+      { id: "child", type: "input", name: "query" },
+      {
+        id: "child",
+        type: "richtext",
+        blocks: [{ type: "paragraph", runs: [{ text: "Rich copy" }] }],
+      },
       { id: "child", type: "table", columns: [{ key: "name", label: "Name" }], rows: [] },
       { id: "child", type: "chart", kind: "bar", series: [{ label: "A", values: [1] }] },
-      { id: "child", type: "tabs", items: [{ label: "Home", to: "home" }] },
       { id: "child", type: "list", items: [{ title: "Item" }] },
-    ]) {
-      expect(
-        treeHasContent(
-          tree({
-            r: { id: "r", type: "box", children: ["child"] },
-            child,
-          }),
-        ),
-      ).toBe(true);
-    }
-  });
-
-  it("true for metric and legacy stat nodes with renderable values", () => {
-    for (const child of [
-      { id: "child", type: "metric", label: "ARR", value: "$24k" },
-      { id: "child", type: "stat", label: "ARR", value: "$24k" },
-    ]) {
-      expect(
-        treeHasContent(
-          tree({
-            r: { id: "r", type: "box", children: ["child"] },
-            child,
-          }),
-        ),
-      ).toBe(true);
-    }
-  });
-
-  it("true for nav, keyValue, and loading intrinsic components with content", () => {
-    for (const child of [
-      { id: "child", type: "nav", items: [{ label: "Home", to: "home" }] },
       { id: "child", type: "keyValue", items: [{ label: "Owner", value: "Design" }] },
+      { id: "child", type: "progress", value: 0 },
       { id: "child", type: "loading" },
     ]) {
       expect(
@@ -247,21 +228,22 @@ describe("treeHasContent", () => {
     }
   });
 
-  it("false for hostile empty intrinsic component payloads", () => {
+  it("fails safe for hostile unknown payloads without hiding valid siblings", () => {
     for (const child of [
-      { id: "child", type: "metric", label: "ARR" },
-      { id: "child", type: "nav", items: [] },
-      { id: "child", type: "keyValue", items: [] },
-      { id: "child", type: "form", children: [] },
       { id: "child", type: "search" },
-      { id: "child", type: "filterBar", filters: [] },
+      { id: "child", type: "constructor", value: "hostile" },
+      { id: "child", type: null },
     ]) {
       const t = tree({
-        r: { id: "r", type: "box", children: ["child"] },
+        r: { id: "r", type: "box", children: ["child", "safe"] },
         child,
+        safe: { id: "safe", type: "text", value: "kept" },
       });
       expect(() => treeHasContent(t)).not.toThrow();
-      expect(treeHasContent(t)).toBe(false);
+      expect(treeHasContent(t)).toBe(true);
+      const ids = treeRenderableNodeIds(t);
+      expect(ids.has("child")).toBe(false);
+      expect(ids.has("safe")).toBe(true);
     }
   });
 
@@ -382,19 +364,12 @@ describe("treeHasContent", () => {
     expect(treeHasContent(tree(nodes))).toBe(false);
   });
 
-  it("does not read component table, tabs, or list data beyond their caps", () => {
+  it("does not read table or list data beyond their caps", () => {
     const columns: unknown[] = [{ key: "name", label: "Name" }];
     columns.length = 20;
     Object.defineProperty(columns, "12", {
       get() {
         throw new Error("table cap over-read");
-      },
-    });
-    const tabs: unknown[] = [{ label: "Home", to: "home" }];
-    tabs.length = 20;
-    Object.defineProperty(tabs, "12", {
-      get() {
-        throw new Error("tabs cap over-read");
       },
     });
     const listItems: unknown[] = [{ title: "Item" }];
@@ -407,7 +382,6 @@ describe("treeHasContent", () => {
 
     for (const child of [
       { id: "child", type: "table", columns, rows: [] },
-      { id: "child", type: "tabs", items: tabs },
       { id: "child", type: "list", items: listItems },
     ]) {
       expect(() =>
@@ -439,15 +413,14 @@ describe("treeHasContent", () => {
     }) as unknown as FacetTree;
 
   // Nodes that render NOTHING when their dataset is empty/absent (chart bar/line,
-  // list, keyValue, metric, stat) — so a dangling `from` is genuinely non-content.
+  // list, keyValue, text) — so a dangling `from` is genuinely non-content.
   // The table is excluded: it renders a header from its columns regardless of
   // rows, so its content follows columns, asserted separately below.
   const boundChildren = [
     { id: "child", type: "chart", kind: "bar", series: [], from: "sales" },
     { id: "child", type: "list", items: [], from: "sales" },
     { id: "child", type: "keyValue", items: [], from: "sales" },
-    { id: "child", type: "metric", label: "Revenue", from: "sales", column: "revenue" },
-    { id: "child", type: "stat", label: "Revenue", from: "sales", column: "revenue" },
+    { id: "child", type: "text", value: "", from: "sales", column: "month" },
   ];
 
   const boundTable = (data?: unknown, columns: unknown = [{ key: "month", label: "Month" }]) =>
@@ -523,7 +496,7 @@ describe("treeHasContent", () => {
     expect(treeHasContent(boundTree({ id: "child", type: "text", value: "" }))).toBe(false);
   });
 
-  it("does not read component chart data beyond its caps", () => {
+  it("does not read chart data beyond its caps", () => {
     const values: unknown[] = [1];
     values.length = 250;
     Object.defineProperty(values, "200", {

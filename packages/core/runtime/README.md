@@ -101,9 +101,9 @@ private modules behind the unchanged `@facet/runtime` root exports. This keeps
 the fail-soft loader and seed recovery lifecycle independently reviewable.
 
 Catalog policy is UI authoring policy for the agent stack: active theme,
-theme-switch allowance, allowed components/variants, optional composition
-reference exposure, primitive fallback, and the `component -> primitive`
-authoring order. The runtime only loads and validates that policy. In
+theme-switch allowance, allowed bricks/variants, optional composition-reference
+exposure, and compact/edit guidance. The runtime only loads and validates that
+policy. In
 particular, the composition allow-list controls which datasets an agent may
 inspect; it is not another stage authoring layer. Hosted platform policy such as
 auth, tenant isolation, billing, usage metering, rate limits, and spend caps

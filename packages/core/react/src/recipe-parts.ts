@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { RECIPE_PARTS } from "@facet/core";
-import type { ComponentRecipe, ComponentRecipePart, RecipePartName } from "@facet/core";
+import type { BrickRecipe, BrickRecipePart, RecipePartName } from "@facet/core";
 import { boxStyle, fieldStyle, mediaStyle, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
 
@@ -31,16 +31,16 @@ function safeOwnValue(record: Record<string, unknown>, key: string): unknown {
   }
 }
 
-function recipeStyleBundle<Key extends keyof ComponentRecipePart>(
+function recipeStyleBundle<Key extends keyof BrickRecipePart>(
   part: Record<string, unknown>,
   key: Key,
-): ComponentRecipePart[Key] | undefined {
+): BrickRecipePart[Key] | undefined {
   const value = safeOwnValue(part, key);
-  return isObjectRecord(value) ? (value as ComponentRecipePart[Key]) : undefined;
+  return isObjectRecord(value) ? (value as BrickRecipePart[Key]) : undefined;
 }
 
 export function resolveRecipePart(
-  recipe: ComponentRecipe | undefined,
+  recipe: BrickRecipe | undefined,
   partName: unknown,
   theme: ResolvedTheme,
 ): ResolvedRecipePart {

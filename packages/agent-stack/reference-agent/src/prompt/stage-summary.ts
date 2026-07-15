@@ -1,9 +1,4 @@
-import {
-  EMPTY_TREE,
-  type ComponentNodeType,
-  type FacetTree,
-  type PrimitiveBrickType,
-} from "@facet/core";
+import { EMPTY_TREE, type BrickType, type FacetTree } from "@facet/core";
 
 export const DEFAULT_STAGE_JSON_CHAR_LIMIT = 48_000;
 export const DEFAULT_STAGE_SUMMARY_NODE_LIMIT = 80;
@@ -60,23 +55,14 @@ export function summarizeStageForPrompt(
   return lines.join("\n");
 }
 
-/** The core node-type identifiers this summarizer recognizes. */
-type SummarizableNodeType = PrimitiveBrickType | ComponentNodeType;
-
 /** Per-brick summary handler — receives a raw (already `isRecord`-checked) node. */
 type NodeSummarizer = (node: Record<string, unknown>) => string;
 
 /**
- * The per-brick summary registry: one entry per core node type → its (unchanged)
- * summary handler. This de-scatters the former `summarizeNode` `switch`; the
- * handler BODIES are identical, only the dispatch now reads this table.
- *
- * SOFT lookup: this is a partial map, NOT an exhaustive `Record`. A miss (a type
- * absent here — e.g. an unrecognized/malformed `type`, or the raw `image` media
- * alias) falls through to the `type=unknown` default in `summarizeNode`, exactly
- * as the original `switch`'s trailing `return "type=unknown"` did.
+ * The exhaustive per-brick summary registry. Unknown raw node types still fall
+ * through to `type=unknown` at the own-property lookup in `summarizeNode`.
  */
-const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarizer>> = {
+const STAGE_SUMMARY_REGISTRY: Record<BrickType, NodeSummarizer> = {
   box: (node) => {
     const children = Array.isArray(node["children"]) ? node["children"].length : 0;
     return `type=box children=${String(children)}${node["hidden"] === true ? " hidden=true" : ""}`;
@@ -91,6 +77,14 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
     const alt = typeof node["alt"] === "string" ? ` altChars=${String(node["alt"].length)}` : "";
     return `type=media kind=${kind} srcChars=${String(src.length)}${alt}`;
   },
+  input: (node) => {
+    const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
+    const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
+    const options = Array.isArray(node["options"])
+      ? ` options=${String(node["options"].length)}`
+      : "";
+    return `type=input name=${name}${input}${options}`;
+  },
   richtext: (node) => {
     const blocks = Array.isArray(node["blocks"]) ? node["blocks"] : [];
     const preview = richTextPreview(blocks);
@@ -101,34 +95,6 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       preview.length > 0 ? `text=${safeField(preview)}` : undefined,
     ]);
   },
-  input: (node) => {
-    const name = typeof node["name"] === "string" ? safeField(node["name"]) : "(missing)";
-    const input = typeof node["input"] === "string" ? ` input=${safeField(node["input"])}` : "";
-    const options = Array.isArray(node["options"])
-      ? ` options=${String(node["options"].length)}`
-      : "";
-    return `type=input name=${name}${input}${options}`;
-  },
-  button: (node) =>
-    compactSummary([
-      "type=button",
-      charSummary(node["label"], "labelChars"),
-      safeStringSummary(node["variant"], "variant"),
-      safeStringSummary(node["tone"], "tone"),
-      node["disabled"] === true ? "disabled=true" : undefined,
-    ]),
-  tabs: (node) =>
-    compactSummary([
-      "type=tabs",
-      `items=${String(arrayCount(node["items"]))}`,
-      safeStringSummary(node["variant"], "variant"),
-    ]),
-  nav: (node) =>
-    compactSummary([
-      "type=nav",
-      `items=${String(arrayCount(node["items"]))}`,
-      safeStringSummary(node["variant"], "variant"),
-    ]),
   table: (node) =>
     compactSummary([
       "type=table",
@@ -148,8 +114,12 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       safeStringSummary(node["variant"], "variant"),
     ]);
   },
-  metric: (node) => summarizeMetric("metric", node),
-  stat: (node) => summarizeMetric("stat", node),
+  list: (node) =>
+    compactSummary([
+      "type=list",
+      `items=${String(arrayCount(node["items"]))}`,
+      safeStringSummary(node["variant"], "variant"),
+    ]),
   keyValue: (node) =>
     compactSummary([
       "type=keyValue",
@@ -162,27 +132,6 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       numberSummary(node["value"], "value"),
       charSummary(node["label"], "labelChars"),
       safeStringSummary(node["tone"], "tone"),
-      safeStringSummary(node["variant"], "variant"),
-    ]),
-  list: (node) =>
-    compactSummary([
-      "type=list",
-      `items=${String(arrayCount(node["items"]))}`,
-      safeStringSummary(node["variant"], "variant"),
-    ]),
-  form: (node) =>
-    compactSummary([
-      "type=form",
-      `children=${String(arrayCount(node["children"]))}`,
-      charSummary(node["title"], "titleChars"),
-      charSummary(node["body"], "bodyChars"),
-      charSummary(node["submitLabel"], "submitLabelChars"),
-      safeStringSummary(node["variant"], "variant"),
-    ]),
-  filterBar: (node) =>
-    compactSummary([
-      "type=filterBar",
-      `filters=${String(arrayCount(node["filters"]))}`,
       safeStringSummary(node["variant"], "variant"),
     ]),
   loading: (node) =>
@@ -206,17 +155,6 @@ function summarizeNode(node: FacetTree["nodes"][string] | undefined): string {
     ? (STAGE_SUMMARY_REGISTRY as Record<string, NodeSummarizer | undefined>)[type]
     : undefined;
   return summarize ? summarize(node) : "type=unknown";
-}
-
-function summarizeMetric(type: "metric" | "stat", node: Record<string, unknown>): string {
-  return compactSummary([
-    `type=${type}`,
-    charSummary(node["label"], "labelChars"),
-    charSummary(node["value"], "valueChars"),
-    charSummary(node["delta"], "deltaChars"),
-    safeStringSummary(node["tone"], "tone"),
-    safeStringSummary(node["variant"], "variant"),
-  ]);
 }
 
 function compactSummary(parts: readonly (string | undefined)[]): string {

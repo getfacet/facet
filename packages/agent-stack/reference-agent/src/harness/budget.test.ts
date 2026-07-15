@@ -27,7 +27,7 @@ const COMPACTION_POLICY = {
 
 const QUICKSTART_BUDGET = {
   maxSteps: 50,
-  maxToolCallsPerStep: 16,
+  maxToolCallsPerStep: 32,
   maxContextChars: 96_000,
   maxHistoryTurns: 20,
   maxHistoryChars: 24_000,

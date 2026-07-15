@@ -6,6 +6,7 @@ import type { FacetComposition } from "@facet/core";
 
 const moduleUrl = new URL("./compositions.ts", import.meta.url);
 const containerModuleUrl = new URL("./composition-containers.ts", import.meta.url);
+const controlModuleUrl = new URL("./composition-controls.ts", import.meta.url);
 
 // Legacy vocabulary is built at runtime so the removed tokens never appear as
 // source literals (same idiom as theme.test.ts).
@@ -101,11 +102,27 @@ const EXPECTED_EMPTY_STATE_NODES = {
   },
   "empty-state.action": {
     id: "empty-state.action",
-    type: "button",
-    label: "Create project",
-    variant: "primary",
+    type: "box",
+    style: { bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+    children: ["empty-state.action-label"],
     onPress: { kind: "agent", name: "create_item" },
   },
+  "empty-state.action-label": {
+    id: "empty-state.action-label",
+    type: "text",
+    value: "Create project",
+    style: { color: "accent-fg", align: "center", weight: "semibold" },
+  },
+};
+
+const collectKeys = (value: unknown): readonly string[] => {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectKeys(entry));
+  }
+  if (value === null || typeof value !== "object") {
+    return [];
+  }
+  return Object.entries(value).flatMap(([key, entry]) => [key, ...collectKeys(entry)]);
 };
 
 /**
@@ -121,7 +138,7 @@ async function loadDefaults(): Promise<readonly FacetComposition[]> {
 describe("DEFAULT_COMPOSITIONS", () => {
   it("ships native section card and empty-state references", async () => {
     const defaults = await loadDefaults();
-    expect(defaults).toHaveLength(22);
+    expect(defaults).toHaveLength(27);
 
     for (const composition of defaults) {
       const { composition: validated, issues } = validateComposition(composition);
@@ -155,7 +172,7 @@ describe("DEFAULT_COMPOSITIONS", () => {
 
   it("ships concrete reference datasets", async () => {
     const defaults = await loadDefaults();
-    expect(defaults).toHaveLength(22);
+    expect(defaults).toHaveLength(27);
     for (const composition of defaults) {
       const { composition: validated, issues } = validateComposition(composition);
       expect(issues).toEqual([]);
@@ -216,6 +233,11 @@ describe("DEFAULT_COMPOSITIONS", () => {
       "card",
       "section",
       "cta-button",
+      "form",
+      "fixed-filter",
+      "metric",
+      "tabs",
+      "nav",
       "pricing-section",
       "faq-section",
       "dashboard-summary",
@@ -236,29 +258,174 @@ describe("DEFAULT_COMPOSITIONS", () => {
     }
   });
 
-  it("uses concrete example content and prefers metric for native authoring", async () => {
+  it("ships native control and navigation references", async () => {
     const defaults = await loadDefaults();
-    const serialized = JSON.stringify(defaults);
-    const nodeTypes = defaults.flatMap((composition) =>
-      Object.values(composition.nodes).map((node) => ("type" in node ? node.type : undefined)),
-    );
-    const legacyStatNodes = defaults.flatMap((composition) =>
-      Object.entries(composition.nodes)
-        .filter(([, node]) => "type" in node && node.type === "stat")
-        .map(([id, node]) => ({ id, composition: composition.name, node })),
+    const controls = new Map(
+      defaults
+        .filter((composition) =>
+          ["cta-button", "form", "fixed-filter", "metric", "tabs", "nav"].includes(
+            composition.name,
+          ),
+        )
+        .map((composition) => [composition.name, composition] as const),
     );
 
-    expect(nodeTypes).toContain("metric");
-    expect(legacyStatNodes.map(({ id, composition }) => `${composition}:${id}`)).toEqual([
-      "dashboard-summary:dashboard-summary.stat",
+    expect([...controls.keys()]).toEqual([
+      "cta-button",
+      "form",
+      "fixed-filter",
+      "metric",
+      "tabs",
+      "nav",
     ]);
-    expect(JSON.stringify(legacyStatNodes[0]?.node)).toContain("Revenue");
+
+    for (const [name, composition] of controls) {
+      const { composition: validated, issues } = validateComposition(composition);
+      expect(issues, name).toEqual([]);
+      expect(validated, name).toEqual(composition);
+
+      const keys = new Set(collectKeys(composition));
+      for (const denied of [
+        "html",
+        "rawHtml",
+        "innerHTML",
+        "script",
+        "javascript",
+        "js",
+        "css",
+        "pixels",
+        "px",
+        "position",
+        "absolute",
+        "overlay",
+        "zIndex",
+        "z-index",
+        "backend",
+        "fetch",
+        "fetchUrl",
+        "endpoint",
+        "url",
+        "dataSource",
+        "dataBinding",
+        "binding",
+        "bindings",
+        "query",
+        "queryExpr",
+        "expression",
+        "where",
+        "predicate",
+        "formula",
+        "resolver",
+        "onChange",
+      ]) {
+        expect(keys.has(denied), `${name}:${denied}`).toBe(false);
+      }
+    }
+
+    const form = controls.get("form");
+    expect(form?.root).toBe("form.root");
+    expect(form?.nodes["form.root"]).toMatchObject({
+      id: "form.root",
+      type: "box",
+      children: ["form.title", "form.email", "form.role", "form.submit"],
+    });
+    expect(Object.values(form?.nodes ?? {}).filter((node) => node.type === "input")).toHaveLength(
+      2,
+    );
+    expect(form?.nodes["form.submit"]).toMatchObject({
+      id: "form.submit",
+      type: "box",
+      children: ["form.submit-label"],
+      onPress: { kind: "agent", name: "submit_form", collect: "form.root" },
+    });
+    const formActions = Object.values(form?.nodes ?? {}).flatMap((node) =>
+      node.type === "box" && node.onPress?.kind === "agent" ? [node.onPress] : [],
+    );
+    expect(formActions).toEqual([{ kind: "agent", name: "submit_form", collect: "form.root" }]);
+
+    const metric = controls.get("metric");
+    expect(metric?.nodes["metric.value"]).toMatchObject({
+      id: "metric.value",
+      type: "text",
+      from: "summary",
+      column: "revenue",
+      row: 0,
+    });
+
+    for (const name of ["fixed-filter", "tabs", "nav"] as const) {
+      const composition = controls.get(name);
+      expect(composition, name).toBeDefined();
+      expect(
+        Object.values(composition?.nodes ?? {}).every(
+          (node) => node.type === "box" || node.type === "text",
+        ),
+        name,
+      ).toBe(true);
+
+      const pressable = Object.values(composition?.nodes ?? {}).filter(
+        (node) => node.type === "box" && node.onPress !== undefined,
+      );
+      expect(pressable.length, name).toBeGreaterThan(1);
+      for (const node of pressable) {
+        if (node.type !== "box") continue;
+        expect(node.onPress?.kind, `${name}:${node.id}`).toBe("navigate");
+        if (node.onPress?.kind !== "navigate") continue;
+        expect(node.active, `${name}:${node.id}`).toEqual({ screen: node.onPress.to });
+        expect(node.activeVariant, `${name}:${node.id}`).toBe("selected");
+
+        const labelId = node.children[0];
+        const label = labelId === undefined ? undefined : composition?.nodes[labelId];
+        expect(label, `${name}:${node.id}:label`).toMatchObject({
+          type: "text",
+          active: { screen: node.onPress.to },
+          activeStyle: { color: "accent-fg" },
+        });
+        expect(label, `${name}:${node.id}:label`).not.toHaveProperty("activeVariant");
+      }
+
+      const serialized = JSON.stringify(composition);
+      expect(serialized, name).not.toContain('"kind":"agent"');
+      expect(serialized, name).not.toContain('"collect"');
+      expect(composition?.metadata.followUpEdits?.join(" "), name).toMatch(/screen/i);
+    }
+
+    const rewrittenNodes = [
+      ["hero", "hero.cta"],
+      ["cta-button", "cta-button.root"],
+      ["pricing-section", "pricing-section.starter-price"],
+      ["pricing-section", "pricing-section.pro-price"],
+      ["pricing-section", "pricing-section.cta"],
+      ["dashboard-summary", "dashboard-summary.stat"],
+      ["settings-panel", "settings-panel.save"],
+      ["empty-state", "empty-state.action"],
+      ["support-triage", "support-triage.submit"],
+    ] as const;
+    for (const [compositionName, nodeId] of rewrittenNodes) {
+      const composition = defaults.find((candidate) => candidate.name === compositionName);
+      expect(composition?.nodes[nodeId], `${compositionName}:${nodeId}`).toMatchObject({
+        id: nodeId,
+        type: "box",
+      });
+    }
+
+    const retiredTypes = new Set(["button", "form", "filterBar", "metric", "tabs", "nav", "stat"]);
+    for (const composition of defaults) {
+      for (const [id, node] of Object.entries(composition.nodes)) {
+        expect(retiredTypes.has(node.type), `${composition.name}:${id}`).toBe(false);
+      }
+    }
+  });
+
+  it("uses concrete example content and native-only authoring", async () => {
+    const defaults = await loadDefaults();
+    const serialized = JSON.stringify(defaults);
     expect(serialized).not.toContain(legacyDefinitionsField);
     expect(serialized).not.toMatch(legacyNaming);
 
     const source = [
       moduleUrl,
       containerModuleUrl,
+      controlModuleUrl,
       new URL("./composition-chart-table.ts", import.meta.url),
     ]
       .map((url) => readFileSync(url, "utf8"))

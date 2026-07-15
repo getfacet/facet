@@ -51,12 +51,10 @@ const CATALOG_POLICY: FacetCatalog = {
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
   bricks: [
     { type: "box", variants: ["surface"] },
-    { type: "button", variants: ["primary"] },
+    { type: "input", variants: ["default"] },
   ],
   compositions: { mode: "allow", names: ["approved"] },
-  primitiveFallback: "allowed",
   policy: {
-    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 4,
@@ -899,8 +897,8 @@ describe("createReferenceAgent tool loop", () => {
       const transcript = toolResultSearchText(provider.turns[1]!);
       expect(transcript).toContain("catalog policy locked theme");
       expect(transcript).toContain('rejected theme "midnight"');
-      expect(transcript).toContain('catalog policy rejected node type "chart"');
-      expect(transcript).toContain("Use an allowed catalog component");
+      expect(transcript).toContain('catalog policy rejected brick type "chart"');
+      expect(transcript).toContain("Use an allowed catalog brick");
     } finally {
       errorSpy.mockRestore();
     }
