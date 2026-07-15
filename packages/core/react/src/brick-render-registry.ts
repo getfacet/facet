@@ -2,9 +2,6 @@ import type { ReactNode } from "react";
 import type { ComponentNodeType, FacetNode } from "@facet/core";
 import { renderChart } from "./brick-renderer-chart.js";
 import {
-  renderAlert,
-  renderBadge,
-  renderDivider,
   renderEmptyState,
   renderKeyValue,
   renderList,
@@ -84,11 +81,8 @@ export const BRICK_RENDERERS: Record<BrickRendererType, BrickRendererEntry> = {
   metric: { render: renderMetric, container: false, motionSnapshot: true },
   stat: { render: renderStat, container: false, motionSnapshot: true },
   keyValue: { render: renderKeyValue, container: false, motionSnapshot: true },
-  badge: { render: renderBadge, container: false, motionSnapshot: true },
   progress: { render: renderProgress, container: false, motionSnapshot: true },
-  alert: { render: renderAlert, container: false, motionSnapshot: true },
   list: { render: renderList, container: false, motionSnapshot: true },
-  divider: { render: renderDivider, container: false, motionSnapshot: true },
   filterBar: { render: renderFilterBar, container: false, motionSnapshot: true },
   emptyState: { render: renderEmptyState, container: false, motionSnapshot: true },
   loading: { render: renderLoading, container: false, motionSnapshot: true },
