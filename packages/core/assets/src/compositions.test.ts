@@ -222,7 +222,10 @@ describe("per-tone parity (DC-001)", () => {
     info: {
       box: alertBox,
       text: { color: "info" },
-      parts: { title: { text: { color: "info", weight: "bold" } }, body: { text: { color: "fg" } } },
+      parts: {
+        title: { text: { color: "info", weight: "bold" } },
+        body: { text: { color: "fg" } },
+      },
     },
     success: {
       box: alertBox,
@@ -276,12 +279,18 @@ describe("per-tone parity (DC-001)", () => {
     ["badge-warning", "warning", "warning"],
     ["badge-danger", "danger", "danger"],
   ];
-  it.each(badgeCases)("%s bakes the merged badge tokens for its tone", async (name, tone, variant) => {
-    const composition = await byName(name);
-    const expected = badgeExpected(tone, variant === undefined ? undefined : badgeRecipes[variant]);
-    expect(style(composition, `${name}.root`)).toEqual(expected.box);
-    expect(style(composition, `${name}.label`)).toEqual(expected.label);
-  });
+  it.each(badgeCases)(
+    "%s bakes the merged badge tokens for its tone",
+    async (name, tone, variant) => {
+      const composition = await byName(name);
+      const expected = badgeExpected(
+        tone,
+        variant === undefined ? undefined : badgeRecipes[variant],
+      );
+      expect(style(composition, `${name}.root`)).toEqual(expected.box);
+      expect(style(composition, `${name}.label`)).toEqual(expected.label);
+    },
+  );
 
   const alertCases: ReadonlyArray<[name: string, variant: string | undefined]> = [
     ["alert", undefined],
@@ -348,7 +357,9 @@ describe("no residual demoted display leaves (DC-004)", () => {
         },
       );
       for (const node of Object.values(expanded.nodes)) {
-        expect(DEMOTED.has(String((node as { type?: unknown }).type)), composition.name).toBe(false);
+        expect(DEMOTED.has(String((node as { type?: unknown }).type)), composition.name).toBe(
+          false,
+        );
       }
     }
   });
