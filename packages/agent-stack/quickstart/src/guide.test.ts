@@ -14,6 +14,7 @@ const EXPECTED_NODE_ORDER = [
   "qs.metric.patch",
   "qs.card.safety",
   "qs.badge.safe",
+  "qs.badge.safe.label",
   "qs.card.progress",
   "qs.progress.ready",
   "qs.surface.card",
@@ -24,6 +25,8 @@ const EXPECTED_NODE_ORDER = [
   "qs.intake.goal",
   "qs.intake.surface",
   "qs.intake.alert",
+  "qs.intake.alert.title",
+  "qs.intake.alert.body",
   "qs.intake.submit",
   "qs.runtime.summary",
   "qs.runtime.list",
@@ -31,12 +34,18 @@ const EXPECTED_NODE_ORDER = [
   "qs.nav.system",
   "qs.system.hero",
   "qs.system.hero.alert",
+  "qs.system.hero.alert.title",
+  "qs.system.hero.alert.body",
   "qs.system.theme",
   "qs.system.theme.badges",
   "qs.system.badge.neutral",
+  "qs.system.badge.neutral.label",
   "qs.system.badge.success",
+  "qs.system.badge.success.label",
   "qs.system.badge.warning",
+  "qs.system.badge.warning.label",
   "qs.system.badge.danger",
+  "qs.system.badge.danger.label",
   "qs.system.theme.progress",
   "qs.system.theme.list",
   "qs.system.bricks",
@@ -57,6 +66,8 @@ const EXPECTED_NODE_ORDER = [
   "qs.system.form.submit",
   "qs.system.feedback.card",
   "qs.system.feedback.alert",
+  "qs.system.feedback.alert.title",
+  "qs.system.feedback.alert.body",
   "qs.system.feedback.list",
   "qs.system.compositions",
   "qs.system.compositions.list",
@@ -67,6 +78,8 @@ const EXPECTED_NODE_ORDER = [
   "qs.nav.usecases",
   "qs.usecases.hero",
   "qs.usecases.alert",
+  "qs.usecases.alert.title",
+  "qs.usecases.alert.body",
   "qs.usecases.examples",
   "qs.usecases.list",
   "qs.usecases.actions",
@@ -105,9 +118,9 @@ describe("quickstart guide", () => {
   it("preserves the serialized initial stage byte-for-byte through module extraction", () => {
     const serialized = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(serialized).toHaveLength(18_381);
+    expect(serialized).toHaveLength(20_864);
     expect(createHash("sha256").update(serialized).digest("hex")).toBe(
-      "793e6595cbd4c398903868af5e655f152b86fb6e8d312f6b45637d063a86a030",
+      "eb17b41d3e6770d82baf51035f83b6c9fb6131c8b8f59c504e93d195ad9f5a1c",
     );
   });
 
