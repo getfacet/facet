@@ -109,7 +109,7 @@ describe("agent tool observation contract", () => {
   });
 
   it("round-trips a bounded data payload and rejects non-string data", () => {
-    const payload = JSON.stringify({ root: "r1", ids: { card: "r1" } });
+    const payload = JSON.stringify({ root: "r1", ids: { box: "r1" } });
     const observation = formatAgentToolObservation({
       tool: "inspect_stage",
       status: "ok",
@@ -120,7 +120,7 @@ describe("agent tool observation contract", () => {
 
     const parsed = parseAgentToolObservation(observation.text);
     expect(parsed?.data).toBe(payload);
-    expect(JSON.parse(parsed?.data ?? "")).toMatchObject({ root: "r1", ids: { card: "r1" } });
+    expect(JSON.parse(parsed?.data ?? "")).toMatchObject({ root: "r1", ids: { box: "r1" } });
 
     const withNonStringData = JSON.stringify({ ...parsed, data: { root: "r1" } });
     expect(parseAgentToolObservation(withNonStringData)).toBeUndefined();
@@ -332,12 +332,12 @@ describe("agent tool observation contract", () => {
     expect(isVisitorVisibleStageChange(TREE, afterOrphan, ["orphan"])).toBe(false);
   });
 
-  it("classifies component section and card descendants as visible while skipping blank data components", () => {
+  it("classifies nested boxes and populated components as visible while skipping blank data components", () => {
     const highLevelTree: FacetTree = {
-      root: "section",
+      root: "shell",
       nodes: {
-        section: { id: "section", type: "section", children: ["card"] },
-        card: { id: "card", type: "card", children: ["stat", "table"] },
+        shell: { id: "shell", type: "box", children: ["group"] },
+        group: { id: "group", type: "box", children: ["stat", "table"] },
         stat: {
           id: "stat",
           type: "stat",
@@ -351,8 +351,8 @@ describe("agent tool observation contract", () => {
     };
 
     expect(Array.from(visibleStageNodeIds(highLevelTree)).sort()).toEqual([
-      "card",
-      "section",
+      "group",
+      "shell",
       "stat",
     ]);
 

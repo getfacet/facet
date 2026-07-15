@@ -32,12 +32,7 @@ const CATALOG_E2E: FacetCatalog = {
   name: "quickstart-catalog",
   description: "Quickstart catalog policy",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [
-    { type: "section", variants: ["surface"] },
-    { type: "card", variants: ["interactive"] },
-    { type: "button", variants: ["primary"] },
-    { type: "metric" },
-  ],
+  bricks: [{ type: "box" }, { type: "button", variants: ["primary"] }, { type: "metric" }],
   compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
@@ -74,11 +69,26 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
   nodes: {
     "catalog-dashboard": {
       id: "catalog-dashboard",
-      type: "section",
-      title: "Catalog dashboard",
-      eyebrow: "Operator catalog",
-      variant: "surface",
-      children: ["catalog-arr", "catalog-pricing"],
+      type: "box",
+      style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+      children: [
+        "catalog-dashboard.eyebrow",
+        "catalog-dashboard.title",
+        "catalog-arr",
+        "catalog-pricing",
+      ],
+    },
+    "catalog-dashboard.eyebrow": {
+      id: "catalog-dashboard.eyebrow",
+      type: "text",
+      value: "Operator catalog",
+      style: { color: "fg-muted", size: "sm", weight: "semibold" },
+    },
+    "catalog-dashboard.title": {
+      id: "catalog-dashboard.title",
+      type: "text",
+      value: "Catalog dashboard",
+      style: { color: "fg", size: "xl", weight: "bold" },
     },
     "catalog-arr": {
       id: "catalog-arr",
@@ -90,11 +100,28 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
     },
     "catalog-pricing": {
       id: "catalog-pricing",
-      type: "card",
-      title: "Pricing path",
-      body: "Route qualified teams to the Pro plan.",
-      variant: "interactive",
-      children: ["catalog-pricing-cta"],
+      type: "box",
+      style: {
+        bg: "surface",
+        border: true,
+        gap: "sm",
+        pad: "md",
+        radius: "md",
+        shadow: "md",
+      },
+      children: ["catalog-pricing.title", "catalog-pricing.body", "catalog-pricing-cta"],
+    },
+    "catalog-pricing.title": {
+      id: "catalog-pricing.title",
+      type: "text",
+      value: "Pricing path",
+      style: { color: "fg", size: "lg", weight: "bold" },
+    },
+    "catalog-pricing.body": {
+      id: "catalog-pricing.body",
+      type: "text",
+      value: "Route qualified teams to the Pro plan.",
+      style: { color: "fg-muted" },
     },
     "catalog-pricing-cta": {
       id: "catalog-pricing-cta",
@@ -107,16 +134,22 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
 };
 
 function nativePanelTree(id: string, title: string): FacetTree {
+  const titleId = `${id}.title`;
   const copyId = `${id}.copy`;
   return {
     root: id,
     nodes: {
       [id]: {
         id,
-        type: "section",
-        title,
-        variant: "surface",
-        children: [copyId],
+        type: "box",
+        style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+        children: [titleId, copyId],
+      },
+      [titleId]: {
+        id: titleId,
+        type: "text",
+        value: title,
+        style: { color: "fg", size: "xl", weight: "bold" },
       },
       [copyId]: {
         id: copyId,
@@ -814,7 +847,7 @@ describe("quickstart E2E — composition references stay provider-only (DC-006, 
         const patchText = JSON.stringify(frames[1]?.data);
         expect(patchText).toContain("catalog-dashboard");
         expect(patchText).toContain("catalog-pricing");
-        expect(patchText).toContain('"type":"section"');
+        expect(patchText).toContain('"type":"box"');
         expect(patchText).toContain('"type":"button"');
         frameText = JSON.stringify(frames);
         expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
@@ -1039,11 +1072,11 @@ describe("quickstart E2E — quickstart component default", () => {
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain('"op":"replace"');
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
-        // badge/alert/divider are not node types; the seed expresses them via
-        // box+text primitives, so only surviving showcase types are asserted.
+        // Demoted visual patterns are expressed with box+text primitives, so
+        // only surviving showcase types are asserted.
         for (const type of [
-          "section",
-          "card",
+          "box",
+          "text",
           "tabs",
           "table",
           "chart",

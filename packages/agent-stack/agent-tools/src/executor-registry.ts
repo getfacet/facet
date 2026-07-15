@@ -50,7 +50,7 @@ type ExecutorRegistry = { [K in FacetNode["type"]]: ExecutorBrickEntry<K> };
 
 export function parseContainerChildren(
   value: unknown,
-  nodeType: "section" | "card" | "form",
+  nodeType: "form",
 ):
   | { readonly children: readonly string[] }
   | { readonly error: string; readonly nextAction: string } {
@@ -82,7 +82,7 @@ function preview(value: string): string {
     : collapsed;
 }
 
-// --- shared asNode handlers (metric/stat and emptyState/loading collapse cases) ---
+// --- shared asNode handlers (metric/stat and passthrough collapse cases) ---
 
 const asNodeMetricStat: AsNodeHandler = (value) => {
   if (typeof value["label"] !== "string" || typeof value["value"] !== "string") {
@@ -225,40 +225,6 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     },
     describe: (facetNode) =>
       `${facetNode.id} button label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`,
-  },
-  section: {
-    policy: { kind: "component" },
-    asNode: (value) => {
-      const children = parseContainerChildren(value["children"], "section");
-      if ("error" in children) return children;
-      return {
-        facetNode: {
-          ...value,
-          id: value["id"],
-          type: "section",
-          children: children.children,
-        } as unknown as FacetNode,
-      };
-    },
-    describe: (facetNode) =>
-      `${facetNode.id} section children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`,
-  },
-  card: {
-    policy: { kind: "component" },
-    asNode: (value) => {
-      const children = parseContainerChildren(value["children"], "card");
-      if ("error" in children) return children;
-      return {
-        facetNode: {
-          ...value,
-          id: value["id"],
-          type: "card",
-          children: children.children,
-        } as unknown as FacetNode,
-      };
-    },
-    describe: (facetNode) =>
-      `${facetNode.id} card children=${String(facetNode.children.length)}${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`,
   },
   tabs: {
     policy: { kind: "component" },
@@ -431,12 +397,6 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     },
     describe: (facetNode) =>
       `${facetNode.id} filterBar filters=${String(facetNode.filters.length)}${variantSuffix(facetNode)}`,
-  },
-  emptyState: {
-    policy: { kind: "component" },
-    asNode: asNodePassthrough,
-    describe: (facetNode) =>
-      `${facetNode.id} emptyState${facetNode.title === undefined ? "" : ` title="${preview(facetNode.title)}"`}${variantSuffix(facetNode)}`,
   },
   loading: {
     policy: { kind: "component" },

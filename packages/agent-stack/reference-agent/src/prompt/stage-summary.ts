@@ -109,8 +109,6 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       : "";
     return `type=input name=${name}${input}${options}`;
   },
-  section: (node) => summarizeContainer("section", node, ["title", "eyebrow", "body"], ["variant"]),
-  card: (node) => summarizeContainer("card", node, ["title", "body"], ["variant", "tone"]),
   button: (node) =>
     compactSummary([
       "type=button",
@@ -172,19 +170,19 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       `items=${String(arrayCount(node["items"]))}`,
       safeStringSummary(node["variant"], "variant"),
     ]),
-  form: (node) => summarizeContainer("form", node, ["title", "body", "submitLabel"], ["variant"]),
+  form: (node) =>
+    compactSummary([
+      "type=form",
+      `children=${String(arrayCount(node["children"]))}`,
+      charSummary(node["title"], "titleChars"),
+      charSummary(node["body"], "bodyChars"),
+      charSummary(node["submitLabel"], "submitLabelChars"),
+      safeStringSummary(node["variant"], "variant"),
+    ]),
   filterBar: (node) =>
     compactSummary([
       "type=filterBar",
       `filters=${String(arrayCount(node["filters"]))}`,
-      safeStringSummary(node["variant"], "variant"),
-    ]),
-  emptyState: (node) =>
-    compactSummary([
-      "type=emptyState",
-      charSummary(node["title"], "titleChars"),
-      charSummary(node["body"], "bodyChars"),
-      charSummary(node["actionLabel"], "actionLabelChars"),
       safeStringSummary(node["variant"], "variant"),
     ]),
   loading: (node) =>
@@ -218,20 +216,6 @@ function summarizeMetric(type: "metric" | "stat", node: Record<string, unknown>)
     charSummary(node["delta"], "deltaChars"),
     safeStringSummary(node["tone"], "tone"),
     safeStringSummary(node["variant"], "variant"),
-  ]);
-}
-
-function summarizeContainer(
-  type: "section" | "card" | "form",
-  node: Record<string, unknown>,
-  charFields: readonly string[],
-  safeStringFields: readonly string[],
-): string {
-  return compactSummary([
-    `type=${type}`,
-    `children=${String(arrayCount(node["children"]))}`,
-    ...charFields.map((field) => charSummary(node[field], `${field}Chars`)),
-    ...safeStringFields.map((field) => safeStringSummary(node[field], field)),
   ]);
 }
 

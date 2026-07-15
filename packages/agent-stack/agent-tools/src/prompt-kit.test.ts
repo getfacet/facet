@@ -21,6 +21,15 @@ const PAGE_BRIEF = "# Northstar Studio\n\nBuild a compact product-planning page.
 const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
 const retiredTool = ["use", "composition"].join("_");
 const retiredOrder = ["composition", "component", "primitive"].join(" -> ");
+const retiredContainerPatternNaming = new RegExp(
+  `\\b(?:${[
+    ["sec", "tion"],
+    ["ca", "rd"],
+    ["empty", "State"],
+  ]
+    .map((parts) => parts.join(""))
+    .join("|")})\\b`,
+);
 
 function sectionBetween(system: string, start: string, end: string): string {
   const startIndex = system.indexOf(start);
@@ -54,11 +63,11 @@ function catalogFixture(): FacetCatalog {
     theme: { active: "studio", switchPolicy: "locked", allowed: ["studio", "print"] },
     bricks: [
       {
-        type: "section",
+        type: "box",
         variants: ["surface", "hero"],
         guidance: "Use for compact screen regions.",
       },
-      { type: "card", variants: ["metric"], guidance: "Use for grouped records." },
+      { type: "metric", variants: ["emphasis"], guidance: "Use for summary values." },
       { type: "button", variants: ["primary"] },
     ],
     compositions: { mode: "allow", names: ["pricing-grid", "onboarding-flow"] },
@@ -233,8 +242,8 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(system).toMatch(/never write raw CSS/i);
 
     const section = catalogSection(system);
-    expect(section).toContain("section variants: surface, hero");
-    expect(section).toContain("card variants: metric");
+    expect(section).toContain("box variants: surface, hero");
+    expect(section).toContain("metric variants: emphasis");
     expect(section).toContain("button variants: primary");
     expect(section).toContain("policy order: component -> primitive");
 
@@ -263,11 +272,12 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).not.toMatch(/form\/search\/filterBar/);
   });
 
-  it("teaches append_node against all container parents, not only boxes", () => {
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain(
-      "existing container parent (box, section, card, or form)",
-    );
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toContain("existing box parent");
+  it("teaches optional references and native box or form container parents", () => {
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("existing container parent (box or form)");
+    expect(FACET_STATE_EDITING_PROMPT).toMatch(/optionally inspect/i);
+    expect(FACET_STATE_EDITING_PROMPT).toMatch(/native box\/component nodes/i);
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).not.toMatch(retiredContainerPatternNaming);
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toMatch(retiredContainerPatternNaming);
   });
 
   it("teaches the canonical reference read and no old tool names", () => {
@@ -310,11 +320,11 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
     expect(section).toMatch(/switchPolicy:\s*locked/i);
     expect(section).toMatch(/allowed themes:\s*studio, print/i);
     expect(section).toMatch(/allowed components/i);
-    expect(section).toContain("section");
+    expect(section).toContain("box");
     expect(section).toContain("surface, hero");
     expect(section).toContain("Use for compact screen regions.");
-    expect(section).toContain("card");
     expect(section).toContain("metric");
+    expect(section).toContain("emphasis");
     expect(section).toMatch(/composition policy:\s*allow pricing-grid, onboarding-flow/i);
     expect(section).toMatch(/primitiveFallback:\s*discouraged/i);
     expect(section).toMatch(/policy order:\s*component -> primitive/i);
@@ -376,8 +386,8 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
           variants: ["compact", "emphasis"],
           tags: ["analytics", "kpi"],
           repeatable: true,
-          preferredParent: "section",
-          composedOf: ["card", "metric"],
+          preferredParent: "box",
+          composedOf: ["box", "metric"],
           dataRequirements: ["metric label", "current value"],
           followUpEdits: ["update metric value after data changes"],
           root: "metadata-root-leak",
@@ -387,7 +397,7 @@ describe("buildFacetAgentSystemPrompt catalog guidance", () => {
         },
         root: "metric-root",
         nodes: {
-          "metric-root": { id: "metric-root", type: "card", children: ["metric-title"] },
+          "metric-root": { id: "metric-root", type: "box", children: ["metric-title"] },
           "metric-title": { id: "metric-title", type: "text", value: "Revenue" },
         },
       },

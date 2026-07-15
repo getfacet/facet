@@ -22,7 +22,7 @@ import type { FacetCatalog, FacetComposition } from "@facet/core";
 import * as referenceAgent from "@facet/reference-agent";
 import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
-import { QUICKSTART_INITIAL_STAGE } from "./guide.js";
+import { QUICKSTART_INITIAL_STAGE, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 import { createStubAgent } from "@facet/reference-agent";
 
@@ -34,10 +34,7 @@ const CATALOG_FIXTURE: FacetCatalog = {
   name: "quickstart-catalog",
   description: "Quickstart catalog policy",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [
-    { type: "section", variants: ["surface"] },
-    { type: "button", variants: ["primary"] },
-  ],
+  bricks: [{ type: "box" }, { type: "button", variants: ["primary"] }],
   compositions: { mode: "allow", names: ["pricing"] },
   primitiveFallback: "allowed",
   policy: {
@@ -55,6 +52,16 @@ describe("@facet/quickstart barrel", () => {
     expect(quickstartBarrel.createReferenceAgent).toBe(referenceAgent.createReferenceAgent);
     expect(quickstartBarrel.resolveProvider).toBe(referenceAgent.resolveProvider);
     expect(quickstartBarrel.createStubAgent).toBe(referenceAgent.createStubAgent);
+  });
+});
+
+describe("quickstart guide brief", () => {
+  it("does not advertise retired container node types", () => {
+    const retiredContainerTerms = /\b(?:sections?|cards?|emptyStates?)\b/i; // composition-hard-cut: allowed-negative
+
+    expect(QUICKSTART_PAGE_BRIEF).not.toMatch(retiredContainerTerms);
+    expect(QUICKSTART_PAGE_BRIEF).toContain("optional concrete composition references");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("ordinary native nodes");
   });
 });
 
@@ -391,7 +398,7 @@ describe("runCli — --assets (DC-009)", () => {
           compositions: { mode: "allow", names: ["pricing"] },
           primitiveFallback: "allowed",
         });
-        expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["section", "button"]);
+        expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["box", "button"]);
         expect(resolvedCatalog?.policy.order).toEqual(["component", "primitive"]);
         expect(resolvedCatalog?.policy.maxScreenSections).toBe(3);
       } finally {
@@ -465,12 +472,11 @@ describe("runCli — quickstart component default", () => {
       expect(seedText).toContain("Core Structure");
       expect(seedText).toContain("Design System");
       expect(seedText).toContain("Use Cases");
-      // badge/alert/divider were removed as node types (demoted to compositions /
-      // box); the seed now expresses them via box+text primitives, so only the
+      // Demoted visual patterns are expressed with box+text primitives, so only
       // surviving showcase brick types are asserted here.
       for (const type of [
-        "section",
-        "card",
+        "box",
+        "text",
         "tabs",
         "table",
         "chart",

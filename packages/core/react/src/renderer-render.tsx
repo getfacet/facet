@@ -607,9 +607,9 @@ export function renderNode({
     case "input":
       return renderBrick();
     default: {
-      // Registry dispatch for the renderBrick set (every component). A container
-      // brick (section/card/form) renders its children first and passes them in;
-      // every other brick is a leaf and calls renderBrick() with none. box/text/
+      // Registry dispatch for the renderBrick set (every component). The form
+      // container renders its children first and passes them in; every other
+      // component is a leaf and calls renderBrick() with none. box/text/
       // media/input keep their bespoke cases above. An unknown/junk type has no
       // entry and renders nothing — the same no-default fail-safe degrade as
       // before (the switch previously fell through to `undefined`).

@@ -323,9 +323,9 @@ describe("resolveTheme", () => {
       color: "accent-fg",
       weight: "semibold",
     });
-    expect(resolveRecipe(resolved, "card", "default").box).toMatchObject({
+    expect(resolveRecipe(resolved, "stat", "default").box).toMatchObject({
       bg: "surface",
-      shadow: "sm",
+      border: true,
     });
   });
 
@@ -706,11 +706,6 @@ describe("recipe resolution", () => {
               text: { color: "accent-fg", weight: "bold" },
             },
           },
-          card: {
-            default: {
-              box: { bg: "surface", border: true, radius: "lg" },
-            },
-          },
         },
       },
     ]);
@@ -726,13 +721,23 @@ describe("recipe resolution", () => {
       color: "#fefefe",
       fontWeight: 700,
     });
+  });
 
-    const card = resolveRecipe(resolved, "card", "missing");
-    expect(boxStyle(card.box, resolved)).toMatchObject({
-      background: "#f3f4f6",
-      border: "1px solid #e2e5ea",
-      borderRadius: "18px",
-    });
+  it("does not resolve retired container-pattern recipes", () => {
+    const retiredRecipeKeys = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
+    const recipes = Object.fromEntries(
+      retiredRecipeKeys.map((component) => [
+        component,
+        { default: { box: { bg: "danger" as const } } },
+      ]),
+    );
+    const resolved = resolveTheme("stale", [{ name: "stale", recipes } as unknown as FacetTheme]);
+
+    for (const component of retiredRecipeKeys) {
+      const staleComponent = component as unknown as Parameters<typeof resolveRecipe>[1];
+      expect(resolveRecipe(resolveTheme(undefined), staleComponent, "default")).toEqual({});
+      expect(resolveRecipe(resolved, staleComponent, "default")).toEqual({});
+    }
   });
 
   it("falls back to default recipe variants for missing or hostile recipe keys", () => {

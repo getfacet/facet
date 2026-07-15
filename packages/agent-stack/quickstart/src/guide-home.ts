@@ -16,12 +16,28 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.hero": {
     id: "qs.hero",
-    type: "section",
-    eyebrow: "Facet quickstart",
-    title: "What is Facet?",
-    body: "Facet is a live UI surface an agent can safely reshape while you talk: typed bricks, token styling, reusable assets, and JSON Patch updates instead of raw client code.",
-    variant: "surface",
-    children: ["qs.hero.actions"],
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    children: ["qs.hero.eyebrow", "qs.hero.title", "qs.hero.body", "qs.hero.actions"],
+  },
+  "qs.hero.eyebrow": {
+    id: "qs.hero.eyebrow",
+    type: "text",
+    value: "Facet quickstart",
+    style: { color: "fg-muted", size: "sm", weight: "semibold" },
+  },
+  "qs.hero.title": {
+    id: "qs.hero.title",
+    type: "text",
+    value: "What is Facet?",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.hero.body": {
+    id: "qs.hero.body",
+    type: "text",
+    value:
+      "Facet is a live UI surface an agent can safely reshape while you talk: typed bricks, token styling, reusable assets, and JSON Patch updates instead of raw client code.",
+    style: { color: "fg" },
   },
   "qs.hero.actions": {
     id: "qs.hero.actions",
@@ -65,10 +81,21 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.card.safety": {
     id: "qs.card.safety",
-    type: "card",
-    title: "Safe vocabulary",
-    body: "Agents emit validated stage data, not HTML or scripts.",
-    children: ["qs.badge.safe"],
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+    children: ["qs.card.safety.title", "qs.card.safety.body", "qs.badge.safe"],
+  },
+  "qs.card.safety.title": {
+    id: "qs.card.safety.title",
+    type: "text",
+    value: "Safe vocabulary",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.card.safety.body": {
+    id: "qs.card.safety.body",
+    type: "text",
+    value: "Agents emit validated stage data, not HTML or scripts.",
+    style: { color: "fg-muted" },
   },
   "qs.badge.safe": {
     id: "qs.badge.safe",
@@ -84,10 +111,21 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.card.progress": {
     id: "qs.card.progress",
-    type: "card",
-    title: "First paint",
-    body: "The shell starts with a real stage, then the provider-backed agent can refine it.",
-    children: ["qs.progress.ready"],
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+    children: ["qs.card.progress.title", "qs.card.progress.body", "qs.progress.ready"],
+  },
+  "qs.card.progress.title": {
+    id: "qs.card.progress.title",
+    type: "text",
+    value: "First paint",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.card.progress.body": {
+    id: "qs.card.progress.body",
+    type: "text",
+    value: "The shell starts with a real stage, then the provider-backed agent can refine it.",
+    style: { color: "fg-muted" },
   },
   "qs.progress.ready": {
     id: "qs.progress.ready",
@@ -99,11 +137,28 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.surface.card": {
     id: "qs.surface.card",
-    type: "card",
-    title: "Representative product surface",
-    body: "Display components stay display-only. Ask the agent to turn this into your own dashboard, pricing path, or workflow.",
-    variant: "interactive",
-    children: ["qs.surface.chart", "qs.surface.divider", "qs.surface.table"],
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "md" },
+    children: [
+      "qs.surface.card.title",
+      "qs.surface.card.body",
+      "qs.surface.chart",
+      "qs.surface.divider",
+      "qs.surface.table",
+    ],
+  },
+  "qs.surface.card.title": {
+    id: "qs.surface.card.title",
+    type: "text",
+    value: "Representative product surface",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.surface.card.body": {
+    id: "qs.surface.card.body",
+    type: "text",
+    value:
+      "Display components stay display-only. Ask the agent to turn this into your own dashboard, pricing path, or workflow.",
+    style: { color: "fg-muted" },
   },
   "qs.surface.chart": {
     id: "qs.surface.chart",
@@ -141,10 +196,22 @@ export const QUICKSTART_HOME_NODES = {
 export const QUICKSTART_HOME_SUMMARY_NODES = {
   "qs.runtime.summary": {
     id: "qs.runtime.summary",
-    type: "section",
-    title: "A page the agent owns",
-    body: "Every tab is still the same Facet stage. Navigation is local, while agent actions can patch the visible page.",
-    children: ["qs.runtime.list"],
+    type: "box",
+    style: { gap: "md", pad: "lg", width: "full" },
+    children: ["qs.runtime.summary.title", "qs.runtime.summary.body", "qs.runtime.list"],
+  },
+  "qs.runtime.summary.title": {
+    id: "qs.runtime.summary.title",
+    type: "text",
+    value: "A page the agent owns",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.runtime.summary.body": {
+    id: "qs.runtime.summary.body",
+    type: "text",
+    value:
+      "Every tab is still the same Facet stage. Navigation is local, while agent actions can patch the visible page.",
+    style: { color: "fg" },
   },
   "qs.runtime.list": {
     id: "qs.runtime.list",

@@ -3,6 +3,12 @@ import { COMPONENT_NODE_TYPES, PRIMITIVE_BRICK_TYPES, type FacetTree } from "@fa
 
 import { STAGE_SUMMARY_REGISTRY, summarizeStageForPrompt } from "./stage-summary.js";
 
+const RETIRED_CONTAINER_PATTERN_TYPES = [
+  ["sec", "tion"].join(""),
+  ["ca", "rd"].join(""),
+  ["empty", "State"].join(""),
+] as const;
+
 // Guards the whole point of the registry: if a future PR removes a core node
 // type but leaves its summary entry (or adds a type and forgets the entry), the
 // registry keys drift from the core vocabulary and this test fails. The switch
@@ -16,6 +22,29 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
   it("maps every core node type to a summary handler", () => {
     for (const type of [...PRIMITIVE_BRICK_TYPES, ...COMPONENT_NODE_TYPES]) {
       expect(typeof STAGE_SUMMARY_REGISTRY[type]).toBe("function");
+    }
+  });
+
+  it("omits retired container-pattern handlers", () => {
+    for (const type of RETIRED_CONTAINER_PATTERN_TYPES) {
+      expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, type)).toBe(false);
+    }
+
+    const staleNodes = Object.fromEntries(
+      RETIRED_CONTAINER_PATTERN_TYPES.map((type) => [type, { id: type, type }]),
+    );
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [...RETIRED_CONTAINER_PATTERN_TYPES] },
+        ...staleNodes,
+      },
+    } as unknown as FacetTree;
+    const summary = summarizeStageForPrompt(stage);
+
+    for (const type of RETIRED_CONTAINER_PATTERN_TYPES) {
+      expect(summary).toContain(`- ${type}: type=unknown`);
+      expect(summary).not.toContain(`type=${type}`);
     }
   });
 });

@@ -108,17 +108,40 @@ describe("printTree", () => {
     expect(out).toContain("  media(video): https://example.com/clip.mp4");
   });
 
-  it("prints component nodes with labels and counts while walking section, card, and form children", () => {
+  it("does not special-case retired container node types", () => {
+    for (const retired of ["section", "card", "emptyState"] as const) {
+      const out = lines({
+        root: "retired",
+        nodes: {
+          retired: {
+            id: "retired",
+            type: retired,
+            eyebrow: "Legacy",
+            title: "Retired pattern",
+            body: "No longer native",
+            actionLabel: "Act",
+            children: ["child"],
+            onPress: { name: "press_retired" },
+            onHold: { name: "hold_retired" },
+          },
+          child: { id: "child", type: "text", value: "must not be walked" },
+        },
+      } as unknown as FacetTree);
+
+      expect(out).toEqual([retired]);
+    }
+  });
+
+  it("prints native boxes text and buttons plus surviving components", () => {
     const out = lines({
       root: "root",
       nodes: {
         root: {
           id: "root",
-          type: "section",
-          eyebrow: "Catalog",
-          title: "Overview",
+          type: "box",
           children: [
-            "card",
+            "heading",
+            "summary",
             "button",
             "tabs",
             "nav",
@@ -130,18 +153,21 @@ describe("printTree", () => {
             "list",
             "form",
             "filterBar",
-            "emptyState",
+            "empty",
             "loading",
           ],
         },
-        card: {
-          id: "card",
-          type: "card",
-          title: "Revenue",
-          body: "Quarterly snapshot",
-          tone: "success",
+        heading: { id: "heading", type: "text", value: "Catalog / Overview" },
+        summary: {
+          id: "summary",
+          type: "box",
           onPress: { kind: "agent", name: "open_revenue" },
-          children: ["stat"],
+          children: ["summary-copy", "stat"],
+        },
+        "summary-copy": {
+          id: "summary-copy",
+          type: "text",
+          value: "Revenue / Quarterly snapshot",
         },
         stat: { id: "stat", type: "stat", label: "ARR", value: "$1M", delta: "+5%" },
         button: { id: "button", type: "button", label: "Refresh", onPress: { name: "refresh" } },
@@ -206,12 +232,20 @@ describe("printTree", () => {
           type: "filterBar",
           filters: [{ name: "status", label: "Status", options: ["Open"] }],
         },
-        emptyState: {
-          id: "emptyState",
-          type: "emptyState",
-          title: "No results",
-          body: "Try another query",
-          actionLabel: "Clear filters",
+        empty: {
+          id: "empty",
+          type: "box",
+          children: ["empty-copy", "empty-action"],
+        },
+        "empty-copy": {
+          id: "empty-copy",
+          type: "text",
+          value: "No results / Try another query",
+        },
+        "empty-action": {
+          id: "empty-action",
+          type: "button",
+          label: "Clear filters",
           onPress: { name: "clear_filters" },
         },
         loading: { id: "loading", type: "loading", label: "Loading customers" },
@@ -219,8 +253,10 @@ describe("printTree", () => {
     });
 
     expect(out).toEqual([
-      'section: "Catalog / Overview" (14 children)',
-      '  card: "Revenue" (1 child) [→ open_revenue]',
+      "box",
+      '  text: "Catalog / Overview"',
+      "  box [→ open_revenue]",
+      '    text: "Revenue / Quarterly snapshot"',
       "    stat: ARR = $1M (+5%)",
       '  button: "Refresh" [→ refresh]',
       "  tabs: 2 tabs",
@@ -234,7 +270,9 @@ describe("printTree", () => {
       '  form: "Lead" (1 child)',
       "    input: q",
       "  filterBar: 1 filter",
-      '  emptyState: "No results / Try another query / Clear filters" [→ clear_filters]',
+      "  box",
+      '    text: "No results / Try another query"',
+      '    button: "Clear filters" [→ clear_filters]',
       '  loading: "Loading customers"',
     ]);
   });

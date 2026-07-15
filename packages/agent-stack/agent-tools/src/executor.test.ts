@@ -24,7 +24,7 @@ const CATALOG_POLICY: FacetCatalog = {
   name: "catalog-policy-test",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
   bricks: [
-    { type: "section", variants: ["surface"] },
+    { type: "form", variants: ["surface"] },
     { type: "button", variants: ["primary"] },
   ],
   compositions: { mode: "allow", names: ["approved"] },
@@ -275,6 +275,9 @@ describe("executeStageTool", () => {
     if (invalidParent.status === "error") expect(invalidParent.code).toBe("invalid_parent");
     expect(invalidParent.patches).toEqual([]);
     expect(invalidParent.shadow).toBe(ROOT_TREE);
+    expect(parseAgentToolObservation(invalidParent.observation.text)?.next_action).toBe(
+      "Inspect the stage and append under an existing visible box or form, or create the parent first.",
+    );
 
     const nonBoxParent = executeStageTool(
       {
@@ -288,6 +291,9 @@ describe("executeStageTool", () => {
     if (nonBoxParent.status === "error") expect(nonBoxParent.code).toBe("invalid_parent");
     expect(nonBoxParent.patches).toEqual([]);
     expect(nonBoxParent.shadow).toBe(TREE_WITH_TEXT);
+    expect(parseAgentToolObservation(nonBoxParent.observation.text)?.next_action).toBe(
+      "Choose an existing box or form node as parentId.",
+    );
   });
 
   it("accepts every core chart kind and rejects values outside the shared set", () => {
@@ -415,6 +421,41 @@ describe("executeStageTool", () => {
         next_action: "Use one allowed Facet v1 node type.",
       });
       // The clean asNode type-error — NOT the "was removed by validation" drop path.
+      expect(observation?.message).toContain("must be one of the Facet v1 node types");
+      expect(observation?.message).not.toContain("was removed by validation");
+    }
+  });
+
+  it("rejects retired container-pattern node types at asNode", () => {
+    for (const retired of ["section", "card", "emptyState"] as const) {
+      const result = executeStageTool(
+        {
+          id: `call-retired-${retired}`,
+          name: "set_node",
+          input: {
+            node: {
+              id: `retired-${retired}`,
+              type: retired,
+              children: [],
+              title: "Retired pattern",
+            },
+          },
+        },
+        { shadow: ROOT_TREE },
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_input");
+      expect(result.patches).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
+      const observation = parseAgentToolObservation(result.observation.text);
+      expect(observation).toMatchObject({
+        tool: "set_node",
+        status: "error",
+        outcome: "rejected",
+        next_action: "Use one allowed Facet v1 node type.",
+      });
       expect(observation?.message).toContain("must be one of the Facet v1 node types");
       expect(observation?.message).not.toContain("was removed by validation");
     }
@@ -967,15 +1008,15 @@ describe("executeStageTool", () => {
 
   describe("catalog policy", () => {
     it("catalog policy allows catalog-listed components and primitive fallback", () => {
-      const section = executeStageTool(
+      const form = executeStageTool(
         {
-          id: "catalog-section",
+          id: "catalog-form",
           name: "append_node",
           input: {
             parentId: "root",
             ["node"]: {
-              id: "hero",
-              type: "section",
+              id: "contact",
+              type: "form",
               title: "Overview",
               variant: "surface",
               children: [],
@@ -985,20 +1026,20 @@ describe("executeStageTool", () => {
         { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
       );
 
-      expect(section.status).toBe("ok");
-      expect(section.patches).toEqual([
+      expect(form.status).toBe("ok");
+      expect(form.patches).toEqual([
         {
           op: "add",
-          path: "/nodes/hero",
+          path: "/nodes/contact",
           value: {
-            id: "hero",
-            type: "section",
+            id: "contact",
+            type: "form",
             title: "Overview",
             variant: "surface",
             children: [],
           },
         },
-        { op: "add", path: "/nodes/root/children/-", value: "hero" },
+        { op: "add", path: "/nodes/root/children/-", value: "contact" },
       ]);
 
       const button = executeStageTool(
@@ -1006,11 +1047,11 @@ describe("executeStageTool", () => {
           id: "catalog-button",
           name: "append_node",
           input: {
-            parentId: "hero",
+            parentId: "contact",
             ["node"]: { id: "cta", type: "button", label: "Start", variant: "primary" },
           },
         },
-        { shadow: section.shadow, assets: { catalog: CATALOG_POLICY } },
+        { shadow: form.shadow, assets: { catalog: CATALOG_POLICY } },
       );
 
       expect(button.status).toBe("ok");
@@ -1020,7 +1061,7 @@ describe("executeStageTool", () => {
           path: "/nodes/cta",
           value: { id: "cta", type: "button", label: "Start", variant: "primary" },
         },
-        { op: "add", path: "/nodes/hero/children/-", value: "cta" },
+        { op: "add", path: "/nodes/contact/children/-", value: "cta" },
       ]);
 
       const primitive = executeStageTool(

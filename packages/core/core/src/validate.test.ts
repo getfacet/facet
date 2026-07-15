@@ -429,16 +429,7 @@ describe("validateTree component nodes", () => {
         root: {
           id: "root",
           type: "box",
-          children: [
-            "metric",
-            "stat",
-            "keyValue",
-            "nav",
-            "form",
-            "filterBar",
-            "emptyState",
-            "loading",
-          ],
+          children: ["metric", "stat", "keyValue", "nav", "form", "filterBar", "loading"],
         },
         metric: { id: "metric", type: "metric", label: "ARR", value: "$24k", tone: "success" },
         stat: { id: "stat", type: "stat", label: "MRR", value: "$2k", tone: "info" },
@@ -466,13 +457,6 @@ describe("validateTree component nodes", () => {
           filters: [{ name: "status", label: "Status", options: ["Open"] }],
           onChange: { name: "filter_customers" },
         },
-        emptyState: {
-          id: "emptyState",
-          type: "emptyState",
-          title: "No customers",
-          actionLabel: "Create customer",
-          onPress: { name: "create_customer" },
-        },
         loading: { id: "loading", type: "loading", label: "Loading customers" },
       },
     });
@@ -495,10 +479,6 @@ describe("validateTree component nodes", () => {
     expect(tree.nodes["filterBar"]).toMatchObject({
       type: "filterBar",
       onChange: { kind: "agent", name: "filter_customers" },
-    });
-    expect(tree.nodes["emptyState"]).toMatchObject({
-      type: "emptyState",
-      onPress: { kind: "agent", name: "create_customer" },
     });
     expect(tree.nodes["loading"]).toMatchObject({ type: "loading", label: "Loading customers" });
   });
@@ -541,19 +521,16 @@ describe("validateTree component nodes", () => {
       nodes: {
         root: {
           id: "root",
-          type: "section",
-          title: "Overview",
-          eyebrow: "Live",
+          type: "box",
           variant: "dashboard",
-          children: ["card", "tabs", "table", "chart", "stat", "progress", "list"],
+          style: { gap: "md" },
+          children: ["panel", "tabs", "table", "chart", "stat", "progress", "list"],
         },
-        card: {
-          id: "card",
-          type: "card",
-          title: "Revenue",
-          body: "Pipeline summary",
-          tone: "success",
+        panel: {
+          id: "panel",
+          type: "box",
           variant: "metric",
+          style: { bg: "surface", gap: "sm" },
           children: ["button"],
         },
         button: {
@@ -587,8 +564,12 @@ describe("validateTree component nodes", () => {
 
     expect(issues).toHaveLength(0);
     expect(tree.root).toBe("root");
-    expect(tree.nodes["root"]).toMatchObject({ type: "section", title: "Overview" });
-    expect(tree.nodes["card"]).toMatchObject({ type: "card", children: ["button"] });
+    expect(tree.nodes["root"]).toMatchObject({ type: "box", style: { gap: "md" } });
+    expect(tree.nodes["panel"]).toMatchObject({
+      type: "box",
+      style: { bg: "surface", gap: "sm" },
+      children: ["button"],
+    });
     expect(tree.nodes["button"]).toMatchObject({ type: "button", label: "Refresh" });
     expect(tree.nodes["table"]).toMatchObject({ type: "table" });
     expect(tree.nodes["chart"]).toMatchObject({ type: "chart", kind: "line" });
@@ -634,7 +615,7 @@ describe("validateTree component nodes", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
-        root: { id: "root", type: "section", children: ["table", "chart", "list"] },
+        root: { id: "root", type: "box", children: ["table", "chart", "list"] },
         table: { id: "table", type: "table", columns: [{ key: "value", label: "Value" }], rows },
         chart: { id: "chart", type: "chart", kind: "bar", series: [{ label: "A", values }] },
         list: { id: "list", type: "list", items },
@@ -656,7 +637,7 @@ describe("validateTree component nodes", () => {
       nodes: {
         root: {
           id: "root",
-          type: "section",
+          type: "box",
           children: ["tabs", "lowProgress", "highProgress", "badStat", "good"],
         },
         tabs: {
@@ -707,7 +688,7 @@ describe("validateTree component nodes", () => {
         nodes: {
           root: {
             id: "root",
-            type: "section",
+            type: "box",
             children: ["badge", "alert", "divider", "keep"],
           },
           badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
@@ -731,6 +712,48 @@ describe("validateTree component nodes", () => {
     for (const type of ["badge", "alert", "divider"] as const) {
       expect(issues.some((issue) => issue.includes(`unknown type "${type}"`))).toBe(true);
     }
+  });
+});
+
+describe("retired container-pattern boundaries", () => {
+  it("drops retired container patterns and stale metadata", () => {
+    const retiredTypes = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
+    const staleNodes = Object.fromEntries(
+      retiredTypes.map((type) => [type, { id: type, type, children: [] }]),
+    );
+    const { tree, issues: treeIssues } = validateTree({
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: [...retiredTypes, "keep"] },
+        ...staleNodes,
+        keep: { id: "keep", type: "text", value: "kept" },
+      },
+    });
+
+    expect(Object.keys(tree.nodes)).toEqual(["root", "keep"]);
+    expect((tree.nodes["root"] as { children?: readonly string[] }).children).toEqual(["keep"]);
+    expect(tree.nodes["keep"]).toMatchObject({ type: "text", value: "kept" });
+    for (const type of retiredTypes) {
+      expect(treeIssues.some((issue) => issue.includes(`unknown type "${type}"`))).toBe(true);
+    }
+
+    const { composition, issues: compositionIssues } = validateComposition({
+      name: "stale-metadata",
+      metadata: {
+        description: "Stale metadata is dropped",
+        preferredParent: "section", // composition-hard-cut: allowed-negative
+        composedOf: [...retiredTypes, "box", "stat"],
+      },
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+    });
+
+    expect(composition).toBeDefined();
+    expect(composition?.metadata.preferredParent).toBeUndefined();
+    expect(composition?.metadata.composedOf).toEqual(["box", "stat"]);
+    expect(
+      compositionIssues.some((issue) => issue.includes("preferredParent is invalid; dropped")),
+    ).toBe(true);
   });
 });
 
@@ -807,9 +830,9 @@ describe("validateComposition", () => {
     const safe = validateComposition({
       name: "customerSummaryCard",
       metadata: { description: "Customer summary card" },
-      root: "card",
+      root: "root",
       nodes: {
-        card: { id: "card", type: "card", title: "Summary", children: ["metric"] },
+        root: { id: "root", type: "box", children: ["metric"] },
         metric: { id: "metric", type: "metric", label: "ARR", value: "$24k" },
       },
     });
@@ -978,13 +1001,13 @@ describe("validateComposition", () => {
         variants: ["compact", "detailed"],
         tags: ["dashboard", "metrics"],
         repeatable: true,
-        preferredParent: "section",
-        composedOf: ["section", "card", "stat", "not-a-node"],
+        preferredParent: "box",
+        composedOf: ["box", "stat", "not-a-node"],
         dataRequirements: ["metric_label", "current_value"],
         followUpEdits: ["refresh_value"],
       },
-      root: "card",
-      nodes: { card: { id: "card", type: "card", title: "KPI", children: [] } },
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
     });
 
     expect(issues).toHaveLength(0);
@@ -996,40 +1019,50 @@ describe("validateComposition", () => {
       variants: ["compact", "detailed"],
       tags: ["dashboard", "metrics"],
       repeatable: true,
-      preferredParent: "section",
-      composedOf: ["section", "card", "stat"],
+      preferredParent: "box",
+      composedOf: ["box", "stat"],
       dataRequirements: ["metric_label", "current_value"],
       followUpEdits: ["refresh_value"],
     });
   });
 
-  it("keeps every intrinsic component type in composedOf, not just the high-level shortlist", () => {
+  it("keeps every surviving FacetNode type in composedOf", () => {
     const composedOf = [
-      "metric",
+      "box",
+      "text",
+      "media",
+      "input",
+      "richtext",
+      "button",
+      "tabs",
       "nav",
+      "table",
+      "chart",
+      "metric",
       "keyValue",
+      "progress",
+      "list",
       "form",
       "filterBar",
-      "emptyState",
       "loading",
       "stat",
-      "box",
-      // Primitive bricks are admitted too — incl. richtext (allowlist derives
-      // from PRIMITIVE_BRICK_TYPES, so a new primitive is not silently dropped).
-      "richtext",
     ];
-    const { composition, issues } = validateComposition({
-      name: "component-heavy",
-      metadata: {
-        description: "Component-heavy reference",
-        composedOf: [...composedOf, "not-a-node"],
-      },
-      root: "card",
-      nodes: { card: { id: "card", type: "card", children: [] } },
-    });
+    const kept: string[] = [];
+    for (const [index, chunk] of [composedOf.slice(0, 16), composedOf.slice(16)].entries()) {
+      const { composition, issues } = validateComposition({
+        name: `component-heavy-${String(index)}`,
+        metadata: {
+          description: "Component-heavy reference",
+          composedOf: chunk,
+        },
+        root: "root",
+        nodes: { root: { id: "root", type: "box", children: [] } },
+      });
 
-    expect(issues).toHaveLength(0);
-    expect(composition?.metadata?.composedOf).toEqual(composedOf);
+      expect(issues).toHaveLength(0);
+      kept.push(...(composition?.metadata?.composedOf ?? []));
+    }
+    expect(kept).toEqual(composedOf);
   });
 
   it("keeps sentence-like dataRequirements/followUpEdits as free text after bounded sanitation", () => {
@@ -1048,8 +1081,8 @@ describe("validateComposition", () => {
         ],
         followUpEdits: ["Add a refresh button to reload the balance."],
       },
-      root: "card",
-      nodes: { card: { id: "card", type: "card", children: [] } },
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
     });
 
     const dataRequirements = composition?.metadata?.dataRequirements ?? [];

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 import * as nodeModule from "./nodes.js";
@@ -14,8 +15,6 @@ import { validateTree } from "./validate.js";
 
 const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
   "button",
-  "section",
-  "card",
   "tabs",
   "nav",
   "table",
@@ -26,8 +25,13 @@ const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
   "list",
   "form",
   "filterBar",
-  "emptyState",
   "loading",
+] as const;
+
+const RETIRED_CONTAINER_TYPES = [
+  ["sec", "tion"].join(""),
+  ["ca", "rd"].join(""),
+  ["empty", "State"].join(""),
 ] as const;
 
 describe("component vocabulary", () => {
@@ -86,14 +90,50 @@ describe("component vocabulary", () => {
       ).toBe(true);
     }
   });
+
+  it("does not route retired container patterns", () => {
+    const layoutModuleUrl = new URL(
+      ["./component-validation-", "layout.ts"].join(""),
+      import.meta.url,
+    );
+    expect(existsSync(layoutModuleUrl), "the retired layout sanitizer module must be deleted").toBe(
+      false,
+    );
+
+    const validationSource = readFileSync(
+      new URL("./component-validation.ts", import.meta.url),
+      "utf8",
+    );
+    const feedbackSource = readFileSync(
+      new URL("./component-validation-feedback.ts", import.meta.url),
+      "utf8",
+    );
+    expect(validationSource).not.toContain(["component-validation-", "layout"].join(""));
+    expect(feedbackSource).not.toContain(["empty", "State"].join(""));
+
+    for (const type of RETIRED_CONTAINER_TYPES) {
+      const issues: string[] = [];
+      expect(sanitizeComponentNode(type, { type, title: "Stale" }, issues)).toBeUndefined();
+      expect(issues).toContain(`node "${type}": unknown component type "${type}" dropped`);
+
+      const { tree } = validateTree({
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["valid", type] },
+          valid: { id: "valid", type: "text", value: "Still visible" },
+          [type]: { id: type, type, title: "Stale" },
+        },
+      });
+      expect(tree.nodes[type]).toBeUndefined();
+      expect(tree.nodes.valid).toMatchObject({ type: "text", value: "Still visible" });
+    }
+  });
 });
 
 describe("sanitizeComponentNode", () => {
   it("matches validateTree's established behavior for every legacy high-level component", () => {
     const fixtures = [
       { type: "button", label: "Run", tone: "invented" },
-      { type: "section", title: "Section", children: [] },
-      { type: "card", title: "Card", children: [] },
       {
         type: "tabs",
         items: Array.from({ length: 13 }, (_, index) => ({

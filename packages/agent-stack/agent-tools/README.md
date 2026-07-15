@@ -73,14 +73,15 @@ catalog policy, and each exposed composition's name plus
 composition metadata, provider keys, visitor ids, secrets, and unknown asset
 fields do not enter the system prompt.
 
-The component-model guidance tells agents to author intrinsic components and
-catalog-advertised variants before falling back to primitive bricks. It names
-product-quality defaults such as sections, cards, inputs, buttons, tabs, nav,
-tables, charts, metrics, key-value rows, progress, lists, forms, filters, empty
-states, and loading states without exposing renderer recipe parts, theme token
-values, or composition node JSON as stage syntax. Composition datasets are
-optional examples: skip the read for a simple UI; for a complex UI, inspect one
-and then author native nodes separately.
+The component-model guidance tells agents to author surviving intrinsic
+components and catalog-advertised variants before falling back to primitive
+bricks. Inputs, buttons, tabs, nav, tables, charts, metrics, key-value rows,
+progress, lists, forms, filters, and loading states remain in that authoring
+vocabulary. Section, card, and empty-state layouts are instead optional
+composition examples built from native boxes, text, and buttons: skip the read
+for a simple UI; for a complex UI, inspect one and then author native nodes
+separately. Renderer recipe parts, theme token values, and composition node JSON
+never become stage syntax.
 
 The catalog prompt section is active UI authoring policy. It tells the model the
 active theme, whether theme switching is a locked theme or explicitly allowed,

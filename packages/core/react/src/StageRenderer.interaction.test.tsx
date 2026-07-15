@@ -347,9 +347,9 @@ describe("StageRenderer component button and tabs (jsdom)", () => {
   const highLevelScreensTree = (): FacetTree => ({
     root: "root",
     nodes: {
-      root: { id: "root", type: "section", children: ["tabs", "rootText"] },
+      root: { id: "root", type: "box", children: ["tabs", "rootText"] },
       rootText: { id: "rootText", type: "text", value: "plain root content" },
-      home: { id: "home", type: "section", children: ["tabs", "homeText", "refresh", "locked"] },
+      home: { id: "home", type: "box", children: ["tabs", "homeText", "refresh", "locked"] },
       tabs: {
         id: "tabs",
         type: "tabs",
@@ -372,7 +372,7 @@ describe("StageRenderer component button and tabs (jsdom)", () => {
         disabled: true,
         onPress: { kind: "agent", name: "locked" },
       },
-      about: { id: "about", type: "section", children: ["tabs", "aboutText"] },
+      about: { id: "about", type: "box", children: ["tabs", "aboutText"] },
       aboutText: { id: "aboutText", type: "text", value: "about content" },
     },
     screens: { home: "home", about: "about" },
@@ -650,17 +650,16 @@ describe("StageRenderer collect (jsdom)", () => {
     );
   });
 
-  it("collects fields from component section/card targets via a component button", () => {
+  it("collects fields from a native box target via a component button", () => {
     const onAction = vi.fn();
     render(
       <StageRenderer
         onAction={onAction}
         tree={tree({
-          root: { id: "root", type: "section", children: ["card", "submit"] },
-          card: {
-            id: "card",
-            type: "card",
-            title: "Contact",
+          root: { id: "root", type: "box", children: ["panel", "submit"] },
+          panel: {
+            id: "panel",
+            type: "box",
             children: ["emailF"],
           },
           emailF: { id: "emailF", type: "input", name: "email", placeholder: "your email" },
@@ -668,7 +667,7 @@ describe("StageRenderer collect (jsdom)", () => {
             id: "submit",
             type: "button",
             label: "Send",
-            onPress: { kind: "agent", name: "submit", collect: "card" },
+            onPress: { kind: "agent", name: "submit", collect: "panel" },
           },
         })}
       />,
@@ -679,6 +678,7 @@ describe("StageRenderer collect (jsdom)", () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
+    expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction).toHaveBeenCalledWith(
       { kind: "agent", name: "submit" },
       { email: "ada@lovelace.dev" },

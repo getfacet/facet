@@ -89,7 +89,7 @@ function catalogFixture(): FacetCatalog {
     description: "Reference agent catalog policy",
     theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
     bricks: [
-      { type: "section", variants: ["surface"], guidance: "Use sections for major groups." },
+      { type: "box", variants: ["surface"], guidance: "Use boxes for major groups." },
       { type: "button", variants: ["primary"] },
     ],
     compositions: { mode: "allow", names: ["approved"] },
@@ -170,7 +170,7 @@ describe("buildSystem", () => {
       /product-quality defaults[\s\S]*input for raw inputs[\s\S]*button for actions/i,
     );
     expect(system).toMatch(/editBeforeAppend is true/i);
-    expect(system).toContain("allowed components: section variants: surface");
+    expect(system).toContain("allowed components: box variants: surface");
     expect(system).toContain("button variants: primary");
     expect(system).toContain("policy order: component -> primitive");
 
@@ -357,7 +357,7 @@ describe("buildSystem", () => {
     expect(catalogSection).toContain("reference-catalog");
     expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
     expect(catalogSection).toContain("locked theme guidance");
-    expect(catalogSection).toContain("allowed components: section variants: surface");
+    expect(catalogSection).toContain("allowed components: box variants: surface");
     expect(catalogSection).toContain("button variants: primary");
     expect(catalogSection).toContain("composition policy: allow approved");
     expect(catalogSection).toContain("primitiveFallback: allowed");
@@ -778,7 +778,7 @@ describe("buildInitialMessages", () => {
     expect(nodeLines.at(-1)).toContain("node-079");
   });
 
-  it("stage summary covers component catalog nodes without full JSON", () => {
+  it("stage summary covers surviving catalog nodes and native box compositions without full JSON", () => {
     const stage: FacetTree = {
       root: "root",
       nodes: {
@@ -786,7 +786,7 @@ describe("buildInitialMessages", () => {
           id: "root",
           type: "box",
           children: [
-            "section",
+            "overview",
             "tabs",
             "nav",
             "table",
@@ -799,26 +799,20 @@ describe("buildInitialMessages", () => {
             "search-input",
             "search-button",
             "filterBar",
-            "emptyState",
+            "no-results",
             "loading",
           ],
         },
-        section: {
-          id: "section",
-          type: "section",
-          title: "Overview",
-          eyebrow: "RAW_JSON_SENTINEL_EYEBROW",
-          body: "RAW_JSON_SENTINEL_SECTION_BODY",
+        overview: {
+          id: "overview",
+          type: "box",
           variant: "surface",
-          children: ["card", "button"],
+          children: ["metrics-group", "button"],
         },
-        card: {
-          id: "card",
-          type: "card",
-          title: "Metrics",
-          body: "RAW_JSON_SENTINEL_CARD_BODY",
+        "metrics-group": {
+          id: "metrics-group",
+          type: "box",
           variant: "surface",
-          tone: "accent",
           children: ["legacy-stat"],
         },
         button: {
@@ -935,13 +929,14 @@ describe("buildInitialMessages", () => {
             { name: "status", label: "Status", input: "select", options: ["Open", "Closed"] },
           ],
         },
-        emptyState: {
-          id: "emptyState",
-          type: "emptyState",
-          title: "No results",
-          body: "RAW_JSON_SENTINEL_EMPTY",
-          actionLabel: "Reset",
+        "no-results": {
+          id: "no-results",
+          type: "box",
+          children: ["empty-title", "empty-body", "empty-action"],
         },
+        "empty-title": { id: "empty-title", type: "text", value: "No results" },
+        "empty-body": { id: "empty-body", type: "text", value: "Try another filter." },
+        "empty-action": { id: "empty-action", type: "button", label: "Reset" },
         loading: { id: "loading", type: "loading", label: "Loading results" },
       },
       screens: { home: "root" },
@@ -951,10 +946,8 @@ describe("buildInitialMessages", () => {
     const prompt = formatCurrentStageForPrompt(stage, { maxJsonChars: 0, maxSummaryNodes: 30 });
 
     expect(prompt).toContain("CURRENT STAGE SUMMARY");
-    expect(prompt).toContain("- section: type=section children=2");
-    expect(prompt).toContain("titleChars=8");
-    expect(prompt).toContain("- card: type=card children=1");
-    expect(prompt).toContain("tone=accent");
+    expect(prompt).toContain("- overview: type=box children=2");
+    expect(prompt).toContain("- metrics-group: type=box children=1");
     expect(prompt).toContain("- button: type=button labelChars=24");
     expect(prompt).toContain("disabled=true");
     expect(prompt).toContain("- tabs: type=tabs items=2");
@@ -970,11 +963,12 @@ describe("buildInitialMessages", () => {
     expect(prompt).toContain("- search-input: type=input name=q");
     expect(prompt).toContain("- search-button: type=button labelChars=2");
     expect(prompt).toContain("- filterBar: type=filterBar filters=1");
-    expect(prompt).toContain("- emptyState: type=emptyState titleChars=10");
+    expect(prompt).toContain("- no-results: type=box children=3");
+    expect(prompt).toContain("- empty-title: type=text chars=10");
+    expect(prompt).toContain("- empty-action: type=button labelChars=5");
     expect(prompt).toContain("- loading: type=loading labelChars=15");
     expect(prompt).not.toContain("RAW_JSON_SENTINEL");
     expect(prompt).not.toContain('"nodes"');
-    expect(prompt).not.toContain('"type":"section"');
   });
 });
 

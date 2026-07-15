@@ -57,7 +57,7 @@ const { tree, issues } = validateTree(EMPTY_TREE);
 const { catalog } = validateCatalog({
   name: "product-ui",
   theme: { active: "default", switchPolicy: "locked" },
-  components: [{ type: "section", variants: ["surface"] }, { type: "card" }],
+  components: [{ type: "button", variants: ["primary"] }, { type: "metric" }],
   compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
@@ -75,9 +75,15 @@ const { composition } = validateComposition({
   nodes: {
     card: {
       id: "card",
-      type: "card",
-      title: "Welcome",
-      children: ["start"],
+      type: "box",
+      style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
+      children: ["title", "start"],
+    },
+    title: {
+      id: "title",
+      type: "text",
+      value: "Welcome",
+      style: { size: "lg", weight: "bold" },
     },
     start: {
       id: "start",

@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CATALOG } from "./catalog.js";
 import * as themeExports from "./theme.js";
 import {
   isValidThemeName,
@@ -594,14 +593,10 @@ describe("validateTheme", () => {
     expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(5);
   });
 
-  it("accepts metric, stat, and every catalog-advertised component recipe variant", () => {
+  it("accepts every surviving primitive and component recipe key", () => {
     const recipes: Record<string, Record<string, { box: { bg: "surface" } }>> = {};
-    const defaultComponents = DEFAULT_CATALOG.components ?? [];
-    for (const component of defaultComponents) {
-      const variants = component.variants ?? ["default"];
-      recipes[component.type] = Object.fromEntries(
-        variants.map((variant) => [variant, { box: { bg: "surface" } }]),
-      );
+    for (const component of RECIPE_COMPONENTS) {
+      recipes[component] = { default: { box: { bg: "surface" } } };
     }
     recipes.stat = { default: { box: { bg: "surface" } }, success: { box: { bg: "surface" } } };
 
@@ -609,15 +604,34 @@ describe("validateTheme", () => {
 
     expect(theme).toBeDefined();
     expect(hasError(issues)).toBe(false);
-    for (const component of defaultComponents) {
-      for (const variant of component.variants ?? ["default"]) {
-        expect(theme?.recipes?.[component.type]?.[variant]?.box).toEqual({ bg: "surface" });
-      }
+    for (const component of RECIPE_COMPONENTS) {
+      expect(theme?.recipes?.[component]?.default?.box).toEqual({ bg: "surface" });
     }
     expect(theme?.recipes?.metric?.default?.box).toEqual({ bg: "surface" });
     expect(theme?.recipes?.stat?.success?.box).toEqual({ bg: "surface" });
-    for (const component of defaultComponents) {
-      expect((RECIPE_COMPONENTS as readonly string[]).includes(component.type)).toBe(true);
+  });
+
+  it("warning-drops retired container-pattern recipe keys", () => {
+    const retiredRecipeKeys = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
+    const recipes = Object.fromEntries(
+      retiredRecipeKeys.map((component) => [
+        component,
+        { default: { box: { bg: "surface" as const } } },
+      ]),
+    );
+
+    const { theme, issues } = validateTheme({ name: "stale-recipes", recipes });
+
+    expect(theme).toBeDefined();
+    for (const component of retiredRecipeKeys) {
+      expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, component)).toBe(false);
+      expect(
+        issues.some(
+          (issue) =>
+            issue.severity === "warning" &&
+            issue.message.includes(`unknown component "${component}" dropped`),
+        ),
+      ).toBe(true);
     }
   });
 

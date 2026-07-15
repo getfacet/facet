@@ -11,18 +11,20 @@ npm install @facet/assets @facet/core
 `DEFAULT_THEME` is the built-in token value map for colors, spacing, typography
 (`fontFamily`/`fontSize`/`fontWeight`), radii, shadows, media ratios, and
 component recipes. Recipes are named style bundles for primitive bricks and
-intrinsic components, such as `button.primary`, `section.surface`, and
-`card.interactive`; agents still emit recipe or token names, not CSS values.
+intrinsic components, such as `button.primary`, `media.hero`, and
+`input.default`; agents still emit recipe or token names, not CSS values.
 Component recipes also carry token-only `parts` for internal affordances such as
 field labels and controls, button labels, tabs, table cells, chart plots,
 progress tracks/fills, and list items. Those parts are default
-renderer data, not new stage syntax. Badges and alerts ship as box+text reference
-datasets in `DEFAULT_COMPOSITIONS`, not component recipes.
+renderer data, not new stage syntax. Badges, alerts, cards, sections, and empty
+states ship as native reference datasets in `DEFAULT_COMPOSITIONS`, not
+component recipes.
 Its default sans stack is `Nunito, sans-serif`; this package only exports the
 data value, so hosts that want the exact Nunito face must load that font in
 their own shell.
-`DEFAULT_COMPOSITIONS` is a small library of eleven concrete reference datasets
-such as `hero`, `card`, `pricing-section`, and `dashboard-summary`. Every entry
+`DEFAULT_COMPOSITIONS` is a library of 22 concrete reference datasets such as
+`hero`, `card`, `section`, `empty-state`, `pricing-section`, and
+`dashboard-summary`. Every entry
 is self-contained native Facet data with `name`, required
 `metadata.description`, a fragment `root`, and a node map that uses the same
 closed node/token vocabulary as a stage. The root may be a leaf or a container.

@@ -81,10 +81,15 @@ describe("StageRenderer component layout contract", () => {
         stat: { id: "stat", type: "stat", label: "Legacy ARR", value: "$22k", delta: "+8%" },
         empty: {
           id: "empty",
-          type: "emptyState",
-          title: "No results",
-          body: "Try a different filter.",
-          actionLabel: "Reset",
+          type: "box",
+          children: ["emptyTitle", "emptyBody", "emptyAction"],
+        },
+        emptyTitle: text("emptyTitle", "No results"),
+        emptyBody: text("emptyBody", "Try a different filter."),
+        emptyAction: {
+          id: "emptyAction",
+          type: "button",
+          label: "Reset",
           onPress: { kind: "agent", name: "reset" },
         },
         loading: { id: "loading", type: "loading", label: "Loading accounts" },
@@ -129,10 +134,10 @@ describe("StageRenderer component layout contract", () => {
         rootText: text("rootText", "root fallback"),
         home: {
           id: "home",
-          type: "section",
+          type: "box",
           children: ["nav", "form", "filters", "empty"],
         },
-        about: { id: "about", type: "section", children: ["aboutText"] },
+        about: { id: "about", type: "box", children: ["aboutText"] },
         aboutText: text("aboutText", "about content"),
         nav: { id: "nav", type: "nav", items: [{ label: "About", to: "about" }] },
         form: {
@@ -154,9 +159,14 @@ describe("StageRenderer component layout contract", () => {
         },
         empty: {
           id: "empty",
-          type: "emptyState",
-          title: "No rows",
-          actionLabel: "Reload",
+          type: "box",
+          children: ["emptyTitle", "emptyAction"],
+        },
+        emptyTitle: text("emptyTitle", "No rows"),
+        emptyAction: {
+          id: "emptyAction",
+          type: "button",
+          label: "Reload",
           onPress: { kind: "agent", name: "reload" },
         },
       },
@@ -176,7 +186,9 @@ describe("StageRenderer component layout contract", () => {
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "Closed" } });
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "filter" }, { status: "Closed" });
 
+    onAction.mockClear();
     fireEvent.click(screen.getByRole("button", { name: "Reload" }));
+    expect(onAction).toHaveBeenCalledTimes(1);
     expect(onAction).toHaveBeenCalledWith({ kind: "agent", name: "reload" });
 
     fireEvent.click(screen.getByRole("button", { name: "About" }));
@@ -202,10 +214,11 @@ describe("StageRenderer component layout contract", () => {
           toggleText: text("toggleText", "Toggle"),
           empty: {
             id: "empty",
-            type: "emptyState",
+            type: "box",
             hidden: true,
-            title: "Hidden empty state",
-          } as unknown as FacetNode,
+            children: ["emptyText"],
+          },
+          emptyText: text("emptyText", "Hidden empty state"),
         })}
       />,
     );
@@ -250,10 +263,10 @@ describe("StageRenderer component layout contract", () => {
       metric: { id: "metric", type: "metric", label: "ARR" } as unknown as FacetNode,
       empty: {
         id: "empty",
-        type: "emptyState",
-        title: { bad: true },
-        body: "Still bounded",
-      } as unknown as FacetNode,
+        type: "box",
+        children: ["emptyBody"],
+      },
+      emptyBody: text("emptyBody", "Still bounded"),
       loading: { id: "loading", type: "loading", label: { bad: true } } as unknown as FacetNode,
       safe: text("safe", "safe child"),
     });

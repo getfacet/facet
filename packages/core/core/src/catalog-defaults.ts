@@ -16,16 +16,6 @@ export const DEFAULT_COMPONENTS: readonly CatalogComponent[] = [
     variants: ["primary", "secondary", "danger"],
     guidance: "Use for direct visitor actions before hand-rolled pressable boxes.",
   },
-  {
-    type: "section",
-    variants: ["default", "surface"],
-    guidance: "Use as compact screen/page regions.",
-  },
-  {
-    type: "card",
-    variants: ["default", "interactive"],
-    guidance: "Use for grouped content, records, and action panels.",
-  },
   { type: "tabs", variants: ["default"], guidance: "Use for local screen navigation." },
   { type: "nav", variants: ["default"], guidance: "Use for app and section navigation." },
   { type: "table", variants: ["default"], guidance: "Use for display-only tabular data." },
@@ -51,11 +41,6 @@ export const DEFAULT_COMPONENTS: readonly CatalogComponent[] = [
     type: "filterBar",
     variants: ["default"],
     guidance: "Use for compact filtering controls.",
-  },
-  {
-    type: "emptyState",
-    variants: ["default"],
-    guidance: "Use for no-data and no-result states.",
   },
   { type: "loading", variants: ["default"], guidance: "Use for pending and busy states." },
 ];

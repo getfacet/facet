@@ -138,6 +138,56 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(out).not.toContain("<hr");
   });
 
+  // Intentional negative/fail-safe fixtures: these raw pre-cutover node shapes
+  // bypass the narrowed core union and must disappear as WHOLE subtrees. The
+  // valid descendants must not be unwrapped, while an outside sibling survives.
+  it("blank-degrades retired container-pattern subtrees", () => {
+    const staleTree = tree({
+      root: box("root", ["stale-section", "stale-card", "stale-empty", "valid-sibling"]),
+      "stale-section": {
+        id: "stale-section",
+        type: "section",
+        title: "Stale section",
+        children: ["section-child"],
+      } as unknown as FacetNode,
+      "section-child": text("section-child", "Section child must stay hidden"),
+      "stale-card": {
+        id: "stale-card",
+        type: "card",
+        title: "Stale card",
+        children: ["card-child"],
+      } as unknown as FacetNode,
+      "card-child": text("card-child", "Card child must stay hidden"),
+      "stale-empty": {
+        id: "stale-empty",
+        type: "emptyState",
+        title: "Empty state must stay hidden",
+        body: "No stale feedback copy",
+        actionLabel: "No stale action",
+      } as unknown as FacetNode,
+      "valid-sibling": text("valid-sibling", "Valid sibling survives"),
+    });
+
+    expect(() => render(staleTree)).not.toThrow();
+    const out = render(staleTree);
+    expect(out).toContain("Valid sibling survives");
+    expect(out.match(/<p/g)).toHaveLength(1);
+    for (const hiddenCopy of [
+      "Stale section",
+      "Section child must stay hidden",
+      "Stale card",
+      "Card child must stay hidden",
+      "Empty state must stay hidden",
+      "No stale feedback copy",
+      "No stale action",
+    ]) {
+      expect(out).not.toContain(hiddenCopy);
+    }
+    expect(out).not.toContain("<section");
+    expect(out).not.toContain("<h2");
+    expect(out).not.toContain("<h3");
+  });
+
   it("falls back safely when raw screen maps throw during resolution", () => {
     const screens = new Proxy(
       {},
@@ -465,17 +515,6 @@ describe("StageRenderer component renderer (static)", () => {
     radius: { lg: "18px", full: "9999px" },
     shadow: { md: "0 14px 36px rgba(0, 0, 0, 0.18)" },
     recipes: {
-      section: {
-        dashboard: {
-          box: { bg: "surface", pad: "md", radius: "lg" },
-          text: { color: "fg-muted", weight: "semibold" },
-        },
-      },
-      card: {
-        elevated: {
-          box: { bg: "bg", border: true, radius: "lg", shadow: "md", pad: "md" },
-        },
-      },
       button: {
         primary: {
           box: { bg: "accent", pad: "md", radius: "full" },
@@ -493,21 +532,35 @@ describe("StageRenderer component renderer (static)", () => {
         nodes: {
           root: {
             id: "root",
-            type: "section",
-            title: "Dashboard",
-            eyebrow: "Q3",
-            body: "Live operating view",
-            variant: "dashboard",
-            children: ["card", "table", "chart", "stat", "progress", "list"],
+            type: "box",
+            style: { bg: "surface", pad: "md", radius: "lg" },
+            children: [
+              "dashboard-eyebrow",
+              "dashboard-title",
+              "dashboard-body",
+              "card",
+              "table",
+              "chart",
+              "stat",
+              "progress",
+              "list",
+            ],
+          },
+          "dashboard-eyebrow": { id: "dashboard-eyebrow", type: "text", value: "Q3" },
+          "dashboard-title": { id: "dashboard-title", type: "text", value: "Dashboard" },
+          "dashboard-body": {
+            id: "dashboard-body",
+            type: "text",
+            value: "Live operating view",
           },
           card: {
             id: "card",
-            type: "card",
-            title: "Revenue",
-            body: "Current quarter",
-            variant: "elevated",
-            children: ["button"],
+            type: "box",
+            style: { bg: "bg", border: true, radius: "lg", shadow: "md", pad: "md" },
+            children: ["card-title", "card-body", "button"],
           },
+          "card-title": { id: "card-title", type: "text", value: "Revenue" },
+          "card-body": { id: "card-body", type: "text", value: "Current quarter" },
           button: {
             id: "button",
             type: "button",
@@ -545,7 +598,7 @@ describe("StageRenderer component renderer (static)", () => {
       [catalogTheme],
     );
 
-    expect(out).toContain("<section");
+    expect(out).not.toContain("<section");
     expect(out).toContain("Dashboard");
     expect(out).toContain("Live operating view");
     expect(out).toContain("box-shadow:0 14px 36px rgba(0, 0, 0, 0.18)");
@@ -579,23 +632,6 @@ describe("StageRenderer component renderer (static)", () => {
       space: { xs: "3px", sm: "7px", md: "13px" },
       radius: { sm: "5px", lg: "17px", full: "999px" },
       recipes: {
-        section: {
-          default: {
-            parts: {
-              title: { text: { color: "danger", weight: "bold" } },
-              body: { text: { color: "warning" } },
-            },
-          },
-        },
-        card: {
-          default: {
-            parts: {
-              header: { box: { bg: "surface-2", pad: "xs", radius: "sm" } },
-              title: { text: { color: "danger", weight: "bold" } },
-              body: { text: { color: "warning" } },
-            },
-          },
-        },
         button: {
           default: {
             parts: {
@@ -679,18 +715,29 @@ describe("StageRenderer component renderer (static)", () => {
         nodes: {
           root: {
             id: "root",
-            type: "section",
-            title: "Overview",
-            body: "Part-driven internals",
-            children: ["card", "tabs", "table", "chart", "stat", "progress", "list", "email"],
+            type: "box",
+            children: [
+              "overview",
+              "internals",
+              "card",
+              "tabs",
+              "table",
+              "chart",
+              "stat",
+              "progress",
+              "list",
+              "email",
+            ],
           },
+          overview: { id: "overview", type: "text", value: "Overview" },
+          internals: { id: "internals", type: "text", value: "Part-driven internals" },
           card: {
             id: "card",
-            type: "card",
-            title: "Revenue",
-            body: "Current quarter",
-            children: ["button"],
+            type: "box",
+            children: ["revenue", "quarter", "button"],
           },
+          revenue: { id: "revenue", type: "text", value: "Revenue" },
+          quarter: { id: "quarter", type: "text", value: "Current quarter" },
           button: { id: "button", type: "button", label: "Refresh" },
           tabs: {
             id: "tabs",
@@ -702,8 +749,7 @@ describe("StageRenderer component renderer (static)", () => {
           },
           accountsRoot: {
             id: "accountsRoot",
-            type: "section",
-            title: "Accounts",
+            type: "box",
             children: [],
           },
           table: {
@@ -742,11 +788,10 @@ describe("StageRenderer component renderer (static)", () => {
       [partsTheme],
     );
 
-    expect(out).toMatch(/<h2 style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Overview/);
-    expect(out).toMatch(/<p style="[^"]*color:#b45309[^"]*">Part-driven internals/);
-    expect(out).toMatch(
-      /<div style="(?=[^"]*background:#eef2ff)(?=[^"]*padding:3px)(?=[^"]*border-radius:5px)[^"]*"><h3/,
-    );
+    expect(out).toContain("Overview");
+    expect(out).toContain("Part-driven internals");
+    expect(out).toContain("Revenue");
+    expect(out).toContain("Current quarter");
     expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#b45309[^"]*">Refresh/);
     expect(out).toMatch(
       /role="tab" aria-selected="true"[^>]*style="(?=[^"]*background:#0f766e)(?=[^"]*border-radius:999px)(?=[^"]*color:#ffffff)[^"]*">Pipeline/,
@@ -791,11 +836,10 @@ describe("StageRenderer component renderer (static)", () => {
     const noisy = {
       root: {
         id: "root",
-        type: "section",
-        title: 42,
-        body: "still renders",
-        children: ["button", "table", "chart", "list", "text"],
+        type: "box",
+        children: ["body", "button", "table", "chart", "list", "text"],
       },
+      body: text("body", "still renders"),
       button: { id: "button", type: "button", label: { bad: true }, onPress: 99 },
       table: { id: "table", type: "table", columns: "bad", rows: [{ value: { nope: true } }] },
       chart: { id: "chart", type: "chart", kind: "space", series: "bad", title: "Bad chart" },
@@ -1121,8 +1165,6 @@ describe("StageRenderer happy path", () => {
     const out = render(
       tree({
         root: box("root", [
-          "section",
-          "card",
           "button",
           "table",
           "chart",
@@ -1132,15 +1174,6 @@ describe("StageRenderer happy path", () => {
           "media",
           "field",
         ]),
-        section: {
-          id: "section",
-          type: "section",
-          eyebrow: longLabel,
-          title: longLabel,
-          body: longBody,
-          children: [],
-        },
-        card: { id: "card", type: "card", title: longLabel, body: longBody, children: [] },
         button: { id: "button", type: "button", label: longLabel },
         table: {
           id: "table",

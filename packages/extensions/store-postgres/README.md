@@ -83,9 +83,14 @@ The validated composition shape is a self-contained native reference dataset:
   nodes: {
     "launch-card.root": {
       id: "launch-card.root",
-      type: "card",
-      title: "Ready to launch?",
-      children: [],
+      type: "box",
+      style: { bg: "surface", border: true, pad: "md", radius: "md" },
+      children: ["launch-card.title"],
+    },
+    "launch-card.title": {
+      id: "launch-card.title",
+      type: "text",
+      value: "Ready to launch?",
     },
   },
 }

@@ -17,11 +17,6 @@ function quote(value: string): string {
   return JSON.stringify(value);
 }
 
-function joinedLabel(parts: readonly (string | undefined)[]): string | undefined {
-  const labels = parts.filter((part): part is string => part !== undefined && part.length > 0);
-  return labels.length > 0 ? labels.join(" / ") : undefined;
-}
-
 function labeledCount(label: string | undefined, noun: string, value: number): string {
   const suffix = `(${count(noun, value)})`;
   return label === undefined ? ` ${suffix}` : `: ${quote(label)} ${suffix}`;
@@ -37,14 +32,6 @@ function detail(node: FacetNode): string {
       return `: ${node.name}`;
     case "button":
       return `: ${quote(node.label)}`;
-    case "section":
-      return labeledCount(
-        joinedLabel([node.eyebrow, node.title]) ?? node.body,
-        "child",
-        node.children.length,
-      );
-    case "card":
-      return labeledCount(node.title ?? node.body, "child", node.children.length);
     case "tabs":
       return `: ${count("tab", node.items.length)}`;
     case "table":
@@ -66,10 +53,6 @@ function detail(node: FacetNode): string {
       return labeledCount(node.title ?? node.body, "child", node.children.length);
     case "filterBar":
       return `: ${count("filter", node.filters.length)}`;
-    case "emptyState": {
-      const label = joinedLabel([node.title, node.body, node.actionLabel]);
-      return label === undefined ? "" : `: ${quote(label)}`;
-    }
     case "loading":
       return node.label === undefined ? "" : `: ${quote(node.label)}`;
     case "richtext":
@@ -77,21 +60,16 @@ function detail(node: FacetNode): string {
     case "box":
       return "";
   }
+  return "";
 }
 
 function nodePress(node: FacetNode): FacetAction | undefined {
-  if (
-    node.type === "box" ||
-    node.type === "button" ||
-    node.type === "card" ||
-    node.type === "emptyState"
-  )
-    return node.onPress;
+  if (node.type === "box" || node.type === "button") return node.onPress;
   return undefined;
 }
 
 function nodeHold(node: FacetNode): FacetAction | undefined {
-  if (node.type === "box" || node.type === "button" || node.type === "card") return node.onHold;
+  if (node.type === "box" || node.type === "button") return node.onHold;
   return undefined;
 }
 

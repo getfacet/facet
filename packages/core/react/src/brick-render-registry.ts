@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import type { ComponentNodeType, FacetNode } from "@facet/core";
 import { renderChart } from "./brick-renderer-chart.js";
 import {
-  renderEmptyState,
   renderKeyValue,
   renderList,
   renderLoading,
@@ -10,14 +9,7 @@ import {
   renderProgress,
   renderStat,
 } from "./brick-renderer-data.js";
-import {
-  renderButton,
-  renderCard,
-  renderNav,
-  renderSection,
-  renderTable,
-  renderTabs,
-} from "./brick-renderer-layout.js";
+import { renderButton, renderNav, renderTable, renderTabs } from "./brick-renderer-layout.js";
 import { renderFilterBar, renderForm, renderInput } from "./brick-renderer-inputs.js";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
 
@@ -69,8 +61,6 @@ export interface BrickRendererEntry {
  */
 export const BRICK_RENDERERS: Record<BrickRendererType, BrickRendererEntry> = {
   // ---- Layout containers (render children, then renderBrick(children)) ----
-  section: { render: renderSection, container: true, motionSnapshot: false },
-  card: { render: renderCard, container: true, motionSnapshot: false },
   form: { render: renderForm, container: true, motionSnapshot: false },
   // ---- Leaf bricks (renderBrick(), participate in the motion snapshot) ----
   button: { render: renderButton, container: false, motionSnapshot: true },
@@ -84,7 +74,6 @@ export const BRICK_RENDERERS: Record<BrickRendererType, BrickRendererEntry> = {
   progress: { render: renderProgress, container: false, motionSnapshot: true },
   list: { render: renderList, container: false, motionSnapshot: true },
   filterBar: { render: renderFilterBar, container: false, motionSnapshot: true },
-  emptyState: { render: renderEmptyState, container: false, motionSnapshot: true },
   loading: { render: renderLoading, container: false, motionSnapshot: true },
   // ---- Input primitive (renderBrick(); its own motion-snapshot case) ------
   input: { render: renderInput, container: false, motionSnapshot: false },

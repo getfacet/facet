@@ -12,6 +12,11 @@ import type { FacetStageToolName, ToolSpec } from "./types.js";
 // source literals (same idiom as theme.test.ts).
 const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
 const legacyTool = ["use_", "st", "amp"].join("");
+const RETIRED_CONTAINER_PATTERN_TYPES = [
+  ["sec", "tion"].join(""),
+  ["ca", "rd"].join(""),
+  ["empty", "State"].join(""),
+] as const;
 
 const EXPECTED_NAMES: readonly FacetStageToolName[] = [
   "render_page",
@@ -95,7 +100,7 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     const nodeSchemaText = JSON.stringify(propertiesOf(appendNode)["node"]);
 
     expect(renderPage.description).toMatch(/catalog policy/i);
-    expect(appendNode.description).toMatch(/box, section, card, or form/i);
+    expect(appendNode.description).toMatch(/box or form/i);
     expect(nodeSchemaText).toMatch(/component -> primitive fallback/);
     expect(nodeSchemaText).toMatch(/tree\.data datasets/);
     expect(nodeSchemaText).not.toMatch(/no data-binding/i);
@@ -110,7 +115,7 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     expect(nodeSchemaText).toMatch(/box, text, media, input, richtext/);
     // DC-003: the search intrinsic component is removed from the node schema.
     expect(nodeSchemaText).not.toContain("search");
-    expect(JSON.stringify(propertiesOf(setNode)["node"])).toMatch(/section|card|table|chart/);
+    expect(JSON.stringify(propertiesOf(setNode)["node"])).toMatch(/box|form|table|chart/);
     expect(setTheme.description).toMatch(/locked/i);
     expect(setTheme.description).toMatch(/catalog/i);
     expect(getComposition.description).toMatch(/composition/i);
@@ -118,6 +123,22 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     const retiredTerm = new RegExp(["high-level", "brick"].join(" "), "i");
     expect(allToolText()).not.toMatch(retiredTerm);
     expect(allToolText()).not.toMatch(/v1 brick/i);
+  });
+
+  it("omits retired container-pattern node types", () => {
+    const appendNode = tool("append_node");
+    const nodeSchemaText = JSON.stringify(propertiesOf(appendNode)["node"]);
+    const parentSchemaText = JSON.stringify(propertiesOf(appendNode)["parentId"]);
+
+    for (const type of RETIRED_CONTAINER_PATTERN_TYPES) {
+      const nodeType = new RegExp(`\\b${type}\\b`);
+      expect(nodeSchemaText).not.toMatch(nodeType);
+      expect(appendNode.description).not.toMatch(nodeType);
+      expect(parentSchemaText).not.toMatch(nodeType);
+    }
+
+    expect(appendNode.description).toMatch(/box or form/i);
+    expect(parentSchemaText).toMatch(/box or form/i);
   });
 
   it("bounds inspection schemas", () => {

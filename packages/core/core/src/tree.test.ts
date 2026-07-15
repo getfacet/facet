@@ -230,11 +230,10 @@ describe("treeHasContent", () => {
     }
   });
 
-  it("true for nav, keyValue, emptyState, and loading intrinsic components with content", () => {
+  it("true for nav, keyValue, and loading intrinsic components with content", () => {
     for (const child of [
       { id: "child", type: "nav", items: [{ label: "Home", to: "home" }] },
       { id: "child", type: "keyValue", items: [{ label: "Owner", value: "Design" }] },
-      { id: "child", type: "emptyState", title: "No projects yet" },
       { id: "child", type: "loading" },
     ]) {
       expect(
@@ -253,7 +252,6 @@ describe("treeHasContent", () => {
       { id: "child", type: "metric", label: "ARR" },
       { id: "child", type: "nav", items: [] },
       { id: "child", type: "keyValue", items: [] },
-      { id: "child", type: "emptyState" },
       { id: "child", type: "form", children: [] },
       { id: "child", type: "search" },
       { id: "child", type: "filterBar", filters: [] },
@@ -261,6 +259,18 @@ describe("treeHasContent", () => {
       const t = tree({
         r: { id: "r", type: "box", children: ["child"] },
         child,
+      });
+      expect(() => treeHasContent(t)).not.toThrow();
+      expect(treeHasContent(t)).toBe(false);
+    }
+  });
+
+  it("does not count retired container patterns as renderable content", () => {
+    const retiredTypes = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
+    for (const type of retiredTypes) {
+      const t = tree({
+        r: { id: "r", type: "box", children: ["child"] },
+        child: { id: "child", type, title: "stale", children: [] },
       });
       expect(() => treeHasContent(t)).not.toThrow();
       expect(treeHasContent(t)).toBe(false);

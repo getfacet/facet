@@ -19,13 +19,15 @@ npm install @facet/react @facet/client @facet/core react
 rendered, no node carries raw HTML/JS/CSS, and unresolvable ids are skipped
 rather than thrown on. Intrinsic components render through token-only theme recipes;
 unknown recipes, variants, tones, parts, or theme names fall back to defaults.
-The renderer owns the internal DOM for components such as `section`, `card`,
-`button`, `tabs`, `nav`, `table`, `chart`, `metric`, `keyValue`, `progress`,
-`list`, `form`, `filterBar`, `emptyState`, and `loading`; recipe parts style
+The renderer owns the internal DOM for components such as `button`, `tabs`,
+`nav`, `table`, `chart`, `metric`, `keyValue`, `progress`, `list`, `form`,
+`filterBar`, and `loading`; recipe parts style
 their internal labels, controls, rows, tracks, and fills without exposing those
-part names as stage node fields. Badges and alerts are ordinary native boxes,
-text, and components—not renderer-owned node types; optional composition
-references may inform their design but never insert them. Primitive nodes remain
+part names as stage node fields. Sections, cards, empty states, badges, and
+alerts are ordinary native boxes, text, and buttons—not renderer-owned node
+types; optional composition references may inform their design but never insert
+them. A stale raw node using one of the retired discriminants blank-degrades as
+a whole subtree while valid siblings continue rendering. Primitive nodes remain
 the base rendering path for custom composition. Wire it to a transport with
 `useFacet` and pass `send` through `onAction`.
 

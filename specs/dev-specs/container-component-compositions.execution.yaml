@@ -1,0 +1,787 @@
+# Execution Manifest: Container Components as Composition References
+#
+# Keep synchronized with specs/dev-specs/container-component-compositions.md.
+# Scope: card, section, and emptyState node-type retirement. stat is excluded.
+# Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
+
+feature_slug: "container-component-compositions"
+spec_path: "specs/dev-specs/container-component-compositions.md"
+context_evidence_path: "specs/context/container-component-compositions.md"
+
+shared_preflight:
+  - concern: "worktree"
+    requirement: "Run /worktree-prep and implement on an isolated codex/ feature branch; never commit implementation on main."
+    owner: "main-agent"
+    verification: "git branch --show-current and git worktree list"
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck, pnpm test, and pnpm lint pass before any WU starts."
+    owner: "main-agent"
+    verification: "run the three commands"
+  - concern: "atomicity"
+    requirement: "All WUs form one indivisible hard cutover. Each WU runs only scoped Vitest; combined pnpm typecheck runs after every WU lands."
+    owner: "main-agent"
+    verification: "WU handoffs plus one combined typecheck result"
+  - concern: "git-safety"
+    requirement: "Do not alter PR-5a artifacts, merge, or push without owner approval; do not add Co-Authored-By."
+    owner: "main-agent"
+    verification: "git status, git diff, and final commit inspection"
+
+review_fix_policy:
+  batching_rule: "Group review comments into bounded batches. Scoped fixes rerun their quick checks; main agent reruns the authoritative gate chain."
+  subagent_scope: "Assigned WU files, quick_checks, and no_regression_checks only."
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "execute-WUs"
+    - "combined-typecheck"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+
+work_units:
+  - id: "WU-01"
+    title: "Assets — native container-pattern references"
+    owner_role: "subagent"
+    packages: ["@facet/assets"]
+    objective: "Publish native section/card/empty-state reference data, rewrite all 16 embedded retired nodes and 15 hints, and prove 22 references validate."
+    module_shape:
+      decision: "sibling-helper"
+      rationale: "Add a private role-specific composition-containers.ts sibling, following composition-chart-table.ts; keep it behind DEFAULT_COMPOSITIONS with no barrel export."
+    files:
+      - path: "packages/core/assets/src/composition-containers.ts"
+        change_type: "add"
+        purpose: "Own the three canonical native section/card/empty-state references."
+      - path: "packages/core/assets/src/compositions.ts"
+        change_type: "update"
+        purpose: "Import canonical references and rewrite embedded retired nodes and parent hints."
+      - path: "packages/core/assets/src/composition-chart-table.ts"
+        change_type: "update"
+        purpose: "Rewrite the section root as a native box plus explicit title text."
+      - path: "packages/core/assets/src/compositions.test.ts"
+        change_type: "update"
+        purpose: "Assert exact count, native structure, tokens, zero residual types, and empty-state action ownership."
+    depends_on: []
+    parallel_group: "serial-assets-native"
+    red_check:
+      command: "pnpm exec vitest run packages/core/assets/src/compositions.test.ts -t 'ships native section card and empty-state references'"
+      target: "packages/core/assets/src/compositions.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/assets/src/compositions.test.ts -t 'ships native section card and empty-state references'"
+      - "pnpm exec vitest run packages/core/assets/src/compositions.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/assets/src/compositions.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/assets/src/compositions.test.ts"
+        covers_dc: ["DC-004", "DC-005", "DC-006", "DC-007", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Exactly 22 valid references; all 16 retired nodes and 15 hints are gone."
+      - "Empty-state root is actionless, its child button is explicit, and no raw style scalar is introduced."
+    handoff_format: &handoff
+      - "changed_files"
+      - "executed_commands"
+      - "red_check_output_before"
+      - "red_check_output_after"
+      - "green_diff_summary"
+      - "refactor_decision"
+      - "pass_fail"
+      - "first_error_line"
+      - "assumptions"
+      - "next_action"
+
+  - id: "WU-02"
+    title: "Assets — retire component theme recipes"
+    owner_role: "subagent"
+    packages: ["@facet/assets"]
+    objective: "Remove default section/card/emptyState recipes after their intended tokens are captured in native references."
+    module_shape:
+      decision: "preserve"
+      rationale: "Pure deletion from the existing theme-data owner."
+    files:
+      - path: "packages/core/assets/src/theme.ts"
+        change_type: "update"
+        purpose: "Delete the three retired recipe blocks."
+      - path: "packages/core/assets/src/theme.test.ts"
+        change_type: "update"
+        purpose: "Assert retired recipe absence and surviving theme coverage."
+    depends_on: ["WU-01"]
+    parallel_group: "serial-assets-recipes"
+    red_check:
+      command: "pnpm exec vitest run packages/core/assets/src/theme.test.ts -t 'omits retired container-pattern recipes'"
+      target: "packages/core/assets/src/theme.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/assets/src/theme.test.ts -t 'omits retired container-pattern recipes'"
+      - "pnpm exec vitest run packages/core/assets/src/theme.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/assets/src/theme.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/assets/src/theme.test.ts"
+        covers_dc: ["DC-007", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "No retired default recipe key remains; surviving recipes are unchanged."
+    handoff_format: *handoff
+
+  - id: "WU-03"
+    title: "Core — shrink public node, container, registry, and content surface"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Remove public node shapes, union and registry entries, narrow containers to box plus form, and remove retired content predicates while retaining stat."
+    module_shape:
+      decision: "preserve"
+      rationale: "Shrink existing public source owners without adding a replacement API."
+    files:
+      - path: "packages/core/core/src/component-nodes.ts"
+        change_type: "update"
+        purpose: "Remove the interfaces and intrinsic tuple/union arms."
+      - path: "packages/core/core/src/nodes.ts"
+        change_type: "update"
+        purpose: "Remove public exports and narrow ContainerNode/isContainer to box and form."
+      - path: "packages/core/core/src/brick-registry.ts"
+        change_type: "update"
+        purpose: "Remove the three exhaustive registry entries."
+      - path: "packages/core/core/src/tree.ts"
+        change_type: "update"
+        purpose: "Remove the retired section/card and empty-state self-render predicates."
+      - path: "packages/core/core/src/nodes.test.ts"
+        change_type: "update"
+        purpose: "Pin the exact surviving union/container and BRICK_REGISTRY rosters and retain stat."
+    depends_on: ["WU-01", "WU-02"]
+    parallel_group: "serial-core-base"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/nodes.test.ts -t 'retired container patterns are not node types'"
+      target: "packages/core/core/src/nodes.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/nodes.test.ts -t 'retired container patterns are not node types'"
+      - "pnpm exec vitest run packages/core/core/src/nodes.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src/nodes.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/nodes.test.ts"
+        covers_dc: ["DC-001", "DC-010", "DC-011"]
+        action: "update"
+        boundary_cases: ["public node roster", "exact BRICK_REGISTRY omission", "stat retained"]
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "The exact public union/registry omits all three; ContainerNode is BoxNode|FormNode; stat remains."
+    handoff_format: *handoff
+
+  - id: "WU-04"
+    title: "Core — remove layout validation role and empty-state route"
+    owner_role: "subagent"
+    packages: ["@facet/core"]
+    objective: "Delete the now-empty layout validator, narrow role dispatch, remove emptyState feedback minting, and pin registry/validation exhaustiveness."
+    module_shape:
+      decision: "no-split"
+      rationale: "Delete the dead role module instead of preserving an empty scaffold."
+    files:
+      - path: "packages/core/core/src/component-validation.ts"
+        change_type: "update"
+        purpose: "Remove the layout-role dispatch."
+      - path: "packages/core/core/src/component-validation-layout.ts"
+        change_type: "delete"
+        purpose: "Delete the empty validation role."
+      - path: "packages/core/core/src/component-validation-feedback.ts"
+        change_type: "update"
+        purpose: "Remove emptyState routing while preserving progress/loading."
+      - path: "packages/core/core/src/component-validation.test.ts"
+        change_type: "update"
+        purpose: "Assert retired types are not routed and stale input drops safely."
+      - path: "packages/core/core/src/brick-registry.test.ts"
+        change_type: "update"
+        purpose: "Realign the adjacent exact registry exhaustiveness suite."
+    depends_on: ["WU-03"]
+    parallel_group: "par-core-cut"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/component-validation.test.ts -t 'does not route retired container patterns'"
+      target: "packages/core/core/src/component-validation.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/component-validation.test.ts -t 'does not route retired container patterns'"
+      - "pnpm exec vitest run packages/core/core/src/component-validation.test.ts packages/core/core/src/brick-registry.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src/component-validation.test.ts packages/core/core/src/brick-registry.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/component-validation.test.ts"
+        covers_dc: ["DC-001", "DC-002", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/brick-registry.test.ts"
+        covers_dc: ["DC-001", "DC-010"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "No layout role/file remains; feedback supports only progress/loading; the adjacent exact registry suite is realigned."
+    handoff_format: *handoff
+
+  - id: "WU-05"
+    title: "Core — catalog and STAGE_SPEC hard cut"
+    owner_role: "subagent"
+    packages: ["@facet/core", "@facet/assets"]
+    objective: "Stop catalog and LLM stage-spec advertisement, preserve box/form container language and stat, and align catalog tests."
+    module_shape:
+      decision: "preserve"
+      rationale: "Shrink the existing canonical catalog and spec sources."
+    files:
+      - path: "packages/core/core/src/catalog-defaults.ts"
+        change_type: "update"
+        purpose: "Remove the three default catalog entries."
+      - path: "packages/core/core/src/spec.ts"
+        change_type: "update"
+        purpose: "Remove node-type roster lines and describe box/form plus optional references."
+      - path: "packages/core/core/src/catalog.test.ts"
+        change_type: "update"
+        purpose: "Pin exact catalog omission."
+      - path: "packages/core/core/src/spec.test.ts"
+        change_type: "update"
+        purpose: "Pin exact STAGE_SPEC omission, box/form wording, and stat retention."
+      - path: "packages/core/assets/src/catalog.test.ts"
+        change_type: "update"
+        purpose: "Align default asset catalog expectations."
+    depends_on: ["WU-03"]
+    parallel_group: "par-core-cut"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/spec.test.ts -t 'omits retired container node types'"
+      target: "packages/core/core/src/spec.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/spec.test.ts -t 'omits retired container node types'"
+      - "pnpm exec vitest run packages/core/core/src/catalog.test.ts packages/core/core/src/spec.test.ts packages/core/assets/src/catalog.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src/catalog.test.ts packages/core/core/src/spec.test.ts packages/core/assets/src/catalog.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/catalog.test.ts"
+        covers_dc: ["DC-001", "DC-009", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/spec.test.ts"
+        covers_dc: ["DC-001", "DC-009", "DC-010", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/assets/src/catalog.test.ts"
+        covers_dc: ["DC-001"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Catalogs/spec omit the three types, containers read box/form, reference guidance is optional, and stat remains."
+    handoff_format: *handoff
+
+  - id: "WU-06"
+    title: "Core boundaries — metadata, stale validation, content, and recipe keys"
+    owner_role: "subagent"
+    packages: ["@facet/core", "@facet/react"]
+    objective: "Narrow composition metadata, test stale-type dropping and content behavior, and prove stale recipe keys are rejected across core/React resolution."
+    module_shape:
+      decision: "preserve"
+      rationale: "Narrow metadata in its existing owner and retain adjacent boundary tests."
+    files:
+      - path: "packages/core/core/src/composition-validation.ts"
+        change_type: "update"
+        purpose: "Narrow preferredParent to root or box."
+      - path: "packages/core/core/src/validate.test.ts"
+        change_type: "update"
+        purpose: "Assert stale retired nodes and metadata drop safely with issues."
+      - path: "packages/core/core/src/tree.test.ts"
+        change_type: "update"
+        purpose: "Align content/container predicates while retaining stat coverage."
+      - path: "packages/core/core/src/theme.test.ts"
+        change_type: "update"
+        purpose: "Assert recipe-key narrowing and warning-drop behavior."
+      - path: "packages/core/react/src/theme.test.ts"
+        change_type: "update"
+        purpose: "Assert stale recipe keys cannot resolve in React."
+    depends_on: ["WU-01", "WU-02", "WU-03"]
+    parallel_group: "par-core-cut"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/validate.test.ts -t 'drops retired container patterns and stale metadata'"
+      target: "packages/core/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/validate.test.ts -t 'drops retired container patterns and stale metadata'"
+      - "pnpm exec vitest run packages/core/core/src/validate.test.ts packages/core/core/src/tree.test.ts packages/core/core/src/theme.test.ts packages/core/react/src/theme.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/core/src/validate.test.ts packages/core/core/src/tree.test.ts packages/core/core/src/theme.test.ts packages/core/react/src/theme.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/core/src/validate.test.ts"
+        covers_dc: ["DC-002", "DC-005", "DC-011"]
+        action: "update"
+        boundary_cases: ["malformed/empty/null", "dangling", "cyclic", "max-depth"]
+      - type: "unit"
+        target: "packages/core/core/src/tree.test.ts"
+        covers_dc: ["DC-002", "DC-010"]
+        action: "update"
+      - type: "unit"
+        target: "packages/core/core/src/theme.test.ts and packages/core/react/src/theme.test.ts"
+        covers_dc: ["DC-007", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "preferredParent is root|box and composedOf follows the narrowed FacetNode union; retired types drop with issues while valid siblings survive; stale recipes warning-drop."
+    handoff_format: *handoff
+
+  - id: "WU-07"
+    title: "React — remove renderers and prove stale-subtree blank degradation"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Remove three renderers and registry entries and prove stale nodes and their descendants render blank without throwing."
+    module_shape:
+      decision: "preserve"
+      rationale: "Shrink existing renderer role modules and registry."
+    files:
+      - path: "packages/core/react/src/brick-render-registry.ts"
+        change_type: "update"
+        purpose: "Remove the three renderer registry entries."
+      - path: "packages/core/react/src/brick-renderer-layout.tsx"
+        change_type: "update"
+        purpose: "Remove card and section renderers."
+      - path: "packages/core/react/src/brick-renderer-data.tsx"
+        change_type: "update"
+        purpose: "Remove the emptyState renderer."
+      - path: "packages/core/react/src/StageRenderer.test.ts"
+        change_type: "update"
+        purpose: "Prove whole-subtree blank degradation, no throw, and valid sibling rendering."
+      - path: "packages/core/react/src/brick-render-registry.test.ts"
+        change_type: "update"
+        purpose: "Pin exact surviving registry."
+    depends_on: ["WU-03", "WU-04"]
+    parallel_group: "par-consumers"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/StageRenderer.test.ts -t 'blank-degrades retired container-pattern subtrees'"
+      target: "packages/core/react/src/StageRenderer.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/StageRenderer.test.ts -t 'blank-degrades retired container-pattern subtrees'"
+      - "pnpm exec vitest run packages/core/react/src/StageRenderer.test.ts packages/core/react/src/brick-render-registry.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src/StageRenderer.test.ts packages/core/react/src/brick-render-registry.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/StageRenderer.test.ts"
+        covers_dc: ["DC-002", "DC-011"]
+        action: "update"
+        boundary_cases:
+          ["malformed/null", "dangling", "cyclic", "depth-cap", "stale retired subtree"]
+      - type: "unit"
+        target: "packages/core/react/src/brick-render-registry.test.ts"
+        covers_dc: ["DC-001", "DC-002"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Entries/functions are absent; stale children are not unwrapped; a valid sibling renders; form is the only component container."
+    handoff_format: *handoff
+
+  - id: "WU-08"
+    title: "React — migrate behavior fixtures and internal roster comments"
+    owner_role: "subagent"
+    packages: ["@facet/react"]
+    objective: "Migrate renderer interaction and budget fixtures to native boxes, assert empty-state single dispatch, and correct internal dispatcher/container comments."
+    module_shape:
+      decision: "preserve"
+      rationale: "Fixture migration and documentation-only comments; no runtime logic change."
+    files:
+      - path: "packages/core/react/src/renderer-render.tsx"
+        change_type: "update"
+        purpose: "Correct an internal roster comment only."
+      - path: "packages/core/react/src/renderer-motion.ts"
+        change_type: "update"
+        purpose: "Correct an internal container comment only."
+      - path: "packages/core/react/src/component-layout.test.tsx"
+        change_type: "update"
+        purpose: "Replace retired layout fixtures and test the native empty-state button action."
+      - path: "packages/core/react/src/StageRenderer.interaction.test.tsx"
+        change_type: "update"
+        purpose: "Migrate interaction fixtures and assert exactly one action."
+      - path: "packages/core/react/src/StageRenderer.budget.test.tsx"
+        change_type: "update"
+        purpose: "Migrate node-budget fixtures to native boxes."
+    depends_on: ["WU-07"]
+    parallel_group: "serial-react-fixtures"
+    red_check:
+      command: "pnpm exec vitest run packages/core/react/src/component-layout.test.tsx -t 'renders every new intrinsic component plus legacy stat with bounded roots'"
+      target: "packages/core/react/src/component-layout.test.tsx"
+      justification: "After WU-07, the existing retired emptyState fixture and expectation fail until WU-08 rewrites them to native nodes."
+    quick_checks:
+      - "pnpm exec vitest run packages/core/react/src/component-layout.test.tsx -t 'renders every new intrinsic component plus legacy stat with bounded roots'"
+      - "pnpm exec vitest run packages/core/react/src/component-layout.test.tsx packages/core/react/src/StageRenderer.interaction.test.tsx packages/core/react/src/StageRenderer.budget.test.tsx"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/react/src/component-layout.test.tsx packages/core/react/src/StageRenderer.interaction.test.tsx packages/core/react/src/StageRenderer.budget.test.tsx"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/react/src/component-layout.test.tsx"
+        covers_dc: ["DC-006"]
+        action: "update"
+        boundary_cases: ["native empty-state explicit child-button action"]
+      - type: "unit"
+        target: "packages/core/react/src/StageRenderer.interaction.test.tsx and packages/core/react/src/StageRenderer.budget.test.tsx"
+        covers_dc: ["DC-006", "DC-011"]
+        action: "update"
+        boundary_cases: ["single dispatch", "duplicate and bubbling regression"]
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "The empty-state click dispatches exactly once and box/form interaction and budget coverage stays green."
+    handoff_format: *handoff
+
+  - id: "WU-09"
+    title: "Agent tools — remove executor and buffered-container support"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools"]
+    objective: "Remove executor entries, make buffered raw-container recognition box-only, align executor next-action wording to box/form, and defeat-test all three clean rejections."
+    module_shape:
+      decision: "preserve"
+      rationale: "Shrink exhaustive registry and buffer candidate logic."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/executor-registry.ts"
+        change_type: "update"
+        purpose: "Remove the three executor entries."
+      - path: "packages/agent-stack/agent-tools/src/buffer.ts"
+        change_type: "update"
+        purpose: "Make retired-container forward-reference recognition box-only without adding form behavior."
+      - path: "packages/agent-stack/agent-tools/src/executor-node.ts"
+        change_type: "update"
+        purpose: "Align append-parent and next-action wording to box/form."
+      - path: "packages/agent-stack/agent-tools/src/executor.test.ts"
+        change_type: "update"
+        purpose: "Defeat-test clean own-property rejection, no mutation, and box/form next-action wording."
+      - path: "packages/agent-stack/agent-tools/src/buffer.test.ts"
+        change_type: "update"
+        purpose: "Align buffered-container expectations."
+    depends_on: ["WU-03", "WU-04"]
+    parallel_group: "par-consumers"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts -t 'rejects retired container-pattern node types at asNode'"
+      target: "packages/agent-stack/agent-tools/src/executor.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts -t 'rejects retired container-pattern node types at asNode'"
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts packages/agent-stack/agent-tools/src/buffer.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor.test.ts packages/agent-stack/agent-tools/src/buffer.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/executor.test.ts"
+        covers_dc: ["DC-003", "DC-009", "DC-011"]
+        action: "update"
+        boundary_cases: ["three clean type rejections", "box/form next-action wording"]
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/buffer.test.ts"
+        covers_dc: ["DC-009"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Each retired type produces zero patches, an unchanged shadow, and a clean type error; Object.hasOwn remains; form buffering is not added; executor wording matches box/form."
+    handoff_format: *handoff
+
+  - id: "WU-10"
+    title: "Agent tools — schema, playbook, and container wording"
+    owner_role: "subagent"
+    packages: ["@facet/agent-tools"]
+    objective: "Remove retired node advertisements, direct models to optional references and native boxes, and migrate observation fixtures to the surviving vocabulary."
+    module_shape:
+      decision: "preserve"
+      rationale: "Canonical prompt and schema strings remain in their existing owners."
+    files:
+      - path: "packages/agent-stack/agent-tools/src/specs.ts"
+        change_type: "update"
+        purpose: "Remove retired schema and tool-description advertisements."
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.ts"
+        change_type: "update"
+        purpose: "Teach optional references and native box authoring."
+      - path: "packages/agent-stack/agent-tools/src/specs.test.ts"
+        change_type: "update"
+        purpose: "Pin exact schema omission."
+      - path: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        change_type: "update"
+        purpose: "Pin prompt omission and reference guidance."
+      - path: "packages/agent-stack/agent-tools/src/observation.test.ts"
+        change_type: "update"
+        purpose: "Migrate retired visibility fixtures."
+    depends_on: ["WU-03", "WU-05"]
+    parallel_group: "par-consumers"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/specs.test.ts -t 'omits retired container-pattern node types'"
+      target: "packages/agent-stack/agent-tools/src/specs.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/specs.test.ts -t 'omits retired container-pattern node types'"
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/specs.test.ts packages/agent-stack/agent-tools/src/prompt-kit.test.ts packages/agent-stack/agent-tools/src/observation.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/specs.test.ts packages/agent-stack/agent-tools/src/prompt-kit.test.ts packages/agent-stack/agent-tools/src/observation.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/specs.test.ts and packages/agent-stack/agent-tools/src/prompt-kit.test.ts"
+        covers_dc: ["DC-009", "DC-011"]
+        action: "update"
+      - type: "unit"
+        target: "packages/agent-stack/agent-tools/src/observation.test.ts"
+        covers_dc: ["DC-009", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "No retired roster or parent wording remains; reference names are read-only guidance and observation fixtures contain only surviving nodes."
+    handoff_format: *handoff
+
+  - id: "WU-11"
+    title: "Reference agent — stage-summary cutover"
+    owner_role: "subagent"
+    packages: ["@facet/reference-agent"]
+    objective: "Remove specialized summary handlers, migrate prompt/catalog fixtures, and prove stale types summarize unknown."
+    module_shape:
+      decision: "preserve"
+      rationale: "Shrink the mapped registry and existing fixtures."
+    files:
+      - path: "packages/agent-stack/reference-agent/src/prompt/stage-summary.ts"
+        change_type: "update"
+        purpose: "Remove specialized card, section, and emptyState handlers."
+      - path: "packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts"
+        change_type: "update"
+        purpose: "Pin exact handler omission and stale unknown summary."
+      - path: "packages/agent-stack/reference-agent/src/prompt.test.ts"
+        change_type: "update"
+        purpose: "Migrate stage/prompt fixtures."
+      - path: "packages/agent-stack/reference-agent/src/agent.test.ts"
+        change_type: "update"
+        purpose: "Migrate catalog/tool fixtures."
+    depends_on: ["WU-03", "WU-10"]
+    parallel_group: "par-consumers"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts -t 'omits retired container-pattern handlers'"
+      target: "packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts -t 'omits retired container-pattern handlers'"
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/reference-agent/src/agent.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/reference-agent/src/agent.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/reference-agent/src/prompt/stage-summary.test.ts, packages/agent-stack/reference-agent/src/prompt.test.ts, and packages/agent-stack/reference-agent/src/agent.test.ts"
+        covers_dc: ["DC-009", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "The exact registry omits all three; stale summaries are unknown; surviving prompt/catalog behavior stays green."
+    handoff_format: *handoff
+
+  - id: "WU-12"
+    title: "Quickstart — migrate seed and regenerate golden"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Rewrite all 18 seed nodes as styled boxes with 40 explicit texts and regenerate exact deterministic goldens."
+    module_shape:
+      decision: "preserve"
+      rationale: "Keep explicit role records and visible insertion order; add no factory."
+    files:
+      - path: "packages/agent-stack/quickstart/src/guide-home.ts"
+        change_type: "update"
+        purpose: "Rewrite home guide containers and add explicit text nodes."
+      - path: "packages/agent-stack/quickstart/src/guide-structure.ts"
+        change_type: "update"
+        purpose: "Rewrite structure guide containers and add explicit text nodes."
+      - path: "packages/agent-stack/quickstart/src/guide-system.ts"
+        change_type: "update"
+        purpose: "Rewrite system guide containers and add explicit text nodes."
+      - path: "packages/agent-stack/quickstart/src/guide-usecases.ts"
+        change_type: "update"
+        purpose: "Rewrite use-case guide containers and add explicit text nodes."
+      - path: "packages/agent-stack/quickstart/src/guide.test.ts"
+        change_type: "update"
+        purpose: "Regenerate and pin node order, length, SHA-256, validation, and zero-residual assertions."
+    depends_on: ["WU-01", "WU-03", "WU-05"]
+    parallel_group: "par-consumers"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/quickstart/src/guide.test.ts -t 'contains only surviving node types after PR-5b'"
+      target: "packages/agent-stack/quickstart/src/guide.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/guide.test.ts -t 'contains only surviving node types after PR-5b'"
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/guide.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/guide.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/agent-stack/quickstart/src/guide.test.ts"
+        covers_dc: ["DC-008", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "All 18 retired nodes are gone; 40 title/body text nodes exist; node order, length, and SHA are regenerated from the final valid seed."
+    handoff_format: *handoff
+
+  - id: "WU-13"
+    title: "Quickstart — page brief and consumer fixture migration"
+    owner_role: "subagent"
+    packages: ["@facet/quickstart"]
+    objective: "Remove node-type claims from the built-in guide brief and migrate CLI/E2E custom catalogs and expected patches."
+    module_shape:
+      decision: "preserve"
+      rationale: "Keep prompt text in its guide owner and migrate only local fixtures."
+    files:
+      - path: "packages/agent-stack/quickstart/src/guide.ts"
+        change_type: "update"
+        purpose: "Remove retired node claims and point to native references."
+      - path: "packages/agent-stack/quickstart/src/cli.test.ts"
+        change_type: "update"
+        purpose: "Migrate custom catalogs and guide expectations."
+      - path: "packages/agent-stack/quickstart/src/quickstart.e2e.test.ts"
+        change_type: "update"
+        purpose: "Migrate expected patches and seed assumptions."
+    depends_on: ["WU-05", "WU-12"]
+    parallel_group: "serial-quickstart-consumers"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/quickstart/src/cli.test.ts -t 'does not advertise retired container node types'"
+      target: "packages/agent-stack/quickstart/src/cli.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/cli.test.ts -t 'does not advertise retired container node types'"
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/cli.test.ts packages/agent-stack/quickstart/src/quickstart.e2e.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/agent-stack/quickstart/src/cli.test.ts packages/agent-stack/quickstart/src/quickstart.e2e.test.ts"
+    test_plan:
+      - type: "integration"
+        target: "packages/agent-stack/quickstart/src/cli.test.ts and packages/agent-stack/quickstart/src/quickstart.e2e.test.ts"
+        covers_dc: ["DC-008", "DC-009", "DC-011"]
+        action: "update"
+        boundary_cases:
+          ["offline provider", "rapid double message", "same-visitor read/write ordering"]
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Custom catalogs use surviving types; patches and seeds contain no retired type; the no-key/offline path stays green."
+    handoff_format: *handoff
+
+  - id: "WU-14"
+    title: "Playground — printer and generator migration"
+    owner_role: "subagent"
+    packages: ["apps/playground"]
+    objective: "Remove exhaustive printer branches and actions for the retired types and migrate generator/outline fixtures to native boxes."
+    module_shape:
+      decision: "preserve"
+      rationale: "Shrink one exhaustive switch without changing app-to-package dependencies."
+    files:
+      - path: "apps/playground/src/print-tree.ts"
+        change_type: "update"
+        purpose: "Remove retired display and action branches."
+      - path: "apps/playground/src/print-tree.test.ts"
+        change_type: "update"
+        purpose: "Pin native outline behavior and retired-case absence."
+      - path: "apps/playground/src/generator.test.ts"
+        change_type: "update"
+        purpose: "Migrate generated tree fixtures to native boxes."
+    depends_on: ["WU-03"]
+    parallel_group: "par-consumers"
+    red_check:
+      command: "pnpm exec vitest run apps/playground/src/print-tree.test.ts -t 'does not special-case retired container node types'"
+      target: "apps/playground/src/print-tree.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run apps/playground/src/print-tree.test.ts -t 'does not special-case retired container node types'"
+      - "pnpm exec vitest run apps/playground/src/print-tree.test.ts apps/playground/src/generator.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run apps/playground/src/print-tree.test.ts apps/playground/src/generator.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "apps/playground/src/print-tree.test.ts and apps/playground/src/generator.test.ts"
+        covers_dc: ["DC-008", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "Valid native trees print correctly and source has no retired switch or action arm."
+    handoff_format: *handoff
+
+  - id: "WU-15"
+    title: "Downstream consumers — asset/catalog fixture migration"
+    owner_role: "subagent"
+    packages: ["@facet/runtime", "@facet/store-postgres", "@facet/agent-tools"]
+    objective: "Migrate test-only default/custom composition and catalog fixtures so downstream fail-soft loading cannot hide stale types."
+    module_shape:
+      decision: "preserve"
+      rationale: "Test-only consumer fixtures remain package-local."
+    files:
+      - path: "packages/core/runtime/src/assets.test.ts"
+        change_type: "update"
+        purpose: "Migrate default/custom composition fixtures and exact counts."
+      - path: "packages/extensions/store-postgres/src/postgres-assets.test.ts"
+        change_type: "update"
+        purpose: "Migrate persisted composition fixtures."
+      - path: "packages/agent-stack/agent-tools/src/composition-references.test.ts"
+        change_type: "update"
+        purpose: "Migrate reference fixtures while preserving legal card reference naming."
+    depends_on: ["WU-01", "WU-05", "WU-06"]
+    parallel_group: "par-consumers"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/composition-references.test.ts -t 'selects every valid reference when catalog is omitted without losing fields'"
+      target: "packages/agent-stack/agent-tools/src/composition-references.test.ts"
+      justification: "First add an explicit preferredParent === box expectation while the fixture still says section (RED), then migrate the fixture to box (GREEN)."
+    quick_checks:
+      - "pnpm exec vitest run packages/agent-stack/agent-tools/src/composition-references.test.ts -t 'selects every valid reference when catalog is omitted without losing fields'"
+      - "pnpm exec vitest run packages/core/runtime/src/assets.test.ts packages/extensions/store-postgres/src/postgres-assets.test.ts packages/agent-stack/agent-tools/src/composition-references.test.ts"
+    no_regression_checks:
+      - "pnpm exec vitest run packages/core/runtime/src/assets.test.ts packages/extensions/store-postgres/src/postgres-assets.test.ts packages/agent-stack/agent-tools/src/composition-references.test.ts"
+    test_plan:
+      - type: "unit"
+        target: "packages/core/runtime/src/assets.test.ts, packages/extensions/store-postgres/src/postgres-assets.test.ts, and packages/agent-stack/agent-tools/src/composition-references.test.ts"
+        covers_dc: ["DC-004", "DC-005", "DC-011"]
+        action: "update"
+    done_conditions:
+      - "RED->GREEN evidence reported."
+      - "All custom catalogs and compositions validate; legal card reference names remain; no retired node or hint fixture remains except an explicit negative."
+    handoff_format: *handoff
+
+execution_order:
+  - ["WU-01"]
+  - ["WU-02"]
+  - ["WU-03"]
+  - ["WU-04", "WU-05", "WU-06"]
+  - ["WU-07", "WU-09", "WU-10", "WU-12", "WU-14", "WU-15"]
+  - ["WU-08", "WU-11", "WU-13"]
+  - ["combined pnpm typecheck"]
+  - ["feature final gate"]
+
+final_gate_details:
+  update_tests: "Map every changed production file to an affected Vitest test and run affected package suites."
+  verify:
+    - "pnpm verify"
+    - "pnpm --filter @facet/playground typecheck"
+    - "pnpm --filter @facet/playground build"
+    - "pnpm --filter @facet/quickstart build"
+    - "pnpm package:smoke"
+  code_review: "Review the direct worktree diff; PASS requires P0-P2 = 0."
+  live_test: "Run Tier 1 plus blocking Tier 2 provider smoke with OPENAI_API_KEY and the owner live journey required by the skill."
+  update_docs:
+    - "Update STAGE_SPEC, root/package documentation, architecture text, and changeset entries for the six behavior/release-note packages."
+    - "Treat the @facet/store-postgres README edit as documentation-only with no direct changeset entry; .changeset/config.json fixes @facet/* together."
+    - "Run pnpm exec changeset status --since=main and verify the complete fixed-group release plan."
+    - "Run node scripts/check-composition-hard-cut.mjs."
+    - 'Run rg -n ''CardNode|SectionNode|EmptyStateNode|type: "(card|section|emptyState)"|preferredParent: "(section|card)"|render(Card|Section|EmptyState)'' packages apps docs README.md AGENTS.md .changeset; hits may remain only in annotated negative/fail-safe tests.'
+    - 'Run rg -n ''"type"[[:space:]]*:[[:space:]]*"(card|section|emptyState)"'' packages apps docs README.md AGENTS.md .changeset; hits may remain only in annotated negative/fail-safe tests.'
+    - "Run rg -n 'card|section|emptyState|empty-state' packages apps docs README.md AGENTS.md .changeset; classify every hit as a legal composition/reference name, ordinary non-node prose, or annotated negative."
+  commit_policy: "One feature commit after all gates; no merge or push without owner approval; no Co-Authored-By trailer."
+
+final_gate_test_plan:
+  owner: "main-agent"
+  target: "recorded combined typecheck and complete ordered feature hard-gate evidence"
+  covers_dc: ["DC-012"]
+  commands:
+    - "pnpm typecheck"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test (blocking Tier 2 with OPENAI_API_KEY)"
+    - "/update-docs"
+  pass_condition: "Every ordered step and every supplemental build, package smoke, changeset status, and hard-cut scan is recorded PASS."

@@ -2,8 +2,41 @@ import { readFileSync } from "node:fs";
 import ts from "typescript";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type { BoxNode, FacetNode, InputNode, MediaNode, TextNode } from "./nodes.js";
+import {
+  isContainer,
+  PRIMITIVE_BRICK_TYPES,
+  type BoxNode,
+  type ContainerNode,
+  type FacetNode,
+  type FormNode,
+  type InputNode,
+  type MediaNode,
+  type TextNode,
+} from "./nodes.js";
+import { BRICK_REGISTRY, CORE_NODE_TYPES } from "./brick-registry.js";
 import { COMPONENT_NODE_TYPES, INTRINSIC_COMPONENT_TYPES } from "./component-nodes.js";
+
+const SURVIVING_INTRINSIC_COMPONENT_TYPES = [
+  "button",
+  "tabs",
+  "nav",
+  "table",
+  "chart",
+  "metric",
+  "keyValue",
+  "progress",
+  "list",
+  "form",
+  "filterBar",
+  "loading",
+] as const;
+
+const SURVIVING_COMPONENT_NODE_TYPES = [...SURVIVING_INTRINSIC_COMPONENT_TYPES, "stat"] as const;
+
+const SURVIVING_PUBLIC_NODE_TYPES = [
+  ...PRIMITIVE_BRICK_TYPES,
+  ...SURVIVING_COMPONENT_NODE_TYPES,
+] as const;
 
 /**
  * Preservation test for the `node-mixins` PURE REFACTOR.
@@ -165,31 +198,27 @@ describe("node discriminated-union preservation (exhaustiveness guard)", () => {
 
     // The full FacetNode discriminant set (primitives + intrinsic/legacy
     // components) — a broken discriminated union would drift this set.
-    expectTypeOf<FacetNode["type"]>().toEqualTypeOf<
-      | "box"
-      | "text"
-      | "media"
-      | "input"
-      | "richtext"
-      | "button"
-      | "section"
-      | "card"
-      | "tabs"
-      | "nav"
-      | "table"
-      | "chart"
-      | "metric"
-      | "keyValue"
-      | "progress"
-      | "list"
-      | "form"
-      // "search" is retired as a node type by this consolidation (removed from
-      // ComponentNodeType in WU-2); the "search" token survives only as an input KIND.
-      | "filterBar"
-      | "emptyState"
-      | "loading"
-      | "stat"
-    >();
+    expectTypeOf<FacetNode["type"]>().toEqualTypeOf<(typeof SURVIVING_PUBLIC_NODE_TYPES)[number]>();
+  });
+});
+
+describe("container composition reference cutover", () => {
+  it("retired container patterns are not node types", () => {
+    expect(INTRINSIC_COMPONENT_TYPES).toEqual(SURVIVING_INTRINSIC_COMPONENT_TYPES);
+    expect(COMPONENT_NODE_TYPES).toEqual(SURVIVING_COMPONENT_NODE_TYPES);
+    expect(CORE_NODE_TYPES).toEqual(SURVIVING_PUBLIC_NODE_TYPES);
+    expect(Object.keys(BRICK_REGISTRY).sort()).toEqual([...SURVIVING_PUBLIC_NODE_TYPES].sort());
+
+    expectTypeOf<FacetNode["type"]>().toEqualTypeOf<(typeof SURVIVING_PUBLIC_NODE_TYPES)[number]>();
+    expectTypeOf<Extract<FacetNode, { type: "stat" }>["type"]>().toEqualTypeOf<"stat">();
+    expectTypeOf<ContainerNode>().toEqualTypeOf<BoxNode | FormNode>();
+
+    const box: FacetNode = { id: "box", type: "box", children: [] };
+    const form: FacetNode = { id: "form", type: "form", children: [] };
+    const stat: FacetNode = { id: "stat", type: "stat", label: "Total", value: "1" };
+    expect(isContainer(box)).toBe(true);
+    expect(isContainer(form)).toBe(true);
+    expect(isContainer(stat)).toBe(false);
   });
 });
 

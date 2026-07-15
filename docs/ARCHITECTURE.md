@@ -108,26 +108,27 @@ The v1 intrinsic components are still just typed stage data:
 
 - `button` — a leaf action brick with `label`, optional `variant`/`tone`,
   `disabled`, `onPress`, and `onHold`.
-- `section` — a normal-flow container with optional `title`, `eyebrow`, `body`,
-  `variant`, and `children`.
-- `card` — a normal-flow container with optional `title`, `body`, `variant`,
-  `tone`, `onPress`/`onHold`, and `children`.
 - `tabs` — local navigation over existing screen/view-state semantics. It does
   not write stage content or call the agent.
 - `nav` — app or section navigation over the same local screen/view-state
   semantics.
 - `table` — display-only tabular data with capped columns, rows, and cells.
 - `chart` — display-only chart data with capped series and points.
-- `metric`, `keyValue`, `progress`, `list`, `emptyState`, and `loading` —
-  compact display and feedback components with bounded payloads. `stat` remains
-  a legacy alias for `metric`. Badges and alerts are not node types; default
-  reference datasets show equivalent native box+text patterns, and a visual
-  separator is a plain bordered box rather than a node.
+- `metric`, `keyValue`, `progress`, `list`, and `loading` — compact display and
+  feedback components with bounded payloads. `stat` remains a legacy alias for
+  `metric`.
 - `form` and `filterBar` — input/control surfaces only. Backend work
   stays with the agent through actions and later patches.
 
-Only `box`, `section`, `card`, and `form` are containers in v1. Tables, charts,
-and filter bars are display/control-only; there is no client fetch,
+Sections, cards, and empty states are composition patterns, not node types.
+Default `section`, `card`, and `empty-state` references encode their intended
+appearance as concrete `box`/`text`/`button` trees with closed tokens. Their
+roots have no implicit behavior; an empty-state action exists only on the
+authored child button. Badges and alerts follow the same reference-data model,
+and a visual separator is a plain bordered box.
+
+Only `box` and `form` are containers in v1. Tables, charts, and filter bars are
+display/control-only; there is no client fetch,
 agent-authored sort/filter engine, data-source/resolver/query binding, expression
 language, or inline script. (Binding a data-bearing node to the in-tree `data`
 warehouse by NAME via `from` is allowed and is not a data source — see "Data

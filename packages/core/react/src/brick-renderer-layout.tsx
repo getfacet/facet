@@ -1,6 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
 import {
-  MAX_NODE_BODY_CHARS,
   MAX_NODE_LABEL_CHARS,
   MAX_TABLE_COLUMNS,
   MAX_TABLE_ROWS,
@@ -23,116 +22,12 @@ import {
   componentTextStyle,
   intrinsicBoxStyle,
   isObjectRecord,
-  partBoxStyle,
   safeOwnValue,
   stringValue,
   tableCellText,
   textAlignStyle,
   withInert,
 } from "./brick-renderer-shared.js";
-
-export function renderSection<Press>(
-  node: FacetNode,
-  context: BrickRenderContext<Press>,
-): ReactNode {
-  const { theme, className, inert } = context;
-  const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "section", variant);
-  const style = componentBoxStyle(theme, recipe, {
-    gap: "md",
-    pad: "md",
-    width: "full",
-  });
-  const eyebrow = cappedString(safeOwnValue(node, "eyebrow"), MAX_NODE_LABEL_CHARS);
-  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
-  const body = cappedString(safeOwnValue(node, "body"), MAX_NODE_BODY_CHARS);
-  return (
-    <section
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(style, inert)}
-    >
-      {eyebrow === undefined ? null : (
-        <p
-          style={componentTextStyle(
-            theme,
-            recipe,
-            { color: "fg-muted", size: "sm", weight: "semibold" },
-            "label",
-          )}
-        >
-          {eyebrow}
-        </p>
-      )}
-      {title === undefined ? null : (
-        <h2
-          style={componentTextStyle(
-            theme,
-            recipe,
-            { color: "fg", size: "xl", weight: "bold" },
-            "title",
-          )}
-        >
-          {title}
-        </h2>
-      )}
-      {body === undefined ? null : (
-        <p style={componentTextStyle(theme, recipe, { color: "fg" }, "body")}>{body}</p>
-      )}
-      {context.children}
-    </section>
-  );
-}
-
-export function renderCard<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
-  const { theme, className, inert } = context;
-  const variant = safeOwnValue(node, "variant");
-  const tone = safeOwnValue(node, "tone");
-  const recipe = componentRecipe(theme, "card", variant, tone);
-  const style = componentBoxStyle(theme, recipe, {
-    gap: "sm",
-    pad: "md",
-    bg: "surface",
-    border: true,
-    radius: "md",
-  });
-  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
-  const body = cappedString(safeOwnValue(node, "body"), MAX_NODE_BODY_CHARS);
-  const press = context.classifyPress(safeOwnValue(node, "onPress"));
-  const hold = context.classifyPress(safeOwnValue(node, "onHold"));
-  return context.renderPressable({
-    press: inert ? null : press,
-    hold: inert ? null : hold,
-    dispatch: context.dispatch,
-    className,
-    style,
-    inert,
-    children: (
-      <>
-        {title === undefined && body === undefined ? null : (
-          <div style={partBoxStyle(theme, recipe, "header", { gap: "xs" })}>
-            {title === undefined ? null : (
-              <h3
-                style={componentTextStyle(
-                  theme,
-                  recipe,
-                  { color: "fg", size: "lg", weight: "bold" },
-                  "title",
-                )}
-              >
-                {title}
-              </h3>
-            )}
-            {body === undefined ? null : (
-              <p style={componentTextStyle(theme, recipe, { color: "fg" }, "body")}>{body}</p>
-            )}
-          </div>
-        )}
-        {context.children}
-      </>
-    ),
-  });
-}
 
 export function renderButton<Press>(
   node: FacetNode,

@@ -61,7 +61,7 @@ const invalidComposition = {
   nodes: { x: { id: "x", type: "text", value: "orphan" } },
 };
 
-/** A component-brick composition with concrete values and an agent action. */
+/** A native composition with concrete values and an agent action. */
 const richComposition = {
   name: "customerSummaryCard",
   metadata: { description: "Customer summary example" },
@@ -69,9 +69,22 @@ const richComposition = {
   nodes: {
     card: {
       id: "card",
-      type: "card",
-      title: "Acme Corp",
-      children: ["metric", "action"],
+      type: "box",
+      style: {
+        bg: "surface",
+        border: true,
+        gap: "sm",
+        pad: "md",
+        radius: "md",
+        shadow: "sm",
+      },
+      children: ["title", "metric", "action"],
+    },
+    title: {
+      id: "title",
+      type: "text",
+      value: "Acme Corp",
+      style: { color: "fg", size: "lg", weight: "bold" },
     },
     metric: { id: "metric", type: "metric", label: "ARR", value: "$24k" },
     action: {
@@ -248,7 +261,7 @@ describe("loadAssets", () => {
     const custom: FacetCatalog = {
       name: "custom",
       theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-      bricks: [{ type: "section", variants: ["surface"] }],
+      bricks: [{ type: "box" }],
       compositions: { mode: "allow", names: ["dashboard-summary"] },
       primitiveFallback: "discouraged",
       policy: {
@@ -301,7 +314,7 @@ describe("loadAssets", () => {
         catalog: {
           name: "bad name",
           theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-          bricks: [{ type: "section", variants: ["surface"] }],
+          bricks: [{ type: "box" }],
           compositions: { mode: "allow", names: ["dashboard-summary"] },
           primitiveFallback: "discouraged",
           policy: {
@@ -321,7 +334,7 @@ describe("loadAssets", () => {
     expect(loaded.catalog.primitiveFallback).toBe("discouraged");
     expect(loaded.catalog.policy.maxScreenSections).toBe(3);
     expect(loaded.catalog.bricks).not.toEqual(DEFAULT_CATALOG.bricks);
-    expect(loaded.catalog.bricks.some((brick) => brick.type === "section")).toBe(true);
+    expect(loaded.catalog.bricks.some((brick) => brick.type === "box")).toBe(true);
     expect(loaded.issues.some((issue) => issue.includes("name is missing or malformed"))).toBe(
       true,
     );

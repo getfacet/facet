@@ -23,12 +23,33 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.hero": {
     id: "qs.system.hero",
-    type: "section",
-    eyebrow: "Default assets",
-    title: "Design System",
-    body: "The agent can introduce the default theme, catalog variants, intrinsic components, fields, and optional composition references through live Facet UI examples.",
-    variant: "surface",
-    children: ["qs.system.hero.alert"],
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    children: [
+      "qs.system.hero.eyebrow",
+      "qs.system.hero.title",
+      "qs.system.hero.body",
+      "qs.system.hero.alert",
+    ],
+  },
+  "qs.system.hero.eyebrow": {
+    id: "qs.system.hero.eyebrow",
+    type: "text",
+    value: "Default assets",
+    style: { color: "fg-muted", size: "sm", weight: "semibold" },
+  },
+  "qs.system.hero.title": {
+    id: "qs.system.hero.title",
+    type: "text",
+    value: "Design System",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.system.hero.body": {
+    id: "qs.system.hero.body",
+    type: "text",
+    value:
+      "The agent can introduce the default theme, catalog variants, intrinsic components, fields, and optional composition references through live Facet UI examples.",
+    style: { color: "fg" },
   },
   "qs.system.hero.alert": {
     id: "qs.system.hero.alert",
@@ -51,11 +72,28 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.theme": {
     id: "qs.system.theme",
-    type: "section",
-    title: "Theme recipes",
-    body: "Agents choose variants and bounded tones. The renderer resolves token-only recipes into the final UI.",
-    variant: "surface",
-    children: ["qs.system.theme.badges", "qs.system.theme.progress", "qs.system.theme.list"],
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    children: [
+      "qs.system.theme.title",
+      "qs.system.theme.body",
+      "qs.system.theme.badges",
+      "qs.system.theme.progress",
+      "qs.system.theme.list",
+    ],
+  },
+  "qs.system.theme.title": {
+    id: "qs.system.theme.title",
+    type: "text",
+    value: "Theme recipes",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.system.theme.body": {
+    id: "qs.system.theme.body",
+    type: "text",
+    value:
+      "Agents choose variants and bounded tones. The renderer resolves token-only recipes into the final UI.",
+    style: { color: "fg" },
   },
   "qs.system.theme.badges": {
     id: "qs.system.theme.badges",
@@ -136,28 +174,54 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.bricks": {
     id: "qs.system.bricks",
-    type: "section",
-    title: "Component gallery",
-    body: "The built-in intrinsic components render through React recipe parts while box, text, media, input, and richtext remain the primitive base.",
-    variant: "surface",
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
     children: [
+      "qs.system.bricks.title",
+      "qs.system.bricks.body",
       "qs.system.actions.card",
       "qs.system.data.card",
       "qs.system.form.card",
       "qs.system.feedback.card",
     ],
   },
+  "qs.system.bricks.title": {
+    id: "qs.system.bricks.title",
+    type: "text",
+    value: "Component gallery",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.system.bricks.body": {
+    id: "qs.system.bricks.body",
+    type: "text",
+    value:
+      "The built-in intrinsic components render through React recipe parts while box, text, media, input, and richtext remain the primitive base.",
+    style: { color: "fg" },
+  },
   "qs.system.actions.card": {
     id: "qs.system.actions.card",
-    type: "card",
-    title: "Actions and layout",
-    body: "Buttons, cards, metrics, badges, progress, dividers, and flow boxes.",
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
     children: [
+      "qs.system.actions.card.title",
+      "qs.system.actions.card.body",
       "qs.system.action.buttons",
       "qs.system.action.metric",
       "qs.system.action.progress",
       "qs.system.action.divider",
     ],
+  },
+  "qs.system.actions.card.title": {
+    id: "qs.system.actions.card.title",
+    type: "text",
+    value: "Actions and layout",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.system.actions.card.body": {
+    id: "qs.system.actions.card.body",
+    type: "text",
+    value: "Buttons, cards, metrics, badges, progress, dividers, and flow boxes.",
+    style: { color: "fg-muted" },
   },
   "qs.system.action.buttons": {
     id: "qs.system.action.buttons",
@@ -213,10 +277,27 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.data.card": {
     id: "qs.system.data.card",
-    type: "card",
-    title: "Display-only data",
-    body: "Tables and charts show bounded data only. They do not fetch, sort, or bind backend state.",
-    children: ["qs.system.data.chart", "qs.system.data.table"],
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+    children: [
+      "qs.system.data.card.title",
+      "qs.system.data.card.body",
+      "qs.system.data.chart",
+      "qs.system.data.table",
+    ],
+  },
+  "qs.system.data.card.title": {
+    id: "qs.system.data.card.title",
+    type: "text",
+    value: "Display-only data",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.system.data.card.body": {
+    id: "qs.system.data.card.body",
+    type: "text",
+    value:
+      "Tables and charts show bounded data only. They do not fetch, sort, or bind backend state.",
+    style: { color: "fg-muted" },
   },
   "qs.system.data.chart": {
     id: "qs.system.data.chart",
@@ -245,10 +326,27 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.form.card": {
     id: "qs.system.form.card",
-    type: "card",
-    title: "Field controls",
-    body: "Field values stay in browser view-state until an action collects them.",
-    children: ["qs.system.form.name", "qs.system.form.kind", "qs.system.form.submit"],
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+    children: [
+      "qs.system.form.card.title",
+      "qs.system.form.card.body",
+      "qs.system.form.name",
+      "qs.system.form.kind",
+      "qs.system.form.submit",
+    ],
+  },
+  "qs.system.form.card.title": {
+    id: "qs.system.form.card.title",
+    type: "text",
+    value: "Field controls",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.system.form.card.body": {
+    id: "qs.system.form.card.body",
+    type: "text",
+    value: "Field values stay in browser view-state until an action collects them.",
+    style: { color: "fg-muted" },
   },
   "qs.system.form.name": {
     id: "qs.system.form.name",
@@ -276,10 +374,27 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.feedback.card": {
     id: "qs.system.feedback.card",
-    type: "card",
-    title: "Feedback patterns",
-    body: "Alerts and lists carry product state without overlays, z-index, or absolute positioning.",
-    children: ["qs.system.feedback.alert", "qs.system.feedback.list"],
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+    children: [
+      "qs.system.feedback.card.title",
+      "qs.system.feedback.card.body",
+      "qs.system.feedback.alert",
+      "qs.system.feedback.list",
+    ],
+  },
+  "qs.system.feedback.card.title": {
+    id: "qs.system.feedback.card.title",
+    type: "text",
+    value: "Feedback patterns",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.system.feedback.card.body": {
+    id: "qs.system.feedback.card.body",
+    type: "text",
+    value:
+      "Alerts and lists carry product state without overlays, z-index, or absolute positioning.",
+    style: { color: "fg-muted" },
   },
   "qs.system.feedback.alert": {
     id: "qs.system.feedback.alert",
@@ -311,11 +426,27 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.compositions": {
     id: "qs.system.compositions",
-    type: "section",
-    title: "Optional reference datasets",
-    body: "For a complex UI, the agent may read one concrete example by name, then copy or adapt its ordinary native nodes. Simple UI can be authored directly without a lookup.",
-    variant: "surface",
-    children: ["qs.system.compositions.list", "qs.system.compositions.table"],
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    children: [
+      "qs.system.compositions.title",
+      "qs.system.compositions.body",
+      "qs.system.compositions.list",
+      "qs.system.compositions.table",
+    ],
+  },
+  "qs.system.compositions.title": {
+    id: "qs.system.compositions.title",
+    type: "text",
+    value: "Optional reference datasets",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.system.compositions.body": {
+    id: "qs.system.compositions.body",
+    type: "text",
+    value:
+      "For a complex UI, the agent may read one concrete example by name, then copy or adapt its ordinary native nodes. Simple UI can be authored directly without a lookup.",
+    style: { color: "fg" },
   },
   "qs.system.compositions.list": {
     id: "qs.system.compositions.list",
@@ -356,11 +487,22 @@ export const QUICKSTART_SYSTEM_NODES = {
   },
   "qs.system.catalog": {
     id: "qs.system.catalog",
-    type: "section",
-    title: "Catalog policy",
-    body: "The default authoring order is component, then primitive fallback. A separate composition allow-list controls which optional references are advertised.",
-    variant: "surface",
-    children: ["qs.system.catalog.list"],
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    children: ["qs.system.catalog.title", "qs.system.catalog.body", "qs.system.catalog.list"],
+  },
+  "qs.system.catalog.title": {
+    id: "qs.system.catalog.title",
+    type: "text",
+    value: "Catalog policy",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.system.catalog.body": {
+    id: "qs.system.catalog.body",
+    type: "text",
+    value:
+      "The default authoring order is component, then primitive fallback. A separate composition allow-list controls which optional references are advertised.",
+    style: { color: "fg" },
   },
   "qs.system.catalog.list": {
     id: "qs.system.catalog.list",

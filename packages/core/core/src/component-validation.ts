@@ -23,10 +23,6 @@ import {
   sanitizeFeedbackComponentNode,
   type FeedbackComponentType,
 } from "./component-validation-feedback.js";
-import {
-  sanitizeLayoutComponentNode,
-  type LayoutComponentType,
-} from "./component-validation-layout.js";
 import { BRICK_REGISTRY, type ComponentRole } from "./brick-registry.js";
 
 export { MAX_COMPONENT_ARRAY_ITEMS } from "./component-validation-shared.js";
@@ -50,8 +46,6 @@ const ROLE_SANITIZERS: Record<ComponentRole, RoleSanitizer> = {
     sanitizeDataComponentNode(id, raw, type as DataComponentType, issues),
   feedback: (id, raw, type, issues) =>
     sanitizeFeedbackComponentNode(id, raw, type as FeedbackComponentType, issues),
-  layout: (id, raw, type, issues) =>
-    sanitizeLayoutComponentNode(id, raw, type as LayoutComponentType, issues),
 };
 
 export function isPrimitiveBrickType(value: unknown): value is PrimitiveBrickType {

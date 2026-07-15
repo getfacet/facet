@@ -271,7 +271,7 @@ function containerNodeCandidate(value: unknown): FacetNode | undefined {
   const id = nodeIdCandidate(value);
   if (id === undefined) return undefined;
   const type = value["type"];
-  if (type !== "box" && type !== "section" && type !== "card") return undefined;
+  if (type !== "box") return undefined;
   const children = value["children"];
   if (
     children !== undefined &&

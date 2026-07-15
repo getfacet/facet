@@ -5,7 +5,7 @@ export type FacetStageToolSpec = ToolSpec<FacetStageToolName>;
 const NODE_SCHEMA = {
   type: "object",
   description:
-    "A Facet stage node from the component or primitive layer of the catalog-guided component -> primitive fallback model. Primitive bricks are box, text, media, input, richtext. Intrinsic components are button, section, card, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, emptyState, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box, section, card, and form are containers. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a node's from field. Variant names must be allowed by the active catalog policy.",
+    "A Facet stage node from the component or primitive layer of the catalog-guided component -> primitive fallback model. Primitive bricks are box, text, media, input, richtext. Intrinsic components are button, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box and form are containers. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a node's from field. Variant names must be allowed by the active catalog policy.",
 } as const;
 
 const TREE_SCHEMA = {
@@ -43,13 +43,13 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "append_node",
     description:
-      "Add one primitive brick or component node as the last child of the existing box, section, card, or form parentId. Use for small incremental page additions. Catalog policy controls allowed node types and variants.",
+      "Add one primitive brick or component node as the last child of the existing box or form parentId. Use for small incremental page additions. Catalog policy controls allowed node types and variants.",
     parameters: {
       type: "object",
       properties: {
         parentId: {
           type: "string",
-          description: "The id of an existing container node: box, section, card, or form.",
+          description: "The id of an existing container node: box or form.",
         },
         ["node"]: NODE_SCHEMA,
       },

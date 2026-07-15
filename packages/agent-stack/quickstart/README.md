@@ -12,8 +12,9 @@ With no `facet.md`, quickstart opens on a compact, validated four-tab product
 tour: **What is Facet?**, **Core Structure**, **Design System**, and **Use
 Cases**. The seed demonstrates the component default kit: sections, cards, tabs,
 table, chart, inputs, buttons, metrics, progress, and lists, plus badge and alert
-patterns authored from native boxes and text. That first paint is not a stub
-mode; the normal path still resolves your provider key and the provider-backed
+patterns. Section, card, badge, and alert layouts are authored from native boxes
+and text rather than dedicated node types. That first paint is not a stub mode;
+the normal path still resolves your provider key and the provider-backed
 reference agent can refine the seeded stage on the first visit.
 
 The reference agent runs a bounded **streaming tool loop**: the model calls
@@ -164,9 +165,15 @@ A composition document is a self-contained native example:
   "nodes": {
     "launch-card.root": {
       "id": "launch-card.root",
-      "type": "card",
-      "title": "Ready to launch?",
-      "children": ["launch-card.action"]
+      "type": "box",
+      "style": { "bg": "surface", "border": true, "gap": "sm", "pad": "md", "radius": "md" },
+      "children": ["launch-card.title", "launch-card.action"]
+    },
+    "launch-card.title": {
+      "id": "launch-card.title",
+      "type": "text",
+      "value": "Ready to launch?",
+      "style": { "size": "lg", "weight": "bold" }
     },
     "launch-card.action": {
       "id": "launch-card.action",
@@ -192,9 +199,9 @@ A catalog document can lock the page to one theme:
   "description": "Launch page UI policy",
   "theme": { "active": "midnight", "switchPolicy": "locked", "allowed": ["midnight"] },
   "components": [
-    { "type": "section", "variants": ["surface"] },
-    { "type": "card", "variants": ["default", "interactive"] },
-    { "type": "button", "variants": ["primary", "secondary"] }
+    { "type": "button", "variants": ["primary", "secondary"] },
+    { "type": "metric" },
+    { "type": "table" }
   ],
   "compositions": { "mode": "all" },
   "primitiveFallback": "allowed",
@@ -218,7 +225,7 @@ theme names the model may choose with `set_theme`:
     "switchPolicy": "allowed",
     "allowed": ["midnight", "daylight"]
   },
-  "components": [{ "type": "section", "variants": ["surface"] }],
+  "components": [{ "type": "button", "variants": ["primary", "secondary"] }],
   "compositions": { "mode": "all" },
   "primitiveFallback": "allowed",
   "policy": {

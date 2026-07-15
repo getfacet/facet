@@ -39,7 +39,6 @@ import {
   rendersBox,
   rendersButton,
   rendersChart,
-  rendersEmptyState,
   rendersField,
   rendersFilterBar,
   rendersForm,
@@ -48,7 +47,6 @@ import {
   rendersMedia,
   rendersMetricStat,
   rendersProgress,
-  rendersSectionCard,
   rendersTable,
   rendersTabsNav,
   rendersText,
@@ -75,7 +73,7 @@ export const CORE_NODE_TYPES: readonly CoreNodeType[] = [
 ];
 
 /** Component role → routes to the matching role sanitizer (in component-validation). */
-export type ComponentRole = "control" | "data" | "feedback" | "layout";
+export type ComponentRole = "control" | "data" | "feedback";
 
 export type DataBearingNode =
   TableNode | ChartNode | ListNode | KeyValueNode | MetricNode | StatNode | TextNode;
@@ -254,29 +252,10 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     established: true,
     rendersSelf: rendersProgress,
   },
-  emptyState: {
-    kind: "component",
-    role: "feedback",
-    established: false,
-    rendersSelf: rendersEmptyState,
-  },
   loading: {
     kind: "component",
     role: "feedback",
     established: false,
     rendersSelf: rendersAlways,
-  },
-  // ---- Layout components ------------------------------------------------
-  section: {
-    kind: "component",
-    role: "layout",
-    established: true,
-    rendersSelf: rendersSectionCard,
-  },
-  card: {
-    kind: "component",
-    role: "layout",
-    established: true,
-    rendersSelf: rendersSectionCard,
   },
 };

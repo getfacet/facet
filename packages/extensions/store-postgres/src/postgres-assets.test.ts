@@ -111,7 +111,7 @@ const legacyReferenceComposition = {
 const customCatalog: FacetCatalog = {
   name: "operator",
   theme: { active: "midnight", switchPolicy: "locked", allowed: ["midnight"] },
-  bricks: [{ type: "section", variants: ["surface"] }],
+  bricks: [{ type: "box" }],
   compositions: { mode: "allow", names: ["cta"] },
   primitiveFallback: "discouraged",
   policy: {

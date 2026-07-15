@@ -1,5 +1,10 @@
 import type { FacetComposition } from "@facet/core";
 import { CHART_TABLE_VIEW_COMPOSITION } from "./composition-chart-table.js";
+import {
+  CARD_COMPOSITION,
+  EMPTY_STATE_COMPOSITION,
+  SECTION_COMPOSITION,
+} from "./composition-containers.js";
 
 /**
  * Default compositions are data-only, self-contained native reference
@@ -24,11 +29,21 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
     nodes: {
       "hero.root": {
         id: "hero.root",
-        type: "section",
-        title: "Ship polished interfaces in minutes",
-        body: "Compose safe, live UI for each user without shipping a new frontend.",
-        variant: "surface",
-        children: ["hero.cta"],
+        type: "box",
+        style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+        children: ["hero.title", "hero.body", "hero.cta"],
+      },
+      "hero.title": {
+        id: "hero.title",
+        type: "text",
+        value: "Ship polished interfaces in minutes",
+        style: { color: "fg", size: "xl", weight: "bold" },
+      },
+      "hero.body": {
+        id: "hero.body",
+        type: "text",
+        value: "Compose safe, live UI for each user without shipping a new frontend.",
+        style: { color: "fg" },
       },
       "hero.cta": {
         id: "hero.cta",
@@ -40,30 +55,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
     },
   },
-  {
-    name: "card",
-    metadata: {
-      description: "A titled content card with body copy.",
-      category: "content",
-      useWhen: "Grouping one concept, record, or explanation.",
-      avoidWhen: "The content is a whole screen section.",
-      tags: ["card", "content"],
-      variants: ["default", "interactive"],
-      repeatable: true,
-      preferredParent: "section",
-    },
-    root: "card.root",
-    nodes: {
-      "card.root": {
-        id: "card.root",
-        type: "card",
-        title: "Quarterly planning",
-        body: "Review goals, owners, and open decisions for the next release.",
-        variant: "default",
-        children: [],
-      },
-    },
-  },
+  CARD_COMPOSITION,
+  SECTION_COMPOSITION,
   {
     name: "cta-button",
     metadata: {
@@ -74,7 +67,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["button", "cta", "action"],
       variants: ["primary"],
       repeatable: true,
-      preferredParent: "card",
+      preferredParent: "box",
     },
     root: "cta-button.root",
     nodes: {
@@ -104,17 +97,51 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
     nodes: {
       "pricing-section.root": {
         id: "pricing-section.root",
-        type: "section",
-        title: "Choose a plan",
-        variant: "surface",
-        children: ["pricing-section.starter", "pricing-section.pro", "pricing-section.enterprise"],
+        type: "box",
+        style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+        children: [
+          "pricing-section.title",
+          "pricing-section.starter",
+          "pricing-section.pro",
+          "pricing-section.enterprise",
+        ],
+      },
+      "pricing-section.title": {
+        id: "pricing-section.title",
+        type: "text",
+        value: "Choose a plan",
+        style: { color: "fg", size: "xl", weight: "bold" },
       },
       "pricing-section.starter": {
         id: "pricing-section.starter",
-        type: "card",
-        title: "Starter",
-        body: "Simple tools for early teams.",
-        children: ["pricing-section.starter-price"],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: ["pricing-section.starter-header", "pricing-section.starter-price"],
+      },
+      "pricing-section.starter-header": {
+        id: "pricing-section.starter-header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["pricing-section.starter-title", "pricing-section.starter-body"],
+      },
+      "pricing-section.starter-title": {
+        id: "pricing-section.starter-title",
+        type: "text",
+        value: "Starter",
+        style: { color: "fg", size: "lg", weight: "bold" },
+      },
+      "pricing-section.starter-body": {
+        id: "pricing-section.starter-body",
+        type: "text",
+        value: "Simple tools for early teams.",
+        style: { color: "fg-muted" },
       },
       "pricing-section.starter-price": {
         id: "pricing-section.starter-price",
@@ -124,11 +151,38 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "pricing-section.pro": {
         id: "pricing-section.pro",
-        type: "card",
-        title: "Pro",
-        body: "Advanced workflows and analytics.",
-        tone: "accent",
-        children: ["pricing-section.pro-price", "pricing-section.cta"],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: [
+          "pricing-section.pro-header",
+          "pricing-section.pro-price",
+          "pricing-section.cta",
+        ],
+      },
+      "pricing-section.pro-header": {
+        id: "pricing-section.pro-header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["pricing-section.pro-title", "pricing-section.pro-body"],
+      },
+      "pricing-section.pro-title": {
+        id: "pricing-section.pro-title",
+        type: "text",
+        value: "Pro",
+        style: { color: "fg", size: "lg", weight: "bold" },
+      },
+      "pricing-section.pro-body": {
+        id: "pricing-section.pro-body",
+        type: "text",
+        value: "Advanced workflows and analytics.",
+        style: { color: "fg-muted" },
       },
       "pricing-section.pro-price": {
         id: "pricing-section.pro-price",
@@ -145,10 +199,34 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       },
       "pricing-section.enterprise": {
         id: "pricing-section.enterprise",
-        type: "card",
-        title: "Enterprise",
-        body: "Custom controls for larger organizations.",
-        children: ["pricing-section.enterprise-badge"],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: ["pricing-section.enterprise-header", "pricing-section.enterprise-badge"],
+      },
+      "pricing-section.enterprise-header": {
+        id: "pricing-section.enterprise-header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["pricing-section.enterprise-title", "pricing-section.enterprise-body"],
+      },
+      "pricing-section.enterprise-title": {
+        id: "pricing-section.enterprise-title",
+        type: "text",
+        value: "Enterprise",
+        style: { color: "fg", size: "lg", weight: "bold" },
+      },
+      "pricing-section.enterprise-body": {
+        id: "pricing-section.enterprise-body",
+        type: "text",
+        value: "Custom controls for larger organizations.",
+        style: { color: "fg-muted" },
       },
       "pricing-section.enterprise-badge": {
         id: "pricing-section.enterprise-badge",
@@ -180,9 +258,15 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
     nodes: {
       "faq-section.root": {
         id: "faq-section.root",
-        type: "section",
-        title: "Questions",
-        children: ["faq-section.list"],
+        type: "box",
+        style: { gap: "md", pad: "lg", width: "full" },
+        children: ["faq-section.title", "faq-section.list"],
+      },
+      "faq-section.title": {
+        id: "faq-section.title",
+        type: "text",
+        value: "Questions",
+        style: { color: "fg", size: "xl", weight: "bold" },
       },
       "faq-section.list": {
         id: "faq-section.list",
@@ -211,14 +295,20 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
     nodes: {
       "dashboard-summary.root": {
         id: "dashboard-summary.root",
-        type: "section",
-        title: "Overview",
-        variant: "surface",
+        type: "box",
+        style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
         children: [
+          "dashboard-summary.title",
           "dashboard-summary.stat",
           "dashboard-summary.badge",
           "dashboard-summary.progress",
         ],
+      },
+      "dashboard-summary.title": {
+        id: "dashboard-summary.title",
+        type: "text",
+        value: "Overview",
+        style: { color: "fg", size: "xl", weight: "bold" },
       },
       "dashboard-summary.stat": {
         id: "dashboard-summary.stat",
@@ -259,15 +349,39 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["settings", "form", "fields"],
       variants: ["compact"],
       repeatable: true,
-      preferredParent: "section",
+      preferredParent: "box",
     },
     root: "settings-panel.root",
     nodes: {
       "settings-panel.root": {
         id: "settings-panel.root",
-        type: "card",
-        title: "Workspace settings",
-        children: ["settings-panel.email", "settings-panel.timezone", "settings-panel.save"],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: [
+          "settings-panel.header",
+          "settings-panel.email",
+          "settings-panel.timezone",
+          "settings-panel.save",
+        ],
+      },
+      "settings-panel.header": {
+        id: "settings-panel.header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["settings-panel.title"],
+      },
+      "settings-panel.title": {
+        id: "settings-panel.title",
+        type: "text",
+        value: "Workspace settings",
+        style: { color: "fg", size: "lg", weight: "bold" },
       },
       "settings-panel.email": {
         id: "settings-panel.email",
@@ -311,63 +425,117 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
     nodes: {
       "feature-grid.root": {
         id: "feature-grid.root",
-        type: "section",
-        title: "Features",
-        children: ["feature-grid.first", "feature-grid.second", "feature-grid.third"],
+        type: "box",
+        style: { gap: "md", pad: "lg", width: "full" },
+        children: [
+          "feature-grid.title",
+          "feature-grid.first",
+          "feature-grid.second",
+          "feature-grid.third",
+        ],
+      },
+      "feature-grid.title": {
+        id: "feature-grid.title",
+        type: "text",
+        value: "Features",
+        style: { color: "fg", size: "xl", weight: "bold" },
       },
       "feature-grid.first": {
         id: "feature-grid.first",
-        type: "card",
-        title: "Fast setup",
-        body: "Start from safe default UI patterns.",
-        children: [],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: ["feature-grid.first-header"],
+      },
+      "feature-grid.first-header": {
+        id: "feature-grid.first-header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["feature-grid.first-title", "feature-grid.first-body"],
+      },
+      "feature-grid.first-title": {
+        id: "feature-grid.first-title",
+        type: "text",
+        value: "Fast setup",
+        style: { color: "fg", size: "lg", weight: "bold" },
+      },
+      "feature-grid.first-body": {
+        id: "feature-grid.first-body",
+        type: "text",
+        value: "Start from safe default UI patterns.",
+        style: { color: "fg-muted" },
       },
       "feature-grid.second": {
         id: "feature-grid.second",
-        type: "card",
-        title: "Live UI",
-        body: "Render task-specific screens as the conversation changes.",
-        children: [],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: ["feature-grid.second-header"],
+      },
+      "feature-grid.second-header": {
+        id: "feature-grid.second-header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["feature-grid.second-title", "feature-grid.second-body"],
+      },
+      "feature-grid.second-title": {
+        id: "feature-grid.second-title",
+        type: "text",
+        value: "Live UI",
+        style: { color: "fg", size: "lg", weight: "bold" },
+      },
+      "feature-grid.second-body": {
+        id: "feature-grid.second-body",
+        type: "text",
+        value: "Render task-specific screens as the conversation changes.",
+        style: { color: "fg-muted" },
       },
       "feature-grid.third": {
         id: "feature-grid.third",
-        type: "card",
-        title: "Safe patches",
-        body: "Keep every update declarative and bounded.",
-        children: [],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: ["feature-grid.third-header"],
+      },
+      "feature-grid.third-header": {
+        id: "feature-grid.third-header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["feature-grid.third-title", "feature-grid.third-body"],
+      },
+      "feature-grid.third-title": {
+        id: "feature-grid.third-title",
+        type: "text",
+        value: "Safe patches",
+        style: { color: "fg", size: "lg", weight: "bold" },
+      },
+      "feature-grid.third-body": {
+        id: "feature-grid.third-body",
+        type: "text",
+        value: "Keep every update declarative and bounded.",
+        style: { color: "fg-muted" },
       },
     },
   },
-  {
-    name: "empty-state",
-    metadata: {
-      description: "A compact empty state with a recovery action.",
-      category: "feedback",
-      useWhen: "There is no data yet and the user needs a clear next action.",
-      avoidWhen: "There is meaningful content to summarize.",
-      tags: ["empty", "feedback", "action"],
-      variants: ["default"],
-      repeatable: true,
-      preferredParent: "section",
-    },
-    root: "empty-state.root",
-    nodes: {
-      "empty-state.root": {
-        id: "empty-state.root",
-        type: "card",
-        title: "No projects yet",
-        body: "Create your first project to start organizing this workspace.",
-        children: ["empty-state.action"],
-      },
-      "empty-state.action": {
-        id: "empty-state.action",
-        type: "button",
-        label: "Create project",
-        variant: "primary",
-        onPress: { kind: "agent", name: "create_item" },
-      },
-    },
-  },
+  EMPTY_STATE_COMPOSITION,
   {
     name: "support-triage",
     metadata: {
@@ -378,15 +546,39 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["support", "triage", "form"],
       variants: ["compact"],
       repeatable: true,
-      preferredParent: "section",
+      preferredParent: "box",
     },
     root: "support-triage.root",
     nodes: {
       "support-triage.root": {
         id: "support-triage.root",
-        type: "card",
-        title: "How can we help?",
-        children: ["support-triage.issue", "support-triage.details", "support-triage.submit"],
+        type: "box",
+        style: {
+          bg: "surface",
+          border: true,
+          gap: "sm",
+          pad: "md",
+          radius: "md",
+          shadow: "sm",
+        },
+        children: [
+          "support-triage.header",
+          "support-triage.issue",
+          "support-triage.details",
+          "support-triage.submit",
+        ],
+      },
+      "support-triage.header": {
+        id: "support-triage.header",
+        type: "box",
+        style: { gap: "xs" },
+        children: ["support-triage.title"],
+      },
+      "support-triage.title": {
+        id: "support-triage.title",
+        type: "text",
+        value: "How can we help?",
+        style: { color: "fg", size: "lg", weight: "bold" },
       },
       "support-triage.issue": {
         id: "support-triage.issue",
@@ -429,7 +621,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["badge", "status", "chip"],
       variants: ["default"],
       repeatable: true,
-      preferredParent: "card",
+      preferredParent: "box",
     },
     root: "badge.root",
     nodes: {
@@ -457,7 +649,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["badge", "status", "neutral"],
       variants: ["neutral"],
       repeatable: true,
-      preferredParent: "card",
+      preferredParent: "box",
     },
     root: "badge-neutral.root",
     nodes: {
@@ -485,7 +677,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["badge", "status", "success"],
       variants: ["success"],
       repeatable: true,
-      preferredParent: "card",
+      preferredParent: "box",
     },
     root: "badge-success.root",
     nodes: {
@@ -513,7 +705,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["badge", "status", "warning"],
       variants: ["warning"],
       repeatable: true,
-      preferredParent: "card",
+      preferredParent: "box",
     },
     root: "badge-warning.root",
     nodes: {
@@ -541,7 +733,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["badge", "status", "danger"],
       variants: ["danger"],
       repeatable: true,
-      preferredParent: "card",
+      preferredParent: "box",
     },
     root: "badge-danger.root",
     nodes: {
@@ -573,7 +765,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["alert", "notice", "feedback"],
       variants: ["default"],
       repeatable: true,
-      preferredParent: "section",
+      preferredParent: "box",
     },
     root: "alert.root",
     nodes: {
@@ -607,7 +799,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["alert", "notice", "info"],
       variants: ["info"],
       repeatable: true,
-      preferredParent: "section",
+      preferredParent: "box",
     },
     root: "alert-info.root",
     nodes: {
@@ -641,7 +833,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["alert", "notice", "success"],
       variants: ["success"],
       repeatable: true,
-      preferredParent: "section",
+      preferredParent: "box",
     },
     root: "alert-success.root",
     nodes: {
@@ -675,7 +867,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["alert", "notice", "warning"],
       variants: ["warning"],
       repeatable: true,
-      preferredParent: "section",
+      preferredParent: "box",
     },
     root: "alert-warning.root",
     nodes: {
@@ -709,7 +901,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       tags: ["alert", "notice", "danger"],
       variants: ["danger"],
       repeatable: true,
-      preferredParent: "section",
+      preferredParent: "box",
     },
     root: "alert-danger.root",
     nodes: {

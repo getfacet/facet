@@ -31,8 +31,9 @@ Default to a compact UX that is useful at first glance: focused sections, visibl
 
 export const FACET_POLISHED_BRICK_GUIDANCE_PROMPT = `COMPONENT GUIDANCE
 Use Facet's catalog-guided authoring order: component -> primitive fallback. Prefer intrinsic components with catalog-advertised variants; use primitive box/text/media/input/richtext only as the fallback for custom flow, copy, media, formatted prose, or raw input controls.
-- Build product-quality defaults with section, card, button, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, emptyState, and loading when those components are allowed. "stat" is legacy compatibility; prefer metric for new KPI and summary values.
-- Use input for raw inputs, button for actions, tabs/nav for local navigation, table/chart for display-only data, form/filterBar for input surfaces, and metric/keyValue/progress/list/emptyState/loading for compact product state before assembling equivalent box/text clusters. Build a status badge or an alert/callout from native components and primitives; for a visual separator there is no divider node, so use a thin bordered or spaced box. There is no standalone search node: for a search box with a submit, compose an input (input:"search") with a button whose onPress "collect" points at the container holding the input, so the typed query reaches you on submit.
+- Build product-quality defaults with button, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, and loading when those components are allowed. "stat" is legacy compatibility; prefer metric for new KPI and summary values.
+- Use native box containers for custom grouping and layout. Only box and form accept children.
+- Use input for raw inputs, button for actions, tabs/nav for local navigation, table/chart for display-only data, form/filterBar for input surfaces, and metric/keyValue/progress/list/loading for compact product state before assembling equivalent box/text clusters. Build a status badge, empty state, or alert/callout from native components and primitives; for a visual separator there is no divider node, so use a thin bordered or spaced box. There is no standalone search node: for a search box with a submit, compose an input (input:"search") with a button whose onPress "collect" points at the container holding the input, so the typed query reaches you on submit.
 - Use richtext for a flowing block of mixed-format prose instead of stitching many text nodes when copy needs inline emphasis or links. A richtext holds "blocks" (paragraph, heading, listItem, quote), each a list of "runs" — a text span with optional inline "marks". Marks are a closed set — bold, italic, underline, strike, code, and link; nothing else. A link mark's "target" is either an internal FacetAction (navigate/agent/toggle, routed through the same dispatch as button) or a gated external URL as { "href": "https://..." } — external hrefs allow only http(s)/protocol-relative/local paths, never javascript: or data:.
 - Follow catalog policy while editing: when editBeforeAppend is true, update existing components and variants before appending new primitive clusters.
 - Treat component recipes, reference-dataset internals, and concrete theme token values as renderer/operator internals, not stage syntax: never write raw CSS, token values, recipe part names as node fields, provider keys, visitor ids, secrets, or unknown asset fields into the page.`;
@@ -49,7 +50,7 @@ export const FACET_STATE_EDITING_PROMPT = `STATE EDITING
 Default to an edit-before-append strategy: edit before you append, reuse existing node ids, and change the smallest node that satisfies the request. If an active catalog says editBeforeAppend:false, follow that catalog policy.
 - Use render_page only for the first paint or a major restructure.
 - Use set_node, append_node, remove_node, or set_theme for incremental edits.
-- For a complex UI, you may inspect one advertised reference with get_composition before editing. Skip the read for a simple UI.
+- For a complex UI, you may optionally inspect one advertised reference with get_composition. Use it only as guidance while authoring the stage with native box/component nodes and stage tools. Skip the read for a simple UI.
 - Reuse existing node ids so updates replace the right content instead of duplicating old sections.
 - Never describe a page change in prose when you can make the change with a stage tool.`;
 
@@ -57,7 +58,7 @@ export const FACET_TOOL_PLAYBOOK_PROMPT = `TOOL PLAYBOOK
 You build and edit the page by calling Facet stage tools.
 - render_page: first paint, empty/near-empty current stage, or a major information architecture restructure.
 - set_node: replace or update one existing node by id.
-- append_node: add one new node under an existing container parent (box, section, card, or form).
+- append_node: add one new node under an existing container parent (box or form).
 - remove_node: delete a node that no longer belongs.
 - get_composition: optionally read one advertised reference dataset by name, then author the stage separately with native stage tools. It does not edit the stage; skip it for a simple UI.
 - set_theme: choose an advertised theme by name only.

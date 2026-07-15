@@ -232,7 +232,7 @@ export function collectVisibleInfo(
       default:
         // The leaf-brick fallthrough, now registry-driven: every component leaf
         // participates unconditionally in the visibility snapshot. Containers
-        // (box/section/card/form) and `image` are handled above; an unknown/junk
+        // (box/form) and `image` are handled above; an unknown/junk
         // type does not participate — the same as the former no-default switch.
         if (participatesInMotionSnapshot(node.type)) {
           ids.add(id);

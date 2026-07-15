@@ -207,9 +207,6 @@ function nodeRendersItself(
 export function rendersBox(): boolean {
   return false;
 }
-export function rendersSectionCard(node: Record<string, unknown>): boolean {
-  return hasString(node.eyebrow) || hasString(node.title) || hasString(node.body);
-}
 export function rendersText(node: Record<string, unknown>): boolean {
   return hasString(node.value);
 }
@@ -260,9 +257,6 @@ export function rendersForm(node: Record<string, unknown>): boolean {
 }
 export function rendersFilterBar(node: Record<string, unknown>): boolean {
   return hasRenderableArray(node.filters, TREE_RENDERABLE_MAX_FILTERS, isRenderableFilter);
-}
-export function rendersEmptyState(node: Record<string, unknown>): boolean {
-  return hasString(node.title) || hasString(node.body) || hasString(node.actionLabel);
 }
 
 // Per-brick `resolveFromContent` predicates — the former `from`-binding switch

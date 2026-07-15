@@ -16,12 +16,34 @@ export const QUICKSTART_STRUCTURE_NODES = {
   },
   "qs.runtime.section": {
     id: "qs.runtime.section",
-    type: "section",
-    eyebrow: "Architecture",
-    title: "Core Structure",
-    body: "Facet separates the safe stage contract, renderer, runtime, assets, transport, and agent tools. The model chooses bounded intent; Facet validates and renders.",
-    variant: "surface",
-    children: ["qs.structure.list", "qs.structure.table"],
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    children: [
+      "qs.runtime.section.eyebrow",
+      "qs.runtime.section.title",
+      "qs.runtime.section.body",
+      "qs.structure.list",
+      "qs.structure.table",
+    ],
+  },
+  "qs.runtime.section.eyebrow": {
+    id: "qs.runtime.section.eyebrow",
+    type: "text",
+    value: "Architecture",
+    style: { color: "fg-muted", size: "sm", weight: "semibold" },
+  },
+  "qs.runtime.section.title": {
+    id: "qs.runtime.section.title",
+    type: "text",
+    value: "Core Structure",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.runtime.section.body": {
+    id: "qs.runtime.section.body",
+    type: "text",
+    value:
+      "Facet separates the safe stage contract, renderer, runtime, assets, transport, and agent tools. The model chooses bounded intent; Facet validates and renders.",
+    style: { color: "fg" },
   },
   "qs.structure.list": {
     id: "qs.structure.list",

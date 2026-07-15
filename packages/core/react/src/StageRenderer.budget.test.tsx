@@ -94,12 +94,13 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     expect(container!.querySelectorAll("div").length).toBeLessThan(10);
   });
 
-  it("keeps extracted component containers on the shared render budget", () => {
+  it("keeps nested native box containers on the shared render budget", () => {
     const children = Array.from({ length: 200_000 }, (_, index) => `missing-${String(index)}`);
     const hostile: FacetTree = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "section", title: "Safe", children },
+        root: { id: "root", type: "box", children: ["panel"] },
+        panel: { id: "panel", type: "box", children },
       },
     };
     let container: HTMLElement | undefined;
@@ -107,7 +108,7 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     expect(() => {
       ({ container } = render(<StageRenderer tree={hostile} onAction={vi.fn()} />));
     }).not.toThrow();
-    expect(container!.querySelectorAll("section")).toHaveLength(1);
+    expect(container!.querySelectorAll("div")).toHaveLength(3);
     expect(container!.querySelectorAll("*").length).toBeLessThan(20);
   });
 

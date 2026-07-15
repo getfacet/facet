@@ -415,16 +415,14 @@ export type PrimitiveBrickType = (typeof PRIMITIVE_BRICK_TYPES)[number];
 export type PrimitiveBrickNode = BoxNode | TextNode | MediaNode | InputNode | RichTextNode;
 
 export * from "./component-nodes.js";
-import type { CardNode, ComponentNode, FormNode, SectionNode } from "./component-nodes.js";
+import type { ComponentNode, FormNode } from "./component-nodes.js";
 
 /** Any brick the agent may place on a stage. */
 export type FacetNode = PrimitiveBrickNode | ComponentNode;
 
-export type ContainerNode = BoxNode | SectionNode | CardNode | FormNode;
+export type ContainerNode = BoxNode | FormNode;
 
 /** Narrows a node to the bricks that can hold children. */
 export function isContainer(node: FacetNode): node is ContainerNode {
-  return (
-    node.type === "box" || node.type === "section" || node.type === "card" || node.type === "form"
-  );
+  return node.type === "box" || node.type === "form";
 }

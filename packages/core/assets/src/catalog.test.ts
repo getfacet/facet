@@ -43,19 +43,24 @@ describe("DEFAULT_CATALOG", () => {
   });
 
   it("catalog includes variants and guidance for agent-facing components", () => {
-    const section = DEFAULT_CATALOG.components?.find((component) => component.type === "section");
-    const card = DEFAULT_CATALOG.components?.find((component) => component.type === "card");
+    const nav = DEFAULT_CATALOG.components?.find((component) => component.type === "nav");
     const chart = DEFAULT_CATALOG.components?.find((component) => component.type === "chart");
     const metric = DEFAULT_CATALOG.components?.find((component) => component.type === "metric");
     const stat = DEFAULT_CATALOG.bricks.find((brick) => brick.type === "stat");
+    const componentTypes = new Set<string>(
+      (DEFAULT_CATALOG.components ?? []).map((component) => component.type),
+    );
 
-    expect(section?.variants).toContain("surface");
-    expect(card?.variants).toContain("interactive");
+    expect(nav?.variants).toContain("default");
     expect(chart?.variants).toContain("default");
     expect(metric?.variants).toEqual(["default", "success"]);
     expect(stat?.guidance).toMatch(/legacy alias/i);
-    expect(section?.guidance).toMatch(/screen/i);
+    expect(nav?.guidance).toMatch(/navigation/i);
     expect(chart?.guidance).toMatch(/display-only/i);
+    expect(componentTypes).not.toContain("section");
+    expect(componentTypes).not.toContain("card");
+    expect(componentTypes).not.toContain("emptyState");
+    expect(DEFAULT_CATALOG.components).toHaveLength(12);
   });
 
   it("does not hide structural component definitions in default assets", () => {

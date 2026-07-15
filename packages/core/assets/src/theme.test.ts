@@ -119,6 +119,16 @@ describe("DEFAULT_THEME", () => {
 });
 
 describe("DEFAULT_THEME recipes", () => {
+  it("omits retired container-pattern recipes", () => {
+    expect(DEFAULT_THEME.recipes).toBeDefined();
+    expect(DEFAULT_THEME.recipes).not.toHaveProperty("section");
+    expect(DEFAULT_THEME.recipes).not.toHaveProperty("card");
+    expect(DEFAULT_THEME.recipes).not.toHaveProperty("emptyState");
+
+    expect(DEFAULT_THEME.recipes?.stat?.default).toBeDefined();
+    expect(DEFAULT_THEME.recipes?.loading?.default).toBeDefined();
+  });
+
   it("recipes validate with required semantic, chart, and shadow token maps", () => {
     const result = validateTheme(DEFAULT_THEME);
 
@@ -238,7 +248,6 @@ describe("DEFAULT_THEME recipes", () => {
       { component: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
       { component: "form", variant: "default", parts: ["header", "title", "body", "actions"] },
       { component: "filterBar", variant: "default", parts: ["item", "label", "control", "input"] },
-      { component: "emptyState", variant: "default", parts: ["title", "body"] },
       { component: "loading", variant: "default", parts: ["label"] },
     ];
 
@@ -270,11 +279,10 @@ describe("DEFAULT_THEME recipes", () => {
   });
 
   it("defines every catalog-advertised default variant as a recipe", () => {
-    // badge/alert/divider are demoted to compositions in PR-5a; their recipes are
-    // gone even though the shared @facet/core DEFAULT_CATALOG still advertises them
-    // until the atomic core-removal WU lands (lockstep). Excluding them here is
-    // forward-compatible — the entries disappear from the catalog in that WU.
-    const DEMOTED = new Set(["badge", "alert", "divider"]);
+    // Retired node types are demoted to compositions; their recipes are gone even
+    // though the shared @facet/core DEFAULT_CATALOG still advertises them until
+    // the atomic core-removal WU lands. Excluding them here is forward-compatible.
+    const DEMOTED = new Set(["badge", "alert", "divider", "section", "card", "emptyState"]);
     for (const component of DEFAULT_CATALOG.components ?? []) {
       if (DEMOTED.has(component.type)) continue;
       for (const variant of component.variants ?? []) {

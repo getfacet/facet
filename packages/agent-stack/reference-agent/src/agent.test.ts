@@ -50,7 +50,7 @@ const CATALOG_POLICY: FacetCatalog = {
   description: "Reference agent catalog policy",
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
   bricks: [
-    { type: "section", variants: ["surface"] },
+    { type: "box", variants: ["surface"] },
     { type: "button", variants: ["primary"] },
   ],
   compositions: { mode: "allow", names: ["approved"] },
@@ -1000,9 +1000,8 @@ describe("createReferenceAgent tool loop", () => {
         call("append_node", {
           parentId: "root",
           node: {
-            id: "catalog-section",
-            type: "section",
-            title: "Catalog section",
+            id: "catalog-group",
+            type: "box",
             variant: "surface",
             children: [],
           },
@@ -1018,7 +1017,7 @@ describe("createReferenceAgent tool loop", () => {
     });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await runAgent(agent, { kind: "message", text: "add a catalog section" });
+      const out = await runAgent(agent, { kind: "message", text: "add a catalog group" });
 
       expect(provider.turns[0]!.system).toContain("CATALOG");
       expect(provider.turns[0]!.system).toContain("reference-catalog");
@@ -1026,7 +1025,7 @@ describe("createReferenceAgent tool loop", () => {
       expect(patch).toBeDefined();
       if (patch?.kind !== "patch") throw new Error("expected patch");
       const paths = patch.patches.map((operation) => ("path" in operation ? operation.path : ""));
-      expect(paths).toContain("/nodes/catalog-section");
+      expect(paths).toContain("/nodes/catalog-group");
       expect(paths).toContain("/nodes/root/children/-");
       expect(saysOf(out)).not.toContain(
         "Sorry — I couldn't update the page this time, so I've left it as it was. Please try again.",

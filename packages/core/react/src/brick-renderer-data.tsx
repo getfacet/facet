@@ -243,69 +243,6 @@ export function renderList<Press>(node: FacetNode, context: BrickRenderContext<P
   );
 }
 
-export function renderEmptyState<Press>(
-  node: FacetNode,
-  context: BrickRenderContext<Press>,
-): ReactNode {
-  const { theme, className, inert } = context;
-  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
-  const body = cappedString(safeOwnValue(node, "body"), MAX_NODE_BODY_CHARS);
-  const actionLabel = cappedString(safeOwnValue(node, "actionLabel"), MAX_NODE_LABEL_CHARS);
-  if (title === undefined && body === undefined && actionLabel === undefined) return null;
-  const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "emptyState", variant);
-  const style = componentBoxStyle(theme, recipe, {
-    gap: "sm",
-    pad: "md",
-    align: "center",
-    bg: "surface",
-    border: true,
-    radius: "md",
-    width: "full",
-  });
-  const press = context.classifyPress(safeOwnValue(node, "onPress"));
-  return (
-    <section
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(style, inert)}
-    >
-      {title === undefined ? null : (
-        <h3 style={componentTextStyle(theme, recipe, { align: "center", weight: "bold" }, "title")}>
-          {title}
-        </h3>
-      )}
-      {body === undefined ? null : (
-        <p
-          style={componentTextStyle(theme, recipe, { align: "center", color: "fg-muted" }, "body")}
-        >
-          {body}
-        </p>
-      )}
-      {actionLabel === undefined ? null : (
-        <button
-          type="button"
-          disabled={inert || press === null ? true : undefined}
-          tabIndex={inert ? -1 : undefined}
-          onClick={inert || press === null ? undefined : () => context.dispatch(press)}
-          style={rootContainmentStyle({
-            background: theme.color.accent,
-            border: 0,
-            borderRadius: theme.radius.md,
-            color: theme.color["accent-fg"],
-            cursor: inert || press === null ? undefined : "pointer",
-            font: "inherit",
-            fontWeight: theme.fontWeight.semibold,
-            padding: `${theme.space.sm} ${theme.space.md}`,
-          })}
-        >
-          {actionLabel}
-        </button>
-      )}
-    </section>
-  );
-}
-
 export function renderLoading<Press>(
   node: FacetNode,
   context: BrickRenderContext<Press>,

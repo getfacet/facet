@@ -111,8 +111,6 @@ data:
 | Component    | It is...                                                        |
 | ------------ | --------------------------------------------------------------- |
 | `button`     | a leaf action component with label, variant/tone, and press/hold actions. |
-| `section`    | a normal-flow page region with optional title, eyebrow, body, and children. |
-| `card`       | a grouped content/action container with optional title, body, tone, and children. |
 | `tabs`       | local screen navigation over pre-drawn screens.                 |
 | `nav`        | app or section navigation over pre-drawn screens.               |
 | `table`      | display-only tabular data with capped rows, columns, and cells. |
@@ -123,8 +121,13 @@ data:
 | `list`       | capped list display.                                            |
 | `form`       | grouped visitor input and submission.                           |
 | `filterBar`  | compact filtering controls UI only.                             |
-| `emptyState` | no-data or no-result state.                                     |
 | `loading`    | pending/busy state.                                             |
+
+Sections, cards, and empty states are native composition patterns rather than
+node types. `DEFAULT_COMPOSITIONS` includes `section`, `card`, and `empty-state`
+reference datasets built from ordinary `box`, `text`, and (for the action)
+`button` nodes. An agent may inspect one as guidance, then author the native
+nodes itself.
 
 The primitive base remains valid everywhere:
 
@@ -136,9 +139,10 @@ The primitive base remains valid everywhere:
 | `input` | a native text/select/checkbox/radio/switch/search input.                         |
 | `richtext` | flowing prose with closed blocks, inline marks, and safe links.              |
 
-A *card* is still equivalent to a `box` with a border. A *button* is still a
-pressable box. Components are convenience nodes over that same safe model, not
-an escape hatch. Everything stays safe and unbreakable because:
+A *card* is a `box` with tokenized surface, border, spacing, and text children.
+An empty state is a `box` with text plus an explicit action button. Components
+remain convenience nodes over that same safe model, not an escape hatch.
+Everything stays safe and unbreakable because:
 
 An `onPress` can also be declarative — `{kind:"navigate", to}` to switch between
 pre-drawn **screens** or `{kind:"toggle", target}` to show/hide a node — and the
@@ -186,8 +190,8 @@ where `./assets` holds any mix of:
   The model **selects** a theme by name (via a `set_theme` tool); **it never
   authors the CSS values** and never writes one into the tree. Theme documents
   can also carry **component recipes**: token-only style bundles for components
-  such as `button.primary`, `card.interactive`, `media.hero`, or
-  `input.default`, plus closed recipe `parts` for renderer-owned internals like
+  such as `button.primary`, `media.hero`, or `input.default`, plus closed recipe
+  `parts` for renderer-owned internals like
   field labels/controls, tabs, table cells, chart plots, progress fills, and
   list rows. Nodes choose a `variant` or `tone` where supported; recipe parts
   never become stage node fields. The renderer resolves the selected recipe

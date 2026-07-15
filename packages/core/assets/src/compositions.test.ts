@@ -5,6 +5,7 @@ import { validateComposition } from "@facet/core";
 import type { FacetComposition } from "@facet/core";
 
 const moduleUrl = new URL("./compositions.ts", import.meta.url);
+const containerModuleUrl = new URL("./composition-containers.ts", import.meta.url);
 
 // Legacy vocabulary is built at runtime so the removed tokens never appear as
 // source literals (same idiom as theme.test.ts).
@@ -15,6 +16,97 @@ const legacyTemplateMarker = new RegExp(
 );
 const legacySlotField = ["slo", "ts"].join("");
 const legacyReferenceField = ["u", "se"].join("");
+
+const EXPECTED_SECTION_NODES = {
+  "section.root": {
+    id: "section.root",
+    type: "box",
+    style: { gap: "md", pad: "lg", width: "full" },
+    children: ["section.title", "section.body"],
+  },
+  "section.title": {
+    id: "section.title",
+    type: "text",
+    value: "Section title",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "section.body": {
+    id: "section.body",
+    type: "text",
+    value: "Add focused content for this part of the page.",
+    style: { color: "fg" },
+  },
+};
+
+const EXPECTED_CARD_NODES = {
+  "card.root": {
+    id: "card.root",
+    type: "box",
+    style: {
+      bg: "surface",
+      border: true,
+      gap: "sm",
+      pad: "md",
+      radius: "md",
+      shadow: "sm",
+    },
+    children: ["card.header"],
+  },
+  "card.header": {
+    id: "card.header",
+    type: "box",
+    style: { gap: "xs" },
+    children: ["card.title", "card.body"],
+  },
+  "card.title": {
+    id: "card.title",
+    type: "text",
+    value: "Quarterly planning",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "card.body": {
+    id: "card.body",
+    type: "text",
+    value: "Review goals, owners, and open decisions for the next release.",
+    style: { color: "fg-muted" },
+  },
+};
+
+const EXPECTED_EMPTY_STATE_NODES = {
+  "empty-state.root": {
+    id: "empty-state.root",
+    type: "box",
+    style: {
+      bg: "surface",
+      border: true,
+      gap: "sm",
+      pad: "lg",
+      radius: "md",
+      align: "center",
+      width: "full",
+    },
+    children: ["empty-state.title", "empty-state.body", "empty-state.action"],
+  },
+  "empty-state.title": {
+    id: "empty-state.title",
+    type: "text",
+    value: "No projects yet",
+    style: { color: "fg", align: "center", size: "lg", weight: "bold" },
+  },
+  "empty-state.body": {
+    id: "empty-state.body",
+    type: "text",
+    value: "Create your first project to start organizing this workspace.",
+    style: { color: "fg-muted", align: "center" },
+  },
+  "empty-state.action": {
+    id: "empty-state.action",
+    type: "button",
+    label: "Create project",
+    variant: "primary",
+    onPress: { kind: "agent", name: "create_item" },
+  },
+};
 
 /**
  * Asserts the canonical module exists BEFORE any dynamic loading so a missing
@@ -27,9 +119,43 @@ async function loadDefaults(): Promise<readonly FacetComposition[]> {
 }
 
 describe("DEFAULT_COMPOSITIONS", () => {
+  it("ships native section card and empty-state references", async () => {
+    const defaults = await loadDefaults();
+    expect(defaults).toHaveLength(22);
+
+    for (const composition of defaults) {
+      const { composition: validated, issues } = validateComposition(composition);
+      expect(issues, composition.name).toEqual([]);
+      expect(validated, composition.name).toEqual(composition);
+      expect(["root", "box"], composition.name).toContain(composition.metadata.preferredParent);
+    }
+
+    const section = defaults.find((composition) => composition.name === "section");
+    expect(section?.nodes).toEqual(EXPECTED_SECTION_NODES);
+
+    const card = defaults.find((composition) => composition.name === "card");
+    expect(card?.nodes).toEqual(EXPECTED_CARD_NODES);
+
+    const emptyState = defaults.find((composition) => composition.name === "empty-state");
+    expect(emptyState?.nodes).toEqual(EXPECTED_EMPTY_STATE_NODES);
+    expect(emptyState?.nodes["empty-state.root"]).not.toHaveProperty("onPress");
+    expect(emptyState?.nodes["empty-state.root"]).not.toHaveProperty("onHold");
+
+    const retiredTypes = new Set([
+      ["sec", "tion"].join(""),
+      ["ca", "rd"].join(""),
+      ["empty", "State"].join(""),
+    ]);
+    for (const composition of defaults) {
+      for (const [id, node] of Object.entries(composition.nodes)) {
+        expect(retiredTypes.has(node.type), `${composition.name}:${id}`).toBe(false);
+      }
+    }
+  });
+
   it("ships concrete reference datasets", async () => {
     const defaults = await loadDefaults();
-    expect(defaults).toHaveLength(21);
+    expect(defaults).toHaveLength(22);
     for (const composition of defaults) {
       const { composition: validated, issues } = validateComposition(composition);
       expect(issues).toEqual([]);
@@ -88,6 +214,7 @@ describe("DEFAULT_COMPOSITIONS", () => {
     for (const expected of [
       "hero",
       "card",
+      "section",
       "cta-button",
       "pricing-section",
       "faq-section",
@@ -129,7 +256,11 @@ describe("DEFAULT_COMPOSITIONS", () => {
     expect(serialized).not.toContain(legacyDefinitionsField);
     expect(serialized).not.toMatch(legacyNaming);
 
-    const source = [moduleUrl, new URL("./composition-chart-table.ts", import.meta.url)]
+    const source = [
+      moduleUrl,
+      containerModuleUrl,
+      new URL("./composition-chart-table.ts", import.meta.url),
+    ]
       .map((url) => readFileSync(url, "utf8"))
       .join("\n");
     expect(source).not.toMatch(/\bfrom\s+["@'](?:node:|@facet\/(react|runtime|server|client))\b/);

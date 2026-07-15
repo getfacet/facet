@@ -16,6 +16,18 @@ const legacy = ["st", "amp"].join("");
 const legacyNaming = new RegExp(legacy, "i");
 
 describe("STAGE_SPEC", () => {
+  it("omits retired container node types", () => {
+    for (const type of ["section", "card", "emptyState"] as const) {
+      expect(STAGE_SPEC).not.toContain(`"type":"${type}"`);
+      expect(STAGE_SPEC).not.toContain(`- ${type}:`);
+    }
+
+    expect(STAGE_SPEC).toMatch(/screen root container: box or form/i);
+    expect(STAGE_SPEC).toMatch(/Containers are box and form/i);
+    expect(STAGE_SPEC).toMatch(/compositions as optional reference datasets/i);
+    expect(STAGE_SPEC).toContain('- stat: { "id", "type":"stat"');
+  });
+
   it("teaches screens entry navigate toggle and hidden", () => {
     // Tree gains named screens + entry.
     expect(STAGE_SPEC).toContain('"screens"');

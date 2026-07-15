@@ -9,10 +9,28 @@ import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
 export const QUICKSTART_INTAKE_NODES = {
   "qs.intake": {
     id: "qs.intake",
-    type: "card",
-    title: "Give the agent a target",
-    body: "Field values remain browser view-state until this button collects them.",
-    children: ["qs.intake.goal", "qs.intake.surface", "qs.intake.alert", "qs.intake.submit"],
+    type: "box",
+    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+    children: [
+      "qs.intake.title",
+      "qs.intake.body",
+      "qs.intake.goal",
+      "qs.intake.surface",
+      "qs.intake.alert",
+      "qs.intake.submit",
+    ],
+  },
+  "qs.intake.title": {
+    id: "qs.intake.title",
+    type: "text",
+    value: "Give the agent a target",
+    style: { color: "fg", size: "lg", weight: "bold" },
+  },
+  "qs.intake.body": {
+    id: "qs.intake.body",
+    type: "text",
+    value: "Field values remain browser view-state until this button collects them.",
+    style: { color: "fg-muted" },
   },
   "qs.intake.goal": {
     id: "qs.intake.goal",
@@ -79,12 +97,33 @@ export const QUICKSTART_USE_CASE_NODES = {
   },
   "qs.usecases.hero": {
     id: "qs.usecases.hero",
-    type: "section",
-    eyebrow: "Your turn",
-    title: "Use Cases",
-    body: "Ask Facet to draw a concrete app surface. The agent should update the page with ordinary native components, primitives, variants, and fields instead of only replying in chat.",
-    variant: "surface",
-    children: ["qs.usecases.alert"],
+    type: "box",
+    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    children: [
+      "qs.usecases.hero.eyebrow",
+      "qs.usecases.hero.title",
+      "qs.usecases.hero.body",
+      "qs.usecases.alert",
+    ],
+  },
+  "qs.usecases.hero.eyebrow": {
+    id: "qs.usecases.hero.eyebrow",
+    type: "text",
+    value: "Your turn",
+    style: { color: "fg-muted", size: "sm", weight: "semibold" },
+  },
+  "qs.usecases.hero.title": {
+    id: "qs.usecases.hero.title",
+    type: "text",
+    value: "Use Cases",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.usecases.hero.body": {
+    id: "qs.usecases.hero.body",
+    type: "text",
+    value:
+      "Ask Facet to draw a concrete app surface. The agent should update the page with ordinary native components, primitives, variants, and fields instead of only replying in chat.",
+    style: { color: "fg" },
   },
   "qs.usecases.alert": {
     id: "qs.usecases.alert",
@@ -107,10 +146,26 @@ export const QUICKSTART_USE_CASE_NODES = {
   },
   "qs.usecases.examples": {
     id: "qs.usecases.examples",
-    type: "section",
-    title: "Starting points",
-    body: "These are prompts the agent can turn into a live page.",
-    children: ["qs.usecases.list", "qs.usecases.actions"],
+    type: "box",
+    style: { gap: "md", pad: "lg", width: "full" },
+    children: [
+      "qs.usecases.examples.title",
+      "qs.usecases.examples.body",
+      "qs.usecases.list",
+      "qs.usecases.actions",
+    ],
+  },
+  "qs.usecases.examples.title": {
+    id: "qs.usecases.examples.title",
+    type: "text",
+    value: "Starting points",
+    style: { color: "fg", size: "xl", weight: "bold" },
+  },
+  "qs.usecases.examples.body": {
+    id: "qs.usecases.examples.body",
+    type: "text",
+    value: "These are prompts the agent can turn into a live page.",
+    style: { color: "fg" },
   },
   "qs.usecases.list": {
     id: "qs.usecases.list",

@@ -37,20 +37,6 @@ export {
 const recipeVariants = <T extends Record<string, ComponentRecipe>>(variants: T): Readonly<T> =>
   Object.assign(Object.create(null) as T, variants);
 
-const sectionParts = (): NonNullable<ComponentRecipe["parts"]> => ({
-  label: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
-  title: { text: { color: "fg", size: "xl", weight: "bold" } },
-  body: { text: { color: "fg" } },
-});
-
-const cardParts = (): NonNullable<ComponentRecipe["parts"]> => ({
-  header: { box: { gap: "xs" } },
-  title: { text: { color: "fg", size: "lg", weight: "bold" } },
-  body: { text: { color: "fg-muted" } },
-  footer: { box: { direction: "row", gap: "sm", align: "center" } },
-  actions: { box: { direction: "row", gap: "sm", align: "center", wrap: true } },
-});
-
 const metricRecipeVariants = (): Readonly<Record<"default" | "success", ComponentRecipe>> =>
   recipeVariants({
     default: {
@@ -137,30 +123,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
       parts: {
         label: { text: { color: "accent-fg", weight: "semibold" } },
       },
-    },
-  }),
-  section: recipeVariants({
-    default: {
-      box: { gap: "md", pad: "lg", width: "full" },
-      text: { color: "fg" },
-      parts: sectionParts(),
-    },
-    surface: {
-      box: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
-      text: { color: "fg" },
-      parts: sectionParts(),
-    },
-  }),
-  card: recipeVariants({
-    default: {
-      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
-      text: { color: "fg" },
-      parts: cardParts(),
-    },
-    interactive: {
-      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "md" },
-      text: { color: "fg" },
-      parts: cardParts(),
     },
   }),
   tabs: recipeVariants({
@@ -303,24 +265,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
         label: { text: { color: "fg-muted", size: "sm", weight: "semibold" } },
         control: { field: { width: "full" } },
         input: { field: { width: "full" } },
-      },
-    },
-  }),
-  emptyState: recipeVariants({
-    default: {
-      box: {
-        bg: "surface",
-        border: true,
-        gap: "sm",
-        pad: "lg",
-        radius: "md",
-        align: "center",
-        width: "full",
-      },
-      text: { color: "fg", align: "center" },
-      parts: {
-        title: { text: { color: "fg", align: "center", size: "lg", weight: "bold" } },
-        body: { text: { color: "fg-muted", align: "center" } },
       },
     },
   }),

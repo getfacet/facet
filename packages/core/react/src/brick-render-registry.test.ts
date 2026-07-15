@@ -21,12 +21,18 @@ describe("BRICK_RENDERERS", () => {
     expect([...Object.keys(BRICK_RENDERERS), ...bespoke].sort()).toEqual(allCoreTypes);
   });
 
-  it("marks only the layout containers as children-bearing", () => {
+  it("marks form as the only component container", () => {
     const containers = Object.entries(BRICK_RENDERERS)
       .filter(([, entry]) => entry.container)
       .map(([type]) => type)
       .sort();
-    expect(containers).toEqual(["card", "form", "section"]);
+    expect(containers).toEqual(["form"]);
+  });
+
+  it("has no renderer entry for retired container patterns", () => {
+    for (const type of ["section", "card", "emptyState"]) {
+      expect(brickRendererEntry(type)).toBeUndefined();
+    }
   });
 
   it("marks every component leaf as a motion-snapshot participant", () => {

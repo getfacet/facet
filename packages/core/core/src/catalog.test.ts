@@ -91,7 +91,7 @@ describe("validateCatalog", () => {
         allowed: ["acme-default", "acme-dark"],
       },
       bricks: [
-        { type: "section", variants: ["dashboard"], guidance: "Use as screen regions." },
+        { type: "nav", variants: ["dashboard"], guidance: "Use for app navigation." },
         { type: "button", variants: ["primary", "secondary"] },
         { type: "box" },
       ],
@@ -113,12 +113,12 @@ describe("validateCatalog", () => {
       allowed: ["acme-default", "acme-dark"],
     });
     expect(catalog.bricks).toEqual([
-      { type: "section", variants: ["dashboard"], guidance: "Use as screen regions." },
+      { type: "nav", variants: ["dashboard"], guidance: "Use for app navigation." },
       { type: "button", variants: ["primary", "secondary"] },
       { type: "box" },
     ]);
     expect(catalog.components).toEqual([
-      { type: "section", variants: ["dashboard"], guidance: "Use as screen regions." },
+      { type: "nav", variants: ["dashboard"], guidance: "Use for app navigation." },
       { type: "button", variants: ["primary", "secondary"] },
     ]);
     expect(catalog.compositions).toEqual({
@@ -342,7 +342,7 @@ describe("validateCatalog", () => {
   it("fails closed when a provided bricks restriction is not an array", () => {
     const { catalog, issues } = validateCatalog({
       name: "acme",
-      bricks: { section: {} } as unknown as FacetCatalog["bricks"],
+      bricks: { nav: {} } as unknown as FacetCatalog["bricks"],
     });
 
     // Provided-but-mistyped must not silently reopen the full default vocabulary.
@@ -473,11 +473,10 @@ describe("validateCatalog", () => {
     );
   });
 
-  it("does not advertise demoted display leaves", () => {
-    // badge/alert/divider are demoted to DEFAULT_COMPOSITIONS (WU-1) and removed
-    // from the node vocabulary (WU-2); the default catalog must no longer
-    // advertise them as intrinsic components or bricks.
-    const demoted = ["badge", "alert", "divider"];
+  it("does not advertise demoted display patterns", () => {
+    // These display patterns are composition references, not intrinsic nodes;
+    // the default catalog must not advertise them as components or bricks.
+    const demoted = ["badge", "alert", "divider", "section", "card", "emptyState"];
     const componentTypes = new Set((DEFAULT_CATALOG.components ?? []).map((c) => c.type));
     const brickTypes = new Set(DEFAULT_CATALOG.bricks.map((b) => b.type));
     for (const type of demoted) {
@@ -486,9 +485,8 @@ describe("validateCatalog", () => {
         false,
       );
     }
-    // Roster shrinks by exactly the three demoted leaves (18 -> 15 intrinsic
-    // components in DEFAULT_CATALOG.components).
-    expect(DEFAULT_CATALOG.components).toHaveLength(15);
+    // The original 18-component roster loses exactly six demoted patterns.
+    expect(DEFAULT_CATALOG.components).toHaveLength(12);
   });
 
   it("keeps the component default catalog compact with recipe-backed variants", () => {
@@ -509,8 +507,6 @@ describe("validateCatalog", () => {
       input: ["default"],
       richtext: [],
       button: ["primary", "secondary", "danger"],
-      section: ["default", "surface"],
-      card: ["default", "interactive"],
       tabs: ["default"],
       nav: ["default"],
       table: ["default"],
@@ -522,7 +518,6 @@ describe("validateCatalog", () => {
       list: ["default", "compact"],
       form: ["default"],
       filterBar: ["default"],
-      emptyState: ["default"],
       loading: ["default"],
     });
 

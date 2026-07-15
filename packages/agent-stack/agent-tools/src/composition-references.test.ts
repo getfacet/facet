@@ -13,7 +13,7 @@ function composition(name: string, description: string): unknown {
       variants: ["compact"],
       tags: ["conversion"],
       repeatable: false,
-      preferredParent: "section",
+      preferredParent: "box",
       composedOf: ["box", "text"],
       dataRequirements: ["A short title"],
       followUpEdits: ["Replace the example copy"],
@@ -35,6 +35,7 @@ describe("get_composition reference contract", () => {
 
     expect(expected).toBeDefined();
     expect(selected).toEqual([expected]);
+    expect(selected[0]?.metadata.preferredParent).toBe("box");
     expect(JSON.parse(JSON.stringify(selected[0]))).toEqual(expected);
   });
 

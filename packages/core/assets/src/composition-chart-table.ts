@@ -16,9 +16,15 @@ export const CHART_TABLE_VIEW_COMPOSITION: FacetComposition = {
   nodes: {
     "chart-table-view.root": {
       id: "chart-table-view.root",
-      type: "section",
-      title: "Weekly performance",
-      children: ["chart-table-view.chart", "chart-table-view.table"],
+      type: "box",
+      style: { gap: "md", pad: "lg", width: "full" },
+      children: ["chart-table-view.title", "chart-table-view.chart", "chart-table-view.table"],
+    },
+    "chart-table-view.title": {
+      id: "chart-table-view.title",
+      type: "text",
+      value: "Weekly performance",
+      style: { color: "fg", size: "xl", weight: "bold" },
     },
     "chart-table-view.chart": {
       id: "chart-table-view.chart",

@@ -73,25 +73,17 @@ describe("extractJson", () => {
   });
 });
 
-describe("component generator renderability", () => {
-  it.each(["section", "card"] as const)(
-    "accepts a renderable %s root without retrying",
-    async (type) => {
-      mockClaudeResponse({
-        root: "root",
-        nodes: {
-          root: { id: "root", type, title: "Overview", children: ["body"] },
-          body: { id: "body", type: "text", value: "Ready" },
-        },
-      });
-      mockClaudeResponse(renderableBoxTree("fallback"));
+describe("generator renderability", () => {
+  it("accepts a renderable native box root without retrying", async () => {
+    mockClaudeResponse(renderableBoxTree("Ready"));
+    mockClaudeResponse(renderableBoxTree("fallback"));
 
-      const result = await generatePage("make a dashboard");
+    const result = await generatePage("make a dashboard");
 
-      expect(result.tree.nodes[result.tree.root]).toMatchObject({ type });
-      expect(spawnMock).toHaveBeenCalledTimes(1);
-    },
-  );
+    expect(result.tree.nodes[result.tree.root]).toMatchObject({ type: "box" });
+    expect(result.tree.nodes["text"]).toMatchObject({ type: "text", value: "Ready" });
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     ["button", { id: "root", type: "button", label: "Open" }],

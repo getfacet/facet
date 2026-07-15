@@ -5,8 +5,6 @@ export * from "./data-types.js";
 
 export const INTRINSIC_COMPONENT_TYPES = [
   "button",
-  "section",
-  "card",
   "tabs",
   "nav",
   "table",
@@ -17,7 +15,6 @@ export const INTRINSIC_COMPONENT_TYPES = [
   "list",
   "form",
   "filterBar",
-  "emptyState",
   "loading",
 ] as const;
 export type IntrinsicComponentType = (typeof INTRINSIC_COMPONENT_TYPES)[number];
@@ -43,28 +40,6 @@ export interface ButtonNode {
   readonly disabled?: boolean;
   readonly onPress?: FacetAction;
   readonly onHold?: FacetAction;
-}
-
-export interface SectionNode {
-  readonly id: NodeId;
-  readonly type: "section";
-  readonly title?: string;
-  readonly eyebrow?: string;
-  readonly body?: string;
-  readonly variant?: string;
-  readonly children: readonly NodeId[];
-}
-
-export interface CardNode {
-  readonly id: NodeId;
-  readonly type: "card";
-  readonly title?: string;
-  readonly body?: string;
-  readonly variant?: string;
-  readonly tone?: Tone;
-  readonly onPress?: FacetAction;
-  readonly onHold?: FacetAction;
-  readonly children: readonly NodeId[];
 }
 
 export interface TabItem {
@@ -211,16 +186,6 @@ export interface FilterBarNode {
   readonly onChange?: FacetAction;
 }
 
-export interface EmptyStateNode {
-  readonly id: NodeId;
-  readonly type: "emptyState";
-  readonly title?: string;
-  readonly body?: string;
-  readonly actionLabel?: string;
-  readonly variant?: string;
-  readonly onPress?: FacetAction;
-}
-
 export interface LoadingNode {
   readonly id: NodeId;
   readonly type: "loading";
@@ -230,8 +195,6 @@ export interface LoadingNode {
 
 export type IntrinsicComponentNode =
   | ButtonNode
-  | SectionNode
-  | CardNode
   | TabsNode
   | NavNode
   | TableNode
@@ -242,7 +205,6 @@ export type IntrinsicComponentNode =
   | ListNode
   | FormNode
   | FilterBarNode
-  | EmptyStateNode
   | LoadingNode;
 
 export type LegacyComponentNode = StatNode;

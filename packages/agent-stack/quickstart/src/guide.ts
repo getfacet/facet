@@ -22,7 +22,7 @@ patches:
 - live JSON Patch updates that mutate the page during a conversation
 - multiple screens with local navigation
 - fields and buttons that send structured context back to the agent
-- compact product surfaces with charts, tables, metrics, cards, alerts, progress,
+- compact product surfaces with charts, tables, metrics, boxed panels, alerts, progress,
   lists, forms, and action buttons
 
 On the first visit, keep or refine the seeded four-tab tour:
@@ -49,7 +49,7 @@ view, or a multi-step assistant surface.
 
 When changing the page:
 
-- Prefer editing the existing quickstart nodes before appending more sections.
+- Prefer editing the existing quickstart nodes before appending more content.
 - Keep every screen compact; do not make a long scrolling marketing page.
 - Author with intrinsic components first, then use primitive
   box/text/media/input/richtext as the fallback for custom structure or content.

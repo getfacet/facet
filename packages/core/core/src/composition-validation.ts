@@ -71,7 +71,7 @@ export interface CompositionMetadata {
   readonly variants?: readonly string[];
   readonly tags?: readonly string[];
   readonly repeatable?: boolean;
-  readonly preferredParent?: "root" | "box" | "section" | "card";
+  readonly preferredParent?: "root" | "box";
   readonly composedOf?: readonly FacetNode["type"][];
   readonly dataRequirements?: readonly string[];
   readonly followUpEdits?: readonly string[];
@@ -304,7 +304,7 @@ function sanitizeCompositionMetadata(
     variants?: readonly string[];
     tags?: readonly string[];
     repeatable?: boolean;
-    preferredParent?: "root" | "box" | "section" | "card";
+    preferredParent?: "root" | "box";
     composedOf?: readonly FacetNode["type"][];
     dataRequirements?: readonly string[];
     followUpEdits?: readonly string[];
@@ -320,12 +320,7 @@ function sanitizeCompositionMetadata(
   const tags = metadataStringList(raw.tags, "tags", issues);
   if (tags !== undefined) metadata.tags = tags;
   if (typeof raw.repeatable === "boolean") metadata.repeatable = raw.repeatable;
-  if (
-    raw.preferredParent === "root" ||
-    raw.preferredParent === "box" ||
-    raw.preferredParent === "section" ||
-    raw.preferredParent === "card"
-  ) {
+  if (raw.preferredParent === "root" || raw.preferredParent === "box") {
     metadata.preferredParent = raw.preferredParent;
   } else if (raw.preferredParent !== undefined) {
     issues.push("composition metadata preferredParent is invalid; dropped");
