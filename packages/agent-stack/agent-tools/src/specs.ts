@@ -5,7 +5,7 @@ export type FacetStageToolSpec = ToolSpec<FacetStageToolName>;
 const NODE_SCHEMA = {
   type: "object",
   description:
-    "A Facet stage node from the component or primitive layer of the catalog-guided composition -> component -> primitive fallback model. Primitive bricks are box, text, media, input, richtext. Intrinsic components are button, section, card, tabs, nav, table, chart, metric, keyValue, badge, progress, alert, list, divider, form, filterBar, emptyState, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box, section, card, and form are containers. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a node's from field. Variant names must be allowed by the active catalog policy.",
+    "A Facet stage node from the component or primitive layer of the catalog-guided composition -> component -> primitive fallback model. Primitive bricks are box, text, media, input, richtext. Intrinsic components are button, section, card, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, emptyState, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box, section, card, and form are containers. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a node's from field. Variant names must be allowed by the active catalog policy.",
 } as const;
 
 const TREE_SCHEMA = {

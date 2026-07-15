@@ -435,6 +435,42 @@ describe("executeStageTool", () => {
     expect(observation?.message).toContain('a "media" node needs a safe static "src"');
   });
 
+  it("refuses a removed display-leaf type at asNode with a clean type error (DC-003)", () => {
+    // badge/alert/divider were removed from the node vocabulary (badge/alert are
+    // now compositions, divider is a box). A set_node authoring one must be
+    // REFUSED at the executor input boundary (asNode clean type-error), never
+    // accepted-then-dropped by validateTree. label/body satisfy the FORMER
+    // badge/alert asNode shape checks, so were the registry entries still present
+    // this would pass asNode — proving the refusal is the missing-registry-key
+    // path (RISK-INV-1), not a shape rejection or a downstream validation drop.
+    for (const removed of ["badge", "alert", "divider"] as const) {
+      const result = executeStageTool(
+        {
+          id: `call-removed-${removed}`,
+          name: "set_node",
+          input: { ["node"]: { id: "status", type: removed, label: "Live", body: "Live" } },
+        },
+        { shadow: ROOT_TREE },
+      );
+
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_input");
+      expect(result.patches).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
+      const observation = parseAgentToolObservation(result.observation.text);
+      expect(observation).toMatchObject({
+        tool: "set_node",
+        status: "error",
+        outcome: "rejected",
+        next_action: "Use one allowed Facet v1 node type.",
+      });
+      // The clean asNode type-error — NOT the "was removed by validation" drop path.
+      expect(observation?.message).toContain("must be one of the Facet v1 node types");
+      expect(observation?.message).not.toContain("was removed by validation");
+    }
+  });
+
   it("rejects root-breaking missing and forbidden-id mutations without patches", () => {
     const setRoot = executeStageTool(
       {
@@ -1817,7 +1853,7 @@ describe("executeStageTool", () => {
     it("catalog policy rejects tone-only recipe selectors not listed as variants", () => {
       const toneCatalog: FacetCatalog = {
         ...CATALOG_POLICY,
-        bricks: [{ type: "badge", variants: ["neutral"] }],
+        bricks: [{ type: "button", variants: ["neutral"] }],
       };
 
       const toneRejected = executeStageTool(
@@ -1826,7 +1862,7 @@ describe("executeStageTool", () => {
           name: "append_node",
           input: {
             parentId: "root",
-            ["node"]: { id: "status", type: "badge", label: "Healthy", tone: "success" },
+            ["node"]: { id: "status", type: "button", label: "Healthy", tone: "success" },
           },
         },
         { shadow: ROOT_TREE, assets: { catalog: toneCatalog } },
@@ -1850,7 +1886,7 @@ describe("executeStageTool", () => {
             parentId: "root",
             ["node"]: {
               id: "status",
-              type: "badge",
+              type: "button",
               label: "Healthy",
               variant: "neutral",
               tone: "success",

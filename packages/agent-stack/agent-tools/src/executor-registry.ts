@@ -373,20 +373,6 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     describe: (facetNode, warehouse) =>
       `${facetNode.id} keyValue items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`,
   },
-  badge: {
-    policy: { kind: "component" },
-    asNode: (value) => {
-      if (typeof value["label"] !== "string") {
-        return {
-          error: 'a "badge" node needs a string "label"',
-          nextAction: 'Pass a string "label" for badge nodes.',
-        };
-      }
-      return { facetNode: value as unknown as FacetNode };
-    },
-    describe: (facetNode) =>
-      `${facetNode.id} badge label="${preview(facetNode.label)}"${variantSuffix(facetNode)}`,
-  },
   progress: {
     policy: { kind: "component" },
     asNode: (value) => {
@@ -401,20 +387,6 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     describe: (facetNode) =>
       `${facetNode.id} progress value=${String(facetNode.value)}${variantSuffix(facetNode)}`,
   },
-  alert: {
-    policy: { kind: "component" },
-    asNode: (value) => {
-      if (typeof value["body"] !== "string") {
-        return {
-          error: 'an "alert" node needs a string "body"',
-          nextAction: 'Pass a string "body" for alert nodes.',
-        };
-      }
-      return { facetNode: value as unknown as FacetNode };
-    },
-    describe: (facetNode) =>
-      `${facetNode.id} alert body="${preview(facetNode.body)}"${variantSuffix(facetNode)}`,
-  },
   list: {
     policy: { kind: "component" },
     asNode: (value) => {
@@ -428,12 +400,6 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
     },
     describe: (facetNode, warehouse) =>
       `${facetNode.id} list items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`,
-  },
-  divider: {
-    policy: { kind: "component" },
-    asNode: asNodePassthrough,
-    describe: (facetNode) =>
-      `${facetNode.id} divider${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`,
   },
   form: {
     policy: { kind: "component" },
