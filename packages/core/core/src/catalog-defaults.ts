@@ -37,26 +37,15 @@ export const DEFAULT_COMPONENTS: readonly CatalogComponent[] = [
   },
   { type: "keyValue", variants: ["default"], guidance: "Use for compact label/value details." },
   {
-    type: "badge",
-    variants: ["neutral", "success", "warning", "danger"],
-    guidance: "Use for compact statuses and labels.",
-  },
-  {
     type: "progress",
     variants: ["default", "success"],
     guidance: "Use for bounded percentage progress.",
-  },
-  {
-    type: "alert",
-    variants: ["info", "success", "warning", "danger"],
-    guidance: "Use for feedback, warnings, and notices.",
   },
   {
     type: "list",
     variants: ["default", "compact"],
     guidance: "Use for capped task or summary lists.",
   },
-  { type: "divider", variants: ["default"], guidance: "Use to separate dense content." },
   { type: "form", variants: ["default"], guidance: "Use for grouped visitor input." },
   {
     type: "filterBar",

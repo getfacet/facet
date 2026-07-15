@@ -10,7 +10,7 @@ import {
   setVariant,
 } from "./component-validation-shared.js";
 
-export type LayoutComponentType = "section" | "card" | "divider";
+export type LayoutComponentType = "section" | "card";
 
 export function sanitizeLayoutComponentNode(
   id: string,
@@ -55,15 +55,6 @@ export function sanitizeLayoutComponentNode(
       if (onPress !== undefined) node.onPress = onPress;
       const onHold = normalizeFacetAction(raw.onHold, id, "onHold", issues);
       if (onHold !== undefined) node.onHold = onHold;
-      return node;
-    }
-    case "divider": {
-      const node: { id: string; type: "divider"; label?: string; variant?: string } = {
-        id,
-        type,
-      };
-      setText(raw.label, id, "label", node, "label", MAX_NODE_LABEL_CHARS, issues);
-      setVariant(raw.variant, id, node, issues);
       return node;
     }
   }
