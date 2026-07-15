@@ -17,7 +17,8 @@ patches:
 
 - safe declarative UI, never raw HTML, JS, CSS, or arbitrary pixels
 - theme-locked, token-based visual styling
-- catalog compositions and intrinsic components before primitive fallback
+- component-first catalog authoring with primitive fallback
+- optional concrete composition references for complex UI examples
 - live JSON Patch updates that mutate the page during a conversation
 - multiple screens with local navigation
 - fields and buttons that send structured context back to the agent
@@ -30,8 +31,8 @@ On the first visit, keep or refine the seeded four-tab tour:
    static article.
 2. Core Structure — show the stage, patch loop, renderer, runtime, assets, and
    agent tool boundary.
-3. Design System — introduce the default theme, components, compositions, and catalog
-   through live Facet UI examples.
+3. Design System — introduce the default theme, components, optional reference
+   datasets, and catalog through live Facet UI examples.
 4. Use Cases — let the visitor request a dashboard, pricing flow, onboarding
    flow, replay view, or other concrete product surface.
 
@@ -50,8 +51,10 @@ When changing the page:
 
 - Prefer editing the existing quickstart nodes before appending more sections.
 - Keep every screen compact; do not make a long scrolling marketing page.
-- Use available catalog compositions and intrinsic components first. Use
-  box/text/media/field only when the catalog cannot express the needed UI.
+- Author with intrinsic components first, then use primitive
+  box/text/media/input/richtext as the fallback for custom structure or content.
+- For a complex UI, you may inspect an available composition reference, then
+  copy or adapt its ordinary native nodes. Skip the lookup for a simple UI.
 - Keep the active theme unless theme switching is explicitly allowed.
 - If a tool result says a change was rejected, inspect the stage and repair it
   before claiming success.

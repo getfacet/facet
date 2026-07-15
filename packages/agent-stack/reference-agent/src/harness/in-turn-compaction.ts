@@ -119,8 +119,10 @@ export async function compactInTurnTranscript(
 /**
  * Landing-target sizing: keep as many recent step groups verbatim as still fit
  * under `targetChars` (compactionTargetRatio × effective budget), but never
- * fewer than `minRecentStepsVerbatim` and always compact at least one group.
- * The summary block is budgeted at its `maxSummaryTokens` upper bound.
+ * fewer than `minRecentStepsVerbatim` and normally compact at least one group.
+ * The newest `get_composition` group is pinned intact for its first provider
+ * handoff, even if that leaves no group compactable. The summary block is
+ * budgeted at its `maxSummaryTokens` upper bound.
  */
 function chooseVerbatimKeepGroups(
   inTurn: readonly TurnMessage[],
@@ -128,8 +130,13 @@ function chooseVerbatimKeepGroups(
   options: CompactInTurnOptions,
 ): number {
   const groups = groupTranscriptSteps(inTurn);
-  const maxKeep = groups.length - 1;
-  const minKeep = Math.min(options.budget.minRecentStepsVerbatim, maxKeep);
+  const pinsNewestCompositionRead = newestGroupContainsCompositionRead(groups);
+  const maxKeep = pinsNewestCompositionRead ? groups.length : groups.length - 1;
+  const requiredKeep = Math.max(
+    options.budget.minRecentStepsVerbatim,
+    pinsNewestCompositionRead ? 1 : 0,
+  );
+  const minKeep = Math.min(requiredKeep, maxKeep);
   const summaryBound = summaryCharBudget(options.budget.maxSummaryTokens);
   const base = options.fixedChars + initialContextChars + summaryBound;
   let suffixChars = 0;
@@ -141,6 +148,32 @@ function chooseVerbatimKeepGroups(
     if (base + suffixChars <= options.targetChars) keep = candidate;
   }
   return keep;
+}
+
+function newestGroupContainsCompositionRead(groups: readonly (readonly TurnMessage[])[]): boolean {
+  const newest = groups.at(-1);
+  return (
+    newest?.some(
+      (message) =>
+        message.role === "assistant_tools" &&
+        message.toolCalls.some((call) => call.name === "get_composition"),
+    ) ?? false
+  );
+}
+
+/**
+ * True while the newest in-turn step group carries an exact composition read
+ * that has not yet reached the provider. The loop uses the same grouping rule
+ * as compaction so a cooldown cannot accidentally bypass the hard token stop
+ * for the pinned first handoff.
+ */
+export function hasPendingCompositionReadHandoff(
+  messages: readonly TurnMessage[],
+  initialContextLength: number,
+): boolean {
+  return newestGroupContainsCompositionRead(
+    groupTranscriptSteps(messages.slice(initialContextLength)),
+  );
 }
 
 /**

@@ -2,7 +2,7 @@ import type { StageToolBuffer } from "@facet/agent-tools";
 import type { JsonPatchOperation, ServerMessage } from "@facet/core";
 import type { ProviderStep, TurnMessage } from "../provider.js";
 import type { ReferenceAgentBudget } from "./budget.js";
-import { appendProviderStepTranscript } from "./transcript.js";
+import { appendProviderStepTranscript, type TranscriptToolObservation } from "./transcript.js";
 import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
 
 export interface ExecuteToolStepOptions {
@@ -22,7 +22,7 @@ export interface ExecuteToolStepResult {
 
 export function executeToolStep(options: ExecuteToolStepOptions): ExecuteToolStepResult {
   const batch: ServerMessage[] = [];
-  const observations = [];
+  const observations: TranscriptToolObservation[] = [];
   let mutated = false;
   let said = false;
 

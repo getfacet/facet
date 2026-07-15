@@ -5,6 +5,7 @@ export {
   getStageToolSpec,
 } from "./specs.js";
 export type { FacetStageToolSpec } from "./specs.js";
+export { selectCompositionReferences } from "./composition-references.js";
 export {
   FACET_AGENT_ROLE_PROMPT,
   FACET_ASSET_PRIVACY_PROMPT,
@@ -42,6 +43,7 @@ export type {
   AgentToolObservationStatus,
   AgentToolOutcome,
   FacetStageToolName,
+  GetCompositionToolInput,
   InspectNodeToolInput,
   InspectStageToolInput,
   RemoveNodeToolInput,
@@ -60,5 +62,4 @@ export type {
   ToolCall,
   ToolInputByName,
   ToolSpec,
-  UseCompositionToolInput,
 } from "./types.js";

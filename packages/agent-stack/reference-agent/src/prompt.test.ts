@@ -95,7 +95,7 @@ function catalogFixture(): FacetCatalog {
     compositions: { mode: "allow", names: ["approved"] },
     primitiveFallback: "allowed",
     policy: {
-      order: ["composition", "component", "primitive"],
+      order: ["component", "primitive"],
       editBeforeAppend: true,
       compactScreens: true,
       maxScreenSections: 4,
@@ -142,8 +142,12 @@ describe("buildSystem", () => {
       compositions: [
         {
           name: "approved",
-          description: "Approved reference composition",
-          slots: { title: "Slot default must stay private" },
+          metadata: {
+            description: "Approved reference composition",
+            category: "hero",
+            useWhen: "leading a fresh landing page",
+            internalNotes: "reference-metadata-sentinel",
+          },
           root: "reference-composition-root",
           nodes: {
             "reference-composition-root": {
@@ -151,11 +155,6 @@ describe("buildSystem", () => {
               type: "text",
               value: "reference-composition-json",
             },
-          },
-          metadata: {
-            category: "hero",
-            useWhen: "leading a fresh landing page",
-            internalNotes: "reference-metadata-sentinel",
           },
           providerKey: "sk-reference-key",
           visitorId: "reference-visitor-id",
@@ -165,7 +164,7 @@ describe("buildSystem", () => {
     });
 
     expect(system).toMatch(
-      /COMPONENT GUIDANCE[\s\S]*catalog-advertised compositions[\s\S]*intrinsic components with catalog-advertised variants[\s\S]*never write raw CSS/i,
+      /COMPONENT GUIDANCE[\s\S]*intrinsic components with catalog-advertised variants[\s\S]*reference-dataset internals[\s\S]*never write raw CSS/i,
     );
     expect(system).toMatch(
       /product-quality defaults[\s\S]*input for raw inputs[\s\S]*button for actions/i,
@@ -173,7 +172,7 @@ describe("buildSystem", () => {
     expect(system).toMatch(/editBeforeAppend is true/i);
     expect(system).toContain("allowed components: section variants: surface");
     expect(system).toContain("button variants: primary");
-    expect(system).toContain("policy order: composition -> component -> primitive");
+    expect(system).toContain("policy order: component -> primitive");
 
     expect(system).not.toContain("#ffffff");
     expect(system).not.toContain("#111111");
@@ -184,9 +183,10 @@ describe("buildSystem", () => {
     expect(system).not.toContain("sk-reference-key");
     expect(system).not.toContain("reference-visitor-id");
     const compositionSection = compositionSectionOf(system);
-    // Whitelisted composition metadata is advertised; unknown metadata fields are not.
-    expect(compositionSection).toContain("category: hero");
-    expect(compositionSection).toContain("useWhen: leading a fresh landing page");
+    // Only the required index fields are advertised; all other metadata stays private.
+    expect(compositionSection).toContain("approved: Approved reference composition");
+    expect(compositionSection).not.toContain("category: hero");
+    expect(compositionSection).not.toContain("useWhen: leading a fresh landing page");
     expect(compositionSection).not.toContain("reference-metadata-sentinel");
     expect(compositionSection).not.toContain('"nodes"');
     expect(compositionSection).not.toContain('"root"');
@@ -259,7 +259,7 @@ describe("buildSystem", () => {
     // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
     // list" in prose — we probe for the section intros this WU adds, not the word).
     expect(base).not.toContain("select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reusable catalog compositions you may expand");
+    expect(base).not.toContain("Reference datasets available by NAME");
   });
 
   it("injects theme names and descriptions never values", () => {
@@ -287,16 +287,19 @@ describe("buildSystem", () => {
     expect(system).toMatch(/set_theme/);
   });
 
-  it("advertises composition names, slots, and descriptions without embedding fragment JSON", () => {
+  it("advertises reference names and required descriptions without embedding native-node JSON", () => {
     const compositions: FacetComposition[] = [
       {
         name: "cta",
-        description: "A call-to-action button",
-        slots: { label: "Get started", href: "/signup" },
+        metadata: {
+          description: "A call-to-action button",
+          category: "conversion",
+          useWhen: "the page needs one clear action",
+        },
         root: "cta",
         nodes: {
           cta: { id: "cta", type: "box", children: ["cta-label"] },
-          "cta-label": { id: "cta-label", type: "text", value: "{{label}}" },
+          "cta-label": { id: "cta-label", type: "text", value: "Get started" },
         },
       },
     ];
@@ -306,9 +309,9 @@ describe("buildSystem", () => {
     expect(system).toContain("COMPOSITIONS");
     expect(compositionSection).toContain("cta");
     expect(compositionSection).toContain("A call-to-action button");
-    expect(compositionSection).toContain("label");
-    expect(compositionSection).toContain("href");
-    expect(compositionSection).toContain("use_composition");
+    expect(compositionSection).toContain("get_composition");
+    expect(compositionSection).not.toContain("category");
+    expect(compositionSection).not.toContain("useWhen");
     expect(compositionSection).not.toContain("cta-label");
     expect(compositionSection).not.toContain('"nodes"');
     expect(compositionSection).not.toContain("Get started");
@@ -317,7 +320,12 @@ describe("buildSystem", () => {
   it("advertises oversized compositions by name without copying their large JSON", () => {
     const big = "x".repeat(5000);
     const compositions: FacetComposition[] = [
-      { name: "huge", root: "h", nodes: { h: { id: "h", type: "text", value: big } } },
+      {
+        name: "huge",
+        metadata: { description: "A large reference" },
+        root: "h",
+        nodes: { h: { id: "h", type: "text", value: big } },
+      },
     ];
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
@@ -353,7 +361,7 @@ describe("buildSystem", () => {
     expect(catalogSection).toContain("button variants: primary");
     expect(catalogSection).toContain("composition policy: allow approved");
     expect(catalogSection).toContain("primitiveFallback: allowed");
-    expect(catalogSection).toContain("policy order: composition -> component -> primitive");
+    expect(catalogSection).toContain("policy order: component -> primitive");
     expect(catalogSection).not.toContain("#ffffff");
     expect(catalogSection).not.toContain("#111111");
     expect(catalogSection).not.toContain('"nodes"');
@@ -369,6 +377,7 @@ describe("TOOLS", () => {
     const names = TOOLS.map((t) => t.name).sort();
     expect(names).toEqual([
       "append_node",
+      "get_composition",
       "inspect_node",
       "inspect_stage",
       "remove_node",
@@ -376,7 +385,6 @@ describe("TOOLS", () => {
       "say",
       "set_node",
       "set_theme",
-      "use_composition",
     ]);
     for (const tool of TOOLS) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -393,14 +401,12 @@ describe("TOOLS", () => {
     expect(props["name"]).toMatchObject({ type: "string" });
   });
 
-  it("use_composition takes a composition name, params map, and parent location", () => {
-    const useComposition = TOOLS.find((t) => t.name === "use_composition");
-    expect(useComposition).toBeDefined();
-    const props = useComposition!.parameters["properties"] as Record<string, unknown>;
-    expect(Object.keys(props)).toEqual(["name", "params", "at"]);
+  it("get_composition takes exactly one composition name and exposes no edit location", () => {
+    const getComposition = TOOLS.find((t) => t.name === "get_composition");
+    expect(getComposition).toBeDefined();
+    const props = getComposition!.parameters["properties"] as Record<string, unknown>;
+    expect(Object.keys(props)).toEqual(["name"]);
     expect(props["name"]).toMatchObject({ type: "string" });
-    expect(props["params"]).toMatchObject({ type: "object" });
-    expect(props["at"]).toMatchObject({ type: "object" });
   });
 });
 

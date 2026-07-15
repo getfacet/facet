@@ -7,7 +7,8 @@
 Facet is a TypeScript framework for UI a language model renders itself — safe,
 live, and different for every user. You give the model a closed, typed UI
 vocabulary: primitive bricks as the universal fallback, intrinsic components for
-common UI, and catalog compositions/recipes for one-shot polish. It keeps
+common UI, theme recipes for one-shot polish, and optional catalog reference
+datasets the model can inspect for complex work. It keeps
 changing the interface as the conversation goes and can build a different one
 for each person, all without ever emitting unsafe or broken markup.
 
@@ -51,10 +52,10 @@ they all hurt:
 
 Facet is the missing middle: the model works inside a **closed core vocabulary**
 instead of raw HTML/JS/CSS, but the vocabulary is not an opaque component
-catalog. Operators can expose a catalog policy, compositions, and theme recipes
-for one-shot quality; the model can still fall back to primitives for custom flow
-composition. It **can't inject or break the layout**, and it updates **live, per
-user**.
+catalog. Operators can expose a catalog policy, optional composition reference
+datasets, and theme recipes for one-shot quality; the model can still build
+custom flow layouts from the native vocabulary. It **can't inject or break the
+layout**, and it updates **live, per user**.
 
 ## The mental model: two layers
 
@@ -77,27 +78,32 @@ locale, prior context) is enough to make the first paint different.
 The model builds the Stage from a **closed Facet vocabulary**, never raw
 HTML/JS/CSS. In v1 that vocabulary has three layers:
 
-1. **Primitive bricks** — `box`, `text`, `media`, and `field`, the universal
-   fallback for structure, copy, media, and raw inputs.
+1. **Primitive bricks** — `box`, `text`, `media`, `input`, and `richtext`, the
+   universal fallback for structure, copy, media, inputs, and formatted prose.
 2. **Components** — typed common UI shapes the renderer knows how to draw.
-   Intrinsic components are owned by Facet core; recipe components expand to
-   ordinary validated nodes before render.
+   Intrinsic components are owned and validated by Facet core; theme recipes
+   style them without adding stage syntax.
 3. **Catalog** — the active policy and asset metadata: allowed components,
-   variants, compositions, primitive fallback, and theme switching.
+   variants, exposed reference datasets, primitive fallback, and theme
+   switching.
 
-The built-in catalog tells the agent to try those layers in that order:
-`composition -> component -> primitive`. Catalog compositions are expanded
-server-side through the `use_composition` tool, arriving in the browser as
-ordinary validated nodes. A project can narrow the allowed components, variants,
-compositions, and theme switching through catalog data, but the catalog is still
-just UI vocabulary and usage policy. It is not hosted-platform auth, billing,
-tenant, rate-limit, or abuse policy.
+The built-in catalog's native authoring order is `component -> primitive`.
+Independently, a project may expose composition reference datasets by catalog
+policy. For a complex interface, the model can call the read-only
+`get_composition` tool with one advertised name, receive that validated concrete
+native-node JSON in its provider transcript, and then author or adapt ordinary
+nodes with the normal stage tools. The read never edits the Stage, and simple
+work does not need it. A project can narrow allowed components, variants,
+reference exposure, and theme switching through catalog data, but the catalog
+is still just UI vocabulary and usage policy. It is not hosted-platform auth,
+billing, tenant, rate-limit, or abuse policy.
 
 An intrinsic component belongs in Facet core only when it is generic across
 apps, useful to many agents as a familiar UI noun, renderer-owned, safe without
 client-side business logic, and hard for agents to reproduce reliably from
-primitives alone. Domain-specific or tenant-specific UI should be a recipe
-component/composition instead.
+primitives alone. Domain-specific or tenant-specific UI should be authored from
+the native vocabulary; operators may provide a concrete reference dataset to
+demonstrate a preferred pattern.
 
 The v1 intrinsic components cover common product/app UI while remaining typed
 data:
@@ -113,13 +119,9 @@ data:
 | `chart`      | display-only chart data with capped series and points.          |
 | `metric`     | compact KPI/metric display. `stat` remains a legacy alias.      |
 | `keyValue`   | compact label/value details.                                    |
-| `badge`      | compact status or label.                                        |
 | `progress`   | bounded progress display.                                       |
-| `alert`      | feedback, warning, or notice block.                             |
 | `list`       | capped list display.                                            |
-| `divider`    | visual/content separator.                                       |
 | `form`       | grouped visitor input and submission.                           |
-| `search`     | search input and submission UI only.                            |
 | `filterBar`  | compact filtering controls UI only.                             |
 | `emptyState` | no-data or no-result state.                                     |
 | `loading`    | pending/busy state.                                             |
@@ -131,7 +133,8 @@ The primitive base remains valid everywhere:
 | `box`   | the universal container. Flow layout, token styles, optional `onPress`/`onHold`. |
 | `text`  | text with token styles (family/size/weight/color).                               |
 | `media` | image or video media with a static, safe URL.                                    |
-| `field` | a native text/select/checkbox/radio/switch input.                                |
+| `input` | a native text/select/checkbox/radio/switch/search input.                         |
+| `richtext` | flowing prose with closed blocks, inline marks, and safe links.              |
 
 A *card* is still equivalent to a `box` with a border. A *button* is still a
 pressable box. Components are convenience nodes over that same safe model, not
@@ -155,11 +158,11 @@ token (`2`/`3`/`4`) — all still tokens, never raw values.
 4. **The renderer is fail-safe** → unknown or dangling nodes are skipped, so a
    partial stage renders as "plain", never broken.
 
-Catalog entries and composition metadata give the model one-shot guidance
+Catalog entries and composition reference descriptions give the model guidance
 without giving up the primitive foundation: a catalog can say which components
-and variants are allowed, which compositions are available, whether primitive
-fallback is allowed or merely discouraged, and whether the active theme is
-locked.
+and variants are allowed, which reference datasets may be inspected, whether
+primitive fallback is allowed or merely discouraged, and whether the active
+theme is locked.
 
 ## Reskin with data, not code
 
@@ -174,31 +177,31 @@ OPENAI_API_KEY=sk-… npx facet-quickstart --assets ./assets
 where `./assets` holds any mix of:
 
 - **`catalog.json`** — a validated `FacetCatalog` describing active theme policy,
-  allowed components/variants, allowed compositions, primitive fallback, and usage guidance
-  such as compact-screen and edit-before-append preferences. This is neutral UI
-  vocabulary policy; tenant/project lookup, auth, billing, rate limits, and abuse
-  operations stay outside Facet.
+  allowed components/variants, composition-reference exposure, primitive
+  fallback, and usage guidance such as compact-screen and edit-before-append
+  preferences. This is neutral UI vocabulary policy; tenant/project lookup,
+  auth, billing, rate limits, and abuse operations stay outside Facet.
 - **`*.theme.json`** — a named palette/type/scale document mapping token names
   to CSS values, e.g. `{ "name": "midnight", "color": { "bg": "#0b1020", "fg": "#e8ecff" }, "fontFamily": { "sans": "Inter, system-ui, sans-serif" } }`.
   The model **selects** a theme by name (via a `set_theme` tool); **it never
   authors the CSS values** and never writes one into the tree. Theme documents
   can also carry **component recipes**: token-only style bundles for components
   such as `button.primary`, `card.interactive`, `media.hero`, or
-  `field.default`, plus closed recipe `parts` for renderer-owned internals like
+  `input.default`, plus closed recipe `parts` for renderer-owned internals like
   field labels/controls, tabs, table cells, chart plots, progress fills, and
   list rows. Nodes choose a `variant` or `tone` where supported; recipe parts
   never become stage node fields. The renderer resolves the selected recipe
   through the active theme. An unknown or missing name simply falls back to the
   default look — nothing throws.
-- **`*.composition.json`** — a reusable catalog composition: a validated
-  `{ root, nodes, slots? }` fragment (a hero, a card) offered to the
-  model by name. Compositions can include bounded
-  metadata (`category`, `useWhen`, `avoidWhen`, `tags`, `preferredParent`,
-  `composedOf`, and similar prompt-safe fields) so the agent knows when to use
-  them without seeing full composition JSON. The quickstart model calls the
-  `use_composition` tool with string slot params and the server expands the composition into ordinary patches
-  with fresh ids, under a known container parent and within the patch batch cap;
-  there is **no client-side composition expansion**.
+- **`*.composition.json`** — an optional concrete native reference dataset with
+  shape `{ name, metadata: { description, ... }, root, nodes }`. The prompt
+  index exposes only each catalog-allowed name and bounded description. On
+  demand, `get_composition({ name })` returns the complete validated object to
+  the model's provider transcript without emitting any message or patch; the
+  model then writes ordinary native nodes separately. There are no parameters,
+  insertion target, substitution markers, nesting semantics, or automatic
+  application. Full composition JSON is never shipped in the browser shell or
+  SSE protocol.
 - **`initial.tree.json`** — a starting stage the first visit opens on *before*
   the model's first turn: a fast, non-blank first paint the agent then refines.
 
@@ -252,8 +255,8 @@ model instead, there are three jacks — see
 Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
 *conversation* is a `Sink` you choose: store it for replay, forward it to your
 own system (e.g. a chat platform that already keeps it), or drop it. The
-per-agent asset library (themes, compositions, and an optional initial tree) is an
-`AssetsStore` (memory, file, or Postgres).
+per-agent asset library (themes, composition references, and an optional initial
+tree) is an `AssetsStore` (memory, file, or Postgres).
 
 **Each visitor is a `visitorId`, and you decide where it comes from.** For an
 anonymous page, `browserVisitorId()` stores an unguessable id in the browser so a
@@ -287,17 +290,17 @@ reference packages only when they match your integration shape.
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/core` | `@facet/core` | The contract: closed primitive/component vocabulary, catalog/component/composition policy, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators and untrusted event normalizers, `expandComposition`, session/event types. |
-| `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/composition/initial-tree loading, `withInitialStage`) + `SummaryStore` (opaque rolling-summary records for brain-side context compaction). File-backed Node references via `@facet/runtime/node`. |
+| `packages/core/core` | `@facet/core` | The contract: closed primitive/component vocabulary, catalog/reference-exposure policy, concrete composition-reference validation, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, untrusted event normalizers, and session/event types. |
+| `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/composition-reference/initial-tree loading, `withInitialStage`) + `SummaryStore` (opaque rolling-summary records for brain-side context compaction). File-backed Node references via `@facet/runtime/node`. |
 | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for primitive bricks and intrinsic components, token→CSS and recipe/part resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `packages/core/assets` | `@facet/assets` | Node-free default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with component recipes/parts, and `DEFAULT_COMPOSITIONS` with metadata. Depends only on `@facet/core`. |
+| `packages/core/assets` | `@facet/assets` | Default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with component recipes/parts, and concrete native `DEFAULT_COMPOSITIONS` references. Depends only on `@facet/core`. |
 
 ### Agent Authoring
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, and reusable prompt kit for custom LLM/tool loops. |
-| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the `Stage` control API (`render`/`append`/`useComposition`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
+| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, a read-only composition-reference lookup, and reusable prompt kit for custom LLM/tool loops. |
+| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the native `Stage` control API (`render`/`append`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
 
 ### Integration Adapters
 
@@ -387,8 +390,8 @@ back-compatible helper.
 - [x] SSE/POST transport + a browser playground
 - [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
 - [x] Durable `StageStore`/`Sink`/`AssetsStore` + a Postgres adapter
-- [x] `@facet/assets` default catalog + theme recipes + composition data
-      (node-free value maps)
+- [x] `@facet/assets` default catalog + theme recipes + concrete native
+      composition reference data
 - [x] One-command quickstart (`facet-quickstart`) composing `@facet/reference-agent`
 - [ ] Docs site + examples
 - [ ] Caching & static skeleton for fast first paint

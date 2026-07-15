@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { expandComposition, validateComposition } from "@facet/core";
+import { validateComposition } from "@facet/core";
 import type { FacetComposition } from "@facet/core";
 
 const moduleUrl = new URL("./compositions.ts", import.meta.url);
@@ -10,6 +10,11 @@ const moduleUrl = new URL("./compositions.ts", import.meta.url);
 // source literals (same idiom as theme.test.ts).
 const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
 const legacyDefinitionsField = ["component", "Definitions"].join("");
+const legacyTemplateMarker = new RegExp(
+  [["\\{", "\\{"].join(""), "[A-Za-z_][A-Za-z0-9_-]*", ["\\}", "\\}"].join("")].join(""),
+);
+const legacySlotField = ["slo", "ts"].join("");
+const legacyReferenceField = ["u", "se"].join("");
 
 /**
  * Asserts the canonical module exists BEFORE any dynamic loading so a missing
@@ -22,15 +27,42 @@ async function loadDefaults(): Promise<readonly FacetComposition[]> {
 }
 
 describe("DEFAULT_COMPOSITIONS", () => {
-  it("ships exactly 21 defaults that pass validateComposition with zero error issues", async () => {
+  it("ships concrete reference datasets", async () => {
     const defaults = await loadDefaults();
     expect(defaults).toHaveLength(21);
     for (const composition of defaults) {
       const { composition: validated, issues } = validateComposition(composition);
       expect(issues).toEqual([]);
-      expect(validated).toBeDefined();
+      expect(validated).toEqual(composition);
       expect(validated?.root).toBe(composition.root);
+      expect(composition.metadata.description.trim(), composition.name).not.toBe("");
+      expect(
+        Object.prototype.hasOwnProperty.call(composition, "description"),
+        composition.name,
+      ).toBe(false);
+      expect(
+        Object.prototype.hasOwnProperty.call(composition, legacySlotField),
+        composition.name,
+      ).toBe(false);
+
+      const serialized = JSON.stringify(composition);
+      expect(serialized, composition.name).not.toMatch(legacyTemplateMarker);
+      for (const [id, node] of Object.entries(composition.nodes)) {
+        expect(Object.prototype.hasOwnProperty.call(node, legacyReferenceField), id).toBe(false);
+        expect(node.id, id).toBe(id);
+      }
     }
+
+    const pricing = defaults.find((composition) => composition.name === "pricing-section");
+    const dashboard = defaults.find((composition) => composition.name === "dashboard-summary");
+    expect(pricing?.nodes["pricing-section.enterprise-badge"]).toMatchObject({
+      id: "pricing-section.enterprise-badge",
+      type: "box",
+    });
+    expect(dashboard?.nodes["dashboard-summary.badge"]).toMatchObject({
+      id: "dashboard-summary.badge",
+      type: "box",
+    });
   });
 
   it("carries every node id under the composition's own name prefix", async () => {
@@ -70,14 +102,14 @@ describe("DEFAULT_COMPOSITIONS", () => {
     }
 
     for (const composition of defaults) {
-      expect(composition.metadata?.category, composition.name).toBeDefined();
-      expect(composition.metadata?.useWhen, composition.name).toBeDefined();
-      expect(composition.metadata?.tags?.length, composition.name).toBeGreaterThan(0);
+      expect(composition.metadata.category, composition.name).toBeDefined();
+      expect(composition.metadata.useWhen, composition.name).toBeDefined();
+      expect(composition.metadata.tags?.length, composition.name).toBeGreaterThan(0);
       expect(JSON.stringify(composition.metadata), composition.name).not.toContain('"nodes"');
     }
   });
 
-  it("prefers metric where composition expansion compatibility allows it", async () => {
+  it("uses concrete example content and prefers metric for native authoring", async () => {
     const defaults = await loadDefaults();
     const serialized = JSON.stringify(defaults);
     const nodeTypes = defaults.flatMap((composition) =>
@@ -93,7 +125,7 @@ describe("DEFAULT_COMPOSITIONS", () => {
     expect(legacyStatNodes.map(({ id, composition }) => `${composition}:${id}`)).toEqual([
       "dashboard-summary:dashboard-summary.stat",
     ]);
-    expect(JSON.stringify(legacyStatNodes[0]?.node)).toContain("{{metric}}");
+    expect(JSON.stringify(legacyStatNodes[0]?.node)).toContain("Revenue");
     expect(serialized).not.toContain(legacyDefinitionsField);
     expect(serialized).not.toMatch(legacyNaming);
 
@@ -103,42 +135,6 @@ describe("DEFAULT_COMPOSITIONS", () => {
     expect(source).not.toMatch(/\bfrom\s+["@'](?:node:|@facet\/(react|runtime|server|client))\b/);
     expect(source).not.toMatch(new RegExp(`\\b${legacyDefinitionsField}\\b`));
     expect(source).not.toMatch(legacyNaming);
-  });
-
-  it("declares slots with whole-value markers and each composition is fillable", async () => {
-    const defaults = await loadDefaults();
-    for (const composition of defaults) {
-      expect(Object.keys(composition.slots ?? {}), composition.name).not.toEqual([]);
-      const serialized = JSON.stringify(composition.nodes);
-      for (const slot of Object.keys(composition.slots ?? {})) {
-        expect(serialized, `${composition.name}:${slot}`).toContain(`{{${slot}}}`);
-      }
-
-      const params = Object.fromEntries(
-        Object.keys(composition.slots ?? {}).map((slot) => [slot, `filled:${slot}`]),
-      );
-      let i = 0;
-      // The registry resolves the PR-5.0 nested `{ use }` badge embeds (pricing /
-      // dashboard) so expansion carries no dropped-reference issue.
-      const expanded = expandComposition(
-        composition,
-        params,
-        { parent: "root" },
-        {
-          existingIds: new Set(["root"]),
-          mintId: () => `${composition.name}.fresh.${String(i++)}`,
-          compositions: defaults,
-        },
-      );
-
-      expect(expanded.root, composition.name).toBeDefined();
-      expect(expanded.issues, composition.name).toEqual([]);
-      const filled = JSON.stringify(expanded.nodes);
-      for (const slot of Object.keys(composition.slots ?? {})) {
-        expect(filled, `${composition.name}:${slot}`).toContain(`filled:${slot}`);
-        expect(filled, `${composition.name}:${slot}`).not.toContain(`{{${slot}}}`);
-      }
-    }
   });
 });
 
@@ -316,50 +312,33 @@ describe("per-tone parity (DC-001)", () => {
   });
 });
 
-// DC-004: the two shipped embeds are rewired to PR-5.0 `{ use }` nesting and no
-// `type: "badge"` (or alert/divider) primitive survives full expansion of any
-// default composition.
-describe("no residual demoted display leaves (DC-004)", () => {
+// DC-007: the two formerly nested badge examples are now ordinary native box +
+// text structures, and no demoted display-leaf type survives in any dataset.
+describe("no residual demoted display leaves (DC-007)", () => {
   const DEMOTED = new Set(["badge", "alert", "divider"]);
 
-  it("rewires the two shipped embeds to { use } references", async () => {
+  it("inlines the two shipped badge examples as native structures", async () => {
     const defaults = await loadDefaults();
     const pricing = defaults.find((c) => c.name === "pricing-section");
     const dashboard = defaults.find((c) => c.name === "dashboard-summary");
-    expect(pricing?.nodes["pricing-section.enterprise-badge"]).toMatchObject({ use: "badge" });
-    expect(dashboard?.nodes["dashboard-summary.badge"]).toMatchObject({ use: "badge-success" });
+    expect(pricing?.nodes["pricing-section.enterprise-badge"]).toMatchObject({
+      id: "pricing-section.enterprise-badge",
+      type: "box",
+      children: ["pricing-section.enterprise-badge-label"],
+    });
+    expect(dashboard?.nodes["dashboard-summary.badge"]).toMatchObject({
+      id: "dashboard-summary.badge",
+      type: "box",
+      children: ["dashboard-summary.badge-label"],
+    });
   });
 
-  it("leaves zero demoted primitive after full expansion of every default", async () => {
+  it("leaves zero demoted node type in every native dataset", async () => {
     const defaults = await loadDefaults();
-    // No demoted type authored anywhere in the raw node maps.
     for (const composition of defaults) {
       for (const [id, node] of Object.entries(composition.nodes)) {
         const type = (node as { type?: unknown }).type;
         expect(DEMOTED.has(String(type)), `${composition.name}:${id}`).toBe(false);
-      }
-    }
-    // And after expansion (resolving nested { use } refs) the produced primitive
-    // graph is likewise free of any demoted type.
-    for (const composition of defaults) {
-      const params = Object.fromEntries(
-        Object.keys(composition.slots ?? {}).map((slot) => [slot, `x`]),
-      );
-      let i = 0;
-      const expanded = expandComposition(
-        composition,
-        params,
-        { parent: "root" },
-        {
-          existingIds: new Set(["root"]),
-          mintId: () => `${composition.name}.x.${String(i++)}`,
-          compositions: defaults,
-        },
-      );
-      for (const node of Object.values(expanded.nodes)) {
-        expect(DEMOTED.has(String((node as { type?: unknown }).type)), composition.name).toBe(
-          false,
-        );
       }
     }
   });

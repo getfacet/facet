@@ -82,7 +82,7 @@ export const QUICKSTART_USE_CASE_NODES = {
     type: "section",
     eyebrow: "Your turn",
     title: "Use Cases",
-    body: "Ask Facet to draw a concrete app surface. The agent should update the page with components, compositions, variants, and fields instead of only replying in chat.",
+    body: "Ask Facet to draw a concrete app surface. The agent should update the page with ordinary native components, primitives, variants, and fields instead of only replying in chat.",
     variant: "surface",
     children: ["qs.usecases.alert"],
   },

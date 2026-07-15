@@ -203,9 +203,11 @@ Bundle B PR review record.
   names share `isValidThemeName`, descriptions truncate at the shared 200-char
   cap, and the refusal issue never echoes the raw name.
 - ~~quickstart/prompt.ts (composition budget)~~ — OBSOLETE after the component
-  model: the canonical `@facet/agent-tools` prompt advertises bounded composition
-  metadata only and never places fragment JSON in the prompt. The unpublished
-  quickstart prompt shim was removed by the agent-stack ownership cleanup.
+  model: the canonical `@facet/agent-tools` prompt advertises a bounded
+  name-description reference index. The agent can request one exact reference on
+  demand; that JSON stays in the provider conversation and never enters browser
+  frames. The unpublished quickstart prompt shim was removed by the agent-stack
+  ownership cleanup.
 - **agent-tools/executor-node.ts (set_theme)** — an unknown theme name returns
   `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
   error observation naming the available themes (append_node precedent).
@@ -227,9 +229,10 @@ Bundle B PR review record.
 - **core/theme.ts** — redundant `theme as FacetTheme` cast at the return
   (compiles clean without it).
 - ~~reference prompt oversized-composition suppression test~~ — OBSOLETE with
-  the composition metadata model: valid composition names remain advertised
-  while descriptions/metadata are bounded and fragment JSON is excluded; the
-  canonical reference-agent prompt suite pins that contract.
+  the concrete reference model: valid composition names and bounded descriptions
+  remain indexed, while an exact reference is read on demand and retained only
+  in the provider conversation; the canonical reference-agent prompt suite pins
+  that contract.
 - **tests** — `core/src/theme.test.ts`: negative-dimension clamp floor
   (`"-20px"` → `"0px"`) untested.
 - ~~server/server.ts:385 (seed frame vs lastApplied)~~ — RESOLVED in-branch

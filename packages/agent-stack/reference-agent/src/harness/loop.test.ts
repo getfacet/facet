@@ -270,6 +270,77 @@ describe("runReferenceAgentLoop", () => {
     expect(saysOf(result.messages)).toEqual(["done"]);
   });
 
+  it("preserves complete get_composition results for the next provider turn", async () => {
+    const composition = {
+      name: "large-reference",
+      metadata: { description: "Large exact reference" },
+      root: "root",
+      nodes: { root: { id: "root", type: "text", value: "x".repeat(5_000) } },
+    };
+    const exactObservation = JSON.stringify({
+      status: "ok",
+      data: { data: JSON.stringify(composition) },
+    });
+    const buffer = bufferWith([outcomeWith(exactObservation)]);
+    const provider = providerOf(
+      toolStep(call("composition-1", "get_composition", { name: composition.name })),
+      textStep("done"),
+    );
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(buffer),
+      budget: testBudget({ maxObservationChars: 4_000, maxContextChars: 20_000 }),
+      tools: [],
+    });
+
+    expect(exactObservation.length).toBeGreaterThan(4_000);
+    expect(provider.turns).toHaveLength(2);
+    const exactResult = provider.turns[1]?.messages.at(-1);
+    expect(exactResult).toEqual({
+      role: "tool_result",
+      callId: "composition-1",
+      content: exactObservation,
+    });
+    if (exactResult?.role !== "tool_result") throw new Error("expected exact tool_result");
+    expect(JSON.parse(exactResult.content)).toEqual(JSON.parse(exactObservation));
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  it("preserves complete get_composition results by stopping before an over-budget handoff", async () => {
+    const exactObservation = JSON.stringify({
+      status: "ok",
+      data: { data: JSON.stringify({ name: "too-large", value: "x".repeat(5_000) }) },
+    });
+    const buffer = bufferWith([outcomeWith(exactObservation)]);
+    const provider = providerOf(
+      toolStep(call("composition-1", "get_composition", { name: "too-large" })),
+      textStep("must not be reached"),
+    );
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(buffer),
+      budget: testBudget({
+        maxObservationChars: 4_000,
+        maxContextChars: 3_000,
+        minRecentStepsVerbatim: 1,
+      }),
+      tools: [],
+    });
+
+    expect(provider.turns).toHaveLength(1);
+    expect(buffer.runCalls).toHaveLength(1);
+    expect(stopReasons(result.traceEvents)).toEqual(["context_limit"]);
+    expect(result.traceEvents).toContainEqual({
+      type: "tool_result",
+      toolName: "get_composition",
+      callId: "composition-1",
+      observationChars: exactObservation.length,
+      truncated: false,
+    });
+  });
+
   it("resets the stage tool buffer after yielding a patch batch", async () => {
     const buffer = bufferWith([patchOutcome()]);
     const provider = providerOf(
@@ -806,6 +877,45 @@ describe("in-turn compaction", () => {
       result.traceEvents.filter((event) => event.type === "compaction_triggered"),
     ).toHaveLength(1);
     expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  it("stops an over-budget composition read during the compaction cooldown", async () => {
+    const exactObservation = JSON.stringify({
+      status: "ok",
+      data: { data: JSON.stringify({ name: "too-large", value: "x".repeat(5_000) }) },
+    });
+    const buffer = bufferWith([outcomeWith("x".repeat(1_000)), outcomeWith(exactObservation)]);
+    const provider = providerOf(
+      toolStep(call("inspect-1", "inspect_stage")),
+      toolStep(call("composition-1", "get_composition", { name: "too-large" })),
+      textStep("must not be reached"),
+    );
+
+    const result = await runLoop({
+      provider,
+      bufferFactory: bufferFactoryFor(buffer),
+      budget: compactionBudget({
+        compactionCooldownSteps: 40,
+        maxContextChars: 20_000,
+        minRecentStepsVerbatim: 0,
+      }),
+      contextWindowTokens: 300,
+      tools: [],
+    });
+
+    expect(
+      result.traceEvents.filter((event) => event.type === "compaction_triggered"),
+    ).toHaveLength(1);
+    expect(provider.turns).toHaveLength(2);
+    expect(buffer.runCalls).toHaveLength(2);
+    expect(stopReasons(result.traceEvents)).toEqual(["context_limit"]);
+    expect(result.traceEvents).toContainEqual({
+      type: "tool_result",
+      toolName: "get_composition",
+      callId: "composition-1",
+      observationChars: exactObservation.length,
+      truncated: false,
+    });
   });
 
   it("compacts again once the cooldown has elapsed", async () => {

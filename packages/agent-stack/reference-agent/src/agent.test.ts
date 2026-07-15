@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MAX_PATCH_OPS, collectMessages, EMPTY_TREE, iterateAgentResult } from "@facet/core";
+import { collectMessages, EMPTY_TREE, iterateAgentResult } from "@facet/core";
 import { parseAgentToolObservation, type AgentToolObservationData } from "@facet/agent-tools";
 import type {
   ClientEvent,
@@ -56,25 +56,12 @@ const CATALOG_POLICY: FacetCatalog = {
   compositions: { mode: "allow", names: ["approved"] },
   primitiveFallback: "allowed",
   policy: {
-    order: ["composition", "component", "primitive"],
+    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 4,
   },
 };
-
-function compositionWithPatchCount(name: string, patchCount: number): FacetComposition {
-  const nodeCount = patchCount - 1;
-  const children = Array.from({ length: nodeCount - 1 }, (_, index) => `child-${String(index)}`);
-  return {
-    name,
-    root: "composition-root",
-    nodes: {
-      "composition-root": { id: "composition-root", type: "box", children },
-      ...Object.fromEntries(children.map((id) => [id, { id, type: "text" as const, value: id }])),
-    },
-  };
-}
 
 let callSeq = 0;
 function call(name: string, input: unknown): ToolCall {
@@ -207,279 +194,60 @@ async function batchesOf(
 }
 
 describe("createReferenceAgent tool loop", () => {
-  it("use_composition expands a composition through the closure into one referentially closed batch", async () => {
-    const composition: FacetComposition = {
-      name: "card",
-      description: "A reusable card",
-      slots: { title: "Default title" },
-      root: "card",
+  it("shares one composition reference snapshot across prompt and lookup", async () => {
+    const approved = {
+      name: "approved",
+      metadata: { description: "Original approved reference" },
+      root: "approved-root",
       nodes: {
-        card: { id: "card", type: "box", children: ["title"] },
-        title: { id: "title", type: "text", value: "{{title}}" },
+        "approved-root": { id: "approved-root", type: "text", value: "Original" },
       },
-    };
-    const provider = providerOf(
-      toolStep(
-        call("use_composition", {
-          name: "card",
-          params: { title: "Hello" },
-          at: { parent: "root" },
-        }),
-      ),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [composition] });
-
-    const batches = await batchesOf(agent, { kind: "message", text: "use card" });
-
-    expect(batches).toHaveLength(1);
-    const patch = batches[0]?.find((m) => m.kind === "patch");
-    expect(patch?.kind).toBe("patch");
-    if (patch?.kind !== "patch") throw new Error("expected patch");
-    const nodeAdds = patch.patches.filter((op) => op.op === "add" && op.path.startsWith("/nodes/"));
-    const append = patch.patches.find(
-      (op) => op.op === "add" && op.path === "/nodes/root/children/-",
-    );
-    expect(append).toBeDefined();
-    const rootId = append?.op === "add" && typeof append.value === "string" ? append.value : "";
-    const rootAdd = nodeAdds.find((op) => op.path === `/nodes/${rootId}`);
-    expect(rootAdd).toBeDefined();
-    expect(rootId).not.toBe("card");
-    expect(patch.patches.some((op) => "path" in op && op.path === "/nodes/card")).toBe(false);
-    expect(patch.patches.some((op) => "path" in op && op.path === "/nodes/title")).toBe(false);
-    expect(JSON.stringify(patch.patches)).toContain("Hello");
-    if (rootAdd?.op === "add") {
-      const rootNode = rootAdd.value as { readonly children?: readonly string[] };
-      const childId = rootNode.children?.[0];
-      expect(childId).toBeDefined();
-      expect(nodeAdds.some((op) => op.path === `/nodes/${String(childId)}`)).toBe(true);
-      const observation = toolResultData(provider.turns[1]!)[0]!;
-      expect(observation.data).toBeDefined();
-      const idsJson = JSON.parse(observation.data ?? "") as {
-        readonly root: string;
-        readonly slots: Readonly<Record<string, string>>;
-        readonly ids: Readonly<Record<string, string>>;
-      };
-      expect(observation).toMatchObject({
-        status: "ok",
-        outcome: "applied_visible",
-        applied: true,
-        visible_to_visitor: true,
-      });
-      expect(idsJson.root).toBe(rootId);
-      expect(idsJson.slots["title"]).toBe(childId);
-      expect(idsJson.ids["card"]).toBe(rootId);
-    }
-  });
-
-  it("use_composition reports an unknown composition name as a no-op observation", async () => {
-    const provider = providerOf(
-      toolStep(call("use_composition", { name: "missing", params: {}, at: { parent: "root" } })),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [] });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const out = await runAgent(agent, { kind: "message", text: "use missing" });
-
-      expect(patchesOf(out)).toHaveLength(0);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs.some((o) => o.includes("unknown composition") && o.includes("missing"))).toBe(
-        true,
-      );
-    } finally {
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("use_composition twice remaps ids disjointly in the same turn", async () => {
-    const composition: FacetComposition = {
-      name: "label",
-      root: "label",
-      nodes: { label: { id: "label", type: "text", value: "Badge" } },
-    };
-    const provider = providerOf(
-      toolStep(
-        call("use_composition", { name: "label", params: {}, at: { parent: "root" } }),
-        call("use_composition", { name: "label", params: {}, at: { parent: "root" } }),
-      ),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [composition] });
-
-    const out = await runAgent(agent, { kind: "message", text: "twice" });
-    const patch = out.find((m) => m.kind === "patch");
-    expect(patch?.kind).toBe("patch");
-    if (patch?.kind !== "patch") throw new Error("expected patch");
-    const appended = patch.patches.flatMap((op) =>
-      op.op === "add" && op.path === "/nodes/root/children/-" && typeof op.value === "string"
-        ? [op.value]
-        : [],
-    );
-    expect(appended).toHaveLength(2);
-    expect(new Set(appended).size).toBe(2);
-    for (const id of appended) {
-      expect(patch.patches.some((op) => op.op === "add" && op.path === `/nodes/${id}`)).toBe(true);
-    }
-  });
-
-  it("use_composition resolves from the immutable composition snapshot captured at agent creation", async () => {
-    const composition: FacetComposition = {
-      name: "label",
-      slots: { title: "Original" },
-      root: "label",
-      nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
-    };
-    const provider = providerOf(
-      toolStep(call("use_composition", { name: "label", params: {}, at: { parent: "root" } })),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [composition] });
-    const mutableComposition = composition as {
-      slots?: FacetComposition["slots"];
-      nodes: Record<string, FacetComposition["nodes"][string]>;
-    };
-    mutableComposition.slots = { title: "Mutated" };
-    mutableComposition.nodes["label"] = { id: "label", type: "text", value: "Mutated" };
-
-    const out = await runAgent(agent, { kind: "message", text: "snapshot" });
-
-    const patch = out.find((m) => m.kind === "patch");
-    expect(patch?.kind).toBe("patch");
-    if (patch?.kind !== "patch") throw new Error("expected patch");
-    expect(JSON.stringify(patch.patches)).toContain("Original");
-    expect(JSON.stringify(patch.patches)).not.toContain("Mutated");
-  });
-
-  it("use_composition rapid sequential provider turns preserve order and emit referentially closed batches", async () => {
-    const composition: FacetComposition = {
-      name: "pair",
-      slots: { title: "Original" },
-      root: "pair",
-      nodes: {
-        pair: { id: "pair", type: "box", children: ["pair-title"] },
-        "pair-title": { id: "pair-title", type: "text", value: "{{title}}" },
-      },
-    };
-    const provider = providerOf(
-      toolStep(call("use_composition", { name: "pair", params: {}, at: { parent: "root" } })),
-      END,
-      toolStep(call("use_composition", { name: "pair", params: {}, at: { parent: "root" } })),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [composition] });
-
-    const firstTurn = await batchesOf(agent, { kind: "message", text: "first-turn" });
-    // Mutating the source between rapid turns must not alter later executions (DC-009).
-    (composition.nodes as Record<string, FacetComposition["nodes"][string]>)["pair-title"] = {
-      id: "pair-title",
-      type: "text",
-      value: "Mutated",
-    };
-    const secondTurn = await batchesOf(agent, { kind: "message", text: "second-turn" });
-
-    for (const turn of [firstTurn, secondTurn]) {
-      expect(turn).toHaveLength(1);
-      const patch = turn[0]?.find((m) => m.kind === "patch");
-      expect(patch?.kind).toBe("patch");
-      if (patch?.kind !== "patch") throw new Error("expected patch");
-      // Referentially closed: every node id the batch references is defined in
-      // the same batch, and the visible append lands last.
-      const addedNodeIds = patch.patches.flatMap((op) =>
-        op.op === "add" && op.path.startsWith("/nodes/") && !op.path.endsWith("/children/-")
-          ? [op.path.slice("/nodes/".length)]
-          : [],
-      );
-      const append = patch.patches.at(-1);
-      expect(append).toMatchObject({ op: "add", path: "/nodes/root/children/-" });
-      const appendedRoot =
-        append?.op === "add" && typeof append.value === "string" ? append.value : "";
-      expect(addedNodeIds).toContain(appendedRoot);
-      for (const op of patch.patches) {
-        if (op.op !== "add" || op.path.endsWith("/children/-")) continue;
-        const node = op.value as { readonly children?: readonly string[] };
-        for (const childId of node.children ?? []) expect(addedNodeIds).toContain(childId);
-      }
-      expect(JSON.stringify(patch.patches)).toContain("Original");
-      expect(JSON.stringify(patch.patches)).not.toContain("Mutated");
-    }
-    // Order preserved: the first turn's provider steps precede the second turn's.
-    expect(providerTurnText(provider.turns[0]!)).toContain("first-turn");
-    expect(providerTurnText(provider.turns[2]!)).toContain("second-turn");
-  });
-
-  it("use_composition is a no-op for malformed compositions and unknown parents", async () => {
-    const malformed = {
-      name: "broken",
-      root: "missing",
-      nodes: { text: { id: "text", type: "text", value: "x" } },
+      // Unknown operator fields are ignored by validation. A blind
+      // structuredClone would reject this function before the fail-safe
+      // composition boundary gets a chance to sanitize the document.
+      operatorHelper() {},
     } as unknown as FacetComposition;
-    const provider = providerOf(
-      toolStep(
-        call("use_composition", { name: "broken", params: {}, at: { parent: "root" } }),
-        call("use_composition", { name: "broken", params: {}, at: { parent: "ghost" } }),
-      ),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [malformed] });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const out = await runAgent(agent, { kind: "message", text: "broken" });
-
-      expect(patchesOf(out)).toHaveLength(0);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs.some((o) => o.includes("could not expand"))).toBe(true);
-      expect(obs.some((o) => o.includes("parent") && o.includes("ghost"))).toBe(true);
-    } finally {
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("use_composition rejects a parent that exists but is not a container", async () => {
-    const composition: FacetComposition = {
-      name: "label",
-      root: "label",
-      nodes: { label: { id: "label", type: "text", value: "Inside" } },
-    };
-    const provider = providerOf(
-      toolStep(call("use_composition", { name: "label", params: {}, at: { parent: "title" } })),
-      END,
-    );
-    const sessionWithTextParent: FacetSession = {
-      agentId: "quickstart",
-      visitor: { visitorId: "v1" },
-      stage: {
-        root: "root",
-        nodes: {
-          root: { id: "root", type: "box", children: ["title"] },
-          title: { id: "title", type: "text", value: "Title" },
-        },
+    const blocked: FacetComposition = {
+      name: "blocked",
+      metadata: { description: "Blocked reference" },
+      root: "blocked-root",
+      nodes: {
+        "blocked-root": { id: "blocked-root", type: "text", value: "Blocked" },
       },
     };
-    const agent = makeAgent(provider, { compositions: [composition] });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const out = await runAgent(
-        agent,
-        { kind: "message", text: "bad parent" },
-        sessionWithTextParent,
-      );
+    const catalog = {
+      compositions: { mode: "allow", names: ["approved"] },
+    } as unknown as FacetCatalog;
+    const provider = providerOf(
+      toolStep(call("get_composition", { name: "approved" })),
+      toolStep(call("render_page", { tree: VALID_TREE })),
+      END,
+    );
+    const agent = makeAgent(provider, { compositions: [approved, blocked], catalog });
 
-      expect(patchesOf(out)).toHaveLength(0);
-      expect(toolResultData(provider.turns[1]!)).toContainEqual(
-        expect.objectContaining({
-          status: "error",
-          outcome: "rejected",
-          message: 'error: use_composition — parent "title" is not a container',
-        }),
-      );
-    } finally {
-      errorSpy.mockRestore();
-    }
+    const mutableApproved = approved as unknown as {
+      nodes: Record<string, { value?: string }>;
+    };
+    mutableApproved.nodes["approved-root"]!.value = "Mutated";
+    const mutableCatalog = catalog as unknown as {
+      compositions: { names: string[] };
+    };
+    mutableCatalog.compositions.names[0] = "blocked";
+
+    const out = await runAgent(agent, { kind: "message", text: "read the reference" });
+
+    const patches = patchesOf(out);
+    expect(patches).toHaveLength(1);
+    expect(JSON.stringify(patches)).toContain('"value":"hello"');
+    const system = provider.turns[0]!.system;
+    const compositionIndex = system.slice(system.indexOf("COMPOSITIONS"));
+    expect(compositionIndex).toContain("approved: Original approved reference");
+    expect(compositionIndex).not.toContain("blocked: Blocked reference");
+    const observation = toolResultData(provider.turns[1]!)[0]!;
+    expect(observation.tool).toBe("get_composition");
+    const read = JSON.parse(observation.data ?? "null") as FacetComposition | null;
+    expect(read?.name).toBe("approved");
+    expect(read?.nodes["approved-root"]).toMatchObject({ value: "Original" });
   });
 
   it("append_node rejects a parent that exists but is not a container", async () => {
@@ -523,103 +291,6 @@ describe("createReferenceAgent tool loop", () => {
     } finally {
       errorSpy.mockRestore();
     }
-  });
-
-  it("use_composition refuses an expansion beyond the node output cap without emitting patches", async () => {
-    // MAX_PATCH_OPS children + the composition root exceed the canonical
-    // 1023-node output cap (DC-003), so the expansion refuses with zero
-    // partial state before the executor's patch-op accounting even runs.
-    const nodes: Record<string, FacetComposition["nodes"][string]> = {
-      root: { id: "root", type: "box", children: [] },
-    };
-    const children: string[] = [];
-    for (let i = 0; i < MAX_PATCH_OPS; i += 1) {
-      const id = `n${String(i)}`;
-      children.push(id);
-      nodes[id] = { id, type: "text", value: id };
-    }
-    nodes["root"] = { id: "root", type: "box", children };
-    const composition: FacetComposition = { name: "huge", root: "root", nodes };
-    const provider = providerOf(
-      toolStep(call("use_composition", { name: "huge", params: {}, at: { parent: "root" } })),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [composition] });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const out = await runAgent(agent, { kind: "message", text: "huge" });
-
-      expect(patchesOf(out)).toHaveLength(0);
-      const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-        m.role === "tool_result" ? m.content : "",
-      );
-      expect(obs[0]).toContain("could not expand");
-      expect(obs[0]).toContain("1023-node cap");
-      expect(obs[0]).toContain("invalid_composition");
-    } finally {
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("use_composition counts patch ops already flushed before say in the same provider step", async () => {
-    const largeNodes: Record<string, FacetComposition["nodes"][string]> = {
-      root: { id: "root", type: "box", children: [] },
-    };
-    const children: string[] = [];
-    for (let i = 0; i < MAX_PATCH_OPS - 2; i += 1) {
-      const id = `n${String(i)}`;
-      children.push(id);
-      largeNodes[id] = { id, type: "text", value: id };
-    }
-    largeNodes["root"] = { id: "root", type: "box", children };
-    const compositions: FacetComposition[] = [
-      { name: "large", root: "root", nodes: largeNodes },
-      {
-        name: "label",
-        root: "label",
-        nodes: { label: { id: "label", type: "text", value: "Too much" } },
-      },
-    ];
-    const provider = providerOf(
-      toolStep(
-        call("use_composition", { name: "large", params: {}, at: { parent: "root" } }),
-        call("say", { text: "between" }),
-        call("use_composition", { name: "label", params: {}, at: { parent: "root" } }),
-      ),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions });
-
-    const out = await runAgent(agent, { kind: "message", text: "mixed" });
-
-    expect(patchesOf(out)).toHaveLength(1);
-    expect(saysOf(out)).toEqual(["between"]);
-    const obs = provider.turns[1]!.messages.filter((m) => m.role === "tool_result").map((m) =>
-      m.role === "tool_result" ? m.content : "",
-    );
-    expect(obs[2]).toContain("would exceed the patch op cap");
-  });
-
-  it("use_composition reports non-fatal expansion issues in a successful observation", async () => {
-    const composition: FacetComposition = {
-      name: "label",
-      slots: { title: "Fallback" },
-      root: "label",
-      nodes: { label: { id: "label", type: "text", value: "{{title}}" } },
-    };
-    const provider = providerOf(
-      toolStep(call("use_composition", { name: "label", params: 42, at: { parent: "root" } })),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [composition] });
-
-    await runAgent(agent, { kind: "message", text: "bad params" });
-
-    const observation = toolResultData(provider.turns[1]!)[0]!;
-    expect(observation.message).toContain("note:");
-    expect(
-      observation.warnings.some((warning) => warning.includes("params is not an object map")),
-    ).toBe(true);
   });
 
   it("per-step streaming yields one batch for each provider step that changed output", async () => {
@@ -923,36 +594,6 @@ describe("createReferenceAgent tool loop", () => {
     expect(obs).toHaveLength(1);
     expect(obs[0]!.length).toBeLessThanOrEqual(40);
     expect(obs[0]).toContain("[truncated:");
-  });
-
-  it("reports an error before a provider step exceeds the aggregate patch cap", async () => {
-    const provider = providerOf(
-      toolStep(
-        call("use_composition", { name: "cap-fill", params: {}, at: { parent: "root" } }),
-        call("append_node", {
-          parentId: "root",
-          node: { id: "too-many", type: "text", value: "cap" },
-        }),
-      ),
-      END,
-    );
-    const agent = makeAgent(provider, {
-      budget: { maxToolCallsPerStep: 2, maxContextChars: 1_000_000 },
-      compositions: [compositionWithPatchCount("cap-fill", MAX_PATCH_OPS)],
-    });
-
-    const out = await runAgent(agent, { kind: "message", text: "add many" }, SESSION);
-
-    const patch = out.find((message) => message.kind === "patch");
-    expect(patch).toBeDefined();
-    if (patch?.kind === "patch") expect(patch.patches).toHaveLength(MAX_PATCH_OPS);
-    const observations = toolResultData(provider.turns[1]!);
-    expect(observations[0]).toMatchObject({
-      tool: "use_composition",
-      status: "ok",
-      patch_count: MAX_PATCH_OPS,
-    });
-    expect(observations.at(-1)?.message).toContain("would exceed the patch op cap");
   });
 
   it("feeds a bad tool arg back as an error observation and recovers on retry", async () => {
@@ -1603,7 +1244,7 @@ describe("createReferenceAgent tool loop", () => {
     expect(provider.turns[0]!.system).toContain(DEFAULT_GUIDE);
   });
 
-  it("threads operator themes and compositions into the system prompt (names only, no theme CSS)", async () => {
+  it("threads operator themes and composition references into the system prompt by index only", async () => {
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
     const theme: FacetTheme = {
       name: "neon",
@@ -1612,7 +1253,7 @@ describe("createReferenceAgent tool loop", () => {
     };
     const composition: FacetComposition = {
       name: "hero",
-      description: "a hero band",
+      metadata: { description: "a hero band" },
       root: "h-root",
       nodes: {
         "h-root": { id: "h-root", type: "box", children: ["h-title"] },

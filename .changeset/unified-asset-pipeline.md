@@ -8,8 +8,8 @@
 Unified asset pipeline — one `AssetsStore` for themes AND compositions, with the
 Facet-provided defaults as a base layer and per-agent custom assets layered on
 top (add / refine, never a wholesale replace). Management is unified; application
-stays at each consumer (a renderer maps a theme → its output; the graft applies
-compositions).
+stays at each consumer: a renderer maps a theme to its output, while an agent
+may inspect allowed compositions as read-only authoring references.
 
 PRE-1.0 BREAKING (in-repo consumers updated): the `@facet/kit` code-factory
 package is REMOVED — its only consumer (`apps/playground`) migrated to a local,
@@ -20,8 +20,8 @@ can consume the same defaults.
 
 - `@facet/assets` (new): node-free default-asset DATA (deps = `@facet/core` only)
   — the token value maps, `COLOR`, `DEFAULT_THEME`, and `DEFAULT_COMPOSITIONS`
-  (hero/card/cta-button as validated `FacetComposition` trees). The single,
-  renderer-agnostic source of default-asset truth.
+  (hero/card/cta-button as validated concrete native-node reference trees). The
+  single, renderer-agnostic source of default-asset truth.
 - `@facet/react`: derives its default-theme floor + `DEFAULT_RESOLVED` from
   `@facet/assets` (no duplicated values, no drift); re-exports `DEFAULT_THEME` +
   `COLOR` for back-compat; zero-arg style output byte-identical; `resolveTheme`
@@ -34,7 +34,9 @@ can consume the same defaults.
   "never throws" contract now covers the primary store I/O + malformed shapes
   too.
 - `@facet/quickstart`: resolves assets through `loadAssets` on EVERY boot (a
-  `MemoryAssets` fallback when no `--assets`), so the default theme + composition
-  library reach the agent and shell even with no operator assets.
+  `MemoryAssets` fallback when no `--assets`), so the default theme reaches the
+  shell and the allowed composition-reference index plus exact on-demand reads
+  reach the agent even with no operator assets. Exact reference JSON remains in
+  the provider conversation and is not sent to the browser.
 
 (`@facet/*` are versioned together as a fixed group.)

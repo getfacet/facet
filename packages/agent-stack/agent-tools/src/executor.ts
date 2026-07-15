@@ -1,4 +1,5 @@
 import { EMPTY_TREE, isTreeShaped } from "@facet/core";
+import { executeGetComposition } from "./executor-assets.js";
 import { executeInspectNode, executeInspectStage } from "./executor-inspect.js";
 import { isFacetStageToolName, isRecord, parseToolCall } from "./executor-input.js";
 import {
@@ -8,7 +9,7 @@ import {
   executeSetNode,
   executeSetTheme,
 } from "./executor-node.js";
-import { executeRenderPage, executeUseComposition } from "./executor-page.js";
+import { executeRenderPage } from "./executor-page.js";
 import { errorResult } from "./executor-result.js";
 import { FACET_STAGE_TOOL_NAMES } from "./specs.js";
 import type { StageToolContext, StageToolResult } from "./types.js";
@@ -47,8 +48,8 @@ export function executeStageTool(call: unknown, context: StageToolContext): Stag
       return executeRenderPage(input, shadow, catalog);
     case "append_node":
       return executeAppendNode(input, shadow, catalog);
-    case "use_composition":
-      return executeUseComposition(input, shadow, context.assets?.compositions ?? [], catalog);
+    case "get_composition":
+      return executeGetComposition(input, shadow, context.assets?.compositions ?? [], catalog);
     case "set_node":
       return executeSetNode(input, shadow, catalog);
     case "remove_node":

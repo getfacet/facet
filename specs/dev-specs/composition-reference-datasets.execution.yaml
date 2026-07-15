@@ -1,0 +1,1451 @@
+# Execution Manifest: Composition Reference Datasets
+# Mirror: specs/dev-specs/composition-reference-datasets.md
+
+feature_slug: "composition-reference-datasets"
+spec_path: "specs/dev-specs/composition-reference-datasets.md"
+context_evidence_path: "specs/context/composition-reference-datasets.md"
+intake_brief_path: "specs/feature-intake/composition-reference-datasets.md"
+baseline_commit: "89175af6edef1cb9df8dfa2bd779abc4ea309b1a"
+approval_status: "awaiting-owner-approval"
+
+shared_preflight:
+  - concern: "isolated-worktree"
+    requirement: "Run /worktree-prep only after owner approval; preserve the four untracked display-leaf-compositions spec files in the source checkout."
+    owner: "main-agent"
+    verification: "git status --short; worktree path/branch report"
+  - concern: "baseline-green"
+    requirement: "pnpm typecheck && pnpm test && pnpm lint pass before any WU starts."
+    owner: "main-agent"
+    verification: "record commands and first failing line if any"
+  - concern: "package-builds"
+    requirement: "All eight affected public packages build before implementation."
+    owner: "main-agent"
+    verification: "pnpm --filter @facet/core --filter @facet/runtime --filter @facet/assets --filter @facet/agent-tools --filter @facet/reference-agent --filter @facet/quickstart --filter @facet/agent --filter @facet/store-postgres build"
+
+execution_policy:
+  tdd: "For each behavioral WU, change/add its target test first, run red_check and record FAIL, implement to GREEN, then refactor and run quick/no-regression checks."
+  file_ownership: "Each planned file is owned by exactly one WU; max five files per WU."
+  combined_check: "After WU-1..WU-20 and WU-26, run pnpm typecheck before the hard gate."
+  docs_stage: "WU-21..WU-25 execute inside final /update-docs, whose final evidence invokes the already-reviewed WU-26 scanner."
+  no_compatibility: "Do not add aliases, fallback parsing, dual tools, or deprecated expansion paths."
+
+review_fix_policy:
+  batching_rule: "Batch review comments by WU. Apply scoped fixes, rerun the WU quick checks, then rerun /verify and /code-review for the batch."
+  work_unit_scope: "Only listed files unless the main agent updates both spec and manifest with owner-visible evidence."
+  final_gate_rerun_owner: "main-agent"
+
+final_gate_owner: "main-agent"
+final_gate_chain:
+  flow: "feature"
+  steps:
+    - "/worktree-prep"
+    - "/update-tests"
+    - "/verify"
+    - "/code-review"
+    - "/live-test"
+    - "/update-docs"
+  required_extras:
+    - "pnpm package:smoke"
+    - "Tier 2 provider smoke is blocking; missing OPENAI_API_KEY/ANTHROPIC_API_KEY is FAIL."
+    - "Tier 3 both-provider smoke before merge/release."
+
+handoff_format:
+  - "changed_files"
+  - "executed_commands"
+  - "red_check_output_before"
+  - "red_check_output_after"
+  - "green_diff_summary"
+  - "refactor_decision"
+  - "pass_fail"
+  - "first_error_line"
+  - "assumptions"
+  - "next_action"
+
+wu_defaults: &wu_defaults
+  done_conditions:
+    - "RED-to-GREEN evidence reported; an N/A WU records and satisfies its narrow justification."
+    - "The WU objective and listed file purposes are complete with no compatibility shim."
+    - "quick_checks and no_regression_checks pass, or the first blocking line is reported."
+  handoff_format:
+    - "changed_files"
+    - "executed_commands"
+    - "red_check_output_before"
+    - "red_check_output_after"
+    - "green_diff_summary"
+    - "refactor_decision"
+    - "pass_fail"
+    - "first_error_line"
+    - "assumptions"
+    - "next_action"
+
+work_units:
+  - id: "WU-1"
+    <<: *wu_defaults
+    title: "Concrete native composition contract"
+    owner_role: "implementer"
+    packages: ["@facet/core"]
+    objective: "Make FacetComposition a required metadata-description plus native FacetNode fragment, retaining normal node/topology bounds and fragment roots."
+    module_shape:
+      decision: "shrink-existing"
+      rationale: "The semantic gate already lives in composition/tree/primitive validation; remove composition-only modes without adding a core abstraction."
+    files:
+      - {
+          path: "packages/core/core/src/composition-validation.ts",
+          change_type: "update",
+          purpose: "Required metadata.description; remove top-level description/slots/CompositionRef; native nodes only.",
+        }
+      - {
+          path: "packages/core/core/src/primitive-node-validation.ts",
+          change_type: "update",
+          purpose: "Remove slot/ref sanitizer modes and functions; sanitizeNode returns FacetNode only.",
+        }
+      - {
+          path: "packages/core/core/src/tree-validation.ts",
+          change_type: "update",
+          purpose: "Narrow shared sanitizer/topology helpers back to FacetNode only.",
+        }
+      - {
+          path: "packages/core/core/src/slot-marker.ts",
+          change_type: "update",
+          purpose: "Remove SLOT_MARKER_RE while preserving generic name regexes used elsewhere.",
+        }
+      - {
+          path: "packages/core/core/src/validate.test.ts",
+          change_type: "update",
+          purpose: "RED/GREEN native-only, required description, hostile data, topology, leaf-root, and legacy-shape tests.",
+        }
+    depends_on: []
+    parallel_group: "core-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/validate.test.ts -t 'concrete composition contract'"
+      target: "packages/core/core/src/validate.test.ts"
+      justification: ""
+    quick_checks:
+      - "pnpm exec vitest run packages/core/core/src/validate.test.ts"
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/core/core/src/validate.test.ts packages/core/core/src/tree.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "unit-adversarial",
+          target: "packages/core/core/src/validate.test.ts",
+          covers_dc: ["DC-001", "DC-002", "DC-007", "DC-008"],
+          action: "update",
+        }
+
+  - id: "WU-2"
+    <<: *wu_defaults
+    title: "Remove expansion fill coupling from brick registry"
+    owner_role: "implementer"
+    packages: ["@facet/core"]
+    objective: "Delete expansion-only fill/string-leaf handlers without changing registry validation/render/data-binding roles."
+    module_shape:
+      decision: "delete-and-shrink"
+      rationale: "The fill module has no surviving responsibility once functional composition is removed."
+    files:
+      - {
+          path: "packages/core/core/src/brick-registry.ts",
+          change_type: "update",
+          purpose: "Remove filler types/imports/fields/entries.",
+        }
+      - {
+          path: "packages/core/core/src/brick-registry.test.ts",
+          change_type: "update",
+          purpose: "Pin exhaustive registry with no composition fill hooks.",
+        }
+      - {
+          path: "packages/core/core/src/expand-composition-fill.ts",
+          change_type: "delete",
+          purpose: "Retire slot filling and string-leaf collection.",
+        }
+    depends_on: ["WU-3"]
+    parallel_group: "core-b"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/brick-registry.test.ts -t 'has no composition fill hooks'"
+      target: "packages/core/core/src/brick-registry.test.ts"
+      justification: ""
+    quick_checks: ["pnpm exec vitest run packages/core/core/src/brick-registry.test.ts"]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/core/core/src/brick-registry.test.ts packages/core/core/src/tree.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "unit-structure",
+          target: "packages/core/core/src/brick-registry.test.ts",
+          covers_dc: ["DC-008"],
+          action: "update",
+        }
+
+  - id: "WU-3"
+    <<: *wu_defaults
+    title: "Retire expansion implementation"
+    owner_role: "implementer"
+    packages: ["@facet/core"]
+    objective: "Delete all remaining expansion implementation and its oversized behavior suite."
+    module_shape:
+      decision: "delete"
+      rationale: "No expansion responsibility survives; compatibility is forbidden."
+    files:
+      - {
+          path: "packages/core/core/src/expand-composition.ts",
+          change_type: "delete",
+          purpose: "Remove public expansion implementation/types.",
+        }
+      - {
+          path: "packages/core/core/src/expand-composition-core.ts",
+          change_type: "delete",
+          purpose: "Remove validate/fill/mint pipeline.",
+        }
+      - {
+          path: "packages/core/core/src/expand-composition-remap.ts",
+          change_type: "delete",
+          purpose: "Remove expansion id remapping.",
+        }
+      - {
+          path: "packages/core/core/src/expand-composition.test.ts",
+          change_type: "delete",
+          purpose: "Remove obsolete expansion contract tests.",
+        }
+    depends_on: ["WU-4"]
+    parallel_group: "core-c"
+    red_check:
+      command: "N/A"
+      target: "deletion-only"
+      justification: "Pure retirement; replacement behavior and public absence are pinned by WU-1, WU-4, WU-8, and WU-10."
+    quick_checks:
+      [
+        "test ! -e packages/core/core/src/expand-composition.ts && test ! -e packages/core/core/src/expand-composition-core.ts && test ! -e packages/core/core/src/expand-composition-remap.ts && test ! -e packages/core/core/src/expand-composition.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/core/core/src/index.test.ts packages/core/core/src/spec.test.ts packages/core/core/src/validate.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "retirement",
+          target: "shipping-surface search + WU-4 barrel test",
+          covers_dc: ["DC-008"],
+          action: "delete",
+        }
+
+  - id: "WU-4"
+    <<: *wu_defaults
+    title: "Tombstone core public API and rewrite STAGE_SPEC"
+    owner_role: "implementer"
+    packages: ["@facet/core"]
+    objective: "Remove every ref/graph/expand/marker public name and teach optional reference reading followed by native authoring."
+    module_shape:
+      decision: "public-surface-cutover"
+      rationale: "Barrel and canonical agent spec are the authoritative public seams."
+    files:
+      - {
+          path: "packages/core/core/src/validate.ts",
+          change_type: "update",
+          purpose: "Remove CompositionRef/graph/SLOT_MARKER_RE exports.",
+        }
+      - {
+          path: "packages/core/core/src/index.ts",
+          change_type: "update",
+          purpose: "Remove expansion exports.",
+        }
+      - {
+          path: "packages/core/core/src/index.test.ts",
+          change_type: "update",
+          purpose: "Negative public-surface assertions and retained composition validator type checks.",
+        }
+      - {
+          path: "packages/core/core/src/spec.ts",
+          change_type: "update",
+          purpose: "Reference dataset workflow; native authoring; no tier/slots/expansion.",
+        }
+      - {
+          path: "packages/core/core/src/spec.test.ts",
+          change_type: "update",
+          purpose: "Pin the new public LLM contract and legacy absence.",
+        }
+    depends_on: ["WU-1"]
+    parallel_group: "core-d"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/index.test.ts packages/core/core/src/spec.test.ts -t 'reference dataset hard cutover'"
+      target: "packages/core/core/src/index.test.ts; packages/core/core/src/spec.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/core/core/src/index.test.ts packages/core/core/src/spec.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/core/core/src/index.test.ts packages/core/core/src/spec.test.ts packages/core/core/src/validate.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "public-contract",
+          target: "packages/core/core/src/index.test.ts",
+          covers_dc: ["DC-001", "DC-008"],
+          action: "update",
+        }
+      - {
+          type: "prompt-contract",
+          target: "packages/core/core/src/spec.test.ts",
+          covers_dc: ["DC-004", "DC-009"],
+          action: "update",
+        }
+
+  - id: "WU-5"
+    <<: *wu_defaults
+    title: "Reference exposure policy and native authoring order"
+    owner_role: "implementer"
+    packages: ["@facet/core"]
+    objective: "Keep composition allow policy for reference exposure while changing canonical authoring order to component then primitive."
+    module_shape:
+      decision: "preserve"
+      rationale: "Existing catalog modules own type/default/validation; only semantics and tuple change."
+    files:
+      - {
+          path: "packages/core/core/src/catalog-types.ts",
+          change_type: "update",
+          purpose: "CatalogUsageOrder becomes ['component','primitive']; document composition exposure policy.",
+        }
+      - {
+          path: "packages/core/core/src/catalog-policy.ts",
+          change_type: "update",
+          purpose: "Canonical two-tier order.",
+        }
+      - {
+          path: "packages/core/core/src/catalog-validation.ts",
+          change_type: "update",
+          purpose: "Validate/default the new order and issue text.",
+        }
+      - {
+          path: "packages/core/core/src/catalog-defaults.ts",
+          change_type: "update",
+          purpose: "Clone/default new order without changing allow policy.",
+        }
+      - {
+          path: "packages/core/core/src/catalog.test.ts",
+          change_type: "update",
+          purpose: "RED/GREEN exposure-versus-authoring semantics.",
+        }
+    depends_on: []
+    parallel_group: "catalog-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/core/src/catalog.test.ts -t 'reference exposure is separate from authoring order'"
+      target: "packages/core/core/src/catalog.test.ts"
+      justification: ""
+    quick_checks: ["pnpm exec vitest run packages/core/core/src/catalog.test.ts"]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/core/core/src/catalog.test.ts packages/core/core/src/theme.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "unit-public-policy",
+          target: "packages/core/core/src/catalog.test.ts",
+          covers_dc: ["DC-003", "DC-009"],
+          action: "update",
+        }
+
+  - id: "WU-6"
+    <<: *wu_defaults
+    title: "Remove runtime graph pass"
+    owner_role: "implementer"
+    packages: ["@facet/core", "@facet/runtime"]
+    objective: "Delete composition-graph validation and keep only per-document concrete validation/dedupe in loadAssets."
+    module_shape:
+      decision: "delete-and-simplify"
+      rationale: "Graph semantics no longer exist; this WU only deletes graph wiring and migrates the existing runtime integration assertions."
+    files:
+      - {
+          path: "packages/core/core/src/composition-graph.ts",
+          change_type: "delete",
+          purpose: "Remove graph validation/constants/results.",
+        }
+      - {
+          path: "packages/core/core/src/composition-graph.test.ts",
+          change_type: "delete",
+          purpose: "Remove graph behavior tests.",
+        }
+      - {
+          path: "packages/core/runtime/src/assets.ts",
+          change_type: "update",
+          purpose: "Remove graph import/pass; retain validated concrete list.",
+        }
+      - {
+          path: "packages/core/runtime/src/assets.test.ts",
+          change_type: "update",
+          purpose: "Migrate concrete load, legacy skip, native topology, and catalog order assertions while deleting graph cases; no net suite responsibility growth.",
+        }
+    depends_on: ["WU-1", "WU-3"]
+    parallel_group: "runtime-a"
+    red_check:
+      command: "N/A"
+      target: "retirement-only"
+      justification: "After WU-1 owns the semantic RED, production assets.ts only loses graph wiring and obsolete graph tests are deleted; record retirement evidence and run the runtime suite."
+    quick_checks: ["pnpm exec vitest run packages/core/runtime/src/assets.test.ts"]
+    no_regression_checks: ["pnpm exec vitest run packages/core/runtime/src"]
+    test_plan:
+      - {
+          type: "integration",
+          target: "packages/core/runtime/src/assets.test.ts",
+          covers_dc: ["DC-002", "DC-008"],
+          action: "update",
+        }
+
+  - id: "WU-7"
+    <<: *wu_defaults
+    title: "Concrete default reference datasets"
+    owner_role: "implementer"
+    packages: ["@facet/assets"]
+    objective: "Convert all defaults to self-contained native concrete examples and migrate default catalog order."
+    module_shape:
+      decision: "preserve-data-modules"
+      rationale: "Keep existing data ownership and split chart-table file; inline the two reference uses rather than add abstraction."
+    files:
+      - {
+          path: "packages/core/assets/src/compositions.ts",
+          change_type: "update",
+          purpose: "Metadata descriptions, concrete content, no slots/markers, inline badge structures.",
+        }
+      - {
+          path: "packages/core/assets/src/composition-chart-table.ts",
+          change_type: "update",
+          purpose: "Concrete chart/table example with no markers.",
+        }
+      - {
+          path: "packages/core/assets/src/compositions.test.ts",
+          change_type: "update",
+          purpose: "Deep native validation and legacy-shape absence across every default.",
+        }
+      - {
+          path: "packages/core/assets/src/catalog.test.ts",
+          change_type: "update",
+          purpose: "Default catalog authoring order and reference exposure policy.",
+        }
+    depends_on: ["WU-1", "WU-5"]
+    parallel_group: "assets-a"
+    red_check:
+      command: "pnpm exec vitest run packages/core/assets/src/compositions.test.ts packages/core/assets/src/catalog.test.ts -t 'ships concrete reference datasets'"
+      target: "packages/core/assets/src/compositions.test.ts; packages/core/assets/src/catalog.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/core/assets/src/compositions.test.ts packages/core/assets/src/catalog.test.ts",
+      ]
+    no_regression_checks: ["pnpm exec vitest run packages/core/assets/src"]
+    test_plan:
+      - {
+          type: "data-contract",
+          target: "packages/core/assets/src/compositions.test.ts",
+          covers_dc: ["DC-001", "DC-007"],
+          action: "update",
+        }
+      - {
+          type: "policy",
+          target: "packages/core/assets/src/catalog.test.ts",
+          covers_dc: ["DC-009"],
+          action: "update",
+        }
+
+  - id: "WU-8"
+    <<: *wu_defaults
+    title: "Remove in-process Stage composition API"
+    owner_role: "implementer"
+    packages: ["@facet/agent"]
+    objective: "Remove Stage.useComposition and expansion imports with no replacement, preserving native Stage APIs."
+    module_shape:
+      decision: "shrink-public-class"
+      rationale: "No composition method survives; ordinary render/set/append are already the intended replacement."
+    files:
+      - {
+          path: "packages/extensions/agent/src/stage.ts",
+          change_type: "update",
+          purpose: "Remove expansion imports/method/dead container bookkeeping.",
+        }
+      - {
+          path: "packages/extensions/agent/src/stage.test.ts",
+          change_type: "update",
+          purpose: "Public method absence and native API regression tests.",
+        }
+      - {
+          path: "packages/extensions/agent/src/define-agent.test.ts",
+          change_type: "update",
+          purpose: "Remove expansion fixtures and retain defineAgent native flow.",
+        }
+    depends_on: ["WU-3", "WU-4"]
+    parallel_group: "sdk-a"
+    red_check:
+      command: "pnpm exec vitest run packages/extensions/agent/src/stage.test.ts -t 'has no composition expansion method'"
+      target: "packages/extensions/agent/src/stage.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/extensions/agent/src/stage.test.ts packages/extensions/agent/src/define-agent.test.ts",
+      ]
+    no_regression_checks: ["pnpm exec vitest run packages/extensions/agent/src"]
+    test_plan:
+      - {
+          type: "public-api",
+          target: "packages/extensions/agent/src/stage.test.ts",
+          covers_dc: ["DC-008"],
+          action: "update",
+        }
+
+  - id: "WU-9"
+    <<: *wu_defaults
+    title: "Shared reference selector and canonical tool contract"
+    owner_role: "implementer"
+    packages: ["@facet/agent-tools"]
+    objective: "Implement the exact public selector contract as the sole exposure-policy owner and replace the public tool input/name schema."
+    module_shape:
+      decision: "add-role-module"
+      rationale: "A small pure selector with core-only imports avoids prompt/executor policy drift and owns no runtime, registry, or executor-policy coupling."
+    files:
+      - {
+          path: "packages/agent-stack/agent-tools/src/composition-references.ts",
+          change_type: "add",
+          purpose: "Exact signature selectCompositionReferences(compositions: readonly unknown[], catalog?: unknown): readonly FacetComposition[]; validate, first-valid dedupe, omitted-catalog all within deterministic 128-reference exposure cap, supplied-malformed none, filter, detach/deep-freeze; sole exposure owner with core-only imports.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/composition-references.test.ts",
+          change_type: "add",
+          purpose: "Exact signature behavior; 128-reference cap, all/allow/empty/first-wins/malformed-catalog/hostile/detach/deep-freeze and serialization deep-equality with no field loss.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/types.ts",
+          change_type: "update",
+          purpose: "get_composition name/input map; remove UseCompositionToolInput; document bounded generic data vs exact get_composition data.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/specs.ts",
+          change_type: "update",
+          purpose: "Canonical name-only JSON schema and native authoring descriptions.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/specs.test.ts",
+          change_type: "update",
+          purpose: "Canonical name-only schema, rejected extra fields, and native authoring wording.",
+        }
+    depends_on: ["WU-1", "WU-5"]
+    parallel_group: "tools-a"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/composition-references.test.ts packages/agent-stack/agent-tools/src/specs.test.ts -t 'get_composition reference contract'"
+      target: "packages/agent-stack/agent-tools/src/composition-references.test.ts; packages/agent-stack/agent-tools/src/specs.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/agent-tools/src/composition-references.test.ts packages/agent-stack/agent-tools/src/specs.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/agent-tools/src/composition-references.test.ts packages/agent-stack/agent-tools/src/specs.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "unit-policy",
+          target: "packages/agent-stack/agent-tools/src/composition-references.test.ts",
+          covers_dc: ["DC-003", "DC-004", "DC-009"],
+          action: "add",
+        }
+
+  - id: "WU-10"
+    <<: *wu_defaults
+    title: "Read-only composition asset executor"
+    owner_role: "implementer"
+    packages: ["@facet/agent-tools"]
+    objective: "Implement exact known lookup and fail-safe unknown/disallowed/malformed responses with no stage effect; retire page expansion code."
+    module_shape:
+      decision: "add-role-module-and-shrink"
+      rationale: "Asset reads do not belong in executor-page; a focused executor keeps page writes isolated and testable."
+    files:
+      - {
+          path: "packages/agent-stack/agent-tools/src/executor-assets.ts",
+          change_type: "add",
+          purpose: "Name-only read executor returning exact serialized concrete data.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/executor-assets.test.ts",
+          change_type: "add",
+          purpose: "Known/unknown/disallowed/malformed/zero-effect/exact-data tests.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/executor.ts",
+          change_type: "update",
+          purpose: "Dispatch get_composition to asset executor.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/executor-page.ts",
+          change_type: "update",
+          purpose: "Delete expansion/minting/insertion and retain page rendering helpers only.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/executor-policy.ts",
+          change_type: "update",
+          purpose: "Remove compositionCatalogViolation and stale composition-authoring/next-action wording; owns no exposure predicate.",
+        }
+    depends_on: ["WU-3", "WU-4", "WU-9"]
+    parallel_group: "tools-b"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/executor-assets.test.ts -t 'returns exact composition without stage effects'"
+      target: "packages/agent-stack/agent-tools/src/executor-assets.test.ts"
+      justification: ""
+    quick_checks:
+      ["pnpm exec vitest run packages/agent-stack/agent-tools/src/executor-assets.test.ts"]
+    no_regression_checks:
+      ["pnpm exec vitest run packages/agent-stack/agent-tools/src/executor-assets.test.ts"]
+    test_plan:
+      - {
+          type: "unit-adversarial",
+          target: "packages/agent-stack/agent-tools/src/executor-assets.test.ts",
+          covers_dc: ["DC-003", "DC-004", "DC-008"],
+          action: "add",
+        }
+
+  - id: "WU-11"
+    <<: *wu_defaults
+    title: "Remove buffer expansion special cases and old dispatch branch"
+    owner_role: "implementer"
+    packages: ["@facet/agent-tools"]
+    objective: "Make the read pass through without changing pending edits, patch accounting, messages, or shadow."
+    module_shape:
+      decision: "shrink-existing"
+      rationale: "No special buffer path is needed for a non-mutating read."
+    files:
+      - {
+          path: "packages/agent-stack/agent-tools/src/buffer.ts",
+          change_type: "update",
+          purpose: "Remove use_composition parent/patch-limit switch paths.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/buffer.test.ts",
+          change_type: "update",
+          purpose: "Read preserves pending queue/shadow and emits no patch/message.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/executor.test.ts",
+          change_type: "update",
+          purpose: "Retired tool reaches ordinary unknown-tool handling without consuming pending edits; remove obsolete expansion blocks.",
+        }
+    depends_on: ["WU-10"]
+    parallel_group: "tools-c"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/buffer.test.ts packages/agent-stack/agent-tools/src/executor.test.ts -t 'treats retired use_composition as unknown without touching pending edits'"
+      target: "packages/agent-stack/agent-tools/src/buffer.test.ts; packages/agent-stack/agent-tools/src/executor.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/agent-tools/src/buffer.test.ts packages/agent-stack/agent-tools/src/executor.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/agent-tools/src/buffer.test.ts packages/agent-stack/agent-tools/src/executor.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "integration",
+          target: "packages/agent-stack/agent-tools/src/buffer.test.ts",
+          covers_dc: ["DC-004", "DC-008"],
+          action: "update",
+        }
+
+  - id: "WU-12"
+    <<: *wu_defaults
+    title: "Exact composition observation data"
+    owner_role: "implementer"
+    packages: ["@facet/agent-tools"]
+    objective: "Use a package-private exact formatter only for get_composition while the public generic formatter exposes no bypass and retains every existing bound."
+    module_shape:
+      decision: "private-sibling"
+      rationale: "The shared envelope remains canonical, but a package-private sibling prevents public callers from bypassing the generic cap."
+    files:
+      - {
+          path: "packages/agent-stack/agent-tools/src/composition-observation.ts",
+          change_type: "add",
+          purpose: "Role-specific package-private formatter calls public formatter with data omitted, replaces only exact composition data, rebuilds text; no coherence duplication and no barrel export.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/observation.ts",
+          change_type: "update",
+          purpose: "Keep public generic bounded behavior and clarify no bypass.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/observation.test.ts",
+          change_type: "update",
+          purpose: ">2K exact composition, JSON parse/deep-equality with no field loss, plus unchanged public generic truncation/non-bypass tests.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/executor-result.ts",
+          change_type: "update",
+          purpose: "Private result branch calls exact formatter only for composition read.",
+        }
+    depends_on: ["WU-10"]
+    parallel_group: "tools-c"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/observation.test.ts -t 'preserves exact composition data above the generic cap'"
+      target: "packages/agent-stack/agent-tools/src/observation.test.ts"
+      justification: ""
+    quick_checks: ["pnpm exec vitest run packages/agent-stack/agent-tools/src/observation.test.ts"]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/agent-tools/src/observation.test.ts packages/agent-stack/agent-tools/src/executor-assets.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "boundary",
+          target: "packages/agent-stack/agent-tools/src/observation.test.ts",
+          covers_dc: ["DC-004", "DC-005"],
+          action: "update",
+        }
+
+  - id: "WU-13"
+    <<: *wu_defaults
+    title: "Prompt index, public barrel, and provider wire cutover"
+    owner_role: "implementer"
+    packages: ["@facet/agent-tools", "@facet/reference-agent"]
+    objective: "Expose name plus metadata.description only, publish only the exact selector/get schema, and prove both providers map the shared canonical contract unchanged."
+    module_shape:
+      decision: "public-surface-cutover"
+      rationale: "Prompt kit and barrel are the canonical provider-agnostic surface."
+    files:
+      - {
+          path: "packages/agent-stack/agent-tools/src/prompt-kit.ts",
+          change_type: "update",
+          purpose: "Shared filtered index; no slots/JSON/tier/expansion language.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts",
+          change_type: "update",
+          purpose: "Name-description-only, parity, simple-skip, legacy absence.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/index.ts",
+          change_type: "update",
+          purpose: "Export GetCompositionToolInput and selectCompositionReferences; remove old input; retain intended helpers.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/src/index.test.ts",
+          change_type: "update",
+          purpose: "Public exact selector/type/name presence, tombstone absence, and composition formatter non-export.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/provider.test.ts",
+          change_type: "update",
+          purpose: "OpenAI/Anthropic canonical name/schema/result wire assertions.",
+        }
+    depends_on: ["WU-4", "WU-5", "WU-9", "WU-10", "WU-11", "WU-12"]
+    parallel_group: "tools-d"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/agent-tools/src/prompt-kit.test.ts packages/agent-stack/agent-tools/src/index.test.ts -t 'indexes reference datasets without functional composition'"
+      target: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts; packages/agent-stack/agent-tools/src/index.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/agent-tools/src/prompt-kit.test.ts packages/agent-stack/agent-tools/src/index.test.ts packages/agent-stack/reference-agent/src/provider.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/agent-tools/src packages/agent-stack/reference-agent/src/provider.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "prompt-contract",
+          target: "packages/agent-stack/agent-tools/src/prompt-kit.test.ts",
+          covers_dc: ["DC-003", "DC-009"],
+          action: "update",
+        }
+      - {
+          type: "public-contract",
+          target: "packages/agent-stack/agent-tools/src/index.test.ts",
+          covers_dc: ["DC-004", "DC-008"],
+          action: "update",
+        }
+      - {
+          type: "provider-wire",
+          target: "packages/agent-stack/reference-agent/src/provider.test.ts",
+          covers_dc: ["DC-004", "DC-005"],
+          action: "update",
+        }
+
+  - id: "WU-14"
+    <<: *wu_defaults
+    title: "Preserve exact read through provider transcript"
+    owner_role: "implementer"
+    packages: ["@facet/reference-agent"]
+    objective: "Forward complete >4K composition results to the next provider turn and stop rather than slice at total context overflow."
+    module_shape:
+      decision: "narrow-tool-aware-path"
+      rationale: "Transcript remains generic; only get_composition opts out of per-observation truncation. Existing total-context machinery remains the last gate."
+    files:
+      - {
+          path: "packages/agent-stack/reference-agent/src/harness/transcript.ts",
+          change_type: "update",
+          purpose: "Tool-aware exact preservation and trace accounting.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/harness/transcript.test.ts",
+          change_type: "update",
+          purpose: ">4K exact vs generic bounded tests.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/harness/loop-batches.ts",
+          change_type: "update",
+          purpose: "Thread tool identity/exact policy into transcript.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/harness/loop.test.ts",
+          change_type: "update",
+          purpose: "Next-provider deep equality and total-context no-partial stop.",
+        }
+    depends_on: ["WU-11", "WU-12"]
+    parallel_group: "reference-a"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/transcript.test.ts packages/agent-stack/reference-agent/src/harness/loop.test.ts -t 'preserves complete get_composition results'"
+      target: "packages/agent-stack/reference-agent/src/harness/transcript.test.ts; packages/agent-stack/reference-agent/src/harness/loop.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/transcript.test.ts packages/agent-stack/reference-agent/src/harness/loop.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/transcript.test.ts packages/agent-stack/reference-agent/src/harness/loop.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "boundary-integration",
+          target: "packages/agent-stack/reference-agent/src/harness/loop.test.ts",
+          covers_dc: ["DC-005"],
+          action: "update",
+        }
+
+  - id: "WU-15"
+    <<: *wu_defaults
+    title: "Reference-agent immutable same-source integration"
+    owner_role: "implementer"
+    packages: ["@facet/reference-agent"]
+    objective: "Validate/filter one cloned snapshot and feed it to both system prompt and tool assets, with no caller-mutation or catalog drift."
+    module_shape:
+      decision: "preserve-factory"
+      rationale: "createReferenceAgent already owns the snapshot seam; tighten it rather than add a second lifecycle abstraction."
+    files:
+      - {
+          path: "packages/agent-stack/reference-agent/src/agent.ts",
+          change_type: "update",
+          purpose: "One immutable validated exposed snapshot for prompt and tools.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/agent.test.ts",
+          change_type: "update",
+          purpose: "Remove expansion suite; same-source/catalog/mutation/read-then-write tests.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/prompt/system.ts",
+          change_type: "update",
+          purpose: "Concrete reference option/comments and canonical TOOLS identity.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/prompt.test.ts",
+          change_type: "update",
+          purpose: "Name-description-only and catalog-filtered prompt tests.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/index.test.ts",
+          change_type: "update",
+          purpose: "Public option types use concrete FacetComposition and new tools.",
+        }
+    depends_on: ["WU-13", "WU-14", "WU-16"]
+    parallel_group: "reference-c"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/agent.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts -t 'shares one composition reference snapshot'"
+      target: "packages/agent-stack/reference-agent/src/agent.test.ts; packages/agent-stack/reference-agent/src/prompt.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/reference-agent/src/agent.test.ts packages/agent-stack/reference-agent/src/prompt.test.ts packages/agent-stack/reference-agent/src/index.test.ts",
+      ]
+    no_regression_checks: ["pnpm exec vitest run packages/agent-stack/reference-agent/src"]
+    test_plan:
+      - {
+          type: "integration",
+          target: "packages/agent-stack/reference-agent/src/agent.test.ts",
+          covers_dc: ["DC-003", "DC-004", "DC-006"],
+          action: "update",
+        }
+
+  - id: "WU-16"
+    <<: *wu_defaults
+    title: "Pin newest exact read through in-turn compaction"
+    owner_role: "implementer"
+    packages: ["@facet/reference-agent"]
+    objective: "Keep the newest composition-read group verbatim through its first next-provider handoff even when configured recent retention is zero."
+    module_shape:
+      decision: "focused-context-boundary"
+      rationale: "Patch the existing compactor and add a focused test rather than grow transcript/agent suites or duplicate context budgeting."
+    files:
+      - {
+          path: "packages/agent-stack/reference-agent/src/harness/in-turn-compaction.ts",
+          change_type: "update",
+          purpose: "Pin newest get_composition group through first handoff; later groups may compact normally; no summary/partial fallback.",
+        }
+      - {
+          path: "packages/agent-stack/reference-agent/src/harness/in-turn-compaction.test.ts",
+          change_type: "add",
+          purpose: "Zero-recent exact preservation, later compaction, and cannot-fit context_limit boundary.",
+        }
+    depends_on: ["WU-12", "WU-14"]
+    parallel_group: "reference-b"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/in-turn-compaction.test.ts -t 'keeps the newest composition read verbatim when min recent is zero'"
+      target: "packages/agent-stack/reference-agent/src/harness/in-turn-compaction.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/reference-agent/src/harness/in-turn-compaction.test.ts packages/agent-stack/reference-agent/src/harness/loop.test.ts",
+      ]
+    no_regression_checks: ["pnpm exec vitest run packages/agent-stack/reference-agent/src"]
+    test_plan:
+      - {
+          type: "context-boundary",
+          target: "packages/agent-stack/reference-agent/src/harness/in-turn-compaction.test.ts",
+          covers_dc: ["DC-005"],
+          action: "update",
+        }
+
+  - id: "WU-17"
+    <<: *wu_defaults
+    title: "Quickstart loaded-assets and deterministic E2E"
+    owner_role: "implementer"
+    packages: ["@facet/quickstart"]
+    objective: "Pin one loaded snapshot, get-then-native-author behavior, and provider-only composition JSON."
+    module_shape:
+      decision: "preserve-wiring"
+      rationale: "Quickstart already loads once and passes assets to reference-agent; update fixtures/comments and the deterministic journey."
+    files:
+      - {
+          path: "packages/agent-stack/quickstart/src/cli.ts",
+          change_type: "update",
+          purpose: "Reference dataset comments/wiring; no second list.",
+        }
+      - {
+          path: "packages/agent-stack/quickstart/src/cli.test.ts",
+          change_type: "update",
+          purpose: "Concrete custom/default snapshot and new catalog order.",
+        }
+      - {
+          path: "packages/agent-stack/quickstart/src/quickstart.e2e.test.ts",
+          change_type: "update",
+          purpose: "Read then native patch; rapid same-visitor ordering; provider-offline-after-read fail-safe; shell/SSE/reconnect/provenance negatives.",
+        }
+    depends_on: ["WU-6", "WU-7", "WU-15", "WU-16"]
+    parallel_group: "quickstart-a"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts -t 'reads a composition reference then authors native nodes'"
+      target: "packages/agent-stack/quickstart/src/quickstart.e2e.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/quickstart/src/cli.test.ts packages/agent-stack/quickstart/src/quickstart.e2e.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts",
+        "pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts",
+      ]
+    test_plan:
+      - {
+          type: "e2e-deterministic",
+          target: "packages/agent-stack/quickstart/src/quickstart.e2e.test.ts#get-then-native-write",
+          covers_dc: ["DC-006"],
+          action: "update",
+        }
+      - {
+          type: "e2e-ordering",
+          target: "packages/agent-stack/quickstart/src/quickstart.e2e.test.ts#rapid-same-visitor",
+          covers_dc: ["DC-006"],
+          action: "update",
+        }
+      - {
+          type: "e2e-provider-failure",
+          target: "packages/agent-stack/quickstart/src/quickstart.e2e.test.ts#offline-after-read",
+          covers_dc: ["DC-006", "DC-010"],
+          action: "update",
+        }
+      - {
+          type: "e2e-reconnect-boundary",
+          target: "packages/agent-stack/quickstart/src/quickstart.e2e.test.ts#no-composition-payload",
+          covers_dc: ["DC-010"],
+          action: "update",
+        }
+      - {
+          type: "integration",
+          target: "packages/agent-stack/quickstart/src/cli.test.ts",
+          covers_dc: ["DC-011"],
+          action: "update",
+        }
+
+  - id: "WU-18"
+    <<: *wu_defaults
+    title: "Quickstart guide and golden regeneration"
+    owner_role: "implementer"
+    packages: ["@facet/quickstart"]
+    objective: "Teach reference examples and component-to-primitive authoring in the seeded guide, then regenerate exact serialization golden."
+    module_shape:
+      decision: "preserve-extracted-guide"
+      rationale: "Existing guide extraction is deliberate; update data/copy in place and pin final bytes/hash."
+    files:
+      - {
+          path: "packages/agent-stack/quickstart/src/guide-system.ts",
+          change_type: "update",
+          purpose: "Replace slot table/tier copy with reference name-description data.",
+        }
+      - {
+          path: "packages/agent-stack/quickstart/src/guide.test.ts",
+          change_type: "update",
+          purpose: "Regenerated length/SHA256 and reference-copy assertions.",
+        }
+      - {
+          path: "packages/agent-stack/quickstart/src/guide.ts",
+          change_type: "update",
+          purpose: "Page brief: optional examples then native authoring.",
+        }
+      - {
+          path: "packages/agent-stack/quickstart/src/guide-usecases.ts",
+          change_type: "update",
+          purpose: "Remove compositions-as-authored-tier wording.",
+        }
+    depends_on: ["WU-5", "WU-17"]
+    parallel_group: "quickstart-b"
+    red_check:
+      command: "pnpm exec vitest run packages/agent-stack/quickstart/src/guide.test.ts -t 'preserves the serialized initial stage'"
+      target: "packages/agent-stack/quickstart/src/guide.test.ts"
+      justification: ""
+    quick_checks: ["pnpm exec vitest run packages/agent-stack/quickstart/src/guide.test.ts"]
+    no_regression_checks: ["pnpm exec vitest run packages/agent-stack/quickstart/src"]
+    test_plan:
+      - {
+          type: "golden",
+          target: "packages/agent-stack/quickstart/src/guide.test.ts",
+          covers_dc: ["DC-009", "DC-012"],
+          action: "update",
+        }
+
+  - id: "WU-19"
+    <<: *wu_defaults
+    title: "Raw File/Postgres asset boundary fixtures"
+    owner_role: "implementer"
+    packages: ["@facet/runtime", "@facet/store-postgres"]
+    objective: "Migrate both raw adapter fixtures and prove raw roundtrip plus loadAssets semantic gating with no production or SQL change."
+    module_shape:
+      decision: "test-only"
+      rationale: "PostgresAssets intentionally stores unknown JSONB; production code must remain semantically opaque."
+    files:
+      - {
+          path: "packages/core/runtime/src/file-assets.test.ts",
+          change_type: "update",
+          purpose: "Canonical raw file fixture with required metadata; FileAssets-to-loadAssets gate proof.",
+        }
+      - {
+          path: "packages/extensions/store-postgres/src/postgres-assets.test.ts",
+          change_type: "update",
+          purpose: "Concrete shape/order roundtrip and new-vs-legacy load gate assertions.",
+        }
+    depends_on: ["WU-1", "WU-5", "WU-6"]
+    parallel_group: "adapter-a"
+    red_check:
+      command: "N/A"
+      target: "test-only adapter fixture migration"
+      justification: "FileAssets/PostgresAssets production behavior remains intentionally opaque and unchanged; WU-1 owns the semantic RED, while this WU verifies both raw adapters against the completed load gate."
+    quick_checks:
+      [
+        "pnpm exec vitest run packages/core/runtime/src/file-assets.test.ts packages/extensions/store-postgres/src/postgres-assets.test.ts",
+      ]
+    no_regression_checks:
+      [
+        "pnpm exec vitest run packages/core/runtime/src/file-assets.test.ts packages/extensions/store-postgres/src",
+      ]
+    test_plan:
+      - {
+          type: "adapter-integration",
+          target: "packages/core/runtime/src/file-assets.test.ts; packages/extensions/store-postgres/src/postgres-assets.test.ts",
+          covers_dc: ["DC-011"],
+          action: "update",
+        }
+
+  - id: "WU-20"
+    <<: *wu_defaults
+    title: "Playground semantic copy"
+    owner_role: "implementer"
+    packages: ["@facet/playground"]
+    objective: "Stop describing composition as an authoring vocabulary tier; retain transitive STAGE_SPEC use."
+    module_shape:
+      decision: "copy-only"
+      rationale: "No functional composition consumer exists in the playground."
+    files:
+      - {
+          path: "apps/playground/src/App.tsx",
+          change_type: "update",
+          purpose: "Export and render user-facing optional-reference-example subtitle wording.",
+        }
+      - {
+          path: "apps/playground/src/App.test.ts",
+          change_type: "add",
+          purpose: "Focused RED/GREEN assertion for displayed reference-example copy and functional-tier absence.",
+        }
+      - {
+          path: "apps/playground/src/gen.ts",
+          change_type: "update",
+          purpose: "Comment-only: native vocabulary plus optional references; existing generator suite remains regression coverage.",
+        }
+    depends_on: ["WU-4", "WU-5", "WU-13"]
+    parallel_group: "app-a"
+    red_check:
+      command: "pnpm exec vitest run apps/playground/src/App.test.ts -t 'describes compositions as optional reference data'"
+      target: "apps/playground/src/App.test.ts"
+      justification: ""
+    quick_checks:
+      [
+        "pnpm exec vitest run apps/playground/src/App.test.ts apps/playground/src/generator.test.ts",
+        "pnpm --filter @facet/playground build",
+      ]
+    no_regression_checks: ["pnpm exec vitest run apps/playground/src"]
+    test_plan:
+      - {
+          type: "copy-contract",
+          target: "apps/playground/src/App.test.ts",
+          covers_dc: ["DC-009", "DC-012"],
+          action: "add",
+        }
+
+  - id: "WU-21"
+    <<: *wu_defaults
+    title: "Architecture and tool-result documentation"
+    owner_role: "update-docs"
+    execution_stage: "final-/update-docs"
+    packages: ["repository-docs"]
+    objective: "Make architecture/review/tool-result sources truthful for concrete reference reads and removed expansion."
+    module_shape: { decision: "docs", rationale: "Triggered source-of-truth documents." }
+    files:
+      - {
+          path: "AGENTS.md",
+          change_type: "update",
+          purpose: "Package role and invariants no longer mention expansion.",
+        }
+      - {
+          path: "README.md",
+          change_type: "update",
+          purpose: "Public overview and example workflow.",
+        }
+      - {
+          path: "docs/ARCHITECTURE.md",
+          change_type: "update",
+          purpose: "Assets/prompt/read/native-write flow and boundaries.",
+        }
+      - {
+          path: "docs/REVIEW-RULES.md",
+          change_type: "update",
+          purpose: "Review examples and hard-cut search posture.",
+        }
+      - {
+          path: "docs/AGENT-TOOL-RESULT-CONTRACT.md",
+          change_type: "update",
+          purpose: "Exact no-stage-change data and context overflow contract.",
+        }
+    depends_on: ["WU-18", "WU-19", "WU-20"]
+    parallel_group: "docs-a"
+    red_check:
+      {
+        command: "N/A",
+        target: "documentation",
+        justification: "Executed by /update-docs with triggered-doc evidence.",
+      }
+    quick_checks: ["pnpm format:check"]
+    no_regression_checks: ["pnpm format:check"]
+    test_plan:
+      - {
+          type: "documentation",
+          target: "triggered-doc evidence",
+          covers_dc: ["DC-012"],
+          action: "update",
+        }
+
+  - id: "WU-22"
+    <<: *wu_defaults
+    title: "Core/runtime/assets/tools/SDK package docs"
+    owner_role: "update-docs"
+    execution_stage: "final-/update-docs"
+    packages:
+      ["@facet/core", "@facet/runtime", "@facet/assets", "@facet/agent-tools", "@facet/agent"]
+    objective: "Document the concrete schema/load/read/native-authoring cutover and removed Stage API."
+    module_shape: { decision: "docs", rationale: "Affected package entrypoint documentation." }
+    files:
+      - {
+          path: "packages/core/core/README.md",
+          change_type: "update",
+          purpose: "Concrete type/validator/catalog order and removed APIs.",
+        }
+      - {
+          path: "packages/core/runtime/README.md",
+          change_type: "update",
+          purpose: "Per-document assets gate without graph semantics.",
+        }
+      - {
+          path: "packages/core/assets/README.md",
+          change_type: "update",
+          purpose: "Self-contained reference data.",
+        }
+      - {
+          path: "packages/agent-stack/agent-tools/README.md",
+          change_type: "update",
+          purpose: "get_composition exact read and prompt index.",
+        }
+      - {
+          path: "packages/extensions/agent/README.md",
+          change_type: "update",
+          purpose: "Remove Stage.useComposition and show native methods.",
+        }
+    depends_on: ["WU-18", "WU-19", "WU-20"]
+    parallel_group: "docs-a"
+    red_check:
+      { command: "N/A", target: "documentation", justification: "Executed by /update-docs." }
+    quick_checks: ["pnpm format:check"]
+    no_regression_checks: ["pnpm format:check"]
+    test_plan:
+      - {
+          type: "documentation",
+          target: "affected package READMEs",
+          covers_dc: ["DC-012"],
+          action: "update",
+        }
+
+  - id: "WU-23"
+    <<: *wu_defaults
+    title: "Reference/quickstart/store package docs"
+    owner_role: "update-docs"
+    execution_stage: "final-/update-docs"
+    packages: ["@facet/reference-agent", "@facet/quickstart", "@facet/store-postgres"]
+    objective: "Document same-snapshot lookup, provider-only JSON, and raw persistence hard-cut behavior."
+    module_shape: { decision: "docs", rationale: "Affected package entrypoint documentation." }
+    files:
+      - {
+          path: "packages/agent-stack/reference-agent/README.md",
+          change_type: "update",
+          purpose: "Immutable reference snapshot and exact provider loop.",
+        }
+      - {
+          path: "packages/agent-stack/quickstart/README.md",
+          change_type: "update",
+          purpose: "Concrete asset files, get tool, native authoring and provider smoke.",
+        }
+      - {
+          path: "packages/extensions/store-postgres/README.md",
+          change_type: "update",
+          purpose: "Raw JSONB plus loadAssets hard-cut migration.",
+        }
+    depends_on: ["WU-17", "WU-19"]
+    parallel_group: "docs-a"
+    red_check:
+      { command: "N/A", target: "documentation", justification: "Executed by /update-docs." }
+    quick_checks: ["pnpm format:check"]
+    no_regression_checks: ["pnpm format:check"]
+    test_plan:
+      - {
+          type: "documentation",
+          target: "affected package READMEs",
+          covers_dc: ["DC-012"],
+          action: "update",
+        }
+
+  - id: "WU-24"
+    <<: *wu_defaults
+    title: "Reconcile unreleased changesets"
+    owner_role: "update-docs"
+    execution_stage: "final-/update-docs"
+    packages: ["fixed-group"]
+    objective: "Remove unreleased claims for expansion/nesting/slots and add the concrete reference hard-cut release note."
+    module_shape:
+      {
+        decision: "release-metadata",
+        rationale: "The fixed group release notes must describe the net unreleased API.",
+      }
+    files:
+      - {
+          path: ".changeset/composition-canonicalization.md",
+          change_type: "update",
+          purpose: "Canonicalization ends at concrete data + read tool.",
+        }
+      - {
+          path: ".changeset/composition-nesting.md",
+          change_type: "delete",
+          purpose: "Fully reverted before release.",
+        }
+      - {
+          path: ".changeset/kits-themes-as-data.md",
+          change_type: "update",
+          purpose: "Replace private expansion claims with indexed/on-demand reference data.",
+        }
+      - {
+          path: ".changeset/display-leaf-compositions.md",
+          change_type: "update",
+          purpose: "Badge/alert examples are copied/adapted, never {use}-expanded.",
+        }
+      - {
+          path: ".changeset/composition-reference-datasets.md",
+          change_type: "add",
+          purpose: "Breaking fixed-group hard-cut note for eight affected public packages.",
+        }
+    depends_on: ["WU-21", "WU-22", "WU-23"]
+    parallel_group: "docs-b"
+    red_check:
+      {
+        command: "N/A",
+        target: "release-metadata",
+        justification: "Release-note correction executed by /update-docs.",
+      }
+    quick_checks: ["pnpm exec changeset status"]
+    no_regression_checks: ["pnpm format:check"]
+    test_plan:
+      - {
+          type: "release-metadata",
+          target: ".changeset",
+          covers_dc: ["DC-012"],
+          action: "update-delete-add",
+        }
+
+  - id: "WU-25"
+    <<: *wu_defaults
+    title: "Remove residual semantic expansion claims"
+    owner_role: "update-docs"
+    execution_stage: "final-/update-docs"
+    packages: ["repository-docs", "fixed-group"]
+    objective: "Remove composition-first/pre-patch/graft/metadata-only claims that do not contain the primary retired symbol spellings."
+    module_shape:
+      {
+        decision: "docs-release-metadata",
+        rationale: "Semantic migrations in current shipping docs and unreleased notes.",
+      }
+    files:
+      - {
+          path: ".changeset/catalog-design-system-v1.md",
+          change_type: "update",
+          purpose: "Composition policy controls reference exposure, not expansion before patches.",
+        }
+      - {
+          path: ".changeset/polished-brick-rendering-contracts.md",
+          change_type: "update",
+          purpose: "Remove prefer-compositions-before-patch claim.",
+        }
+      - {
+          path: ".changeset/structural-audit-cleanup.md",
+          change_type: "update",
+          purpose: "Remove composition-first hierarchy claim.",
+        }
+      - {
+          path: ".changeset/unified-asset-pipeline.md",
+          change_type: "update",
+          purpose: "Replace graft/apply language with read-only reference data.",
+        }
+      - {
+          path: "docs/HARDENING-BACKLOG.md",
+          change_type: "update",
+          purpose: "Document name-description index plus exact provider-only on-demand JSON.",
+        }
+    depends_on: ["WU-21", "WU-22", "WU-23"]
+    parallel_group: "docs-b"
+    red_check:
+      {
+        command: "N/A",
+        target: "documentation-release-metadata",
+        justification: "Documentation and unreleased release-note correction executed by /update-docs.",
+      }
+    quick_checks: ["pnpm exec changeset status"]
+    no_regression_checks: ["pnpm format:check"]
+    test_plan:
+      - {
+          type: "documentation-release-metadata",
+          target: "docs/HARDENING-BACKLOG.md and residual .changeset files",
+          covers_dc: ["DC-012"],
+          action: "update",
+        }
+
+  - id: "WU-26"
+    <<: *wu_defaults
+    title: "Deterministic shipping hard-cut scanner"
+    owner_role: "implementer"
+    packages: ["repository-tooling"]
+    objective: "Build and unit-test the deterministic scanner before code review; final /update-docs later invokes it against converged shipping surfaces."
+    module_shape:
+      decision: "focused-quality-script"
+      rationale: "A tested scanner can distinguish rg no-hit, hit, and execution-error statuses; raw zero-hit shell commands cannot."
+    files:
+      - {
+          path: "scripts/check-composition-hard-cut.mjs",
+          change_type: "add",
+          purpose: "Scan exact roots packages, apps, docs, scripts, .changeset, README.md, and AGENTS.md with the three locked pattern groups; exclude specs and ignored build outputs; restrict annotations to test/fixture paths; fail on rg errors or unannotated matches.",
+        }
+      - {
+          path: "scripts/check-composition-hard-cut.test.mjs",
+          change_type: "add",
+          purpose: "Node tests for clean, eligible annotated-negative, annotated-ineligible-path, unannotated-match, slotless inline/multiline raw-use references, scanner-self-match prevention, and search-error fixtures.",
+        }
+    scanner_contract:
+      roots: ["packages", "apps", "docs", "scripts", ".changeset", "README.md", "AGENTS.md"]
+      exclusions: ["specs/**", "**/node_modules/**", "**/dist/**", "**/coverage/**", "**/.turbo/**"]
+      pattern_groups:
+        retired_symbols: "use_composition|useComposition|UseCompositionToolInput|UseCompositionResult|expandComposition|ExpandComposition(Result|Options)?|CompositionParams|CompositionRef|ExpandAt|validateCompositionGraph|composition-graph|expand-composition|allowReference|allowSlotMarkers|SLOT_MARKER_RE|NodeFiller|NodeStringLeaves|compositionCatalogViolation"
+        legacy_data: '\{\{[A-Za-z_][A-Za-z0-9_-]*\}\}|"slots"\s*:|slots:|\{\s*(?:"use"|use)\s*:|^\s*(?:"use"|use)\s*:\s*["''\x60]'
+        semantic_case_insensitive: "composition -> component -> primitive|expanded server-side|server-side expansion|composition-first|composition first|composition.*before.*(patch|component|primitive)|prefer.*composition|graft.*composition|composition.*metadata.*prompt"
+      exit_codes: { clean: 1, matches: 0, error: ">1" }
+      allowed_negative:
+        annotation: "composition-hard-cut: allowed-negative"
+        eligible_paths: "basename contains .test. or .spec., or a path segment equals fixtures, __fixtures__, or test-data"
+        same_line_required: true
+        forbidden_paths: "all production source, docs, changesets, README.md, AGENTS.md, and scanner source"
+      self_match_policy: "Scanner source is not excluded and must construct its pattern definitions without matching itself."
+    depends_on: []
+    parallel_group: "quality-a"
+    red_check:
+      command: "node --test scripts/check-composition-hard-cut.test.mjs"
+      target: "scripts/check-composition-hard-cut.test.mjs"
+      justification: ""
+    quick_checks: ["node --test scripts/check-composition-hard-cut.test.mjs"]
+    no_regression_checks:
+      ["pnpm format:check", "node --test scripts/check-composition-hard-cut.test.mjs"]
+    test_plan:
+      - {
+          type: "quality-gate",
+          target: "scripts/check-composition-hard-cut.test.mjs",
+          covers_dc: ["DC-008", "DC-012"],
+          action: "add",
+        }
+
+post_work_unit_checks:
+  - "pnpm typecheck"
+  - "pnpm exec vitest run packages/core/core/src packages/core/runtime/src packages/core/assets/src"
+  - "pnpm exec vitest run packages/agent-stack/agent-tools/src packages/agent-stack/reference-agent/src"
+  - "pnpm exec vitest run packages/agent-stack/quickstart/src/cli.test.ts packages/agent-stack/quickstart/src/quickstart.e2e.test.ts"
+  - "pnpm exec vitest run packages/extensions/agent/src packages/extensions/store-postgres/src/postgres-assets.test.ts"
+  - "pnpm exec vitest run apps/playground/src/App.test.ts apps/playground/src/generator.test.ts"
+  - "node --test scripts/check-composition-hard-cut.test.mjs"
+
+shipping_surface_searches:
+  archive_exclusion: "Do not search or rewrite specs/**; it is historical evidence. Preserve user-owned untracked display-leaf specs."
+  commands:
+    - "node --test scripts/check-composition-hard-cut.test.mjs"
+    - "node scripts/check-composition-hard-cut.mjs"
+  expectation: "Scanner treats rg exit 1 as clean, exit 0 as a match set, and >1 as an error; zero unannotated shipping legacy hits. Negative-test lines require the exact composition-hard-cut: allowed-negative annotation; no broad waiver."
+
+live_test:
+  tier_1: "All blocking: verdict policy; quickstart E2E twice; built bundle; journey harness."
+  tier_2:
+    required: true
+    command: "pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/smoke.test.ts"
+    missing_key_policy: "FAIL"
+  tier_3:
+    when: "pre-merge/release"
+    command: "FACET_SMOKE_PROVIDERS=both pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/smoke.test.ts"
+
+approval_gate:
+  status: "blocked-until-owner-approval"
+  authorized_after_approval: ["/worktree-prep", "/implement"]
+  unauthorized_before_approval: ["source implementation", "branch", "commit", "push", "PR", "merge"]

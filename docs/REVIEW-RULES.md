@@ -10,11 +10,12 @@ bureaucratic.
    `@facet/core`-validated bricks with **token** style values — never raw
    HTML/JS/CSS, never raw scalars, never absolute positioning. The primitive
    fallback/base nodes remain `box` and `text` for structure and copy, plus
-   `media` and `field` for rendered assets and input. Intrinsic components are
-   valid only when added deliberately to the closed vocabulary in `@facet/core`;
-   recipe components/compositions must expand to ordinary validated nodes.
-   Bypassing core validation or admitting arbitrary markup is an
-   invariant violation.
+   `media`, `input`, and `richtext` for rendered assets, input, and formatted
+   prose. Intrinsic components are valid only when added deliberately to the
+   closed vocabulary in `@facet/core`; theme recipes may only select validated
+   tokens. Composition references are concrete native-node datasets an agent may
+   read, not stage syntax or an authoring tier. Bypassing core validation or
+   admitting arbitrary markup is an invariant violation.
 2. **Patches-only + fail-safe.** Stage changes travel as RFC 6902 patches; the
    *same* pure `applyPatch` runs on server and client. The renderer/validator is
    fail-safe — unknown/dangling/invalid input is dropped or skipped, **never
@@ -40,18 +41,20 @@ bureaucratic.
 gate on them. (A P2 may only ship unfixed with an explicit maintainer waiver
 recorded in the PR.)
 
-Component/composition expansion is not a violation when the node kind and tokens
-are intentionally defined and validated in `@facet/core`, or when a recipe
-component expands to ordinary validated nodes before render. Treat code, prompts,
-or docs that reject valid intrinsic components merely because they are not
-primitive fallback nodes as a bug; treat any path that accepts unvalidated nodes,
-raw markup, raw scalar styles, client-side business logic on display components,
-or absolute positioning as at least P1.
+Intrinsic components are not a violation when their node kinds and tokens are
+intentionally defined and validated in `@facet/core`. Theme recipes may style
+those nodes but cannot add behavior or fields. A composition-reference read may
+return only a validated concrete native dataset and must not itself emit stage
+messages or patches. Treat code, prompts, or docs that reject valid intrinsic
+components merely because they are not primitive fallback nodes as a bug; treat
+any path that accepts unvalidated nodes, raw markup, raw scalar styles,
+client-side business logic on display components, or absolute positioning as at
+least P1.
 
 Renderer layout containment is part of the contract. Parent owns placement,
 child owns internal layout, and renderer owns containment. A component renderer
-or recipe expansion that lets a child push horizontal width, overlap siblings,
-or escape its parent without an explicit bounded scroll region is at least P1.
+that lets a child push horizontal width, overlap siblings, or escape its parent
+without an explicit bounded scroll region is at least P1.
 
 ## Gate Profiles
 
@@ -81,9 +84,10 @@ or escape its parent without an explicit bounded scroll region is at least P1.
   + persistent generator handshake (deadlock/ordering), timeouts, resource leaks.
 - **consistency** — duplication, cross-package drift, dev-vs-published resolution
   (`publishConfig`/`exports`), barrel usage, naming, docs/prompts that hard-code
-  primitive fallback nodes as the full permanent vocabulary or still describe
-  the removed pre-composition hierarchy (or its legacy API names) as the
-  primary model instead of `composition -> component -> primitive`.
+  primitive fallback nodes as the full permanent vocabulary, describe
+  composition references as a functional node tier, or retain retired
+  composition APIs/data shapes. The native authoring order is
+  `component -> primitive`; reference lookup is optional and separate.
 - **test-gaps** — changed behavior without a test; critical pure logic
   (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
   coverage; untested testable surface (`@facet/cli`); tautological
@@ -104,4 +108,9 @@ or escape its parent without an explicit bounded scroll region is at least P1.
 
 Run the canonical mechanical gate with `pnpm verify`: typecheck, tests, lint,
 format-check, build, and a source NUL-byte scan. Use the individual commands only
-for scoped diagnosis.
+for scoped diagnosis. Composition hard cuts also run
+`node scripts/check-composition-hard-cut.mjs`: shipping source, docs, package
+READMEs, fixtures, and current changesets must contain no retired symbol, data,
+or functional-tier claim. Historical `specs/**` are archival. Only an intentional
+negative in a test or fixture may use the scanner's exact annotation; annotations
+cannot waive production code or documentation.

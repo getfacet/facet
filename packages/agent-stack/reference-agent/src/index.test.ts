@@ -104,7 +104,7 @@ describe("reference-agent barrel", () => {
     expectTypeOf<ResolveProviderFlags>().toMatchTypeOf<{ readonly provider?: string }>();
     expectTypeOf<PromptAssets>().toMatchTypeOf<{
       readonly themes: readonly unknown[];
-      readonly compositions: readonly unknown[];
+      readonly compositions: readonly FacetComposition[];
     }>();
   });
 
@@ -116,6 +116,7 @@ describe("reference-agent barrel", () => {
       readonly compositions?: readonly FacetComposition[];
     }>();
     expectTypeOf<PromptAssets["compositions"]>().toEqualTypeOf<readonly FacetComposition[]>();
+    expect(reference.FACET_STAGE_TOOL_NAMES).toContain("get_composition");
     // The legacy pre-canonicalization surface is gone from the public option
     // and prompt types.
     expectTypeOf<

@@ -41,7 +41,7 @@ const CATALOG_FIXTURE: FacetCatalog = {
   compositions: { mode: "allow", names: ["pricing"] },
   primitiveFallback: "allowed",
   policy: {
-    order: ["composition", "component", "primitive"],
+    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 3,
@@ -289,8 +289,9 @@ describe("runCli — --assets (DC-009)", () => {
   it("no-assets boot resolves the canonical default composition snapshot", async () => {
     // With no --assets the CLI still resolves through `loadAssets` (an empty
     // `MemoryAssets`), so the `@facet/assets` default theme + composition
-    // library seeds and reaches BOTH the agent and the shell on every boot.
-    // `onResolvedAssets` is the observable seam for what was handed downstream.
+    // reference library seeds on every boot. `onResolvedAssets` is the
+    // observable seam for the one snapshot handed to the agent; only themes
+    // and the initial stage are browser-facing.
     let resolvedThemes = 0;
     let resolvedCompositionNames: readonly string[] = [];
     let resolvedCatalog: FacetCatalog | undefined;
@@ -320,8 +321,7 @@ describe("runCli — --assets (DC-009)", () => {
         join(dir, "panel.composition.json"),
         JSON.stringify({
           name: "qs-operator-panel",
-          description: "Operator panel band",
-          slots: { title: "Operator default title" },
+          metadata: { description: "Concrete operator panel reference" },
           root: "qs-operator-root",
           nodes: {
             "qs-operator-root": {
@@ -329,7 +329,11 @@ describe("runCli — --assets (DC-009)", () => {
               type: "box",
               children: ["qs-operator-title"],
             },
-            "qs-operator-title": { id: "qs-operator-title", type: "text", value: "{{title}}" },
+            "qs-operator-title": {
+              id: "qs-operator-title",
+              type: "text",
+              value: "Concrete operator title",
+            },
           },
         }),
       );
@@ -338,6 +342,7 @@ describe("runCli — --assets (DC-009)", () => {
         join(dir, "hero.composition.json"),
         JSON.stringify({
           name: "hero",
+          metadata: { description: "Custom concrete hero reference" },
           root: "hero-root",
           nodes: { "hero-root": { id: "hero-root", type: "text", value: "Custom hero" } },
         }),
@@ -354,6 +359,9 @@ describe("runCli — --assets (DC-009)", () => {
         expect(names).toContain("pricing-section"); // defaults still seed underneath
         expect(names.filter((name) => name === "hero")).toHaveLength(1);
         expect(resolved.find((c) => c.name === "hero")?.root).toBe("hero-root");
+        expect(resolved.find((c) => c.name === "qs-operator-panel")?.metadata.description).toBe(
+          "Concrete operator panel reference",
+        );
         expect(captured.err.join("\n")).toContain(
           'custom composition "hero" shadows the seeded default',
         );
@@ -384,6 +392,7 @@ describe("runCli — --assets (DC-009)", () => {
           primitiveFallback: "allowed",
         });
         expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["section", "button"]);
+        expect(resolvedCatalog?.policy.order).toEqual(["component", "primitive"]);
         expect(resolvedCatalog?.policy.maxScreenSections).toBe(3);
       } finally {
         await running.close();
@@ -493,16 +502,37 @@ describe("runCli — provider-backed boot (DC-004)", () => {
     }
   });
 
-  it("wires the compaction-ON composition (composeQuickstartAgent) into the provider boot", async () => {
+  it("wires one resolved asset snapshot into the compaction-enabled provider boot", async () => {
     composeSpy.mockClear();
-    const { running } = await bootCli();
+    let resolvedThemes: readonly unknown[] | undefined;
+    let resolvedCompositions: readonly FacetComposition[] | undefined;
+    let resolvedCatalog: FacetCatalog | undefined;
+    const { running } = await bootCli([], {
+      onResolvedAssets: (assets) => {
+        resolvedThemes = assets.themes;
+        resolvedCompositions = assets.compositions;
+        resolvedCatalog = assets.catalog;
+      },
+    });
     try {
       // The CLI must compose via composeQuickstartAgent (default MemorySummaryStore),
       // not the bare createReferenceAgent whose default is compaction OFF.
       expect(composeSpy).toHaveBeenCalledTimes(1);
-      const options = composeSpy.mock.calls[0]?.[0] as { summaryStore?: unknown } | undefined;
+      const options = composeSpy.mock.calls[0]?.[0] as
+        | {
+            readonly summaryStore?: unknown;
+            readonly themes?: readonly unknown[];
+            readonly compositions?: readonly FacetComposition[];
+            readonly catalog?: FacetCatalog;
+          }
+        | undefined;
       // No explicit opt-out slipped in: the default (undefined) wires the store.
       expect(options?.summaryStore).not.toBeNull();
+      // The prompt and get_composition lookup receive the exact arrays/catalog
+      // observed at the load seam — no second list or re-load can drift them.
+      expect(options?.themes).toBe(resolvedThemes);
+      expect(options?.compositions).toBe(resolvedCompositions);
+      expect(options?.catalog).toBe(resolvedCatalog);
     } finally {
       await running.close();
     }

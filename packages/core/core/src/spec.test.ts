@@ -126,9 +126,10 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/LEAF brick/i);
   });
 
-  it("teaches composition -> component -> primitive fallback and the locked component vocabulary", () => {
-    expect(STAGE_SPEC).toMatch(/composition -> component -> primitive fallback/);
+  it("reference dataset hard cutover teaches optional reading followed by native authoring", () => {
+    expect(STAGE_SPEC).toMatch(/component -> primitive fallback/);
     expect(STAGE_SPEC).toMatch(/primitive bricks/i);
+    expect(STAGE_SPEC).toContain("box, text, media, input, richtext");
     for (const type of PRIMITIVE_BRICK_TYPES) {
       expect(STAGE_SPEC).toContain(`"type":"${type}"`);
     }
@@ -148,27 +149,30 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/prefer metric/i);
     expect(STAGE_SPEC).toMatch(/stat[^.]*legacy/i);
     expect(STAGE_SPEC).toMatch(/Catalog/i);
+    expect(STAGE_SPEC).toMatch(/optional reference dataset/i);
+    expect(STAGE_SPEC).toMatch(/read[^.]*by name[^.]*only when useful/i);
+    expect(STAGE_SPEC).toMatch(/author[^.]*native nodes/i);
+    expect(STAGE_SPEC).toMatch(/reference read[^.]*does not mutate/i);
+    expect(STAGE_SPEC).not.toMatch(
+      new RegExp(["composition", "component", "primitive fallback"].join(" -> "), "i"),
+    );
+    expect(STAGE_SPEC).not.toContain(`"${["slo", "ts"].join("")}"`);
+    expect(STAGE_SPEC).not.toMatch(/expanded? into|expand by name|filling[^.]*slots/i);
+    expect(STAGE_SPEC).not.toContain(`{ "${["u", "se"].join("")}":"badge" }`);
     expect(STAGE_SPEC).not.toMatch(/high-level brick/i);
     expect(STAGE_SPEC).not.toMatch(new RegExp(`${legacy} -> high-level`, "i"));
   });
 
-  it("omits demoted display leaves as node types and teaches badge/alert as compositions", () => {
-    // DC-005: badge/alert/divider are demoted to catalog compositions — STAGE_SPEC
-    // must NOT teach any of them as a node-type line, and they must not appear in
-    // the intrinsic roster the spec advertises.
+  it("omits demoted display leaves as node types and teaches native construction", () => {
     for (const type of ["badge", "alert", "divider"] as const) {
       expect(STAGE_SPEC).not.toContain(`"type":"${type}"`);
       expect(STAGE_SPEC).not.toContain(`- ${type}:`);
       expect(INTRINSIC_COMPONENT_TYPES as readonly string[]).not.toContain(type);
     }
-    // "divider" is fully retired as vocabulary — the spec steers separators to a box.
+    // These display shapes are authored from the native vocabulary, never as node types.
     expect(STAGE_SPEC).not.toContain("divider");
-    // The composition note stays: badges/alerts are catalog compositions expanded
-    // by name ({ "use":"badge" } / { "use":"alert" }), never node types.
     expect(STAGE_SPEC).toMatch(/Badges and alerts are NOT node types/i);
-    expect(STAGE_SPEC).toMatch(/catalog compositions/i);
-    expect(STAGE_SPEC).toContain('{ "use":"badge" }');
-    expect(STAGE_SPEC).toContain('{ "use":"alert" }');
+    expect(STAGE_SPEC).toMatch(/author[^.]*native/i);
     expect(STAGE_SPEC).toMatch(/use a plain box/i);
   });
 
@@ -198,23 +202,19 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/no fetch or computed column/i);
   });
 
-  it("teaches a composition-only vocabulary with no legacy or tool-specific guidance", () => {
-    // DC-012: the stage contract carries canonical composition language only —
-    // no legacy vocabulary survives anywhere in the spec text.
+  it("keeps reference guidance tool-neutral with no functional composition vocabulary", () => {
     expect(STAGE_SPEC).not.toMatch(legacyNaming);
-    // Compositions are taught as asset-loaded reusable component definitions
-    // expanded into ordinary validated nodes — never renderer plugins or code.
-    expect(STAGE_SPEC).toMatch(/reusable component definitions/i);
-    expect(STAGE_SPEC).toMatch(/expanded into ordinary validated nodes/i);
-    // Tool-neutral: STAGE_SPEC describes the stage vocabulary; every embedding
-    // surface (CLI generator, bridge prompt, persistent tools) wraps it with
-    // its own action instructions, so no concrete tool name may leak in here.
+    expect(STAGE_SPEC).toMatch(/concrete native node examples/i);
+    expect(STAGE_SPEC).toMatch(/optional design guidance/i);
+    expect(STAGE_SPEC).not.toMatch(/renderer plugins|automatic insertion/i);
+    // Tool-neutral: embedding surfaces add concrete read and write tool instructions.
     for (const toolName of [
       "render_page",
       "set_node",
       "append_node",
       "remove_node",
-      "use_composition",
+      ["use", "composition"].join("_"),
+      ["get", "composition"].join("_"),
       `use_${legacy}`,
       "set_theme",
       "inspect_stage",

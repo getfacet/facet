@@ -46,11 +46,15 @@ export function createStageToolBuffer(
   };
 
   const recordMessages = (messages: readonly ServerMessage[]): void => {
+    let recordedPatch = false;
     for (const message of messages) {
       if (message.kind !== "patch") continue;
-      for (const patch of message.patches) batchPatches.push(patch);
+      for (const patch of message.patches) {
+        batchPatches.push(patch);
+        recordedPatch = true;
+      }
     }
-    shadow = applyPatch(batchBaseShadow, batchPatches);
+    if (recordedPatch) shadow = applyPatch(batchBaseShadow, batchPatches);
   };
 
   const wouldExceedPatchCap = (result: StageToolResult): boolean =>
@@ -112,19 +116,11 @@ export function createStageToolBuffer(
   };
 
   const cumulativePatchLimitOutcome = (call: ToolCall): StageToolBufferOutcome => {
-    const input = inputOf(call);
-    const compositionName = input["name"];
-    const observation =
-      call.name === "use_composition" &&
-      typeof compositionName === "string" &&
-      compositionName.length > 0
-        ? `error: use_composition — expanded "${compositionName}" would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`
-        : `error: ${call.name} — this step would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`;
     return failedOutcome(
       rejectedObservation(
         call.name,
         "patch_limit",
-        observation,
+        `error: ${call.name} — this step would exceed the patch op cap (${String(MAX_PATCH_OPS)}) for this streamed batch`,
         "Split the change into smaller edits.",
       ),
       shadow,
@@ -210,25 +206,6 @@ export function createStageToolBuffer(
     return execute(call);
   };
 
-  const runUseComposition = (call: ToolCall): StageToolBufferOutcome => {
-    const at = inputOf(call)["at"];
-    const parent = isRecord(at) ? at["parent"] : undefined;
-    if (typeof parent === "string" && parent.length > 0 && !hasNode(shadow, parent)) {
-      const missing = pendingMissing(parent);
-      if (missing !== undefined) {
-        return failedOutcome(
-          pendingObservation(
-            "use_composition",
-            `error: use_composition — parent "${parent}" was created this turn but is still waiting for child node(s): ${summarizeIds(missing)}. Define those child nodes before using a composition inside it.`,
-            "Define the parent node's missing child node(s), then use the composition.",
-          ),
-          shadow,
-        );
-      }
-    }
-    return execute(call);
-  };
-
   const runRemoveNode = (call: ToolCall): StageToolBufferOutcome => {
     const nodeId = inputOf(call)["nodeId"];
     if (typeof nodeId === "string" && nodeId.length > 0) pending.delete(nodeId);
@@ -242,8 +219,6 @@ export function createStageToolBuffer(
           return runSetNode(call);
         case "append_node":
           return runAppendNode(call);
-        case "use_composition":
-          return runUseComposition(call);
         case "remove_node":
           return runRemoveNode(call);
         default:

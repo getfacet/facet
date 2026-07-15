@@ -33,10 +33,11 @@ export interface CatalogComponent {
   readonly guidance?: string;
 }
 
+/** Controls which reference datasets an agent may inspect; it is not an authoring tier. */
 export type CatalogCompositionsPolicy =
   { readonly mode: "all" } | { readonly mode: "allow"; readonly names: readonly string[] };
 
-export type CatalogUsageOrder = readonly ["composition", "component", "primitive"];
+export type CatalogUsageOrder = readonly ["component", "primitive"];
 
 export interface CatalogUsagePolicy {
   readonly order: CatalogUsageOrder;

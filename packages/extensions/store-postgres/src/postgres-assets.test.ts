@@ -74,7 +74,7 @@ const validTheme = {
 
 const validComposition = {
   name: "cta",
-  description: "a call to action",
+  metadata: { description: "a call to action" },
   root: "s-root",
   nodes: {
     "s-root": { id: "s-root", type: "box", children: ["s-label"] },
@@ -84,8 +84,28 @@ const validComposition = {
 
 const invalidComposition = {
   name: "broken",
+  metadata: { description: "a broken reference dataset" },
   root: "missing",
   nodes: { x: { id: "x", type: "text", value: "orphan" } },
+};
+
+const legacySlotsField = ["sl", "ots"].join("");
+const legacyReferenceField = ["u", "se"].join("");
+const legacyTemplateComposition = {
+  name: "legacy-template",
+  description: "An obsolete template",
+  [legacySlotsField]: { label: "Default" },
+  root: "copy",
+  nodes: { copy: { id: "copy", type: "text", value: "Default" } },
+};
+const legacyReferenceComposition = {
+  name: "legacy-reference",
+  metadata: { description: "An obsolete nested reference" },
+  root: "root",
+  nodes: {
+    root: { id: "root", type: "box", children: ["ref"] },
+    ref: { [legacyReferenceField]: "legacy-template" },
+  },
 };
 
 const customCatalog: FacetCatalog = {
@@ -95,7 +115,7 @@ const customCatalog: FacetCatalog = {
   compositions: { mode: "allow", names: ["cta"] },
   primitiveFallback: "discouraged",
   policy: {
-    order: ["composition", "component", "primitive"],
+    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 4,
@@ -255,6 +275,32 @@ describe("PostgresAssets", () => {
     await store.putAssets("agent", replacement);
 
     await expect(store.load("agent")).resolves.toEqual(replacement);
+  });
+
+  it("round-trips concrete and legacy shapes raw while loadAssets keeps only the native document", async () => {
+    const store = new PostgresAssets(roundTripPool());
+    const docs: AssetDocuments = {
+      themes: [validTheme],
+      compositions: [validComposition, legacyTemplateComposition, legacyReferenceComposition],
+      catalog: customCatalog,
+      initialTree: seedTree,
+    };
+
+    await store.putAssets("agent", docs);
+    await expect(store.load("agent")).resolves.toEqual(docs);
+
+    const loaded = await loadAssets(store, "agent");
+    const names = loaded.compositions.map((composition) => composition.name);
+    expect(names).toContain("cta");
+    expect(names).not.toContain("legacy-template");
+    expect(names).not.toContain("legacy-reference");
+    expect(loaded.compositions.find((composition) => composition.name === "cta")).toMatchObject(
+      validComposition,
+    );
+    expect(loaded.catalog.policy.order).toEqual(["component", "primitive"]);
+    expect(loaded.issues.some((issue) => issue.includes("composition document skipped"))).toBe(
+      true,
+    );
   });
 
   it("keeps composition assets isolated by agent id", async () => {

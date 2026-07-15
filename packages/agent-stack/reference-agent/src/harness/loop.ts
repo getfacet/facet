@@ -13,7 +13,11 @@ import {
 } from "./budget.js";
 import { assembleProviderContext } from "./context.js";
 import { createTokenEstimator, estimateProviderTurnChars, estimateTurnChars } from "./estimate.js";
-import { compactInTurnTranscript, shouldCompactInTurn } from "./in-turn-compaction.js";
+import {
+  compactInTurnTranscript,
+  hasPendingCompositionReadHandoff,
+  shouldCompactInTurn,
+} from "./in-turn-compaction.js";
 import { emitBatchYieldTrace, executeToolStep, hasPatchBatch, sayBatch } from "./loop-batches.js";
 import {
   emitContextCompactionTrace,
@@ -253,7 +257,11 @@ async function* runReadyProviderLoop(
         stopReason = "context_limit";
         break;
       }
-      if (compactionAttempted && tokenEstimator.estimateTokens(turnChars) > budgetTokens) {
+      const tokenOver = tokenEstimator.estimateTokens(turnChars) > budgetTokens;
+      if (
+        tokenOver &&
+        (compactionAttempted || hasPendingCompositionReadHandoff(messages, initialContextLength))
+      ) {
         stopReason = "context_limit";
         break;
       }

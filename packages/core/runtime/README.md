@@ -66,7 +66,7 @@ turns those documents into `LoadedAssets`:
 
 - `themes`: `DEFAULT_THEME` plus valid custom `*.theme.json` documents.
 - `compositions`: `DEFAULT_COMPOSITIONS` plus valid custom `*.composition.json`
-  documents.
+  documents. Each is a concrete, self-contained native node dataset.
 - `catalog`: a validated catalog document, or `DEFAULT_CATALOG`.
 - `initialTree`: an optional seed tree only when it validates and renders content.
 - `issues`: bounded warnings for skipped, shadowed, or sanitized documents.
@@ -88,16 +88,26 @@ every fallback.
 an empty registry still resolves the default theme, default compositions, and
 the locked theme default catalog.
 
+Composition documents are validated independently through
+`validateComposition`. A malformed document is skipped with a bounded issue
+while the remaining defaults and custom documents continue to load; there is no
+cross-document reference or dependency pass. `loadAssets` returns a frozen
+`readonly FacetComposition[]`, but it does not apply those datasets to a stage.
+Agent stacks may expose a filtered reference view and author ordinary native
+nodes after inspection.
+
 Raw document storage, validation/loading, and initial-stage seeding are separate
 private modules behind the unchanged `@facet/runtime` root exports. This keeps
 the fail-soft loader and seed recovery lifecycle independently reviewable.
 
 Catalog policy is UI authoring policy for the agent stack: active theme,
-theme-switch allowance, allowed components/variants, composition allow-list,
-primitive fallback, and the `composition -> component -> primitive` authoring
-order. The runtime only loads and validates that policy. Hosted platform policy
-such as auth, tenant isolation, billing, usage metering, rate limits, and spend
-caps belongs to the platform around Facet, not to `AssetsStore`.
+theme-switch allowance, allowed components/variants, optional composition
+reference exposure, primitive fallback, and the `component -> primitive`
+authoring order. The runtime only loads and validates that policy. In
+particular, the composition allow-list controls which datasets an agent may
+inspect; it is not another stage authoring layer. Hosted platform policy such as
+auth, tenant isolation, billing, usage metering, rate limits, and spend caps
+belongs to the platform around Facet, not to `AssetsStore`.
 
 See the [Facet docs](https://github.com/getfacet/facet) and
 [ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).

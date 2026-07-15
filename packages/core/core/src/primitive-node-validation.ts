@@ -53,17 +53,13 @@ import { sanitizeViewPredicate, type ViewPredicate } from "./view.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import { MAX_FIELD_OPTIONS, MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import {
-  isForbiddenKey,
   isPlainObject as isObject,
-  nullMap,
   printableKey,
   printableValue,
   type IssueSink,
 } from "./issues.js";
-import { SLOT_MARKER_RE, SLOT_NAME_RE } from "./slot-marker.js";
-import { isValidThemeName } from "./theme.js";
+import { SLOT_NAME_RE } from "./slot-marker.js";
 import { normalizeFacetAction } from "./action-validation.js";
-import type { CompositionRef } from "./composition-validation.js";
 export { isPrimitiveRecord, sanitizeActionPayload } from "./action-validation.js";
 
 function asString(value: unknown): string | undefined {
@@ -86,10 +82,6 @@ function asNumberToken<T extends number>(value: unknown, allowed: readonly T[]):
 
 function isValidSlotName(name: string): boolean {
   return SLOT_NAME_RE.test(name);
-}
-
-function isSlotMarker(value: string): boolean {
-  return SLOT_MARKER_RE.test(value);
 }
 
 /** Only render media from safe URL schemes — never `javascript:`, `data:text/html`, etc. */
@@ -306,94 +298,6 @@ function setActivePredicate(
   );
 }
 
-export interface SanitizeNodeOptions {
-  readonly allowSlotMarkers?: boolean;
-  /**
-   * Admit a CLOSED composition-reference node `{ use, slots }` in this node map.
-   * Set ONLY by `validateComposition` (a reference may appear inside a composition
-   * DEFINITION). `validateTree` never sets it, so a reference node authored into
-   * the live stage tree is dropped as unknown — a reference is structurally
-   * impossible to reach the stage/client (RISK-INV-1).
-   */
-  readonly allowReference?: boolean;
-}
-
-/**
- * Bounded string map shared by composition slot DEFAULTS and composition-reference
- * slot ARGUMENTS: forbidden/invalid slot names dropped, non-string values dropped,
- * over-cap values truncated at `MAX_FIELD_VALUE_CHARS`. Never throws. `label`
- * prefixes the issues so the two call-sites keep distinct diagnostics.
- */
-export function sanitizeSlotMap(
-  raw: unknown,
-  issues: IssueSink,
-  label: string,
-): Record<string, string> | undefined {
-  if (raw === undefined) return undefined;
-  if (!isObject(raw)) {
-    issues.push(`${label}s is not an object map; dropped`);
-    return undefined;
-  }
-  const slots = nullMap<string>();
-  for (const [name, value] of Object.entries(raw)) {
-    const key = printableKey(name);
-    if (isForbiddenKey(name)) {
-      issues.push(`${label} "${key}": forbidden slot name dropped`);
-      continue;
-    }
-    if (!isValidSlotName(name)) {
-      issues.push(`${label} "${key}": invalid slot name dropped`);
-      continue;
-    }
-    if (typeof value !== "string") {
-      issues.push(`${label} "${key}": default is not a string; dropped`);
-      continue;
-    }
-    if (value.length > MAX_FIELD_VALUE_CHARS) {
-      slots[name] = value.slice(0, MAX_FIELD_VALUE_CHARS);
-      issues.push(`${label} "${key}": default truncated to ${MAX_FIELD_VALUE_CHARS} characters`);
-      continue;
-    }
-    slots[name] = value;
-  }
-  return Object.keys(slots).length > 0 ? slots : undefined;
-}
-
-/**
- * Whether a raw value is shaped like a CLOSED composition reference: a string
- * `use` and NO node `type` (so it is unambiguously a reference, not a brick that
- * happens to carry a stray `use` key). Slot bounding and name validation happen
- * in `sanitizeCompositionReference`.
- */
-export function isCompositionRefShape(raw: unknown): raw is { use: string } {
-  return isObject(raw) && typeof raw.use === "string" && raw.type === undefined;
-}
-
-/**
- * Build a CLOSED `{ use, slots }` reference — ONLY `use` and (bounded) `slots`
- * survive; every other author key is dropped. `use` must be a valid composition
- * name (the same identifier floor a composition's own `name` uses). Never throws;
- * an invalid `use` drops the reference with a bounded issue.
- */
-function sanitizeCompositionReference(
-  id: string,
-  raw: Record<string, unknown>,
-  issues: IssueSink,
-): CompositionRef | undefined {
-  const key = printableKey(id);
-  const use = asString(raw.use);
-  if (use === undefined || !isValidThemeName(use)) {
-    issues.push(
-      `node "${key}": composition reference use ${printableValue(raw.use)} is invalid; dropped`,
-    );
-    return undefined;
-  }
-  const ref: { use: string; slots?: Record<string, string> } = { use };
-  const slots = sanitizeSlotMap(raw.slots, issues, "composition reference slot");
-  if (slots !== undefined) ref.slots = slots;
-  return ref;
-}
-
 /**
  * Per-primitive validate handlers. Bodies are the former `sanitizeNode` switch
  * cases verbatim — the brick registry (`brick-registry.ts`) references these so
@@ -404,7 +308,6 @@ export type PrimitiveValidator = (
   id: string,
   raw: Record<string, unknown>,
   issues: IssueSink,
-  options: SanitizeNodeOptions,
   rawType: string,
 ) => FacetNode | undefined;
 
@@ -543,7 +446,6 @@ export function validateMedia(
   id: string,
   raw: Record<string, unknown>,
   issues: IssueSink,
-  options: SanitizeNodeOptions,
   rawType: string,
 ): FacetNode | undefined {
   const key = printableKey(id);
@@ -552,7 +454,7 @@ export function validateMedia(
     issues.push(`node "${key}": media needs a string src`);
     return undefined;
   }
-  if (!isSafeMediaSrc(src) && !(options.allowSlotMarkers === true && isSlotMarker(src))) {
+  if (!isSafeMediaSrc(src)) {
     issues.push(`node "${key}": unsafe media src dropped`);
     return undefined;
   }
@@ -582,10 +484,7 @@ export function validateMedia(
   const alt = asString(raw.alt);
   node.alt = alt ?? "";
   const poster = asString(raw.poster);
-  if (
-    poster !== undefined &&
-    (isSafeMediaSrc(poster) || (options.allowSlotMarkers === true && isSlotMarker(poster)))
-  ) {
+  if (poster !== undefined && isSafeMediaSrc(poster)) {
     node.poster = poster;
   }
   const controls = asBool(raw.controls);
@@ -777,21 +676,10 @@ export function validateRichText(
   return node;
 }
 
-export function sanitizeNode(
-  id: string,
-  raw: unknown,
-  issues: IssueSink,
-  options: SanitizeNodeOptions = {},
-): FacetNode | CompositionRef | undefined {
+export function sanitizeNode(id: string, raw: unknown, issues: IssueSink): FacetNode | undefined {
   const key = printableKey(id);
   const type = isObject(raw) ? asString(raw.type) : undefined;
   if (!isObject(raw) || type === undefined) {
-    // A CLOSED composition reference is admitted ONLY under `allowReference`
-    // (composition definitions). Without the option it falls through to the
-    // unknown-node path, so a reference authored into the live tree is dropped.
-    if (options.allowReference === true && isCompositionRefShape(raw)) {
-      return sanitizeCompositionReference(id, raw, issues);
-    }
     issues.push(`node "${key}": not an object with a type`);
     return undefined;
   }
@@ -800,7 +688,7 @@ export function sanitizeNode(
   // input alias for the `media` primitive (kind defaulted from the raw type).
   const lookupType = type === "image" ? "media" : type;
   const entry = (BRICK_REGISTRY as Record<string, BrickEntry | undefined>)[lookupType];
-  if (entry?.validate !== undefined) return entry.validate(id, raw, issues, options, type);
+  if (entry?.validate !== undefined) return entry.validate(id, raw, issues, type);
   issues.push(`node "${key}": unknown type "${printableKey(type)}"`);
   return undefined;
 }

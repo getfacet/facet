@@ -1,10 +1,5 @@
-import { isPlainObject, type IssueSink } from "./issues.js";
-import {
-  PRIMITIVE_BRICK_TYPES,
-  type FacetNode,
-  type PrimitiveBrickType,
-  type TextNode,
-} from "./nodes.js";
+import { isPlainObject } from "./issues.js";
+import { PRIMITIVE_BRICK_TYPES, type PrimitiveBrickType, type TextNode } from "./nodes.js";
 import {
   COMPONENT_NODE_TYPES,
   type ChartNode,
@@ -58,44 +53,6 @@ import {
   rendersTabsNav,
   rendersText,
 } from "./tree.js";
-import {
-  fillBox,
-  fillButton,
-  fillCard,
-  fillChart,
-  fillEmptyState,
-  fillField,
-  fillFilterBar,
-  fillForm,
-  fillKeyValue,
-  fillList,
-  fillLoading,
-  fillMedia,
-  fillMetricStat,
-  fillProgress,
-  fillSection,
-  fillTable,
-  fillTabsNav,
-  fillText,
-  leavesBox,
-  leavesButton,
-  leavesCard,
-  leavesChart,
-  leavesEmptyState,
-  leavesField,
-  leavesFilterBar,
-  leavesForm,
-  leavesKeyValue,
-  leavesList,
-  leavesLoading,
-  leavesMedia,
-  leavesMetricStat,
-  leavesProgress,
-  leavesSection,
-  leavesTable,
-  leavesTabsNav,
-  leavesText,
-} from "./expand-composition-fill.js";
 
 /**
  * The per-brick registry — the single, exhaustive source that de-scatters the
@@ -139,15 +96,6 @@ export type RendersPredicate = (
   warehouse: DataWarehouse | undefined,
 ) => boolean;
 
-export type NodeFiller = (
-  node: FacetNode,
-  defaults: Readonly<Record<string, string>>,
-  params: Readonly<Record<string, unknown>>,
-  issues: IssueSink,
-) => FacetNode;
-
-export type NodeStringLeaves = (node: FacetNode) => readonly string[];
-
 export interface BrickEntry {
   readonly kind: "primitive" | "component";
   /** Component role tag (undefined for primitives). */
@@ -162,17 +110,13 @@ export interface BrickEntry {
   readonly resolveFromContent?: RendersPredicate;
   /** Content predicate for a node without a `from` binding. */
   readonly rendersSelf: RendersPredicate;
-  /** Composition slot fill. */
-  readonly fill: NodeFiller;
-  /** Composition slot-source string leaves. */
-  readonly stringLeaves: NodeStringLeaves;
 }
 
 /**
  * richtext content predicate (over the RAW node, mirroring the other renders*
  * predicates): renders when ≥1 block carries ≥1 run with NON-EMPTY string text.
- * Used for composition emptyState fallback — an all-empty-run richtext emits only
- * invisible elements, so it must count as no-content and let the fallback show.
+ * Used for tree content detection — an all-empty-run richtext emits only
+ * invisible elements, so it must count as no-content.
  * (This matches the renderer's own `richTextHasVisibleRun` visibility test; motion
  * participation is decided there, not here.)
  */
@@ -196,8 +140,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     established: false,
     validate: validateBox,
     rendersSelf: rendersBox,
-    fill: fillBox,
-    stringLeaves: leavesBox,
   },
   text: {
     kind: "primitive",
@@ -206,24 +148,18 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     resolve: (node, warehouse) => resolveScalar(node as TextNode, warehouse),
     resolveFromContent: fromText,
     rendersSelf: rendersText,
-    fill: fillText,
-    stringLeaves: leavesText,
   },
   media: {
     kind: "primitive",
     established: false,
     validate: validateMedia,
     rendersSelf: rendersMedia,
-    fill: fillMedia,
-    stringLeaves: leavesMedia,
   },
   input: {
     kind: "primitive",
     established: false,
     validate: validateInput,
     rendersSelf: rendersField,
-    fill: fillField,
-    stringLeaves: leavesField,
   },
   richtext: {
     kind: "primitive",
@@ -231,10 +167,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     validate: validateRichText,
     // richtext is a LEAF and NOT `from`-bound (no resolve/resolveFromContent).
     rendersSelf: rendersRichText,
-    // Not composition-slot-filled and not a slot source in v1, so `fill` is a
-    // passthrough (reusing fillBox) and `stringLeaves` is empty (leavesBox).
-    fill: fillBox,
-    stringLeaves: leavesBox,
   },
   // ---- Control components -----------------------------------------------
   button: {
@@ -242,40 +174,30 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     role: "control",
     established: true,
     rendersSelf: rendersButton,
-    fill: fillButton,
-    stringLeaves: leavesButton,
   },
   tabs: {
     kind: "component",
     role: "control",
     established: true,
     rendersSelf: rendersTabsNav,
-    fill: fillTabsNav,
-    stringLeaves: leavesTabsNav,
   },
   nav: {
     kind: "component",
     role: "control",
     established: false,
     rendersSelf: rendersTabsNav,
-    fill: fillTabsNav,
-    stringLeaves: leavesTabsNav,
   },
   form: {
     kind: "component",
     role: "control",
     established: false,
     rendersSelf: rendersForm,
-    fill: fillForm,
-    stringLeaves: leavesForm,
   },
   filterBar: {
     kind: "component",
     role: "control",
     established: false,
     rendersSelf: rendersFilterBar,
-    fill: fillFilterBar,
-    stringLeaves: leavesFilterBar,
   },
   // ---- Data components --------------------------------------------------
   table: {
@@ -284,8 +206,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     established: true,
     resolve: (node, warehouse) => resolveTable(node as TableNode, warehouse),
     rendersSelf: rendersTable,
-    fill: fillTable,
-    stringLeaves: leavesTable,
   },
   chart: {
     kind: "component",
@@ -294,8 +214,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     resolve: (node, warehouse) => resolveChart(node as ChartNode, warehouse),
     resolveFromContent: fromChart,
     rendersSelf: rendersChart,
-    fill: fillChart,
-    stringLeaves: leavesChart,
   },
   list: {
     kind: "component",
@@ -304,8 +222,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     resolve: (node, warehouse) => resolveList(node as ListNode, warehouse),
     resolveFromContent: fromList,
     rendersSelf: rendersList,
-    fill: fillList,
-    stringLeaves: leavesList,
   },
   keyValue: {
     kind: "component",
@@ -314,8 +230,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     resolve: (node, warehouse) => resolveKeyValue(node as KeyValueNode, warehouse),
     resolveFromContent: fromKeyValue,
     rendersSelf: rendersKeyValue,
-    fill: fillKeyValue,
-    stringLeaves: leavesKeyValue,
   },
   metric: {
     kind: "component",
@@ -324,8 +238,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     resolve: (node, warehouse) => resolveScalar(node as MetricNode | StatNode, warehouse),
     resolveFromContent: fromMetricStat,
     rendersSelf: rendersMetricStat,
-    fill: fillMetricStat,
-    stringLeaves: leavesMetricStat,
   },
   stat: {
     kind: "component",
@@ -334,8 +246,6 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     resolve: (node, warehouse) => resolveScalar(node as MetricNode | StatNode, warehouse),
     resolveFromContent: fromMetricStat,
     rendersSelf: rendersMetricStat,
-    fill: fillMetricStat,
-    stringLeaves: leavesMetricStat,
   },
   // ---- Feedback components ----------------------------------------------
   progress: {
@@ -343,24 +253,18 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     role: "feedback",
     established: true,
     rendersSelf: rendersProgress,
-    fill: fillProgress,
-    stringLeaves: leavesProgress,
   },
   emptyState: {
     kind: "component",
     role: "feedback",
     established: false,
     rendersSelf: rendersEmptyState,
-    fill: fillEmptyState,
-    stringLeaves: leavesEmptyState,
   },
   loading: {
     kind: "component",
     role: "feedback",
     established: false,
     rendersSelf: rendersAlways,
-    fill: fillLoading,
-    stringLeaves: leavesLoading,
   },
   // ---- Layout components ------------------------------------------------
   section: {
@@ -368,15 +272,11 @@ export const BRICK_REGISTRY: Record<CoreNodeType, BrickEntry> = {
     role: "layout",
     established: true,
     rendersSelf: rendersSectionCard,
-    fill: fillSection,
-    stringLeaves: leavesSection,
   },
   card: {
     kind: "component",
     role: "layout",
     established: true,
     rendersSelf: rendersSectionCard,
-    fill: fillCard,
-    stringLeaves: leavesCard,
   },
 };

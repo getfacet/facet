@@ -16,7 +16,7 @@ const legacyTool = ["use_", "st", "amp"].join("");
 const EXPECTED_NAMES: readonly FacetStageToolName[] = [
   "render_page",
   "append_node",
-  "use_composition",
+  "get_composition",
   "set_node",
   "remove_node",
   "say",
@@ -65,19 +65,23 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     expect(props["name"]).toMatchObject({ type: "string" });
   });
 
-  it("describes composition expansion as name plus string params plus parent location", () => {
-    const useComposition = tool("use_composition");
-    const props = propertiesOf(useComposition);
-    const params = props["params"] as Record<string, unknown>;
-    const at = props["at"] as Record<string, unknown>;
+  it("keeps the get_composition reference contract name-only and read-only", () => {
+    const getComposition = tool("get_composition");
+    const props = propertiesOf(getComposition);
 
-    expect(useComposition.description).toMatch(/composition/i);
-    expect(useComposition.description).not.toMatch(/compat/i);
-    expect(Object.keys(props)).toEqual(["name", "params", "at"]);
+    expect(getComposition.description).toMatch(/reference/i);
+    expect(getComposition.description).toMatch(/read|inspect/i);
+    expect(getComposition.description).toMatch(/native/i);
+    expect(getComposition.description).not.toMatch(/expand|insert|patch/i);
+    expect(Object.keys(props)).toEqual(["name"]);
     expect(props["name"]).toMatchObject({ type: "string" });
     expect(JSON.stringify(props["name"])).toContain("COMPOSITIONS");
-    expect(params["additionalProperties"]).toMatchObject({ type: "string" });
-    expect(at["required"]).toEqual(["parent"]);
+    expect(getComposition.parameters["required"]).toEqual(["name"]);
+    expect(getComposition.parameters["additionalProperties"]).toBe(false);
+    expect(props).not.toHaveProperty("params");
+    expect(props).not.toHaveProperty("at");
+    expect(props).not.toHaveProperty("target");
+    expect(props).not.toHaveProperty("patch");
     expect(getStageToolSpec(legacyTool as FacetStageToolName)).toBeUndefined();
     expect(allToolText()).not.toMatch(legacyNaming);
   });
@@ -87,12 +91,12 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     const appendNode = tool("append_node");
     const setNode = tool("set_node");
     const setTheme = tool("set_theme");
-    const useComposition = tool("use_composition");
+    const getComposition = tool("get_composition");
     const nodeSchemaText = JSON.stringify(propertiesOf(appendNode)["node"]);
 
     expect(renderPage.description).toMatch(/catalog policy/i);
     expect(appendNode.description).toMatch(/box, section, card, or form/i);
-    expect(nodeSchemaText).toMatch(/composition -> component -> primitive fallback/);
+    expect(nodeSchemaText).toMatch(/component -> primitive fallback/);
     expect(nodeSchemaText).toMatch(/tree\.data datasets/);
     expect(nodeSchemaText).not.toMatch(/no data-binding/i);
     for (const type of PRIMITIVE_BRICK_TYPES) {
@@ -109,8 +113,8 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     expect(JSON.stringify(propertiesOf(setNode)["node"])).toMatch(/section|card|table|chart/);
     expect(setTheme.description).toMatch(/locked/i);
     expect(setTheme.description).toMatch(/catalog/i);
-    expect(useComposition.description).toMatch(/composition/i);
-    expect(useComposition.description).not.toMatch(legacyNaming);
+    expect(getComposition.description).toMatch(/composition/i);
+    expect(getComposition.description).not.toMatch(legacyNaming);
     const retiredTerm = new RegExp(["high-level", "brick"].join(" "), "i");
     expect(allToolText()).not.toMatch(retiredTerm);
     expect(allToolText()).not.toMatch(/v1 brick/i);

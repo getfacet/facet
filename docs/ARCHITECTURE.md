@@ -47,10 +47,10 @@ freely, guided by a catalog when a project wants stronger design-system policy.
 The trick that makes this safe *and* one-shot-reliable is that freedom and
 fragility are separated onto different axes:
 
-- Freedom comes from **composition**: primitive bricks stay the universal base,
-  intrinsic components cover common product/app UI, catalog compositions provide
-  reusable fragments, and recipe components can expand to ordinary validated
-  nodes.
+- Freedom comes from **native composition**: primitive bricks stay the universal
+  base, intrinsic components cover common product/app UI, and the model can
+  combine both freely. Optional catalog reference datasets show validated
+  concrete patterns without becoming stage syntax or an authoring tier.
 - Safety comes from **constraining the vocabulary, not handing over markup**:
   nodes are typed data (no raw HTML/JS), style values are **tokens** not scalars,
   layout is **flow-only** (no absolute positioning), every prop has a
@@ -60,8 +60,8 @@ So "broken" splits into two kinds, and both are designed out: *crashes /
 injection / overlap* are made structurally impossible; *ugliness* is prevented
 because tokens and recipes force every choice onto a coherent scale. One-shot
 leverage (the thing semantic catalogs were good at) comes from catalog policy,
-theme recipes, and composition metadata, while primitive fallback keeps the system from
-becoming an opaque widget-only catalog.
+theme recipes, and optional reference examples, while primitive fallback keeps
+the system from becoming an opaque widget-only catalog.
 
 ## Primitive Bricks And Components
 
@@ -99,9 +99,10 @@ Components are split by ownership:
   app domains, useful as familiar agent-facing nouns, renderer-owned, safe
   without client-side business logic, and hard enough to reproduce from
   primitives that a typed node materially improves reliability.
-- **Recipe components/compositions** are operator or catalog data. They expand
-  to ordinary validated nodes and theme recipes; they do not add new raw code or
-  new client-side behavior.
+- **Theme recipes** are operator data that map approved component variants and
+  renderer-owned parts to token-only styles. **Composition references** are
+  concrete, validated native-node examples an LLM may inspect. Neither adds a
+  node kind, stage syntax, automatic insertion, or client-side behavior.
 
 The v1 intrinsic components are still just typed stage data:
 
@@ -119,9 +120,9 @@ The v1 intrinsic components are still just typed stage data:
 - `chart` — display-only chart data with capped series and points.
 - `metric`, `keyValue`, `progress`, `list`, `emptyState`, and `loading` —
   compact display and feedback components with bounded payloads. `stat` remains
-  a legacy alias for `metric`. Badges and alerts are not node types; they are
-  catalog compositions (`{ "use": "badge" }` / `{ "use": "alert" }`, expanded to
-  box+text), and a visual separator is a plain bordered box rather than a node.
+  a legacy alias for `metric`. Badges and alerts are not node types; default
+  reference datasets show equivalent native box+text patterns, and a visual
+  separator is a plain bordered box rather than a node.
 - `form` and `filterBar` — input/control surfaces only. Backend work
   stays with the agent through actions and later patches.
 
@@ -146,8 +147,8 @@ descriptors — never a general z-index/absolute-positioning escape hatch:
 
 ## Renderer Layout Contract
 
-The renderer enforces the containment rule for every primitive brick, intrinsic
-component, and expanded recipe component:
+The renderer enforces the containment rule for every primitive brick and
+intrinsic component:
 
 - **Parent owns placement.** A parent's direction, gap, align, justify, columns,
   and wrap place only its immediate children.
@@ -161,8 +162,8 @@ component, and expanded recipe component:
 - Absolute/fixed positioning remains outside the stage vocabulary.
 
 This contract is intentionally central: component renderers must satisfy it at
-their root element, and recipe components satisfy it after expansion because they
-become ordinary validated nodes.
+their root element. Theme recipes only select token styles, and any model output
+adapted from a reference dataset still passes the ordinary native-node validator.
 
 `onPress` is a small **behavior language** — a discriminated union so the agent
 can pre-declare what an interaction does:
@@ -238,14 +239,16 @@ the vocabulary grows deliberately instead of by accretion.
 ## Catalog policy
 
 `FacetCatalog` is the agent-facing usage manual for the active project. It says
-which primitive bricks, components, variants, and compositions are allowed,
-whether primitive fallback is allowed or discouraged, whether theme switching is
-locked, and whether the agent should prefer compact screens or
-edit-before-append behavior. Missing or malformed catalog input falls back to
-`DEFAULT_CATALOG` with bounded issues. The normalized model exposes `bricks`,
-`components`, a required `compositions` policy (`{ mode: "all" }` by default, or
-`{ mode: "allow", names }`), `primitiveFallback`, and a usage `policy` whose
-canonical `order` is `["composition", "component", "primitive"]`.
+which primitive bricks, components, and variants are allowed, which optional
+composition references may be inspected, whether primitive fallback is allowed
+or discouraged, whether theme switching is locked, and whether the agent should
+prefer compact screens or edit-before-append behavior. Missing or malformed
+catalog input falls back to `DEFAULT_CATALOG` with bounded issues. The normalized
+model exposes `bricks`, `components`, a required composition-reference exposure
+policy (`{ mode: "all" }` by default, or `{ mode: "allow", names }`),
+`primitiveFallback`, and a usage `policy` whose canonical native authoring order
+is `["component", "primitive"]`. Reference exposure is independent from that
+order and never creates a third node tier.
 
 The catalog is deliberately neutral UI vocabulary/policy. It is not LiveFrame and
 it is not a hosted control plane. Tenant/project lookup, browser auth, agent
@@ -303,34 +306,41 @@ composition, and initial-tree assets fail-soft, caps hostile asset/issue arrays 
 iterating them, and skips any invalid document with a logged issue — the same
 skip-and-log posture the file stage store already uses.
 
-**Compositions** — `*.composition.json` validated `{ root, nodes, slots? }`
-fragments — reach the quickstart LLM as names, slot names, descriptions, and
-bounded metadata such as `category`, `useWhen`, `avoidWhen`, `tags`,
-`preferredParent`, `composedOf`, and `followUpEdits`. Full composition JSON,
-`root`, `nodes`, slot defaults, and unknown fields are not prompt surface. The
-model calls the `use_composition` tool; the server resolves the name from the
-immutable per-agent composition snapshot, fills whole-value `{{slot}}` markers,
-remaps every internal id to a fresh id, drops unreachable nodes and composition
-actions that point outside the expanded subtree, and emits ordinary JSON Patch
-ops through the same closure buffer as hand-authored nodes. The parent must be a
-known container (`box`, `section`, `card`, or `form`), and an expansion that
-would overflow one patch batch is refused before any partial patch is emitted.
+**Composition references** — `*.composition.json` documents with validated
+`{ name, metadata: { description, ... }, root, nodes }` shape — are optional,
+concrete native-node datasets. `metadata.description` is required and bounded;
+every node uses the existing closed `FacetNode` vocabulary and token rules. The
+fragment root may be any retained native leaf or container. The same native
+sanitizer, dangling-child pruning, cycle breaking, depth cap, and node cap apply
+at load; unusable documents are skipped with bounded issues. There are no
+parameters, substitution markers, nested reference nodes, or graph semantics.
 
-A composition may also **reference another composition** — a closed
-`{ use: <name>, slots? }` node inside its `nodes` map — so shared structure stays
-DRY instead of being inlined. This is operator/catalog data only: the reference
-shape is admitted solely inside composition definitions (never in the live stage
-tree — `validateTree` drops it), its `slots` are the same bounded static strings
-as slot defaults (no expressions — the no-DSL line holds), and it expands
-recursively to **primitive/native-brick nodes only**, so a reference node can
-never reach the visitor. Because the catalog is operator-authored and loaded
-once, the whole reference graph is validated at **load** (`validateCompositionGraph`):
-a cycle, a dangling reference, or an over-depth/over-size chain refuses the
-affected compositions before any agent can use them, never a live-expansion
-hazard. The agent surface is unchanged — it still calls `use_composition` by
-name; nesting is invisible to it.
-There is **no client-side composition expansion** anywhere: `validateTree` and
-the fail-safe renderer see only normal bricks.
+`@facet/agent-tools` builds one detached, deeply frozen per-agent snapshot for
+both prompt indexing and lookup. It revalidates inputs, keeps the first valid
+duplicate name, applies the catalog's `all`/allow-list exposure policy, and stops
+after 128 selected references so the index remains inside the smallest
+reference-agent context profile; a supplied malformed catalog fails closed to no
+references. The system prompt sees only each selected name plus
+`metadata.description`, never `root`, `nodes`, other metadata, or unknown asset
+fields.
+
+For complex work, the model may call `get_composition({ name })`. This is a
+read-only agent-side lookup: success returns the complete selected composition
+JSON in a standard `no_stage_change` observation with zero messages, patches, or
+changed node ids. The model then authors or adapts ordinary native nodes through
+the existing stage tools as a separate action; no ids are minted and nothing is
+inserted automatically. Unknown, catalog-disallowed, or malformed requests are
+rejected fail-safe without touching the stage or pending edit buffer.
+
+The exact read is a narrow exception to generic observation and transcript text
+caps so the next provider call receives the whole validated object. The newest
+read group stays verbatim through that first handoff even when configured recent
+retention is zero. If the complete next request cannot fit the total provider
+context, the loop stops with `context_limit` before calling the provider rather
+than slicing or summarizing the result. Composition JSON remains provider-side:
+it is absent from the browser shell, globals, SSE frames, reconnect snapshots,
+and server/client protocols. The browser and renderer see only native stage
+nodes later authored through ordinary patches.
 
 Seeding a page before the first model call is a `StageStore` **decorator**,
 `withInitialStage`, that opens a fresh session on a validated initial tree
@@ -581,8 +591,9 @@ later batch. Replace the hand-written branches with an LLM call that emits the
 same operations and nothing else in the stack changes. The shared prompt kit
 covers Facet-specific guidance such as compact page UX, edit-before-append
 behavior, bounded `render_page` use, visible-completion rules, and
-theme/composition metadata privacy; the consuming agent still owns the page brief, provider
-context, history, budgets, retries, stop policy, and any business/domain tools.
+theme/reference-asset privacy; the consuming agent still owns the page brief,
+provider context, history, budgets, retries, stop policy, and any business/domain
+tools.
 
 ## Reference brain: `@facet/reference-agent`
 
@@ -635,17 +646,21 @@ before a provider call if compaction still cannot fit the configured context
 budget. Corrupt sink history rows and
 malformed stage metadata degrade to placeholders/summaries instead of aborting
 prompt assembly. Tool observations are appended to the transcript before the
-next provider step as bounded JSON emitted by `@facet/agent-tools`. The model
+next provider step as structured JSON emitted by `@facet/agent-tools`. The model
 reads `status`, `outcome`, `visible_to_visitor`, `warnings`, and `next_action`
-instead of matching prose. Observation fields are bounded before they enter the
-transcript; the harness's observation cap remains a final guard. Trace callbacks
-are sanitized and bounded; saturated async trace queues preserve terminal
-`stop`/`turn_error` events over ordinary trace events.
+instead of matching prose. Generic observation fields and transcript entries are
+bounded. The one role-specific exception is a successful `get_composition`
+payload: its exact `data` string and newest tool group remain intact for the
+first provider handoff, or the harness stops `context_limit` before that call.
+Trace callbacks remain sanitized and bounded; saturated async trace queues
+preserve terminal `stop`/`turn_error` events over ordinary trace events.
 
-The stage tools map 1:1 onto the `Stage` control API — `append_node` /
-`set_node` / `remove_node` (incremental edits), `render_page` (a full redraw),
-and `say` (chat) — via the provider's native function-calling (OpenAI) /
-tool-use (Anthropic). It is fail-safe throughout: a bad tool argument becomes a
+The native write/chat tools correspond to the `Stage` control API —
+`append_node` / `set_node` / `remove_node` (incremental edits), `render_page` (a
+full redraw), and `say` (chat) — via the provider's native function-calling
+(OpenAI) / tool-use (Anthropic). `get_composition` is deliberately separate: it
+reads one provider-side reference with exact `{ name }` input and has no `Stage`
+method or write effect. It is fail-safe throughout: a bad tool argument becomes a
 structured `status: "error"` / `outcome: "rejected"` observation the model
 recovers from (never a throw), buffered forward references become
 `outcome: "pending"`, and non-visible writes are reported as

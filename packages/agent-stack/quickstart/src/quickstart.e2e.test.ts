@@ -41,22 +41,31 @@ const CATALOG_E2E: FacetCatalog = {
   compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: ["composition", "component", "primitive"],
+    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
     maxScreenSections: 3,
   },
 };
 
-/** Operator composition for `--assets` paths — expanded server-side; its document internals never cross the browser (DC-013). */
+const OPERATOR_REFERENCE_NODE_ID = "qs-reference-provenance-node";
+const OPERATOR_REFERENCE_PROVENANCE = "provider-only-reference-provenance-7f4c";
+
+/** Concrete operator reference for `--assets`; only the provider may observe its full JSON. */
 const OPERATOR_COMPOSITION: FacetComposition = {
   name: "qs-operator-panel",
-  description: "Operator panel band",
-  slots: { title: "Operator default title" },
-  root: "qs-operator-root",
+  metadata: {
+    description: "Concrete operator panel reference",
+    category: "operations",
+    tags: ["panel", "operator"],
+  },
+  root: OPERATOR_REFERENCE_NODE_ID,
   nodes: {
-    "qs-operator-root": { id: "qs-operator-root", type: "box", children: ["qs-operator-title"] },
-    "qs-operator-title": { id: "qs-operator-title", type: "text", value: "{{title}}" },
+    [OPERATOR_REFERENCE_NODE_ID]: {
+      id: OPERATOR_REFERENCE_NODE_ID,
+      type: "text",
+      value: OPERATOR_REFERENCE_PROVENANCE,
+    },
   },
 };
 
@@ -96,6 +105,27 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
     },
   },
 };
+
+function nativePanelTree(id: string, title: string): FacetTree {
+  const copyId = `${id}.copy`;
+  return {
+    root: id,
+    nodes: {
+      [id]: {
+        id,
+        type: "section",
+        title,
+        variant: "surface",
+        children: [copyId],
+      },
+      [copyId]: {
+        id: copyId,
+        type: "text",
+        value: `${title} authored with native nodes`,
+      },
+    },
+  };
+}
 
 /** One parsed SSE frame: its optional `id:` line and its decoded `data:` payload. */
 interface SseFrame {
@@ -725,41 +755,58 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
   });
 });
 
-describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
-  it("runCli loads catalog.json and drives a catalog-guided dashboard/pricing path", async () => {
+describe("quickstart E2E — composition references stay provider-only (DC-006, DC-010)", () => {
+  it("reads a composition reference then authors native nodes", async () => {
     const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
     const openAi = installOpenAiMock([
+      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
       [
-        mockCall("set_theme", { name: "midnight" }),
         mockCall("render_page", { tree: CATALOG_DASHBOARD_TREE }),
-        mockCall("say", { text: "catalog dashboard ready" }),
+        mockCall("say", { text: "native dashboard ready" }),
       ],
       [],
     ]);
     let running: RunningQuickstart | undefined;
     try {
       await writeFile(join(dir, "catalog.json"), JSON.stringify(CATALOG_E2E), "utf8");
+      await writeFile(
+        join(dir, "panel.composition.json"),
+        JSON.stringify(OPERATOR_COMPOSITION),
+        "utf8",
+      );
       const booted = await bootCli(["--assets", dir]);
       running = booted.running;
 
-      const visitorId = "e2e-catalog-dashboard";
+      const shell = await (await fetch(`${running.url}/`)).text();
+      expect(shell).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+      expect(shell).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+      expect(shell).not.toContain("__FACET_COMPOSITIONS__");
+
+      const visitorId = "e2e-reference-native";
       const stream = await openStream(running.url, visitorId);
+      let frameText = "";
       try {
         await stream.next(1); // reset
         const post = await postEvent(running.url, visitorId, {
           kind: "message",
-          text: "Build the catalog dashboard and pricing path",
+          text: "Read the operator reference, then build a native dashboard",
         });
         expect(post.status).toBe(202);
 
         const frames = await stream.next(3);
         expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "patch", "say"]);
-        expect(sayTexts(frames)).toEqual(["catalog dashboard ready"]);
+        expect(sayTexts(frames)).toEqual(["native dashboard ready"]);
 
-        const providerRequest = JSON.stringify(openAi.bodies[0]);
-        expect(providerRequest).toContain("CATALOG");
-        expect(providerRequest).toContain("quickstart-catalog");
-        expect(providerRequest).toContain("policy order: composition -> component -> primitive");
+        const firstProviderRequest = JSON.stringify(openAi.bodies[0]);
+        expect(firstProviderRequest).toContain("CATALOG");
+        expect(firstProviderRequest).toContain("quickstart-catalog");
+        expect(firstProviderRequest).toContain("policy order: component -> primitive");
+        expect(firstProviderRequest).toContain(OPERATOR_COMPOSITION.name);
+        expect(firstProviderRequest).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+
+        const providerAfterRead = JSON.stringify(openAi.bodies[1]);
+        expect(providerAfterRead).toContain(OPERATOR_REFERENCE_NODE_ID);
+        expect(providerAfterRead).toContain(OPERATOR_REFERENCE_PROVENANCE);
 
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
@@ -769,11 +816,22 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         expect(patchText).toContain("catalog-pricing");
         expect(patchText).toContain('"type":"section"');
         expect(patchText).toContain('"type":"button"');
-        expect(patchText).not.toContain("midnight");
+        frameText = JSON.stringify(frames);
+        expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+        expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+        expect(frameText).not.toContain('"kind":"composition"');
         expect(booted.captured.err.join("\n")).not.toContain("turn failed");
       } finally {
         await stream.close();
       }
+
+      const reconnect = await fetch(`${running.url}/stream?visitorId=${visitorId}`);
+      const snapshot = await readEvents(reconnect, 2); // reset + native stage snapshot
+      const snapshotText = JSON.stringify(snapshot);
+      expect(snapshotText).toContain("catalog-dashboard");
+      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+      expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
     } finally {
       await running?.close();
       openAi.restore();
@@ -781,18 +839,22 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
     }
   });
 
-  it("serializes rapid composition-guided visitor events into ordered ordinary patch frames", async () => {
-    const panelCall = (title: string): MockOpenAiToolCall =>
-      mockCall("use_composition", {
-        name: "qs-operator-panel",
-        params: { title },
-        at: { parent: QUICKSTART_INITIAL_STAGE.root },
-      });
+  it("serializes rapid same-visitor reference reads and native writes in order", async () => {
+    const dashboardTree = nativePanelTree("native-dashboard", "Dashboard band");
+    const pricingTree = nativePanelTree("native-pricing", "Pricing band");
     const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
     const openAi = installOpenAiMock([
-      [panelCall("Dashboard band"), mockCall("say", { text: "composition dashboard ready" })],
+      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
+      [
+        mockCall("render_page", { tree: dashboardTree }),
+        mockCall("say", { text: "native dashboard ready" }),
+      ],
       [],
-      [panelCall("Pricing band"), mockCall("say", { text: "composition pricing ready" })],
+      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
+      [
+        mockCall("render_page", { tree: pricingTree }),
+        mockCall("say", { text: "native pricing ready" }),
+      ],
       [],
     ]);
     let running: RunningQuickstart | undefined;
@@ -811,8 +873,8 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
       try {
         await stream.next(1); // reset
         const [dashboardPost, pricingPost] = await Promise.all([
-          postEvent(running.url, visitorId, { kind: "message", text: "composition dashboard" }),
-          postEvent(running.url, visitorId, { kind: "message", text: "composition pricing" }),
+          postEvent(running.url, visitorId, { kind: "message", text: "reference dashboard" }),
+          postEvent(running.url, visitorId, { kind: "message", text: "reference pricing" }),
         ]);
         expect([dashboardPost.status, pricingPost.status]).toEqual([202, 202]);
 
@@ -825,29 +887,33 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
           "patch",
           "say",
         ]);
-        expect(sayTexts(frames)).toEqual([
-          "composition dashboard ready",
-          "composition pricing ready",
-        ]);
+        expect(sayTexts(frames)).toEqual(["native dashboard ready", "native pricing ready"]);
 
         const frameText = JSON.stringify(frames);
         expect(frameText).toContain(QUICKSTART_INITIAL_STAGE.root);
-        // Server-side expansion: slot params filled; the document never crosses
-        // (no template markers, no document node ids, no composition kind).
+        // Reads cause no stage effects. Each following provider step authors a
+        // normal native tree, and those writes preserve visitor-event order.
         expect(frameText).toContain("Dashboard band");
         expect(frameText).toContain("Pricing band");
-        expect(frameText).not.toContain("{{title}}");
-        expect(frameText).not.toContain("qs-operator-root");
+        expect(frameText.indexOf("native-dashboard")).toBeLessThan(
+          frameText.indexOf("native-pricing"),
+        );
+        expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+        expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
         expect(frameText).not.toContain('"kind":"composition"');
-        for (const body of openAi.bodies) {
-          // The composition is advertised to the model by NAME with the catalog.
-          expect(JSON.stringify(body)).toContain("quickstart-catalog");
-          expect(JSON.stringify(body)).toContain("qs-operator-panel");
-        }
+        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_REFERENCE_PROVENANCE);
+        expect(JSON.stringify(openAi.bodies[4])).toContain(OPERATOR_REFERENCE_PROVENANCE);
         expect(booted.captured.err.join("\n")).not.toContain("turn failed");
       } finally {
         await stream.close();
       }
+
+      const reconnect = await fetch(`${running.url}/stream?visitorId=${visitorId}`);
+      const snapshot = await readEvents(reconnect, 2);
+      const snapshotText = JSON.stringify(snapshot);
+      expect(snapshotText).toContain("native-pricing");
+      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
     } finally {
       await running?.close();
       openAi.restore();
@@ -855,9 +921,12 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
     }
   });
 
-  it("keeps the stage coherent while the agent is offline and leaks no composition document to the browser", async () => {
+  it("fails safe when the provider goes offline after a composition read", async () => {
     const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-offline-"));
-    const openAi = installOpenAiMock([new Error("connect ECONNREFUSED (provider offline)")]);
+    const openAi = installOpenAiMock([
+      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
+      new Error("connect ECONNREFUSED (provider offline after read)"),
+    ]);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     let running: RunningQuickstart | undefined;
     try {
@@ -891,15 +960,15 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         "__FACET_INITIAL_STAGE__",
         "__FACET_THEMES__",
       ]);
-      expect(shell).not.toContain("qs-operator-root");
-      expect(shell).not.toContain("Operator default title");
+      expect(shell).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+      expect(shell).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
       expect(shell).not.toContain("__FACET_COMPOSITIONS__");
-      expect(shell).not.toContain("use_composition");
 
-      // Offline turn: the event is accepted, the turn fails SOFTLY, and the
-      // browser still gets ordinary frames (seed patch + apology say).
+      // The read itself has no stage effect. The next provider request receives
+      // the exact reference, then fails; the browser gets only seed + fail-safe.
       const visitorId = "e2e-offline";
       const stream = await openStream(running.url, visitorId);
+      let frameText = "";
       try {
         await stream.next(1); // reset
         const post = await postEvent(running.url, visitorId, { kind: "message", text: "hello?" });
@@ -908,14 +977,17 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
         expect(frames.map((frame) => kindOf(frame.data))).toEqual(["patch", "say"]);
         expect(JSON.stringify(frames[0]?.data)).toContain(QUICKSTART_INITIAL_STAGE.root);
         expect(sayTexts(frames)[0]).toMatch(/sorry/i);
+        frameText = JSON.stringify(frames);
+        expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+        expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+        expect(openAi.bodies.length).toBeGreaterThanOrEqual(2);
+        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_REFERENCE_NODE_ID);
+        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_REFERENCE_PROVENANCE);
 
-        // The server stays healthy and keeps accepting events after the outage.
+        // The server stays healthy after the outage.
         const health = await fetch(`${running.url}/health`);
         expect(health.status).toBe(200);
         expect(await health.text()).toContain("ok agent=local");
-        const again = await postEvent(running.url, visitorId, { kind: "message", text: "again" });
-        expect(again.status).toBe(202);
-        expect(kindOf((await stream.next(1))[0]?.data)).toBe("say");
       } finally {
         await stream.close();
       }
@@ -924,7 +996,11 @@ describe("quickstart E2E — catalog-guided CLI path (DC-010, DC-012)", () => {
       const reconnect = await fetch(`${running.url}/stream?visitorId=${visitorId}`);
       const snap = await readEvents(reconnect, 2); // reset + snapshot patch
       expect(kindOf(snap[1]?.data)).toBe("patch");
-      expect(JSON.stringify(snap[1]?.data)).toContain(QUICKSTART_INITIAL_STAGE.root);
+      const snapshotText = JSON.stringify(snap[1]?.data);
+      expect(snapshotText).toContain(QUICKSTART_INITIAL_STAGE.root);
+      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+      expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
     } finally {
       await running?.close();
       openAi.restore();
@@ -963,9 +1039,8 @@ describe("quickstart E2E — quickstart component default", () => {
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain('"op":"replace"');
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
-        // badge/alert/divider were removed as node types (demoted to
-        // compositions / box); the seed now expresses them via box+text
-        // primitives, so only the surviving showcase brick types are asserted.
+        // badge/alert/divider are not node types; the seed expresses them via
+        // box+text primitives, so only surviving showcase types are asserted.
         for (const type of [
           "section",
           "card",
@@ -984,7 +1059,7 @@ describe("quickstart E2E — quickstart component default", () => {
         const providerRequest = JSON.stringify(openAi.bodies[0]);
         expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
         expect(providerRequest).toContain("# Facet quickstart tour");
-        expect(providerRequest).toContain("composition -> component -> primitive fallback");
+        expect(providerRequest).toContain("component -> primitive fallback");
         expect(providerRequest).not.toContain("STUB_TREE");
         expect(booted.captured.out.join("\n")).toContain("openai");
       } finally {

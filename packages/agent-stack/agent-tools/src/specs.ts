@@ -5,7 +5,7 @@ export type FacetStageToolSpec = ToolSpec<FacetStageToolName>;
 const NODE_SCHEMA = {
   type: "object",
   description:
-    "A Facet stage node from the component or primitive layer of the catalog-guided composition -> component -> primitive fallback model. Primitive bricks are box, text, media, input, richtext. Intrinsic components are button, section, card, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, emptyState, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box, section, card, and form are containers. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a node's from field. Variant names must be allowed by the active catalog policy.",
+    "A Facet stage node from the component or primitive layer of the catalog-guided component -> primitive fallback model. Primitive bricks are box, text, media, input, richtext. Intrinsic components are button, section, card, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, emptyState, loading. Legacy stat remains accepted as metric compatibility; prefer metric. Only box, section, card, and form are containers. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a node's from field. Variant names must be allowed by the active catalog policy.",
 } as const;
 
 const TREE_SCHEMA = {
@@ -14,16 +14,10 @@ const TREE_SCHEMA = {
     "The full Facet stage tree: { root, nodes, screens?, entry?, theme? }. Every node and theme must pass the active catalog policy before patches are emitted.",
 } as const;
 
-const STRING_MAP_SCHEMA = {
-  type: "object",
-  description: "String slot values keyed by slot name.",
-  additionalProperties: { type: "string" },
-} as const;
-
 export const FACET_STAGE_TOOL_NAMES = [
   "render_page",
   "append_node",
-  "use_composition",
+  "get_composition",
   "set_node",
   "remove_node",
   "say",
@@ -64,9 +58,9 @@ export const FACET_STAGE_TOOL_SPECS = [
     },
   },
   {
-    name: "use_composition",
+    name: "get_composition",
     description:
-      "Expand a reusable composition asset by name under at.parent. Pass string params for slots; the executor mints fresh ids. Catalog policy may restrict names and the expanded validated nodes.",
+      "Read one catalog-exposed composition reference dataset by name. This is read-only: inspect its complete native Facet node JSON, then author the stage separately with native stage tools.",
     parameters: {
       type: "object",
       properties: {
@@ -74,20 +68,8 @@ export const FACET_STAGE_TOOL_SPECS = [
           type: "string",
           description: "A composition name from the offered COMPOSITIONS list.",
         },
-        params: STRING_MAP_SCHEMA,
-        at: {
-          type: "object",
-          properties: {
-            parent: {
-              type: "string",
-              description: "The id of an existing container node: box, section, card, or form.",
-            },
-          },
-          required: ["parent"],
-          additionalProperties: false,
-        },
       },
-      required: ["name", "params", "at"],
+      required: ["name"],
       additionalProperties: false,
     },
   },

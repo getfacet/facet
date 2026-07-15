@@ -39,7 +39,7 @@ const server = createFacetServer({
 await server.listen();
 ```
 
-## Assets: the `compositions` JSONB shape
+## Assets: raw JSONB and composition references
 
 `facet_assets` holds one row per agent with four JSONB columns: `themes`,
 `compositions`, `catalog`, and `initial_tree`. `PostgresAssets.load(agentId)`
@@ -50,7 +50,10 @@ thrown on.
 
 Use `PostgresAssets` anywhere an `AssetsStore` is accepted. `loadAssets`
 remains the validation/fallback gate; the Postgres adapter returns raw JSONB
-documents and performs no validation of its own. The reference
+documents and performs no item-level or composition-semantic validation of its
+own. In particular, a JSON array can round-trip through `PostgresAssets` even
+when individual documents are invalid; `loadAssets` is the boundary that
+sanitizes valid concrete references and skips invalid entries with issues. The reference
 `createFacetServer` only accepts `stageStore` and `sink`, so a host that loads
 assets must pass `loaded.initialTree` to `withInitialStage`, `loaded.themes` to
 its renderer shell, and `loaded.compositions`/`loaded.catalog`/`loaded.themes`
@@ -65,9 +68,34 @@ const loaded = await loadAssets(assets, "live");
 
 const stageStore = withInitialStage(new PostgresStageStore(pool), loaded.initialTree);
 // Pass loaded.themes to the renderer shell.
-// Pass loaded.themes, loaded.compositions, and loaded.catalog to the agent
-// prompt/tool path.
+// Pass loaded.themes, loaded.compositions, and loaded.catalog to the agent.
+// Its prompt indexes reference names/descriptions; get_composition returns one
+// complete selected document only inside the provider tool loop.
 ```
+
+The validated composition shape is a self-contained native reference dataset:
+
+```ts
+{
+  name: "launch-card",
+  metadata: { description: "A launch card with one primary action." },
+  root: "launch-card.root",
+  nodes: {
+    "launch-card.root": {
+      id: "launch-card.root",
+      type: "card",
+      title: "Ready to launch?",
+      children: [],
+    },
+  },
+}
+```
+
+Composition references are agent/provider-side assets. A successful
+`get_composition({ name })` read has no stage effect; the model authors any
+adapted UI later through ordinary native stage tools, and only those ordinary
+patches travel to the runtime/client. Hosts must not place the composition JSON
+in their renderer shell or add an asset transport route.
 
 `putAssets(agentId, docs)` is an explicit admin/write operation that replaces
 the agent's whole asset row — all four JSONB columns at once. Do not run it as
@@ -81,6 +109,14 @@ await new PostgresAssets(pool).putAssets("live", {
   initialTree: optionalInitialTree,
 });
 ```
+
+The pre-1.0 composition change requires a data migration, not a schema
+migration: the `compositions` JSONB column stays as-is, while each stored
+document must be rewritten to the concrete `{ name, metadata, root, nodes }`
+shape with a required `metadata.description`. `PostgresAssets` deliberately
+does not reinterpret older template-like or nested-reference documents. They
+still round-trip at the raw adapter boundary but are skipped when the host calls
+`loadAssets`; no compatibility conversion or automatic stage insertion occurs.
 
 See the [Facet docs](https://github.com/getfacet/facet) and
 [ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).

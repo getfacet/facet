@@ -95,6 +95,7 @@ export const DEFAULT_CATALOG: FacetCatalog = {
   theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
   bricks: DEFAULT_BRICKS,
   components: DEFAULT_COMPONENTS,
+  // Reference exposure is independent from the native authoring order below.
   compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {

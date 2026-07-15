@@ -17,11 +17,11 @@ import { LiveView } from "./live.js";
 
 type View = "gallery" | "generated" | "live" | "visitors";
 
-const SUBTITLES: Record<View, string> = {
+export const SUBTITLES: Record<View, string> = {
   gallery:
     "Six very different pages — all from four bricks (box/text/media/input) + tokens. No LLM.",
   generated:
-    "The page an LLM built from Facet's closed composition → component → primitive vocabulary, validated and rendered.",
+    "The page an LLM built with Facet's closed component → primitive vocabulary. Composition datasets are optional reference examples; the result is validated and rendered.",
   live: "Talk to a real @facet/server: type a request and the LLM agent builds the page live over SSE.",
   visitors:
     "One agent (Nova), two visitors. Rule-based — no LLM. Type in a chat dock and watch only that visitor's stage rebuild.",

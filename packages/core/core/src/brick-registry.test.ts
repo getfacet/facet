@@ -19,13 +19,19 @@ describe("brick registry exhaustiveness", () => {
     expect([...CORE_NODE_TYPES].sort()).toEqual(Object.keys(BRICK_REGISTRY).sort());
   });
 
+  it("has no composition fill hooks", () => {
+    for (const type of CORE_NODE_TYPES) {
+      const entry = BRICK_REGISTRY[type];
+      expect("fill" in entry).toBe(false);
+      expect("stringLeaves" in entry).toBe(false);
+    }
+  });
+
   it("every entry carries the concern handlers its kind requires", () => {
     for (const type of CORE_NODE_TYPES) {
       const entry = BRICK_REGISTRY[type];
-      // rendersSelf / fill / stringLeaves are required for every brick.
+      // rendersSelf is required for every brick.
       expect(typeof entry.rendersSelf).toBe("function");
-      expect(typeof entry.fill).toBe("function");
-      expect(typeof entry.stringLeaves).toBe("function");
       if (entry.kind === "primitive") {
         expect(typeof entry.validate).toBe("function");
         expect(entry.role).toBeUndefined();

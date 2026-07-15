@@ -33,6 +33,7 @@ export interface AgentToolObservationInput {
   readonly nextAction?: string;
   readonly summary?: string;
   readonly code?: StageToolErrorCode | "pending";
+  /** Generic observation data is always capped; this API exposes no bypass. */
   readonly data?: string;
 }
 

@@ -35,17 +35,17 @@ describe("validateCatalog", () => {
     expect(catalog).not.toBe(DEFAULT_CATALOG);
     expect(issues).toHaveLength(0);
     expect(catalog.theme.switchPolicy).toBe("locked");
-    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
     expect(catalog.components).toEqual(DEFAULT_CATALOG.components);
     expect(catalog.compositions).toEqual(DEFAULT_CATALOG.compositions);
   });
 
-  it("uses only canonical composition policy", () => {
+  it("reference exposure is separate from authoring order", () => {
     const { catalog, issues } = validateCatalog({
       name: "canonical",
       compositions: { mode: "allow", names: ["customerSummary"] },
       policy: {
-        order: ["composition", "component", "primitive"],
+        order: ["component", "primitive"],
         editBeforeAppend: true,
         compactScreens: true,
         maxScreenSections: 4,
@@ -54,14 +54,14 @@ describe("validateCatalog", () => {
 
     expect(issues).toEqual([]);
     expect(catalog.compositions).toEqual({ mode: "allow", names: ["customerSummary"] });
-    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
     expect(legacyPolicyField in catalog).toBe(false);
     expect(legacyOrderField in catalog.policy).toBe(false);
 
     expect(legacyPolicyField in DEFAULT_CATALOG).toBe(false);
     expect(legacyOrderField in DEFAULT_CATALOG.policy).toBe(false);
     expect(DEFAULT_CATALOG.compositions).toEqual({ mode: "all" });
-    expect(DEFAULT_CATALOG.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(DEFAULT_CATALOG.policy.order).toEqual(["component", "primitive"]);
   });
 
   it("returns fresh fallback catalog objects so caller mutation cannot poison defaults", () => {
@@ -78,7 +78,7 @@ describe("validateCatalog", () => {
     expect(second.bricks).toHaveLength(DEFAULT_CATALOG.bricks.length);
     expect(second.components).toEqual(DEFAULT_CATALOG.components);
     expect(second.compositions).toEqual(DEFAULT_CATALOG.compositions);
-    expect(second.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(second.policy.order).toEqual(["component", "primitive"]);
   });
 
   it("keeps valid catalog bricks, variants, compositions, and usage policy", () => {
@@ -98,7 +98,7 @@ describe("validateCatalog", () => {
       compositions: { mode: "allow", names: ["pricing", "dashboard-summary"] },
       primitiveFallback: "discouraged",
       policy: {
-        order: ["composition", "component", "primitive"],
+        order: ["component", "primitive"],
         editBeforeAppend: true,
         compactScreens: true,
         maxScreenSections: 6,
@@ -126,7 +126,7 @@ describe("validateCatalog", () => {
       names: ["pricing", "dashboard-summary"],
     });
     expect(catalog.primitiveFallback).toBe("discouraged");
-    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
   });
 
   it("normalizes component-facing catalogs to the canonical shape", () => {
@@ -141,7 +141,7 @@ describe("validateCatalog", () => {
       compositions: { mode: "allow", names: ["customerSummary"] },
       primitiveFallback: "allowed",
       policy: {
-        order: ["composition", "component", "primitive"],
+        order: ["component", "primitive"],
         editBeforeAppend: true,
         compactScreens: true,
         maxScreenSections: 4,
@@ -156,7 +156,7 @@ describe("validateCatalog", () => {
     ]);
     expect(catalog.bricks).toEqual(catalog.components);
     expect(catalog.compositions).toEqual({ mode: "allow", names: ["customerSummary"] });
-    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
   });
 
   it(`ignores legacy ${legacy} and order fields when normalizing policy`, () => {
@@ -171,7 +171,7 @@ describe("validateCatalog", () => {
       primitiveFallback: "discouraged",
       policy: {
         order: [legacy, "brick", "primitive"],
-        [legacyOrderField]: ["composition", "component", "primitive"],
+        [legacyOrderField]: ["component", "primitive"],
         editBeforeAppend: false,
         compactScreens: false,
         maxScreenSections: 2,
@@ -183,15 +183,13 @@ describe("validateCatalog", () => {
       { type: "box" },
     ]);
     expect(catalog.compositions).toEqual({ mode: "allow", names: ["pricing"] });
-    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
     expect(catalog.policy.editBeforeAppend).toBe(false);
     expect(catalog.policy.compactScreens).toBe(false);
     expect(catalog.policy.maxScreenSections).toBe(2);
     expect(legacyPolicyField in catalog).toBe(false);
     expect(legacyOrderField in catalog.policy).toBe(false);
-    expect(issues).toContain(
-      "catalog policy: invalid order defaulted to composition > component > primitive",
-    );
+    expect(issues).toContain("catalog policy: invalid order defaulted to component > primitive");
   });
 
   it(`never lets a legacy ${legacyPolicyField} policy shape the normalized compositions policy`, () => {
@@ -238,7 +236,7 @@ describe("validateCatalog", () => {
     expect(catalog.components).toEqual([{ type: "metric", variants: ["default"] }]);
     expect(catalog.compositions).toEqual({ mode: "allow", names: ["summary"] });
     expect(catalog.primitiveFallback).toBe(DEFAULT_CATALOG.primitiveFallback);
-    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
     expect(catalog.policy.maxScreenSections).toBe(DEFAULT_CATALOG.policy.maxScreenSections);
     expect(issues.length).toBeGreaterThan(0);
     expect(issues.join("\n")).not.toContain("bad name".repeat(100));
@@ -532,7 +530,7 @@ describe("validateCatalog", () => {
     expect(issues).toEqual([]);
     expect(catalog.bricks).toEqual(DEFAULT_CATALOG.bricks);
     expect(catalog.policy).toEqual({
-      order: ["composition", "component", "primitive"],
+      order: ["component", "primitive"],
       editBeforeAppend: true,
       compactScreens: true,
       maxScreenSections: 6,

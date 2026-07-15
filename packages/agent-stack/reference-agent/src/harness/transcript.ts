@@ -43,7 +43,9 @@ export function appendProviderStepTranscript(
     appended.push(
       appendToolResultObservation(
         messages,
-        { ...observation, toolName: observation.toolName ?? call.name },
+        // The provider call is authoritative for the tool identity. Observation
+        // producers cannot opt an unrelated result into an exact-data policy.
+        { ...observation, toolName: call.name },
         options,
       ),
     );
@@ -56,10 +58,12 @@ export function appendToolResultObservation(
   observation: TranscriptToolObservation,
   options: TranscriptObservationOptions,
 ): BoundedTranscriptObservation {
-  const bounded = boundObservationText(observation.content, options.maxObservationChars);
+  const toolName = observation.toolName ?? "unknown";
+  const bounded = preservesExactObservation(toolName)
+    ? exactObservationText(observation.content)
+    : boundObservationText(observation.content, options.maxObservationChars);
   messages.push({ role: "tool_result", callId: observation.callId, content: bounded.content });
 
-  const toolName = observation.toolName ?? "unknown";
   emitReferenceAgentTrace(
     options.trace,
     bounded.truncated
@@ -113,4 +117,17 @@ export function finalProseForProviderStop(step: ProviderStep): string {
 function normalizeObservationLimit(maxObservationChars: number): number {
   if (!Number.isFinite(maxObservationChars)) return MIN_REFERENCE_AGENT_OBSERVATION_CHARS;
   return Math.max(MIN_REFERENCE_AGENT_OBSERVATION_CHARS, Math.floor(maxObservationChars));
+}
+
+function preservesExactObservation(toolName: string): boolean {
+  return toolName === "get_composition";
+}
+
+function exactObservationText(content: string): Omit<BoundedTranscriptObservation, "callId"> {
+  return {
+    content,
+    originalChars: content.length,
+    truncated: false,
+    omittedChars: 0,
+  };
 }

@@ -141,26 +141,47 @@ success. This keeps false-success cases, such as creating an unattached node
 with `set_node`, inside the repair loop.
 
 `ReferenceAgentOptions.compositions` is the operator's composition library.
-`createReferenceAgent` snapshots those documents (and the `catalog`) once at
-creation with a structured clone — later mutation of the caller's composition
-objects never alters the prompt or execution of any turn.
+They are concrete native reference datasets, not stage operations or renderer
+extensions. `createReferenceAgent` validates, catalog-filters, detaches, and
+deep-freezes them once at creation. The resulting immutable snapshot is shared
+by both the prompt index and lookup, so later caller mutation cannot make the
+advertised names drift from what the model can read. An omitted catalog exposes
+all valid references within the deterministic 128-reference exposure cap; a
+supplied malformed catalog fails closed to none.
 
 Reference-agent catalog consumption has two paths:
 
 - Prompt path: `buildSystem(guide, assets?)` takes `PromptAssets` (`themes`,
   `compositions`, optional `catalog`) and delegates to the agent-tools prompt
-  kit, which includes theme names, the active catalog, composition names,
-  slot names, and whitelisted composition metadata — never composition node
-  JSON or slot default values. Catalog guidance includes
-  locked theme behavior, allowed component variants, composition policy,
-  primitive fallback, compact-screen guidance, product-quality component
-  defaults, and `composition -> component -> primitive`.
-- Executor path: the same `catalog` and the immutable composition snapshot are
-  passed as stage-tool assets to the buffered executor, where `use_composition`
-  expands them server-side. That makes catalog policy
-  enforceable, not just prompt text: disallowed components/variants/compositions, tone-only
-  recipe selectors outside the advertised variants, and locked theme changes are
-  rejected before any patch is yielded to the runtime.
+  kit. The composition index contains only each exposed reference's `name` and
+  short `metadata.description`; it never includes the native node JSON. Catalog
+  guidance also includes locked theme behavior, allowed component variants,
+  reference exposure policy, primitive fallback, compact-screen guidance, and
+  the native authoring order `component -> primitive`.
+- Lookup path: the same immutable snapshot and catalog are passed as stage-tool
+  assets. For a complex UI, the model may call `get_composition` with exactly
+  `{ name }`. A successful read returns the complete concrete
+  `{ name, metadata, root, nodes }` JSON, emits no runtime message or patch, and
+  leaves both the stage shadow and pending edit buffer unchanged. The model then
+  copies or adapts the example by calling the ordinary native stage tools.
+
+The successful `get_composition` payload has a deliberately narrow exact-data
+boundary. Its complete serialized JSON is preserved in the structured tool
+result delivered to the next provider request even when it exceeds the generic
+observation data cap. The generic public observation formatter remains capped,
+and the exact path is not a public bypass. In-turn compaction retains a newest
+reference-read step verbatim for that first delivery, even when configured to
+retain zero recent steps. If the complete step cannot fit the context budget,
+the loop stops with `context_limit` instead of sending a partial reference or a
+summary in its place.
+
+Composition JSON stays inside the agent/provider loop. The read does not add a
+browser global, transport payload, asset route, stage node, or provenance field;
+only the later ordinary RFC 6902 stage patches can reach the runtime and client.
+Catalog policy remains enforceable rather than prompt-only: disallowed
+components and variants, tone-only recipe selectors outside the advertised
+variants, locked theme changes, and unavailable reference names are rejected
+before any patch is yielded.
 
 Catalog policy here is UI authoring policy for the reference brain. It is not
 hosted platform policy for auth, tenants, billing, metering, rate limits, spend
@@ -172,7 +193,8 @@ still owns the reference `DEFAULT_GUIDE`, provider adapters, context assembly,
 history compaction, budgets, retries, trace events, and fallback behavior.
 The reference prompt consumes the reusable component-model guidance from
 agent-tools; it does not duplicate renderer recipes, theme token values,
-composition node JSON, provider keys, or visitor ids.
+provider keys, or visitor ids. Composition node JSON appears only in the exact
+result of an explicit provider-side reference read.
 
 Use `@facet/reference-agent` when you want Facet's runnable reference brain.
 

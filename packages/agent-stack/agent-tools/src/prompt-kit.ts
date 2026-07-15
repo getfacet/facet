@@ -1,4 +1,10 @@
-import { MAX_DESCRIPTION_LENGTH, STAGE_SPEC, isValidThemeName } from "@facet/core";
+import {
+  MAX_DESCRIPTION_LENGTH,
+  STAGE_SPEC,
+  isValidThemeName,
+  type FacetComposition,
+} from "@facet/core";
+import { selectCompositionReferences } from "./composition-references.js";
 import type { StageToolAssets } from "./types.js";
 
 export type FacetPromptAssets = StageToolAssets;
@@ -9,7 +15,6 @@ export interface FacetAgentSystemPromptOptions {
 }
 
 const MAX_PROMPT_ASSET_ITEMS = 1024;
-const MAX_PROMPT_COMPOSITION_SLOTS = 64;
 const MAX_PROMPT_CATALOG_ITEMS = 64;
 const MAX_PROMPT_METADATA_ITEMS = 16;
 
@@ -25,12 +30,12 @@ Default to a compact UX that is useful at first glance: focused sections, visibl
 - A box or text may carry an active look that turns on by itself against the visitor's current view: set "active" to a closed predicate — {"screen":"<screenName>"} (on only while that screen is current) or {"toggled":"<nodeId>"} (on only while that node is locally toggled shown) — plus "activeVariant":"<variantName>" (prefer this) or, as a fallback, an "activeStyle" of theme tokens to fold in when it matches. It is read-only: it re-styles purely on a local navigate/toggle with NO agent turn and writes no data or view-state, and an unknown predicate kind or a dangling screen/nodeId simply keeps the default look.`;
 
 export const FACET_POLISHED_BRICK_GUIDANCE_PROMPT = `COMPONENT GUIDANCE
-Use Facet's catalog-guided authoring order: composition -> component -> primitive fallback. Prefer catalog-advertised compositions when one fits; otherwise use intrinsic components with catalog-advertised variants; use primitive box/text/media/input only as the fallback for custom flow, copy, media, or raw input controls.
+Use Facet's catalog-guided authoring order: component -> primitive fallback. Prefer intrinsic components with catalog-advertised variants; use primitive box/text/media/input/richtext only as the fallback for custom flow, copy, media, formatted prose, or raw input controls.
 - Build product-quality defaults with section, card, button, tabs, nav, table, chart, metric, keyValue, progress, list, form, filterBar, emptyState, and loading when those components are allowed. "stat" is legacy compatibility; prefer metric for new KPI and summary values.
-- Use input for raw inputs, button for actions, tabs/nav for local navigation, table/chart for display-only data, form/filterBar for input surfaces, and metric/keyValue/progress/list/emptyState/loading for compact product state before assembling equivalent box/text clusters. A status badge or an alert/callout is a catalog composition (expand one by name with use_composition), not a node type; for a visual separator there is no divider node, so use a thin bordered or spaced box. There is no standalone search node: for a search box with a submit, compose an input (input:"search") with a button whose onPress "collect" points at the container holding the input, so the typed query reaches you on submit.
+- Use input for raw inputs, button for actions, tabs/nav for local navigation, table/chart for display-only data, form/filterBar for input surfaces, and metric/keyValue/progress/list/emptyState/loading for compact product state before assembling equivalent box/text clusters. Build a status badge or an alert/callout from native components and primitives; for a visual separator there is no divider node, so use a thin bordered or spaced box. There is no standalone search node: for a search box with a submit, compose an input (input:"search") with a button whose onPress "collect" points at the container holding the input, so the typed query reaches you on submit.
 - Use richtext for a flowing block of mixed-format prose instead of stitching many text nodes when copy needs inline emphasis or links. A richtext holds "blocks" (paragraph, heading, listItem, quote), each a list of "runs" — a text span with optional inline "marks". Marks are a closed set — bold, italic, underline, strike, code, and link; nothing else. A link mark's "target" is either an internal FacetAction (navigate/agent/toggle, routed through the same dispatch as button) or a gated external URL as { "href": "https://..." } — external hrefs allow only http(s)/protocol-relative/local paths, never javascript: or data:.
-- Follow catalog policy while editing: when editBeforeAppend is true, update existing components, compositions, and variants before appending new primitive clusters.
-- Treat component recipes, composition internals, and concrete theme token values as renderer/operator internals, not stage syntax: never write raw CSS, token values, recipe part names as node fields, composition node JSON, provider keys, visitor ids, secrets, or unknown asset fields into the page.`;
+- Follow catalog policy while editing: when editBeforeAppend is true, update existing components and variants before appending new primitive clusters.
+- Treat component recipes, reference-dataset internals, and concrete theme token values as renderer/operator internals, not stage syntax: never write raw CSS, token values, recipe part names as node fields, provider keys, visitor ids, secrets, or unknown asset fields into the page.`;
 
 export const FACET_DATA_BINDING_PROMPT = `DATA BINDING
 Author shared data once, then bind many views to it. Put rows the whole page reuses in the tree's top-level "data" warehouse: a map of dataset NAME -> an array of flat row records (each value a string, number, or boolean; no nested objects). Then bind a data-bearing node to a dataset by NAME with its "from" field instead of repeating the rows inline.
@@ -43,7 +48,8 @@ Author shared data once, then bind many views to it. Put rows the whole page reu
 export const FACET_STATE_EDITING_PROMPT = `STATE EDITING
 Default to an edit-before-append strategy: edit before you append, reuse existing node ids, and change the smallest node that satisfies the request. If an active catalog says editBeforeAppend:false, follow that catalog policy.
 - Use render_page only for the first paint or a major restructure.
-- Use set_node, append_node, remove_node, use_composition, or set_theme for incremental edits.
+- Use set_node, append_node, remove_node, or set_theme for incremental edits.
+- For a complex UI, you may inspect one advertised reference with get_composition before editing. Skip the read for a simple UI.
 - Reuse existing node ids so updates replace the right content instead of duplicating old sections.
 - Never describe a page change in prose when you can make the change with a stage tool.`;
 
@@ -53,7 +59,7 @@ You build and edit the page by calling Facet stage tools.
 - set_node: replace or update one existing node by id.
 - append_node: add one new node under an existing container parent (box, section, card, or form).
 - remove_node: delete a node that no longer belongs.
-- use_composition: expand an advertised composition by name, filling slot params with strings.
+- get_composition: optionally read one advertised reference dataset by name, then author the stage separately with native stage tools. It does not edit the stage; skip it for a simple UI.
 - set_theme: choose an advertised theme by name only.
 - inspect_stage / inspect_node: inspect before editing when the current structure or ids are unclear.
 - say: send a short chat line; do not use chat as a substitute for the requested page edit.
@@ -70,7 +76,7 @@ Use structured outcome recovery. Every tool result is JSON; read status, outcome
 Do not claim completion unless the requested page change has an applied_visible result, or you intentionally only needed a no_stage_change tool such as inspect or say.`;
 
 export const FACET_ASSET_PRIVACY_PROMPT = `ASSET PRIVACY
-Operator assets are offered as metadata only. Use catalog policy, theme names, composition names, descriptions, slot names, and whitelisted composition metadata; never copy theme CSS values, composition node JSON, provider keys, visitor ids, secrets, slot default values, or unknown asset fields into the prompt or page.`;
+Operator assets are indexed with catalog policy, theme names and descriptions, and reference-dataset names and descriptions. Inspect a reference only through get_composition, then author ordinary native nodes. Never expose theme CSS values, provider keys, visitor ids, secrets, or unknown asset fields in the prompt or page.`;
 
 export const FACET_PAGE_BRIEF_HEADING = "PAGE BRIEF";
 
@@ -89,16 +95,6 @@ function assetName(value: unknown): string | undefined {
 function assetDescription(value: unknown): string | undefined {
   if (typeof value !== "string" || value.length === 0) return undefined;
   return value.length > MAX_DESCRIPTION_LENGTH ? value.slice(0, MAX_DESCRIPTION_LENGTH) : value;
-}
-
-function assetTextList(value: unknown): readonly string[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .flatMap((item) => {
-      const text = assetDescription(item);
-      return text === undefined ? [] : [text];
-    })
-    .slice(0, MAX_PROMPT_METADATA_ITEMS);
 }
 
 function assetNameList(value: unknown): readonly string[] {
@@ -183,10 +179,7 @@ function catalogPolicyLines(value: unknown): readonly string[] {
   if (!isRecord(value)) return [];
   const lines: string[] = [];
   const order = Array.isArray(value["order"])
-    ? value["order"].filter(
-        (item): item is string =>
-          item === "composition" || item === "component" || item === "primitive",
-      )
+    ? value["order"].filter((item): item is string => item === "component" || item === "primitive")
     : [];
   if (order.length > 0) lines.push(`policy order: ${order.join(" -> ")}`);
   if (typeof value["editBeforeAppend"] === "boolean") {
@@ -215,7 +208,7 @@ function catalogUseOrderGuidance(policy: unknown): string {
     compactScreens === false
       ? "catalog allows broader screens when appropriate"
       : "keep each screen compact";
-  return `use order: composition -> component -> primitive fallback; ${editGuidance}; ${compactGuidance}.`;
+  return `use order: component -> primitive fallback; ${editGuidance}; ${compactGuidance}.`;
 }
 
 function catalogSection(catalog: unknown): string | undefined {
@@ -240,69 +233,19 @@ function catalogSection(catalog: unknown): string | undefined {
   lines.push(catalogUseOrderGuidance(catalog["policy"]));
   return [
     "CATALOG",
-    "Active catalog guidance. Use these names and policies only; do not expose catalog internals, theme values, or composition JSON.",
+    "Active catalog guidance. Use these names and policies only; do not expose catalog internals or theme values.",
     lines.join("\n"),
   ].join("\n\n");
 }
 
-function compositionMetadataLines(value: unknown): readonly string[] {
-  if (!isRecord(value)) return [];
-  const lines: string[] = [];
-  const category = assetDescription(value["category"]);
-  if (category !== undefined) lines.push(`category: ${category}`);
-  const useWhen = assetDescription(value["useWhen"]);
-  if (useWhen !== undefined) lines.push(`useWhen: ${useWhen}`);
-  const avoidWhen = assetDescription(value["avoidWhen"]);
-  if (avoidWhen !== undefined) lines.push(`avoidWhen: ${avoidWhen}`);
-  const variants = assetTextList(value["variants"]);
-  if (variants.length > 0) lines.push(`variants: ${variants.join(", ")}`);
-  const tags = assetTextList(value["tags"]);
-  if (tags.length > 0) lines.push(`tags: ${tags.join(", ")}`);
-  if (typeof value["repeatable"] === "boolean")
-    lines.push(`repeatable: ${String(value["repeatable"])}`);
-  const preferredParent = value["preferredParent"];
-  if (
-    preferredParent === "root" ||
-    preferredParent === "box" ||
-    preferredParent === "section" ||
-    preferredParent === "card"
-  ) {
-    lines.push(`preferredParent: ${preferredParent}`);
-  }
-  const composedOf = assetTextList(value["composedOf"]);
-  if (composedOf.length > 0) lines.push(`composedOf: ${composedOf.join(", ")}`);
-  const dataRequirements = assetTextList(value["dataRequirements"]);
-  if (dataRequirements.length > 0) lines.push(`dataRequirements: ${dataRequirements.join(", ")}`);
-  const followUpEdits = assetTextList(value["followUpEdits"]);
-  if (followUpEdits.length > 0) lines.push(`followUpEdits: ${followUpEdits.join(", ")}`);
-  return lines;
-}
-
-function compositionLine(composition: unknown): string | undefined {
-  if (!isRecord(composition)) return undefined;
-  const name = assetName(composition["name"]);
-  if (name === undefined) return undefined;
-  const description = assetDescription(composition["description"]);
-  const head = description !== undefined ? `- ${name}: ${description}` : `- ${name}`;
-  const rawSlots = composition["slots"];
-  const slotNames = isRecord(rawSlots)
-    ? Object.keys(rawSlots).filter(isValidThemeName).slice(0, MAX_PROMPT_COMPOSITION_SLOTS)
-    : [];
-  const slots = slotNames.length > 0 ? slotNames.join(", ") : "(none)";
-  const metadata = compositionMetadataLines(composition["metadata"]).map((line) => `  ${line}`);
-  return [head, `  slots: ${slots}`, ...metadata].join("\n");
-}
-
-function compositionsSection(compositions: readonly unknown[]): string | undefined {
-  const entries = compositions.flatMap((composition) => {
-    const entry = compositionLine(composition);
-    return entry === undefined ? [] : [entry];
-  });
-  if (entries.length === 0) return undefined;
+function compositionsSection(compositions: readonly FacetComposition[]): string | undefined {
+  if (compositions.length === 0) return undefined;
   return [
     "COMPOSITIONS",
-    "Reusable catalog compositions you may expand with the use_composition tool. Pick a listed name, pass string params for its slots, and choose at.parent; do not copy composition JSON or invent composition ids.",
-    entries.join("\n\n"),
+    "Reference datasets available by NAME. For a complex UI, you may call get_composition with exactly one listed name, inspect the concrete native nodes, then author the stage separately with native stage tools. The read does not edit the stage; skip it for a simple UI.",
+    compositions
+      .map((composition) => `- ${composition.name}: ${composition.metadata.description}`)
+      .join("\n"),
   ].join("\n\n");
 }
 
@@ -326,7 +269,10 @@ export function buildFacetAgentSystemPrompt(options: FacetAgentSystemPromptOptio
   const catalogBlock = catalogSection(options.assets?.catalog);
   if (catalogBlock !== undefined) sections.push(catalogBlock);
 
-  const compositions = assetArray(options.assets?.compositions);
+  const compositions = selectCompositionReferences(
+    options.assets?.compositions ?? [],
+    options.assets?.catalog,
+  );
   const compositionBlock = compositionsSection(compositions);
   if (compositionBlock !== undefined) sections.push(compositionBlock);
 

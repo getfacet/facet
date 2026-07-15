@@ -54,7 +54,7 @@ export function nodeCatalogViolation(
     }
     return {
       message: `error: catalog policy rejected node type "${node.type}". Allowed node types: ${catalogAllowedNodeTypes(catalog)}.`,
-      nextAction: "Use an allowed catalog component, composition, or permitted primitive fallback.",
+      nextAction: "Use an allowed catalog component or permitted primitive fallback.",
     };
   }
 
@@ -94,19 +94,6 @@ function catalogPolicyEntryForNode(
     if (catalog.components !== undefined && node.type !== "stat") return undefined;
   }
   return catalog.bricks.find((candidate) => candidate.type === node.type);
-}
-
-export function compositionCatalogViolation(
-  name: string,
-  catalog: FacetCatalog | undefined,
-): CatalogPolicyViolation | undefined {
-  if (catalog === undefined || catalog.compositions.mode === "all") return undefined;
-  if (catalog.compositions.names.includes(name)) return undefined;
-  return {
-    message: `error: catalog policy rejected composition "${name}". Allowed compositions: ${catalog.compositions.names.join(", ")}.`,
-    nextAction:
-      "Pick a composition allowed by the active catalog, or compose the UI from allowed components/primitives.",
-  };
 }
 
 export function themeCatalogViolation(

@@ -632,7 +632,7 @@ describe("validateTheme", () => {
             nodes: {
               root: { id: "root", type: "text", value: "not a recipe" },
             },
-            slots: { title: "Title" },
+            slots: { title: "Title" }, // composition-hard-cut: allowed-negative
             [["component", "Definitions"].join("")]: [{ name: "not-a-recipe" }],
             compositions: [{ name: "not-a-recipe" }],
           },

@@ -26,7 +26,7 @@ export interface ToolCall<Name extends string = string, Input = unknown> {
 export type FacetStageToolName =
   | "render_page"
   | "append_node"
-  | "use_composition"
+  | "get_composition"
   | "set_node"
   | "remove_node"
   | "say"
@@ -43,12 +43,8 @@ export interface AppendNodeToolInput {
   readonly ["node"]: FacetNode;
 }
 
-export interface UseCompositionToolInput {
+export interface GetCompositionToolInput {
   readonly name: string;
-  readonly params: Readonly<Record<string, string>>;
-  readonly at: {
-    readonly parent: NodeId;
-  };
 }
 
 export interface SetNodeToolInput {
@@ -79,7 +75,7 @@ export interface InspectNodeToolInput {
 export interface ToolInputByName {
   readonly render_page: RenderPageToolInput;
   readonly ["append_node"]: AppendNodeToolInput;
-  readonly use_composition: UseCompositionToolInput;
+  readonly ["get_composition"]: GetCompositionToolInput;
   readonly ["set_node"]: SetNodeToolInput;
   readonly ["remove_node"]: RemoveNodeToolInput;
   readonly say: SayToolInput;
@@ -138,7 +134,11 @@ export interface AgentToolObservationData {
   readonly next_action: string;
   readonly summary: string;
   readonly code?: StageToolErrorCode | "pending";
-  /** Bounded, always-valid JSON payload for machine-readable tool metadata (e.g. minted composition ids). */
+  /**
+   * Always-valid JSON payload for machine-readable tool metadata. Generic tool
+   * observations keep this bounded; a successful get_composition read carries
+   * the complete selected reference through its package-private formatter.
+   */
   readonly data?: string;
 }
 

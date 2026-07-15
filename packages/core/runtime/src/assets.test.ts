@@ -46,7 +46,7 @@ const invalidTheme = { name: "hostile", color: { bg: "url(http://evil)" } };
 /** A legal fragment: a box root with one text child. */
 const validComposition = {
   name: "cta",
-  description: "a call to action",
+  metadata: { description: "a call to action" },
   root: "s-root",
   nodes: {
     "s-root": { id: "s-root", type: "box", children: ["s-label"] },
@@ -56,23 +56,24 @@ const validComposition = {
 /** Root does not resolve ⇒ `validateComposition` refuses it. */
 const invalidComposition = {
   name: "broken",
+  metadata: { description: "a broken reference dataset" },
   root: "does-not-exist",
   nodes: { x: { id: "x", type: "text", value: "orphan" } },
 };
 
-/** A component-brick composition with slot params and an agent action. */
+/** A component-brick composition with concrete values and an agent action. */
 const richComposition = {
   name: "customerSummaryCard",
-  description: "Reusable customer summary",
+  metadata: { description: "Customer summary example" },
   root: "card",
   nodes: {
     card: {
       id: "card",
       type: "card",
-      title: "{{customer}}",
+      title: "Acme Corp",
       children: ["metric", "action"],
     },
-    metric: { id: "metric", type: "metric", label: "ARR", value: "{{arr}}" },
+    metric: { id: "metric", type: "metric", label: "ARR", value: "$24k" },
     action: {
       id: "action",
       type: "button",
@@ -135,6 +136,9 @@ function contract(name: string, make: (docs: AssetDocuments) => AssetsStore): vo
       expect(loaded.themes.map((t) => t.name)).toContain("midnight");
       expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
       expect(loaded.compositions.map((c) => c.name)).toContain("cta");
+      expect(loaded.compositions.find((c) => c.name === "cta")?.metadata.description).toBe(
+        "a call to action",
+      );
       for (const c of DEFAULT_COMPOSITIONS) {
         expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
       }
@@ -248,7 +252,7 @@ describe("loadAssets", () => {
       compositions: { mode: "allow", names: ["dashboard-summary"] },
       primitiveFallback: "discouraged",
       policy: {
-        order: ["composition", "component", "primitive"],
+        order: ["component", "primitive"],
         editBeforeAppend: true,
         compactScreens: true,
         maxScreenSections: 4,
@@ -301,7 +305,7 @@ describe("loadAssets", () => {
           compositions: { mode: "allow", names: ["dashboard-summary"] },
           primitiveFallback: "discouraged",
           policy: {
-            order: ["composition", "component", "primitive"],
+            order: ["component", "primitive"],
             editBeforeAppend: true,
             compactScreens: true,
             maxScreenSections: 3,
@@ -490,7 +494,7 @@ describe("loadAssets", () => {
     expect(second.catalog.bricks.find((brick) => brick.type === "media")?.variants).toEqual(
       mediaBrick?.variants,
     );
-    expect(second.catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(second.catalog.policy.order).toEqual(["component", "primitive"]);
   });
 
   it("never calls store-supplied array methods while reading themes and compositions", async () => {
@@ -640,6 +644,7 @@ describe("loadAssets", () => {
     // remaining defaults and unrelated valid customs coexist.
     const customHero = {
       name: "hero",
+      metadata: { description: "A custom hero example" },
       root: "r",
       nodes: {
         r: { id: "r", type: "box", children: ["mine"] },
@@ -728,6 +733,7 @@ describe("loadAssets", () => {
     // first-wins.
     const first = {
       name: "hero",
+      metadata: { description: "The first custom hero" },
       root: "r",
       nodes: {
         r: { id: "r", type: "box", children: ["a"] },
@@ -736,6 +742,7 @@ describe("loadAssets", () => {
     };
     const second = {
       name: "hero",
+      metadata: { description: "The second custom hero" },
       root: "r",
       nodes: {
         r: { id: "r", type: "box", children: ["b"] },
@@ -798,93 +805,89 @@ describe("loadAssets", () => {
   });
 });
 
-// --- composition reference graph (load-time gate, WU-4) ----------------------
+// --- concrete composition load gate -----------------------------------------
 
-// A reusable single-node child composition whose slot fills a text primitive.
-const badgeComposition = {
-  name: "badge",
-  slots: { label: "Default label" },
-  root: "text",
-  nodes: {
-    text: { id: "text", type: "text", value: "{{label}}" },
-  },
-};
-
-/** A parent composition that references `badge` via `{ use, slots }`. */
-const cardWithBadge = {
-  name: "card",
-  root: "root",
-  nodes: {
-    root: { id: "root", type: "box", children: ["ref"] },
-    ref: { use: "badge", slots: { label: "Hi" } },
-  },
-};
-
-/** Two compositions that reference each other (a → b → a). */
-const cyclePairA = {
-  name: "cyc-a",
-  root: "root",
-  nodes: {
-    root: { id: "root", type: "box", children: ["ref"] },
-    ref: { use: "cyc-b", slots: {} },
-  },
-};
-const cyclePairB = {
-  name: "cyc-b",
-  root: "root",
-  nodes: {
-    root: { id: "root", type: "box", children: ["ref"] },
-    ref: { use: "cyc-a", slots: {} },
-  },
-};
-
-/** A parent whose reference names a composition that is not in the set. */
-const cardWithDanglingRef = {
-  name: "card",
-  root: "root",
-  nodes: {
-    root: { id: "root", type: "box", children: ["ref"] },
-    ref: { use: "ghost", slots: {} },
-  },
-};
-
-describe("loadAssets composition reference graph", () => {
-  it("loads both compositions of a valid nested pair", async () => {
+describe("loadAssets concrete composition documents", () => {
+  it("loads native container and leaf-root reference datasets independently", async () => {
+    const containerReference = {
+      name: "notice-card",
+      metadata: { description: "A notice card example" },
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["copy"] },
+        copy: { id: "copy", type: "text", value: "Plan renewed" },
+      },
+    };
+    const leafReference = {
+      name: "status-copy",
+      metadata: { description: "A single status label" },
+      root: "copy",
+      nodes: { copy: { id: "copy", type: "text", value: "Ready" } },
+    };
     const loaded = await loadAssets(
-      new MemoryAssets({ themes: [], compositions: [cardWithBadge, badgeComposition] }),
+      new MemoryAssets({ themes: [], compositions: [containerReference, leafReference] }),
       "a",
     );
-    const names = loaded.compositions.map((c) => c.name);
-    expect(names).toContain("card");
-    expect(names).toContain("badge");
+    expect(loaded.compositions.find((c) => c.name === "notice-card")).toMatchObject({
+      metadata: { description: "A notice card example" },
+      root: "root",
+    });
+    expect(loaded.compositions.find((c) => c.name === "status-copy")).toMatchObject({
+      metadata: { description: "A single status label" },
+      root: "copy",
+    });
   });
 
-  it("refuses a cyclic composition pair at load — neither registers", async () => {
-    const loaded = await loadAssets(
-      new MemoryAssets({ themes: [], compositions: [cyclePairA, cyclePairB] }),
-      "a",
-    );
-    const names = loaded.compositions.map((c) => c.name);
-    expect(names).not.toContain("cyc-a");
-    expect(names).not.toContain("cyc-b");
-    // The refusal is surfaced through the existing issue channel, bounded.
-    expect(loaded.issues.some((i) => i.includes("cyc-a") || i.includes("cyc-b"))).toBe(true);
-  });
-
-  it("drops a composition with a dangling reference, keeping the rest", async () => {
+  it("skips legacy template and reference shapes while keeping native documents", async () => {
+    const legacyFields = ["sl", "ots"].join("");
+    const legacyReferenceField = ["u", "se"].join("");
+    const legacyTemplate = {
+      name: "legacy-template",
+      description: "An obsolete template",
+      [legacyFields]: { label: "Default" },
+      root: "copy",
+      nodes: { copy: { id: "copy", type: "text", value: "Default" } },
+    };
+    const legacyReference = {
+      name: "legacy-reference",
+      metadata: { description: "An obsolete reference" },
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["ref"] },
+        ref: { [legacyReferenceField]: "legacy-template" },
+      },
+    };
     const loaded = await loadAssets(
       new MemoryAssets({
         themes: [],
-        compositions: [cardWithDanglingRef, validComposition],
+        compositions: [legacyTemplate, legacyReference, validComposition],
       }),
       "a",
     );
     const names = loaded.compositions.map((c) => c.name);
-    // The dangling parent is refused…
-    expect(names).not.toContain("card");
-    // …while the unrelated clean composition still loads.
+    expect(names).not.toContain("legacy-template");
+    expect(names).not.toContain("legacy-reference");
     expect(names).toContain("cta");
-    expect(loaded.issues.some((i) => i.includes("card"))).toBe(true);
+    expect(loaded.issues.some((issue) => issue.includes("skipped"))).toBe(true);
+  });
+
+  it("applies native topology sanitation per document", async () => {
+    const danglingChild = {
+      name: "topology-example",
+      metadata: { description: "A dataset with one stale child id" },
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["missing", "copy"] },
+        copy: { id: "copy", type: "text", value: "Kept" },
+      },
+    };
+    const loaded = await loadAssets(
+      new MemoryAssets({ themes: [], compositions: [danglingChild] }),
+      "a",
+    );
+    const composition = loaded.compositions.find((c) => c.name === "topology-example");
+    expect(composition?.nodes["root"]).toMatchObject({ children: ["copy"] });
+    expect(loaded.issues.some((issue) => issue.includes("dangling child"))).toBe(true);
   });
 });
 

@@ -10,14 +10,6 @@ export * from "./view.js";
 export * from "./agent-result.js";
 export * from "./validate.js";
 export * from "./data-binding.js";
-export { expandComposition } from "./expand-composition.js";
-export type {
-  CompositionParams,
-  ExpandAt,
-  UseCompositionResult,
-  ExpandCompositionResult,
-  ExpandCompositionOptions,
-} from "./expand-composition.js";
 export * from "./stage-fold.js";
 export * from "./serial-queue.js";
 export * from "./semaphore.js";

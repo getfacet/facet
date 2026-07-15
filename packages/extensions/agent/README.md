@@ -2,9 +2,9 @@
 
 The in-process agent SDK for Facet: `defineAgent` wraps your logic into an agent
 the runtime can call, and `Stage` is the control surface it drives —
-`render` / `set` / `append` / `useComposition` / `remove` / `screens` / `theme` /
-`say` — to compose and mutate a visitor's page. Each method records standard RFC
-6902 operations underneath.
+`render` / `set` / `append` / `setData` / `remove` / `screens` / `theme` / `say`
+— to compose and mutate a visitor's page with native Facet data. Each method
+records standard RFC 6902 operations underneath.
 
 Tier: **Agent Authoring**. Use this when TypeScript code, tests, a rules engine,
 or a local demo should author stage changes without hand-writing patch arrays.
@@ -42,17 +42,18 @@ export const agent = defineAgent(({ event, stage }) => {
 });
 ```
 
-`Stage.useComposition(composition, params, { parent })` accepts an
-already-resolved `FacetComposition`, fills its declared `{{slot}}` markers,
-mints fresh ids, appends the expanded root under a known container parent, and
-returns the new `root`, `slots`, and full old-to-new `ids` map for follow-up
-edits. On success every expansion op — all minted nodes plus the single parent
-attach — is recorded together, so the expansion travels as one referentially
-closed patch batch; on any failure (a malformed composition, an unknown or
-non-container parent, or an expansion that would exceed one patch batch) it
-records zero ops and returns a result without `root`. `defineAgent` and
-`defineStreamingAgent` seed `Stage` with the current session tree, so
-compositions can target containers that existed before the current turn.
+`Stage` has no composition-specific mutation method. If application code uses a
+composition reference dataset, it should validate or select that data outside
+this SDK, adapt the example into native nodes with ids appropriate for the
+visitor's stage, and author those nodes through `render`, `set`, and `append`.
+The SDK never interprets placeholders, remaps an asset graph, or adds a hidden
+stage writer. Only the native operations recorded by the methods above travel.
+
+Use `set` to insert or replace one node by id. Use `append` to record the new
+node and attach its id to an existing container. Use `setData` to upsert a named
+dataset that nodes can bind through `from`; it is declared stage data, not a
+fetch or query. `defineAgent` and `defineStreamingAgent` seed `Stage` with the
+current session tree so data initialization remains correct across turns.
 
 ```ts
 import { defineStreamingAgent } from "@facet/agent";

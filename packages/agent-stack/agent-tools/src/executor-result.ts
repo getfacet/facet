@@ -5,7 +5,9 @@ import {
   type NodeId,
   type ServerMessage,
 } from "@facet/core";
+import { formatCompositionObservation } from "./composition-observation.js";
 import { formatAgentToolObservation, isVisitorVisibleStageChange } from "./observation.js";
+import type { AgentToolObservationInput } from "./observation.js";
 import { foldStageShadow } from "./stage-shadow.js";
 import type {
   AgentToolOutcome,
@@ -63,23 +65,30 @@ export function okMessageResult(
       )
     : false;
   const outcome = okOutcome(stageChanged, visibleToVisitor, issues);
+  const observationInput: AgentToolObservationInput = {
+    tool: toolName,
+    status: "ok",
+    outcome,
+    message: observation,
+    applied: stageChanged,
+    stageChanged,
+    visibleToVisitor,
+    patchCount: folded.patchCount,
+    changedNodeIds: folded.changedNodeIds,
+    warnings: issues,
+    nextAction: options.nextAction ?? nextActionForOutcome(outcome),
+    summary: folded.summary,
+  };
+  const formattedObservation =
+    toolName === "get_composition" && options.data !== undefined
+      ? formatCompositionObservation(observationInput, options.data)
+      : formatAgentToolObservation({
+          ...observationInput,
+          ...(options.data !== undefined ? { data: options.data } : {}),
+        });
   return {
     status: "ok",
-    observation: formatAgentToolObservation({
-      tool: toolName,
-      status: "ok",
-      outcome,
-      message: observation,
-      applied: stageChanged,
-      stageChanged,
-      visibleToVisitor,
-      patchCount: folded.patchCount,
-      changedNodeIds: folded.changedNodeIds,
-      warnings: issues,
-      nextAction: options.nextAction ?? nextActionForOutcome(outcome),
-      summary: folded.summary,
-      ...(options.data !== undefined ? { data: options.data } : {}),
-    }),
+    observation: formattedObservation,
     messages,
     patches: folded.patches,
     changedNodeIds: folded.changedNodeIds,

@@ -31,8 +31,14 @@ import {
   createStageToolBuffer,
   executeStageTool,
   parseAgentToolObservation,
+  selectCompositionReferences,
 } from "@facet/agent-tools";
-import type { StageToolResult, ToolCall, ToolSpec } from "@facet/agent-tools";
+import type {
+  GetCompositionToolInput,
+  StageToolResult,
+  ToolCall,
+  ToolSpec,
+} from "@facet/agent-tools";
 ```
 
 The package depends only on `@facet/core`, so it can be reused by external agent
@@ -43,7 +49,7 @@ authors without pulling in the reference agent or a Node-only provider stack.
 `buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
 most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
 from `@facet/core`, compact page UX guidance, edit-before-append rules, the
-catalog-guided `composition -> component -> primitive` model, the tool playbook, the structured
+catalog-guided `component -> primitive` model, the tool playbook, the structured
 tool-result contract, and optional theme, catalog, and composition metadata.
 
 The prompt kit is not a complete agent. Your loop still owns the page brief,
@@ -61,35 +67,63 @@ const system = buildFacetAgentSystemPrompt({
 });
 ```
 
-Asset sections expose only prompt-safe metadata: theme names/descriptions,
-catalog policy, composition names/descriptions, slot names, and whitelisted
-composition metadata such as category, use/avoid guidance, tags, variants,
-repeatability, preferred parent, composition, data requirements, and follow-up
-edit hints. They never expose theme CSS values, composition node JSON, slot
-default values, provider keys, visitor ids, secrets, or unknown asset fields.
-The advertised compositions are expanded server-side when the model calls the
-`use_composition` tool; their node JSON never enters the prompt.
+Asset sections expose only prompt-safe indexes: theme names/descriptions,
+catalog policy, and each exposed composition's name plus
+`metadata.description`. Theme CSS values, composition node JSON, other
+composition metadata, provider keys, visitor ids, secrets, and unknown asset
+fields do not enter the system prompt.
 
-The component-model guidance tells agents to try advertised compositions first,
-then intrinsic components and catalog-advertised variants, before falling back to
-primitive bricks. It names product-quality defaults such as sections, cards,
-inputs, buttons, tabs, nav, tables, charts, metrics, key-value rows,
-progress, lists, forms, filters, empty states, and
-loading states without exposing renderer recipe parts, theme token values, or
-composition node JSON as stage syntax.
+The component-model guidance tells agents to author intrinsic components and
+catalog-advertised variants before falling back to primitive bricks. It names
+product-quality defaults such as sections, cards, inputs, buttons, tabs, nav,
+tables, charts, metrics, key-value rows, progress, lists, forms, filters, empty
+states, and loading states without exposing renderer recipe parts, theme token
+values, or composition node JSON as stage syntax. Composition datasets are
+optional examples: skip the read for a simple UI; for a complex UI, inspect one
+and then author native nodes separately.
 
 The catalog prompt section is active UI authoring policy. It tells the model the
 active theme, whether theme switching is a locked theme or explicitly allowed,
 which components and variants are allowed, whether all compositions or only named
-compositions may be used, whether primitive fallback is allowed, and the preferred
-order: `composition -> component -> primitive`.
+compositions may be exposed as references, whether primitive fallback is
+allowed, and the authoring order: `component -> primitive`. Composition policy
+controls reference exposure, not a stage authoring layer.
 
 Catalog policy is deliberately narrower than hosted platform policy. It guides
 and gates the UI the model may author; it does not define tenant isolation,
 authentication, billing, usage metering, rate limits, spend caps, or operational
 admin policy.
 
-## Catalog-Aware Enforcement
+## Composition reference reads
+
+`selectCompositionReferences(compositions, catalog?)` is the shared pure
+boundary used by both prompt indexing and lookup. It validates untrusted
+documents in input order, keeps the first valid occurrence of each name, applies
+the catalog's composition exposure policy, detaches caller-owned objects, and
+returns a newly allocated deeply frozen array. To keep the name/description
+index inside the smallest reference-agent context profile, exposure stops
+deterministically after 128 selected references; prompt indexing and lookup
+therefore see the same bounded set. Omitting the catalog exposes every valid
+reference within that cap; supplying a malformed catalog fails closed to an
+empty array.
+
+The canonical `get_composition` tool accepts exactly `{ name: string }` and
+performs a read-only lookup in that selected snapshot. A successful read returns
+the complete serialized validated dataset in the normal structured observation
+with `outcome: "no_stage_change"`: no messages, patches, changed node ids, or
+shadow mutation occur. Unknown or disallowed names reject with
+`invalid_composition`; malformed or extra input fields reject with
+`invalid_input`. After a successful read, the model must author the stage
+separately with native stage tools.
+
+The exact dataset is the one role-specific exception to the generic observation
+data cap, so it is never replaced with a truncation marker. The surrounding
+provider loop must still enforce its total-context limit before another model
+call; if the complete result cannot fit, stop rather than pass a partial value.
+The public `formatAgentToolObservation` API remains capped and has no bypass
+option.
+
+## Catalog-aware enforcement
 
 Pass the same catalog into `executeStageTool` through `StageToolAssets`:
 
@@ -100,30 +134,29 @@ const result = executeStageTool(call, {
 });
 ```
 
-`StageToolAssets.compositions` is the executor's composition library: the
-`use_composition` tool (input type `UseCompositionToolInput` — a composition
-`name`, string slot `params`, and `at.parent`) expands one of those documents
-server-side into ordinary validated patches with fresh ids. An unknown name, a
-name outside the catalog allow-list, or a failed expansion is a structured
-rejection (`invalid_composition`) with zero patches; a missing or non-container
-`at.parent` is `invalid_parent`.
+`StageToolAssets.compositions` is an optional list of concrete native reference
+datasets. Both the prompt and `get_composition` pass it through
+`selectCompositionReferences`, so the offered name-description index and
+readable documents follow the same validation, dedupe, and catalog exposure
+policy.
 
-The executor enforces catalog policy before it emits patches:
+The executor enforces catalog policy at both write and reference-read boundaries:
 
 - `render_page`, `append_node`, and `set_node` reject disallowed node types and
   disallowed variants. For tone-capable components, a `tone` used without
   an allowed `variant` is treated as a recipe selector and is rejected unless
   the catalog advertises that name.
-- `use_composition` rejects composition names outside an allow-list catalog
-  before expansion.
+- `get_composition` rejects names outside the catalog exposure allow-list and
+  never emits a stage effect.
 - `set_theme` rejects locked theme changes and names outside an allowed theme
   list.
 
-These are catalog_policy rejections: the structured observation has
-`outcome: "rejected"`, `applied: false`, `patch_count: 0`, a catalog-policy
-message, and a `next_action` telling the model to use an allowed composition,
-component, primitive, variant, or theme. Treat them as repair instructions, not
-as visible success.
+Catalog-policy rejections from authoring tools have `outcome: "rejected"`,
+`applied: false`, `patch_count: 0`, a catalog-policy message, and a
+`next_action` telling the model to use an allowed component, primitive, variant,
+or theme. An unavailable reference read instead uses the bounded
+`invalid_composition` result described above. Treat every rejection as a repair
+instruction, not as visible success.
 
 ## LLM-facing observations
 

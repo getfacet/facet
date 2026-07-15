@@ -1,4 +1,4 @@
-import type { StageToolAssets } from "@facet/agent-tools";
+import { selectCompositionReferences, type StageToolAssets } from "@facet/agent-tools";
 import type {
   FacetAgent,
   FacetCatalog,
@@ -6,6 +6,7 @@ import type {
   FacetTheme,
   ServerMessage,
 } from "@facet/core";
+import { validateCatalog } from "@facet/core";
 import { sessionKey, type Sink, type SummaryStore } from "@facet/runtime";
 import {
   enqueueBackgroundCompaction,
@@ -54,7 +55,7 @@ export interface ReferenceAgentOptions {
   /** Operator themes offered to the model by NAME in prompt ② (validated by the
    * caller). The model selects one with `set_theme`; values never reach it. */
   readonly themes?: readonly FacetTheme[];
-  /** Operator compositions (reusable fragments) advertised by name for server-side expansion. */
+  /** Concrete native reference datasets advertised by name for optional read-only inspection. */
   readonly compositions?: readonly FacetComposition[];
   /** Active catalog policy advertised to the model and enforced by stage tools. */
   readonly catalog?: FacetCatalog;
@@ -86,20 +87,21 @@ export function createReferenceAgentWithDependencies(
   options: ReferenceAgentOptions,
   dependencies: ReferenceAgentDependencies = {},
 ): FacetAgent {
-  // Snapshot once at creation: later mutation of the caller's composition
-  // documents must never alter execution (DC-009).
-  const compositions = (options.compositions ?? []).map((composition) =>
-    structuredClone(composition),
-  );
-  const catalog = options.catalog === undefined ? undefined : structuredClone(options.catalog);
+  // Select once at creation. Validation both detaches and deeply freezes the
+  // exposed reference documents, so the prompt index and read-only tool assets
+  // share one policy-filtered source that caller mutation cannot drift.
+  const compositions = selectCompositionReferences(options.compositions ?? [], options.catalog);
+  const catalog =
+    options.catalog === undefined ? undefined : validateCatalog(options.catalog).catalog;
   const assets: StageToolAssets = {
+    themes: options.themes ?? [],
     compositions,
     ...(catalog !== undefined ? { catalog } : {}),
   };
   const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
-    themes: options.themes ?? [],
-    compositions,
-    ...(catalog !== undefined ? { catalog } : {}),
+    ...assets,
+    themes: assets.themes ?? [],
+    compositions: assets.compositions ?? [],
   });
   const budget = normalizeBudget({
     ...(options.budgetPreset !== undefined ? { budgetPreset: options.budgetPreset } : {}),

@@ -1,8 +1,8 @@
 # @facet/core
 
-The Facet contract: the declarative stage spec in the Composition -> Component
--> Primitive Fallback authoring model, catalog policy, style tokens and theme recipes,
-reusable composition validation/expansion and metadata, the
+The Facet contract: the declarative stage spec in the Component -> Primitive
+Fallback authoring model, catalog policy, style tokens and theme recipes,
+validation for concrete composition reference datasets, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) JSON Patch
 `applyPatch`, validators, and the session/event types. It depends on nothing —
 every other Facet package builds on it.
@@ -27,12 +27,13 @@ component validator while dropping malformed payloads;
 `validateCatalog` turns untrusted catalog data into bounded UI policy; `validateTheme` gates
 token-value maps, component recipes, and recipe parts as operator data;
 `validateComposition` turns an untrusted composition document into a validated
-`FacetComposition` (with optional `CompositionMetadata`) or refuses it whole — a
-raw node map above 1023 nodes rejects the entire composition; `expandComposition`
-fills validated composition slots, preserves bounded metadata, prunes the
-root-reachable subtree, drops expanded actions that point outside that subtree,
-and remaps ids before a caller emits ordinary patches. `applyPatch` is the one
-patch function that runs identically on server and client.
+`FacetComposition` or refuses it whole. A composition is a self-contained native
+node dataset with `{ name, metadata: { description, ... }, root, nodes }`; its
+root may be a leaf or a container. The validator sanitizes node shapes and
+tokens, prunes dangling children, breaks cycles, and requires the root and
+`metadata.description` to survive. A raw node map above 1023 nodes rejects the
+entire document. `applyPatch` is the one patch function that runs identically on
+server and client.
 
 The public `normalizeVisitorContext`, `normalizeClientEvent`, and
 `normalizeLocalCollectedEvent` helpers give every transport the same rejecting,
@@ -44,7 +45,7 @@ the shared field/action bounds, and clamp optional view snapshots through
 import {
   applyPatch,
   EMPTY_TREE,
-  expandComposition,
+  validateComposition,
   validateCatalog,
   validateTree,
 } from "@facet/core";
@@ -52,7 +53,7 @@ import {
 // Fail-safe: unknown nodes / bad tokens are stripped, never thrown on.
 const { tree, issues } = validateTree(EMPTY_TREE);
 
-// Catalogs are UI vocabulary policy, not hosted auth/billing/tenant policy.
+// Catalogs are UI vocabulary and reference-exposure policy, not hosted policy.
 const { catalog } = validateCatalog({
   name: "product-ui",
   theme: { active: "default", switchPolicy: "locked" },
@@ -60,9 +61,30 @@ const { catalog } = validateCatalog({
   compositions: { mode: "all" },
   primitiveFallback: "allowed",
   policy: {
-    order: ["composition", "component", "primitive"],
+    order: ["component", "primitive"],
     editBeforeAppend: true,
     compactScreens: true,
+  },
+});
+
+// Reference datasets contain concrete native nodes; validation never mutates a stage.
+const { composition } = validateComposition({
+  name: "welcome-card",
+  metadata: { description: "A compact welcome card with one action." },
+  root: "card",
+  nodes: {
+    card: {
+      id: "card",
+      type: "card",
+      title: "Welcome",
+      children: ["start"],
+    },
+    start: {
+      id: "start",
+      type: "button",
+      label: "Get started",
+      onPress: { kind: "agent", name: "start" },
+    },
   },
 });
 
@@ -76,41 +98,26 @@ const next = applyPatch(tree, [
   { op: "add", path: "/nodes/root/children/-", value: "hello" },
 ]);
 
-const expanded = expandComposition(
-  {
-    name: "card",
-    slots: { title: "Card title" },
-    root: "card.root",
-    nodes: {
-      "card.root": { id: "card.root", type: "box", children: ["card.title"] },
-      "card.title": { id: "card.title", type: "text", value: "{{title}}" },
-    },
-  },
-  { title: "Hello" },
-  { parent: "root" },
-  { existingIds: new Set(Object.keys(tree.nodes)) },
-);
+// A consumer can inspect `composition`, adapt its native nodes, then author
+// ordinary RFC 6902 operations. Core does not apply a reference to a stage.
 ```
 
-`expandComposition` is fail-safe and hard-capped: malformed params become issues
-and defaults; an unknown parent returns no nodes; output is at most 1023 nodes;
-at most 5000 `existingIds` are read before expansion refuses; all id minting
-shares one 4096-attempt budget; issues stop at 64 entries plus one suppression
-tail; and a caught error's detail is sanitized (C0/DEL/C1 control characters
-removed) to at most 256 characters, so a throwing `message` getter reports only
-`unknown error`. Slot markers are also filled inside action strings (navigate
-targets, agent action names and string payload values), and a marker that
-survives fill anywhere — including non-fillable node-id references — refuses
-the whole expansion instead of shipping a node the validated fold would drop.
-Every over-cap or throwing path is a bounded no-op — the
-returned ids are fresh only for the nodes that will actually be emitted.
+Composition documents admit only the same closed native node and token
+vocabulary as stage trees. Raw HTML, JavaScript, CSS, fetch/query/resolver
+instructions, unknown node kinds, and invalid root documents are refused
+fail-safe. There is no reference-node, placeholder, dependency-graph, or
+composition-specific stage mutation API in core: a consumer reads the validated
+data and authors ordinary native nodes and patches itself.
 
-The theme, catalog, and composition-expansion implementations are organized as
-private responsibility modules behind these same root exports. Their validator
-and expansion helpers are not additional package entry points; the public API
-remains the contract exported from `@facet/core`.
-Composition assets may carry bounded metadata for
-prompt guidance, but expansion still emits ordinary nodes and JSON Patch operations. `applyPatch`
+`FacetCatalog.compositions` is only an exposure policy for those optional
+datasets (`all` or an allow-list); it is not an authoring tier. The fixed catalog
+authoring order is `component -> primitive`.
+
+The theme, catalog, and composition-validation implementations are organized as
+private responsibility modules behind these same root exports. Their helpers
+are not additional package entry points; the public API remains the contract
+exported from `@facet/core`. Composition assets may carry bounded metadata for
+agent guidance, while stage edits remain ordinary nodes and JSON Patch operations. `applyPatch`
 enforces JSON Pointer reads for source operations (`move`, `copy`, and `test`)
 and requires object-member `replace`/`remove` targets to exist before mutating,
 so stale ops do not leave partial object members behind or count as stage edits.

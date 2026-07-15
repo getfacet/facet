@@ -151,14 +151,15 @@ export async function runCli(
   }
 
   // Assets registry (Decision 8): resolve through `loadAssets` on EVERY boot so
-  // the `@facet/assets` default theme + composition library seeds even with no
+  // the `@facet/assets` default theme + composition reference library seeds even with no
   // --assets (an empty MemoryAssets still yields the defaults through the same
   // validation gate — WU-6). An EXPLICIT --assets path must exist (the --guide
   // precedent) and adds the operator's docs on top of the defaults.
   // Documents are validated once here at boot; each issue is one concise warn
   // line (never a document value). Themes go to the agent (names in prompt ②)
-  // AND the server (the shell map); compositions to the agent only — expanded
-  // server-side, never shipped to the browser; a seedable initial tree to the
+  // AND the server (the shell map); compositions to the agent only as one
+  // validated reference snapshot. They are read with `get_composition`, never
+  // expanded or shipped to the browser. A seedable initial tree goes to the
   // server (which wraps the stage store).
   let store: AssetsStore;
   if (flags.assets !== undefined) {

@@ -23,10 +23,11 @@ The renderer owns the internal DOM for components such as `section`, `card`,
 `button`, `tabs`, `nav`, `table`, `chart`, `metric`, `keyValue`, `progress`,
 `list`, `form`, `filterBar`, `emptyState`, and `loading`; recipe parts style
 their internal labels, controls, rows, tracks, and fills without exposing those
-part names as stage node fields. Badges and alerts are catalog compositions
-(box+text), not renderer-owned node types. Primitive nodes remain the base rendering path for custom
-composition. Wire it to a transport with `useFacet` and pass `send` through
-`onAction`.
+part names as stage node fields. Badges and alerts are ordinary native boxes,
+text, and components—not renderer-owned node types; optional composition
+references may inform their design but never insert them. Primitive nodes remain
+the base rendering path for custom composition. Wire it to a transport with
+`useFacet` and pass `send` through `onAction`.
 
 `StageRenderer` delegates safe-tree handling, motion, hold/press collection, and
 intrinsic rendering to private responsibility modules. These modules do not add

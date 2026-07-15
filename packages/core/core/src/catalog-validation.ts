@@ -271,7 +271,7 @@ function validateUsagePolicy(raw: unknown, issues: BoundedIssues): CatalogUsageP
         : DEFAULT_CATALOG.policy.compactScreens,
   };
   if (raw.order !== undefined && !isCanonicalUsageOrder(raw.order)) {
-    issues.push("catalog policy: invalid order defaulted to composition > component > primitive");
+    issues.push("catalog policy: invalid order defaulted to component > primitive");
   }
   if (
     typeof raw.maxScreenSections === "number" &&

@@ -19,7 +19,7 @@ describe("DEFAULT_CATALOG", () => {
 
     expect(issues).toEqual([]);
     expect(catalog.theme.switchPolicy).toBe("locked");
-    expect(catalog.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
     expect(catalog.policy.editBeforeAppend).toBe(true);
     expect(catalog.policy.compactScreens).toBe(true);
 
@@ -73,6 +73,14 @@ describe("DEFAULT_CATALOG", () => {
       false,
     );
     expect(DEFAULT_CATALOG.compositions).toEqual({ mode: "all" });
-    expect(DEFAULT_CATALOG.policy.order).toEqual(["composition", "component", "primitive"]);
+    expect(DEFAULT_CATALOG.policy.order).toEqual(["component", "primitive"]);
+  });
+
+  it("ships concrete reference datasets", () => {
+    const { catalog, issues } = validateCatalog(DEFAULT_CATALOG);
+
+    expect(issues).toEqual([]);
+    expect(catalog.compositions).toEqual({ mode: "all" });
+    expect(catalog.policy.order).toEqual(["component", "primitive"]);
   });
 });

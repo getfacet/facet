@@ -10,11 +10,12 @@
 
 Kits & themes as data — reskin and pre-seed a Facet page without touching code.
 Four additive layers, one flow, and the invariants hold: **the LLM never authors
-theme values** (it selects a theme by NAME), **composition internals never reach
-the model** (compositions are advertised as name/description/slot metadata and
-expanded server-side by `expandComposition` into ordinary patch ops), and
-**no new protocol messages** are introduced (the theme map and initial stage
-ship inline in the quickstart shell).
+theme values** (it selects a theme by NAME), **composition data stays out of the
+system prompt** (the prompt contains only a validated name/description index;
+the provider may fetch one complete concrete dataset on demand with the
+read-only `get_composition` tool), and **no new protocol messages** are
+introduced (the theme map and initial stage ship inline in the quickstart
+shell, while composition reads remain provider-side).
 
 PRE-1.0 BREAKING (in-repo consumers all updated): `FacetRuntime.handle` and
 `applyMessages` now return `TurnResult` (`{ messages, agentMutated }`) instead
@@ -55,9 +56,10 @@ and the salvage clone.
   layer).
 - `@facet/quickstart`: `--assets <dir>` (reads `*.theme.json`,
   `*.composition.json`, `initial.tree.json`), theme names + descriptions and
-  composition metadata (names, descriptions, slots) injected into the prompt, a
-  `set_theme` tool (a NAME argument only) plus a `use_composition` tool (a listed
-  name + string slot params, expanded server-side), and the escaped theme map
-  inlined into the shell. With no `--assets`, boot is byte-identical.
+  a validated composition name/description index injected into the prompt, a
+  `set_theme` tool (a NAME argument only) plus `get_composition` (an exact,
+  read-only lookup by listed name), and the escaped theme map inlined into the
+  shell. After a read, the model authors ordinary native stage nodes through the
+  existing tools. With no `--assets`, boot is byte-identical.
 
 (`@facet/*` are versioned together as a fixed group.)

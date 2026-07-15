@@ -16,28 +16,35 @@ intrinsic components, such as `button.primary`, `section.surface`, and
 Component recipes also carry token-only `parts` for internal affordances such as
 field labels and controls, button labels, tabs, table cells, chart plots,
 progress tracks/fills, and list items. Those parts are default
-renderer data, not new stage syntax. Badges and alerts ship as box+text catalog
-compositions (`DEFAULT_COMPOSITIONS`), not component recipes.
+renderer data, not new stage syntax. Badges and alerts ship as box+text reference
+datasets in `DEFAULT_COMPOSITIONS`, not component recipes.
 Its default sans stack is `Nunito, sans-serif`; this package only exports the
 data value, so hosts that want the exact Nunito face must load that font in
 their own shell.
-`DEFAULT_COMPOSITIONS` is a small library of eleven reusable composition
-fragments such as `hero`, `card`, `pricing-section`, and `dashboard-summary`;
-each composition declares string slots and whole-value `{{slot}}` markers so
-hosts can expand them with `expandComposition` or quickstart's `use_composition`
-tool. Compositions also carry bounded metadata for agent authoring: category,
+`DEFAULT_COMPOSITIONS` is a small library of eleven concrete reference datasets
+such as `hero`, `card`, `pricing-section`, and `dashboard-summary`. Every entry
+is self-contained native Facet data with `name`, required
+`metadata.description`, a fragment `root`, and a node map that uses the same
+closed node/token vocabulary as a stage. The root may be a leaf or a container.
+There are no placeholders, parameters, hidden renderer behaviors, or
+cross-dataset dependencies.
+
+These examples are optional reading material for an agent, not templates or a
+third authoring layer. A prompt can list only each exposed name and description;
+an agent that needs a complex example can request one complete dataset, inspect
+it, and then copy or adapt the native node ideas using its normal stage tools.
+Reading a dataset does not modify the stage. Bounded metadata such as category,
 use/avoid guidance, tags, variants, repeatability, preferred parent, and
-optional composed-of/data/follow-up hints. The prompt boundary is
-metadata-only: prompt layers expose names, descriptions, slot names, and that
-metadata only — composition node JSON and slot defaults never serialize into
-prompts and stay server-side.
+optional composed-of/data/follow-up hints remains operator data; it is not new
+stage syntax.
 
 `DEFAULT_CATALOG` is the default UI authoring policy. It locks the active theme
 to `default`, allows the built-in intrinsic component set, advertises the compact
 recipe variants backed by `DEFAULT_THEME`, allows all advertised compositions,
 permits primitive fallback, and teaches the order
-`composition -> component -> primitive` with edit-before-append and
-compact-screen guidance. This catalog is
+`component -> primitive` with edit-before-append and compact-screen guidance.
+Its composition policy controls only which optional reference datasets may be
+inspected. This catalog is
 about what UI the agent may author; it is not hosted platform policy for tenant
 isolation, authentication, billing, metering, spend caps, or custom domains.
 

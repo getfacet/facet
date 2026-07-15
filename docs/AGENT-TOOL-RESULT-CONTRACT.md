@@ -10,7 +10,9 @@ This contract applies to LLM-facing Facet stage tool observations emitted by
 
 ## Required Shape
 
-Every LLM-facing observation is a bounded JSON string with these fields:
+Every LLM-facing observation is a JSON string with these fields. Generic
+observations are bounded; the one exact composition-reference payload described
+below is a deliberate provider-context exception:
 
 ```json
 {
@@ -41,26 +43,64 @@ stage changed and the changed state is visitor-visible.
 ### Optional `data` field
 
 Some tools attach an optional `data?: string` field carrying a machine-readable
-payload that would be lossy to squeeze into the prose `message`. It is:
+payload that would be lossy to squeeze into the prose `message`.
+
+For the public generic formatter, `data` is:
 
 - optional — present only when a tool has structured metadata to hand back;
-- bounded — capped in length like every other field (≤ 2048 chars);
+- bounded — capped like every other field (≤ 2048 chars);
 - always valid JSON — a consumer can `JSON.parse` it directly.
 
-`use_composition` is the producer today: on success it emits
-`data` as JSON `{ "root", "slots", "ids", "slotsOmitted"?, "idsOmitted"? }`
-describing the expanded fragment's root id, slot-name → node-id map, and
-old → new node-id map; every part of the payload participates in the length
-budget (root first, then slot entries, then id entries), and `slotsOmitted` /
-`idsOmitted` count the entries dropped when a map was too large to fit. This
-structured payload moved OUT of `message`, which is now prose only. As a final
-safety net, if a `data` value ever exceeds the length bound it is replaced
-wholesale with `{ "truncated": true }` rather than sliced mid-JSON.
+If a generic `data` value exceeds that bound, it is replaced wholesale with
+`{ "truncated": true }` rather than sliced into invalid JSON. Consumers should
+parse generic `data` inside a `try`/`catch`, ignore parse errors, and treat that
+marker as unavailable detail.
 
-Consumer rule: parse `data` inside a `try`/`catch` and ignore it on any parse
-error. If the parsed value is `{ "truncated": true }`, treat the structured
-detail as unavailable and fall back to `inspect_stage` to read the resulting
-nodes.
+#### Exact `get_composition` exception
+
+`get_composition` is a read-only provider-side asset lookup with exact input
+`{ "name": "<advertised name>" }`. A successful read uses the same standard
+observation envelope, with:
+
+```json
+{
+  "tool": "get_composition",
+  "status": "ok",
+  "outcome": "no_stage_change",
+  "applied": false,
+  "stage_changed": false,
+  "visible_to_visitor": false,
+  "patch_count": 0,
+  "changed_node_ids": [],
+  "data": "{\"name\":\"hero\",\"metadata\":{\"description\":\"A hero reference.\"},\"root\":\"hero.root\",\"nodes\":{\"hero.root\":{\"id\":\"hero.root\",\"type\":\"text\",\"value\":\"Hello\"}}}"
+}
+```
+
+The `data` string is the complete serialization of the selected, validated
+`FacetComposition`. `JSON.parse(data)` is deep-equal to that object: no fields
+are dropped, no ids are minted, and no truncation marker is substituted. A
+package-private role-specific formatter creates this exception; the public
+generic formatter keeps its normal cap and has no bypass option.
+
+Prompt and lookup use the same detached, deeply frozen, catalog-filtered
+snapshot. The prompt index exposes only name plus `metadata.description`; the
+complete object appears only after an explicit successful tool read. Unknown or
+catalog-disallowed names return an `invalid_composition` rejection. Missing,
+malformed, or extra input fields return `invalid_input`. Both cases leave the
+stage shadow and pending edits unchanged.
+
+The reference transcript also preserves the complete successful read past its
+generic observation caps. The newest composition-read tool group is pinned
+verbatim through the next provider handoff even when recent-step retention is
+zero. If the whole request still exceeds the total context budget, the loop does
+not send a partial value, truncation marker, or summary to the provider; it stops
+with `context_limit` before the call. After one complete handoff, normal later
+step-group compaction may resume.
+
+Composition data is agent/provider-side only. It does not enter a stage message,
+patch, browser global, HTML shell, SSE frame, reconnect snapshot, or client
+protocol. The model must author any desired UI separately with ordinary native
+stage tools.
 
 ## Outcomes
 
@@ -71,7 +111,7 @@ nodes.
 | `applied_with_warnings` | A patch was applied, but validation/folding dropped or sanitized something. | Usually no. Inspect or repair when the warning affects the requested work. |
 | `pending` | The edit is buffered, usually because a container references child ids that do not exist yet. No patch was emitted. | No. Define the missing children or change the edit. |
 | `rejected` | The tool call was invalid or unsafe. No patch was emitted. | No. Follow `next_action`. |
-| `no_stage_change` | The tool intentionally did not mutate the stage, for example `inspect_stage`, `inspect_node`, or `say`. | Only if no page change was required. |
+| `no_stage_change` | The tool intentionally did not mutate the stage, for example `get_composition`, `inspect_stage`, `inspect_node`, or `say`. | Only if no page change was required. A reference read is not page completion. |
 
 ## False-Success Rule
 
@@ -87,8 +127,8 @@ In particular:
 - Buffered edits are `pending`, not success.
 - Rejected edits emit no patch and must include a concrete `next_action`.
 - Catalog policy rejections are `rejected`, not warnings. They emit no patch
-  when the active catalog disallows a node type, component variant, composition, or theme
-  switch.
+  when the active catalog disallows a node type or component variant, hides a
+  composition reference, or forbids a theme switch.
 
 ## Visibility Definition
 
@@ -115,8 +155,8 @@ Every non-complete result should include a concrete `next_action`.
   closed tree.
 - `pending`: define the missing child nodes in the same turn, or replace the
   pending container with a closed node.
-- `rejected`: fix the named input, parent, composition, tree, or patch
-  limit issue and retry.
+- `rejected`: fix the named input, parent, tree, or patch limit issue and retry;
+  for `invalid_composition`, choose an advertised reference name.
 
 Catalog policy rejection is a specific rejected class, often referred to in docs
 and tests as `catalog_policy`. The JSON observation still uses the closest
@@ -130,15 +170,17 @@ When a catalog policy rejection happens:
 - disallowed node type or component variant: use an allowed primitive/component,
   use an allowed variant, or fall back to primitives only when the catalog
   permits primitive fallback;
-- disallowed composition: choose a composition allowed by the active catalog
-  (via the `use_composition` tool), or compose the UI from allowed
+- hidden composition reference: choose a name advertised by the prompt index for
+  `get_composition`, or skip the optional read and author the UI from allowed
   components/primitives;
 - locked theme: keep the active catalog theme and do not call `set_theme`;
 - allowed-theme list miss: pick a theme listed by the active catalog.
 
 ## Bounds And Privacy
 
-Observations must remain bounded and safe to place in a provider transcript.
+Observations must remain safe to place in a provider transcript. Generic
+observations remain bounded; exact composition reads follow the dedicated
+whole-value/context-stop rule above.
 
 - Do not include full stage JSON by default.
 - Bound tool names, changed node id lists, warnings, messages, next actions, and
@@ -148,6 +190,8 @@ Observations must remain bounded and safe to place in a provider transcript.
 - If a changed node id is too long for the observation contract, omit it and
   increment `omitted_changed_node_count`.
 - Do not include provider keys, visitor ids, collected secrets, raw CSS values,
-  full composition JSON, or unbounded user input.
+  or unbounded user input. Complete composition JSON is allowed only as the
+  validated `get_composition` `data` payload; unknown asset fields are already
+  removed, and it is never forwarded to the browser or trace callbacks.
 - Keep the contract provider-neutral; OpenAI and Anthropic receive the same
   logical observation content.

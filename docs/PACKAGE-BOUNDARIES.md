@@ -8,11 +8,12 @@ or custom-domain routing.
 
 The catalog and design-system surface is part of that neutral technology layer:
 it is typed UI vocabulary and agent authoring policy (primitive bricks,
-intrinsic components, variants, compositions, primitive fallback, and theme
-switching), not tenant/project or billing policy. Facet core owns the intrinsic
-component set; hosted products that need domain-specific UI should expose recipe
-components/compositions through assets rather than letting tenants add new
-intrinsics at runtime.
+intrinsic components, variants, primitive fallback, and theme switching), plus
+separate policy for exposing optional read-only composition reference datasets.
+It is not tenant/project or billing policy. Facet core owns the intrinsic
+component set; hosted products that need domain-specific examples should expose
+native composition reference datasets through assets rather than letting tenants
+add new intrinsics at runtime.
 
 Production hosted platforms should wrap Facet primitives with their own edge/API
 and operations layer:
@@ -45,10 +46,10 @@ These packages are the reusable core of Facet:
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/core` | Closed stage contract: primitive bricks, Facet-owned intrinsic components, catalog/component/composition policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
-| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` interfaces and memory/file references for catalog/theme/composition/initial-tree assets and opaque rolling-summary records. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
+| `@facet/core` | Closed stage contract: primitive bricks, Facet-owned intrinsic components, catalog/component authoring policy, composition-reference exposure policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
+| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` interfaces and memory/file references for catalog/theme/composition-reference/initial-tree assets and opaque rolling-summary records. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
 | `@facet/react` | Renderer, recipe/theme-to-CSS mapping, recipe-part rendering for intrinsic components, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
-| `@facet/assets` | Default catalog, component recipes/parts, and default composition definitions with metadata (`DEFAULT_COMPOSITIONS`). | Catalog/theme/composition schemas need fuller authoring docs and editor-facing examples. |
+| `@facet/assets` | Default catalog, component recipes/parts, and default composition reference datasets with metadata (`DEFAULT_COMPOSITIONS`). | Catalog/theme/composition schemas need fuller authoring docs and editor-facing examples. |
 
 ### Agent Authoring
 

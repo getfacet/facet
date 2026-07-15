@@ -17,7 +17,6 @@ import {
 } from "./issues.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import { breakCycles, pruneDanglingChildren, sanitizeNodeMap } from "./tree-validation.js";
-import { isCompositionRefShape, sanitizeSlotMap } from "./primitive-node-validation.js";
 
 const MAX_COMPOSITION_METADATA_ITEMS = 16;
 const MAX_COMPOSITION_NODES = 1023;
@@ -53,34 +52,19 @@ function isValidSlotName(name: string): boolean {
 }
 
 /**
- * A reusable, validated brick fragment — a named `{root, nodes}` subtree the
- * operator authors and an agent can expand into ordinary patches. The `root`
- * need NOT be a box (a single-text composition is legal), and unlike a tree a composition
- * has no `screens`/`entry`.
+ * A validated concrete native reference dataset. The `root` need NOT be a box
+ * (a single-text composition is legal), and unlike a tree a composition has no
+ * `screens`/`entry`.
  */
 export interface FacetComposition {
   readonly name: string;
-  readonly description?: string;
-  readonly metadata?: CompositionMetadata;
-  readonly slots?: Readonly<Record<string, string>>;
+  readonly metadata: CompositionMetadata;
   readonly root: NodeId;
-  readonly nodes: Readonly<Record<NodeId, FacetNode | CompositionRef>>;
-}
-
-/**
- * A CLOSED reference from one composition's node map to ANOTHER composition,
- * resolved recursively to primitive/native nodes at expand time. It is the only
- * non-`FacetNode` value a composition's `nodes` map may hold, and it is admitted
- * ONLY inside a composition DEFINITION (never the live stage tree — see
- * `SanitizeNodeOptions.allowReference`). Only `use` and (bounded-string) `slots`
- * survive sanitation; it carries no `url`/`fetch`/`binding`/`query`/`resolver`.
- */
-export interface CompositionRef {
-  readonly use: string;
-  readonly slots?: Readonly<Record<string, string>>;
+  readonly nodes: Readonly<Record<NodeId, FacetNode>>;
 }
 
 export interface CompositionMetadata {
+  readonly description: string;
   readonly category?: string;
   readonly useWhen?: string;
   readonly avoidWhen?: string;
@@ -102,9 +86,9 @@ export interface CompositionValidationResult {
  * Fail-safe boundary for an untrusted composition document, mirroring `validateTree`'s
  * discipline (shared `sanitizeNodeMap`/`pruneDanglingChildren`/`breakCycles`):
  * brick-shape + token-membership sanitization, null-proto node map, dangling and
- * cyclic child refs removed, depth capped. Never throws. A composition needs a string
- * `name` and a `root` that resolves to a kept node (any brick type); optional
- * `slots` are bounded string defaults; no usable root ⇒ `composition` undefined.
+ * cyclic child refs removed, depth capped. Never throws. A composition needs a
+ * string `name`, a bounded `metadata.description`, and a `root` that resolves to
+ * a kept native node (any brick type); no usable root ⇒ `composition` undefined.
  * Issues report everything that was fixed or refused.
  */
 export function validateComposition(input: unknown): CompositionValidationResult {
@@ -152,10 +136,7 @@ function validateCompositionUnsafe(
     return { issues: issues.list };
   }
 
-  const nodes = sanitizeNodeMap(input.nodes, issues, {
-    allowSlotMarkers: true,
-    allowReference: true,
-  });
+  const nodes = sanitizeNodeMap(input.nodes, issues);
   pruneDanglingChildren(nodes, issues);
 
   const rootId =
@@ -167,31 +148,10 @@ function validateCompositionUnsafe(
 
   breakCycles(nodes, [rootId], issues);
 
-  const composition: {
-    name: string;
-    description?: string;
-    metadata?: CompositionMetadata;
-    slots?: Record<string, string>;
-    root: string;
-    nodes: Record<string, FacetNode | CompositionRef>;
-  } = { name, root: rootId, nodes };
-  if (input.description !== undefined) {
-    // Same validate/truncate policy validateTheme applies (shared helper): a
-    // non-string is dropped WITH an issue so the operator sees the field was
-    // ignored; an over-cap string is truncated at the shared 200-char cap so a
-    // giant description can't blow the prompt/context budget it is injected into.
-    const { description, warning } = boundedDescription(
-      input.description,
-      "composition",
-      MAX_DESCRIPTION_LENGTH,
-    );
-    if (description !== undefined) composition.description = description;
-    if (warning !== undefined) issues.push(warning);
-  }
-  const slots = sanitizeCompositionSlots(input.slots, issues);
-  if (slots !== undefined) composition.slots = slots;
   const metadata = sanitizeCompositionMetadata(input.metadata, issues);
-  if (metadata !== undefined) composition.metadata = metadata;
+  if (metadata === undefined) return { issues: issues.list };
+
+  const composition: FacetComposition = { name, metadata, root: rootId, nodes };
   return { composition, issues: issues.list };
 }
 
@@ -199,11 +159,7 @@ function inspectCompositionNodes(rawNodes: Record<string, unknown>, issues: Issu
   let safe = true;
   for (const [id, raw] of Object.entries(rawNodes)) {
     if (!isObject(raw)) continue;
-    // A node is either an allowed brick type OR a CLOSED composition reference
-    // `{ use, slots }`. Anything else refuses the whole composition. The
-    // forbidden-field sweep below still applies to references, so a ref carrying
-    // `url`/`fetch`/… is refused too.
-    if (!isAllowedCompositionNodeType(raw.type) && !isCompositionRefShape(raw)) {
+    if (!isAllowedCompositionNodeType(raw.type)) {
       issues.push(
         `node "${printableKey(id)}": unknown component type ${printableValue(raw.type)} in composition`,
       );
@@ -320,12 +276,28 @@ function sanitizeCompositionMetadata(
   raw: unknown,
   issues: IssueSink,
 ): CompositionMetadata | undefined {
-  if (raw === undefined) return undefined;
   if (!isObject(raw)) {
-    issues.push("composition metadata is not an object; dropped");
+    issues.push("composition metadata is required and must be an object; refused");
     return undefined;
   }
+
+  if (raw.description === undefined) {
+    issues.push("composition metadata.description is required; refused");
+    return undefined;
+  }
+  const { description, warning } = boundedDescription(
+    raw.description,
+    "composition",
+    MAX_DESCRIPTION_LENGTH,
+  );
+  if (warning !== undefined) issues.push(warning);
+  if (description === undefined) {
+    issues.push("composition metadata.description is required; refused");
+    return undefined;
+  }
+
   const metadata: {
+    description: string;
     category?: string;
     useWhen?: string;
     avoidWhen?: string;
@@ -336,7 +308,7 @@ function sanitizeCompositionMetadata(
     composedOf?: readonly FacetNode["type"][];
     dataRequirements?: readonly string[];
     followUpEdits?: readonly string[];
-  } = {};
+  } = { description };
   const category = metadataString(raw.category, "category", issues);
   if (category !== undefined) metadata.category = category;
   const useWhen = metadataString(raw.useWhen, "useWhen", issues);
@@ -366,16 +338,5 @@ function sanitizeCompositionMetadata(
   if (dataRequirements !== undefined) metadata.dataRequirements = dataRequirements;
   const followUpEdits = freeTextList(raw.followUpEdits, "followUpEdits");
   if (followUpEdits !== undefined) metadata.followUpEdits = followUpEdits;
-  return Object.keys(metadata).length > 0 ? metadata : undefined;
-}
-
-// Composition slot DEFAULTS and composition-reference slot ARGUMENTS share ONE
-// bounded-string sanitizer (`sanitizeSlotMap`), so a reference's `slots` are
-// bounded exactly like a slot default (MAX_FIELD_VALUE_CHARS truncation,
-// isValidSlotName gate, forbidden-key drop).
-function sanitizeCompositionSlots(
-  raw: unknown,
-  issues: IssueSink,
-): Record<string, string> | undefined {
-  return sanitizeSlotMap(raw, issues, "composition slot");
+  return metadata;
 }

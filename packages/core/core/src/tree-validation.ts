@@ -9,8 +9,7 @@ import {
   printableValue,
   type IssueSink,
 } from "./issues.js";
-import { sanitizeNode, type SanitizeNodeOptions } from "./primitive-node-validation.js";
-import type { CompositionRef } from "./composition-validation.js";
+import { sanitizeNode } from "./primitive-node-validation.js";
 import { isValidThemeName } from "./theme.js";
 import { sanitizeDataWarehouse } from "./data-binding.js";
 import type { DataWarehouse } from "./data-types.js";
@@ -113,26 +112,11 @@ function sanitizeScreens(
  * so they'd be unreachable. Shared by `validateTree` and `validateComposition` so the
  * brick-shape + token-membership sanitization is derived once, not twice.
  */
-// Composition definitions (`allowReference: true`) may keep CLOSED
-// `{ use, slots }` references alongside `FacetNode`s; the option-less call
-// (`validateTree`) never does, so its map stays `FacetNode`-only — a reference
-// node authored into the live stage tree is dropped as unknown (RISK-INV-1).
 export function sanitizeNodeMap(
   rawNodes: Record<string, unknown>,
   issues: IssueSink,
-  options: SanitizeNodeOptions & { allowReference: true },
-): Record<string, FacetNode | CompositionRef>;
-export function sanitizeNodeMap(
-  rawNodes: Record<string, unknown>,
-  issues: IssueSink,
-  options?: SanitizeNodeOptions,
-): Record<string, FacetNode>;
-export function sanitizeNodeMap(
-  rawNodes: Record<string, unknown>,
-  issues: IssueSink,
-  options: SanitizeNodeOptions = {},
-): Record<string, FacetNode | CompositionRef> {
-  const nodes: Record<string, FacetNode | CompositionRef> = nullMap<FacetNode | CompositionRef>();
+): Record<string, FacetNode> {
+  const nodes = nullMap<FacetNode>();
   for (const [id, raw] of Object.entries(rawNodes)) {
     if (id === "") {
       issues.push('node "": empty node id dropped');
@@ -142,7 +126,7 @@ export function sanitizeNodeMap(
       issues.push(`node "${printableKey(id)}": forbidden node id dropped`);
       continue;
     }
-    const node = sanitizeNode(id, raw, issues, options);
+    const node = sanitizeNode(id, raw, issues);
     if (node !== undefined) {
       nodes[id] = node;
     }
@@ -156,13 +140,9 @@ export function sanitizeNodeMap(
  * keep the first occurrence). A dup would otherwise render the same subtree
  * twice and make patch pointers to it ambiguous. Mutates `nodes` in place.
  */
-export function pruneDanglingChildren(
-  nodes: Record<string, FacetNode | CompositionRef>,
-  issues: IssueSink,
-): void {
+export function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: IssueSink): void {
   for (const node of Object.values(nodes)) {
-    // A CompositionRef is a childless leaf (no `type`); only containers prune.
-    if ("type" in node && isContainer(node)) {
+    if (isContainer(node)) {
       const seen = new Set<string>();
       const kept: string[] = [];
       let dangling = false;
@@ -209,7 +189,7 @@ export function pruneDanglingChildren(
  * be kept under multiple different walk roots. Mutates `nodes` in place.
  */
 export function breakCycles(
-  nodes: Record<string, FacetNode | CompositionRef>,
+  nodes: Record<string, FacetNode>,
   roots: readonly string[],
   issues: IssueSink,
 ): { worstRoot: string; maxReachable: number } {
@@ -220,8 +200,7 @@ export function breakCycles(
   let claimed = new Set<string>();
   const visit = (nodeId: string, depth: number): void => {
     const node = nodes[nodeId];
-    // A CompositionRef is a childless leaf (no `type`); only containers recurse.
-    if (node === undefined || !("type" in node) || !isContainer(node)) {
+    if (node === undefined || !isContainer(node)) {
       return;
     }
     inPath.add(nodeId);

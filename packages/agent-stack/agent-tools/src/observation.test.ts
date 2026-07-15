@@ -6,6 +6,7 @@ import {
   parseAgentToolObservation,
   visibleStageNodeIds,
 } from "./observation.js";
+import { okMessageResult } from "./executor-result.js";
 
 // Legacy vocabulary is built at runtime so the removed tokens never appear as
 // source literals (same idiom as theme.test.ts).
@@ -108,12 +109,12 @@ describe("agent tool observation contract", () => {
   });
 
   it("round-trips a bounded data payload and rejects non-string data", () => {
-    const payload = JSON.stringify({ root: "r1", slots: {}, ids: { card: "r1" } });
+    const payload = JSON.stringify({ root: "r1", ids: { card: "r1" } });
     const observation = formatAgentToolObservation({
-      tool: "use_composition",
+      tool: "inspect_stage",
       status: "ok",
-      outcome: "applied_visible",
-      message: "Used composition.",
+      outcome: "no_stage_change",
+      message: "Inspected the stage.",
       data: payload,
     });
 
@@ -125,18 +126,58 @@ describe("agent tool observation contract", () => {
     expect(parseAgentToolObservation(withNonStringData)).toBeUndefined();
   });
 
-  it("replaces an over-cap data payload with a valid truncated marker", () => {
+  it("keeps the public generic formatter capped with no composition bypass", () => {
     const observation = formatAgentToolObservation({
-      tool: "use_composition",
+      tool: "get_composition",
       status: "ok",
-      outcome: "applied_visible",
-      message: "Used composition.",
+      outcome: "no_stage_change",
+      message: "Read a composition reference.",
       data: `{"pad":"${"z".repeat(4_000)}"}`,
     });
 
     const parsed = parseAgentToolObservation(observation.text);
     expect(parsed?.data).toBe('{"truncated":true}');
     expect(JSON.parse(parsed?.data ?? "")).toEqual({ truncated: true });
+  });
+
+  it("preserves exact composition data above the generic cap", () => {
+    const composition = {
+      name: "large-reference",
+      metadata: {
+        description: "A complete reference whose serialized data exceeds the generic cap.",
+        variants: ["full"],
+        followUpEdits: ["Replace the example copy."],
+      },
+      root: "reference-root",
+      nodes: {
+        "reference-root": {
+          id: "reference-root",
+          type: "box",
+          children: ["reference-copy"],
+        },
+        "reference-copy": {
+          id: "reference-copy",
+          type: "text",
+          value: "x".repeat(3_000),
+        },
+      },
+    } as const;
+    const serialized = JSON.stringify(composition);
+    expect(serialized.length).toBeGreaterThan(2_048);
+
+    const result = okMessageResult(
+      "get_composition",
+      'Read composition reference "large-reference".',
+      TREE,
+      [],
+      [],
+      { data: serialized },
+    );
+    const parsed = parseAgentToolObservation(result.observation.text);
+
+    expect(parsed?.data).toBe(serialized);
+    expect(JSON.parse(parsed?.data ?? "null")).toEqual(composition);
+    expect(result.observation.data).toEqual(parsed);
   });
 
   it("omits the data field entirely when no payload is supplied", () => {
@@ -213,16 +254,16 @@ describe("agent tool observation contract", () => {
 
   it(`accepts the canonical invalid_composition code and rejects ${legacyCode}`, () => {
     const rejected = formatAgentToolObservation({
-      tool: "use_composition",
+      tool: "get_composition",
       status: "error",
       outcome: "rejected",
       code: "invalid_composition",
-      message: 'error: use_composition — unknown composition "nope".',
+      message: 'error: get_composition — unknown composition "nope".',
     });
 
     const data = parseAgentToolObservation(rejected.text);
     expect(data).toMatchObject({
-      tool: "use_composition",
+      tool: "get_composition",
       status: "error",
       outcome: "rejected",
       code: "invalid_composition",

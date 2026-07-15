@@ -111,6 +111,7 @@ const MAX_FILE_BYTES = 1_048_576;
 function compositionDoc(name: string, value = "Go"): Record<string, unknown> {
   return {
     name,
+    metadata: { description: `${name} native reference example` },
     root: "r",
     nodes: {
       r: { id: "r", type: "box", children: ["t"] },
@@ -191,6 +192,49 @@ describe("FileAssets", () => {
     expect(
       loaded.issues.some((i) => i.includes("duplicate composition name") && i.includes("dup")),
     ).toBe(true);
+  });
+
+  it("keeps raw composition files opaque while loadAssets admits native docs and skips legacy shapes", async () => {
+    const legacySlotsField = ["sl", "ots"].join("");
+    const legacyReferenceField = ["u", "se"].join("");
+    const native = compositionDoc("native-example", "Ready");
+    const legacyTemplate = {
+      name: "legacy-template",
+      description: "An obsolete template",
+      [legacySlotsField]: { label: "Default" },
+      root: "copy",
+      nodes: { copy: { id: "copy", type: "text", value: "Default" } },
+    };
+    const legacyReference = {
+      name: "legacy-reference",
+      metadata: { description: "An obsolete nested reference" },
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["ref"] },
+        ref: { [legacyReferenceField]: "legacy-template" },
+      },
+    };
+    const dir = makeTempDir();
+    writeFileSync(join(dir, "a-native.composition.json"), JSON.stringify(native));
+    writeFileSync(join(dir, "b-template.composition.json"), JSON.stringify(legacyTemplate));
+    writeFileSync(join(dir, "c-reference.composition.json"), JSON.stringify(legacyReference));
+
+    const store = new FileAssets(dir);
+    await expect(store.load("a")).resolves.toMatchObject({
+      compositions: [native, legacyTemplate, legacyReference],
+    });
+
+    const loaded = await loadAssets(store, "a");
+    const names = loaded.compositions.map((composition) => composition.name);
+    expect(names).toContain("native-example");
+    expect(names).not.toContain("legacy-template");
+    expect(names).not.toContain("legacy-reference");
+    expect(
+      loaded.compositions.find((composition) => composition.name === "native-example"),
+    ).toMatchObject(native);
+    expect(loaded.issues.some((issue) => issue.includes("composition document skipped"))).toBe(
+      true,
+    );
   });
 
   it("records an issue for an unparseable file, never throws, and boots", async () => {

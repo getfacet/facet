@@ -42,7 +42,7 @@ like a real service page an agent developer could ship to visitors.
   acknowledgement alongside the page change.`;
 
 /** Operator assets injected into prompt layer 2: themes offered to the model by
- * NAME and compositions it may expand by name. */
+ * NAME and concrete native references it may inspect read-only by name. */
 export interface PromptAssets {
   readonly themes: readonly FacetTheme[];
   readonly compositions: readonly FacetComposition[];

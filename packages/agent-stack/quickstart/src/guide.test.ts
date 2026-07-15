@@ -118,14 +118,26 @@ describe("quickstart guide", () => {
   it("preserves the serialized initial stage byte-for-byte through module extraction", () => {
     const serialized = JSON.stringify(QUICKSTART_INITIAL_STAGE);
 
-    expect(serialized).toHaveLength(20_864);
+    expect(serialized).toContain('"title":"Optional reference datasets"');
+    expect(serialized).toContain('"caption":"Reference examples"');
+    expect(serialized).toContain(
+      '"description":"A compact product hero with a title, subtitle, and CTA."',
+    );
+    expect(serialized).toContain('"title":"Native authoring"');
+    expect(serialized).toContain("box, text, media, input, and richtext");
+    expect(serialized).not.toContain('"slots"');
+    expect(serialized).toHaveLength(21_023);
     expect(createHash("sha256").update(serialized).digest("hex")).toBe(
-      "eb17b41d3e6770d82baf51035f83b6c9fb6131c8b8f59c504e93d195ad9f5a1c",
+      "d75e6ac635d10396b529a30e50967928c0ce17b043e449122232a4147c640425",
     );
   });
 
   it("keeps the page brief on the established guide export", () => {
     expect(QUICKSTART_PAGE_BRIEF).toContain("# Facet quickstart tour");
     expect(QUICKSTART_PAGE_BRIEF).toContain("Preserve the top-level tabs");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("component-first catalog authoring");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("box/text/media/input/richtext");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("inspect an available composition reference");
+    expect(QUICKSTART_PAGE_BRIEF).toContain("ordinary native nodes");
   });
 });

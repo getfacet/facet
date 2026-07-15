@@ -10,7 +10,6 @@ import {
   validateComposition,
   validateTree,
 } from "./validate.js";
-import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 import { MAX_DESCRIPTION_LENGTH } from "./theme.js";
 
 describe("canonical composition validation surface", () => {
@@ -57,6 +56,73 @@ describe("canonical composition validation surface", () => {
     const oversized = validateComposition({ name: "oversized", root: "root", nodes });
     expect(oversized.composition).toBeUndefined();
     expect(oversized.issues.length).toBeLessThanOrEqual(65);
+  });
+});
+
+describe("concrete composition contract", () => {
+  it("requires metadata.description and keeps only native nodes", () => {
+    const valid = validateComposition({
+      name: "reference-card",
+      metadata: { description: "A concrete reference card" },
+      root: "label",
+      nodes: {
+        label: { id: "label", type: "text", value: "{{literal-label}}" }, // composition-hard-cut: allowed-negative
+      },
+    });
+
+    expect(valid.issues).toHaveLength(0);
+    expect(valid.composition).toEqual({
+      name: "reference-card",
+      metadata: { description: "A concrete reference card" },
+      root: "label",
+      nodes: {
+        label: { id: "label", type: "text", value: "{{literal-label}}", style: {} }, // composition-hard-cut: allowed-negative
+      },
+    });
+
+    for (const legacy of [
+      {
+        name: "top-level-description",
+        description: "legacy",
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "legacy" } },
+      },
+      {
+        name: "missing-description",
+        metadata: { category: "legacy" },
+        root: "label",
+        nodes: { label: { id: "label", type: "text", value: "legacy" } },
+      },
+      {
+        name: "nested-reference",
+        metadata: { description: "legacy reference" },
+        root: "root",
+        nodes: {
+          root: { id: "root", type: "box", children: ["ref"] },
+          ref: { use: "badge", slots: { label: "legacy" } }, // composition-hard-cut: allowed-negative
+        },
+      },
+    ]) {
+      expect(validateComposition(legacy).composition).toBeUndefined();
+    }
+  });
+
+  it("applies ordinary native media safety instead of marker semantics", () => {
+    const { composition, issues } = validateComposition({
+      name: "literal-markers",
+      metadata: { description: "Marker-looking strings are ordinary values" },
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["copy", "media"] },
+        copy: { id: "copy", type: "text", value: "{{literal-copy}}" }, // composition-hard-cut: allowed-negative
+        media: { id: "media", type: "media", src: "{{not-a-safe-url}}" }, // composition-hard-cut: allowed-negative
+      },
+    });
+
+    expect(composition?.nodes["copy"]).toMatchObject({ value: "{{literal-copy}}" }); // composition-hard-cut: allowed-negative
+    expect(composition?.nodes["media"]).toBeUndefined();
+    expect(composition?.nodes["root"]).toMatchObject({ children: ["copy"] });
+    expect(issues.some((issue) => issue.includes("unsafe media src"))).toBe(true);
   });
 });
 
@@ -718,10 +784,10 @@ describe("validateComposition", () => {
     expect(run.issues).toContain("composition could not be read safely; refused");
   });
 
-  it("keeps a valid fragment with a resolving root and one-line description", () => {
+  it("keeps a valid fragment with a resolving root and metadata description", () => {
     const { composition, issues } = validateComposition({
       name: "hero",
-      description: "a big hero",
+      metadata: { description: "a big hero" },
       root: "h",
       nodes: {
         h: { id: "h", type: "box", style: { gap: "md" }, children: ["t"] },
@@ -731,7 +797,7 @@ describe("validateComposition", () => {
     expect(issues).toHaveLength(0);
     expect(composition).toBeDefined();
     expect(composition?.name).toBe("hero");
-    expect(composition?.description).toBe("a big hero");
+    expect(composition?.metadata.description).toBe("a big hero");
     expect(composition?.root).toBe("h");
     expect(composition?.nodes["t"]).toMatchObject({ type: "text", value: "hi" });
     expect(Object.getPrototypeOf(composition?.nodes)).toBeNull();
@@ -740,6 +806,7 @@ describe("validateComposition", () => {
   it("normalizes safe intrinsic nodes and refuses unknown component names", () => {
     const safe = validateComposition({
       name: "customerSummaryCard",
+      metadata: { description: "Customer summary card" },
       root: "card",
       nodes: {
         card: { id: "card", type: "card", title: "Summary", children: ["metric"] },
@@ -772,7 +839,12 @@ describe("validateComposition", () => {
         return [id, { id, type: "text", value: id }];
       }),
     );
-    const accepted = validateComposition({ name: "bounded", root: "root", nodes });
+    const accepted = validateComposition({
+      name: "bounded",
+      metadata: { description: "Bounded reference" },
+      root: "root",
+      nodes,
+    });
     expect(accepted.composition).toBeDefined();
     expect(Object.keys(accepted.composition?.nodes ?? {})).toHaveLength(1023);
 
@@ -808,6 +880,7 @@ describe("validateComposition", () => {
   it("accepts a single text node as the root (the root need not be a box)", () => {
     const { composition, issues } = validateComposition({
       name: "label",
+      metadata: { description: "Single label" },
       root: "t",
       nodes: { t: { id: "t", type: "text", value: "solo" } },
     });
@@ -830,7 +903,7 @@ describe("validateComposition", () => {
 
   it("drops hostile node ids without flipping the map prototype", () => {
     const input = JSON.parse(
-      '{"name":"h","root":"root","nodes":{"root":{"id":"root","type":"box","children":["value"]},"__proto__":{"id":"__proto__","type":"text","value":"x"}}}',
+      '{"name":"h","metadata":{"description":"Hostile ids"},"root":"root","nodes":{"root":{"id":"root","type":"box","children":["value"]},"__proto__":{"id":"__proto__","type":"text","value":"x"}}}',
     ) as unknown;
     const { composition, issues } = validateComposition(input);
     expect(Object.keys(composition?.nodes ?? {})).toEqual(["root"]);
@@ -842,6 +915,7 @@ describe("validateComposition", () => {
   it("sanitizes junk style tokens on composition nodes", () => {
     const { composition } = validateComposition({
       name: "s",
+      metadata: { description: "Styled reference" },
       root: "root",
       nodes: {
         root: { id: "root", type: "box", style: { gap: "HUGE", pad: "md" }, children: [] },
@@ -856,6 +930,7 @@ describe("validateComposition", () => {
     const run = (): ReturnType<typeof validateComposition> =>
       validateComposition({
         name: "cyc",
+        metadata: { description: "Cyclic reference" },
         root: "a",
         nodes: {
           a: { id: "a", type: "box", children: ["b"] },
@@ -881,7 +956,12 @@ describe("validateComposition", () => {
       };
     }
     const run = (): ReturnType<typeof validateComposition> =>
-      validateComposition({ name: "deep", root: "root", nodes });
+      validateComposition({
+        name: "deep",
+        metadata: { description: "Deep reference" },
+        root: "root",
+        nodes,
+      });
     expect(run).not.toThrow();
     const { issues } = run();
     expect(issues.some((issue) => issue.includes("max depth"))).toBe(true);
@@ -890,8 +970,8 @@ describe("validateComposition", () => {
   it("keeps bounded prompt-safe composition metadata", () => {
     const { composition, issues } = validateComposition({
       name: "dashboard-summary",
-      description: "Dashboard cards",
       metadata: {
+        description: "Dashboard cards",
         category: "dashboard",
         useWhen: "Summarizing KPIs",
         avoidWhen: "Long narrative content",
@@ -909,6 +989,7 @@ describe("validateComposition", () => {
 
     expect(issues).toHaveLength(0);
     expect(composition?.metadata).toEqual({
+      description: "Dashboard cards",
       category: "dashboard",
       useWhen: "Summarizing KPIs",
       avoidWhen: "Long narrative content",
@@ -939,7 +1020,10 @@ describe("validateComposition", () => {
     ];
     const { composition, issues } = validateComposition({
       name: "component-heavy",
-      metadata: { composedOf: [...composedOf, "not-a-node"] },
+      metadata: {
+        description: "Component-heavy reference",
+        composedOf: [...composedOf, "not-a-node"],
+      },
       root: "card",
       nodes: { card: { id: "card", type: "card", children: [] } },
     });
@@ -953,6 +1037,7 @@ describe("validateComposition", () => {
     const { composition, issues } = validateComposition({
       name: "free-text-metadata",
       metadata: {
+        description: "Free-text metadata reference",
         dataRequirements: [
           "The current account balance in USD.",
           "A list of recent transactions with dates.",
@@ -1045,7 +1130,7 @@ describe("validateTree shared-child DAG (single-parent per walk root)", () => {
   });
 });
 
-describe("validateComposition caps (name + description)", () => {
+describe("validateComposition caps (name + metadata.description)", () => {
   it("rejects a composition name that is not a valid theme-name (too long / bad chars)", () => {
     for (const bad of ["x".repeat(65), "has space", "-lead"]) {
       const { composition, issues } = validateComposition({
@@ -1078,14 +1163,14 @@ describe("validateComposition caps (name + description)", () => {
     }
   });
 
-  it("truncates an over-long composition description to the shared 200-char cap with an issue", () => {
+  it("truncates an over-long metadata.description to the shared 200-char cap with an issue", () => {
     const { composition, issues } = validateComposition({
       name: "hero",
-      description: "d".repeat(5000),
+      metadata: { description: "d".repeat(5000) },
       root: "t",
       nodes: { t: { id: "t", type: "text", value: "x" } },
     });
-    expect(composition?.description).toHaveLength(200);
+    expect(composition?.metadata.description).toHaveLength(200);
     expect(issues.some((i) => i.includes("description truncated"))).toBe(true);
   });
 });
@@ -1274,158 +1359,18 @@ describe("validate issue echo is bounded and never throws", () => {
   });
 });
 
-describe("validateComposition description", () => {
-  it("drops a non-string description WITH an issue (mirrors validateTheme)", () => {
+describe("validateComposition metadata.description", () => {
+  it("refuses a non-string required description WITH an issue", () => {
     for (const bad of [123, {}, null, [1]]) {
       const { composition, issues } = validateComposition({
         name: "hero",
-        description: bad,
+        metadata: { description: bad },
         root: "t",
         nodes: { t: { id: "t", type: "text", value: "x" } },
       });
-      expect(composition).toBeDefined();
-      expect(composition?.description).toBeUndefined();
+      expect(composition).toBeUndefined();
       expect(issues.some((i) => i.includes("description is not a string"))).toBe(true);
     }
-  });
-});
-
-describe("validateComposition composition slots", () => {
-  it("sanitizes optional composition slots with bounded string defaults", () => {
-    const { composition, issues } = validateComposition({
-      name: "hero",
-      slots: {
-        title: "Hello",
-        empty: "",
-        body: "b".repeat(MAX_FIELD_VALUE_CHARS + 5),
-        bad: 42,
-      },
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["title"] },
-        title: { id: "title", type: "text", value: "{{title}}" },
-      },
-    });
-
-    expect(composition?.slots).toEqual({
-      title: "Hello",
-      empty: "",
-      body: "b".repeat(MAX_FIELD_VALUE_CHARS),
-    });
-    expect(issues.some((issue) => issue.includes("slot") && issue.includes("not a string"))).toBe(
-      true,
-    );
-    expect(issues.some((issue) => issue.includes("slot") && issue.includes("truncated"))).toBe(
-      true,
-    );
-  });
-
-  it("accepts whole-value composition slot markers in composition string leaves only", () => {
-    const { composition, issues } = validateComposition({
-      name: "card",
-      slots: {
-        title: "Title",
-        image: "https://example.com/card.png",
-        poster: "https://example.com/poster.jpg",
-        label: "Email",
-      },
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["title", "image", "field"] },
-        title: { id: "title", type: "text", value: "{{title}}" },
-        image: {
-          id: "image",
-          type: "media",
-          kind: "video",
-          src: "{{image}}",
-          alt: "{{title}}",
-          poster: "{{poster}}",
-        },
-        field: {
-          id: "field",
-          type: "input",
-          name: "email",
-          label: "{{label}}",
-          placeholder: "{{title}}",
-        },
-      },
-    });
-
-    expect(composition).toBeDefined();
-    expect(composition?.nodes["title"]).toMatchObject({ type: "text", value: "{{title}}" });
-    expect(composition?.nodes["image"]).toMatchObject({
-      type: "media",
-      src: "{{image}}",
-      alt: "{{title}}",
-      poster: "{{poster}}",
-    });
-    expect(composition?.nodes["field"]).toMatchObject({
-      type: "input",
-      label: "{{label}}",
-      placeholder: "{{title}}",
-    });
-    expect(issues).toHaveLength(0);
-  });
-});
-
-describe("validateComposition composition reference", () => {
-  it("admits a bounded composition reference node inside a composition definition", () => {
-    const { composition, issues } = validateComposition({
-      name: "wrapper",
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["ref"] },
-        ref: {
-          use: "badge",
-          slots: { label: "x", huge: "y".repeat(MAX_FIELD_VALUE_CHARS + 3) },
-          // Extra keys must NOT survive — the reference is a closed { use, slots }.
-          id: "ref",
-          extra: "should-be-stripped",
-          children: ["nope"],
-        },
-      },
-    });
-
-    expect(composition).toBeDefined();
-    // Only { use, slots } survives; every other key is dropped, and the slot
-    // values are bounded through the same slot-string path as slot defaults.
-    expect(composition?.nodes["ref"]).toEqual({
-      use: "badge",
-      slots: { label: "x", huge: "y".repeat(MAX_FIELD_VALUE_CHARS) },
-    });
-    // The reference is a childless leaf, so the root's child ref is NOT dangling.
-    expect(composition?.nodes["root"]).toMatchObject({ type: "box", children: ["ref"] });
-    expect(issues.some((issue) => issue.includes("truncated"))).toBe(true);
-  });
-
-  it("refuses a composition whose reference carries a forbidden field", () => {
-    const { composition, issues } = validateComposition({
-      name: "wrapper",
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["ref"] },
-        ref: { use: "badge", url: "https://evil.example/exfil" },
-      },
-    });
-
-    expect(composition).toBeUndefined();
-    expect(issues.some((issue) => issue.includes("url"))).toBe(true);
-  });
-
-  it("drops a composition reference node authored into the live stage tree", () => {
-    const { tree, issues } = validateTree({
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["ref"] },
-        ref: { use: "badge", slots: { label: "x" } },
-      },
-    });
-
-    // A reference node is structurally impossible in the live stage: validateTree
-    // never sets allowReference, so the { use, slots } node is dropped as unknown.
-    expect(tree.nodes["ref"]).toBeUndefined();
-    expect(tree.nodes["root"]).toBeDefined();
-    expect(issues.length).toBeGreaterThan(0);
   });
 });
 
@@ -1745,6 +1690,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     // validateComposition parity: the shared sanitizeNode strips the same junk.
     const { composition, issues: compositionIssues } = validateComposition({
       name: "junky",
+      metadata: { description: "Junky reference" },
       root: "b",
       nodes: {
         b: {

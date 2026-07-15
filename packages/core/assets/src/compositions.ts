@@ -2,15 +2,16 @@ import type { FacetComposition } from "@facet/core";
 import { CHART_TABLE_VIEW_COMPOSITION } from "./composition-chart-table.js";
 
 /**
- * Default compositions are prompt-safe, node-free data assets: reusable stage
- * fragments with bounded metadata so an agent can choose useful patterns before
- * falling back to raw bricks.
+ * Default compositions are data-only, self-contained native reference
+ * datasets. An agent may inspect one as an example, then author ordinary stage
+ * nodes with the existing native tools; these assets are not templates or
+ * renderer extensions.
  */
 export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   {
     name: "hero",
-    description: "A compact product hero with a title, subtitle, and CTA.",
     metadata: {
+      description: "A compact product hero with a title, subtitle, and CTA.",
       category: "marketing",
       useWhen: "Introducing a product, feature, or first screen.",
       avoidWhen: "The user needs dense operational data first.",
@@ -19,25 +20,20 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: false,
       preferredParent: "root",
     },
-    slots: {
-      title: "Your headline",
-      subtitle: "A short supporting line.",
-      cta: "Get started",
-    },
     root: "hero.root",
     nodes: {
       "hero.root": {
         id: "hero.root",
         type: "section",
-        title: "{{title}}",
-        body: "{{subtitle}}",
+        title: "Ship polished interfaces in minutes",
+        body: "Compose safe, live UI for each user without shipping a new frontend.",
         variant: "surface",
         children: ["hero.cta"],
       },
       "hero.cta": {
         id: "hero.cta",
         type: "button",
-        label: "{{cta}}",
+        label: "Get started",
         variant: "primary",
         tone: "accent",
         onPress: { kind: "agent", name: "start" },
@@ -46,8 +42,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   },
   {
     name: "card",
-    description: "A titled content card with body copy.",
     metadata: {
+      description: "A titled content card with body copy.",
       category: "content",
       useWhen: "Grouping one concept, record, or explanation.",
       avoidWhen: "The content is a whole screen section.",
@@ -56,17 +52,13 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: {
-      title: "Card title",
-      body: "Card body copy.",
-    },
     root: "card.root",
     nodes: {
       "card.root": {
         id: "card.root",
         type: "card",
-        title: "{{title}}",
-        body: "{{body}}",
+        title: "Quarterly planning",
+        body: "Review goals, owners, and open decisions for the next release.",
         variant: "default",
         children: [],
       },
@@ -74,8 +66,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   },
   {
     name: "cta-button",
-    description: "A single accent call-to-action button that fires an agent action.",
     metadata: {
+      description: "A single accent call-to-action button that fires an agent action.",
       category: "action",
       useWhen: "The user should take one clear next action.",
       avoidWhen: "The action needs surrounding explanation or fields.",
@@ -84,15 +76,12 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "card",
     },
-    slots: {
-      label: "Get started",
-    },
     root: "cta-button.root",
     nodes: {
       "cta-button.root": {
         id: "cta-button.root",
         type: "button",
-        label: "{{label}}",
+        label: "Get started",
         variant: "primary",
         tone: "accent",
         onPress: { kind: "agent", name: "start" },
@@ -101,8 +90,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   },
   {
     name: "pricing-section",
-    description: "A compact pricing comparison section with three plan cards.",
     metadata: {
+      description: "A compact pricing comparison section with three plan cards.",
       category: "commerce",
       useWhen: "Showing plans, packages, or tier comparison.",
       avoidWhen: "The user asked for a single plan detail.",
@@ -111,26 +100,19 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: false,
       preferredParent: "root",
     },
-    slots: {
-      title: "Choose a plan",
-      starter: "Starter",
-      pro: "Pro",
-      enterprise: "Enterprise",
-      cta: "Compare plans",
-    },
     root: "pricing-section.root",
     nodes: {
       "pricing-section.root": {
         id: "pricing-section.root",
         type: "section",
-        title: "{{title}}",
+        title: "Choose a plan",
         variant: "surface",
         children: ["pricing-section.starter", "pricing-section.pro", "pricing-section.enterprise"],
       },
       "pricing-section.starter": {
         id: "pricing-section.starter",
         type: "card",
-        title: "{{starter}}",
+        title: "Starter",
         body: "Simple tools for early teams.",
         children: ["pricing-section.starter-price"],
       },
@@ -143,7 +125,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "pricing-section.pro": {
         id: "pricing-section.pro",
         type: "card",
-        title: "{{pro}}",
+        title: "Pro",
         body: "Advanced workflows and analytics.",
         tone: "accent",
         children: ["pricing-section.pro-price", "pricing-section.cta"],
@@ -157,27 +139,35 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "pricing-section.cta": {
         id: "pricing-section.cta",
         type: "button",
-        label: "{{cta}}",
+        label: "Compare plans",
         variant: "primary",
         onPress: { kind: "agent", name: "compare_pricing" },
       },
       "pricing-section.enterprise": {
         id: "pricing-section.enterprise",
         type: "card",
-        title: "{{enterprise}}",
+        title: "Enterprise",
         body: "Custom controls for larger organizations.",
         children: ["pricing-section.enterprise-badge"],
       },
       "pricing-section.enterprise-badge": {
-        use: "badge",
-        slots: { label: "Custom" },
+        id: "pricing-section.enterprise-badge",
+        type: "box",
+        style: { direction: "row", pad: "xs", radius: "full", bg: "surface-2" },
+        children: ["pricing-section.enterprise-badge-label"],
+      },
+      "pricing-section.enterprise-badge-label": {
+        id: "pricing-section.enterprise-badge-label",
+        type: "text",
+        value: "Custom",
+        style: { color: "fg", size: "sm", weight: "semibold" },
       },
     },
   },
   {
     name: "faq-section",
-    description: "A concise FAQ list for common questions.",
     metadata: {
+      description: "A concise FAQ list for common questions.",
       category: "support",
       useWhen: "Answering several predictable questions.",
       avoidWhen: "The user needs an interactive troubleshooting flow.",
@@ -186,31 +176,29 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: false,
       preferredParent: "root",
     },
-    slots: {
-      title: "Questions",
-      q1: "What is included?",
-      q2: "Can I cancel?",
-      q3: "How do I get support?",
-    },
     root: "faq-section.root",
     nodes: {
       "faq-section.root": {
         id: "faq-section.root",
         type: "section",
-        title: "{{title}}",
+        title: "Questions",
         children: ["faq-section.list"],
       },
       "faq-section.list": {
         id: "faq-section.list",
         type: "list",
-        items: [{ title: "{{q1}}" }, { title: "{{q2}}" }, { title: "{{q3}}" }],
+        items: [
+          { title: "What is included?" },
+          { title: "Can I cancel?" },
+          { title: "How do I get support?" },
+        ],
       },
     },
   },
   {
     name: "dashboard-summary",
-    description: "A KPI summary section with stats and status.",
     metadata: {
+      description: "A KPI summary section with stats and status.",
       category: "dashboard",
       useWhen: "Summarizing current performance or account state.",
       avoidWhen: "The user asked for detailed raw records first.",
@@ -219,18 +207,12 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: false,
       preferredParent: "root",
     },
-    slots: {
-      title: "Overview",
-      metric: "Revenue",
-      value: "$42k",
-      delta: "+12%",
-    },
     root: "dashboard-summary.root",
     nodes: {
       "dashboard-summary.root": {
         id: "dashboard-summary.root",
         type: "section",
-        title: "{{title}}",
+        title: "Overview",
         variant: "surface",
         children: [
           "dashboard-summary.stat",
@@ -241,14 +223,22 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "dashboard-summary.stat": {
         id: "dashboard-summary.stat",
         type: "stat",
-        label: "{{metric}}",
-        value: "{{value}}",
-        delta: "{{delta}}",
+        label: "Revenue",
+        value: "$42k",
+        delta: "+12%",
         tone: "success",
       },
       "dashboard-summary.badge": {
-        use: "badge-success",
-        slots: { label: "Healthy" },
+        id: "dashboard-summary.badge",
+        type: "box",
+        style: { direction: "row", pad: "xs", radius: "full", bg: "surface", border: true },
+        children: ["dashboard-summary.badge-label"],
+      },
+      "dashboard-summary.badge-label": {
+        id: "dashboard-summary.badge-label",
+        type: "text",
+        value: "Healthy",
+        style: { color: "success", size: "xs", weight: "semibold" },
       },
       "dashboard-summary.progress": {
         id: "dashboard-summary.progress",
@@ -261,8 +251,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   },
   {
     name: "settings-panel",
-    description: "A settings card with two editable fields and a save action.",
     metadata: {
+      description: "A settings card with two editable fields and a save action.",
       category: "settings",
       useWhen: "Collecting a small configuration update.",
       avoidWhen: "The form needs many fields or validation steps.",
@@ -271,18 +261,12 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: {
-      title: "Settings",
-      email: "Email",
-      timezone: "Timezone",
-      save: "Save",
-    },
     root: "settings-panel.root",
     nodes: {
       "settings-panel.root": {
         id: "settings-panel.root",
         type: "card",
-        title: "{{title}}",
+        title: "Workspace settings",
         children: ["settings-panel.email", "settings-panel.timezone", "settings-panel.save"],
       },
       "settings-panel.email": {
@@ -290,7 +274,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
         type: "input",
         name: "email",
         input: "email",
-        label: "{{email}}",
+        label: "Notification email",
         style: { width: "full" },
       },
       "settings-panel.timezone": {
@@ -298,14 +282,14 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
         type: "input",
         name: "timezone",
         input: "select",
-        label: "{{timezone}}",
+        label: "Timezone",
         options: ["UTC", "PST", "EST"],
         style: { width: "full" },
       },
       "settings-panel.save": {
         id: "settings-panel.save",
         type: "button",
-        label: "{{save}}",
+        label: "Save settings",
         variant: "primary",
         onPress: { kind: "agent", name: "save_settings", collect: "settings-panel.root" },
       },
@@ -313,8 +297,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   },
   {
     name: "feature-grid",
-    description: "A three-card feature grid.",
     metadata: {
+      description: "A three-card feature grid.",
       category: "marketing",
       useWhen: "Explaining a small set of product capabilities.",
       avoidWhen: "The user needs one focused workflow.",
@@ -323,38 +307,32 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: false,
       preferredParent: "root",
     },
-    slots: {
-      title: "Features",
-      first: "Fast setup",
-      second: "Live UI",
-      third: "Safe patches",
-    },
     root: "feature-grid.root",
     nodes: {
       "feature-grid.root": {
         id: "feature-grid.root",
         type: "section",
-        title: "{{title}}",
+        title: "Features",
         children: ["feature-grid.first", "feature-grid.second", "feature-grid.third"],
       },
       "feature-grid.first": {
         id: "feature-grid.first",
         type: "card",
-        title: "{{first}}",
+        title: "Fast setup",
         body: "Start from safe default UI patterns.",
         children: [],
       },
       "feature-grid.second": {
         id: "feature-grid.second",
         type: "card",
-        title: "{{second}}",
+        title: "Live UI",
         body: "Render task-specific screens as the conversation changes.",
         children: [],
       },
       "feature-grid.third": {
         id: "feature-grid.third",
         type: "card",
-        title: "{{third}}",
+        title: "Safe patches",
         body: "Keep every update declarative and bounded.",
         children: [],
       },
@@ -362,8 +340,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   },
   {
     name: "empty-state",
-    description: "A compact empty state with a recovery action.",
     metadata: {
+      description: "A compact empty state with a recovery action.",
       category: "feedback",
       useWhen: "There is no data yet and the user needs a clear next action.",
       avoidWhen: "There is meaningful content to summarize.",
@@ -372,24 +350,19 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: {
-      title: "Nothing here yet",
-      body: "Create the first item to get started.",
-      action: "Create item",
-    },
     root: "empty-state.root",
     nodes: {
       "empty-state.root": {
         id: "empty-state.root",
         type: "card",
-        title: "{{title}}",
-        body: "{{body}}",
+        title: "No projects yet",
+        body: "Create your first project to start organizing this workspace.",
         children: ["empty-state.action"],
       },
       "empty-state.action": {
         id: "empty-state.action",
         type: "button",
-        label: "{{action}}",
+        label: "Create project",
         variant: "primary",
         onPress: { kind: "agent", name: "create_item" },
       },
@@ -397,8 +370,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   },
   {
     name: "support-triage",
-    description: "A support triage card with issue type selection.",
     metadata: {
+      description: "A support triage card with issue type selection.",
       category: "support",
       useWhen: "Collecting basic support context before agent follow-up.",
       avoidWhen: "The user already gave all required details.",
@@ -407,18 +380,12 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: {
-      title: "How can we help?",
-      issue: "Issue type",
-      details: "Details",
-      submit: "Send",
-    },
     root: "support-triage.root",
     nodes: {
       "support-triage.root": {
         id: "support-triage.root",
         type: "card",
-        title: "{{title}}",
+        title: "How can we help?",
         children: ["support-triage.issue", "support-triage.details", "support-triage.submit"],
       },
       "support-triage.issue": {
@@ -426,7 +393,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
         type: "input",
         name: "issue_type",
         input: "select",
-        label: "{{issue}}",
+        label: "Issue type",
         options: ["Billing", "Technical", "Account"],
         style: { width: "full" },
       },
@@ -435,13 +402,13 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
         type: "input",
         name: "details",
         input: "text",
-        label: "{{details}}",
+        label: "Describe what happened",
         style: { width: "full" },
       },
       "support-triage.submit": {
         id: "support-triage.submit",
         type: "button",
-        label: "{{submit}}",
+        label: "Send request",
         variant: "primary",
         onPress: { kind: "agent", name: "submit_support", collect: "support-triage.root" },
       },
@@ -454,8 +421,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   // renderer defaults only); the tone-named variants fold in their recipe.
   {
     name: "badge",
-    description: "A compact neutral status chip.",
     metadata: {
+      description: "A compact neutral status chip.",
       category: "feedback",
       useWhen: "Labeling a compact status, tag, or count.",
       avoidWhen: "The message needs a full sentence or an action.",
@@ -464,7 +431,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "card",
     },
-    slots: { label: "Status" },
     root: "badge.root",
     nodes: {
       "badge.root": {
@@ -476,15 +442,15 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "badge.label": {
         id: "badge.label",
         type: "text",
-        value: "{{label}}",
+        value: "In review",
         style: { color: "fg", size: "sm", weight: "semibold" },
       },
     },
   },
   {
     name: "badge-neutral",
-    description: "A compact neutral-toned status chip.",
     metadata: {
+      description: "A compact neutral-toned status chip.",
       category: "feedback",
       useWhen: "Labeling a compact neutral status or tag.",
       avoidWhen: "The message needs a full sentence or an action.",
@@ -493,7 +459,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "card",
     },
-    slots: { label: "Status" },
     root: "badge-neutral.root",
     nodes: {
       "badge-neutral.root": {
@@ -505,15 +470,15 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "badge-neutral.label": {
         id: "badge-neutral.label",
         type: "text",
-        value: "{{label}}",
+        value: "Draft",
         style: { color: "neutral", size: "xs", weight: "semibold" },
       },
     },
   },
   {
     name: "badge-success",
-    description: "A compact success-toned status chip.",
     metadata: {
+      description: "A compact success-toned status chip.",
       category: "feedback",
       useWhen: "Labeling a healthy, complete, or positive status.",
       avoidWhen: "The message needs a full sentence or an action.",
@@ -522,7 +487,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "card",
     },
-    slots: { label: "Healthy" },
     root: "badge-success.root",
     nodes: {
       "badge-success.root": {
@@ -534,15 +498,15 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "badge-success.label": {
         id: "badge-success.label",
         type: "text",
-        value: "{{label}}",
+        value: "Healthy",
         style: { color: "success", size: "xs", weight: "semibold" },
       },
     },
   },
   {
     name: "badge-warning",
-    description: "A compact warning-toned status chip.",
     metadata: {
+      description: "A compact warning-toned status chip.",
       category: "feedback",
       useWhen: "Labeling a caution, pending, or attention status.",
       avoidWhen: "The message needs a full sentence or an action.",
@@ -551,7 +515,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "card",
     },
-    slots: { label: "Pending" },
     root: "badge-warning.root",
     nodes: {
       "badge-warning.root": {
@@ -563,15 +526,15 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "badge-warning.label": {
         id: "badge-warning.label",
         type: "text",
-        value: "{{label}}",
+        value: "Pending",
         style: { color: "warning", size: "xs", weight: "semibold" },
       },
     },
   },
   {
     name: "badge-danger",
-    description: "A compact danger-toned status chip.",
     metadata: {
+      description: "A compact danger-toned status chip.",
       category: "feedback",
       useWhen: "Labeling a failing, blocked, or critical status.",
       avoidWhen: "The message needs a full sentence or an action.",
@@ -580,7 +543,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "card",
     },
-    slots: { label: "Failed" },
     root: "badge-danger.root",
     nodes: {
       "badge-danger.root": {
@@ -592,7 +554,7 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "badge-danger.label": {
         id: "badge-danger.label",
         type: "text",
-        value: "{{label}}",
+        value: "Failed",
         style: { color: "danger", size: "xs", weight: "semibold" },
       },
     },
@@ -603,8 +565,8 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
   // tone-less render (empty recipe → renderer defaults only, body has no tokens).
   {
     name: "alert",
-    description: "A neutral notice panel with a title and body.",
     metadata: {
+      description: "A neutral notice panel with a title and body.",
       category: "feedback",
       useWhen: "Calling out a plain notice or message.",
       avoidWhen: "The state is a compact status (use a badge).",
@@ -613,7 +575,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: { title: "Notice", body: "Something you should know." },
     root: "alert.root",
     nodes: {
       "alert.root": {
@@ -625,20 +586,21 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "alert.title": {
         id: "alert.title",
         type: "text",
-        value: "{{title}}",
+        value: "Scheduled maintenance",
         style: { weight: "bold" },
       },
       "alert.body": {
         id: "alert.body",
         type: "text",
-        value: "{{body}}",
+        value: "The dashboard will be read-only for ten minutes tonight.",
+        style: {},
       },
     },
   },
   {
     name: "alert-info",
-    description: "An informational notice panel with a title and body.",
     metadata: {
+      description: "An informational notice panel with a title and body.",
       category: "feedback",
       useWhen: "Sharing informational context or a tip.",
       avoidWhen: "The state is a compact status (use a badge).",
@@ -647,7 +609,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: { title: "Heads up", body: "Here is something useful to know." },
     root: "alert-info.root",
     nodes: {
       "alert-info.root": {
@@ -659,21 +620,21 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "alert-info.title": {
         id: "alert-info.title",
         type: "text",
-        value: "{{title}}",
+        value: "New export format",
         style: { weight: "bold", color: "info" },
       },
       "alert-info.body": {
         id: "alert-info.body",
         type: "text",
-        value: "{{body}}",
+        value: "CSV exports now include timezone-aware date and time values.",
         style: { color: "fg" },
       },
     },
   },
   {
     name: "alert-success",
-    description: "A success notice panel with a title and body.",
     metadata: {
+      description: "A success notice panel with a title and body.",
       category: "feedback",
       useWhen: "Confirming a completed or successful action.",
       avoidWhen: "The state is a compact status (use a badge).",
@@ -682,7 +643,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: { title: "Success", body: "Your changes were saved." },
     root: "alert-success.root",
     nodes: {
       "alert-success.root": {
@@ -694,21 +654,21 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "alert-success.title": {
         id: "alert-success.title",
         type: "text",
-        value: "{{title}}",
+        value: "Changes saved",
         style: { weight: "bold", color: "success" },
       },
       "alert-success.body": {
         id: "alert-success.body",
         type: "text",
-        value: "{{body}}",
+        value: "Your workspace settings are up to date.",
         style: { color: "fg" },
       },
     },
   },
   {
     name: "alert-warning",
-    description: "A warning notice panel with a title and body.",
     metadata: {
+      description: "A warning notice panel with a title and body.",
       category: "feedback",
       useWhen: "Warning about a caution or pending condition.",
       avoidWhen: "The state is a compact status (use a badge).",
@@ -717,7 +677,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: { title: "Warning", body: "Please review before continuing." },
     root: "alert-warning.root",
     nodes: {
       "alert-warning.root": {
@@ -729,21 +688,21 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "alert-warning.title": {
         id: "alert-warning.title",
         type: "text",
-        value: "{{title}}",
+        value: "Storage almost full",
         style: { weight: "bold", color: "warning" },
       },
       "alert-warning.body": {
         id: "alert-warning.body",
         type: "text",
-        value: "{{body}}",
+        value: "Remove unused files before the next scheduled import.",
         style: { color: "fg" },
       },
     },
   },
   {
     name: "alert-danger",
-    description: "A danger notice panel with a title and body.",
     metadata: {
+      description: "A danger notice panel with a title and body.",
       category: "feedback",
       useWhen: "Flagging an error or critical condition.",
       avoidWhen: "The state is a compact status (use a badge).",
@@ -752,7 +711,6 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       repeatable: true,
       preferredParent: "section",
     },
-    slots: { title: "Error", body: "Something went wrong." },
     root: "alert-danger.root",
     nodes: {
       "alert-danger.root": {
@@ -764,13 +722,13 @@ export const DEFAULT_COMPOSITIONS: readonly FacetComposition[] = [
       "alert-danger.title": {
         id: "alert-danger.title",
         type: "text",
-        value: "{{title}}",
+        value: "Payment failed",
         style: { weight: "bold", color: "danger" },
       },
       "alert-danger.body": {
         id: "alert-danger.body",
         type: "text",
-        value: "{{body}}",
+        value: "Update the billing method to keep the workspace active.",
         style: { color: "fg" },
       },
     },

@@ -11,17 +11,19 @@ pluggable seam, not the only brain Facet can run.
 With no `facet.md`, quickstart opens on a compact, validated four-tab product
 tour: **What is Facet?**, **Core Structure**, **Design System**, and **Use
 Cases**. The seed demonstrates the component default kit: sections, cards, tabs,
-table, chart, inputs, buttons, metrics, progress, and lists, plus badge and
-alert catalog compositions. That first paint is not a stub mode; the normal path still resolves
-your provider key and the provider-backed reference agent can refine the seeded
-stage on the first visit.
+table, chart, inputs, buttons, metrics, progress, and lists, plus badge and alert
+patterns authored from native boxes and text. That first paint is not a stub
+mode; the normal path still resolves your provider key and the provider-backed
+reference agent can refine the seeded stage on the first visit.
 
 The reference agent runs a bounded **streaming tool loop**: the model calls
 `append_node` / `set_node` / `remove_node` (incremental edits), `render_page`
-(a full redraw), `use_composition` (server-side expansion of an advertised
-composition), `set_theme`, and `say` (chat) — via the provider's native function-calling
-(OpenAI) / tool-use (Anthropic) — observing each result before deciding the
-next. Those observations are structured results with outcomes such as
+(a full redraw), `get_composition` (an optional, read-only lookup of one
+advertised reference), `set_theme`, and `say` (chat) — via the provider's native
+function-calling (OpenAI) / tool-use (Anthropic) — observing each result before
+deciding the next. A composition read never edits the stage; the model uses the
+returned concrete nodes as an example and authors the page separately with the
+ordinary native stage tools. Observations are structured results with outcomes such as
 `applied_visible`, `applied_not_visible`, `applied_with_warnings`, `pending`,
 and `rejected`, so the model can repair tool failures instead of treating them
 as success. After every provider step, quickstart yields the closed batch it
@@ -129,8 +131,8 @@ that doesn't match is ignored):
 | File | What it is |
 | --- | --- |
 | `*.theme.json` | A named palette/type/scale document — token names mapped to CSS values, including optional `fontFamily` stacks. Offered to the agent by NAME (a `set_theme` tool); **the model never authors the CSS values**. |
-| `*.composition.json` | A reusable composition `{ name, description?, metadata?, slots?, root, nodes }` the agent may add with `use_composition`. The prompt advertises names/slots/descriptions/whitelisted metadata only; the server expands the root-reachable composition subtree into ordinary patches with fresh ids. |
-| `catalog.json` | A `FacetCatalog` policy document that tells the agent which theme is active, whether theme switching is locked or allowed, which components/variants and compositions it may use, and whether primitive fallback is allowed. |
+| `*.composition.json` | The prompt indexes only the reference name and description. The complete concrete dataset has shape `{ name, metadata, root, nodes }` with required `metadata.description`; the provider may retrieve it with `get_composition` and then author ordinary native nodes separately. The read itself never edits the stage. |
+| `catalog.json` | A `FacetCatalog` policy document that tells the agent which theme is active, whether theme switching is locked or allowed, which components/variants it may author, which composition references it may inspect, and whether primitive fallback is allowed. Reference exposure is separate from authoring order. |
 | `initial.tree.json` | A single `FacetTree` the first visit opens on before the agent's first turn (a fast, non-blank first paint). |
 
 If the built-in guide is in use and assets do not provide `initial.tree.json`,
@@ -148,10 +150,39 @@ A theme document looks like:
 }
 ```
 
+A composition document is a self-contained native example:
+
+```json
+{
+  "name": "launch-card",
+  "metadata": {
+    "description": "A compact launch card with one primary action.",
+    "useWhen": "A visitor needs one clear next step.",
+    "followUpEdits": ["Replace the sample title and action name."]
+  },
+  "root": "launch-card.root",
+  "nodes": {
+    "launch-card.root": {
+      "id": "launch-card.root",
+      "type": "card",
+      "title": "Ready to launch?",
+      "children": ["launch-card.action"]
+    },
+    "launch-card.action": {
+      "id": "launch-card.action",
+      "type": "button",
+      "label": "Start",
+      "variant": "primary",
+      "onPress": { "kind": "agent", "name": "start" }
+    }
+  }
+}
+```
+
 With no `catalog.json`, quickstart uses `DEFAULT_CATALOG`: a compact product/app
-UI catalog with a locked theme (`default`), all default compositions advertised,
+UI catalog with a locked theme (`default`), all default references advertised,
 the built-in intrinsic component set and variants, primitive fallback allowed,
-and the authoring order `composition -> component -> primitive`.
+and the native authoring order `component -> primitive`.
 
 A catalog document can lock the page to one theme:
 
@@ -168,7 +199,7 @@ A catalog document can lock the page to one theme:
   "compositions": { "mode": "all" },
   "primitiveFallback": "allowed",
   "policy": {
-    "order": ["composition", "component", "primitive"],
+    "order": ["component", "primitive"],
     "editBeforeAppend": true,
     "compactScreens": true,
     "maxScreenSections": 6
@@ -191,7 +222,7 @@ theme names the model may choose with `set_theme`:
   "compositions": { "mode": "all" },
   "primitiveFallback": "allowed",
   "policy": {
-    "order": ["composition", "component", "primitive"],
+    "order": ["component", "primitive"],
     "editBeforeAppend": true,
     "compactScreens": true
   }
@@ -212,18 +243,38 @@ Every document passes one `@facet/core` validator at boot — `validateTheme`,
   silently seeding a blank page. A missing, malformed, or invalid `catalog.json`
   falls back to `DEFAULT_CATALOG` and logs a concise catalog issue.
 
-The validated theme names + descriptions (never values), catalog policy, and
-composition names + slot names + descriptions + whitelisted metadata are injected into
-the agent's prompt; full composition JSON stays server-side and is expanded only when
-the model calls `use_composition`. Composition expansion only targets an existing container
-parent, reports non-fatal sanitization issues back to the model, and refuses an
-expansion that would overflow one patch batch. Catalog-guided behavior is also
-enforced by the tool executor: a locked theme rejects `set_theme`, disallowed
-component variants, tone-only recipe selectors outside the advertised variants,
-and composition names reject before any patch is emitted, and the model gets a structured
-repair observation instead of a silent no-op. The validated theme map ships
-inline in the served HTML shell for the renderer (no new protocol message). An
-explicit `--assets` path that doesn't exist ⇒ exit 1 naming it.
+The pre-1.0 composition change is a hard cutover. Each document must be a
+self-contained `{ name, metadata, root, nodes }` dataset with required
+`metadata.description` and only validated native nodes. Older template-like or
+nested-reference documents are skipped at the `loadAssets` semantic gate; there
+is no compatibility parser or automatic stage insertion path.
+
+Quickstart loads assets once at boot. The reference agent derives one detached,
+deeply frozen, catalog-filtered composition snapshot and shares it between the
+prompt index and lookup. Selection stops deterministically after 128 references
+so the index stays inside the smallest reference-agent context profile. The prompt
+receives only reference names and short descriptions. For a complex UI,
+`get_composition({ name })` returns the complete selected JSON in the structured result sent to the next provider request, with
+zero messages, patches, changed ids, stage-shadow changes, or pending-buffer
+changes. The model then copies or adapts the example using ordinary native stage
+tools. Unavailable names fail safe.
+
+The exact composition result is provider-only: it is not written into the HTML
+shell, SSE frames, reconnect snapshots, a browser global, or a protocol asset
+route, and the authored tree carries no composition provenance. The complete
+result is retained for its first next-provider delivery even above the generic
+observation data cap; if it cannot fit the context budget, the turn stops rather
+than sending a partial or summarized reference. Only later ordinary stage
+patches reach the browser.
+
+Catalog-guided behavior is also enforced by the tool executor: a locked theme
+rejects `set_theme`; disallowed component variants and tone-only recipe
+selectors outside the advertised variants reject before any patch is emitted;
+and catalog composition policy controls which reference names may be read. The
+model gets a structured repair observation instead of a silent no-op. The
+validated theme map ships inline in the served HTML shell for the renderer (no
+new protocol message). An explicit `--assets` path that doesn't exist ⇒ exit 1
+naming it.
 
 This catalog is catalog UI policy only. It is not a hosted auth, billing,
 tenant, metering, rate-limit, or spend-control policy; put those controls in the
