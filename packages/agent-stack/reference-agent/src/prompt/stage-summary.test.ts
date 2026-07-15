@@ -95,6 +95,39 @@ describe("summarizeStageForPrompt richtext", () => {
   });
 });
 
+// DC-002 / DC-005: badge/alert/divider were removed from the core node-type
+// vocabulary and demoted to compositions, so their explicit STAGE_SUMMARY
+// handlers are gone. A stale authored node bearing one of those removed `type`s
+// must fall through the SOFT registry to the generic `type=unknown` summary
+// (fail-safe), never emitting a `type=badge`/`type=alert`/`type=divider` line.
+describe("summarizeStageForPrompt removed display-leaf types", () => {
+  it("summarizes a removed display-leaf generically", () => {
+    const stage = {
+      root: "root",
+      nodes: {
+        root: { id: "root", type: "box", children: ["badge", "alert", "divider"] },
+        badge: { id: "badge", type: "badge", label: "Live", tone: "info" },
+        alert: { id: "alert", type: "alert", title: "Heads up", body: "Something happened here." },
+        divider: { id: "divider", type: "divider", label: "Details" },
+      },
+    } as unknown as FacetTree;
+
+    const summary = summarizeStageForPrompt(stage);
+    expect(summary).not.toContain("type=badge");
+    expect(summary).not.toContain("type=alert");
+    expect(summary).not.toContain("type=divider");
+    expect(summary).toContain("- badge: type=unknown");
+    expect(summary).toContain("- alert: type=unknown");
+    expect(summary).toContain("- divider: type=unknown");
+  });
+
+  it("has no badge/alert/divider handlers in the registry", () => {
+    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "badge")).toBe(false);
+    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "alert")).toBe(false);
+    expect(Object.hasOwn(STAGE_SUMMARY_REGISTRY, "divider")).toBe(false);
+  });
+});
+
 // The summarizer reads raw, unvalidated node `type`s, so it can meet
 // "constructor" and other Object.prototype member names. A bare registry lookup
 // returned the inherited `Object` FUNCTION, and `summarize(node)` then produced

@@ -787,11 +787,8 @@ describe("buildInitialMessages", () => {
             "chart",
             "metric",
             "keyValue",
-            "badge",
             "progress",
-            "alert",
             "list",
-            "divider",
             "form",
             "search-input",
             "search-button",
@@ -892,7 +889,6 @@ describe("buildInitialMessages", () => {
           ],
           variant: "compact",
         },
-        badge: { id: "badge", type: "badge", label: "Live", tone: "info" },
         progress: {
           id: "progress",
           type: "progress",
@@ -900,20 +896,12 @@ describe("buildInitialMessages", () => {
           value: 45,
           tone: "accent",
         },
-        alert: {
-          id: "alert",
-          type: "alert",
-          title: "Heads up",
-          body: "RAW_JSON_SENTINEL_ALERT",
-          tone: "warning",
-        },
         list: {
           id: "list",
           type: "list",
           variant: "checks",
           items: [{ title: "One" }, { title: "Two", body: "Second" }],
         },
-        divider: { id: "divider", type: "divider", label: "Details" },
         form: {
           id: "form",
           type: "form",
@@ -970,11 +958,8 @@ describe("buildInitialMessages", () => {
     expect(prompt).toContain("- metric: type=metric labelChars=7 valueChars=3");
     expect(prompt).toContain("- legacy-stat: type=stat labelChars=6 valueChars=2");
     expect(prompt).toContain("- keyValue: type=keyValue items=2");
-    expect(prompt).toContain("- badge: type=badge labelChars=4");
     expect(prompt).toContain("- progress: type=progress value=45");
-    expect(prompt).toContain("- alert: type=alert titleChars=8 bodyChars=23");
     expect(prompt).toContain("- list: type=list items=2");
-    expect(prompt).toContain("- divider: type=divider labelChars=7");
     expect(prompt).toContain("- form: type=form children=2");
     expect(prompt).toContain("- search-input: type=input name=q");
     expect(prompt).toContain("- search-button: type=button labelChars=2");
