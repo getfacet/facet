@@ -158,13 +158,6 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       `items=${String(arrayCount(node["items"]))}`,
       safeStringSummary(node["variant"], "variant"),
     ]),
-  badge: (node) =>
-    compactSummary([
-      "type=badge",
-      charSummary(node["label"], "labelChars"),
-      safeStringSummary(node["tone"], "tone"),
-      safeStringSummary(node["variant"], "variant"),
-    ]),
   progress: (node) =>
     compactSummary([
       "type=progress",
@@ -173,24 +166,10 @@ const STAGE_SUMMARY_REGISTRY: Partial<Record<SummarizableNodeType, NodeSummarize
       safeStringSummary(node["tone"], "tone"),
       safeStringSummary(node["variant"], "variant"),
     ]),
-  alert: (node) =>
-    compactSummary([
-      "type=alert",
-      charSummary(node["title"], "titleChars"),
-      charSummary(node["body"], "bodyChars"),
-      safeStringSummary(node["tone"], "tone"),
-      safeStringSummary(node["variant"], "variant"),
-    ]),
   list: (node) =>
     compactSummary([
       "type=list",
       `items=${String(arrayCount(node["items"]))}`,
-      safeStringSummary(node["variant"], "variant"),
-    ]),
-  divider: (node) =>
-    compactSummary([
-      "type=divider",
-      charSummary(node["label"], "labelChars"),
       safeStringSummary(node["variant"], "variant"),
     ]),
   form: (node) => summarizeContainer("form", node, ["title", "body", "submitLabel"], ["variant"]),

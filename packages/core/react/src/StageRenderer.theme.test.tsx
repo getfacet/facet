@@ -31,9 +31,6 @@ const POLISHED_PARTS: FacetTheme = {
     button: {
       default: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
     },
-    badge: {
-      success: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
-    },
     input: {
       default: { parts: { label: { text: { color: "fg", weight: "bold" } } } },
     },
@@ -137,24 +134,19 @@ describe("StageRenderer theming (jsdom)", () => {
       root: "root",
       theme: "component-parts",
       nodes: {
-        root: { id: "root", type: "box", children: ["save", "status", "email"] },
+        root: { id: "root", type: "box", children: ["save", "email"] },
         save: { id: "save", type: "button", label: "Save", variant: "missing" },
-        status: { id: "status", type: "badge", label: "Ready", tone: "success" },
         email: { id: "email", type: "input", name: "email", label: "Email" },
       },
     };
 
     const { container } = render(<StageRenderer themes={[POLISHED_PARTS]} tree={tree} />);
     const save = container.querySelector('[role="button"] span') as HTMLElement;
-    const readySpans = Array.from(container.querySelectorAll("span")).filter(
-      (node) => node.textContent === "Ready",
-    );
-    const status = readySpans[readySpans.length - 1] as HTMLElement;
     const email = Array.from(container.querySelectorAll("span")).find(
       (node) => node.textContent === "Email",
     ) as HTMLElement;
 
-    for (const node of [save, status, email]) {
+    for (const node of [save, email]) {
       expect(node.style.color === "#fe0000" || node.style.color === "rgb(254, 0, 0)").toBe(true);
       expect(node.style.fontWeight).toBe("700");
     }

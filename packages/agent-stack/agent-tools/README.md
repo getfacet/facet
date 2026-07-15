@@ -73,8 +73,8 @@ The advertised compositions are expanded server-side when the model calls the
 The component-model guidance tells agents to try advertised compositions first,
 then intrinsic components and catalog-advertised variants, before falling back to
 primitive bricks. It names product-quality defaults such as sections, cards,
-fields, buttons, tabs, nav, tables, charts, metrics, key-value rows, badges,
-progress, alerts, lists, dividers, forms, search, filters, empty states, and
+inputs, buttons, tabs, nav, tables, charts, metrics, key-value rows,
+progress, lists, forms, filters, empty states, and
 loading states without exposing renderer recipe parts, theme token values, or
 composition node JSON as stage syntax.
 

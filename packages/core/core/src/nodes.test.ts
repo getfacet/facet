@@ -3,6 +3,7 @@ import ts from "typescript";
 import { describe, expect, expectTypeOf, it } from "vitest";
 
 import type { BoxNode, FacetNode, InputNode, MediaNode, TextNode } from "./nodes.js";
+import { COMPONENT_NODE_TYPES, INTRINSIC_COMPONENT_TYPES } from "./component-nodes.js";
 
 /**
  * Preservation test for the `node-mixins` PURE REFACTOR.
@@ -179,11 +180,8 @@ describe("node discriminated-union preservation (exhaustiveness guard)", () => {
       | "chart"
       | "metric"
       | "keyValue"
-      | "badge"
       | "progress"
-      | "alert"
       | "list"
-      | "divider"
       | "form"
       // "search" is retired as a node type by this consolidation (removed from
       // ComponentNodeType in WU-2); the "search" token survives only as an input KIND.
@@ -192,6 +190,17 @@ describe("node discriminated-union preservation (exhaustiveness guard)", () => {
       | "loading"
       | "stat"
     >();
+  });
+});
+
+// --- 3b. Demoted display leaves removed (runtime guard) ---------------------
+
+describe("demoted display leaves are not node types", () => {
+  it("excludes badge/alert/divider from INTRINSIC_COMPONENT_TYPES and COMPONENT_NODE_TYPES", () => {
+    for (const demoted of ["badge", "alert", "divider"]) {
+      expect(INTRINSIC_COMPONENT_TYPES as readonly string[]).not.toContain(demoted);
+      expect(COMPONENT_NODE_TYPES as readonly string[]).not.toContain(demoted);
+    }
   });
 });
 

@@ -475,6 +475,24 @@ describe("validateCatalog", () => {
     );
   });
 
+  it("does not advertise demoted display leaves", () => {
+    // badge/alert/divider are demoted to DEFAULT_COMPOSITIONS (WU-1) and removed
+    // from the node vocabulary (WU-2); the default catalog must no longer
+    // advertise them as intrinsic components or bricks.
+    const demoted = ["badge", "alert", "divider"];
+    const componentTypes = new Set((DEFAULT_CATALOG.components ?? []).map((c) => c.type));
+    const brickTypes = new Set(DEFAULT_CATALOG.bricks.map((b) => b.type));
+    for (const type of demoted) {
+      expect(componentTypes.has(type as CatalogComponent["type"]), `component ${type}`).toBe(false);
+      expect(brickTypes.has(type as FacetCatalog["bricks"][number]["type"]), `brick ${type}`).toBe(
+        false,
+      );
+    }
+    // Roster shrinks by exactly the three demoted leaves (18 -> 15 intrinsic
+    // components in DEFAULT_CATALOG.components).
+    expect(DEFAULT_CATALOG.components).toHaveLength(15);
+  });
+
   it("keeps the component default catalog compact with recipe-backed variants", () => {
     const variants = Object.fromEntries(
       DEFAULT_CATALOG.bricks.map((brick) => [brick.type, brick.variants ?? []]),
@@ -502,11 +520,8 @@ describe("validateCatalog", () => {
       metric: ["default", "success"],
       keyValue: ["default"],
       stat: ["default", "success"],
-      badge: ["neutral", "success", "warning", "danger"],
       progress: ["default", "success"],
-      alert: ["info", "success", "warning", "danger"],
       list: ["default", "compact"],
-      divider: ["default"],
       form: ["default"],
       filterBar: ["default"],
       emptyState: ["default"],

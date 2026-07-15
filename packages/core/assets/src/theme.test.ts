@@ -232,11 +232,10 @@ describe("DEFAULT_THEME recipes", () => {
       { component: "keyValue", variant: "default", parts: ["item", "label", "value"] },
       { component: "stat", variant: "default", parts: ["label", "value", "trend"] },
       { component: "stat", variant: "success", parts: ["label", "value", "trend"] },
-      { component: "badge", variant: "neutral", parts: ["label"] },
+      // badge/alert/divider recipes were removed in PR-5a — their tokens are now
+      // baked into the per-tone badge*/alert* compositions in @facet/assets.
       { component: "progress", variant: "default", parts: ["label", "track", "fill"] },
-      { component: "alert", variant: "info", parts: ["title", "body"] },
       { component: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
-      { component: "divider", variant: "default", parts: ["label", "rule"] },
       { component: "form", variant: "default", parts: ["header", "title", "body", "actions"] },
       { component: "filterBar", variant: "default", parts: ["item", "label", "control", "input"] },
       { component: "emptyState", variant: "default", parts: ["title", "body"] },
@@ -271,7 +270,13 @@ describe("DEFAULT_THEME recipes", () => {
   });
 
   it("defines every catalog-advertised default variant as a recipe", () => {
+    // badge/alert/divider are demoted to compositions in PR-5a; their recipes are
+    // gone even though the shared @facet/core DEFAULT_CATALOG still advertises them
+    // until the atomic core-removal WU lands (lockstep). Excluding them here is
+    // forward-compatible — the entries disappear from the catalog in that WU.
+    const DEMOTED = new Set(["badge", "alert", "divider"]);
     for (const component of DEFAULT_CATALOG.components ?? []) {
+      if (DEMOTED.has(component.type)) continue;
       for (const variant of component.variants ?? []) {
         expect(
           DEFAULT_THEME.recipes?.[component.type]?.[variant],
@@ -281,6 +286,7 @@ describe("DEFAULT_THEME recipes", () => {
     }
 
     for (const brick of DEFAULT_CATALOG.bricks) {
+      if (DEMOTED.has(brick.type)) continue;
       for (const variant of brick.variants ?? []) {
         expect(
           DEFAULT_THEME.recipes?.[brick.type]?.[variant],

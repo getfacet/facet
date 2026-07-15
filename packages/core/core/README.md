@@ -13,7 +13,7 @@ and bounded text/media style choices. Theme recipes are token-only style bundles
 for component variants and closed internal recipe parts; concrete CSS values
 live in validated theme data, not in agent-authored trees. Recipe parts let a
 theme describe renderer-owned affordances such as field labels/controls, table
-cells, tabs, chart plots, progress fills, list rows, and divider rules without
+cells, tabs, chart plots, progress fills, and list rows without
 letting agents emit raw CSS or arbitrary part keys.
 
 ```bash

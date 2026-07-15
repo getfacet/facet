@@ -154,14 +154,14 @@ describe("createStageToolBuffer", () => {
     const badge = buffer.run({
       id: "set-badge",
       name: "set_node",
-      input: { node: { id: "badge", type: "badge", label: "Live" } },
+      input: { node: { id: "badge", type: "text", value: "Live" } },
     });
 
     const patchMessages = badge.messages.filter((message) => message.kind === "patch");
     expect(patchMessages).toHaveLength(2);
     expect(badge.shadow.nodes["section"]).toMatchObject({ children: ["card"] });
     expect(badge.shadow.nodes["card"]).toMatchObject({ type: "card", children: ["badge"] });
-    expect(badge.shadow.nodes["badge"]).toMatchObject({ type: "badge", label: "Live" });
+    expect(badge.shadow.nodes["badge"]).toMatchObject({ type: "text", value: "Live" });
   });
 
   it("reports pending when a buffered box waits for missing children", () => {

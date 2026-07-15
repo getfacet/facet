@@ -22,11 +22,8 @@ const EXPECTED_INTRINSIC_COMPONENT_TYPES = [
   "chart",
   "metric",
   "keyValue",
-  "badge",
   "progress",
-  "alert",
   "list",
-  "divider",
   "form",
   "filterBar",
   "emptyState",
@@ -70,6 +67,25 @@ describe("component vocabulary", () => {
     });
     expect(tree.nodes["s"]).toBeUndefined();
   });
+
+  it("demoted display leaves (badge/alert/divider) are no longer components and fail-safe drop", () => {
+    // DC-002/DC-003: badge/alert/divider left the component vocabulary (demoted to
+    // catalog compositions). They are neither intrinsic nor component types, and a
+    // stale node authoring one is dropped via the generic unknown-component path
+    // with a clean drop issue — never minted, never thrown.
+    for (const type of ["badge", "alert", "divider"] as const) {
+      expect(isComponentNodeType(type)).toBe(false);
+      expect(isIntrinsicComponentType(type)).toBe(false);
+      expect(INTRINSIC_COMPONENT_TYPES as readonly string[]).not.toContain(type);
+
+      const issues: string[] = [];
+      const node = sanitizeComponentNode(type, { type, label: "x" }, issues);
+      expect(node).toBeUndefined();
+      expect(
+        issues.some((issue) => issue.includes(`unknown component type "${type}" dropped`)),
+      ).toBe(true);
+    }
+  });
 });
 
 describe("sanitizeComponentNode", () => {
@@ -98,11 +114,8 @@ describe("sanitizeComponentNode", () => {
         })),
       },
       { type: "stat", label: "ARR", value: "$1m", tone: "success" },
-      { type: "badge", label: "Ready", tone: "success" },
       { type: "progress", value: 101, label: "Done" },
-      { type: "alert", body: "Heads up", tone: "warning" },
       { type: "list", items: Array.from({ length: 51 }, (_, index) => `Item ${String(index)}`) },
-      { type: "divider", label: "Next" },
     ] as const;
 
     for (const [index, fixture] of fixtures.entries()) {

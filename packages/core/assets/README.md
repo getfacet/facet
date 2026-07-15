@@ -11,12 +11,13 @@ npm install @facet/assets @facet/core
 `DEFAULT_THEME` is the built-in token value map for colors, spacing, typography
 (`fontFamily`/`fontSize`/`fontWeight`), radii, shadows, media ratios, and
 component recipes. Recipes are named style bundles for primitive bricks and
-intrinsic components, such as `button.primary`, `section.surface`, `card.interactive`, and
-`badge.success`; agents still emit recipe or token names, not CSS values.
+intrinsic components, such as `button.primary`, `section.surface`, and
+`card.interactive`; agents still emit recipe or token names, not CSS values.
 Component recipes also carry token-only `parts` for internal affordances such as
 field labels and controls, button labels, tabs, table cells, chart plots,
-progress tracks/fills, list items, and divider rules. Those parts are default
-renderer data, not new stage syntax.
+progress tracks/fills, and list items. Those parts are default
+renderer data, not new stage syntax. Badges and alerts ship as box+text catalog
+compositions (`DEFAULT_COMPOSITIONS`), not component recipes.
 Its default sans stack is `Nunito, sans-serif`; this package only exports the
 data value, so hosts that want the exact Nunito face must load that font in
 their own shell.

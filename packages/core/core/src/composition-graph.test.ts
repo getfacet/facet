@@ -42,6 +42,24 @@ describe("validateCompositionGraph", () => {
     expect(acceptedNames(result.accepted)).toEqual(["badge", "card"]);
   });
 
+  it("resolves the PR-5a badge embeds { use:'badge' } / { use:'badge-success' } with no dangling", () => {
+    // DC-004: the two shipped default embeds (pricing-section, dashboard-summary)
+    // now reference the per-tone badge compositions by name. Both target
+    // compositions exist, so the graph passes with zero issues and keeps all four.
+    const badge = comp("badge");
+    const badgeSuccess = comp("badge-success");
+    const pricing = comp("pricing-section", ["badge"]);
+    const dashboard = comp("dashboard-summary", ["badge-success"]);
+    const result = validateCompositionGraph([pricing, dashboard, badge, badgeSuccess]);
+    expect(result.issues).toEqual([]);
+    expect(acceptedNames(result.accepted)).toEqual([
+      "badge",
+      "badge-success",
+      "dashboard-summary",
+      "pricing-section",
+    ]);
+  });
+
   it("refuses both compositions on a cycle (a -> b -> a) with a bounded issue", () => {
     const a = comp("a", ["b"]);
     const b = comp("b", ["a"]);

@@ -11,8 +11,8 @@ pluggable seam, not the only brain Facet can run.
 With no `facet.md`, quickstart opens on a compact, validated four-tab product
 tour: **What is Facet?**, **Core Structure**, **Design System**, and **Use
 Cases**. The seed demonstrates the component default kit: sections, cards, tabs,
-table, chart, fields, buttons, metrics, badges, progress, alerts, lists, and a
-divider. That first paint is not a stub mode; the normal path still resolves
+table, chart, inputs, buttons, metrics, progress, and lists, plus badge and
+alert catalog compositions. That first paint is not a stub mode; the normal path still resolves
 your provider key and the provider-backed reference agent can refine the seeded
 stage on the first visit.
 

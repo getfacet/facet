@@ -20,11 +20,11 @@ rendered, no node carries raw HTML/JS/CSS, and unresolvable ids are skipped
 rather than thrown on. Intrinsic components render through token-only theme recipes;
 unknown recipes, variants, tones, parts, or theme names fall back to defaults.
 The renderer owns the internal DOM for components such as `section`, `card`,
-`button`, `tabs`, `nav`, `table`, `chart`, `metric`, `keyValue`, `badge`,
-`progress`, `alert`, `list`, `divider`, `form`, `search`, `filterBar`,
-`emptyState`, and `loading`; recipe parts style their internal labels,
-controls, rows, tracks, fills, and rules without exposing those part names as
-stage node fields. Primitive nodes remain the base rendering path for custom
+`button`, `tabs`, `nav`, `table`, `chart`, `metric`, `keyValue`, `progress`,
+`list`, `form`, `filterBar`, `emptyState`, and `loading`; recipe parts style
+their internal labels, controls, rows, tracks, and fills without exposing those
+part names as stage node fields. Badges and alerts are catalog compositions
+(box+text), not renderer-owned node types. Primitive nodes remain the base rendering path for custom
 composition. Wire it to a transport with `useFacet` and pass `send` through
 `onAction`.
 

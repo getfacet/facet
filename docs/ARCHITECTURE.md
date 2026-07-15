@@ -117,9 +117,11 @@ The v1 intrinsic components are still just typed stage data:
   semantics.
 - `table` — display-only tabular data with capped columns, rows, and cells.
 - `chart` — display-only chart data with capped series and points.
-- `metric`, `keyValue`, `badge`, `progress`, `alert`, `list`, `divider`,
-  `emptyState`, and `loading` — compact display and feedback components with
-  bounded payloads. `stat` remains a legacy alias for `metric`.
+- `metric`, `keyValue`, `progress`, `list`, `emptyState`, and `loading` —
+  compact display and feedback components with bounded payloads. `stat` remains
+  a legacy alias for `metric`. Badges and alerts are not node types; they are
+  catalog compositions (`{ "use": "badge" }` / `{ "use": "alert" }`, expanded to
+  box+text), and a visual separator is a plain bordered box rather than a node.
 - `form` and `filterBar` — input/control surfaces only. Backend work
   stays with the agent through actions and later patches.
 
@@ -260,7 +262,7 @@ spec. Raw CSS values enter Facet in exactly one place — `validateTheme` in
 output. A `FacetTheme` is a partial override document (token name → CSS value)
 plus optional `recipes` for components, variants, and closed internal recipe
 parts such as field labels/controls, tabs, table cells, chart plots, progress
-tracks/fills, list rows, and divider rules. The validator is the single gate it
+tracks/fills, and list rows. The validator is the single gate it
 passes: an allowlist per token group, recipe style group, and recipe part name, a deny-list
 (`url()`, `var()`, `expression()`, `javascript:` and injection characters are
 refused), dimension clamps so a theme can't push content off-screen, a bounded

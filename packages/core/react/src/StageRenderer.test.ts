@@ -18,6 +18,7 @@ import {
 } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
 import * as stageRendererExports from "./StageRenderer.js";
+import { brickRendererEntry } from "./brick-render-registry.js";
 import { MOTION_CLASS_NAMES } from "./motion.js";
 
 function render(tree: FacetTree): string {
@@ -96,6 +97,45 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(() => render(nodesThrows)).not.toThrow();
     expect(render(rootThrows)).toBe("");
     expect(render(nodesThrows)).toBe("");
+  });
+
+  // DC-003 / RISK-INV-4: badge/alert/divider were demoted to compositions and
+  // their react renderers + BRICK_RENDERERS entries removed. A STALE tree still
+  // carrying one of the removed leaf types (a patch authored before the cutover)
+  // must hit the renderer's unknown-type skip path: no registry entry, no throw,
+  // and NONE of the old component markup (the inline badge `<span>`, the
+  // `role="alert"` panel, the `<hr>`/`role="separator"` rule).
+  it("blank-degrades a removed display-leaf type (badge/alert/divider) without throwing", () => {
+    // The registry no longer maps the removed types — the RED anchor: this holds
+    // only once the renderers + BRICK_RENDERERS entries are gone.
+    expect(brickRendererEntry("badge")).toBeUndefined();
+    expect(brickRendererEntry("alert")).toBeUndefined();
+    expect(brickRendererEntry("divider")).toBeUndefined();
+
+    // A stale tree carrying the removed types (cast past the narrowed union, as a
+    // pre-cutover patch would arrive on the fail-safe render path).
+    const staleTree = tree({
+      root: box("root", ["b", "a", "d"]),
+      b: { id: "b", type: "badge", label: "Healthy", tone: "success" } as unknown as FacetNode,
+      a: {
+        id: "a",
+        type: "alert",
+        title: "Heads up",
+        body: "Review pricing.",
+      } as unknown as FacetNode,
+      d: { id: "d", type: "divider", label: "Details" } as unknown as FacetNode,
+    });
+
+    expect(() => render(staleTree)).not.toThrow();
+    const out = render(staleTree);
+    // Skipped: none of the removed leaves' content or component markup survives.
+    expect(out).not.toContain("Healthy");
+    expect(out).not.toContain("Heads up");
+    expect(out).not.toContain("Review pricing.");
+    expect(out).not.toContain("Details");
+    expect(out).not.toContain('role="alert"');
+    expect(out).not.toContain('role="separator"');
+    expect(out).not.toContain("<hr");
   });
 
   it("falls back safely when raw screen maps throw during resolution", () => {
@@ -442,12 +482,6 @@ describe("StageRenderer component renderer (static)", () => {
           text: { color: "accent-fg", weight: "bold" },
         },
       },
-      badge: {
-        success: {
-          box: { bg: "success", pad: "xs", radius: "full" },
-          text: { color: "accent-fg" },
-        },
-      },
     },
   };
 
@@ -464,17 +498,7 @@ describe("StageRenderer component renderer (static)", () => {
             eyebrow: "Q3",
             body: "Live operating view",
             variant: "dashboard",
-            children: [
-              "card",
-              "table",
-              "chart",
-              "stat",
-              "badge",
-              "progress",
-              "alert",
-              "list",
-              "divider",
-            ],
+            children: ["card", "table", "chart", "stat", "progress", "list"],
           },
           card: {
             id: "card",
@@ -510,15 +534,12 @@ describe("StageRenderer component renderer (static)", () => {
             series: [{ label: "ARR", values: [10, 20] }],
           },
           stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", delta: "+12%" },
-          badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
           progress: { id: "progress", type: "progress", label: "Quota", value: 72 },
-          alert: { id: "alert", type: "alert", title: "Heads up", body: "Review pricing." },
           list: {
             id: "list",
             type: "list",
             items: [{ title: "Next", body: "Call customer" }],
           },
-          divider: { id: "divider", type: "divider", label: "Details" },
         },
       },
       [catalogTheme],
@@ -536,11 +557,8 @@ describe("StageRenderer component renderer (static)", () => {
     expect(out).toContain("<svg");
     expect(out).toContain("Trend");
     expect(out).toContain("$24k");
-    expect(out).toContain("Healthy");
     expect(out).toContain('role="progressbar"');
-    expect(out).toContain('role="alert"');
     expect(out).toContain("Call customer");
-    expect(out).toContain("<hr");
   });
 
   it("renders component recipe parts", () => {
@@ -633,28 +651,12 @@ describe("StageRenderer component renderer (static)", () => {
             },
           },
         },
-        alert: {
-          default: {
-            parts: {
-              title: { text: { color: "danger", weight: "bold" } },
-              body: { text: { color: "warning" } },
-            },
-          },
-        },
         list: {
           default: {
             parts: {
               item: { box: { bg: "surface-2", pad: "xs", radius: "sm" } },
               itemTitle: { text: { color: "danger", weight: "bold" } },
               itemText: { text: { color: "warning" } },
-            },
-          },
-        },
-        divider: {
-          default: {
-            parts: {
-              label: { text: { color: "info", weight: "bold" } },
-              rule: { box: { bg: "danger", width: "full" } },
             },
           },
         },
@@ -680,18 +682,7 @@ describe("StageRenderer component renderer (static)", () => {
             type: "section",
             title: "Overview",
             body: "Part-driven internals",
-            children: [
-              "card",
-              "tabs",
-              "table",
-              "chart",
-              "stat",
-              "progress",
-              "alert",
-              "list",
-              "divider",
-              "email",
-            ],
+            children: ["card", "tabs", "table", "chart", "stat", "progress", "list", "email"],
           },
           card: {
             id: "card",
@@ -733,13 +724,11 @@ describe("StageRenderer component renderer (static)", () => {
           },
           progress: { id: "progress", type: "progress", label: "Completion", value: 72 },
           stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", delta: "+12%" },
-          alert: { id: "alert", type: "alert", title: "Heads up", body: "Review pricing." },
           list: {
             id: "list",
             type: "list",
             items: [{ title: "Next", body: "Call customer" }],
           },
-          divider: { id: "divider", type: "divider", label: "Details" },
           email: {
             id: "email",
             type: "input",
@@ -785,15 +774,9 @@ describe("StageRenderer component renderer (static)", () => {
     expect(out).toMatch(/<p style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)[^"]*">\$24k/);
     expect(out).toMatch(/<p style="(?=[^"]*font-weight:500)(?=[^"]*color:#b45309)[^"]*">\+12%/);
     expect(out).toMatch(
-      /role="alert"[^>]*><p style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)/,
-    );
-    expect(out).toMatch(/<p style="[^"]*color:#b45309[^"]*">Review pricing\./);
-    expect(out).toMatch(
       /<li style="(?=[^"]*background:#eef2ff)(?=[^"]*padding:3px)(?=[^"]*border-radius:5px)[^"]*"><span style="[^"]*color:#dc2626[^"]*">Next/,
     );
     expect(out).toMatch(/<p style="[^"]*color:#b45309[^"]*">Call customer/);
-    expect(out).toMatch(/<hr style="[^"]*background:#dc2626[^"]*width:100%/);
-    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#2563eb[^"]*">Details/);
     expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Email/);
     expect(out).toMatch(/<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*width:100%/);
     expect(out).toMatch(
@@ -1144,10 +1127,7 @@ describe("StageRenderer happy path", () => {
           "table",
           "chart",
           "stat",
-          "badge",
           "progress",
-          "alert",
-          "divider",
           "text",
           "media",
           "field",
@@ -1177,10 +1157,7 @@ describe("StageRenderer happy path", () => {
           series: [{ label: "A", values: [1] }],
         },
         stat: { id: "stat", type: "stat", label: longLabel, value: longLabel, delta: longLabel },
-        badge: { id: "badge", type: "badge", label: longLabel },
         progress: { id: "progress", type: "progress", value: 50, label: longLabel },
-        alert: { id: "alert", type: "alert", title: longLabel, body: longBody },
-        divider: { id: "divider", type: "divider", label: longLabel },
         text: { id: "text", type: "text", value: longBody },
         media: {
           id: "media",

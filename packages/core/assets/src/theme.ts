@@ -240,36 +240,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
     },
   }),
   stat: metricRecipeVariants(),
-  badge: recipeVariants({
-    neutral: {
-      box: { bg: "surface-2", pad: "xs", radius: "full" },
-      text: { color: "neutral", size: "xs", weight: "semibold" },
-      parts: {
-        label: { text: { color: "neutral", size: "xs", weight: "semibold" } },
-      },
-    },
-    success: {
-      box: { bg: "surface", border: true, pad: "xs", radius: "full" },
-      text: { color: "success", size: "xs", weight: "semibold" },
-      parts: {
-        label: { text: { color: "success", size: "xs", weight: "semibold" } },
-      },
-    },
-    warning: {
-      box: { bg: "surface", border: true, pad: "xs", radius: "full" },
-      text: { color: "warning", size: "xs", weight: "semibold" },
-      parts: {
-        label: { text: { color: "warning", size: "xs", weight: "semibold" } },
-      },
-    },
-    danger: {
-      box: { bg: "surface", border: true, pad: "xs", radius: "full" },
-      text: { color: "danger", size: "xs", weight: "semibold" },
-      parts: {
-        label: { text: { color: "danger", size: "xs", weight: "semibold" } },
-      },
-    },
-  }),
   progress: recipeVariants({
     default: {
       box: { gap: "xs", width: "full" },
@@ -285,40 +255,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
         label: { text: { color: "success", size: "sm", weight: "medium" } },
         track: { box: { bg: "surface-2", radius: "full", width: "full" } },
         fill: { box: { bg: "success", radius: "full", width: "full" } },
-      },
-    },
-  }),
-  alert: recipeVariants({
-    info: {
-      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
-      text: { color: "info" },
-      parts: {
-        title: { text: { color: "info", weight: "bold" } },
-        body: { text: { color: "fg" } },
-      },
-    },
-    success: {
-      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
-      text: { color: "success" },
-      parts: {
-        title: { text: { color: "success", weight: "bold" } },
-        body: { text: { color: "fg" } },
-      },
-    },
-    warning: {
-      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
-      text: { color: "warning" },
-      parts: {
-        title: { text: { color: "warning", weight: "bold" } },
-        body: { text: { color: "fg" } },
-      },
-    },
-    danger: {
-      box: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md" },
-      text: { color: "danger" },
-      parts: {
-        title: { text: { color: "danger", weight: "bold" } },
-        body: { text: { color: "fg" } },
       },
     },
   }),
@@ -339,15 +275,6 @@ export const RECIPES: ComponentRecipes = Object.assign(Object.create(null) as Co
         item: { box: { pad: "xs", radius: "sm" } },
         itemTitle: { text: { color: "fg", size: "sm", weight: "semibold" } },
         itemText: { text: { color: "fg-muted", size: "xs" } },
-      },
-    },
-  }),
-  divider: recipeVariants({
-    default: {
-      box: { border: true, width: "full" },
-      parts: {
-        label: { text: { color: "fg-muted", size: "xs", weight: "medium" } },
-        rule: { box: { bg: "border", width: "full" } },
       },
     },
   }),

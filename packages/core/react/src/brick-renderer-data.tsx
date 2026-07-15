@@ -149,45 +149,6 @@ export function renderKeyValue<Press>(
   );
 }
 
-export function renderBadge<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
-  const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
-  if (label === undefined) return null;
-  const { theme, className, inert } = context;
-  const variant = safeOwnValue(node, "variant");
-  const tone = safeOwnValue(node, "tone");
-  const recipe = componentRecipe(theme, "badge", variant, tone);
-  return (
-    <span
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(
-        componentBoxStyle(theme, recipe, {
-          direction: "row",
-          pad: "xs",
-          radius: "full",
-          bg: tone === "success" ? "success" : "surface-2",
-        }),
-        inert,
-      )}
-    >
-      <span
-        style={componentTextStyle(
-          theme,
-          recipe,
-          {
-            color: tone === "success" ? "accent-fg" : "fg",
-            size: "sm",
-            weight: "semibold",
-          },
-          "label",
-        )}
-      >
-        {label}
-      </span>
-    </span>
-  );
-}
-
 export function renderProgress<Press>(
   node: FacetNode,
   context: BrickRenderContext<Press>,
@@ -241,36 +202,6 @@ export function renderProgress<Press>(
   );
 }
 
-export function renderAlert<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
-  const body = cappedString(safeOwnValue(node, "body"), MAX_NODE_BODY_CHARS);
-  if (body === undefined) return null;
-  const { theme, className, inert } = context;
-  const variant = safeOwnValue(node, "variant");
-  const tone = safeOwnValue(node, "tone");
-  const recipe = componentRecipe(theme, "alert", variant, tone);
-  const style = componentBoxStyle(theme, recipe, {
-    gap: "xs",
-    pad: "md",
-    bg: "surface",
-    border: true,
-    radius: "md",
-  });
-  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
-  return (
-    <div
-      role="alert"
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(style, inert)}
-    >
-      {title === undefined ? null : (
-        <p style={componentTextStyle(theme, recipe, { weight: "bold" }, "title")}>{title}</p>
-      )}
-      <p style={componentTextStyle(theme, recipe, {}, "body")}>{body}</p>
-    </div>
-  );
-}
-
 export function renderList<Press>(node: FacetNode, context: BrickRenderContext<Press>): ReactNode {
   const { theme, className, inert } = context;
   // `from`-bound list projects one item per dataset row through the ONE core
@@ -309,36 +240,6 @@ export function renderList<Press>(node: FacetNode, context: BrickRenderContext<P
         </li>
       ))}
     </ul>
-  );
-}
-
-export function renderDivider<Press>(
-  node: FacetNode,
-  context: BrickRenderContext<Press>,
-): ReactNode {
-  const { theme, className, inert } = context;
-  const variant = safeOwnValue(node, "variant");
-  const recipe = componentRecipe(theme, "divider", variant);
-  const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
-  const rulePart = resolveRecipePart(recipe, "rule", theme);
-  return (
-    <div
-      role="separator"
-      className={className}
-      aria-hidden={inert ? true : undefined}
-      style={withInert(rootContainmentStyle(), inert)}
-    >
-      <hr
-        style={rootContainmentStyle({
-          border: 0,
-          borderTop: `1px solid ${theme.color.border}`,
-          ...(rulePart.box ?? {}),
-        })}
-      />
-      {label === undefined ? null : (
-        <span style={componentTextStyle(theme, recipe, {}, "label")}>{label}</span>
-      )}
-    </div>
   );
 }
 

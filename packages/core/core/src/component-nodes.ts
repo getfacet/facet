@@ -13,11 +13,8 @@ export const INTRINSIC_COMPONENT_TYPES = [
   "chart",
   "metric",
   "keyValue",
-  "badge",
   "progress",
-  "alert",
   "list",
-  "divider",
   "form",
   "filterBar",
   "emptyState",
@@ -164,28 +161,11 @@ export interface KeyValueNode {
   readonly from?: string;
 }
 
-export interface BadgeNode {
-  readonly id: NodeId;
-  readonly type: "badge";
-  readonly label: string;
-  readonly tone?: Tone;
-  readonly variant?: string;
-}
-
 export interface ProgressNode {
   readonly id: NodeId;
   readonly type: "progress";
   readonly value: number;
   readonly label?: string;
-  readonly tone?: Tone;
-  readonly variant?: string;
-}
-
-export interface AlertNode {
-  readonly id: NodeId;
-  readonly type: "alert";
-  readonly title?: string;
-  readonly body: string;
   readonly tone?: Tone;
   readonly variant?: string;
 }
@@ -202,13 +182,6 @@ export interface ListNode {
   readonly variant?: string;
   /** Optional binding: project one item per row from `FacetTree.data[from]`. */
   readonly from?: string;
-}
-
-export interface DividerNode {
-  readonly id: NodeId;
-  readonly type: "divider";
-  readonly label?: string;
-  readonly variant?: string;
 }
 
 export interface FormNode {
@@ -265,11 +238,8 @@ export type IntrinsicComponentNode =
   | ChartNode
   | MetricNode
   | KeyValueNode
-  | BadgeNode
   | ProgressNode
-  | AlertNode
   | ListNode
-  | DividerNode
   | FormNode
   | FilterBarNode
   | EmptyStateNode
