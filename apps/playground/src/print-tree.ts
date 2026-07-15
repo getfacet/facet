@@ -58,16 +58,10 @@ function detail(node: FacetNode): string {
       return `: ${count("item", node.items.length)}`;
     case "nav":
       return `: ${count("item", node.items.length)}`;
-    case "badge":
-      return `: ${quote(node.label)}`;
     case "progress":
       return `: ${node.label === undefined ? "" : `${node.label} `}${String(node.value)}%`;
-    case "alert":
-      return node.title === undefined ? `: ${node.body}` : `: ${quote(node.title)} - ${node.body}`;
     case "list":
       return `: ${count("item", node.items.length)}`;
-    case "divider":
-      return node.label === undefined ? "" : `: ${quote(node.label)}`;
     case "form":
       return labeledCount(node.title ?? node.body, "child", node.children.length);
     case "filterBar":

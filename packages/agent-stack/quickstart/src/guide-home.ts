@@ -72,10 +72,15 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.badge.safe": {
     id: "qs.badge.safe",
-    type: "badge",
-    label: "Closed vocabulary",
-    tone: "success",
-    variant: "success",
+    type: "box",
+    style: { direction: "row", pad: "xs", radius: "full", bg: "surface", border: true },
+    children: ["qs.badge.safe.label"],
+  },
+  "qs.badge.safe.label": {
+    id: "qs.badge.safe.label",
+    type: "text",
+    value: "Closed vocabulary",
+    style: { color: "success", size: "xs", weight: "semibold" },
   },
   "qs.card.progress": {
     id: "qs.card.progress",
@@ -111,9 +116,9 @@ export const QUICKSTART_HOME_NODES = {
   },
   "qs.surface.divider": {
     id: "qs.surface.divider",
-    type: "divider",
-    label: "Tool outcomes",
-    variant: "default",
+    type: "box",
+    style: { border: true, bg: "surface-2", radius: "full" },
+    children: [],
   },
   "qs.surface.table": {
     id: "qs.surface.table",

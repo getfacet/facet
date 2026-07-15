@@ -33,11 +33,22 @@ export const QUICKSTART_INTAKE_NODES = {
   },
   "qs.intake.alert": {
     id: "qs.intake.alert",
-    type: "alert",
-    title: "Provider-backed",
-    body: "The normal quickstart path still uses your OpenAI or Anthropic key; this seed is just the first paint.",
-    tone: "info",
-    variant: "info",
+    type: "box",
+    style: { gap: "sm", pad: "md", bg: "surface", border: true, radius: "md" },
+    children: ["qs.intake.alert.title", "qs.intake.alert.body"],
+  },
+  "qs.intake.alert.title": {
+    id: "qs.intake.alert.title",
+    type: "text",
+    value: "Provider-backed",
+    style: { weight: "bold", color: "info" },
+  },
+  "qs.intake.alert.body": {
+    id: "qs.intake.alert.body",
+    type: "text",
+    value:
+      "The normal quickstart path still uses your OpenAI or Anthropic key; this seed is just the first paint.",
+    style: { color: "fg" },
   },
   "qs.intake.submit": {
     id: "qs.intake.submit",
@@ -77,11 +88,22 @@ export const QUICKSTART_USE_CASE_NODES = {
   },
   "qs.usecases.alert": {
     id: "qs.usecases.alert",
-    type: "alert",
-    title: "Try a real request",
-    body: "Examples: customer onboarding, pricing comparison, CRM dashboard, evaluation replay, or support triage.",
-    variant: "info",
-    tone: "info",
+    type: "box",
+    style: { gap: "sm", pad: "md", bg: "surface", border: true, radius: "md" },
+    children: ["qs.usecases.alert.title", "qs.usecases.alert.body"],
+  },
+  "qs.usecases.alert.title": {
+    id: "qs.usecases.alert.title",
+    type: "text",
+    value: "Try a real request",
+    style: { weight: "bold", color: "info" },
+  },
+  "qs.usecases.alert.body": {
+    id: "qs.usecases.alert.body",
+    type: "text",
+    value:
+      "Examples: customer onboarding, pricing comparison, CRM dashboard, evaluation replay, or support triage.",
+    style: { color: "fg" },
   },
   "qs.usecases.examples": {
     id: "qs.usecases.examples",
