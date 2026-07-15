@@ -963,6 +963,9 @@ describe("quickstart E2E — quickstart component default", () => {
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain('"op":"replace"');
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
+        // badge/alert/divider were removed as node types (demoted to
+        // compositions / box); the seed now expresses them via box+text
+        // primitives, so only the surviving showcase brick types are asserted.
         for (const type of [
           "section",
           "card",
@@ -972,11 +975,8 @@ describe("quickstart E2E — quickstart component default", () => {
           "input",
           "button",
           "metric",
-          "badge",
           "progress",
-          "alert",
           "list",
-          "divider",
         ]) {
           expect(seedText).toContain(`"type":"${type}"`);
         }

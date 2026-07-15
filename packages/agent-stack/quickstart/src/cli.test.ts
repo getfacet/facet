@@ -456,6 +456,9 @@ describe("runCli — quickstart component default", () => {
       expect(seedText).toContain("Core Structure");
       expect(seedText).toContain("Design System");
       expect(seedText).toContain("Use Cases");
+      // badge/alert/divider were removed as node types (demoted to compositions /
+      // box); the seed now expresses them via box+text primitives, so only the
+      // surviving showcase brick types are asserted here.
       for (const type of [
         "section",
         "card",
@@ -465,11 +468,8 @@ describe("runCli — quickstart component default", () => {
         "input",
         "button",
         "metric",
-        "badge",
         "progress",
-        "alert",
         "list",
-        "divider",
       ]) {
         expect(seedText).toContain(`"type":"${type}"`);
       }
