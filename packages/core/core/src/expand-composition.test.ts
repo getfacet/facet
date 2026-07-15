@@ -603,24 +603,24 @@ describe("expandComposition", () => {
             id: "section",
             type: "section",
             title: "{{title}}",
-            children: ["card", "badge"],
+            children: ["card", "panel"],
           },
           card: {
             id: "card",
             type: "card",
             title: "MRR",
             children: ["stat"],
-            onPress: { kind: "toggle", target: "badge" },
+            onPress: { kind: "toggle", target: "panel" },
           },
           stat: { id: "stat", type: "stat", label: "MRR", value: "$42k" },
-          badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
+          panel: { id: "panel", type: "box", children: [] },
         },
       },
       { title: "Revenue now" },
       { parent: "root" },
       {
         existingIds: new Set(["root"]),
-        mintId: mintFrom(["fresh-section", "fresh-card", "fresh-stat", "fresh-badge"]),
+        mintId: mintFrom(["fresh-section", "fresh-card", "fresh-stat", "fresh-panel"]),
       },
     );
 
@@ -631,13 +631,13 @@ describe("expandComposition", () => {
       id: "fresh-section",
       type: "section",
       title: "Revenue now",
-      children: ["fresh-card", "fresh-badge"],
+      children: ["fresh-card", "fresh-panel"],
     });
     expect(result.nodes["fresh-card"]).toMatchObject({
       id: "fresh-card",
       type: "card",
       children: ["fresh-stat"],
-      onPress: { kind: "toggle", target: "fresh-badge" },
+      onPress: { kind: "toggle", target: "fresh-panel" },
     });
   });
 
@@ -855,7 +855,7 @@ describe("expandComposition", () => {
     });
   });
 
-  it("fills alert title/body slots, preserves tone and variant, and remaps a targeting action", () => {
+  it("fills card title/body slots, preserves tone and variant, and remaps a targeting action", () => {
     const result = expandComposition(
       {
         name: "notice",
@@ -870,11 +870,12 @@ describe("expandComposition", () => {
           },
           notice: {
             id: "notice",
-            type: "alert",
+            type: "card",
             title: "{{heading}}",
             body: "{{detail}}",
             tone: "warning",
             variant: "outline",
+            children: [],
           },
         },
       },
@@ -891,11 +892,12 @@ describe("expandComposition", () => {
     // slot default, tone/variant preserved untouched, and no spurious fields introduced.
     expect(result.nodes["fresh-notice"]).toEqual({
       id: "fresh-notice",
-      type: "alert",
+      type: "card",
       body: "Disk almost full",
       title: "Heads up",
       tone: "warning",
       variant: "outline",
+      children: [],
     });
     expect(result.nodes["fresh-wrap"]).toMatchObject({
       children: ["fresh-notice"],
@@ -903,7 +905,7 @@ describe("expandComposition", () => {
     });
   });
 
-  it("fills a divider label slot and passes a bare divider through with only an id remap", () => {
+  it("fills a leaf value slot and passes a bare leaf through with only an id remap", () => {
     const result = expandComposition(
       {
         name: "sectioned",
@@ -911,8 +913,8 @@ describe("expandComposition", () => {
         root: "wrap",
         nodes: {
           wrap: { id: "wrap", type: "box", children: ["labeled", "bare"] },
-          labeled: { id: "labeled", type: "divider", label: "{{sep}}", variant: "inset" },
-          bare: { id: "bare", type: "divider" },
+          labeled: { id: "labeled", type: "text", value: "{{sep}}", variant: "inset" },
+          bare: { id: "bare", type: "loading" },
         },
       },
       { sep: "More" },
@@ -929,17 +931,19 @@ describe("expandComposition", () => {
       labeled: "fresh-labeled",
       bare: "fresh-bare",
     });
-    // Only the label-bearing divider contributes a slot; the bare divider adds none.
+    // Only the value-bearing leaf contributes a slot; the bare leaf adds none.
     expect(result.slots).toEqual({ sep: "fresh-labeled" });
     expect(result.nodes["fresh-labeled"]).toEqual({
       id: "fresh-labeled",
-      type: "divider",
-      label: "More",
+      type: "text",
+      value: "More",
       variant: "inset",
+      // Post-fill validateComposition normalizes a text node's style to an object.
+      style: {},
     });
-    // A divider with no slot-bearing fields passes through intact: fresh id only, no label
+    // A leaf with no slot-bearing fields passes through intact: fresh id only, no value
     // materialized and no other fields invented.
-    expect(result.nodes["fresh-bare"]).toEqual({ id: "fresh-bare", type: "divider" });
+    expect(result.nodes["fresh-bare"]).toEqual({ id: "fresh-bare", type: "loading" });
   });
 
   it("bounds untrusted node ids echoed in expansion issues", () => {

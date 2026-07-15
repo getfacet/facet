@@ -152,6 +152,26 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).not.toMatch(new RegExp(`${legacy} -> high-level`, "i"));
   });
 
+  it("omits demoted display leaves as node types and teaches badge/alert as compositions", () => {
+    // DC-005: badge/alert/divider are demoted to catalog compositions — STAGE_SPEC
+    // must NOT teach any of them as a node-type line, and they must not appear in
+    // the intrinsic roster the spec advertises.
+    for (const type of ["badge", "alert", "divider"] as const) {
+      expect(STAGE_SPEC).not.toContain(`"type":"${type}"`);
+      expect(STAGE_SPEC).not.toContain(`- ${type}:`);
+      expect(INTRINSIC_COMPONENT_TYPES as readonly string[]).not.toContain(type);
+    }
+    // "divider" is fully retired as vocabulary — the spec steers separators to a box.
+    expect(STAGE_SPEC).not.toContain("divider");
+    // The composition note stays: badges/alerts are catalog compositions expanded
+    // by name ({ "use":"badge" } / { "use":"alert" }), never node types.
+    expect(STAGE_SPEC).toMatch(/Badges and alerts are NOT node types/i);
+    expect(STAGE_SPEC).toMatch(/catalog compositions/i);
+    expect(STAGE_SPEC).toContain('{ "use":"badge" }');
+    expect(STAGE_SPEC).toContain('{ "use":"alert" }');
+    expect(STAGE_SPEC).toMatch(/use a plain box/i);
+  });
+
   it("documents composition and renderer layout boundaries without backend bindings", () => {
     expect(STAGE_SPEC).toMatch(/composition/i);
     expect(STAGE_SPEC).toMatch(/validated nodes/i);

@@ -479,18 +479,7 @@ describe("validateTree component nodes", () => {
           title: "Overview",
           eyebrow: "Live",
           variant: "dashboard",
-          children: [
-            "card",
-            "tabs",
-            "table",
-            "chart",
-            "stat",
-            "badge",
-            "progress",
-            "alert",
-            "list",
-            "divider",
-          ],
+          children: ["card", "tabs", "table", "chart", "stat", "progress", "list"],
         },
         card: {
           id: "card",
@@ -523,17 +512,8 @@ describe("validateTree component nodes", () => {
           series: [{ label: "ARR", values: [1, 2, 3] }],
         },
         stat: { id: "stat", type: "stat", label: "ARR", value: "$24k", tone: "success" },
-        badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
         progress: { id: "progress", type: "progress", label: "Quota", value: 72 },
-        alert: {
-          id: "alert",
-          type: "alert",
-          title: "Heads up",
-          body: "Review pricing.",
-          tone: "warning",
-        },
         list: { id: "list", type: "list", items: [{ title: "Next", body: "Call customer" }] },
-        divider: { id: "divider", type: "divider", label: "Details" },
       },
       screens: { home: "root" },
       entry: "home",
@@ -611,15 +591,7 @@ describe("validateTree component nodes", () => {
         root: {
           id: "root",
           type: "section",
-          children: [
-            "tabs",
-            "lowProgress",
-            "highProgress",
-            "badStat",
-            "badBadge",
-            "badAlert",
-            "good",
-          ],
+          children: ["tabs", "lowProgress", "highProgress", "badStat", "good"],
         },
         tabs: {
           id: "tabs",
@@ -638,8 +610,6 @@ describe("validateTree component nodes", () => {
           tone: "not-a-tone",
         },
         badStat: { id: "badStat", type: "stat", label: "ARR" },
-        badBadge: { id: "badBadge", type: "badge", label: 42 },
-        badAlert: { id: "badAlert", type: "alert", title: "Missing body" },
         good: { id: "good", type: "text", value: "kept" },
       },
     });
@@ -652,15 +622,49 @@ describe("validateTree component nodes", () => {
     expect((tree.nodes["highProgress"] as { value?: unknown; tone?: unknown }).value).toBe(100);
     expect((tree.nodes["highProgress"] as { tone?: unknown }).tone).toBeUndefined();
     expect(tree.nodes["badStat"]).toBeUndefined();
-    expect(tree.nodes["badBadge"]).toBeUndefined();
-    expect(tree.nodes["badAlert"]).toBeUndefined();
     expect(tree.nodes["good"]).toMatchObject({ type: "text", value: "kept" });
     expect(issues.some((issue) => issue.includes("items exceeded"))).toBe(true);
     expect(issues.some((issue) => issue.includes("progress value clamped to 0"))).toBe(true);
     expect(issues.some((issue) => issue.includes("progress value clamped to 100"))).toBe(true);
     expect(issues.some((issue) => issue.includes("stat needs string label and value"))).toBe(true);
-    expect(issues.some((issue) => issue.includes("badge has no string label"))).toBe(true);
-    expect(issues.some((issue) => issue.includes("alert has no string body"))).toBe(true);
+  });
+
+  it("drops a stale demoted display-leaf node (badge/alert/divider) without throwing", () => {
+    // DC-003: badge/alert/divider are demoted to catalog compositions and are no
+    // longer node types. A stale tree still carrying them must fail-safe —
+    // validateTree DROPS the unknown component nodes (with a drop issue), prunes
+    // them from surviving parents, keeps the rest of the tree, and never throws.
+    let result: ReturnType<typeof validateTree> | undefined;
+    expect(() => {
+      result = validateTree({
+        root: "root",
+        nodes: {
+          root: {
+            id: "root",
+            type: "section",
+            children: ["badge", "alert", "divider", "keep"],
+          },
+          badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
+          alert: { id: "alert", type: "alert", title: "Heads up", body: "Review pricing." },
+          divider: { id: "divider", type: "divider", label: "Details" },
+          keep: { id: "keep", type: "text", value: "kept" },
+        },
+      });
+    }).not.toThrow();
+
+    const { tree, issues } = result!;
+    expect(tree.nodes["badge"]).toBeUndefined();
+    expect(tree.nodes["alert"]).toBeUndefined();
+    expect(tree.nodes["divider"]).toBeUndefined();
+    expect(tree.nodes["keep"]).toMatchObject({ type: "text", value: "kept" });
+    // Dropped display-leaf ids are pruned from the surviving parent's children.
+    expect((tree.nodes["root"] as { children?: readonly string[] }).children).toEqual(["keep"]);
+    // Each demoted type is reported as an unknown node type (fail-safe feedback):
+    // it is neither a component nor a primitive brick, so validateTree drops it via
+    // the generic unknown-type path rather than minting a display leaf.
+    for (const type of ["badge", "alert", "divider"] as const) {
+      expect(issues.some((issue) => issue.includes(`unknown type "${type}"`))).toBe(true);
+    }
   });
 });
 
