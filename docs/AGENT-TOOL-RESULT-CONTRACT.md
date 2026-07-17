@@ -1,5 +1,9 @@
 # Agent Tool Result Contract
 
+For the framework overview and integration-path decision, start with the
+[Facet README](../README.md). This document owns the exact result protocol for
+LLM-facing stage tools.
+
 Facet stage tools are consumed by LLMs, so their results must be machine-readable
 and hard to misinterpret. A tool result is not just a log line. It is the model's
 only feedback loop for deciding whether to continue editing the stage, inspect
@@ -7,6 +11,11 @@ the current state, or tell the visitor that the work is done.
 
 This contract applies to LLM-facing Facet stage tool observations emitted by
 `@facet/agent-tools` and consumed by `@facet/reference-agent`.
+
+If you are assembling a provider loop, start with the
+[Agent Integration guide](AGENT-INTEGRATION.md). This document is the exact
+authority for the observation envelope, outcomes, bounds, visibility, and
+recovery behavior; the integration guide explains where each result goes.
 
 ## Required Shape
 

@@ -1,22 +1,38 @@
 # @facet/agent-tools
 
-Provider-agnostic Facet stage tools for authors building their own LLM agent
-loop.
+Provider-neutral Facet stage tools for a host building its own LLM agent loop.
 
 Role: **Agents**.
 
-This package owns the reusable mechanism layer: canonical tool definitions,
-shared call/result types, strict execution against a local stage shadow,
-buffering helpers, structured observations, and Facet prompt guidance. It does
-not select a provider, make model requests, read environment variables, or own
-application business logic.
+Use this package when the host already owns provider requests and product
+policy but needs Facet's safe authoring mechanism. It provides the canonical
+tool specs, prompt kit, immutable design-asset snapshot, strict executor, local
+stage buffer, and structured observations. It does not select a provider, make
+model requests, retain conversation history, connect to a Facet server, or own
+business logic.
 
-Use `@facet/reference-agent` when you want Facet's complete reference loop. Use
-this package when you only need the safe Facet authoring surface.
+Use `@facet/reference-agent` for Facet's complete reference loop. Use
+`@facet/agent` for code-authored in-process stage changes. Use
+`@facet/agent-client` only to transport a completed external `FacetAgent`; it is
+not an LLM tool package.
 
-## Public surface
+```bash
+npm install @facet/agent-tools
+```
 
-```ts
+## Main workflow
+
+1. Call `createStageToolAssetSnapshot` once for the provider turn.
+2. Build the Facet system prompt with `buildFacetAgentSystemPrompt`.
+3. Offer `FACET_STAGE_TOOL_SPECS` to the provider.
+4. Run provider calls through `createStageToolBuffer`, or deliberately manage
+   each shadow with `executeStageTool`.
+5. Return `observation` to the provider, forward validated `messages` to the
+   Facet runtime, and retain the returned `shadow` for the next call.
+6. Repair and retry `rejected` calls. Require `applied_visible` before claiming
+   a requested page change is complete.
+
+```ts check-docs
 import {
   FACET_STAGE_TOOL_SPECS,
   buildFacetAgentSystemPrompt,
@@ -24,140 +40,43 @@ import {
   createStageToolBuffer,
   executeStageTool,
   parseAgentToolObservation,
-  selectPatternReference,
 } from "@facet/agent-tools";
-import type {
-  GetBrickSpecToolInput,
-  GetPatternToolInput,
-  GetPresetToolInput,
-  GetStyleChoicesToolInput,
-  StageToolResult,
-  ToolCall,
-} from "@facet/agent-tools";
+import type { StageToolResult, ToolCall } from "@facet/agent-tools";
 ```
 
-The package depends only on `@facet/core`.
+All imports come from the published package root. The package depends only on
+`@facet/core`.
 
-## Asset snapshot and prompt
+## Discovery and execution
 
-Create one exact immutable snapshot from the effective Theme and Pattern list:
+The prompt exposes bounded Brick, same-Brick Preset, and Pattern indexes. Exact
+details are progressive reads:
 
-```ts
-const assets = createStageToolAssetSnapshot({ theme, patterns });
+- `get_pattern` reads one validated reference tree;
+- `get_preset` reads one unresolved same-Brick style bundle;
+- `get_brick_spec` reads one Brick's fields and owned style paths; and
+- `get_style_choices` reads allowed names for one exact local style property.
 
-const system = buildFacetAgentSystemPrompt({
-  pageBrief: "# Pricing concierge\n\nHelp each visitor compare plans.",
-  assets,
-});
-```
+These reads return `no_stage_change`; the model must adapt the guidance and
+author ordinary native Bricks with `render_page`, `append_node`, or `set_node`.
+The complete Theme remains in the snapshot for strict validation, while its
+concrete CSS values stay out of the model prompt.
 
-`createStageToolAssetSnapshot` revalidates, detaches, deduplicates, indexes, and
-deep-freezes the input. The resulting `StageToolAssets` contains:
+Strict authoring is atomic. An unknown field, target, property, Preset, token,
+fixed choice, or invalid tree reference returns `rejected`, emits zero patches,
+and leaves the local shadow unchanged. Renderer fail-soft behavior is a later
+defense for stale or bypassed data, not acceptance of an invalid model call.
 
-- the complete `theme` for strict authoring and exact Preset reads;
-- exact compatible `patterns` for Pattern reads;
-- a Brick index with `type`, `description`, and `useWhen`;
-- a same-Brick Preset index with `brick`, `name`, `description`, and `useWhen`;
-  and
-- a Pattern index with `name`, `description`, and `useWhen`.
+`render_page` accepts a complete tree as tool input, but the validated runtime
+output is an RFC 6902 `patch` message. After initial state, only patches travel
+for document changes.
 
-The prompt receives only the three bounded indexes. Concrete Theme values,
-full Pattern trees, provider keys, visitor ids, and unknown asset fields remain
-private. Exact data is returned only when the model calls the matching read
-tool.
+## Read next
 
-The prompt teaches Pattern and Preset discovery before direct styling. For an
-unfamiliar Brick, the model reads its fields and local style paths with
-`get_brick_spec`, then calls `get_style_choices` only when it must choose an
-unfamiliar value for one exact Brick/target/property path.
-
-## Canonical tools
-
-`FACET_STAGE_TOOL_SPECS` contains eleven tools:
-
-| Tool | Purpose |
-| --- | --- |
-| `render_page` | Strictly replace the complete Facet Document. |
-| `append_node` | Add one new Brick and attach it to an existing box. |
-| `set_node` | Insert or replace one Brick by id. |
-| `remove_node` | Remove one node and clean references. |
-| `say` | Send one short chat message. |
-| `get_pattern` | Read one exact indexed Pattern. |
-| `get_preset` | Read one exact same-Brick Preset. |
-| `get_brick_spec` | Read one compact Core Brick specification. |
-| `get_style_choices` | Read allowed values and meanings for one local style property. |
-| `inspect_stage` | Read a bounded stage summary. |
-| `inspect_node` | Read one bounded node subtree. |
-
-Read inputs are exact:
-
-```ts
-const patternInput = { name: "hero" } satisfies GetPatternToolInput;
-const presetInput = { brick: "box", name: "panel" } satisfies GetPresetToolInput;
-const brickInput = { type: "progress" } satisfies GetBrickSpecToolInput;
-const choicesInput = {
-  brick: "progress",
-  target: "track",
-  property: "height",
-} satisfies GetStyleChoicesToolInput;
-```
-
-All four exact reads return `outcome: "no_stage_change"` with no messages,
-patches, changed ids, or shadow mutation. `get_pattern` returns an exact
-compatible reference tree; `get_preset` returns its unresolved metadata/style
-bundle; `get_brick_spec` projects Core's fields and local style paths; and
-`get_style_choices` returns property-local names with their meaning and usage
-guidance. Unknown names or paths fail closed with `not_available`.
-
-These exact read payloads are the narrow exception to the generic observation
-data cap. A provider loop must preserve the complete selected result for its
-first next-model delivery and stop at its total context limit rather than send
-partial asset data.
-
-## Strict execution
-
-Pass the same snapshot used by the prompt to every execution:
-
-```ts
-const result = executeStageTool(call, { shadow, assets });
-```
-
-`render_page`, `append_node`, and `set_node` validate against the effective
-Theme. An unknown field, Brick-owned style target/property, Preset, token name,
-or fixed choice rejects the complete call with structured repair errors and no
-patch. The renderer's later fail-safe behavior is not used to excuse invalid
-agent authoring.
-
-The model may use four style forms on a Brick: omit style, Preset only, direct
-style only, or Preset plus deliberate direct overrides. Resolution is Theme
-default, then same-Brick Preset, then direct style.
-
-When adding a hierarchy below an existing parent, define unattached leaves with
-`set_node`, define inner boxes bottom-up with `set_node`, and call
-`append_node` only once for the completed top node. Attaching a descendant to
-the destination and also naming it inside the new box creates two parents and
-is invalid authoring practice.
-
-## Structured observations
-
-Tool observations are JSON strings with machine-readable fields including
-`outcome`, `applied`, `visible_to_visitor`, `warnings`, `errors`, and
-`next_action`.
-
-| Outcome | Meaning |
-| --- | --- |
-| `applied_visible` | The requested stage change is visible. |
-| `applied_not_visible` | The stage changed, but the relevant Brick is unattached or otherwise not visible. |
-| `applied_with_warnings` | A non-authoring fold diagnostic occurred after a change. |
-| `pending` | A buffered edit still needs dependencies; no patch was emitted. |
-| `rejected` | The call was invalid or unsafe; no patch was emitted. |
-| `no_stage_change` | A read, inspect, or chat call intentionally did not mutate the stage. |
-
-For a request to build or change the page, reads and inspections are preparation
-only. The loop must continue through a mutation tool and receive
-`applied_visible` before claiming completion. Factual requests that require no
-page change do not need a mutation.
-
-See
-[`docs/AGENT-TOOL-RESULT-CONTRACT.md`](../../../docs/AGENT-TOOL-RESULT-CONTRACT.md)
-for the full result policy.
+- [Custom agent integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md)
+  — the complete snapshot, prompt, buffer/executor, provider handoff, and host
+  boundaries.
+- [Agent tool result contract](https://github.com/getfacet/facet/blob/main/docs/AGENT-TOOL-RESULT-CONTRACT.md)
+  — exact observation fields, outcomes, visibility, bounds, and recovery.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
+  — Facet's stage and safety invariants.

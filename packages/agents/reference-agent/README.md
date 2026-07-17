@@ -13,6 +13,20 @@ The reusable provider-neutral tool and prompt layer lives in
 `@facet/agent-tools`. This package adds OpenAI/Anthropic adapters, event/history
 context, retry and stop policy, budgets, tracing, and compaction.
 
+Install this package when you want to run or study that complete reference
+brain. For a custom provider loop, integrate `@facet/agent-tools` directly. For
+a deterministic TypeScript/rules agent, use `@facet/agent`. For transport from
+an external process, `@facet/agent-client` connects a completed `FacetAgent` but
+does not provide LLM tools.
+
+```bash
+npm install @facet/reference-agent @facet/assets @facet/runtime
+```
+
+Consumers must import from the published `@facet/reference-agent` package root.
+The internal directory names described below explain the implementation; they
+are not public subpaths and must not be copied into integration imports.
+
 ```ts
 import { DEFAULT_PATTERNS, DEFAULT_THEME } from "@facet/assets";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
@@ -177,3 +191,12 @@ values with the shared runtime rule. Visitor ids are omitted from prompt data.
 `STUB_TREE` on visit, echoes messages into the stage and chat, and reports
 collected tap fields in sorted order. Use it for deterministic tests and the
 quickstart live-test Tier 1 path.
+
+## Read next
+
+- [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md)
+  for the provider-neutral custom-loop handoff and host-owned boundaries.
+- [Agent Tool Result Contract](https://github.com/getfacet/facet/blob/main/docs/AGENT-TOOL-RESULT-CONTRACT.md)
+  for exact observation outcomes and recovery behavior.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
+  for the stage, patch, and design-asset boundaries.

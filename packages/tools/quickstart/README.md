@@ -2,10 +2,16 @@
 
 Role: **Tools**.
 
-One command from a provider key to a live Facet page. `facet-quickstart` wraps
-`@facet/reference-agent`, the reference server, the React renderer, and the chat
-dock. The reference brain is one pluggable implementation, not the only agent
-Facet can run.
+Use this package for a **local first run**: one command takes a provider key to
+a live Facet page. `facet-quickstart` wraps `@facet/reference-agent`, the
+reference server, the React renderer, and the chat dock. The reference brain is
+one pluggable implementation, not the only agent Facet can run.
+
+Do not treat Quickstart as a production server or a required layer in a custom
+integration. Start with the
+[Getting Started guide](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
+to choose between Quickstart, React embedding, a custom LLM loop, and the other
+supported paths.
 
 With no `facet.md`, quickstart starts from a validated four-screen product tour:
 **What is Facet?**, **Core Structure**, **Design System**, and **Use Cases**. It
@@ -13,8 +19,14 @@ uses all eleven native Bricks. Navigation, actions, cards, controls, summaries,
 badges, and alerts are ordinary Brick trees styled by the active Theme.
 
 ```bash
-OPENAI_API_KEY=sk-… npx facet-quickstart
+OPENAI_API_KEY=sk-… npx --package=@facet/quickstart -- facet-quickstart
 ```
+
+Prerequisites:
+
+- Node.js 20 or newer;
+- either `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`; and
+- a local browser.
 
 On success:
 
@@ -256,5 +268,14 @@ spend controls.
 Quickstart is not a multi-tenant server and does not implement tenant isolation,
 metering, admin auth, or global turn limits.
 
-To bring your own brain, see
-[Bring your own brain](../../../README.md#bring-your-own-brain).
+## Related guides
+
+- [Facet overview and package chooser](https://github.com/getfacet/facet/blob/main/README.md)
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
+  choose and wire a supported adoption path.
+- [Design System](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md) —
+  define a complete Theme and compatible Patterns.
+- [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md) —
+  replace the reference brain with your own LLM loop.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
+  understand the runtime and safety boundaries.

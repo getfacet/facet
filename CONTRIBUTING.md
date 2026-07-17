@@ -20,8 +20,11 @@ Node ≥ 20 and pnpm 9 (`corepack enable`).
    core logic (`validateTree`, `applyPatch`, `Stage`) has a test.
 4. Open a PR describing the change and why.
 
-CI runs the same `pnpm verify` gate on every PR: typecheck, tests, lint,
-format-check, build, and a source NUL-byte scan.
+CI runs the same `pnpm verify` gate on every PR, in this order: typecheck, tests,
+lint, format-check, build, the documentation checker test followed by the full
+documentation check, the package-layout test followed by the full layout check,
+and the source NUL-byte scan. The documentation check covers current-document
+links and anchors plus explicitly marked concrete TypeScript/TSX snippets.
 
 ## Design principles
 

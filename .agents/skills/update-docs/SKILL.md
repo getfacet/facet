@@ -34,15 +34,42 @@ Merge the three lists.
   explicit reason.
 - Any code/config/schema change → do NOT skip.
 
+## Canonical homes (choose one owner)
+
+Route a subject to its owning document. Link to that document from other
+surfaces instead of copying the same explanation:
+
+| Subject | Canonical home |
+|---|---|
+| First evaluation, mental model, use-case choice, headline safety | `README.md` |
+| Prerequisites, installation, supported adoption paths, React/reference wiring | `docs/GETTING-STARTED.md` |
+| Current Theme, Preset, Pattern, token, style, and asset-authoring workflow | `docs/DESIGN-SYSTEM.md` |
+| Provider-neutral custom LLM loop, progressive reads, executor handoff, retries, and host-owned policy | `docs/AGENT-INTEGRATION.md` |
+| Invariants, ownership, data flow, validation boundaries, renderer behavior | `docs/ARCHITECTURE.md` |
+| Exact stage-tool result shape, outcomes, false-success, and recovery rules | `docs/AGENT-TOOL-RESULT-CONTRACT.md` |
+| Package roles, collaborators, public/private boundaries, and deployment claims | `docs/PACKAGE-BOUNDARIES.md` |
+| Pre-1.0 style hard-cut replacement steps only | `docs/STYLE-SYSTEM-MIGRATION.md` |
+| One package's purpose, when/not to use it, install/API minimum | that package's `README.md` |
+
+Do not add hand-maintained exhaustive Brick/property/token tables to a guide;
+Core's closed contract and generated agent-facing specifications own exhaustive
+vocabulary.
+
 ## Doc map (changed file → triggered doc)
 | Changed code | Triggered doc(s) |
 |---|---|
-| `packages/core/core/src/{nodes,tokens,protocol}.ts` (brick/token/action vocabulary) | **`packages/core/core/src/spec.ts` (STAGE_SPEC)** + `docs/ARCHITECTURE.md` |
-| `packages/core/core/src/{validate,patch}.ts` (fail-safe behavior) | `docs/ARCHITECTURE.md` (invariants) + `README.md` if a headline guarantee changed |
-| A published `@facet/*` public API (exports/signatures) | that package's `README.md` (bridge/client have one; add one if the surface is user-facing) + root `README.md` if it's a headline capability |
-| New / renamed / removed `@facet/*` package | root `README.md` (package list) + `AGENTS.md` (package list) + a Changeset |
-| `packages/tools/cli` / `packages/tools/bridge` commands or env vars | `README.md` / `CONTRIBUTING.md` usage + the package `README.md` + the CLI `--help` text |
-| `packages/adapters/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + `packages/adapters/server` docstring |
+| `packages/core/core/src/{nodes,tokens,protocol}.ts` (Brick/token/action vocabulary) | **`packages/core/core/src/spec.ts` (STAGE_SPEC)** + `docs/ARCHITECTURE.md`; add `docs/DESIGN-SYSTEM.md` when the styling model or author workflow changes |
+| Theme/Preset/Pattern/style contracts, validation, resolver, or default assets | `docs/DESIGN-SYSTEM.md` + affected Core/assets/renderer package `README.md`; `docs/ARCHITECTURE.md` only when ownership, resolution order, or failure boundaries change |
+| `packages/core/core/src/{validate,patch}.ts` (fail-safe behavior) | `docs/ARCHITECTURE.md`; root `README.md` only if a headline guarantee changed |
+| Stage-tool schema, progressive reads, executor handoff, or reusable prompt flow | `docs/AGENT-INTEGRATION.md` + affected agent package `README.md`; `docs/AGENT-TOOL-RESULT-CONTRACT.md` only if exact result/outcome behavior changed |
+| Stage-tool result fields, outcomes, false-success, or recovery behavior | `docs/AGENT-TOOL-RESULT-CONTRACT.md` + `docs/AGENT-INTEGRATION.md` when the onboarding control flow changes |
+| React/reference transport installation or wiring | `docs/GETTING-STARTED.md` + affected renderer/adapter package `README.md` |
+| A published `@facet/*` public API (exports/signatures) | that package's `README.md` + the owning canonical guide; root `README.md` only if path selection or a headline capability changed |
+| New / renamed / removed `@facet/*` package | `docs/PACKAGE-BOUNDARIES.md` + root `README.md` decision/role summary + `AGENTS.md` package map + a Changeset |
+| Package role, collaborator, public subpath, or deployment positioning | `docs/PACKAGE-BOUNDARIES.md` + that package's `README.md` |
+| `packages/tools/cli` / `packages/tools/bridge` commands or env vars | the package `README.md` + `docs/GETTING-STARTED.md` only when an adoption path changes + `CONTRIBUTING.md` for contributor-only usage + the CLI `--help` text |
+| `packages/adapters/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + the server package `README.md`; `docs/GETTING-STARTED.md` only when adopter wiring or production guidance changes |
+| Pre-1.0 style cutover/removal instructions | `docs/STYLE-SYSTEM-MIGRATION.md`; keep current model explanation in `docs/DESIGN-SYSTEM.md` |
 | `.agents/skills/**`, `.claude/**`, `.codex/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
 | Release/versioning setup | `CONTRIBUTING.md`, `CHANGELOG.md` |
 

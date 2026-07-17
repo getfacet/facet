@@ -1,73 +1,91 @@
 # @facet/server
 
-The reference Facet transport: a tiny Node SSE + POST server that carries events
-to the runtime and streams patches back. Two channels, both SSE + POST so an
-agent behind NAT only ever dials OUT — a browser side (`GET /stream` + `POST
-/event`) and an agent side (`GET /agent/stream` + `POST /agent/control`).
+The native reference transport for Facet: a small Node SSE + POST server that
+carries browser events to a runtime and streams stage patches and chat back.
 
-Role: **Adapters**. This package is the reference transport implementation.
+Role: **Adapters**. Use this package for local/self-hosted reference deployments
+or to study Facet's native transport. It is not a complete hosted edge or
+security perimeter.
+
+The server exposes two channels:
+
+- browser: `GET /stream` + `POST /event` and best-effort `POST /record`;
+- external agent: `GET /agent/stream` + `POST /agent/control`.
+
+Both directions let browsers and agents dial out without requiring an inbound
+endpoint on the agent. `createFacetServer` composes `@facet/runtime`; supply an
+in-process `FacetAgent` as a fallback brain or connect one through
+`@facet/agent-client`.
+
+For an in-process code-authored agent:
 
 ```bash
-npm install @facet/server @facet/agent @facet/runtime @facet/core
+npm install @facet/server @facet/agent
 ```
 
-`createFacetServer` returns a `FacetServer` with `listen()` / `close()`. Give it
-an in-process `agent` as the fallback brain, or let an external agent hold
-`/agent/stream`. It defaults to in-memory state; pass `stageStore` / `sink` for
-durable backends.
-
-```ts
-import { createFacetServer } from "@facet/server";
+```ts check-docs
 import { defineAgent } from "@facet/agent";
+import { createFacetServer } from "@facet/server";
 
 const agent = defineAgent(({ event, stage }) => {
   if (event.kind === "visit") stage.say("Welcome!");
 });
 
-const server = createFacetServer({ port: 5291, agentId: "live", agent });
+const server = createFacetServer({
+  port: 5291,
+  host: "127.0.0.1",
+  agentId: "demo",
+  agent,
+});
 await server.listen();
 ```
 
-## Delivery guarantees
+See the canonical
+[reference transport walkthrough](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md#run-the-reference-transport)
+for the matching browser and renderer wiring.
 
-Browser SSE frames carry a per-session sequence in the standard `id:` field, so
-an `EventSource` reconnect resumes exactly where it left off (`Last-Event-ID`
-replays only the missed frames; a full rehydrate is always preceded by an
-explicit `reset` message). Streaming `FacetAgent` batches are delivered to
-`/stream` as soon as the runtime saves them; the `/event` POST still acknowledges
-immediately with `202`.
+## Runtime and storage
 
-An agent turn that outlives the per-event timeout is NOT discarded: the visitor
-gets an interim note and the finished result is applied and delivered when it
-arrives — unless a newer turn has already changed the page, in which case only
-the late reply text is shown (a stale result never overwrites a newer stage).
-During full rehydrate, if the frame log changes while the server is reading the
-snapshot/history, the server falls back to the visitor's serial lane and
-re-reads from a stable point instead of replaying over a stale snapshot. Tune
-`agentTimeoutMs` (interim-note threshold) and `agentStaleMs` (dead-agent reaper)
-via `FacetServerOptions`.
+The server defaults to in-memory stage and conversation stores. Pass
+`stageStore` and `sink` when the surrounding application needs durable
+implementations. Persistence does not add tenant, auth, backup, migration, or
+fan-out policy; those remain deployment responsibilities.
 
-The package keeps route assembly, request validation, stream rehydration, POST
-handling, and turn tracking in private modules. These are implementation seams,
-not additional package entry points; the supported API remains
-`createFacetServer` and the `FacetServer` option/result types.
+The package's route assembly, validation, replay, and turn-tracking modules are
+private implementation seams. The supported public entrypoint is the package
+root with `createFacetServer` and its option/result types.
 
-## Trust model (read before hosting)
+## Delivery behavior
 
-This is a REFERENCE transport for local/self-hosted single-operator use with
-public/anonymous pages — NOT a hardened multi-tenant server. The `/agent/*`
-channel is unauthenticated by default (set `agentToken` to require a shared
-secret), and `visitorId` is trusted verbatim as the session key. Put your own
-authentication in front of it for multi-tenant or sensitive-per-visitor
-deployments. See [SECURITY.md] in the repository.
+Browser SSE frames carry a per-session sequence. `EventSource` reconnects can
+resume missed frames; a full rehydrate starts with an explicit `reset` before
+the snapshot and chat history.
 
-Do not expose this package as a public SaaS edge by itself. It has no
-tenant/project lookup, browser auth, default agent auth, per-visitor rate
+An agent turn that crosses `agentTimeoutMs` receives an interim note rather than
+being discarded. Its result may still be delivered later, but a stale result
+cannot overwrite a newer stage. Per-visitor delivery stays serialized. These
+mechanics are reference behavior, not a hosted availability guarantee.
+
+## Trust model
+
+This server is intended for local/self-hosted, single-operator, public/anonymous
+reference use:
+
+- browser `visitorId` is trusted verbatim as the session key;
+- the browser channel has no authentication;
+- the agent channel is unauthenticated unless `agentToken` is configured; and
+- CORS on the browser channel is permissive for the reference setup.
+
+Do not expose it by itself as a public multi-tenant SaaS edge. It does not
+provide tenant/project lookup, scoped browser credentials, authorization, rate
 limits, usage metering, billing/quota enforcement, abuse controls, admin auth,
-audit log, secrets management, or custom-domain routing. Those are platform
-concerns around Facet, not `@facet/server` concerns.
+audit logs, secrets management, or custom-domain routing. Put those controls in
+the platform around Facet, and use a hardened transport where sensitive data is
+involved.
 
-[SECURITY.md]: https://github.com/getfacet/facet/blob/main/SECURITY.md
+Read next:
 
-See the [Facet docs](https://github.com/getfacet/facet) and
-[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
+- [Security](https://github.com/getfacet/facet/blob/main/SECURITY.md)
+- [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md)
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)

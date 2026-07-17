@@ -12,6 +12,11 @@ Role: **Core**.
 npm install @facet/assets @facet/core
 ```
 
+Start with the practical
+[Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md).
+Use this package when the host wants Facet's bundled design data unchanged or
+as the complete base for an operator-owned Theme and Pattern list.
+
 ## Default Theme
 
 `DEFAULT_THEME` contains the complete concrete design system used when an
@@ -43,7 +48,7 @@ a host that wants the exact Nunito face must load the font in its own shell.
 
 Each Pattern is an ordinary Facet tree plus discovery metadata:
 
-```ts
+```ts check-docs
 import { DEFAULT_PATTERNS, DEFAULT_THEME } from "@facet/assets";
 
 const hero = DEFAULT_PATTERNS.find((pattern) => pattern.name === "hero");
@@ -58,3 +63,12 @@ ideas, and then author ordinary Bricks. Reading a Pattern never inserts it or
 changes the stage.
 
 The package contains no renderer, runtime, filesystem access, or provider code.
+
+## Documentation
+
+- [Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md) —
+  default assets, custom Theme/Preset/Pattern examples, and validation behavior.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
+  asset ownership and runtime boundaries.
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
+  supported adoption paths.

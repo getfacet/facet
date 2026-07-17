@@ -1,23 +1,42 @@
 # @facet/runtime
 
-The Facet event loop plus four persistence seams:
+The Facet session event loop and its four storage seams:
 
 - `StageStore` for per-visitor page state;
 - `Sink` for conversation records;
 - `AssetsStore` for one per-agent Theme, an exact Pattern list, and an optional
   initial tree; and
 - `SummaryStore` for an opaque per-visitor rolling-summary record owned by the
-consuming brain.
+  consuming brain.
 
 Role: **Core**.
 
-Browser-safe in-memory references are exported from `@facet/runtime`:
-`MemoryStageStore`, `MemorySink`, `MemoryAssets`, and `MemorySummaryStore`.
-Node-only file references are exported from `@facet/runtime/node`.
+## When to use it
+
+Use `@facet/runtime` when your process owns Facet sessions: it receives visitor
+events, calls a `FacetAgent`, folds the returned patches, persists the resulting
+stage, and returns messages for a transport to deliver.
+
+Do not use it as an LLM brain, renderer, or network server. Pair it with an
+authoring package such as `@facet/agent` or `@facet/agent-tools`, a renderer such
+as `@facet/react`, and either your own transport or a Facet adapter. Tenant
+identity, authorization, billing, metering, quotas, and other hosted control
+plane concerns remain host-owned.
+
+## Install and entrypoints
 
 ```bash
-npm install @facet/runtime @facet/agent @facet/core
+npm install @facet/runtime
 ```
+
+| Import | Environment | Contents |
+| --- | --- | --- |
+| `@facet/runtime` | Browser or server | `FacetRuntime`; store interfaces; asset loading; redaction helpers; browser-safe memory stores. |
+| `@facet/runtime/node` | Node server only | `FileStageStore`, `FileSink`, `FileAssets`, and `FileSummaryStore`. |
+
+The root entrypoint has no Node built-ins. Import file-backed stores only from
+the intentional `@facet/runtime/node` subpath; package `src/*` files are private.
+Database implementations live in adapters such as `@facet/store-postgres`.
 
 ## Event loop
 
@@ -39,8 +58,13 @@ const agent = defineAgent(({ event, stage }) => {
 });
 
 const runtime = new FacetRuntime({ agentId: "live", agent });
-const messages = await runtime.handle({ visitorId: "alice" }, { kind: "visit" });
+const turn = await runtime.handle({ visitorId: "alice" }, { kind: "visit" });
+// Deliver turn.messages through the transport chosen by the host.
 ```
+
+This example also imports `@facet/agent`, so install that package when using the
+code-authored `defineAgent` path. A custom LLM loop can provide the same
+`FacetAgent` contract instead; the runtime does not choose a provider.
 
 The `Sink` record is written once for the whole turn. Sensitive collected field
 names and key-looking values are redacted before storage. The shared
@@ -121,5 +145,14 @@ marker, and `delete` lets the brain rebuild after a conversation mismatch.
 File-backed summaries use `<key>.summary.json`; pair a durable summary store
 with an equally durable `Sink`.
 
-See the [Facet docs](https://github.com/getfacet/facet) and
-[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
+## Learn next
+
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
+  for complete package combinations.
+- [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md)
+  for a provider-neutral LLM authoring loop.
+- [Design System](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md)
+  for Theme, Preset, Pattern, and asset ownership.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
+  and [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md)
+  for runtime invariants and deployment scope.

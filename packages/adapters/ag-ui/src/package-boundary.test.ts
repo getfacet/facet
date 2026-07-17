@@ -102,8 +102,10 @@ describe("@facet/ag-ui package boundaries", () => {
       "| Adapters | `packages/adapters/ag-ui` | `@facet/ag-ui` | Official AG-UI adapter/event layer, browser transport and Node server adapter, keeping Facet safety. |",
     );
     expect(agents).toContain("`@facet/ag-ui`");
-    expect(readme).toContain("### Adapters");
-    expect(readme).toContain("| `packages/adapters/ag-ui` | `@facet/ag-ui` |");
+    expect(readme).toContain("| Carry Facet through AG-UI | `@facet/ag-ui` |");
+    expect(readme).toContain(
+      "- **Adapters** — connect browsers, external agents, protocols, and persistence.",
+    );
     expect(packageBoundaries).toContain("`@facet/ag-ui`");
     expect(packageBoundaries).toMatch(/@facet\/core` remains dependency-free/);
     expect(packageBoundaries).toMatch(

@@ -11,6 +11,11 @@ or a local demo should author stage changes without hand-writing patch arrays.
 For LLM/provider tool-calling loops, start with `@facet/agent-tools`; this
 package is not the LLM tool-schema surface.
 
+`@facet/agent-client` is a separate transport that can dial an external
+`FacetAgent` into the reference server. It does not add model tools. Facet's
+complete sample LLM brain is `@facet/reference-agent`; it is a reference
+implementation, not a requirement for code-authored agents.
+
 ```bash
 npm install @facet/agent @facet/core
 ```
@@ -67,5 +72,11 @@ export const streamingAgent = defineStreamingAgent(async function* ({ event, sta
 });
 ```
 
-See the [Facet docs](https://github.com/getfacet/facet) and
-[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
+## Read next
+
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
+  for supported runtime and transport wiring.
+- [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md)
+  when the author is an LLM rather than TypeScript policy.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
+  for the stage, patch, and single-writer invariants.

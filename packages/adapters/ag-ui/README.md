@@ -4,14 +4,31 @@ Official AG-UI adapter/event layer for Facet.
 
 Role: **Adapters**.
 
+## When to use it
+
+Use `@facet/ag-ui` when AG-UI is the app's client/server event envelope but
+Facet should remain the only stage model. The adapter translates lifecycle,
+message, error, and state events at the edge; Facet still owns the closed Brick
+tree, RFC 6902 patch folding, validation, persistence, and rendering.
+
+Do not use it to create a second stage, execute AG-UI tool calls, or add backend
+business policy. Use the native `@facet/client`/`@facet/server` reference path
+when AG-UI interoperability is not needed.
+
+## Install and entrypoints
+
 ```bash
-npm install @facet/ag-ui @facet/core @facet/runtime
+npm install @facet/ag-ui
 ```
 
-Use this package when an app wants AG-UI as the public client/server event
-envelope while keeping Facet's stage model unchanged. AG-UI carries lifecycle,
-message, error, and state events; Facet still owns the safe UI tree, RFC 6902
-patch folding, validation, and rendering.
+| Import | Environment | Contents |
+| --- | --- | --- |
+| `@facet/ag-ui` | Browser or shared code | AG-UI event conversion, `AgUiTransport`, and `createHttpAgUiTransport`. |
+| `@facet/ag-ui/server` | Node server only | `handleAgUiRequest`, `runFacetAsAgUi`, and server types/helpers. |
+
+Only these two entrypoints are public. Do not import package `src/*` modules.
+Install `@facet/runtime` too when your server code constructs a
+`FacetRuntime` directly.
 
 ## Browser Transport
 
@@ -45,9 +62,10 @@ await handleAgUiRequest(req, res, runtime, {
 });
 ```
 
-The server adapter wraps a `FacetRuntime`. It validates AG-UI `RunAgentInput`,
-authorizes or rewrites the visitor, ignores `RunAgentInput.state` as stage
-authority, and streams AG-UI `RUN_STARTED`, text, state, and terminal events.
+The server adapter wraps the host's existing `FacetRuntime`; it does not run a
+parallel Facet stage. It validates AG-UI `RunAgentInput`, authorizes or rewrites
+the visitor, ignores `RunAgentInput.state` as stage authority, and streams AG-UI
+`RUN_STARTED`, text, state, and terminal events.
 Same visitor work stays serialized through the runtime lane; different resolved
 visitors can run concurrently after authorization.
 
@@ -67,3 +85,12 @@ This package does not execute AG-UI tool calls, add backend policy, or replace
 Facet's native persistence schema. External NAT-safe AG-UI dial-out for agents
 is deferred to a future `@facet/ag-ui/agent`; the native `@facet/agent-client`
 reference path remains unchanged.
+
+## Learn next
+
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
+  for choosing a transport and renderer path.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
+  for the patches-only stage contract.
+- [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md)
+  for the official-adapter and hosted-platform boundaries.

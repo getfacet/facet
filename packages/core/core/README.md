@@ -11,6 +11,10 @@ Role: **Core**.
 npm install @facet/core
 ```
 
+Start with the practical
+[Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md).
+Use this package README for Core's public contract and validation entry points.
+
 ## Closed authoring surface
 
 `FacetNode` is a union of exactly eleven Bricks: `box`, `text`, `media`,
@@ -83,7 +87,7 @@ contrast findings as warnings after structural validation succeeds.
 Theme. `validatePatternList(input, theme)` accepts at most 64 entries and hides
 each invalid or Theme-incompatible Pattern whole.
 
-```ts
+```ts check-docs
 import {
   applyPatch,
   escapeJsonPointerToken,
@@ -133,5 +137,11 @@ Also exported are the normalized browser event/view contracts, data-binding
 helpers, `FacetAgent`, and small dependency-free async primitives such as
 `createSerialQueue` and `createSemaphore`.
 
-See the [Facet docs](https://github.com/getfacet/facet) and
-[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
+## Documentation
+
+- [Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md) —
+  current styling concepts, asset authoring, discovery, and failure boundaries.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
+  system invariants and runtime behavior.
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
+  choose and wire an integration path.

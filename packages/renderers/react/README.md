@@ -1,76 +1,73 @@
 # @facet/react
 
-The Facet React renderer. `StageRenderer` turns a declarative Facet tree into a
-sandboxed React tree built from the closed eleven-Brick vocabulary, while
-`useFacet(transport)` keeps that tree live by folding RFC 6902 patches.
+The native React renderer for Facet. `StageRenderer` turns a declarative Facet
+tree into a sandboxed React tree from the closed 11-Brick vocabulary, while
+`useFacet(transport)` folds RFC 6902 patches into the live stage.
 
-Role: **Renderers**.
+Role: **Renderers**. Use this package to display a Facet Document in React. It
+does not provide a transport, runtime, or agent brain.
+
+React `>=18` is a peer dependency. A reference live-browser setup uses:
 
 ```bash
-npm install @facet/react @facet/client @facet/core react
+npm install @facet/react @facet/client @facet/core react react-dom
 ```
+
+If your application already implements `FacetTransport`, `@facet/client` is
+optional. Follow the canonical
+[React wiring guide](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md#embed-the-react-renderer)
+for a complete, typechecked example.
+
+## Live wiring contract
+
+`useFacet` subscribes to one transport and exposes `tree`, `chat`, `send`,
+`record`, and `transition`. A complete host must also:
+
+1. create or memoize the transport once for a stable visitor;
+2. send the initial `visit` exactly once—the hook does not send it automatically,
+   and development Strict Mode may run effects twice;
+3. preserve the optional `fields` argument from `StageRenderer.onAction`;
+4. attach the latest `onViewSnapshot` value to outgoing events; and
+5. pass locally resolved navigate/toggle events from `onRecord` to the
+   transport's best-effort record channel.
+
+The canonical example uses only public exports from `@facet/react`,
+`@facet/client`, and `@facet/core`. Do not copy a smaller render-only snippet and
+mistake it for a complete live integration.
+
+`useFacet(...).transition` identifies the current folded patch revision. Passing
+it to `StageRenderer` enables the root-replacement crossfade; omitting it keeps
+the latest tree visible without that crossfade.
 
 ## Rendering and style resolution
 
 `StageRenderer` is the browser fail-safe boundary. Unknown Brick kinds,
 dangling ids, invalid styles, and unsafe media/link values are skipped or
-reduced without throwing; valid siblings continue rendering. No authored Brick
-can carry raw HTML, JavaScript, or CSS.
+reduced without throwing; valid siblings continue rendering. This fallback does
+not make invalid agent authoring successful—the authoring boundary must reject
+and repair it first.
 
-The renderer accepts one complete operator Theme through its `theme` prop. It
-resolves every Brick in this order:
+The renderer accepts one complete operator Theme through `theme` and resolves
+each Brick in this order:
 
-1. the Theme default for that Brick;
+1. Theme default for that Brick;
 2. the same-Brick Preset named by `style.preset`;
 3. direct values in the Brick's `style`.
 
-Every value is checked against the owning Brick's Core contract before it is
-mapped to CSS. Nested targets remain Brick-owned authoring paths: for example,
-an input may use `style.control`, and a progress Brick may use `style.track`
-and `style.fill`. The renderer owns the DOM those targets affect, while the
-Facet Document owns only the closed target/property names.
+`colorMode` is host/browser view state (`light`, `dark`, or `system`), not Facet
+Document syntax. Invalid Theme input falls back to `DEFAULT_THEME` as a whole.
+Patterns stay agent-side reference data and are never needed by the renderer.
 
-`resolveTheme(theme, colorMode)` validates the singular Theme and selects its
-light or dark paint branch. Invalid Theme input falls back to `DEFAULT_THEME`
-as a whole. The `colorMode` prop is host/client view state (`light`, `dark`, or
-`system`), never Facet Document syntax.
+## View-state ownership
 
-The package also exports `DEFAULT_THEME`, `COLOR`, `ResolvedTheme`, and small
-token-to-CSS helpers such as `boxStyle`, `textStyle`, `mediaStyle`, and
-`fieldStyle`. Full per-Brick target resolution remains an internal renderer
-responsibility so it cannot drift from `StageRenderer`.
+The renderer owns browser-local screen, toggle, table-sort, viewport, and
+effective color-mode state. `onViewSnapshot` publishes a read-only snapshot for
+the host to attach to the next event; it does not write the Facet Document.
+Likewise, local navigate/toggle actions update view state and use `onRecord`
+rather than causing a second document writer.
 
-Patterns are agent-side reference data. They are never needed by the renderer,
-never inserted automatically, and should not be shipped to the browser.
+Read next:
 
-## Example
-
-```tsx
-import { SseTransport, browserVisitorId } from "@facet/client";
-import { DEFAULT_THEME, StageRenderer, useFacet } from "@facet/react";
-
-const transport = new SseTransport("http://localhost:5291", {
-  visitorId: browserVisitorId(),
-});
-
-export function App() {
-  const { tree, send, record, transition } = useFacet(transport);
-  return (
-    <StageRenderer
-      tree={tree}
-      theme={DEFAULT_THEME}
-      colorMode="system"
-      onAction={(action) => send({ kind: "tap", action })}
-      onRecord={record}
-      transition={transition}
-    />
-  );
-}
-```
-
-`useFacet(...).transition` identifies the current folded patch revision. Pass
-it to `StageRenderer` to enable the exact root-replacement crossfade. Omitting
-it still renders the latest tree but disables that crossfade.
-
-See the [Facet docs](https://github.com/getfacet/facet) and
-[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
+- [Design System](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md)
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)

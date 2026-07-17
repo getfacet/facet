@@ -100,11 +100,26 @@ without an explicit bounded scroll region is at least P1.
 
 ## Commands
 
-Run the canonical mechanical gate with `pnpm verify`: typecheck, tests, lint,
-format-check, build, and a source NUL-byte scan. Use the individual commands only
-for scoped diagnosis. Style-system hard cuts also run
-`node scripts/check-style-hard-cut.mjs`: shipping source, docs, package
-READMEs, fixtures, and current changesets must contain no retired symbol, data,
-or functional-tier claim. Historical `specs/**` are archival. Only an intentional
-negative in a test or fixture may use the scanner's exact annotation; annotations
-cannot waive production code or documentation.
+Run the canonical mechanical gate with `pnpm verify`. It runs typecheck, tests,
+lint, format-check, and build, followed by these repository checks in order:
+
+1. `node --test scripts/check-docs.test.mjs`
+2. `node scripts/check-docs.mjs`
+3. `node --test scripts/check-package-layout.test.mjs`
+4. `node scripts/check-package-layout.mjs`
+5. `node scripts/check-source-nuls.mjs`
+
+The first documentation command pins the checker; the second validates
+current-document links and anchors plus explicitly marked concrete
+TypeScript/TSX snippets. Review evidence must show that both commands ran in
+that order and report the full check's PASS/FAIL result. A scoped documentation
+check helps diagnosis but does not replace the full check. The package-layout
+test/check pair and the source NUL scan are likewise part of `pnpm verify`, not
+optional follow-ups.
+
+Style-system hard cuts also run `node scripts/check-style-hard-cut.mjs`:
+shipping source, docs, package READMEs, fixtures, and current changesets must
+contain no retired symbol, data, or functional-tier claim. Historical
+`specs/**` are archival. Only an intentional negative in a test or fixture may
+use the scanner's exact annotation; annotations cannot waive production code or
+documentation.

@@ -1,5 +1,9 @@
 # Architecture
 
+For the first evaluation and integration-path decision, start with the
+[Facet README](../README.md). This document owns Facet's system invariants and
+runtime architecture.
+
 Facet is a TypeScript framework for UI a language model authors as safe data.
 The agent has real freedom to arrange a small native vocabulary, but it never
 gets an open HTML, script, CSS, or arbitrary-style surface.
@@ -59,7 +63,8 @@ browser view-state, so the server remains the sole document writer.
 
 ## Facet Document
 
-A document is a flat tree:
+A document is a flat tree. The conceptual shape below is pseudocode; the
+exported `@facet/core` type is authoritative:
 
 ```ts
 interface FacetTree {
@@ -85,6 +90,10 @@ Theme selection and display mode are deliberately absent from the document.
 They are host configuration and browser view-state, not content.
 
 ## The style system
+
+This section is the architectural authority for style ownership and resolution.
+For the practical authoring and operator workflow, see the
+[Design System guide](DESIGN-SYSTEM.md).
 
 The style system has four concepts:
 
@@ -117,7 +126,8 @@ cannot supply a raw scalar where a token or fixed choice is expected.
 ### One complete Theme
 
 Each agent asset snapshot has exactly one complete `FacetTheme`. Absence selects
-`DEFAULT_THEME`. A Theme contains:
+`DEFAULT_THEME`. A Theme's conceptual shape is below; the exported Core type is
+authoritative:
 
 ```ts
 interface FacetTheme {
@@ -177,7 +187,8 @@ Facet Document, emit a patch, or give the agent a second styling mechanism.
 
 ## Patterns
 
-A Pattern is an ordinary valid Facet tree plus bounded discovery metadata:
+A Pattern is an ordinary valid Facet tree plus bounded discovery metadata. The
+shape below is pseudocode; the exported Core type is authoritative:
 
 ```ts
 interface FacetPattern extends FacetTree {
@@ -233,9 +244,10 @@ first provider handoff. If the complete next request cannot fit the context
 budget, the loop stops with `context_limit` instead of truncating authoritative
 style or Pattern data.
 
-## Strict authoring and fail-soft rendering
+## Validation boundaries
 
-Facet intentionally uses two validation policies.
+Facet intentionally uses three validation policies at different trust
+boundaries. They must not be collapsed into one generic fallback.
 
 ### Agent mutation boundary: strict and atomic
 
@@ -260,6 +272,14 @@ unknown or dangling nodes. Valid Bricks and siblings continue to render.
 
 This asymmetry gives the agent precise correction while keeping a visitor's page
 alive under imperfect external state.
+
+### Custom Theme boundary: reject whole, then fall back whole
+
+`validateTheme` never returns a partial Theme. If any Theme error is present,
+asset loading and rendering use the complete bundled Theme instead. Contrast
+findings may remain warnings when structural validation succeeds. This operator
+fallback is separate from both strict authored-mutation rejection and fail-soft
+handling of stale render input.
 
 ## Renderer layout contract
 
@@ -382,4 +402,5 @@ compatibility bridge for pre-cutover documents or tool calls. Current validators
 asset loaders, file loaders, public exports, and tool schemas reject or ignore
 retired shapes rather than guessing at intent. See
 [Style system migration](STYLE-SYSTEM-MIGRATION.md) for the supported replacement
-workflow.
+workflow. The [Design System guide](DESIGN-SYSTEM.md) describes only the current
+model.

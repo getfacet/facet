@@ -10,9 +10,29 @@ live as the conversation goes. Optional validated Patterns demonstrate
 reusable native-Brick structures without adding node kinds. (Living,
 per-visitor pages an agent "owns"
 are one application.) See [README.md](README.md) and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The current styling contract and
-pre-1.0 hard cut are summarized in
-[docs/STYLE-SYSTEM-MIGRATION.md](docs/STYLE-SYSTEM-MIGRATION.md).
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## Reader map
+
+If you are a coding agent evaluating or integrating Facet in another project,
+start with [README.md](README.md). It is the package chooser and routes each
+supported use case to one detailed guide:
+
+- [Getting Started](docs/GETTING-STARTED.md) — installation and supported
+  adoption paths;
+- [Design System](docs/DESIGN-SYSTEM.md) — current Theme, Preset, Pattern, token,
+  and style authoring;
+- [Agent Integration](docs/AGENT-INTEGRATION.md) — a custom provider-neutral LLM
+  loop;
+- [Architecture](docs/ARCHITECTURE.md) — invariants and runtime behavior;
+- [Agent Tool Result Contract](docs/AGENT-TOOL-RESULT-CONTRACT.md) — exact tool
+  outcomes; and
+- [Package Boundaries](docs/PACKAGE-BOUNDARIES.md) — package ownership and
+  deployment boundaries.
+
+[Style System Migration](docs/STYLE-SYSTEM-MIGRATION.md) is only for pre-1.0
+cutover work. The rest of this file governs contributors and coding agents
+changing the Facet repository itself.
 
 ## Two invariants (do not break)
 
@@ -93,7 +113,7 @@ on `apps/playground`.
 
 ```bash
 pnpm install
-pnpm verify         # typecheck + test + lint + format:check + build + NUL scan
+pnpm verify         # typecheck + test + lint + format + build + docs/layout/NUL checks
 pnpm typecheck      # tsc --noEmit across all packages
 pnpm test           # unit suites + the deterministic journey-verdict policy
 pnpm package:smoke  # build + pack/install every public package in a clean consumer
@@ -114,9 +134,11 @@ for Claude Code).
 ## Definition of Done (before you commit)
 
 - **`/verify`** passes — run `pnpm verify` for typecheck, test, lint,
-  format:check, build, and the source NUL-byte scan. Add/adjust tests for any
-  behavior change; core logic (`validateTree`, `applyPatch`, `Stage`
-  op-generation) must stay covered.
+  format:check, build, documentation link/anchor/selected-snippet checks,
+  package-layout checks, and the source NUL-byte scan. The documentation gate is
+  `node --test scripts/check-docs.test.mjs` followed by
+  `node scripts/check-docs.mjs`. Add/adjust tests for any behavior change; core
+  logic (`validateTree`, `applyPatch`, `Stage` op-generation) must stay covered.
 - **`/code-review`** on a non-trivial change — P0–P2 = 0 (P3 nits non-blocking).
 - Run the gate profile for the flow: **feature development** and **refactoring**
   have different hard gates (below).

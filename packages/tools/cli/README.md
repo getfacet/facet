@@ -9,7 +9,11 @@ these commands, exactly as it edits files. Each is a thin wrapper over
 bridge, which forwards it to the server.
 
 This package is a local bridge command surface. It is not a remote admin CLI,
-hosted API client, or deployment-management tool.
+hosted API client, deployment-management tool, or a replacement for
+`@facet/agent-tools`. Use it only inside a Facet Bridge session, where the
+bridge supplies `FACET_BRIDGE_URL` and `FACET_EVENT`.
+
+Requires Node.js 20 or newer.
 
 ```bash
 npm install @facet/cli
@@ -28,5 +32,12 @@ facet say <text…>                       # send a chat message
 `FACET_BRIDGE_URL` (where to POST) and `FACET_EVENT` (which visitor event the
 command belongs to) from the environment the bridge provides.
 
-See the [Facet docs](https://github.com/getfacet/facet) and
-[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
+## Related guides
+
+- [Facet overview and package chooser](https://github.com/getfacet/facet/blob/main/README.md)
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
+  choose the external coding-agent path.
+- [`@facet/bridge`](https://github.com/getfacet/facet/blob/main/packages/tools/bridge/README.md) —
+  start the session that provides the CLI environment.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
+  understand the patch and agent/runtime boundaries.

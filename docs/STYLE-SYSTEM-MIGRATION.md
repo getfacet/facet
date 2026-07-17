@@ -1,22 +1,29 @@
 # Style System Migration
 
-Facet's current style system is a pre-1.0 hard cut. It does not translate old
-documents, asset registries, style selectors, or discovery tool inputs. Migrate
-the source data and agent calls before starting on the new version.
+For the current framework overview and adoption paths, start with the
+[Facet README](../README.md). This document is only for the pre-1.0 style-system
+cutover.
 
-## What is supported now
+It covers moving pre-cutover assets, Facet Documents, and agent calls to the
+current pre-1.0 Theme/Preset/Pattern contract. For current concepts
+and authoring examples, read the [Design System guide](DESIGN-SYSTEM.md). For
+invariants and validation behavior, read [Architecture](ARCHITECTURE.md).
 
-Each agent has:
+There is no dual-read period, alias table, automatic rewrite, or runtime
+compatibility bridge. Convert every producer and asset source before deploying
+the current version.
 
-- one complete Theme;
-- zero or more exact validated Patterns;
+## Cutover target
+
+Each agent must resolve to:
+
+- one complete Theme, with `DEFAULT_THEME` used when no custom Theme is
+  supplied;
+- one exact validated Pattern list, with `DEFAULT_PATTERNS` used when the list
+  is absent and no Patterns used when it is explicitly empty; and
 - an optional initial Facet tree.
 
-Each Facet Document contains native Bricks and their optional `style` objects.
-It does not choose or mutate the Theme. The host supplies the Theme to the
-renderer and owns `colorMode`.
-
-The supported asset files are:
+The supported file-backed asset names are:
 
 ```text
 theme.json
@@ -24,178 +31,105 @@ patterns.json
 initial.tree.json   # optional
 ```
 
-Other pre-cutover asset files and fields are not aliases for these files. File
-and runtime loaders report bounded issues and continue with the current defaults
-where possible.
+A Facet Document contains only native Bricks and their optional closed `style`
+objects. It never selects a Theme or display mode. The host supplies the Theme,
+and the browser owns `colorMode`.
 
-## Current terminology
+## Migrate Theme data
 
-Use these terms consistently in code, prompts, and documentation:
+1. Start from `DEFAULT_THEME` or another current complete `FacetTheme`.
+2. Define every Core token name in its required token group, including both
+   `tokens.paint.light` and `tokens.paint.dark`.
+3. Provide one valid default style for all 11 Bricks.
+4. Move each reusable style bundle to `presets[brick][name]`. Give it
+   `description`, `useWhen`, optional `avoidWhen`, and one style definition for
+   that same Brick.
+5. Run `validateTheme` at the untrusted asset boundary. Treat a missing `theme`
+   result as rejection of the complete custom Theme.
 
-| Example | Name |
-| --- | --- |
-| `fontSize`, `gap`, `background` | style property |
-| `label`, `control`, `track`, `fill` | Brick-owned style target |
-| `md`, `lg`, `success` | token name |
-| `row`, `column`, `auto`, `full` | fixed choice |
-| `16px`, `#16a34a`, a font stack | concrete Theme value |
-| `space.md = 16px` | Theme token definition |
-| `panel`, `heading` | same-Brick Preset name |
-| a named style bundle with guidance | Preset definition |
-| a validated worked Facet tree with guidance | Pattern |
+Do not migrate concrete CSS values into Facet Documents. They remain inside
+Theme token definitions. Do not partially merge a malformed custom Theme;
+asset loading and rendering fall back to the complete bundled Theme.
 
-Targets with the same spelling on different Bricks are still separate. The
-owning Brick always determines which properties, states, and choices are legal.
+## Migrate Facet Documents
 
-## Theme migration
+For every Brick with style data:
 
-A current Theme is complete rather than a partial overlay:
+1. Find its current fields, root properties, nested targets, states, and value
+   domains in `BRICK_CONTRACT` or with `get_brick_spec`.
+2. Replace the style with one of the [four current authoring
+   forms](DESIGN-SYSTEM.md#the-four-authoring-forms): Theme default only,
+   same-Brick Preset, direct style, or Preset plus a direct adjustment.
+3. Use only token names or fixed choices allowed at that exact Brick-owned path.
+   For an unfamiliar direct value, use `get_style_choices` rather than guessing.
+4. Remove any document field that selects a design system or light/dark mode.
+   Pass one Theme and `colorMode` through host/renderer configuration instead.
 
-```ts
-interface FacetTheme {
-  name: string;
-  description?: string;
-  tokens: FacetThemeTokens;
-  defaults: BrickStyleDefinitionMap;
-  presets?: FacetPresets;
-}
-```
-
-To migrate Theme data:
-
-1. Start from `DEFAULT_THEME` or another current complete Theme.
-2. Define every required token in every token group.
-3. Define both `tokens.paint.light` and `tokens.paint.dark`.
-4. Provide one valid default style for all 11 Bricks.
-5. Move reusable same-Brick style bundles into `presets[brick][name]` and add
-   `description`, `useWhen`, optional `avoidWhen`, and `style`.
-6. Run `validateTheme`; treat a missing `theme` result as rejection of the whole
-   custom Theme.
-
-Do not put concrete CSS values in a Facet Document. Documents use token names;
-the Theme owns their CSS meanings.
-
-## Document migration
-
-Every Brick may omit `style` or use one of these forms:
-
-```json
-{ "id": "copy", "type": "text", "value": "Ready" }
-```
-
-```json
-{
-  "id": "copy",
-  "type": "text",
-  "value": "Ready",
-  "style": { "preset": "heading" }
-}
-```
-
-```json
-{
-  "id": "copy",
-  "type": "text",
-  "value": "Ready",
-  "style": { "color": "success", "fontWeight": "semibold" }
-}
-```
-
-```json
-{
-  "id": "copy",
-  "type": "text",
-  "value": "Ready",
-  "style": { "preset": "heading", "color": "success" }
-}
-```
-
-Resolution is always:
+Resolution after conversion is always:
 
 ```text
 Theme default → same-Brick Preset → direct style
 ```
 
-Migrate each old style object by selecting the owning Brick's current property
-and target names from `BRICK_CONTRACT`. Do not rename keys by guesswork. A
-property may accept token names, fixed choices, or a smaller state-specific
-subset; use the discovery tools described below.
+The current flow-only layout contract has no arbitrary positioning or z-index.
+Convert any overlay presentation to the bounded `box` backdrop and modal/drawer
+fields only when that behavior is actually needed. There is no dedicated
+overlay Brick.
 
-Remove any document field that tries to select a design system or switch display
-mode. Pass the one Theme as host configuration. Pass `colorMode` to
-`StageRenderer`; use `system` when browser preference should lead.
+## Migrate Patterns
 
-## Pattern migration
+Convert each reusable worked example into one complete valid `FacetPattern`:
 
-A current Pattern is one complete valid Facet tree plus discovery metadata:
+- include `name`, `description`, `useWhen`, and optional `avoidWhen`;
+- include an ordinary Facet tree (`root`, `nodes`, and optional `screens`,
+  `entry`, and `data`);
+- use only native Bricks and current same-Brick Preset/direct style syntax; and
+- validate it against the effective Theme before exposing it.
 
-```ts
-interface FacetPattern extends FacetTree {
-  name: string;
-  description: string;
-  useWhen: string;
-  avoidWhen?: string;
-}
-```
+Patterns have no parameters and are never inserted automatically. After
+`get_pattern`, the agent adapts the example and re-authors ordinary Bricks
+through the normal strict mutation tools.
 
-Patterns have no parameters and are never inserted automatically. Convert a
-worked reference into ordinary native Bricks, validate the complete tree against
-the effective Theme, and place it in `patterns.json`. The agent reads it for
-guidance and re-authors adapted content through normal mutation tools.
+## Migrate agent calls
 
-## Agent tool migration
+Replace any eager all-design-system prompt or retired reference operation with
+the current progressive sequence:
 
-Use progressive discovery instead of placing the whole design system in every
-mutation schema:
-
-1. Read Pattern names and guidance; call `get_pattern({ name })` when useful.
-2. Read Preset names and guidance; call `get_preset({ brick, name })` when useful.
-3. For one unfamiliar Brick, call `get_brick_spec({ type })`.
-4. For one unfamiliar direct value, call
-   `get_style_choices({ brick, target, property })`.
-5. Author the actual change with `render_page`, `set_node`, `append_node`, or
+1. inspect Pattern metadata and call `get_pattern({ name })` when a worked
+   structure fits;
+2. inspect Preset metadata and call `get_preset({ brick, name })` when a visual
+   role fits;
+3. call `get_brick_spec({ type })` for one unfamiliar Brick;
+4. call `get_style_choices({ brick, target, property })` for one unfamiliar
+   direct value; and
+5. author the change with `render_page`, `set_node`, `append_node`, or
    `remove_node`.
 
-`get_brick_spec` accepts one `type`, not a batch. `get_style_choices` uses the
-exact Brick-owned path returned by the Brick specification. Asset reads return
-`no_stage_change`; they do not satisfy a request to change the page.
+Asset reads return `no_stage_change`. They do not satisfy a request to change
+the page. Mutation success requires a visible applied outcome.
 
-Pattern and Preset styles from the validated snapshot are already known-valid.
-Use the choice lookup only when the agent directly chooses an unfamiliar value.
+Current authored mutations are strict and atomic. If a call contains an invalid
+field, target, property, state, Preset, token, fixed choice, reference, or bound,
+the complete call is rejected with zero patches. Return the structured issues
+to the agent, repair the call, and retry. Do not reinterpret renderer fail-soft
+behavior as authoring success.
 
-## Error handling
+## Deploy the cutover
 
-Current authoring is strict and atomic. If a mutation contains an invalid field,
-target, property, state, Preset name, token name, fixed choice, or reference:
+Deploy converted assets and converted agent calls together. Before switching
+traffic, verify:
 
-- the whole mutation is rejected;
-- no patch is emitted;
-- the tool result contains bounded structured errors and a retry action.
-
-Repair the complete call and retry. Do not rely on the renderer to make an
-invalid call acceptable.
-
-The renderer remains fail-soft for stale or bypassed external state. It ignores
-invalid style fragments and skips unknown or dangling nodes so valid siblings
-can remain visible. This is a visitor-safety fallback, not a compatibility
-layer.
-
-## Cutover checklist
-
-- [ ] Asset storage exposes only one complete Theme, exact Patterns, and an
-      optional initial tree.
-- [ ] Theme validation succeeds with complete token maps, defaults, and valid
-      same-Brick Presets.
-- [ ] Documents contain no design-system selector or client display-mode field.
-- [ ] Every Brick style key, target, state, and value comes from the current Core
-      contract.
-- [ ] Agent calls use the current single-Brick and local-choice discovery inputs.
-- [ ] Rejected authoring results are repaired and retried; success is based on a
+- [ ] Asset storage exposes only one complete Theme, the exact Pattern list,
+      and an optional initial tree.
+- [ ] `validateTheme` succeeds and both paint modes are complete.
+- [ ] Every Pattern validates against the effective Theme.
+- [ ] Documents contain no Theme selector, display-mode field, raw CSS, or
+      style key outside the current Brick contract.
+- [ ] Discovery calls use one Brick or one local style path at a time.
+- [ ] Rejected mutation results are repaired and retried; success is based on a
       visible applied mutation.
 - [ ] `pnpm verify`, `pnpm package:smoke`, and
       `node scripts/check-style-hard-cut.mjs` pass.
 
-There is no dual-read period, alias table, automatic rewrite, or runtime fallback
-to a pre-cutover authoring model. Keep any one-time data conversion outside
-Facet, validate its output against the current public APIs, and deploy the
-converted assets and agent calls together.
+Keep one-time conversion code outside Facet. Validate its output through the
+current public APIs, then remove the converter after the hard cut.

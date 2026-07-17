@@ -1,6 +1,6 @@
 ---
 name: verify
-description: Run Facet's mechanical quality gate — typecheck, test, lint, format, build — and report PASS/FAIL. Use before committing, and after any fix.
+description: Run Facet's mechanical quality gate — typecheck, test, lint, format, build, documentation, package layout, and source checks — and report PASS/FAIL. Use before committing, and after any fix.
 ---
 
 # /verify
@@ -18,6 +18,8 @@ pnpm test
 pnpm lint
 pnpm format:check
 pnpm build
+node --test scripts/check-docs.test.mjs
+node scripts/check-docs.mjs
 node --test scripts/check-package-layout.test.mjs
 node scripts/check-package-layout.mjs
 node scripts/check-source-nuls.mjs
@@ -32,6 +34,9 @@ node scripts/check-source-nuls.mjs
 - `format:check` — prettier.
 - `build` — tsup builds every publishable package to `dist` (catches
   publish-time breakage the dev graph hides).
+- **documentation** — `scripts/check-docs.test.mjs` pins the checker itself,
+  then `scripts/check-docs.mjs` validates current-document links, anchors, and
+  explicitly marked concrete TypeScript/TSX snippets. Run them in that order.
 - **package layout** — the Node regression suite plus
   `scripts/check-package-layout.mjs` pin the exact 15
   package name-to-path map, workspace uniqueness, repository directories, role

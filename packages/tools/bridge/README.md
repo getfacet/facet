@@ -9,12 +9,19 @@ runs your local agent. The spawn runner exposes the `facet` command
 in-process `render/append/set/remove/say` tools.
 
 This is local/operator tooling. It is not a hosted worker fleet, queue, billing
-boundary, or tenant isolation layer.
+boundary, tenant isolation layer, or the provider-neutral LLM tool loop from
+`@facet/agent-tools`.
+
+Use Bridge when a coding agent running on your machine should own a link exposed
+by a running Facet server. It requires Node.js 20 or newer, that server's URL,
+and a compatible local agent CLI. For an in-process application agent or a
+direct provider integration, choose another path in
+[Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md).
 
 ```bash
 # it's a bin package — install globally or run with npx
 npm install -g @facet/bridge   # then: facet-bridge
-npx facet-bridge               # or run it one-off
+npx --package=@facet/bridge -- facet-bridge  # or run it one-off
 
 # with a Facet server running (see @facet/server)
 FACET_SERVER=http://localhost:5291 FACET_AGENT_ID=live facet-bridge
@@ -77,3 +84,15 @@ to the agent's assets and never travels as a document patch.
 
 `createBridge({ runner, serverUrl, agentId, … })` is also exported for programmatic
 use, alongside `createPersistentDriver(...)`.
+
+## Related guides
+
+- [Facet overview and package chooser](https://github.com/getfacet/facet/blob/main/README.md)
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
+  compare external, in-process, and custom-LLM paths.
+- [`@facet/cli`](https://github.com/getfacet/facet/blob/main/packages/tools/cli/README.md) —
+  the command surface exposed to a spawned local agent.
+- [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md) —
+  build a provider-neutral LLM tool loop instead of a local CLI bridge.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
+  understand stage ownership and transport boundaries.

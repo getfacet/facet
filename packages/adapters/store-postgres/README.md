@@ -7,11 +7,26 @@ Role: **Adapters**. This optional Postgres adapter stores Facet session and agen
 asset data; it is not a hosted-platform schema for tenants, projects, auth,
 billing, metering, audit, or abuse controls.
 
+## When to use it
+
+Use this package when Facet's stage, conversation, assets, or rolling summaries
+must survive process restarts and Postgres is the chosen backend. Use only the
+stores your host needs; each implements a seam from `@facet/runtime`.
+
+Do not use these tables as a tenant, project, user, credential, billing,
+metering, moderation, or audit model. A hosted service must place its own schema
+and authorization boundary around Facet persistence.
+
+## Install
+
 ```bash
-npm install @facet/store-postgres @facet/server @facet/runtime @facet/core pg
+npm install @facet/store-postgres @facet/server @facet/runtime pg
 ```
 
-`pg` is a peer dependency. Bring your own `Pool`.
+`pg >= 8` is a peer dependency. Bring your own `Pool`. The command includes
+`@facet/server` and `@facet/runtime` because the examples below import them
+directly. A host using different transport or asset wiring may omit the
+corresponding collaborator.
 
 ## Stage and conversation storage
 
@@ -127,5 +142,12 @@ updated_at)`. `PostgresSummaryStore` treats `payload` as opaque JSON and uses a
 SQL monotonic guard so only a strictly newer `covered_through` value wins. Pair
 it with an equally durable `Sink`.
 
-See the [Facet docs](https://github.com/getfacet/facet) and
-[ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).
+## Learn next
+
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
+  for complete package combinations.
+- [Design System](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md)
+  for Theme and Pattern asset ownership.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
+  and [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md)
+  for storage semantics and the persistence-versus-platform boundary.
