@@ -34,6 +34,7 @@ import type {
 } from "@facet/core";
 import { DEFAULT_THEME } from "@facet/assets";
 import { rootContainmentStyle, scrollContainmentStyle, stickyStyle } from "./layout-contract.js";
+import { projectSurface, projectTypography } from "./style-projection.js";
 
 export { DEFAULT_THEME };
 
@@ -144,17 +145,9 @@ export function boxStyle(
   if (style.alignItems !== undefined) css.alignItems = alignValue(style.alignItems);
   if (style.justifyContent !== undefined) css.justifyContent = justifyValue(style.justifyContent);
   if (!isGrid && style.wrap === true) css.flexWrap = "wrap";
-  if (style.background !== undefined) css.background = theme.color[style.background];
-  if (style.color !== undefined) css.color = theme.color[style.color];
+  Object.assign(css, projectSurface(style, theme));
   if (style.backgroundGradient !== undefined)
     css.backgroundImage = theme.gradient[style.backgroundGradient];
-  if (style.borderColor !== undefined) css.borderColor = theme.color[style.borderColor];
-  if (style.borderWidth !== undefined) {
-    css.borderStyle = "solid";
-    css.borderWidth = theme.borderWidth[style.borderWidth];
-  }
-  if (style.borderRadius !== undefined) css.borderRadius = theme.radius[style.borderRadius];
-  if (style.shadow !== undefined) css.boxShadow = theme.shadow[style.shadow];
   if (style.grow === true) css.flexGrow = 1;
   if (style.width === "full") css.width = "100%";
   if (style.minHeight !== undefined) css.minHeight = theme.minHeight[style.minHeight];
@@ -173,19 +166,12 @@ export function textStyle(
   style: TextStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
-  const css: CSSProperties = { margin: 0, wordBreak: "break-word" };
-  css.fontFamily = theme.fontFamily[style.fontFamily ?? "sans"];
-  if (style.fontSize !== undefined) css.fontSize = theme.fontSize[style.fontSize];
-  if (style.fontWeight !== undefined) css.fontWeight = theme.fontWeight[style.fontWeight];
-  if (style.fontStyle !== undefined) css.fontStyle = style.fontStyle;
-  if (style.color !== undefined) css.color = theme.color[style.color];
-  if (style.letterSpacing !== undefined)
-    css.letterSpacing = theme.letterSpacing[style.letterSpacing];
-  if (style.lineHeight !== undefined) css.lineHeight = theme.lineHeight[style.lineHeight];
-  if (style.highlight !== undefined) css.backgroundImage = theme.highlight[style.highlight];
-  if (style.textAlign !== undefined)
-    css.textAlign =
-      style.textAlign === "start" ? "left" : style.textAlign === "end" ? "right" : "center";
+  const css: CSSProperties = {
+    margin: 0,
+    wordBreak: "break-word",
+    ...projectTypography(style, theme),
+  };
+  if (css.fontFamily === undefined) css.fontFamily = theme.fontFamily.sans;
   return rootContainmentStyle(css);
 }
 

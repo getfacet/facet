@@ -14,11 +14,13 @@ import {
   type StyleValueDomain,
 } from "./style-value-contract.js";
 import { isControlChar, isForbiddenKey, isPlainObject, printableKey } from "./issues.js";
-import { sanitizeNode } from "./primitive-node-validation.js";
+import { escapeJsonPointerToken } from "./patch.js";
+import { sanitizeNode } from "./brick-node-validation.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import type { FacetTheme } from "./theme-types.js";
 import type { FacetNode } from "./nodes.js";
 import type { FacetTree } from "./tree.js";
+import { TREE_FIELDS } from "./tree-fields.js";
 import { validateTree } from "./tree-validation.js";
 
 /** Maximum repair entries returned to an agent for one rejected authoring call. */
@@ -26,8 +28,6 @@ export const MAX_AUTHOR_ISSUES = 16;
 
 const MAX_AUTHOR_MESSAGE_CHARS = 240;
 const MAX_COMPARE_DEPTH = 64;
-const TREE_FIELDS = ["root", "nodes", "screens", "entry", "data"] as const;
-
 export interface AuthorIssue {
   /** RFC-6901-like path into the rejected document. */
   readonly path: string;
@@ -84,7 +84,7 @@ function safeMessage(value: string): string {
 }
 
 function pointerToken(value: string): string {
-  return printableKey(value).replace(/~/g, "~0").replace(/\//g, "~1");
+  return escapeJsonPointerToken(printableKey(value));
 }
 
 function childPath(path: string, key: string): string {

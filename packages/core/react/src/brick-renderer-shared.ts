@@ -5,7 +5,6 @@ import {
   MAX_FIELD_VALUE_CHARS,
   MAX_TABLE_CELL_CHARS,
 } from "@facet/core";
-import type { ResolvedTheme } from "./theme.js";
 import { rootContainmentStyle } from "./layout-contract.js";
 
 export const MAX_INTRINSIC_ITEMS = 32;
@@ -122,24 +121,4 @@ export function intrinsicBoxStyle(style: CSSProperties | undefined): CSSProperti
   delete css.maxHeight;
   delete css.minHeight;
   return rootContainmentStyle(css);
-}
-
-export function fieldChoiceControlStyle(theme: ResolvedTheme): CSSProperties {
-  return {
-    accentColor: theme.color.accent,
-  };
-}
-
-export function fieldChoiceOptionStyle(theme: ResolvedTheme): CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: theme.space.sm,
-    color: theme.color.foreground,
-    fontFamily: theme.fontFamily.sans,
-    fontSize: theme.fontSize.md,
-    minWidth: 0,
-    maxWidth: "100%",
-    overflowWrap: "anywhere",
-  };
 }

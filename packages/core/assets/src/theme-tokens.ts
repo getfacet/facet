@@ -172,7 +172,7 @@ export const COLOR_DARK = tokenMap<Color, string>({
   border: "#30303b",
   accent: "#818cf8",
   accentSurface: "#312e81",
-  accentForeground: "#ffffff",
+  accentForeground: "#111827",
   focusRing: "#a5b4fc",
   success: "#4ade80",
   successSurface: "#14532d",

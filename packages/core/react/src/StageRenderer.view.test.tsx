@@ -448,7 +448,7 @@ describe("active look", () => {
   // An active Preset folds at render for BOTH a box and a text. The `hl`
   // Presets live only in `style.active.preset`, so they apply only while the
   // predicate holds.
-  const HIGHLIGHT_VARIANT_THEME: FacetTheme = {
+  const HIGHLIGHT_ACTIVE_THEME: FacetTheme = {
     ...DEFAULT_THEME,
     name: "hl-theme",
     presets: {
@@ -517,12 +517,12 @@ describe("active look", () => {
     render(
       <StageRenderer
         onAction={onAction}
-        theme={HIGHLIGHT_VARIANT_THEME}
+        theme={HIGHLIGHT_ACTIVE_THEME}
         tree={activePresetTree("about")}
       />,
     );
 
-    // On `home`: predicate false → neither node resolves its `hl` recipe (no base
+    // On `home`: predicate false → neither node resolves its `hl` Preset (no base
     // Preset, so the base look is the plain default).
     expect(borderRadiusOf(boxOfMarker("AvBox"))).toBe("0px");
     expect(fontWeightOf(screen.getByText("AvText"))).toBe("400");
@@ -533,7 +533,7 @@ describe("active look", () => {
     // (box → radius.lg "16px"; text → weight bold "700").
     expect(borderRadiusOf(boxOfMarker("AvBox"))).toBe("16px");
     expect(fontWeightOf(screen.getByText("AvText"))).toBe("700");
-    // Read-only: resolving the active variant fires no agent-routed action.
+    // Read-only: resolving the active style fires no agent-routed action.
     expect(onAction).not.toHaveBeenCalled();
   });
 });

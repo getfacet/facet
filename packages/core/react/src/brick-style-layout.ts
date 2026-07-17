@@ -8,6 +8,7 @@ import {
   type InteractionState,
 } from "./interaction-style.js";
 import { rootContainmentStyle, scrollContainmentStyle } from "./layout-contract.js";
+import { projectSurface, projectTypography } from "./style-projection.js";
 import { boxStyle, mediaStyle, textStyle, type ResolvedTheme } from "./theme.js";
 
 type BoxDefinition = BrickStyleDefinition<"box">;
@@ -88,60 +89,6 @@ function withInteractionStates(
   return className === undefined ? { style } : { style, className };
 }
 
-function typographyStyle(
-  style: Partial<
-    Pick<
-      TextDefinition,
-      | "fontFamily"
-      | "fontSize"
-      | "fontWeight"
-      | "fontStyle"
-      | "color"
-      | "textAlign"
-      | "letterSpacing"
-      | "lineHeight"
-    >
-  >,
-  theme: ResolvedTheme,
-): CSSProperties {
-  const css: CSSProperties = {};
-  if (style.fontFamily !== undefined) css.fontFamily = theme.fontFamily[style.fontFamily];
-  if (style.fontSize !== undefined) css.fontSize = theme.fontSize[style.fontSize];
-  if (style.fontWeight !== undefined) css.fontWeight = theme.fontWeight[style.fontWeight];
-  if (style.fontStyle !== undefined) css.fontStyle = style.fontStyle;
-  if (style.color !== undefined) css.color = theme.color[style.color];
-  if (style.textAlign !== undefined) {
-    css.textAlign =
-      style.textAlign === "start" ? "left" : style.textAlign === "end" ? "right" : "center";
-  }
-  if (style.letterSpacing !== undefined)
-    css.letterSpacing = theme.letterSpacing[style.letterSpacing];
-  if (style.lineHeight !== undefined) css.lineHeight = theme.lineHeight[style.lineHeight];
-  return css;
-}
-
-function surfaceStyle(
-  style: Partial<
-    Pick<
-      TableDefinition,
-      "background" | "color" | "borderColor" | "borderWidth" | "borderRadius" | "shadow"
-    >
-  >,
-  theme: ResolvedTheme,
-): CSSProperties {
-  const css: CSSProperties = {};
-  if (style.background !== undefined) css.background = theme.color[style.background];
-  if (style.color !== undefined) css.color = theme.color[style.color];
-  if (style.borderColor !== undefined) css.borderColor = theme.color[style.borderColor];
-  if (style.borderWidth !== undefined) {
-    css.borderStyle = "solid";
-    css.borderWidth = theme.borderWidth[style.borderWidth];
-  }
-  if (style.borderRadius !== undefined) css.borderRadius = theme.radius[style.borderRadius];
-  if (style.shadow !== undefined) css.boxShadow = theme.shadow[style.shadow];
-  return css;
-}
-
 export function layoutBoxTargetStyle(
   style: BoxDefinition,
   theme: ResolvedTheme,
@@ -168,7 +115,7 @@ export function tableRootTargetStyle(style: TableDefinition, theme: ResolvedThem
   const width: CSSProperties = style.width === "full" ? { width: "100%" } : {};
   return rootContainmentStyle({
     ...width,
-    ...surfaceStyle(style, theme),
+    ...projectSurface(style, theme),
     ...scrollContainmentStyle("x"),
   });
 }
@@ -178,7 +125,7 @@ export function tableCaptionTargetStyle(
   theme: ResolvedTheme,
 ): CSSProperties {
   const css: CSSProperties = {
-    ...typographyStyle(style, theme),
+    ...projectTypography(style, theme),
   };
   if (style.padding !== undefined) css.padding = theme.space[style.padding];
   if (style.background !== undefined) css.background = theme.color[style.background];
@@ -187,8 +134,8 @@ export function tableCaptionTargetStyle(
 
 function tableHeaderBaseStyle(style: TableHeaderDefinition, theme: ResolvedTheme): CSSProperties {
   const css: CSSProperties = {
-    ...typographyStyle(style, theme),
-    ...surfaceStyle(style, theme),
+    ...projectTypography(style, theme),
+    ...projectSurface(style, theme),
   };
   if (style.padding !== undefined) css.padding = theme.space[style.padding];
   return rootContainmentStyle(css);
@@ -202,14 +149,14 @@ export function tableHeaderTargetStyle(
   const sortedStyle = sorted && style.sorted !== undefined ? style.sorted : {};
   const base = {
     ...tableHeaderBaseStyle(style, theme),
-    ...typographyStyle(sortedStyle, theme),
-    ...surfaceStyle(sortedStyle, theme),
+    ...projectTypography(sortedStyle, theme),
+    ...projectSurface(sortedStyle, theme),
   };
   return withInteractionStates(base, style, theme);
 }
 
 function tableRowDirectStyle(style: TableRowDefinition, theme: ResolvedTheme): CSSProperties {
-  return rootContainmentStyle(surfaceStyle(style, theme));
+  return rootContainmentStyle(projectSurface(style, theme));
 }
 
 export function tableRowTargetStyle(
@@ -231,8 +178,8 @@ export function tableCellTargetStyle(
   theme: ResolvedTheme,
 ): CSSProperties {
   const css: CSSProperties = {
-    ...typographyStyle(style, theme),
-    ...surfaceStyle(style, theme),
+    ...projectTypography(style, theme),
+    ...projectSurface(style, theme),
   };
   if (style.padding !== undefined) css.padding = theme.space[style.padding];
   return rootContainmentStyle(css);

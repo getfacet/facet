@@ -14,9 +14,9 @@ import {
  * canonical brick type maps to a thin struct of the existing per-type logic —
  * not a new framework.
  *
- * The registry is typed as an exhaustive map over `FacetNode["type"]` (the core
- * node-type union, identical to core's `CoreNodeType`), so a node type added to
- * the vocabulary without an entry is a COMPILE error. This preserves — and
+ * The registry is typed as an exhaustive map over Core's canonical
+ * `FacetNode["type"]` union, so a Brick added to the vocabulary without an entry
+ * is a COMPILE error. This preserves — and
  * moves to the type level — the completeness guard that used to live as the
  * `const exhaustive: never = facetNode` line at the end of `describeNode`.
  */

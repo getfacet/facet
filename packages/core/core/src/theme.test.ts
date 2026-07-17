@@ -22,7 +22,7 @@ import {
   SHADOWS,
   SPACES,
 } from "./tokens.js";
-import { validateTheme } from "./theme-validation.js";
+import { validateTheme } from "./index.js";
 
 const map = <K extends string, V>(keys: readonly K[], value: (key: K) => V): Record<K, V> =>
   Object.fromEntries(keys.map((key) => [key, value(key)])) as Record<K, V>;
@@ -96,6 +96,41 @@ function expectInvalid(theme: unknown): void {
 }
 
 describe("validateTheme", () => {
+  it("keeps specific structural issues when an incomplete Theme cannot be contrast-checked", () => {
+    const result = validateTheme({ name: "incomplete", tokens: {}, defaults: {} });
+
+    expect(result.theme).toBeUndefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          message: expect.stringMatching(/tokens\.paint.*missing or not an object/i),
+        }),
+      ]),
+    );
+    expect(result.issues).not.toContainEqual(
+      expect.objectContaining({ message: "theme document threw during validation" }),
+    );
+  });
+
+  it("returns light and dark contrast warnings through the public validator", () => {
+    const result = validateTheme(completeTheme());
+
+    expect(result.theme).toBeDefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "warning",
+          message: expect.stringMatching(/paint\.light.*foreground.*background.*4\.5/i),
+        }),
+        expect.objectContaining({
+          severity: "warning",
+          message: expect.stringMatching(/paint\.dark.*foreground.*background.*4\.5/i),
+        }),
+      ]),
+    );
+  });
+
   it("accepts only a complete Theme with bounded Presets", () => {
     const valid = completeTheme();
     valid.presets = {

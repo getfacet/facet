@@ -73,6 +73,7 @@ describe("core barrel", () => {
       "./spec.js",
     ]);
     const names = rootExportNames();
+    expect(names.has("TREE_FIELDS")).toBe(false);
     for (const name of [
       "STYLE_VALUE_CONTRACT",
       "TOKEN_STYLE_VALUE_CONTRACT",
@@ -101,6 +102,7 @@ describe("core barrel", () => {
       "MAX_PATTERNS",
       "validatePattern",
       "validatePatternList",
+      "escapeJsonPointerToken",
     ]) {
       expect(names.has(name), `missing root export ${name}`).toBe(true);
     }

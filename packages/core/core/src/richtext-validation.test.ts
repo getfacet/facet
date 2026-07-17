@@ -7,7 +7,7 @@ import {
   MAX_RUNS_PER_BLOCK,
   MAX_MARKS_PER_RUN,
   MAX_LIST_DEPTH,
-} from "./primitive-node-validation.js";
+} from "./brick-node-validation.js";
 import { MAX_NODE_BODY_CHARS } from "./brick-validation-shared.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import type { Mark, RichTextBlock, RichTextNode } from "./nodes.js";

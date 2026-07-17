@@ -6,7 +6,7 @@ import { STAGE_SPEC } from "./spec.js";
 const ISSUE_SOURCE = readFileSync(new URL("./issues.ts", import.meta.url), "utf8");
 
 describe("STAGE_SPEC", () => {
-  it("teaches Pattern and Preset first, then two-step Brick style discovery", () => {
+  it("teaches Pattern and Preset first, then Brick discovery without runner-specific tools", () => {
     const patternIndex = STAGE_SPEC.indexOf("Pattern index");
     const brickIndex = STAGE_SPEC.indexOf("Brick index");
     const presetIndex = STAGE_SPEC.indexOf("Preset index");
@@ -15,12 +15,8 @@ describe("STAGE_SPEC", () => {
     expect(presetIndex).toBeGreaterThan(patternIndex);
     expect(brickIndex).toBeGreaterThan(presetIndex);
     expect(STAGE_SPEC).toMatch(/read one relevant Pattern[^.]*only when useful/i);
-    expect(STAGE_SPEC).toMatch(
-      /get_brick_spec[^.]*one unfamiliar Brick[^.]*fields[^.]*style paths/i,
-    );
-    expect(STAGE_SPEC).toMatch(
-      /get_style_choices[^.]*directly choosing[^.]*Brick[^.]*path[^.]*allowed names[^.]*meanings/i,
-    );
+    expect(STAGE_SPEC).toMatch(/Brick index[^.]*eleven native Bricks/i);
+    expect(STAGE_SPEC).toMatch(/exact fields[^.]*Brick specification/i);
     expect(STAGE_SPEC).toMatch(/inspect[^.]*Preset details/i);
     expect(STAGE_SPEC).toMatch(/Pattern[^.]*read-only design guidance/i);
     expect(STAGE_SPEC).toMatch(/re-author[^.]*ordinary native Bricks/i);
@@ -49,7 +45,7 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/style property/i);
     expect(STAGE_SPEC).toMatch(/token name/i);
     expect(STAGE_SPEC).toMatch(/fixed choice/i);
-    expect(STAGE_SPEC).toMatch(/get_style_choices[^.]*property-local allowed choices/i);
+    expect(STAGE_SPEC).toMatch(/property-local allowed choices/i);
     expect(STAGE_SPEC).toMatch(/never author raw CSS/i);
     expect(STAGE_SPEC).toMatch(/Theme[^.]*concrete CSS values/i);
     expect(STAGE_SPEC).toMatch(/light and dark/i);
@@ -58,44 +54,29 @@ describe("STAGE_SPEC", () => {
   });
 
   it("keeps author rejection separate from the fail-safe renderer", () => {
-    expect(STAGE_SPEC).toMatch(/invalid authoring call[^.]*whole call/i);
-    expect(STAGE_SPEC).toMatch(/structured repair errors/i);
+    expect(STAGE_SPEC).toMatch(/invalid document change[^.]*rejected whole/i);
+    expect(STAGE_SPEC).toMatch(/structured repair issues/i);
     expect(STAGE_SPEC).toMatch(/no patch/i);
     expect(STAGE_SPEC).toMatch(/retry/i);
     expect(STAGE_SPEC).toMatch(/bypassed[^.]*invalid style fragments/i);
     expect(STAGE_SPEC).toMatch(/valid Bricks and siblings continue/i);
   });
 
-  it("requires page-change requests to mutate visibly after read-only preparation", () => {
-    const preparation = STAGE_SPEC.indexOf("asset reads and inspections are preparation only");
-    const mutation = STAGE_SPEC.indexOf("must call a mutation tool");
-    const completion = STAGE_SPEC.indexOf(
-      "must receive applied_visible before claiming completion",
-    );
-
-    expect(preparation).toBeGreaterThanOrEqual(0);
-    expect(mutation).toBeGreaterThan(preparation);
-    expect(completion).toBeGreaterThan(mutation);
-    expect(STAGE_SPEC.slice(mutation, completion)).toContain(
-      "render_page, set_node, append_node, or remove_node",
-    );
-    expect(STAGE_SPEC).toMatch(/no_stage_change[^.]*does not satisfy[^.]*page-change request/i);
-    expect(STAGE_SPEC).toMatch(/factual or no-change request[^.]*does not require a mutation/i);
-  });
-
-  it("defines one safe bottom-up sequence for a new hierarchy", () => {
-    const leaves = STAGE_SPEC.indexOf("create every unattached leaf with set_node");
-    const boxes = STAGE_SPEC.indexOf("create inner boxes bottom-up with set_node");
-    const attach = STAGE_SPEC.indexOf(
-      "append_node the completed top node to the existing parent exactly once",
-    );
-
-    expect(leaves).toBeGreaterThanOrEqual(0);
-    expect(boxes).toBeGreaterThan(leaves);
-    expect(attach).toBeGreaterThan(boxes);
-    expect(STAGE_SPEC).toMatch(
-      /never append a descendant directly to the destination and also reference it from the new container/i,
-    );
+  it("stays tool-neutral so every runner can embed it safely", () => {
+    for (const runnerTerm of [
+      "get_pattern",
+      "get_preset",
+      "get_brick_spec",
+      "get_style_choices",
+      "render_page",
+      "set_node",
+      "append_node",
+      "remove_node",
+      "no_stage_change",
+      "applied_visible",
+    ]) {
+      expect(STAGE_SPEC).not.toContain(runnerTerm);
+    }
   });
 
   it("teaches the current document and interaction boundaries compactly", () => {

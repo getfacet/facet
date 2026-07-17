@@ -3,7 +3,7 @@ export {
   isSafeHref,
   isSafeMediaSrc,
   sanitizeActionPayload,
-} from "./primitive-node-validation.js";
+} from "./brick-node-validation.js";
 export { MAX_DEPTH, MAX_RENDER_NODES, MAX_SCREENS, validateTree } from "./tree-validation.js";
 export type { ValidationResult } from "./tree-validation.js";
 export { validateTheme } from "./theme-validation.js";

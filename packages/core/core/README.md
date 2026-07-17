@@ -73,7 +73,7 @@ Core exposes two deliberately different validation paths:
 `validateTheme` accepts one complete Theme or refuses it whole. It allow-lists
 every token group, Brick default, Preset, target, state, and property; rejects
 unsafe CSS constructs; bounds dimensions and typography values; and reports
-contrast findings as warnings.
+contrast findings as warnings after structural validation succeeds.
 
 `FacetPattern` is an exact read-only reference tree with `name`, `description`,
 `useWhen`, optional `avoidWhen`, and ordinary Facet tree fields.
@@ -84,6 +84,7 @@ each invalid or Theme-incompatible Pattern whole.
 ```ts
 import {
   applyPatch,
+  escapeJsonPointerToken,
   validateAuthorTree,
   validatePattern,
   validateTheme,
@@ -104,10 +105,13 @@ if (authored.value === undefined) {
 
 const pattern = validatePattern(operatorPattern, themeResult.theme).pattern;
 
+const helloId = "hello";
+const helloPath = `/nodes/${escapeJsonPointerToken(helloId)}`;
+
 const next = applyPatch(authored.value, [
   {
     op: "add",
-    path: "/nodes/hello",
+    path: helloPath,
     value: {
       id: "hello",
       type: "text",
@@ -115,7 +119,7 @@ const next = applyPatch(authored.value, [
       style: { preset: "body", color: "accent" },
     },
   },
-  { op: "add", path: "/nodes/root/children/-", value: "hello" },
+  { op: "add", path: "/nodes/root/children/-", value: helloId },
 ]);
 ```
 

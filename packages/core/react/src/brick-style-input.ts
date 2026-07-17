@@ -10,32 +10,12 @@ import {
 } from "./interaction-style.js";
 import { rootContainmentStyle } from "./layout-contract.js";
 import { resolveBrickStyle } from "./style-resolver.js";
+import { projectSurface, projectTypography } from "./style-projection.js";
 import type { ResolvedTheme } from "./theme.js";
 
 type InputDefinition = BrickStyleDefinition<"input">;
 type RichTextDefinition = BrickStyleDefinition<"richtext">;
 type ColorName = keyof ResolvedTheme["color"];
-
-interface TypographyValues {
-  readonly fontFamily?: keyof ResolvedTheme["fontFamily"];
-  readonly fontSize?: keyof ResolvedTheme["fontSize"];
-  readonly fontWeight?: keyof ResolvedTheme["fontWeight"];
-  readonly fontStyle?: CSSProperties["fontStyle"];
-  readonly color?: ColorName;
-  readonly textAlign?: "start" | "center" | "end";
-  readonly letterSpacing?: keyof ResolvedTheme["letterSpacing"];
-  readonly lineHeight?: keyof ResolvedTheme["lineHeight"];
-  readonly highlight?: keyof ResolvedTheme["highlight"];
-}
-
-interface SurfaceValues {
-  readonly background?: ColorName;
-  readonly color?: ColorName;
-  readonly borderColor?: ColorName;
-  readonly borderWidth?: keyof ResolvedTheme["borderWidth"];
-  readonly borderRadius?: keyof ResolvedTheme["radius"];
-  readonly shadow?: keyof ResolvedTheme["shadow"];
-}
 
 export interface StyledBrickTarget {
   readonly className?: string | undefined;
@@ -59,44 +39,6 @@ export interface RichTextStylePresentation {
   readonly code: CSSProperties;
   readonly link: StyledBrickTarget;
   readonly listMarker: CSSProperties;
-}
-
-function textAlign(value: TypographyValues["textAlign"]): CSSProperties["textAlign"] | undefined {
-  return value === "start" ? "left" : value === "end" ? "right" : value;
-}
-
-function typographyStyle(
-  values: TypographyValues | undefined,
-  theme: ResolvedTheme,
-): CSSProperties {
-  if (values === undefined) return {};
-  const css: CSSProperties = {};
-  if (values.fontFamily !== undefined) css.fontFamily = theme.fontFamily[values.fontFamily];
-  if (values.fontSize !== undefined) css.fontSize = theme.fontSize[values.fontSize];
-  if (values.fontWeight !== undefined) css.fontWeight = theme.fontWeight[values.fontWeight];
-  if (values.fontStyle !== undefined) css.fontStyle = values.fontStyle;
-  if (values.color !== undefined) css.color = theme.color[values.color];
-  if (values.textAlign !== undefined) css.textAlign = textAlign(values.textAlign);
-  if (values.letterSpacing !== undefined)
-    css.letterSpacing = theme.letterSpacing[values.letterSpacing];
-  if (values.lineHeight !== undefined) css.lineHeight = theme.lineHeight[values.lineHeight];
-  if (values.highlight !== undefined) css.backgroundImage = theme.highlight[values.highlight];
-  return css;
-}
-
-function surfaceStyle(values: SurfaceValues | undefined, theme: ResolvedTheme): CSSProperties {
-  if (values === undefined) return {};
-  const css: CSSProperties = {};
-  if (values.background !== undefined) css.background = theme.color[values.background];
-  if (values.color !== undefined) css.color = theme.color[values.color];
-  if (values.borderColor !== undefined) css.borderColor = theme.color[values.borderColor];
-  if (values.borderWidth !== undefined) {
-    css.borderStyle = "solid";
-    css.borderWidth = theme.borderWidth[values.borderWidth];
-  }
-  if (values.borderRadius !== undefined) css.borderRadius = theme.radius[values.borderRadius];
-  if (values.shadow !== undefined) css.boxShadow = theme.shadow[values.shadow];
-  return css;
 }
 
 function stateValue(
@@ -236,8 +178,8 @@ export function resolveInputStylePresentation(
 
   const controlValues = style.control;
   const controlBase: CSSProperties = {
-    ...typographyStyle(controlValues, theme),
-    ...surfaceStyle(controlValues, theme),
+    ...projectTypography(controlValues, theme),
+    ...projectSurface(controlValues, theme),
     boxSizing: "border-box",
     minWidth: 0,
     maxWidth: "100%",
@@ -255,8 +197,8 @@ export function resolveInputStylePresentation(
 
   const indicatorValues = style.indicator;
   const indicatorBase: CSSProperties = {
-    ...surfaceStyle(indicatorValues, theme),
-    ...typographyStyle(indicatorValues, theme),
+    ...projectSurface(indicatorValues, theme),
+    ...projectTypography(indicatorValues, theme),
   };
   if (indicatorValues?.indicatorSize !== undefined) {
     const size = theme.indicatorSize[indicatorValues.indicatorSize];
@@ -278,7 +220,7 @@ export function resolveInputStylePresentation(
 
   const optionValues = style.option;
   const optionBase: CSSProperties = {
-    ...typographyStyle(optionValues, theme),
+    ...projectTypography(optionValues, theme),
     display: inputKind === "select" ? undefined : "flex",
     alignItems: inputKind === "select" ? undefined : "center",
     minWidth: 0,
@@ -297,7 +239,7 @@ export function resolveInputStylePresentation(
 
   return {
     root: rootContainmentStyle(root),
-    label: typographyStyle(style.label, theme),
+    label: projectTypography(style.label, theme),
     control: {
       className: joinStyleClasses(controlState.className, placeholder.className),
       style: { ...controlBase, ...controlState.style, ...placeholder.style },
@@ -325,8 +267,8 @@ export function resolveInputStylePresentation(
 
 function quoteStyle(values: RichTextDefinition["quote"], theme: ResolvedTheme): CSSProperties {
   const css: CSSProperties = {
-    ...typographyStyle(values, theme),
-    ...surfaceStyle(values, theme),
+    ...projectTypography(values, theme),
+    ...projectSurface(values, theme),
   };
   delete css.borderColor;
   delete css.borderWidth;
@@ -345,8 +287,8 @@ function quoteStyle(values: RichTextDefinition["quote"], theme: ResolvedTheme): 
 
 function codeStyle(values: RichTextDefinition["code"], theme: ResolvedTheme): CSSProperties {
   const css: CSSProperties = {
-    ...typographyStyle(values, theme),
-    ...surfaceStyle(values, theme),
+    ...projectTypography(values, theme),
+    ...projectSurface(values, theme),
   };
   if (values?.padding !== undefined) css.padding = theme.space[values.padding];
   return css;
@@ -359,26 +301,26 @@ export function resolveRichTextStylePresentation(
   const style = resolveBrickStyle(theme, "richtext", authoredStyle);
   const linkState = statePresentation(style.link, ["hover", "pressed", "focus"], theme);
   const root: CSSProperties = {
-    ...typographyStyle(style, theme),
+    ...projectTypography(style, theme),
     display: "flex",
     flexDirection: "column",
   };
   if (style.blockGap !== undefined) root.gap = theme.space[style.blockGap];
   return {
     root: rootContainmentStyle(root),
-    heading1: typographyStyle(style.heading1, theme),
-    heading2: typographyStyle(style.heading2, theme),
-    heading3: typographyStyle(style.heading3, theme),
+    heading1: projectTypography(style.heading1, theme),
+    heading2: projectTypography(style.heading2, theme),
+    heading3: projectTypography(style.heading3, theme),
     quote: quoteStyle(style.quote, theme),
     code: codeStyle(style.code, theme),
     link: {
       className: linkState.className,
       style: {
-        ...typographyStyle(style.link, theme),
+        ...projectTypography(style.link, theme),
         textDecorationLine: "underline",
         ...linkState.style,
       },
     },
-    listMarker: typographyStyle(style.listMarker, theme),
+    listMarker: projectTypography(style.listMarker, theme),
   };
 }

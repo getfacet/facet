@@ -1,4 +1,5 @@
 import { BRICK_TYPES, type BrickType } from "./brick-contract.js";
+import { CONTRAST_PAIRS, MIN_CONTRAST, contrastRatio, parseSrgb } from "./theme-color.js";
 import { isControlChar, isForbiddenKey, isPlainObject, nullMap, printableKey } from "./issues.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import type { BrickStyleDefinitionMap } from "./style-types.js";
@@ -363,6 +364,28 @@ function validateTokens(raw: unknown, issues: IssueList): FacetThemeTokens {
   };
 }
 
+function warnAboutContrast(tokens: FacetThemeTokens, issues: IssueList): void {
+  for (const mode of ["light", "dark"] as const) {
+    const colors = tokens.paint[mode].color;
+    for (const [foregroundName, backgroundName] of CONTRAST_PAIRS) {
+      const foregroundValue = colors[foregroundName];
+      const backgroundValue = colors[backgroundName];
+      if (typeof foregroundValue !== "string" || typeof backgroundValue !== "string") continue;
+      const foreground = parseSrgb(foregroundValue);
+      const background = parseSrgb(backgroundValue);
+      if (foreground === undefined || background === undefined) continue;
+      const ratio = contrastRatio(foreground, background);
+      if (ratio >= MIN_CONTRAST) continue;
+      issues.push({
+        severity: "warning",
+        message:
+          `theme.tokens.paint.${mode}.color.${foregroundName} / ` +
+          `${backgroundName} contrast ${ratio.toFixed(2)} is below ${String(MIN_CONTRAST)}`,
+      });
+    }
+  }
+}
+
 function validateDefaults(raw: unknown, issues: IssueList): BrickStyleDefinitionMap {
   const output = nullMap<unknown>();
   if (!isPlainObject(raw)) {
@@ -466,6 +489,7 @@ function validateThemeInner(input: unknown): ThemeValidationResult {
   if (issues.hasError || typeof name !== "string" || !isValidThemeName(name)) {
     return { issues: issues.list };
   }
+  warnAboutContrast(tokens, issues);
   const theme: FacetTheme = { name, tokens, defaults };
   if (description !== undefined) (theme as { description?: string }).description = description;
   if (presets !== undefined) (theme as { presets?: FacetPresets }).presets = presets;

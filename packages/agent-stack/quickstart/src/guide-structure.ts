@@ -1,14 +1,5 @@
 import type { FacetTree } from "@facet/core";
-import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
-
-const NAV_ITEM_STYLE = {
-  preset: "secondaryAction",
-  active: { preset: "primaryAction" },
-} as const;
-const NAV_LABEL_STYLE = {
-  preset: "actionLabel",
-  active: { color: "accentForeground" },
-} as const;
+import { quickstartNavNodes } from "./guide-shared.js";
 
 export const QUICKSTART_STRUCTURE_NODES = {
   "qs.runtime.root": {
@@ -17,77 +8,7 @@ export const QUICKSTART_STRUCTURE_NODES = {
     style: { direction: "column", gap: "lg", padding: "xl" },
     children: ["qs.nav.runtime", "qs.runtime.section"],
   },
-  "qs.nav.runtime": {
-    id: "qs.nav.runtime",
-    type: "box",
-    style: { direction: "row", gap: "xs", wrap: true, width: "full" },
-    children: [
-      "qs.nav.runtime.what",
-      "qs.nav.runtime.structure",
-      "qs.nav.runtime.system",
-      "qs.nav.runtime.usecases",
-    ],
-  },
-  "qs.nav.runtime.what": {
-    id: "qs.nav.runtime.what",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[0].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.runtime.what.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[0].to },
-  },
-  "qs.nav.runtime.what.label": {
-    id: "qs.nav.runtime.what.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[0].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[0].to },
-    style: NAV_LABEL_STYLE,
-  },
-  "qs.nav.runtime.structure": {
-    id: "qs.nav.runtime.structure",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[1].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.runtime.structure.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[1].to },
-  },
-  "qs.nav.runtime.structure.label": {
-    id: "qs.nav.runtime.structure.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[1].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[1].to },
-    style: NAV_LABEL_STYLE,
-  },
-  "qs.nav.runtime.system": {
-    id: "qs.nav.runtime.system",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[2].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.runtime.system.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[2].to },
-  },
-  "qs.nav.runtime.system.label": {
-    id: "qs.nav.runtime.system.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[2].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[2].to },
-    style: NAV_LABEL_STYLE,
-  },
-  "qs.nav.runtime.usecases": {
-    id: "qs.nav.runtime.usecases",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[3].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.runtime.usecases.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[3].to },
-  },
-  "qs.nav.runtime.usecases.label": {
-    id: "qs.nav.runtime.usecases.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[3].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[3].to },
-    style: NAV_LABEL_STYLE,
-  },
+  ...quickstartNavNodes("runtime"),
   "qs.runtime.section": {
     id: "qs.runtime.section",
     type: "box",

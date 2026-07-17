@@ -201,8 +201,10 @@ the agent authors a document change.
 ## Progressive discovery
 
 Putting every Brick and style rule inside every mutation schema would make the
-tool surface too large. `@facet/agent-tools` instead creates one immutable turn
-snapshot containing:
+tool surface too large. Core's `STAGE_SPEC` therefore states the portable
+document, style, action, and validation contract without naming one runner's
+tools or result codes. `@facet/agent-tools` adds its concrete discovery/editing
+workflow and creates one immutable turn snapshot containing:
 
 - the complete validated Theme for internal validation;
 - the exact validated Pattern list;
@@ -297,6 +299,10 @@ The browser applies patches with the same `applyPatch` as the server. Browser
 view-state — current screen, toggles, local table sort, viewport class, and
 effective `colorMode` — remains separate. An outgoing event may carry a snapshot
 of that state, but it never becomes a second content writer.
+
+Patch producers use Core's `escapeJsonPointerToken` for every dynamic RFC 6901
+path token, so node ids, screen names, and dataset names share one escaping
+implementation across packages.
 
 ## Assets and boot
 

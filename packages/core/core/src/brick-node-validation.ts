@@ -145,7 +145,7 @@ function setActiveWhen(
  * registry lookup, not a hardcoded switch. `rawType` carries
  * the original input type so the media handler preserves the `image` alias.
  */
-export type PrimitiveValidator = (
+export type BrickValidator = (
   id: string,
   raw: Record<string, unknown>,
   issues: IssueSink,

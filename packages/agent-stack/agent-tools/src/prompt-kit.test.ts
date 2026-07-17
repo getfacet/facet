@@ -114,6 +114,27 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(system.indexOf("PATTERNS")).toBeLessThan(system.indexOf(FACET_PAGE_BRIEF_HEADING));
   });
 
+  it("owns runner-specific workflow outside the tool-neutral Core stage contract", () => {
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+    const runnerTerms = [
+      "get_pattern",
+      "get_preset",
+      "get_brick_spec",
+      "get_style_choices",
+      "render_page",
+      "set_node",
+      "append_node",
+      "remove_node",
+      "no_stage_change",
+      "applied_visible",
+    ];
+
+    for (const term of runnerTerms) {
+      expect(STAGE_SPEC).not.toContain(term);
+      expect(system).toContain(term);
+    }
+  });
+
   it("always indexes all Core Bricks when no turn snapshot is supplied", () => {
     const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
     const brickSection = system.slice(system.indexOf("BRICKS"), system.indexOf("PAGE BRIEF"));

@@ -577,9 +577,9 @@ describe("validateTree data bricks", () => {
   });
 
   it("drops a stale demoted display-leaf node (badge/alert/divider) without throwing", () => {
-    // DC-003: badge/alert/divider are demoted to catalog compositions and are no
-    // longer node types. A stale tree still carrying them must fail-safe —
-    // validateTree DROPS the unknown component nodes (with a drop issue), prunes
+    // DC-003: badge/alert/divider are demonstrated by Patterns and are no longer
+    // node types. A stale tree still carrying them must fail-safe — validateTree
+    // DROPS the unknown Brick nodes (with a drop issue), prunes
     // them from surviving parents, keeps the rest of the tree, and never throws.
     let result: ReturnType<typeof validateTree> | undefined;
     expect(() => {
@@ -1489,10 +1489,10 @@ describe("validateTree input style", () => {
   });
 });
 
-// WU-1 (field→input rename): the primitive input brick replaces the old field
+// WU-1 (field→input rename): the input Brick replaces the old field
 // brick. `input` is the canonical node type (keeping the "search" input KIND);
 // a stale `type:"field"` node is now an UNKNOWN type and fail-safe dropped.
-describe("input primitive", () => {
+describe("input Brick", () => {
   it("keeps an input node and its search input kind (field renamed to input)", () => {
     const { tree, issues } = validateTree({
       root: "root",

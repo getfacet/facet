@@ -48,15 +48,15 @@ config/build change → do NOT skip.
    explicit manual row or it's a FAIL.
 3. **Cover each row.** Add or update the vitest test that exercises the changed
    behavior. Prefer testing pure logic directly. The closed `@facet/core`
-   vocabulary includes the primitive `box`/`text`/`media`/`field` fallback plus
-   deliberately added intrinsic components; patching, validation, tokens,
-   component sanitizers, runtime stores/queues, agent Stage operations, CLI
+   vocabulary is exactly `box`, `text`, `media`, `input`, `richtext`, `table`,
+   `chart`, `list`, `keyValue`, `progress`, and `loading`; patching,
+   validation, tokens, Brick sanitizers, runtime stores/queues, agent Stage operations, CLI
    command builders, and agent-client SSE parsing are all unit-testable.
    For `@facet/react`, split by what the test needs:
    - static output + fail-safe (renders X, degrades to plain, never throws) →
      `renderToStaticMarkup` in a `.test.ts` (node env) — see `StageRenderer.test.ts`.
    - **interaction / hook behavior** (an agent action reaching `onAction`, the
-     `useFacet` patch/say/fail-safe loop, field rendering/value capture, and
+     `useFacet` patch/say/fail-safe loop, input rendering/value capture, and
      browser-local `navigate`/`toggle` resolution plus tap recording) → a
      **jsdom render test** with
      `@testing-library/react` in a `.test.tsx` file that starts with

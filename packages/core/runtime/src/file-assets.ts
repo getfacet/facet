@@ -1,31 +1,12 @@
 import { closeSync, openSync, opendirSync, readSync } from "node:fs";
 import { join } from "node:path";
+import { AssetIssues } from "./asset-issues.js";
 import type { AssetDocuments, AssetsStore } from "./assets.js";
 
 /** Directory entries enumerated before the whole directory fails closed. */
 const MAX_DIRECTORY_ENTRIES = 4096;
 /** Bytes accepted per file; the loader reads at most cap+1 to detect overflow. */
 const MAX_FILE_BYTES = 1_048_576;
-const MAX_ISSUES = 64;
-const ISSUES_SUPPRESSED = "...further asset file issues suppressed";
-const MAX_ISSUE_CHARS = 200;
-
-function isControlChar(code: number): boolean {
-  return code < 0x20 || (code >= 0x7f && code <= 0x9f);
-}
-
-/** Bound + strip control characters from operator-adjacent text (paths, file
- * names) before it enters an issue string. Never returns hostile bytes. */
-function sanitizeIssueText(raw: string): string {
-  let out = "";
-  const limit = Math.min(raw.length, MAX_ISSUE_CHARS);
-  for (let i = 0; i < limit; i += 1) {
-    const ch = raw[i]!;
-    out += isControlChar(ch.charCodeAt(0)) ? "?" : ch;
-  }
-  return raw.length > MAX_ISSUE_CHARS ? `${out}...` : out;
-}
-
 /**
  * A bounded, sanitized detail for a caught fs error. NEVER interpolates the raw
  * exception (a hostile throw value's `message`/`toString` could carry control
@@ -78,20 +59,14 @@ export class FileAssets implements AssetsStore {
   constructor(private readonly dir: string) {}
 
   async load(_agentId: string): Promise<AssetDocuments> {
-    const issues: string[] = [];
-    const pushIssue = (issue: string): void => {
-      if (issues.length >= MAX_ISSUES) {
-        if (issues[issues.length - 1] !== ISSUES_SUPPRESSED) issues.push(ISSUES_SUPPRESSED);
-        return;
-      }
-      issues.push(sanitizeIssueText(issue));
-    };
+    const issues = new AssetIssues();
+    const pushIssue = (issue: string): void => issues.push(issue);
 
     const discovery = this.discoverEntries(pushIssue);
     if (!discovery.ok) {
       // Fail the whole raw directory closed: no asset file is opened, decoded,
       // or parsed past a discovery failure; loadAssets boots on the defaults.
-      return { issues };
+      return { issues: issues.list };
     }
     const names = [...discovery.names].sort();
 
@@ -106,7 +81,7 @@ export class FileAssets implements AssetsStore {
       patterns?: unknown;
       initialTree?: unknown;
       issues: readonly string[];
-    } = { issues };
+    } = { issues: issues.list };
     const currentFiles = ["initial.tree.json", "patterns.json", "theme.json"] as const;
     for (const file of currentFiles) {
       if (!names.includes(file)) continue;

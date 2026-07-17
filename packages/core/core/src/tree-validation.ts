@@ -9,7 +9,7 @@ import {
   printableValue,
   type IssueSink,
 } from "./issues.js";
-import { sanitizeNode } from "./primitive-node-validation.js";
+import { sanitizeNode } from "./brick-node-validation.js";
 import { sanitizeDataWarehouse } from "./data-binding.js";
 import type { DataWarehouse } from "./data-types.js";
 

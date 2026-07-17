@@ -1,8 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { applyOpInPlace, applyPatch, MAX_PATCH_OPS, type JsonPatchOperation } from "./patch.js";
+import {
+  applyOpInPlace,
+  applyPatch,
+  escapeJsonPointerToken,
+  MAX_PATCH_OPS,
+  type JsonPatchOperation,
+} from "./patch.js";
 import { EMPTY_TREE, type FacetTree } from "./tree.js";
 
 describe("applyPatch (RFC 6902)", () => {
+  it("escapes one RFC 6901 token for shared path builders", () => {
+    expect(escapeJsonPointerToken("a/b~c")).toBe("a~1b~0c");
+  });
+
   it("replace at the root path swaps the whole tree", () => {
     const next = {
       root: "root",

@@ -306,10 +306,3 @@ export const FEATURE_GRID_PATTERN = {
     },
   },
 } satisfies FacetPattern;
-
-export const MARKETING_PATTERNS: readonly FacetPattern[] = [
-  HERO_PATTERN,
-  PRICING_SECTION_PATTERN,
-  FAQ_SECTION_PATTERN,
-  FEATURE_GRID_PATTERN,
-];

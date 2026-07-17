@@ -156,7 +156,7 @@ interface DataBound {
 }
 
 /**
- * The press-gesture pair. A box that carries these IS the button primitive —
+ * The press-gesture pair. A box that carries these owns button behavior —
  * pointer/keyboard press and secondary long-press, both the same action union.
  */
 interface Pressable {
@@ -213,7 +213,7 @@ interface Layered {
 /**
  * The universal container and the only brick that holds children. Flow layout
  * only (row/col), so children stack or wrap — they cannot overlap or fall off
- * the page. A box with `onPress` IS the button primitive; a box with a border is
+ * the page. A box with `onPress` is pressable; a box with a border is
  * a card; nested boxes are any layout.
  */
 export interface BoxNode
@@ -243,7 +243,7 @@ export interface MediaNode extends BaseNode, Styleable<MediaStyle> {
   readonly controls?: boolean;
 }
 
-/** The input primitive. */
+/** The input Brick. */
 export interface InputNode extends BaseNode, Styleable<InputStyle> {
   readonly type: "input";
   readonly name: string;

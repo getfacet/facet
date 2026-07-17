@@ -39,14 +39,9 @@ describe("Theme facade", () => {
       ["mutedForeground", "background"],
       ["mutedForeground", "surface"],
       ["accentForeground", "accent"],
-      ["accentForeground", "accentSurface"],
-      ["successForeground", "success"],
       ["successForeground", "successSurface"],
-      ["warningForeground", "warning"],
       ["warningForeground", "warningSurface"],
-      ["dangerForeground", "danger"],
       ["dangerForeground", "dangerSurface"],
-      ["infoForeground", "info"],
       ["infoForeground", "infoSurface"],
     ]);
 

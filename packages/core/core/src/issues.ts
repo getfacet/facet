@@ -65,43 +65,6 @@ export function printableValue(v: unknown): string {
 }
 
 /**
- * Safely extracts a bounded diagnostic from a caught value. This function must
- * itself never throw: hostile objects may throw from their `message` getter,
- * and arbitrary objects are never coerced with `String(...)` or JSON methods.
- * Only a primitive string or a string-valued `message` is accepted. C0, DEL,
- * and C1 controls are removed before the retained detail is capped.
- */
-export function caughtErrorDetail(error: unknown): string {
-  try {
-    let raw: string;
-    if (typeof error === "string") {
-      raw = error;
-    } else if (typeof error === "object" && error !== null) {
-      let message: unknown;
-      try {
-        message = Reflect.get(error, "message");
-      } catch {
-        return "unknown error";
-      }
-      if (typeof message !== "string") return "unknown error";
-      raw = message;
-    } else {
-      return "unknown error";
-    }
-
-    const detail: string[] = [];
-    const scanLimit = Math.min(raw.length, 4096);
-    for (let index = 0; index < scanLimit && detail.length < 256; index += 1) {
-      const code = raw.charCodeAt(index);
-      if (!isControlChar(code)) detail.push(raw[index] ?? "");
-    }
-    return detail.length > 0 ? detail.join("") : "unknown error";
-  } catch {
-    return "unknown error";
-  }
-}
-
-/**
  * Pointer/key tokens that would walk into or poison the prototype chain instead
  * of own data. Shared by both untrusted-document boundaries (the tree/theme node
  * & token maps) AND the JSON-Pointer patch parser — a single spelling so the

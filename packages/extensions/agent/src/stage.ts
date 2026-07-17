@@ -1,4 +1,5 @@
 import {
+  escapeJsonPointerToken,
   type Dataset,
   type FacetNode,
   type FacetTree,
@@ -7,21 +8,16 @@ import {
   type ServerMessage,
 } from "@facet/core";
 
-/** Escapes a token for use in an RFC 6901 JSON Pointer. */
-function escape(token: string): string {
-  return token.replace(/~/g, "~0").replace(/\//g, "~1");
-}
-
 function nodePath(id: NodeId): string {
-  return `/nodes/${escape(id)}`;
+  return `/nodes/${escapeJsonPointerToken(id)}`;
 }
 
 function childrenPath(parent: NodeId): string {
-  return `/nodes/${escape(parent)}/children/-`;
+  return `/nodes/${escapeJsonPointerToken(parent)}/children/-`;
 }
 
 function dataPath(name: string): string {
-  return `/data/${escape(name)}`;
+  return `/data/${escapeJsonPointerToken(name)}`;
 }
 
 /**

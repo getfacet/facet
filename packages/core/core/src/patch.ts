@@ -34,6 +34,11 @@ export type JsonPatchOperation =
  */
 export const MAX_PATCH_OPS = 1024;
 
+/** Escapes one RFC 6901 JSON Pointer token without constructing a full path. */
+export function escapeJsonPointerToken(token: string): string {
+  return token.replace(/~/g, "~0").replace(/\//g, "~1");
+}
+
 type Container = Record<string, unknown> | unknown[];
 
 function isContainerValue(value: unknown): value is Container {

@@ -1,14 +1,5 @@
 import type { FacetTree } from "@facet/core";
-import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
-
-const NAV_ITEM_STYLE = {
-  preset: "secondaryAction",
-  active: { preset: "primaryAction" },
-} as const;
-const NAV_LABEL_STYLE = {
-  preset: "actionLabel",
-  active: { color: "accentForeground" },
-} as const;
+import { quickstartNavNodes } from "./guide-shared.js";
 
 export const QUICKSTART_SYSTEM_NODES = {
   "qs.system.root": {
@@ -24,77 +15,7 @@ export const QUICKSTART_SYSTEM_NODES = {
       "qs.system.discovery",
     ],
   },
-  "qs.nav.system": {
-    id: "qs.nav.system",
-    type: "box",
-    style: { direction: "row", gap: "xs", wrap: true, width: "full" },
-    children: [
-      "qs.nav.system.what",
-      "qs.nav.system.structure",
-      "qs.nav.system.system",
-      "qs.nav.system.usecases",
-    ],
-  },
-  "qs.nav.system.what": {
-    id: "qs.nav.system.what",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[0].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.system.what.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[0].to },
-  },
-  "qs.nav.system.what.label": {
-    id: "qs.nav.system.what.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[0].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[0].to },
-    style: NAV_LABEL_STYLE,
-  },
-  "qs.nav.system.structure": {
-    id: "qs.nav.system.structure",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[1].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.system.structure.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[1].to },
-  },
-  "qs.nav.system.structure.label": {
-    id: "qs.nav.system.structure.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[1].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[1].to },
-    style: NAV_LABEL_STYLE,
-  },
-  "qs.nav.system.system": {
-    id: "qs.nav.system.system",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[2].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.system.system.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[2].to },
-  },
-  "qs.nav.system.system.label": {
-    id: "qs.nav.system.system.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[2].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[2].to },
-    style: NAV_LABEL_STYLE,
-  },
-  "qs.nav.system.usecases": {
-    id: "qs.nav.system.usecases",
-    type: "box",
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[3].to },
-    style: NAV_ITEM_STYLE,
-    children: ["qs.nav.system.usecases.label"],
-    onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[3].to },
-  },
-  "qs.nav.system.usecases.label": {
-    id: "qs.nav.system.usecases.label",
-    type: "text",
-    value: QUICKSTART_NAV_ITEMS[3].label,
-    activeWhen: { screen: QUICKSTART_NAV_ITEMS[3].to },
-    style: NAV_LABEL_STYLE,
-  },
+  ...quickstartNavNodes("system"),
   "qs.system.hero": {
     id: "qs.system.hero",
     type: "box",

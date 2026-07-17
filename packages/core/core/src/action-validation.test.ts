@@ -7,7 +7,7 @@ import {
 import { validateTree } from "./validate.js";
 
 describe("normalizeFacetAction", () => {
-  it("uses the same bounded diagnostics for every component family", () => {
+  it("uses the same bounded diagnostics for every Brick family", () => {
     const issues: string[] = [];
     expect(
       normalizeFacetAction({ kind: "navigate", to: 42 }, "cta", "onPress", issues),

@@ -15,7 +15,6 @@ import {
 } from "./data-binding.js";
 import { isPlainObject } from "./issues.js";
 import {
-  BRICK_TYPES,
   type BrickType,
   type ChartNode,
   type ChartSeries,
@@ -27,14 +26,14 @@ import {
   type TextNode,
 } from "./nodes.js";
 import type { DataWarehouse, TableRow } from "./data-types.js";
-import type { PrimitiveValidator } from "./primitive-node-validation.js";
+import type { BrickValidator } from "./brick-node-validation.js";
 import {
   validateBox,
   validateInput,
   validateMedia,
   validateRichText,
   validateText,
-} from "./primitive-node-validation.js";
+} from "./brick-node-validation.js";
 import {
   fromChart,
   fromKeyValue,
@@ -51,11 +50,6 @@ import {
   rendersTable,
   rendersText,
 } from "./tree.js";
-
-/** The final closed brick type used by the core registry. */
-export type CoreNodeType = BrickType;
-
-export const CORE_NODE_TYPES: readonly CoreNodeType[] = BRICK_TYPES;
 
 export type DataBearingNode = TableNode | ChartNode | ListNode | KeyValueNode | TextNode;
 
@@ -76,7 +70,7 @@ export type RendersPredicate = (
 ) => boolean;
 
 export interface BrickEntry {
-  readonly validate: PrimitiveValidator;
+  readonly validate: BrickValidator;
   /** `from`-binding projection for data-bearing bricks. */
   readonly resolve?: NodeDataResolver;
   /** Content predicate applied when a `from` binding is present. */
@@ -154,4 +148,4 @@ export const BRICK_REGISTRY = {
     validate: validateLoading,
     rendersSelf: rendersAlways,
   },
-} satisfies Record<CoreNodeType, BrickEntry>;
+} satisfies Record<BrickType, BrickEntry>;

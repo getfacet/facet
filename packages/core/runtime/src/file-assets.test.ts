@@ -287,10 +287,14 @@ describe("FileAssets", () => {
 
     const docs = await new FileAssets(dir).load("a");
 
-    expect(docs.issues?.length).toBeLessThanOrEqual(65);
+    expect(docs.issues?.length).toBeLessThanOrEqual(64);
     expect(docs.issues?.at(-1)).toContain("suppressed");
     expect(JSON.stringify(docs.issues)).not.toContain("\\n");
     expect(fsSpy.openedPaths).toEqual([]);
+
+    const loaded = await loadAssets(new FileAssets(dir), "a");
+    expect(loaded.issues).toHaveLength(64);
+    expect(loaded.issues.at(-1)).toContain("suppressed");
   });
 
   it("never rethrows or leaks a hostile directory error", async () => {

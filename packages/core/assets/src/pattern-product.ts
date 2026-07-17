@@ -193,9 +193,3 @@ export const SUPPORT_TRIAGE_PATTERN = {
     },
   },
 } satisfies FacetPattern;
-
-export const PRODUCT_PATTERNS: readonly FacetPattern[] = [
-  DASHBOARD_SUMMARY_PATTERN,
-  SETTINGS_PANEL_PATTERN,
-  SUPPORT_TRIAGE_PATTERN,
-];

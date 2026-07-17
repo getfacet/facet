@@ -173,7 +173,7 @@ describe("unified public node model", () => {
   });
 });
 
-describe("primitive node regression guards", () => {
+describe("native Brick regression guards", () => {
   it("keeps shared look and box concerns inherited from private packs", () => {
     const boxOwn = interfaceOwnMembers("BoxNode");
     const textOwn = interfaceOwnMembers("TextNode");
@@ -188,7 +188,7 @@ describe("primitive node regression guards", () => {
     expect(boxOwn).toContain("hidden");
   });
 
-  it("keeps primitive discriminants and public field sets", () => {
+  it("keeps native Brick discriminants and public field sets", () => {
     expectTypeOf<BoxNode["type"]>().toEqualTypeOf<"box">();
     expectTypeOf<TextNode["type"]>().toEqualTypeOf<"text">();
     expectTypeOf<MediaNode["type"]>().toEqualTypeOf<"media">();

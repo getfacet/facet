@@ -4,24 +4,14 @@ import { SLOT_NAME_RE } from "./slot-marker.js";
 import type { FacetTheme } from "./theme-types.js";
 import { MAX_DESCRIPTION_LENGTH } from "./theme-types.js";
 import type { FacetTree } from "./tree.js";
+import { TREE_FIELDS } from "./tree-fields.js";
 
 /** Maximum exact Pattern list exposed in one agent asset snapshot. */
 export const MAX_PATTERNS = 64;
 /** Maximum raw nodes in one exact Pattern, preserving the former reference-data bound. */
 export const MAX_PATTERN_NODES = 1023;
 
-const PATTERN_FIELDS = new Set([
-  "name",
-  "description",
-  "useWhen",
-  "avoidWhen",
-  "root",
-  "nodes",
-  "screens",
-  "entry",
-  "data",
-]);
-const TREE_FIELDS = ["root", "nodes", "screens", "entry", "data"] as const;
+const PATTERN_FIELDS = new Set(["name", "description", "useWhen", "avoidWhen", ...TREE_FIELDS]);
 
 /**
  * Read-only reference data an agent inspects and re-authors. A Pattern is an

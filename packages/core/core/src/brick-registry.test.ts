@@ -1,14 +1,13 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-import { BRICK_REGISTRY, CORE_NODE_TYPES } from "./brick-registry.js";
+import { BRICK_REGISTRY } from "./brick-registry.js";
 import { BRICK_TYPES } from "./nodes.js";
 
 const RETIRED_TYPES = ["button", "tabs", "nav", "metric", "stat", "form", "filterBar"];
 
 describe("brick registry exhaustiveness", () => {
   it("has exactly 11 direct own-property brick entries", () => {
-    expect(CORE_NODE_TYPES).toEqual(BRICK_TYPES);
     expect(Object.keys(BRICK_REGISTRY)).toEqual(BRICK_TYPES);
     expect(Object.keys(BRICK_REGISTRY)).toHaveLength(11);
     for (const type of BRICK_TYPES) expect(Object.hasOwn(BRICK_REGISTRY, type)).toBe(true);

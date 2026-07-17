@@ -62,10 +62,6 @@ export function cappedArray(value: unknown, max: number): readonly unknown[] {
   }
 }
 
-export function virtualFieldId(nodeId: NodeId, name: string): string {
-  return `${String(nodeId.length)}:${nodeId}${name}`;
-}
-
 export function isContainerValue(value: unknown): value is FacetNode {
   return value != null && isContainer(value as FacetNode);
 }
