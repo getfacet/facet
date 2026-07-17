@@ -14,7 +14,13 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const packageRoots = ["packages/core", "packages/agent-stack", "packages/extensions"];
+const packageRoots = [
+  "packages/core",
+  "packages/renderers",
+  "packages/agents",
+  "packages/adapters",
+  "packages/tools",
+];
 const expectedPackageCount = 15;
 const expectedBins = {
   facet: { args: [], exitCode: 2, output: "FACET_BRIDGE_URL is not set" },

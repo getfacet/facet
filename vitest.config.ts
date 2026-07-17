@@ -5,7 +5,7 @@ export default defineConfig({
     include: [
       "packages/**/src/**/*.test.ts",
       "packages/**/src/**/*.test.tsx",
-      "packages/agent-stack/quickstart/e2e/journey/verdict.test.ts",
+      "packages/tools/quickstart/e2e/journey/verdict.test.ts",
       "apps/**/src/**/*.test.ts",
     ],
   },

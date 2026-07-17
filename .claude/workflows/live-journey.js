@@ -17,8 +17,8 @@ export const meta = {
 // server lifecycle is owned by the /live-test skill (durable main-agent bash), which passes `url` here and
 // tears it down after. Every gating decision is delegated to verdict.ts — this script never re-implements it.
 
-const JOURNEY = 'packages/quickstart/e2e/journey/journey.ts'
-const VERDICT = 'packages/quickstart/e2e/journey/verdict.ts'
+const JOURNEY = 'packages/tools/quickstart/e2e/journey/journey.ts'
+const VERDICT = 'packages/tools/quickstart/e2e/journey/verdict.ts'
 
 // Per-visitor lenses (judged on each visitor's shots). HARD/SOFT is decided by verdict.ts's
 // DEFAULT_LENS_POLICY — kept here only to know which judges to spawn. `diversity` is cross-visitor.
@@ -35,7 +35,7 @@ const VOTES_SOFT = 2
 let cfg = (args && typeof args === 'object') ? args : {}
 if (typeof args === 'string' && args.trim().startsWith('{')) { try { cfg = JSON.parse(args) } catch { cfg = {} } }
 const url = typeof cfg.url === 'string' ? cfg.url : ''
-const artifactsDir = typeof cfg.artifactsDir === 'string' ? cfg.artifactsDir : 'packages/quickstart/e2e/journey/artifacts'
+const artifactsDir = typeof cfg.artifactsDir === 'string' ? cfg.artifactsDir : 'packages/tools/quickstart/e2e/journey/artifacts'
 const nVisitors = Number.isInteger(cfg.visitors) && cfg.visitors > 0 ? cfg.visitors : 3
 
 if (cfg.keyPresent === false) {
@@ -81,7 +81,7 @@ phase('Preflight')
 const smoke = await agent(
   '## Preflight: published-bin standalone smoke\n\n' +
   'Run the built quickstart bin standalone and report whether it boots — this gates the dev-vs-published resolution gap.\n' +
-  'Run: `pnpm --filter @facet/quickstart build` then use the harness `runBinSmoke` OR directly `node packages/quickstart/dist/cli.js --stub --port <free>`, poll `/health`, then KILL the child.\n' +
+  'Run: `pnpm --filter @facet/quickstart build` then use the harness `runBinSmoke` OR directly `node packages/tools/quickstart/dist/cli.js --stub --port <free>`, poll `/health`, then KILL the child.\n' +
   'Return { ran:true, ok:<did it answer /health 200?>, detail:<one line — e.g. the ERR_MODULE_NOT_FOUND if it failed> }. ' +
   'NOTE: in the dev monorepo it is EXPECTED to fail (ok:false) with `@facet/* → src/*.ts` resolution — report that; do not treat it as a tier failure by itself.\n\nStructured output only.',
   { label: 'bin-smoke', phase: 'Preflight', schema: SMOKE_SCHEMA }

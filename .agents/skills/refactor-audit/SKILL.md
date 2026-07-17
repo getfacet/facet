@@ -35,8 +35,8 @@ orchestrators.
 
 Audit the whole repo shape, with emphasis on:
 
-- `packages/{core,agent-stack,extensions}/*/src`
-- `packages/{core,agent-stack,extensions}/*/package.json`
+- `packages/{core,renderers,agents,adapters,tools}/*/src`
+- `packages/{core,renderers,agents,adapters,tools}/*/package.json`
 - root package/config files
 - `apps/playground/**`
 - `docs/**`, `AGENTS.md`, `.agents/**`, and `.codex/**` when process drift is
@@ -71,7 +71,7 @@ still verify and rank all findings.
 ### 2. Public API/export audit
 
 For every grouped package manifest under
-`packages/{core,agent-stack,extensions}/*/package.json`:
+`packages/{core,renderers,agents,adapters,tools}/*/package.json`:
 
 1. Record `name`, `exports`, `publishConfig.exports`, `bin`, `files`,
    `sideEffects`, and `build`.
@@ -101,7 +101,7 @@ Record the literal command or search pattern used for every confirmed finding.
 
 ### 4. Pure-logic test-gap audit
 
-List production files under `packages/{core,agent-stack,extensions}/*/src` that
+List production files under `packages/{core,renderers,agents,adapters,tools}/*/src` that
 are not tests, barrels, or declared CLI/bin entrypoints. For each pure-logic
 candidate:
 
@@ -147,7 +147,7 @@ line-count violations.
 Audit whether the current directory/file structure still matches the
 responsibilities that have emerged in the codebase.
 
-1. Review package-local scaffolds under `packages/{core,agent-stack,extensions}`
+1. Review package-local scaffolds under `packages/{core,renderers,agents,adapters,tools}`
    and `apps/playground` against the package roles in `AGENTS.md`.
 2. For every extraction candidate from the oversized-file, duplication,
    boundary, or test-gap passes, decide whether the right shape is:
@@ -259,8 +259,8 @@ flow, not the feature flow:
 3. Run the refactor hard gate:
    `/update-tests` → `/verify` → `/code-review` → `/update-docs`.
 4. Also run `/live-test` if the cleanup touches a live-link surface
-   (`packages/agent-stack/quickstart`, `packages/core/server`,
-   `packages/core/client`, `packages/extensions/agent-client`,
-   `packages/core/runtime`, `packages/extensions/bridge`, `packages/core/react`
+   (`packages/tools/quickstart`, `packages/adapters/server`,
+   `packages/adapters/client`, `packages/adapters/agent-client`,
+   `packages/core/runtime`, `packages/tools/bridge`, `packages/renderers/react`
    renderer/useFacet/ChatDock paths, or `packages/core/core`
    patch/protocol/stage vocabulary) or the owner requests it.

@@ -126,7 +126,7 @@ describe("printTree", () => {
     const appSource = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
     const generatorSource = readFileSync(new URL("./gen.ts", import.meta.url), "utf8");
     const cliSource = readFileSync(
-      new URL("../../../packages/extensions/cli/src/cli.ts", import.meta.url),
+      new URL("../../../packages/tools/cli/src/cli.ts", import.meta.url),
       "utf8",
     );
     const shippingCopy = [appSource, generatorSource, cliSource].join("\n");

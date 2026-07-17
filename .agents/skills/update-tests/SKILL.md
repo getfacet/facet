@@ -13,7 +13,7 @@ description: >
 > either gain/keep a covering test or be accounted for as intentionally untested.
 
 Facet tests are **vitest**, one project per grouped package
-(`packages/{core,agent-stack,extensions}/*/src/**/*.test.ts`). Run all:
+(`packages/{core,renderers,agents,adapters,tools}/*/src/**/*.test.ts`). Run all:
 `pnpm test`. Run one package from the repository root:
 `pnpm exec vitest run packages/<group>/<name>/src`.
 
@@ -34,7 +34,7 @@ Merge the three lists.
 - Test files only.
 - Docs/markdown only (`*.md`, `docs/**`).
 - Comments/formatting only.
-Any `packages/{core,agent-stack,extensions}/*/src/**` (non-test) or
+Any `packages/{core,renderers,agents,adapters,tools}/*/src/**` (non-test) or
 config/build change → do NOT skip.
 
 ## Workflow

@@ -19,20 +19,20 @@
       "@facet/core": ["packages/core/core/src/index.ts"],
       "@facet/runtime": ["packages/core/runtime/src/index.ts"],
       "@facet/runtime/node": ["packages/core/runtime/src/node.ts"],
-      "@facet/react": ["packages/core/react/src/index.ts"],
-      "@facet/agent-tools": ["packages/agent-stack/agent-tools/src/index.ts"],
-      "@facet/reference-agent": ["packages/agent-stack/reference-agent/src/index.ts"],
-      "@facet/quickstart": ["packages/agent-stack/quickstart/src/index.ts"],
-      "@facet/agent": ["packages/extensions/agent/src/index.ts"],
-      "@facet/agent-client": ["packages/extensions/agent-client/src/index.ts"],
-      "@facet/ag-ui": ["packages/extensions/ag-ui/src/index.ts"],
-      "@facet/ag-ui/server": ["packages/extensions/ag-ui/src/server.ts"],
-      "@facet/client": ["packages/core/client/src/index.ts"],
+      "@facet/react": ["packages/renderers/react/src/index.ts"],
+      "@facet/agent-tools": ["packages/agents/agent-tools/src/index.ts"],
+      "@facet/reference-agent": ["packages/agents/reference-agent/src/index.ts"],
+      "@facet/quickstart": ["packages/tools/quickstart/src/index.ts"],
+      "@facet/agent": ["packages/agents/agent/src/index.ts"],
+      "@facet/agent-client": ["packages/adapters/agent-client/src/index.ts"],
+      "@facet/ag-ui": ["packages/adapters/ag-ui/src/index.ts"],
+      "@facet/ag-ui/server": ["packages/adapters/ag-ui/src/server.ts"],
+      "@facet/client": ["packages/adapters/client/src/index.ts"],
       "@facet/assets": ["packages/core/assets/src/index.ts"],
-      "@facet/cli": ["packages/extensions/cli/src/cli.ts"],
-      "@facet/server": ["packages/core/server/src/index.ts"],
-      "@facet/bridge": ["packages/extensions/bridge/src/index.ts"],
-      "@facet/store-postgres": ["packages/extensions/store-postgres/src/index.ts"]
+      "@facet/cli": ["packages/tools/cli/src/cli.ts"],
+      "@facet/server": ["packages/adapters/server/src/index.ts"],
+      "@facet/bridge": ["packages/tools/bridge/src/index.ts"],
+      "@facet/store-postgres": ["packages/adapters/store-postgres/src/index.ts"]
     }
   }
 }

@@ -38,10 +38,10 @@ provider-smoke-required**. Conservative on purpose: over-verifying costs one
 smoke turn; under-verifying defeats the gate.
 
 **provider-smoke-required** ⇔ any candidate path starts with
-`packages/agent-stack/quickstart/`, is
-`packages/agent-stack/reference-agent/package.json`, or is
-`packages/agent-stack/reference-agent/src/agent.ts`, or starts with
-`packages/agent-stack/reference-agent/src/provider/` (the top-level
+`packages/tools/quickstart/`, is
+`packages/agents/reference-agent/package.json`, or is
+`packages/agents/reference-agent/src/agent.ts`, or starts with
+`packages/agents/reference-agent/src/provider/` (the top-level
 `src/provider.ts` compatibility barrel is included as well).
 
 ## Step 2 — Tier 1 (ALWAYS run, blocking)
@@ -49,7 +49,7 @@ smoke turn; under-verifying defeats the gate.
 **1a — deterministic journey verdict policy** (no keys, no I/O):
 
 ```bash
-pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/journey/verdict.test.ts
+pnpm exec vitest run --config packages/tools/quickstart/e2e/vitest.config.ts packages/tools/quickstart/e2e/journey/verdict.test.ts
 ```
 
 This pins the HARD/SOFT/quorum aggregation rule. Any failure ⇒ Tier 1 FAIL.
@@ -57,8 +57,8 @@ This pins the HARD/SOFT/quorum aggregation rule. Any failure ⇒ Tier 1 FAIL.
 **1b — deterministic stub E2E** (no keys, no network beyond localhost):
 
 ```bash
-pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts
-pnpm exec vitest run packages/agent-stack/quickstart/src/quickstart.e2e.test.ts   # run TWICE
+pnpm exec vitest run packages/tools/quickstart/src/quickstart.e2e.test.ts
+pnpm exec vitest run packages/tools/quickstart/src/quickstart.e2e.test.ts   # run TWICE
 ```
 
 Run it **twice**; both runs must pass with identical results (determinism,
@@ -68,13 +68,13 @@ DC-008). Any failure or run-to-run difference ⇒ Tier 1 FAIL.
 
 ```bash
 pnpm --filter @facet/quickstart build
-pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/bundle.test.ts
+pnpm exec vitest run --config packages/tools/quickstart/e2e/vitest.config.ts packages/tools/quickstart/e2e/bundle.test.ts
 ```
 
 **1d — deterministic journey harness** (uses the build from 1c, localhost only):
 
 ```bash
-pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/journey/harness.test.ts
+pnpm exec vitest run --config packages/tools/quickstart/e2e/vitest.config.ts packages/tools/quickstart/e2e/journey/harness.test.ts
 ```
 
 This exercises boot/teardown, bind retry, provider resolution without keys, and
@@ -89,7 +89,7 @@ Requires a real key in the environment: `OPENAI_API_KEY` or
 `ANTHROPIC_API_KEY` (never echo values; presence check only).
 
 ```bash
-pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/smoke.test.ts
+pnpm exec vitest run --config packages/tools/quickstart/e2e/vitest.config.ts packages/tools/quickstart/e2e/smoke.test.ts
 ```
 
 - **Provider smoke required + key present** → run it; failure ⇒ FAIL.
@@ -105,7 +105,7 @@ Both providers, missing either key = explicit failure (the test file enforces
 it):
 
 ```bash
-FACET_SMOKE_PROVIDERS=both pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/smoke.test.ts
+FACET_SMOKE_PROVIDERS=both pnpm exec vitest run --config packages/tools/quickstart/e2e/vitest.config.ts packages/tools/quickstart/e2e/smoke.test.ts
 ```
 
 Run this when the change is about to merge to main or ship a release. Missing
@@ -125,13 +125,13 @@ Codex runs this directly; do not invoke `.claude/workflows/live-journey.js`.
 2. Install Chromium if needed, then run the deterministic browser preflight:
    ```bash
    pnpm exec playwright install chromium
-   pnpm exec vitest run --config packages/agent-stack/quickstart/e2e/vitest.config.ts packages/agent-stack/quickstart/e2e/journey/journey.selftest.test.ts
+   pnpm exec vitest run --config packages/tools/quickstart/e2e/vitest.config.ts packages/tools/quickstart/e2e/journey/journey.selftest.test.ts
    ```
    A preflight failure makes the journey tier FAIL; do not start a paid provider
    run until it passes.
 3. Start the real-provider quickstart on a free port:
    ```bash
-   pnpm exec tsx packages/agent-stack/quickstart/src/cli.ts --provider <openai|anthropic> --port <port>
+   pnpm exec tsx packages/tools/quickstart/src/cli.ts --provider <openai|anthropic> --port <port>
    ```
 4. Use Playwright or the in-app browser to open the page, send at least three
    fresh-visitor messages, and capture screenshots.

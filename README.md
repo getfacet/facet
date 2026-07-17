@@ -28,7 +28,7 @@ OPENAI_API_KEY=sk-… npx facet-quickstart
 This starts a live page at `http://localhost:5292`. The built-in reference agent
 reads `./facet.md` when present, otherwise uses the bundled tour brief, and edits
 the page with RFC 6902 patches. `ANTHROPIC_API_KEY` also works. See
-[`@facet/quickstart`](packages/agent-stack/quickstart/README.md) for flags and
+[`@facet/quickstart`](packages/tools/quickstart/README.md) for flags and
 provider options.
 
 ## Why Facet
@@ -225,48 +225,51 @@ positioning, z-index, authored selector, or CSS escape hatch.
 
 ## Packages
 
-### Foundation
+### Core
 
 | Path | Package | Role |
 | --- | --- | --- |
 | `packages/core/core` | `@facet/core` | Closed Brick/style contract, Theme/Preset/Pattern types and validators, strict author validation, fail-soft tree validation, RFC 6902 patch protocol. |
 | `packages/core/runtime` | `@facet/runtime` | Event loop, stores, per-agent assets, summaries, and initial-stage support. |
-| `packages/core/react` | `@facet/react` | React renderer, style resolution, token-to-CSS lookup, browser view-state. |
 | `packages/core/assets` | `@facet/assets` | `DEFAULT_THEME` and `DEFAULT_PATTERNS` data. |
 
-### Agent Authoring
+### Renderers
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-neutral tool schemas/executor, progressive discovery, observations, prompt kit. |
-| `packages/extensions/agent` | `@facet/agent` | In-process `Stage` API and `defineAgent`. |
+| `packages/renderers/react` | `@facet/react` | React renderer, style resolution, token-to-CSS lookup, browser view-state. |
 
-### Integration Adapters
-
-| Path | Package | Role |
-| --- | --- | --- |
-| `packages/extensions/ag-ui` | `@facet/ag-ui` | AG-UI adapter that preserves Facet validation and patch semantics. |
-
-### Reference Implementations
+### Agents
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/server` | `@facet/server` | Reference SSE + POST transport. |
-| `packages/core/client` | `@facet/client` | Browser-side transports. |
-| `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an external agent. |
-| `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable stores backed by Postgres. |
-| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain and streaming tool loop. |
+| `packages/agents/agent-tools` | `@facet/agent-tools` | Provider-neutral tool schemas/executor, progressive discovery, observations, prompt kit. |
+| `packages/agents/agent` | `@facet/agent` | In-process `Stage` API and `defineAgent`. |
+| `packages/agents/reference-agent` | `@facet/reference-agent` | Reference LLM brain and streaming tool loop. |
 
-### Local tools
+### Adapters
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup CLI/server/page wrapper. |
-| `packages/extensions/cli` | `@facet/cli` | Command-line stage control. |
-| `packages/extensions/bridge` | `@facet/bridge` | Local coding-agent bridge. |
+| `packages/adapters/server` | `@facet/server` | Reference SSE + POST transport. |
+| `packages/adapters/client` | `@facet/client` | Browser-side transports. |
+| `packages/adapters/agent-client` | `@facet/agent-client` | Dial-in SDK for an external agent. |
+| `packages/adapters/ag-ui` | `@facet/ag-ui` | AG-UI adapter that preserves Facet validation and patch semantics. |
+| `packages/adapters/store-postgres` | `@facet/store-postgres` | Optional durable-store adapter backed by Postgres. |
+
+### Tools
+
+| Path | Package | Role |
+| --- | --- | --- |
+| `packages/tools/quickstart` | `@facet/quickstart` | Zero-setup CLI/server/page wrapper. |
+| `packages/tools/cli` | `@facet/cli` | Command-line stage control. |
+| `packages/tools/bridge` | `@facet/bridge` | Local coding-agent bridge. |
+
+`apps/playground` is an unpublished demo app. Root `labs/` is an unpublished
+experimental area and is not a workspace or publish target.
 
 See [Architecture](docs/ARCHITECTURE.md) for the full data flow and
-[Package boundaries](docs/PACKAGE-BOUNDARIES.md) for support tiers.
+[Package boundaries](docs/PACKAGE-BOUNDARIES.md) for package responsibilities.
 
 ## Bring your own brain
 

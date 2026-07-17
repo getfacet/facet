@@ -41,8 +41,8 @@ Merge the three lists.
 | `packages/core/core/src/{validate,patch}.ts` (fail-safe behavior) | `docs/ARCHITECTURE.md` (invariants) + `README.md` if a headline guarantee changed |
 | A published `@facet/*` public API (exports/signatures) | that package's `README.md` (bridge/client have one; add one if the surface is user-facing) + root `README.md` if it's a headline capability |
 | New / renamed / removed `@facet/*` package | root `README.md` (package list) + `AGENTS.md` (package list) + a Changeset |
-| `packages/extensions/cli` / `packages/extensions/bridge` commands or env vars | `README.md` / `CONTRIBUTING.md` usage + the package `README.md` + the CLI `--help` text |
-| `packages/core/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + `packages/core/server` docstring |
+| `packages/tools/cli` / `packages/tools/bridge` commands or env vars | `README.md` / `CONTRIBUTING.md` usage + the package `README.md` + the CLI `--help` text |
+| `packages/adapters/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + `packages/adapters/server` docstring |
 | `.agents/skills/**`, `.claude/**`, `.codex/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
 | Release/versioning setup | `CONTRIBUTING.md`, `CHANGELOG.md` |
 

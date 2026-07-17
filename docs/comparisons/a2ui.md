@@ -191,5 +191,5 @@ dependency rule lets a future adapter remain outside the foundation contracts.
 - [AG-UI docs](https://docs.ag-ui.com) and
   [CopilotKit repository](https://github.com/CopilotKit/copilotkit)
 - Facet internals — `packages/core/core/src/nodes.ts`,
-  `packages/core/core/src/protocol.ts`, `packages/core/server/src/server.ts`,
+  `packages/core/core/src/protocol.ts`, `packages/adapters/server/src/server.ts`,
   `AGENTS.md`

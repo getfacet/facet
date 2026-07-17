@@ -10,4 +10,4 @@ and local stage-shadow helpers.
 
 `@facet/reference-agent` now consumes that shared tool layer while preserving
 its public compatibility exports. `@facet/quickstart` continues composing the
-reference agent from the grouped `packages/agent-stack/*` package layout.
+reference agent without changing its public package surface.

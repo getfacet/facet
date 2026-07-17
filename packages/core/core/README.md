@@ -5,6 +5,8 @@ vocabulary, one closed Brick style system, validation, the
 [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) patch implementation,
 and session/event types. Every other Facet package builds on this package.
 
+Role: **Core**.
+
 ```bash
 npm install @facet/core
 ```

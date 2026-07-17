@@ -49,47 +49,34 @@ pre-1.0 hard cut are summarized in
 
 ## Package map
 
-Source directories are grouped by role; npm package names and public import
-specifiers stay unchanged. The physical source groups are not the same thing as
-product support tiers: `@facet/server` lives under `packages/core/server`, but
-it is a reference transport, not a hardened public edge. Do not move packages
-just to mirror the semantic tiers below; move a package only when ownership,
-imports, and release metadata all benefit from the physical move.
+Source directories are grouped by one criterion: the package's primary role in
+Facet. npm package names and public import specifiers stay unchanged. Reference,
+local/self-hosted, and optional implementation characteristics belong in the
+package description; they are not additional grouping axes.
 
 | Group | Path | Package | Role |
 | --- | --- | --- | --- |
 | Core | `packages/core/core` | `@facet/core` | Contract: closed Brick and Brick-owned style vocabularies, token/fixed choice metadata, Theme/Preset/Pattern validation, RFC 6902 patch, strict author validation, fail-soft tree validation, and session/event types. Depends on nothing. |
 | Core | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (one per-agent Theme, exact Pattern list, optional initial tree; `MemoryAssets` + `loadAssets`, `withInitialStage`) + `SummaryStore` (opaque per-visitor rolling-summary record for brain-side context compaction; `MemorySummaryStore`). File-backed Node references (`FileAssets`, `FileSummaryStore`) via `@facet/runtime/node`. |
-| Core | `packages/core/server` | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
-| Core | `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
-| Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), Theme default → same-Brick Preset → direct-style resolution, token→CSS lookup, client-owned `colorMode`, `useFacet`, and `ChatDock`. |
 | Core | `packages/core/assets` | `@facet/assets` | Default-asset **data**: one complete `DEFAULT_THEME` and exact validated `DEFAULT_PATTERNS`. Depends only on `@facet/core`. |
-| Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, progressive Pattern/Preset/Brick/style-choice reads, and the reusable Facet prompt kit. |
-| Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters (usage reporting + Anthropic prompt caching), prompt, streaming tool loop, exact asset-read handoff, token-budgeted LLM context compaction (cross-turn rolling summary + in-turn transcript folding, deterministic fallback), deterministic test fixture. |
-| Agent Stack | `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
-| Extensions | `packages/extensions/agent` | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
-| Extensions | `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
-| Extensions | `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
-| Extensions | `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
-| Extensions | `packages/extensions/ag-ui` | `@facet/ag-ui` | Official AG-UI adapter/event layer, browser transport and Node server adapter, keeping Facet safety. |
-| Extensions | `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable `StageStore`/`Sink`/`AssetsStore`/`SummaryStore` backed by Postgres (`pg` peer dep). |
-| Labs | `packages/labs` | unpublished | Reserved for experiments; nothing here is part of the supported package contract. |
-| App | `apps/playground` | unpublished | Demos (not published). |
+| Renderers | `packages/renderers/react` | `@facet/react` | Renderer (`StageRenderer`), Theme default → same-Brick Preset → direct-style resolution, token→CSS lookup, client-owned `colorMode`, `useFacet`, and `ChatDock`. |
+| Agents | `packages/agents/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, progressive Pattern/Preset/Brick/style-choice reads, and the reusable Facet prompt kit. |
+| Agents | `packages/agents/agent` | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
+| Agents | `packages/agents/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters (usage reporting + Anthropic prompt caching), prompt, streaming tool loop, exact asset-read handoff, token-budgeted LLM context compaction (cross-turn rolling summary + in-turn transcript folding, deterministic fallback), deterministic test fixture. |
+| Adapters | `packages/adapters/server` | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
+| Adapters | `packages/adapters/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
+| Adapters | `packages/adapters/agent-client` | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
+| Adapters | `packages/adapters/ag-ui` | `@facet/ag-ui` | Official AG-UI adapter/event layer, browser transport and Node server adapter, keeping Facet safety. |
+| Adapters | `packages/adapters/store-postgres` | `@facet/store-postgres` | Optional Postgres adapter for durable `StageStore`/`Sink`/`AssetsStore`/`SummaryStore` implementations (`pg` peer dep). |
+| Tools | `packages/tools/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
+| Tools | `packages/tools/cli` | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
+| Tools | `packages/tools/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
 
-Semantic tiers for documentation and support:
-
-- **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
-  `@facet/assets`.
-- **Agent Authoring:** `@facet/agent-tools`, `@facet/agent`.
-- **Integration Adapters:** `@facet/ag-ui`.
-- **Reference Implementations:** `@facet/server`, `@facet/client`,
-  `@facet/agent-client`, `@facet/store-postgres`, `@facet/reference-agent`.
-- **Local Tools:** `@facet/quickstart`, `@facet/cli`, `@facet/bridge`.
-
-`Self-host` is a deployment style for the reference implementations, not a
-separate package tier. Hosted/multi-tenant products should depend on the
-Foundation contracts and provide their own transport, identity, metering, and
-operational wrapper.
+Outside the public package groups, `apps/playground` is an unpublished demo app
+and root `labs/` is an unpublished experimental area. Self-hosting is a
+deployment choice, not a package classification. Hosted/multi-tenant products
+provide their own transport, identity, metering, and operational wrapper around
+Facet's contracts.
 
 See `docs/PACKAGE-BOUNDARIES.md` before changing package positioning, publishing
 metadata, or hosted-deployment claims.
@@ -113,7 +100,7 @@ pnpm package:smoke  # build + pack/install every public package in a clean consu
 pnpm demo           # in-process terminal demo
 pnpm --filter @facet/playground dev     # browser playground (port 5290)
 pnpm --filter @facet/playground serve   # live server (port 5291)
-pnpm --filter @facet/quickstart build   # then: OPENAI_API_KEY=sk-... pnpm exec tsx packages/agent-stack/quickstart/src/cli.ts
+pnpm --filter @facet/quickstart build   # then: OPENAI_API_KEY=sk-... pnpm exec tsx packages/tools/quickstart/src/cli.ts
                                         # (published as the facet-quickstart bin, port 5292)
 ```
 
@@ -145,11 +132,11 @@ For new feature work or any approved `/spec-bridge` implementation:
 `/live-test` runs after `/code-review` as the live-link gate. The three fast
 vitest tiers: Tier 1 (deterministic stub E2E + real-bundle run) always blocks;
 Tier 2 (key-gated provider smoke) **blocks whenever
-`packages/agent-stack/quickstart/` changed, or when
-`packages/agent-stack/reference-agent/src/agent.ts`,
-`packages/agent-stack/reference-agent/src/provider.ts`, anything under
-`packages/agent-stack/reference-agent/src/provider/`, or
-`packages/agent-stack/reference-agent/package.json` changed** — a missing key is
+`packages/tools/quickstart/` changed, or when
+`packages/agents/reference-agent/src/agent.ts`,
+`packages/agents/reference-agent/src/provider.ts`, anything under
+`packages/agents/reference-agent/src/provider/`, or
+`packages/agents/reference-agent/package.json` changed** — a missing key is
 then a FAIL, not a skip; Tier 3 (both providers) runs pre-merge/release. Plus an
 **owner-run "live journey" tier** (real headless browser + real LLM +
 vision-judged screenshots, pre-merge/on-request, SKIP without a key) that the
@@ -162,9 +149,9 @@ For approved `/refactor-audit` cleanup work with no intended behavior change:
 `/update-tests` → `/verify` → `/code-review` → `/update-docs`
 
 Run `/live-test` too when the refactor touches a live-link surface:
-`packages/agent-stack/quickstart`, `packages/core/server`,
-`packages/core/client`, `packages/extensions/agent-client`,
-`packages/core/runtime`, `packages/extensions/bridge`, `packages/core/react`
+`packages/tools/quickstart`, `packages/adapters/server`,
+`packages/adapters/client`, `packages/adapters/agent-client`,
+`packages/core/runtime`, `packages/tools/bridge`, `packages/renderers/react`
 renderer/useFacet/ChatDock paths, or core patch/protocol/stage vocabulary. Also
 run it for release/pre-merge owner requests.
 

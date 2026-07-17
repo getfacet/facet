@@ -7,7 +7,9 @@ The Facet event loop plus four persistence seams:
 - `AssetsStore` for one per-agent Theme, an exact Pattern list, and an optional
   initial tree; and
 - `SummaryStore` for an opaque per-visitor rolling-summary record owned by the
-  consuming brain.
+consuming brain.
+
+Role: **Core**.
 
 Browser-safe in-memory references are exported from `@facet/runtime`:
 `MemoryStageStore`, `MemorySink`, `MemoryAssets`, and `MemorySummaryStore`.

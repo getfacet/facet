@@ -333,16 +333,23 @@ patch data; it does not create another writer or protocol.
 Dependencies point toward `@facet/core`; Core has no dependencies. Nothing
 depends on the playground app.
 
-- **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
-  `@facet/assets`.
-- **Agent authoring:** `@facet/agent-tools`, `@facet/agent`.
-- **Integration adapter:** `@facet/ag-ui`.
-- **Reference implementations:** `@facet/server`, `@facet/client`,
-  `@facet/agent-client`, `@facet/store-postgres`, `@facet/reference-agent`.
-- **Local tools:** `@facet/quickstart`, `@facet/cli`, `@facet/bridge`.
+- **Core:** `@facet/core`, `@facet/runtime`, `@facet/assets` own the document
+  contract, event loop, stores, and bundled default design data.
+- **Renderers:** `@facet/react` renders a Facet Document into React UI.
+- **Agents:** `@facet/agent-tools`, `@facet/agent`, and
+  `@facet/reference-agent` help agents author Facet Documents. The last is the
+  reference LLM brain, not a production policy boundary.
+- **Adapters:** `@facet/server`, `@facet/client`, `@facet/agent-client`,
+  `@facet/ag-ui`, and `@facet/store-postgres` connect Facet to transports,
+  protocols, and persistence. The server/client pair is a reference transport;
+  the Postgres package is optional.
+- **Tools:** `@facet/quickstart`, `@facet/cli`, and `@facet/bridge` are local
+  human-run entry points and development tools.
 
-The server/client packages are reference transports, not a hosted edge. See
-[Package boundaries](PACKAGE-BOUNDARIES.md) for support and deployment language.
+The server/client packages are reference transports, not a hosted edge. Root
+`labs/` is an unpublished experimental area. See
+[Package boundaries](PACKAGE-BOUNDARIES.md) for detailed responsibilities and
+deployment language.
 
 ## AG-UI edge adapter
 

@@ -9,7 +9,7 @@ import { URL } from "node:url";
 
 import { scanHardCut } from "./check-style-hard-cut.mjs";
 
-const ROOT_DIRECTORIES = ["packages", "apps", "docs", "scripts", ".changeset"];
+const ROOT_DIRECTORIES = ["packages", "apps", "labs", "docs", "scripts", ".changeset"];
 
 async function makeFixture(t) {
   const cwd = await mkdtemp(path.join(os.tmpdir(), "facet-hard-cut-"));
@@ -882,6 +882,18 @@ test("scans only locked roots and excludes only locked generated directories", a
   assert.deepEqual(
     scanned.violations.map(({ path: violationPath }) => violationPath),
     [".changeset/current.md", "AGENTS.md", "README.md", "scripts/legacy.mjs"],
+  );
+});
+
+test("keeps root labs inside the production hard-cut scan", async (t) => {
+  const cwd = await makeFixture(t);
+  await writeFixture(cwd, "labs/experiment.ts", `${retiredSymbol()}();\n`);
+
+  const result = scanHardCut({ cwd, mode: "production" });
+
+  assert.deepEqual(
+    result.violations.map(({ path: violationPath }) => violationPath),
+    ["labs/experiment.ts"],
   );
 });
 

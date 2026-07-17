@@ -6,6 +6,8 @@ Node-free default design-system data for Facet. This package depends only on
 - `DEFAULT_THEME` — one complete, validated Theme.
 - `DEFAULT_PATTERNS` — 17 exact, validated Pattern trees.
 
+Role: **Core**.
+
 ```bash
 npm install @facet/assets @facet/core
 ```

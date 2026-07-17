@@ -8,7 +8,7 @@ import process from "node:process";
 import { pathToFileURL } from "node:url";
 import ts from "typescript";
 
-const PRODUCTION_ROOTS = ["packages", "apps", "scripts"];
+const PRODUCTION_ROOTS = ["packages", "apps", "labs", "scripts"];
 const ALL_ROOTS = [...PRODUCTION_ROOTS, "docs", ".changeset", "README.md", "AGENTS.md"];
 
 const EXCLUDED_GLOBS = [
