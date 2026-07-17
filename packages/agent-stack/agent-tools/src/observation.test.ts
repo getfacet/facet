@@ -6,11 +6,11 @@ import {
   parseAgentToolObservation,
   visibleStageNodeIds,
 } from "./observation.js";
-import { okMessageResult } from "./executor-result.js";
+import { formatAssetObservation } from "./asset-observation.js";
 
 // Legacy vocabulary is built at runtime so the removed tokens never appear as
 // source literals (same idiom as theme.test.ts).
-const legacyCode = ["invalid_", "st", "amp"].join("");
+const legacyCode = ["invalid_", "compo", "sition"].join("");
 
 const TREE: FacetTree = {
   root: "root",
@@ -23,6 +23,40 @@ const TREE: FacetTree = {
 };
 
 describe("agent tool observation contract", () => {
+  it("serializes bounded structured author errors", () => {
+    const observation = formatAgentToolObservation({
+      tool: "render_page",
+      status: "error",
+      outcome: "rejected",
+      code: "invalid_authoring",
+      message: "Rejected invalid authoring.",
+      errors: Array.from({ length: 20 }, (_, index) => ({
+        path: `/nodes/node-${String(index)}/style/color`,
+        message: `Choose an allowed color for node ${String(index)}.`,
+        allowed: ["fg", "muted", "accent"],
+      })),
+      omittedErrorCount: 3,
+    });
+
+    const data = parseAgentToolObservation(observation.text);
+    expect(data).toMatchObject({
+      status: "error",
+      outcome: "rejected",
+      code: "invalid_authoring",
+      applied: false,
+      stage_changed: false,
+      visible_to_visitor: false,
+      patch_count: 0,
+      omitted_error_count: 7,
+    });
+    expect(data?.errors).toHaveLength(16);
+    expect(data?.errors?.[0]).toEqual({
+      path: "/nodes/node-0/style/color",
+      message: "Choose an allowed color for node 0.",
+      allowed: ["fg", "muted", "accent"],
+    });
+  });
+
   it("formats a bounded JSON observation with required fields", () => {
     const observation = formatAgentToolObservation({
       tool: "append_node",
@@ -126,12 +160,12 @@ describe("agent tool observation contract", () => {
     expect(parseAgentToolObservation(withNonStringData)).toBeUndefined();
   });
 
-  it("keeps the public generic formatter capped with no composition bypass", () => {
+  it("keeps the public generic formatter capped with no asset bypass", () => {
     const observation = formatAgentToolObservation({
-      tool: "get_composition",
+      tool: "get_pattern",
       status: "ok",
       outcome: "no_stage_change",
-      message: "Read a composition reference.",
+      message: "Read a Pattern reference.",
       data: `{"pad":"${"z".repeat(4_000)}"}`,
     });
 
@@ -140,14 +174,11 @@ describe("agent tool observation contract", () => {
     expect(JSON.parse(parsed?.data ?? "")).toEqual({ truncated: true });
   });
 
-  it("preserves exact composition data above the generic cap", () => {
-    const composition = {
-      name: "large-reference",
-      metadata: {
-        description: "A complete reference whose serialized data exceeds the generic cap.",
-        variants: ["full"],
-        followUpEdits: ["Replace the example copy."],
-      },
+  it("preserves exact validated Pattern data above the generic cap", () => {
+    const pattern = {
+      name: "large-pattern",
+      description: "A complete reference whose serialized data exceeds the generic cap.",
+      useWhen: "Use for a complete large reference.",
       root: "reference-root",
       nodes: {
         "reference-root": {
@@ -162,22 +193,23 @@ describe("agent tool observation contract", () => {
         },
       },
     } as const;
-    const serialized = JSON.stringify(composition);
+    const serialized = JSON.stringify(pattern);
     expect(serialized.length).toBeGreaterThan(2_048);
 
-    const result = okMessageResult(
-      "get_composition",
-      'Read composition reference "large-reference".',
-      TREE,
-      [],
-      [],
-      { data: serialized },
+    const observation = formatAssetObservation(
+      {
+        tool: "get_pattern",
+        status: "ok",
+        outcome: "no_stage_change",
+        message: "Read one exact unresolved Pattern.",
+      },
+      serialized,
     );
-    const parsed = parseAgentToolObservation(result.observation.text);
+    const parsed = parseAgentToolObservation(observation.text);
 
     expect(parsed?.data).toBe(serialized);
-    expect(JSON.parse(parsed?.data ?? "null")).toEqual(composition);
-    expect(result.observation.data).toEqual(parsed);
+    expect(JSON.parse(parsed?.data ?? "null")).toEqual(pattern);
+    expect(observation.data).toEqual(parsed);
   });
 
   it("omits the data field entirely when no payload is supplied", () => {
@@ -252,21 +284,21 @@ describe("agent tool observation contract", () => {
     });
   });
 
-  it(`accepts the canonical invalid_composition code and rejects ${legacyCode}`, () => {
+  it(`accepts the canonical availability code and rejects ${legacyCode}`, () => {
     const rejected = formatAgentToolObservation({
-      tool: "get_composition",
+      tool: "get_pattern",
       status: "error",
       outcome: "rejected",
-      code: "invalid_composition",
-      message: 'error: get_composition — unknown composition "nope".',
+      code: "not_available",
+      message: "The requested Pattern is not available in this turn snapshot.",
     });
 
     const data = parseAgentToolObservation(rejected.text);
     expect(data).toMatchObject({
-      tool: "get_composition",
+      tool: "get_pattern",
       status: "error",
       outcome: "rejected",
-      code: "invalid_composition",
+      code: "not_available",
       patch_count: 0,
     });
     if (data === undefined) throw new Error("expected canonical observation");
@@ -405,6 +437,6 @@ describe("agent tool observation contract", () => {
   });
 
   it("treats stage metadata changes as visitor-visible", () => {
-    expect(isVisitorVisibleStageChange(TREE, { ...TREE, theme: "midnight" }, [])).toBe(true);
+    expect(isVisitorVisibleStageChange(TREE, { ...TREE, root: "visible" }, [])).toBe(true);
   });
 });

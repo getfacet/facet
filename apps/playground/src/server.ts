@@ -17,13 +17,17 @@ import { makeLiveAgent } from "./live-agent.js";
 // is connected (instead of a blank page).
 const OFFLINE_FACE: FacetTree = page(
   [
-    text("Nova is offline right now", { size: "2xl", weight: "bold", align: "center" }),
+    text("Nova is offline right now", {
+      fontSize: "2xl",
+      fontWeight: "bold",
+      textAlign: "center",
+    }),
     text("This page's agent isn't connected — check back soon.", {
-      color: "fg-muted",
-      align: "center",
+      color: "mutedForeground",
+      textAlign: "center",
     }),
   ],
-  { pad: "2xl" },
+  { padding: "2xl" },
 );
 
 const PORT = 5291;

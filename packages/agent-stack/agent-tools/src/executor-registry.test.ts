@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { BRICK_TYPES, type DataWarehouse, type FacetNode } from "@facet/core";
 
-import { EXECUTOR_REGISTRY, describeNode } from "./executor-registry.js";
+import { EXECUTOR_REGISTRY, describeNode, nodePreset } from "./executor-registry.js";
 
 describe("executor registry exhaustiveness", () => {
   it("has exactly one entry per final brick", () => {
@@ -14,6 +14,18 @@ describe("executor registry exhaustiveness", () => {
       expect(typeof entry.asNode).toBe("function");
       expect(typeof entry.describe).toBe("function");
     }
+  });
+
+  it("describes only current Preset style metadata", () => {
+    const node = {
+      id: "status",
+      type: "progress",
+      value: 75,
+      style: { preset: "compact" },
+    } as const satisfies FacetNode;
+
+    expect(nodePreset(node)).toBe("compact");
+    expect(describeNode(node, undefined)).toBe("status progress value=75 preset=compact");
   });
 });
 

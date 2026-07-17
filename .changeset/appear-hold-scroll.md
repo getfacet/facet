@@ -18,7 +18,7 @@ never a raw value — animation timing/curves and the scroll region's max height
 live only in the renderer (framework constants, not theme documents, so
 `validateTheme` stays closed to animation CSS); the fail-safe boundary strips
 unknown `appear`/`scroll` tokens and malformed `onHold` on both the stored
-(`validateTree`/`foldPatchIntoStage`/`validateComposition`) and raw render paths.
+(`validateTree`/`foldPatchIntoStage`/`validatePattern`) and raw render paths.
 
 - `@facet/core`: `APPEARS` token group (`none`/`fade`/`slide`) + `Appear` type;
   `BoxStyle.appear?` and `BoxStyle.scroll?`; `BoxNode.onHold?: FacetAction`

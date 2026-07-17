@@ -292,65 +292,66 @@ const TOOL_LOOP_TURN: ProviderTurn = {
   ],
 };
 
-const COMPOSITION_TOOL = FACET_STAGE_TOOL_SPECS.find((tool) => tool.name === "get_composition")!;
-const EXACT_COMPOSITION_RESULT = JSON.stringify({
-  tool: "get_composition",
+const PATTERN_TOOL = FACET_STAGE_TOOL_SPECS.find((tool) => tool.name === "get_pattern")!;
+const EXACT_PATTERN_RESULT = JSON.stringify({
+  tool: "get_pattern",
   status: "ok",
   outcome: "no_stage_change",
   data: JSON.stringify({
     name: "hero",
-    metadata: { description: "A compact hero reference." },
+    description: "A compact hero reference.",
+    useWhen: "Use for one focused introduction.",
     root: "hero.root",
     nodes: { "hero.root": { id: "hero.root", type: "text", value: "Build boldly" } },
   }),
 });
-const COMPOSITION_WIRE_TURN: ProviderTurn = {
+const PATTERN_WIRE_TURN: ProviderTurn = {
   system: "sys",
   messages: [
     { role: "user", content: "show me a reference" },
     {
       role: "assistant_tools",
       text: "",
-      toolCalls: [{ id: "composition-1", name: "get_composition", input: { name: "hero" } }],
+      toolCalls: [{ id: "pattern-1", name: "get_pattern", input: { name: "hero" } }],
     },
-    { role: "tool_result", callId: "composition-1", content: EXACT_COMPOSITION_RESULT },
+    { role: "tool_result", callId: "pattern-1", content: EXACT_PATTERN_RESULT },
   ],
 };
 
-describe.each([openaiCase, anthropicCase])("$label canonical composition wire", (adapter) => {
+describe.each([openaiCase, anthropicCase])("$label canonical Pattern wire", (adapter) => {
   it("maps the shared name-only schema and exact result unchanged", async () => {
     const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("")));
 
-    await adapter.create(API_KEY, fetchImpl).run(COMPOSITION_WIRE_TURN, [COMPOSITION_TOOL]);
+    await adapter.create(API_KEY, fetchImpl).run(PATTERN_WIRE_TURN, [PATTERN_TOOL]);
 
     const body = bodyOf(calls[0]!);
     const tools = body["tools"] as Array<Record<string, unknown>>;
     if (adapter.label === "openai") {
       const fn = tools[0]!["function"] as Record<string, unknown>;
-      expect(fn["name"]).toBe("get_composition");
-      expect(fn["parameters"]).toEqual(COMPOSITION_TOOL.parameters);
+      expect(fn["name"]).toBe("get_pattern");
+      expect(fn["parameters"]).toEqual(PATTERN_TOOL.parameters);
 
       const messages = body["messages"] as Array<Record<string, unknown>>;
       const assistant = messages.find((message) => message["role"] === "assistant")!;
       const calls = assistant["tool_calls"] as Array<Record<string, unknown>>;
       expect(calls[0]).toMatchObject({
-        id: "composition-1",
-        function: { name: "get_composition", arguments: JSON.stringify({ name: "hero" }) },
+        id: "pattern-1",
+        function: { name: "get_pattern", arguments: JSON.stringify({ name: "hero" }) },
       });
       const result = messages.find((message) => message["role"] === "tool")!;
-      expect(result["content"]).toBe(EXACT_COMPOSITION_RESULT);
+      expect(result["content"]).toBe(EXACT_PATTERN_RESULT);
       return;
     }
 
-    expect(tools[0]!["name"]).toBe("get_composition");
-    expect(tools[0]!["input_schema"]).toEqual(COMPOSITION_TOOL.parameters);
+    expect(tools[0]!["name"]).toBe("get_pattern");
+    expect(tools[0]!["input_schema"]).toEqual(PATTERN_TOOL.parameters);
     const messages = body["messages"] as Array<Record<string, unknown>>;
     const assistant = messages.find((message) => message["role"] === "assistant")!;
     const uses = assistant["content"] as Array<Record<string, unknown>>;
     expect(uses[0]).toEqual({
       type: "tool_use",
-      id: "composition-1",
-      name: "get_composition",
+      id: "pattern-1",
+      name: "get_pattern",
       input: { name: "hero" },
     });
     const resultMessage = messages.find(
@@ -366,8 +367,8 @@ describe.each([openaiCase, anthropicCase])("$label canonical composition wire", 
     const results = resultMessage["content"] as Array<Record<string, unknown>>;
     expect(results[0]).toEqual({
       type: "tool_result",
-      tool_use_id: "composition-1",
-      content: EXACT_COMPOSITION_RESULT,
+      tool_use_id: "pattern-1",
+      content: EXACT_PATTERN_RESULT,
     });
   });
 });

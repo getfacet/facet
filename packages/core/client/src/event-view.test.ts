@@ -6,7 +6,7 @@ const SNAPSHOT: ViewSnapshot = {
   screen: "pricing",
   toggled: { faq: "shown" },
   viewport: "narrow",
-  scheme: "dark",
+  colorMode: "dark",
 };
 
 describe("withView", () => {

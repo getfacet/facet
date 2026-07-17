@@ -12,6 +12,31 @@ function patchesOf(messages: readonly ServerMessage[]): readonly ServerMessage[]
 }
 
 describe("createStubAgent", () => {
+  it("authors only Preset and direct style syntax", async () => {
+    const { tree, issues } = validateTree(STUB_TREE);
+    expect(issues).toEqual([]);
+    expect(tree.nodes.home?.style).toEqual({ preset: "panel", gap: "lg" });
+    expect(tree.nodes.hero?.style).toEqual({ preset: "heading" });
+    expect(tree.nodes.submit?.style).toEqual({ preset: "primaryAction" });
+    expect(tree.nodes["submit-label"]?.style).toEqual({ preset: "actionLabel" });
+
+    const retiredKeys = [["vari", "ant"].join(""), ["to", "ne"].join(""), ["sche", "me"].join("")];
+    const serialized = JSON.stringify(STUB_TREE);
+    for (const key of retiredKeys) expect(serialized).not.toContain(`"${key}"`);
+
+    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
+    const visitor = { visitorId: "styled-retry" };
+    await rt.handle(visitor, { kind: "visit", visitor });
+    await rt.handle(visitor, { kind: "message", text: "first" });
+    await rt.handle(visitor, { kind: "message", text: "retry" });
+    const retried = await rt.stageFor(visitor.visitorId);
+    expect(retried?.nodes["stub-echo"]).toMatchObject({
+      type: "text",
+      value: "echo: retry",
+      style: { preset: "body", color: "accent" },
+    });
+  });
+
   it("STUB_TREE is valid, renderable, and carries the signup form + screens", () => {
     const { tree, issues } = validateTree(STUB_TREE);
     expect(issues).toEqual([]);
@@ -66,36 +91,6 @@ describe("createStubAgent", () => {
     expect(saysOf(onAction)).toEqual(["submit: email=a@b.c name=Ada"]);
   });
 
-  it("a 'theme <name>' message switches the theme and says stub: theme <name>", async () => {
-    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
-    const visitor = { visitorId: "v" };
-    await rt.handle(visitor, { kind: "visit", visitor });
-
-    const out = (await rt.handle(visitor, { kind: "message", text: "theme midnight" })).messages;
-    expect(saysOf(out)).toEqual(["stub: theme midnight"]);
-    // The theme name lands on the persisted stage (through the runtime save path).
-    const stage = await rt.stageFor("v");
-    expect((stage as { theme?: unknown } | undefined)?.theme).toBe("midnight");
-    // A plain "theme" prefix message still echoes; a non-theme message is untouched.
-    const plain = (await rt.handle(visitor, { kind: "message", text: "hello" })).messages;
-    expect(saysOf(plain)).toEqual(["stub: hello"]);
-  });
-
-  it("refuses an invalid 'theme <name>' (spaces/punctuation) with a say and no /theme op", async () => {
-    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
-    const visitor = { visitorId: "v" };
-    await rt.handle(visitor, { kind: "visit", visitor });
-
-    // "Dark Mode!" fails isValidThemeName — the stub must refuse it, matching the
-    // real agent's set_theme gate, so no `add /theme` frame reaches live clients
-    // while the stored stage strips it (a stored-vs-live divergence).
-    const out = (await rt.handle(visitor, { kind: "message", text: "theme Dark Mode!" })).messages;
-    expect(saysOf(out)).toEqual(["stub: invalid theme name (letters/digits/_/-, max 64)"]);
-    expect(patchesOf(out)).toHaveLength(0);
-    const stage = await rt.stageFor("v");
-    expect((stage as { theme?: unknown } | undefined)?.theme).toBeUndefined();
-  });
-
   it("is deterministic: the same event sequence yields deep-equal message sequences", async () => {
     async function run(): Promise<ServerMessage[][]> {
       const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
@@ -103,7 +98,7 @@ describe("createStubAgent", () => {
       const events: ClientEvent[] = [
         { kind: "visit", visitor },
         { kind: "message", text: "hello" },
-        { kind: "message", text: "theme midnight" },
+        { kind: "message", text: "retry" },
         {
           kind: "tap",
           action: { kind: "agent", name: "submit", collect: "signup" },

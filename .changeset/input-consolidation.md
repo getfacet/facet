@@ -18,9 +18,9 @@ Consolidate the input-capturing vocabulary (hard cutover — pre-1.0, breaking).
   pressable label box whose `onPress` carries `collect`. The
   standalone `search` node — and its `submitLabel`/`onSubmit`/`value` submit
   affordance — is gone. STAGE_SPEC + the prompt kit teach the new model.
-- **Theme recipe follows the rename.** The top-level `field` brick recipe in
-  `DEFAULT_THEME` is renamed → `input` (so the input brick keeps its default
-  chrome); the theme-internal style-slot/sub-part named `field` is unchanged.
+- **Theme style follows the rename.** The top-level `field` Brick default and
+  Presets in `DEFAULT_THEME` are renamed → `input`, so the input Brick keeps its
+  default chrome through the current Brick-owned style vocabulary.
 
 Migration: emit `type:"input"` instead of `type:"field"`; replace a `search`
 node with `input:"search"` plus a pressable label box for submit. Password input values

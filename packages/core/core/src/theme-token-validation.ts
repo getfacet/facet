@@ -1,251 +1,409 @@
-import {
-  isControlChar,
-  isForbiddenKey,
-  isPlainObject,
-  MAX_VALUE_LENGTH,
-  nullMap,
-  printableKey,
-} from "./issues.js";
-import { isAllowedColor } from "./theme-color.js";
+import { isControlChar, isForbiddenKey, isPlainObject, nullMap, printableKey } from "./issues.js";
 import { IssueList } from "./theme-issues.js";
+import { MAX_THEME_CSS_VALUE_BYTES } from "./theme-types.js";
 
-const DANGEROUS_SUBSTRINGS = ["url(", "var(", "expression(", "javascript:"];
-const SPACE_PX_RANGE = { lo: 0, hi: 512 } as const;
-const FONT_SIZE_PX_RANGE = { lo: 0, hi: 512 } as const;
-const RADIUS_PX_RANGE = { lo: 0, hi: 9999 } as const;
-const WEIGHT_RANGE = { lo: 1, hi: 1000 } as const;
-// Landing-grade dimension groups. Heights/widths span section-scale lengths;
-// tracking (letter-spacing) is small and may be negative; leading (line-height)
-// stays modest.
-const MIN_HEIGHT_PX_RANGE = { lo: 0, hi: 9999 } as const;
-const MAX_WIDTH_PX_RANGE = { lo: 0, hi: 9999 } as const;
-const TRACKING_PX_RANGE = { lo: -64, hi: 64 } as const;
-const LEADING_PX_RANGE = { lo: 0, hi: 512 } as const;
+export type ThemeValueResult<V> = { readonly value: V } | { readonly error: string };
+export type ThemeValueHandler<V> = (value: unknown, token: string) => ThemeValueResult<V>;
 
-export {
-  SPACE_PX_RANGE,
-  FONT_SIZE_PX_RANGE,
-  RADIUS_PX_RANGE,
-  MIN_HEIGHT_PX_RANGE,
-  MAX_WIDTH_PX_RANGE,
-  TRACKING_PX_RANGE,
-  LEADING_PX_RANGE,
-};
+const UNSIGNED_DECIMAL_SOURCE = String.raw`(?:0|[1-9]\d*)(?:\.\d{1,4})?`;
+const SIGNED_DECIMAL_SOURCE = String.raw`-?${UNSIGNED_DECIMAL_SOURCE}`;
+const UNSIGNED_DECIMAL_RE = new RegExp(`^${UNSIGNED_DECIMAL_SOURCE}$`);
+const SIGNED_DECIMAL_RE = new RegExp(`^${SIGNED_DECIMAL_SOURCE}$`);
+const DANGEROUS = ["url(", "var(", "calc(", "expression(", "javascript:"];
+const NAMED_COLORS = new Set([
+  "aqua",
+  "black",
+  "blue",
+  "cyan",
+  "fuchsia",
+  "gray",
+  "green",
+  "grey",
+  "lime",
+  "magenta",
+  "maroon",
+  "navy",
+  "olive",
+  "orange",
+  "purple",
+  "red",
+  "silver",
+  "teal",
+  "white",
+  "yellow",
+]);
 
-function unsafeValue(value: string): string | undefined {
-  if (value.length > MAX_VALUE_LENGTH) return `value exceeds ${MAX_VALUE_LENGTH} characters`;
-  for (let i = 0; i < value.length; i++) {
-    if (isControlChar(value.charCodeAt(i))) return "value contains a control character";
+function utf8Bytes(value: string): number {
+  let bytes = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code <= 0x7f) bytes += 1;
+    else if (code <= 0x7ff) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return MAX_THEME_CSS_VALUE_BYTES + 1;
+      bytes += 4;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return MAX_THEME_CSS_VALUE_BYTES + 1;
+    else bytes += 3;
   }
-  if (/[;{}<>\\`]/.test(value)) return "value contains a disallowed character";
-  const collapsed = value.replace(/\s+/g, "").toLowerCase();
-  for (const bad of DANGEROUS_SUBSTRINGS) {
-    if (collapsed.includes(bad)) return `value contains "${bad}"`;
-  }
-  return undefined;
+  return bytes;
 }
 
-const DIMENSION_RE = /^(-?\d*\.?\d+)(px|rem|em)$/;
-
-/** px-equivalent of a dimension (`0` or `<number>px/rem/em`), or undefined if malformed. */
-function dimensionPx(value: string): number | undefined {
-  if (value === "0") return 0;
-  const match = DIMENSION_RE.exec(value);
-  if (match === null) return undefined;
-  const scalar = Number(match[1]);
-  if (!Number.isFinite(scalar)) return undefined;
-  return match[2] === "px" ? scalar : scalar * 16;
-}
-
-const RATIO_RE = /^(\d*\.?\d+)\s*\/\s*(\d*\.?\d+)$/;
-
-function isAllowedRatio(value: string): boolean {
-  const match = RATIO_RE.exec(value);
-  if (match === null) return false;
-  const a = Number(match[1]);
-  const b = Number(match[2]);
-  return Number.isFinite(a) && a > 0 && Number.isFinite(b) && b > 0;
-}
-
-type Handled<V> = { readonly value: V; readonly warning?: string } | { readonly error: string };
-
-/**
- * Validates one token group: iterates the raw map's OWN keys, dropping forbidden
- * and unknown-token keys with a warning, running `handle` on each surviving
- * value. A value `error` is surfaced (and refuses the whole document); a `value`
- * (with an optional clamp `warning`) is written to a null-proto output map.
- * Returns the map only if it has at least one entry.
- */
-export function validateGroup<V>(
-  raw: unknown,
-  members: readonly string[],
-  group: string,
-  handle: (value: unknown) => Handled<V>,
-  issues: IssueList,
-): Record<string, V> | undefined {
-  if (!isPlainObject(raw)) {
-    issues.push({
-      severity: "warning",
-      message: `theme group "${group}" is not an object; ignored`,
-    });
-    return undefined;
-  }
-  const out = nullMap<V>();
-  for (const key of Object.keys(raw)) {
-    if (isForbiddenKey(key)) {
-      issues.push({
-        severity: "warning",
-        message: `theme "${group}": forbidden key "${printableKey(key)}" dropped`,
-      });
-      continue;
-    }
-    if (!members.includes(key)) {
-      issues.push({
-        severity: "warning",
-        message: `theme "${group}": unknown token "${printableKey(key)}" dropped`,
-      });
-      continue;
-    }
-    const result = handle(raw[key]);
-    if ("error" in result) {
-      issues.push({
-        severity: "error",
-        message: `theme "${group}" token "${printableKey(key)}": ${result.error}`,
-      });
-      continue;
-    }
-    if (result.warning !== undefined) {
-      issues.push({
-        severity: "warning",
-        message: `theme "${group}" token "${printableKey(key)}": ${result.warning}`,
-      });
-    }
-    out[key] = result.value;
-  }
-  return Object.keys(out).length > 0 ? out : undefined;
-}
-
-export function handleColor(value: unknown): Handled<string> {
+function safeCssString(value: unknown): ThemeValueResult<string> {
   if (typeof value !== "string") return { error: "value is not a string" };
-  const unsafe = unsafeValue(value);
-  if (unsafe !== undefined) return { error: unsafe };
-  if (!isAllowedColor(value)) return { error: "not an allowed color value" };
+  if (value.trim() !== value || value.length === 0) {
+    return { error: "value is empty or has surrounding whitespace" };
+  }
+  if (utf8Bytes(value) > MAX_THEME_CSS_VALUE_BYTES) {
+    return { error: `value exceeds ${MAX_THEME_CSS_VALUE_BYTES} bytes` };
+  }
+  for (let index = 0; index < value.length; index += 1) {
+    if (isControlChar(value.charCodeAt(index)))
+      return { error: "value contains a control character" };
+  }
+  if (/[;{}<>\\`]/.test(value)) return { error: "value contains a disallowed character" };
+  const collapsed = value.replace(/\s+/g, "").toLowerCase();
+  for (const danger of DANGEROUS) {
+    if (collapsed.includes(danger)) return { error: `value contains "${danger}"` };
+  }
   return { value };
 }
 
-export function dimensionHandler(lo: number, hi: number): (value: unknown) => Handled<string> {
-  return (value) => {
-    if (typeof value !== "string") return { error: "value is not a string" };
-    const unsafe = unsafeValue(value);
-    if (unsafe !== undefined) return { error: unsafe };
-    const px = dimensionPx(value);
-    if (px === undefined) return { error: "not 0 or a <number>px/rem/em dimension" };
-    if (px < lo || px > hi) {
-      const clamped = Math.min(hi, Math.max(lo, px));
-      return { value: `${clamped}px`, warning: `dimension "${value}" clamped to ${clamped}px` };
+function decimal(raw: string, signed = false): number | undefined {
+  if (!(signed ? SIGNED_DECIMAL_RE : UNSIGNED_DECIMAL_RE).test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
+}
+
+interface UnitBounds {
+  readonly min: number;
+  readonly max: number;
+}
+
+export function lengthHandler(options: {
+  readonly unitlessZero?: boolean;
+  readonly px?: UnitBounds;
+  readonly rem?: UnitBounds;
+  readonly em?: UnitBounds;
+  readonly ch?: UnitBounds;
+  readonly svh?: UnitBounds;
+  readonly keywords?: Readonly<Record<string, string>>;
+}): ThemeValueHandler<string> {
+  return (raw, token) => {
+    const safe = safeCssString(raw);
+    if ("error" in safe) return safe;
+    const value = safe.value;
+    const keyword = options.keywords?.[token];
+    if (keyword !== undefined && value === keyword) return { value };
+    if (options.unitlessZero === true && value === "0") return { value };
+    const match = new RegExp(`^(${SIGNED_DECIMAL_SOURCE})(px|rem|em|ch|svh)$`).exec(value);
+    if (match === null) return { error: "value has an invalid length grammar or unit" };
+    const scalar = decimal(match[1]!, true);
+    const bounds = options[match[2]! as "px" | "rem" | "em" | "ch" | "svh"];
+    if (
+      scalar === undefined ||
+      bounds === undefined ||
+      scalar < bounds.min ||
+      scalar > bounds.max
+    ) {
+      return { error: "value is outside the allowed range" };
     }
     return { value };
   };
 }
 
-export function handleWeight(value: unknown): Handled<number> {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return { error: "fontWeight is not a finite number" };
+export const fontWeightHandler: ThemeValueHandler<number> = (value) => {
+  if (typeof value !== "number" || !Number.isFinite(value) || !Number.isInteger(value)) {
+    return { error: "fontWeight is not a finite integer" };
   }
-  if (value < WEIGHT_RANGE.lo || value > WEIGHT_RANGE.hi) {
-    const clamped = Math.min(WEIGHT_RANGE.hi, Math.max(WEIGHT_RANGE.lo, value));
-    return { value: clamped, warning: `fontWeight ${value} clamped to ${clamped}` };
+  return value >= 1 && value <= 1000 ? { value } : { error: "fontWeight is outside 1..1000" };
+};
+
+const FONT_FAMILY_RE = /^[A-Za-z0-9 ,'"_-]{1,200}$/;
+export const fontFamilyHandler: ThemeValueHandler<string> = (raw) => {
+  const safe = safeCssString(raw);
+  if ("error" in safe) return safe;
+  return FONT_FAMILY_RE.test(safe.value)
+    ? safe
+    : { error: "fontFamily must use 1..200 safe family-list characters" };
+};
+
+export const lineHeightHandler: ThemeValueHandler<string> = (raw) => {
+  const safe = safeCssString(raw);
+  if ("error" in safe) return safe;
+  const value = decimal(safe.value);
+  return value !== undefined && value >= 0.8 && value <= 3
+    ? safe
+    : { error: "lineHeight is outside 0.8..3" };
+};
+
+export const aspectRatioHandler: ThemeValueHandler<string> = (raw, token) => {
+  const safe = safeCssString(raw);
+  if ("error" in safe) return safe;
+  if (token === "auto")
+    return safe.value === "auto" ? safe : { error: "aspectRatio.auto must be auto" };
+  const match = new RegExp(`^(${UNSIGNED_DECIMAL_SOURCE}) / (${UNSIGNED_DECIMAL_SOURCE})$`).exec(
+    safe.value,
+  );
+  if (match === null) return { error: "aspectRatio must be formatted as a / b" };
+  const left = decimal(match[1]!);
+  const right = decimal(match[2]!);
+  return left !== undefined &&
+    right !== undefined &&
+    left >= 0.01 &&
+    left <= 100 &&
+    right >= 0.01 &&
+    right <= 100
+    ? safe
+    : { error: "aspectRatio components are outside 0.01..100" };
+};
+
+function percent(raw: string): number | undefined {
+  if (!raw.endsWith("%")) return undefined;
+  const value = decimal(raw.slice(0, -1));
+  return value !== undefined && value >= 0 && value <= 100 ? value : undefined;
+}
+
+function opaqueColor(value: string): boolean {
+  const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.exec(value);
+  if (hex !== null) {
+    const digits = hex[1]!.toLowerCase();
+    return (
+      digits.length === 3 ||
+      digits.length === 6 ||
+      digits.endsWith(digits.length === 4 ? "f" : "ff")
+    );
   }
-  return { value };
-}
-
-const FONT_FAMILY_RE = /^[A-Za-z0-9 _,'" -]+$/;
-
-export function handleFontFamily(value: unknown): Handled<string> {
-  if (typeof value !== "string") return { error: "value is not a string" };
-  const unsafe = unsafeValue(value);
-  if (unsafe !== undefined) return { error: unsafe };
-  if (!/[A-Za-z]/.test(value) || !FONT_FAMILY_RE.test(value)) {
-    return { error: "not an allowed font-family value" };
+  if (NAMED_COLORS.has(value.toLowerCase())) return true;
+  const rgb = /^rgb\((.*)\)$/.exec(value);
+  if (rgb !== null) {
+    const parts = rgb[1]!.split(",").map((part) => part.trim());
+    if (parts.length !== 3) return false;
+    const percentages = parts.every((part) => part.endsWith("%"));
+    if (percentages) return parts.every((part) => percent(part) !== undefined);
+    if (parts.some((part) => part.endsWith("%"))) return false;
+    return parts.every((part) => {
+      const channel = decimal(part);
+      return channel !== undefined && channel >= 0 && channel <= 255;
+    });
   }
-  return { value };
+  const hsl = /^hsl\((.*)\)$/.exec(value);
+  if (hsl !== null) {
+    const parts = hsl[1]!.split(",").map((part) => part.trim());
+    const hue = parts[0] === undefined ? undefined : decimal(parts[0], true);
+    return (
+      parts.length === 3 &&
+      hue !== undefined &&
+      percent(parts[1]!) !== undefined &&
+      percent(parts[2]!) !== undefined
+    );
+  }
+  return false;
 }
 
-export function handleRatio(value: unknown): Handled<string> {
-  if (typeof value !== "string") return { error: "value is not a string" };
-  const unsafe = unsafeValue(value);
-  if (unsafe !== undefined) return { error: unsafe };
-  if (!isAllowedRatio(value)) return { error: "not a <n> / <m> ratio" };
-  return { value };
+function alpha(raw: string): number | undefined {
+  const value = decimal(raw);
+  return value !== undefined && value >= 0 && value <= 1 ? value : undefined;
 }
 
-/**
- * A non-empty, injection-free CSS value string (the same safe-value gate used
- * for shadows): rejects `url(`/`var(`/`expression(`/`javascript:` and the
- * `;{}<>\`` injection characters via `unsafeValue`, but allows the CSS function
- * shapes an operator legitimately needs (e.g. `linear-gradient(...)`,
- * `rgba(...)`). Reused for `gradient`/`scrim`/`highlight`.
- */
-export function handleCssShape(value: unknown): Handled<string> {
-  if (typeof value !== "string") return { error: "value is not a string" };
-  const unsafe = unsafeValue(value);
-  if (unsafe !== undefined) return { error: unsafe };
-  if (value.trim() === "") return { error: "value is empty" };
-  return { value };
+function translucentColor(value: string): boolean {
+  if (opaqueColor(value)) return true;
+  const rgba = /^rgba\((.*)\)$/.exec(value);
+  if (rgba !== null) {
+    const parts = rgba[1]!.split(",").map((part) => part.trim());
+    if (parts.length !== 4 || alpha(parts[3]!) === undefined) return false;
+    const percentages = parts.slice(0, 3).every((part) => part.endsWith("%"));
+    if (percentages) return parts.slice(0, 3).every((part) => percent(part) !== undefined);
+    if (parts.slice(0, 3).some((part) => part.endsWith("%"))) return false;
+    return parts.slice(0, 3).every((part) => {
+      const channel = decimal(part);
+      return channel !== undefined && channel >= 0 && channel <= 255;
+    });
+  }
+  const hsla = /^hsla\((.*)\)$/.exec(value);
+  if (hsla === null) return false;
+  const parts = hsla[1]!.split(",").map((part) => part.trim());
+  return (
+    parts.length === 4 &&
+    decimal(parts[0]!, true) !== undefined &&
+    percent(parts[1]!) !== undefined &&
+    percent(parts[2]!) !== undefined &&
+    alpha(parts[3]!) !== undefined
+  );
 }
 
-export function handleShadow(value: unknown): Handled<string> {
-  return handleCssShape(value);
+export const colorHandler: ThemeValueHandler<string> = (raw, token) => {
+  const safe = safeCssString(raw);
+  if ("error" in safe) return safe;
+  if (token === "inherit")
+    return safe.value === "inherit" ? safe : { error: "color.inherit must be inherit" };
+  return opaqueColor(safe.value) ? safe : { error: "value is not an allowed opaque color" };
+};
+
+export const scrimHandler: ThemeValueHandler<string> = (raw, token) => {
+  const safe = safeCssString(raw);
+  if ("error" in safe) return safe;
+  if (token === "none")
+    return safe.value === "transparent" ? safe : { error: "scrim.none must be transparent" };
+  return translucentColor(safe.value) ? safe : { error: "value is not an allowed scrim color" };
+};
+
+function splitTopLevel(value: string): string[] | undefined {
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === "(") depth += 1;
+    else if (char === ")") {
+      depth -= 1;
+      if (depth < 0) return undefined;
+    } else if (char === "," && depth === 0) {
+      parts.push(value.slice(start, index).trim());
+      start = index + 1;
+    }
+  }
+  if (depth !== 0) return undefined;
+  parts.push(value.slice(start).trim());
+  return parts;
 }
 
-export function tokenValue<T extends string | number>(
+function gradientStop(value: string): number | undefined {
+  const match = new RegExp(`^(.+) (${UNSIGNED_DECIMAL_SOURCE}%)$`).exec(value);
+  if (match === null) return undefined;
+  const color = match[1]!;
+  const position = percent(match[2]!);
+  return position !== undefined && (color === "transparent" || opaqueColor(color))
+    ? position
+    : undefined;
+}
+
+export const gradientHandler: ThemeValueHandler<string> = (raw) => {
+  const safe = safeCssString(raw);
+  if ("error" in safe) return safe;
+  if (safe.value === "none") return safe;
+  let body: string;
+  let headValid = false;
+  if (safe.value.startsWith("linear-gradient(") && safe.value.endsWith(")")) {
+    body = safe.value.slice("linear-gradient(".length, -1);
+    const parts = splitTopLevel(body);
+    if (parts === undefined || parts.length < 3 || parts.length > 9)
+      return { error: "gradient must contain 2..8 stops" };
+    const angleMatch = new RegExp(`^(${SIGNED_DECIMAL_SOURCE})deg$`).exec(parts.shift()!);
+    const angle = angleMatch === null ? undefined : decimal(angleMatch[1]!, true);
+    headValid = angle !== undefined && angle >= -360 && angle <= 360;
+    body = parts.join(",");
+  } else if (safe.value.startsWith("radial-gradient(") && safe.value.endsWith(")")) {
+    body = safe.value.slice("radial-gradient(".length, -1);
+    const parts = splitTopLevel(body);
+    if (parts === undefined || parts.length < 3 || parts.length > 9)
+      return { error: "gradient must contain 2..8 stops" };
+    const position = new RegExp(
+      `^circle at (${UNSIGNED_DECIMAL_SOURCE}%) (${UNSIGNED_DECIMAL_SOURCE}%)$`,
+    ).exec(parts.shift()!);
+    headValid =
+      position !== null &&
+      percent(position[1]!) !== undefined &&
+      percent(position[2]!) !== undefined;
+    body = parts.join(",");
+  } else return { error: "value is not an allowed gradient" };
+  if (!headValid) return { error: "gradient heading is outside the allowed range" };
+  const stops = splitTopLevel(body);
+  if (stops === undefined || stops.length < 2 || stops.length > 8)
+    return { error: "gradient must contain 2..8 stops" };
+  let previous = -1;
+  for (const stop of stops) {
+    const position = gradientStop(stop);
+    if (position === undefined || position < previous)
+      return { error: "gradient stops are invalid or decreasing" };
+    previous = position;
+  }
+  return safe;
+};
+
+function shadowLength(value: string, negative: boolean): boolean {
+  if (value === "0") return true;
+  const match = new RegExp(
+    `^(${negative ? SIGNED_DECIMAL_SOURCE : UNSIGNED_DECIMAL_SOURCE})(px|rem|em)$`,
+  ).exec(value);
+  if (match === null) return false;
+  const scalar = decimal(match[1]!, negative);
+  if (scalar === undefined) return false;
+  const maximum = match[2] === "px" ? 256 : 16;
+  return scalar >= (negative ? -maximum : 0) && scalar <= maximum;
+}
+
+function shadowLayer(value: string): boolean {
+  let colorStart = value.lastIndexOf(" ");
+  const functionStart = Math.max(value.lastIndexOf(" rgba("), value.lastIndexOf(" hsla("));
+  if (functionStart >= 0) colorStart = functionStart;
+  if (colorStart < 0) return false;
+  const color = value.slice(colorStart + 1);
+  const prefix = value.slice(0, colorStart).trim();
+  if (!translucentColor(color)) return false;
+  const terms = prefix.split(/\s+/);
+  if (terms[0] === "inset") terms.shift();
+  if (terms.length !== 3 && terms.length !== 4) return false;
+  return (
+    shadowLength(terms[0]!, true) &&
+    shadowLength(terms[1]!, true) &&
+    shadowLength(terms[2]!, false) &&
+    (terms[3] === undefined || shadowLength(terms[3], true))
+  );
+}
+
+export const shadowHandler: ThemeValueHandler<string> = (raw) => {
+  const safe = safeCssString(raw);
+  if ("error" in safe) return safe;
+  if (safe.value === "none") return safe;
+  const layers = splitTopLevel(safe.value);
+  return layers !== undefined &&
+    layers.length >= 1 &&
+    layers.length <= 4 &&
+    layers.every(shadowLayer)
+    ? safe
+    : { error: "value is not a 1..4 layer safe shadow" };
+};
+
+export function validateCompleteGroup<K extends string, V>(
   raw: unknown,
-  members: readonly T[],
-  path: string,
+  members: readonly K[],
+  group: string,
+  handler: ThemeValueHandler<V>,
   issues: IssueList,
-): T | undefined {
-  if ((members as readonly unknown[]).includes(raw)) return raw as T;
-  issues.push({ severity: "warning", message: `${path}: invalid token dropped` });
-  return undefined;
-}
-
-export function booleanValue(raw: unknown, path: string, issues: IssueList): boolean | undefined {
-  if (typeof raw === "boolean") return raw;
-  issues.push({ severity: "warning", message: `${path}: invalid boolean dropped` });
-  return undefined;
-}
-
-export function recipeStyleObject(
-  raw: unknown,
-  path: string,
-  issues: IssueList,
-): Record<string, unknown> | undefined {
+): Record<K, V> {
+  const output = nullMap<V>() as Record<K, V>;
   if (!isPlainObject(raw)) {
-    issues.push({ severity: "warning", message: `${path}: style is not an object; ignored` });
-    return undefined;
+    issues.push({
+      severity: "error",
+      message: `theme group "${group}" is missing or not an object`,
+    });
+    return output;
   }
-  return raw;
-}
-
-export function warnUnknownStyleKeys(
-  raw: Record<string, unknown>,
-  known: ReadonlySet<string>,
-  path: string,
-  issues: IssueList,
-): void {
   for (const key of Object.keys(raw)) {
-    if (isForbiddenKey(key)) {
+    if (isForbiddenKey(key) || !(members as readonly string[]).includes(key)) {
       issues.push({
-        severity: "warning",
-        message: `${path}: forbidden key "${printableKey(key)}" dropped`,
+        severity: "error",
+        message: `theme group "${group}" has unknown or forbidden token "${printableKey(key)}"`,
+      });
+    }
+  }
+  for (const key of members) {
+    if (!Object.prototype.hasOwnProperty.call(raw, key)) {
+      issues.push({
+        severity: "error",
+        message: `theme group "${group}" is missing token "${key}"`,
       });
       continue;
     }
-    if (!known.has(key)) {
+    const result = handler(Reflect.get(raw, key), key);
+    if ("error" in result) {
       issues.push({
-        severity: "warning",
-        message: `${path}: unknown style key "${printableKey(key)}" dropped`,
+        severity: "error",
+        message: `theme "${group}" token "${key}": ${result.error}`,
       });
-    }
+    } else output[key] = result.value;
   }
+  return output;
 }

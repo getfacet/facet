@@ -33,7 +33,7 @@ describe("event normalization", () => {
         view: {
           screen: "x".repeat(MAX_FIELD_VALUE_CHARS + 1),
           viewport: "wide",
-          scheme: "invalid",
+          colorMode: "invalid",
           toggled,
         },
       }),

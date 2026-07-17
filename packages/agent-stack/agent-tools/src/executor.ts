@@ -1,5 +1,10 @@
-import { EMPTY_TREE, isTreeShaped } from "@facet/core";
-import { executeGetComposition } from "./executor-assets.js";
+import { EMPTY_TREE, isTreeShaped, type FacetTree } from "@facet/core";
+import {
+  executeGetBrickSpec,
+  executeGetPattern,
+  executeGetPreset,
+  executeGetStyleChoices,
+} from "./executor-assets.js";
 import { executeInspectNode, executeInspectStage } from "./executor-inspect.js";
 import { isFacetStageToolName, isRecord, parseToolCall } from "./executor-input.js";
 import {
@@ -7,7 +12,6 @@ import {
   executeRemoveNode,
   executeSay,
   executeSetNode,
-  executeSetTheme,
 } from "./executor-node.js";
 import { executeRenderPage } from "./executor-page.js";
 import { errorResult } from "./executor-result.js";
@@ -42,25 +46,54 @@ export function executeStageTool(call: unknown, context: StageToolContext): Stag
   }
 
   const input = isRecord(parsed.input) ? parsed.input : {};
-  const catalog = context.assets?.catalog;
+  const assets = context.assets;
   switch (parsed.name) {
     case "render_page":
-      return executeRenderPage(input, shadow, catalog);
+      return assets === undefined
+        ? unavailableSnapshot(parsed.name, shadow)
+        : executeRenderPage(input, shadow, assets.theme);
     case "append_node":
-      return executeAppendNode(input, shadow, catalog);
-    case "get_composition":
-      return executeGetComposition(input, shadow, context.assets?.compositions ?? [], catalog);
+      return assets === undefined
+        ? unavailableSnapshot(parsed.name, shadow)
+        : executeAppendNode(input, shadow, assets.theme);
     case "set_node":
-      return executeSetNode(input, shadow, catalog);
+      return assets === undefined
+        ? unavailableSnapshot(parsed.name, shadow)
+        : executeSetNode(input, shadow, assets.theme);
     case "remove_node":
       return executeRemoveNode(input, shadow);
     case "say":
       return executeSay(input, shadow);
-    case "set_theme":
-      return executeSetTheme(input, shadow, catalog);
+    case "get_brick_spec":
+      return assets === undefined
+        ? unavailableSnapshot(parsed.name, shadow)
+        : executeGetBrickSpec(input, shadow, assets);
+    case "get_style_choices":
+      return assets === undefined
+        ? unavailableSnapshot(parsed.name, shadow)
+        : executeGetStyleChoices(input, shadow, assets);
+    case "get_preset":
+      return assets === undefined
+        ? unavailableSnapshot(parsed.name, shadow)
+        : executeGetPreset(input, shadow, assets);
+    case "get_pattern":
+      return assets === undefined
+        ? unavailableSnapshot(parsed.name, shadow)
+        : executeGetPattern(input, shadow, assets);
     case "inspect_stage":
       return executeInspectStage(input, shadow);
     case "inspect_node":
       return executeInspectNode(input, shadow);
   }
+}
+
+function unavailableSnapshot(tool: string, shadow: FacetTree): StageToolResult {
+  return errorResult(
+    tool,
+    "not_available",
+    "The active asset snapshot is unavailable.",
+    shadow,
+    [],
+    "Retry after the host provides one validated Theme and Pattern snapshot.",
+  );
 }

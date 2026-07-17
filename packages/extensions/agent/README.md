@@ -2,7 +2,7 @@
 
 The in-process agent SDK for Facet: `defineAgent` wraps your logic into an agent
 the runtime can call, and `Stage` is the control surface it drives —
-`render` / `set` / `append` / `setData` / `remove` / `screens` / `theme` / `say`
+`render` / `set` / `append` / `setData` / `remove` / `screens` / `say`
 — to compose and mutate a visitor's page with native Facet data. Each method
 records standard RFC 6902 operations underneath.
 
@@ -42,9 +42,9 @@ export const agent = defineAgent(({ event, stage }) => {
 });
 ```
 
-`Stage` has no composition-specific mutation method. If application code uses a
-composition reference dataset, it should validate or select that data outside
-this SDK, adapt the example into native nodes with ids appropriate for the
+`Stage` has no Pattern-specific mutation method. If application code uses a
+Pattern reference dataset, it should validate or select that data outside this
+SDK, adapt the example into native nodes with ids appropriate for the
 visitor's stage, and author those nodes through `render`, `set`, and `append`.
 The SDK never interprets placeholders, remaps an asset graph, or adds a hidden
 stage writer. Only the native operations recorded by the methods above travel.

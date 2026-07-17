@@ -10,7 +10,6 @@ import {
   type IssueSink,
 } from "./issues.js";
 import { sanitizeNode } from "./primitive-node-validation.js";
-import { isValidThemeName } from "./theme.js";
 import { sanitizeDataWarehouse } from "./data-binding.js";
 import type { DataWarehouse } from "./data-types.js";
 
@@ -109,8 +108,8 @@ function sanitizeScreens(
  * ASSIGN the map's [[Prototype]] instead of storing a node (silently losing it
  * and making dangling-child lookups resolve through the prototype chain). Such
  * ids are also dropped outright — patch pointers to them are forbidden anyway,
- * so they'd be unreachable. Shared by `validateTree` and `validateComposition` so the
- * brick-shape + token-membership sanitization is derived once, not twice.
+ * so they'd be unreachable. This is the single node-map sanitation path for
+ * `validateTree`, keeping brick-shape + token-membership sanitation centralized.
  */
 export function sanitizeNodeMap(
   rawNodes: Record<string, unknown>,
@@ -181,8 +180,8 @@ export function pruneDanglingChildren(nodes: Record<string, FacetNode>, issues: 
  * instantiates 2^depth elements and hangs the tab.
  *
  * Single-parent is enforced PER WALK ROOT: `claimed` resets at the start of each
- * root's DFS (the roots are the tree root plus each kept screen root; a composition
- * passes its single fragment root). This is deliberate — two screens legitimately
+ * root's DFS (the roots are the tree root plus each kept screen root; each
+ * validation walk passes one root). This is deliberate — two screens legitimately
  * SHARE a node (a common header/footer), so a global claim would strip the ref
  * from the second screen and break the pre-drawn-screens feature. Path explosion
  * only matters within one render pass (one root); across roots a node may still
@@ -326,7 +325,6 @@ function validateTreeUnsafe(input: unknown, issues: BoundedIssues): ValidationRe
   const tree: {
     root: string;
     nodes: Record<string, FacetNode>;
-    theme?: string;
     screens?: Record<string, string>;
     entry?: string;
     data?: DataWarehouse;
@@ -339,19 +337,6 @@ function validateTreeUnsafe(input: unknown, issues: BoundedIssues): ValidationRe
   const data = sanitizeDataWarehouse(input.data, issues);
   if (data !== undefined) {
     tree.data = data;
-  }
-  // Keep the theme NAME only when it is a string that passes the theme-name rule
-  // (`isValidThemeName`, the same floor `validateTheme` applies to a document's
-  // own name) — otherwise it is dropped with an issue (else the save-time
-  // re-validate at runtime.ts would strip it silently). This caps an untrusted
-  // writer (a prompt-injected model, a visitor) at 64 chars of `[a-zA-Z0-9_-]`
-  // so an unbounded or control-character name can't be stored and re-shipped in
-  // every rehydrate/replay frame. Styles stay tokens — the tree never carries a
-  // CSS value.
-  if (typeof input.theme === "string" && isValidThemeName(input.theme)) {
-    tree.theme = input.theme;
-  } else if (input.theme !== undefined) {
-    issues.push("theme is not a valid theme name; dropped");
   }
   if (screens !== undefined && entry !== undefined) {
     tree.screens = screens;

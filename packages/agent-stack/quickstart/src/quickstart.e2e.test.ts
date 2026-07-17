@@ -17,8 +17,9 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BRICK_TYPES } from "@facet/core";
-import type { FacetCatalog, FacetComposition, FacetTheme, FacetTree } from "@facet/core";
+import type { FacetPattern, FacetTheme, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
+import { DEFAULT_THEME } from "@facet/react";
 import { MemorySink } from "@facet/runtime";
 import { createStubAgent } from "@facet/reference-agent";
 import { runCli, type RunCliHooks } from "./cli.js";
@@ -39,36 +40,27 @@ const RETIRED_NODE_TYPES = [
   ["st", "at"].join(""),
 ] as const;
 
-const CATALOG_E2E: FacetCatalog = {
-  name: "quickstart-catalog",
-  description: "Quickstart catalog policy",
-  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: BRICK_TYPES.map((type) => ({ type })),
-  compositions: { mode: "all" },
-  policy: {
-    editBeforeAppend: true,
-    compactScreens: true,
-    maxScreenSections: 3,
-  },
-};
-
-const OPERATOR_REFERENCE_NODE_ID = "qs-reference-provenance-node";
-const OPERATOR_REFERENCE_PROVENANCE = "provider-only-reference-provenance-7f4c";
+const OPERATOR_PATTERN_NODE_ID = "qs-pattern-provenance-node";
+const OPERATOR_PATTERN_PROVENANCE = "provider-only-pattern-provenance-7f4c";
 
 /** Concrete operator reference for `--assets`; only the provider may observe its full JSON. */
-const OPERATOR_COMPOSITION: FacetComposition = {
+const OPERATOR_PATTERN: FacetPattern = {
   name: "qs-operator-panel",
-  metadata: {
-    description: "Concrete operator panel reference",
-    category: "operations",
-    tags: ["panel", "operator"],
-  },
-  root: OPERATOR_REFERENCE_NODE_ID,
+  description: "Concrete operator panel Pattern",
+  useWhen: "Use when authoring an operator status panel.",
+  root: OPERATOR_PATTERN_NODE_ID,
   nodes: {
-    [OPERATOR_REFERENCE_NODE_ID]: {
-      id: OPERATOR_REFERENCE_NODE_ID,
+    [OPERATOR_PATTERN_NODE_ID]: {
+      id: OPERATOR_PATTERN_NODE_ID,
+      type: "box",
+      style: { preset: "panel" },
+      children: [`${OPERATOR_PATTERN_NODE_ID}.copy`],
+    },
+    [`${OPERATOR_PATTERN_NODE_ID}.copy`]: {
+      id: `${OPERATOR_PATTERN_NODE_ID}.copy`,
       type: "text",
-      value: OPERATOR_REFERENCE_PROVENANCE,
+      value: OPERATOR_PATTERN_PROVENANCE,
+      style: { preset: "body" },
     },
   },
 };
@@ -79,7 +71,13 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
     "catalog-dashboard": {
       id: "catalog-dashboard",
       type: "box",
-      style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+      style: {
+        preset: "panel",
+        gap: "md",
+        padding: "lg",
+        borderRadius: "lg",
+        width: "full",
+      },
       children: [
         "catalog-dashboard.eyebrow",
         "catalog-dashboard.title",
@@ -91,47 +89,46 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
       id: "catalog-dashboard.eyebrow",
       type: "text",
       value: "Operator catalog",
-      style: { color: "fg-muted", size: "sm", weight: "semibold" },
+      style: { color: "mutedForeground", fontSize: "sm", fontWeight: "semibold" },
     },
     "catalog-dashboard.title": {
       id: "catalog-dashboard.title",
       type: "text",
       value: "Catalog dashboard",
-      style: { color: "fg", size: "xl", weight: "bold" },
+      style: { preset: "heading", fontSize: "xl", fontWeight: "bold" },
     },
     "catalog-arr": {
       id: "catalog-arr",
       type: "box",
-      style: { bg: "surface", border: true, gap: "xs", pad: "md", radius: "md" },
+      style: { preset: "panel", gap: "xs", padding: "md", borderRadius: "md" },
       children: ["catalog-arr.label", "catalog-arr.value", "catalog-arr.delta"],
     },
     "catalog-arr.label": {
       id: "catalog-arr.label",
       type: "text",
       value: "ARR",
-      style: { color: "fg-muted", size: "sm", weight: "medium" },
+      style: { color: "mutedForeground", fontSize: "sm", fontWeight: "medium" },
     },
     "catalog-arr.value": {
       id: "catalog-arr.value",
       type: "text",
       value: "$1.2M",
-      style: { color: "fg", size: "xl", weight: "bold" },
+      style: { fontSize: "xl", fontWeight: "bold" },
     },
     "catalog-arr.delta": {
       id: "catalog-arr.delta",
       type: "text",
       value: "+18%",
-      style: { color: "success", size: "sm", weight: "semibold" },
+      style: { color: "success", fontSize: "sm", fontWeight: "semibold" },
     },
     "catalog-pricing": {
       id: "catalog-pricing",
       type: "box",
       style: {
-        bg: "surface",
-        border: true,
+        preset: "panel",
         gap: "sm",
-        pad: "md",
-        radius: "md",
+        padding: "md",
+        borderRadius: "md",
         shadow: "md",
       },
       children: ["catalog-pricing.title", "catalog-pricing.body", "catalog-pricing-cta"],
@@ -140,18 +137,18 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
       id: "catalog-pricing.title",
       type: "text",
       value: "Pricing path",
-      style: { color: "fg", size: "lg", weight: "bold" },
+      style: { fontSize: "lg", fontWeight: "bold" },
     },
     "catalog-pricing.body": {
       id: "catalog-pricing.body",
       type: "text",
       value: "Route qualified teams to the Pro plan.",
-      style: { color: "fg-muted" },
+      style: { color: "mutedForeground" },
     },
     "catalog-pricing-cta": {
       id: "catalog-pricing-cta",
       type: "box",
-      style: { bg: "accent", pad: "sm", radius: "md" },
+      style: { preset: "primaryAction", padding: "sm", borderRadius: "md" },
       children: ["catalog-pricing-cta.label"],
       onPress: { kind: "agent", name: "view_pricing", payload: { plan: "pro" } },
     },
@@ -159,7 +156,7 @@ const CATALOG_DASHBOARD_TREE: FacetTree = {
       id: "catalog-pricing-cta.label",
       type: "text",
       value: "View pricing",
-      style: { color: "accent-fg", weight: "semibold" },
+      style: { preset: "actionLabel", color: "accentForeground", fontWeight: "semibold" },
     },
   },
 };
@@ -173,14 +170,14 @@ function nativePanelTree(id: string, title: string): FacetTree {
       [id]: {
         id,
         type: "box",
-        style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+        style: { preset: "panel", gap: "md", padding: "lg", borderRadius: "lg", width: "full" },
         children: [titleId, copyId],
       },
       [titleId]: {
         id: titleId,
         type: "text",
         value: title,
-        style: { color: "fg", size: "xl", weight: "bold" },
+        style: { preset: "heading", fontSize: "xl", fontWeight: "bold" },
       },
       [copyId]: {
         id: copyId,
@@ -819,11 +816,25 @@ describe("quickstart E2E — stub flow through the proxy (DC-001, DC-008)", () =
   });
 });
 
-describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-010)", () => {
-  it("reads a reference dataset then authors native bricks", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
+describe("quickstart E2E — Pattern recovery and provider-only assets", () => {
+  it("recovers from an invalid style call with Pattern first discovery", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-pattern-"));
     const openAi = installOpenAiMock([
-      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
+      [mockCall("get_pattern", { name: OPERATOR_PATTERN.name })],
+      [
+        mockCall("render_page", {
+          tree: {
+            ...CATALOG_DASHBOARD_TREE,
+            nodes: {
+              ...CATALOG_DASHBOARD_TREE.nodes,
+              "catalog-dashboard": {
+                ...CATALOG_DASHBOARD_TREE.nodes["catalog-dashboard"],
+                style: { preset: "panel", padding: "giant" },
+              },
+            },
+          },
+        }),
+      ],
       [
         mockCall("render_page", { tree: CATALOG_DASHBOARD_TREE }),
         mockCall("say", { text: "native dashboard ready" }),
@@ -832,28 +843,24 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
     ]);
     let running: RunningQuickstart | undefined;
     try {
-      await writeFile(join(dir, "catalog.json"), JSON.stringify(CATALOG_E2E), "utf8");
-      await writeFile(
-        join(dir, "panel.composition.json"),
-        JSON.stringify(OPERATOR_COMPOSITION),
-        "utf8",
-      );
+      await writeFile(join(dir, "patterns.json"), JSON.stringify([OPERATOR_PATTERN]), "utf8");
       const booted = await bootCli(["--assets", dir]);
       running = booted.running;
 
       const shell = await (await fetch(`${running.url}/`)).text();
-      expect(shell).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-      expect(shell).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
-      expect(shell).not.toContain("__FACET_COMPOSITIONS__");
+      expect(shell).toContain("__FACET_THEME__");
+      expect(shell).not.toContain(OPERATOR_PATTERN_NODE_ID);
+      expect(shell).not.toContain(OPERATOR_PATTERN_PROVENANCE);
+      expect(shell).not.toContain("__FACET_PATTERNS__");
 
-      const visitorId = "e2e-reference-native";
+      const visitorId = "e2e-pattern-recovery";
       const stream = await openStream(running.url, visitorId);
       let frameText = "";
       try {
         await stream.next(1); // reset
         const post = await postEvent(running.url, visitorId, {
           kind: "message",
-          text: "Read the operator reference, then build a native dashboard",
+          text: "Read the operator Pattern, then build a styled native dashboard",
         });
         expect(post.status).toBe(202);
 
@@ -862,16 +869,24 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
         expect(sayTexts(frames)).toEqual(["native dashboard ready"]);
 
         const firstProviderRequest = JSON.stringify(openAi.bodies[0]);
-        expect(firstProviderRequest).toContain("CATALOG");
-        expect(firstProviderRequest).toContain("quickstart-catalog");
-        expect(firstProviderRequest).toContain("allowed bricks: box; text; media; input");
-        expect(firstProviderRequest).toContain("reference policy: all advertised references");
-        expect(firstProviderRequest).toContain(OPERATOR_COMPOSITION.name);
-        expect(firstProviderRequest).not.toContain(OPERATOR_REFERENCE_NODE_ID);
+        expect(firstProviderRequest).toContain("PATTERNS");
+        expect(firstProviderRequest).toContain(OPERATOR_PATTERN.name);
+        expect(firstProviderRequest).toContain(OPERATOR_PATTERN.description);
+        expect(firstProviderRequest).toContain(OPERATOR_PATTERN.useWhen);
+        expect(firstProviderRequest).not.toContain(OPERATOR_PATTERN_NODE_ID);
 
         const providerAfterRead = JSON.stringify(openAi.bodies[1]);
-        expect(providerAfterRead).toContain(OPERATOR_REFERENCE_NODE_ID);
-        expect(providerAfterRead).toContain(OPERATOR_REFERENCE_PROVENANCE);
+        expect(providerAfterRead).toContain(OPERATOR_PATTERN_NODE_ID);
+        expect(providerAfterRead).toContain(OPERATOR_PATTERN_PROVENANCE);
+
+        const providerAfterRejectedStyle = JSON.stringify(openAi.bodies[2]);
+        expect(providerAfterRejectedStyle).toContain("invalid_authoring");
+        expect(providerAfterRejectedStyle).toContain("rejected");
+        expect(providerAfterRejectedStyle).toContain("/nodes/catalog-dashboard/style/padding");
+        expect(providerAfterRejectedStyle).toContain("allowed");
+
+        const providerAfterRecovery = JSON.stringify(openAi.bodies[3]);
+        expect(providerAfterRecovery).toContain("applied_visible");
 
         const seedText = JSON.stringify(frames[0]?.data);
         expect(seedText).toContain(QUICKSTART_INITIAL_STAGE.root);
@@ -881,13 +896,15 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
         expect(patchText).toContain("catalog-pricing");
         expect(patchText).toContain('"type":"box"');
         expect(patchText).toContain('"type":"text"');
+        expect(patchText).toContain('"preset":"panel"');
+        expect(patchText).toContain('"padding":"lg"');
+        expect(patchText).not.toContain("giant");
         for (const retired of RETIRED_NODE_TYPES) {
           expect(patchText).not.toContain(`"type":"${retired}"`);
         }
         frameText = JSON.stringify(frames);
-        expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-        expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
-        expect(frameText).not.toContain('"kind":"composition"');
+        expect(frameText).not.toContain(OPERATOR_PATTERN_NODE_ID);
+        expect(frameText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
         expect(booted.captured.err.join("\n")).not.toContain("turn failed");
       } finally {
         await stream.close();
@@ -897,9 +914,9 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
       const snapshot = await readEvents(reconnect, 2); // reset + native stage snapshot
       const snapshotText = JSON.stringify(snapshot);
       expect(snapshotText).toContain("catalog-dashboard");
-      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
-      expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+      expect(snapshotText).not.toContain(OPERATOR_PATTERN_NODE_ID);
+      expect(snapshotText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
+      expect(frameText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
     } finally {
       await running?.close();
       openAi.restore();
@@ -907,18 +924,18 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
     }
   });
 
-  it("serializes rapid same-visitor reference reads and native writes in order", async () => {
+  it("serializes rapid same-visitor Pattern reads and native writes in order", async () => {
     const dashboardTree = nativePanelTree("native-dashboard", "Dashboard band");
     const pricingTree = nativePanelTree("native-pricing", "Pricing band");
-    const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-catalog-"));
+    const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-pattern-"));
     const openAi = installOpenAiMock([
-      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
+      [mockCall("get_pattern", { name: OPERATOR_PATTERN.name })],
       [
         mockCall("render_page", { tree: dashboardTree }),
         mockCall("say", { text: "native dashboard ready" }),
       ],
       [],
-      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
+      [mockCall("get_pattern", { name: OPERATOR_PATTERN.name })],
       [
         mockCall("render_page", { tree: pricingTree }),
         mockCall("say", { text: "native pricing ready" }),
@@ -927,16 +944,11 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
     ]);
     let running: RunningQuickstart | undefined;
     try {
-      await writeFile(join(dir, "catalog.json"), JSON.stringify(CATALOG_E2E), "utf8");
-      await writeFile(
-        join(dir, "panel.composition.json"),
-        JSON.stringify(OPERATOR_COMPOSITION),
-        "utf8",
-      );
+      await writeFile(join(dir, "patterns.json"), JSON.stringify([OPERATOR_PATTERN]), "utf8");
       const booted = await bootCli(["--assets", dir]);
       running = booted.running;
 
-      const visitorId = "e2e-catalog-rapid";
+      const visitorId = "e2e-pattern-rapid";
       const stream = await openStream(running.url, visitorId);
       try {
         await stream.next(1); // reset
@@ -966,11 +978,10 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
         expect(frameText.indexOf("native-dashboard")).toBeLessThan(
           frameText.indexOf("native-pricing"),
         );
-        expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-        expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
-        expect(frameText).not.toContain('"kind":"composition"');
-        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_REFERENCE_PROVENANCE);
-        expect(JSON.stringify(openAi.bodies[4])).toContain(OPERATOR_REFERENCE_PROVENANCE);
+        expect(frameText).not.toContain(OPERATOR_PATTERN_NODE_ID);
+        expect(frameText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
+        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_PATTERN_PROVENANCE);
+        expect(JSON.stringify(openAi.bodies[4])).toContain(OPERATOR_PATTERN_PROVENANCE);
         expect(booted.captured.err.join("\n")).not.toContain("turn failed");
       } finally {
         await stream.close();
@@ -980,8 +991,8 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
       const snapshot = await readEvents(reconnect, 2);
       const snapshotText = JSON.stringify(snapshot);
       expect(snapshotText).toContain("native-pricing");
-      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+      expect(snapshotText).not.toContain(OPERATOR_PATTERN_NODE_ID);
+      expect(snapshotText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
     } finally {
       await running?.close();
       openAi.restore();
@@ -989,34 +1000,29 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
     }
   });
 
-  it("fails safe when the provider goes offline after a reference read", async () => {
+  it("fails safe when the provider goes offline after a Pattern read", async () => {
     const dir = await mkdtemp(join(tmpdir(), "facet-quickstart-offline-"));
     const openAi = installOpenAiMock([
-      [mockCall("get_composition", { name: OPERATOR_COMPOSITION.name })],
+      [mockCall("get_pattern", { name: OPERATOR_PATTERN.name })],
       new Error("connect ECONNREFUSED (provider offline after read)"),
     ]);
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     let running: RunningQuickstart | undefined;
     try {
-      await writeFile(
-        join(dir, "panel.composition.json"),
-        JSON.stringify(OPERATOR_COMPOSITION),
-        "utf8",
-      );
-      let resolvedCompositionNames: readonly string[] = [];
+      await writeFile(join(dir, "patterns.json"), JSON.stringify([OPERATOR_PATTERN]), "utf8");
+      let resolvedPatternNames: readonly string[] = [];
       const booted = await bootCli(["--assets", dir], {
         onResolvedAssets: (assets) => {
-          resolvedCompositionNames = (assets.compositions ?? []).map((c) => c.name);
+          resolvedPatternNames = assets.patterns.map((pattern) => pattern.name);
         },
       });
       running = booted.running;
 
-      // The canonical snapshot reached the CLI seam: operator doc + defaults.
-      expect(resolvedCompositionNames).toContain("qs-operator-panel");
-      expect(resolvedCompositionNames).toContain("pricing-section");
+      // An explicit exact Pattern list replaces the bundled defaults at the CLI seam.
+      expect(resolvedPatternNames).toEqual(["qs-operator-panel"]);
 
-      // DC-013: the boot script materializes ONLY the two known globals — no
-      // composition document, default library, global, or resolver.
+      // The boot script materializes only Theme + initial stage. Pattern trees
+      // remain provider-side and have no browser global or route.
       const shell = await (await fetch(`${running.url}/`)).text();
       const bootTag = (shell.match(/<script>[\s\S]*?<\/script>/g) ?? []).find((tag) =>
         tag.includes("__FACET_"),
@@ -1026,11 +1032,11 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
       new Function("window", bootTag!.slice("<script>".length, -"</script>".length))(fakeWindow);
       expect(Object.keys(fakeWindow).sort()).toEqual([
         "__FACET_INITIAL_STAGE__",
-        "__FACET_THEMES__",
+        "__FACET_THEME__",
       ]);
-      expect(shell).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-      expect(shell).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
-      expect(shell).not.toContain("__FACET_COMPOSITIONS__");
+      expect(shell).not.toContain(OPERATOR_PATTERN_NODE_ID);
+      expect(shell).not.toContain(OPERATOR_PATTERN_PROVENANCE);
+      expect(shell).not.toContain("__FACET_PATTERNS__");
 
       // The read itself has no stage effect. The next provider request receives
       // the exact reference, then fails; the browser gets only seed + fail-safe.
@@ -1046,11 +1052,11 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
         expect(JSON.stringify(frames[0]?.data)).toContain(QUICKSTART_INITIAL_STAGE.root);
         expect(sayTexts(frames)[0]).toMatch(/sorry/i);
         frameText = JSON.stringify(frames);
-        expect(frameText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-        expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+        expect(frameText).not.toContain(OPERATOR_PATTERN_NODE_ID);
+        expect(frameText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
         expect(openAi.bodies.length).toBeGreaterThanOrEqual(2);
-        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_REFERENCE_NODE_ID);
-        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_REFERENCE_PROVENANCE);
+        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_PATTERN_NODE_ID);
+        expect(JSON.stringify(openAi.bodies[1])).toContain(OPERATOR_PATTERN_PROVENANCE);
 
         // The server stays healthy after the outage.
         const health = await fetch(`${running.url}/health`);
@@ -1066,9 +1072,9 @@ describe("quickstart E2E — reference datasets stay provider-only (DC-006, DC-0
       expect(kindOf(snap[1]?.data)).toBe("patch");
       const snapshotText = JSON.stringify(snap[1]?.data);
       expect(snapshotText).toContain(QUICKSTART_INITIAL_STAGE.root);
-      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_NODE_ID);
-      expect(snapshotText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
-      expect(frameText).not.toContain(OPERATOR_REFERENCE_PROVENANCE);
+      expect(snapshotText).not.toContain(OPERATOR_PATTERN_NODE_ID);
+      expect(snapshotText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
+      expect(frameText).not.toContain(OPERATOR_PATTERN_PROVENANCE);
     } finally {
       await running?.close();
       openAi.restore();
@@ -1124,7 +1130,7 @@ describe("quickstart E2E — quickstart brick default", () => {
         expect(providerRequest).toContain(
           "Bricks are box, text, media, input, richtext, table, chart, list, keyValue, progress, loading.",
         );
-        expect(providerRequest).toContain("optional reference");
+        expect(providerRequest).toContain("Pattern index");
         expect(providerRequest).not.toContain("STUB_TREE");
         expect(booted.captured.out.join("\n")).toContain("openai");
       } finally {
@@ -1145,14 +1151,14 @@ const SEED_TREE: FacetTree = {
     "seed-root": {
       id: "seed-root",
       type: "box",
-      style: { direction: "col", gap: "md" },
+      style: { direction: "column", gap: "md" },
       children: ["seed-hero"],
     },
     "seed-hero": { id: "seed-hero", type: "text", value: "Seeded skeleton" },
   },
 };
 
-describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
+describe("quickstart E2E — singular Theme & seeding (DC-009, DC-010)", () => {
   it("ships the seed to the FIRST stream as a stamped patch frame on the visit turn", async () => {
     // A recording NO-OP agent: it MUTATES no stage (paints nothing) — it only
     // records the stage it was handed and emits one `say` as a deterministic
@@ -1215,7 +1221,7 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
         "seed-root": {
           id: "seed-root",
           type: "box",
-          style: { direction: "col", gap: "md" },
+          style: { direction: "column", gap: "md" },
           children: ["seed-hero"],
         },
         "seed-hero": {
@@ -1243,13 +1249,16 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
     // `validateTheme` already refuses `<` in values, but a description is freer
     // text — the shell's `<`→< escape is the defense-in-depth that keeps a
     // hostile description from closing the injected <script> and running code.
-    const themes: readonly FacetTheme[] = [
-      { name: "midnight", description: "</script><script>alert(1)</script>" },
-    ];
-    const themed = await boot({ themes });
+    const theme: FacetTheme = {
+      ...DEFAULT_THEME,
+      name: "midnight",
+      description: "</script><script>alert(1)</script>",
+    };
+    const themed = await boot({ theme });
     try {
       const body = await (await fetch(`${themed.url}/`)).text();
-      expect(body).toContain("window.__FACET_THEMES__ = ");
+      expect(body).toContain("window.__FACET_THEME__ = ");
+      expect(body).not.toContain("__FACET_THEMES__");
       expect(body).toContain('"midnight"');
       // Every `<` in the JSON is escaped, so the hostile marker is inert data.
       expect(body).toContain("\\u003c/script>\\u003cscript>alert(1)");
@@ -1268,9 +1277,12 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
     // syntax error or clobber the first assignment, silently killing BOTH the
     // instant paint and the theme map. Executing the body (not string-matching
     // the `;`) is what catches that.
-    const validTheme: FacetTheme = { name: "brand", description: "operator theme" };
-    const themes: readonly FacetTheme[] = [validTheme];
-    const seeded = await boot({ themes, initialStage: SEED_TREE });
+    const validTheme: FacetTheme = {
+      ...DEFAULT_THEME,
+      name: "brand",
+      description: "operator theme",
+    };
+    const seeded = await boot({ theme: validTheme, initialStage: SEED_TREE });
     try {
       const body = await (await fetch(`${seeded.url}/`)).text();
 
@@ -1282,7 +1294,8 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
       expect(body.indexOf(bootTag)).toBeLessThan(body.indexOf('src="/app.js"'));
 
       // Both assignments are present in the one script.
-      expect(bootTag).toContain("window.__FACET_THEMES__ =");
+      expect(bootTag).toContain("window.__FACET_THEME__ =");
+      expect(bootTag).not.toContain("__FACET_THEMES__");
       expect(bootTag).toContain("window.__FACET_INITIAL_STAGE__ =");
 
       // The join contract: executing the extracted body as real JS must
@@ -1291,14 +1304,14 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
       const scriptBody = bootTag.slice("<script>".length, -"</script>".length);
       const fakeWindow: Record<string, unknown> = {};
       new Function("window", scriptBody)(fakeWindow);
-      expect(fakeWindow.__FACET_THEMES__).toEqual(themes);
+      expect(fakeWindow.__FACET_THEME__).toEqual(validTheme);
       expect(fakeWindow.__FACET_INITIAL_STAGE__).toEqual(SEED_TREE);
     } finally {
       await seeded.close();
     }
   });
 
-  it("stub theme switch: emits the /theme add-op and persists theme on reconnect", async () => {
+  it("treats a theme-like chat message as content and never authors document Theme", async () => {
     const visitorId = "e2e-theme";
     const stream = await openStream(base, visitorId);
     try {
@@ -1306,31 +1319,30 @@ describe("quickstart E2E — themes & seeding (DC-009, DC-010)", () => {
       await postEvent(base, visitorId, { kind: "visit", visitor: { visitorId } });
       await stream.next(1); // visit patch (STUB_TREE)
 
-      // "theme <name>" ⇒ the stub runs `stage.theme(name)` + a say (DC-010).
       await postEvent(base, visitorId, { kind: "message", text: "theme midnight" });
-      const frames = await stream.next(2); // theme patch + say
+      const frames = await stream.next(2); // ordinary text patch + say
       expect(frames.map((f) => kindOf(f.data))).toEqual(["patch", "say"]);
       const patchText = JSON.stringify(frames[0]?.data);
-      expect(patchText).toContain('"op":"add"');
-      expect(patchText).toContain('"path":"/theme"');
-      expect(patchText).toContain('"value":"midnight"');
+      expect(patchText).toContain("echo: theme midnight");
+      expect(patchText).not.toContain('"path":"/theme"');
       expect(sayTexts(frames)).toEqual(["stub: theme midnight"]);
     } finally {
       await stream.close();
     }
 
-    // Reconnect: the rehydrate snapshot carries the persisted `theme`, proving a
-    // string `theme` survived the runtime's save-time `validateTree` (WU-2's
-    // keep-if-string — else `runtime.ts` would strip the name on first save).
+    // Reconnect keeps the ordinary authored content and still has no Theme field.
     const reconnect = await fetch(`${base}/stream?visitorId=${visitorId}`);
     const snap = await readEvents(reconnect, 2); // reset + snapshot patch
     expect(kindOf(snap[1]?.data)).toBe("patch");
-    expect(JSON.stringify(snap[1]?.data)).toContain('"theme":"midnight"');
+    const snapshotText = JSON.stringify(snap[1]?.data);
+    expect(snapshotText).toContain("echo: theme midnight");
+    expect(snapshotText).not.toContain('"theme":');
   });
 
   it("no-assets boot: shell carries no theme global and a fresh connect is a bare reset", async () => {
     // The shared `running` server booted with no themes and no initialStage.
     const body = await (await fetch(`${base}/`)).text();
+    expect(body).not.toContain("__FACET_THEME__");
     expect(body).not.toContain("__FACET_THEMES__");
     // ...and no seed global either — byte-identical to the no-assets shell.
     expect(body).not.toContain("__FACET_INITIAL_STAGE__");

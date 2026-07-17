@@ -5,7 +5,6 @@ import {
   type NodeId,
   type ServerMessage,
 } from "@facet/core";
-import { formatCompositionObservation } from "./composition-observation.js";
 import { formatAgentToolObservation, isVisitorVisibleStageChange } from "./observation.js";
 import type { AgentToolObservationInput } from "./observation.js";
 import { foldStageShadow } from "./stage-shadow.js";
@@ -79,13 +78,10 @@ export function okMessageResult(
     nextAction: options.nextAction ?? nextActionForOutcome(outcome),
     summary: folded.summary,
   };
-  const formattedObservation =
-    toolName === "get_composition" && options.data !== undefined
-      ? formatCompositionObservation(observationInput, options.data)
-      : formatAgentToolObservation({
-          ...observationInput,
-          ...(options.data !== undefined ? { data: options.data } : {}),
-        });
+  const formattedObservation = formatAgentToolObservation({
+    ...observationInput,
+    ...(options.data !== undefined ? { data: options.data } : {}),
+  });
   return {
     status: "ok",
     observation: formattedObservation,

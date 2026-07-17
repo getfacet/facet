@@ -10,12 +10,34 @@ const STAGE: FacetTree = {
 };
 
 describe("bridge prompts", () => {
+  it("advertises no Theme command or retired style syntax", () => {
+    const prompts = [
+      buildSpawnPrompt({ kind: "visit", visitor: { visitorId: "visitor" } }, STAGE),
+      PERSISTENT_SYSTEM_PROMPT,
+    ];
+
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain("facet theme");
+      expect(prompt).not.toContain("theme(name)");
+      for (const retired of [
+        "catalog",
+        "composition",
+        "recipe",
+        "variant",
+        ["active", "Variant"].join(""),
+        ["active", "Style"].join(""),
+      ]) {
+        expect(prompt.toLowerCase()).not.toContain(retired.toLowerCase());
+      }
+    }
+  });
+
   it("preserves the spawn visit prompt", () => {
     const event: ClientEvent = { kind: "visit", visitor: { visitorId: "visitor" } };
 
     expect(buildSpawnPrompt(event, STAGE))
       .toBe(`You control a live web page via the \`facet\` command. Change the page by running:
-  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet theme <name>   facet say <text>
+  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet say <text>
 
 ${STAGE_SPEC}
 
@@ -42,7 +64,6 @@ A visitor just arrived. Render a short welcome page with \`facet render\`.`);
 - append(parentId, node): add a node under a parent
 - set(node): add or replace a node by id
 - remove(id): delete a node
-- theme(name): select a validated theme name
 - say(text): send a short chat reply
 
 ${STAGE_SPEC}
@@ -80,7 +101,7 @@ On a fresh visit, render a page. On a message, prefer append/set/remove to chang
 
 function spawnSystem(): string {
   return `You control a live web page via the \`facet\` command. Change the page by running:
-  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet theme <name>   facet say <text>
+  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet say <text>
 
 ${STAGE_SPEC}
 

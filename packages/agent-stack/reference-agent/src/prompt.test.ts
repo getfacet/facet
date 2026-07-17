@@ -1,16 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { EMPTY_TREE, STAGE_SPEC } from "@facet/core";
-import type {
-  ClientEvent,
-  FacetCatalog,
-  FacetSession,
-  FacetComposition,
-  FacetTheme,
-  FacetTree,
-  ServerMessage,
-} from "@facet/core";
+import type { ClientEvent, FacetSession, FacetTree, ServerMessage } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import type { TurnMessage } from "./provider.js";
 import { redactSensitiveText } from "./prompt/messages.js";
@@ -23,6 +15,7 @@ import {
   FACET_TOOL_PLAYBOOK_PROMPT,
   FACET_TOOL_RESULT_CONTRACT_PROMPT,
 } from "@facet/agent-tools";
+import type { StageToolAssets } from "@facet/agent-tools";
 import {
   DEFAULT_GUIDE,
   HISTORY_TURNS,
@@ -60,7 +53,6 @@ function largeStage(order: readonly number[]): FacetTree {
     nodes,
     screens: { home: "root", review: "node-001" },
     entry: "home",
-    theme: "studio",
   };
 }
 
@@ -68,37 +60,33 @@ function stored(text: string, messages: readonly ServerMessage[]): StoredEvent {
   return { at: 0, event: { kind: "message", text }, messages };
 }
 
-function compositionSectionOf(system: string): string {
-  const start = system.indexOf("COMPOSITIONS");
-  const end = system.lastIndexOf("PAGE BRIEF");
-  return start >= 0 && end > start ? system.slice(start, end) : "";
-}
-
-function catalogSectionOf(system: string): string {
-  const start = system.indexOf("CATALOG");
-  const nextSections = ["COMPOSITIONS", "PAGE BRIEF"]
-    .map((heading) => system.indexOf(heading, start + 1))
-    .filter((index) => index > start);
-  const end = nextSections.length > 0 ? Math.min(...nextSections) : system.length;
-  return start >= 0 ? system.slice(start, end) : "";
-}
-
-function catalogFixture(): FacetCatalog {
+function promptAssets(): StageToolAssets {
   return {
-    name: "reference-catalog",
-    description: "Reference agent catalog policy",
-    theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-    bricks: [
-      { type: "box", variants: ["surface"], guidance: "Use boxes for major groups." },
-      { type: "progress", variants: ["success"] },
+    theme: { privateConcreteValue: "#123456" },
+    patterns: [{ privateTree: "private-pattern-tree" }],
+    patternIndex: [
+      {
+        name: "account-summary",
+        description: "A compact account summary.",
+        useWhen: "Account status needs one focused view.",
+      },
     ],
-    compositions: { mode: "allow", names: ["approved"] },
-    policy: {
-      editBeforeAppend: true,
-      compactScreens: true,
-      maxScreenSections: 4,
-    },
-  };
+    brickIndex: [
+      {
+        type: "box",
+        description: "The only container Brick.",
+        useWhen: "Grouping a flow of Bricks.",
+      },
+    ],
+    presetIndex: [
+      {
+        brick: "box",
+        name: "panel",
+        description: "A reusable panel treatment.",
+        useWhen: "A distinct content surface is needed.",
+      },
+    ],
+  } as unknown as StageToolAssets;
 }
 
 describe("buildSystem", () => {
@@ -113,7 +101,7 @@ describe("buildSystem", () => {
     expect(system).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
     expect(system).toContain("Default to a compact UX");
     expect(system).toContain("BRICK GUIDANCE");
-    expect(system).toContain("Default to an edit-before-append strategy");
+    expect(system).toContain("Default to edit before append");
     expect(system).toContain("render_page: first paint");
     expect(system).toMatch(/reuse .*node ids/i);
   });
@@ -127,85 +115,29 @@ describe("buildSystem", () => {
     expect(system).toMatch(/bind[^.]*by name with "from"/i);
   });
 
-  it("composition metadata privacy: guidance is consumed from agent-tools without leaking asset internals", () => {
-    const system = buildSystem(DEFAULT_GUIDE, {
-      themes: [
-        {
-          name: "default",
-          description: "Default theme",
-          color: { bg: "#ffffff", fg: "#111111" },
-          recipeInternals: "reference-recipe-sentinel",
-        },
-      ] as unknown as readonly FacetTheme[],
-      compositions: [
-        {
-          name: "approved",
-          metadata: {
-            description: "Approved reference composition",
-            category: "hero",
-            useWhen: "leading a fresh landing page",
-            internalNotes: "reference-metadata-sentinel",
-          },
-          root: "reference-composition-root",
-          nodes: {
-            "reference-composition-root": {
-              id: "reference-composition-root",
-              type: "text",
-              value: "reference-composition-json",
-            },
-          },
-          providerKey: "sk-reference-key",
-          visitorId: "reference-visitor-id",
-        },
-      ] as unknown as readonly FacetComposition[],
-      catalog: catalogFixture(),
-    });
+  it("indexes Pattern and Preset metadata without leaking exact assets", () => {
+    const system = buildSystem(DEFAULT_GUIDE, promptAssets());
 
-    expect(system).toMatch(
-      /BRICK GUIDANCE[\s\S]*closed, catalog-guided brick vocabulary[\s\S]*reference-dataset internals[\s\S]*never write raw CSS/i,
-    );
-    expect(system).toMatch(
-      /product-quality flow[\s\S]*input for visitor entry[\s\S]*pressable box with label text/i,
-    );
-    expect(system).toMatch(/editBeforeAppend is true/i);
-    expect(system).toContain("allowed bricks: box variants: surface");
-    expect(system).toContain("progress variants: success");
-    expect(system).not.toContain("allowed components"); // composition-hard-cut: allowed-negative
-    expect(system).not.toContain("primitiveFallback");
-    expect(system).not.toContain("policy order");
-
-    expect(system).not.toContain("#ffffff");
-    expect(system).not.toContain("#111111");
-    expect(system).not.toContain("reference-recipe-sentinel");
-    expect(system).not.toContain("reference-composition-root");
-    expect(system).not.toContain("reference-composition-json");
-    expect(system).not.toContain("Slot default must stay private");
-    expect(system).not.toContain("sk-reference-key");
-    expect(system).not.toContain("reference-visitor-id");
-    const compositionSection = compositionSectionOf(system);
-    // Only the required index fields are advertised; all other metadata stays private.
-    expect(compositionSection).toContain("approved: Approved reference composition");
-    expect(compositionSection).not.toContain("category: hero");
-    expect(compositionSection).not.toContain("useWhen: leading a fresh landing page");
-    expect(compositionSection).not.toContain("reference-metadata-sentinel");
-    expect(compositionSection).not.toContain('"nodes"');
-    expect(compositionSection).not.toContain('"root"');
+    expect(system).toContain("account-summary: A compact account summary.");
+    expect(system).toContain("Use when: Account status needs one focused view.");
+    expect(system).toContain("box/panel: A reusable panel treatment.");
+    expect(system).not.toContain("#123456");
+    expect(system).not.toContain("private-pattern-tree");
   });
 
-  it("prompt/system.ts declares the canonical composition PromptAssets (no legacy naming)", () => {
+  it("prompt/system.ts accepts one immutable StageToolAssets snapshot", () => {
     const source = readFileSync(
       fileURLToPath(new URL("./prompt/system.ts", import.meta.url)),
       "utf8",
     );
-    expect(source).toContain("readonly compositions: readonly FacetComposition[]");
-    expect(source).not.toMatch(new RegExp(["st", "amp"].join(""), "i"));
+    expect(source).toContain("export type PromptAssets = StageToolAssets");
+    expect(source).not.toMatch(new RegExp(["cata", "log"].join(""), "i"));
   });
 
   it("teaches structured pending and visibility outcomes before completion", () => {
     const system = buildSystem(DEFAULT_GUIDE);
     expect(system).toContain(FACET_TOOL_RESULT_CONTRACT_PROMPT);
     expect(system).toContain("TOOL RESULT CONTRACT");
-    expect(system).toContain("Use structured outcome recovery");
     expect(system).toContain("applied_visible");
     expect(system).toContain("applied_not_visible");
     expect(system).toContain("applied_with_warnings");
@@ -214,32 +146,27 @@ describe("buildSystem", () => {
     expect(system).toMatch(/Do not claim completion/i);
   });
 
-  it("teaches appear/scroll/onHold through the embedded STAGE_SPEC (drift net)", () => {
-    // Not a tautology on STAGE_SPEC inclusion: pins that the COMPOSED system
-    // prompt actually carries the three new words, so quickstart notices if the
-    // vocabulary ever drops out of the spec (and this bundle touches
-    // packages/agent-stack/quickstart/ so the /live-test Tier-2 path heuristic fires).
+  it("teaches host-owned colorMode and current Pattern Preset style flow", () => {
     const system = buildSystem(DEFAULT_GUIDE);
-    expect(system).toContain('"onHold"');
-    expect(system).toMatch(/appear\(none\|fade\|slide\)/);
-    expect(system).toMatch(/scroll\(x\|y\)/);
-    expect(system).not.toMatch(/scroll\(bool\)/);
+    expect(system).toMatch(/colorMode[^.]*host\/client view state/i);
+    expect(system).toMatch(/Pattern index[^]*Preset index[^]*Brick index/i);
+    expect(system).toMatch(/Preset[^.]*direct style/i);
+    expect(system).toContain("get_pattern");
+    expect(system).toContain("get_brick_spec");
+    expect(system).toContain("get_style_choices");
+    expect(system).toContain("get_preset");
   });
 
-  it("brick-vocab v1 prompt teaches media, input options, columns, and scroll axes", () => {
+  it("teaches all native Bricks without expanding detailed mutation schemas", () => {
     const system = buildSystem(DEFAULT_GUIDE);
-    expect(system).toContain('"type":"media"');
-    expect(system).toMatch(/"image"\|"video"/);
-    expect(system).toMatch(/"select"/);
-    expect(system).toMatch(/"checkbox"/);
-    expect(system).toContain('"options"?:[strings]');
-    expect(system).toContain("columns(2|3|4)");
-    expect(system).toContain("scroll(x|y)");
-    expect(system).not.toContain("(box, text, image, field)");
+    expect(system).toContain(
+      "Bricks are box, text, media, input, richtext, table, chart, list, keyValue, progress, loading",
+    );
+    expect(system).toMatch(/one unfamiliar Brick[^.]*get_brick_spec/i);
+    expect(system).toMatch(/get_style_choices[^.]*unfamiliar property/i);
 
     const tools = JSON.stringify(TOOLS);
-    expect(tools).toContain("box, text, media, input");
-    expect(tools).not.toContain("box | text | image | field");
+    expect(tools).not.toContain("privateConcreteValue");
   });
 
   it("exports a non-empty DEFAULT_GUIDE and HISTORY_TURNS = 20", () => {
@@ -250,122 +177,60 @@ describe("buildSystem", () => {
     expect(HISTORY_TURNS).toBe(20);
   });
 
-  it("with no assets (or empty arrays) adds no THEMES/COMPOSITIONS section (DC-008 byte-identity)", () => {
+  it("with no assets keeps bounded empty Pattern and Preset indexes", () => {
     const guide = "# My shop\n\nSell exactly one teapot.";
     const base = buildSystem(guide);
     expect(base).toContain(FACET_ASSET_PRIVACY_PROMPT);
-    // Empty assets must produce the byte-identical no-assets string.
-    expect(buildSystem(guide, { themes: [], compositions: [] })).toBe(base);
-    // No injected asset SECTION is present (the STAGE_SPEC may mention a "THEMES
-    // list" in prose — we probe for the section intros this WU adds, not the word).
-    expect(base).not.toContain("select by NAME with the set_theme tool");
-    expect(base).not.toContain("Reference datasets available by NAME");
+    expect(base).toMatch(/PATTERNS[^]*\(none available\)/);
+    expect(base).toMatch(/PRESETS[^]*\(none available\)/);
+    expect(base).toContain("BRICKS");
   });
 
-  it("injects theme names and descriptions never values", () => {
-    const themes: FacetTheme[] = [
-      {
-        name: "midnight",
-        description: "Dark, high-contrast night palette",
-        color: { bg: "#0b1020", fg: "#e8ecff" },
-      },
-      { name: "sunrise", description: "Warm light morning palette", color: { bg: "#fff7ed" } },
-    ];
-    const system = buildSystem(DEFAULT_GUIDE, { themes, compositions: [] });
+  it("does not expose the Theme document while indexing its Presets", () => {
+    const system = buildSystem(DEFAULT_GUIDE, promptAssets());
 
-    expect(system).toContain("THEMES");
-    // Names + one-line descriptions are present.
-    expect(system).toContain("midnight");
-    expect(system).toContain("Dark, high-contrast night palette");
-    expect(system).toContain("sunrise");
-    expect(system).toContain("Warm light morning palette");
-    // NEVER a token value — probe each hex the document carried.
-    expect(system).not.toContain("#0b1020");
-    expect(system).not.toContain("#e8ecff");
-    expect(system).not.toContain("#fff7ed");
-    // Select-by-name rule points the model at set_theme.
-    expect(system).toMatch(/set_theme/);
+    expect(system).toContain("box/panel");
+    expect(system).not.toContain("privateConcreteValue");
+    expect(system).not.toContain("#123456");
   });
 
-  it("advertises reference names and required descriptions without embedding native-node JSON", () => {
-    const compositions: FacetComposition[] = [
-      {
-        name: "cta",
-        metadata: {
-          description: "A call-to-action button",
-          category: "conversion",
-          useWhen: "the page needs one clear action",
-        },
-        root: "cta",
-        nodes: {
-          cta: { id: "cta", type: "box", children: ["cta-label"] },
-          "cta-label": { id: "cta-label", type: "text", value: "Get started" },
-        },
-      },
-    ];
-    const system = buildSystem(DEFAULT_GUIDE, { themes: [], compositions });
-    const compositionSection = compositionSectionOf(system);
+  it("advertises Pattern metadata without embedding native-node JSON", () => {
+    const system = buildSystem(DEFAULT_GUIDE, promptAssets());
+    const patternSection = system.slice(system.indexOf("PATTERNS"), system.indexOf("BRICKS"));
 
-    expect(system).toContain("COMPOSITIONS");
-    expect(compositionSection).toContain("cta");
-    expect(compositionSection).toContain("A call-to-action button");
-    expect(compositionSection).toContain("get_composition");
-    expect(compositionSection).not.toContain("category");
-    expect(compositionSection).not.toContain("useWhen");
-    expect(compositionSection).not.toContain("cta-label");
-    expect(compositionSection).not.toContain('"nodes"');
-    expect(compositionSection).not.toContain("Get started");
+    expect(patternSection).toContain("account-summary");
+    expect(patternSection).toContain("A compact account summary");
+    expect(patternSection).toContain("get_pattern");
+    expect(patternSection).not.toContain("private-pattern-tree");
+    expect(patternSection).not.toContain('"nodes"');
   });
 
-  it("advertises oversized compositions by name without copying their large JSON", () => {
+  it("keeps exact Pattern trees out of the prompt even when they are large", () => {
+    const assets = promptAssets();
     const big = "x".repeat(5000);
-    const compositions: FacetComposition[] = [
-      {
-        name: "huge",
-        metadata: { description: "A large reference" },
-        root: "h",
-        nodes: { h: { id: "h", type: "text", value: big } },
-      },
-    ];
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    try {
-      const system = buildSystem(DEFAULT_GUIDE, { themes: [], compositions });
-      const compositionSection = compositionSectionOf(system);
-      expect(compositionSection).toContain("huge");
-      expect(compositionSection).not.toContain(big);
-      expect(warnSpy).not.toHaveBeenCalled();
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const system = buildSystem(DEFAULT_GUIDE, {
+      ...assets,
+      patterns: [{ privateTree: big }],
+    } as unknown as StageToolAssets);
+
+    expect(system).toContain("account-summary");
+    expect(system).not.toContain(big);
   });
 
-  it("catalog policy guidance appears in the reference prompt without leaking internals", () => {
-    const system = buildSystem(DEFAULT_GUIDE, {
-      themes: [
-        {
-          name: "default",
-          description: "Default theme",
-          color: { bg: "#ffffff", fg: "#111111" },
-        },
-      ],
-      compositions: [],
-      catalog: catalogFixture(),
-    });
-    const catalogSection = catalogSectionOf(system);
+  it("uses Pattern Preset and colorMode wording with retired terms absent", () => {
+    const system = buildSystem(DEFAULT_GUIDE, promptAssets());
+    const retired = [
+      ["set", "theme"].join("_"),
+      ["get", "composition"].join("_"),
+      ["cata", "log"].join(""),
+      ["vari", "ant"].join(""),
+      ["reci", "pe"].join(""),
+    ];
 
-    expect(catalogSection).toContain("CATALOG");
-    expect(catalogSection).toContain("reference-catalog");
-    expect(catalogSection).toMatch(/switchPolicy:\s*locked/i);
-    expect(catalogSection).toContain("locked theme guidance");
-    expect(catalogSection).toContain("allowed bricks: box variants: surface");
-    expect(catalogSection).toContain("progress variants: success");
-    expect(catalogSection).toContain("reference policy: allow approved");
-    expect(catalogSection).toContain("edit-before-append: true");
-    expect(catalogSection).not.toContain("primitiveFallback");
-    expect(catalogSection).not.toContain("policy order");
-    expect(catalogSection).not.toContain("#ffffff");
-    expect(catalogSection).not.toContain("#111111");
-    expect(catalogSection).not.toContain('"nodes"');
+    expect(system).toContain("Pattern");
+    expect(system).toContain("Preset");
+    expect(system).toContain("colorMode");
+    for (const term of retired) expect(system.toLowerCase()).not.toContain(term);
   });
 });
 
@@ -374,18 +239,20 @@ describe("TOOLS", () => {
     expect(TOOLS).toBe(FACET_STAGE_TOOL_SPECS);
   });
 
-  it("offers the Stage-mapped tools with schemas, including set_theme", () => {
+  it("offers the current compact Stage tool schemas", () => {
     const names = TOOLS.map((t) => t.name).sort();
     expect(names).toEqual([
       "append_node",
-      "get_composition",
+      "get_brick_spec",
+      "get_pattern",
+      "get_preset",
+      "get_style_choices",
       "inspect_node",
       "inspect_stage",
       "remove_node",
       "render_page",
       "say",
       "set_node",
-      "set_theme",
     ]);
     for (const tool of TOOLS) {
       expect(tool.description.length).toBeGreaterThan(0);
@@ -393,21 +260,19 @@ describe("TOOLS", () => {
     }
   });
 
-  it("set_theme takes a single name string argument (never a CSS value)", () => {
-    const setTheme = TOOLS.find((t) => t.name === "set_theme");
-    expect(setTheme).toBeDefined();
-    const props = setTheme!.parameters["properties"] as Record<string, unknown>;
-    // A NAME argument only — no value/color/css field the model could smuggle CSS through.
-    expect(Object.keys(props)).toEqual(["name"]);
-    expect(props["name"]).toMatchObject({ type: "string" });
-  });
-
-  it("get_composition takes exactly one composition name and exposes no edit location", () => {
-    const getComposition = TOOLS.find((t) => t.name === "get_composition");
-    expect(getComposition).toBeDefined();
-    const props = getComposition!.parameters["properties"] as Record<string, unknown>;
-    expect(Object.keys(props)).toEqual(["name"]);
-    expect(props["name"]).toMatchObject({ type: "string" });
+  it("keeps asset reads exact and mutation schemas free of full Brick details", () => {
+    for (const name of [
+      "get_pattern",
+      "get_preset",
+      "get_brick_spec",
+      "get_style_choices",
+    ] as const) {
+      const tool = TOOLS.find((candidate) => candidate.name === name);
+      expect(tool).toBeDefined();
+      expect(tool!.parameters["additionalProperties"]).toBe(false);
+    }
+    const render = TOOLS.find((tool) => tool.name === "render_page");
+    expect(JSON.stringify(render?.parameters)).not.toContain("property-local");
   });
 });
 
@@ -665,13 +530,11 @@ describe("buildInitialMessages", () => {
       root: "root",
       nodes: { root: { id: "root", type: "box", children: [] } },
       entry: 42,
-      theme: { name: "bad" },
     } as unknown as FacetTree;
 
     expect(() => formatCurrentStageForPrompt(malformed, { maxJsonChars: 0 })).not.toThrow();
     const prompt = formatCurrentStageForPrompt(malformed, { maxJsonChars: 0 });
     expect(prompt).not.toContain("entry=");
-    expect(prompt).not.toContain("theme=");
   });
 
   it("skips full JSON serialization when summary mode is explicitly requested", () => {
@@ -762,7 +625,6 @@ describe("buildInitialMessages", () => {
     expect(firstContent).toContain("nodes=91");
     expect(firstContent).toContain("screens=2");
     expect(firstContent).toContain("entry=home");
-    expect(firstContent).toContain("theme=studio");
     expect(firstContent).toContain("inspect_stage");
     expect(firstContent).toContain("inspect_node");
     expect(firstContent).not.toContain('"nodes"');
@@ -779,7 +641,7 @@ describe("buildInitialMessages", () => {
     expect(nodeLines.at(-1)).toContain("node-079");
   });
 
-  it("stage summary covers surviving catalog nodes and native box compositions without full JSON", () => {
+  it("stage summary covers surviving native Bricks without full JSON", () => {
     const stage: FacetTree = {
       root: "root",
       nodes: {
@@ -809,13 +671,13 @@ describe("buildInitialMessages", () => {
         overview: {
           id: "overview",
           type: "box",
-          variant: "surface",
+          style: { background: "surface" },
           children: ["metrics-group", "button"],
         },
         "metrics-group": {
           id: "metrics-group",
           type: "box",
-          variant: "surface",
+          style: { background: "surface" },
           children: ["legacy-stat"],
         },
         button: {
@@ -849,7 +711,7 @@ describe("buildInitialMessages", () => {
           id: "table",
           type: "table",
           caption: "RAW_JSON_SENTINEL_TABLE",
-          variant: "compact",
+          style: { background: "surface" },
           columns: [
             { key: "plan", label: "Plan" },
             { key: "price", label: "Price" },
@@ -864,7 +726,7 @@ describe("buildInitialMessages", () => {
           type: "chart",
           kind: "bar",
           title: "RAW_JSON_SENTINEL_CHART",
-          variant: "mini",
+          style: { gap: "sm" },
           series: [{ label: "Revenue", values: [1, 2, 3] }],
           labels: ["Q1", "Q2", "Q3"],
         },
@@ -883,21 +745,21 @@ describe("buildInitialMessages", () => {
           type: "keyValue",
           items: [
             { label: "Plan", value: "Pro" },
-            { label: "Region", value: "US", tone: "info" },
+            { label: "Region", value: "US" },
           ],
-          variant: "compact",
+          style: { gap: "sm", value: { color: "info" } },
         },
         progress: {
           id: "progress",
           type: "progress",
           label: "Completion",
           value: 45,
-          tone: "accent",
+          style: { fill: { background: "accent" } },
         },
         list: {
           id: "list",
           type: "list",
-          variant: "checks",
+          style: { gap: "sm" },
           items: [{ title: "One" }, { title: "Two", body: "Second" }],
         },
         form: {
@@ -1003,7 +865,7 @@ describe("describeEvent visitor view line", () => {
         screen: "pricing",
         toggled: { "faq-3": "shown", promo: "hidden" },
         viewport: "narrow",
-        scheme: "dark",
+        colorMode: "dark",
       },
     };
     const line = describeEvent(event);
@@ -1012,7 +874,7 @@ describe("describeEvent visitor view line", () => {
     expect(line).toContain('screen: "pricing"');
     expect(line).toContain('shown: "faq-3"');
     expect(line).toContain('hidden: "promo"');
-    expect(line).toContain("device: narrow, dark");
+    expect(line).toContain("device: narrow; colorMode: dark");
   });
 
   it("escapes visitor-controlled toggled keys so they cannot break out of the line", () => {
@@ -1042,11 +904,11 @@ describe("describeEvent visitor view line", () => {
     const event: ClientEvent = {
       kind: "visit",
       visitor: { visitorId: "v1", referrer: "news.example.com" },
-      view: { screen: "dashboard", scheme: "light" },
+      view: { screen: "dashboard", colorMode: "light" },
     };
     const line = describeEvent(event);
     expect(line).toContain("(visit)");
-    expect(line).toContain('[visitor view, last visit] screen: "dashboard"; device: light');
+    expect(line).toContain('[visitor view, last visit] screen: "dashboard"; colorMode: light');
     expect(line).not.toContain("[visitor view]\n"); // never the current-view label
   });
 

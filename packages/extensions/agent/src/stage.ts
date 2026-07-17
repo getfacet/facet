@@ -29,9 +29,9 @@ function dataPath(name: string): string {
  * and mutate the stage as a conversation unfolds.
  *
  * The method names stay ergonomic (render / set / append / remove / screens /
- * theme / say), but each records standard RFC 6902 operations underneath. Stage
- * edits are coalesced into a single `patch` message and ordered correctly
- * relative to `say(...)`.
+ * say), but each records standard RFC 6902 operations underneath. Stage edits
+ * are coalesced into a single `patch` message and ordered correctly relative to
+ * `say(...)`.
  */
 export class Stage {
   private out: ServerMessage[] = [];
@@ -97,19 +97,6 @@ export class Stage {
   screens(screens: Readonly<Record<string, NodeId>>, entry: string): this {
     this.pending.push({ op: "add", path: "/screens", value: screens });
     this.pending.push({ op: "add", path: "/entry", value: entry });
-    return this;
-  }
-
-  /**
-   * Select the stage's theme by name.
-   *
-   * Records a top-level `add` op for `/theme` — the same upsert precedent as
-   * `screens()` — carrying only a theme NAME, never a CSS value. An unknown
-   * name is the renderer's fail-safe problem: `resolveTheme` falls back to the
-   * default look, so a stale or missing name never breaks the page.
-   */
-  theme(name: string): this {
-    this.pending.push({ op: "add", path: "/theme", value: name });
     return this;
   }
 

@@ -6,13 +6,14 @@ a hosted control plane: tenant/project auth, API keys, billing, usage metering,
 rate limits, abuse operations, admin dashboards, audit logs, secrets management,
 or custom-domain routing.
 
-The catalog and design-system surface is part of that neutral technology layer:
-it is typed UI vocabulary and agent authoring policy (the closed 11-brick
-roster, variants, and theme switching), plus separate policy for exposing
-optional read-only composition reference datasets. It is not tenant/project or
-billing policy. Hosted products that need domain-specific examples should
-expose native composition reference datasets through assets rather than adding
-runtime node kinds.
+The design-system surface is part of that neutral technology layer. It consists
+of the closed 11-Brick contract, closed style properties and values, one
+host-selected Theme with same-Brick Presets, and an exact list of optional
+read-only Patterns. It is not tenant/project or billing policy. Hosted products
+that need domain-specific references should provide validated native-Brick
+Patterns through their per-agent assets rather than adding runtime node kinds.
+The agent authors Bricks and unresolved style names; it neither selects the
+Theme nor emits concrete CSS values.
 
 Production hosted platforms should wrap Facet primitives with their own edge/API
 and operations layer:
@@ -45,10 +46,10 @@ These packages are the reusable core of Facet:
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/core` | Closed stage contract: 11 native bricks, catalog authoring policy, composition-reference exposure policy, token vocabulary/theme recipes and recipe parts, RFC 6902 patch helpers, validation, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
-| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` interfaces and memory/file references for catalog/theme/composition-reference/initial-tree assets and opaque rolling-summary records. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
-| `@facet/react` | Renderer, recipe/theme-to-CSS mapping, recipe-part rendering for native bricks, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
-| `@facet/assets` | Default catalog, brick recipes/parts, and default composition reference datasets with metadata (`DEFAULT_COMPOSITIONS`). | Catalog/theme/composition schemas need fuller authoring docs and editor-facing examples. |
+| `@facet/core` | Closed stage contract: 11 native Bricks, each Brick's owned style vocabulary, token/fixed-value metadata, complete Theme and Preset types, validated Pattern references, strict author validation, fail-soft sanitation, RFC 6902 patch helpers, and session/event contracts. | Needs a stable versioning story for protocol changes before 1.0. |
+| `@facet/runtime` | Session event loop plus `StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` interfaces and memory/file references for one Theme, an exact Pattern list, an optional initial tree, and opaque rolling-summary records. | Deliberately no tenant/project policy, quotas, or distributed orchestration. Hosted platforms must wrap it. |
+| `@facet/react` | Renderer, Theme-to-CSS resolution for Theme defaults → same-Brick Preset → direct style → active/state layers, Brick-owned target rendering, `useFacet`, `ChatDock`, and browser-side interaction handling. | Needs more end-user examples and visual docs, not more platform logic. |
+| `@facet/assets` | Default data only: one complete `DEFAULT_THEME` and validated native-Brick `DEFAULT_PATTERNS`. | Theme, Preset, and Pattern authoring need fuller operator-facing examples. |
 
 ### Agent Authoring
 
@@ -58,7 +59,7 @@ business logic, provider choice, customer tools, or production policy.
 
 | Package | Role | Current gap |
 | --- | --- | --- |
-| `@facet/agent-tools` | LLM/tool-loop mechanism: provider-agnostic stage tool specs, executor, inspection helpers, observations, local stage shadow, and reusable Facet prompt kit. | Useful as-is; provider-specific schema adapter helpers would make custom loops easier. |
+| `@facet/agent-tools` | LLM/tool-loop mechanism: provider-agnostic stage mutation/inspection tools; progressive `get_pattern`, `get_preset`, single-Brick `get_brick_spec`, and exact-path `get_style_choices` reads; structured observations; local stage shadow; and reusable Facet prompt guidance. | Useful as-is; provider-specific schema adapter helpers would make custom loops easier. |
 | `@facet/agent` | In-process TypeScript authoring SDK with `Stage`, `defineAgent`, and `defineStreamingAgent`. | Keep it for code-authored agents, tests, rules engines, and demos; it is not the LLM tool schema package. |
 
 `@facet/agent` stays separate for now. Removing it would force in-process users
@@ -121,9 +122,11 @@ surface for hosted products.
 - **Hosted wrappers:** Facet intentionally does not provide project-scoped API
   keys, billing, metering, admin auth, or tenant isolation. Those belong outside
   this repo.
-- **Catalog scope:** `FacetCatalog` is UI vocabulary policy. It can restrict
-  bricks, variants, compositions, and theme switching, but it is not authentication, authorization,
-  billing, tenant isolation, moderation, or platform routing.
+- **Design-system scope:** an `AssetsStore` resolves one complete Theme and one
+  exact compatible Pattern list for an agent. Absence selects bundled defaults;
+  an explicit empty Pattern list exposes none. This asset selection is not
+  authentication, authorization, billing, tenant isolation, moderation, or
+  platform routing.
 - **Docs:** package README files should say which tier they belong to and when
   a hosted platform should wrap or replace them.
 - **Examples:** the repo needs examples for custom agent loops using

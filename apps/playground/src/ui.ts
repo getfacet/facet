@@ -5,9 +5,13 @@ import { page, text } from "./bricks.js";
 export function welcome(subtitle: string): FacetTree {
   return page(
     [
-      text("What should this page be?", { size: "2xl", weight: "bold", align: "center" }),
-      text(subtitle, { color: "fg-muted", align: "center" }),
+      text("What should this page be?", {
+        fontSize: "2xl",
+        fontWeight: "bold",
+        textAlign: "center",
+      }),
+      text(subtitle, { color: "mutedForeground", textAlign: "center" }),
     ],
-    { gap: "md", pad: "2xl" },
+    { gap: "md", padding: "2xl" },
   );
 }

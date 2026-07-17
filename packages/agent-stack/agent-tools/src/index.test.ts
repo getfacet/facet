@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import type { FacetComposition } from "@facet/core";
+import type { FacetPattern } from "@facet/core";
 import * as agentTools from "./index.js";
 import {
   FACET_AGENT_ROLE_PROMPT,
@@ -14,12 +14,15 @@ import {
   buildFacetAgentSystemPrompt,
   formatAgentToolObservation,
   parseAgentToolObservation,
-  selectCompositionReferences,
+  selectPatternReference,
 } from "./index.js";
 import type {
   FacetAgentSystemPromptOptions,
   FacetPromptAssets,
-  GetCompositionToolInput,
+  GetBrickSpecToolInput,
+  GetPatternToolInput,
+  GetPresetToolInput,
+  GetStyleChoicesToolInput,
   StageToolAssets,
 } from "./index.js";
 
@@ -31,31 +34,35 @@ const retiredTool = ["use", "composition"].join("_");
 const retiredInput = ["Use", "Composition", "ToolInput"].join("");
 
 describe("agent-tools barrel exports", () => {
-  it("indexes reference datasets without functional composition", () => {
+  it("exports Pattern selection and the four current asset-read tools", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
 
-    expect(source).toContain("selectCompositionReferences");
-    expect(source).toContain("GetCompositionToolInput");
+    expect(source).toContain("selectPatternReference");
+    expect(source).toContain("GetPatternToolInput");
+    expect(source).toContain("GetPresetToolInput");
+    expect(source).toContain("GetBrickSpecToolInput");
+    expect(source).toContain("GetStyleChoicesToolInput");
     expect(source).not.toContain(retiredInput);
     expect(source).not.toContain("formatCompositionObservation");
-    expect("selectCompositionReferences" in agentTools).toBe(true);
+    expect("selectPatternReference" in agentTools).toBe(true);
     expect("formatCompositionObservation" in agentTools).toBe(false);
-    expect(FACET_STAGE_TOOL_NAMES).toContain("get_composition");
+    expect(FACET_STAGE_TOOL_NAMES).toContain("get_pattern");
+    expect(FACET_STAGE_TOOL_NAMES).toContain("get_preset");
+    expect(FACET_STAGE_TOOL_NAMES).toContain("get_brick_spec");
+    expect(FACET_STAGE_TOOL_NAMES).toContain("get_style_choices");
     expect(FACET_STAGE_TOOL_NAMES).not.toContain(retiredTool);
   });
 
-  it("exports the canonical composition tool surface with no legacy re-export names", () => {
+  it("keeps retired composition and legacy naming out of the public surface", () => {
     const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
 
-    expect(source).toContain("GetCompositionToolInput");
     expect(source).not.toContain(retiredInput);
     expect(source).not.toMatch(legacyNaming);
 
-    expect(FACET_STAGE_TOOL_NAMES).toContain("get_composition");
     expect(FACET_STAGE_TOOL_NAMES).not.toContain(retiredTool);
     expect(FACET_STAGE_TOOL_NAMES).not.toContain(legacyTool);
-    expectTypeOf(selectCompositionReferences).toEqualTypeOf<
-      (compositions: readonly unknown[], catalog?: unknown) => readonly FacetComposition[]
+    expectTypeOf(selectPatternReference).toEqualTypeOf<
+      (patterns: readonly FacetPattern[], name: string) => FacetPattern | undefined
     >();
   });
 
@@ -86,20 +93,38 @@ describe("agent-tools barrel exports", () => {
     expect(prompt).toContain(FACET_TOOL_RESULT_CONTRACT_PROMPT);
     expect(prompt).toContain(FACET_ASSET_PRIVACY_PROMPT);
     expect(prompt).toContain(FACET_PAGE_BRIEF_HEADING);
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_composition");
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_pattern");
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_preset");
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_brick_spec");
+    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_style_choices");
     expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toContain(retiredTool);
     expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toMatch(legacyNaming);
     expectTypeOf<FacetPromptAssets>().toEqualTypeOf<StageToolAssets>();
     expectTypeOf<FacetPromptAssets>().toMatchTypeOf<{
-      readonly themes?: readonly unknown[];
-      readonly compositions?: readonly unknown[];
+      readonly theme: unknown;
+      readonly patterns: readonly unknown[];
+      readonly brickIndex: readonly unknown[];
+      readonly presetIndex: readonly unknown[];
+      readonly patternIndex: readonly unknown[];
     }>();
     expectTypeOf<FacetAgentSystemPromptOptions>().toMatchTypeOf<{
       readonly pageBrief: string;
       readonly assets?: FacetPromptAssets;
     }>();
-    expectTypeOf<GetCompositionToolInput>().toEqualTypeOf<{
+    expectTypeOf<GetPatternToolInput>().toEqualTypeOf<{
       readonly name: string;
+    }>();
+    expectTypeOf<GetPresetToolInput>().toEqualTypeOf<{
+      readonly brick: FacetPattern["nodes"][string]["type"];
+      readonly name: string;
+    }>();
+    expectTypeOf<GetBrickSpecToolInput>().toEqualTypeOf<{
+      readonly type: FacetPattern["nodes"][string]["type"];
+    }>();
+    expectTypeOf<GetStyleChoicesToolInput>().toEqualTypeOf<{
+      readonly brick: FacetPattern["nodes"][string]["type"];
+      readonly target: string;
+      readonly property: string;
     }>();
   });
 });

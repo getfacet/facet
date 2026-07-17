@@ -326,13 +326,13 @@ export function BoxElement({
   // boxes add cursor:pointer; a holdable box additionally disables text
   // selection and the iOS long-press callout so a real-device long press runs
   // the hold instead of starting a selection / the share sheet (review r6).
-  const activeStyle: CSSProperties = holdable
+  const interactionStyle: CSSProperties = holdable
     ? { ...style, cursor: "pointer", userSelect: "none", WebkitTouchCallout: "none" }
     : interactive
       ? { ...style, cursor: "pointer" }
       : style;
   const finalStyle: CSSProperties =
-    inert || disabled ? { ...activeStyle, pointerEvents: "none" } : activeStyle;
+    inert || disabled ? { ...interactionStyle, pointerEvents: "none" } : interactionStyle;
 
   // Conditionally ATTACHED props: undefined adds no attribute to the static
   // markup (the exact-markup pins stay byte-identical) and attaches no

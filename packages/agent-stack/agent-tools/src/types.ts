@@ -1,7 +1,8 @@
 import type {
+  AuthorIssue,
+  BrickType,
   FacetNode,
-  FacetCatalog,
-  FacetComposition,
+  FacetPattern,
   FacetTheme,
   FacetTree,
   JsonPatchOperation,
@@ -26,11 +27,13 @@ export interface ToolCall<Name extends string = string, Input = unknown> {
 export type FacetStageToolName =
   | "render_page"
   | "append_node"
-  | "get_composition"
   | "set_node"
   | "remove_node"
   | "say"
-  | "set_theme"
+  | "get_brick_spec"
+  | "get_style_choices"
+  | "get_preset"
+  | "get_pattern"
   | "inspect_stage"
   | "inspect_node";
 
@@ -41,10 +44,6 @@ export interface RenderPageToolInput {
 export interface AppendNodeToolInput {
   readonly parentId: NodeId;
   readonly ["node"]: FacetNode;
-}
-
-export interface GetCompositionToolInput {
-  readonly name: string;
 }
 
 export interface SetNodeToolInput {
@@ -59,7 +58,22 @@ export interface SayToolInput {
   readonly text: string;
 }
 
-export interface SetThemeToolInput {
+export interface GetBrickSpecToolInput {
+  readonly type: BrickType;
+}
+
+export interface GetStyleChoicesToolInput {
+  readonly brick: BrickType;
+  readonly target: string;
+  readonly property: string;
+}
+
+export interface GetPresetToolInput {
+  readonly brick: BrickType;
+  readonly name: string;
+}
+
+export interface GetPatternToolInput {
   readonly name: string;
 }
 
@@ -75,19 +89,47 @@ export interface InspectNodeToolInput {
 export interface ToolInputByName {
   readonly render_page: RenderPageToolInput;
   readonly ["append_node"]: AppendNodeToolInput;
-  readonly ["get_composition"]: GetCompositionToolInput;
   readonly ["set_node"]: SetNodeToolInput;
   readonly ["remove_node"]: RemoveNodeToolInput;
   readonly say: SayToolInput;
-  readonly set_theme: SetThemeToolInput;
+  readonly ["get_brick_spec"]: GetBrickSpecToolInput;
+  readonly ["get_style_choices"]: GetStyleChoicesToolInput;
+  readonly ["get_preset"]: GetPresetToolInput;
+  readonly ["get_pattern"]: GetPatternToolInput;
   readonly inspect_stage: InspectStageToolInput;
   readonly ["inspect_node"]: InspectNodeToolInput;
 }
 
-export interface StageToolAssets {
-  readonly themes?: readonly FacetTheme[];
-  readonly compositions?: readonly FacetComposition[];
-  readonly catalog?: FacetCatalog;
+/** Validated asset data offered by a static or per-turn dynamic host source. */
+export interface StageToolAssetSource {
+  readonly theme: FacetTheme;
+  readonly patterns: readonly FacetPattern[];
+}
+
+export interface BrickIndexEntry {
+  readonly type: BrickType;
+  readonly description: string;
+  readonly useWhen: string;
+}
+
+export interface PresetIndexEntry {
+  readonly brick: BrickType;
+  readonly name: string;
+  readonly description: string;
+  readonly useWhen: string;
+}
+
+export interface PatternIndexEntry {
+  readonly name: string;
+  readonly description: string;
+  readonly useWhen: string;
+}
+
+/** One exact, immutable Theme/Preset/Pattern view shared for a provider turn. */
+export interface StageToolAssets extends StageToolAssetSource {
+  readonly brickIndex: readonly BrickIndexEntry[];
+  readonly presetIndex: readonly PresetIndexEntry[];
+  readonly patternIndex: readonly PatternIndexEntry[];
 }
 
 export interface StageToolContext {
@@ -103,9 +145,13 @@ export type StageToolErrorCode =
   | "invalid_input"
   | "invalid_tree"
   | "invalid_parent"
-  | "invalid_composition"
+  | "invalid_authoring"
+  | "not_available"
   | "patch_limit"
   | "fold_error";
+
+/** Public structured repair item returned for strict authoring failures. */
+export type StageToolAuthorIssue = AuthorIssue;
 
 export type AgentToolObservationStatus = StageToolStatus | "pending";
 
@@ -134,10 +180,12 @@ export interface AgentToolObservationData {
   readonly next_action: string;
   readonly summary: string;
   readonly code?: StageToolErrorCode | "pending";
+  readonly errors?: readonly StageToolAuthorIssue[];
+  readonly omitted_error_count?: number;
   /**
    * Always-valid JSON payload for machine-readable tool metadata. Generic tool
-   * observations keep this bounded; a successful get_composition read carries
-   * the complete selected reference through its package-private formatter.
+   * observations keep this bounded; exact asset reads carry their selected
+   * unresolved data through package-private formatters.
    */
   readonly data?: string;
 }

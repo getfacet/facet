@@ -18,19 +18,33 @@ function hero(): FacetTree {
   const button = (label: string, name: string, primary: boolean): string =>
     s.box(
       primary
-        ? { bg: "accent", radius: "md", pad: "md" }
-        : { bg: "surface", radius: "md", pad: "md", border: true },
-      [s.text(label, { color: primary ? "accent-fg" : "fg", weight: "semibold" })],
+        ? { background: "accent", borderRadius: "md", padding: "md" }
+        : {
+            background: "surface",
+            borderRadius: "md",
+            padding: "md",
+            borderWidth: "thin",
+          },
+      [
+        s.text(label, {
+          color: primary ? "accentForeground" : "foreground",
+          fontWeight: "semibold",
+        }),
+      ],
       { kind: "agent", name },
     );
-  return s.tree({ direction: "col", gap: "lg", pad: "2xl", align: "center" }, [
-    s.text("Build living pages", { size: "3xl", weight: "bold", align: "center" }),
-    s.text("One link. A different page for every visitor.", {
-      size: "md",
-      color: "fg-muted",
-      align: "center",
+  return s.tree({ direction: "column", gap: "lg", padding: "2xl", alignItems: "center" }, [
+    s.text("Build living pages", {
+      fontSize: "3xl",
+      fontWeight: "bold",
+      textAlign: "center",
     }),
-    s.box({ direction: "row", gap: "md", justify: "center" }, [
+    s.text("One link. A different page for every visitor.", {
+      fontSize: "md",
+      color: "mutedForeground",
+      textAlign: "center",
+    }),
+    s.box({ direction: "row", gap: "md", justifyContent: "center" }, [
       button("Get started", "get_started", true),
       button("Docs", "docs", false),
     ]),
@@ -40,22 +54,38 @@ function hero(): FacetTree {
 function productGrid(): FacetTree {
   const s = new TreeBuilder("n");
   const card = (seed: string, name: string, price: string): string =>
-    s.box({ direction: "col", gap: "sm", border: true, radius: "lg", pad: "md", grow: true }, [
-      s.media(`https://picsum.photos/seed/${seed}/400/300`, name, {
-        width: "full",
-        ratio: "wide",
-        radius: "md",
-      }),
-      s.text(name, { weight: "semibold" }),
-      s.text(price, { color: "fg-muted", size: "sm" }),
-      s.box(
-        { bg: "accent", radius: "sm", pad: "sm", align: "center" },
-        [s.text("Add to cart", { color: "accent-fg", size: "sm", weight: "semibold" })],
-        { kind: "agent", name: "add", payload: { sku: seed } },
-      ),
-    ]);
-  return s.tree({ direction: "col", gap: "lg", pad: "xl" }, [
-    s.text("Featured", { size: "2xl", weight: "bold" }),
+    s.box(
+      {
+        direction: "column",
+        gap: "sm",
+        borderWidth: "thin",
+        borderRadius: "lg",
+        padding: "md",
+        grow: true,
+      },
+      [
+        s.media(`https://picsum.photos/seed/${seed}/400/300`, name, {
+          width: "full",
+          aspectRatio: "wide",
+          borderRadius: "md",
+        }),
+        s.text(name, { fontWeight: "semibold" }),
+        s.text(price, { color: "mutedForeground", fontSize: "sm" }),
+        s.box(
+          { background: "accent", borderRadius: "sm", padding: "sm", alignItems: "center" },
+          [
+            s.text("Add to cart", {
+              color: "accentForeground",
+              fontSize: "sm",
+              fontWeight: "semibold",
+            }),
+          ],
+          { kind: "agent", name: "add", payload: { sku: seed } },
+        ),
+      ],
+    );
+  return s.tree({ direction: "column", gap: "lg", padding: "xl" }, [
+    s.text("Featured", { fontSize: "2xl", fontWeight: "bold" }),
     s.box({ direction: "row", gap: "md", wrap: true }, [
       card("aurora", "Aurora Lamp", "$48"),
       card("willow", "Willow Chair", "$120"),
@@ -66,14 +96,14 @@ function productGrid(): FacetTree {
 
 function signupForm(): FacetTree {
   const s = new TreeBuilder("n");
-  return s.tree({ direction: "col", gap: "md", pad: "xl", align: "stretch" }, [
-    s.text("Join the beta", { size: "2xl", weight: "bold" }),
-    s.text("We'll email you an invite.", { color: "fg-muted", size: "sm" }),
+  return s.tree({ direction: "column", gap: "md", padding: "xl", alignItems: "stretch" }, [
+    s.text("Join the beta", { fontSize: "2xl", fontWeight: "bold" }),
+    s.text("We'll email you an invite.", { color: "mutedForeground", fontSize: "sm" }),
     s.field("email", "Email", "you@example.com"),
     s.field("name", "Name", "Ada Lovelace"),
     s.box(
-      { bg: "accent", radius: "md", pad: "md", align: "center" },
-      [s.text("Request invite", { color: "accent-fg", weight: "semibold" })],
+      { background: "accent", borderRadius: "md", padding: "md", alignItems: "center" },
+      [s.text("Request invite", { color: "accentForeground", fontWeight: "semibold" })],
       { kind: "agent", name: "submit" },
     ),
   ]);
@@ -81,17 +111,26 @@ function signupForm(): FacetTree {
 
 function stats(): FacetTree {
   const s = new TreeBuilder("n");
-  const stat = (num: string, label: string, bg: Color, fg: Color, labelColor: Color): string =>
-    s.box({ direction: "col", gap: "xs", pad: "lg", bg, radius: "lg", grow: true }, [
-      s.text(num, { size: "3xl", weight: "bold", color: fg }),
-      s.text(label, { size: "sm", color: labelColor }),
-    ]);
-  return s.tree({ direction: "col", gap: "lg", pad: "xl" }, [
-    s.text("This month", { size: "2xl", weight: "bold" }),
+  const stat = (
+    num: string,
+    label: string,
+    background: Color,
+    foreground: Color,
+    labelColor: Color,
+  ): string =>
+    s.box(
+      { direction: "column", gap: "xs", padding: "lg", background, borderRadius: "lg", grow: true },
+      [
+        s.text(num, { fontSize: "3xl", fontWeight: "bold", color: foreground }),
+        s.text(label, { fontSize: "sm", color: labelColor }),
+      ],
+    );
+  return s.tree({ direction: "column", gap: "lg", padding: "xl" }, [
+    s.text("This month", { fontSize: "2xl", fontWeight: "bold" }),
     s.box({ direction: "row", gap: "md", wrap: true }, [
-      stat("12.4k", "Visitors", "surface", "fg", "fg-muted"),
-      stat("87%", "Return rate", "surface-2", "fg", "fg-muted"),
-      stat("1,203", "Signups", "accent", "accent-fg", "accent-fg"),
+      stat("12.4k", "Visitors", "surface", "foreground", "mutedForeground"),
+      stat("87%", "Return rate", "mutedSurface", "foreground", "mutedForeground"),
+      stat("1,203", "Signups", "accent", "accentForeground", "accentForeground"),
     ]),
   ]);
 }
@@ -104,25 +143,49 @@ function pricing(): FacetTree {
     feats: readonly string[],
     highlight: boolean,
   ): string => {
-    const fg: Color = highlight ? "accent-fg" : "fg";
-    const muted: Color = highlight ? "accent-fg" : "fg-muted";
+    const foreground: Color = highlight ? "accentForeground" : "foreground";
+    const muted: Color = highlight ? "accentForeground" : "mutedForeground";
     return s.box(
       highlight
-        ? { direction: "col", gap: "sm", pad: "lg", radius: "lg", bg: "accent", grow: true }
-        : { direction: "col", gap: "sm", pad: "lg", radius: "lg", border: true, grow: true },
+        ? {
+            direction: "column",
+            gap: "sm",
+            padding: "lg",
+            borderRadius: "lg",
+            background: "accent",
+            grow: true,
+          }
+        : {
+            direction: "column",
+            gap: "sm",
+            padding: "lg",
+            borderRadius: "lg",
+            borderWidth: "thin",
+            grow: true,
+          },
       [
-        s.text(name, { weight: "semibold", color: fg }),
-        s.text(price, { size: "2xl", weight: "bold", color: fg }),
-        ...feats.map((f) => s.text(`✓ ${f}`, { size: "sm", color: muted })),
+        s.text(name, { fontWeight: "semibold", color: foreground }),
+        s.text(price, { fontSize: "2xl", fontWeight: "bold", color: foreground }),
+        ...feats.map((f) => s.text(`✓ ${f}`, { fontSize: "sm", color: muted })),
         s.box(
           highlight
-            ? { bg: "bg", radius: "sm", pad: "sm", align: "center" }
-            : { bg: "accent", radius: "sm", pad: "sm", align: "center" },
+            ? {
+                background: "background",
+                borderRadius: "sm",
+                padding: "sm",
+                alignItems: "center",
+              }
+            : {
+                background: "accent",
+                borderRadius: "sm",
+                padding: "sm",
+                alignItems: "center",
+              },
           [
             s.text("Choose", {
-              size: "sm",
-              weight: "semibold",
-              color: highlight ? "accent" : "accent-fg",
+              fontSize: "sm",
+              fontWeight: "semibold",
+              color: highlight ? "accent" : "accentForeground",
             }),
           ],
           { kind: "agent", name: "choose", payload: { tier: name } },
@@ -130,8 +193,8 @@ function pricing(): FacetTree {
       ],
     );
   };
-  return s.tree({ direction: "col", gap: "lg", pad: "xl" }, [
-    s.text("Pricing", { size: "2xl", weight: "bold" }),
+  return s.tree({ direction: "column", gap: "lg", padding: "xl" }, [
+    s.text("Pricing", { fontSize: "2xl", fontWeight: "bold" }),
     s.box({ direction: "row", gap: "md", wrap: true }, [
       tier("Hobby", "$0", ["1 link", "Community"], false),
       tier("Pro", "$20", ["Unlimited", "Analytics", "Priority"], true),
@@ -143,16 +206,20 @@ function pricing(): FacetTree {
 function imageGallery(): FacetTree {
   const s = new TreeBuilder("n");
   const cell = (seed: string, caption: string): string =>
-    s.box({ direction: "col", gap: "xs", grow: true }, [
+    s.box({ direction: "column", gap: "xs", grow: true }, [
       s.media(`https://picsum.photos/seed/${seed}/300/300`, caption, {
         width: "full",
-        ratio: "square",
-        radius: "md",
+        aspectRatio: "square",
+        borderRadius: "md",
       }),
-      s.text(caption, { size: "sm", color: "fg-muted", align: "center" }),
+      s.text(caption, {
+        fontSize: "sm",
+        color: "mutedForeground",
+        textAlign: "center",
+      }),
     ]);
-  return s.tree({ direction: "col", gap: "lg", pad: "xl" }, [
-    s.text("Gallery", { size: "2xl", weight: "bold" }),
+  return s.tree({ direction: "column", gap: "lg", padding: "xl" }, [
+    s.text("Gallery", { fontSize: "2xl", fontWeight: "bold" }),
     s.box({ direction: "row", gap: "sm", wrap: true }, [
       cell("dawn", "Dawn"),
       cell("ridge", "Ridge"),
@@ -166,39 +233,57 @@ function screensAndToggle(): FacetTree {
   const s = new TreeBuilder("n");
   const navButton = (label: string, to: string): string =>
     s.box(
-      { bg: "surface", radius: "md", pad: "sm", border: true, align: "center" },
-      [s.text(label, { size: "sm", weight: "semibold" })],
+      {
+        background: "surface",
+        borderRadius: "md",
+        padding: "sm",
+        borderWidth: "thin",
+        alignItems: "center",
+      },
+      [s.text(label, { fontSize: "sm", fontWeight: "semibold" })],
       { kind: "navigate", to },
     );
   // Pre-drawn menu panel, hidden on first paint — the ☰ box toggles it,
   // browser-locally (no agent turn), exactly like navigate below.
   const menu = s.hiddenBox(
-    { direction: "col", gap: "xs", pad: "md", bg: "surface-2", radius: "md" },
+    {
+      direction: "column",
+      gap: "xs",
+      padding: "md",
+      background: "mutedSurface",
+      borderRadius: "md",
+    },
     [
-      s.text("Home", { size: "sm" }),
-      s.text("Pricing", { size: "sm" }),
-      s.text("Contact", { size: "sm" }),
+      s.text("Home", { fontSize: "sm" }),
+      s.text("Pricing", { fontSize: "sm" }),
+      s.text("Contact", { fontSize: "sm" }),
     ],
   );
-  const main = s.box({ direction: "col", gap: "md", pad: "xl" }, [
-    s.text("Home", { size: "2xl", weight: "bold" }),
+  const main = s.box({ direction: "column", gap: "md", padding: "xl" }, [
+    s.text("Home", { fontSize: "2xl", fontWeight: "bold" }),
     s.text("Navigate and toggle run instantly in the browser — no agent turn.", {
-      size: "sm",
-      color: "fg-muted",
+      fontSize: "sm",
+      color: "mutedForeground",
     }),
     s.box(
-      { bg: "accent", radius: "md", pad: "sm", align: "center" },
-      [s.text("☰ Menu", { color: "accent-fg", size: "sm", weight: "semibold" })],
+      { background: "accent", borderRadius: "md", padding: "sm", alignItems: "center" },
+      [
+        s.text("☰ Menu", {
+          color: "accentForeground",
+          fontSize: "sm",
+          fontWeight: "semibold",
+        }),
+      ],
       { kind: "toggle", target: menu },
     ),
     menu,
     navButton("About →", "about"),
   ]);
-  const about = s.box({ direction: "col", gap: "md", pad: "xl" }, [
-    s.text("About", { size: "2xl", weight: "bold" }),
+  const about = s.box({ direction: "column", gap: "md", padding: "xl" }, [
+    s.text("About", { fontSize: "2xl", fontWeight: "bold" }),
     s.text("This screen was pre-drawn; the browser switched to it.", {
-      size: "sm",
-      color: "fg-muted",
+      fontSize: "sm",
+      color: "mutedForeground",
     }),
     navButton("← Home", "main"),
   ]);
@@ -207,7 +292,7 @@ function screensAndToggle(): FacetTree {
 
 /**
  * "Appear, hold & scroll" — the deterministic manual surface for the DC-009
- * real-browser check: a fade-in hero, a bounded scroll:true product list of 20
+ * real-browser check: a fade-in hero, a bounded vertically scrolling product list of 20
  * slide-in cards, and a press/hold pair on every card (press = agent action,
  * hold = browser-local toggle of a pre-drawn, initially-hidden peek panel).
  * Exported so the gallery test can assert on the exact tree.
@@ -216,46 +301,71 @@ export function appearHoldScroll(): FacetTree {
   const s = new TreeBuilder("n");
   // Pre-drawn peek panel, hidden on first paint — every card's hold target.
   const peek = s.hiddenBox(
-    { direction: "col", gap: "xs", pad: "md", bg: "surface-2", radius: "md", appear: "fade" },
+    {
+      direction: "column",
+      gap: "xs",
+      padding: "md",
+      background: "mutedSurface",
+      borderRadius: "md",
+      enterAnimation: "fade",
+    },
     [
-      s.text("Quick peek", { size: "sm", weight: "semibold" }),
+      s.text("Quick peek", { fontSize: "sm", fontWeight: "semibold" }),
       s.text("Hold any card to toggle this panel; press one to view it.", {
-        size: "sm",
-        color: "fg-muted",
+        fontSize: "sm",
+        color: "mutedForeground",
       }),
     ],
   );
   const card = (i: number): string =>
     s.box(
-      { direction: "row", gap: "md", pad: "md", border: true, radius: "md", appear: "slide" },
+      {
+        direction: "row",
+        gap: "md",
+        padding: "md",
+        borderWidth: "thin",
+        borderRadius: "md",
+        enterAnimation: "slide",
+      },
       [
         s.media(`https://picsum.photos/seed/prod${i}/120/120`, `Product ${i}`, {
-          ratio: "square",
-          radius: "sm",
+          aspectRatio: "square",
+          borderRadius: "sm",
         }),
-        s.box({ direction: "col", gap: "xs", grow: true }, [
-          s.text(`Product ${i}`, { weight: "semibold" }),
-          s.text(`$${10 + i}`, { size: "sm", color: "fg-muted" }),
+        s.box({ direction: "column", gap: "xs", grow: true }, [
+          s.text(`Product ${i}`, { fontWeight: "semibold" }),
+          s.text(`$${10 + i}`, { fontSize: "sm", color: "mutedForeground" }),
         ]),
       ],
       { kind: "agent", name: "view_product", payload: { sku: `prod${i}` } },
       { kind: "toggle", target: peek },
     );
   const hero = s.box(
-    { direction: "col", gap: "xs", pad: "lg", bg: "accent", radius: "lg", appear: "fade" },
+    {
+      direction: "column",
+      gap: "xs",
+      padding: "lg",
+      background: "accent",
+      borderRadius: "lg",
+      enterAnimation: "fade",
+    },
     [
-      s.text("New arrivals", { size: "2xl", weight: "bold", color: "accent-fg" }),
+      s.text("New arrivals", {
+        fontSize: "2xl",
+        fontWeight: "bold",
+        color: "accentForeground",
+      }),
       s.text("Press a card for details — hold it for a quick peek.", {
-        size: "sm",
-        color: "accent-fg",
+        fontSize: "sm",
+        color: "accentForeground",
       }),
     ],
   );
   const list = s.box(
-    { direction: "col", gap: "sm", scroll: true },
+    { direction: "column", gap: "sm", scroll: "vertical" },
     Array.from({ length: 20 }, (_, i) => card(i + 1)),
   );
-  return s.tree({ direction: "col", gap: "md", pad: "xl" }, [hero, peek, list]);
+  return s.tree({ direction: "column", gap: "md", padding: "xl" }, [hero, peek, list]);
 }
 
 export function brickVocabV1Demo(): FacetTree {
@@ -263,7 +373,7 @@ export function brickVocabV1Demo(): FacetTree {
   const video = s.media(
     "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4",
     "Flower video",
-    { width: "full", ratio: "wide", radius: "md" },
+    { width: "full", aspectRatio: "wide", borderRadius: "md" },
     "video",
     {
       poster: "https://interactive-examples.mdn.mozilla.net/media/examples/flower.jpg",
@@ -274,44 +384,60 @@ export function brickVocabV1Demo(): FacetTree {
   const size = s.field("size", "Size", "", "radio", ["Small", "Large"]);
   const agree = s.field("agree", "Agree to terms", "", "checkbox");
   const alerts = s.field("alerts", "Alerts", "", "switch");
-  const form = s.box({ direction: "col", gap: "sm", pad: "md", border: true, radius: "md" }, [
-    plan,
-    size,
-    agree,
-    alerts,
-  ]);
+  const form = s.box(
+    {
+      direction: "column",
+      gap: "sm",
+      padding: "md",
+      borderWidth: "thin",
+      borderRadius: "md",
+    },
+    [plan, size, agree, alerts],
+  );
   const submit = s.box(
-    { bg: "accent", radius: "md", pad: "sm", align: "center" },
-    [s.text("Submit selections", { color: "accent-fg", weight: "semibold", size: "sm" })],
+    { background: "accent", borderRadius: "md", padding: "sm", alignItems: "center" },
+    [
+      s.text("Submit selections", {
+        color: "accentForeground",
+        fontWeight: "semibold",
+        fontSize: "sm",
+      }),
+    ],
     { kind: "agent", name: "submit_vocab", collect: form },
   );
   const gridCell = (label: string, value: string): string =>
-    s.box({ direction: "col", gap: "xs", pad: "md", bg: "surface", radius: "md" }, [
-      s.text(value, { size: "xl", weight: "bold" }),
-      s.text(label, { size: "sm", color: "fg-muted" }),
-    ]);
+    s.box(
+      { direction: "column", gap: "xs", padding: "md", background: "surface", borderRadius: "md" },
+      [
+        s.text(value, { fontSize: "xl", fontWeight: "bold" }),
+        s.text(label, { fontSize: "sm", color: "mutedForeground" }),
+      ],
+    );
   const grid = s.box({ columns: 3, gap: "sm" }, [
     gridCell("Media kind", "video"),
     gridCell("Controls", "native"),
     gridCell("Layout", "grid"),
   ]);
   const railCard = (seed: string, label: string): string =>
-    s.box({ direction: "col", gap: "xs", pad: "sm", border: true, radius: "md" }, [
-      s.media(`https://picsum.photos/seed/${seed}/320/180`, label, {
-        ratio: "wide",
-        radius: "sm",
-      }),
-      s.text(label, { size: "sm", weight: "semibold" }),
-    ]);
-  const carousel = s.box({ direction: "row", gap: "sm", scroll: "x" }, [
+    s.box(
+      { direction: "column", gap: "xs", padding: "sm", borderWidth: "thin", borderRadius: "md" },
+      [
+        s.media(`https://picsum.photos/seed/${seed}/320/180`, label, {
+          aspectRatio: "wide",
+          borderRadius: "sm",
+        }),
+        s.text(label, { fontSize: "sm", fontWeight: "semibold" }),
+      ],
+    );
+  const carousel = s.box({ direction: "row", gap: "sm", scroll: "horizontal" }, [
     railCard("vocab-a", "Alpha"),
     railCard("vocab-b", "Beta"),
     railCard("vocab-c", "Gamma"),
     railCard("vocab-d", "Delta"),
     railCard("vocab-e", "Epsilon"),
   ]);
-  return s.tree({ direction: "col", gap: "md", pad: "xl" }, [
-    s.text("Brick vocab v1", { size: "2xl", weight: "bold" }),
+  return s.tree({ direction: "column", gap: "md", padding: "xl" }, [
+    s.text("Brick vocab v1", { fontSize: "2xl", fontWeight: "bold" }),
     video,
     form,
     submit,

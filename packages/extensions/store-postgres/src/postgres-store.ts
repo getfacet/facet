@@ -40,15 +40,29 @@ export async function initSchema(pool: Pool): Promise<void> {
   await pool.query(`
     create table if not exists facet_assets (
       agent_id text primary key,
-      themes jsonb,
-      compositions jsonb,
-      catalog jsonb,
+      theme jsonb,
+      patterns jsonb,
       initial_tree jsonb,
       updated_at timestamptz not null default now()
     )
   `);
-  await pool.query("alter table facet_assets add column if not exists catalog jsonb");
-  await pool.query("alter table facet_assets add column if not exists compositions jsonb");
+  const assetColumns = await pool.query<{ readonly column_name: string }>(`
+    select column_name
+    from information_schema.columns
+    where table_schema = current_schema()
+      and table_name = 'facet_assets'
+    order by column_name
+  `);
+  const actualColumns = assetColumns.rows.map((row) => row.column_name).sort();
+  const expectedColumns = ["agent_id", "initial_tree", "patterns", "theme", "updated_at"];
+  if (
+    actualColumns.length !== expectedColumns.length ||
+    expectedColumns.some((column, index) => actualColumns[index] !== column)
+  ) {
+    throw new Error(
+      "Facet asset schema migration required before use; replace facet_assets with the current schema.",
+    );
+  }
 }
 
 export class PostgresStageStore implements StageStore {

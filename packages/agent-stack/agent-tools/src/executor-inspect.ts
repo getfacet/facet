@@ -24,7 +24,7 @@ export function executeInspectStage(input: Readonly<Record<string, unknown>>, sh
     "inspect_stage",
     `ok: stage root "${summary.root}"; ${String(summary.nodeCount)} nodes; ${String(
       summary.screenCount,
-    )} screens; showing ${String(entries.length)}/${String(summary.nodeCount)} nodes${summary.theme === undefined ? "" : `; theme "${summary.theme}"`}\n${nodeLines}${suffix}`,
+    )} screens; showing ${String(entries.length)}/${String(summary.nodeCount)} nodes\n${nodeLines}${suffix}`,
     shadow,
     [],
   );

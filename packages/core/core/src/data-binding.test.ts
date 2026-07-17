@@ -91,11 +91,11 @@ describe("final data brick binding surface", () => {
     const bindingSource = readFileSync(new URL("./data-binding.ts", import.meta.url), "utf8");
     expect(bindingSource).not.toContain("component-nodes");
     expect(bindingSource).not.toContain("component-validation-shared");
-    expect(bindingSource).not.toMatch(/\b(?:MetricNode|StatNode|metric|stat)\b/); // composition-hard-cut: allowed-negative
+    expect(bindingSource).not.toMatch(/\b(?:MetricNode|StatNode|metric|stat)\b/); // style-hard-cut: allowed-negative
 
     const treeSource = readFileSync(new URL("./tree.ts", import.meta.url), "utf8");
     for (const retiredPath of [
-      "TREE_RENDERABLE_MAX_TABS_ITEMS", // composition-hard-cut: allowed-negative
+      "TREE_RENDERABLE_MAX_TABS_ITEMS", // style-hard-cut: allowed-negative
       "TREE_RENDERABLE_MAX_FILTERS",
       "rendersButton",
       "rendersTabsNav",
@@ -276,6 +276,30 @@ describe("resolveNodeData (DC-005 precedence + projection)", () => {
     expect(resolveNodeData(keyValueNode({ from: "nope" }), warehouse)).toEqual([]);
     expect(resolveNodeData(textNode({ from: "nope", column: "total" }), warehouse)).toBe("");
     expect(resolveNodeData(tableNode({ from: "sales" }), undefined)).toEqual([]);
+  });
+
+  it("projects data without variant or tone", () => {
+    const legacyItems = [
+      null,
+      {
+        key: "cpu",
+        label: "CPU",
+        value: "91",
+        variant: "emphasis", // style-hard-cut: allowed-negative
+        tone: "success",
+      },
+    ] as unknown as KeyValueNode["items"];
+
+    expect(resolveNodeData(keyValueNode({ items: legacyItems }), undefined)).toEqual([
+      { key: "cpu", label: "CPU", value: "91" },
+    ]);
+
+    const bound = sanitizeDataWarehouse({
+      metrics: [{ label: "CPU", value: 91, tone: "success", variant: "emphasis" }], // style-hard-cut: allowed-negative
+    })!;
+    expect(resolveNodeData(keyValueNode({ from: "metrics" }), bound)).toEqual([
+      { label: "CPU", value: "91" },
+    ]);
   });
 
   it("is TOTAL on an UNSANITIZED warehouse with non-object rows — never throws (fail-safe)", () => {

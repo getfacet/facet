@@ -9,6 +9,7 @@ import {
 import type { ResolvedTheme } from "./theme.js";
 import type { StageTransitionHint } from "./useFacet.js";
 import {
+  captureResolvedThemeSnapshot,
   collectVisibleInfo,
   emptyMotionState,
   isBlankBootSnapshot,
@@ -64,13 +65,20 @@ export function useStageMotion({
   const exitTimersRef = useRef<Map<NodeId, TimerHandle>>(new Map());
   const stageTimerRef = useRef<TimerHandle | null>(null);
   const normalizedTransition = useMemo(() => normalizeTransitionHint(transition), [transition]);
+  const capturedTheme = useMemo(() => captureResolvedThemeSnapshot(theme), [theme]);
+  const capturedVisibilityOverrides = useMemo<ReadonlyMap<NodeId, boolean>>(
+    () => new Map(visibilityOverrides),
+    [visibilityOverrides],
+  );
   const renderable = isRenderableTree(tree);
   const currentRootId = renderable ? resolveScreenRoot(tree, currentScreen) : null;
   const activeScreen = renderable ? resolveActiveScreen(tree, currentScreen) : null;
   const visibleInfo = useMemo(
     () =>
-      currentRootId === null ? null : collectVisibleInfo(tree, currentRootId, visibilityOverrides),
-    [currentRootId, tree, visibilityOverrides],
+      currentRootId === null
+        ? null
+        : collectVisibleInfo(tree, currentRootId, capturedVisibilityOverrides),
+    [capturedVisibilityOverrides, currentRootId, tree],
   );
   const currentSnapshot: RenderSnapshot | null =
     currentRootId === null || visibleInfo === null
@@ -80,8 +88,8 @@ export function useStageMotion({
           rootId: currentRootId,
           activeScreen,
           visible: visibleInfo,
-          visibilityOverrides,
-          theme,
+          visibilityOverrides: capturedVisibilityOverrides,
+          theme: capturedTheme,
           revision: normalizedTransition?.revision ?? null,
           rootReplacedRevision: normalizedTransition?.rootReplacedRevision ?? null,
         };

@@ -7,7 +7,7 @@
  * assert exact outputs. One fixture tree exercises collect, screens, and
  * patching in a single boot.
  */
-import { isValidThemeName, type ClientEvent, type FacetAgent, type FacetTree } from "@facet/core";
+import type { ClientEvent, FacetAgent, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
 
 /**
@@ -23,14 +23,19 @@ export const STUB_TREE: FacetTree = {
     home: {
       id: "home",
       type: "box",
-      style: { direction: "col", gap: "md" },
+      style: { preset: "panel", gap: "lg" },
       children: ["hero", "signup", "submit", "go-about"],
     },
-    hero: { id: "hero", type: "text", value: "Facet quickstart — stub stage" },
+    hero: {
+      id: "hero",
+      type: "text",
+      value: "Facet quickstart — stub stage",
+      style: { preset: "heading" },
+    },
     signup: {
       id: "signup",
       type: "box",
-      style: { direction: "col", gap: "sm" },
+      style: { preset: "inset", direction: "column" },
       children: ["signup-name", "signup-email"],
     },
     "signup-name": {
@@ -38,6 +43,7 @@ export const STUB_TREE: FacetTree = {
       type: "input",
       name: "name",
       label: "Name",
+      style: { preset: "standard" },
     },
     "signup-email": {
       id: "signup-email",
@@ -45,36 +51,59 @@ export const STUB_TREE: FacetTree = {
       name: "email",
       input: "email",
       label: "Email",
+      style: { preset: "standard" },
     },
     submit: {
       id: "submit",
       type: "box",
-      style: { border: true },
+      style: { preset: "primaryAction" },
       onPress: { kind: "agent", name: "submit", collect: "signup" },
       children: ["submit-label"],
     },
-    "submit-label": { id: "submit-label", type: "text", value: "Send" },
+    "submit-label": {
+      id: "submit-label",
+      type: "text",
+      value: "Send",
+      style: { preset: "actionLabel" },
+    },
     "go-about": {
       id: "go-about",
       type: "box",
+      style: { preset: "secondaryAction" },
       onPress: { kind: "navigate", to: "about" },
       children: ["go-about-label"],
     },
-    "go-about-label": { id: "go-about-label", type: "text", value: "About →" },
+    "go-about-label": {
+      id: "go-about-label",
+      type: "text",
+      value: "About →",
+      style: { preset: "actionLabel" },
+    },
     about: {
       id: "about",
       type: "box",
-      style: { direction: "col", gap: "md" },
+      style: { preset: "panel", gap: "lg" },
       children: ["about-title", "go-home"],
     },
-    "about-title": { id: "about-title", type: "text", value: "About this stub" },
+    "about-title": {
+      id: "about-title",
+      type: "text",
+      value: "About this stub",
+      style: { preset: "heading" },
+    },
     "go-home": {
       id: "go-home",
       type: "box",
+      style: { preset: "secondaryAction" },
       onPress: { kind: "navigate", to: "home" },
       children: ["go-home-label"],
     },
-    "go-home-label": { id: "go-home-label", type: "text", value: "← Home" },
+    "go-home-label": {
+      id: "go-home-label",
+      type: "text",
+      value: "← Home",
+      style: { preset: "actionLabel" },
+    },
   },
 };
 
@@ -96,23 +125,12 @@ export function createStubAgent(): FacetAgent {
         return;
       }
       case "message": {
-        // Deterministic theme switch: "theme <name>" selects a theme by name
-        // (the DC-010 live vehicle) instead of echoing. Zero randomness/clock.
-        const THEME_PREFIX = "theme ";
-        if (event.text.startsWith(THEME_PREFIX)) {
-          const name = event.text.slice(THEME_PREFIX.length).trim();
-          // Mirror the real agent's set_theme gate: an invalid name would be
-          // stripped from the stored stage while the raw `add /theme` frame still
-          // reached live clients — a stored-vs-live divergence. Refuse instead.
-          if (!isValidThemeName(name)) {
-            stage.say("stub: invalid theme name (letters/digits/_/-, max 64)");
-            return;
-          }
-          stage.theme(name);
-          stage.say(`stub: theme ${name}`);
-          return;
-        }
-        const echo = { id: "stub-echo", type: "text", value: `echo: ${event.text}` } as const;
+        const echo = {
+          id: "stub-echo",
+          type: "text",
+          value: `echo: ${event.text}`,
+          style: { preset: "body", color: "accent" },
+        } as const;
         if (session.stage.nodes["stub-echo"] === undefined) {
           stage.append(session.stage.root, echo);
         } else {

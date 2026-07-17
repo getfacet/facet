@@ -7,7 +7,6 @@ export interface StageTreeSummary {
   readonly nodeCount: number;
   readonly screenCount: number;
   readonly entry?: string;
-  readonly theme?: string;
 }
 
 export interface StageShadowFoldResult {
@@ -33,14 +32,12 @@ export function summarizeStageTree(tree: FacetTree): StageTreeSummary {
     nodeCount: number;
     screenCount: number;
     entry?: string;
-    theme?: string;
   } = {
     root: tree.root,
     nodeCount: Object.keys(tree.nodes).length,
     screenCount: tree.screens === undefined ? 0 : Object.keys(tree.screens).length,
   };
   if (tree.entry !== undefined) summary.entry = tree.entry;
-  if (tree.theme !== undefined) summary.theme = tree.theme;
   return summary;
 }
 
@@ -150,7 +147,6 @@ function metadataChanges(before: FacetTree, after: FacetTree): readonly string[]
   if (before.root !== after.root) changes.push(`root ${before.root} -> ${after.root}`);
   if (stableJson(before.screens) !== stableJson(after.screens)) changes.push("screens changed");
   if (before.entry !== after.entry) changes.push("entry changed");
-  if (before.theme !== after.theme) changes.push("theme changed");
   const beforeCount = Object.keys(before.nodes).length;
   const afterCount = Object.keys(after.nodes).length;
   if (beforeCount !== afterCount)

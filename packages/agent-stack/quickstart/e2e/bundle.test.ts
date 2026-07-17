@@ -17,6 +17,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { DEFAULT_THEME } from "@facet/react";
 
 // NOT `new URL("../dist/page/app.js", import.meta.url)`: Vite statically
 // rewrites that exact pattern into a served-asset URL (http://localhost:3000/…
@@ -33,6 +34,53 @@ function readBundle(): string {
         `before the Tier 1b bundle test (it executes the REAL page bundle). [${String(error)}]`,
     );
   }
+}
+
+function completeTheme(
+  name: string,
+  lightBackground: string,
+  darkBackground: string,
+  lightSuccess = "#15803d",
+  darkSuccess = "#4ade80",
+) {
+  return {
+    ...DEFAULT_THEME,
+    name,
+    tokens: {
+      ...DEFAULT_THEME.tokens,
+      paint: {
+        light: {
+          ...DEFAULT_THEME.tokens.paint.light,
+          color: {
+            ...DEFAULT_THEME.tokens.paint.light.color,
+            background: lightBackground,
+            success: lightSuccess,
+          },
+        },
+        dark: {
+          ...DEFAULT_THEME.tokens.paint.dark,
+          color: {
+            ...DEFAULT_THEME.tokens.paint.dark.color,
+            background: darkBackground,
+            success: darkSuccess,
+          },
+        },
+      },
+    },
+  };
+}
+
+function matchMediaFor(dark: boolean): typeof window.matchMedia {
+  return ((query: string) => ({
+    matches: query.includes("prefers-color-scheme") ? dark : false,
+    media: query,
+    onchange: null,
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    addListener: () => {},
+    removeListener: () => {},
+    dispatchEvent: () => false,
+  })) as typeof window.matchMedia;
 }
 
 /** No-op EventSource: enough surface for SseTransport to construct + close. */
@@ -80,6 +128,104 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     expect(bundleText.includes("process.env.NODE_ENV")).toBe(false);
   });
 
+  it("contains only the Theme browser asset seam and no Pattern payload or Node builtin", () => {
+    const retiredPatternGlobal = ["__FACET_", "PATTERNS__"].join("");
+    expect(bundleText).toContain("__FACET_THEME__");
+    expect(bundleText).not.toContain(retiredPatternGlobal);
+    expect(bundleText).not.toContain("get_pattern");
+    expect(bundleText).not.toContain("provider-only-pattern-provenance");
+    expect(bundleText).not.toMatch(
+      /\bnode:(?:assert|buffer|child_process|crypto|events|fs|http|https|net|os|path|stream|url|util|worker_threads)\b/,
+    );
+  });
+
+  it("paints the boot-shipped seed immediately and themes the canvas (no agent turn)", async () => {
+    const globals = globalThis as {
+      EventSource?: unknown;
+      fetch?: unknown;
+    };
+    globals.EventSource = StubEventSource;
+    globals.fetch = (): Promise<Response> =>
+      Promise.resolve(new Response("{}", { status: 202, headers: {} }));
+
+    // The two boot seams the quickstart server inlines into the shell: one
+    // complete Theme and one seed stage. Setting them BEFORE eval mirrors the
+    // shell running the inline <script> ahead of /app.js.
+    const bootWindow = window as unknown as {
+      __FACET_INITIAL_STAGE__?: unknown;
+      __FACET_THEME__?: unknown;
+      __FACET_PATTERNS__?: unknown;
+    };
+    const seedText = "Seeded skeleton pre-model";
+    const lightBackground = "#f5f7ff";
+    const darkBackground = "#0b1020";
+    bootWindow.__FACET_THEME__ = completeTheme("midnight", lightBackground, darkBackground);
+    window.matchMedia = matchMediaFor(true);
+    bootWindow.__FACET_INITIAL_STAGE__ = {
+      root: "seed-root",
+      nodes: {
+        "seed-root": {
+          id: "seed-root",
+          type: "box",
+          style: { preset: "panel", direction: "column", gap: "md", padding: "lg" },
+          children: ["seed-hero"],
+        },
+        "seed-hero": {
+          id: "seed-hero",
+          type: "text",
+          value: seedText,
+          style: { preset: "heading", color: "success" },
+        },
+      },
+    };
+
+    try {
+      document.body.innerHTML = '<div id="root"></div>';
+      const root = document.getElementById("root");
+      expect(root).not.toBeNull();
+
+      expect(() => {
+        (0, eval)(bundleText);
+      }).not.toThrow();
+
+      // The FIRST paint is the seed itself: poll only for React's async mount,
+      // NOT for any server frame — none can arrive (EventSource is a no-op stub
+      // and fetch is a dummy). The seed text in the DOM proves the page no longer
+      // waits on the first model turn to paint (Fix A).
+      const deadline = Date.now() + 10_000;
+      while (root!.children.length === 0 && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(root!.textContent).toContain(seedText);
+
+      // The canvas follows the dark branch of the one host-owned Theme. The
+      // document selects no Theme, while its Preset + token style remains visible.
+      const darkBackgroundProbe = document.createElement("div");
+      darkBackgroundProbe.style.background = darkBackground;
+      const canvasDeadline = Date.now() + 10_000;
+      while (
+        document.body.style.background !== darkBackgroundProbe.style.background &&
+        Date.now() < canvasDeadline
+      ) {
+        await new Promise((resolve) => setTimeout(resolve, 25));
+      }
+      expect(document.body.style.background).toBe(darkBackgroundProbe.style.background);
+      const heading = Array.from(root!.querySelectorAll("p")).find(
+        (element) => element.textContent === seedText,
+      ) as HTMLElement | undefined;
+      expect(heading).toBeDefined();
+      expect(heading?.style.fontSize).not.toBe("");
+      const darkSuccessProbe = document.createElement("div");
+      darkSuccessProbe.style.color = "#4ade80";
+      expect(heading?.style.color).toBe(darkSuccessProbe.style.color);
+      expect(bootWindow.__FACET_PATTERNS__).toBeUndefined();
+    } finally {
+      delete bootWindow.__FACET_INITIAL_STAGE__;
+      delete bootWindow.__FACET_THEME__;
+      delete bootWindow.__FACET_PATTERNS__;
+    }
+  });
+
   it("evaluates in jsdom without throwing and mounts into #root", async () => {
     const globals = globalThis as {
       EventSource?: unknown;
@@ -111,75 +257,6 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     expect(page!.style.fontFamily).toBe("Nunito, sans-serif");
   });
 
-  it("paints the boot-shipped seed immediately and themes the canvas (no agent turn)", async () => {
-    const globals = globalThis as {
-      EventSource?: unknown;
-      fetch?: unknown;
-    };
-    globals.EventSource = StubEventSource;
-    globals.fetch = (): Promise<Response> =>
-      Promise.resolve(new Response("{}", { status: 202, headers: {} }));
-
-    // The two boot seams the quickstart server inlines into the shell: a seed
-    // stage (with the theme pre-selected) and the theme registry that names it.
-    // Setting them BEFORE eval mirrors the shell running the inline <script>
-    // ahead of /app.js.
-    const bootWindow = window as unknown as {
-      __FACET_INITIAL_STAGE__?: unknown;
-      __FACET_THEMES__?: unknown;
-    };
-    const seedText = "Seeded skeleton pre-model";
-    bootWindow.__FACET_INITIAL_STAGE__ = {
-      root: "seed-root",
-      theme: "midnight",
-      nodes: {
-        "seed-root": {
-          id: "seed-root",
-          type: "box",
-          style: { direction: "col", gap: "md" },
-          children: ["seed-hero"],
-        },
-        "seed-hero": { id: "seed-hero", type: "text", value: seedText },
-      },
-    };
-    bootWindow.__FACET_THEMES__ = [{ name: "midnight", color: { bg: "#0b1020", fg: "#e5e7eb" } }];
-
-    try {
-      document.body.innerHTML = '<div id="root"></div>';
-      const root = document.getElementById("root");
-      expect(root).not.toBeNull();
-
-      expect(() => {
-        (0, eval)(bundleText);
-      }).not.toThrow();
-
-      // The FIRST paint is the seed itself: poll only for React's async mount,
-      // NOT for any server frame — none can arrive (EventSource is a no-op stub
-      // and fetch is a dummy). The seed text in the DOM proves the page no longer
-      // waits on the first model turn to paint (Fix A).
-      const deadline = Date.now() + 10_000;
-      while (root!.children.length === 0 && Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      expect(root!.textContent).toContain(seedText);
-
-      // Fix B: the canvas (document.body, outside the tree) follows the resolved
-      // theme's bg. The seed pre-selects theme "midnight", so the body background
-      // is midnight's bg, not the default white. Compute the expected normalized
-      // color via a detached element so the assertion doesn't hardcode jsdom's
-      // hex→rgb conversion.
-      const probe = document.createElement("div");
-      probe.style.background = "#0b1020";
-      const whiteProbe = document.createElement("div");
-      whiteProbe.style.background = "#ffffff";
-      expect(document.body.style.background).toBe(probe.style.background);
-      expect(document.body.style.background).not.toBe(whiteProbe.style.background);
-    } finally {
-      delete bootWindow.__FACET_INITIAL_STAGE__;
-      delete bootWindow.__FACET_THEMES__;
-    }
-  });
-
   it("junk boot globals fall back to a bare boot: mounts on EMPTY_TREE + default canvas, no throw", async () => {
     const globals = globalThis as {
       EventSource?: unknown;
@@ -191,8 +268,9 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
 
     const bootWindow = window as unknown as {
       __FACET_INITIAL_STAGE__?: unknown;
-      __FACET_THEMES__?: unknown;
+      __FACET_THEME__?: unknown;
     };
+    window.matchMedia = matchMediaFor(false);
 
     // Evaluate the real bundle against the current globals and wait for React to
     // mount. Returns the freshly-created #root so callers can assert on the DOM.
@@ -218,48 +296,42 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     whiteProbe.style.background = "#ffffff";
 
     try {
-      // Case 1: a non-array themes global and a non-tree seed. readThemes returns
-      // undefined (not an array) and readInitialStage returns undefined
-      // (isTreeShaped rejects `{ root: 5 }`), so the page mounts on EMPTY_TREE
-      // with the default theme — a blank canvas, never a thrown error.
-      bootWindow.__FACET_THEMES__ = "junk";
+      // Case 1: a non-object Theme global and a non-tree seed both fail their
+      // shape floors, so the page mounts on EMPTY_TREE + default Theme.
+      bootWindow.__FACET_THEME__ = "junk";
       bootWindow.__FACET_INITIAL_STAGE__ = { root: 5 };
       let root = await runBoot();
       expect(root.children.length).toBeGreaterThan(0); // mounted, not a blank page
       expect(root.textContent).not.toContain("Seeded"); // no node from the junk seed
       expect(document.body.style.background).toBe(whiteProbe.style.background);
 
-      // Case 2: a partially-junk themes array (`null` and `{ name: 7 }` are not
-      // valid theme shapes) with the same non-tree seed — still mounts on
-      // EMPTY_TREE + default canvas: the junk entries never reach StageRenderer.
-      bootWindow.__FACET_THEMES__ = [null, { name: 7 }, { name: "ok" }];
+      // Case 2: a name-only Theme passes the cheap page floor but fails complete
+      // Theme validation in the renderer, so fallback remains whole/default.
+      bootWindow.__FACET_THEME__ = { name: "incomplete" };
       bootWindow.__FACET_INITIAL_STAGE__ = { root: 5 };
       root = await runBoot();
       expect(root.children.length).toBeGreaterThan(0);
       expect(document.body.style.background).toBe(whiteProbe.style.background);
 
-      // Case 3: the partial-filter survivor is observable — a VALID seed that
-      // pre-selects theme "ok" alongside the same mixed array. Only if readThemes
-      // kept `{ name: "ok" }` (dropping `null` and `{ name: 7 }`) does the canvas
-      // take ok's bg; a filter that threw, dropped ok, or let junk through would
-      // fail here.
+      // Case 3: one complete Theme is observable with a valid styled seed. The
+      // document contains no Theme selector; the host-owned asset alone controls paint.
       const okBg = "#123456";
-      bootWindow.__FACET_THEMES__ = [
-        null,
-        { name: 7 },
-        { name: "ok", color: { bg: okBg, fg: "#ffffff" } },
-      ];
+      bootWindow.__FACET_THEME__ = completeTheme("ok", okBg, "#010203");
       bootWindow.__FACET_INITIAL_STAGE__ = {
         root: "seed-root",
-        theme: "ok",
         nodes: {
           "seed-root": {
             id: "seed-root",
             type: "box",
-            style: { direction: "col", gap: "md" },
+            style: { preset: "panel", direction: "column", gap: "md" },
             children: ["seed-hero"],
           },
-          "seed-hero": { id: "seed-hero", type: "text", value: "ok-seed" },
+          "seed-hero": {
+            id: "seed-hero",
+            type: "text",
+            value: "ok-seed",
+            style: { preset: "heading" },
+          },
         },
       };
       root = await runBoot();
@@ -269,7 +341,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
       expect(document.body.style.background).toBe(okProbe.style.background);
     } finally {
       delete bootWindow.__FACET_INITIAL_STAGE__;
-      delete bootWindow.__FACET_THEMES__;
+      delete bootWindow.__FACET_THEME__;
     }
   });
 
@@ -287,7 +359,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
     const replacementText = "Replacement after SSE root write";
     const bootWindow = window as unknown as {
       __FACET_INITIAL_STAGE__?: unknown;
-      __FACET_THEMES__?: unknown;
+      __FACET_THEME__?: unknown;
     };
 
     bootWindow.__FACET_INITIAL_STAGE__ = {
@@ -296,7 +368,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
         "seed-root": {
           id: "seed-root",
           type: "box",
-          style: { direction: "col", gap: "md" },
+          style: { direction: "column", gap: "md" },
           children: ["seed-copy"],
         },
         "seed-copy": { id: "seed-copy", type: "text", value: seedText },
@@ -338,7 +410,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
                 "replacement-root": {
                   id: "replacement-root",
                   type: "box",
-                  style: { direction: "col", gap: "md" },
+                  style: { direction: "column", gap: "md" },
                   children: ["replacement-copy"],
                 },
                 "replacement-copy": {
@@ -368,7 +440,7 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
       expect(frame!.querySelector(".facet-motion-stage-previous")?.textContent).toContain(seedText);
     } finally {
       delete bootWindow.__FACET_INITIAL_STAGE__;
-      delete bootWindow.__FACET_THEMES__;
+      delete bootWindow.__FACET_THEME__;
     }
   });
 });

@@ -1,115 +1,80 @@
-/** Theme document public contract and canonical defaults. */
+/** Public contract for one complete, operator-owned Facet design system. */
+import type { BrickType } from "./brick-contract.js";
+import { SLOT_NAME_RE } from "./slot-marker.js";
+import type { BrickStyleDefinition, BrickStyleDefinitionMap } from "./style-types.js";
 import type {
-  Align,
-  Appear,
-  Columns,
+  AspectRatio,
+  BorderWidth,
+  ChartThickness,
   Color,
-  Direction,
+  ControlHeight,
   FontFamily,
   FontSize,
   FontWeight,
   Gradient,
   Highlight,
-  Justify,
-  Leading,
+  IndicatorSize,
+  LetterSpacing,
+  LineHeight,
   MaxWidth,
   MinHeight,
+  ProgressThickness,
   Radius,
-  Ratio,
   Scrim,
-  ScrollAxis,
   Shadow,
-  Sizing,
   Space,
-  TextAlign,
-  Tracking,
 } from "./tokens.js";
-import { BRICK_TYPES } from "./nodes.js";
-import { SLOT_NAME_RE } from "./slot-marker.js";
-import type { RecipePartName } from "./theme-recipes.js";
 
-export { RECIPE_PARTS } from "./theme-recipes.js";
-export type { RecipePartName } from "./theme-recipes.js";
+export type CompleteMap<K extends PropertyKey, V> = Readonly<Record<K, V>>;
 
-/** A partial override document over the default theme. Every group is optional. */
+export interface FacetPaintTokens {
+  readonly color: CompleteMap<Color, string>;
+  readonly shadow: CompleteMap<Shadow, string>;
+  readonly gradient: CompleteMap<Gradient, string>;
+  readonly scrim: CompleteMap<Scrim, string>;
+  readonly highlight: CompleteMap<Highlight, string>;
+}
+
+export interface FacetThemeTokens {
+  readonly space: CompleteMap<Space, string>;
+  readonly fontSize: CompleteMap<FontSize, string>;
+  readonly fontFamily: CompleteMap<FontFamily, string>;
+  readonly fontWeight: CompleteMap<FontWeight, number>;
+  readonly radius: CompleteMap<Radius, string>;
+  readonly borderWidth: CompleteMap<BorderWidth, string>;
+  readonly aspectRatio: CompleteMap<AspectRatio, string>;
+  readonly minHeight: CompleteMap<MinHeight, string>;
+  readonly maxWidth: CompleteMap<MaxWidth, string>;
+  readonly letterSpacing: CompleteMap<LetterSpacing, string>;
+  readonly lineHeight: CompleteMap<LineHeight, string>;
+  readonly controlHeight: CompleteMap<ControlHeight, string>;
+  readonly indicatorSize: CompleteMap<IndicatorSize, string>;
+  readonly progressThickness: CompleteMap<ProgressThickness, string>;
+  readonly chartThickness: CompleteMap<ChartThickness, string>;
+  readonly paint: {
+    readonly light: FacetPaintTokens;
+    readonly dark: FacetPaintTokens;
+  };
+}
+
+export interface FacetPreset<B extends BrickType = BrickType> {
+  readonly description: string;
+  readonly useWhen: string;
+  readonly avoidWhen?: string;
+  readonly style: BrickStyleDefinition<B>;
+}
+
+export type FacetPresets = Readonly<{
+  readonly [B in BrickType]?: Readonly<Record<string, FacetPreset<B>>>;
+}>;
+
 export interface FacetTheme {
   readonly name: string;
   readonly description?: string;
-  readonly color?: Readonly<Partial<Record<Color, string>>>;
-  readonly space?: Readonly<Partial<Record<Space, string>>>;
-  readonly fontFamily?: Readonly<Partial<Record<FontFamily, string>>>;
-  readonly fontSize?: Readonly<Partial<Record<FontSize, string>>>;
-  readonly fontWeight?: Readonly<Partial<Record<FontWeight, number>>>;
-  readonly radius?: Readonly<Partial<Record<Radius, string>>>;
-  readonly ratio?: Readonly<Partial<Record<Ratio, string>>>;
-  readonly shadow?: Readonly<Partial<Record<Shadow, string>>>;
-  readonly minHeight?: Readonly<Partial<Record<MinHeight, string>>>;
-  readonly maxWidth?: Readonly<Partial<Record<MaxWidth, string>>>;
-  readonly tracking?: Readonly<Partial<Record<Tracking, string>>>;
-  readonly leading?: Readonly<Partial<Record<Leading, string>>>;
-  readonly gradient?: Readonly<Partial<Record<Gradient, string>>>;
-  readonly scrim?: Readonly<Partial<Record<Scrim, string>>>;
-  readonly highlight?: Readonly<Partial<Record<Highlight, string>>>;
-  /** Dark-scheme palette (same token space as `color`), used by `scheme:"dark"`. */
-  readonly colorDark?: Readonly<Partial<Record<Color, string>>>;
-  readonly recipes?: BrickRecipes;
+  readonly tokens: FacetThemeTokens;
+  readonly defaults: BrickStyleDefinitionMap;
+  readonly presets?: FacetPresets;
 }
-
-export interface RecipeBoxStyle {
-  readonly direction?: Direction;
-  readonly gap?: Space;
-  readonly pad?: Space;
-  readonly align?: Align;
-  readonly justify?: Justify;
-  readonly wrap?: boolean;
-  readonly bg?: Color;
-  readonly radius?: Radius;
-  readonly border?: boolean;
-  readonly grow?: boolean;
-  readonly width?: Sizing;
-  readonly appear?: Appear;
-  readonly scroll?: ScrollAxis | true;
-  readonly columns?: Columns;
-  readonly shadow?: Shadow;
-}
-
-export interface RecipeTextStyle {
-  readonly family?: FontFamily;
-  readonly size?: FontSize;
-  readonly weight?: FontWeight;
-  readonly color?: Color;
-  readonly align?: TextAlign;
-}
-
-export interface RecipeMediaStyle {
-  readonly radius?: Radius;
-  readonly width?: Sizing;
-  readonly ratio?: Ratio;
-}
-
-export interface RecipeFieldStyle {
-  readonly width?: Sizing;
-}
-
-export interface BrickRecipePart {
-  readonly box?: RecipeBoxStyle;
-  readonly text?: RecipeTextStyle;
-  readonly media?: RecipeMediaStyle;
-  readonly field?: RecipeFieldStyle;
-}
-
-export type BrickRecipeParts = Readonly<Partial<Record<RecipePartName, BrickRecipePart>>>;
-
-export interface BrickRecipe extends BrickRecipePart {
-  readonly parts?: BrickRecipeParts;
-}
-
-export const RECIPE_BRICKS = BRICK_TYPES;
-export type RecipeBrickName = (typeof RECIPE_BRICKS)[number];
-
-export type BrickRecipes = Readonly<
-  Partial<Record<RecipeBrickName, Readonly<Record<string, BrickRecipe>>>>
->;
 
 export interface ThemeIssue {
   readonly severity: "error" | "warning";
@@ -117,52 +82,18 @@ export interface ThemeIssue {
 }
 
 export interface ThemeValidationResult {
-  /** Present iff no `error` issue was raised. */
+  /** Present iff validation raised no error. Invalid Themes are never partial. */
   readonly theme?: FacetTheme;
   readonly issues: readonly ThemeIssue[];
 }
 
-/**
- * True iff `name` is a valid theme name — a short, filename-safe identifier
- * (1–64 chars of `[a-zA-Z0-9_-]`, leading char alphanumeric). The single rule
- * both `validateTheme` (a theme document's own name) and `validateTree` (a
- * tree's `theme` reference) apply, so the two can never drift apart.
- */
+/** Shared filename/slot-safe name grammar for Theme and Preset identifiers. */
 export function isValidThemeName(name: string): boolean {
   return SLOT_NAME_RE.test(name);
 }
 
-/** Shared cap for a document's one-line `description` (a theme's and a composition's). */
+/** Shared bound for short agent-facing Theme/Preset prose. */
 export const MAX_DESCRIPTION_LENGTH = 200;
 
-/**
- * The canonical default palette — token NAMES → concrete hex — as the SINGLE
- * source of truth for the default colors.
- */
-export const DEFAULT_COLORS: Readonly<Record<Color, string>> = {
-  fg: "#1a1d23",
-  "fg-muted": "#6b7280",
-  bg: "#ffffff",
-  surface: "#f6f7f9",
-  "surface-2": "#eceef1",
-  accent: "#4f46e5",
-  "accent-fg": "#ffffff",
-  border: "#e2e5ea",
-  success: "#16a34a",
-  warning: "#d97706",
-  danger: "#dc2626",
-  neutral: "#64748b",
-  info: "#0284c7",
-  "chart-1": "#2563eb",
-  "chart-2": "#16a34a",
-  "chart-3": "#d97706",
-  "chart-4": "#dc2626",
-  "chart-5": "#7c3aed",
-  "chart-6": "#0891b2",
-};
-
-/**
- * WCAG contrast is measured for these pairs against the EFFECTIVE colors — each
- * member is the document's override if present, else the `DEFAULT_COLORS` value
- * it renders on — so a partial override (e.g. `bg` only) is still checked.
- */
+/** Theme concrete CSS values are operator data, but remain tightly bounded. */
+export const MAX_THEME_CSS_VALUE_BYTES = 512;

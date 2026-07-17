@@ -16,6 +16,18 @@ const ROOT_BOX: FacetTree = {
 };
 
 describe("foldStageShadow", () => {
+  it("stores no document Theme", () => {
+    const legacyTree = { ...ROOT_BOX, theme: "legacy-brand" } as FacetTree & {
+      readonly theme: string;
+    };
+
+    expect(summarizeStageTree(legacyTree)).toEqual({
+      root: "root",
+      nodeCount: 1,
+      screenCount: 0,
+    });
+  });
+
   it("folds patch messages through foldPatchIntoStage", () => {
     const patches: JsonPatchOperation[] = [
       {
@@ -83,10 +95,7 @@ describe("foldStageShadow", () => {
 
     const result = foldStageShadow(ROOT_BOX, [{ kind: "patch", patches }]);
 
-    expect(result.shadow).toEqual({
-      root: "root",
-      nodes: { root: { id: "root", type: "box", style: {}, children: [] } },
-    });
+    expect(result.shadow).toEqual(ROOT_BOX);
     expect(result.patches).toEqual([]);
     expect(result.patchCount).toBe(0);
     expect(result.issues.some((issue) => issue.includes("cap"))).toBe(true);

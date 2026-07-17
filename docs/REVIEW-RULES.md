@@ -11,9 +11,9 @@ bureaucratic.
    HTML/JS/CSS, never raw scalars, never absolute positioning. The complete
    roster is `box`, `text`, `media`, `input`, `richtext`, `table`, `chart`,
    `list`, `keyValue`, `progress`, and `loading`; only `box` is a container.
-   Theme recipes may only select validated tokens. Composition references are
-   concrete native-node datasets an agent may
-   read, not stage syntax or an authoring tier. Bypassing core validation or
+   Theme Presets may only select validated Brick-owned choices. Patterns are
+   concrete native-node datasets an agent may read, not stage syntax or an
+   authoring tier. Bypassing core validation or
    admitting arbitrary markup is an invariant violation.
 2. **Patches-only + fail-safe.** Stage changes travel as RFC 6902 patches; the
    *same* pure `applyPatch` runs on server and client. The renderer/validator is
@@ -40,8 +40,8 @@ bureaucratic.
 gate on them. (A P2 may only ship unfixed with an explicit maintainer waiver
 recorded in the PR.)
 
-A theme recipe may style a validated brick but cannot add behavior or fields. A
-composition-reference read may return only a validated concrete native dataset
+A Theme Preset may style its owning validated Brick but cannot add behavior or
+fields. A Pattern read may return only a validated concrete native dataset
 and must not itself emit stage messages or patches. Treat any path that accepts
 unvalidated nodes, raw markup, raw scalar styles, client-side business logic on
 display bricks, or absolute positioning as at least P1.
@@ -79,8 +79,8 @@ without an explicit bounded scroll region is at least P1.
   + persistent generator handshake (deadlock/ordering), timeouts, resource leaks.
 - **consistency** — duplication, cross-package drift, dev-vs-published resolution
   (`publishConfig`/`exports`), barrel usage, naming, docs/prompts that omit the
-  exact 11-brick roster, describe composition references as a functional node
-  tier, or retain retired component-tier APIs/data shapes. Reference lookup is
+  exact 11-Brick roster, describe Patterns as a functional node tier, or retain
+  retired component-tier/style/asset APIs and data shapes. Pattern lookup is
   optional and separate from node authoring.
 - **test-gaps** — changed behavior without a test; critical pure logic
   (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
@@ -102,8 +102,8 @@ without an explicit bounded scroll region is at least P1.
 
 Run the canonical mechanical gate with `pnpm verify`: typecheck, tests, lint,
 format-check, build, and a source NUL-byte scan. Use the individual commands only
-for scoped diagnosis. Composition hard cuts also run
-`node scripts/check-composition-hard-cut.mjs`: shipping source, docs, package
+for scoped diagnosis. Style-system hard cuts also run
+`node scripts/check-style-hard-cut.mjs`: shipping source, docs, package
 READMEs, fixtures, and current changesets must contain no retired symbol, data,
 or functional-tier claim. Historical `specs/**` are archival. Only an intentional
 negative in a test or fixture may use the scanner's exact annotation; annotations

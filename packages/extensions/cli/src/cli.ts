@@ -10,7 +10,6 @@
  *   facet append <boxId> '<node-json>'     # add a child brick under a box
  *   facet remove <nodeId>               # remove a node
  *   facet screens '<map-json>' <entry>  # set the named screens map + entry screen
- *   facet theme <name>                  # select a validated theme name
  *   facet say <text…>                   # send a chat message
  *
  * Each command is a thin wrapper over @facet/agent's Stage. It POSTs the

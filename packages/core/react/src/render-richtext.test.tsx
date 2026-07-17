@@ -36,6 +36,91 @@ function tree(node: FacetNode): FacetTree {
 }
 
 describe("renderRichText (DC-001 happy render)", () => {
+  it("styles bounded semantic targets without a per-block or per-run selector", () => {
+    const theme = resolveTheme();
+    const normalizedColor = (value: string): string => {
+      const sample = document.createElement("span");
+      sample.style.color = value;
+      return sample.style.color;
+    };
+    const node = {
+      id: "rt",
+      type: "richtext",
+      style: {
+        fontSize: "lg",
+        blockGap: "xl",
+        heading1: { fontSize: "4xl", color: "info" },
+        quote: {
+          color: "warning",
+          background: "warningSurface",
+          padding: "lg",
+          borderColor: "warning",
+          borderWidth: "thick",
+        },
+        code: {
+          fontFamily: "mono",
+          color: "success",
+          background: "successSurface",
+          padding: "xs",
+          borderRadius: "lg",
+        },
+        link: {
+          color: "accent",
+          hover: { color: "info", highlight: "accent" },
+          pressed: { color: "warning" },
+          focus: { color: "danger", highlight: "warning" },
+        },
+        listMarker: { color: "danger", fontSize: "xl", fontWeight: "bold" },
+        // Raw-path junk is not a published target and cannot select content.
+        block: { 0: { color: "danger" } },
+        run: { 0: { color: "danger" } },
+      },
+      blocks: [
+        { type: "heading", level: 1, runs: [{ text: "Heading" }] },
+        { type: "quote", runs: [{ text: "Quote" }] },
+        { type: "paragraph", runs: [{ text: "Code", marks: [{ kind: "code" }] }] },
+        {
+          type: "paragraph",
+          runs: [
+            { text: "Link", marks: [{ kind: "link", target: { href: "https://example.com" } }] },
+          ],
+        },
+        { type: "listItem", runs: [{ text: "Item" }] },
+      ],
+    } as unknown as RichTextNode;
+    const { container } = render(<>{renderRichText(node, ctx())}</>);
+
+    const root = container.firstElementChild as HTMLElement;
+    const heading = container.querySelector("h1") as HTMLElement;
+    const quote = container.querySelector("blockquote") as HTMLElement;
+    const code = Array.from(container.querySelectorAll("span")).find(
+      (span) => span.textContent === "Code",
+    ) as HTMLElement;
+    const link = container.querySelector('a[href="https://example.com"]') as HTMLAnchorElement;
+    const marker = container.querySelector('[data-facet-list-item] > span[aria-hidden="true"]') as
+      HTMLSpanElement | undefined;
+
+    expect(root.style.fontSize).toBe(theme.fontSize.lg);
+    expect(root.style.gap).toBe(theme.space.xl);
+    expect(heading.style.fontSize).toBe(theme.fontSize["4xl"]);
+    expect(heading.style.color).toBe(normalizedColor(theme.color.info));
+    expect(quote.style.background).toBe(normalizedColor(theme.color.warningSurface));
+    expect(quote.style.padding).toBe(theme.space.lg);
+    expect(quote.style.borderInlineStartWidth).toBe(theme.borderWidth.thick);
+    expect(code.style.fontFamily).toBe(theme.fontFamily.mono);
+    expect(code.style.background).toBe(normalizedColor(theme.color.successSurface));
+    expect(code.style.borderRadius).toBe(theme.radius.lg);
+    expect(link.classList).toContain("facet-hover-color");
+    expect(link.classList).toContain("facet-pressed-color");
+    expect(link.classList).toContain("facet-focus-highlight");
+    expect(link.style.getPropertyValue("--facet-hover-color")).toBe(theme.color.info);
+    expect(link.style.getPropertyValue("--facet-focus-color")).toBe(theme.color.danger);
+    expect(marker?.style.color).toBe(normalizedColor(theme.color.danger));
+    expect(marker?.style.fontSize).toBe(theme.fontSize.xl);
+    expect(root.innerHTML).not.toContain("block:");
+    expect(root.innerHTML).not.toContain("run:");
+  });
+
   it("flows mixed marks + an internal link as ONE wrapping block with per-run emphasis", () => {
     const node = richtext([
       {

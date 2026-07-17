@@ -8,7 +8,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
-// Spy on the compaction-ON composition so a regression back to the bare
+// Spy on the compaction-enabled wiring so a regression back to the bare
 // createReferenceAgent (compaction OFF) fails a test instead of shipping.
 const { composeSpy } = vi.hoisted(() => ({ composeSpy: vi.fn() }));
 vi.mock("./agent.js", async (importOriginal) => {
@@ -19,7 +19,8 @@ vi.mock("./agent.js", async (importOriginal) => {
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BRICK_TYPES, type FacetCatalog, type FacetComposition } from "@facet/core";
+import { BRICK_TYPES, type FacetPattern, type FacetTheme } from "@facet/core";
+import { DEFAULT_THEME } from "@facet/react";
 import * as referenceAgent from "@facet/reference-agent";
 import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
@@ -30,22 +31,6 @@ import { createStubAgent } from "@facet/reference-agent";
 const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
 
 const TEST_PROVIDER_ENV = { OPENAI_API_KEY: "sk-test" } as const;
-
-const CATALOG_FIXTURE: FacetCatalog = {
-  name: "quickstart-catalog",
-  description: "Quickstart catalog policy",
-  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [
-    { type: "box", variants: ["surface"] },
-    { type: "progress", variants: ["success"] },
-  ],
-  compositions: { mode: "allow", names: ["pricing"] },
-  policy: {
-    editBeforeAppend: true,
-    compactScreens: true,
-    maxScreenSections: 3,
-  },
-};
 
 describe("@facet/quickstart barrel", () => {
   it("quickstart barrel exposes reference-agent aliases", () => {
@@ -59,11 +44,13 @@ describe("@facet/quickstart barrel", () => {
 
 describe("quickstart guide brief", () => {
   it("does not advertise retired container node types", () => {
-    const retiredContainerTerms = /\b(?:sections?|cards?|emptyStates?)\b/i; // composition-hard-cut: allowed-negative
+    const retiredContainerTerms = /\b(?:sections?|cards?|emptyStates?)\b/i; // style-hard-cut: allowed-negative
 
     expect(QUICKSTART_PAGE_BRIEF).not.toMatch(retiredContainerTerms);
-    expect(QUICKSTART_PAGE_BRIEF).toContain("optional concrete reference datasets");
-    expect(QUICKSTART_PAGE_BRIEF).toContain("ordinary native bricks");
+    expect(QUICKSTART_PAGE_BRIEF).toContain(
+      "optional named Patterns as concrete read-only references",
+    );
+    expect(QUICKSTART_PAGE_BRIEF).toContain("ordinary native Bricks");
   });
 });
 
@@ -81,15 +68,13 @@ function capture(): Captured {
 }
 
 interface ShellGlobals {
-  __FACET_THEMES__?: unknown;
+  __FACET_THEME__?: unknown;
   __FACET_INITIAL_STAGE__?: unknown;
 }
 
 function readShellGlobals(body: string): ShellGlobals {
   const bootTag =
-    (body.match(/<script>[\s\S]*?<\/script>/g) ?? []).find((tag) =>
-      tag.includes("__FACET_INITIAL_STAGE__"),
-    ) ?? "";
+    (body.match(/<script>[\s\S]*?<\/script>/g) ?? []).find((tag) => tag.includes("__FACET_")) ?? "";
   expect(bootTag).not.toBe("");
   const scriptBody = bootTag.slice("<script>".length, -"</script>".length);
   const fakeWindow: ShellGlobals = {};
@@ -220,6 +205,36 @@ describe("runCli — guide resolution (DC-005)", () => {
 });
 
 describe("runCli — --assets (DC-009)", () => {
+  it("wires one Theme and exact Patterns", async () => {
+    composeSpy.mockClear();
+    let resolved: { readonly theme: FacetTheme; readonly patterns: readonly FacetPattern[] };
+    const { running } = await bootCli([], {
+      onResolvedAssets: (assets) => {
+        resolved = assets;
+      },
+    });
+    try {
+      expect(resolved!.theme.name).toBe("default");
+      expect(resolved!.patterns.map((pattern) => pattern.name)).toEqual(
+        expect.arrayContaining(["hero", "card", "pricing-section"]),
+      );
+      const options = composeSpy.mock.calls[0]?.[0] as
+        { readonly theme?: FacetTheme; readonly patterns?: readonly FacetPattern[] } | undefined;
+      expect(options?.theme).toBe(resolved!.theme);
+      expect(options?.patterns).toBe(resolved!.patterns);
+
+      const shell = await (await fetch(`${running.url}/`)).text();
+      expect(shell).toContain("window.__FACET_THEME__");
+      expect(shell).not.toContain("__FACET_THEMES__");
+      expect(shell).not.toContain("__FACET_PATTERNS__");
+      expect(readShellGlobals(shell).__FACET_THEME__).toEqual(resolved!.theme);
+      expect(await fetch(`${running.url}/patterns`)).toMatchObject({ status: 404 });
+      expect(await fetch(`${running.url}/assets`)).toMatchObject({ status: 404 });
+    } finally {
+      await running.close();
+    }
+  });
+
   it("exits 1 when an explicit assets path does not exist", async () => {
     const missing = join(
       tmpdir(),
@@ -262,180 +277,54 @@ describe("runCli — --assets (DC-009)", () => {
     }
   });
 
-  it("boots on a valid dir, logs issues, wires only the valid theme and no seed", async () => {
+  it("loads exact current asset files and keeps Patterns out of the browser", async () => {
     const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
     try {
-      // One valid theme, one invalid theme (non-string name ⇒ skipped), and an
-      // initial tree that validateTree reduces to EMPTY_TREE (empty root box ⇒
-      // not seedable ⇒ DC-009 model-first fallback, no seed wired).
-      writeFileSync(
-        join(dir, "midnight.theme.json"),
-        JSON.stringify({ name: "midnight", color: { bg: "#000000", fg: "#ffffff" } }),
-      );
-      writeFileSync(join(dir, "broken.theme.json"), JSON.stringify({ name: 7 }));
-      writeFileSync(join(dir, "initial.tree.json"), JSON.stringify({ root: "root", nodes: {} }));
-
-      const { captured, running } = await bootCli(["--assets", dir]);
-      try {
-        // Issues surfaced, one concise line each, prefixed and never a value.
-        const issues = captured.err.join("\n");
-        expect(issues).toContain("[facet-quickstart]");
-        expect(issues).toContain("theme document skipped");
-        expect(issues).toContain("not seedable");
-
-        // The valid theme is injected into the shell; the skipped one is absent.
-        const shell = await (await fetch(`${running.url}/`)).text();
-        expect(shell).toContain("window.__FACET_THEMES__");
-        expect(shell).toContain("midnight");
-      } finally {
-        await running.close();
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("no-assets boot resolves the canonical default composition snapshot", async () => {
-    // With no --assets the CLI still resolves through `loadAssets` (an empty
-    // `MemoryAssets`), so the `@facet/assets` default theme + composition
-    // reference library seeds on every boot. `onResolvedAssets` is the
-    // observable seam for the one snapshot handed to the agent; only themes
-    // and the initial stage are browser-facing.
-    let resolvedThemes = 0;
-    let resolvedCompositionNames: readonly string[] = [];
-    let resolvedCatalog: FacetCatalog | undefined;
-    const { running } = await bootCli([], {
-      onResolvedAssets: (assets) => {
-        resolvedThemes = assets.themes.length;
-        resolvedCompositionNames = (assets.compositions ?? []).map((c) => c.name);
-        resolvedCatalog = assets.catalog;
-      },
-    });
-    try {
-      expect(resolvedThemes).toBeGreaterThan(0);
-      expect(resolvedCompositionNames).toEqual(
-        expect.arrayContaining(["hero", "card", "pricing-section"]),
-      );
-      expect(resolvedCatalog?.name).toBe("default");
-      expect(resolvedCatalog?.theme.switchPolicy).toBe("locked");
-    } finally {
-      await running.close();
-    }
-  });
-
-  it("custom *.composition.json documents layer onto the default composition snapshot", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
-    try {
-      writeFileSync(
-        join(dir, "panel.composition.json"),
-        JSON.stringify({
-          name: "qs-operator-panel",
-          metadata: { description: "Concrete operator panel reference" },
-          root: "qs-operator-root",
+      const theme: FacetTheme = { ...DEFAULT_THEME, name: "midnight" };
+      const patterns: readonly FacetPattern[] = [
+        {
+          name: "operator-panel",
+          description: "An operator-owned panel Pattern.",
+          useWhen: "A concise operator panel is needed.",
+          root: "operator-panel.root",
           nodes: {
-            "qs-operator-root": {
-              id: "qs-operator-root",
+            "operator-panel.root": {
+              id: "operator-panel.root",
               type: "box",
-              children: ["qs-operator-title"],
+              style: { preset: "panel" },
+              children: ["operator-panel.copy"],
             },
-            "qs-operator-title": {
-              id: "qs-operator-title",
+            "operator-panel.copy": {
+              id: "operator-panel.copy",
               type: "text",
-              value: "Concrete operator title",
+              value: "private-pattern-marker",
+              style: { preset: "body" },
             },
           },
-        }),
-      );
-      // A custom doc that reuses a seeded default name shadows it (one entry).
-      writeFileSync(
-        join(dir, "hero.composition.json"),
-        JSON.stringify({
-          name: "hero",
-          metadata: { description: "Custom concrete hero reference" },
-          root: "hero-root",
-          nodes: { "hero-root": { id: "hero-root", type: "text", value: "Custom hero" } },
-        }),
-      );
-      let resolved: readonly FacetComposition[] = [];
+        },
+      ];
+      writeFileSync(join(dir, "theme.json"), JSON.stringify(theme));
+      writeFileSync(join(dir, "patterns.json"), JSON.stringify(patterns));
+      writeFileSync(join(dir, "initial.tree.json"), JSON.stringify({ root: "root", nodes: {} }));
+
+      let resolved: { readonly theme: FacetTheme; readonly patterns: readonly FacetPattern[] };
       const { captured, running } = await bootCli(["--assets", dir], {
         onResolvedAssets: (assets) => {
-          resolved = assets.compositions ?? [];
+          resolved = assets;
         },
       });
       try {
-        const names = resolved.map((c) => c.name);
-        expect(names).toContain("qs-operator-panel");
-        expect(names).toContain("pricing-section"); // defaults still seed underneath
-        expect(names.filter((name) => name === "hero")).toHaveLength(1);
-        expect(resolved.find((c) => c.name === "hero")?.root).toBe("hero-root");
-        expect(resolved.find((c) => c.name === "qs-operator-panel")?.metadata.description).toBe(
-          "Concrete operator panel reference",
-        );
-        expect(captured.err.join("\n")).toContain(
-          'custom composition "hero" shadows the seeded default',
-        );
-      } finally {
-        await running.close();
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("catalog.json reaches the resolved assets hook", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
-    try {
-      writeFileSync(join(dir, "catalog.json"), JSON.stringify(CATALOG_FIXTURE));
-      let resolvedCatalog: FacetCatalog | undefined;
-      const { running } = await bootCli(["--assets", dir], {
-        onResolvedAssets: ({ catalog }) => {
-          resolvedCatalog = catalog;
-        },
-      });
-      try {
-        expect(resolvedCatalog).toMatchObject({
-          name: "quickstart-catalog",
-          description: "Quickstart catalog policy",
-          theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-          compositions: { mode: "allow", names: ["pricing"] },
-        });
-        expect(resolvedCatalog?.bricks.map((brick) => brick.type)).toEqual(["box", "progress"]);
-        expect(resolvedCatalog?.bricks[1]?.variants).toEqual(["success"]);
-        expect(resolvedCatalog?.policy.maxScreenSections).toBe(3);
-      } finally {
-        await running.close();
-      }
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it("malformed catalog.json keeps defaults per section and fails provided lists closed", async () => {
-    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
-    try {
-      writeFileSync(
-        join(dir, "catalog.json"),
-        JSON.stringify({
-          name: 7,
-          theme: { switchPolicy: "sometimes" },
-          bricks: [{ type: "unknown-brick" }],
-        }),
-      );
-      let resolvedCatalog: FacetCatalog | undefined;
-      const { captured, running } = await bootCli(["--assets", dir], {
-        onResolvedAssets: ({ catalog }) => {
-          resolvedCatalog = catalog;
-        },
-      });
-      try {
-        expect(resolvedCatalog?.name).toBe("default");
-        expect(resolvedCatalog?.theme.switchPolicy).toBe("locked");
-        // A provided bricks list whose entries are all invalid fails closed to
-        // an empty allow-list instead of reopening the default vocabulary.
-        expect(resolvedCatalog?.bricks).toEqual([]);
         const issues = captured.err.join("\n");
         expect(issues).toContain("[facet-quickstart]");
-        expect(issues).toContain("catalog:");
+        expect(issues).toContain("initial tree: no valid root node");
+        expect(resolved!.theme.name).toBe("midnight");
+        expect(resolved!.patterns.map((pattern) => pattern.name)).toEqual(["operator-panel"]);
+
+        const shell = await (await fetch(`${running.url}/`)).text();
+        expect(shell).toContain("window.__FACET_THEME__");
+        expect(shell).toContain("midnight");
+        expect(shell).not.toContain("private-pattern-marker");
+        expect(shell).not.toContain("__FACET_PATTERNS__");
       } finally {
         await running.close();
       }
@@ -444,15 +333,64 @@ describe("runCli — --assets (DC-009)", () => {
     }
   });
 
-  it("injects the default theme library and logs nothing when --assets is absent", async () => {
-    // WU-7: the default library now seeds on every boot, so the shell carries
-    // the default theme global even with no --assets; the defaults are valid, so
-    // nothing is logged.
+  it("reports retired asset files without interpreting their contents", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    try {
+      writeFileSync(join(dir, "legacy.theme.json"), '"private-retired-theme"');
+      writeFileSync(join(dir, "legacy.composition.json"), '"private-retired-pattern"');
+      writeFileSync(join(dir, "catalog.json"), '"private-retired-catalog"');
+      const { captured, running } = await bootCli(["--assets", dir]);
+      try {
+        const issues = captured.err.join("\n");
+        expect(issues).toContain("legacy.theme.json");
+        expect(issues).toContain("legacy.composition.json");
+        expect(issues).toContain("catalog.json");
+        expect(issues).not.toContain("private-retired");
+        const shell = await (await fetch(`${running.url}/`)).text();
+        expect(shell).not.toContain("private-retired");
+      } finally {
+        await running.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("falls back as a whole from an incomplete Theme and exposes no invalid Patterns", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "facet-assets-"));
+    try {
+      writeFileSync(join(dir, "theme.json"), JSON.stringify({ name: "incomplete-secret" }));
+      writeFileSync(join(dir, "patterns.json"), JSON.stringify([{ name: "invalid-secret" }]));
+      let resolved: { readonly theme: FacetTheme; readonly patterns: readonly FacetPattern[] };
+      const { captured, running } = await bootCli(["--assets", dir], {
+        onResolvedAssets: (assets) => {
+          resolved = assets;
+        },
+      });
+      try {
+        expect(resolved!.theme.name).toBe("default");
+        expect(resolved!.patterns).toEqual([]);
+        const issues = captured.err.join("\n");
+        expect(issues).toContain("theme:");
+        expect(issues).toContain("pattern");
+        const shell = await (await fetch(`${running.url}/`)).text();
+        expect(shell).not.toContain("incomplete-secret");
+        expect(shell).not.toContain("invalid-secret");
+      } finally {
+        await running.close();
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("injects the default singular Theme and logs nothing when --assets is absent", async () => {
     const { captured, running } = await bootCli();
     try {
       expect(captured.err).toEqual([]);
       const shell = await (await fetch(`${running.url}/`)).text();
-      expect(shell).toContain("window.__FACET_THEMES__");
+      expect(shell).toContain("window.__FACET_THEME__");
+      expect(shell).not.toContain("__FACET_THEMES__");
     } finally {
       await running.close();
     }
@@ -479,9 +417,9 @@ describe("runCli — quickstart brick default", () => {
           (BRICK_TYPES as readonly string[]).includes(node.type),
         ),
       ).toBe(true);
-      expect(seedText).toHaveLength(38_701);
+      expect(seedText).toHaveLength(36_977);
       expect(createHash("sha256").update(seedText).digest("hex")).toBe(
-        "e3d701dd9cdc5840dac0ee67ea144eaf45522bb2102f1c5ff17ef0a13e8ae75e",
+        "f94cf14cb65ea41d3e151c066367094da0afd2cd02b2b53ff091b88317868f81",
       );
     } finally {
       await running.close();
@@ -503,16 +441,12 @@ describe("runCli — provider-backed boot (DC-004)", () => {
     }
   });
 
-  it("wires one resolved asset snapshot into the compaction-enabled provider boot", async () => {
+  it("keeps the compaction-enabled provider boot on the resolved static snapshot", async () => {
     composeSpy.mockClear();
-    let resolvedThemes: readonly unknown[] | undefined;
-    let resolvedCompositions: readonly FacetComposition[] | undefined;
-    let resolvedCatalog: FacetCatalog | undefined;
+    let resolved: { readonly theme: FacetTheme; readonly patterns: readonly FacetPattern[] };
     const { running } = await bootCli([], {
       onResolvedAssets: (assets) => {
-        resolvedThemes = assets.themes;
-        resolvedCompositions = assets.compositions;
-        resolvedCatalog = assets.catalog;
+        resolved = assets;
       },
     });
     try {
@@ -522,18 +456,14 @@ describe("runCli — provider-backed boot (DC-004)", () => {
       const options = composeSpy.mock.calls[0]?.[0] as
         | {
             readonly summaryStore?: unknown;
-            readonly themes?: readonly unknown[];
-            readonly compositions?: readonly FacetComposition[];
-            readonly catalog?: FacetCatalog;
+            readonly theme?: FacetTheme;
+            readonly patterns?: readonly FacetPattern[];
           }
         | undefined;
       // No explicit opt-out slipped in: the default (undefined) wires the store.
       expect(options?.summaryStore).not.toBeNull();
-      // The prompt and get_composition lookup receive the exact arrays/catalog
-      // observed at the load seam — no second list or re-load can drift them.
-      expect(options?.themes).toBe(resolvedThemes);
-      expect(options?.compositions).toBe(resolvedCompositions);
-      expect(options?.catalog).toBe(resolvedCatalog);
+      expect(options?.theme).toBe(resolved!.theme);
+      expect(options?.patterns).toBe(resolved!.patterns);
     } finally {
       await running.close();
     }

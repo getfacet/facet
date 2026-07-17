@@ -11,8 +11,13 @@ import {
 export const EMPTY_ANCESTORS: ReadonlySet<NodeId> = new Set<NodeId>();
 export const RENDER_BUDGET = MAX_RENDER_NODES;
 
-export function styleOf<T extends object>(style: T | undefined): T | undefined {
-  return typeof style === "object" && style !== null ? style : undefined;
+export function styleOf<T extends object>(style: unknown): T | undefined {
+  if (!isObjectRecord(style)) return undefined;
+  try {
+    return { ...style } as T;
+  } catch {
+    return undefined;
+  }
 }
 
 export function cappedString(value: unknown, max: number): string | undefined {
@@ -21,13 +26,21 @@ export function cappedString(value: unknown, max: number): string | undefined {
 }
 
 export function childIdsOf(node: FacetNode): readonly NodeId[] {
-  return Array.isArray((node as { readonly children?: unknown }).children)
-    ? (node as { readonly children: readonly NodeId[] }).children
-    : [];
+  const children = safeOwnValue(node, "children");
+  if (!Array.isArray(children)) return [];
+  try {
+    return children.slice() as readonly NodeId[];
+  } catch {
+    return [];
+  }
 }
 
 export function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  try {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  } catch {
+    return false;
+  }
 }
 
 export function safeOwnValue(record: unknown, key: string): unknown {
@@ -106,7 +119,19 @@ export function isRenderableTree(tree: FacetTree): boolean {
   // != null: a patch can set the root node to JSON null, not just remove it.
   const root = safeTreeRoot(tree);
   const nodes = safeTreeNodes(tree);
-  return root !== undefined && nodes !== undefined && isTreeShaped(tree) && nodes[root] != null;
+  return (
+    root !== undefined &&
+    nodes !== undefined &&
+    isTreeShaped(tree) &&
+    safeOwnValue(nodes, root) != null
+  );
+}
+
+/** Resolve one raw-path node without invoking inherited or throwing accessors. */
+export function safeTreeNode(tree: FacetTree, id: NodeId): FacetNode | undefined {
+  const nodes = safeTreeNodes(tree);
+  const node = safeOwnValue(nodes, id);
+  return isObjectRecord(node) ? (node as unknown as FacetNode) : undefined;
 }
 
 export interface RenderableMediaValue {
@@ -115,7 +140,6 @@ export interface RenderableMediaValue {
   readonly alt?: unknown;
   readonly poster?: string;
   readonly controls: boolean;
-  readonly variant?: unknown;
   readonly style?: object;
 }
 
@@ -132,8 +156,7 @@ export function readRenderableMedia(raw: unknown): RenderableMediaValue | undefi
   const posterValue = safeOwnValue(raw, "poster");
   const poster =
     typeof posterValue === "string" && isSafeMediaSrc(posterValue) ? posterValue : undefined;
-  const styleValue = safeOwnValue(raw, "style");
-  const style = typeof styleValue === "object" && styleValue !== null ? styleValue : undefined;
+  const style = styleOf<object>(safeOwnValue(raw, "style"));
 
   return {
     kind,
@@ -141,7 +164,6 @@ export function readRenderableMedia(raw: unknown): RenderableMediaValue | undefi
     alt: safeOwnValue(raw, "alt"),
     ...(poster === undefined ? {} : { poster }),
     controls: safeOwnValue(raw, "controls") === true,
-    variant: safeOwnValue(raw, "variant"),
     ...(style === undefined ? {} : { style }),
   };
 }
@@ -151,7 +173,7 @@ export function isRenderableMedia(raw: unknown): boolean {
 }
 
 export function isHiddenByDefault(node: FacetNode): boolean {
-  return (node as { readonly hidden?: unknown }).hidden === true;
+  return safeOwnValue(node, "hidden") === true;
 }
 
 /** Pointer coordinates on the raw event path can be missing (synthetic events); degrade to 0. */

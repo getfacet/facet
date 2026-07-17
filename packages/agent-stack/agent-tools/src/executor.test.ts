@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { CHART_KINDS, MAX_CHART_POINTS, MAX_TABLE_ROWS } from "@facet/core";
-import type { FacetCatalog, FacetTree, JsonPatchOperation } from "@facet/core";
-import { executeStageTool } from "./executor.js";
+import type { FacetTheme, FacetTree, JsonPatchOperation } from "@facet/core";
+import { executeStageTool as executeStageToolRaw } from "./executor.js";
+import * as nodeExecutors from "./executor-node.js";
+import { executeAppendNode, executeSetNode } from "./executor-node.js";
+import { executeRenderPage } from "./executor-page.js";
 import { foldStageShadow } from "./stage-shadow.js";
 import { parseAgentToolObservation } from "./observation.js";
+import type { StageToolAssets, StageToolContext, StageToolResult } from "./types.js";
 
 const ROOT_TREE: FacetTree = {
   root: "root",
@@ -20,21 +24,302 @@ const TREE_WITH_TEXT: FacetTree = {
   },
 };
 
-const CATALOG_POLICY: FacetCatalog = {
-  name: "catalog-policy-test",
-  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [
-    { type: "box", variants: ["surface"] },
-    { type: "text", variants: ["body"] },
-  ],
-  compositions: { mode: "allow", names: ["approved"] },
-  policy: {
-    editBeforeAppend: true,
-    compactScreens: true,
+const AUTHOR_THEME = {
+  name: "author-test",
+  presets: {
+    box: {
+      panel: {
+        description: "Panel treatment.",
+        useWhen: "Use for grouped content.",
+        style: { gap: "md", background: "surface" },
+      },
+    },
+    text: {
+      heading: {
+        description: "Heading treatment.",
+        useWhen: "Use for section headings.",
+        style: { fontSize: "xl", fontWeight: "bold" },
+      },
+    },
   },
+} as unknown as FacetTheme;
+
+const AUTHOR_ASSETS: StageToolAssets = {
+  theme: AUTHOR_THEME,
+  patterns: [],
+  brickIndex: [],
+  presetIndex: [],
+  patternIndex: [],
 };
 
+function executeStageTool(call: unknown, context: StageToolContext): StageToolResult {
+  return executeStageToolRaw(call, {
+    ...context,
+    assets: context.assets ?? AUTHOR_ASSETS,
+  });
+}
+
 describe("executeStageTool", () => {
+  it("has no retired theme executor shim", () => {
+    expect(nodeExecutors).not.toHaveProperty("executeSetTheme");
+  });
+
+  it("rejects mutation tools when the validated asset snapshot is unavailable", () => {
+    const calls = [
+      {
+        id: "render-without-assets",
+        name: "render_page",
+        input: { tree: TREE_WITH_TEXT },
+      },
+      {
+        id: "append-without-assets",
+        name: "append_node",
+        input: { parentId: "root", node: { id: "copy", type: "text", value: "Copy" } },
+      },
+      {
+        id: "set-without-assets",
+        name: "set_node",
+        input: { node: { id: "copy", type: "text", value: "Copy" } },
+      },
+    ] as const;
+
+    for (const call of calls) {
+      const result = executeStageToolRaw(call, { shadow: ROOT_TREE });
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("not_available");
+      expect(result.messages).toEqual([]);
+      expect(result.patches).toEqual([]);
+      expect(result.changedNodeIds).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(result.observation.text.length).toBeLessThan(2_000);
+    }
+  });
+
+  it("dispatches local style-choice discovery through the public executor", () => {
+    const result = executeStageTool(
+      {
+        id: "read-progress-height",
+        name: "get_style_choices",
+        input: { brick: "progress", target: "track", property: "height" },
+      },
+      { shadow: ROOT_TREE },
+    );
+
+    expect(result.status).toBe("ok");
+    expect(JSON.parse(result.observation.data?.data ?? "null")).toMatchObject({
+      brick: "progress",
+      target: "track",
+      property: "height",
+      source: "token",
+    });
+    expect(result.patches).toEqual([]);
+    expect(result.shadow).toBe(ROOT_TREE);
+  });
+
+  it("keeps non-authoring tools available without an asset snapshot", () => {
+    const calls = [
+      { id: "say-without-assets", name: "say", input: { text: "Done" } },
+      { id: "remove-without-assets", name: "remove_node", input: { nodeId: "title" } },
+      { id: "inspect-stage-without-assets", name: "inspect_stage", input: {} },
+      { id: "inspect-node-without-assets", name: "inspect_node", input: { nodeId: "root" } },
+    ] as const;
+
+    for (const call of calls) {
+      const result = executeStageToolRaw(call, { shadow: TREE_WITH_TEXT });
+      expect(result.status).toBe("ok");
+    }
+  });
+
+  it("rejects every invalid style call atomically", () => {
+    const cases = [
+      {
+        expectedPath: "/nodes/copy/style/preset",
+        result: executeRenderPage(
+          {
+            tree: {
+              root: "page",
+              nodes: {
+                page: { id: "page", type: "box", children: ["copy"] },
+                copy: {
+                  id: "copy",
+                  type: "text",
+                  value: "Wrong Preset",
+                  style: { preset: "panel" },
+                },
+              },
+            },
+          },
+          ROOT_TREE,
+          AUTHOR_THEME,
+        ),
+      },
+      {
+        expectedPath: "/style/track",
+        result: executeSetNode(
+          {
+            node: {
+              id: "copy",
+              type: "text",
+              value: "Wrong target",
+              style: { track: { background: "surface" } },
+            },
+          },
+          ROOT_TREE,
+          AUTHOR_THEME,
+        ),
+      },
+      {
+        expectedPath: "/style/track/fontSize",
+        result: executeSetNode(
+          {
+            node: {
+              id: "meter",
+              type: "progress",
+              value: 50,
+              style: { track: { fontSize: "md" } },
+            },
+          },
+          ROOT_TREE,
+          AUTHOR_THEME,
+        ),
+      },
+      {
+        expectedPath: "/style/track/height",
+        result: executeAppendNode(
+          {
+            parentId: "root",
+            node: {
+              id: "meter",
+              type: "progress",
+              value: 50,
+              style: { track: { height: "huge" } },
+            },
+          },
+          ROOT_TREE,
+          AUTHOR_THEME,
+        ),
+      },
+      {
+        expectedPath: "/style/indicator/hover",
+        result: executeAppendNode(
+          {
+            parentId: "root",
+            node: {
+              id: "choice",
+              type: "input",
+              name: "choice",
+              input: "checkbox",
+              style: { indicator: { hover: { background: "accent" } } },
+            },
+          },
+          ROOT_TREE,
+          AUTHOR_THEME,
+        ),
+      },
+      {
+        expectedPath: "/style/placeholder",
+        result: executeAppendNode(
+          {
+            parentId: "root",
+            node: {
+              id: "choice",
+              type: "input",
+              name: "choice",
+              input: "checkbox",
+              style: { placeholder: { color: "muted" } },
+            },
+          },
+          ROOT_TREE,
+          AUTHOR_THEME,
+        ),
+      },
+    ];
+
+    for (const { expectedPath, result } of cases) {
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_authoring");
+      expect(result.messages).toEqual([]);
+      expect(result.patches).toEqual([]);
+      expect(result.changedNodeIds).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.summary).toBe("no stage changes");
+      expect(result.shadow).toBe(ROOT_TREE);
+      expect(result.observation.data).toMatchObject({
+        status: "error",
+        outcome: "rejected",
+        applied: false,
+        stage_changed: false,
+        patch_count: 0,
+        errors: expect.any(Array),
+      });
+      expect(result.observation.data?.errors?.length).toBeGreaterThan(0);
+      expect(result.observation.data?.errors?.map(({ path }) => path)).toContain(expectedPath);
+      expect(result.observation.data?.omitted_error_count).toBe(0);
+    }
+  });
+
+  it("keeps valid strict style calls as RFC 6902 patches", () => {
+    const rendered = executeRenderPage(
+      {
+        tree: {
+          root: "page",
+          nodes: {
+            page: {
+              id: "page",
+              type: "box",
+              children: ["copy"],
+              style: { preset: "panel", padding: "lg" },
+            },
+            copy: {
+              id: "copy",
+              type: "text",
+              value: "Styled",
+              style: { preset: "heading", color: "accent" },
+            },
+          },
+        },
+      },
+      ROOT_TREE,
+      AUTHOR_THEME,
+    );
+    const set = executeSetNode(
+      {
+        node: {
+          id: "copy",
+          type: "text",
+          value: "Strict",
+          style: { preset: "heading", fontSize: "lg" },
+        },
+      },
+      ROOT_TREE,
+      AUTHOR_THEME,
+    );
+    const appended = executeAppendNode(
+      {
+        parentId: "root",
+        node: {
+          id: "meter",
+          type: "progress",
+          value: 50,
+          style: { track: { height: "md" }, fill: { background: "success" } },
+        },
+      },
+      ROOT_TREE,
+      AUTHOR_THEME,
+    );
+
+    expect(rendered.status).toBe("ok");
+    expect(rendered.patches).toMatchObject([{ op: "replace", path: "" }]);
+    expect(set.status).toBe("ok");
+    expect(set.patches).toMatchObject([{ op: "add", path: "/nodes/copy" }]);
+    expect(appended.status).toBe("ok");
+    expect(appended.patches).toMatchObject([
+      { op: "add", path: "/nodes/meter" },
+      { op: "add", path: "/nodes/root/children/-" },
+    ]);
+  });
+
   it("valid append returns an ok observation patch metadata and updated shadow", () => {
     const result = executeStageTool(
       {
@@ -52,7 +337,7 @@ describe("executeStageTool", () => {
       {
         op: "add",
         path: "/nodes/greeting",
-        value: { id: "greeting", type: "text", value: "Hello", style: {} },
+        value: { id: "greeting", type: "text", value: "Hello" },
       },
       { op: "add", path: "/nodes/root/children/-", value: "greeting" },
     ];
@@ -77,12 +362,10 @@ describe("executeStageTool", () => {
       id: "greeting",
       type: "text",
       value: "Hello",
-      style: {},
     });
     expect(result.shadow.nodes["root"]).toEqual({
       id: "root",
       type: "box",
-      style: {},
       children: ["greeting"],
     });
     expect(result.issues).toEqual([]);
@@ -126,7 +409,7 @@ describe("executeStageTool", () => {
     });
   });
 
-  it("sanitizes direct node tool payloads before returning messages and patches", () => {
+  it("rejects unsafe and oversized direct node payloads atomically", () => {
     const append = executeStageTool(
       {
         id: "call-sanitize-append",
@@ -145,23 +428,6 @@ describe("executeStageTool", () => {
       },
       { shadow: ROOT_TREE },
     );
-
-    expect(append.status).toBe("ok");
-    expect(append.patches[0]).toEqual({
-      op: "add",
-      path: "/nodes/unsafe",
-      value: { id: "unsafe", type: "text", value: "Hello", style: { color: "fg" } },
-    });
-    expect(append.shadow.nodes["unsafe"]).toEqual({
-      id: "unsafe",
-      type: "text",
-      value: "Hello",
-      style: { color: "fg" },
-    });
-    const appendMessages = JSON.stringify(append.messages);
-    expect(appendMessages).not.toContain("dangerouslySetInnerHTML");
-    expect(appendMessages).not.toContain("onclick");
-    expect(appendMessages).not.toContain("backgroundImage");
 
     const rows = Array.from({ length: MAX_TABLE_ROWS + 10 }, (_, index) => ({
       name: `Row ${String(index)}`,
@@ -184,17 +450,6 @@ describe("executeStageTool", () => {
       { shadow: ROOT_TREE },
     );
 
-    expect(table.status).toBe("ok");
-    const tablePatch = table.patches[0];
-    expect(tablePatch?.op).toBe("add");
-    if (tablePatch?.op === "add") {
-      const value = tablePatch.value as { rows?: readonly unknown[]; rawRows?: unknown };
-      expect(value.rows).toHaveLength(MAX_TABLE_ROWS);
-      expect(value.rawRows).toBeUndefined();
-    }
-    expect(JSON.stringify(table.messages)).not.toContain("rawRows");
-    expect(table.issues.some((issue) => issue.includes("rows exceeded"))).toBe(true);
-
     const chart = executeStageTool(
       {
         id: "call-sanitize-chart",
@@ -216,16 +471,15 @@ describe("executeStageTool", () => {
       { shadow: ROOT_TREE },
     );
 
-    expect(chart.status).toBe("ok");
-    const chartPatch = chart.patches[0];
-    expect(chartPatch?.op).toBe("add");
-    if (chartPatch?.op === "add") {
-      const value = chartPatch.value as {
-        series?: readonly { readonly values?: readonly unknown[] }[];
-      };
-      expect(value.series?.[0]?.values).toHaveLength(MAX_CHART_POINTS);
+    for (const result of [append, table, chart]) {
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_authoring");
+      expect(result.messages).toEqual([]);
+      expect(result.patches).toEqual([]);
+      expect(result.changedNodeIds).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
     }
-    expect(chart.issues.some((issue) => issue.includes("points exceeded"))).toBe(true);
   });
 
   it("returns typed no-patch errors for malformed unknown and invalid inputs", () => {
@@ -294,6 +548,38 @@ describe("executeStageTool", () => {
     );
   });
 
+  it("returns structured invalid_input for revoked whole-call and nested-input proxies", () => {
+    const revokedCall = Proxy.revocable<Record<string, unknown>>({}, {});
+    revokedCall.revoke();
+    const revokedInput = Proxy.revocable<Record<string, unknown>>({}, {});
+    revokedInput.revoke();
+
+    const attempts = [
+      () => executeStageTool(revokedCall.proxy, { shadow: ROOT_TREE }),
+      () =>
+        executeStageTool(
+          { id: "revoked-input", name: "get_brick_spec", input: revokedInput.proxy },
+          { shadow: ROOT_TREE },
+        ),
+    ];
+
+    for (const attempt of attempts) {
+      expect(attempt).not.toThrow();
+      const result = attempt();
+      expect(result.status).toBe("error");
+      if (result.status === "error") expect(result.code).toBe("invalid_input");
+      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
+        status: "error",
+        outcome: "rejected",
+        code: "invalid_input",
+      });
+      expect(result.messages).toEqual([]);
+      expect(result.patches).toEqual([]);
+      expect(result.patchCount).toBe(0);
+      expect(result.shadow).toBe(ROOT_TREE);
+    }
+  });
+
   it("accepts every core chart kind and rejects values outside the shared set", () => {
     for (const kind of CHART_KINDS) {
       const result = executeStageTool(
@@ -323,13 +609,13 @@ describe("executeStageTool", () => {
     );
 
     expect(invalid.status).toBe("error");
-    if (invalid.status === "error") expect(invalid.code).toBe("invalid_input");
+    if (invalid.status === "error") expect(invalid.code).toBe("invalid_authoring");
     expect(invalid.patches).toEqual([]);
     expect(invalid.shadow).toBe(ROOT_TREE);
     const observation = parseAgentToolObservation(invalid.observation.text);
-    expect(observation).toMatchObject({ status: "error", code: "invalid_input" });
+    expect(observation).toMatchObject({ status: "error", code: "invalid_authoring" });
     if (observation === undefined) throw new Error("expected a structured chart observation");
-    for (const kind of CHART_KINDS) expect(observation.message).toContain(`"${kind}"`);
+    expect(observation.errors?.map(({ path }) => path)).toContain("/kind");
   });
 
   it("accepts a safe media node and lands it on the shadow", () => {
@@ -374,7 +660,7 @@ describe("executeStageTool", () => {
     );
 
     expect(result.status).toBe("error");
-    if (result.status === "error") expect(result.code).toBe("invalid_input");
+    if (result.status === "error") expect(result.code).toBe("invalid_authoring");
     expect(result.patches).toEqual([]);
     expect(result.patchCount).toBe(0);
     expect(result.shadow).toBe(ROOT_TREE);
@@ -383,9 +669,14 @@ describe("executeStageTool", () => {
       tool: "append_node",
       status: "error",
       outcome: "rejected",
-      next_action: "Use a safe static media src.",
+      code: "invalid_authoring",
     });
-    expect(observation?.message).toContain('a "media" node needs a safe static "src"');
+    expect(observation?.errors).toEqual([
+      expect.objectContaining({
+        path: "",
+        message: expect.stringContaining("closed Brick contract"),
+      }),
+    ]);
   });
 
   it("clean-rejects retired and prototype types for repeated set/append calls", () => {
@@ -416,7 +707,7 @@ describe("executeStageTool", () => {
           );
 
           expect(result.status).toBe("error");
-          if (result.status === "error") expect(result.code).toBe("invalid_input");
+          if (result.status === "error") expect(result.code).toBe("invalid_authoring");
           expect(result.messages).toEqual([]);
           expect(result.patches).toEqual([]);
           expect(result.patchCount).toBe(0);
@@ -426,10 +717,9 @@ describe("executeStageTool", () => {
             tool: name,
             status: "error",
             outcome: "rejected",
-            next_action: "Use one allowed Facet brick type.",
+            code: "invalid_authoring",
           });
-          expect(observation?.message).toContain("must be one of the Facet brick types");
-          expect(observation?.message).not.toContain("was removed by validation");
+          expect(observation?.errors?.map(({ path }) => path)).toContain("/type");
         }
       }
     }
@@ -482,12 +772,15 @@ describe("executeStageTool", () => {
       { shadow: TREE_WITH_TEXT },
     );
     expect(forbidden.status).toBe("error");
+    if (forbidden.status === "error") expect(forbidden.code).toBe("invalid_authoring");
     expect(forbidden.patches).toEqual([]);
     expect(forbidden.shadow).toBe(TREE_WITH_TEXT);
-    expect(forbidden.observation.text).toContain("forbidden");
+    expect(parseAgentToolObservation(forbidden.observation.text)?.errors).toEqual([
+      expect.objectContaining({ path: "/id" }),
+    ]);
   });
 
-  it("render_page validates folds a full tree and rejects an unrenderable tree", () => {
+  it("render_page rejects an invalid tree atomically and rejects an unrenderable tree", () => {
     const result = executeStageTool(
       {
         id: "call-5",
@@ -506,12 +799,14 @@ describe("executeStageTool", () => {
       { shadow: ROOT_TREE },
     );
 
-    expect(result.status).toBe("ok");
-    expect(result.patchCount).toBe(1);
-    expect(result.shadow.nodes["ok"]).toEqual({ id: "ok", type: "text", value: "OK", style: {} });
-    expect(result.shadow.nodes["bad"]).toBeUndefined();
-    expect(result.observation.text).toContain("note:");
-    expect(result.issues.some((issue) => issue.includes("text has no string value"))).toBe(true);
+    expect(result.status).toBe("error");
+    if (result.status === "error") expect(result.code).toBe("invalid_authoring");
+    expect(result.patchCount).toBe(0);
+    expect(result.patches).toEqual([]);
+    expect(result.shadow).toBe(ROOT_TREE);
+    expect(
+      parseAgentToolObservation(result.observation.text)?.errors?.map(({ path }) => path),
+    ).toContain("/nodes/bad/value");
 
     const empty = executeStageTool(
       {
@@ -522,7 +817,7 @@ describe("executeStageTool", () => {
       { shadow: ROOT_TREE },
     );
     expect(empty.status).toBe("error");
-    if (empty.status === "error") expect(empty.code).toBe("invalid_tree");
+    if (empty.status === "error") expect(empty.code).toBe("invalid_authoring");
     expect(empty.patches).toEqual([]);
     expect(empty.shadow).toBe(ROOT_TREE);
   });
@@ -586,29 +881,7 @@ describe("executeStageTool", () => {
     expect(result.shadow).toBe(ROOT_TREE);
   });
 
-  it("render_page preserves the current theme when locked catalog has no active theme", () => {
-    const result = executeStageTool(
-      {
-        id: "call-locked-current-theme",
-        name: "render_page",
-        input: { tree: TREE_WITH_TEXT },
-      },
-      {
-        shadow: { ...ROOT_TREE, theme: "brand" },
-        assets: {
-          catalog: {
-            ...CATALOG_POLICY,
-            theme: { switchPolicy: "locked" },
-          },
-        },
-      },
-    );
-
-    expect(result.status).toBe("ok");
-    expect(result.shadow.theme).toBe("brand");
-  });
-
-  it("set_node remove_node say and set_theme emit existing stage tool messages", () => {
+  it("set_node remove_node and say emit existing stage tool messages", () => {
     const set = executeStageTool(
       {
         id: "call-8",
@@ -622,7 +895,7 @@ describe("executeStageTool", () => {
       {
         op: "add",
         path: "/nodes/title",
-        value: { id: "title", type: "text", value: "T", style: {} },
+        value: { id: "title", type: "text", value: "T" },
       },
     ]);
     expect(parseAgentToolObservation(set.observation.text)).toMatchObject({
@@ -663,23 +936,6 @@ describe("executeStageTool", () => {
     expect(say.messages).toEqual([{ kind: "say", text: "Done" }]);
     expect(say.patches).toEqual([]);
     expect(say.shadow).toBe(ROOT_TREE);
-
-    const theme = executeStageTool(
-      { id: "call-11", name: "set_theme", input: { name: "midnight" } },
-      { shadow: ROOT_TREE },
-    );
-    expect(theme.status).toBe("ok");
-    expect(theme.patches).toEqual([{ op: "add", path: "/theme", value: "midnight" }]);
-    expect(theme.shadow.theme).toBe("midnight");
-
-    const invalidTheme = executeStageTool(
-      { id: "call-12", name: "set_theme", input: { name: "Ocean Breeze" } },
-      { shadow: ROOT_TREE },
-    );
-    expect(invalidTheme.status).toBe("error");
-    if (invalidTheme.status === "error") expect(invalidTheme.code).toBe("invalid_input");
-    expect(invalidTheme.patches).toEqual([]);
-    expect(invalidTheme.shadow).toBe(ROOT_TREE);
   });
 
   it("returns applied_not_visible when set_node creates an unattached node", () => {
@@ -903,7 +1159,7 @@ describe("executeStageTool", () => {
       {
         op: "add",
         path: "/nodes/a~1b~0c",
-        value: { id: "a/b~c", type: "text", value: "escaped", style: {} },
+        value: { id: "a/b~c", type: "text", value: "escaped" },
       },
     ]);
     expect(result.shadow.nodes["a/b~c"]).toMatchObject({ type: "text", value: "escaped" });
@@ -978,351 +1234,5 @@ describe("executeStageTool", () => {
     expect(missingChildren.observation.text).toContain("+5980 more");
     expect(missingChildren.observation.text).not.toContain("child-5999");
     expect(missingChildren.observation.text.length).toBeLessThan(1000);
-  });
-
-  describe("catalog policy", () => {
-    it("catalog policy allows a listed brick and advertised variant", () => {
-      const result = executeStageTool(
-        {
-          id: "catalog-text",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            node: { id: "copy", type: "text", value: "Listed", variant: "body" },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(result.status).toBe("ok");
-      expect(result.patches).toHaveLength(2);
-      expect(result.shadow.nodes["copy"]).toMatchObject({
-        id: "copy",
-        type: "text",
-        value: "Listed",
-        variant: "body",
-      });
-    });
-
-    it("catalog policy rejects disallowed brick types and variants without patches", () => {
-      const chart = executeStageTool(
-        {
-          id: "catalog-chart",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            ["node"]: {
-              id: "chart",
-              type: "chart",
-              kind: "line",
-              series: [{ label: "Revenue", values: [1, 2, 3] }],
-            },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(chart.status).toBe("error");
-      expect(chart.patches).toEqual([]);
-      expect(chart.messages).toEqual([]);
-      expect(chart.shadow).toBe(ROOT_TREE);
-      expect(parseAgentToolObservation(chart.observation.text)).toMatchObject({
-        outcome: "rejected",
-        applied: false,
-        stage_changed: false,
-        patch_count: 0,
-      });
-      expect(chart.observation.text).toContain("catalog policy");
-      expect(chart.observation.text).toContain("chart");
-
-      const variant = executeStageTool(
-        {
-          id: "catalog-variant",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            node: { id: "danger", type: "text", value: "Delete", variant: "danger" },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(variant.status).toBe("error");
-      expect(variant.patches).toEqual([]);
-      expect(variant.messages).toEqual([]);
-      expect(parseAgentToolObservation(variant.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(variant.observation.text).toContain("variant");
-      expect(variant.observation.text).toContain("danger");
-    });
-
-    it("uses catalog.bricks as the only node policy lookup", () => {
-      const catalog = {
-        ...CATALOG_POLICY,
-        bricks: [{ type: "box" }, { type: "text" }],
-        [["com", "ponents"].join("")]: [{ type: "chart" }],
-        [["primitive", "Fallback"].join("")]: "allowed",
-      } as unknown as FacetCatalog;
-      const result = executeStageTool(
-        {
-          id: "catalog-one-lookup",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            node: { id: "chart", type: "chart", kind: "bar", series: [] },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog } },
-      );
-
-      expect(result.status).toBe("error");
-      expect(result.patches).toEqual([]);
-      expect(result.shadow).toBe(ROOT_TREE);
-      expect(result.observation.text).toContain("Allowed brick types: box, text");
-    });
-
-    it("catalog policy rejects tone-only recipe selectors not listed as variants", () => {
-      const toneCatalog: FacetCatalog = {
-        ...CATALOG_POLICY,
-        bricks: [{ type: "progress", variants: ["neutral"] }],
-      };
-
-      const toneRejected = executeStageTool(
-        {
-          id: "catalog-tone",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            node: { id: "status", type: "progress", value: 50, tone: "success" },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: toneCatalog } },
-      );
-
-      expect(toneRejected.status).toBe("error");
-      expect(toneRejected.patches).toEqual([]);
-      expect(toneRejected.messages).toEqual([]);
-      expect(parseAgentToolObservation(toneRejected.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(toneRejected.observation.text).toContain("tone");
-      expect(toneRejected.observation.text).toContain("success");
-
-      const variantWins = executeStageTool(
-        {
-          id: "catalog-tone-with-variant",
-          name: "append_node",
-          input: {
-            parentId: "root",
-            ["node"]: {
-              id: "status",
-              type: "progress",
-              value: 50,
-              variant: "neutral",
-              tone: "success",
-            },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: toneCatalog } },
-      );
-
-      expect(variantWins.status).toBe("ok");
-    });
-
-    it("catalog policy rejects disallowed set_node brick types and variants without patches", () => {
-      const typeRejected = executeStageTool(
-        {
-          id: "catalog-set-chart",
-          name: "set_node",
-          input: {
-            ["node"]: {
-              id: "chart",
-              type: "chart",
-              kind: "bar",
-              series: [{ label: "Usage", values: [3, 4] }],
-            },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(typeRejected.status).toBe("error");
-      expect(typeRejected.patches).toEqual([]);
-      expect(typeRejected.messages).toEqual([]);
-      expect(typeRejected.shadow).toBe(ROOT_TREE);
-      expect(parseAgentToolObservation(typeRejected.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(typeRejected.observation.text).toContain("catalog policy");
-      expect(typeRejected.observation.text).toContain("chart");
-
-      const variantRejected = executeStageTool(
-        {
-          id: "catalog-set-danger",
-          name: "set_node",
-          input: { node: { id: "danger", type: "text", value: "Delete", variant: "danger" } },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(variantRejected.status).toBe("error");
-      expect(variantRejected.patches).toEqual([]);
-      expect(variantRejected.messages).toEqual([]);
-      expect(variantRejected.shadow).toBe(ROOT_TREE);
-      expect(parseAgentToolObservation(variantRejected.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(variantRejected.observation.text).toContain("variant");
-      expect(variantRejected.observation.text).toContain("danger");
-    });
-
-    it("catalog policy rejects disallowed render_page trees before patch emission", () => {
-      const result = executeStageTool(
-        {
-          id: "catalog-render",
-          name: "render_page",
-          input: {
-            tree: {
-              root: "root",
-              nodes: {
-                root: { id: "root", type: "box", children: ["chart"] },
-                chart: {
-                  id: "chart",
-                  type: "chart",
-                  kind: "bar",
-                  series: [{ label: "Usage", values: [3, 4] }],
-                },
-              },
-            },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(result.status).toBe("error");
-      expect(result.patches).toEqual([]);
-      expect(result.messages).toEqual([]);
-      expect(result.shadow).toBe(ROOT_TREE);
-      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(result.observation.text).toContain("catalog policy");
-      expect(result.observation.text).toContain("chart");
-    });
-
-    it("catalog policy rejects locked theme changes without patches", () => {
-      const result = executeStageTool(
-        { id: "catalog-theme", name: "set_theme", input: { name: "midnight" } },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(result.status).toBe("error");
-      expect(result.patches).toEqual([]);
-      expect(result.messages).toEqual([]);
-      expect(result.shadow).toBe(ROOT_TREE);
-      expect(parseAgentToolObservation(result.observation.text)).toMatchObject({
-        outcome: "rejected",
-        patch_count: 0,
-      });
-      expect(result.observation.text).toContain("catalog policy");
-      expect(result.observation.text).toContain("locked");
-    });
-
-    it("render_page preserves the active locked catalog theme when omitted", () => {
-      const result = executeStageTool(
-        {
-          id: "catalog-render-theme",
-          name: "render_page",
-          input: {
-            tree: {
-              root: "root",
-              nodes: {
-                root: { id: "root", type: "box", children: ["copy"] },
-                copy: { id: "copy", type: "text", value: "Themed" },
-              },
-            },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: CATALOG_POLICY } },
-      );
-
-      expect(result.status).toBe("ok");
-      expect(result.shadow.theme).toBe("default");
-      expect(result.patches).toEqual([
-        {
-          op: "replace",
-          path: "",
-          value: {
-            root: "root",
-            theme: "default",
-            nodes: {
-              root: { id: "root", type: "box", children: ["copy"], style: {} },
-              copy: { id: "copy", type: "text", value: "Themed", style: {} },
-            },
-          },
-        },
-      ]);
-    });
-
-    it("render_page does not preserve a stale shadow theme without a locked catalog", () => {
-      const themedShadow: FacetTree = { ...ROOT_TREE, theme: "midnight" };
-      const result = executeStageTool(
-        {
-          id: "catalog-render-no-policy",
-          name: "render_page",
-          input: {
-            tree: {
-              root: "root",
-              nodes: {
-                root: { id: "root", type: "box", children: ["copy"] },
-                copy: { id: "copy", type: "text", value: "Plain" },
-              },
-            },
-          },
-        },
-        { shadow: themedShadow },
-      );
-
-      expect(result.status).toBe("ok");
-      expect(result.shadow).not.toHaveProperty("theme");
-      expect(result.patches[0]).toMatchObject({
-        op: "replace",
-        path: "",
-      });
-      expect((result.patches[0] as { value?: FacetTree }).value).not.toHaveProperty("theme");
-    });
-
-    it("render_page leaves theme omitted when the catalog allows switching", () => {
-      const allowedCatalog: FacetCatalog = {
-        ...CATALOG_POLICY,
-        theme: { active: "default", switchPolicy: "allowed", allowed: ["default", "midnight"] },
-      };
-      const result = executeStageTool(
-        {
-          id: "catalog-render-allowed-theme",
-          name: "render_page",
-          input: {
-            tree: {
-              root: "root",
-              nodes: {
-                root: { id: "root", type: "box", children: ["copy"] },
-                copy: { id: "copy", type: "text", value: "Allowed" },
-              },
-            },
-          },
-        },
-        { shadow: ROOT_TREE, assets: { catalog: allowedCatalog } },
-      );
-
-      expect(result.status).toBe("ok");
-      expect(result.shadow).not.toHaveProperty("theme");
-      expect((result.patches[0] as { value?: FacetTree }).value).not.toHaveProperty("theme");
-    });
   });
 });

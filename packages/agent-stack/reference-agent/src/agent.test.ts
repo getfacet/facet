@@ -1,11 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { collectMessages, EMPTY_TREE, iterateAgentResult } from "@facet/core";
+import {
+  ASPECT_RATIOS,
+  BORDER_WIDTHS,
+  BRICK_CONTRACT,
+  BRICK_TYPES,
+  CHART_THICKNESSES,
+  COLORS,
+  CONTROL_HEIGHTS,
+  EMPTY_TREE,
+  FONT_FAMILIES,
+  FONT_SIZES,
+  FONT_WEIGHTS,
+  GRADIENTS,
+  HIGHLIGHTS,
+  INDICATOR_SIZES,
+  LETTER_SPACINGS,
+  LINE_HEIGHTS,
+  MAX_WIDTHS,
+  MIN_HEIGHTS,
+  PROGRESS_THICKNESSES,
+  RADII,
+  SCRIMS,
+  SHADOWS,
+  SPACES,
+  collectMessages,
+  iterateAgentResult,
+} from "@facet/core";
 import { parseAgentToolObservation, type AgentToolObservationData } from "@facet/agent-tools";
 import type {
   ClientEvent,
-  FacetCatalog,
   FacetSession,
-  FacetComposition,
+  FacetPattern,
   FacetTheme,
   ServerMessage,
 } from "@facet/core";
@@ -45,21 +70,79 @@ const VALID_TREE = {
   },
 };
 
-const CATALOG_POLICY: FacetCatalog = {
-  name: "reference-catalog",
-  description: "Reference agent catalog policy",
-  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [
-    { type: "box", variants: ["surface"] },
-    { type: "input", variants: ["default"] },
-  ],
-  compositions: { mode: "allow", names: ["approved"] },
-  policy: {
-    editBeforeAppend: true,
-    compactScreens: true,
-    maxScreenSections: 4,
-  },
-};
+const map = <K extends string, V>(keys: readonly K[], value: (key: K) => V): Record<K, V> =>
+  Object.fromEntries(keys.map((key) => [key, value(key)])) as Record<K, V>;
+
+function completeTheme(): FacetTheme {
+  const defaults = Object.fromEntries(
+    BRICK_TYPES.map((brick) => [
+      brick,
+      Object.fromEntries(
+        Object.keys(BRICK_CONTRACT[brick].style.targets).map((target) => [target, {}]),
+      ),
+    ]),
+  );
+  const paint = {
+    color: map(COLORS, (name) => (name === "inherit" ? "inherit" : "#123456")),
+    shadow: map(SHADOWS, (name) => (name === "none" ? "none" : "0 1px 2px #000000")),
+    gradient: map(GRADIENTS, (name) =>
+      name === "none" ? "none" : "linear-gradient(90deg, #000000 0%, #ffffff 100%)",
+    ),
+    scrim: map(SCRIMS, (name) => (name === "none" ? "transparent" : "rgba(0, 0, 0, 0.5)")),
+    highlight: map(HIGHLIGHTS, (name) =>
+      name === "none" ? "none" : "linear-gradient(90deg, #ffff00 0%, #ffff00 100%)",
+    ),
+  };
+  return {
+    name: "test",
+    description: "Complete reference-agent test Theme.",
+    tokens: {
+      space: map(SPACES, () => "16px"),
+      fontSize: map(FONT_SIZES, () => "16px"),
+      fontFamily: map(FONT_FAMILIES, () => "sans-serif"),
+      fontWeight: map(FONT_WEIGHTS, () => 400),
+      radius: map(RADII, () => "8px"),
+      borderWidth: map(BORDER_WIDTHS, () => "1px"),
+      aspectRatio: map(ASPECT_RATIOS, (name) => (name === "auto" ? "auto" : "1 / 1")),
+      minHeight: map(MIN_HEIGHTS, (name) => (name === "auto" ? "auto" : "100px")),
+      maxWidth: map(MAX_WIDTHS, (name) => (name === "none" ? "none" : "100px")),
+      letterSpacing: map(LETTER_SPACINGS, () => "0"),
+      lineHeight: map(LINE_HEIGHTS, () => "1.5"),
+      controlHeight: map(CONTROL_HEIGHTS, () => "32px"),
+      indicatorSize: map(INDICATOR_SIZES, () => "16px"),
+      progressThickness: map(PROGRESS_THICKNESSES, () => "4px"),
+      chartThickness: map(CHART_THICKNESSES, () => "2px"),
+      paint: { light: structuredClone(paint), dark: structuredClone(paint) },
+    },
+    defaults: defaults as unknown as FacetTheme["defaults"],
+    presets: {
+      box: {
+        panel: {
+          description: "Reusable panel treatment.",
+          useWhen: "A distinct content surface is needed.",
+          style: { gap: "md", background: "surface" },
+        },
+      },
+    },
+  };
+}
+
+function testAssets(): ReferenceAgentOptions["assets"] {
+  return { theme: completeTheme(), patterns: [] };
+}
+
+function pattern(description: string, value: string): FacetPattern {
+  return {
+    name: "notice",
+    description,
+    useWhen: "One concise notice is useful.",
+    root: "notice",
+    nodes: {
+      notice: { id: "notice", type: "box", children: ["notice-text"] },
+      "notice-text": { id: "notice-text", type: "text", value },
+    },
+  };
+}
 
 let callSeq = 0;
 function call(name: string, input: unknown): ToolCall {
@@ -109,8 +192,7 @@ function makeAgent(
     budgetPreset?: ReferenceAgentOptions["budgetPreset"];
     budget?: ReferenceAgentOptions["budget"];
     trace?: ReferenceAgentOptions["trace"];
-    compositions?: readonly FacetComposition[];
-    catalog?: FacetCatalog;
+    assets?: ReferenceAgentOptions["assets"];
   } = {},
 ): ReturnType<typeof createReferenceAgent> {
   return createReferenceAgent({
@@ -123,8 +205,7 @@ function makeAgent(
     ...(extra.trace !== undefined ? { trace: extra.trace } : {}),
     ...(extra.historyTurns !== undefined ? { historyTurns: extra.historyTurns } : {}),
     ...(extra.maxSteps !== undefined ? { maxSteps: extra.maxSteps } : {}),
-    ...(extra.compositions !== undefined ? { compositions: extra.compositions } : {}),
-    ...(extra.catalog !== undefined ? { catalog: extra.catalog } : {}),
+    assets: extra.assets ?? testAssets(),
   });
 }
 
@@ -192,60 +273,74 @@ async function batchesOf(
 }
 
 describe("createReferenceAgent tool loop", () => {
-  it("shares one composition reference snapshot across prompt and lookup", async () => {
-    const approved = {
-      name: "approved",
-      metadata: { description: "Original approved reference" },
-      root: "approved-root",
-      nodes: {
-        "approved-root": { id: "approved-root", type: "text", value: "Original" },
+  it("uses one asset snapshot per turn and refreshes next turn", async () => {
+    const theme = completeTheme();
+    let currentPattern = pattern("Original notice reference.", "Original");
+    const assetSource = vi.fn(() => ({ theme, patterns: [currentPattern] }));
+    const turns: ProviderTurn[] = [];
+    let step = 0;
+    const provider: MockProvider = {
+      name: "openai",
+      model: "mock",
+      turns,
+      run(turn): Promise<ProviderStep> {
+        turns.push({ system: turn.system, messages: [...turn.messages] });
+        const current = step;
+        step += 1;
+        if (current === 0) {
+          currentPattern = pattern("Updated notice reference.", "Updated");
+          return Promise.resolve(toolStep(call("get_pattern", { name: "notice" })));
+        }
+        if (current === 1 || current === 3) {
+          return Promise.resolve(toolStep(call("get_pattern", { name: "notice" })));
+        }
+        return Promise.resolve(END);
       },
-      // Unknown operator fields are ignored by validation. A blind
-      // structuredClone would reject this function before the fail-safe
-      // composition boundary gets a chance to sanitize the document.
-      operatorHelper() {},
-    } as unknown as FacetComposition;
-    const blocked: FacetComposition = {
-      name: "blocked",
-      metadata: { description: "Blocked reference" },
-      root: "blocked-root",
-      nodes: {
-        "blocked-root": { id: "blocked-root", type: "text", value: "Blocked" },
-      },
     };
-    const catalog = {
-      compositions: { mode: "allow", names: ["approved"] },
-    } as unknown as FacetCatalog;
-    const provider = providerOf(
-      toolStep(call("get_composition", { name: "approved" })),
-      toolStep(call("render_page", { tree: VALID_TREE })),
-      END,
-    );
-    const agent = makeAgent(provider, { compositions: [approved, blocked], catalog });
+    const agent = createReferenceAgent({
+      provider,
+      sink: new MemorySink(),
+      agentId: "quickstart",
+      assets: assetSource,
+    });
 
-    const mutableApproved = approved as unknown as {
-      nodes: Record<string, { value?: string }>;
-    };
-    mutableApproved.nodes["approved-root"]!.value = "Mutated";
-    const mutableCatalog = catalog as unknown as {
-      compositions: { names: string[] };
-    };
-    mutableCatalog.compositions.names[0] = "blocked";
+    await runAgent(agent, { kind: "message", text: "read the notice twice" });
 
-    const out = await runAgent(agent, { kind: "message", text: "read the reference" });
+    expect(assetSource).toHaveBeenCalledTimes(1);
+    expect(turns[0]!.system).toContain("Original notice reference.");
+    expect(turns[0]!.system).not.toContain("Updated notice reference.");
+    expect(toolResultData(turns[1]!)[0]!.data).toContain('"value":"Original"');
+    expect(toolResultData(turns[2]!)[1]!.data).toContain('"value":"Original"');
 
-    const patches = patchesOf(out);
-    expect(patches).toHaveLength(1);
-    expect(JSON.stringify(patches)).toContain('"value":"hello"');
-    const system = provider.turns[0]!.system;
-    const compositionIndex = system.slice(system.indexOf("COMPOSITIONS"));
-    expect(compositionIndex).toContain("approved: Original approved reference");
-    expect(compositionIndex).not.toContain("blocked: Blocked reference");
-    const observation = toolResultData(provider.turns[1]!)[0]!;
-    expect(observation.tool).toBe("get_composition");
-    const read = JSON.parse(observation.data ?? "null") as FacetComposition | null;
-    expect(read?.name).toBe("approved");
-    expect(read?.nodes["approved-root"]).toMatchObject({ value: "Original" });
+    await runAgent(agent, { kind: "message", text: "read the notice again" });
+
+    expect(assetSource).toHaveBeenCalledTimes(2);
+    expect(turns[3]!.system).toContain("Updated notice reference.");
+    expect(turns[3]!.system).not.toContain("Original notice reference.");
+    expect(toolResultData(turns[4]!)[0]!.data).toContain('"value":"Updated"');
+  });
+
+  it("keeps the stage unchanged when the asset source fails", async () => {
+    const provider = providerOf(toolStep(call("render_page", { tree: VALID_TREE })), END);
+    const agent = makeAgent(provider, {
+      assets: () => Promise.reject(new Error("asset store offline")),
+    });
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const out = await runAgent(agent, { kind: "message", text: "draw" });
+
+      expect(provider.turns).toHaveLength(0);
+      expect(patchesOf(out)).toHaveLength(0);
+      expect(saysOf(out)).toEqual([
+        "Sorry — I couldn't update the page this time, so I've left it as it was. Please try again.",
+      ]);
+      expect(errorSpy).toHaveBeenCalledWith(
+        "[facet-reference-agent] turn failed:",
+        "asset store offline",
+      );
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 
   it("append_node rejects a parent that exists but is not a container", async () => {
@@ -329,7 +424,7 @@ describe("createReferenceAgent tool loop", () => {
       expect(patch.patches).toContainEqual({
         op: "add",
         path: "/nodes/panel",
-        value: { id: "panel", type: "box", style: {}, children: ["child"] },
+        value: { id: "panel", type: "box", children: ["child"] },
       });
     }
   });
@@ -403,7 +498,7 @@ describe("createReferenceAgent tool loop", () => {
     expect(paths).not.toContain("/nodes/root/children/-");
   });
 
-  it("normalizes a box without children instead of throwing from the closure buffer", async () => {
+  it("rejects a box without required children before the closure buffer", async () => {
     const provider = providerOf(
       toolStep(call("set_node", { node: { id: "panel", type: "box" } })),
       END,
@@ -413,15 +508,14 @@ describe("createReferenceAgent tool loop", () => {
     const batches = await batchesOf(agent, { kind: "message", text: "build" });
 
     expect(batches).toHaveLength(1);
-    const patch = batches[0]?.find((m) => m.kind === "patch");
-    expect(patch?.kind).toBe("patch");
-    if (patch?.kind === "patch") {
-      expect(patch.patches).toContainEqual({
-        op: "add",
-        path: "/nodes/panel",
-        value: { id: "panel", type: "box", style: {}, children: [] },
-      });
-    }
+    expect(batches[0]?.some((message) => message.kind === "patch")).toBe(false);
+    expect(toolResultData(provider.turns[1]!)).toContainEqual(
+      expect.objectContaining({
+        status: "error",
+        code: "invalid_authoring",
+        errors: [expect.objectContaining({ path: "/children" })],
+      }),
+    );
   });
 
   it("does not report a permanently buffered set_node as a completed mutation", async () => {
@@ -581,6 +675,7 @@ describe("createReferenceAgent tool loop", () => {
       provider,
       sink: new MemorySink(),
       agentId: "quickstart",
+      assets: testAssets(),
       budget: { maxObservationChars: 40 },
     });
 
@@ -657,7 +752,13 @@ describe("createReferenceAgent tool loop", () => {
     try {
       await runAgent(agent, { kind: "message", text: "go" }, SESSION);
       const obs = toolResultSearchText(provider.turns[1]!);
-      expect(obs.includes('"text" node needs a string "value"')).toBe(true);
+      expect(
+        toolResultData(provider.turns[1]!).some(
+          (result) =>
+            result.code === "invalid_authoring" &&
+            result.errors?.some((error) => error.path === "/value") === true,
+        ),
+      ).toBe(true);
       expect(obs.includes("unknown tool") && obs.includes("append_node")).toBe(true);
       expect(obs.includes("render_page") && obs.includes("renderable content")).toBe(true);
     } finally {
@@ -741,9 +842,11 @@ describe("createReferenceAgent tool loop", () => {
         patch.patches.some((p) => p.op === "remove" && "path" in p && p.path === "/nodes/greet"),
       ).toBe(true);
     }
-    const obs = toolResultSearchText(provider.turns[1]!);
-    expect(obs.includes('"media" node needs string "src"')).toBe(true);
-    expect(obs.includes('"input" node needs a string "name"')).toBe(true);
+    const authorErrorPaths = toolResultData(provider.turns[1]!).flatMap(
+      (result) => result.errors?.map((error) => error.path) ?? [],
+    );
+    expect(authorErrorPaths).toContain("/src");
+    expect(authorErrorPaths).toContain("/name");
   });
 
   it("brick-vocab v1 accepts media nodes and rejects old image nodes", async () => {
@@ -796,112 +899,24 @@ describe("createReferenceAgent tool loop", () => {
       expect(patch.patches.some((p) => "path" in p && p.path === "/nodes/badSrc")).toBe(false);
     }
     const observations = toolResultData(provider.turns[1]!);
-    const obs = toolResultSearchText(provider.turns[1]!);
     expect(observations.some((o) => o.status === "ok" && o.message.includes("clip"))).toBe(true);
-    expect(obs.includes('"type" must be one of')).toBe(true);
-    expect(obs.includes("media")).toBe(true);
-    expect(obs.includes('kind must be "image" or "video"')).toBe(true);
-    expect(obs.includes('safe static "src"')).toBe(true);
+    const rejected = observations.filter((observation) => observation.code === "invalid_authoring");
+    expect(rejected).toHaveLength(3);
+    expect(rejected.flatMap((result) => result.errors?.map((error) => error.path) ?? [])).toEqual(
+      expect.arrayContaining(["/type", ""]),
+    );
   });
 
-  it("set_theme records a /theme add op the model can drive", async () => {
-    const provider = providerOf(toolStep(call("set_theme", { name: "midnight" })), END);
+  it("rejects retired asset mutation tools without a stage change", async () => {
+    const retiredTool = ["set", "theme"].join("_");
+    const provider = providerOf(toolStep(call(retiredTool, { name: "midnight" })), END);
     const agent = makeAgent(provider);
     const out = await runAgent(agent, { kind: "message", text: "go dark" }, SESSION);
 
-    const patch = out.find((m) => m.kind === "patch");
-    expect(patch).toBeDefined();
-    if (patch?.kind === "patch") {
-      expect(patch.patches).toContainEqual({ op: "add", path: "/theme", value: "midnight" });
-    }
-  });
-
-  it("set_theme with an invalid theme name is an error observation and emits no /theme op", async () => {
-    // "Ocean Breeze" has a space, so it fails isValidThemeName. It must never
-    // reach the wire (the runtime's save-time re-validate would strip it,
-    // diverging the stored stage from the live clients).
-    const provider = providerOf(toolStep(call("set_theme", { name: "Ocean Breeze" })), END);
-    const agent = makeAgent(provider);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const out = await runAgent(agent, { kind: "message", text: "go" }, SESSION);
-      // No /theme patch was emitted — the invalid name degraded to an observation.
-      expect(patchesOf(out)).toHaveLength(0);
-      expect(
-        toolResultData(provider.turns[1]!).some(
-          (o) => o.status === "error" && o.message.includes("valid theme name"),
-        ),
-      ).toBe(true);
-    } finally {
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("set_theme with a non-string name is an error observation, not a throw", async () => {
-    const provider = providerOf(toolStep(call("set_theme", { name: 42 })), END);
-    const agent = makeAgent(provider);
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const out = await runAgent(agent, { kind: "message", text: "go" }, SESSION);
-      // Nothing was applied — the bad arg degraded to an observation, the turn survived.
-      expect(patchesOf(out)).toHaveLength(0);
-      expect(toolResultData(provider.turns[1]!).some((o) => o.status === "error")).toBe(true);
-    } finally {
-      errorSpy.mockRestore();
-    }
-  });
-
-  it("catalog policy rejection observations reach the next provider step transcript", async () => {
-    const provider = providerOf(
-      toolStep(
-        call("set_theme", { name: "midnight" }),
-        call("append_node", {
-          parentId: "root",
-          node: {
-            id: "sales-chart",
-            type: "chart",
-            kind: "bar",
-            series: [{ label: "Sales", values: [1, 2] }],
-          },
-        }),
-      ),
-      END,
+    expect(patchesOf(out)).toHaveLength(0);
+    expect(toolResultData(provider.turns[1]!)).toContainEqual(
+      expect.objectContaining({ tool: retiredTool, status: "error", code: "unknown_tool" }),
     );
-    const agent = makeAgent(provider, { catalog: CATALOG_POLICY });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    try {
-      const out = await runAgent(agent, { kind: "message", text: "switch theme and add chart" });
-
-      expect(patchesOf(out)).toHaveLength(0);
-      const observations = toolResultData(provider.turns[1]!);
-      expect(observations).toContainEqual(
-        expect.objectContaining({
-          tool: "set_theme",
-          status: "error",
-          outcome: "rejected",
-          applied: false,
-          stage_changed: false,
-          visible_to_visitor: false,
-        }),
-      );
-      expect(observations).toContainEqual(
-        expect.objectContaining({
-          tool: "append_node",
-          status: "error",
-          outcome: "rejected",
-          applied: false,
-          stage_changed: false,
-          visible_to_visitor: false,
-        }),
-      );
-      const transcript = toolResultSearchText(provider.turns[1]!);
-      expect(transcript).toContain("catalog policy locked theme");
-      expect(transcript).toContain('rejected theme "midnight"');
-      expect(transcript).toContain('catalog policy rejected brick type "chart"');
-      expect(transcript).toContain("Use an allowed catalog brick");
-    } finally {
-      errorSpy.mockRestore();
-    }
   });
 
   it("stops at maxSteps when the model never ends the loop", async () => {
@@ -991,16 +1006,15 @@ describe("createReferenceAgent tool loop", () => {
     }
   });
 
-  it("catalog policy context preserves applied stage on provider failure without throwing", async () => {
+  it("preserves an applied native Brick edit on provider failure without throwing", async () => {
     const traceEvents: ReferenceAgentTraceEvent[] = [];
     const provider = providerOf(
       toolStep(
         call("append_node", {
           parentId: "root",
           node: {
-            id: "catalog-group",
+            id: "native-group",
             type: "box",
-            variant: "surface",
             children: [],
           },
         }),
@@ -1008,22 +1022,19 @@ describe("createReferenceAgent tool loop", () => {
       new Error("openai request failed: HTTP 400"),
     );
     const agent = makeAgent(provider, {
-      catalog: CATALOG_POLICY,
       trace: (event) => {
         traceEvents.push(event);
       },
     });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
-      const out = await runAgent(agent, { kind: "message", text: "add a catalog group" });
+      const out = await runAgent(agent, { kind: "message", text: "add a group" });
 
-      expect(provider.turns[0]!.system).toContain("CATALOG");
-      expect(provider.turns[0]!.system).toContain("reference-catalog");
       const patch = out.find((message) => message.kind === "patch");
       expect(patch).toBeDefined();
       if (patch?.kind !== "patch") throw new Error("expected patch");
       const paths = patch.patches.map((operation) => ("path" in operation ? operation.path : ""));
-      expect(paths).toContain("/nodes/catalog-group");
+      expect(paths).toContain("/nodes/native-group");
       expect(paths).toContain("/nodes/root/children/-");
       expect(saysOf(out)).not.toContain(
         "Sorry — I couldn't update the page this time, so I've left it as it was. Please try again.",
@@ -1241,38 +1252,25 @@ describe("createReferenceAgent tool loop", () => {
     expect(provider.turns[0]!.system).toContain(DEFAULT_GUIDE);
   });
 
-  it("threads operator themes and composition references into the system prompt by index only", async () => {
+  it("threads one static Theme and Pattern snapshot into prompt indexes only", async () => {
     const provider = providerOf(toolStep(call("say", { text: "ok" })), END);
-    const theme: FacetTheme = {
-      name: "neon",
-      description: "a bright neon look",
-      color: { bg: "#ff00ff" },
-    };
-    const composition: FacetComposition = {
-      name: "hero",
-      metadata: { description: "a hero band" },
-      root: "h-root",
-      nodes: {
-        "h-root": { id: "h-root", type: "box", children: ["h-title"] },
-        "h-title": { id: "h-title", type: "text", value: "Welcome" },
-      },
-    };
+    const theme = completeTheme();
+    const hero = { ...pattern("A hero band.", "Welcome"), name: "hero" };
     const agent = createReferenceAgent({
       provider,
       sink: new MemorySink(),
       agentId: "quickstart",
-      themes: [theme],
-      compositions: [composition],
+      assets: { theme, patterns: [hero] },
     });
     await runAgent(agent, { kind: "message", text: "draw" }, SESSION);
 
     const system = provider.turns[0]!.system;
-    expect(system).toContain("THEMES");
-    expect(system).toContain("neon");
-    expect(system).toContain("COMPOSITIONS");
-    expect(system).toContain("hero");
-    // Theme documents reach the model by NAME only — the raw CSS value never does.
-    expect(system).not.toContain("#ff00ff");
+    expect(system).toContain("PATTERNS");
+    expect(system).toContain("hero: A hero band.");
+    expect(system).toContain("PRESETS");
+    expect(system).toContain("box/panel");
+    expect(system).not.toContain("Welcome");
+    expect(system).not.toContain("#123456");
   });
 });
 
@@ -1350,6 +1348,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1389,6 +1388,7 @@ describe("compaction", () => {
       provider: nextProvider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spySummarizer().summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1410,6 +1410,7 @@ describe("compaction", () => {
       provider: provider1,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1426,6 +1427,7 @@ describe("compaction", () => {
       provider: provider2,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1461,6 +1463,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       onBackgroundTask, // DEFAULT budget → high trigger, small history stays under it
@@ -1483,6 +1486,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1527,6 +1531,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1564,6 +1569,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore: throwingStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1602,6 +1608,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1631,6 +1638,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore: staleStore,
       summarizerFactory: () => spySummarizer().summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1658,6 +1666,7 @@ describe("compaction", () => {
       provider,
       sink: new MemorySink(),
       agentId: "quickstart",
+      assets: testAssets(),
       summarizerFactory: factory,
       onBackgroundTask,
     });
@@ -1683,6 +1692,7 @@ describe("compaction", () => {
       provider: provider1,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: CHUNK_BUDGET,
@@ -1702,6 +1712,7 @@ describe("compaction", () => {
       provider: provider2,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: CHUNK_BUDGET,
@@ -1736,6 +1747,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1763,6 +1775,7 @@ describe("compaction", () => {
       provider,
       sink: failingSink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore: new MemorySummaryStore(),
       summarizerFactory: () => spySummarizer().summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1802,6 +1815,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore: throwingStore,
       summarizerFactory: () => spySummarizer().summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1837,6 +1851,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore: mismatchedStore,
       summarizerFactory: () => spySummarizer().summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1879,6 +1894,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -1923,6 +1939,7 @@ describe("compaction", () => {
         provider,
         sink,
         agentId: "quickstart",
+        assets: testAssets(),
         summaryStore,
         summarizerFactory: () => spy.summarizer,
         budget: TRIGGERING_BUDGET,
@@ -1969,6 +1986,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: CAP_BUDGET,
@@ -2010,6 +2028,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: { maxContextTokens: 100, maxSummarizerInputChars: 1000 },
@@ -2030,10 +2049,10 @@ describe("compaction", () => {
   it("projects the next turn with the budget's stage bounds, not the 48K default (R5)", async () => {
     // A ~3000-char stage JSON with maxStageJsonChars: 100 renders as a SUMMARY in
     // the real assembly. The projection must measure the same rendering: at
-    // maxContextTokens 10950 the summary-mode projection stays under the trigger,
-    // while the full-JSON projection (+~750 tokens of stage JSON) fires.
-    // (Retuned from 10350 when the richtext STAGE_SPEC teaching grew the system
-    // prompt; verified central in the [10650, 11250] passing window.)
+    // maxContextTokens 8400 puts the 75% trigger (~6300 tokens) between the
+    // summary-mode projection (~5900) and the full-JSON projection (~6600).
+    // This deliberately leaves the assertion sensitive to accidentally falling
+    // back to the 48K default while allowing for the current fixed prompt/tools.
     const bigStage = {
       root: "root",
       nodes: {
@@ -2058,9 +2077,10 @@ describe("compaction", () => {
         provider,
         sink: await seed(),
         agentId: "quickstart",
+        assets: testAssets(),
         summaryStore: new MemorySummaryStore(),
         summarizerFactory: () => spy.summarizer,
-        budget: { maxContextTokens: 10_950, maxStageJsonChars },
+        budget: { maxContextTokens: 8_400, maxStageJsonChars },
         onBackgroundTask,
       });
       await runAgent(agent, { kind: "message", text: "ok" }, bigSession);
@@ -2094,6 +2114,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => skipSpy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -2114,6 +2135,7 @@ describe("compaction", () => {
       provider: freshProvider,
       sink: freshSink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -2161,6 +2183,7 @@ describe("compaction", () => {
       provider,
       sink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore: staleAfterFirst,
       summarizerFactory: () => skipSpy.summarizer,
       budget: TRIGGERING_BUDGET,
@@ -2197,6 +2220,7 @@ describe("compaction", () => {
       provider,
       sink: forwardSink,
       agentId: "quickstart",
+      assets: testAssets(),
       summaryStore,
       summarizerFactory: () => spy.summarizer,
       budget: TRIGGERING_BUDGET,

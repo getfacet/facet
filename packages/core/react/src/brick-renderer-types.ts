@@ -15,6 +15,11 @@ export interface PressableRenderArgs<Press> {
 }
 
 export interface BrickRenderContext<Press> {
+  /**
+   * One resolved Theme value for this render walk. Brick renderers derive their
+   * closed target style from the node plus this value; an inert walk receives
+   * the motion snapshot's copy, never a live Theme or a second style resolver.
+   */
   readonly theme: ResolvedTheme;
   readonly className: string | undefined;
   readonly inert: boolean;

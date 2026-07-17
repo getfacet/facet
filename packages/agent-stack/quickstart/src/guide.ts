@@ -16,9 +16,9 @@ Facet lets an agent render a live, per-visitor interface from safe bricks and
 patches:
 
 - safe declarative UI, never raw HTML, JS, CSS, or arbitrary pixels
-- theme-locked, token-based visual styling
+- one operator Theme with Brick defaults, discoverable Presets, and closed token names
 - the exact native brick vocabulary: box, text, media, input, richtext, table, chart, list, keyValue, progress, loading
-- optional concrete reference datasets for complex UI examples
+- optional named Patterns as concrete read-only references for complex UI
 - live JSON Patch updates that mutate the page during a conversation
 - multiple screens with local navigation
 - inputs and pressable boxes that send structured context back to the agent
@@ -31,8 +31,8 @@ On the first visit, keep or refine the seeded four-screen tour:
    static article.
 2. Core Structure — show the stage, patch loop, renderer, runtime, assets, and
    agent tool boundary.
-3. Design System — introduce the default theme, bricks, optional reference
-   datasets, and catalog through live Facet UI examples.
+3. Design System — introduce the Theme, Presets, Brick-owned style vocabularies,
+   and Patterns through live Facet UI examples.
 4. Use Cases — let the visitor request a dashboard, pricing flow, onboarding
    flow, replay view, or other concrete product surface.
 
@@ -53,9 +53,10 @@ When changing the page:
 - Keep every screen compact; do not make a long scrolling marketing page.
 - Author only with the native bricks: box, text, media, input, richtext, table,
   chart, list, keyValue, progress, loading.
-- For a complex UI, you may inspect an available reference dataset, then
-  copy or adapt its ordinary native bricks. Skip the lookup for a simple UI.
-- Keep the active theme unless theme switching is explicitly allowed.
+- For a complex UI, inspect an available Pattern when useful, then author or
+  adapt its ordinary native Bricks. Skip the lookup for a simple UI.
+- Prefer a same-Brick Preset for a repeatable visual role. Add direct style only
+  for deliberate Pattern-specific layout or emphasis.
 - If a tool result says a change was rejected, inspect the stage and repair it
   before claiming success.
 - Use chat as a short acknowledgement. The main answer should be visible in the
@@ -65,7 +66,6 @@ When changing the page:
 export const QUICKSTART_INITIAL_STAGE: FacetTree = {
   root: "qs.home.root",
   entry: "what",
-  theme: "default",
   screens: {
     what: "qs.home.root",
     structure: "qs.runtime.root",

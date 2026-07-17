@@ -4,8 +4,6 @@ import type { AssetDocuments, AssetsStore } from "./assets.js";
 
 /** Directory entries enumerated before the whole directory fails closed. */
 const MAX_DIRECTORY_ENTRIES = 4096;
-/** Sorted files opened per collection (themes, compositions). */
-const MAX_FILES_PER_COLLECTION = 1024;
 /** Bytes accepted per file; the loader reads at most cap+1 to detect overflow. */
 const MAX_FILE_BYTES = 1_048_576;
 const MAX_ISSUES = 64;
@@ -49,11 +47,11 @@ function fsErrorDetail(err: unknown): string {
 type Discovery = { readonly ok: true; readonly names: readonly string[] } | { readonly ok: false };
 
 /**
- * Durable, dependency-free reference `AssetsStore`: reads an operator's asset
- * documents from a directory — sorted `*.theme.json` and `*.composition.json`
- * collections, an optional `catalog.json`, and an optional `initial.tree.json`.
- * Documents are served RAW; `loadAssets` validates them. Legacy
- * pre-canonicalization asset suffixes are ignored, never executed.
+ * Durable, dependency-free reference `AssetsStore`: reads an operator's exact
+ * optional `theme.json`, `patterns.json`, and `initial.tree.json` documents.
+ * Documents are served RAW; `loadAssets` validates them. Recognized retired
+ * Theme/Composition/Catalog files are reported, but never opened or
+ * reinterpreted as current assets. All other files are ignored.
  *
  * Bounded on every axis (DC-007), because the directory is external input:
  *  - discovery enumerates at most 4096 entries with a streaming
@@ -62,8 +60,8 @@ type Discovery = { readonly ok: true; readonly names: readonly string[] } | { re
  *    directory fails closed (empty documents + a bounded issue) BEFORE any
  *    asset file is opened, decoded, or parsed — `loadAssets` then boots on the
  *    bundled defaults;
- *  - after discovery succeeds, at most 1024 sorted files are opened per
- *    collection;
+ *  - after discovery succeeds, at most the three exact current files are
+ *    opened, in sorted filename order;
  *  - each file is bounded-read at most cap+1 = 1048577 bytes: exactly 1048576
  *    bytes are accepted, and the 1048577th byte rejects the file BEFORE UTF-8
  *    decode / `JSON.parse` — even when a pre-read size check saw exactly the
@@ -93,39 +91,39 @@ export class FileAssets implements AssetsStore {
     if (!discovery.ok) {
       // Fail the whole raw directory closed: no asset file is opened, decoded,
       // or parsed past a discovery failure; loadAssets boots on the defaults.
-      return { themes: [], compositions: [], issues };
+      return { issues };
     }
     const names = [...discovery.names].sort();
 
-    const themes = this.parseCollection(names, ".theme.json", "themes", pushIssue);
-    const compositions = this.parseCollection(
-      names,
-      ".composition.json",
-      "compositions",
-      pushIssue,
-    );
-
-    const docs: {
-      themes: readonly unknown[];
-      compositions: readonly unknown[];
-      catalog?: unknown;
-      initialTree?: unknown;
-      issues: readonly string[];
-    } = { themes, compositions, issues };
-
-    if (names.includes("catalog.json")) {
-      const catalog = this.parseFile("catalog.json", pushIssue);
-      if (catalog !== undefined) docs.catalog = catalog;
+    for (const name of names) {
+      if (this.isRetiredAssetFile(name)) {
+        pushIssue(`retired asset file ignored (${name})`);
+      }
     }
 
-    // A missing initial.tree.json is the normal case (no seed) — not an issue.
-    // A present-but-unparseable one IS.
-    if (names.includes("initial.tree.json")) {
-      const tree = this.parseFile("initial.tree.json", pushIssue);
-      if (tree !== undefined) docs.initialTree = tree;
+    const docs: {
+      theme?: unknown;
+      patterns?: unknown;
+      initialTree?: unknown;
+      issues: readonly string[];
+    } = { issues };
+    const currentFiles = ["initial.tree.json", "patterns.json", "theme.json"] as const;
+    for (const file of currentFiles) {
+      if (!names.includes(file)) continue;
+      const value = this.parseFile(file, pushIssue);
+      if (value === undefined) continue;
+      if (file === "theme.json") docs.theme = value;
+      else if (file === "patterns.json") docs.patterns = value;
+      else docs.initialTree = value;
     }
 
     return docs;
+  }
+
+  private isRetiredAssetFile(name: string): boolean {
+    return (
+      name === "catalog.json" || name.endsWith(".theme.json") || name.endsWith(".composition.json")
+    );
   }
 
   /** Streaming bounded enumeration: at most `MAX_DIRECTORY_ENTRIES` entries are
@@ -164,31 +162,6 @@ export class FileAssets implements AssetsStore {
         // Already closed or a hostile handle — nothing safe left to do.
       }
     }
-  }
-
-  /** Sorted, per-collection bounded parse: opens at most
-   * `MAX_FILES_PER_COLLECTION` files; files beyond the cap are never opened. */
-  private parseCollection(
-    sortedNames: readonly string[],
-    suffix: string,
-    label: string,
-    pushIssue: (issue: string) => void,
-  ): unknown[] {
-    const matched = sortedNames.filter((name) => name.endsWith(suffix));
-    if (matched.length > MAX_FILES_PER_COLLECTION) {
-      pushIssue(
-        `assets \`${label}\` had ${String(matched.length)} file(s); loading the first ${String(
-          MAX_FILES_PER_COLLECTION,
-        )} (sorted)`,
-      );
-    }
-    const bounded = matched.slice(0, MAX_FILES_PER_COLLECTION);
-    const parsed: unknown[] = [];
-    for (const file of bounded) {
-      const value = this.parseFile(file, pushIssue);
-      if (value !== undefined) parsed.push(value);
-    }
-    return parsed;
   }
 
   /** Bounded read + decode + parse for one file; any failure is an issue with a

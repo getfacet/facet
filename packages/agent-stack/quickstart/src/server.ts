@@ -48,11 +48,11 @@ export interface QuickstartServerOptions {
   readonly sink?: Sink;
   readonly stageStore?: StageStore;
   /**
-   * Operator themes (validated by the caller) inlined into the shell as
-   * `window.__FACET_THEMES__` for the page to hand `StageRenderer`. Absent/empty
-   * ⇒ the shell is byte-identical to today's (no injected script).
+   * One effective Theme (validated by the caller) inlined into the shell as
+   * `window.__FACET_THEME__` for the page to hand `StageRenderer`. Patterns stay
+   * provider-side and have no shell value or browser route.
    */
-  readonly themes?: readonly FacetTheme[];
+  readonly theme?: FacetTheme;
   /**
    * A seedable initial tree (validated by the caller) — wraps the stage store
    * with `withInitialStage` so a fresh session opens on it before the first
@@ -85,7 +85,7 @@ function escapeForScript(value: unknown): string {
 
 /**
  * The HTML shell. Two optional boot seams ship inline in ONE `<script>` (Decision
- * 2): operator themes as `window.__FACET_THEMES__`, and a seed stage as
+ * 2): the effective Theme as `window.__FACET_THEME__`, and a seed stage as
  * `window.__FACET_INITIAL_STAGE__` so the first paint isn't gated on the first
  * model turn. Both are `escapeForScript`-escaped (defense in depth; `validateTheme`
  * already refuses `<` in theme values, but descriptions are freer text and the
@@ -93,10 +93,10 @@ function escapeForScript(value: unknown): string {
  * byte-identical to the no-assets boot; a single seam present ⇒ exactly its one
  * assignment (the join adds no leading/trailing separator).
  */
-function shellHtml(themes?: readonly FacetTheme[], initialStage?: FacetTree): string {
+function shellHtml(theme?: FacetTheme, initialStage?: FacetTree): string {
   const globals: string[] = [];
-  if (themes !== undefined && themes.length > 0) {
-    globals.push(`window.__FACET_THEMES__ = ${escapeForScript(themes)}`);
+  if (theme !== undefined) {
+    globals.push(`window.__FACET_THEME__ = ${escapeForScript(theme)}`);
   }
   if (initialStage !== undefined) {
     globals.push(`window.__FACET_INITIAL_STAGE__ = ${escapeForScript(initialStage)}`);
@@ -290,7 +290,7 @@ function handleRequest(
     return;
   }
   // DNS-rebinding guard, applied to EVERY route including the shell. The shell
-  // now inlines operator data (`__FACET_INITIAL_STAGE__` / `__FACET_THEMES__`),
+  // now inlines operator data (`__FACET_INITIAL_STAGE__` / `__FACET_THEME__`),
   // so a rebound hostile origin (attacker.com → 127.0.0.1, Host still
   // non-loopback) that fetches `/` could read the operator's seed tree and theme
   // documents out of the boot script — the shell is no longer the data-free
@@ -308,7 +308,7 @@ function handleRequest(
       res.end();
       return;
     }
-    res.end(shellHtml(options.themes, options.initialStage));
+    res.end(shellHtml(options.theme, options.initialStage));
     return;
   }
   if ((req.method === "GET" || req.method === "HEAD") && pathname === "/app.js") {

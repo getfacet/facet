@@ -8,20 +8,20 @@ export const DEFAULT_OFFLINE_FACE: FacetTree = {
     root: {
       id: "root",
       type: "box",
-      style: { direction: "col", gap: "sm", pad: "2xl", align: "center" },
+      style: { direction: "column", gap: "sm", padding: "2xl", alignItems: "center" },
       children: ["o1", "o2"],
     },
     o1: {
       id: "o1",
       type: "text",
       value: "This page is offline right now",
-      style: { size: "xl", weight: "bold" },
+      style: { fontSize: "xl", fontWeight: "bold" },
     },
     o2: {
       id: "o2",
       type: "text",
       value: "Its agent isn't connected. Check back soon.",
-      style: { color: "fg-muted" },
+      style: { color: "mutedForeground" },
     },
   },
 };

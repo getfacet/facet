@@ -108,7 +108,7 @@ export class TreeBuilder {
     this.nodes["root"] = {
       id: "root",
       type: "box",
-      style: { direction: "col" },
+      style: { direction: "column" },
       children: Object.values(screens),
     };
     return { root: "root", nodes: this.nodes, screens, entry };

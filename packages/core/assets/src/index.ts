@@ -1,3 +1,2 @@
-export * from "./theme.js";
-export * from "./compositions.js";
-export * from "./catalog.js";
+export { DEFAULT_PATTERNS } from "./patterns.js";
+export { DEFAULT_THEME } from "./theme.js";

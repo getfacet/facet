@@ -7,12 +7,11 @@
 "@facet/quickstart": minor
 ---
 
-Add polished built-in brick rendering contracts. `@facet/core` now validates
-token-only recipe parts for renderer-owned affordances, `@facet/assets` ships
-default polished recipes and catalog-backed variants, and `@facet/react` renders
-native bricks through those recipes, including active navigation looks and
-display-only table/chart affordances. Agent prompt guidance and executor catalog
-policy prefer polished native patterns while rejecting
-disallowed tone-only recipe selectors before patch emission. Optional
-composition references remain read-only examples. Quickstart now starts from a
-compact polished default stage for the built-in guide.
+Add polished built-in Brick rendering contracts. `@facet/core` validates each
+Brick-owned style target and value; `@facet/assets` ships complete defaults and
+same-Brick Presets; and `@facet/react` renders native Bricks through those
+contracts, including active navigation looks and display-only table/chart
+affordances. Agent prompt guidance prefers matching Presets and Patterns while
+strict mutation validation rejects unavailable local style paths or values
+before patch emission. Optional Patterns remain read-only examples. Quickstart
+starts from a compact polished default stage for the built-in guide.

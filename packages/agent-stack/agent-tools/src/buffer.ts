@@ -27,7 +27,7 @@ const MAX_ID_LIST_PREVIEW = 20;
 
 export function createStageToolBuffer(
   initialShadow: FacetTree,
-  assets: StageToolAssets = {},
+  assets?: StageToolAssets,
 ): StageToolBuffer {
   const pending = new Map<NodeId, PendingOp>();
   const batchPatches: JsonPatchOperation[] = [];
@@ -71,7 +71,7 @@ export function createStageToolBuffer(
             name: "append_node",
             input: { parentId: op.parentId, node: op.node },
           },
-      { shadow, assets },
+      { shadow, ...(assets === undefined ? {} : { assets }) },
     );
     if (result.status !== "ok" || wouldExceedPatchCap(result)) return undefined;
     emittedPatchOps += result.patchCount;
@@ -92,7 +92,7 @@ export function createStageToolBuffer(
             name: "append_node",
             input: { parentId: op.kind === "append" ? op.parentId : "", node },
           },
-      { shadow, assets },
+      { shadow, ...(assets === undefined ? {} : { assets }) },
     );
     return result.status === "ok" ? undefined : formatObservation(result);
   };
@@ -128,7 +128,10 @@ export function createStageToolBuffer(
   };
 
   const execute = (call: ToolCall, onAccepted?: () => void): StageToolBufferOutcome => {
-    const result = executeStageTool(call, { shadow, assets });
+    const result = executeStageTool(call, {
+      shadow,
+      ...(assets === undefined ? {} : { assets }),
+    });
     if (wouldExceedPatchCap(result)) return cumulativePatchLimitOutcome(call);
 
     if (result.status !== "ok") return failedOutcome(formatObservation(result), shadow);

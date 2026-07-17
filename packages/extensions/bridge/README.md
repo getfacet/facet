@@ -4,8 +4,9 @@ Tier: **Local / Demo Tool**.
 
 Point a local coding agent (Claude Code, Codex, …) at a Facet link. The bridge
 dials into a Facet server (SSE + POST, NAT-safe) and, for each visitor event,
-runs your local agent — exposing a `facet` command the agent calls to change the
-page (`facet render/append/set/remove/screens/theme/say`).
+runs your local agent. The spawn runner exposes the `facet` command
+(`render/append/set/remove/screens/say`); the persistent runner exposes
+in-process `render/append/set/remove/say` tools.
 
 This is local/operator tooling. It is not a hosted worker fleet, queue, billing
 boundary, or tenant isolation layer.
@@ -69,10 +70,10 @@ session calls in-process `facet_*` tools (via the Agent SDK's MCP tools) whose
 handlers write to the current event's stage — events are processed serially so
 each turn's changes are attributed to that event.
 
-Both runners expose the same stage action surface: render, append, set, remove,
-screens, theme by name, and say. In spawn mode, theme selection uses
-`facet theme <name>`. Theme selection is name-only; invalid names are rejected
-before any stage patch is emitted.
+The spawn runner additionally exposes `screens` through the `facet` CLI. The
+persistent runner currently exposes render, append, set, remove, and say only.
+Theme selection is absent from both runners: one operator-selected Theme belongs
+to the agent's assets and never travels as a document patch.
 
 `createBridge({ runner, serverUrl, agentId, … })` is also exported for programmatic
 use, alongside `createPersistentDriver(...)`.

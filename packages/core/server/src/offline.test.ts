@@ -75,6 +75,24 @@ const OVERWRITE = [
 ];
 
 describe("offlineFor preserves a data-bound built stage (WU-7 / DC-007)", () => {
+  it("uses only current authored style syntax", () => {
+    const validated = validateTree(DEFAULT_OFFLINE_FACE);
+
+    expect(validated.issues).toEqual([]);
+    expect(validated.tree).toEqual(DEFAULT_OFFLINE_FACE);
+    expect(DEFAULT_OFFLINE_FACE.nodes["root"]?.style).toEqual({
+      direction: "column",
+      gap: "sm",
+      padding: "2xl",
+      alignItems: "center",
+    });
+    expect(DEFAULT_OFFLINE_FACE.nodes["o1"]?.style).toEqual({
+      fontSize: "xl",
+      fontWeight: "bold",
+    });
+    expect(DEFAULT_OFFLINE_FACE.nodes["o2"]?.style).toEqual({ color: "mutedForeground" });
+  });
+
   it("does NOT overwrite a populated data-bound built page", () => {
     const stage = dataBoundStage();
     // Guard the fixture: the warehouse survived validation.

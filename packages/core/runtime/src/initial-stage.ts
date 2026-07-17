@@ -6,7 +6,11 @@ const MAX_SEEDED = 10_000;
 
 /** A tree worth seeding a fresh session with: it already renders content. */
 export function isSeedableTree(tree: FacetTree): boolean {
-  return treeHasContent(tree);
+  try {
+    return treeHasContent(tree);
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -55,8 +59,8 @@ export function withInitialStage(store: StageStore, initialStage?: FacetTree): S
         return existing;
       }
       const session: FacetSession = { agentId, visitor, stage: seed };
-      armSeed(key);
       await store.save(session);
+      armSeed(key);
       return session;
     },
     takeSeeded(agentId, visitorId) {

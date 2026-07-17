@@ -1,181 +1,163 @@
 # @facet/agent-tools
 
-Provider-agnostic Facet stage tools for people building their own external
-agents.
+Provider-agnostic Facet stage tools for authors building their own LLM agent
+loop.
 
 Tier: **Agent Authoring**.
 
-This package is the reusable mechanism layer: shared tool-call contracts,
-result shapes, stage-tool helpers, and provider-neutral Facet prompt guidance
-that can sit inside any LLM/tool loop. It does not choose a model, make provider
-requests, read environment variables, or own a reference policy.
+This package owns the reusable mechanism layer: canonical tool definitions,
+shared call/result types, strict execution against a local stage shadow,
+buffering helpers, structured observations, and Facet prompt guidance. It does
+not select a provider, make model requests, read environment variables, or own
+application business logic.
 
-`@facet/reference-agent` is separate on purpose. It is Facet's runnable reference
-brain with provider adapters, prompt policy, a tool loop, and the deterministic
-stub used by quickstart. Use `@facet/reference-agent` when you want that complete
-agent. Use `@facet/agent-tools` when you are writing your own agent and only need
-the safe Facet stage tool surface.
+Use `@facet/reference-agent` when you want Facet's complete reference loop. Use
+this package when you only need the safe Facet authoring surface.
 
-## Current surface
-
-This package ships the reusable stage-tool surface used by the reference agent:
-canonical tool specs, shared tool-call/result types, a provider-agnostic
-executor, catalog-aware enforcement, stage-shadow folding/summaries, a buffered
-helper for streamed tool batches, and reusable LLM-facing Facet authoring
-guidance.
+## Public surface
 
 ```ts
 import {
   FACET_STAGE_TOOL_SPECS,
   buildFacetAgentSystemPrompt,
+  createStageToolAssetSnapshot,
   createStageToolBuffer,
   executeStageTool,
   parseAgentToolObservation,
-  selectCompositionReferences,
+  selectPatternReference,
 } from "@facet/agent-tools";
 import type {
-  GetCompositionToolInput,
+  GetBrickSpecToolInput,
+  GetPatternToolInput,
+  GetPresetToolInput,
+  GetStyleChoicesToolInput,
   StageToolResult,
   ToolCall,
-  ToolSpec,
 } from "@facet/agent-tools";
 ```
 
-The package depends only on `@facet/core`, so it can be reused by external agent
-authors without pulling in the reference agent or a Node-only provider stack.
+The package depends only on `@facet/core`.
 
-## Prompt kit
+## Asset snapshot and prompt
 
-`buildFacetAgentSystemPrompt` assembles the Facet-specific system guidance that
-most LLM agents need before they call the stage tools. It includes `STAGE_SPEC`
-from `@facet/core`, compact page UX guidance, edit-before-append rules, the
-closed native-brick model, the tool playbook, the structured
-tool-result contract, and optional theme, catalog, and composition metadata.
-
-The prompt kit is not a complete agent. Your loop still owns the page brief,
-business logic, domain tools, provider messages, history, current event,
-current stage context, budgets, retries, and stop policy.
+Create one exact immutable snapshot from the effective Theme and Pattern list:
 
 ```ts
+const assets = createStageToolAssetSnapshot({ theme, patterns });
+
 const system = buildFacetAgentSystemPrompt({
   pageBrief: "# Pricing concierge\n\nHelp each visitor compare plans.",
-  assets: {
-    themes,
-    catalog,
-    compositions,
-  },
+  assets,
 });
 ```
 
-Asset sections expose only prompt-safe indexes: theme names/descriptions,
-catalog policy, and each exposed composition's name plus
-`metadata.description`. Theme CSS values, composition node JSON, other
-composition metadata, provider keys, visitor ids, secrets, and unknown asset
-fields do not enter the system prompt.
+`createStageToolAssetSnapshot` revalidates, detaches, deduplicates, indexes, and
+deep-freezes the input. The resulting `StageToolAssets` contains:
 
-The guidance teaches exactly eleven authorable bricks: `box`, `text`, `media`,
-`input`, `richtext`, `table`, `chart`, `list`, `keyValue`, `progress`, and
-`loading`. Actions, navigation, grouped inputs, label/value summaries, fixed
-filters, sections, cards, and empty states are authored from those bricks.
-Optional composition references show concrete examples: skip the read for a
-simple UI; for a complex UI, inspect one and then author native nodes separately.
-Renderer recipe parts, theme token values, and composition node JSON never
-become stage syntax.
+- the complete `theme` for strict authoring and exact Preset reads;
+- exact compatible `patterns` for Pattern reads;
+- a Brick index with `type`, `description`, and `useWhen`;
+- a same-Brick Preset index with `brick`, `name`, `description`, and `useWhen`;
+  and
+- a Pattern index with `name`, `description`, and `useWhen`.
 
-The catalog prompt section is active UI authoring policy. It tells the model the
-active theme, whether theme switching is a locked theme or explicitly allowed,
-which bricks and variants are allowed, and whether all compositions or only
-named compositions may be exposed as references. Composition policy controls
-reference exposure, not a stage authoring layer.
+The prompt receives only the three bounded indexes. Concrete Theme values,
+full Pattern trees, provider keys, visitor ids, and unknown asset fields remain
+private. Exact data is returned only when the model calls the matching read
+tool.
 
-Catalog policy is deliberately narrower than hosted platform policy. It guides
-and gates the UI the model may author; it does not define tenant isolation,
-authentication, billing, usage metering, rate limits, spend caps, or operational
-admin policy.
+The prompt teaches Pattern and Preset discovery before direct styling. For an
+unfamiliar Brick, the model reads its fields and local style paths with
+`get_brick_spec`, then calls `get_style_choices` only when it must choose an
+unfamiliar value for one exact Brick/target/property path.
 
-## Composition reference reads
+## Canonical tools
 
-`selectCompositionReferences(compositions, catalog?)` is the shared pure
-boundary used by both prompt indexing and lookup. It validates untrusted
-documents in input order, keeps the first valid occurrence of each name, applies
-the catalog's composition exposure policy, detaches caller-owned objects, and
-returns a newly allocated deeply frozen array. To keep the name/description
-index inside the smallest reference-agent context profile, exposure stops
-deterministically after 128 selected references; prompt indexing and lookup
-therefore see the same bounded set. Omitting the catalog exposes every valid
-reference within that cap; supplying a malformed catalog fails closed to an
-empty array.
+`FACET_STAGE_TOOL_SPECS` contains eleven tools:
 
-The canonical `get_composition` tool accepts exactly `{ name: string }` and
-performs a read-only lookup in that selected snapshot. A successful read returns
-the complete serialized validated dataset in the normal structured observation
-with `outcome: "no_stage_change"`: no messages, patches, changed node ids, or
-shadow mutation occur. Unknown or disallowed names reject with
-`invalid_composition`; malformed or extra input fields reject with
-`invalid_input`. After a successful read, the model must author the stage
-separately with native stage tools.
+| Tool | Purpose |
+| --- | --- |
+| `render_page` | Strictly replace the complete Facet Document. |
+| `append_node` | Add one new Brick and attach it to an existing box. |
+| `set_node` | Insert or replace one Brick by id. |
+| `remove_node` | Remove one node and clean references. |
+| `say` | Send one short chat message. |
+| `get_pattern` | Read one exact indexed Pattern. |
+| `get_preset` | Read one exact same-Brick Preset. |
+| `get_brick_spec` | Read one compact Core Brick specification. |
+| `get_style_choices` | Read allowed values and meanings for one local style property. |
+| `inspect_stage` | Read a bounded stage summary. |
+| `inspect_node` | Read one bounded node subtree. |
 
-The exact dataset is the one role-specific exception to the generic observation
-data cap, so it is never replaced with a truncation marker. The surrounding
-provider loop must still enforce its total-context limit before another model
-call; if the complete result cannot fit, stop rather than pass a partial value.
-The public `formatAgentToolObservation` API remains capped and has no bypass
-option.
-
-## Catalog-aware enforcement
-
-Pass the same catalog into `executeStageTool` through `StageToolAssets`:
+Read inputs are exact:
 
 ```ts
-const result = executeStageTool(call, {
-  shadow,
-  assets: { themes, catalog, compositions },
-});
+const patternInput = { name: "hero" } satisfies GetPatternToolInput;
+const presetInput = { brick: "box", name: "panel" } satisfies GetPresetToolInput;
+const brickInput = { type: "progress" } satisfies GetBrickSpecToolInput;
+const choicesInput = {
+  brick: "progress",
+  target: "track",
+  property: "height",
+} satisfies GetStyleChoicesToolInput;
 ```
 
-`StageToolAssets.compositions` is an optional list of concrete native reference
-datasets. Both the prompt and `get_composition` pass it through
-`selectCompositionReferences`, so the offered name-description index and
-readable documents follow the same validation, dedupe, and catalog exposure
-policy.
+All four exact reads return `outcome: "no_stage_change"` with no messages,
+patches, changed ids, or shadow mutation. `get_pattern` returns an exact
+compatible reference tree; `get_preset` returns its unresolved metadata/style
+bundle; `get_brick_spec` projects Core's fields and local style paths; and
+`get_style_choices` returns property-local names with their meaning and usage
+guidance. Unknown names or paths fail closed with `not_available`.
 
-The executor enforces catalog policy at both write and reference-read boundaries:
+These exact read payloads are the narrow exception to the generic observation
+data cap. A provider loop must preserve the complete selected result for its
+first next-model delivery and stop at its total context limit rather than send
+partial asset data.
 
-- `render_page`, `append_node`, and `set_node` reject disallowed node types and
-  disallowed variants. For tone-capable bricks, a `tone` used without
-  an allowed `variant` is treated as a recipe selector and is rejected unless
-  the catalog advertises that name.
-- `get_composition` rejects names outside the catalog exposure allow-list and
-  never emits a stage effect.
-- `set_theme` rejects locked theme changes and names outside an allowed theme
-  list.
+## Strict execution
 
-Catalog-policy rejections from authoring tools have `outcome: "rejected"`,
-`applied: false`, `patch_count: 0`, a catalog-policy message, and a
-`next_action` telling the model to use an allowed brick, variant, or theme. An
-unavailable reference read instead uses the bounded
-`invalid_composition` result described above. Treat every rejection as a repair
-instruction, not as visible success.
+Pass the same snapshot used by the prompt to every execution:
 
-## LLM-facing observations
+```ts
+const result = executeStageTool(call, { shadow, assets });
+```
 
-Tool observations are structured JSON strings, not prose-only log lines. The
-model sees fields such as `outcome`, `applied`, `visible_to_visitor`,
-`warnings`, and `next_action`.
+`render_page`, `append_node`, and `set_node` validate against the effective
+Theme. An unknown field, Brick-owned style target/property, Preset, token name,
+or fixed choice rejects the complete call with structured repair errors and no
+patch. The renderer's later fail-safe behavior is not used to excuse invalid
+agent authoring.
 
-Important outcomes:
+The model may use four style forms on a Brick: omit style, Preset only, direct
+style only, or Preset plus deliberate direct overrides. Resolution is Theme
+default, then same-Brick Preset, then direct style.
+
+When adding a hierarchy below an existing parent, define unattached leaves with
+`set_node`, define inner boxes bottom-up with `set_node`, and call
+`append_node` only once for the completed top node. Attaching a descendant to
+the destination and also naming it inside the new box creates two parents and
+is invalid authoring practice.
+
+## Structured observations
+
+Tool observations are JSON strings with machine-readable fields including
+`outcome`, `applied`, `visible_to_visitor`, `warnings`, `errors`, and
+`next_action`.
 
 | Outcome | Meaning |
 | --- | --- |
-| `applied_visible` | The stage changed and the relevant change is reachable from the server-side render root. |
-| `applied_not_visible` | A patch applied, but the changed node is not visible yet; attach it to a visible box before claiming completion. |
-| `applied_with_warnings` | The stage changed but validation/folding dropped or sanitized something. |
-| `pending` | The edit is buffered, usually waiting for missing child nodes; no patch was emitted yet. |
-| `rejected` | The tool call was invalid or unsafe; no patch was emitted. |
-| `no_stage_change` | The tool intentionally did not mutate the stage, such as inspect or say. |
+| `applied_visible` | The requested stage change is visible. |
+| `applied_not_visible` | The stage changed, but the relevant Brick is unattached or otherwise not visible. |
+| `applied_with_warnings` | A non-authoring fold diagnostic occurred after a change. |
+| `pending` | A buffered edit still needs dependencies; no patch was emitted. |
+| `rejected` | The call was invalid or unsafe; no patch was emitted. |
+| `no_stage_change` | A read, inspect, or chat call intentionally did not mutate the stage. |
 
-See [`docs/AGENT-TOOL-RESULT-CONTRACT.md`](../../../docs/AGENT-TOOL-RESULT-CONTRACT.md)
-for the full policy. The key rule: never treat `applied_not_visible`,
-`applied_with_warnings`, `pending`, or `rejected` as visible completion.
-Use `parseAgentToolObservation` when your loop needs to branch on the structured
-fields rather than string-matching result text.
+For a request to build or change the page, reads and inspections are preparation
+only. The loop must continue through a mutation tool and receive
+`applied_visible` before claiming completion. Factual requests that require no
+page change do not need a mutation.
+
+See
+[`docs/AGENT-TOOL-RESULT-CONTRACT.md`](../../../docs/AGENT-TOOL-RESULT-CONTRACT.md)
+for the full result policy.

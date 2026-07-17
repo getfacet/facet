@@ -37,7 +37,7 @@ describe("backdrop hero render (DC-001)", () => {
           id: "root",
           type: "box",
           backdrop: "bg",
-          style: { minHeight: "screen", backdropScrim: "dark" },
+          style: { minHeight: "screen", backdropScrim: "strong" },
           children: ["headline"],
         } as unknown as FacetNode,
         bg: media("bg"),
@@ -45,7 +45,7 @@ describe("backdrop hero render (DC-001)", () => {
           id: "headline",
           type: "text",
           value: "Ship faster",
-          style: { size: "5xl", highlight: "band" },
+          style: { fontSize: "4xl", highlight: "warning" },
         } as unknown as FacetNode,
       }),
     );
@@ -58,50 +58,38 @@ describe("backdrop hero render (DC-001)", () => {
     expect(markup).toContain("position:absolute");
     expect(markup).toContain("position:relative");
     // The readability scrim tint is painted over the backdrop layer.
-    expect(markup).toContain("rgba(0, 0, 0, 0.5)");
+    expect(markup).toContain("rgba(15, 23, 42, 0.7)");
     // The min-height display token resolved to its section-scale value.
     expect(markup).toContain("min-height:100svh");
     // The flow child renders ON TOP: the headline copy at display size with a
     // highlight band behind the run.
     expect(markup).toContain("Ship faster");
-    expect(markup).toContain("font-size:80px");
-    expect(markup).toContain("linear-gradient(transparent 55%, #fde68a 55%)");
+    expect(markup).toContain("font-size:64px");
+    expect(markup).toContain("linear-gradient(0deg, #fde68a 0%, #fde68a 100%)");
   });
 
-  it("swaps the subtree color map for scheme:dark (bounded, restored by a nested light island)", () => {
+  it("ignores a retired subtree paint selector instead of swapping the Theme branch", () => {
+    const retiredPaintSelector = ["sche", "me"].join("");
     const markup = render(
       tree({
         root: {
           id: "root",
           type: "box",
-          style: { scheme: "dark" },
-          children: ["dark-copy", "light-island"],
+          style: { [retiredPaintSelector]: "dark" },
+          children: ["copy"],
         } as unknown as FacetNode,
-        "dark-copy": {
-          id: "dark-copy",
+        copy: {
+          id: "copy",
           type: "text",
-          value: "on dark",
-          style: { color: "fg" },
-        } as unknown as FacetNode,
-        "light-island": {
-          id: "light-island",
-          type: "box",
-          style: { scheme: "light" },
-          children: ["light-copy"],
-        } as unknown as FacetNode,
-        "light-copy": {
-          id: "light-copy",
-          type: "text",
-          value: "on light",
-          style: { color: "fg" },
+          value: "one Theme branch",
+          style: { color: "foreground" },
         } as unknown as FacetNode,
       }),
     );
 
-    // scheme:dark flips the child color map: `fg` resolves to the dark palette.
-    expect(markup).toContain("color:#f5f5f7");
-    // A nested scheme:light island restores the light palette for its subtree.
-    expect(markup).toContain("color:#1a1d23");
+    expect(markup).toContain("one Theme branch");
+    expect(markup).toContain("color:#172033");
+    expect(markup).not.toContain("#f5f5f7");
   });
 });
 
@@ -220,7 +208,7 @@ describe("backdrop flow-only discipline (DC-004)", () => {
           id: "root",
           type: "box",
           backdrop: "bg",
-          style: { backdropScrim: "dark" },
+          style: { backdropScrim: "strong" },
           children: ["nav", "headline"],
         } as unknown as FacetNode,
         bg: media("bg"),
@@ -253,8 +241,8 @@ describe("backdrop flow-only discipline (DC-004)", () => {
   });
 });
 
-// ── video backdrop + scheme-own-bg (regressions the review caught) ───────────
-describe("backdrop video cover mode + scheme own background", () => {
+// ── video backdrop + retired subtree mode regression ────────────────────────
+describe("backdrop video cover mode", () => {
   it("paints a kind:video backdrop as an aria-hidden, controls-suppressed cover layer", () => {
     const markup = render(
       tree({
@@ -284,30 +272,6 @@ describe("backdrop video cover mode + scheme own background", () => {
     expect(markup).toContain("position:absolute");
     expect(markup).toContain("z-index:-2");
     expect(markup).toContain("Motion hero");
-  });
-
-  it("scheme:dark paints the declaring box's OWN background from the dark palette (legible band)", () => {
-    const markup = render(
-      tree({
-        root: {
-          id: "root",
-          type: "box",
-          style: { scheme: "dark", bg: "bg" },
-          children: ["copy"],
-        } as unknown as FacetNode,
-        copy: {
-          id: "copy",
-          type: "text",
-          value: "dark band",
-          style: { color: "fg" },
-        } as unknown as FacetNode,
-      }),
-    );
-    // The box's OWN bg resolves to the DARK palette (#0b0b0f), not the light
-    // default — so the section is dark under its dark-palette (#f5f5f7) text.
-    expect(markup).toContain("#0b0b0f"); // dark bg on the box itself
-    expect(markup).toContain("#f5f5f7"); // dark-palette fg on the child copy
-    // (near-white text on near-black bg = legible, the "dark band" the token means)
   });
 });
 

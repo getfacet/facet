@@ -12,10 +12,12 @@ const REGISTERED_BRICKS = [
   "loading",
   "input",
 ] as const;
+const ALL_DRAWABLE_BRICKS = [...BESPOKE_BRICKS, ...REGISTERED_BRICKS] as const;
 const RETIRED_BRICKS = ["button", "tabs", "nav", "metric", "stat", "form", "filterBar"];
 
 describe("BRICK_RENDERERS", () => {
   it("has exactly one entry per drawable final brick", () => {
+    expect(ALL_DRAWABLE_BRICKS).toHaveLength(11);
     expect(Object.keys(BRICK_RENDERERS).sort()).toEqual([...REGISTERED_BRICKS].sort());
 
     const accountedFor = [...BESPOKE_BRICKS, ...Object.keys(BRICK_RENDERERS)];

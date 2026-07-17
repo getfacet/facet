@@ -117,7 +117,7 @@ describe("protocol event contract (type-level)", () => {
       screen: "pricing",
       toggled: { faq: "shown" },
       viewport: "narrow",
-      scheme: "dark",
+      colorMode: "dark",
     };
     const action: FacetAction = { kind: "agent", name: "submit" };
     const visit = {
@@ -148,7 +148,7 @@ describe("protocol event contract (type-level)", () => {
   });
 
   it("a ClientEvent carrying view stays assignable to CollectedEvent (forward ⊆ collected)", () => {
-    const view: ViewSnapshot = { screen: "pricing", scheme: "light" };
+    const view: ViewSnapshot = { screen: "pricing", colorMode: "light" };
     const events: ClientEvent[] = [
       { kind: "visit", visitor: { visitorId: "v" }, view },
       { kind: "message", text: "hi", view },

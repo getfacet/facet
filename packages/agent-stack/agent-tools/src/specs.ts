@@ -7,23 +7,30 @@ const BRICK_ROSTER = BRICK_TYPES.join(", ");
 
 const NODE_SCHEMA = {
   type: "object",
-  description: `A Facet stage brick. Bricks are ${BRICK_ROSTER}. Box is the only container. No raw HTML/JS/CSS, client-side fetch, external resolver, expression, or formula. Data binding is limited to named top-level tree.data datasets referenced by a brick's from field. Variant names must be allowed by the active catalog policy.`,
+  description: `One native Facet Brick (${BRICK_ROSTER}). Use get_brick_spec before authoring unfamiliar fields or styles. No raw HTML, JavaScript, or CSS.`,
 } as const;
 
 const TREE_SCHEMA = {
   type: "object",
   description:
-    "The full Facet stage tree: { root, nodes, screens?, entry?, theme? }. Every brick and theme must pass the active catalog policy before patches are emitted.",
+    "A complete Facet document with root, nodes, and optional screens, entry, and data. Use get_brick_spec before authoring unfamiliar Bricks or styles.",
+} as const;
+
+const NAME_SCHEMA = {
+  type: "string",
+  description: "One exact name from the corresponding active index.",
 } as const;
 
 export const FACET_STAGE_TOOL_NAMES = [
   "render_page",
   "append_node",
-  "get_composition",
   "set_node",
   "remove_node",
   "say",
-  "set_theme",
+  "get_brick_spec",
+  "get_style_choices",
+  "get_preset",
+  "get_pattern",
   "inspect_stage",
   "inspect_node",
 ] as const satisfies readonly FacetStageToolName[];
@@ -31,59 +38,33 @@ export const FACET_STAGE_TOOL_NAMES = [
 export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "render_page",
-    description:
-      "Replace the entire page with a new Facet stage tree. Use for the first paint or a large restructure. The executor rejects catalog policy violations before emitting patches.",
+    description: "Replace the complete page after checking unfamiliar Brick details.",
     parameters: {
       type: "object",
-      properties: {
-        tree: TREE_SCHEMA,
-      },
+      properties: { tree: TREE_SCHEMA },
       required: ["tree"],
       additionalProperties: false,
     },
   },
   {
     name: "append_node",
-    description:
-      "Add one brick as the last child of the existing box parentId. Use for small incremental page additions. Catalog policy controls allowed brick types and variants.",
+    description: "Append one Brick to an existing box parent.",
     parameters: {
       type: "object",
       properties: {
-        parentId: {
-          type: "string",
-          description: "The id of an existing box container.",
-        },
-        ["node"]: NODE_SCHEMA,
+        parentId: { type: "string", description: "The id of an existing box container." },
+        node: NODE_SCHEMA,
       },
       required: ["parentId", "node"],
       additionalProperties: false,
     },
   },
   {
-    name: "get_composition",
-    description:
-      "Optionally read one catalog-exposed reference dataset by name. This is read-only and does not edit the stage: inspect its complete native Facet brick JSON, then author the stage separately with stage tools.",
-    parameters: {
-      type: "object",
-      properties: {
-        name: {
-          type: "string",
-          description: "A composition name from the offered COMPOSITIONS list.",
-        },
-      },
-      required: ["name"],
-      additionalProperties: false,
-    },
-  },
-  {
     name: "set_node",
-    description:
-      "Insert or replace one brick by id. Reuse an existing id to update that brick in place. Catalog policy controls allowed brick types and variants.",
+    description: "Insert or replace one Brick by its id.",
     parameters: {
       type: "object",
-      properties: {
-        ["node"]: NODE_SCHEMA,
-      },
+      properties: { node: NODE_SCHEMA },
       required: ["node"],
       additionalProperties: false,
     },
@@ -93,9 +74,7 @@ export const FACET_STAGE_TOOL_SPECS = [
     description: "Delete one node from the page by id.",
     parameters: {
       type: "object",
-      properties: {
-        nodeId: { type: "string", description: "The node id to remove." },
-      },
+      properties: { nodeId: { type: "string", description: "The node id to remove." } },
       required: ["nodeId"],
       additionalProperties: false,
     },
@@ -105,30 +84,75 @@ export const FACET_STAGE_TOOL_SPECS = [
     description: "Send a short chat message to the visitor.",
     parameters: {
       type: "object",
-      properties: {
-        text: { type: "string", description: "The chat text to send." },
-      },
+      properties: { text: { type: "string", description: "The chat text to send." } },
       required: ["text"],
       additionalProperties: false,
     },
   },
   {
-    name: "set_theme",
-    description:
-      "Restyle the whole page by selecting a theme by name only. Never pass CSS values or colors. A locked catalog policy rejects theme switches.",
+    name: "get_brick_spec",
+    description: "Read exact fields and compact local style paths for one unfamiliar Brick.",
     parameters: {
       type: "object",
       properties: {
-        name: { type: "string", description: "A theme name from the offered THEMES list." },
+        type: {
+          type: "string",
+          enum: BRICK_TYPES,
+          description: "One exact Brick type from the Brick index.",
+        },
       },
+      required: ["type"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_style_choices",
+    description:
+      "Read allowed values for one exact Brick-owned style property when its choice is unfamiliar.",
+    parameters: {
+      type: "object",
+      properties: {
+        brick: { type: "string", enum: BRICK_TYPES, description: "The owning Brick type." },
+        target: {
+          type: "string",
+          description: 'Exact "root" or Brick-owned target from get_brick_spec.',
+        },
+        property: {
+          type: "string",
+          description: "Exact local property from the selected target in get_brick_spec.",
+        },
+      },
+      required: ["brick", "target", "property"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_preset",
+    description: "Read one exact same-Brick Preset's metadata and unresolved style names.",
+    parameters: {
+      type: "object",
+      properties: {
+        brick: { type: "string", enum: BRICK_TYPES, description: "The Preset's Brick type." },
+        name: NAME_SCHEMA,
+      },
+      required: ["brick", "name"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_pattern",
+    description:
+      "Read one exact compatible Pattern for reference, then adapt and author native Bricks separately.",
+    parameters: {
+      type: "object",
+      properties: { name: NAME_SCHEMA },
       required: ["name"],
       additionalProperties: false,
     },
   },
   {
     name: "inspect_stage",
-    description:
-      "Inspect a bounded summary of the current local stage shadow without emitting a patch.",
+    description: "Inspect a bounded summary of the current local stage without changing it.",
     parameters: {
       type: "object",
       properties: {
@@ -144,8 +168,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   },
   {
     name: "inspect_node",
-    description:
-      "Inspect one node and a bounded descendant slice from the current local stage shadow without emitting a patch.",
+    description: "Inspect one node and a bounded descendant slice without changing the stage.",
     parameters: {
       type: "object",
       properties: {

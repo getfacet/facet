@@ -3,7 +3,7 @@
  * tool workflow, operator assets, and deployer page brief.
  */
 import { FACET_STAGE_TOOL_SPECS, buildFacetAgentSystemPrompt } from "@facet/agent-tools";
-import type { FacetCatalog, FacetComposition, FacetTheme } from "@facet/core";
+import type { StageToolAssets } from "@facet/agent-tools";
 
 import type { ToolSpec } from "../provider.js";
 
@@ -41,13 +41,8 @@ like a real service page an agent developer could ship to visitors.
   incremental edits that reuse existing node ids. Use chat only as a short
   acknowledgement alongside the page change.`;
 
-/** Operator assets injected into prompt layer 2: themes offered to the model by
- * NAME and concrete native references it may inspect read-only by name. */
-export interface PromptAssets {
-  readonly themes: readonly FacetTheme[];
-  readonly compositions: readonly FacetComposition[];
-  readonly catalog?: FacetCatalog;
-}
+/** The exact immutable Theme/Preset/Pattern snapshot shared by one turn. */
+export type PromptAssets = StageToolAssets;
 
 /** Layers 1 and 2: vocabulary, tool workflow, optional assets, and page brief. */
 export function buildSystem(guide: string, assets?: PromptAssets): string {

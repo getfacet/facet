@@ -24,7 +24,6 @@ import {
   type TableNode,
   type TableRow,
   type TextNode,
-  type Tone,
 } from "./nodes.js";
 
 const FINAL_BRICK_TYPES = [
@@ -42,28 +41,28 @@ const FINAL_BRICK_TYPES = [
 ] as const;
 
 const RETIRED_PUBLIC_NAMES = [
-  "PRIMITIVE_BRICK_TYPES", // composition-hard-cut: allowed-negative
-  "PrimitiveBrickType", // composition-hard-cut: allowed-negative
-  "PrimitiveBrickNode", // composition-hard-cut: allowed-negative
-  "INTRINSIC_COMPONENT_TYPES", // composition-hard-cut: allowed-negative
-  "IntrinsicComponentType", // composition-hard-cut: allowed-negative
-  "LEGACY_COMPONENT_TYPES", // composition-hard-cut: allowed-negative
-  "LegacyComponentType", // composition-hard-cut: allowed-negative
-  "COMPONENT_NODE_TYPES", // composition-hard-cut: allowed-negative
-  "ComponentNodeType", // composition-hard-cut: allowed-negative
-  "IntrinsicComponentNode", // composition-hard-cut: allowed-negative
-  "LegacyComponentNode", // composition-hard-cut: allowed-negative
-  "ComponentNode", // composition-hard-cut: allowed-negative
-  "ButtonNode", // composition-hard-cut: allowed-negative
+  "PRIMITIVE_BRICK_TYPES", // style-hard-cut: allowed-negative
+  "PrimitiveBrickType", // style-hard-cut: allowed-negative
+  "PrimitiveBrickNode", // style-hard-cut: allowed-negative
+  "INTRINSIC_COMPONENT_TYPES", // style-hard-cut: allowed-negative
+  "IntrinsicComponentType", // style-hard-cut: allowed-negative
+  "LEGACY_COMPONENT_TYPES", // style-hard-cut: allowed-negative
+  "LegacyComponentType", // style-hard-cut: allowed-negative
+  "COMPONENT_NODE_TYPES", // style-hard-cut: allowed-negative
+  "ComponentNodeType", // style-hard-cut: allowed-negative
+  "IntrinsicComponentNode", // style-hard-cut: allowed-negative
+  "LegacyComponentNode", // style-hard-cut: allowed-negative
+  "ComponentNode", // style-hard-cut: allowed-negative
+  "ButtonNode", // style-hard-cut: allowed-negative
   "TabItem",
-  "TabsNode", // composition-hard-cut: allowed-negative
+  "TabsNode", // style-hard-cut: allowed-negative
   "NavItem",
-  "NavNode", // composition-hard-cut: allowed-negative
-  "MetricNode", // composition-hard-cut: allowed-negative
-  "StatNode", // composition-hard-cut: allowed-negative
-  "FormNode", // composition-hard-cut: allowed-negative
+  "NavNode", // style-hard-cut: allowed-negative
+  "MetricNode", // style-hard-cut: allowed-negative
+  "StatNode", // style-hard-cut: allowed-negative
+  "FormNode", // style-hard-cut: allowed-negative
   "FilterBarFilter",
-  "FilterBarNode", // composition-hard-cut: allowed-negative
+  "FilterBarNode", // style-hard-cut: allowed-negative
 ] as const;
 
 const NODES_SOURCE = readFileSync(new URL("./nodes.ts", import.meta.url), "utf8");
@@ -140,25 +139,18 @@ describe("unified public node model", () => {
     expect(isContainer(table)).toBe(false);
   });
 
-  it("preserves the six survivor interfaces and supporting public types", () => {
+  it("gives every data and feedback brick an optional closed style", () => {
     expectTypeOf<keyof TableNode>().toEqualTypeOf<
-      "id" | "type" | "columns" | "rows" | "caption" | "variant" | "from"
+      "id" | "type" | "columns" | "rows" | "caption" | "from" | "style"
     >();
     expectTypeOf<keyof ChartNode>().toEqualTypeOf<
-      "id" | "type" | "kind" | "series" | "labels" | "title" | "variant" | "from"
+      "id" | "type" | "kind" | "series" | "labels" | "title" | "from" | "style"
     >();
-    expectTypeOf<keyof ListNode>().toEqualTypeOf<"id" | "type" | "items" | "variant" | "from">();
-    expectTypeOf<keyof KeyValueNode>().toEqualTypeOf<
-      "id" | "type" | "items" | "variant" | "from"
-    >();
-    expectTypeOf<keyof ProgressNode>().toEqualTypeOf<
-      "id" | "type" | "value" | "label" | "tone" | "variant"
-    >();
-    expectTypeOf<keyof LoadingNode>().toEqualTypeOf<"id" | "type" | "label" | "variant">();
+    expectTypeOf<keyof ListNode>().toEqualTypeOf<"id" | "type" | "items" | "from" | "style">();
+    expectTypeOf<keyof KeyValueNode>().toEqualTypeOf<"id" | "type" | "items" | "from" | "style">();
+    expectTypeOf<keyof ProgressNode>().toEqualTypeOf<"id" | "type" | "value" | "label" | "style">();
+    expectTypeOf<keyof LoadingNode>().toEqualTypeOf<"id" | "type" | "label" | "style">();
     expectTypeOf<ChartKind>().toEqualTypeOf<"bar" | "line" | "donut">();
-    expectTypeOf<Tone>().toEqualTypeOf<
-      "neutral" | "accent" | "info" | "success" | "warning" | "danger"
-    >();
 
     const column: TableColumn = { key: "amount", label: "Amount", sortable: true };
     const row: TableRow = { amount: 12 };
@@ -185,7 +177,7 @@ describe("primitive node regression guards", () => {
   it("keeps shared look and box concerns inherited from private packs", () => {
     const boxOwn = interfaceOwnMembers("BoxNode");
     const textOwn = interfaceOwnMembers("TextNode");
-    for (const field of ["style", "activeVariant", "activeStyle", "active"] as const) {
+    for (const field of ["style", "activeWhen"] as const) {
       expect(boxOwn).not.toContain(field);
       expect(textOwn).not.toContain(field);
     }
@@ -209,36 +201,23 @@ describe("primitive node regression guards", () => {
     expectTypeOf<keyof BoxNode>().toEqualTypeOf<
       | "id"
       | "type"
-      | "variant"
       | "style"
       | "onPress"
       | "onHold"
       | "hidden"
       | "backdrop"
       | "overlay"
-      | "activeVariant"
-      | "activeStyle"
-      | "active"
+      | "activeWhen"
       | "children"
     >();
     expectTypeOf<keyof TextNode>().toEqualTypeOf<
-      | "id"
-      | "type"
-      | "value"
-      | "variant"
-      | "style"
-      | "from"
-      | "column"
-      | "row"
-      | "activeVariant"
-      | "activeStyle"
-      | "active"
+      "id" | "type" | "value" | "style" | "from" | "column" | "row" | "activeWhen"
     >();
     expectTypeOf<keyof MediaNode>().toEqualTypeOf<
-      "id" | "type" | "kind" | "src" | "variant" | "alt" | "poster" | "controls" | "style"
+      "id" | "type" | "kind" | "src" | "alt" | "poster" | "controls" | "style"
     >();
     expectTypeOf<keyof InputNode>().toEqualTypeOf<
-      "id" | "type" | "name" | "variant" | "input" | "options" | "label" | "placeholder" | "style"
+      "id" | "type" | "name" | "input" | "options" | "label" | "placeholder" | "style"
     >();
   });
 });

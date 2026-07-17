@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { APPEARS } from "@facet/core";
+import { ENTER_ANIMATIONS } from "@facet/core";
 import { APPEAR_CSS, appearClass } from "./appear.js";
 
 // APPEAR_CSS is the ONE place appear animation CSS lives (framework-owned,
@@ -81,11 +81,11 @@ describe("appearClass", () => {
     expect(appearClass([])).toBeUndefined();
   });
 
-  // Drift net derived from core's APPEARS: adding a token to the palette
+  // Drift net derived from core's enterAnimation domain: adding a choice
   // without teaching appearClass/APPEAR_CSS about it must fail HERE, not
   // silently render the new token as a no-op class.
-  it("covers every core APPEARS token: class + keyframes for all but 'none'", () => {
-    for (const token of APPEARS) {
+  it("covers every core enterAnimation choice: class + keyframes for all but 'none'", () => {
+    for (const token of ENTER_ANIMATIONS) {
       if (token === "none") {
         expect(appearClass({ appear: token })).toBeUndefined();
         continue;

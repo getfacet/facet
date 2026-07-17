@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import type { NodeId, Scheme, SortDirection, ViewSnapshot, Viewport } from "@facet/core";
+import type {
+  ColorMode,
+  ColorModePreference,
+  NodeId,
+  SortDirection,
+  ViewSnapshot,
+  Viewport,
+} from "@facet/core";
 
 /**
  * Renderer-owned viewport breakpoints. Report-only: they decide which closed
@@ -29,7 +36,7 @@ export function captureViewSnapshot(
   currentScreen: string | undefined,
   visibilityOverrides: ReadonlyMap<NodeId, boolean>,
   viewport?: Viewport,
-  scheme?: Scheme,
+  colorMode?: ColorMode,
   sortOverrides?: ReadonlyMap<NodeId, { column: string; direction: SortDirection }>,
 ): ViewSnapshot {
   const snapshot: {
@@ -37,7 +44,7 @@ export function captureViewSnapshot(
     toggled?: Record<string, "shown" | "hidden">;
     sort?: Record<string, { column: string; direction: SortDirection }>;
     viewport?: Viewport;
-    scheme?: Scheme;
+    colorMode?: ColorMode;
   } = {};
 
   if (currentScreen !== undefined) {
@@ -69,8 +76,8 @@ export function captureViewSnapshot(
   if (viewport !== undefined) {
     snapshot.viewport = viewport;
   }
-  if (scheme !== undefined) {
-    snapshot.scheme = scheme;
+  if (colorMode !== undefined) {
+    snapshot.colorMode = colorMode;
   }
 
   return snapshot;
@@ -78,19 +85,31 @@ export function captureViewSnapshot(
 
 export interface DeviceClasses {
   viewport?: Viewport;
-  scheme?: Scheme;
+  /** Effective mode only; the host's `system` preference never enters a snapshot. */
+  colorMode: ColorMode;
+}
+
+function colorModePreference(value: unknown): ColorModePreference {
+  return value === "light" || value === "dark" ? value : "system";
 }
 
 /**
  * One synchronous read of the device classes via `matchMedia`. Guarded for SSR
- * and older browsers: returns `{}` when `window`/`matchMedia` is unavailable so
- * an event simply carries no `viewport`/`scheme`.
+ * and older browsers: viewport is omitted and `system` resolves to light until
+ * browser detection is available.
  */
-function detectDeviceClasses(): DeviceClasses {
+function detectDeviceClasses(preference: ColorModePreference): DeviceClasses {
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-    return {};
+    return { colorMode: preference === "dark" ? "dark" : "light" };
   }
-  const classes: DeviceClasses = {};
+  const classes: DeviceClasses = {
+    colorMode:
+      preference === "system"
+        ? window.matchMedia(DARK_QUERY).matches
+          ? "dark"
+          : "light"
+        : preference,
+  };
   if (window.matchMedia(NARROW_QUERY).matches) {
     classes.viewport = "narrow";
   } else if (window.matchMedia(WIDE_QUERY).matches) {
@@ -98,29 +117,32 @@ function detectDeviceClasses(): DeviceClasses {
   } else {
     classes.viewport = "medium";
   }
-  classes.scheme = window.matchMedia(DARK_QUERY).matches ? "dark" : "light";
   return classes;
 }
 
 /**
- * Report-only viewport/scheme detection. Subscribes to the width and
- * color-scheme media queries and mirrors the result in React state; the
+ * Report-only viewport/effective-color-mode detection. Subscribes to width and,
+ * only for `system`, color-scheme media queries and mirrors the result in React state; the
  * listeners do NOTHING but call `setState` (they have no transport to reach —
- * DC-006). Returns `{}` when detection is unavailable. This module is fenced
- * out of layout/boxStyle resolution on purpose (RISK-INV-5).
+ * DC-006). This module is fenced out of layout resolution except for returning
+ * the paint-only effective mode to StageRenderer (RISK-INV-5).
  */
-export function useViewportScheme(): DeviceClasses {
-  const [classes, setClasses] = useState<DeviceClasses>(detectDeviceClasses);
+export function useViewportColorMode(rawPreference: unknown = "system"): DeviceClasses {
+  const preference = colorModePreference(rawPreference);
+  const [classes, setClasses] = useState<DeviceClasses>(() => detectDeviceClasses(preference));
 
   useEffect(() => {
     if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      setClasses(detectDeviceClasses(preference));
       return;
     }
-    const update = (): void => setClasses(detectDeviceClasses());
+    const update = (): void => setClasses(detectDeviceClasses(preference));
     // Re-read after mount in case the environment changed between the initial
     // render and commit, then keep in sync with the three queries.
     update();
-    const queries = [NARROW_QUERY, WIDE_QUERY, DARK_QUERY].map((q) => window.matchMedia(q));
+    const queryNames =
+      preference === "system" ? [NARROW_QUERY, WIDE_QUERY, DARK_QUERY] : [NARROW_QUERY, WIDE_QUERY];
+    const queries = queryNames.map((query) => window.matchMedia(query));
     for (const query of queries) {
       query.addEventListener("change", update);
     }
@@ -129,7 +151,7 @@ export function useViewportScheme(): DeviceClasses {
         query.removeEventListener("change", update);
       }
     };
-  }, []);
+  }, [preference]);
 
   return classes;
 }

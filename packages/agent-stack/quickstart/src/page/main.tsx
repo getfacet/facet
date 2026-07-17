@@ -14,6 +14,7 @@ import { isTreeShaped } from "@facet/core";
 import type {
   ClientEvent,
   CollectedEvent,
+  ColorModePreference,
   FacetAction,
   FacetTheme,
   FacetTree,
@@ -39,27 +40,23 @@ import {
 
 declare global {
   interface Window {
-    __FACET_THEMES__?: unknown;
+    __FACET_THEME__?: unknown;
     __FACET_INITIAL_STAGE__?: unknown;
   }
 }
 
 /**
- * Read the boot-shipped theme map (Decision 2 seam). Floor-guarded: only an
- * array of objects carrying a string `name` survives — anything else (absent,
- * a non-array, JSON junk) becomes `undefined`, so `StageRenderer` falls back to
- * the default theme. `validateTheme` remains the real security boundary; this is
- * a shape floor after the JSON round trip.
+ * Read the one boot-shipped Theme. `StageRenderer` performs the complete,
+ * hostile-input-safe validation; this is only a cheap shape floor after the
+ * JSON round trip.
  */
-function readThemes(): readonly FacetTheme[] | undefined {
-  const raw = window.__FACET_THEMES__;
-  if (!Array.isArray(raw)) return undefined;
-  const themes = raw.filter(
-    (t): t is FacetTheme =>
-      typeof t === "object" && t !== null && typeof (t as { name?: unknown }).name === "string",
-  );
-  return themes.length > 0 ? themes : undefined;
+function readTheme(): FacetTheme | undefined {
+  const raw = window.__FACET_THEME__;
+  if (typeof raw !== "object" || raw === null) return undefined;
+  return typeof (raw as { name?: unknown }).name === "string" ? (raw as FacetTheme) : undefined;
 }
+
+const COLOR_MODE: ColorModePreference = "system";
 
 /**
  * Read the boot-shipped seed stage (Decision 4 / Fix A seam) so the first paint
@@ -97,7 +94,7 @@ function makeVisitor(): VisitorContext {
 
 function Page(): ReactNode {
   const visitor = useMemo(makeVisitor, []);
-  const themes = useMemo(readThemes, []);
+  const theme = useMemo(readTheme, []);
   const initialTree = useMemo(readInitialStage, []);
   const transport = useMemo(() => new SseTransport("", visitor), [visitor]);
   // Conditional spread: exactOptionalPropertyTypes forbids an explicit
@@ -122,11 +119,14 @@ function Page(): ReactNode {
   const onViewSnapshot = useCallback(
     (snap: ViewSnapshot): void => {
       viewRef.current = snap;
+      const resolved = resolveTheme(theme, snap.colorMode);
+      document.body.style.background = resolved.color.background;
+      document.body.style.color = resolved.color.foreground;
       // Best-effort persistence (persistView swallows storage failures); this
       // callback only stores — it never sends.
       persistView(agentId, snap);
     },
-    [agentId],
+    [agentId, theme],
   );
 
   // Fire the initial visit → first paint. A returning visitor's visit reports
@@ -135,23 +135,6 @@ function Page(): ReactNode {
   useEffect(() => {
     send(withView({ kind: "visit", visitor }, persistedView ?? viewRef.current));
   }, [send, visitor, persistedView]);
-
-  // Paint the page CANVAS (document.body, outside the tree) with the resolved
-  // theme's bg/fg so a dark theme actually darkens the whole page, not just the
-  // token-styled bricks. StageRenderer/ChatDock are untouched — the spec keeps
-  // the dock on the default palette. The default theme resolves to white/near-
-  // black, visually identical to today. Guard the tree read the way StageRenderer
-  // does (a raw-path tree can be null/primitive), then let `resolveTheme`
-  // floor-guard the name.
-  useEffect(() => {
-    const themeName: unknown =
-      typeof tree === "object" && tree !== null
-        ? (tree as { readonly theme?: unknown }).theme
-        : undefined;
-    const resolved = resolveTheme(themeName, themes);
-    document.body.style.background = resolved.color.bg;
-    document.body.style.color = resolved.color.fg;
-  }, [tree, themes]);
 
   // Fold new agent says into the conversation log; a server reset shrinks
   // `chat`, in which case rebuild instead of appending duplicates.
@@ -194,8 +177,9 @@ function Page(): ReactNode {
           onAction={onAction}
           onRecord={onRecord}
           transition={transition}
+          colorMode={COLOR_MODE}
           onViewSnapshot={onViewSnapshot}
-          {...(themes !== undefined ? { themes } : {})}
+          {...(theme !== undefined ? { theme } : {})}
         />
       </div>
       <ChatDock messages={log} onSend={onSend} />
@@ -213,7 +197,7 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "16px",
-    fontFamily: DEFAULT_THEME.fontFamily?.sans ?? "sans-serif",
+    fontFamily: DEFAULT_THEME.tokens.fontFamily.sans,
   },
   stage: { flex: 1 },
 } as const;

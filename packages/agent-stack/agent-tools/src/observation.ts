@@ -1,8 +1,9 @@
-import { treeRenderableNodeIds, type FacetTree, type NodeId } from "@facet/core";
+import { MAX_AUTHOR_ISSUES, treeRenderableNodeIds, type FacetTree, type NodeId } from "@facet/core";
 import type {
   AgentToolObservationData,
   AgentToolObservationStatus,
   AgentToolOutcome,
+  StageToolAuthorIssue,
   StageToolErrorCode,
   StageToolObservation,
 } from "./types.js";
@@ -18,6 +19,10 @@ const MAX_MESSAGE_CHARS = 500;
 const MAX_NEXT_ACTION_CHARS = 300;
 const MAX_SUMMARY_CHARS = 500;
 const MAX_DATA_CHARS = 2048;
+const MAX_AUTHOR_PATH_CHARS = 240;
+const MAX_AUTHOR_MESSAGE_CHARS = 240;
+const MAX_AUTHOR_ALLOWED_VALUES = 32;
+const MAX_AUTHOR_ALLOWED_CHARS = 80;
 
 export interface AgentToolObservationInput {
   readonly tool: string;
@@ -33,6 +38,8 @@ export interface AgentToolObservationInput {
   readonly nextAction?: string;
   readonly summary?: string;
   readonly code?: StageToolErrorCode | "pending";
+  readonly errors?: readonly StageToolAuthorIssue[];
+  readonly omittedErrorCount?: number;
   /** Generic observation data is always capped; this API exposes no bypass. */
   readonly data?: string;
 }
@@ -44,6 +51,7 @@ export function formatAgentToolObservation(input: AgentToolObservationInput): St
   const status = statusForOutcome(input.outcome);
   const code = codeForOutcome(input.outcome, input.code);
   const dataField = boundedData(input.data);
+  const authorErrors = boundedAuthorErrors(input.errors, input.omittedErrorCount);
   const data: AgentToolObservationData = {
     version: CONTRACT_VERSION,
     tool: truncate(input.tool, MAX_TOOL_CHARS),
@@ -61,6 +69,12 @@ export function formatAgentToolObservation(input: AgentToolObservationInput): St
     next_action: truncate(input.nextAction ?? "", MAX_NEXT_ACTION_CHARS),
     summary: truncate(input.summary ?? "", MAX_SUMMARY_CHARS),
     ...(code !== undefined ? { code } : {}),
+    ...(authorErrors === undefined
+      ? {}
+      : {
+          errors: authorErrors.items,
+          omitted_error_count: authorErrors.omitted,
+        }),
     ...(dataField !== undefined ? { data: dataField } : {}),
   };
   return { status: data.status, text: JSON.stringify(data), data };
@@ -96,9 +110,40 @@ function stageMetadataChanged(before: FacetTree, after: FacetTree): boolean {
   return (
     before.root !== after.root ||
     before.entry !== after.entry ||
-    before.theme !== after.theme ||
     stableJson(before.screens) !== stableJson(after.screens)
   );
+}
+
+function boundedAuthorErrors(
+  errors: readonly StageToolAuthorIssue[] | undefined,
+  omittedErrorCount: number | undefined,
+): { readonly items: readonly StageToolAuthorIssue[]; readonly omitted: number } | undefined {
+  if (errors === undefined && omittedErrorCount === undefined) return undefined;
+  const source = errors ?? [];
+  const shown = source.slice(0, MAX_AUTHOR_ISSUES).map((issue): StageToolAuthorIssue => {
+    const allowed = issue.allowed
+      ?.slice(0, MAX_AUTHOR_ALLOWED_VALUES)
+      .map((value) => safeAuthorText(value, MAX_AUTHOR_ALLOWED_CHARS));
+    return {
+      path: safeAuthorText(issue.path, MAX_AUTHOR_PATH_CHARS),
+      message: safeAuthorText(issue.message, MAX_AUTHOR_MESSAGE_CHARS),
+      ...(allowed === undefined ? {} : { allowed }),
+    };
+  });
+  return {
+    items: shown,
+    omitted: nonNegativeInteger(omittedErrorCount) + Math.max(0, source.length - shown.length),
+  };
+}
+
+function safeAuthorText(value: string, maxChars: number): string {
+  const output: string[] = [];
+  const scanLimit = Math.min(value.length, maxChars * 4);
+  for (let index = 0; index < scanLimit && output.length < maxChars; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0x20 && !(code >= 0x7f && code <= 0x9f)) output.push(value[index] ?? "");
+  }
+  return output.join("");
 }
 
 function boundedList<T>(
@@ -167,9 +212,11 @@ function isObservationData(value: unknown): value is AgentToolObservationData {
     typeof value["next_action"] === "string" &&
     typeof value["summary"] === "string" &&
     (value["code"] === undefined || isErrorCode(value["code"])) &&
+    hasValidAuthorErrors(value) &&
     (value["data"] === undefined || typeof value["data"] === "string")
   ) {
-    return hasCoherentOutcome(value as unknown as AgentToolObservationData);
+    const observation = value as unknown as AgentToolObservationData;
+    return hasCoherentOutcome(observation) && hasCoherentAuthorErrors(observation);
   }
   return false;
 }
@@ -299,11 +346,61 @@ function isErrorCode(value: unknown): value is StageToolErrorCode | "pending" {
     value === "invalid_input" ||
     value === "invalid_tree" ||
     value === "invalid_parent" ||
-    value === "invalid_composition" ||
+    value === "invalid_authoring" ||
+    value === "not_available" ||
     value === "patch_limit" ||
     value === "fold_error" ||
     value === "pending"
   );
+}
+
+function hasValidAuthorErrors(value: Record<string, unknown>): boolean {
+  const errors = value["errors"];
+  const omitted = value["omitted_error_count"];
+  if (errors === undefined && omitted === undefined) return true;
+  return (
+    Array.isArray(errors) &&
+    errors.length <= MAX_AUTHOR_ISSUES &&
+    errors.every(isAuthorIssue) &&
+    isNonNegativeInteger(omitted)
+  );
+}
+
+function isAuthorIssue(value: unknown): value is StageToolAuthorIssue {
+  if (!isRecord(value)) return false;
+  const allowed = value["allowed"];
+  return (
+    typeof value["path"] === "string" &&
+    value["path"].length <= MAX_AUTHOR_PATH_CHARS &&
+    isControlFree(value["path"]) &&
+    typeof value["message"] === "string" &&
+    value["message"].length <= MAX_AUTHOR_MESSAGE_CHARS &&
+    isControlFree(value["message"]) &&
+    (allowed === undefined ||
+      (Array.isArray(allowed) &&
+        allowed.length <= MAX_AUTHOR_ALLOWED_VALUES &&
+        allowed.every(
+          (choice): choice is string =>
+            typeof choice === "string" &&
+            choice.length <= MAX_AUTHOR_ALLOWED_CHARS &&
+            isControlFree(choice),
+        )))
+  );
+}
+
+function isControlFree(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code < 0x20 || (code >= 0x7f && code <= 0x9f)) return false;
+  }
+  return true;
+}
+
+function hasCoherentAuthorErrors(value: AgentToolObservationData): boolean {
+  const hasErrors = value.errors !== undefined || value.omitted_error_count !== undefined;
+  return hasErrors
+    ? value.outcome === "rejected" && value.code === "invalid_authoring"
+    : value.code !== "invalid_authoring";
 }
 
 function isNonNegativeInteger(value: unknown): value is number {

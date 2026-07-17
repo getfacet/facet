@@ -6,17 +6,13 @@ import {
   type NodeId,
   type RichTextNode,
 } from "@facet/core";
-import { classifyPress, type ClassifiedPress } from "./renderer-press.js";
-import { cappedString, isObjectRecord, styleOf } from "./renderer-safe.js";
 import {
-  headingLookCss,
-  headingTag,
-  listIndentCss,
-  markLookCss,
-  quoteLookCss,
-  textStyle,
-  type ResolvedTheme,
-} from "./theme.js";
+  resolveRichTextStylePresentation,
+  type RichTextStylePresentation,
+} from "./brick-style-input.js";
+import { classifyPress, type ClassifiedPress } from "./renderer-press.js";
+import { cappedString, isObjectRecord, safeOwnValue } from "./renderer-safe.js";
+import { headingTag, listIndentCss, type ResolvedTheme } from "./theme.js";
 
 /**
  * What `renderer-render.tsx` threads into the bespoke richtext path — the same
@@ -31,6 +27,10 @@ export interface RichTextRenderContext {
   readonly inert: boolean;
   readonly nodeId: NodeId;
   readonly dispatch: (press: ClassifiedPress) => void;
+}
+
+interface ResolvedRichTextRenderContext extends RichTextRenderContext {
+  readonly presentation: RichTextStylePresentation;
 }
 
 /** Read a run's ordered mark-kind names (strings only) off a raw-path run object. */
@@ -59,14 +59,33 @@ function linkTargetOf(marks: unknown): unknown {
  * anchor. On the inert path every link degrades to plain styled text (no click, no
  * navigation). Never throws on any shape.
  */
-function renderRun(run: unknown, key: string, context: RichTextRenderContext): ReactNode {
+function semanticRunStyle(
+  kinds: readonly string[],
+  context: ResolvedRichTextRenderContext,
+): CSSProperties {
+  const css: CSSProperties = {};
+  const decorations: string[] = [];
+  for (const kind of kinds) {
+    if (kind === "bold") css.fontWeight = context.theme.fontWeight.bold;
+    else if (kind === "italic") css.fontStyle = "italic";
+    else if (kind === "underline") decorations.push("underline");
+    else if (kind === "strike") decorations.push("line-through");
+  }
+  if (kinds.includes("code")) Object.assign(css, context.presentation.code);
+  if (kinds.includes("link")) Object.assign(css, context.presentation.link.style);
+  if (decorations.length > 0) css.textDecorationLine = [...new Set(decorations)].join(" ");
+  return css;
+}
+
+function renderRun(run: unknown, key: string, context: ResolvedRichTextRenderContext): ReactNode {
   if (!isObjectRecord(run)) return null;
   const text = cappedString(run.text, MAX_NODE_BODY_CHARS);
   if (text === undefined) return null;
 
   const kinds = markKindsOf(run.marks);
-  const look = markLookCss(kinds, context.theme);
+  const look = semanticRunStyle(kinds, context);
   const hasLink = kinds.includes("link");
+  const linkClassName = context.presentation.link.className;
 
   if (hasLink && !context.inert) {
     const target = linkTargetOf(run.marks);
@@ -77,7 +96,13 @@ function renderRun(run: unknown, key: string, context: RichTextRenderContext): R
     if (isObjectRecord(target) && typeof target.href === "string") {
       if (isSafeHref(target.href)) {
         return (
-          <a key={key} href={target.href} rel="noopener noreferrer" style={look}>
+          <a
+            key={key}
+            href={target.href}
+            rel="noopener noreferrer"
+            className={linkClassName}
+            style={look}
+          >
             {text}
           </a>
         );
@@ -100,6 +125,7 @@ function renderRun(run: unknown, key: string, context: RichTextRenderContext): R
           key={key}
           role="link"
           tabIndex={0}
+          className={linkClassName}
           style={{ ...look, cursor: "pointer" }}
           onClick={onActivate}
           onKeyDown={(event): void => {
@@ -134,7 +160,7 @@ function renderRun(run: unknown, key: string, context: RichTextRenderContext): R
 function renderRunsOf(
   runs: unknown,
   blockKey: string,
-  context: RichTextRenderContext,
+  context: ResolvedRichTextRenderContext,
 ): ReactNode[] {
   if (!Array.isArray(runs)) return [];
   const out: ReactNode[] = [];
@@ -153,7 +179,11 @@ const BLOCK_BASE: CSSProperties = { margin: 0 };
  * `<blockquote>`. An unknown `type` degrades to a paragraph (text kept). Returns
  * null when the block has no valid runs. Never throws.
  */
-function renderBlock(block: unknown, key: string, context: RichTextRenderContext): ReactNode {
+function renderBlock(
+  block: unknown,
+  key: string,
+  context: ResolvedRichTextRenderContext,
+): ReactNode {
   if (!isObjectRecord(block)) return null;
   const rawType = block.type;
   const type =
@@ -166,15 +196,21 @@ function renderBlock(block: unknown, key: string, context: RichTextRenderContext
   if (type === "heading") {
     const level = typeof block.level === "number" ? block.level : 1;
     const Tag = headingTag(level);
+    const headingStyle =
+      Tag === "h1"
+        ? context.presentation.heading1
+        : Tag === "h2"
+          ? context.presentation.heading2
+          : context.presentation.heading3;
     return (
-      <Tag key={key} style={{ ...BLOCK_BASE, ...headingLookCss(level, context.theme) }}>
+      <Tag key={key} style={{ ...BLOCK_BASE, ...headingStyle }}>
         {children}
       </Tag>
     );
   }
   if (type === "quote") {
     return (
-      <blockquote key={key} style={{ ...BLOCK_BASE, ...quoteLookCss(context.theme) }}>
+      <blockquote key={key} style={{ ...BLOCK_BASE, ...context.presentation.quote }}>
         {children}
       </blockquote>
     );
@@ -187,7 +223,10 @@ function renderBlock(block: unknown, key: string, context: RichTextRenderContext
         data-facet-list-item=""
         style={{ ...BLOCK_BASE, display: "flex", ...listIndentCss(depth, context.theme) }}
       >
-        <span aria-hidden={true} style={{ marginInlineEnd: context.theme.space.sm }}>
+        <span
+          aria-hidden={true}
+          style={{ marginInlineEnd: context.theme.space.sm, ...context.presentation.listMarker }}
+        >
           {"•"}
         </span>
         <span>{children}</span>
@@ -211,19 +250,17 @@ function renderBlock(block: unknown, key: string, context: RichTextRenderContext
 export function renderRichText(node: RichTextNode, context: RichTextRenderContext): ReactNode {
   const rawBlocks = (node as { readonly blocks?: unknown }).blocks;
   const blocks = Array.isArray(rawBlocks) ? rawBlocks : [];
+  const presentation = resolveRichTextStylePresentation(context.theme, safeOwnValue(node, "style"));
+  const resolvedContext: ResolvedRichTextRenderContext = { ...context, presentation };
   const children: ReactNode[] = [];
   for (const [index, block] of blocks.entries()) {
-    const rendered = renderBlock(block, `b${String(index)}`, context);
+    const rendered = renderBlock(block, `b${String(index)}`, resolvedContext);
     if (rendered !== null) children.push(rendered);
   }
   // Block-level typography reuses the `TextStyle` token pack (the resolved
   // container style); blocks stack in flow with a small token gap.
-  const base = textStyle(styleOf(node.style), context.theme);
   const style: CSSProperties = {
-    ...base,
-    display: "flex",
-    flexDirection: "column",
-    gap: context.theme.space.sm,
+    ...presentation.root,
     ...(context.inert ? { pointerEvents: "none" } : {}),
   };
   return (

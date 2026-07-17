@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type {
   CollectedEvent,
+  ColorModePreference,
   FacetAction,
   FacetTheme,
   FacetTree,
@@ -10,8 +11,10 @@ import type {
   SortDirection,
   ViewSnapshot,
 } from "@facet/core";
-import { captureViewSnapshot, useViewportScheme } from "./view-snapshot.js";
+import { captureViewSnapshot, useViewportColorMode } from "./view-snapshot.js";
 import { APPEAR_CSS } from "./appear.js";
+import { INPUT_TARGET_CSS } from "./brick-style-input.js";
+import { INTERACTION_CSS } from "./interaction-style.js";
 import {
   MOTION_CSS,
   stageCurrentClassName,
@@ -37,6 +40,7 @@ const EMPTY_EXIT_RECORDS_BY_PARENT: ReadonlyMap<NodeId, readonly ExitRecord[]> =
   readonly ExitRecord[]
 >();
 const DISPLAY_CONTENTS_STYLE: CSSProperties = { display: "contents" };
+const BRICK_STATE_CSS = `${INTERACTION_CSS}\n${INPUT_TARGET_CSS}`;
 
 export interface StageRendererProps {
   readonly tree: FacetTree;
@@ -60,16 +64,13 @@ export interface StageRendererProps {
    * navigate/toggle behave exactly as today and the output is byte-identical.
    */
   readonly onRecord?: (tap: CollectedEvent) => void;
-  /**
-   * The operator-authored theme registry. The tree's `theme` NAME is resolved
-   * against it into concrete CSS; an absent prop (or unknown name) renders the
-   * default look. Documents must be `validateTheme`-clean — the host owns that
-   * boundary; `resolveTheme` floor-guards the lookup regardless.
-   */
-  readonly themes?: readonly FacetTheme[];
+  /** One complete operator Theme. Invalid/hostile input falls back as a whole. */
+  readonly theme?: FacetTheme;
+  /** Host preference; `system` resolves in the browser and falls back to light on SSR. */
+  readonly colorMode?: ColorModePreference;
   /**
    * Read-only publish of the browser's live view snapshot
-   * (`{screen, toggled, viewport, scheme}`) — the counterpart of how `fields`
+   * (`{screen, toggled, viewport, colorMode}`) — the counterpart of how `fields`
    * rides `onAction`. Sampled after each commit whenever screen/overrides or
    * the detected device classes change; the host attaches it to an OUTGOING
    * event, exactly like `fields`. Optional (narrower props stay assignable);
@@ -101,7 +102,8 @@ export function StageRenderer({
   transition,
   onAction,
   onRecord,
-  themes,
+  theme: rawTheme,
+  colorMode = "system",
   onViewSnapshot,
 }: StageRendererProps): ReactNode {
   const [currentScreen, setCurrentScreen] = useState<string | null>(null);
@@ -125,19 +127,14 @@ export function StageRenderer({
   // Scope handle for collectFieldValues — reads stay inside THIS renderer
   // instance so two stages on one page never cross-read each other's inputs.
   const stageRootRef = useRef<HTMLDivElement>(null);
-  // Resolve the tree's theme NAME (unknown on the raw patch path) against the
-  // registry ONCE per name/registry change. A live theme flip is just a new
-  // `tree.theme`, so this re-resolves and the stage restyles without a reload.
-  // Guard the read: hooks must run before the renderable check below, but a
-  // null/primitive tree (the unvalidated CLI path) has no `.theme` to dereference.
-  const themeName: unknown =
-    typeof tree === "object" && tree !== null
-      ? (tree as { readonly theme?: unknown }).theme
-      : undefined;
-  const theme = useMemo(() => resolveTheme(themeName, themes), [themeName, themes]);
-  // Report-only device classes (RISK-INV-5): they ride ONLY the published
-  // snapshot below, never layout/boxStyle resolution.
-  const { viewport, scheme } = useViewportScheme();
+  // Browser classes are host/view state, never Facet Document syntax. The
+  // effective color mode selects only the Theme's paint branch; viewport stays
+  // report-only and never reaches layout resolution.
+  const { viewport, colorMode: effectiveColorMode } = useViewportColorMode(colorMode);
+  const theme = useMemo(
+    () => resolveTheme(rawTheme, effectiveColorMode),
+    [rawTheme, effectiveColorMode],
+  );
   const { motionState, normalizedTransition, renderable, currentRootId, activeScreen } =
     useStageMotion({
       tree,
@@ -160,11 +157,18 @@ export function StageRenderer({
         currentScreen ?? undefined,
         visibilityOverrides,
         viewport,
-        scheme,
+        effectiveColorMode,
         sortOverrides,
       ),
     );
-  }, [onViewSnapshot, currentScreen, visibilityOverrides, viewport, scheme, sortOverrides]);
+  }, [
+    onViewSnapshot,
+    currentScreen,
+    visibilityOverrides,
+    viewport,
+    effectiveColorMode,
+    sortOverrides,
+  ]);
 
   // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
   // the unvalidated CLI path — renders as nothing, never a crash.
@@ -387,6 +391,7 @@ export function StageRenderer({
   // deliberately replays its animation.
   const staged = (
     <Fragment>
+      <style>{BRICK_STATE_CSS}</style>
       {appearSeen.used ? <style>{APPEAR_CSS}</style> : null}
       {hasActiveMotion ? <style>{MOTION_CSS}</style> : null}
       {stageBody}

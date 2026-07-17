@@ -11,7 +11,7 @@ a constrained renderer-owned descriptor (never a z-index/absolute escape hatch).
   field on `box` (part of the `Layered` concern pack, alongside `backdrop`). The
   author supplies ONLY the closed `kind` name — never coordinates, size, or
   z-index. `@facet/core` exports `OVERLAY_KINDS` / `OverlayKind` / `Overlay`.
-  (`popover` + an anchored variant are deferred, addable additively.)
+  (`popover` and an anchored form are deferred, addable additively.)
 
 - **Renderer-owned (`@facet/react`):** a visible overlay box floats in a
   renderer-fixed positive-z band — `modal` centered, `drawer` at the end edge —

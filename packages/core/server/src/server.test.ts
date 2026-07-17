@@ -434,7 +434,7 @@ describe("browser channel", () => {
             screen: "pricing",
             toggled: { "faq-3": "shown", junk: "sideways" },
             viewport: "4k-ultrawide",
-            scheme: "dark",
+            colorMode: "dark",
             nested: { deep: true },
           },
         },
@@ -445,7 +445,7 @@ describe("browser channel", () => {
     expect(received[0]).toEqual({
       kind: "message",
       text: "hi",
-      view: { screen: "pricing", toggled: { "faq-3": "shown" }, scheme: "dark" },
+      view: { screen: "pricing", toggled: { "faq-3": "shown" }, colorMode: "dark" },
     });
   });
 
@@ -461,7 +461,7 @@ describe("browser channel", () => {
         screen: "pricing",
         toggled: { "faq-3": "shown", junk: "sideways" },
         viewport: "4k-ultrawide",
-        scheme: "dark",
+        colorMode: "dark",
         nested: { deep: true },
       },
     });
@@ -472,7 +472,7 @@ describe("browser channel", () => {
     expect(stored.view).toEqual({
       screen: "pricing",
       toggled: { "faq-3": "shown" },
-      scheme: "dark",
+      colorMode: "dark",
     });
   });
 
@@ -1111,7 +1111,7 @@ describe("async delivery — late results", () => {
     const seed: FacetTree = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", style: { direction: "col" }, children: ["t1"] },
+        root: { id: "root", type: "box", style: { direction: "column" }, children: ["t1"] },
         t1: { id: "t1", type: "text", value: "late answer body" },
       },
     };
@@ -1222,7 +1222,7 @@ describe("async delivery — late results", () => {
     const good: FacetTree = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", style: { direction: "col" }, children: ["g1"] },
+        root: { id: "root", type: "box", style: { direction: "column" }, children: ["g1"] },
         g1: { id: "g1", type: "text", value: "good op landed" },
       },
     };
@@ -1275,7 +1275,7 @@ describe("async delivery — late results", () => {
   const labelTree = (label: string): FacetTree => ({
     root: "root",
     nodes: {
-      root: { id: "root", type: "box", style: { direction: "col" }, children: ["t"] },
+      root: { id: "root", type: "box", style: { direction: "column" }, children: ["t"] },
       t: { id: "t", type: "text", value: label },
     },
   });
@@ -1614,7 +1614,7 @@ describe("async delivery — resume & rehydrate", () => {
   const seededTree: FacetTree = {
     root: "root",
     nodes: {
-      root: { id: "root", type: "box", style: { direction: "col" }, children: ["s1"] },
+      root: { id: "root", type: "box", style: { direction: "column" }, children: ["s1"] },
       s1: { id: "s1", type: "text", value: "seeded stage" },
     },
   };
@@ -1815,7 +1815,7 @@ describe("async delivery — resume & rehydrate", () => {
     const seed: FacetTree = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", style: { direction: "col" }, children: ["t1"] },
+        root: { id: "root", type: "box", style: { direction: "column" }, children: ["t1"] },
         t1: { id: "t1", type: "text", value: "seeded" },
       },
     };
@@ -1843,7 +1843,7 @@ describe("async delivery — resume & rehydrate", () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", style: { direction: "col" }, children: ["t1"] },
+        root: { id: "root", type: "box", style: { direction: "column" }, children: ["t1"] },
         t1: { id: "t1", type: "text", value: "seed" },
       },
     };
@@ -1948,7 +1948,7 @@ describe("hardening", () => {
     const seedTree: FacetTree = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", style: { direction: "col" }, children: ["t1"] },
+        root: { id: "root", type: "box", style: { direction: "column" }, children: ["t1"] },
         t1: { id: "t1", type: "text", value: "seed" },
       },
     };

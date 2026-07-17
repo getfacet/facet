@@ -5,21 +5,21 @@
 "@facet/quickstart": minor
 ---
 
-Unified asset pipeline — one `AssetsStore` for themes AND compositions, with the
-Facet-provided defaults as a base layer and per-agent custom assets layered on
-top (add / refine, never a wholesale replace). Management is unified; application
-stays at each consumer: a renderer maps a theme to its output, while an agent
-may inspect allowed compositions as read-only authoring references.
+Unified asset pipeline — one `AssetsStore` for an exact per-agent Theme, Pattern
+list, and optional initial tree. Missing assets use Facet defaults; a supplied
+Theme replaces the default whole after validation, and supplied Patterns are an
+exact list rather than a merge. A renderer maps the Theme to output, while an
+agent may inspect Patterns as read-only authoring references.
 
 PRE-1.0 BREAKING (in-repo consumers updated): the `@facet/kit` code-factory
 package is REMOVED — its only consumer (`apps/playground`) migrated to a local,
-byte-identical `page`/`text` brick helper. The default theme/composition DATA
+byte-identical `page`/`text` brick helper. The default Theme/Pattern data
 moved out of `@facet/react` (`DEFAULT_THEME`) and the retired `@facet/kit` (its
-bundled composition trees) into a new node-free package, so a second renderer
+bundled reference trees) into a new node-free package, so a second renderer
 can consume the same defaults.
 
 - `@facet/assets` (new): node-free default-asset DATA (deps = `@facet/core` only)
-  — the token value maps, `COLOR`, `DEFAULT_THEME`, and `DEFAULT_COMPOSITIONS`
+  — the token value maps, `COLOR`, `DEFAULT_THEME`, and `DEFAULT_PATTERNS`
   (hero/card/cta-button as validated concrete native-node reference trees). The
   single, renderer-agnostic source of default-asset truth.
 - `@facet/react`: derives its default-theme floor + `DEFAULT_RESOLVED` from
@@ -27,16 +27,16 @@ can consume the same defaults.
   `COLOR` for back-compat; zero-arg style output byte-identical; `resolveTheme`
   stays the single (render-time) merge site.
 - `@facet/runtime`: `loadAssets` seeds the `@facet/assets` defaults through the
-  SAME validation gate and layers custom on top with symmetric collision rules —
-  themes shadow per-name via a load-time list swap (render's `resolveTheme` does
-  the per-field overlay), compositions union with a custom name shadowing a
-  same-named default. An empty/absent store still resolves the defaults, and the
+  same validation gate. One valid custom Theme replaces the default whole;
+  missing or invalid Theme data falls back whole. A present Pattern list is
+  exact, while an absent list uses the bundled Patterns. An empty/absent store
+  still resolves the defaults, and the
   "never throws" contract now covers the primary store I/O + malformed shapes
   too.
 - `@facet/quickstart`: resolves assets through `loadAssets` on EVERY boot (a
   `MemoryAssets` fallback when no `--assets`), so the default theme reaches the
-  shell and the allowed composition-reference index plus exact on-demand reads
-  reach the agent even with no operator assets. Exact reference JSON remains in
+  shell and the Pattern index plus exact on-demand reads reach the agent even
+  with no operator assets. Exact reference JSON remains in
   the provider conversation and is not sent to the browser.
 
 (`@facet/*` are versioned together as a fixed group.)

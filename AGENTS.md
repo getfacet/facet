@@ -6,24 +6,29 @@ of truth; `CLAUDE.md` points here.
 Facet is a TypeScript framework for **UI a language model renders itself** —
 safe, live, and different for every user. The model composes interfaces from
 `@facet/core`'s closed, validated vocabulary of 11 safe bricks and mutates them
-live as the conversation goes. Optional reference compositions demonstrate
-reusable box/text/input patterns without adding node kinds. (Living,
+live as the conversation goes. Optional validated Patterns demonstrate
+reusable native-Brick structures without adding node kinds. (Living,
 per-visitor pages an agent "owns"
 are one application.) See [README.md](README.md) and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). The current styling contract and
+pre-1.0 hard cut are summarized in
+[docs/STYLE-SYSTEM-MIGRATION.md](docs/STYLE-SYSTEM-MIGRATION.md).
 
 ## Two invariants (do not break)
 
 1. **Agents emit a declarative brick spec, never raw HTML/JS/CSS.**
-   `@facet/core` owns the closed, validated node and token vocabulary
-   (`packages/core/core/src/nodes.ts`). Agents/consumers may emit no node kind or
-   style value unless core intentionally defines and validates it. The complete
+   `@facet/core` owns the closed, validated node and style vocabulary
+   (`packages/core/core/src/nodes.ts`, `brick-contract.ts`, and
+   `style-value-contract.ts`). Agents/consumers may emit no node kind, style
+   property, target, state, token name, or fixed choice unless Core intentionally
+   defines and validates it. The complete
    roster is `box`, `text`, `media`, `input`, `richtext`, `table`, `chart`,
    `list`, `keyValue`, `progress`, and `loading`; only `box` is a container.
-   Style values are **tokens**, not raw scalars. Layout is
+   Theme-sensitive style values are **tokens**; renderer semantics such as
+   `row`/`column` are closed fixed choices. Neither accepts raw CSS. Layout is
    **flow-only** (no absolute positioning). Adding a brick capability means
-   adding a node kind or token *on purpose* — never letting a model emit
-   arbitrary code.
+   extending the Core contract *on purpose* — never letting a model emit
+   arbitrary code or an open-ended style object.
 2. **Only patches travel** — [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)
    JSON Patch — and the *same* pure `applyPatch` runs on server and client so
    they never drift. The renderer is **fail-safe**: unknown/dangling nodes are
@@ -53,14 +58,14 @@ imports, and release metadata all benefit from the physical move.
 
 | Group | Path | Package | Role |
 | --- | --- | --- | --- |
-| Core | `packages/core/core` | `@facet/core` | Contract: closed brick vocabulary, catalog/reference-exposure policy, tokens, RFC 6902 patch, `validateTree`/`validateComposition`, session/event types. A composition is validated concrete native reference data, never stage syntax. Depends on nothing. |
-| Core | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (per-agent theme/composition-reference/initial-tree registry; `MemoryAssets` + `loadAssets`, `withInitialStage`) + `SummaryStore` (opaque per-visitor rolling-summary record for brain-side context compaction; `MemorySummaryStore`). File-backed Node references (`FileAssets`, `FileSummaryStore`) via `@facet/runtime/node`. |
+| Core | `packages/core/core` | `@facet/core` | Contract: closed Brick and Brick-owned style vocabularies, token/fixed choice metadata, Theme/Preset/Pattern validation, RFC 6902 patch, strict author validation, fail-soft tree validation, and session/event types. Depends on nothing. |
+| Core | `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state, always Facet's) + `Sink` (conversation — store/forward/drop) + `AssetsStore` (one per-agent Theme, exact Pattern list, optional initial tree; `MemoryAssets` + `loadAssets`, `withInitialStage`) + `SummaryStore` (opaque per-visitor rolling-summary record for brain-side context compaction; `MemorySummaryStore`). File-backed Node references (`FileAssets`, `FileSummaryStore`) via `@facet/runtime/node`. |
 | Core | `packages/core/server` | `@facet/server` | Reference transport: browser side + agent side (SSE + POST). |
 | Core | `packages/core/client` | `@facet/client` | Browser-side transports (`SseTransport`, `LocalTransport`) — the visitor's counterpart of `@facet/agent-client`. |
-| Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), the token→CSS theme (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| Core | `packages/core/assets` | `@facet/assets` | Default-asset **data**: `DEFAULT_CATALOG`, `DEFAULT_THEME`, and concrete native `DEFAULT_COMPOSITIONS` reference datasets (data, not code or renderer extensions). Depends only on `@facet/core`. |
-| Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, the shared composition-reference selector and read-only `get_composition` contract, and reusable Facet prompt kit. |
-| Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters (usage reporting + Anthropic prompt caching), prompt, streaming tool loop, exact provider-only composition reads, token-budgeted LLM context compaction (cross-turn rolling summary + in-turn transcript folding, deterministic fallback), deterministic test fixture. |
+| Core | `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`), Theme default → same-Brick Preset → direct-style resolution, token→CSS lookup, client-owned `colorMode`, `useFacet`, and `ChatDock`. |
+| Core | `packages/core/assets` | `@facet/assets` | Default-asset **data**: one complete `DEFAULT_THEME` and exact validated `DEFAULT_PATTERNS`. Depends only on `@facet/core`. |
+| Agent Stack | `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, progressive Pattern/Preset/Brick/style-choice reads, and the reusable Facet prompt kit. |
+| Agent Stack | `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain: provider adapters (usage reporting + Anthropic prompt caching), prompt, streaming tool loop, exact asset-read handoff, token-budgeted LLM context compaction (cross-turn rolling summary + in-turn transcript folding, deterministic fallback), deterministic test fixture. |
 | Agent Stack | `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup `facet-quickstart` CLI/server/page wrapper that composes `@facet/reference-agent`. |
 | Extensions | `packages/extensions/agent` | `@facet/agent` | In-process agent SDK: the `Stage` control API + `defineAgent`. |
 | Extensions | `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an **external** agent (SSE + heartbeat + reconnect). |
@@ -201,8 +206,9 @@ fixes can skip straight to `/verify` → `/code-review`.
   extensions (bundler resolution).
 - No `any`. Prefer `unknown` + narrowing (see `validate.ts`).
 - Barrel exports only (`index.ts`); the `facet` bin is the one exception.
-- Keep the native brick roster stable and small; grow bricks/tokens deliberately
-  in `@facet/core`, never via raw markup. See
+- Keep the native Brick roster stable and small; grow Bricks and their closed
+  style vocabularies deliberately in `@facet/core`, never via raw markup or
+  arbitrary style keys. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) "The brick-vs-field growth rule
   (two axes)" for when to add a capability as a new data brick vs a named `box`
   concern pack (new content → new data brick; new `box` behavior → a named

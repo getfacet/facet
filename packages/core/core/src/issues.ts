@@ -1,10 +1,9 @@
 /**
  * Shared, INTERNAL issue-hardening helpers for the two untrusted-document
- * boundaries — `validateTree`/`validateComposition` (`validate.ts`) and `validateTheme`
- * (`theme.ts`). NOT re-exported from the barrel: these are an implementation
- * detail both validators import directly, so the key-echo cap and the
- * bounded-issue-list posture are defined once and can never drift between the
- * tree path and the theme path.
+ * boundaries — tree/Pattern validation and Theme validation. NOT re-exported
+ * from the barrel: these are an implementation detail the validators import
+ * directly, so the key-echo cap and bounded-issue-list posture are defined once
+ * and cannot drift between document and asset paths.
  *
  * The threat both sinks share: an issue string interpolates a document-derived
  * name (a node id, a token key, a screen/child id) that came from untrusted LLM
@@ -138,44 +137,17 @@ export function nullMap<V>(): Record<string, V> {
   return Object.create(null) as Record<string, V>;
 }
 
-/**
- * The shared validate/truncate policy for a document's one-line `description`
- * (a theme's and a composition's). Returns the value to keep (if any) and a single
- * warning MESSAGE (if any) — each caller pushes it in its own issue shape. The
- * `label` ("theme"/"composition") and `cap` (`MAX_DESCRIPTION_LENGTH`, single-sourced
- * in `theme.ts`) parameterize the ONLY differences between the two call sites;
- * the message wording is otherwise byte-identical. Callers gate on
- * `input.description !== undefined` before calling, so a non-string reaching
- * here is a supplied-but-wrong value.
- */
-export function boundedDescription(
-  raw: unknown,
-  label: string,
-  cap: number,
-): { description?: string; warning?: string } {
-  if (typeof raw !== "string") {
-    return { warning: `${label} description is not a string; ignored` };
-  }
-  if (raw.length > cap) {
-    return {
-      description: raw.slice(0, cap),
-      warning: `${label} description truncated to ${cap} characters`,
-    };
-  }
-  return { description: raw };
-}
-
 /** The minimal surface `validate.ts`'s helpers need — push a diagnostic string. */
 export interface IssueSink {
   push(issue: string): void;
 }
 
 /**
- * A bounded string-issue collector for the tree/composition path. Once `MAX_ISSUES`
- * real entries are recorded, further pushes are dropped after a single
- * `ISSUES_SUPPRESSED` tail entry — so a 100k-junk-node root replace produces at
- * most 65 issue strings instead of one per node. Mirrors the theme path's
- * `IssueList` posture; `.list` is the plain array to return.
+ * A bounded string-issue collector for tree, Pattern, and fold paths. Once
+ * `MAX_ISSUES` real entries are recorded, further pushes are dropped after a
+ * single `ISSUES_SUPPRESSED` tail entry — so a 100k-junk-node root replace
+ * produces at most 65 issue strings instead of one per node. Theme validation
+ * follows the same bounded posture; `.list` is the plain array to return.
  */
 export class BoundedIssues implements IssueSink {
   private readonly items: string[] = [];

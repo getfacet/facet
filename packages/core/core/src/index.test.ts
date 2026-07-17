@@ -51,14 +51,14 @@ function moduleName(declaration: ts.ExportDeclaration): string {
 }
 
 describe("core barrel", () => {
-  it("exports only the canonical module surface", () => {
+  it("exports only the new style asset contract", () => {
     expect(INDEX_AST.statements.every(ts.isExportDeclaration)).toBe(true);
     expect(EXPORT_DECLARATIONS.map(moduleName)).toEqual([
       "./tokens.js",
+      "./style-value-contract.js",
       "./nodes.js",
       "./tree.js",
       "./theme.js",
-      "./catalog.js",
       "./patch.js",
       "./protocol.js",
       "./event-validation.js",
@@ -72,114 +72,68 @@ describe("core barrel", () => {
       "./lru-map.js",
       "./spec.js",
     ]);
-  });
-
-  it("reference dataset hard cutover keeps only native composition validation public", () => {
-    const retiredPublicNames = [
-      ["Composition", "Ref"].join(""),
-      ["validate", "Composition", "Graph"].join(""),
-      ["expand", "Composition"].join(""),
-      ["Expand", "Composition"].join(""),
-      ["Use", "Composition", "Result"].join(""),
-      ["Expand", "Composition", "Result"].join(""),
-      ["Expand", "Composition", "Options"].join(""),
-      ["Composition", "Params"].join(""),
-      ["Expand", "At"].join(""),
-      ["Validate", "Composition", "Graph", "Result"].join(""),
-      ["MAX", "COMPOSITION", "GRAPH", "NEST", "DEPTH"].join("_"),
-      ["MAX", "COMPOSITION", "GRAPH", "NODES"].join("_"),
-      ["SLOT", "MARKER", "RE"].join("_"),
-    ];
-    const retiredModulePaths = [
-      ["./composition", "graph.js"].join("-"),
-      ["./expand", "composition.js"].join("-"),
-    ];
-
-    for (const retired of [...retiredPublicNames, ...retiredModulePaths]) {
-      expect(INDEX_SOURCE).not.toContain(retired);
-      expect(VALIDATE_SOURCE).not.toContain(retired);
-    }
-
-    expectTypeOf<import("./index.js").FacetComposition>().toEqualTypeOf<
-      import("./validate.js").FacetComposition
-    >();
-    expectTypeOf<import("./index.js").CompositionMetadata>().toEqualTypeOf<
-      import("./validate.js").CompositionMetadata
-    >();
-    expectTypeOf<import("./index.js").CompositionValidationResult>().toEqualTypeOf<
-      import("./validate.js").CompositionValidationResult
-    >();
-    expectTypeOf<typeof import("./index.js").validateComposition>().toEqualTypeOf<
-      typeof import("./validate.js").validateComposition
-    >();
-  });
-
-  it("exports the final Brick APIs and no retired tier aliases", () => {
     const names = rootExportNames();
     for (const name of [
+      "STYLE_VALUE_CONTRACT",
+      "TOKEN_STYLE_VALUE_CONTRACT",
+      "FIXED_STYLE_VALUE_CONTRACT",
       "BRICK_TYPES",
       "BrickType",
+      "BRICK_CONTRACT",
+      "BrickContractEntry",
       "FacetNode",
       "ContainerNode",
       "isContainer",
-      "BrickRecipePart",
-      "BrickRecipeParts",
-      "BrickRecipe",
-      "BrickRecipes",
-      "RECIPE_BRICKS",
-      "RecipeBrickName",
-      "CATALOG_BRICK_TYPES",
-      "CatalogBrick",
+      "BrickStyle",
+      "BrickStyleDefinition",
+      "FacetTheme",
+      "FacetPreset",
+      "FacetPresets",
+      "validateTheme",
+      "AuthorIssue",
+      "AuthorValidationResult",
+      "validateAuthorNode",
+      "validateAuthorTree",
+      "FacetPattern",
+      "PatternValidationResult",
+      "PatternListValidationResult",
+      "MAX_PATTERN_NODES",
+      "MAX_PATTERNS",
+      "validatePattern",
+      "validatePatternList",
     ]) {
       expect(names.has(name), `missing root export ${name}`).toBe(true);
     }
 
     const retiredRootNames = [
-      ["INTRINSIC", "COMPONENT", "TYPES"].join("_"),
-      ["Intrinsic", "Component", "Type"].join(""),
-      ["LEGACY", "COMPONENT", "TYPES"].join("_"),
-      ["Legacy", "Component", "Type"].join(""),
-      ["COMPONENT", "NODE", "TYPES"].join("_"),
-      ["Component", "Node", "Type"].join(""),
-      ["Intrinsic", "Component", "Node"].join(""),
-      ["Legacy", "Component", "Node"].join(""),
-      ["Component", "Node"].join(""),
-      ["PRIMITIVE", "BRICK", "TYPES"].join("_"),
-      ["Primitive", "Brick", "Type"].join(""),
-      ["Primitive", "Brick", "Node"].join(""),
-      ["Button", "Node"].join(""),
-      ["Tabs", "Node"].join(""),
-      ["Nav", "Node"].join(""),
-      ["Form", "Node"].join(""),
-      ["Filter", "Bar", "Node"].join(""),
-      ["Metric", "Node"].join(""),
-      ["Stat", "Node"].join(""),
-      ["CATALOG", "COMPONENT", "TYPES"].join("_"),
-      ["Catalog", "Component"].join(""),
-      ["Catalog", "Usage", "Order"].join(""),
-      ["Component", "Recipe", "Part"].join(""),
-      ["Component", "Recipe", "Parts"].join(""),
-      ["Component", "Recipe"].join(""),
-      ["Component", "Recipes"].join(""),
-      ["RECIPE", "COMPONENTS"].join("_"),
-      ["Recipe", "Component", "Name"].join(""),
-      ["MAX", "TABS", "ITEMS"].join("_"),
+      ["Facet", "Catalog"].join(""),
+      ["Catalog", "Brick"].join(""),
+      ["CATALOG", "BRICK", "TYPES"].join("_"),
+      ["DEFAULT", "CATALOG"].join("_"),
+      ["validate", "Catalog"].join(""),
+      ["Facet", "Composition"].join(""),
+      ["Composition", "Metadata"].join(""),
+      ["Composition", "Validation", "Result"].join(""),
+      ["validate", "Composition"].join(""),
     ];
     for (const name of retiredRootNames) {
       expect(names.has(name), `retired root export ${name}`).toBe(false);
       expect(core).not.toHaveProperty(name);
     }
 
-    expect(core.RECIPE_BRICKS).toEqual(core.BRICK_TYPES);
-    expect(core.CATALOG_BRICK_TYPES).toEqual(core.BRICK_TYPES);
-    expectTypeOf<import("./index.js").BrickRecipe>().toEqualTypeOf<
-      import("./theme-types.js").BrickRecipe
+    for (const retiredText of ["catalog", "composition"]) {
+      expect(INDEX_SOURCE.toLowerCase()).not.toContain(retiredText);
+      expect(VALIDATE_SOURCE.toLowerCase()).not.toContain(retiredText);
+    }
+
+    expectTypeOf<import("./index.js").FacetPattern>().toEqualTypeOf<
+      import("./validate.js").FacetPattern
     >();
-    expectTypeOf<import("./index.js").BrickRecipes>().toEqualTypeOf<
-      import("./theme-types.js").BrickRecipes
+    expectTypeOf<import("./index.js").PatternValidationResult>().toEqualTypeOf<
+      import("./validate.js").PatternValidationResult
     >();
-    expectTypeOf<import("./index.js").CatalogBrick>().toEqualTypeOf<
-      import("./catalog-types.js").CatalogBrick
+    expectTypeOf<typeof import("./index.js").validatePattern>().toEqualTypeOf<
+      typeof import("./validate.js").validatePattern
     >();
   });
 });

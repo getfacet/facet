@@ -5,12 +5,15 @@ export {
   getStageToolSpec,
 } from "./specs.js";
 export type { FacetStageToolSpec } from "./specs.js";
-export { selectCompositionReferences } from "./composition-references.js";
+export { createStageToolAssetSnapshot } from "./asset-snapshot.js";
+export { selectPatternReference } from "./pattern-references.js";
 export {
   FACET_AGENT_ROLE_PROMPT,
   FACET_ASSET_PRIVACY_PROMPT,
+  FACET_DATA_BINDING_PROMPT,
   FACET_PAGE_BRIEF_HEADING,
   FACET_PAGE_EXPERIENCE_PROMPT,
+  FACET_POLISHED_BRICK_GUIDANCE_PROMPT,
   FACET_STATE_EDITING_PROMPT,
   FACET_TOOL_PLAYBOOK_PROMPT,
   FACET_TOOL_RESULT_CONTRACT_PROMPT,
@@ -42,16 +45,23 @@ export type {
   AgentToolObservationData,
   AgentToolObservationStatus,
   AgentToolOutcome,
+  BrickIndexEntry,
   FacetStageToolName,
-  GetCompositionToolInput,
+  GetBrickSpecToolInput,
+  GetPatternToolInput,
+  GetPresetToolInput,
+  GetStyleChoicesToolInput,
   InspectNodeToolInput,
   InspectStageToolInput,
+  PatternIndexEntry,
+  PresetIndexEntry,
   RemoveNodeToolInput,
   RenderPageToolInput,
   SayToolInput,
   SetNodeToolInput,
-  SetThemeToolInput,
+  StageToolAssetSource,
   StageToolAssets,
+  StageToolAuthorIssue,
   StageToolContext,
   StageToolErrorCode,
   StageToolErrorResult,

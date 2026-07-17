@@ -1,6 +1,7 @@
 import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
 import { MIN_REFERENCE_AGENT_OBSERVATION_CHARS, type ReferenceAgentBudget } from "./budget.js";
 import { truncateWithMarker } from "./compaction.js";
+import { isExactAssetReadToolName } from "./asset-read-policy.js";
 import type { ProviderStep, TurnMessage } from "../provider.js";
 
 export interface TranscriptToolObservation {
@@ -59,7 +60,7 @@ export function appendToolResultObservation(
   options: TranscriptObservationOptions,
 ): BoundedTranscriptObservation {
   const toolName = observation.toolName ?? "unknown";
-  const bounded = preservesExactObservation(toolName)
+  const bounded = isExactAssetReadToolName(toolName)
     ? exactObservationText(observation.content)
     : boundObservationText(observation.content, options.maxObservationChars);
   messages.push({ role: "tool_result", callId: observation.callId, content: bounded.content });
@@ -117,10 +118,6 @@ export function finalProseForProviderStop(step: ProviderStep): string {
 function normalizeObservationLimit(maxObservationChars: number): number {
   if (!Number.isFinite(maxObservationChars)) return MIN_REFERENCE_AGENT_OBSERVATION_CHARS;
   return Math.max(MIN_REFERENCE_AGENT_OBSERVATION_CHARS, Math.floor(maxObservationChars));
-}
-
-function preservesExactObservation(toolName: string): boolean {
-  return toolName === "get_composition";
 }
 
 function exactObservationText(content: string): Omit<BoundedTranscriptObservation, "callId"> {

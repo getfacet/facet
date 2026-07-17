@@ -4,25 +4,17 @@ import {
   MAX_FIELD_VALUE_CHARS,
   MAX_NODE_LABEL_CHARS,
   type FacetNode,
-  type InputStyle,
   type NodeId,
 } from "@facet/core";
-import { fieldStyle } from "./theme.js";
+import { joinStyleClasses, resolveInputStylePresentation } from "./brick-style-input.js";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
-import { brickRecipe, brickTextStyle } from "./brick-renderer-recipe.js";
-import {
-  cappedString,
-  fieldChoiceControlStyle,
-  fieldChoiceOptionStyle,
-  fieldControlStyle,
-  isFieldInput,
-  optionsOf,
-  safeOwnValue,
-  styleOf,
-} from "./brick-renderer-shared.js";
+import { cappedString, isFieldInput, optionsOf, safeOwnValue } from "./brick-renderer-shared.js";
 
 interface FieldRenderModel {
   readonly className: string | undefined;
+  readonly controlClassName: string | undefined;
+  readonly choiceControlClassName: string | undefined;
+  readonly choiceOptionClassName: string | undefined;
   readonly inert: boolean;
   readonly wrapperStyle: CSSProperties;
   readonly label: ReactNode;
@@ -45,13 +37,19 @@ function renderSelectField(model: FieldRenderModel): ReactNode {
     >
       {model.label}
       <select
+        className={model.controlClassName}
         name={model.controlName}
         data-facet-field-id={model.fieldId}
         style={model.controlStyle}
         {...model.inertControlProps}
       >
         {model.options.map((option, index) => (
-          <option key={`${String(index)}:${option}`} value={option}>
+          <option
+            key={`${String(index)}:${option}`}
+            value={option}
+            className={model.choiceOptionClassName}
+            style={model.choiceOptionStyle}
+          >
             {option}
           </option>
         ))}
@@ -69,8 +67,13 @@ function renderRadioField(model: FieldRenderModel): ReactNode {
     >
       {model.label}
       {model.options.map((option, index) => (
-        <label key={`${String(index)}:${option}`} style={model.choiceOptionStyle}>
+        <label
+          key={`${String(index)}:${option}`}
+          className={model.choiceOptionClassName}
+          style={model.choiceOptionStyle}
+        >
           <input
+            className={model.choiceControlClassName}
             type="radio"
             name={model.controlName}
             value={option}
@@ -94,6 +97,7 @@ function renderBooleanField(model: FieldRenderModel, role?: "switch"): ReactNode
     >
       {model.label}
       <input
+        className={model.choiceControlClassName}
         type="checkbox"
         role={role}
         name={model.controlName}
@@ -117,6 +121,7 @@ function renderTextField(
     >
       {model.label}
       <input
+        className={model.controlClassName}
         type={input}
         name={model.controlName}
         placeholder={model.placeholder}
@@ -135,37 +140,35 @@ export function renderInput<Press>(node: FacetNode, context: BrickRenderContext<
   const name = cappedString(safeOwnValue(node, "name"), MAX_FIELD_VALUE_CHARS);
   const placeholder = cappedString(safeOwnValue(node, "placeholder"), MAX_NODE_LABEL_CHARS);
   const options = optionsOf(safeOwnValue(node, "options"));
-  const variant = safeOwnValue(node, "variant");
-  const recipe = brickRecipe(theme, "input", variant);
+  const presentation = resolveInputStylePresentation(theme, safeOwnValue(node, "style"), input);
   const wrapperStyle: CSSProperties = {
-    display: "flex",
-    flexDirection: "column",
-    gap: "4px",
-    ...fieldStyle(
-      {
-        ...(recipe.field ?? {}),
-        ...(styleOf<InputStyle>(safeOwnValue(node, "style")) ?? {}),
-      },
-      theme,
-    ),
+    ...presentation.root,
     ...(inert ? { pointerEvents: "none" } : {}),
   };
   const fieldLabel = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
   const label =
-    fieldLabel === undefined ? null : (
-      <span style={brickTextStyle(theme, recipe, {}, "label")}>{fieldLabel}</span>
-    );
+    fieldLabel === undefined ? null : <span style={presentation.label}>{fieldLabel}</span>;
+  const choiceControlStyle: CSSProperties = {
+    ...presentation.control.style,
+    ...presentation.indicator.style,
+  };
   const model: FieldRenderModel = {
     className,
+    controlClassName: presentation.control.className,
+    choiceControlClassName: joinStyleClasses(
+      presentation.control.className,
+      presentation.indicator.className,
+    ),
+    choiceOptionClassName: presentation.option.className,
     inert,
     wrapperStyle,
     label,
     fieldId: inert ? undefined : nodeId,
     controlName: inert ? undefined : name,
     inertControlProps: inert ? { disabled: true, tabIndex: -1 } : {},
-    controlStyle: fieldControlStyle(theme, recipe),
-    choiceControlStyle: fieldChoiceControlStyle(theme),
-    choiceOptionStyle: fieldChoiceOptionStyle(theme),
+    controlStyle: presentation.control.style,
+    choiceControlStyle,
+    choiceOptionStyle: presentation.option.style,
     options,
     placeholder,
   };

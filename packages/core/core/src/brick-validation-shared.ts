@@ -1,6 +1,5 @@
-import { printableKey, printableValue, type IssueSink } from "./issues.js";
-import { TONES, type Tone } from "./nodes.js";
-import { DATASET_NAME_RE, SLOT_NAME_RE } from "./slot-marker.js";
+import { printableKey, type IssueSink } from "./issues.js";
+import { DATASET_NAME_RE } from "./slot-marker.js";
 
 export const MAX_BRICK_ARRAY_ITEMS = 32;
 export const MAX_NODE_LABEL_CHARS = 200;
@@ -36,31 +35,6 @@ export function setText<T extends string>(
 ): void {
   const text = boundedString(value, id, label, max, issues);
   if (text !== undefined) node[key] = text;
-}
-
-export function setVariant(
-  value: unknown,
-  id: string,
-  node: { variant?: string },
-  issues: IssueSink,
-): void {
-  if (value === undefined) return;
-  if (typeof value === "string" && SLOT_NAME_RE.test(value)) node.variant = value;
-  else issues.push(`node "${printableKey(id)}": malformed variant dropped`);
-}
-
-export function setTone(
-  value: unknown,
-  id: string,
-  node: { tone?: Tone },
-  issues: IssueSink,
-  reportInvalid: boolean,
-): void {
-  if (value === undefined) return;
-  const tone = tokenValue<Tone>(value, TONES);
-  if (tone !== undefined) node.tone = tone;
-  else if (reportInvalid)
-    issues.push(`node "${printableKey(id)}": unknown tone ${printableValue(value)} dropped`);
 }
 
 /** Copy a bounded dataset-name binding onto a data-bearing brick. */

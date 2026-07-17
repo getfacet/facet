@@ -8,15 +8,13 @@ import {
   type FacetNode,
 } from "@facet/core";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
-import type { ResolvedTheme } from "./theme.js";
-import { resolveRecipePart } from "./recipe-parts.js";
+import { chartTargetStyles, type ChartTargetStyles } from "./brick-style-data.js";
 import { rootContainmentStyle } from "./layout-contract.js";
-import { brickBoxStyle, brickRecipe, brickTextStyle } from "./brick-renderer-recipe.js";
+import { resolveBrickStyle } from "./style-resolver.js";
 import {
   cappedArray,
   cappedString,
   finiteNumber,
-  intrinsicBoxStyle,
   isObjectRecord,
   safeOwnValue,
   withInert,
@@ -45,11 +43,11 @@ function chartSeriesOf(raw: unknown): readonly RenderChartSeries[] {
   return series;
 }
 
-function chartColor(theme: ResolvedTheme, index: number): string {
-  return theme.color[`chart-${String((index % 6) + 1)}` as keyof typeof theme.color];
+function chartColor(styles: ChartTargetStyles, index: number): string {
+  return styles.seriesColors[index % styles.seriesColors.length] ?? styles.seriesColors[0] ?? "";
 }
 
-function renderChartBars(raw: unknown, theme: ResolvedTheme): ReactNode {
+function renderChartBars(raw: unknown, styles: ChartTargetStyles): ReactNode {
   const series = chartSeriesOf(raw);
   if (series.length === 0) return null;
   const values = series.flatMap((item) => item.values as number[]);
@@ -70,14 +68,16 @@ function renderChartBars(raw: unknown, theme: ResolvedTheme): ReactNode {
           y={y}
           width={barWidth}
           height={barHeight}
-          fill={chartColor(theme, seriesIndex)}
+          fill={chartColor(styles, seriesIndex)}
+          stroke={chartColor(styles, seriesIndex)}
+          strokeWidth={styles.seriesThickness}
         />
       );
     }),
   );
 }
 
-function renderChartLines(raw: unknown, theme: ResolvedTheme): ReactNode {
+function renderChartLines(raw: unknown, styles: ChartTargetStyles): ReactNode {
   const series = chartSeriesOf(raw);
   if (series.length === 0) return null;
   const values = series.flatMap((item) => item.values as number[]);
@@ -101,8 +101,8 @@ function renderChartLines(raw: unknown, theme: ResolvedTheme): ReactNode {
         key={item.label}
         points={points}
         fill="none"
-        stroke={chartColor(theme, seriesIndex)}
-        strokeWidth={3}
+        stroke={chartColor(styles, seriesIndex)}
+        strokeWidth={styles.seriesThickness}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
@@ -110,7 +110,7 @@ function renderChartLines(raw: unknown, theme: ResolvedTheme): ReactNode {
   });
 }
 
-function renderChartDonut(raw: unknown, theme: ResolvedTheme): ReactNode {
+function renderChartDonut(raw: unknown, styles: ChartTargetStyles): ReactNode {
   const slices = chartSeriesOf(raw).flatMap((item) =>
     item.values
       .map((value) => Math.abs(value))
@@ -134,8 +134,8 @@ function renderChartDonut(raw: unknown, theme: ResolvedTheme): ReactNode {
         cy={70}
         r={radius}
         fill="none"
-        stroke={chartColor(theme, index)}
-        strokeWidth={20}
+        stroke={chartColor(styles, index)}
+        strokeWidth={styles.seriesThickness}
         strokeDasharray={`${length.toFixed(2)} ${Math.max(0, circumference - length).toFixed(2)}`}
         strokeDashoffset={dashOffset.toFixed(2)}
         transform="rotate(-90 70 70)"
@@ -156,40 +156,32 @@ export function renderChart<Press>(node: FacetNode, context: BrickRenderContext<
   const series: readonly ChartSeries[] =
     node.type === "chart" ? resolveNodeData(node, context.data) : [];
   const source = { series };
+  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
+  const styles = chartTargetStyles(
+    resolveBrickStyle(theme, "chart", safeOwnValue(node, "style")),
+    theme,
+  );
   const chart =
     kind === "bar"
-      ? renderChartBars(source, theme)
+      ? renderChartBars(source, styles)
       : kind === "line"
-        ? renderChartLines(source, theme)
-        : renderChartDonut(source, theme);
+        ? renderChartLines(source, styles)
+        : renderChartDonut(source, styles);
   if (chart === null) return null;
-  const title = cappedString(safeOwnValue(node, "title"), MAX_NODE_LABEL_CHARS);
-  const variant = safeOwnValue(node, "variant");
-  const recipe = brickRecipe(theme, "chart", variant);
-  const style = brickBoxStyle(theme, recipe, {
-    gap: "sm",
-    pad: "sm",
-    width: "full",
-  });
-  const plotPart = resolveRecipePart(recipe, "plot", theme);
   return (
     <figure
       className={className}
       aria-hidden={inert ? true : undefined}
-      style={withInert(rootContainmentStyle({ ...style, margin: 0 }), inert)}
+      style={withInert(rootContainmentStyle({ ...styles.root, margin: 0 }), inert)}
     >
-      {title === undefined ? null : (
-        <figcaption style={brickTextStyle(theme, recipe, { weight: "semibold" }, "title")}>
-          {title}
-        </figcaption>
-      )}
+      {title === undefined ? null : <figcaption style={styles.title}>{title}</figcaption>}
       <svg
         role="img"
         aria-label={title ?? "chart"}
         viewBox="0 0 360 140"
         width="100%"
         style={rootContainmentStyle({
-          ...intrinsicBoxStyle(plotPart.box),
+          ...styles.plot,
           display: "block",
           width: "100%",
           height: "auto",

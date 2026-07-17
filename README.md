@@ -4,23 +4,20 @@
   <strong>The UI layer for LLMs and agents — interfaces your model draws.</strong>
 </p>
 
-Facet is a TypeScript framework for UI a language model renders itself — safe,
-live, and different for every user. You give the model one closed, typed
-vocabulary of 11 native bricks plus optional validated reference compositions
-it may inspect for complex work. Theme recipes provide one-shot polish without
-adding node kinds. The model keeps changing the interface as the conversation
-goes and can build a different one for each person, all without ever emitting
-unsafe or broken markup.
+Facet is a TypeScript framework for UI a language model renders itself: safe,
+live, and different for every visitor. The model authors a declarative Facet
+Document from 11 native Bricks and a closed style vocabulary. It never emits raw
+HTML, JavaScript, or CSS. Optional Patterns show complete worked structures; one
+operator Theme supplies tokens, defaults, and same-Brick Presets.
 
-> Status: **pre-1.0.** The spec, patch protocol, runtime, renderer, the SSE/POST
-> transport (browser + external agents), a browser playground, durable stores,
-> and a Postgres adapter are all in place and tested. APIs may still change.
+> Status: **pre-1.0.** The current style system is an intentional hard cut. Old
+> asset shapes, selectors, and tool inputs are rejected rather than translated.
+> See [Style system migration](docs/STYLE-SYSTEM-MIGRATION.md).
 
-Facet is the neutral open-source technology layer: protocol, runtime,
-renderer, reference transports, and agent integration tools. It does **not**
-include a hosted control plane, tenant/project auth, billing, metering, abuse
-operations, admin dashboards, or custom-domain routing. Production platforms
-should wrap these primitives with their own operational layer.
+Facet is a neutral open-source technology layer: contract, patch protocol,
+runtime, renderer, reference transports, and agent tools. Hosted identity,
+billing, metering, abuse operations, and tenant control planes belong in a
+platform around Facet.
 
 ## Quickstart: one command
 
@@ -28,351 +25,267 @@ should wrap these primitives with their own operational layer.
 OPENAI_API_KEY=sk-… npx facet-quickstart
 ```
 
-That boots a live Facet server at `http://localhost:5292` whose page is drawn by
-a **built-in LLM agent**: it reads a guide markdown brief (your `./facet.md` if
-present, otherwise the built-in quickstart tour brief), starts from a compact
-native-brick four-screen seed stage on the default path, and keeps patching it as
-visitors chat.
-`ANTHROPIC_API_KEY` works too (OpenAI is the default when both are set). Flags
-and details:
-[`@facet/quickstart`](packages/agent-stack/quickstart/README.md).
-To plug in *your own* model instead, see
-[Advanced: bring your own brain](#advanced-bring-your-own-brain).
+This starts a live page at `http://localhost:5292`. The built-in reference agent
+reads `./facet.md` when present, otherwise uses the bundled tour brief, and edits
+the page with RFC 6902 patches. `ANTHROPIC_API_KEY` also works. See
+[`@facet/quickstart`](packages/agent-stack/quickstart/README.md) for flags and
+provider options.
 
-## Why
+## Why Facet
 
-Today, when an AI wants to *show* you something, there are three options — and
-they all hurt:
+An agent usually has two bad UI choices: return only prose, or generate open-ended
+web code. The first cannot build a real interface; the second is unsafe and easy
+to break. Facet takes the middle path:
 
-- **Text / markdown only** — the model can't really build UI; you get a wall of words.
-- **Let the model emit HTML/React** — unlimited, but **unsafe** (injection),
-  **fragile** (broken layouts), and **unreliable** (hallucinated markup).
-- **A fixed catalog of opaque components** (today's "generative UI") — safe, but
-  the model can only assemble what you pre-built. **Rigid.**
+- the agent can freely arrange a small set of native Bricks;
+- every authored field and style choice is closed and validated by Core;
+- Theme data, not agent-authored CSS, controls the concrete design;
+- only patches travel after the initial state;
+- the renderer skips invalid remnants instead of crashing the page.
 
-Facet is the missing middle: the model works inside a **closed core vocabulary**
-instead of raw HTML/JS/CSS, but the vocabulary is not an opaque component
-catalog. Operators can expose a catalog policy, optional composition reference
-datasets, and theme recipes for one-shot quality; the model can still build
-custom flow layouts from the native vocabulary. It **can't inject or break the
-layout**, and it updates **live, per user**.
+## The mental model
 
-## The mental model: two layers
+Facet has two layers:
 
-A Facet page is two layers stacked together:
+1. **The brain** decides what the visitor should see and calls tools. Facet ships
+   a reference brain, but applications may provide their own.
+2. **The stage** stores, validates, patches, and renders the Facet Document. This
+   is the framework contract.
 
-- **The Stage** — the body of the page. The model rebuilds this per user and
-  mutates it as you talk. Everything visible is built here.
-- **The Chat dock** — always present (floating or pinned). It is *not* generated;
-  it's the control surface the user drives the Stage with.
+The stage vocabulary has exactly 11 Bricks:
 
-```
-the user speaks in the Chat  →  the model rebuilds the Stage
-```
+- `box` — the only container; flow layout, actions, bounded overlays/backdrops
+- `text` — plain text
+- `media` — gated image or video
+- `input` — renderer-owned named controls
+- `richtext` — closed blocks, runs, marks, and gated links
+- `table`, `chart` — bounded data views
+- `list`, `keyValue`, `progress`, `loading` — compact product-state views
 
-The Stage can also diverge *before* anyone says a word: who showed up (referrer,
-locale, prior context) is enough to make the first paint different.
+Tables and charts do not fetch data or execute authored logic. Data may be
+authored inline or stored once in the document's named `data` map and referenced
+with `from` where the Brick contract permits it.
 
-## Native Bricks, References, And Catalog
+## The design system
 
-The model builds the Stage from one **closed Facet vocabulary**, never raw
-HTML/JS/CSS. Its 11 node types are all bricks:
+### Theme
 
-| Brick | It is… |
-| --- | --- |
-| `box` | The only container: flow layout, token styles, optional `onPress`/`onHold`. |
-| `text` | Text with token styles and optional single-cell `from` binding. |
-| `media` | Image or video media with a static, safe URL. |
-| `input` | A text/select/checkbox/radio/switch/search input. |
-| `richtext` | Flowing prose with closed blocks, inline marks, and safe links. |
-| `table` | Display-only tabular data with capped rows, columns, and cells. |
-| `chart` | Display-only chart data with capped series and points. |
-| `list` | A capped list display. |
-| `keyValue` | Compact label/value details. |
-| `progress` | Bounded progress display. |
-| `loading` | A pending/busy display. |
+Each agent has one complete operator-owned Theme. If none is supplied, Facet uses
+`DEFAULT_THEME`. A Theme contains:
 
-Only `box` has `children`. Actions are pressable boxes with text labels; forms
-are boxes containing inputs and a pressable submit box; filters can be local
-pressable choices; tabs and navigation are pressable boxes that use
-`{kind:"navigate", to}` plus an `active {screen}` look; metric-style summaries
-are label/value text pairs. These are reusable composition patterns, not extra
-node types.
+- complete token definitions, including separate light and dark paint maps;
+- one default style for every Brick;
+- optional Presets, each scoped to one Brick and documented with `description`
+  and `useWhen`.
 
-For a complex pattern, the model may call the read-only `get_composition` tool
-with one catalog-advertised name, receive that validated concrete native-brick
-JSON in its provider transcript, and then author or adapt ordinary nodes with
-the normal stage tools. The read never edits the Stage, and simple work does not
-need it. `DEFAULT_COMPOSITIONS` includes cards, sections, empty states, actions,
-forms, filters, summaries, and navigation examples. An empty-state action, for
-example, is a pressable `box` containing a label `text` child.
+Concrete values such as pixels, colors, font stacks, and shadows appear only in
+validated Theme data. They never appear in a Facet Document or an agent tool
+call.
 
-The catalog can narrow allowed bricks and variants, reference exposure, theme
-switching, and compact/edit guidance. It does not add node kinds and is not
-hosted-platform auth, billing, tenant, rate-limit, or abuse policy.
+The Theme is host configuration, not document state. The agent cannot select or
+mutate it. The host passes `colorMode` to `StageRenderer`; `system` resolves in
+the browser, and the renderer selects the Theme's light or dark paint map. The
+effective mode is browser view-state and may ride the next visitor event. It is
+not a document field and does not create a patch.
 
-Everything stays safe and unbreakable because:
+### Brick-owned style vocabularies
 
-An `onPress` can also be declarative — `{kind:"navigate", to}` to switch between
-pre-drawn **screens** or `{kind:"toggle", target}` to show/hide a node — and the
-browser runs those **instantly with no round-trip to the model**; `{kind:"agent"}`
-is the path back to the model for anything open-ended. A box can also declare an
-`onHold` (a long-press secondary gesture, same action union), an `appear` token
-(a bounded enter animation — `fade`/`slide`, the theme owns the timing), a
-`scroll` axis (`x`/`y`, with legacy `true` normalized to `y`), and a `columns`
-token (`2`/`3`/`4`) — all still tokens, never raw values.
+Every Brick owns a closed list of style targets, properties, states, and allowed
+values. Similar names do not create a global target. For example,
+`progress.style.label` and another Brick's `style.label` are separate contracts.
 
-1. **Bricks are typed data, never raw HTML/JS** → nothing can be injected.
-2. **Style values are tokens, not raw scalars** (`gap: "md"`, not `gap: 23`) →
-   any combination lands on a coherent scale; the model can't produce visual
-   chaos, and good output comes out in one shot.
-3. **Layout is flow-only** (row/col/grid columns, no absolute positioning) →
-   children stack or wrap; they can't overlap or fall off the page.
-4. **The renderer is fail-safe** → unknown or dangling nodes are skipped, so a
-   partial stage renders as "plain", never broken.
+Values come from two closed sources:
 
-Catalog entries and composition-reference descriptions give the model guidance
-without creating another authoring tier: a catalog says which bricks and
-variants are allowed, which reference datasets may be inspected, and whether
-the active theme is locked.
+- **tokens** are Theme-sensitive names such as `md`, `accent`, or `success`;
+- **fixed choices** are renderer semantics such as `row`, `column`, `auto`, or
+  `full`.
 
-## Reskin with data, not code
+The agent sees names and guidance, never the Theme's concrete values. New Bricks
+or new style capabilities are added once to the Core contract, which drives
+types, validation, discovery, and rendering.
 
-A page's look is **operator data, not model output**. Hand `facet-quickstart` an
-assets directory and it reskins and pre-seeds the page — the model still never
-deals in pixels:
+### Four authoring forms
 
-```bash
-OPENAI_API_KEY=sk-… npx facet-quickstart --assets ./assets
+Each Brick has one optional `style` object. There are exactly four normal forms:
+
+```json
+{ "id": "panel", "type": "box", "children": [] }
 ```
 
-where `./assets` holds any mix of:
+Omit `style` to use the Theme default.
 
-- **`catalog.json`** — a validated `FacetCatalog` describing active theme policy,
-  allowed bricks/variants, composition-reference exposure, and usage guidance
-  such as compact-screen and edit-before-append
-  preferences. This is neutral UI vocabulary policy; tenant/project lookup,
-  auth, billing, rate limits, and abuse operations stay outside Facet.
-- **`*.theme.json`** — a named palette/type/scale document mapping token names
-  to CSS values, e.g. `{ "name": "midnight", "color": { "bg": "#0b1020", "fg": "#e8ecff" }, "fontFamily": { "sans": "Inter, system-ui, sans-serif" } }`.
-  The model **selects** a theme by name (via a `set_theme` tool); **it never
-  authors the CSS values** and never writes one into the tree. Theme documents
-  can also carry **brick recipes**: token-only style bundles for bricks such as
-  `box.primary`, `text.heading`, `media.hero`, or `input.default`, plus closed
-  recipe `parts` for renderer-owned internals like
-  field labels/controls, table cells, chart plots, progress fills, and
-  list rows. Nodes choose a `variant` or `tone` where supported; recipe parts
-  never become stage node fields. The renderer resolves the selected recipe
-  through the active theme. An unknown or missing name simply falls back to the
-  default look — nothing throws.
-- **`*.composition.json`** — an optional concrete native reference dataset with
-  shape `{ name, metadata: { description, ... }, root, nodes }`. The prompt
-  index exposes only each catalog-allowed name and bounded description. On
-  demand, `get_composition({ name })` returns the complete validated object to
-  the model's provider transcript without emitting any message or patch; the
-  model then writes ordinary native nodes separately. There are no parameters,
-  insertion target, substitution markers, nesting semantics, or automatic
-  application. Full composition JSON is never shipped in the browser shell or
-  SSE protocol.
-- **`initial.tree.json`** — a starting stage the first visit opens on *before*
-  the model's first turn: a fast, non-blank first paint the agent then refines.
-
-Every document passes one validator at boot (`validateCatalog` /
-`validateTheme` / `validateComposition` / `validateTree`): a value that smuggles CSS
-(`url()`, `var()`, `expression()`, `javascript:`) is refused, dimensions are
-clamped so a theme can't push content off-screen, and a low-contrast
-text/background pair is **flagged as a warning, never rejected** (Facet measures
-the WCAG ratio; you decide the policy). An invalid document is skipped with a
-logged issue and boot proceeds. Raw CSS enters Facet exactly here, as operator
-data behind one gate — the model-facing surface only ever names a theme,
-chooses a recipe variant/tone, or chooses style tokens such as `family: "mono"`.
-
-## What you can build
-
-- **An AI that answers with UI, not text** — "compare these three" → a real
-  table; "I need your details" → a real form; "show me the plan" → a live
-  dashboard, assembled on the spot.
-- **Living pages** — a link that assembles itself for each visitor and keeps
-  changing as they talk. (An agent that owns its own public page is one case of
-  this.)
-- **Copilot canvases** — an agent that manipulates a live panel — adds a chart,
-  updates a card — as it reasons.
-
-## How it works
-
-```
- [ user's browser ]
-   Stage (dynamic)  +  Chat dock (persistent)
-        │  ClientEvent: visit / message / tap
-        ▼
- [ @facet/server ]    reference SSE/POST transport (swap or wrap for production)
-        │
- [ @facet/runtime ]   one isolated session per (agent, visitor)
-        │  calls your model, applies streamed batches, persists the session
-        ▼
- [ your model ]   drives the Stage via @facet/agent + your LLM
-        │  ServerMessage: stage patches (RFC 6902) + chat replies
-        ▼
- [ @facet/react ]   renders the brick spec to safe DOM; applies patches live
+```json
+{
+  "id": "panel",
+  "type": "box",
+  "children": [],
+  "style": { "preset": "panel" }
+}
 ```
 
-**"Your model" defaults to the reference one:** `facet-quickstart` composes
-`@facet/reference-agent`, which fills the model slot with an OpenAI/Anthropic
-tool-calling loop. It is a reference implementation of a pluggable boundary;
-`@facet/quickstart` is the one-command wrapper around it. To connect your own
-model instead, there are three jacks — see
-[Advanced: bring your own brain](#advanced-bring-your-own-brain).
+Use a same-Brick Preset for a repeatable visual role.
 
-**Persistence has three pluggable seams.** The *stage* (the page) is always
-Facet's, kept in a `StageStore` (in-memory, file, or Postgres). The
-*conversation* is a `Sink` you choose: store it for replay, forward it to your
-own system (e.g. a chat platform that already keeps it), or drop it. The
-per-agent asset library (themes, composition references, and an optional initial
-tree) is an `AssetsStore` (memory, file, or Postgres).
+```json
+{
+  "id": "panel",
+  "type": "box",
+  "children": [],
+  "style": { "gap": "lg" }
+}
+```
 
-**Each visitor is a `visitorId`, and you decide where it comes from.** For an
-anonymous page, `browserVisitorId()` stores an unguessable id in the browser so a
-refresh or return visit re-hydrates the same page. When your app already knows
-who the visitor is — a logged-in user, an actor id — pass *that* id instead;
-Facet keys sessions by whatever id you give it (bring-your-own-identity, same as
-the stores). In a public or multi-tenant deployment, project lookup,
-authentication, rate limits, abuse controls, and usage metering belong in the
-platform layer in front of Facet.
+Use direct style for a deliberate local choice.
 
-Two engineering choices keep "constantly re-rendering" cheap and correct:
+```json
+{
+  "id": "panel",
+  "type": "box",
+  "children": [],
+  "style": { "preset": "panel", "gap": "lg" }
+}
+```
 
-- **Stage changes travel as [RFC 6902 JSON Patch](https://datatracker.ietf.org/doc/html/rfc6902)**
-  (the IETF standard, also used by AG-UI). Only diffs move, and the *same* pure
-  `applyPatch` runs on server and client so they never drift.
-- **The tree is a flat map of nodes with a `root` id** (the A2UI shape), so the
-  model can stream and patch one node at a time.
-- **Agent results may stream as batches.** A normal agent returns one
-  `ServerMessage[]`; a streaming agent returns `AsyncIterable<ServerMessage[]>`.
-  The runtime folds, saves, and delivers each batch before pulling the next one,
-  while the conversation record is still written once for the whole turn.
+Use a Preset plus a small direct adjustment when the reusable role is right but
+one local detail should differ.
+
+Resolution is always:
+
+```text
+Theme default → same-Brick Preset → direct style
+```
+
+Later layers override only the exact allowed properties they provide. Renderer
+states such as hover, focus, checked, sorted, or alternate live under the
+Brick-owned targets that declare them. `box` and `text` may also use
+`activeWhen` with `style.active` for browser-local selected looks.
+
+## Patterns and progressive discovery
+
+A Pattern is a validated ordinary Facet tree plus bounded `name`, `description`,
+`useWhen`, and optional `avoidWhen` metadata. It adds no node kind, parameters,
+or insertion mechanism. The agent reads a useful Pattern, then authors an
+adapted native-Brick tree itself. It must not blindly copy sample content or
+actions.
+
+The reference prompt keeps the initial context small and teaches this order:
+
+1. inspect the Pattern index and call `get_pattern` when a worked structure fits;
+2. inspect the Preset index and call `get_preset` when a same-Brick role fits;
+3. inspect the Brick index and call `get_brick_spec` for one unfamiliar Brick;
+4. call `get_style_choices` only for one unfamiliar property value that the
+   agent intends to author.
+
+Pattern and Preset styles already supplied by the validated asset snapshot are
+known-valid and may be re-authored. Exact asset reads do not mutate the stage.
+The agent must still call `render_page`, `set_node`, `append_node`, or
+`remove_node` to satisfy a page-change request.
+
+## Strict authoring, fail-soft rendering
+
+Facet uses different policies at the two safety boundaries:
+
+- **Agent authoring is strict and atomic.** An invalid mutation rejects the
+  entire call, emits no patch, and returns bounded structured errors with paths,
+  allowed choices, and a retry action.
+- **Rendering is fail-soft.** If stale, persisted, or bypassed data reaches the
+  renderer, invalid style fragments are ignored and unknown or dangling nodes
+  are skipped. Valid siblings continue to render.
+
+The renderer fallback is not reported as authoring success. Agents are expected
+to repair rejected calls and retry until the requested change is actually
+visible.
+
+## Assets
+
+The per-agent asset boundary accepts only:
+
+```text
+theme.json
+patterns.json
+initial.tree.json   # optional
+```
+
+`loadAssets` validates and deeply freezes one complete Theme, an exact compatible
+Pattern list, and an optional strict initial tree. Invalid custom Theme data
+falls back as a whole to `DEFAULT_THEME`; invalid Patterns are omitted with
+bounded issues. `FileAssets` is available through `@facet/runtime/node`, while
+`MemoryAssets` is browser-safe.
+
+## Patches and renderer safety
+
+After the initial state, only RFC 6902 JSON Patch operations travel. The same
+pure `applyPatch` implementation runs on server and client. The server owns
+document content; the browser owns local view-state such as current screen,
+toggles, table sort, viewport class, and `colorMode`. Keeping those writers
+separate prevents patch races.
+
+Layout is flow-only. Parents place immediate children, children own only their
+internal layout, and renderer roots enforce containment. There is no arbitrary
+positioning, z-index, authored selector, or CSS escape hatch.
 
 ## Packages
-
-Source directories are grouped for maintainability; npm package names stay
-unchanged. The public surface is intentionally narrower than the source tree:
-use the Foundation packages as the stable Facet contract, then pick authoring or
-reference packages only when they match your integration shape.
 
 ### Foundation
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/core` | `@facet/core` | The contract: closed 11-brick vocabulary, catalog/reference-exposure policy, concrete composition-reference validation, style tokens/theme recipes and recipe parts, RFC 6902 patch, validators, untrusted event normalizers, and session/event types. |
-| `packages/core/runtime` | `@facet/runtime` | Event loop + `StageStore` (page state) + `Sink` (conversation) + `AssetsStore` (`loadAssets`, catalog/theme/composition-reference/initial-tree loading, `withInitialStage`) + `SummaryStore` (opaque rolling-summary records for brain-side context compaction). File-backed Node references via `@facet/runtime/node`. |
-| `packages/core/react` | `@facet/react` | Renderer (`StageRenderer`) for the closed brick vocabulary, token→CSS and recipe/part resolution (`boxStyle`/`textStyle`/`mediaStyle`/…), `useFacet`, `ChatDock`. |
-| `packages/core/assets` | `@facet/assets` | Default-asset data — `DEFAULT_CATALOG`, `DEFAULT_THEME` with brick recipes/parts, and concrete native `DEFAULT_COMPOSITIONS` references. Depends only on `@facet/core`. |
+| `packages/core/core` | `@facet/core` | Closed Brick/style contract, Theme/Preset/Pattern types and validators, strict author validation, fail-soft tree validation, RFC 6902 patch protocol. |
+| `packages/core/runtime` | `@facet/runtime` | Event loop, stores, per-agent assets, summaries, and initial-stage support. |
+| `packages/core/react` | `@facet/react` | React renderer, style resolution, token-to-CSS lookup, browser view-state. |
+| `packages/core/assets` | `@facet/assets` | `DEFAULT_THEME` and `DEFAULT_PATTERNS` data. |
 
 ### Agent Authoring
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-agnostic stage tool specs, executor, inspection helpers, structured observations, local shadow folding, a read-only composition-reference lookup, and reusable prompt kit for custom LLM/tool loops. |
-| `packages/extensions/agent` | `@facet/agent` | In-process TypeScript authoring SDK — the native `Stage` control API (`render`/`append`/…) + `defineAgent`; useful when your code, not an LLM tool schema, emits stage changes. |
+| `packages/agent-stack/agent-tools` | `@facet/agent-tools` | Provider-neutral tool schemas/executor, progressive discovery, observations, prompt kit. |
+| `packages/extensions/agent` | `@facet/agent` | In-process `Stage` API and `defineAgent`. |
 
 ### Integration Adapters
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/extensions/ag-ui` | `@facet/ag-ui` | Optional AG-UI event-layer adapter: browser `FacetTransport` over AG-UI plus Node `@facet/ag-ui/server` handlers around `FacetRuntime`, while Facet keeps stage spec, patch validation, and renderer safety as the authority. |
+| `packages/extensions/ag-ui` | `@facet/ag-ui` | AG-UI adapter that preserves Facet validation and patch semantics. |
 
 ### Reference Implementations
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/core/server` | `@facet/server` | Reference SSE/POST transport for local/self-hosted single-operator use; not a production multi-tenant edge. |
-| `packages/core/client` | `@facet/client` | Reference browser-side transports (`SseTransport`, `LocalTransport`) plus the shared `withView` event helper for `useFacet`; hosted platforms usually implement their own `FacetTransport`. |
-| `packages/extensions/agent-client` | `@facet/agent-client` | Reference external-agent dial-in client for `@facet/server`'s agent channel (SSE + heartbeat + reconnect). |
-| `packages/extensions/store-postgres` | `@facet/store-postgres` | Reference durable `StageStore`/`Sink`/`AssetsStore`/`SummaryStore` adapter backed by Postgres; not a hosted-platform product schema. |
-| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference brain package: providers, prompt, streaming tool loop, and deterministic test fixture. |
+| `packages/core/server` | `@facet/server` | Reference SSE + POST transport. |
+| `packages/core/client` | `@facet/client` | Browser-side transports. |
+| `packages/extensions/agent-client` | `@facet/agent-client` | Dial-in SDK for an external agent. |
+| `packages/extensions/store-postgres` | `@facet/store-postgres` | Durable stores backed by Postgres. |
+| `packages/agent-stack/reference-agent` | `@facet/reference-agent` | Reference LLM brain and streaming tool loop. |
 
-### Local Tools
+### Local tools
 
 | Path | Package | Role |
 | --- | --- | --- |
-| `packages/agent-stack/quickstart` | `@facet/quickstart` | `facet-quickstart` — local first-run CLI/server/page wrapper with a native-brick seeded first paint that composes `@facet/reference-agent`. |
-| `packages/extensions/cli` | `@facet/cli` | The `facet` command — a running agent's action surface. |
-| `packages/extensions/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving via the `facet` CLI. |
+| `packages/agent-stack/quickstart` | `@facet/quickstart` | Zero-setup CLI/server/page wrapper. |
+| `packages/extensions/cli` | `@facet/cli` | Command-line stage control. |
+| `packages/extensions/bridge` | `@facet/bridge` | Local coding-agent bridge. |
 
-### Labs
+See [Architecture](docs/ARCHITECTURE.md) for the full data flow and
+[Package boundaries](docs/PACKAGE-BOUNDARIES.md) for support tiers.
 
-`packages/labs` is reserved for experiments; nothing there is part of the
-supported package contract.
+## Bring your own brain
 
-See [docs/PACKAGE-BOUNDARIES.md](docs/PACKAGE-BOUNDARIES.md) for the package
-support tiers, hosting boundary, and known package gaps.
+An external brain can use `@facet/agent-client` to receive visitor events and
+send stage messages, or use `@facet/agent-tools` inside its own provider loop.
+Facet deliberately does not prescribe the model, memory strategy, backend
+tools, or business policy. It does prescribe the document and patch contract.
 
-## Advanced: bring your own brain
-
-The reference agent is just a default. Your model connects through the authoring
-or reference layer that fits your setup:
-
-- **custom LLM/tool loop** — use `@facet/agent-tools` to expose safe stage
-  tools, structured tool observations, local stage shadow, and reusable
-  Facet-specific prompt guidance to your provider.
-- **in-process TypeScript** — a JS function inside the server (`@facet/agent`),
-  useful for tests, rules engines, or code-authored agents.
-- **local CLI** — a running agent (e.g. Claude Code or Codex) calls
-  `facet append/theme/say/…` and a local bridge forwards it (`@facet/cli`).
-- **reference dial-in** — an external agent connects out over SSE, NAT-safe, and
-  is served events to answer (`@facet/agent-client`). Hosted platforms usually
-  wrap or replace this reference client with their own scoped credentials and
-  transport.
-
-The model (the LLM/rules) is always yours; Facet is the surface it draws on.
-
-To poke at the repo itself:
+## Development
 
 ```bash
 pnpm install
-pnpm demo                                # in-process terminal demo (no browser, no LLM)
-pnpm --filter @facet/playground dev      # browser playground — http://localhost:5290
-pnpm --filter @facet/playground serve    # live server on :5291 (uses your local Claude)
+pnpm verify
+pnpm package:smoke
 ```
 
-Authoring a model's logic looks like this:
-
-```ts
-import { defineAgent } from "@facet/agent";
-
-export const agent = defineAgent(({ event, stage }) => {
-  if (event.kind === "visit") {
-    stage.render(/* a brick tree tailored to event.visitor */);
-  }
-  if (event.kind === "message") {
-    stage
-      .append("root", { id: "price", type: "text", value: "$20/mo" })
-      .say("Added it below.");
-  }
-});
-```
-
-For live construction, use `defineStreamingAgent` and yield whenever the current
-batch should reach the browser; `defineAgent` remains the one-flush-at-the-end
-back-compatible helper.
-
-## Roadmap
-
-- [x] Core spec (closed 11-brick vocabulary, catalog policy, tokens,
-      and recipes) + RFC 6902 patches + in-process demo
-- [x] SSE/POST transport + a browser playground
-- [x] External-agent dial-in (NAT-safe) + local `facet` CLI bridge
-- [x] Durable `StageStore`/`Sink`/`AssetsStore` + a Postgres adapter
-- [x] `@facet/assets` default catalog + theme recipes + concrete native
-      composition reference data
-- [x] One-command quickstart (`facet-quickstart`) composing `@facet/reference-agent`
-- [ ] Docs site + examples
-- [ ] Caching & static skeleton for fast first paint
-- [ ] Content-safety / moderation hooks
-- [ ] More adapters and deployment examples around the runtime seams
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the longer write-up and
-[AGENTS.md](AGENTS.md) if you're contributing.
+See [AGENTS.md](AGENTS.md) for repository rules and
+[CONTRIBUTING.md](CONTRIBUTING.md) for contribution and release workflow.
 
 ## License
 
-[MIT](LICENSE)
+MIT

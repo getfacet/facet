@@ -15,7 +15,7 @@ import { assembleProviderContext } from "./context.js";
 import { createTokenEstimator, estimateProviderTurnChars, estimateTurnChars } from "./estimate.js";
 import {
   compactInTurnTranscript,
-  hasPendingCompositionReadHandoff,
+  hasPendingExactAssetReadHandoff,
   shouldCompactInTurn,
 } from "./in-turn-compaction.js";
 import { emitBatchYieldTrace, executeToolStep, hasPatchBatch, sayBatch } from "./loop-batches.js";
@@ -34,7 +34,7 @@ export const REFERENCE_AGENT_FAILURE_SAY =
 
 export type ReferenceAgentLoopBufferFactory = (
   initialShadow: FacetTree,
-  assets: StageToolAssets,
+  assets?: StageToolAssets,
 ) => StageToolBuffer;
 
 export interface ReferenceAgentLoopOptions {
@@ -99,7 +99,6 @@ export async function* runReferenceAgentLoop(
 ): AsyncGenerator<readonly ServerMessage[], ReferenceAgentLoopSummary, void> {
   const trace = options.trace;
   const tools = options.tools ?? TOOLS;
-  const assets = options.assets ?? {};
   const bufferFactory = options.bufferFactory ?? createStageToolBuffer;
   const fallbackSay = options.fallbackSay ?? REFERENCE_AGENT_FAILURE_SAY;
 
@@ -134,7 +133,10 @@ export async function* runReferenceAgentLoop(
         system: options.system,
         event: options.event,
         turn: context.turn,
-        buffer: bufferFactory(options.session.stage, assets),
+        buffer:
+          options.assets === undefined
+            ? bufferFactory(options.session.stage)
+            : bufferFactory(options.session.stage, options.assets),
         tools,
         budget: options.budget,
         trace,
@@ -251,16 +253,29 @@ async function* runReadyProviderLoop(
       // unconditional stop — but only after compaction has had its chance above,
       // so a high chars-per-token calibration can no longer preempt the token
       // trigger. The TOKEN budget stays a post-compaction last resort exactly as
-      // before: it fires only when a compaction attempt still could not land the
-      // turn under budget, never preempting group accumulation early in a turn.
+      // before. A declared PROVIDER window is different: after compaction gets
+      // its chance, exceeding that real request limit always stops before the
+      // provider call. The preset TOKEN cap remains calibration policy: it fires
+      // only when a compaction attempt still could not land the turn under
+      // budget, never preempting group accumulation early in a turn.
       if (estimatedContextChars > options.budget.maxContextChars) {
         stopReason = "context_limit";
         break;
       }
-      const tokenOver = tokenEstimator.estimateTokens(turnChars) > budgetTokens;
+      const estimatedTokens = tokenEstimator.estimateTokens(turnChars);
+      const declaredProviderWindowOver =
+        typeof options.contextWindowTokens === "number" &&
+        Number.isFinite(options.contextWindowTokens) &&
+        options.contextWindowTokens > 0 &&
+        estimatedTokens > options.contextWindowTokens;
+      if (declaredProviderWindowOver) {
+        stopReason = "context_limit";
+        break;
+      }
+      const tokenOver = estimatedTokens > budgetTokens;
       if (
         tokenOver &&
-        (compactionAttempted || hasPendingCompositionReadHandoff(messages, initialContextLength))
+        (compactionAttempted || hasPendingExactAssetReadHandoff(messages, initialContextLength))
       ) {
         stopReason = "context_limit";
         break;

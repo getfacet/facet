@@ -55,7 +55,6 @@ function largeStage(order: readonly number[], textSize = 500): FacetTree {
     nodes,
     screens: { home: "root", review: "node-001" },
     entry: "home",
-    theme: "studio",
   };
 }
 
@@ -138,7 +137,7 @@ describe("assembleProviderContext", () => {
     expect(firstFinal).toContain("nodes=9");
     expect(firstFinal).toContain("screens=2");
     expect(firstFinal).toContain("entry=home");
-    expect(firstFinal).toContain("theme=studio");
+    expect(firstFinal).not.toContain("theme=");
     expect(firstFinal).toContain("inspect_stage");
     expect(firstFinal).toContain("inspect_node");
     expect(firstFinal).not.toContain('"nodes"');

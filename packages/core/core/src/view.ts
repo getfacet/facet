@@ -10,9 +10,13 @@ import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 export const VIEWPORTS = ["narrow", "medium", "wide"] as const;
 export type Viewport = (typeof VIEWPORTS)[number];
 
-/** Closed color-scheme classes a browser may report on an event. */
-export const SCHEMES = ["light", "dark"] as const;
-export type Scheme = (typeof SCHEMES)[number];
+/** Closed effective color modes a browser may report on an event. */
+export const COLOR_MODES = ["light", "dark"] as const;
+export type ColorMode = (typeof COLOR_MODES)[number];
+
+/** Closed host preference used to choose an effective color mode. */
+export const COLOR_MODE_PREFERENCES = ["system", ...COLOR_MODES] as const;
+export type ColorModePreference = (typeof COLOR_MODE_PREFERENCES)[number];
 
 /**
  * Closed set of directions a locally-sorted table column may report. A closed
@@ -47,7 +51,9 @@ export const MAX_VIEW_SORT_KEYS = 256;
  * never part of the stage tree, never interpreted or rendered back by Facet;
  * the agent reads it to target its next patch (e.g. the screen the visitor is
  * actually on). `screen`/`toggled` keys are agent-authored screen names and
- * node ids; `viewport`/`scheme` are the closed enums above.
+ * node ids; `viewport`/`colorMode` are the closed enums above. `colorMode` is
+ * the effective browser mode (`light` or `dark`), not the host's `system`
+ * preference and never a document-authored style choice.
  */
 export interface ViewSnapshot {
   readonly screen?: string;
@@ -56,7 +62,7 @@ export interface ViewSnapshot {
     Record<string, { readonly column: string; readonly direction: SortDirection }>
   >;
   readonly viewport?: Viewport;
-  readonly scheme?: Scheme;
+  readonly colorMode?: ColorMode;
 }
 
 /**
@@ -66,7 +72,7 @@ export interface ViewSnapshot {
  * then omits `view` and processes the event as if it never carried one.
  *
  * Rules: `screen` must be a string of at most `MAX_FIELD_VALUE_CHARS` (dropped
- * otherwise); `viewport`/`scheme` outside the closed enums are dropped;
+ * otherwise); `viewport`/`colorMode` outside the closed enums are dropped;
  * `toggled` keeps only entries whose key is a string within
  * `MAX_FIELD_VALUE_CHARS` and whose value is `"shown"`/`"hidden"`, capped at
  * `MAX_VIEW_TOGGLED_KEYS` by dropping the OLDEST (first-inserted) entries.
@@ -90,7 +96,7 @@ export function sanitizeView(value: unknown): ViewSnapshot | undefined {
       toggled?: Record<string, "shown" | "hidden">;
       sort?: Record<string, { column: string; direction: SortDirection }>;
       viewport?: Viewport;
-      scheme?: Scheme;
+      colorMode?: ColorMode;
     } = {};
 
     const screen = value["screen"];
@@ -103,9 +109,9 @@ export function sanitizeView(value: unknown): ViewSnapshot | undefined {
       cleaned.viewport = viewport as Viewport;
     }
 
-    const scheme = value["scheme"];
-    if (typeof scheme === "string" && (SCHEMES as readonly string[]).includes(scheme)) {
-      cleaned.scheme = scheme as Scheme;
+    const colorMode = value["colorMode"];
+    if (typeof colorMode === "string" && (COLOR_MODES as readonly string[]).includes(colorMode)) {
+      cleaned.colorMode = colorMode as ColorMode;
     }
 
     const toggled = value["toggled"];
@@ -160,7 +166,7 @@ export function sanitizeView(value: unknown): ViewSnapshot | undefined {
 /**
  * A CLOSED, EXTENSIBLE tagged union naming ONE view-state condition an
  * active-look brick reacts to (enabler B). Read-only: the renderer evaluates it
- * against the already-threaded snapshot view-state to select a variant/style —
+ * against the already-threaded snapshot view-state to select an active style —
  * it never writes view-state and never evaluates an expression. Deliberately a
  * closed union (like the enums above and `ViewSnapshot`), not a DSL: mechanism
  * vs policy — the vocabulary grows only by adding a member on purpose.

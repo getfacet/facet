@@ -1,42 +1,51 @@
 # @facet/react
 
-The Facet React renderer: `StageRenderer` turns the declarative stage spec into a
-sandboxed React tree built from Facet's closed eleven-brick vocabulary.
-`useFacet(transport)` keeps that tree in sync by applying patches live. It also
-ships token→CSS and recipe resolution for color, spacing, typography, brick
-variants, tones, and renderer-owned recipe parts
-(`boxStyle`/`textStyle`/`mediaStyle`/…, `resolveTheme`, `resolveRecipe`),
-`ChatDock`, and `useFacet`.
-(`browserVisitorId` lives in `@facet/client`, next to the transport that needs
-it.)
+The Facet React renderer. `StageRenderer` turns a declarative Facet tree into a
+sandboxed React tree built from the closed eleven-Brick vocabulary, while
+`useFacet(transport)` keeps that tree live by folding RFC 6902 patches.
 
 ```bash
 npm install @facet/react @facet/client @facet/core react
 ```
 
-`StageRenderer` is the security + fail-safe boundary: only known brick types are
-rendered, no node carries raw HTML/JS/CSS, and unresolvable ids are skipped
-rather than thrown on. Bricks render through token-only theme recipes;
-unknown recipes, variants, tones, parts, or theme names fall back to defaults.
-The renderer owns the internal DOM for data/display bricks such as `table`,
-`chart`, `keyValue`, `progress`, `list`, and `loading`; recipe parts style their
-internal labels, controls, rows, tracks, and fills without exposing those part
-names as stage node fields. Actions, navigation, grouped inputs, summaries,
-cards, sections, empty states, badges, and alerts are ordinary `box`/`text`/
-`input` composition patterns—not renderer-owned node types. Optional composition
-references may inform their design but never insert them. A stale raw node using
-one of the retired discriminants blank-degrades as a whole subtree while valid
-siblings continue rendering. Wire it to a transport with
-`useFacet` and pass `send` through `onAction`.
+## Rendering and style resolution
 
-`StageRenderer` delegates safe-tree handling, motion, hold/press collection, and
-brick rendering to private responsibility modules. These modules do not add
-deep-import APIs; the supported surface remains the package root exports.
+`StageRenderer` is the browser fail-safe boundary. Unknown Brick kinds,
+dangling ids, invalid styles, and unsafe media/link values are skipped or
+reduced without throwing; valid siblings continue rendering. No authored Brick
+can carry raw HTML, JavaScript, or CSS.
+
+The renderer accepts one complete operator Theme through its `theme` prop. It
+resolves every Brick in this order:
+
+1. the Theme default for that Brick;
+2. the same-Brick Preset named by `style.preset`;
+3. direct values in the Brick's `style`.
+
+Every value is checked against the owning Brick's Core contract before it is
+mapped to CSS. Nested targets remain Brick-owned authoring paths: for example,
+an input may use `style.control`, and a progress Brick may use `style.track`
+and `style.fill`. The renderer owns the DOM those targets affect, while the
+Facet Document owns only the closed target/property names.
+
+`resolveTheme(theme, colorMode)` validates the singular Theme and selects its
+light or dark paint branch. Invalid Theme input falls back to `DEFAULT_THEME`
+as a whole. The `colorMode` prop is host/client view state (`light`, `dark`, or
+`system`), never Facet Document syntax.
+
+The package also exports `DEFAULT_THEME`, `COLOR`, `ResolvedTheme`, and small
+token-to-CSS helpers such as `boxStyle`, `textStyle`, `mediaStyle`, and
+`fieldStyle`. Full per-Brick target resolution remains an internal renderer
+responsibility so it cannot drift from `StageRenderer`.
+
+Patterns are agent-side reference data. They are never needed by the renderer,
+never inserted automatically, and should not be shipped to the browser.
+
+## Example
 
 ```tsx
-import { SseTransport } from "@facet/client";
-import { StageRenderer, useFacet } from "@facet/react";
-import { browserVisitorId } from "@facet/client";
+import { SseTransport, browserVisitorId } from "@facet/client";
+import { DEFAULT_THEME, StageRenderer, useFacet } from "@facet/react";
 
 const transport = new SseTransport("http://localhost:5291", {
   visitorId: browserVisitorId(),
@@ -47,6 +56,8 @@ export function App() {
   return (
     <StageRenderer
       tree={tree}
+      theme={DEFAULT_THEME}
+      colorMode="system"
       onAction={(action) => send({ kind: "tap", action })}
       onRecord={record}
       transition={transition}
@@ -55,11 +66,9 @@ export function App() {
 }
 ```
 
-`useFacet(...).transition` is local renderer metadata for the current folded
-patch revision. Pass it to `<StageRenderer transition={transition} />` so root
-document replacements use the renderer's exact stage crossfade path. Omitting
-the prop is compatible with existing consumers and still renders the latest
-tree, but disables exact root-replace crossfade.
+`useFacet(...).transition` identifies the current folded patch revision. Pass
+it to `StageRenderer` to enable the exact root-replacement crossfade. Omitting
+it still renders the latest tree but disables that crossfade.
 
 See the [Facet docs](https://github.com/getfacet/facet) and
 [ARCHITECTURE.md](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md).

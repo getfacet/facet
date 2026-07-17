@@ -1,33 +1,22 @@
 # @facet/reference-agent
 
-Reference Facet brain: provider adapters, prompt policy, a bounded streaming
-harness, and a deterministic test fixture.
+Facet's reference brain: provider adapters, prompt policy, a bounded streaming
+tool loop, context compaction, and a deterministic test fixture.
 
 Tier: **Reference Implementation**.
 
-This package is a reference harness, not Facet's product boundary and not a
-customer production brain. Use it to understand a robust tool-calling loop, test
-Facet end to end, or bootstrap local evaluations. Agent business logic, domain tools,
-and production policy belong to the application or platform that uses Facet.
+This package demonstrates a robust Facet agent loop. It is not the product
+boundary or a ready-made production brain. Application business logic, domain
+tools, identity, spend controls, and production policy belong to the host.
 
-The reusable Facet stage tool and prompt-kit layer lives in
-`@facet/agent-tools`. That package owns the canonical tool specs,
-`executeStageTool`, inspection helpers, result types, local stage-shadow
-helpers, catalog-aware enforcement, and provider-neutral Facet authoring
-guidance without choosing a provider or reference policy. Use
-`@facet/agent-tools` directly for custom agent loops. This package consumes that
-layer and adds the OpenAI/Anthropic adapters, reference page brief,
-event/history/stage context, bounded harness loop, and deterministic test
-fixture.
-
-`@facet/quickstart` composes this package for the provider-backed
-`facet-quickstart` path. You can import it directly when you want the reference
-agent without the quickstart CLI/server/page wrapper.
+The reusable provider-neutral tool and prompt layer lives in
+`@facet/agent-tools`. This package adds OpenAI/Anthropic adapters, event/history
+context, retry and stop policy, budgets, tracing, and compaction.
 
 ```ts
-import { MemorySink } from "@facet/runtime";
-import { DEFAULT_CATALOG, DEFAULT_COMPOSITIONS } from "@facet/assets";
+import { DEFAULT_PATTERNS, DEFAULT_THEME } from "@facet/assets";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
+import { MemorySink } from "@facet/runtime";
 
 const provider = resolveProvider({}, process.env);
 if (provider === null) throw new Error("Set OPENAI_API_KEY or ANTHROPIC_API_KEY");
@@ -37,8 +26,7 @@ const agent = createReferenceAgent({
   sink: new MemorySink(),
   agentId: "reference",
   guide: "# My Facet page",
-  catalog: DEFAULT_CATALOG,
-  compositions: DEFAULT_COMPOSITIONS,
+  assets: { theme: DEFAULT_THEME, patterns: DEFAULT_PATTERNS },
   budgetPreset: "quickstart",
   trace: (event) => console.debug("[facet-reference-agent]", event),
 });
@@ -46,203 +34,146 @@ const agent = createReferenceAgent({
 
 ## Package layout
 
-- `provider/`: provider turn/tool types, OpenAI and Anthropic adapters, and env
-  resolution. The top-level `provider.ts` remains a compatibility barrel.
-- `prompt/`: compatibility wrapper around the shared agent-tools prompt kit,
-  plus event/history transcript messages and bounded current-stage summaries.
-  The package root keeps the prompt helpers used by quickstart, including
-  `TOOLS`, without exporting the raw agent-tools executor.
-- `harness/`: context assembly, token-calibrated sizing, background and in-turn
-  compaction, budget normalization, retry/stop classification, transcript
-  observations, trace events, and the streaming loop. Test-only compaction
-  controls remain internal to this harness rather than the package API.
+- `provider/`: provider turn/tool types and OpenAI/Anthropic adapters.
+- `prompt/`: the shared Facet system prompt wrapper, event/history messages,
+  and bounded current-stage summaries.
+- `harness/`: context assembly, token sizing, compaction, budget normalization,
+  retry/stop classification, exact tool observations, tracing, and the
+  streaming loop.
 - `stub.ts`: deterministic agent fixture for local tests and live-link gates.
 
-The harness is bounded by default. It compacts sink history, includes full stage
-JSON only after a bounded length check says it can fit, falls back to
-deterministic stage summaries for large pages, retries only classified retryable
-provider failures, and emits one fallback chat line when a turn otherwise
-produces no useful output. Corrupt sink history rows and malformed stage
-metadata degrade to placeholders/summaries instead of aborting prompt assembly.
+## Theme, Presets, Patterns, and Brick discovery
 
-## LLM context compaction
+`ReferenceAgentOptions.assets` is required. It accepts either static
+`{ theme, patterns }` data or a function that returns that shape, synchronously
+or asynchronously. The source is acquired once at the start of each provider
+turn, then validated, detached, indexed, and deeply frozen by
+`createStageToolAssetSnapshot`.
 
-Pass a `summaryStore` (any `@facet/runtime` `SummaryStore`; quickstart wires
-`MemorySummaryStore` by default) and the harness compacts with the same
-provider/model it acts with, sized in tokens calibrated from provider-reported
-usage (the Anthropic adapter also enables `cache_control` prefix caching on the
-stable system+tools prefix):
+The complete Theme is used for strict mutation validation but its CSS values do
+not enter the prompt. The prompt receives only:
 
-- **Cross-turn** — after a turn, a background task on a per-visitor serial lane
-  folds older sink history (chunked under `maxSummarizerInputChars`) into a
-  rolling, redacted, schema-validated conversation summary. It persists with a
-  monotonic covered-through marker plus a conversation-identity anchor, so a
-  wiped/reset sink rebuilds at generation 1 instead of resurrecting a foreign
-  summary. The next turn injects it as a pinned user-role data block ahead of
-  the verbatim recent turns.
-- **In-turn** — when the tool transcript passes `compactionTriggerRatio` of the
-  effective token budget, the oldest whole tool step-groups fold into one
-  summary message (pair-safe for both provider wire formats) and the stage
-  block refreshes from the tool-buffer shadow under a never-inflate guard, so
-  the turn continues instead of hard-stopping at `context_limit`.
+- all eleven Brick names with `description` and `useWhen`;
+- active same-Brick Preset names with `description` and `useWhen`; and
+- active Pattern names with `description` and `useWhen`.
 
-Every summarizer failure (throw, timeout, invalid output, store error,
-insufficient gain) degrades to the deterministic truncation pipeline — a turn
-is never blocked or failed by compaction. Without a `summaryStore`, no
-summarizer is constructed and behavior is exactly the deterministic pipeline.
-Compaction emits `compaction_triggered` / `compaction_done` /
-`compaction_failed` trace events with the site (`cross_turn` / `in_turn`).
+The model normally considers a Pattern first, then a matching Preset, and then
+direct Brick style when a deliberate adjustment is needed. It can call:
+
+- `get_pattern({ name })` for one exact reference tree;
+- `get_preset({ brick, name })` for one exact unresolved Preset;
+- `get_brick_spec({ type })` for one compact Core Brick field/style contract;
+  and
+- `get_style_choices({ brick, target, property })` for the allowed names and
+  meanings at one exact local style property.
+
+Those four calls are exact asset reads with `outcome: "no_stage_change"`. They
+never emit runtime messages or patches and never change the stage shadow or
+pending buffer. The model must follow them with ordinary stage mutation tools
+when the visitor requested a visible page change.
+
+The singular Theme is host/operator input. It is not selected or mutated by the
+model. The browser receives that Theme separately from the stage; Patterns stay
+inside the agent/provider loop.
+
+## Tool loop
+
+The reference agent uses the canonical `FACET_STAGE_TOOL_SPECS` from
+`@facet/agent-tools`:
+
+- mutations: `render_page`, `append_node`, `set_node`, `remove_node`;
+- exact discovery: `get_pattern`, `get_preset`, `get_brick_spec`,
+  `get_style_choices`;
+- inspection: `inspect_stage`, `inspect_node`; and
+- chat: `say`.
+
+Every result is structured. The loop reads `outcome`,
+`visible_to_visitor`, `warnings`, `errors`, and `next_action`. `pending`,
+`rejected`, `applied_with_warnings`, `applied_not_visible`, and
+`no_stage_change` are not visible completion for a requested page edit. The
+agent must continue until a mutation returns `applied_visible`, unless the
+request was factual and required no stage change.
+
+Exact asset payloads bypass the generic observation-data cap only inside the
+reference harness. The newest exact read is retained whole for its first next
+provider delivery. In-turn compaction and transcript folding use the same
+four-name exact-read policy. If the complete step cannot fit the provider's
+declared context window, the loop stops with `context_limit` rather than send a
+partial or summarized asset.
+
+Pattern JSON is provider-side only. It is not written into the HTML shell, SSE
+frames, reconnect snapshots, browser globals, stage nodes, or transport routes.
+Only later ordinary RFC 6902 stage patches reach the runtime and client.
+
+## Context compaction
+
+Pass a `summaryStore` to enable model-assisted compaction. Quickstart wires a
+`MemorySummaryStore` by default.
+
+- **Cross-turn:** after a turn, a background task folds older Sink history into
+  a rolling redacted summary with a monotonic covered-through marker and
+  conversation identity anchor.
+- **In-turn:** when the transcript crosses `compactionTriggerRatio`, the oldest
+  complete tool step groups fold into one summary and the current stage block
+  refreshes from the tool-buffer shadow.
+
+Summarizer throw, timeout, invalid output, store failure, or insufficient gain
+falls back to deterministic truncation. Compaction never makes the visitor turn
+fail. Without a `summaryStore`, no summarizer is constructed.
 
 ## Budgets and tracing
 
-`createReferenceAgent` accepts additive budget options:
+`createReferenceAgent` accepts:
 
-- `budgetPreset`: `"quickstart"` (default), `"hosted"`, or `"local-dev"`.
-- `budget`: field-level overrides for steps, tool calls, context/history/stage
-  character limits, observation/final-text caps, provider retries, retry
-  backoff, and the token/compaction model (`maxContextTokens`,
-  `compactionTriggerRatio`/`compactionTargetRatio`,
-  `minRecentTurnsVerbatim`/`minRecentStepsVerbatim`, `maxSummaryTokens`,
-  `maxSummarizerInputChars`, `summarizerTimeoutMs`/`summarizerRetries`,
-  `compactionCooldownSteps`, `contextWindowTokensDefault`).
-- Legacy `maxSteps` and `historyTurns` still work when the corresponding
-  explicit budget override is absent.
+- `budgetPreset`: `"quickstart"` (default), `"hosted"`, or `"local-dev"`;
+- `budget`: field overrides for steps, calls, history/stage/context size,
+  observations, provider retries, token limits, and compaction; and
+- compatibility aliases `maxSteps` and `historyTurns` when the corresponding
+  explicit override is absent.
 
-Preset intent:
+The provider's declared `contextWindowTokens`, when present, is a hard
+pre-request ceiling. The configured budget remains the compaction and policy
+ceiling within it.
 
-| Preset | Intended use |
-| --- | --- |
-| `quickstart` | Conservative default for local first-run and npx evaluation. |
-| `hosted` | More generous reference-harness profile for controlled hosted evaluations; not an endorsement that this package is your production brain. |
-| `local-dev` | Generous but still bounded local experimentation profile. |
-
-Pass `trace(event)` to observe bounded, sanitized harness events such as
-`turn_start`, `context_compacted`, `provider_attempt`, `provider_retry`,
-`provider_step`, `tool_result`, `batch_yield`, `stop`, and `turn_error`.
-Trace callback failures are ignored so observability cannot break a visitor turn.
-Async trace callbacks are serialized per callback with a bounded pending queue;
-when the queue is saturated, terminal `stop`/`turn_error` events are preserved
-over ordinary trace events.
-
-## Tool Layer
-
-Use `@facet/agent-tools` directly when you are writing your own provider loop
-and only need the safe Facet stage tool surface:
-
-```ts
-import { FACET_STAGE_TOOL_SPECS, executeStageTool } from "@facet/agent-tools";
-```
-
-The tool loop feeds the model structured JSON tool results. The prompt teaches
-the model to inspect `outcome`, `visible_to_visitor`, `warnings`, and
-`next_action` before claiming completion. In particular, `pending`,
-`rejected`, `applied_with_warnings`, and `applied_not_visible` are not visible
-success. This keeps false-success cases, such as creating an unattached node
-with `set_node`, inside the repair loop.
-
-`ReferenceAgentOptions.compositions` is the operator's composition library.
-They are concrete native reference datasets, not stage operations or renderer
-extensions. `createReferenceAgent` validates, catalog-filters, detaches, and
-deep-freezes them once at creation. The resulting immutable snapshot is shared
-by both the prompt index and lookup, so later caller mutation cannot make the
-advertised names drift from what the model can read. An omitted catalog exposes
-all valid references within the deterministic 128-reference exposure cap; a
-supplied malformed catalog fails closed to none.
-
-Reference-agent catalog consumption has two paths:
-
-- Prompt path: `buildSystem(guide, assets?)` takes `PromptAssets` (`themes`,
-  `compositions`, optional `catalog`) and delegates to the agent-tools prompt
-  kit. The composition index contains only each exposed reference's `name` and
-  short `metadata.description`; it never includes the native node JSON. Catalog
-  guidance also includes locked theme behavior, allowed brick variants,
-  reference exposure policy, and compact-screen guidance.
-- Lookup path: the same immutable snapshot and catalog are passed as stage-tool
-  assets. For a complex UI, the model may call `get_composition` with exactly
-  `{ name }`. A successful read returns the complete concrete
-  `{ name, metadata, root, nodes }` JSON, emits no runtime message or patch, and
-  leaves both the stage shadow and pending edit buffer unchanged. The model then
-  copies or adapts the example by calling the ordinary native stage tools.
-
-The successful `get_composition` payload has a deliberately narrow exact-data
-boundary. Its complete serialized JSON is preserved in the structured tool
-result delivered to the next provider request even when it exceeds the generic
-observation data cap. The generic public observation formatter remains capped,
-and the exact path is not a public bypass. In-turn compaction retains a newest
-reference-read step verbatim for that first delivery, even when configured to
-retain zero recent steps. If the complete step cannot fit the context budget,
-the loop stops with `context_limit` instead of sending a partial reference or a
-summary in its place.
-
-Composition JSON stays inside the agent/provider loop. The read does not add a
-browser global, transport payload, asset route, stage node, or provenance field;
-only the later ordinary RFC 6902 stage patches can reach the runtime and client.
-Catalog policy remains enforceable rather than prompt-only: disallowed bricks
-and variants, tone-only recipe selectors outside the advertised
-variants, locked theme changes, and unavailable reference names are rejected
-before any patch is yielded.
-
-Catalog policy here is UI authoring policy for the reference brain. It is not
-hosted platform policy for auth, tenants, billing, metering, rate limits, spend
-caps, secrets operations, or admin workflows.
-
-`buildSystem(guide, assets?)` remains the reference-agent compatibility helper,
-but its fixed Facet guidance now comes from `@facet/agent-tools`. This package
-still owns the reference `DEFAULT_GUIDE`, provider adapters, context assembly,
-history compaction, budgets, retries, trace events, and fallback behavior.
-The reference prompt consumes the reusable native-brick guidance from
-agent-tools; it does not duplicate renderer recipes, theme token values,
-provider keys, or visitor ids. Composition node JSON appears only in the exact
-result of an explicit provider-side reference read.
-
-Use `@facet/reference-agent` when you want Facet's runnable reference brain.
+`trace(event)` receives bounded events such as `turn_start`,
+`compaction_triggered`, `compaction_done`, `provider_attempt`, `provider_step`,
+`tool_result`, `batch_yield`, `stop`, and `turn_error`. Trace failures are
+ignored; async callbacks are serialized with a bounded pending queue.
 
 ## Exports
 
-- `createReferenceAgent` plus compatibility alias `createQuickstartAgent`.
-- `ReferenceAgentOptions` plus compatibility alias `QuickstartAgentOptions`.
-- `ReferenceProvider` plus compatibility alias `QuickstartProvider`.
-- Harness budget and trace helpers: `REFERENCE_AGENT_BUDGET_PRESETS`,
-  `normalizeBudget`, stop reason constants/types, retry classification helpers,
-  `REFERENCE_AGENT_TRACE_EVENT_TYPES`, trace emitter/sanitizer types, and
-  `ReferenceAgentLoopSummary`.
-- Provider helpers: `resolveProvider`, `createOpenAiProvider`,
-  `createAnthropicProvider`, model constants, and provider turn/tool types.
-- Prompt/tool compatibility: `DEFAULT_GUIDE`, `buildSystem`, `TOOLS`,
-  `describeEvent`, `buildInitialMessages`, `PromptAssets`, and the Facet stage
-  tool types re-exported from `@facet/agent-tools`.
-- Stub: `createStubAgent`, `STUB_TREE`.
+- `createReferenceAgent` and compatibility alias `createQuickstartAgent`.
+- `ReferenceAgentOptions`, `ReferenceAgentAssetSource`, provider types, and
+  provider factories/resolution helpers.
+- `REFERENCE_AGENT_BUDGET_PRESETS`, budget normalization, stop/retry helpers,
+  trace event types, and `ReferenceAgentLoopSummary`.
+- `DEFAULT_GUIDE`, `buildSystem`, `TOOLS`, event/stage prompt helpers,
+  `FACET_STAGE_TOOL_NAMES`, `FACET_STAGE_TOOL_SPECS`, and stage tool input types.
+- summary validation/helpers and token estimator helpers.
+- `createStubAgent` and `STUB_TREE`.
+
+The package root intentionally does not re-export the raw
+`executeStageTool`; custom provider loops should import that from
+`@facet/agent-tools`.
 
 ## Provider keys
 
-Provider keys are read from environment variables by `resolveProvider`:
-
-| Provider | Key env var | Default model |
+| Provider | Environment variable | Default model |
 | --- | --- | --- |
-| `openai` | `OPENAI_API_KEY` | `gpt-5.4-mini` |
-| `anthropic` | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` |
+| OpenAI | `OPENAI_API_KEY` | `gpt-5.4-mini` |
+| Anthropic | `ANTHROPIC_API_KEY` | `claude-sonnet-4-5` |
 
-An explicit provider flag requires its matching key. Without a flag, OpenAI wins
-when both keys are present, then Anthropic, then `null`.
+An explicit provider requires its matching key. Without an explicit choice,
+OpenAI wins when both keys exist, then Anthropic, then `null`. Keys remain in
+provider request headers and are never logged, persisted, or sent to the
+browser. The adapters use `fetch` directly.
 
-Keys are never logged, persisted, or placed in the browser bundle. They travel
-only in the provider request auth header. The adapters use raw `fetch`; no
-provider SDK dependency is bundled here.
-
-The prompt formatter includes normal collected fields so actions can use form
-context, but field names that look sensitive (`password`, `token`, `api_key`,
-provider-key-like names) and key-looking field values are rendered as
-`[redacted]`. This prompt/history boundary deliberately applies the same
-runtime-owned rule a second time, so legacy or externally supplied Sink entries
-are scrubbed without maintaining a second set of secret patterns. Visit prompts
-include non-secret context such as referrer/locale and omit the `visitorId`
-bearer key.
+Prompt/history formatting redacts sensitive field names and key-looking field
+values with the shared runtime rule. Visitor ids are omitted from prompt data.
 
 ## Stub
 
-`createStubAgent()` is deterministic: no network, no randomness, and no clock
-reads. It renders `STUB_TREE` on visit, echoes messages into the stage and chat,
-responds to `theme <name>`, and echoes collected tap fields in sorted order.
-
-Use it for local tests and the quickstart live-test Tier 1 path, not as the
-public quickstart experience.
+`createStubAgent()` has no network, randomness, or clock reads. It renders
+`STUB_TREE` on visit, echoes messages into the stage and chat, and reports
+collected tap fields in sorted order. Use it for deterministic tests and the
+quickstart live-test Tier 1 path.

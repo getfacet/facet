@@ -1,18 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { Pool } from "pg";
-import type { FacetCatalog, FacetTree } from "@facet/core";
+import type { FacetTree } from "@facet/core";
 import { loadAssets, MemoryAssets, type AssetDocuments, type AssetsStore } from "@facet/runtime";
-import { FileAssets } from "@facet/runtime/node";
+import type { Pool } from "pg";
 import { PostgresAssets as BarrelPostgresAssets } from "./index.js";
 import { PostgresAssets } from "./postgres-assets.js";
-
-// Built at runtime so the legacy token never appears as a source literal
-// (same idiom as theme.test.ts).
-const legacy = ["st", "amp"].join("");
 
 interface Call {
   readonly text: string;
   readonly values: readonly unknown[];
+}
+
+interface StoredRow {
+  theme: unknown | null;
+  theme_present: boolean;
+  patterns: unknown | null;
+  patterns_present: boolean;
+  initial_tree: unknown | null;
+  initial_tree_present: boolean;
 }
 
 function fakePool(rows: readonly unknown[] = []): { pool: Pool; calls: Call[] } {
@@ -32,24 +36,22 @@ function rejectingPool(error: Error): Pool {
   } as unknown as Pool;
 }
 
+function parseJsonParameter(value: unknown): unknown | null {
+  return value === null ? null : (JSON.parse(String(value)) as unknown);
+}
+
 function roundTripPool(): Pool {
-  const rows = new Map<
-    string,
-    {
-      themes: unknown;
-      compositions: unknown;
-      catalog: unknown | null;
-      initial_tree: unknown | null;
-    }
-  >();
+  const rows = new Map<string, StoredRow>();
   return {
     query: (text: string, values: readonly unknown[] = []) => {
       if (/insert into facet_assets/i.test(text)) {
         rows.set(String(values[0]), {
-          themes: JSON.parse(String(values[1])) as unknown,
-          compositions: JSON.parse(String(values[2])) as unknown,
-          catalog: values[3] === null ? null : (JSON.parse(String(values[3])) as unknown),
-          initial_tree: values[4] === null ? null : (JSON.parse(String(values[4])) as unknown),
+          theme: parseJsonParameter(values[1]),
+          theme_present: values[1] !== null,
+          patterns: parseJsonParameter(values[2]),
+          patterns_present: values[2] !== null,
+          initial_tree: parseJsonParameter(values[3]),
+          initial_tree_present: values[3] !== null,
         });
         return Promise.resolve({ rows: [] });
       }
@@ -66,314 +68,191 @@ function normalizeSql(sql: string): string {
   return sql.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-const validTheme = {
+const rawTheme = {
   name: "midnight",
-  description: "a dark theme",
-  color: { bg: "#111111", fg: "#eeeeee" },
+  description: "operator-owned Theme",
+  tokens: { intentionally: "raw at this boundary" },
 };
 
-const validComposition = {
+const rawPattern = {
   name: "cta",
-  metadata: { description: "a call to action" },
-  root: "s-root",
-  nodes: {
-    "s-root": { id: "s-root", type: "box", children: ["s-label"] },
-    "s-label": { id: "s-label", type: "text", value: "Go" },
-  },
-};
-
-const invalidComposition = {
-  name: "broken",
-  metadata: { description: "a broken reference dataset" },
-  root: "missing",
-  nodes: { x: { id: "x", type: "text", value: "orphan" } },
-};
-
-const legacySlotsField = ["sl", "ots"].join("");
-const legacyReferenceField = ["u", "se"].join("");
-const legacyTemplateComposition = {
-  name: "legacy-template",
-  description: "An obsolete template",
-  [legacySlotsField]: { label: "Default" },
-  root: "copy",
-  nodes: { copy: { id: "copy", type: "text", value: "Default" } },
-};
-const legacyReferenceComposition = {
-  name: "legacy-reference",
-  metadata: { description: "An obsolete nested reference" },
+  description: "A call to action",
+  useWhen: "The page needs one primary action.",
   root: "root",
-  nodes: {
-    root: { id: "root", type: "box", children: ["ref"] },
-    ref: { [legacyReferenceField]: "legacy-template" },
-  },
-};
-
-const customCatalog: FacetCatalog = {
-  name: "operator",
-  theme: { active: "midnight", switchPolicy: "locked", allowed: ["midnight"] },
-  bricks: [{ type: "box" }],
-  compositions: { mode: "allow", names: ["cta"] },
-  policy: {
-    editBeforeAppend: true,
-    compactScreens: true,
-    maxScreenSections: 4,
-  },
+  nodes: { root: { id: "root", type: "text", value: "Go" } },
 };
 
 const seedTree: FacetTree = {
   root: "root",
-  nodes: {
-    root: { id: "root", type: "box", children: ["h"] },
-    h: { id: "h", type: "text", value: "Welcome" },
-  },
+  nodes: { root: { id: "root", type: "text", value: "Welcome" } },
 };
 
 describe("PostgresAssets", () => {
   it("is exported through the package barrel and implements AssetsStore", () => {
     expect(BarrelPostgresAssets).toBe(PostgresAssets);
-
-    const { pool } = fakePool();
-    const postgresAssets: AssetsStore = new PostgresAssets(pool);
-    const memoryAssets: AssetsStore = new MemoryAssets({ themes: [], compositions: [] });
-    const fileAssets: AssetsStore = new FileAssets("/tmp/facet-assets-unused");
+    const postgresAssets: AssetsStore = new PostgresAssets(fakePool().pool);
+    const memoryAssets: AssetsStore = new MemoryAssets({});
 
     expect(postgresAssets).toBeInstanceOf(PostgresAssets);
     expect(memoryAssets).toBeInstanceOf(MemoryAssets);
-    expect(fileAssets).toBeInstanceOf(FileAssets);
   });
 
-  it("load returns raw persisted composition documents without validating them", async () => {
-    const malformedTheme = { name: "hostile", color: { bg: "url(http://evil)" } };
-    const { pool } = fakePool([
-      {
-        themes: [validTheme, malformedTheme],
-        compositions: [validComposition],
-        initial_tree: seedTree,
-      },
-    ]);
-
-    await expect(new PostgresAssets(pool).load("agent")).resolves.toEqual({
-      themes: [validTheme, malformedTheme],
-      compositions: [validComposition],
-      initialTree: seedTree,
-    });
-  });
-
-  it("load returns raw persisted catalog documents without validating them", async () => {
-    const malformedCatalog = {
-      name: "bad name",
-      theme: { switchPolicy: "sometimes" },
-      bricks: [{ type: "script" }],
-    };
-    const { pool } = fakePool([
-      {
-        themes: [validTheme],
-        compositions: [validComposition],
-        catalog: malformedCatalog,
-        initial_tree: seedTree,
-      },
-    ]);
-
-    await expect(new PostgresAssets(pool).load("agent")).resolves.toEqual({
-      themes: [validTheme],
-      compositions: [validComposition],
-      catalog: malformedCatalog,
-      initialTree: seedTree,
-    });
-  });
-
-  it("load normalizes missing rows and null jsonb columns to canonical composition defaults", async () => {
-    const { pool: emptyPool } = fakePool([]);
-    await expect(new PostgresAssets(emptyPool).load("missing")).resolves.toEqual({
-      themes: [],
-      compositions: [],
-    });
-
-    const { pool: nullPool } = fakePool([{ themes: null, compositions: null, initial_tree: null }]);
-    await expect(new PostgresAssets(nullPool).load("agent")).resolves.toEqual({
-      themes: [],
-      compositions: [],
-    });
-  });
-
-  it("load reports non-array theme and composition jsonb columns to runtime validation", async () => {
-    const { pool } = fakePool([
-      { themes: { not: "an array" }, compositions: "not an array", initial_tree: null },
-    ]);
-
-    const docs = await new PostgresAssets(pool).load("agent");
-
-    expect(docs.themes).toEqual([]);
-    expect(docs.compositions).toEqual([]);
-    expect(docs.issues).toEqual([
-      "postgres assets `themes` was not an array — ignored",
-      "postgres assets `compositions` was not an array — ignored",
-    ]);
-
-    const loaded = await loadAssets(new PostgresAssets(pool), "agent");
-    expect(loaded.issues.some((issue) => issue.includes("postgres assets `themes`"))).toBe(true);
-    expect(loaded.issues.some((issue) => issue.includes("postgres assets `compositions`"))).toBe(
-      true,
-    );
-  });
-
-  it("loadAssets defaults nullable Postgres catalog rows through runtime validation", async () => {
-    const { pool } = fakePool([
-      { themes: [validTheme], compositions: [validComposition], catalog: null, initial_tree: null },
-    ]);
-    const loaded = await loadAssets(new PostgresAssets(pool), "agent");
-
-    expect(loaded.catalog.name).toBe("default");
-    expect(loaded.catalog.theme.switchPolicy).toBe("locked");
-    expect(loaded.issues.some((issue) => issue.includes("catalog"))).toBe(false);
-  });
-
-  it("putAssets upserts catalog docs and a later load returns them", async () => {
-    const store = new PostgresAssets(roundTripPool());
-    const docs: AssetDocuments = {
-      themes: [validTheme],
-      compositions: [validComposition],
-      catalog: customCatalog,
-      initialTree: seedTree,
-    };
-    const replacement: AssetDocuments = {
-      themes: [],
-      compositions: [],
-    };
-
-    await store.putAssets("agent", docs);
-    await expect(store.load("agent")).resolves.toEqual(docs);
-
-    await store.putAssets("agent", replacement);
-    await expect(store.load("agent")).resolves.toEqual(replacement);
-  });
-
-  it("loadAssets still resolves defaults for an agent with no Postgres asset row", async () => {
-    const { pool } = fakePool([]);
-    const loaded = await loadAssets(new PostgresAssets(pool), "agent");
-
-    expect(loaded.themes.length).toBeGreaterThan(0);
-    expect(loaded.compositions.length).toBeGreaterThan(0);
-    expect(loaded.issues).toEqual([]);
-  });
-
-  it("putAssets round-trips composition docs and a later load returns the replacement", async () => {
-    const store = new PostgresAssets(roundTripPool());
-    const docs: AssetDocuments = {
-      themes: [validTheme],
-      compositions: [validComposition],
-      initialTree: seedTree,
-    };
-    const replacement: AssetDocuments = {
-      themes: [{ ...validTheme, name: "dawn", color: { bg: "#ffffff", fg: "#111111" } }],
-      compositions: [],
-    };
-
-    await store.putAssets("agent", docs);
-    await store.putAssets("agent", replacement);
-
-    await expect(store.load("agent")).resolves.toEqual(replacement);
-  });
-
-  it("round-trips concrete and legacy shapes raw while loadAssets keeps only the native document", async () => {
-    const store = new PostgresAssets(roundTripPool());
-    const docs: AssetDocuments = {
-      themes: [validTheme],
-      compositions: [validComposition, legacyTemplateComposition, legacyReferenceComposition],
-      catalog: customCatalog,
-      initialTree: seedTree,
-    };
-
-    await store.putAssets("agent", docs);
-    await expect(store.load("agent")).resolves.toEqual(docs);
-
-    const loaded = await loadAssets(store, "agent");
-    const names = loaded.compositions.map((composition) => composition.name);
-    expect(names).toContain("cta");
-    expect(names).not.toContain("legacy-template");
-    expect(names).not.toContain("legacy-reference");
-    expect(loaded.compositions.find((composition) => composition.name === "cta")).toMatchObject(
-      validComposition,
-    );
-    expect(loaded.catalog).toEqual(customCatalog);
-    expect(loaded.issues.some((issue) => issue.includes("composition document skipped"))).toBe(
-      true,
-    );
-  });
-
-  it("keeps composition assets isolated by agent id", async () => {
-    const store = new PostgresAssets(roundTripPool());
-    const agentA: AssetDocuments = { themes: [validTheme], compositions: [] };
-    const agentB: AssetDocuments = {
-      themes: [],
-      compositions: [validComposition],
-      initialTree: seedTree,
-    };
-
-    await store.putAssets("agent-a", agentA);
-    await store.putAssets("agent-b", agentB);
-
-    await expect(store.load("agent-a")).resolves.toEqual(agentA);
-    await expect(store.load("agent-b")).resolves.toEqual(agentB);
-    await expect(store.load("agent-c")).resolves.toEqual({ themes: [], compositions: [] });
-  });
-
-  it("putAssets emits an agent_id upsert that replaces compositions and never mentions the legacy field", async () => {
+  it("persists singular Theme and exact Patterns only", async () => {
     const { pool, calls } = fakePool();
-    await new PostgresAssets(pool).putAssets("agent", {
-      themes: [],
-      compositions: [],
-      catalog: customCatalog,
-    });
+    const docs: AssetDocuments = {
+      theme: rawTheme,
+      patterns: [rawPattern],
+      initialTree: seedTree,
+    };
+
+    await new PostgresAssets(pool).putAssets("agent", docs);
 
     const call = calls[0];
-    expect(call?.values).toEqual(["agent", "[]", "[]", JSON.stringify(customCatalog), null]);
+    expect(call?.values).toEqual([
+      "agent",
+      JSON.stringify(rawTheme),
+      JSON.stringify([rawPattern]),
+      JSON.stringify(seedTree),
+    ]);
     const sql = normalizeSql(call?.text ?? "");
-    expect(sql).toContain("catalog");
+    expect(sql).toContain("insert into facet_assets (agent_id, theme, patterns, initial_tree");
     expect(sql).toContain("on conflict (agent_id)");
-    expect(sql).toContain("do update set");
-    expect(sql).toContain("themes = excluded.themes");
-    expect(sql).toContain("compositions = excluded.compositions");
-    expect(sql).toContain("catalog = excluded.catalog");
+    expect(sql).toContain("theme = excluded.theme");
+    expect(sql).toContain("patterns = excluded.patterns");
     expect(sql).toContain("initial_tree = excluded.initial_tree");
     expect(sql).toContain("updated_at = now()");
-    expect(sql).not.toContain(legacy);
+    for (const retired of [
+      ["theme", "s"].join(""),
+      ["composition", "s"].join(""),
+      ["catalog"].join(""),
+    ]) {
+      expect(sql).not.toMatch(new RegExp(`\\b${retired}\\b`));
+    }
   });
 
-  it("load queries only composition columns and returns no legacy field", async () => {
-    const { pool, calls } = fakePool([
-      { themes: [validTheme], compositions: [validComposition], initial_tree: null },
-    ]);
-    const docs = await new PostgresAssets(pool).load("agent");
+  it("keeps SQL NULL absence distinct from JSONB null and explicit none", async () => {
+    await expect(new PostgresAssets(fakePool([]).pool).load("missing")).resolves.toEqual({});
 
-    const sql = normalizeSql(calls[0]?.text ?? "");
-    expect(sql).toContain("compositions");
-    expect(sql).not.toContain(legacy);
-    expect(`${legacy}s` in docs).toBe(false);
-    expect(docs.compositions).toEqual([validComposition]);
+    const absent = fakePool([
+      {
+        theme: null,
+        theme_present: false,
+        patterns: null,
+        patterns_present: false,
+        initial_tree: null,
+        initial_tree_present: false,
+      },
+    ]);
+    await expect(new PostgresAssets(absent.pool).load("agent")).resolves.toEqual({});
+
+    const malformed = fakePool([
+      {
+        theme: null,
+        theme_present: true,
+        patterns: null,
+        patterns_present: true,
+        initial_tree: null,
+        initial_tree_present: true,
+      },
+    ]);
+    await expect(new PostgresAssets(malformed.pool).load("agent")).resolves.toEqual({
+      theme: null,
+      patterns: null,
+      initialTree: null,
+    });
+
+    const explicitNone = fakePool([
+      {
+        theme: rawTheme,
+        theme_present: true,
+        patterns: [],
+        patterns_present: true,
+        initial_tree: seedTree,
+        initial_tree_present: true,
+      },
+    ]);
+    await expect(new PostgresAssets(explicitNone.pool).load("agent")).resolves.toEqual({
+      theme: rawTheme,
+      patterns: [],
+      initialTree: seedTree,
+    });
+
+    const selectSql = normalizeSql(explicitNone.calls[0]?.text ?? "");
+    expect(selectSql).toContain("theme is not null as theme_present");
+    expect(selectSql).toContain("patterns is not null as patterns_present");
+    expect(selectSql).toContain("initial_tree is not null as initial_tree_present");
   });
 
-  it("loadAssets drops malformed raw composition docs from PostgresAssets without throwing", async () => {
-    const { pool } = fakePool([
-      { themes: [validTheme], compositions: [invalidComposition], initial_tree: null },
-    ]);
-    const loaded = await loadAssets(new PostgresAssets(pool), "agent");
+  it("round-trips omission, malformed presence, explicit none, and replacements", async () => {
+    const store = new PostgresAssets(roundTripPool());
 
-    expect(loaded.themes.map((theme) => theme.name)).toContain("midnight");
-    expect(loaded.compositions.map((composition) => composition.name)).not.toContain("broken");
-    expect(loaded.compositions.length).toBeGreaterThan(0);
-    expect(loaded.issues.some((issue) => issue.includes("composition document skipped"))).toBe(
-      true,
+    await store.putAssets("absent", {});
+    await expect(store.load("absent")).resolves.toEqual({});
+
+    await store.putAssets("malformed", { theme: null, patterns: null, initialTree: null });
+    await expect(store.load("malformed")).resolves.toEqual({
+      theme: null,
+      patterns: null,
+      initialTree: null,
+    });
+
+    await store.putAssets("agent", { theme: rawTheme, patterns: [rawPattern] });
+    await expect(store.load("agent")).resolves.toEqual({
+      theme: rawTheme,
+      patterns: [rawPattern],
+    });
+
+    await store.putAssets("agent", { patterns: [] });
+    await expect(store.load("agent")).resolves.toEqual({ patterns: [] });
+  });
+
+  it("lets runtime distinguish default Patterns, explicit none, and malformed input", async () => {
+    const defaults = await loadAssets(new PostgresAssets(fakePool([]).pool), "agent");
+    expect(defaults.patterns.length).toBeGreaterThan(0);
+
+    const none = await loadAssets(
+      new PostgresAssets(
+        fakePool([
+          {
+            theme: null,
+            theme_present: false,
+            patterns: [],
+            patterns_present: true,
+            initial_tree: null,
+            initial_tree_present: false,
+          },
+        ]).pool,
+      ),
+      "agent",
     );
+    expect(none.patterns).toEqual([]);
+
+    const malformed = await loadAssets(
+      new PostgresAssets(
+        fakePool([
+          {
+            theme: null,
+            theme_present: false,
+            patterns: null,
+            patterns_present: true,
+            initial_tree: null,
+            initial_tree_present: false,
+          },
+        ]).pool,
+      ),
+      "agent",
+    );
+    expect(malformed.patterns).toEqual([]);
+    expect(malformed.issues.some((issue) => issue.includes("patterns"))).toBe(true);
   });
 
-  it("loadAssets swallows Postgres load failures and falls back to defaults", async () => {
+  it("lets runtime fall back when the Postgres read fails", async () => {
     const loaded = await loadAssets(
       new PostgresAssets(rejectingPool(new Error("db down"))),
       "agent",
     );
 
-    expect(loaded.themes.length).toBeGreaterThan(0);
+    expect(loaded.theme.name).toBe("default");
     expect(loaded.issues).toContain("assets load failed: db down");
   });
 });

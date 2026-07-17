@@ -1,11 +1,5 @@
 import { Stage } from "@facet/agent";
-import {
-  isValidThemeName,
-  type FacetNode,
-  type FacetTree,
-  type NodeId,
-  type ServerMessage,
-} from "@facet/core";
+import { type FacetNode, type FacetTree, type NodeId, type ServerMessage } from "@facet/core";
 
 function parseJson<T>(value: string | undefined, what: string): T {
   if (value === undefined) throw new Error(`missing ${what}`);
@@ -47,27 +41,11 @@ export function buildMessages(
       stage.screens(map, rest[1]);
       break;
     }
-    case "theme": {
-      const name = rest.length === 1 ? rest[0] : undefined;
-      if (rest.length !== 1 || name === "") {
-        throw new Error("theme needs exactly one theme name");
-      }
-      if (name === undefined) {
-        throw new Error("theme needs exactly one theme name");
-      }
-      if (!isValidThemeName(name)) {
-        throw new Error(`invalid theme name "${name}" (letters/digits/_/-, max 64)`);
-      }
-      stage.theme(name);
-      break;
-    }
     case "say":
       stage.say(rest.join(" "));
       break;
     default:
-      throw new Error(
-        `unknown command "${command ?? ""}" (render|set|append|remove|screens|theme|say)`,
-      );
+      throw new Error(`unknown command "${command ?? ""}" (render|set|append|remove|screens|say)`);
   }
   return stage.flush();
 }

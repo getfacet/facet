@@ -1,4 +1,4 @@
-import type { FacetAgent } from "@facet/core";
+import type { FacetAgent, FacetPattern, FacetTheme } from "@facet/core";
 import { createReferenceAgent, type ReferenceAgentOptions } from "@facet/reference-agent";
 import { MemorySummaryStore, type SummaryStore } from "@facet/runtime";
 
@@ -10,16 +10,51 @@ export { MemorySummaryStore } from "@facet/runtime";
 export type { SummaryStore } from "@facet/runtime";
 
 /**
- * Options for the quickstart's default agent composition. Identical to
- * `ReferenceAgentOptions` except `summaryStore` is tri-state:
+ * Options for the quickstart's default agent composition. The generic
+ * reference-agent asset source is fixed to one boot-resolved Theme and exact
+ * compatible Pattern list, while `summaryStore` is tri-state:
  * - `undefined` (default) ⇒ a fresh `MemorySummaryStore` — cross-turn LLM
  *   compaction is ON out of the box;
  * - `null` ⇒ opt out entirely (no store, no summarizer — the reference agent's
  *   own default);
  * - a store instance ⇒ bring your own (e.g. a durable backend).
  */
-export interface ComposeQuickstartAgentOptions extends Omit<ReferenceAgentOptions, "summaryStore"> {
+export interface ComposeQuickstartAgentOptions extends Omit<
+  ReferenceAgentOptions,
+  "assets" | "summaryStore"
+> {
+  /** The one effective, validated Theme resolved for this quickstart boot. */
+  readonly theme: FacetTheme;
+  /** The exact validated Pattern list compatible with `theme`. */
+  readonly patterns: readonly FacetPattern[];
   readonly summaryStore?: SummaryStore | null;
+}
+
+const SEEDED_PROGRESSIVE_CONTEXT_CHARS = 160_000;
+
+/**
+ * The built-in 175-node seed needs more repair room than a generic reference
+ * agent. Keep that policy composition-local so the public quickstart preset —
+ * and generic createReferenceAgent consumers with small custom providers —
+ * retain their existing defaults. The harness treats each provider's declared
+ * context window as a hard pre-request limit while leaving the preset token cap
+ * as the existing compaction-and-calibration policy.
+ */
+function seededProgressiveBudget(
+  options: Pick<ComposeQuickstartAgentOptions, "budget" | "budgetPreset">,
+): ReferenceAgentOptions["budget"] {
+  if (options.budgetPreset !== undefined && options.budgetPreset !== "quickstart") {
+    return options.budget;
+  }
+
+  const requested = options.budget;
+  const maxContextChars = requested?.maxContextChars ?? SEEDED_PROGRESSIVE_CONTEXT_CHARS;
+  return {
+    ...requested,
+    maxContextChars,
+    maxContextTokens: requested?.maxContextTokens ?? maxContextChars / 4,
+    maxSummarizerInputChars: requested?.maxSummarizerInputChars ?? maxContextChars / 2,
+  };
 }
 
 /**
@@ -32,11 +67,15 @@ export interface ComposeQuickstartAgentOptions extends Omit<ReferenceAgentOption
  * never composes through here and so never builds a summarizer.
  */
 export function composeQuickstartAgent(options: ComposeQuickstartAgentOptions): FacetAgent {
-  const { summaryStore, ...rest } = options;
+  const { patterns, summaryStore, theme, ...rest } = options;
   const store: SummaryStore | undefined =
     summaryStore === null ? undefined : (summaryStore ?? new MemorySummaryStore());
+  const assets = Object.freeze({ theme, patterns });
+  const budget = seededProgressiveBudget(options);
   return createReferenceAgent({
     ...rest,
+    ...(budget !== undefined ? { budget } : {}),
+    assets,
     ...(store !== undefined ? { summaryStore: store } : {}),
   });
 }

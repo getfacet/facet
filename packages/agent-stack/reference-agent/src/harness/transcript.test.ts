@@ -112,55 +112,76 @@ describe("provider transcript helpers", () => {
     ]);
   });
 
-  it("preserves complete get_composition results while generic observations stay bounded", () => {
-    const messages: TurnMessage[] = [];
-    const exactObservation = JSON.stringify({
-      status: "ok",
-      data: { data: JSON.stringify({ name: "large-reference", nodes: "x".repeat(5_000) }) },
-    });
-    const genericObservation = `inspection ${"y".repeat(5_000)}`;
-    const step: ProviderStep = {
-      text: "",
-      toolCalls: [
-        { id: "composition-1", name: "get_composition", input: { name: "large-reference" } },
-        { id: "inspect-1", name: "inspect_stage", input: {} },
-      ],
-    };
+  it.each(["get_pattern", "get_preset", "get_brick_spec", "get_style_choices"])(
+    "preserves complete %s results while generic observations stay bounded",
+    (exactToolName) => {
+      const messages: TurnMessage[] = [];
+      const exactObservation = JSON.stringify({
+        status: "ok",
+        data: { data: JSON.stringify({ name: "large-reference", nodes: "x".repeat(5_000) }) },
+      });
+      const genericObservation = `inspection ${"y".repeat(5_000)}`;
+      const step: ProviderStep = {
+        text: "",
+        toolCalls: [
+          { id: "asset-1", name: exactToolName, input: { name: "large-reference" } },
+          { id: "inspect-1", name: "inspect_stage", input: {} },
+        ],
+      };
 
-    const bounded = appendProviderStepTranscript(
+      const bounded = appendProviderStepTranscript(
+        messages,
+        step,
+        [
+          { callId: "asset-1", content: exactObservation },
+          { callId: "inspect-1", content: genericObservation },
+        ],
+        { maxObservationChars: 4_000 },
+      );
+
+      expect(exactObservation.length).toBeGreaterThan(4_000);
+      expect(bounded[0]).toEqual({
+        callId: "asset-1",
+        content: exactObservation,
+        originalChars: exactObservation.length,
+        truncated: false,
+        omittedChars: 0,
+      });
+      expect(bounded[1]).toMatchObject({
+        callId: "inspect-1",
+        originalChars: genericObservation.length,
+        truncated: true,
+      });
+      const exactResult = messages[1];
+      expect(exactResult).toEqual({
+        role: "tool_result",
+        callId: "asset-1",
+        content: exactObservation,
+      });
+      const genericResult = messages[2];
+      expect(genericResult).toMatchObject({ role: "tool_result", callId: "inspect-1" });
+      if (genericResult?.role !== "tool_result") throw new Error("expected generic tool_result");
+      expect(genericResult.content).toHaveLength(4_000);
+      expect(genericResult.content).toMatch(/\[truncated: \d+ chars omitted\]$/);
+    },
+  );
+
+  it("uses the provider call identity instead of producer-supplied tool metadata", () => {
+    const messages: TurnMessage[] = [];
+    const longObservation = "x".repeat(5_000);
+
+    const [bounded] = appendProviderStepTranscript(
       messages,
-      step,
-      [
-        { callId: "composition-1", content: exactObservation },
-        { callId: "inspect-1", content: genericObservation },
-      ],
+      {
+        text: "",
+        toolCalls: [{ id: "inspect-1", name: "inspect_stage", input: {} }],
+      },
+      [{ callId: "inspect-1", content: longObservation, toolName: "get_pattern" }],
       { maxObservationChars: 4_000 },
     );
 
-    expect(exactObservation.length).toBeGreaterThan(4_000);
-    expect(bounded[0]).toEqual({
-      callId: "composition-1",
-      content: exactObservation,
-      originalChars: exactObservation.length,
-      truncated: false,
-      omittedChars: 0,
-    });
-    expect(bounded[1]).toMatchObject({
-      callId: "inspect-1",
-      originalChars: genericObservation.length,
-      truncated: true,
-    });
-    const exactResult = messages[1];
-    expect(exactResult).toEqual({
-      role: "tool_result",
-      callId: "composition-1",
-      content: exactObservation,
-    });
-    const genericResult = messages[2];
-    expect(genericResult).toMatchObject({ role: "tool_result", callId: "inspect-1" });
-    if (genericResult?.role !== "tool_result") throw new Error("expected generic tool_result");
-    expect(genericResult.content).toHaveLength(4_000);
-    expect(genericResult.content).toMatch(/\[truncated: \d+ chars omitted\]$/);
+    expect(bounded?.truncated).toBe(true);
+    expect(bounded?.content).toHaveLength(4_000);
   });
 
   it("keeps the truncation marker whole even when a tiny observation cap is requested", () => {

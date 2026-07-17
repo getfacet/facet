@@ -1,30 +1,4 @@
 import {
-  ALIGNS,
-  APPEARS,
-  COLUMNS,
-  COLORS,
-  DIRECTIONS,
-  FONT_FAMILIES,
-  FONT_SIZES,
-  FONT_WEIGHTS,
-  GRADIENTS,
-  HIGHLIGHTS,
-  JUSTIFIES,
-  LEADINGS,
-  MAX_WIDTHS,
-  MIN_HEIGHTS,
-  RADII,
-  RATIOS,
-  COLOR_SCHEMES,
-  SCRIMS,
-  SCROLL_AXES,
-  SHADOWS,
-  SIZINGS,
-  SPACES,
-  TEXT_ALIGNS,
-  TRACKINGS,
-} from "./tokens.js";
-import {
   BLOCK_TYPES,
   INPUT_KINDS,
   MARK_KINDS,
@@ -44,6 +18,7 @@ import {
   type Overlay,
   type OverlayKind,
   type RichTextBlock,
+  type RichTextStyle,
   type Run,
   type TextStyle,
 } from "./nodes.js";
@@ -60,6 +35,7 @@ import {
 } from "./issues.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import { normalizeFacetAction } from "./action-validation.js";
+import { sanitizeBrickStyle } from "./style-validation.js";
 export { isPrimitiveRecord, sanitizeActionPayload } from "./action-validation.js";
 
 function asString(value: unknown): string | undefined {
@@ -72,16 +48,6 @@ function asBool(value: unknown): boolean | undefined {
 
 function asToken<T extends string>(value: unknown, allowed: readonly string[]): T | undefined {
   return typeof value === "string" && allowed.includes(value) ? (value as T) : undefined;
-}
-
-function asNumberToken<T extends number>(value: unknown, allowed: readonly T[]): T | undefined {
-  const numeric =
-    typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
-  return Number.isInteger(numeric) && allowed.includes(numeric as T) ? (numeric as T) : undefined;
-}
-
-function isValidSlotName(name: string): boolean {
-  return SLOT_NAME_RE.test(name);
 }
 
 /** Only render media from safe URL schemes — never `javascript:`, `data:text/html`, etc. */
@@ -112,137 +78,6 @@ export function isSafeHref(href: string): boolean {
     s.startsWith("//") ||
     (s.startsWith("/") && !s.startsWith("//"))
   );
-}
-
-function boxStyle(value: unknown, nodeId: string, issues: IssueSink): BoxStyle {
-  const style: Record<string, unknown> = {};
-  if (isObject(value)) {
-    const set = <T extends string>(key: string, allowed: readonly string[]): void => {
-      const token = asToken<T>(value[key], allowed);
-      if (token !== undefined) style[key] = token;
-    };
-    set("direction", DIRECTIONS);
-    set("gap", SPACES);
-    set("pad", SPACES);
-    set("align", ALIGNS);
-    set("justify", JUSTIFIES);
-    set("bg", COLORS);
-    set("radius", RADII);
-    set("width", SIZINGS);
-    set("shadow", SHADOWS);
-    // appear/scroll junk is stripped WITH an issue (unlike the legacy tokens
-    // above): the words are new, so a wrong value is a teachable agent mistake,
-    // not pre-existing content. Echoes are bounded (printableValue/printableKey)
-    // — never a raw untrusted value in an issue string.
-    const appear = asToken(value.appear, APPEARS);
-    if (appear !== undefined) {
-      style.appear = appear;
-    } else if (value.appear !== undefined) {
-      issues.push(
-        `node "${printableKey(nodeId)}": unknown appear token ${printableValue(value.appear)} dropped`,
-      );
-    }
-    const scroll = asToken(value.scroll, SCROLL_AXES);
-    if (scroll !== undefined) {
-      style.scroll = scroll;
-    } else if (value.scroll === true) {
-      style.scroll = "y";
-    } else if (value.scroll !== undefined) {
-      issues.push(
-        `node "${printableKey(nodeId)}": unknown scroll axis ${printableValue(value.scroll)} dropped`,
-      );
-    }
-    const columns = asNumberToken(value.columns, COLUMNS);
-    if (columns !== undefined) {
-      style.columns = columns;
-    } else if (value.columns !== undefined) {
-      issues.push(
-        `node "${printableKey(nodeId)}": unknown columns token ${printableValue(value.columns)} dropped`,
-      );
-    }
-    const wrap = asBool(value.wrap);
-    if (wrap !== undefined) style.wrap = wrap;
-    const border = asBool(value.border);
-    if (border !== undefined) style.border = border;
-    const grow = asBool(value.grow);
-    if (grow !== undefined) style.grow = grow;
-    // Landing-grade tokens: like appear/scroll above, a wrong value is a
-    // teachable agent mistake, so unknowns drop WITH a (bounded) issue.
-    const setStrict = (key: string, allowed: readonly string[]): void => {
-      const token = asToken(value[key], allowed);
-      if (token !== undefined) {
-        style[key] = token;
-      } else if (value[key] !== undefined) {
-        issues.push(
-          `node "${printableKey(nodeId)}": unknown ${key} token ${printableValue(value[key])} dropped`,
-        );
-      }
-    };
-    setStrict("minHeight", MIN_HEIGHTS);
-    setStrict("maxWidth", MAX_WIDTHS);
-    setStrict("gradient", GRADIENTS);
-    setStrict("backdropScrim", SCRIMS);
-    setStrict("scheme", COLOR_SCHEMES);
-    const sticky = asBool(value.sticky);
-    if (sticky !== undefined) {
-      style.sticky = sticky;
-    } else if (value.sticky !== undefined) {
-      issues.push(
-        `node "${printableKey(nodeId)}": unknown sticky flag ${printableValue(value.sticky)} dropped`,
-      );
-    }
-  }
-  return style as BoxStyle;
-}
-
-function textStyle(value: unknown, nodeId: string, issues: IssueSink): TextStyle {
-  const style: Record<string, unknown> = {};
-  if (isObject(value)) {
-    const family = asToken(value.family, FONT_FAMILIES);
-    if (family !== undefined) style.family = family;
-    const size = asToken(value.size, FONT_SIZES);
-    if (size !== undefined) style.size = size;
-    const weight = asToken(value.weight, FONT_WEIGHTS);
-    if (weight !== undefined) style.weight = weight;
-    const color = asToken(value.color, COLORS);
-    if (color !== undefined) style.color = color;
-    const align = asToken(value.align, TEXT_ALIGNS);
-    if (align !== undefined) style.align = align;
-    // Landing-grade text tokens: unknowns drop WITH a (bounded) issue.
-    const setStrict = (key: string, allowed: readonly string[]): void => {
-      const token = asToken(value[key], allowed);
-      if (token !== undefined) {
-        style[key] = token;
-      } else if (value[key] !== undefined) {
-        issues.push(
-          `node "${printableKey(nodeId)}": unknown ${key} token ${printableValue(value[key])} dropped`,
-        );
-      }
-    };
-    setStrict("tracking", TRACKINGS);
-    setStrict("leading", LEADINGS);
-    setStrict("highlight", HIGHLIGHTS);
-  }
-  return style as TextStyle;
-}
-
-function mediaStyle(value: unknown): MediaStyle {
-  const style: Record<string, unknown> = {};
-  if (isObject(value)) {
-    const radius = asToken(value.radius, RADII);
-    if (radius !== undefined) style.radius = radius;
-    const width = asToken(value.width, SIZINGS);
-    if (width !== undefined) style.width = width;
-    const ratio = asToken(value.ratio, RATIOS);
-    if (ratio !== undefined) style.ratio = ratio;
-  }
-  return style as MediaStyle;
-}
-
-function inputStyle(value: unknown): InputStyle | undefined {
-  if (!isObject(value)) return undefined;
-  const width = asToken<(typeof SIZINGS)[number]>(value.width, SIZINGS);
-  return width !== undefined ? { width } : undefined;
 }
 
 function inputOptions(value: unknown): readonly string[] | undefined {
@@ -281,33 +116,26 @@ function setColumnRow(raw: Record<string, unknown>, node: { column?: string; row
     node.row = raw.row;
   }
 }
-function asVariant(value: unknown, nodeId: string, issues: IssueSink): string | undefined {
-  if (value === undefined) return undefined;
-  if (typeof value === "string" && isValidSlotName(value)) return value;
-  issues.push(`node "${printableKey(nodeId)}": malformed variant dropped`);
-  return undefined;
-}
-
 /**
- * Enabler B: sanitize the `active` view-state predicate through the closed
+ * Sanitize the `activeWhen` view-state predicate through the closed
  * `sanitizeViewPredicate` (drops an unknown/future kind WITH an issue), so a
  * hostile/unknown predicate degrades to the default look and never becomes an
  * expression eval.
  */
-function setActivePredicate(
+function setActiveWhen(
   raw: Record<string, unknown>,
   id: string,
-  node: { active?: ViewPredicate },
+  node: { activeWhen?: ViewPredicate },
   issues: IssueSink,
 ): void {
-  if (raw.active === undefined) return;
-  const active = sanitizeViewPredicate(raw.active);
-  if (active !== undefined) {
-    node.active = active;
+  if (raw.activeWhen === undefined) return;
+  const activeWhen = sanitizeViewPredicate(raw.activeWhen);
+  if (activeWhen !== undefined) {
+    node.activeWhen = activeWhen;
     return;
   }
   issues.push(
-    `node "${printableKey(id)}": unknown active predicate ${printableValue(raw.active)} dropped`,
+    `node "${printableKey(id)}": unknown activeWhen predicate ${printableValue(raw.activeWhen)} dropped`,
   );
 }
 
@@ -359,30 +187,18 @@ export function validateBox(
   const node: {
     id: string;
     type: "box";
-    style: BoxStyle;
+    style?: BoxStyle;
     children: string[];
     onPress?: FacetAction;
     onHold?: FacetAction;
     hidden?: boolean;
-    variant?: string;
     backdrop?: string;
     overlay?: Overlay;
-    activeVariant?: string;
-    activeStyle?: BoxStyle;
-    active?: ViewPredicate;
-  } = { id, type: "box", style: boxStyle(raw.style, id, issues), children };
-  const variant = asVariant(raw.variant, id, issues);
-  if (variant !== undefined) node.variant = variant;
-  // Enabler B active look: `activeVariant` is a recipe name; `activeStyle` runs
-  // through the SAME boxStyle() token sanitizer as base `style` (no token
-  // bypass); `active` is the closed predicate. All additive optionals.
-  const activeVariant = asVariant(raw.activeVariant, id, issues);
-  if (activeVariant !== undefined) node.activeVariant = activeVariant;
-  if (raw.activeStyle !== undefined) {
-    const activeStyle = boxStyle(raw.activeStyle, id, issues);
-    if (Object.keys(activeStyle).length > 0) node.activeStyle = activeStyle;
-  }
-  setActivePredicate(raw, id, node, issues);
+    activeWhen?: ViewPredicate;
+  } = { id, type: "box", children };
+  const style = sanitizeBrickStyle("box", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
+  setActiveWhen(raw, id, node, issues);
   // `backdrop` is a node-id STRING (resolved to a media node fail-safe at
   // render time in WU-6), NOT a token: kept iff a string, else dropped with
   // a (bounded) issue.
@@ -424,34 +240,22 @@ export function validateText(
     id: string;
     type: "text";
     value: string;
-    style: TextStyle;
-    variant?: string;
+    style?: TextStyle;
     from?: string;
     column?: string;
     row?: number;
-    activeVariant?: string;
-    activeStyle?: TextStyle;
-    active?: ViewPredicate;
+    activeWhen?: ViewPredicate;
   } = {
     id,
     type: "text",
     value,
-    style: textStyle(raw.style, id, issues),
   };
-  const variant = asVariant(raw.variant, id, issues);
-  if (variant !== undefined) node.variant = variant;
+  const style = sanitizeBrickStyle("text", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   // Enabler A store binding: use the shared bounded dataset-cell rules.
   setFrom(raw, id, node, issues);
   setColumnRow(raw, node);
-  // Enabler B active look: `activeStyle` routes through the SAME textStyle()
-  // token sanitizer as base `style`; `active` is the closed predicate.
-  const activeVariant = asVariant(raw.activeVariant, id, issues);
-  if (activeVariant !== undefined) node.activeVariant = activeVariant;
-  if (raw.activeStyle !== undefined) {
-    const activeStyle = textStyle(raw.activeStyle, id, issues);
-    if (Object.keys(activeStyle).length > 0) node.activeStyle = activeStyle;
-  }
-  setActivePredicate(raw, id, node, issues);
+  setActiveWhen(raw, id, node, issues);
   return node;
 }
 
@@ -486,14 +290,13 @@ export function validateMedia(
     type: "media";
     kind: MediaKind;
     src: string;
-    variant?: string;
     alt?: string;
     poster?: string;
     controls?: boolean;
-    style: MediaStyle;
-  } = { id, type: "media", kind, src, style: mediaStyle(raw.style) };
-  const variant = asVariant(raw.variant, id, issues);
-  if (variant !== undefined) node.variant = variant;
+    style?: MediaStyle;
+  } = { id, type: "media", kind, src };
+  const style = sanitizeBrickStyle("media", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   const alt = asString(raw.alt);
   node.alt = alt ?? "";
   const poster = asString(raw.poster);
@@ -519,15 +322,12 @@ export function validateInput(
     id: string;
     type: "input";
     name: string;
-    variant?: string;
     input?: InputKind;
     label?: string;
     placeholder?: string;
     options?: readonly string[];
     style?: InputStyle;
   } = { id, type: "input", name };
-  const variant = asVariant(raw.variant, id, issues);
-  if (variant !== undefined) node.variant = variant;
   const input = asToken<InputKind>(raw.input, INPUT_KINDS);
   if (input !== undefined) node.input = input;
   const options = inputOptions(raw.options);
@@ -541,9 +341,11 @@ export function validateInput(
   if (label !== undefined) node.label = label;
   const placeholder = asString(raw.placeholder);
   if (placeholder !== undefined) node.placeholder = placeholder;
-  // Input style was silently stripped before — kit emits it and the
-  // renderer consumes it, so sanitize it through like every other style.
-  const style = inputStyle(raw.style);
+  const style = sanitizeBrickStyle("input", raw.style, {
+    nodeId: id,
+    issues,
+    inputKind: input ?? "text",
+  });
   if (style !== undefined) node.style = style;
   return node;
 }
@@ -555,8 +357,7 @@ export const MAX_MARKS_PER_RUN = 8;
 export const MAX_LIST_DEPTH = 5;
 
 /**
- * Coerce a numeric token and CLAMP it to `[min, max]` (reusing the numeric
- * coercion of `asNumberToken`). A missing/non-numeric value yields `fallback`;
+ * Coerce a numeric value and CLAMP it to `[min, max]`. A missing/non-numeric value yields `fallback`;
  * an over/under-cap value clamps to the boundary. Never throws.
  */
 function clampInt(value: unknown, min: number, max: number, fallback: number): number {
@@ -681,11 +482,10 @@ export function validateRichText(
     id: string;
     type: "richtext";
     blocks: RichTextBlock[];
-    style: TextStyle;
-    variant?: string;
-  } = { id, type: "richtext", blocks, style: textStyle(raw.style, id, issues) };
-  const variant = asVariant(raw.variant, id, issues);
-  if (variant !== undefined) node.variant = variant;
+    style?: RichTextStyle;
+  } = { id, type: "richtext", blocks };
+  const style = sanitizeBrickStyle("richtext", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   return node;
 }
 

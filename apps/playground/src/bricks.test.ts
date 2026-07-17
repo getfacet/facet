@@ -4,11 +4,8 @@ import { describe, expect, it } from "vitest";
 import { page, text } from "./bricks.js";
 import { welcome } from "./ui.js";
 
-// Frozen literal fixtures capturing the pre-migration @facet/kit output of the
-// two playground faces (welcome in ui.ts, OFFLINE_FACE in server.ts). Inlined as
-// literals — NOT imported from @facet/kit — so this byte-identical guarantee
-// survives kit's deletion in WU-2. The whole point of the migration is that the
-// local ./bricks.js helper emits these exact trees.
+// Frozen literal fixtures for the playground's local authored Brick syntax.
+// The helper must emit these exact plain trees without a compatibility mapper.
 
 const WELCOME_SUBTITLE = "A subtitle line";
 
@@ -19,18 +16,18 @@ const WELCOME_FIXTURE: FacetTree = {
       id: "k1",
       type: "text",
       value: "What should this page be?",
-      style: { size: "2xl", weight: "bold", align: "center" },
+      style: { fontSize: "2xl", fontWeight: "bold", textAlign: "center" },
     },
     k2: {
       id: "k2",
       type: "text",
       value: WELCOME_SUBTITLE,
-      style: { color: "fg-muted", align: "center" },
+      style: { color: "mutedForeground", textAlign: "center" },
     },
     root: {
       id: "root",
       type: "box",
-      style: { direction: "col", gap: "md", pad: "2xl" },
+      style: { direction: "column", gap: "md", padding: "2xl" },
       children: ["k1", "k2"],
     },
   },
@@ -43,18 +40,18 @@ const OFFLINE_FIXTURE: FacetTree = {
       id: "k1",
       type: "text",
       value: "Nova is offline right now",
-      style: { size: "2xl", weight: "bold", align: "center" },
+      style: { fontSize: "2xl", fontWeight: "bold", textAlign: "center" },
     },
     k2: {
       id: "k2",
       type: "text",
       value: "This page's agent isn't connected — check back soon.",
-      style: { color: "fg-muted", align: "center" },
+      style: { color: "mutedForeground", textAlign: "center" },
     },
     root: {
       id: "root",
       type: "box",
-      style: { direction: "col", gap: "lg", pad: "2xl" },
+      style: { direction: "column", gap: "lg", padding: "2xl" },
       children: ["k1", "k2"],
     },
   },
@@ -64,10 +61,14 @@ const OFFLINE_FIXTURE: FacetTree = {
 function buildWelcome(subtitle: string): FacetTree {
   return page(
     [
-      text("What should this page be?", { size: "2xl", weight: "bold", align: "center" }),
-      text(subtitle, { color: "fg-muted", align: "center" }),
+      text("What should this page be?", {
+        fontSize: "2xl",
+        fontWeight: "bold",
+        textAlign: "center",
+      }),
+      text(subtitle, { color: "mutedForeground", textAlign: "center" }),
     ],
-    { gap: "md", pad: "2xl" },
+    { gap: "md", padding: "2xl" },
   );
 }
 
@@ -75,26 +76,45 @@ function buildWelcome(subtitle: string): FacetTree {
 function buildOffline(): FacetTree {
   return page(
     [
-      text("Nova is offline right now", { size: "2xl", weight: "bold", align: "center" }),
+      text("Nova is offline right now", {
+        fontSize: "2xl",
+        fontWeight: "bold",
+        textAlign: "center",
+      }),
       text("This page's agent isn't connected — check back soon.", {
-        color: "fg-muted",
-        align: "center",
+        color: "mutedForeground",
+        textAlign: "center",
       }),
     ],
-    { pad: "2xl" },
+    { padding: "2xl" },
   );
 }
 
 describe("playground local bricks (page/text)", () => {
-  it("rebuilds the welcome face byte-identical to the frozen kit fixture", () => {
+  it("builds only current authored style syntax", () => {
+    expect(buildWelcome(WELCOME_SUBTITLE)).toEqual(WELCOME_FIXTURE);
+    expect(buildOffline()).toEqual(OFFLINE_FIXTURE);
+
+    const source = [
+      readFileSync(new URL("./bricks.ts", import.meta.url), "utf8"),
+      readFileSync(new URL("./nova.ts", import.meta.url), "utf8"),
+      readFileSync(new URL("./server.ts", import.meta.url), "utf8"),
+      readFileSync(new URL("./tree-builder.ts", import.meta.url), "utf8"),
+      readFileSync(new URL("./ui.ts", import.meta.url), "utf8"),
+    ].join("\n");
+    expect(source).not.toMatch(/\b(?:size|weight|align|bg|pad|radius|border)\s*:/);
+    expect(source).not.toMatch(/"(?:col|fg|fg-muted|accent-fg)"/);
+  });
+
+  it("rebuilds the welcome face byte-identical to the current fixture", () => {
     expect(buildWelcome(WELCOME_SUBTITLE)).toEqual(WELCOME_FIXTURE);
   });
 
-  it("welcome() exported from ui.ts renders the frozen kit fixture", () => {
+  it("welcome() exported from ui.ts renders the current fixture", () => {
     expect(welcome(WELCOME_SUBTITLE)).toEqual(WELCOME_FIXTURE);
   });
 
-  it("rebuilds OFFLINE_FACE byte-identical to the frozen kit fixture", () => {
+  it("rebuilds OFFLINE_FACE byte-identical to the current fixture", () => {
     expect(buildOffline()).toEqual(OFFLINE_FIXTURE);
   });
 

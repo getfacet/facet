@@ -272,3 +272,154 @@ describe("StageRenderer store-bound text (jsdom)", () => {
     expect(screen.queryByText("100")).toBeNull();
   });
 });
+
+describe("StageRenderer data and feedback styles (jsdom)", () => {
+  it("styles every data and feedback target", () => {
+    const hostileProgress = {
+      id: "progress",
+      type: "progress",
+      label: "Migration",
+      value: 50,
+      style: {
+        width: "full",
+        gap: "md",
+        label: { color: "danger", fontWeight: "bold" },
+        track: {
+          background: "warningSurface",
+          height: "lg",
+          borderColor: "warning",
+          borderWidth: "medium",
+          borderRadius: "lg",
+        },
+        // Width is renderer-owned even when stale/bypassed input carries one.
+        fill: {
+          background: "info",
+          backgroundGradient: "success",
+          borderRadius: "sm",
+          width: "full",
+        },
+      },
+    } as unknown as FacetNode;
+    const hostileList = {
+      id: "list",
+      type: "list",
+      items: [{ title: "Next", body: "Call customer" }],
+      style: {
+        gap: "lg",
+        padding: "md",
+        background: "accentSurface",
+        item: { gap: "xs", padding: "xs", background: "surface", 0: { color: "danger" } },
+        title: { fontSize: "xl", fontWeight: "bold" },
+        body: { color: "info" },
+        marker: { color: "warning", fontSize: "lg", fontWeight: "bold" },
+      },
+    } as unknown as FacetNode;
+    const { container } = mountClient(
+      createElement(StageRenderer, {
+        tree: stage([
+          {
+            id: "chart",
+            type: "chart",
+            title: "Revenue",
+            kind: "line",
+            series: [{ label: "ARR", values: [10, 20] }],
+            style: {
+              padding: "xl",
+              background: "infoSurface",
+              borderRadius: "lg",
+              title: { fontSize: "xl", color: "danger" },
+              plot: { background: "dangerSurface", borderRadius: "md" },
+              series: { color1: "success", thickness: "lg" },
+            },
+          },
+          hostileList,
+          {
+            id: "kv",
+            type: "keyValue",
+            items: [{ label: "Owner", value: "Design" }],
+            style: {
+              gap: "lg",
+              padding: "lg",
+              background: "mutedSurface",
+              item: { gap: "sm", padding: "sm", borderWidth: "medium" },
+              label: { fontSize: "xs", color: "warning" },
+              value: { fontSize: "lg", color: "success" },
+            },
+          },
+          hostileProgress,
+          {
+            id: "loading",
+            type: "loading",
+            label: "Loading accounts",
+            style: {
+              direction: "column",
+              gap: "lg",
+              alignItems: "end",
+              indicator: { size: "lg", color: "success", animation: "pulse" },
+              label: { fontSize: "xl", color: "info" },
+            },
+          },
+        ]),
+      }),
+    );
+
+    const chart = screen.getByRole("img", { name: "Revenue" });
+    const figure = chart.closest("figure") as HTMLElement;
+    const caption = figure.querySelector("figcaption") as HTMLElement;
+    const line = chart.querySelector("polyline") as SVGPolylineElement;
+    expect(figure.style.padding).toBe("40px");
+    expect(figure.style.borderRadius).toBe("16px");
+    expect(caption.style.fontSize).toBe("28px");
+    expect(chart.style.background).not.toBe("");
+    expect(line.getAttribute("stroke")).toBe("#15803d");
+    expect(line.getAttribute("stroke-width")).toBe("4px");
+
+    const list = screen.getByRole("list");
+    const listItem = list.querySelector("li") as HTMLElement;
+    const listTitle = screen.getByText("Next");
+    const listBody = screen.getByText("Call customer");
+    expect(list.style.gap).toBe("24px");
+    expect(list.style.padding).toBe("16px");
+    expect(listItem.style.padding).toBe("4px");
+    expect(listItem.style.fontSize).toBe("20px");
+    expect(listTitle.style.fontSize).toBe("28px");
+    expect(listBody.style.color).not.toBe("");
+    expect(listItem.getAttribute("style")).not.toContain("position");
+
+    const details = container.querySelector("dl") as HTMLElement;
+    const detailItem = details.querySelector("div") as HTMLElement;
+    const detailLabel = screen.getByText("Owner");
+    const detailValue = screen.getByText("Design");
+    expect(details.style.padding).toBe("24px");
+    expect(detailItem.style.padding).toBe("8px");
+    expect(detailLabel.style.fontSize).toBe("12px");
+    expect(detailValue.style.fontSize).toBe("20px");
+
+    const progress = screen.getByRole("progressbar");
+    const progressRoot = progress.parentElement as HTMLElement;
+    const fill = progress.firstElementChild as HTMLElement;
+    expect(progressRoot.style.gap).toBe("16px");
+    expect(screen.getByText("Migration").style.fontWeight).toBe("700");
+    expect(progress.style.height).toBe("12px");
+    expect(fill.style.width).toBe("50%");
+    expect(fill.style.backgroundImage).not.toBe("");
+    expect(fill.style.borderRadius).toBe("6px");
+
+    const loading = screen.getByRole("status");
+    const indicator = loading.querySelector('[aria-hidden="true"]') as HTMLElement;
+    const loadingLabel = screen.getByText("Loading accounts");
+    expect(loading.style.flexDirection).toBe("column");
+    expect(loading.style.gap).toBe("24px");
+    expect(loading.style.alignItems).toBe("flex-end");
+    expect(indicator.style.width).toBe("20px");
+    expect(indicator.style.height).toBe("20px");
+    expect(indicator.className).toContain("facet-loading-pulse");
+    const styleText = Array.from(
+      container.querySelectorAll("style"),
+      (style) => style.textContent ?? "",
+    ).join("\n");
+    expect(styleText).toContain("@media (prefers-reduced-motion: reduce)");
+    expect(loadingLabel.style.fontSize).toBe("28px");
+    expect(container.textContent).not.toContain("tone");
+  });
+});

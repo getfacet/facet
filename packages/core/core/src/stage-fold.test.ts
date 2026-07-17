@@ -165,6 +165,35 @@ describe("foldPatchIntoStage — convergence by construction", () => {
 });
 
 describe("foldPatchIntoStage — fail-safe posture", () => {
+  it("keeps manual invalid style patches fail-soft and convergent", () => {
+    const patches: JsonPatchOperation[] = [
+      {
+        op: "replace",
+        path: "",
+        value: {
+          root: "root",
+          nodes: {
+            root: { id: "root", type: "box", children: ["copy", "status"] },
+            copy: { id: "copy", type: "text", value: "Still visible" },
+            status: {
+              id: "status",
+              type: "progress",
+              value: 50,
+              style: { gap: "raw-css", track: { height: "4px" } },
+            },
+          },
+        },
+      },
+    ];
+
+    const server = foldPatchIntoStage(rootBox, patches);
+    const client = foldPatchIntoStage(rootBox, patches);
+    expect(server.tree).toEqual(client.tree);
+    expect(server.tree.nodes["copy"]).toMatchObject({ value: "Still visible" });
+    expect(server.tree.nodes["status"]?.style).toEqual({});
+    expect(server.issues.some((issue) => issue.includes("invalid style value"))).toBe(true);
+  });
+
   it("returns a validated tree and a flag issue when patches is not an array", () => {
     const { tree, issues } = foldPatchIntoStage(rootBox, "not-an-array" as unknown as []);
     expect(tree.nodes["root"]).toBeDefined(); // stage preserved, validated
@@ -334,12 +363,12 @@ describe("foldPatchIntoStage — mutated (effect-based edit signal)", () => {
   });
 });
 
-describe("foldPatchIntoStage — appear/scroll/onHold junk parity with validateTree", () => {
-  it("strips junk appear/scroll/onHold written by a live patch, identically to validateTree", () => {
+describe("foldPatchIntoStage — animation/scroll/onHold junk parity with validateTree", () => {
+  it("strips junk animation/scroll/onHold written by a live patch, identically to validateTree", () => {
     const junkyNode = {
       id: "junky",
       type: "box",
-      style: { appear: "explode", scroll: "sideways" },
+      style: { enterAnimation: "explode", scroll: "sideways" },
       onHold: 42,
       children: [],
     };
@@ -353,7 +382,7 @@ describe("foldPatchIntoStage — appear/scroll/onHold junk parity with validateT
       onHold?: unknown;
     };
     expect(junky).toBeDefined();
-    expect(junky.style?.["appear"]).toBeUndefined();
+    expect(junky.style?.["enterAnimation"]).toBeUndefined();
     expect(junky.style?.["scroll"]).toBeUndefined();
     expect(junky.onHold).toBeUndefined();
     expect(folded.issues.some((i) => i.includes("onHold"))).toBe(true);
@@ -371,7 +400,7 @@ describe("foldPatchIntoStage — appear/scroll/onHold junk parity with validateT
     expect(folded.tree.nodes["junky"]).toEqual(tree.nodes["junky"]);
   });
 
-  it("folds valid appear/scroll/onHold through intact (kept vocabulary, no issues)", () => {
+  it("folds valid animation/scroll/onHold through intact (kept vocabulary, no issues)", () => {
     const patches: JsonPatchOperation[] = [
       {
         op: "add",
@@ -379,7 +408,7 @@ describe("foldPatchIntoStage — appear/scroll/onHold junk parity with validateT
         value: {
           id: "panel",
           type: "box",
-          style: { appear: "slide", scroll: true },
+          style: { enterAnimation: "slide", scroll: "vertical" },
           onHold: { name: "peek" },
           children: [],
         },
@@ -392,8 +421,8 @@ describe("foldPatchIntoStage — appear/scroll/onHold junk parity with validateT
       style?: Record<string, unknown>;
       onHold?: unknown;
     };
-    expect(panel.style?.["appear"]).toBe("slide");
-    expect(panel.style?.["scroll"]).toBe("y");
+    expect(panel.style?.["enterAnimation"]).toBe("slide");
+    expect(panel.style?.["scroll"]).toBe("vertical");
     // legacy bare {name} is stamped kind:"agent" by the shared normalization
     expect(panel.onHold).toEqual({ kind: "agent", name: "peek" });
   });
@@ -408,7 +437,7 @@ describe("foldPatchIntoStage — brick-vocab v1 validation parity", () => {
         value: {
           id: "carousel",
           type: "box",
-          style: { scroll: "x", columns: 3 },
+          style: { scroll: "horizontal", columns: 3 },
           children: ["clip", "legacy"],
         },
       },
@@ -441,7 +470,7 @@ describe("foldPatchIntoStage — brick-vocab v1 validation parity", () => {
     expect(folded.issues).toHaveLength(0);
     expect(folded.tree.nodes["carousel"]).toMatchObject({
       type: "box",
-      style: { scroll: "x", columns: 3 },
+      style: { scroll: "horizontal", columns: 3 },
     });
     expect(folded.tree.nodes["clip"]).toMatchObject({
       type: "media",
@@ -458,7 +487,7 @@ describe("foldPatchIntoStage — brick-vocab v1 validation parity", () => {
         carousel: {
           id: "carousel",
           type: "box",
-          style: { scroll: "x", columns: 3 },
+          style: { scroll: "horizontal", columns: 3 },
           children: ["clip", "legacy"],
         },
         clip: {

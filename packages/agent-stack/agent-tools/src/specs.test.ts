@@ -11,28 +11,17 @@ import type { FacetStageToolName, ToolSpec } from "./types.js";
 const EXPECTED_NAMES: readonly FacetStageToolName[] = [
   "render_page",
   "append_node",
-  "get_composition",
   "set_node",
   "remove_node",
   "say",
-  "set_theme",
+  "get_brick_spec",
+  "get_style_choices",
+  "get_preset",
+  "get_pattern",
   "inspect_stage",
   "inspect_node",
 ];
-
-const RETIRED_TERMS = [
-  ["compo", "nent"].join(""),
-  ["intrin", "sic"].join(""),
-  ["primi", "tive"].join(""),
-  ["leg", "acy"].join(""),
-  ["but", "ton"].join(""),
-  ["ta", "bs"].join(""),
-  ["n", "av"].join(""),
-  ["met", "ric"].join(""),
-  ["st", "at"].join(""),
-  ["fo", "rm"].join(""),
-  ["filter", "Bar"].join(""),
-] as const;
+const RETIRED_TOOLS = ["get_composition", "set_theme", "get_token"] as const; // style-hard-cut: allowed-negative
 
 function tool(name: FacetStageToolName): ToolSpec<FacetStageToolName> {
   const found = getStageToolSpec(name);
@@ -45,67 +34,69 @@ function propertiesOf(spec: ToolSpec<FacetStageToolName>): Record<string, unknow
 }
 
 describe("FACET_STAGE_TOOL_SPECS", () => {
-  it("describes the brick-only stage contract", () => {
-    const text = JSON.stringify(FACET_STAGE_TOOL_SPECS);
-    const nodeSchemaText = JSON.stringify(propertiesOf(tool("append_node"))["node"]);
-    const exactRoster = `Bricks are ${BRICK_TYPES.join(", ")}.`;
-
-    expect(nodeSchemaText).toContain(exactRoster);
-    expect(propertiesOf(tool("append_node"))["parentId"]).toMatchObject({
-      description: expect.stringMatching(/existing box/i),
-    });
-    expect(tool("append_node").description).toMatch(/one brick/i);
-    expect(tool("set_node").description).toMatch(/one brick/i);
-    for (const term of RETIRED_TERMS) {
-      expect(text).not.toMatch(new RegExp(`\\b${term}\\b`, "i"));
-    }
-
-    const reference = tool("get_composition");
-    expect(reference.description).toMatch(/optionally read/i);
-    expect(reference.description).toMatch(/reference/i);
-    expect(reference.description).toMatch(/read-only/i);
-    expect(reference.description).toMatch(/does not edit/i);
-  });
-
-  it("exports the exact provider-neutral stage tool surface", () => {
+  it("exports only the hard-cut tool roster", () => {
     const names = FACET_STAGE_TOOL_SPECS.map((spec) => spec.name);
 
     expect(names).toEqual(EXPECTED_NAMES);
     expect(FACET_STAGE_TOOL_NAMES).toEqual(EXPECTED_NAMES);
     expect(new Set(names).size).toBe(EXPECTED_NAMES.length);
     expect(TOOLS).toBe(FACET_STAGE_TOOL_SPECS);
-    for (const spec of FACET_STAGE_TOOL_SPECS) {
-      expect(spec.description.length).toBeGreaterThan(0);
-      expect(spec.parameters["type"]).toBe("object");
-      expect(spec.parameters["properties"]).toEqual(expect.any(Object));
+    for (const retired of RETIRED_TOOLS) {
+      expect(names).not.toContain(retired);
     }
   });
 
-  it("keeps reference and theme tools name-only", () => {
-    for (const name of ["get_composition", "set_theme"] as const) {
-      const spec = tool(name);
-      const props = propertiesOf(spec);
-      expect(Object.keys(props)).toEqual(["name"]);
-      expect(props["name"]).toMatchObject({ type: "string" });
-      expect(spec.parameters["required"]).toEqual(["name"]);
-      expect(spec.parameters["additionalProperties"]).toBe(false);
-    }
+  it("keeps mutation schemas generic and compact", () => {
+    const node = propertiesOf(tool("append_node"))["node"] as Record<string, unknown>;
+    const tree = propertiesOf(tool("render_page"))["tree"] as Record<string, unknown>;
+    const serialized = JSON.stringify(FACET_STAGE_TOOL_SPECS);
+
+    expect(Object.keys(node)).toEqual(["type", "description"]);
+    expect(Object.keys(tree)).toEqual(["type", "description"]);
+    expect(serialized.length).toBeLessThan(7_000);
+    expect(serialized).not.toMatch(/"theme"|"tokens"|"presets"|"patterns"/i);
+    expect(String(node["description"])).toContain(BRICK_TYPES.join(", "));
+    expect(String(node["description"])).toMatch(/get_brick_spec/i);
+  });
+
+  it("defines bounded progressive discovery inputs", () => {
+    expect(propertiesOf(tool("get_brick_spec"))["type"]).toMatchObject({
+      type: "string",
+      enum: BRICK_TYPES,
+    });
+    expect(tool("get_brick_spec").parameters["required"]).toEqual(["type"]);
+
+    expect(Object.keys(propertiesOf(tool("get_style_choices")))).toEqual([
+      "brick",
+      "target",
+      "property",
+    ]);
+    expect(propertiesOf(tool("get_style_choices"))["brick"]).toMatchObject({
+      type: "string",
+      enum: BRICK_TYPES,
+    });
+    expect(tool("get_style_choices").parameters["required"]).toEqual([
+      "brick",
+      "target",
+      "property",
+    ]);
+
+    expect(Object.keys(propertiesOf(tool("get_preset")))).toEqual(["brick", "name"]);
+    expect(Object.keys(propertiesOf(tool("get_pattern")))).toEqual(["name"]);
+    expect(tool("get_preset").parameters["required"]).toEqual(["brick", "name"]);
+    expect(tool("get_pattern").parameters["required"]).toEqual(["name"]);
   });
 
   it("bounds inspection schemas", () => {
-    const inspectStage = propertiesOf(tool("inspect_stage"));
-    const inspectNode = propertiesOf(tool("inspect_node"));
-
-    expect(inspectStage["maxNodes"]).toMatchObject({
+    expect(propertiesOf(tool("inspect_stage"))["maxNodes"]).toMatchObject({
       type: "integer",
       minimum: 1,
       maximum: 200,
     });
-    expect(inspectNode["depth"]).toMatchObject({
+    expect(propertiesOf(tool("inspect_node"))["depth"]).toMatchObject({
       type: "integer",
       minimum: 0,
       maximum: 5,
     });
-    expect(inspectNode["nodeId"]).toMatchObject({ type: "string" });
   });
 });

@@ -15,16 +15,17 @@ screen they are on. Purely additive and UI-IN inert — the stage document schem
 is unchanged, no new round-trip is added, and `view` provably never reaches a
 stage patch/fold/executor path.
 
-- `@facet/core`: new `ViewSnapshot`/`Viewport`/`Scheme` types, `VIEWPORTS`/
-  `SCHEMES`/`MAX_VIEW_TOGGLED_KEYS`, and the single pure `sanitizeView` bounds
+- `@facet/core`: new `ViewSnapshot`/`Viewport`/`ColorMode` types,
+  `VIEWPORTS`/`COLOR_MODES`/`MAX_VIEW_TOGGLED_KEYS`, and the single pure `sanitizeView` bounds
   source; optional `view?` added to every `ClientEvent`/`CollectedEvent`
   variant (forward⊆collected preserved).
 - `@facet/server`: `/event` and `/record` clamp `view` via `sanitizeEventView`
   (calling core `sanitizeView`) without ever rejecting the event for `view`
   reasons.
 - `@facet/react`: `StageRenderer` gains an optional read-only `onViewSnapshot`
-  callback plus `captureViewSnapshot`/`useViewportScheme`/`DeviceClasses`;
-  viewport/scheme are report-only and never read by layout.
+  callback plus `captureViewSnapshot`/`useViewportColorMode`/`DeviceClasses`;
+  viewport and effective `colorMode` are report-only; only colorMode selects the
+  Theme paint branch and neither changes document layout.
 - `@facet/client`: `persistView`/`loadPersistedView` persist the snapshot per
   agent link in `localStorage`, re-validated on read, degrading silently.
 - `@facet/agent-tools`: prompt-kit guidance priming the agent to target the

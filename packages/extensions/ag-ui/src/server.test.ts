@@ -2309,7 +2309,7 @@ describe("AG-UI server adapter", () => {
           view: {
             screen: "checkout",
             viewport: "gigantic", // outside the closed enum → dropped
-            scheme: "dark", // kept
+            colorMode: "dark", // kept
             toggled: {
               "panel-a": "shown", // kept
               "panel-b": "sideways", // not "shown"/"hidden" → dropped
@@ -2327,7 +2327,7 @@ describe("AG-UI server adapter", () => {
           kind: "message",
           text: "hello",
           seq: 4,
-          view: { screen: "checkout", scheme: "dark", toggled: { "panel-a": "shown" } },
+          view: { screen: "checkout", colorMode: "dark", toggled: { "panel-a": "shown" } },
         },
       },
     ]);
@@ -2367,7 +2367,7 @@ describe("AG-UI server adapter", () => {
           seq: 3,
           view: {
             screen: "settings",
-            scheme: "bogus", // outside the closed enum → dropped
+            colorMode: "bogus", // outside the closed enum → dropped
             viewport: "narrow", // kept
           },
         },

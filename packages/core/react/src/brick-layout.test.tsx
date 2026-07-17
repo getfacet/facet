@@ -5,6 +5,11 @@ import { describe, expect, it } from "vitest";
 import type { DataWarehouse, FacetNode, FacetTree, NodeId } from "@facet/core";
 import { foldPatchIntoStage } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
+import { tableHeaderTargetStyle, tableRowTargetStyle } from "./brick-style-layout.js";
+import { INTERACTION_CSS } from "./interaction-style.js";
+import { resolveTheme } from "./theme.js";
+
+const SAFE_MEDIA_SRC = "https://cdn.example.com/layout.jpg";
 
 function tree(nodes: Record<NodeId, FacetNode>, root: NodeId = "root"): FacetTree {
   return { root, nodes };
@@ -32,6 +37,202 @@ const RETIRED_RENDERERS = {
 const RETIRED_TYPES = ["button", "tabs", "nav", "form", "filterBar", "metric", "stat"] as const;
 
 describe("StageRenderer brick layout contract", () => {
+  it("gives a table row hover border a solid style when the base is borderless", () => {
+    const target = tableRowTargetStyle({ hover: { borderWidth: "medium" } }, resolveTheme(), false);
+
+    expect(target.style.borderStyle).toBeUndefined();
+    expect(target.style["--facet-hover-borderWidth" as keyof typeof target.style]).toBe("2px");
+    expect(target.className).toContain("facet-hover-borderWidth");
+    expect(INTERACTION_CSS).toContain(
+      ".facet-interaction.facet-hover-borderWidth:hover{border-width:var(--facet-hover-borderWidth)!important;border-style:solid!important}",
+    );
+  });
+
+  it("maps only the closed layout style vocabulary", () => {
+    const out = render(
+      tree({
+        root: {
+          id: "root",
+          type: "box",
+          style: {
+            direction: "row",
+            gap: "lg",
+            padding: "md",
+            alignItems: "end",
+            justifyContent: "between",
+            wrap: true,
+            grow: true,
+            width: "full",
+            minHeight: "half",
+            maxWidth: "wide",
+            scroll: "horizontal",
+            sticky: true,
+            background: "successSurface",
+            color: "successForeground",
+            backgroundGradient: "success",
+            borderColor: "success",
+            borderWidth: "thick",
+            borderRadius: "lg",
+            shadow: "md",
+            hover: { background: "accentSurface", shadow: "lg" },
+            pressed: { color: "accent" },
+            focus: { borderColor: "focusRing", borderWidth: "medium" },
+            cssText: "position:fixed",
+            inset: "0",
+          },
+          children: ["copy", "media", "table"],
+        } as unknown as FacetNode,
+        copy: {
+          id: "copy",
+          type: "text",
+          value: "Closed typography",
+          style: {
+            fontFamily: "serif",
+            fontSize: "2xl",
+            fontWeight: "bold",
+            fontStyle: "italic",
+            color: "info",
+            textAlign: "end",
+            letterSpacing: "wide",
+            lineHeight: "relaxed",
+            highlight: "warning",
+          },
+        },
+        media: {
+          id: "media",
+          type: "media",
+          kind: "image",
+          src: SAFE_MEDIA_SRC,
+          alt: "Closed media",
+          style: {
+            width: "auto",
+            aspectRatio: "square",
+            objectFit: "contain",
+            objectPosition: "top",
+            borderRadius: "full",
+          },
+        },
+        table: {
+          id: "table",
+          type: "table",
+          caption: "Styled table",
+          columns: [{ key: "name", label: "Name", sortable: true }],
+          rows: [{ name: "Facet" }, { name: "Theme" }],
+          style: {
+            width: "full",
+            background: "surface",
+            color: "foreground",
+            borderColor: "danger",
+            borderWidth: "medium",
+            borderRadius: "md",
+            shadow: "sm",
+            caption: {
+              fontFamily: "mono",
+              fontSize: "lg",
+              fontWeight: "bold",
+              fontStyle: "italic",
+              color: "warning",
+              textAlign: "center",
+              letterSpacing: "wide",
+              lineHeight: "tight",
+              padding: "md",
+              background: "warningSurface",
+            },
+            header: {
+              fontFamily: "sans",
+              fontSize: "sm",
+              fontWeight: "semibold",
+              color: "info",
+              padding: "sm",
+              background: "infoSurface",
+              borderColor: "info",
+              borderWidth: "thin",
+              hover: { background: "accentSurface", color: "accent", borderColor: "accent" },
+              pressed: { background: "dangerSurface" },
+              focus: { borderColor: "focusRing", borderWidth: "medium" },
+              sorted: { background: "successSurface", color: "success", fontWeight: "bold" },
+            },
+            row: {
+              background: "surface",
+              color: "foreground",
+              borderColor: "border",
+              borderWidth: "thin",
+              alternate: { background: "mutedSurface", color: "mutedForeground" },
+              hover: { background: "accentSurface", borderColor: "accent" },
+            },
+            cell: {
+              fontFamily: "serif",
+              fontSize: "md",
+              fontWeight: "medium",
+              color: "foreground",
+              textAlign: "end",
+              letterSpacing: "normal",
+              lineHeight: "normal",
+              padding: "lg",
+              borderColor: "border",
+              borderWidth: "thin",
+            },
+          },
+        },
+      }),
+    );
+
+    expect(out).toContain("display:flex");
+    expect(out).toContain("flex-direction:row");
+    expect(out).toContain("gap:24px");
+    expect(out).toContain("padding:16px");
+    expect(out).toContain("align-items:flex-end");
+    expect(out).toContain("justify-content:space-between");
+    expect(out).toContain("flex-wrap:wrap");
+    expect(out).toContain("min-height:50svh");
+    expect(out).toContain("max-width:1200px");
+    expect(out).toContain("overflow-x:auto");
+    expect(out).toContain("position:sticky");
+    expect(out).toContain("background-image:linear-gradient(135deg, #15803d 0%, #16a34a 100%)");
+    expect(out).toContain("--facet-hover-background:#eef2ff");
+    expect(out).toContain("--facet-focus-borderWidth:2px");
+
+    expect(out).toContain("font-family:Georgia, &quot;Times New Roman&quot;, serif");
+    expect(out).toContain("font-size:36px");
+    expect(out).toContain("font-style:italic");
+    expect(out).toContain("text-align:right");
+    expect(out).toContain("letter-spacing:0.04em");
+    expect(out).toContain("line-height:1.75");
+    expect(out).toContain("background-image:linear-gradient(0deg, #fde68a 0%, #fde68a 100%)");
+
+    expect(out).toContain(`src="${SAFE_MEDIA_SRC}"`);
+    expect(out).toContain("aspect-ratio:1 / 1");
+    expect(out).toContain("object-fit:contain");
+    expect(out).toContain("object-position:top");
+    expect(out).toContain("border-radius:9999px");
+
+    expect(out).toContain("Styled table");
+    expect(out).toContain("border-collapse:collapse");
+    expect(out).toContain("background:#fef3c7");
+    expect(out).toContain("font-family:ui-monospace, SFMono-Regular, Menlo, monospace");
+    expect(out).toContain("--facet-hover-borderColor:#4f46e5");
+    expect(out).toContain("background:#eef2f7");
+    expect(out).toContain("Facet");
+    expect(out).not.toMatch(/position:(?:absolute|fixed)/);
+    expect(out).not.toContain("cssText");
+
+    const sorted = tableHeaderTargetStyle(
+      {
+        background: "surface",
+        color: "foreground",
+        fontWeight: "regular",
+        sorted: { background: "successSurface", color: "success", fontWeight: "bold" },
+      },
+      resolveTheme(),
+      true,
+    );
+    expect(sorted.style).toMatchObject({
+      background: "#dcfce7",
+      color: "#15803d",
+      fontWeight: 700,
+    });
+  });
+
   it("exports no retired renderer and skips every stale subtree", async () => {
     const [layoutRenderers, inputRenderers, dataRenderers] = await Promise.all([
       import("./brick-renderer-layout.js"),
@@ -111,7 +312,7 @@ describe("StageRenderer brick layout contract", () => {
         details: {
           id: "details",
           type: "keyValue",
-          items: [{ label: "Owner", value: "Design", tone: "success" }],
+          items: [{ label: "Owner", value: "Design" }],
         },
         progress: { id: "progress", type: "progress", label: "Migration", value: 72 },
         list: {

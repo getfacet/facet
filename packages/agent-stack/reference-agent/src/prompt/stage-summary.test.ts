@@ -18,6 +18,7 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
         "00-box": {
           id: "00-box",
           type: "box",
+          style: { preset: "panel", gap: "lg", hover: { background: "accentSurface" } },
           children: [
             "01-text",
             "02-media",
@@ -31,7 +32,12 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
             "10-loading",
           ],
         },
-        "01-text": { id: "01-text", type: "text", value: "hello" },
+        "01-text": {
+          id: "01-text",
+          type: "text",
+          value: "hello",
+          style: { preset: "heading", color: "accent" },
+        },
         "02-media": {
           id: "02-media",
           type: "media",
@@ -60,7 +66,7 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
           caption: "Pipeline",
           columns: [{ key: "name", label: "Name" }],
           rows: [{ name: "Acme" }, { name: "Beta" }],
-          variant: "compact",
+          style: { preset: "compact", cell: { padding: "xs" } },
         },
         "06-chart": {
           id: "06-chart",
@@ -72,58 +78,100 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
             { label: "ARR", values: [10, 20] },
             { label: "MRR", values: [5] },
           ],
-          variant: "compact",
+          style: { preset: "panel", plot: { background: "mutedSurface" } },
         },
         "07-list": {
           id: "07-list",
           type: "list",
           items: [{ title: "One" }, { title: "Two" }],
-          variant: "compact",
+          style: { preset: "compact" },
         },
         "08-keyValue": {
           id: "08-keyValue",
           type: "keyValue",
           items: [{ label: "Owner", value: "Ada" }],
-          variant: "compact",
+          style: { preset: "standard" },
         },
         "09-progress": {
           id: "09-progress",
           type: "progress",
           value: 72,
           label: "Migration",
-          tone: "success",
-          variant: "compact",
+          style: { preset: "success", fill: { background: "success" } },
         },
         "10-loading": {
           id: "10-loading",
           type: "loading",
           label: "Loading rows",
-          variant: "compact",
+          style: { preset: "subdued" },
         },
       },
     };
 
     const summary = summarizeStageForPrompt(stage);
-    expect(summary).toContain("- 00-box: type=box children=10");
-    expect(summary).toContain("- 01-text: type=text chars=5");
+    expect(summary).toContain(
+      "- 00-box: type=box children=10 style=preset:panel direct=1 targets=0 states=1 active=no",
+    );
+    expect(summary).toContain(
+      "- 01-text: type=text chars=5 style=preset:heading direct=1 targets=0 states=0 active=no",
+    );
     expect(summary).toContain("- 02-media: type=media kind=image srcChars=19 altChars=7");
     expect(summary).toContain("- 03-input: type=input name=status input=select options=2");
     expect(summary).toContain(
       "- 04-richtext: type=richtext blocks=2 runs=3 text=Welcome aboardMore",
     );
     expect(summary).toContain(
-      "- 05-table: type=table columns=1 rows=2 captionChars=8 variant=compact",
+      "- 05-table: type=table columns=1 rows=2 captionChars=8 style=preset:compact direct=0 targets=1 states=0 active=no",
     );
     expect(summary).toContain(
-      "- 06-chart: type=chart kind=bar series=2 points=3 labels=2 titleChars=5 variant=compact",
+      "- 06-chart: type=chart kind=bar series=2 points=3 labels=2 titleChars=5 style=preset:panel direct=0 targets=1 states=0 active=no",
     );
-    expect(summary).toContain("- 07-list: type=list items=2 variant=compact");
-    expect(summary).toContain("- 08-keyValue: type=keyValue items=1 variant=compact");
     expect(summary).toContain(
-      "- 09-progress: type=progress value=72 labelChars=9 tone=success variant=compact",
+      "- 07-list: type=list items=2 style=preset:compact direct=0 targets=0 states=0 active=no",
     );
-    expect(summary).toContain("- 10-loading: type=loading labelChars=12 variant=compact");
+    expect(summary).toContain(
+      "- 08-keyValue: type=keyValue items=1 style=preset:standard direct=0 targets=0 states=0 active=no",
+    );
+    expect(summary).toContain(
+      "- 09-progress: type=progress value=72 labelChars=9 style=preset:success direct=0 targets=1 states=0 active=no",
+    );
+    expect(summary).toContain(
+      "- 10-loading: type=loading labelChars=12 style=preset:subdued direct=0 targets=0 states=0 active=no",
+    );
     expect(summary).not.toContain("type=unknown");
+  });
+
+  it("summarizes style as bounded metadata and omits document Theme and retired selectors", () => {
+    const retiredTheme = ["the", "me"].join("");
+    const retiredVariant = ["vari", "ant"].join("");
+    const retiredTone = ["to", "ne"].join("");
+    const oversizedPreset = `panel-${"x".repeat(500)}\nnot-a-line`;
+    const raw = {
+      root: "root",
+      [retiredTheme]: "operator-secret",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: [],
+          [retiredVariant]: "legacy",
+          [retiredTone]: "legacy",
+          style: {
+            preset: oversizedPreset,
+            gap: "md",
+            hover: { background: "accent" },
+            active: { preset: "inset", padding: "lg" },
+          },
+        },
+      },
+    } as unknown as FacetTree;
+
+    const summary = summarizeStageForPrompt(raw);
+    expect(summary).not.toContain("operator-secret");
+    expect(summary).not.toContain("legacy");
+    expect(summary).not.toContain("not-a-line");
+    expect(summary).toMatch(/style=preset:panel-x+\.\.\. direct=1 targets=0 states=1 active=yes/);
+    expect(summary.split("\n").find((line) => line.includes("style="))?.length).toBeLessThan(180);
   });
 
   it("has no retired or prototype-chain handler and safely summarizes stale raw nodes", () => {

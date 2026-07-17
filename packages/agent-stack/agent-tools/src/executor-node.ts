@@ -1,10 +1,5 @@
-import {
-  isContainer,
-  isValidThemeName,
-  type FacetCatalog,
-  type FacetTree,
-  type JsonPatchOperation,
-} from "@facet/core";
+import { isContainer, type FacetTheme, type FacetTree, type JsonPatchOperation } from "@facet/core";
+import { authorErrorResult } from "./author-errors.js";
 import { parseNodeInput } from "./executor-input.js";
 import {
   childrenPath,
@@ -13,13 +8,12 @@ import {
   nodePath,
   screenPath,
 } from "./executor-paths.js";
-import { nodeCatalogViolation, themeCatalogViolation } from "./executor-policy.js";
 import { errorResult, okMessageResult, okPatchResult } from "./executor-result.js";
 
 export function executeAppendNode(
   input: Readonly<Record<string, unknown>>,
   shadow: FacetTree,
-  catalog: FacetCatalog | undefined,
+  theme: FacetTheme,
 ) {
   const parentId = input["parentId"];
   if (typeof parentId !== "string" || parentId.length === 0) {
@@ -55,7 +49,10 @@ export function executeAppendNode(
     );
   }
 
-  const node = parseNodeInput(input["node"], "append_node", shadow);
+  const node = parseNodeInput(input["node"], "append_node", shadow, theme);
+  if ("authorValidation" in node) {
+    return authorErrorResult("append_node", node.authorValidation, shadow);
+  }
   if ("error" in node)
     return errorResult("append_node", "invalid_input", node.error, shadow, [], node.nextAction);
   if (node.facetNode.id === shadow.root) {
@@ -78,18 +75,6 @@ export function executeAppendNode(
       "Use set_node to replace the existing node, or choose a new id.",
     );
   }
-  const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
-  if (catalogViolation !== undefined) {
-    return errorResult(
-      "append_node",
-      "invalid_input",
-      catalogViolation.message,
-      shadow,
-      [],
-      catalogViolation.nextAction,
-    );
-  }
-
   return okPatchResult(
     "append_node",
     `Appended "${node.facetNode.id}" under "${parentId}".`,
@@ -105,9 +90,12 @@ export function executeAppendNode(
 export function executeSetNode(
   input: Readonly<Record<string, unknown>>,
   shadow: FacetTree,
-  catalog: FacetCatalog | undefined,
+  theme: FacetTheme,
 ) {
-  const node = parseNodeInput(input["node"], "set_node", shadow);
+  const node = parseNodeInput(input["node"], "set_node", shadow, theme);
+  if ("authorValidation" in node) {
+    return authorErrorResult("set_node", node.authorValidation, shadow);
+  }
   if ("error" in node)
     return errorResult("set_node", "invalid_input", node.error, shadow, [], node.nextAction);
   if (node.facetNode.id === shadow.root) {
@@ -134,17 +122,6 @@ export function executeSetNode(
       shadow,
       [],
       "Replace the entry screen root only with a container node, or use render_page to restructure.",
-    );
-  }
-  const catalogViolation = nodeCatalogViolation(node.facetNode, catalog);
-  if (catalogViolation !== undefined) {
-    return errorResult(
-      "set_node",
-      "invalid_input",
-      catalogViolation.message,
-      shadow,
-      [],
-      catalogViolation.nextAction,
     );
   }
   return okPatchResult(
@@ -257,46 +234,4 @@ export function executeSay(input: Readonly<Record<string, unknown>>, shadow: Fac
     );
   }
   return okMessageResult("say", "Sent chat message.", shadow, [{ kind: "say", text }]);
-}
-
-export function executeSetTheme(
-  input: Readonly<Record<string, unknown>>,
-  shadow: FacetTree,
-  catalog: FacetCatalog | undefined,
-) {
-  const name = input["name"];
-  if (typeof name !== "string" || name.length === 0) {
-    return errorResult(
-      "set_theme",
-      "invalid_input",
-      'error: set_theme needs a non-empty string "name" (a theme from the THEMES list — a name only, never a CSS value)',
-      shadow,
-      [],
-      "Pick a theme name from the THEMES list. Do not pass CSS values.",
-    );
-  }
-  if (!isValidThemeName(name)) {
-    return errorResult(
-      "set_theme",
-      "invalid_input",
-      `error: "${name}" is not a valid theme name (letters/digits/_/-, max 64) — pick a name from the THEMES list`,
-      shadow,
-      [],
-      "Pick a valid theme name from the THEMES list.",
-    );
-  }
-  const catalogViolation = themeCatalogViolation(name, catalog, shadow.theme);
-  if (catalogViolation !== undefined) {
-    return errorResult(
-      "set_theme",
-      "invalid_input",
-      catalogViolation.message,
-      shadow,
-      [],
-      catalogViolation.nextAction,
-    );
-  }
-  return okPatchResult("set_theme", `Theme set to "${name}".`, shadow, [
-    { op: "add", path: "/theme", value: name },
-  ]);
 }

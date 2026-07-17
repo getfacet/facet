@@ -7,36 +7,54 @@
  * The vocabulary grows only by adding typed brick shapes here and matching
  * validation/rendering support on purpose.
  */
-import type {
-  Align,
-  Appear,
-  Columns,
-  Color,
-  Direction,
-  FontFamily,
-  FontSize,
-  FontWeight,
-  Gradient,
-  ColorScheme,
-  Highlight,
-  Justify,
-  Leading,
-  MaxWidth,
-  MinHeight,
-  Radius,
-  Ratio,
-  Scrim,
-  ScrollAxis,
-  Shadow,
-  Sizing,
-  Space,
-  TextAlign,
-  Tracking,
-} from "./tokens.js";
 import type { TableColumn, TableRow } from "./data-types.js";
+import type { InputKind } from "./brick-contract.js";
 import type { ViewPredicate } from "./view.js";
+import type {
+  BoxStyle,
+  ChartStyle,
+  InputStyle,
+  KeyValueStyle,
+  ListStyle,
+  LoadingStyle,
+  MediaStyle,
+  ProgressStyle,
+  RichTextStyle,
+  TableStyle,
+  TextStyle,
+} from "./style-types.js";
 
 export * from "./data-types.js";
+export {
+  BRICK_CONTRACT,
+  BRICK_TYPES,
+  INPUT_KINDS,
+  type BrickContractEntry,
+  type BrickFieldContract,
+  type BrickStylePropertyContract,
+  type BrickStyleTargetContract,
+  type BrickType,
+  type InputKind,
+  type StyleValueSource,
+} from "./brick-contract.js";
+export type {
+  BoxStyle,
+  BrickActiveStyle,
+  BrickStyle,
+  BrickStyleByType,
+  BrickStyleDefinition,
+  BrickStyleDefinitionMap,
+  ChartStyle,
+  InputStyle,
+  KeyValueStyle,
+  ListStyle,
+  LoadingStyle,
+  MediaStyle,
+  ProgressStyle,
+  RichTextStyle,
+  TableStyle,
+  TextStyle,
+} from "./style-types.js";
 
 /** Identifier for a node within a stage tree. */
 export type NodeId = string;
@@ -90,81 +108,6 @@ export interface ToggleAction {
  */
 export type FacetAction = AgentAction | NavigateAction | ToggleAction;
 
-export interface BoxStyle {
-  readonly direction?: Direction;
-  readonly gap?: Space;
-  readonly pad?: Space;
-  readonly align?: Align;
-  readonly justify?: Justify;
-  readonly wrap?: boolean;
-  readonly bg?: Color;
-  readonly radius?: Radius;
-  readonly border?: boolean;
-  readonly grow?: boolean;
-  readonly width?: Sizing;
-  /**
-   * Enter animation, replayed on each mount/re-show of the node (first paint,
-   * node re-add, toggle re-show, screen navigation). The renderer owns the
-   * duration/curve as framework constants — this token names the motion only.
-   */
-  readonly appear?: Appear;
-  /**
-   * Bounded, internally-scrollable region. Legacy `true` normalizes to vertical
-   * (`"y"`). Horizontal scroll remains bounded by the renderer.
-   */
-  readonly scroll?: ScrollAxis | true;
-  /**
-   * Flow-safe grid columns. When present, the renderer uses grid layout and
-   * ignores direction/wrap because the grid owns the axis.
-   */
-  readonly columns?: Columns;
-  readonly shadow?: Shadow;
-  /** Bounded minimum height for landing-grade sections (theme-mapped length). */
-  readonly minHeight?: MinHeight;
-  /** Bounded max content width for readable columns (theme-mapped length). */
-  readonly maxWidth?: MaxWidth;
-  /**
-   * Keeps the box stuck within its scroll container. The renderer owns the top
-   * offset as a framework constant — flow-compatible, no author offset/z-index.
-   */
-  readonly sticky?: boolean;
-  /** Named background gradient (theme maps the name to a concrete CSS gradient). */
-  readonly gradient?: Gradient;
-  /** Scrim overlay strength painted over this box's backdrop layer. */
-  readonly backdropScrim?: Scrim;
-  /**
-   * Authored color scheme for this box's subtree (a dark/light section) — the
-   * renderer swaps the color-token map read-only for the subtree (never leaks
-   * upward). Unknown value → unchanged. `ColorScheme` is deliberately distinct
-   * from view-state's report-only device `Scheme`.
-   */
-  readonly scheme?: ColorScheme;
-}
-
-export interface TextStyle {
-  readonly family?: FontFamily;
-  readonly size?: FontSize;
-  readonly weight?: FontWeight;
-  readonly color?: Color;
-  readonly align?: TextAlign;
-  /** Letter-spacing token (theme-mapped). */
-  readonly tracking?: Tracking;
-  /** Line-height token (theme-mapped). */
-  readonly leading?: Leading;
-  /** Highlight treatment behind the text run (theme-mapped decoration). */
-  readonly highlight?: Highlight;
-}
-
-export interface MediaStyle {
-  readonly radius?: Radius;
-  readonly width?: Sizing;
-  readonly ratio?: Ratio;
-}
-
-export interface InputStyle {
-  readonly width?: Sizing;
-}
-
 /**
  * Module-private field packs (mixins). These are shared shape fragments folded
  * into the base brick interfaces below via `interface … extends …`. They are
@@ -175,10 +118,9 @@ export interface InputStyle {
  * `Extract<FacetNode,{type:K}>` and type-guard narrowing keep resolving.
  */
 
-/** Common identity fields on all four primitives (`type` stays a direct member). */
+/** Common identity field (`type` stays a direct member for union narrowing). */
 interface BaseNode {
   readonly id: NodeId;
-  readonly variant?: string;
 }
 
 /** The style slot only — generic per-brick token type. */
@@ -187,29 +129,12 @@ interface Styleable<S> {
 }
 
 /**
- * The active-look trio (folds the PR-1 duplication). Kept separate from
- * `Styleable` so media/field (which have `style` but no active-look) do not gain
- * these fields.
+ * The local-view condition supported initially by box and text only. Appearance
+ * remains inside `style.active`; the predicate itself is node behavior.
  */
-interface ActiveLook<S> {
-  /**
-   * Recipe name applied ONLY while `active` evaluates true (enabler B). The
-   * renderer folds it over `variant` read-only via `resolveRecipe`; token-only
-   * by construction. Prefer this over `activeStyle`.
-   */
-  readonly activeVariant?: string;
-  /**
-   * Extra style tokens applied ONLY while `active` evaluates true (enabler B).
-   * Routed through the SAME token sanitizer as `style`, so it can carry only
-   * tokens — never a raw-CSS bypass.
-   */
-  readonly activeStyle?: S;
-  /**
-   * Closed view-state predicate selecting when the active look applies (enabler
-   * B). Read-only, evaluated against the threaded snapshot view-state; an
-   * unknown/dangling predicate degrades to the default look.
-   */
-  readonly active?: ViewPredicate;
+interface ActiveWhen {
+  /** Closed view-state predicate selecting when `style.active` applies. */
+  readonly activeWhen?: ViewPredicate;
 }
 
 /** The children slot. Named `ContainerFields` to avoid shadowing `ContainerNode`. */
@@ -292,7 +217,7 @@ interface Layered {
  * a card; nested boxes are any layout.
  */
 export interface BoxNode
-  extends BaseNode, Styleable<BoxStyle>, ActiveLook<BoxStyle>, ContainerFields, Pressable, Layered {
+  extends BaseNode, Styleable<BoxStyle>, ActiveWhen, ContainerFields, Pressable, Layered {
   readonly type: "box";
   /**
    * Content-declared default visibility (server-written). The browser's toggle
@@ -301,7 +226,7 @@ export interface BoxNode
   readonly hidden?: boolean;
 }
 
-export interface TextNode extends BaseNode, Styleable<TextStyle>, ActiveLook<TextStyle>, DataBound {
+export interface TextNode extends BaseNode, Styleable<TextStyle>, ActiveWhen, DataBound {
   readonly type: "text";
   readonly value: string;
 }
@@ -317,20 +242,6 @@ export interface MediaNode extends BaseNode, Styleable<MediaStyle> {
   readonly poster?: string;
   readonly controls?: boolean;
 }
-
-/** Allowed input kinds — single source (validator derives its check from this). */
-export const INPUT_KINDS = [
-  "text",
-  "number",
-  "email",
-  "password",
-  "search",
-  "checkbox",
-  "radio",
-  "select",
-  "switch",
-] as const;
-export type InputKind = (typeof INPUT_KINDS)[number];
 
 /** The input primitive. */
 export interface InputNode extends BaseNode, Styleable<InputStyle> {
@@ -402,21 +313,16 @@ export interface RichTextBlock {
  * its own `blocks`/`runs` (no child ids, no `from` binding) and its block-level
  * typography is the same `TextStyle` token family as `text`.
  */
-export interface RichTextNode extends BaseNode, Styleable<TextStyle> {
+export interface RichTextNode extends BaseNode, Styleable<RichTextStyle> {
   readonly type: "richtext";
   readonly blocks: readonly RichTextBlock[];
 }
 
-export const TONES = ["neutral", "accent", "info", "success", "warning", "danger"] as const;
-export type Tone = (typeof TONES)[number];
-
-export interface TableNode {
-  readonly id: NodeId;
+export interface TableNode extends BaseNode, Styleable<TableStyle> {
   readonly type: "table";
   readonly columns: readonly TableColumn[];
   readonly rows: readonly TableRow[];
   readonly caption?: string;
-  readonly variant?: string;
   /** Optional binding: project rows from `FacetTree.data[from]` instead of inline `rows`. */
   readonly from?: string;
 }
@@ -429,14 +335,12 @@ export interface ChartSeries {
   readonly values: readonly number[];
 }
 
-export interface ChartNode {
-  readonly id: NodeId;
+export interface ChartNode extends BaseNode, Styleable<ChartStyle> {
   readonly type: "chart";
   readonly kind: ChartKind;
   readonly series: readonly ChartSeries[];
   readonly labels?: readonly string[];
   readonly title?: string;
-  readonly variant?: string;
   /** Optional binding: derive one series per numeric column of `FacetTree.data[from]`. */
   readonly from?: string;
 }
@@ -446,11 +350,9 @@ export interface ListItem {
   readonly body?: string;
 }
 
-export interface ListNode {
-  readonly id: NodeId;
+export interface ListNode extends BaseNode, Styleable<ListStyle> {
   readonly type: "list";
   readonly items: readonly ListItem[];
-  readonly variant?: string;
   /** Optional binding: project one item per row from `FacetTree.data[from]`. */
   readonly from?: string;
 }
@@ -459,49 +361,25 @@ export interface KeyValueItem {
   readonly key?: string;
   readonly label: string;
   readonly value: string;
-  readonly tone?: Tone;
 }
 
-export interface KeyValueNode {
-  readonly id: NodeId;
+export interface KeyValueNode extends BaseNode, Styleable<KeyValueStyle> {
   readonly type: "keyValue";
   readonly items: readonly KeyValueItem[];
-  readonly variant?: string;
   /** Optional binding: project `{label, value}` per row from `FacetTree.data[from]`. */
   readonly from?: string;
 }
 
-export interface ProgressNode {
-  readonly id: NodeId;
+export interface ProgressNode extends BaseNode, Styleable<ProgressStyle> {
   readonly type: "progress";
   readonly value: number;
   readonly label?: string;
-  readonly tone?: Tone;
-  readonly variant?: string;
 }
 
-export interface LoadingNode {
-  readonly id: NodeId;
+export interface LoadingNode extends BaseNode, Styleable<LoadingStyle> {
   readonly type: "loading";
   readonly label?: string;
-  readonly variant?: string;
 }
-
-/** The sole closed roster of bricks an agent may place on a stage. */
-export const BRICK_TYPES = [
-  "box",
-  "text",
-  "media",
-  "input",
-  "richtext",
-  "table",
-  "chart",
-  "list",
-  "keyValue",
-  "progress",
-  "loading",
-] as const;
-export type BrickType = (typeof BRICK_TYPES)[number];
 
 /** Any brick the agent may place on a stage. */
 export type FacetNode =

@@ -16,25 +16,23 @@ removed.
 
 Breaking: remove the `button`, `form`, `filterBar`, `metric`, `tabs`, `nav`, and
 legacy `stat` node types together with all component unions, registries,
-validators, catalog fields, renderer dispatch, tool-executor routes, and prompt
-guidance. `FacetCatalog` now exposes one `bricks` roster, and only `box` may have
-children. Stale retired raw nodes blank-degrade in React, core validation drops
+validators, asset fields, renderer dispatch, tool-executor routes, and prompt
+guidance. Core exposes one fixed Brick roster, and only `box` may have children.
+Stale retired raw nodes blank-degrade in React, core validation drops
 them, and stage tools reject them without throwing.
 
-Persisted/operator assets must migrate atomically. Replace catalog `components`
-with `bricks`, remove `primitiveFallback` and `policy.order`, remove retired
-theme recipe keys, and rewrite stored trees and composition references with the
-final bricks or box/text/input patterns. There is no compatibility mapper: an
-old components-only catalog now has no `bricks` restriction and therefore
-normalizes to the full default 11-brick roster without a legacy-field warning;
-retired nodes in trees or references are dropped or invalidate the document at
-their ordinary validation boundary.
+Persisted/operator assets must migrate atomically to one complete Theme, one
+Pattern list, and an optional initial tree. Remove retired component policy and
+style-selector keys, and rewrite stored trees and Patterns with the final Bricks
+or box/text/input structures. There is no compatibility mapper; retired nodes in
+trees or references are dropped or invalidate the document at their ordinary
+validation boundary.
 
-Add validated reference compositions for actions, forms, filters, bound summary
+Add validated reference Patterns for actions, forms, filters, bound summary
 values, and local navigation. These examples use ordinary box/text/input trees:
 pressable label boxes for actions, `navigate` plus active-look predicates for
 browser-local navigation and fixed filters, and `text.from` for bound values.
-Reference reads remain optional and never edit the stage.
+Pattern reads remain optional and never edit the stage.
 
 Update the default quickstart tour, LLM prompt, tool-call budget, buffer
 coherence, playground fixtures, documentation, and tests for native-brick-only

@@ -12,7 +12,7 @@ tokens (no pixels, no raw CSS, no absolute positioning). Purely additive.
 
 - `@facet/core`: `FONT_SIZES` extends with `4xl/5xl/6xl`; new closed token groups
   `MIN_HEIGHTS`, `MAX_WIDTHS`, `TRACKINGS`, `LEADINGS`, `GRADIENTS`, `SCRIMS`,
-  `COLOR_SCHEMES` (distinct from view-state's device `Scheme`), and `HIGHLIGHTS`,
+  paint tokens for dark Theme values, plus `HIGHLIGHTS`,
   wired into `BoxStyle`/`TextStyle`; `BoxNode` gains `backdrop?: NodeId` (paint a
   referenced media node as a bounded background layer) and `sticky`. `validateTree`
   validates them fail-safe; every group is operator-theme overridable; `STAGE_SPEC`
@@ -21,7 +21,8 @@ tokens (no pixels, no raw CSS, no absolute positioning). Purely additive.
   paints the `backdrop` as exactly two renderer-synthesized layers (media cover +
   readability scrim) at negative z-index inside a stacking-context host, so flow
   children always paint above them and no absolute positioning is ever emitted
-  onto authored content; `scheme:"dark"` swaps a per-subtree dark palette. The
+  onto authored content. The client-owned `colorMode` selects the Theme's light
+  or dark paint values for the whole rendered document. The
   backdrop resolves read-only to a media node only, through the existing
   safe-`src` gate, and counts against the render budget.
 - `@facet/assets`: `DEFAULT_THEME` gains concrete default values for every new

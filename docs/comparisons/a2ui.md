@@ -33,7 +33,7 @@ where Facet is deliberately **stricter and simpler**:
    versioned developer catalogs. Both
    recommend graceful degradation for renderer gaps; Facet makes skip-on-unknown
    and skip-on-dangling behavior a library invariant.
-3. **One integrated default vs transport-neutral composition.** Facet ships its
+3. **One integrated default vs transport-neutral payload.** Facet ships its
    own patch/runtime/reference-transport loop and also provides an official
    `@facet/ag-ui` adapter. A2UI defines the UI payload and catalog handshake,
    while A2A, AG-UI, WebSocket, or another carrier supplies delivery.
@@ -144,8 +144,8 @@ is flagged. These are candidates, not commitments.
    without introducing A2UI's data model as a second authoritative state grammar.
    A2A remains a future demand-driven adapter rather than a core dependency.
 4. **Versioned registry for default-asset data (`@facet/assets`).** `[effort M · risk MODERATE — care]`
-   Capture the ergonomics of an extensible catalog at the *asset-data* layer —
-   themes and compositions as versioned value maps, not code.
+   Capture useful versioning ergonomics at the *asset-data* layer — complete
+   Themes and concrete Patterns as validated data, not code or a policy layer.
    *Violates the closed-vocabulary invariant the moment an entry introduces a node
    type not deliberately defined and validated by core, or admits raw markup.*
 5. **First-class execution-boundary annotation on actions** (A2UI's `callableFrom`

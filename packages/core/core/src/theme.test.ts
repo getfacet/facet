@@ -1,837 +1,480 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { BRICK_TYPES } from "./nodes.js";
-import * as themeExports from "./theme.js";
-import { isValidThemeName, MAX_DESCRIPTION_LENGTH, validateTheme } from "./theme.js";
-import type {
-  BrickRecipe,
-  BrickRecipePart,
-  BrickRecipeParts,
-  BrickRecipes,
-  FacetTheme,
-  RecipeBrickName,
-} from "./theme.js";
+import { BRICK_CONTRACT, BRICK_TYPES, type BrickType } from "./brick-contract.js";
+import {
+  ASPECT_RATIOS,
+  BORDER_WIDTHS,
+  CHART_THICKNESSES,
+  COLORS,
+  CONTROL_HEIGHTS,
+  FONT_FAMILIES,
+  FONT_SIZES,
+  FONT_WEIGHTS,
+  GRADIENTS,
+  HIGHLIGHTS,
+  INDICATOR_SIZES,
+  LETTER_SPACINGS,
+  LINE_HEIGHTS,
+  MAX_WIDTHS,
+  MIN_HEIGHTS,
+  PROGRESS_THICKNESSES,
+  RADII,
+  SCRIMS,
+  SHADOWS,
+  SPACES,
+} from "./tokens.js";
+import { validateTheme } from "./theme-validation.js";
 
-const recipeBricks = Reflect.get(themeExports, "RECIPE_BRICKS") as typeof BRICK_TYPES;
+const map = <K extends string, V>(keys: readonly K[], value: (key: K) => V): Record<K, V> =>
+  Object.fromEntries(keys.map((key) => [key, value(key)])) as Record<K, V>;
 
-/** Every issue carrying severity "error" refuses the whole document. */
-function hasError(issues: readonly { severity: "error" | "warning" }[]): boolean {
-  return issues.some((i) => i.severity === "error");
+function completeTheme(): Record<string, unknown> {
+  const defaults = Object.fromEntries(
+    BRICK_TYPES.map((brick) => [
+      brick,
+      Object.fromEntries(
+        Object.keys(BRICK_CONTRACT[brick].style.targets).map((target) => [target, {}]),
+      ),
+    ]),
+  );
+  const paint = {
+    color: map(COLORS, (name) => (name === "inherit" ? "inherit" : "#123456")),
+    shadow: map(SHADOWS, (name) => (name === "none" ? "none" : "0 1px 2px rgba(0, 0, 0, 0.25)")),
+    gradient: map(GRADIENTS, (name) =>
+      name === "none" ? "none" : "linear-gradient(90deg, #000000 0%, #ffffff 100%)",
+    ),
+    scrim: map(SCRIMS, (name) => (name === "none" ? "transparent" : "rgba(0, 0, 0, 0.5)")),
+    highlight: map(HIGHLIGHTS, (name) =>
+      name === "none" ? "none" : "linear-gradient(90deg, #ffff00 0%, #ffff00 100%)",
+    ),
+  };
+
+  return {
+    name: "complete",
+    description: "A complete test Theme.",
+    tokens: {
+      space: map(SPACES, () => "16px"),
+      fontSize: map(FONT_SIZES, () => "16px"),
+      fontFamily: map(FONT_FAMILIES, () => "sans-serif"),
+      fontWeight: map(FONT_WEIGHTS, () => 400),
+      radius: map(RADII, () => "8px"),
+      borderWidth: map(BORDER_WIDTHS, () => "1px"),
+      aspectRatio: map(ASPECT_RATIOS, (name) => (name === "auto" ? "auto" : "1 / 1")),
+      minHeight: map(MIN_HEIGHTS, (name) => (name === "auto" ? "auto" : "100px")),
+      maxWidth: map(MAX_WIDTHS, (name) => (name === "none" ? "none" : "100px")),
+      letterSpacing: map(LETTER_SPACINGS, () => "0"),
+      lineHeight: map(LINE_HEIGHTS, () => "1.5"),
+      controlHeight: map(CONTROL_HEIGHTS, () => "32px"),
+      indicatorSize: map(INDICATOR_SIZES, () => "16px"),
+      progressThickness: map(PROGRESS_THICKNESSES, () => "4px"),
+      chartThickness: map(CHART_THICKNESSES, () => "2px"),
+      paint: { light: structuredClone(paint), dark: structuredClone(paint) },
+    },
+    defaults,
+  };
 }
 
-describe("theme module boundary", () => {
-  it("exports brick recipe terminology only", () => {
-    expect(Object.keys(themeExports).sort()).toEqual([
-      "DEFAULT_COLORS",
-      "MAX_DESCRIPTION_LENGTH",
-      "RECIPE_BRICKS",
-      "RECIPE_PARTS",
-      "isValidThemeName",
-      "validateTheme",
-    ]);
-    expect(recipeBricks).toEqual(BRICK_TYPES);
+function setToken(theme: Record<string, unknown>, group: string, value: unknown): void {
+  const tokens = theme.tokens as Record<string, Record<string, unknown>>;
+  const target = tokens[group]!;
+  target[Object.keys(target)[0]!] = value;
+}
 
-    const part: BrickRecipePart = { box: { bg: "accent" } };
-    const parts: BrickRecipeParts = { label: part };
-    const recipe: BrickRecipe = { ...part, parts };
-    const recipes: BrickRecipes = { box: { selected: recipe } };
-    const name: RecipeBrickName = "box";
-    expect(recipes[name]?.selected).toEqual(recipe);
+function preset(style: Record<string, unknown> = {}): Record<string, unknown> {
+  return { description: "Reusable treatment.", useWhen: "Use for this visual role.", style };
+}
 
-    const source = readFileSync(new URL("./theme-types.ts", import.meta.url), "utf8");
-    const retiredPublicNames = [
-      ["Component", "RecipePart"].join(""),
-      ["Component", "RecipeParts"].join(""),
-      ["Component", "Recipe"].join(""),
-      ["Component", "Recipes"].join(""),
-      ["RECIPE", "_COMPONENTS"].join(""),
-      ["Recipe", "ComponentName"].join(""),
-    ];
-    for (const retiredName of retiredPublicNames) expect(source).not.toContain(retiredName);
-  });
-});
+function expectValid(theme: Record<string, unknown>): void {
+  const result = validateTheme(theme);
+  expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
+  expect(result.issues.some(({ severity }) => severity === "error")).toBe(false);
+}
 
-describe("isValidThemeName", () => {
-  it("accepts short filename-safe identifiers and rejects the rest", () => {
-    for (const ok of ["brand", "midnight-2", "A_b", "x", "x".repeat(64)]) {
-      expect(isValidThemeName(ok)).toBe(true);
-    }
-    for (const bad of [
-      "",
-      "-lead",
-      "has space",
-      "brand\x00",
-      "x".repeat(65),
-      "a".repeat(100_000),
-    ]) {
-      expect(isValidThemeName(bad)).toBe(false);
-    }
-  });
-});
-
-describe("theme clamp constant names", () => {
-  it("keeps spacing and font-size clamp bounds separately named", () => {
-    const source = [
-      readFileSync(new URL("./theme-token-validation.ts", import.meta.url), "utf8"),
-      readFileSync(new URL("./theme-validation.ts", import.meta.url), "utf8"),
-    ].join("\n");
-    expect(source).toMatch(/const SPACE_PX_RANGE/);
-    expect(source).toMatch(/const FONT_SIZE_PX_RANGE/);
-    expect(source).toMatch(
-      /"fontSize"[\s\S]*dimensionHandler\(FONT_SIZE_PX_RANGE\.lo, FONT_SIZE_PX_RANGE\.hi\)/,
-    );
-  });
-});
+function expectInvalid(theme: unknown): void {
+  const result = validateTheme(theme);
+  expect(result.theme).toBeUndefined();
+  expect(result.issues.some(({ severity }) => severity === "error")).toBe(true);
+}
 
 describe("validateTheme", () => {
-  it("rejects url and expression color values as errors", () => {
-    const withUrl = validateTheme({ name: "x", color: { accent: "url(https://evil)" } });
-    expect(withUrl.theme).toBeUndefined();
-    expect(hasError(withUrl.issues)).toBe(true);
-
-    const withExpression = validateTheme({ name: "x", color: { accent: "expression(alert(1))" } });
-    expect(withExpression.theme).toBeUndefined();
-    expect(hasError(withExpression.issues)).toBe(true);
-  });
-
-  it("refuses hostile CSS values (var/javascript:/injection chars) as errors", () => {
-    const hostile: unknown[] = [
-      { name: "x", color: { accent: "var(--x)" } },
-      { name: "x", color: { accent: "#fff;background:red" } },
-      { name: "x", space: { md: "16px}injected{" } },
-      { name: "x", color: { fg: "javascript:alert(1)" } },
-      { name: "x", color: { fg: "</style><script>" } },
-      { name: "x", color: { fg: "#fff`" } },
-      { name: "x", color: { fg: "expr\x00ession" } },
-      { name: "x", color: { fg: "#0000" } },
-      { name: "x", color: { fg: "rgba(0, 0, 0, 0.5)" } },
-      { name: "x", color: { fg: "hsla(0, 0%, 0%, 50%)" } },
-      { name: "x", color: { fg: "rgba(0 0 0 1)" } },
-      { name: "x", color: { fg: "hsla(0 0% 0% 1)" } },
-      { name: "x", color: { fg: "__proto__" } },
-      { name: "x", color: { fg: "constructor" } },
-      { name: "x", color: { fg: "rgb(, 0, 0)" } },
-      { name: "x", color: { fg: "rgb(%, 0, 0)" } },
-      { name: "x", color: { fg: "hsl(, 100%, 50%)" } },
-      { name: "x", color: { fg: "hsl(0, 100%, %)" } },
-    ];
-    for (const doc of hostile) {
-      const result = validateTheme(doc);
-      expect(result.theme, JSON.stringify(doc)).toBeUndefined();
-      expect(hasError(result.issues), JSON.stringify(doc)).toBe(true);
-    }
-  });
-
-  it("never resolves __proto__/constructor/prototype keys and returns null-proto maps", () => {
-    // JSON.parse (the real operator-input path) makes __proto__ an OWN key,
-    // unlike an object literal which would set the prototype.
-    const input = JSON.parse(
-      '{"name":"x","color":{"accent":"#123456","__proto__":"#000000","constructor":"#111111","prototype":"#222222"}}',
-    );
-    const { theme, issues } = validateTheme(input);
-    expect(theme).toBeDefined();
-    const color = (theme as FacetTheme).color!;
-    expect(color.accent).toBe("#123456");
-    expect(Object.getPrototypeOf(color)).toBeNull();
-    expect(Object.prototype.hasOwnProperty.call(color, "__proto__")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(color, "constructor")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(color, "prototype")).toBe(false);
-    // The forbidden keys were dropped, not silently absorbed.
-    expect(hasError(issues)).toBe(false);
-    // Global prototype was not polluted.
-    expect(({} as Record<string, unknown>).accent).toBeUndefined();
-  });
-
-  it("clamps an over-large dimension with a warning but keeps the document", () => {
-    const { theme, issues } = validateTheme({ name: "x", space: { md: "9999999px" } });
-    expect(theme).toBeDefined();
-    expect((theme as FacetTheme).space!.md).toBe("512px");
-    expect(issues.some((i) => i.severity === "warning")).toBe(true);
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("clamps an out-of-range fontWeight with a warning", () => {
-    const { theme, issues } = validateTheme({ name: "x", fontWeight: { bold: 999999 } });
-    expect(theme).toBeDefined();
-    expect((theme as FacetTheme).fontWeight!.bold).toBe(1000);
-    expect(issues.some((i) => i.severity === "warning")).toBe(true);
-  });
-
-  it("accepts safe fontFamily stacks into null-proto maps", () => {
-    const { theme, issues } = validateTheme({
-      name: "type",
-      fontFamily: {
-        sans: 'system-ui, -apple-system, "Segoe UI", sans-serif',
-        mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  it("accepts only a complete Theme with bounded Presets", () => {
+    const valid = completeTheme();
+    valid.presets = {
+      box: {
+        panel: preset({
+          gap: "md",
+          background: "surface",
+          hover: { background: "accentSurface" },
+        }),
       },
-    });
-
-    expect(theme).toBeDefined();
-    const fontFamily = (theme as FacetTheme).fontFamily!;
-    expect(fontFamily.sans).toBe('system-ui, -apple-system, "Segoe UI", sans-serif');
-    expect(fontFamily.mono).toBe("ui-monospace, SFMono-Regular, Menlo, monospace");
-    expect(Object.getPrototypeOf(fontFamily)).toBeNull();
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("refuses unsafe fontFamily values as errors", () => {
-    const hostile: unknown[] = [
-      { name: "x", fontFamily: { sans: "url(https://evil/font.woff2)" } },
-      { name: "x", fontFamily: { sans: "var(--font)" } },
-      { name: "x", fontFamily: { sans: "javascript:alert(1)" } },
-      { name: "x", fontFamily: { sans: "sans-serif;background:red" } },
-      { name: "x", fontFamily: { sans: "serif\x00mono" } },
-      { name: "x", fontFamily: { sans: "@import evil" } },
-      { name: "x", fontFamily: { sans: 123 } },
-    ];
-
-    for (const doc of hostile) {
-      const result = validateTheme(doc);
-      expect(result.theme, JSON.stringify(doc)).toBeUndefined();
-      expect(hasError(result.issues), JSON.stringify(doc)).toBe(true);
-    }
-  });
-
-  it("drops unknown and forbidden fontFamily keys while keeping valid tokens", () => {
-    const input = JSON.parse(
-      '{"name":"x","fontFamily":{"mono":"Menlo, monospace","display":"Papyrus","__proto__":"serif","constructor":"serif","prototype":"serif"}}',
-    );
-
-    const { theme, issues } = validateTheme(input);
-
-    expect(theme).toBeDefined();
-    const fontFamily = (theme as FacetTheme).fontFamily!;
-    expect(fontFamily.mono).toBe("Menlo, monospace");
-    expect(Object.getPrototypeOf(fontFamily)).toBeNull();
-    expect(Object.prototype.hasOwnProperty.call(fontFamily, "display")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(fontFamily, "__proto__")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(fontFamily, "constructor")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(fontFamily, "prototype")).toBe(false);
-    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(4);
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("warns (never rejects) on a low-contrast pair, naming the pair and ratio", () => {
-    const { theme, issues } = validateTheme({
-      name: "x",
-      color: { fg: "#777777", bg: "#888888" },
-    });
-    expect(theme).toBeDefined();
-    const warning = issues.find(
-      (i) =>
-        i.severity === "warning" &&
-        i.message.includes("fg") &&
-        i.message.includes("bg") &&
-        /\d\.\d\d/.test(i.message),
-    );
-    expect(warning).toBeDefined();
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("warns on a partial override whose EFFECTIVE pair is low-contrast (dark bg only)", () => {
-    // Overriding only `bg` to black leaves the default `fg` (#1a1d23) rendering
-    // on it — an effective ratio far below 4.5. The check overlays the default
-    // for the un-overridden member, so this must warn even though only one of the
-    // pair is present in the document.
-    const { theme, issues } = validateTheme({ name: "dark", color: { bg: "#000000" } });
-    expect(theme).toBeDefined();
-    const warning = issues.find(
-      (i) =>
-        i.severity === "warning" &&
-        i.message.includes("fg") &&
-        i.message.includes("bg") &&
-        i.message.toLowerCase().includes("contrast"),
-    );
-    expect(warning).toBeDefined();
-  });
-
-  it("warns on a low-contrast colorDark pair (the dark-scheme palette is guarded too)", () => {
-    // `scheme:"dark"` swaps a subtree onto colorDark, so its fg/bg must also be
-    // legible. Core has no dark-default palette, so BOTH members must be set to
-    // trigger the check (mixing a dark override with a LIGHT default would be a
-    // false warning). Near-black fg on near-black bg → far below the floor.
-    const { theme, issues } = validateTheme({
-      name: "dk",
-      colorDark: { fg: "#050505", bg: "#000000" },
-    });
-    expect(theme).toBeDefined();
-    expect(
-      issues.some((i) => i.severity === "warning" && i.message.toLowerCase().includes("contrast")),
-    ).toBe(true);
-  });
-
-  it("does not warn on a high-contrast colorDark pair", () => {
-    const { issues } = validateTheme({
-      name: "dk",
-      colorDark: { fg: "#ffffff", bg: "#000000" },
-    });
-    expect(issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(false);
-  });
-
-  it("does not warn when every EFFECTIVE pair is high-contrast", () => {
-    // All pair members are overridden to high-contrast values, so no pair — not
-    // even one measured against a default partner — falls below the floor.
-    const { theme, issues } = validateTheme({
-      name: "x",
-      color: {
-        fg: "#ffffff",
-        "fg-muted": "#cccccc",
-        bg: "#000000",
-        accent: "#000000",
-        "accent-fg": "#ffffff",
-      },
-    });
-    expect(theme).toBeDefined();
-    expect(issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(false);
-  });
-
-  it("warns on low-contrast hsl() and named-color pairs", () => {
-    const hsl = validateTheme({
-      name: "hsl-theme",
-      color: { fg: "hsl(0, 0%, 50%)", bg: "hsl(0, 0%, 50%)" },
-    });
-    expect(hsl.theme).toBeDefined();
-    expect(hsl.issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(true);
-
-    const named = validateTheme({ name: "named", color: { fg: "gray", bg: "gray" } });
-    expect(named.theme).toBeDefined();
-    expect(named.issues.some((i) => i.message.toLowerCase().includes("contrast"))).toBe(true);
-  });
-
-  it("drops unknown token and group keys with a warning but keeps the document", () => {
-    const { theme, issues } = validateTheme({
-      name: "x",
-      color: { accent: "#abcdef", bogusToken: "#fff" },
-      bogusGroup: { anything: 1 },
-    });
-    expect(theme).toBeDefined();
-    expect((theme as FacetTheme).color!.accent).toBe("#abcdef");
-    expect(Object.prototype.hasOwnProperty.call((theme as FacetTheme).color!, "bogusToken")).toBe(
-      false,
-    );
-    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(2);
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("never echoes an over-long group key into an issue string (caps it)", () => {
-    const bigKey = "z".repeat(10_000_000);
-    const { issues } = validateTheme({ name: "x", color: { [bigKey]: "#fff" } });
-    expect(issues.some((i) => i.message.includes("<key too long>"))).toBe(true);
-    // The raw 10MB key never reaches the issue text (would flood operator logs).
-    expect(issues.some((i) => i.message.includes(bigKey))).toBe(false);
-  });
-
-  it("never echoes a control/escape-sequence group key into an issue string", () => {
-    const escKey = "\x1b[31maccent";
-    const { issues } = validateTheme({ name: "x", color: { [escKey]: "#fff" } });
-    expect(issues.some((i) => i.message.includes("<unprintable key>"))).toBe(true);
-    // The raw escape sequence never reaches operator terminals via the issue.
-    expect(issues.some((i) => i.message.includes(escKey))).toBe(false);
-  });
-
-  it("caps the per-document issues array so a junk-key group cannot balloon it", () => {
-    const group: Record<string, string> = {};
-    for (let i = 0; i < 100_000; i++) group[`k${String(i)}`] = "#fff";
-    const { issues } = validateTheme({ name: "x", color: group });
-    // 64 real issues + a single suppression tail entry.
-    expect(issues.length).toBeLessThanOrEqual(65);
-    expect(issues[issues.length - 1]?.message).toContain("further issues suppressed");
-  });
-
-  it("rejects a missing or malformed name as an error", () => {
-    for (const doc of [
-      {},
-      { name: 7 },
-      { name: "" },
-      { name: "has space" },
-      { name: "a".repeat(65) },
-    ]) {
-      const result = validateTheme(doc);
-      expect(result.theme, JSON.stringify(doc)).toBeUndefined();
-      expect(hasError(result.issues)).toBe(true);
-    }
-  });
-
-  it("never throws on junk input and reports an error", () => {
-    for (const junk of [null, undefined, 42, "str", [], true, NaN]) {
-      let result: ReturnType<typeof validateTheme> | undefined;
-      expect(() => {
-        result = validateTheme(junk);
-      }).not.toThrow();
-      expect(result!.theme).toBeUndefined();
-      expect(hasError(result!.issues)).toBe(true);
-    }
-  });
-
-  it("never throws on an object whose property accessor throws (hostile getter)", () => {
-    // A live in-process document (MemoryAssets, a DB adapter) can hand in a
-    // proxy/getter that throws on read — the "NEVER throws" contract must hold.
-    const throwers: unknown[] = [
-      {
-        name: "x",
-        get color() {
-          throw new Error("boom");
-        },
-      },
-      {
-        get name() {
-          throw new Error("boom");
-        },
-      },
-    ];
-    for (const doc of throwers) {
-      let result: ReturnType<typeof validateTheme> | undefined;
-      expect(() => {
-        result = validateTheme(doc);
-      }).not.toThrow();
-      expect(result!.theme).toBeUndefined();
-      expect(hasError(result!.issues)).toBe(true);
-    }
-  });
-
-  it("round-trips a valid partial document", () => {
-    const doc = {
-      name: "midnight",
-      description: "dark theme",
-      color: { bg: "#000000", fg: "#ffffff", accent: "rgb(80, 70, 229)" },
-      space: { md: "16px" },
-      fontWeight: { bold: 700 },
-      ratio: { wide: "16 / 9" },
     };
-    const { theme, issues } = validateTheme(doc);
-    expect(theme).toBeDefined();
-    const t = theme as FacetTheme;
-    expect(t.name).toBe("midnight");
-    expect(t.description).toBe("dark theme");
-    expect(t.color!.bg).toBe("#000000");
-    expect(t.color!.accent).toBe("rgb(80, 70, 229)");
-    expect(t.space!.md).toBe("16px");
-    expect(t.fontWeight!.bold).toBe(700);
-    expect(t.ratio!.wide).toBe("16 / 9");
-    expect(hasError(issues)).toBe(false);
-  });
+    expectValid(valid);
 
-  it("still refuses a document whose error issue is raised AFTER the issue cap fills", () => {
-    // 70 junk keys (each a warning) exceed MAX_ISSUES, so the error issue from
-    // the bad `fg` value is dropped from the retained list — but the refusal must
-    // still fire (tracked by `everError`, not a scan of the capped list).
-    const color: Record<string, unknown> = {};
-    for (let i = 0; i < 70; i++) color[`junk${String(i)}`] = "#fff";
-    color["fg"] = "url(javascript:alert(1))"; // dangerous value → error
-    const result = validateTheme({ name: "x", color });
-    expect(result.theme).toBeUndefined();
-    // The error may not even appear in the retained list — the point is refusal.
-    expect(result.issues.length).toBeLessThanOrEqual(65);
+    const missingGroup = completeTheme();
+    delete (missingGroup.tokens as Record<string, unknown>).space;
+    expectInvalid(missingGroup);
 
-    // Control document: the same error value with NO junk keys is refused too.
-    const control = validateTheme({ name: "x", color: { fg: "url(javascript:alert(1))" } });
-    expect(control.theme).toBeUndefined();
-    expect(hasError(control.issues)).toBe(true);
-  });
+    const missingToken = completeTheme();
+    delete ((missingToken.tokens as Record<string, Record<string, unknown>>).space ?? {}).md;
+    expectInvalid(missingToken);
 
-  it("treats a C1 control char (single-byte CSI U+009B) in a key as unprintable, in a value as unsafe", () => {
-    const csiKey = "\u009b31mEVIL"; // U+009B single-byte CSI introducer
-    const keyDoc = validateTheme({ name: "x", color: { [csiKey]: "#fff" } });
-    expect(keyDoc.issues.some((i) => i.message.includes("<unprintable key>"))).toBe(true);
-    // The raw C1 byte never reaches the operator-facing issue string.
-    expect(keyDoc.issues.some((i) => i.message.includes(csiKey))).toBe(false);
+    const missingBrick = completeTheme();
+    delete (missingBrick.defaults as Record<string, unknown>).table;
+    expectInvalid(missingBrick);
 
-    // A value carrying a C1 control char (U+0085 NEL) is refused as an error.
-    const valueDoc = validateTheme({ name: "x", color: { fg: "#fff\u0085f" } });
-    expect(valueDoc.theme).toBeUndefined();
-    expect(hasError(valueDoc.issues)).toBe(true);
-    expect(valueDoc.issues.some((i) => i.message.includes("control character"))).toBe(true);
-  });
+    const missingTarget = completeTheme();
+    delete ((missingTarget.defaults as Record<string, Record<string, unknown>>).input ?? {})
+      .control;
+    expectInvalid(missingTarget);
 
-  // Pins the theme\u2192boundedDescription wiring (label "theme" + MAX_DESCRIPTION_LENGTH
-  // cap); the shared truncate/reject logic is also covered on the composition path,
-  // but that coverage is label-agnostic and wouldn't catch a wrong label/cap here.
-  it("drops a non-string description with a labelled warning", () => {
-    const { theme, issues } = validateTheme({ name: "x", description: 123 });
-    expect(theme?.description).toBeUndefined();
-    expect(issues.some((i) => i.message === "theme description is not a string; ignored")).toBe(
-      true,
+    const sixteen = completeTheme();
+    sixteen.presets = {
+      box: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [`p${index}`, preset()])),
+    };
+    expectValid(sixteen);
+
+    const seventeen = completeTheme();
+    seventeen.presets = {
+      box: Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`p${index}`, preset()])),
+    };
+    expectInvalid(seventeen);
+
+    const sixtyFour = completeTheme();
+    sixtyFour.presets = Object.fromEntries(
+      (["box", "text", "media", "input"] as const).map((brick) => [
+        brick,
+        Object.fromEntries(Array.from({ length: 16 }, (_, index) => [`p${index}`, preset()])),
+      ]),
     );
+    expectValid(sixtyFour);
+
+    const sixtyFive = structuredClone(sixtyFour);
+    (sixtyFive.presets as Record<string, Record<string, unknown>>).richtext = {
+      extra: preset(),
+    };
+    expectInvalid(sixtyFive);
   });
 
-  it("truncates an over-cap description to MAX_DESCRIPTION_LENGTH with a labelled warning", () => {
-    const { theme, issues } = validateTheme({
-      name: "x",
-      description: "x".repeat(MAX_DESCRIPTION_LENGTH + 1),
-    });
-    expect(theme?.description?.length).toBe(MAX_DESCRIPTION_LENGTH);
-    expect(issues.some((i) => i.message === "theme description truncated to 200 characters")).toBe(
-      true,
+  it("enforces every concrete grammar boundary without clamping", () => {
+    const cases: readonly [string, readonly unknown[], readonly unknown[]][] = [
+      ["space", ["0", "0px", "256px", "16rem", "16em"], ["-1px", "257px", "16.0001rem"]],
+      [
+        "fontSize",
+        ["8px", "256px", "0.5rem", "16em"],
+        ["7px", "257px", "0.4999rem", "16.0001em", "0"],
+      ],
+      ["radius", ["0", "9999px", "625rem", "625em"], ["-1px", "10000px", "625.0001rem"]],
+      ["borderWidth", ["0", "16px", "1rem", "1em"], ["-1px", "17px", "1.0001rem"]],
+      [
+        "controlHeight",
+        ["16px", "256px", "1rem", "16em"],
+        ["15px", "257px", "0.9999rem", "16.0001em"],
+      ],
+      [
+        "indicatorSize",
+        ["4px", "128px", "0.25rem", "8em"],
+        ["3px", "129px", "0.2499rem", "8.0001em"],
+      ],
+      [
+        "progressThickness",
+        ["1px", "64px", "0.0625rem", "4em"],
+        ["0px", "65px", "0.0624rem", "4.0001em"],
+      ],
+      [
+        "chartThickness",
+        ["1px", "32px", "0.0625rem", "2em"],
+        ["0px", "33px", "0.0624rem", "2.0001em"],
+      ],
+      [
+        "letterSpacing",
+        ["0", "-16px", "16px", "-1rem", "1em"],
+        ["-17px", "17px", "-1.0001rem", "1.0001em"],
+      ],
+      ["lineHeight", ["0.8", "3"], ["0.7999", "3.0001", "1rem"]],
+    ];
+    for (const [group, accepted, rejected] of cases) {
+      for (const value of accepted) {
+        const theme = completeTheme();
+        setToken(theme, group, value);
+        expectValid(theme);
+      }
+      for (const value of rejected) {
+        const theme = completeTheme();
+        setToken(theme, group, value);
+        expectInvalid(theme);
+      }
+    }
+
+    for (const value of [1, 1000]) {
+      const theme = completeTheme();
+      setToken(theme, "fontWeight", value);
+      expectValid(theme);
+    }
+    for (const value of [0, 1001, 400.5, Number.POSITIVE_INFINITY]) {
+      const theme = completeTheme();
+      setToken(theme, "fontWeight", value);
+      expectInvalid(theme);
+    }
+
+    for (const value of ["auto", "0.01 / 100", "100 / 0.01"]) {
+      const theme = completeTheme();
+      const token = value === "auto" ? "auto" : "square";
+      (theme.tokens as Record<string, Record<string, unknown>>).aspectRatio![token] = value;
+      expectValid(theme);
+    }
+    for (const value of ["0 / 1", "0.0099 / 1", "100.0001 / 1", "1/1", "auto "]) {
+      const theme = completeTheme();
+      (theme.tokens as Record<string, Record<string, unknown>>).aspectRatio!.square = value;
+      expectInvalid(theme);
+    }
+
+    const dimensions: readonly [string, readonly string[], readonly string[]][] = [
+      [
+        "minHeight",
+        ["auto", "0", "2000px", "125rem", "100svh"],
+        ["-1px", "2001px", "125.0001rem", "100.0001svh", "1ch"],
+      ],
+      [
+        "maxWidth",
+        ["none", "0", "4096px", "256rem", "256em", "256ch"],
+        ["-1px", "4097px", "256.0001rem", "1svh"],
+      ],
+    ];
+    for (const [group, accepted, rejected] of dimensions) {
+      for (const value of accepted) {
+        const theme = completeTheme();
+        setToken(theme, group, value);
+        expectValid(theme);
+      }
+      for (const value of rejected) {
+        const theme = completeTheme();
+        setToken(theme, group, value);
+        expectInvalid(theme);
+      }
+    }
+  });
+
+  it("strictly validates font, paint, gradient, and shadow values", () => {
+    for (const value of ["A", "system-ui, -apple-system, 'Open_Sans'", "x".repeat(200)]) {
+      const theme = completeTheme();
+      setToken(theme, "fontFamily", value);
+      expectValid(theme);
+    }
+    for (const value of ["", "x".repeat(201), "url(font)", "sans-serif; color:red", "emoji🙂"]) {
+      const theme = completeTheme();
+      setToken(theme, "fontFamily", value);
+      expectInvalid(theme);
+    }
+
+    const light = (theme: Record<string, unknown>) =>
+      ((theme.tokens as Record<string, unknown>).paint as Record<string, unknown>).light as Record<
+        string,
+        Record<string, unknown>
+      >;
+
+    for (const value of [
+      "#fff",
+      "#ffffffff",
+      "rgb(0, 127.5, 255)",
+      "rgb(0%, 50%, 100%)",
+      "hsl(-360, 100%, 50%)",
+      "orange",
+    ]) {
+      const theme = completeTheme();
+      light(theme).color!.background = value;
+      expectValid(theme);
+    }
+    for (const value of [
+      "#ffffff00",
+      "rgba(0,0,0,.5)",
+      "rgb(256,0,0)",
+      "rgb(0%,2,3%)",
+      "transparent",
+      "inherit",
+      "var(--paint)",
+    ]) {
+      const theme = completeTheme();
+      light(theme).color!.background = value;
+      expectInvalid(theme);
+    }
+
+    const inherited = completeTheme();
+    light(inherited).color!.inherit = "inherit";
+    expectValid(inherited);
+    const wrongInherited = completeTheme();
+    light(wrongInherited).color!.inherit = "#ffffff";
+    expectInvalid(wrongInherited);
+
+    for (const value of [
+      "none",
+      "linear-gradient(-360deg, #000000 0%, transparent 100%)",
+      "radial-gradient(circle at 0% 100%, #000000 0%, #ffffff 100%)",
+      `linear-gradient(360deg, ${Array.from(
+        { length: 8 },
+        (_, index) => `#000000 ${index * 10}%`,
+      ).join(", ")})`,
+    ]) {
+      const theme = completeTheme();
+      light(theme).gradient!.accent = value;
+      expectValid(theme);
+    }
+    for (const value of [
+      "linear-gradient(360.0001deg, #000 0%, #fff 100%)",
+      "linear-gradient(0deg, #000 60%, #fff 50%)",
+      "linear-gradient(0deg, #000 0%)",
+      `linear-gradient(0deg, ${Array.from({ length: 9 }, (_, index) => `#000 ${index * 10}%`).join(", ")})`,
+      "radial-gradient(circle at 100.0001% 0%, #000 0%, #fff 100%)",
+    ]) {
+      const theme = completeTheme();
+      light(theme).gradient!.accent = value;
+      expectInvalid(theme);
+    }
+
+    for (const value of [
+      "none",
+      "-256px 256px 0 rgba(0, 0, 0, 0)",
+      "inset 16rem -16em 256px -256px hsla(0, 100%, 50%, 1)",
+      Array.from({ length: 4 }, () => "0 0 0 #000000").join(", "),
+    ]) {
+      const theme = completeTheme();
+      light(theme).shadow!.sm = value;
+      expectValid(theme);
+    }
+    for (const value of [
+      "257px 0 0 #000",
+      "0 0 -1px #000",
+      "0 0 0 0 0 #000",
+      "0 0 0 url(evil)",
+      Array.from({ length: 5 }, () => "0 0 0 #000").join(", "),
+    ]) {
+      const theme = completeTheme();
+      light(theme).shadow!.sm = value;
+      expectInvalid(theme);
+    }
+
+    for (const value of ["rgba(0, 0, 0, 0)", "rgba(100%, 100%, 100%, 1)"]) {
+      const theme = completeTheme();
+      light(theme).scrim!.soft = value;
+      expectValid(theme);
+    }
+    for (const value of ["transparent", "rgba(0, 0, 0, 1.0001)", "rgba(0, 0, 0, -0.1)"]) {
+      const theme = completeTheme();
+      light(theme).scrim!.soft = value;
+      expectInvalid(theme);
+    }
+  });
+
+  it("rejects malformed styles, metadata, unknown keys, and prototype keys atomically", () => {
+    const rawStyle = completeTheme();
+    (rawStyle.defaults as Record<string, Record<string, unknown>>).box!.background = "#ffffff";
+    expectInvalid(rawStyle);
+
+    const unknownStyle = completeTheme();
+    (unknownStyle.defaults as Record<string, Record<string, unknown>>).text!.margin = "md";
+    expectInvalid(unknownStyle);
+
+    const malformedPreset = completeTheme();
+    malformedPreset.presets = { box: { panel: preset({ preset: "other" }) } };
+    expectInvalid(malformedPreset);
+
+    const missingMetadata = completeTheme();
+    missingMetadata.presets = { box: { panel: { description: "Panel", style: {} } } };
+    expectInvalid(missingMetadata);
+
+    const unknownTheme = completeTheme();
+    unknownTheme.recipe = {};
+    expectInvalid(unknownTheme);
+
+    const polluted = completeTheme();
+    (polluted.tokens as Record<string, unknown>).space = JSON.parse(
+      JSON.stringify((polluted.tokens as Record<string, unknown>).space).replace(
+        /}$/,
+        ',"__proto__":"1px"}',
+      ),
     );
+    expectInvalid(polluted);
   });
 
-  it("preserves brick recipes with token-only style bundles", () => {
-    const { theme, issues } = validateTheme({
-      name: "brand",
-      shadow: { md: "0 12px 30px rgba(0, 0, 0, 0.15)" },
-      recipes: {
-        box: {
-          selected: {
-            box: { bg: "accent", pad: "md", radius: "lg", border: true, shadow: "md" },
-            text: { color: "accent-fg", weight: "semibold" },
-          },
-        },
-        chart: {
-          line: {
-            box: { bg: "surface", pad: "sm", radius: "md" },
-            text: { color: "fg-muted", size: "sm" },
-          },
-        },
-        media: {
-          hero: {
-            media: { radius: "lg", width: "full", ratio: "wide" },
-          },
-        },
+  it("never throws on cyclic or hostile operator input and never returns a partial Theme", () => {
+    const cyclic = completeTheme();
+    cyclic.loop = cyclic;
+    expect(() => validateTheme(cyclic)).not.toThrow();
+    expectInvalid(cyclic);
+
+    const throwing = new Proxy(completeTheme(), {
+      ownKeys() {
+        throw new Error("hostile");
       },
     });
+    expect(() => validateTheme(throwing)).not.toThrow();
+    expectInvalid(throwing);
 
-    expect(theme).toBeDefined();
-    expect(hasError(issues)).toBe(false);
-    expect(theme?.shadow?.md).toBe("0 12px 30px rgba(0, 0, 0, 0.15)");
-    expect(theme?.recipes?.box?.selected?.box).toEqual({
-      bg: "accent",
-      pad: "md",
-      radius: "lg",
-      border: true,
-      shadow: "md",
-    });
-    expect(theme?.recipes?.box?.selected?.text).toEqual({
-      color: "accent-fg",
-      weight: "semibold",
-    });
-    expect(theme?.recipes?.media?.hero?.media).toEqual({
-      radius: "lg",
-      width: "full",
-      ratio: "wide",
-    });
-    expect(Object.getPrototypeOf(theme?.recipes?.box)).toBeNull();
+    const invalidLate = completeTheme();
+    const tokens = invalidLate.tokens as Record<string, Record<string, unknown>>;
+    tokens.space!.md = "24px";
+    tokens.chartThickness!.lg = "999px";
+    const result = validateTheme(invalidLate);
+    expect(result.theme).toBeUndefined();
+    expect(tokens.space!.md).toBe("24px");
+    expect(tokens.chartThickness!.lg).toBe("999px");
   });
 
-  it("validates token-only recipe parts", () => {
-    const input = JSON.parse(`{
-      "name": "brand",
-      "recipes": {
-        "input": {
-          "default": {
-            "field": { "width": "full" },
-            "parts": {
-              "label": {
-                "text": { "color": "fg-muted", "size": "sm", "weight": "medium" }
-              },
-              "control": {
-                "box": { "bg": "surface", "pad": "sm", "radius": "md", "border": true }
-              },
-              "icon": {
-                "box": { "bg": "#fff", "pad": "huge", "width": "auto", "border": "yes" },
-                "text": { "color": "var(--danger)", "size": "sm" },
-                "style": { "color": "red" }
-              },
-              "customRawPart": {
-                "box": { "bg": "accent" }
-              },
-              "__proto__": {
-                "box": { "bg": "danger" }
-              }
-            }
-          }
-        }
-      }
-    }`);
-    Object.defineProperty(input.recipes.input.default.parts, "body", {
+  it("reads each Theme style property once and rejects a throwing getter whole", () => {
+    const changing = completeTheme();
+    const box = (changing.defaults as Record<string, Record<string, unknown>>).box!;
+    let changingReads = 0;
+    Object.defineProperty(box, "gap", {
       enumerable: true,
       get() {
-        throw new Error("hostile part");
+        changingReads += 1;
+        return changingReads === 1
+          ? "md"
+          : new Proxy(
+              {},
+              {
+                ownKeys: () => {
+                  throw new Error("second read");
+                },
+              },
+            );
       },
     });
 
-    const { theme, issues } = validateTheme(input);
+    const accepted = validateTheme(changing);
+    expect(accepted.theme, accepted.issues.map(({ message }) => message).join("\n")).toBeDefined();
+    expect(accepted.theme?.defaults.box.gap).toBe("md");
+    expect(changingReads).toBe(1);
 
-    expect(theme).toBeDefined();
-    expect(hasError(issues)).toBe(false);
-    expect(theme?.recipes?.input?.default?.field).toEqual({ width: "full" });
-    const parts = theme?.recipes?.input?.default?.parts;
-    expect(parts?.label?.text).toEqual({
-      color: "fg-muted",
-      size: "sm",
-      weight: "medium",
-    });
-    expect(parts?.control?.box).toEqual({
-      bg: "surface",
-      pad: "sm",
-      radius: "md",
-      border: true,
-    });
-    expect(parts?.icon?.box).toEqual({ width: "auto" });
-    expect(parts?.icon?.text).toEqual({ size: "sm" });
-    expect(Object.prototype.hasOwnProperty.call(parts ?? {}, "customRawPart")).toBe(false);
-    expect(parts?.body).toBeUndefined();
-    expect(Object.getPrototypeOf(parts)).toBeNull();
-    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(6);
-  });
-
-  it("drops invalid brick recipe tokens and raw CSS values with warnings", () => {
-    const { theme, issues } = validateTheme({
-      name: "brand",
-      recipes: {
-        box: {
-          selected: {
-            box: {
-              bg: "#ffffff",
-              pad: "huge",
-              shadow: "floating",
-              width: "full",
-              border: "yes",
-            },
-            text: {
-              color: "accent",
-              size: "massive",
-              family: "sans",
-            },
-          },
-          "bad variant": {
-            box: { bg: "accent" },
-          },
-        },
-        script: {
-          default: {
-            box: { bg: "accent" },
-          },
-        },
+    const throwing = completeTheme();
+    const throwingBox = (throwing.defaults as Record<string, Record<string, unknown>>).box!;
+    let throwingReads = 0;
+    Object.defineProperty(throwingBox, "gap", {
+      enumerable: true,
+      get() {
+        throwingReads += 1;
+        throw new Error("untrusted style getter");
       },
     });
 
-    expect(theme).toBeDefined();
-    expect(hasError(issues)).toBe(false);
-    expect(theme?.recipes?.box?.selected?.box).toEqual({ width: "full" });
-    expect(theme?.recipes?.box?.selected?.text).toEqual({
-      color: "accent",
-      family: "sans",
-    });
-    expect(theme?.recipes?.box?.["bad variant"]).toBeUndefined();
-    expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, "script")).toBe(false);
-    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(5);
+    let rejected: ReturnType<typeof validateTheme> | undefined;
+    expect(() => {
+      rejected = validateTheme(throwing);
+    }).not.toThrow();
+    expect(rejected?.theme).toBeUndefined();
+    expect(rejected?.issues.some(({ severity }) => severity === "error")).toBe(true);
+    expect(throwingReads).toBe(1);
   });
 
-  it("accepts every final brick recipe key", () => {
-    const recipes: Record<string, Record<string, { box: { bg: "surface" } }>> = {};
-    for (const brick of recipeBricks) {
-      recipes[brick] = { default: { box: { bg: "surface" } } };
-    }
-
-    const { theme, issues } = validateTheme({ name: "brick-recipes", recipes });
-
-    expect(theme).toBeDefined();
-    expect(hasError(issues)).toBe(false);
-    for (const brick of recipeBricks) {
-      expect(theme?.recipes?.[brick]?.default?.box).toEqual({ bg: "surface" });
-    }
-  });
-
-  it("warning-drops every retired brick recipe key", () => {
-    const retiredRecipeKeys = [
-      "button",
-      "form",
-      "filterBar",
-      "metric",
-      "tabs",
-      "nav",
-      "stat",
-    ] as const; // composition-hard-cut: allowed-negative
-    const recipes = Object.fromEntries(
-      retiredRecipeKeys.map((brick) => [brick, { default: { box: { bg: "surface" as const } } }]),
-    );
-
-    const { theme, issues } = validateTheme({ name: "stale-recipes", recipes });
-
-    expect(theme).toBeDefined();
-    for (const brick of retiredRecipeKeys) {
-      expect(Object.prototype.hasOwnProperty.call(theme?.recipes ?? {}, brick)).toBe(false);
-      expect(
-        issues.some(
-          (issue) =>
-            issue.severity === "warning" &&
-            issue.message.includes(`unknown brick "${brick}" dropped`),
-        ),
-      ).toBe(true);
-    }
-  });
-
-  it("keeps structural composition definitions out of style recipes under canonical names", () => {
-    const { theme, issues } = validateTheme({
-      name: "structural-recipes",
-      recipes: {
-        box: {
-          selected: {
-            box: { bg: "surface", pad: "sm" },
-            root: "root",
-            nodes: {
-              root: { id: "root", type: "text", value: "not a recipe" },
-            },
-            slots: { title: "Title" }, // composition-hard-cut: allowed-negative
-            [["component", "Definitions"].join("")]: [{ name: "not-a-recipe" }],
-            compositions: [{ name: "not-a-recipe" }],
-          },
-        },
-      },
-    });
-
-    expect(theme).toBeDefined();
-    expect(hasError(issues)).toBe(false);
-    expect(theme?.recipes?.box?.selected).toEqual({ box: { bg: "surface", pad: "sm" } });
-    const recipe = theme?.recipes?.box?.selected ?? {};
-    expect(Object.prototype.hasOwnProperty.call(recipe, "root")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(recipe, "nodes")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(recipe, "slots")).toBe(false);
-    expect(
-      Object.prototype.hasOwnProperty.call(recipe, ["component", "Definitions"].join("")),
-    ).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(recipe, "compositions")).toBe(false);
-    expect(issues.filter((issue) => issue.severity === "warning").length).toBeGreaterThanOrEqual(5);
-
-    // DC-012: the theme surface (validator + this suite) carries canonical
-    // composition naming only. The legacy token is spelled split so this
-    // hygiene check cannot match its own source.
-    const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
-    expect(readFileSync(new URL("./theme.ts", import.meta.url), "utf8")).not.toMatch(legacyNaming);
-    expect(readFileSync(new URL("./theme.test.ts", import.meta.url), "utf8")).not.toMatch(
-      legacyNaming,
-    );
-  });
-});
-
-describe("landing-grade-vocab", () => {
-  // DC-005: each new landing-grade token group is operator-overridable through
-  // the SAME fail-safe theme machinery — a valid override survives, a malformed
-  // value is clamped or dropped WITH an issue, an unknown key still warns, and
-  // the validator never throws.
-
-  it("accepts a valid override for each new dimension group and keeps the document", () => {
-    const { theme, issues } = validateTheme({
-      name: "landing",
-      minHeight: { screen: "600px" },
-      maxWidth: { wide: "1200px" },
-      tracking: { wide: "0.05em" },
-      leading: { relaxed: "1.5rem" },
-    });
-    expect(theme).toBeDefined();
-    const t = theme as FacetTheme;
-    expect(t.minHeight!.screen).toBe("600px");
-    expect(t.maxWidth!.wide).toBe("1200px");
-    expect(t.tracking!.wide).toBe("0.05em");
-    expect(t.leading!.relaxed).toBe("1.5rem");
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("accepts a valid override for each new CSS-shape group", () => {
-    const { theme, issues } = validateTheme({
-      name: "landing",
-      gradient: { accent: "linear-gradient(180deg, #000000, #4f46e5)" },
-      scrim: { dark: "rgba(0, 0, 0, 0.4)" },
-      highlight: { band: "linear-gradient(transparent 60%, #fde68a 60%)" },
-    });
-    expect(theme).toBeDefined();
-    const t = theme as FacetTheme;
-    expect(t.gradient!.accent).toBe("linear-gradient(180deg, #000000, #4f46e5)");
-    expect(t.scrim!.dark).toBe("rgba(0, 0, 0, 0.4)");
-    expect(t.highlight!.band).toBe("linear-gradient(transparent 60%, #fde68a 60%)");
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("accepts a valid colorDark palette override into a null-proto map", () => {
-    const { theme, issues } = validateTheme({
-      name: "landing",
-      colorDark: { bg: "#0b0b0f", fg: "#f5f5f7" },
-    });
-    expect(theme).toBeDefined();
-    const colorDark = (theme as FacetTheme).colorDark!;
-    expect(colorDark.bg).toBe("#0b0b0f");
-    expect(colorDark.fg).toBe("#f5f5f7");
-    expect(Object.getPrototypeOf(colorDark)).toBeNull();
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("clamps an out-of-range dimension override with a warning but keeps the document", () => {
-    const { theme, issues } = validateTheme({ name: "x", minHeight: { screen: "9999999px" } });
-    expect(theme).toBeDefined();
-    expect((theme as FacetTheme).minHeight!.screen).toBe("9999px");
-    expect(issues.some((i) => i.severity === "warning")).toBe(true);
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("refuses a hostile CSS value in a new CSS-shape group as an error", () => {
-    const hostile: unknown[] = [
-      { name: "x", gradient: { accent: "url(https://evil)" } },
-      { name: "x", scrim: { dark: "rgba(0,0,0,0.4);background:red" } },
-      { name: "x", highlight: { band: "var(--x)" } },
-      { name: "x", gradient: { accent: "javascript:alert(1)" } },
-    ];
-    for (const doc of hostile) {
-      const result = validateTheme(doc);
-      expect(result.theme, JSON.stringify(doc)).toBeUndefined();
-      expect(hasError(result.issues), JSON.stringify(doc)).toBe(true);
-    }
-  });
-
-  it("refuses a hostile colorDark value as an error (reuses the color handler)", () => {
-    const result = validateTheme({ name: "x", colorDark: { bg: "url(https://evil)" } });
-    expect(result.theme).toBeUndefined();
-    expect(hasError(result.issues)).toBe(true);
-  });
-
-  it("drops an unknown token within a new group with a warning but keeps the document", () => {
-    const { theme, issues } = validateTheme({
-      name: "x",
-      minHeight: { screen: "600px", bogus: "10px" },
-      gradient: {
-        accent: "linear-gradient(180deg, #000000, #ffffff)",
-        nope: "linear-gradient(0deg, #000000, #ffffff)",
-      },
-    });
-    expect(theme).toBeDefined();
-    const t = theme as FacetTheme;
-    expect(t.minHeight!.screen).toBe("600px");
-    expect(Object.prototype.hasOwnProperty.call(t.minHeight!, "bogus")).toBe(false);
-    expect(Object.prototype.hasOwnProperty.call(t.gradient!, "nope")).toBe(false);
-    expect(issues.filter((i) => i.severity === "warning").length).toBeGreaterThanOrEqual(2);
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("warns and drops an unknown top-level group key alongside the new groups", () => {
-    const { theme, issues } = validateTheme({
-      name: "x",
-      leading: { relaxed: "1.6rem" },
-      bogusGroup: { anything: 1 },
-    });
-    expect(theme).toBeDefined();
-    expect((theme as FacetTheme).leading!.relaxed).toBe("1.6rem");
-    expect(issues.some((i) => i.message.includes("bogusGroup"))).toBe(true);
-    expect(hasError(issues)).toBe(false);
-  });
-
-  it("never throws when the new groups carry junk shapes", () => {
-    const junkDocs: unknown[] = [
-      { name: "x", minHeight: 42 },
-      { name: "x", gradient: [] },
-      { name: "x", colorDark: "nope" },
-      { name: "x", tracking: { wide: 5 } },
-      {
-        name: "x",
-        get scrim() {
-          throw new Error("boom");
-        },
-      },
-    ];
-    for (const doc of junkDocs) {
-      let result: ReturnType<typeof validateTheme> | undefined;
-      expect(() => {
-        result = validateTheme(doc);
-      }).not.toThrow();
-      expect(result).toBeDefined();
+  it("returns fresh null-prototype maps instead of retaining operator objects", () => {
+    const input = completeTheme();
+    const result = validateTheme(input);
+    expect(result.theme).toBeDefined();
+    expect(result.theme).not.toBe(input);
+    expect(Object.getPrototypeOf(result.theme!.tokens.space)).toBeNull();
+    expect(Object.getPrototypeOf(result.theme!.defaults)).toBeNull();
+    for (const brick of BRICK_TYPES as readonly BrickType[]) {
+      expect(result.theme!.defaults[brick]).not.toBe(
+        (input.defaults as Record<string, unknown>)[brick],
+      );
     }
   });
 });

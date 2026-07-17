@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { MAX_PATCH_OPS } from "@facet/core";
-import type { FacetCatalog, FacetComposition, FacetTree } from "@facet/core";
-import { createStageToolBuffer } from "./buffer.js";
+import type { FacetPattern, FacetTheme, FacetTree } from "@facet/core";
+import {
+  createStageToolBuffer as createStageToolBufferRaw,
+  type StageToolBuffer,
+} from "./buffer.js";
 import { parseAgentToolObservation } from "./observation.js";
+import type { StageToolAssets } from "./types.js";
 
-const retiredCompositionTool = ["use", "composition"].join("_");
+const retiredCompositionTool = ["get", "composition"].join("_");
 const retiredTestName = `treats retired ${retiredCompositionTool} as unknown without touching pending edits`;
 const retiredPressableType = ["but", "ton"].join("");
 
@@ -23,20 +27,10 @@ const TREE_WITH_CHILD: FacetTree = {
   },
 };
 
-const CATALOG_POLICY: FacetCatalog = {
-  name: "buffer-policy-test",
-  theme: { active: "default", switchPolicy: "locked", allowed: ["default"] },
-  bricks: [{ type: "box", variants: ["surface"] }, { type: "text" }],
-  compositions: { mode: "all" },
-  policy: {
-    editBeforeAppend: true,
-    compactScreens: true,
-  },
-};
-
-const PANEL_COMPOSITION: FacetComposition = {
+const PANEL_PATTERN: FacetPattern = {
   name: "panel-reference",
-  metadata: { description: "A simple panel reference." },
+  description: "A simple panel reference.",
+  useWhen: "Use for a compact titled panel.",
   root: "panel",
   nodes: {
     panel: { id: "panel", type: "box", children: ["title"] },
@@ -44,7 +38,47 @@ const PANEL_COMPOSITION: FacetComposition = {
   },
 };
 
+const PATTERN_ASSETS: StageToolAssets = {
+  theme: {} as FacetTheme,
+  patterns: [PANEL_PATTERN],
+  brickIndex: [],
+  presetIndex: [],
+  patternIndex: [
+    {
+      name: PANEL_PATTERN.name,
+      description: PANEL_PATTERN.description,
+      useWhen: PANEL_PATTERN.useWhen,
+    },
+  ],
+};
+
+function createStageToolBuffer(
+  initialShadow: FacetTree,
+  assets: StageToolAssets = PATTERN_ASSETS,
+): StageToolBuffer {
+  return createStageToolBufferRaw(initialShadow, assets);
+}
+
 describe("createStageToolBuffer", () => {
+  it("does not bypass mutation snapshot requirements", () => {
+    const buffer = createStageToolBufferRaw(ROOT_TREE);
+    const rejected = buffer.run({
+      id: "set-without-assets",
+      name: "set_node",
+      input: { node: { id: "copy", type: "text", value: "Copy" } },
+    });
+
+    expect(parseAgentToolObservation(rejected.observation)).toMatchObject({
+      tool: "set_node",
+      status: "error",
+      outcome: "rejected",
+      code: "not_available",
+      patch_count: 0,
+    });
+    expect(rejected.messages).toEqual([]);
+    expect(rejected.shadow).toBe(ROOT_TREE);
+  });
+
   it("buffers forward-referenced box edits until child nodes exist", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);
 
@@ -68,7 +102,7 @@ describe("createStageToolBuffer", () => {
     expect(child.shadow.nodes["title"]).toMatchObject({ type: "text", value: "Hello" });
   });
 
-  it("sanitizes and applies child-shaped leaf bricks instead of buffering them", () => {
+  it("rejects child-shaped leaf bricks instead of sanitizing or buffering them", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);
     const applied = buffer.run({
       id: "call-copy",
@@ -80,18 +114,14 @@ describe("createStageToolBuffer", () => {
 
     expect(parseAgentToolObservation(applied.observation)).toMatchObject({
       tool: "set_node",
-      status: "ok",
-      outcome: "applied_not_visible",
-      patch_count: 1,
+      status: "error",
+      outcome: "rejected",
+      code: "invalid_authoring",
+      patch_count: 0,
     });
     expect(applied.observation).not.toContain("queued");
-    expect(applied.messages.filter((message) => message.kind === "patch")).toHaveLength(1);
-    expect(applied.shadow.nodes["copy"]).toEqual({
-      id: "copy",
-      type: "text",
-      value: "Copy",
-      style: {},
-    });
+    expect(applied.messages).toEqual([]);
+    expect(applied.shadow).toBe(ROOT_TREE);
     expect(buffer.drainUnresolved()).toEqual([]);
   });
 
@@ -207,22 +237,29 @@ describe("createStageToolBuffer", () => {
     expect(buffer.drainUnresolved()).toEqual([]);
   });
 
-  it("rejects catalog-invalid forward-referenced containers instead of buffering them", () => {
-    const buffer = createStageToolBuffer(ROOT_TREE, { catalog: CATALOG_POLICY });
+  it("rejects an invalid direct style before buffering a forward-referenced container", () => {
+    const buffer = createStageToolBuffer(ROOT_TREE);
 
     const queued = buffer.run({
       id: "call-panel",
       name: "set_node",
-      input: { node: { id: "panel", type: "box", variant: "danger", children: ["title"] } },
+      input: {
+        node: {
+          id: "panel",
+          type: "box",
+          style: { padding: "not-a-space-token" },
+          children: ["title"],
+        },
+      },
     });
 
     expect(parseAgentToolObservation(queued.observation)).toMatchObject({
       tool: "set_node",
       status: "error",
       outcome: "rejected",
+      code: "invalid_authoring",
       patch_count: 0,
     });
-    expect(queued.observation).toContain("catalog policy");
     expect(queued.messages).toEqual([]);
 
     const child = buffer.run({
@@ -233,6 +270,7 @@ describe("createStageToolBuffer", () => {
 
     expect(child.messages.filter((message) => message.kind === "patch")).toHaveLength(1);
     expect(child.shadow.nodes["panel"]).toBeUndefined();
+    expect(child.shadow.nodes["title"]).toMatchObject({ type: "text", value: "Hello" });
     expect(buffer.drainUnresolved()).toEqual([]);
   });
 
@@ -268,11 +306,11 @@ describe("createStageToolBuffer", () => {
     });
 
     expect(orphan.messages.some((message) => message.kind === "patch")).toBe(true);
-    expect(buffer.shadow.nodes["title"]).toMatchObject({ value: "Title", style: {} });
+    expect(buffer.shadow.nodes["title"]).toMatchObject({ value: "Title" });
 
     buffer.resetEmittedPatchOps();
 
-    expect(buffer.shadow.nodes["title"]).toMatchObject({ style: {} });
+    expect(buffer.shadow.nodes["title"]).not.toHaveProperty("style");
     const appended = buffer.run({
       id: "append-panel",
       name: "append_node",
@@ -290,8 +328,8 @@ describe("createStageToolBuffer", () => {
     expect(appended.messages.some((message) => message.kind === "patch")).toBe(true);
   });
 
-  it("lets get_composition pass through without touching pending edits or accounting", () => {
-    const buffer = createStageToolBuffer(ROOT_TREE, { compositions: [PANEL_COMPOSITION] });
+  it("lets get_pattern pass through without touching pending edits or accounting", () => {
+    const buffer = createStageToolBuffer(ROOT_TREE, PATTERN_ASSETS);
 
     const queued = buffer.run({
       id: "queue-panel",
@@ -302,12 +340,12 @@ describe("createStageToolBuffer", () => {
 
     const read = buffer.run({
       id: "read-panel-reference",
-      name: "get_composition",
+      name: "get_pattern",
       input: { name: "panel-reference" },
     });
 
     expect(parseAgentToolObservation(read.observation)).toMatchObject({
-      tool: "get_composition",
+      tool: "get_pattern",
       status: "ok",
       outcome: "no_stage_change",
       patch_count: 0,

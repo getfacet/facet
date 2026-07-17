@@ -1,16 +1,28 @@
 import type { Color } from "./tokens.js";
+import { MAX_THEME_CSS_VALUE_BYTES } from "./theme-types.js";
 
 export const CONTRAST_PAIRS: readonly (readonly [Color, Color])[] = [
-  ["fg", "bg"],
-  ["fg-muted", "bg"],
-  ["accent-fg", "accent"],
+  ["foreground", "background"],
+  ["foreground", "surface"],
+  ["foreground", "mutedSurface"],
+  ["mutedForeground", "background"],
+  ["mutedForeground", "surface"],
+  ["accentForeground", "accent"],
+  ["accentForeground", "accentSurface"],
+  ["successForeground", "success"],
+  ["successForeground", "successSurface"],
+  ["warningForeground", "warning"],
+  ["warningForeground", "warningSurface"],
+  ["dangerForeground", "danger"],
+  ["dangerForeground", "dangerSurface"],
+  ["infoForeground", "info"],
+  ["infoForeground", "infoSurface"],
 ];
 export const MIN_CONTRAST = 4.5;
 
-const HEX_RE = /^#([0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-// Argument chars are constrained to digits/dot/comma/percent/whitespace and the
-// letters of "deg" — anything else (e.g. a smuggled keyword) fails the match.
-const RGB_HSL_RE = /^(rgb|rgba|hsl|hsla)\(([0-9.,%\sdeg]+)\)$/i;
+const UNSIGNED_DECIMAL_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,4})?$/;
+const SIGNED_DECIMAL_RE = /^-?(?:0|[1-9]\d*)(?:\.\d{1,4})?$/;
+const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const NAMED_COLORS: Readonly<Record<string, readonly [number, number, number]>> = {
   aqua: [0, 255, 255],
   black: [0, 0, 0],
@@ -39,88 +51,87 @@ export function isAllowedColor(value: string): boolean {
 }
 
 export function parseSrgb(value: string): readonly [number, number, number] | undefined {
-  if (value.startsWith("#")) {
-    if (!HEX_RE.test(value)) return undefined;
-    let hex = value.slice(1);
-    if (hex.length === 3 || hex.length === 4) {
-      if (hex.length === 4 && parseInt(`${hex[3]}${hex[3]}`, 16) !== 255) return undefined;
-      hex = hex
-        .slice(0, 3)
-        .split("")
-        .map((c) => c + c)
-        .join("");
-    } else if (hex.length === 8) {
-      if (parseInt(hex.slice(6, 8), 16) !== 255) return undefined;
-      hex = hex.slice(0, 6);
-    } else if (hex.length !== 6) {
-      return undefined;
-    }
-    const r = parseInt(hex.slice(0, 2), 16);
-    const g = parseInt(hex.slice(2, 4), 16);
-    const b = parseInt(hex.slice(4, 6), 16);
-    return [r, g, b];
+  if (
+    value.length === 0 ||
+    value.length > MAX_THEME_CSS_VALUE_BYTES ||
+    value.trim() !== value ||
+    /[^\x20-\x7e]/.test(value)
+  ) {
+    return undefined;
   }
+
+  if (value.startsWith("#")) return parseHex(value);
+
   const lower = value.toLowerCase();
   if (Object.prototype.hasOwnProperty.call(NAMED_COLORS, lower)) {
     return NAMED_COLORS[lower];
   }
 
-  const match = RGB_HSL_RE.exec(value);
+  return value.startsWith("rgb(") ? parseRgb(value) : parseHsl(value);
+}
+
+function parseHex(value: string): readonly [number, number, number] | undefined {
+  const match = HEX_RE.exec(value);
   if (match === null) return undefined;
-  const fn = match[1]!.toLowerCase();
-  const rawArgs = match[2]!;
-  const commaSeparated = rawArgs.includes(",");
-  const parts = (commaSeparated ? rawArgs.split(",") : rawArgs.trim().split(/\s+/)).map((p) =>
-    p.trim(),
-  );
-  const alphaAllowed = fn === "rgba" || fn === "hsla";
-  if (alphaAllowed && !commaSeparated) return undefined;
-  if (parts.length !== 3 && !(alphaAllowed && parts.length === 4)) return undefined;
-  if (parts.length === 4 && !isOpaqueAlpha(parts[3]!)) return undefined;
+  const digits = match[1]!;
+  if (digits.length === 4 && digits[3]!.toLowerCase() !== "f") return undefined;
+  if (digits.length === 8 && digits.slice(6).toLowerCase() !== "ff") return undefined;
+  const opaque =
+    digits.length === 4 ? digits.slice(0, 3) : digits.length === 8 ? digits.slice(0, 6) : digits;
+  const hex =
+    opaque.length === 3
+      ? opaque
+          .split("")
+          .map((character) => character + character)
+          .join("")
+      : opaque;
+  return [
+    parseInt(hex.slice(0, 2), 16),
+    parseInt(hex.slice(2, 4), 16),
+    parseInt(hex.slice(4, 6), 16),
+  ];
+}
 
-  if (fn === "rgb" || fn === "rgba") {
-    const channel = (raw: string): number | undefined => {
-      if (raw === "") return undefined;
-      const scalar = raw.endsWith("%") ? raw.slice(0, -1) : raw;
-      if (scalar === "") return undefined;
-      const value = raw.endsWith("%") ? (Number(scalar) / 100) * 255 : Number(scalar);
-      if (!Number.isFinite(value) || value < 0 || value > 255) return undefined;
-      return value;
-    };
-    const [r, g, b] = [channel(parts[0]!), channel(parts[1]!), channel(parts[2]!)];
-    if (r === undefined || g === undefined || b === undefined) return undefined;
-    return [r, g, b];
-  }
+function parseRgb(value: string): readonly [number, number, number] | undefined {
+  const rgb = /^rgb\((.*)\)$/.exec(value);
+  if (rgb === null) return undefined;
+  const parts = rgb[1]!.split(",").map((part) => part.trim());
+  if (parts.length !== 3) return undefined;
+  const percentages = parts.every((part) => part.endsWith("%"));
+  if (!percentages && parts.some((part) => part.endsWith("%"))) return undefined;
+  const channel = (raw: string): number | undefined => {
+    const parsed = percentages ? parsePercent(raw) : parseDecimal(raw, false);
+    if (parsed === undefined) return undefined;
+    if (percentages) return parsed * 255;
+    return parsed >= 0 && parsed <= 255 ? parsed : undefined;
+  };
+  const [r, g, b] = [channel(parts[0]!), channel(parts[1]!), channel(parts[2]!)];
+  return r === undefined || g === undefined || b === undefined ? undefined : [r, g, b];
+}
 
-  const hue = parseHue(parts[0]!);
+function parseHsl(value: string): readonly [number, number, number] | undefined {
+  const hsl = /^hsl\((.*)\)$/.exec(value);
+  if (hsl === null) return undefined;
+  const parts = hsl[1]!.split(",").map((part) => part.trim());
+  if (parts.length !== 3) return undefined;
+  const hue = parseDecimal(parts[0]!, true);
   const saturation = parsePercent(parts[1]!);
   const lightness = parsePercent(parts[2]!);
   if (hue === undefined || saturation === undefined || lightness === undefined) return undefined;
-  return hslToSrgb(hue, saturation, lightness);
+  return hslToSrgb(((hue % 360) + 360) % 360, saturation, lightness);
 }
 
-function parseHue(raw: string): number | undefined {
-  const value = raw.toLowerCase().endsWith("deg") ? raw.slice(0, -3) : raw;
-  if (value === "") return undefined;
-  const hue = Number(value);
-  if (!Number.isFinite(hue)) return undefined;
-  return ((hue % 360) + 360) % 360;
+function parseDecimal(raw: string, signed: boolean): number | undefined {
+  if (!(signed ? SIGNED_DECIMAL_RE : UNSIGNED_DECIMAL_RE).test(raw)) return undefined;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : undefined;
 }
 
 function parsePercent(raw: string): number | undefined {
   if (!raw.endsWith("%")) return undefined;
-  const scalar = raw.slice(0, -1);
-  if (scalar === "") return undefined;
-  const value = Number(scalar);
-  if (!Number.isFinite(value) || value < 0 || value > 100) return undefined;
+  const value = parseDecimal(raw.slice(0, -1), false);
+  if (value === undefined || value < 0 || value > 100) return undefined;
   return value / 100;
-}
-
-function isOpaqueAlpha(raw: string): boolean {
-  const scalar = raw.endsWith("%") ? raw.slice(0, -1) : raw;
-  if (scalar === "") return false;
-  const value = raw.endsWith("%") ? Number(scalar) / 100 : Number(scalar);
-  return Number.isFinite(value) && value === 1;
 }
 
 function hslToSrgb(

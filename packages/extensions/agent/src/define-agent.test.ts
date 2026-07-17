@@ -35,12 +35,13 @@ describe("defineAgent", () => {
 
   it("exposes native Stage authoring to agent logic", async () => {
     const removedMethod = ["use", "Composition"].join("");
+    const removedThemeMethod = ["th", "eme"].join("");
     const agent = defineAgent(({ stage }) => {
       expect(removedMethod in stage).toBe(false);
+      expect(removedThemeMethod in stage).toBe(false);
       stage
         .set({ id: "panel", type: "box", children: [] })
-        .append("panel", { id: "label", type: "text", value: "Inside" })
-        .theme("midnight");
+        .append("panel", { id: "label", type: "text", value: "Inside" });
     });
 
     const messages = await collectMessages(agent(event, session));
@@ -56,7 +57,6 @@ describe("defineAgent", () => {
         value: { id: "label", type: "text", value: "Inside" },
       },
       { op: "add", path: "/nodes/panel/children/-", value: "label" },
-      { op: "add", path: "/theme", value: "midnight" },
     ]);
   });
 });
@@ -83,7 +83,7 @@ describe("defineStreamingAgent", () => {
     const agent = defineStreamingAgent(async function* ({ stage }) {
       stage.set({ id: "label", type: "text", value: "Inside" });
       yield;
-      stage.theme("midnight");
+      stage.set({ id: "second", type: "text", value: "Second" });
     });
 
     const batches = await collectBatches(agent(event, session));
@@ -101,7 +101,18 @@ describe("defineStreamingAgent", () => {
           ],
         },
       ],
-      [{ kind: "patch", patches: [{ op: "add", path: "/theme", value: "midnight" }] }],
+      [
+        {
+          kind: "patch",
+          patches: [
+            {
+              op: "add",
+              path: "/nodes/second",
+              value: { id: "second", type: "text", value: "Second" },
+            },
+          ],
+        },
+      ],
     ]);
   });
 

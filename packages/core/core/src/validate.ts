@@ -6,12 +6,21 @@ export {
 } from "./primitive-node-validation.js";
 export { MAX_DEPTH, MAX_RENDER_NODES, MAX_SCREENS, validateTree } from "./tree-validation.js";
 export type { ValidationResult } from "./tree-validation.js";
-export { validateComposition } from "./composition-validation.js";
+export { validateTheme } from "./theme-validation.js";
+export type { ThemeIssue, ThemeValidationResult } from "./theme-types.js";
+export { MAX_AUTHOR_ISSUES, validateAuthorNode, validateAuthorTree } from "./author-validation.js";
+export type { AuthorIssue, AuthorValidationResult } from "./author-validation.js";
+export {
+  MAX_PATTERN_NODES,
+  MAX_PATTERNS,
+  validatePattern,
+  validatePatternList,
+} from "./pattern-validation.js";
 export type {
-  CompositionMetadata,
-  CompositionValidationResult,
-  FacetComposition,
-} from "./composition-validation.js";
+  FacetPattern,
+  PatternListValidationResult,
+  PatternValidationResult,
+} from "./pattern-validation.js";
 export {
   MAX_CHART_POINTS,
   MAX_CHART_SERIES,

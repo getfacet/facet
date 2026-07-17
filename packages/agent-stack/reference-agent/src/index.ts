@@ -22,6 +22,7 @@ export type {
 } from "./prompt.js";
 export { createReferenceAgent, createReferenceAgent as createQuickstartAgent } from "./agent.js";
 export type {
+  ReferenceAgentAssetSource,
   ReferenceAgentOptions,
   ReferenceAgentOptions as QuickstartAgentOptions,
 } from "./agent.js";

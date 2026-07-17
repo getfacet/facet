@@ -11,6 +11,7 @@ import type { Sink, StoredEvent, SummaryStore } from "@facet/runtime";
 import type { StageToolBuffer, StageToolBufferOutcome, ToolSpec } from "@facet/agent-tools";
 
 import { normalizeBudget, type ReferenceAgentBudget } from "./budget.js";
+import { createTokenEstimator, estimateTurnChars } from "./estimate.js";
 import { runReferenceAgentLoop, type ReferenceAgentLoopBufferFactory } from "./loop.js";
 import type { ConversationSummary, Summarizer, SummarizerRequest } from "./summary.js";
 import type { ReferenceAgentTraceEvent } from "./trace.js";
@@ -270,20 +271,21 @@ describe("runReferenceAgentLoop", () => {
     expect(saysOf(result.messages)).toEqual(["done"]);
   });
 
-  it("preserves complete get_composition results for the next provider turn", async () => {
-    const composition = {
+  it("preserves complete get_pattern results for the next provider turn", async () => {
+    const pattern = {
       name: "large-reference",
-      metadata: { description: "Large exact reference" },
+      description: "Large exact reference",
+      useWhen: "Use when the large reference matches the request.",
       root: "root",
       nodes: { root: { id: "root", type: "text", value: "x".repeat(5_000) } },
     };
     const exactObservation = JSON.stringify({
       status: "ok",
-      data: { data: JSON.stringify(composition) },
+      data: { data: JSON.stringify(pattern) },
     });
     const buffer = bufferWith([outcomeWith(exactObservation)]);
     const provider = providerOf(
-      toolStep(call("composition-1", "get_composition", { name: composition.name })),
+      toolStep(call("pattern-1", "get_pattern", { name: pattern.name })),
       textStep("done"),
     );
 
@@ -299,7 +301,7 @@ describe("runReferenceAgentLoop", () => {
     const exactResult = provider.turns[1]?.messages.at(-1);
     expect(exactResult).toEqual({
       role: "tool_result",
-      callId: "composition-1",
+      callId: "pattern-1",
       content: exactObservation,
     });
     if (exactResult?.role !== "tool_result") throw new Error("expected exact tool_result");
@@ -307,14 +309,14 @@ describe("runReferenceAgentLoop", () => {
     expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
   });
 
-  it("preserves complete get_composition results by stopping before an over-budget handoff", async () => {
+  it("preserves complete get_pattern results by stopping before an over-budget handoff", async () => {
     const exactObservation = JSON.stringify({
       status: "ok",
       data: { data: JSON.stringify({ name: "too-large", value: "x".repeat(5_000) }) },
     });
     const buffer = bufferWith([outcomeWith(exactObservation)]);
     const provider = providerOf(
-      toolStep(call("composition-1", "get_composition", { name: "too-large" })),
+      toolStep(call("pattern-1", "get_pattern", { name: "too-large" })),
       textStep("must not be reached"),
     );
 
@@ -334,8 +336,8 @@ describe("runReferenceAgentLoop", () => {
     expect(stopReasons(result.traceEvents)).toEqual(["context_limit"]);
     expect(result.traceEvents).toContainEqual({
       type: "tool_result",
-      toolName: "get_composition",
-      callId: "composition-1",
+      toolName: "get_pattern",
+      callId: "pattern-1",
       observationChars: exactObservation.length,
       truncated: false,
     });
@@ -547,6 +549,57 @@ describe("runReferenceAgentLoop", () => {
     expect(stopReasons(result.traceEvents)).toEqual(["context_limit"]);
   });
 
+  it("stops before provider.run when the first request exceeds a declared provider window", async () => {
+    const provider = providerOf(textStep("should not be reached"));
+
+    const result = await runLoop({
+      provider,
+      system: "s".repeat(125_000),
+      tools: [],
+      budget: testBudget({ maxContextChars: 160_000, maxContextTokens: 40_000 }),
+      contextWindowTokens: 30_000,
+    });
+
+    expect(provider.turns).toHaveLength(0);
+    expect(stopReasons(result.traceEvents)).toEqual(["context_limit"]);
+  });
+
+  it("allows the first request at the declared provider-window boundary", async () => {
+    const system = "s".repeat(1_000);
+    const baselineProvider = providerOf(textStep("baseline"));
+    await runLoop({ provider: baselineProvider, system, tools: [] });
+    const baselineTurn = baselineProvider.turns[0];
+    if (baselineTurn === undefined) throw new Error("expected baseline provider turn");
+    const exactWindow = createTokenEstimator().estimateTokens(
+      estimateTurnChars(baselineTurn.system, baselineTurn.messages, []),
+    );
+    const boundaryProvider = providerOf(textStep("done"));
+
+    const result = await runLoop({
+      provider: boundaryProvider,
+      system,
+      tools: [],
+      contextWindowTokens: exactWindow,
+    });
+
+    expect(boundaryProvider.turns).toHaveLength(1);
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
+  it("keeps the preset token cap as a calibration policy when no provider window is declared", async () => {
+    const provider = providerOf(textStep("done"));
+
+    const result = await runLoop({
+      provider,
+      system: "s".repeat(125_000),
+      tools: [],
+      budget: testBudget({ maxContextChars: 160_000, maxContextTokens: 30_000 }),
+    });
+
+    expect(provider.turns).toHaveLength(1);
+    expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
+  });
+
   it("stops with sink_error when sink history cannot be read", async () => {
     const provider = providerOf(textStep("should not be reached"));
 
@@ -722,7 +775,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -746,7 +798,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
       summarizer: summarizerOf(sampleSummary(), requests),
     });
@@ -769,7 +820,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
       summarizer: summarizerOf(undefined, requests),
     });
@@ -788,7 +838,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
       summarizer: rejectingSummarizer(requests),
     });
@@ -805,7 +854,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -823,7 +871,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
       summarizer: summarizerOf(sampleSummary(), []),
     });
@@ -852,7 +899,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
       summarizer: summarizerOf(undefined, []),
     });
@@ -869,7 +915,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget({ compactionCooldownSteps: 40 }),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -879,7 +924,7 @@ describe("in-turn compaction", () => {
     expect(stopReasons(result.traceEvents)).toEqual(["provider_stop"]);
   });
 
-  it("stops an over-budget composition read during the compaction cooldown", async () => {
+  it("stops an over-budget Pattern read during the compaction cooldown", async () => {
     const exactObservation = JSON.stringify({
       status: "ok",
       data: { data: JSON.stringify({ name: "too-large", value: "x".repeat(5_000) }) },
@@ -887,7 +932,7 @@ describe("in-turn compaction", () => {
     const buffer = bufferWith([outcomeWith("x".repeat(1_000)), outcomeWith(exactObservation)]);
     const provider = providerOf(
       toolStep(call("inspect-1", "inspect_stage")),
-      toolStep(call("composition-1", "get_composition", { name: "too-large" })),
+      toolStep(call("pattern-1", "get_pattern", { name: "too-large" })),
       textStep("must not be reached"),
     );
 
@@ -899,7 +944,6 @@ describe("in-turn compaction", () => {
         maxContextChars: 20_000,
         minRecentStepsVerbatim: 0,
       }),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -911,8 +955,8 @@ describe("in-turn compaction", () => {
     expect(stopReasons(result.traceEvents)).toEqual(["context_limit"]);
     expect(result.traceEvents).toContainEqual({
       type: "tool_result",
-      toolName: "get_composition",
-      callId: "composition-1",
+      toolName: "get_pattern",
+      callId: "pattern-1",
       observationChars: exactObservation.length,
       truncated: false,
     });
@@ -925,7 +969,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget({ compactionCooldownSteps: 0 }),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -941,7 +984,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -995,7 +1037,6 @@ describe("in-turn compaction", () => {
       session: staleSession,
       bufferFactory: bufferFactoryFor(buffer),
       budget: compactionBudget(),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -1015,7 +1056,6 @@ describe("in-turn compaction", () => {
         provider,
         bufferFactory: bufferFactoryFor(bigObservationBuffer(60)),
         budget: compactionBudget({ compactionTargetRatio, maxSummaryTokens: 25 }),
-        contextWindowTokens: 300,
         tools: [],
       });
       const compactedTurn = turnWith(provider, TRANSCRIPT_MARKER);
@@ -1035,7 +1075,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget({ maxContextTokens: 150, minRecentStepsVerbatim: 3 }),
-      contextWindowTokens: 150,
       tools: [],
     });
 
@@ -1057,7 +1096,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer(150)),
       budget: compactionBudget({ maxContextTokens: 800 }),
-      contextWindowTokens: 800,
       tools: [],
     });
 
@@ -1071,7 +1109,6 @@ describe("in-turn compaction", () => {
       provider,
       bufferFactory: bufferFactoryFor(bigObservationBuffer(150)),
       budget: compactionBudget({ maxContextTokens: 800 }),
-      contextWindowTokens: 800,
       tools: [],
     });
 
@@ -1113,7 +1150,6 @@ describe("in-turn compaction", () => {
         minRecentStepsVerbatim: 2,
         compactionCooldownSteps: 0,
       }),
-      contextWindowTokens: 300,
       tools: [],
     });
 
@@ -1145,7 +1181,6 @@ describe("in-turn compaction", () => {
         minRecentStepsVerbatim: 2,
         compactionCooldownSteps: 0,
       }),
-      contextWindowTokens: 600,
       tools: [],
     });
 

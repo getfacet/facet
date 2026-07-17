@@ -11,13 +11,7 @@
 import { readFile } from "node:fs/promises";
 import { readdirSync, realpathSync, statSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import type {
-  FacetAgent,
-  FacetCatalog,
-  FacetComposition,
-  FacetTheme,
-  FacetTree,
-} from "@facet/core";
+import type { FacetAgent, FacetPattern, FacetTheme, FacetTree } from "@facet/core";
 import { resolveProvider } from "@facet/reference-agent";
 import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
 import { FileAssets } from "@facet/runtime/node";
@@ -38,9 +32,8 @@ export interface RunCliHooks {
    * any `--assets` docs), just before they reach the agent + shell — the
    * observable seam tests use to assert the defaults seed on every boot. */
   readonly onResolvedAssets?: (assets: {
-    readonly themes: readonly FacetTheme[];
-    readonly compositions: readonly FacetComposition[];
-    readonly catalog: FacetCatalog;
+    readonly theme: FacetTheme;
+    readonly patterns: readonly FacetPattern[];
   }) => void;
 }
 
@@ -150,17 +143,14 @@ export async function runCli(
     }
   }
 
-  // Assets registry (Decision 8): resolve through `loadAssets` on EVERY boot so
-  // the `@facet/assets` default theme + composition reference library seeds even with no
-  // --assets (an empty MemoryAssets still yields the defaults through the same
-  // validation gate — WU-6). An EXPLICIT --assets path must exist (the --guide
-  // precedent) and adds the operator's docs on top of the defaults.
+  // Assets registry: resolve through `loadAssets` on EVERY boot so the bundled
+  // Theme + Pattern library seed even with no --assets. An EXPLICIT --assets
+  // path must exist (the --guide precedent) and supplies the operator's exact
+  // optional theme.json / patterns.json / initial.tree.json documents.
   // Documents are validated once here at boot; each issue is one concise warn
-  // line (never a document value). Themes go to the agent (names in prompt ②)
-  // AND the server (the shell map); compositions to the agent only as one
-  // validated reference snapshot. They are read with `get_composition`, never
-  // expanded or shipped to the browser. A seedable initial tree goes to the
-  // server (which wraps the stage store).
+  // line (never a document value). The one Theme goes to the agent and browser;
+  // Patterns stay in the agent's immutable snapshot and are never shipped to
+  // the browser. A seedable initial tree goes to the server.
   let store: AssetsStore;
   if (flags.assets !== undefined) {
     // An EXPLICIT --assets must be a READABLE DIRECTORY (the --guide hard-fail
@@ -180,16 +170,15 @@ export async function runCli(
     store = new FileAssets(flags.assets);
   } else {
     // No --assets: an empty document set still seeds the default base layer.
-    store = new MemoryAssets({ themes: [], compositions: [] });
+    store = new MemoryAssets({});
   }
   const loaded = await loadAssets(store, flags.agentId);
-  const themes: readonly FacetTheme[] = loaded.themes;
-  const compositions: readonly FacetComposition[] = loaded.compositions;
-  const catalog: FacetCatalog = loaded.catalog;
+  const theme = loaded.theme;
+  const patterns = loaded.patterns;
   const initialStage: FacetTree | undefined =
     loaded.initialTree ?? (usingQuickstartPageBrief ? QUICKSTART_INITIAL_STAGE : undefined);
   for (const issue of loaded.issues) error(`[facet-quickstart] ${issue}`);
-  hooks.onResolvedAssets?.({ themes, compositions, catalog });
+  hooks.onResolvedAssets?.({ theme, patterns });
 
   // One MemorySink shared by the agent (prompt layer ③ reads history) and the
   // facet server (which records into it) — the same conversation, both sides.
@@ -219,9 +208,8 @@ export async function runCli(
     guide,
     sink,
     agentId: flags.agentId,
-    themes,
-    compositions,
-    catalog,
+    theme,
+    patterns,
   });
   const brain = `${provider.name} (${provider.model})`;
 
@@ -232,7 +220,7 @@ export async function runCli(
       agentId: flags.agentId,
       agent,
       sink,
-      themes,
+      theme,
       ...(initialStage !== undefined ? { initialStage } : {}),
     });
   } catch (cause) {

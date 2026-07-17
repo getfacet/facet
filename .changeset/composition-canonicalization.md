@@ -9,14 +9,12 @@
 "@facet/store-postgres": minor
 ---
 
-Composition canonicalization — the legacy reusable-fragment API is fully
-replaced by the canonical composition vocabulary, intentionally with NO
-compatibility aliases (the replaced surface was never released). `@facet/core`
-exposes `FacetComposition` and `validateComposition`; `@facet/assets` ships
-`DEFAULT_COMPOSITIONS`; `@facet/runtime` loads `*.composition.json` documents
-into `AssetDocuments.compositions`; `@facet/agent-tools`,
-`@facet/reference-agent`, and `@facet/quickstart` advertise a validated
-name/description index and the read-only `get_composition` tool; and
-`@facet/store-postgres` persists per-agent compositions in a `compositions`
-JSONB column. Consumers migrate to composition names, inspect concrete native
-datasets when useful, and author ordinary stage nodes separately.
+Pattern canonicalization — the legacy reusable-fragment API is fully replaced
+by optional, read-only Pattern references, intentionally with no compatibility
+aliases. `@facet/core` exposes `FacetPattern` and `validatePattern`;
+`@facet/assets` ships `DEFAULT_PATTERNS`; `@facet/runtime` loads one exact
+`patterns.json` list into `AssetDocuments.patterns`; agent packages advertise a
+validated name/description/useWhen index and the read-only `get_pattern` tool;
+and `@facet/store-postgres` persists the per-agent list in a `patterns` JSONB
+column. Consumers inspect a Pattern when useful and author ordinary stage nodes
+separately.

@@ -4,20 +4,18 @@ import {
   MAX_FIELD_OPTIONS,
   MAX_FIELD_VALUE_CHARS,
   MAX_TABLE_CELL_CHARS,
-  type BoxStyle,
-  type BrickRecipe,
-  type RecipePartName,
-  type TextStyle,
 } from "@facet/core";
-import { boxStyle, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
-import { resolveRecipePart } from "./recipe-parts.js";
 import { rootContainmentStyle } from "./layout-contract.js";
 
 export const MAX_INTRINSIC_ITEMS = 32;
 
 export function isObjectRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+  try {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  } catch {
+    return false;
+  }
 }
 
 export function safeOwnValue(record: unknown, key: string): unknown {
@@ -40,7 +38,12 @@ export function cappedArray(value: unknown, max: number): readonly unknown[] {
 }
 
 export function styleOf<T extends object>(style: unknown): T | undefined {
-  return isObjectRecord(style) ? (style as T) : undefined;
+  if (!isObjectRecord(style)) return undefined;
+  try {
+    return { ...style } as T;
+  } catch {
+    return undefined;
+  }
 }
 
 export function stringValue(value: unknown): string | undefined {
@@ -101,28 +104,6 @@ export function withInert(style: CSSProperties, inert: boolean): CSSProperties {
   return inert ? { ...style, pointerEvents: "none" } : style;
 }
 
-export function partBoxStyle(
-  theme: ResolvedTheme,
-  recipe: BrickRecipe,
-  partName: RecipePartName,
-  defaults: BoxStyle = {},
-): CSSProperties {
-  const base = boxStyle(defaults, theme);
-  const part = resolveRecipePart(recipe, partName, theme);
-  return part.box === undefined ? base : { ...base, ...part.box };
-}
-
-export function partTextStyle(
-  theme: ResolvedTheme,
-  recipe: BrickRecipe,
-  partName: RecipePartName,
-  defaults: TextStyle = {},
-): CSSProperties {
-  const base = textStyle(defaults, theme);
-  const part = resolveRecipePart(recipe, partName, theme);
-  return part.text === undefined ? base : { ...base, ...part.text };
-}
-
 export function intrinsicBoxStyle(style: CSSProperties | undefined): CSSProperties {
   if (style === undefined) return {};
   const css: CSSProperties = { ...style };
@@ -143,29 +124,6 @@ export function intrinsicBoxStyle(style: CSSProperties | undefined): CSSProperti
   return rootContainmentStyle(css);
 }
 
-export function fieldControlStyle(theme: ResolvedTheme, recipe: BrickRecipe): CSSProperties {
-  const control = resolveRecipePart(recipe, "control", theme);
-  const input = resolveRecipePart(recipe, "input", theme);
-  const css: CSSProperties = {
-    boxSizing: "border-box",
-    background: theme.color.surface,
-    color: theme.color.fg,
-    border: `1px solid ${theme.color.border}`,
-    borderRadius: theme.radius.sm,
-    padding: `${theme.space.sm} ${theme.space.md}`,
-    font: "inherit",
-    lineHeight: 1.4,
-    minHeight: "40px",
-    outline: "none",
-    width: "100%",
-    ...(intrinsicBoxStyle(control.box) ?? {}),
-    ...(control.field ?? {}),
-    ...(intrinsicBoxStyle(input.box) ?? {}),
-    ...(input.field ?? {}),
-  };
-  return rootContainmentStyle(css);
-}
-
 export function fieldChoiceControlStyle(theme: ResolvedTheme): CSSProperties {
   return {
     accentColor: theme.color.accent,
@@ -177,7 +135,7 @@ export function fieldChoiceOptionStyle(theme: ResolvedTheme): CSSProperties {
     display: "flex",
     alignItems: "center",
     gap: theme.space.sm,
-    color: theme.color.fg,
+    color: theme.color.foreground,
     fontFamily: theme.fontFamily.sans,
     fontSize: theme.fontSize.md,
     minWidth: 0,

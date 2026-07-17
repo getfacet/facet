@@ -110,6 +110,21 @@ describe("applySort (pure, guarded)", () => {
     expect(out.map((r) => r["name"])).toEqual(["Carol", "Alice", "Bob"]);
   });
 
+  it("keeps local sorting independent from style-shaped row data", () => {
+    const styledRows: readonly TableRow[] = [
+      { score: 20, style: { color: "danger" }, status: "warning" },
+      { score: 5, style: { color: "success" }, status: "success" },
+    ] as unknown as readonly TableRow[];
+    const styledColumns: readonly TableColumn[] = [
+      { key: "score", label: "Score", sortable: true },
+    ];
+
+    const out = applySort(styledRows, { column: "score", direction: "asc" }, styledColumns);
+
+    expect(out.map((row) => row["score"])).toEqual([5, 20]);
+    expect(styledRows.map((row) => row["score"])).toEqual([20, 5]);
+  });
+
   it("sorts a mixed-type column via the total comparator without throwing", () => {
     const mixed = [
       { v: 3 },

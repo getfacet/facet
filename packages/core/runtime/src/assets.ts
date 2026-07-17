@@ -1,435 +1,210 @@
 import {
-  validateCatalog,
-  validateComposition,
+  validateAuthorTree,
+  validatePatternList,
   validateTheme,
-  validateTree,
-  type FacetComposition,
-  type FacetCatalog,
+  type FacetPattern,
   type FacetTheme,
   type FacetTree,
 } from "@facet/core";
-import { DEFAULT_CATALOG, DEFAULT_COMPOSITIONS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_PATTERNS, DEFAULT_THEME } from "@facet/assets";
+import { AssetIssues, describeAssetError } from "./asset-issues.js";
 import type { AssetsStore } from "./asset-store.js";
 import { isSeedableTree } from "./initial-stage.js";
 
 export { MemoryAssets, type AssetDocuments, type AssetsStore } from "./asset-store.js";
 export { isSeedableTree, withInitialStage } from "./initial-stage.js";
-const MAX_ASSET_DOCUMENTS = 1024;
-const MAX_ASSET_ISSUES = 64;
-const MAX_ASSET_ISSUE_CHARS = 200;
-const ASSET_ISSUES_SUPPRESSED = "...further asset issues suppressed";
 
-type AssetArrayField = "issues" | "themes" | "compositions";
+const RETIRED_FIELDS = ["themes", "compositions", "catalog"] as const;
 
-type AssetField = "issues" | "themes" | "compositions" | "catalog" | "initialTree";
-type FieldRead = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
+type FieldRead =
+  | { readonly ok: true; readonly present: boolean; readonly value: unknown }
+  | { readonly ok: false; readonly present: boolean };
+
+type Presence = true | false | "unreadable";
 
 function isRecord(value: unknown): value is Record<PropertyKey, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function isAssetArray(value: unknown): value is readonly unknown[] {
   try {
-    return Array.isArray(value);
+    return typeof value === "object" && value !== null && !Array.isArray(value);
   } catch {
     return false;
   }
 }
 
-function readAssetField(
-  docs: Record<PropertyKey, unknown>,
-  field: AssetField,
-  issues: string[],
-): FieldRead {
+function readField(record: Record<PropertyKey, unknown>, field: PropertyKey): FieldRead {
+  const presence = ownPresence(record, field);
+  if (presence === "unreadable") return { ok: false, present: false };
+  if (!presence) return { ok: true, present: false, value: undefined };
   try {
-    return { ok: true, value: docs[field] };
+    return { ok: true, present: true, value: Reflect.get(record, field) };
   } catch {
-    if (field === "initialTree") {
-      pushAssetIssue(issues, "initial tree skipped: document threw during validation");
-    } else {
-      pushAssetIssue(issues, `assets \`${field}\` threw during validation — ignored`);
-    }
-    return { ok: false };
+    return { ok: false, present: true };
   }
 }
 
-function isControlChar(code: number): boolean {
-  return code < 0x20 || (code >= 0x7f && code <= 0x9f);
-}
-
-function sanitizeAssetIssue(raw: string): string {
-  let out = "";
-  const limit = Math.min(raw.length, MAX_ASSET_ISSUE_CHARS);
-  for (let i = 0; i < limit; i += 1) {
-    const ch = raw[i]!;
-    out += isControlChar(ch.charCodeAt(0)) ? "?" : ch;
-  }
-  return raw.length > MAX_ASSET_ISSUE_CHARS ? `${out}...` : out;
-}
-
-function describeAssetError(err: unknown): string {
+function ownPresence(record: Record<PropertyKey, unknown>, field: PropertyKey): Presence {
   try {
-    if (err instanceof Error) {
-      return err.message === "" ? "unknown error" : err.message;
-    }
+    return Object.prototype.hasOwnProperty.call(record, field);
   } catch {
-    return "unreadable error";
+    return "unreadable";
   }
-  if (
-    err === null ||
-    err === undefined ||
-    typeof err === "string" ||
-    typeof err === "number" ||
-    typeof err === "boolean" ||
-    typeof err === "bigint" ||
-    typeof err === "symbol"
-  ) {
-    try {
-      return String(err);
-    } catch {
-      return "unreadable error";
-    }
-  }
-  return "non-error rejection";
 }
 
-function pushAssetIssue(issues: string[], issue: string): void {
-  if (issues.length >= MAX_ASSET_ISSUES) {
-    if (issues[issues.length - 1] !== ASSET_ISSUES_SUPPRESSED) {
-      issues.push(ASSET_ISSUES_SUPPRESSED);
+function readIssueArray(raw: unknown, issues: AssetIssues): void {
+  if (raw === undefined) return;
+  let array: readonly unknown[];
+  try {
+    if (!Array.isArray(raw)) {
+      issues.push("assets `issues` was not an array — ignored");
+      return;
     }
+    array = raw;
+  } catch {
+    issues.push("assets `issues` could not be read safely — ignored");
     return;
   }
-  issues.push(sanitizeAssetIssue(issue));
-}
-
-function readAssetArrayLength(
-  value: readonly unknown[],
-  label: AssetArrayField,
-  issues: string[],
-  maxItems: number,
-): number {
+  let length: number;
   try {
-    const length = value.length;
-    if (Number.isSafeInteger(length) && length >= 0) {
-      if (length > maxItems) {
-        pushAssetIssue(
-          issues,
-          `assets \`${label}\` had ${String(length)} item(s); truncated to ${String(maxItems)}`,
-        );
-        return maxItems;
-      }
-      return length;
+    length = Math.min(array.length, 64);
+  } catch {
+    issues.push("assets `issues` length could not be read safely — ignored");
+    return;
+  }
+  for (let index = 0; index < length; index += 1) {
+    try {
+      const value = array[index];
+      if (typeof value === "string") issues.push(value);
+    } catch {
+      issues.push(`assets \`issues\` item ${String(index)} could not be read safely — ignored`);
     }
-  } catch {
-    // Fall through to the shared issue below.
-  }
-  pushAssetIssue(issues, `assets \`${label}\` length was unreadable — ignored`);
-  return 0;
-}
-
-function readAssetArrayItem(
-  value: readonly unknown[],
-  index: number,
-  label: AssetArrayField,
-  issues: string[],
-): FieldRead {
-  try {
-    return { ok: true, value: value[index] };
-  } catch {
-    pushAssetIssue(
-      issues,
-      `assets \`${label}\` item ${String(index)} threw during validation — ignored`,
-    );
-    return { ok: false };
   }
 }
 
-/** The result of validating an `AssetDocuments` set: only documents that cleared
- * their core validator survive; everything skipped or fixed is named in `issues`.
- * The `themes` and `compositions` lists are frozen — defaults and customs share
- * one immutable validated list each. */
+function effectiveTheme(raw: FieldRead, issues: AssetIssues): FacetTheme {
+  if (!raw.ok) {
+    issues.push("assets `theme` could not be read safely — using default Theme");
+    return requiredDefaultTheme(issues);
+  }
+  if (!raw.present) return requiredDefaultTheme(issues);
+  const result = validateTheme(raw.value);
+  if (result.theme !== undefined) return result.theme;
+  for (const issue of result.issues) issues.push(`theme: ${issue.message}`);
+  issues.push("custom Theme was invalid — using default Theme whole");
+  return requiredDefaultTheme(issues);
+}
+
+function requiredDefaultTheme(issues: AssetIssues): FacetTheme {
+  const result = validateTheme(DEFAULT_THEME);
+  if (result.theme !== undefined) return result.theme;
+  // Bundled data is tested and release-gated. Keep the public load contract
+  // total if that invariant is ever violated, while surfacing the defect.
+  issues.push("bundled default Theme failed validation");
+  return DEFAULT_THEME;
+}
+
+function exactPatterns(
+  raw: FieldRead,
+  theme: FacetTheme,
+  issues: AssetIssues,
+): readonly FacetPattern[] {
+  if (!raw.ok) {
+    issues.push("assets `patterns` could not be read safely — none exposed");
+    return [];
+  }
+  const input = raw.present ? raw.value : DEFAULT_PATTERNS;
+  const result = validatePatternList(input, theme);
+  for (const issue of result.issues) issues.push(issue);
+  return result.patterns;
+}
+
+function strictInitialTree(
+  raw: FieldRead,
+  theme: FacetTheme,
+  issues: AssetIssues,
+): FacetTree | undefined {
+  if (!raw.ok) {
+    issues.push("initial tree could not be read safely — ignored");
+    return undefined;
+  }
+  if (!raw.present) return undefined;
+  const result = validateAuthorTree(raw.value, theme);
+  if (result.value === undefined) {
+    for (const issue of result.issues) {
+      issues.push(`initial tree${issue.path}: ${issue.message}`);
+    }
+    if (result.omittedErrorCount > 0) {
+      issues.push(`${String(result.omittedErrorCount)} additional initial tree errors omitted`);
+    }
+    return undefined;
+  }
+  if (!isSeedableTree(result.value)) {
+    issues.push("initial tree is empty — using model-first paint");
+    return undefined;
+  }
+  return result.value;
+}
+
+/** Deep-freezes only validator-owned plain data; hostile raw documents never reach here. */
+function deepFreeze<T>(value: T, seen = new Set<object>()): T {
+  if (typeof value !== "object" || value === null || seen.has(value)) return value;
+  seen.add(value);
+  for (const nested of Object.values(value)) deepFreeze(nested, seen);
+  return Object.freeze(value);
+}
+
+/** One validated, immutable asset snapshot used for a complete agent turn. */
 export interface LoadedAssets {
-  readonly themes: readonly FacetTheme[];
-  readonly compositions: readonly FacetComposition[];
-  readonly catalog: FacetCatalog;
+  readonly theme: FacetTheme;
+  readonly patterns: readonly FacetPattern[];
   readonly initialTree?: FacetTree;
   readonly issues: readonly string[];
 }
 
 /**
- * Runs the core validators once, at boot (Decision Lock: no hot reload).
- *
- * The `@facet/assets` defaults are seeded as the BASE LAYER at the head of both
- * the theme and the composition loop and run through the SAME `validateTheme` /
- * `validateComposition` gate as custom docs (never trusted-in): a bad default is
- * dropped with a recorded issue while the remaining defaults + customs survive.
- * With an empty/absent store the default base layer still resolves (DC-001).
- *
- * Collision rules are SYMMETRIC across both kinds:
- *  - defaults-first, then custom docs;
- *  - a custom doc whose name equals a SEEDED DEFAULT shadows it — the seeded entry
- *    is dropped and the custom appended (defaults-first, custom-last), with a
- *    recorded issue, so the list holds exactly one entry for that name (the
- *    custom). This is a load-time LIST swap, NOT a merge: for themes, render's
- *    `resolveTheme` stays the single merge site that overlays the shadowing custom
- *    onto the imported default value-map floor (DC-007); for compositions the
- *    custom simply replaces the default (DC-003);
- *  - custom-vs-custom (neither a seeded default) stays first-wins + issue.
- *
- * The initial tree passes `validateTree` PLUS `isSeedableTree` — the EMPTY_TREE
- * trap: a tree `validateTree` reduced to empty is refused so it can't silently
- * seed an empty stage and flip the server's offline face. Invalid documents are
- * skipped with a logged issue and boot proceeds — the `FileStageStore`
- * skip-and-log posture. Never throws.
+ * Resolves the singular Theme, exact compatible Patterns, and strict initial
+ * tree once. This boundary is total: hostile operator inputs become bounded
+ * issues, never executable or partially trusted data.
  */
 export async function loadAssets(store: AssetsStore, agentId: string): Promise<LoadedAssets> {
-  // The primary I/O fetch is guarded too: a pluggable adapter (a DB/proxy store)
-  // can reject or return a malformed shape, and the "Never throws" contract must
-  // hold for it — not just for the per-document validators below.
-  let rawDocs: unknown;
-  const issues: string[] = [];
+  const issues = new AssetIssues();
+  let rawDocuments: unknown;
   try {
-    rawDocs = await store.load(agentId);
-  } catch (err) {
-    rawDocs = {
-      themes: [],
-      compositions: [],
-    };
-    pushAssetIssue(issues, `assets load failed: ${describeAssetError(err)}`);
+    rawDocuments = await store.load(agentId);
+  } catch (error) {
+    rawDocuments = {};
+    issues.push(`assets load failed: ${describeAssetError(error)}`);
   }
-  let docs: Record<PropertyKey, unknown>;
-  if (isRecord(rawDocs)) {
-    docs = rawDocs;
+
+  let documents: Record<PropertyKey, unknown>;
+  if (isRecord(rawDocuments)) {
+    documents = rawDocuments;
   } else {
-    pushAssetIssue(issues, "assets document was not an object — ignored");
-    docs = {};
-  }
-  const rawIssues = readAssetField(docs, "issues", issues);
-  if (rawIssues.ok && rawIssues.value !== undefined) {
-    if (isAssetArray(rawIssues.value)) {
-      const length = readAssetArrayLength(rawIssues.value, "issues", issues, MAX_ASSET_ISSUES);
-      for (let i = 0; i < length; i += 1) {
-        const issue = readAssetArrayItem(rawIssues.value, i, "issues", issues);
-        if (issue.ok && typeof issue.value === "string") pushAssetIssue(issues, issue.value);
-      }
-    } else {
-      pushAssetIssue(issues, "assets `issues` was not an array — ignored");
-    }
-  }
-  // Coerce the trusted array fields so a malformed `{ themes: null }` from a
-  // custom adapter can't throw at the spread sites below (skip-and-log, never
-  // crash boot). Defaults still seed, so an empty/bad store yields the defaults.
-  // Only the canonical fields are read — legacy pre-canonicalization arrays
-  // never execute.
-  const rawThemes = readAssetField(docs, "themes", issues);
-  const themeDocs = rawThemes.ok && isAssetArray(rawThemes.value) ? rawThemes.value : [];
-  if (rawThemes.ok && !isAssetArray(rawThemes.value)) {
-    pushAssetIssue(issues, "assets `themes` was not an array — ignored");
-  }
-  const rawCompositions = readAssetField(docs, "compositions", issues);
-  const compositionDocs =
-    rawCompositions.ok && isAssetArray(rawCompositions.value) ? rawCompositions.value : [];
-  if (rawCompositions.ok && !isAssetArray(rawCompositions.value)) {
-    pushAssetIssue(issues, "assets `compositions` was not an array — ignored");
-  }
-  const rawCatalog = readAssetField(docs, "catalog", issues);
-  const catalogInput =
-    rawCatalog.ok && rawCatalog.value !== undefined ? rawCatalog.value : DEFAULT_CATALOG;
-
-  const themes: FacetTheme[] = [];
-  const seenThemeNames = new Set<string>();
-  const seededThemeNames = new Set<string>();
-  const loadTheme = (raw: unknown, seeded: boolean): void => {
-    // Skip-and-log at the seam: a live in-process document (a DB adapter, a
-    // proxy) can throw from a property accessor. `validateTheme` already guards
-    // its own reads, but the try/catch keeps this loop's "Never throws" contract
-    // true for any future validator too.
-    let result: ReturnType<typeof validateTheme>;
-    try {
-      result = validateTheme(raw);
-    } catch {
-      pushAssetIssue(issues, `${seeded ? "default " : ""}theme document skipped: validation threw`);
-      return;
-    }
-    const { theme, issues: themeIssues } = result;
-    if (theme === undefined) {
-      const why = themeIssues
-        .filter((i) => i.severity === "error")
-        .map((i) => i.message)
-        .join("; ");
-      pushAssetIssue(
-        issues,
-        `${seeded ? "default " : ""}theme document skipped: ${why || "invalid"}`,
-      );
-      return;
-    }
-    if (seenThemeNames.has(theme.name)) {
-      if (!seeded && seededThemeNames.has(theme.name)) {
-        // Custom shadows a seeded default: drop the seeded entry and append the
-        // custom (defaults-first, custom-last) so the list holds exactly one entry
-        // for the name — the custom. A load-time LIST swap, never a merge: render's
-        // `resolveTheme` stays the single merge site (overlays custom onto floor).
-        const at = themes.findIndex((t) => t.name === theme.name);
-        if (at !== -1) themes.splice(at, 1);
-        seededThemeNames.delete(theme.name);
-        pushAssetIssue(issues, `custom theme "${theme.name}" shadows the seeded default`);
-        for (const warning of themeIssues) {
-          pushAssetIssue(issues, `theme "${theme.name}": ${warning.message}`);
-        }
-        themes.push(theme);
-        return;
-      }
-      // Custom-vs-custom (or a duplicate default): first wins.
-      pushAssetIssue(issues, `duplicate theme name "${theme.name}" ignored (first wins)`);
-      return;
-    }
-    seenThemeNames.add(theme.name);
-    if (seeded) seededThemeNames.add(theme.name);
-    for (const warning of themeIssues) {
-      pushAssetIssue(issues, `theme "${theme.name}": ${warning.message}`);
-    }
-    themes.push(theme);
-  };
-  // Defaults first (seeded), then custom docs. Both run the SAME validateTheme
-  // gate — a bad default is dropped with an issue, exactly like a bad custom.
-  loadTheme(DEFAULT_THEME, true);
-  const themeCount = readAssetArrayLength(themeDocs, "themes", issues, MAX_ASSET_DOCUMENTS);
-  const compositionCount = readAssetArrayLength(
-    compositionDocs,
-    "compositions",
-    issues,
-    MAX_ASSET_DOCUMENTS,
-  );
-  for (let i = 0; i < themeCount; i += 1) {
-    const raw = readAssetArrayItem(themeDocs, i, "themes", issues);
-    if (raw.ok) loadTheme(raw.value, false);
+    documents = {};
+    issues.push("assets document was not an object — using defaults");
   }
 
-  // The ONE composition path: defaults and custom docs run through the same
-  // validate/dedupe/shadow loop into the same list (DC-006).
-  const compositions: FacetComposition[] = [];
-  const seenCompositionNames = new Set<string>();
-  const seededCompositionNames = new Set<string>();
-  const loadComposition = (raw: unknown, seeded: boolean): void => {
-    let result: ReturnType<typeof validateComposition>;
-    try {
-      result = validateComposition(raw);
-    } catch {
-      pushAssetIssue(
-        issues,
-        `${seeded ? "default " : ""}composition document skipped: validation threw`,
-      );
-      return;
-    }
-    const { composition, issues: compositionIssues } = result;
-    if (composition === undefined) {
-      pushAssetIssue(
-        issues,
-        `${seeded ? "default " : ""}composition document skipped: ${
-          compositionIssues.join("; ") || "invalid"
-        }`,
-      );
-      return;
-    }
-    if (seenCompositionNames.has(composition.name)) {
-      if (!seeded && seededCompositionNames.has(composition.name)) {
-        // Custom shadows a seeded default: drop the seeded entry, append the custom
-        // (symmetric with the theme loop). The name already passed
-        // validateComposition's isValidThemeName gate, so it's safe to echo.
-        const at = compositions.findIndex((c) => c.name === composition.name);
-        if (at !== -1) compositions.splice(at, 1);
-        seededCompositionNames.delete(composition.name);
-        pushAssetIssue(
-          issues,
-          `custom composition "${composition.name}" shadows the seeded default`,
-        );
-        for (const note of compositionIssues) {
-          pushAssetIssue(issues, `composition "${composition.name}": ${note}`);
-        }
-        compositions.push(composition);
-        return;
-      }
-      // Custom-vs-custom (or a duplicate default): first wins. Two same-named
-      // compositions would inject contradictory entries into the prompt's
-      // COMPOSITIONS section.
-      pushAssetIssue(
-        issues,
-        `duplicate composition name "${composition.name}" ignored (first wins)`,
-      );
-      return;
-    }
-    seenCompositionNames.add(composition.name);
-    if (seeded) seededCompositionNames.add(composition.name);
-    for (const note of compositionIssues) {
-      pushAssetIssue(issues, `composition "${composition.name}": ${note}`);
-    }
-    compositions.push(composition);
-  };
-  // Defaults first (seeded), then custom docs — the same symmetric layering the
-  // theme loop uses, through the same validateComposition gate.
-  for (const raw of DEFAULT_COMPOSITIONS) loadComposition(raw, true);
-  for (let i = 0; i < compositionCount; i += 1) {
-    const raw = readAssetArrayItem(compositionDocs, i, "compositions", issues);
-    if (raw.ok) loadComposition(raw.value, false);
-  }
+  const rawIssues = readField(documents, "issues");
+  if (!rawIssues.ok) issues.push("assets `issues` could not be read safely — ignored");
+  else if (rawIssues.present) readIssueArray(rawIssues.value, issues);
 
-  // `validateCatalog(undefined)` returns a FRESH default catalog per call and
-  // never throws — the single source of a default clone, so runtime no longer
-  // duplicates core's private clone helpers (which had to be edited in lockstep).
-  let catalog: FacetCatalog = validateCatalog(undefined).catalog;
-  try {
-    const result = validateCatalog(catalogInput);
-    catalog = result.catalog;
-    for (const note of result.issues) {
-      pushAssetIssue(issues, `catalog: ${note}`);
-    }
-    // Keep validateCatalog's output verbatim: it already fills per-section defaults
-    // while PRESERVING any provided restriction (a partial doc loads as
-    // authored-sections + defaults-for-the-rest). Do NOT wholesale-replace a
-    // partial-but-restrictive custom catalog with the permissive bundled default —
-    // that would fail open, swapping a stricter custom policy for a looser one.
-  } catch {
-    pushAssetIssue(issues, "catalog skipped: validation threw; using default catalog");
-    catalog = validateCatalog(undefined).catalog;
-  }
-
-  let rawInitialTree: unknown;
-  let hasInitialTree = false;
-  const initialTreeRead = readAssetField(docs, "initialTree", issues);
-  if (initialTreeRead.ok) {
-    rawInitialTree = initialTreeRead.value;
-    hasInitialTree = rawInitialTree !== undefined;
-  }
-  let initialTree: FacetTree | undefined;
-  if (hasInitialTree) {
-    try {
-      const { tree, issues: treeIssues } = validateTree(rawInitialTree);
-      for (const note of treeIssues) {
-        pushAssetIssue(issues, `initial tree: ${note}`);
-      }
-      if (isSeedableTree(tree)) {
-        initialTree = tree;
-      } else {
-        // The trap: `validateTree(garbage)` returns EMPTY_TREE; seeding it would
-        // silently flip `hasBuiltStage` and change the offline face. Refuse it so
-        // boot falls back to today's model-first paint.
-        pushAssetIssue(
-          issues,
-          "initial tree is empty or invalid — not seedable; using model-first paint",
-        );
-      }
-    } catch {
-      pushAssetIssue(issues, "initial tree skipped: validation threw");
+  for (const field of RETIRED_FIELDS) {
+    const presence = ownPresence(documents, field);
+    if (presence === "unreadable") {
+      issues.push(`retired asset field \`${field}\` could not be inspected safely`);
+    } else if (presence) {
+      issues.push(`retired asset field \`${field}\` ignored`);
     }
   }
 
-  const loaded: { -readonly [K in keyof LoadedAssets]: LoadedAssets[K] } = {
-    themes: Object.freeze(themes),
-    compositions: Object.freeze(compositions),
-    catalog,
-    issues,
-  };
+  const theme = effectiveTheme(readField(documents, "theme"), issues);
+  const patterns = exactPatterns(readField(documents, "patterns"), theme, issues);
+  const initialTree = strictInitialTree(readField(documents, "initialTree"), theme, issues);
+
+  const loaded: {
+    theme: FacetTheme;
+    patterns: readonly FacetPattern[];
+    initialTree?: FacetTree;
+    issues: readonly string[];
+  } = { theme, patterns, issues: [...issues.list] };
   if (initialTree !== undefined) loaded.initialTree = initialTree;
-  return loaded;
+  return deepFreeze(loaded);
 }

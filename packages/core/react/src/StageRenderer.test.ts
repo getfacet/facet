@@ -1,32 +1,14 @@
-import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import {
-  MAX_CHART_POINTS,
-  MAX_CHART_SERIES,
-  MAX_LIST_ITEMS,
-  MAX_NODE_BODY_CHARS,
-  MAX_NODE_LABEL_CHARS,
-  MAX_TABLE_CELL_CHARS,
-  MAX_TABLE_COLUMNS,
-  MAX_TABLE_ROWS,
-  type FacetNode,
-  type FacetTheme,
-  type FacetTree,
-  type NodeId,
-} from "@facet/core";
+import { describe, expect, it } from "vitest";
+import type { FacetNode, FacetTree, NodeId } from "@facet/core";
+import { brickRendererEntry } from "./brick-render-registry.js";
 import { StageRenderer } from "./StageRenderer.js";
 import * as stageRendererExports from "./StageRenderer.js";
-import { brickRendererEntry } from "./brick-render-registry.js";
-import { MOTION_CLASS_NAMES } from "./motion.js";
 import * as rendererSafeExports from "./renderer-safe.js";
 
 function render(tree: FacetTree): string {
   return renderToStaticMarkup(createElement(StageRenderer, { tree }));
-}
-
-function renderThemed(tree: FacetTree, themes: readonly FacetTheme[]): string {
-  return renderToStaticMarkup(createElement(StageRenderer, { tree, themes }));
 }
 
 function renderWithTransition(tree: FacetTree): string {
@@ -40,7 +22,11 @@ function tree(nodes: Record<NodeId, FacetNode>, root: NodeId = "root"): FacetTre
 }
 
 const text = (id: NodeId, value: string): FacetNode => ({ id, type: "text", value });
-const box = (id: NodeId, children: readonly NodeId[]): FacetNode => ({ id, type: "box", children });
+const box = (id: NodeId, children: readonly NodeId[]): FacetNode => ({
+  id,
+  type: "box",
+  children,
+});
 
 describe("StageRenderer module boundary", () => {
   it("contains no intrinsic renderer limit", () => {
@@ -52,24 +38,58 @@ describe("StageRenderer module boundary", () => {
   });
 });
 
-// The renderer is the fail-safe boundary (invariant #2): the live patch path
-// reaches it WITHOUT passing validateTree, so every malformed shape below must
-// render as "plain" or nothing — never throw.
 describe("StageRenderer fail-safe boundary", () => {
-  it("renders nothing for a null tree (unvalidated CLI path)", () => {
-    expect(render(null as unknown as FacetTree)).toBe("");
+  it("keeps valid siblings when nested style data is hostile", () => {
+    const hostileState = new Proxy(
+      { background: "danger" },
+      {
+        getOwnPropertyDescriptor() {
+          throw new Error("nested style boom");
+        },
+      },
+    );
+    const hostileStyle = new Proxy(
+      {
+        preset: "missing",
+        background: "accent",
+        hover: hostileState,
+        unknownTarget: { cssText: "position:absolute" },
+      },
+      {
+        ownKeys() {
+          throw new Error("style enumeration boom");
+        },
+      },
+    );
+    const raw = tree({
+      root: box("root", ["hostile", "valid"]),
+      hostile: {
+        id: "hostile",
+        type: "box",
+        style: hostileStyle,
+        children: ["hostile-copy"],
+      } as unknown as FacetNode,
+      "hostile-copy": text("hostile-copy", "Hostile style content survives"),
+      valid: {
+        id: "valid",
+        type: "text",
+        value: "Valid sibling survives",
+        style: { color: "success" },
+      },
+    });
+
+    expect(() => render(raw)).not.toThrow();
+    const out = render(raw);
+    expect(out).toContain("Hostile style content survives");
+    expect(out).toContain("Valid sibling survives");
+    expect(out).not.toContain("position:absolute");
   });
 
-  it("renders nothing for a non-object tree", () => {
+  it("renders nothing for null primitive and unresolved-root trees", () => {
+    expect(render(null as unknown as FacetTree)).toBe("");
     expect(render("not a tree" as unknown as FacetTree)).toBe("");
     expect(render(42 as unknown as FacetTree)).toBe("");
-  });
-
-  it("renders nothing when the root id does not resolve", () => {
-    expect(render(tree({ a: text("a", "orphan") }, "missing"))).toBe("");
-  });
-
-  it("renders nothing when nodes is not a map", () => {
+    expect(render(tree({ orphan: text("orphan", "orphan") }, "missing"))).toBe("");
     expect(render({ root: "root", nodes: null } as unknown as FacetTree)).toBe("");
   });
 
@@ -103,1361 +123,279 @@ describe("StageRenderer fail-safe boundary", () => {
     expect(render(nodesThrows)).toBe("");
   });
 
-  // composition-hard-cut: allowed-negative — raw pre-cutover patches bypass
-  // core validation. Every retired type must remain an unknown registry entry
-  // and skip its complete subtree deterministically while valid siblings render.
-  it("repeatedly blank-degrades every retired raw subtree", () => {
-    const retiredTypes = ["button", "tabs", "nav", "form", "filterBar", "metric", "stat"];
+  it("skips retired unknown and prototype-name subtrees", () => {
+    const retiredTypes = ["button", "tabs", "nav", "form", "constructor", "toString"];
     const nodes: Record<NodeId, FacetNode> = {
-      root: box("root", [...retiredTypes, "valid-sibling"]),
-      "valid-sibling": text("valid-sibling", "Valid sibling survives"),
+      root: box("root", [...retiredTypes, "valid"]),
+      valid: text("valid", "Valid sibling survives"),
     };
     for (const type of retiredTypes) {
       nodes[type] = { id: type, type, children: [`${type}-child`] } as unknown as FacetNode;
       nodes[`${type}-child`] = text(`${type}-child`, `Hidden ${type} child`);
       expect(brickRendererEntry(type)).toBeUndefined();
     }
-    const staleTree = tree(nodes);
 
-    for (const out of [render(staleTree), render(staleTree)]) {
-      expect(out).toContain("Valid sibling survives");
-      expect(out.match(/<p/g)).toHaveLength(1);
-      for (const type of retiredTypes) expect(out).not.toContain(`Hidden ${type} child`);
-    }
+    const out = render(tree(nodes));
+    expect(out).toContain("Valid sibling survives");
+    expect(out.match(/<p/g)).toHaveLength(1);
+    for (const type of retiredTypes) expect(out).not.toContain(`Hidden ${type} child`);
   });
 
-  it("falls back safely when raw screen maps throw during resolution", () => {
-    const screens = new Proxy(
-      {},
-      {
-        ownKeys() {
-          throw new Error("screens boom");
-        },
-      },
-    );
-    const out = render({
+  it("skips dangling null and scalar children", () => {
+    const raw = {
       root: "root",
       nodes: {
-        root: box("root", ["copy"]),
-        copy: text("copy", "Safe root"),
+        root: box("root", ["dangling", "null", "scalar", "valid"]),
+        null: null,
+        scalar: 42,
+        valid: text("valid", "still here"),
       },
-      screens,
-      entry: "home",
-    } as unknown as FacetTree);
+    } as unknown as FacetTree;
 
-    expect(out).toContain("Safe root");
+    expect(() => render(raw)).not.toThrow();
+    const out = render(raw);
+    expect(out).toContain("still here");
   });
 
-  it("skips a dangling child reference and renders the rest", () => {
-    const out = render(tree({ root: box("root", ["a", "gone"]), a: text("a", "kept") }));
-    expect(out).toContain("kept");
-    expect(out.match(/<p/g)).toHaveLength(1); // only the resolvable child rendered
-  });
-
-  it("skips a node of unknown type instead of throwing", () => {
-    const alien = { id: "x", type: "script", code: "evil()" } as unknown as FacetNode;
-    const out = render(tree({ root: box("root", ["x", "a"]), x: alien, a: text("a", "safe") }));
-    expect(out).toContain("safe");
-    expect(out.match(/<p/g)).toHaveLength(1); // the alien node produced no output
-  });
-
-  it("skips a node whose type is an Object.prototype member name instead of throwing", () => {
-    // "constructor" (and siblings) name inherited FUNCTIONS on a plain object;
-    // a bare `REGISTRY[type]` returned one and the renderer threw dereferencing
-    // it. The prototype-safe lookup must degrade this to nothing, like any junk.
-    const junk = { id: "x", type: "constructor", code: "evil()" } as unknown as FacetNode;
-    const junkTree = tree({ root: box("root", ["x", "a"]), x: junk, a: text("a", "safe") });
-    expect(() => render(junkTree)).not.toThrow();
-    const out = render(junkTree);
-    expect(out).toContain("safe");
-    expect(out.match(/<p/g)).toHaveLength(1); // the constructor-typed node produced no output
-  });
-
-  // A raw patch can replace any node FIELD with arbitrary JSON — these exact
-  // shapes made the renderer throw before the guards existed.
-  it("renders a box whose children were patched to a non-array as empty", () => {
+  it("renders a box with a non-array children value as an empty safe box", () => {
     const broken = { id: "root", type: "box", children: "oops" } as unknown as FacetNode;
-    expect(() => render(tree({ root: broken }))).not.toThrow();
-    expect(render(tree({ root: broken }))).toBe(
-      '<div style="display:flex;flex-direction:column;box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere"></div>',
-    );
+    const out = render(tree({ root: broken }));
+    expect(out).toContain("<div");
+    expect(out).not.toContain("oops");
   });
 
-  it("skips a text node whose value was patched to an object", () => {
-    const broken = { id: "t", type: "text", value: { evil: true } } as unknown as FacetNode;
-    const out = render(
-      tree({ root: box("root", ["t", "a"]), t: broken, a: text("a", "still up") }),
-    );
-    expect(out).toContain("still up");
-    expect(out.match(/<p/g)).toHaveLength(1);
-  });
-
-  it("skips media whose src was patched to a non-string", () => {
-    const broken = {
-      id: "i",
-      type: "media",
-      kind: "image",
-      src: 42,
-      alt: "x",
+  it("skips a text node whose value is not renderable", () => {
+    const badText = {
+      id: "bad",
+      type: "text",
+      value: { nested: true },
     } as unknown as FacetNode;
-    const out = render(
-      tree({ root: box("root", ["i", "a"]), i: broken, a: text("a", "still up") }),
-    );
-    expect(out).toContain("still up");
-    expect(out).not.toContain("<img");
+    expect(render(tree({ root: box("root", ["bad"]), bad: badText }))).not.toContain("[object");
   });
 
-  it("never throws on hostile media src, kind, or poster accessors", () => {
-    const srcThrows = Object.defineProperty(
-      { id: "bad-src", type: "media", kind: "image" },
-      "src",
-      {
-        get() {
-          throw new Error("src boom");
-        },
-      },
-    ) as unknown as FacetNode;
-    const kindThrows = Object.defineProperty(
-      { id: "bad-kind", type: "media", src: "https://example.com/fallback.jpg" },
-      "kind",
-      {
-        get() {
-          throw new Error("kind boom");
-        },
-      },
-    ) as unknown as FacetNode;
-    const posterThrows = Object.defineProperty(
-      {
-        id: "bad-poster",
-        type: "media",
-        kind: "video",
-        src: "https://example.com/video.mp4",
-      },
-      "poster",
-      {
-        get() {
-          throw new Error("poster boom");
-        },
-      },
-    ) as unknown as FacetNode;
-    const hostileTree = tree({
-      root: box("root", ["bad-src", "bad-kind", "bad-poster", "safe"]),
-      "bad-src": srcThrows,
-      "bad-kind": kindThrows,
-      "bad-poster": posterThrows,
-      safe: text("safe", "still up"),
+  it("breaks direct and self cycles while retaining reachable content", () => {
+    const direct = tree({
+      root: box("root", ["child"]),
+      child: box("child", ["root", "copy"]),
+      copy: text("copy", "once"),
     });
-
-    expect(() => render(hostileTree)).not.toThrow();
-    const out = render(hostileTree);
-    expect(out).toContain("still up");
-    expect(out).not.toContain("bad-src");
-    expect(out).toContain("<img");
-    expect(out).toContain("<video");
-    expect(out).not.toContain("poster=");
+    const self = tree({ root: box("root", ["root", "copy"]), copy: text("copy", "safe") });
+    expect(render(direct)).toContain("once");
+    expect(render(self)).toContain("safe");
   });
 
-  it("skips a node patched to JSON null (root and child)", () => {
-    const rootNull = { root: "root", nodes: { root: null } } as unknown as FacetTree;
-    expect(() => render(rootNull)).not.toThrow();
-    expect(render(rootNull)).toBe("");
-
-    const childNull = tree({
-      root: box("root", ["gone", "a"]),
-      gone: null as unknown as FacetNode,
-      a: text("a", "still up"),
-    });
-    expect(() => render(childNull)).not.toThrow();
-    expect(render(childNull)).toContain("still up");
-  });
-
-  it("survives a style patched to null on any node", () => {
-    const noisy = {
-      root: { id: "root", type: "box", style: null, children: ["t", "f"] },
-      t: { id: "t", type: "text", value: "ok", style: null },
-      f: { id: "f", type: "input", name: "n", label: { bad: 1 }, style: null },
-    } as unknown as Record<string, FacetNode>;
-    expect(() => render(tree(noisy))).not.toThrow();
-    const out = render(tree(noisy));
-    expect(out).toContain("ok");
-    expect(out).toContain("<input"); // field renders, its non-string label skipped
-    expect(out).not.toContain("<span");
-  });
-
-  it("breaks a direct cycle (child pointing back at its parent)", () => {
-    const out = render(
-      tree({ root: box("root", ["a"]), a: box("a", ["root", "t"]), t: text("t", "once") }),
-    );
-    expect(out).toContain("once");
-  });
-
-  it("keeps transition bookkeeping fail-safe for null and cyclic raw trees", () => {
-    expect(renderWithTransition(null as unknown as FacetTree)).toBe("");
-
-    const cyclic = tree({
-      root: box("root", ["a"]),
-      a: box("a", ["root", "t"]),
-      t: text("t", "once"),
-    });
-    const out = renderWithTransition(cyclic);
-    expect(out).toContain("once");
-    expect(out).not.toContain(MOTION_CLASS_NAMES.brickEnter);
-    expect(out).not.toContain(MOTION_CLASS_NAMES.brickExit);
-    expect(out).not.toContain(MOTION_CLASS_NAMES.stageCrossfade);
-  });
-
-  it("breaks a self-cycle (node listing itself as a child)", () => {
-    const out = render(tree({ root: box("root", ["root", "t"]), t: text("t", "still here") }));
-    expect(out).toContain("still here");
-  });
-
-  it("truncates beyond the depth cap instead of blowing the stack", () => {
-    const nodes: Record<NodeId, FacetNode> = { deep: text("deep", "too deep") };
-    // A chain of 120 nested boxes puts the leaf past MAX_DEPTH (100).
-    for (let i = 0; i < 120; i += 1) {
-      nodes[`b${i}`] = box(`b${i}`, [i === 119 ? "deep" : `b${i + 1}`]);
+  it("truncates excessive depth and remains transition-safe", () => {
+    const nodes: Record<NodeId, FacetNode> = {};
+    for (let i = 0; i < 140; i += 1) {
+      nodes[`n${String(i)}`] = box(`n${String(i)}`, [`n${String(i + 1)}`]);
     }
-    const out = render(tree(nodes, "b0"));
-    expect(out).not.toContain("too deep");
+    nodes.n140 = text("n140", "too deep");
+    const deep = tree(nodes, "n0");
+    expect(() => render(deep)).not.toThrow();
+    expect(render(deep)).not.toContain("too deep");
+    expect(() => renderWithTransition(deep)).not.toThrow();
   });
 
-  it("drops media with an unsafe URL scheme", () => {
-    const out = render(
-      tree({
-        root: box("root", ["i"]),
-        i: { id: "i", type: "media", kind: "image", src: "javascript:alert(1)", alt: "x" },
-      }),
-    );
-    expect(out).not.toContain("javascript:");
-    expect(out).not.toContain("<img");
-  });
-});
-
-describe("StageRenderer brick-vocab v1", () => {
-  it("renders media image/video and native form controls", () => {
-    const out = render(
-      tree({
-        root: box("root", ["hero", "clip", "plan", "agree", "size", "alerts"]),
-        hero: {
-          id: "hero",
-          type: "media",
-          kind: "image",
-          src: "https://example.com/hero.png",
-          alt: "Hero",
-        },
-        clip: {
-          id: "clip",
-          type: "media",
-          kind: "video",
-          src: "https://example.com/clip.mp4",
-          poster: "/poster.png",
-          controls: true,
-        },
-        plan: {
-          id: "plan",
-          type: "input",
-          name: "plan",
-          input: "select",
-          options: ["Free", "Pro"],
-        },
-        agree: { id: "agree", type: "input", name: "agree", input: "checkbox" },
-        size: { id: "size", type: "input", name: "size", input: "radio", options: ["S", "M"] },
-        alerts: { id: "alerts", type: "input", name: "alerts", input: "switch" },
-      }),
-    );
-
-    expect(out).toContain("<img");
-    expect(out).toContain('src="https://example.com/hero.png"');
-    expect(out).toContain("<video");
-    expect(out).toContain('src="https://example.com/clip.mp4"');
-    expect(out).toContain('poster="/poster.png"');
-    expect(out).toContain("controls");
-    expect(out).toContain("<select");
-    expect(out).toContain("<option");
-    expect(out).toContain('type="checkbox"');
-    expect(out).toContain('type="radio"');
-    expect(out).toContain('role="switch"');
-  });
-
-  it("skips malformed media and keeps a raw legacy image alias", () => {
-    const legacy = {
-      id: "legacy",
-      type: "image",
-      src: "https://example.com/legacy.png",
-      alt: "Legacy",
-    } as unknown as FacetNode;
-    const out = render(
-      tree({
-        root: box("root", ["missing", "unknown", "unsafe", "legacy", "t"]),
-        missing: { id: "missing", type: "media", kind: "image" } as unknown as FacetNode,
-        unknown: {
-          id: "unknown",
-          type: "media",
-          kind: "gif3d",
-          src: "https://example.com/unknown.gif",
-        } as unknown as FacetNode,
-        unsafe: {
-          id: "unsafe",
-          type: "media",
-          kind: "video",
-          src: "javascript:alert(1)",
-        } as unknown as FacetNode,
-        legacy,
-        t: text("t", "still here"),
-      }),
-    );
-
-    expect(out).toContain("still here");
-    expect(out).toContain('src="https://example.com/legacy.png"');
-    expect(out).not.toContain("unknown.gif");
-    expect(out).not.toContain("javascript:");
-  });
-
-  it("renders columns and scroll-axis styles while raw junk stays plain", () => {
-    const out = render(
-      tree({
-        root: box("root", ["grid", "x", "y", "junk"]),
-        grid: { id: "grid", type: "box", style: { columns: 3 }, children: [] },
-        x: { id: "x", type: "box", style: { scroll: "x" }, children: [] },
-        y: { id: "y", type: "box", style: { scroll: true }, children: [] },
-        junk: {
-          id: "junk",
-          type: "box",
-          style: { columns: "lots", scroll: "sideways" },
-          children: [],
-        } as unknown as FacetNode,
-      }),
-    );
-
-    expect(out).toContain("display:grid");
-    expect(out).toContain("grid-template-columns:repeat(3,minmax(0,1fr))");
-    expect(out).toContain("overflow-x:auto");
-    expect(out).toContain("max-width:100%");
-    expect(out).toContain("overflow-y:auto");
-    expect(out).toContain("max-height:20rem");
-  });
-});
-
-describe("StageRenderer final brick renderer (static)", () => {
-  const catalogTheme: FacetTheme = {
-    name: "catalog",
-    color: {
-      accent: "#123456",
-      "accent-fg": "#ffffff",
-      surface: "#f3f4f6",
-      "surface-2": "#e5e7eb",
-      success: "#15803d",
-      warning: "#b45309",
-    },
-    space: { md: "20px" },
-    radius: { lg: "18px", full: "9999px" },
-    shadow: { md: "0 14px 36px rgba(0, 0, 0, 0.18)" },
-    recipes: {
-      box: {
-        primary: {
-          box: { bg: "accent", pad: "md", radius: "full" },
-          text: { color: "accent-fg", weight: "bold" },
-        },
-      },
-    },
-  };
-
-  it("renders layout, action, and all six survivor bricks with recipes", () => {
-    const out = renderThemed(
+  it("degrades a hostile active predicate to the base look", () => {
+    const predicate = new Proxy(
+      {},
       {
-        root: "root",
-        theme: "catalog",
-        nodes: {
-          root: {
-            id: "root",
-            type: "box",
-            style: { bg: "surface", pad: "md", radius: "lg" },
-            children: [
-              "dashboard-eyebrow",
-              "dashboard-title",
-              "dashboard-body",
-              "card",
-              "table",
-              "chart",
-              "details",
-              "progress",
-              "list",
-              "loading",
-            ],
-          },
-          "dashboard-eyebrow": { id: "dashboard-eyebrow", type: "text", value: "Q3" },
-          "dashboard-title": { id: "dashboard-title", type: "text", value: "Dashboard" },
-          "dashboard-body": {
-            id: "dashboard-body",
-            type: "text",
-            value: "Live operating view",
-          },
-          card: {
-            id: "card",
-            type: "box",
-            style: { bg: "bg", border: true, radius: "lg", shadow: "md", pad: "md" },
-            children: ["card-title", "card-body", "refresh"],
-          },
-          "card-title": { id: "card-title", type: "text", value: "Revenue" },
-          "card-body": { id: "card-body", type: "text", value: "Current quarter" },
-          refresh: {
-            id: "refresh",
-            type: "box",
-            variant: "primary",
-            onPress: { kind: "agent", name: "refresh" },
-            children: ["refresh-label"],
-          },
-          "refresh-label": { id: "refresh-label", type: "text", value: "Refresh" },
-          table: {
-            id: "table",
-            type: "table",
-            caption: "Pipeline",
-            columns: [
-              { key: "name", label: "Name" },
-              { key: "value", label: "Value", align: "end" },
-            ],
-            rows: [{ name: "Acme", value: 42 }],
-          },
-          chart: {
-            id: "chart",
-            type: "chart",
-            title: "Trend",
-            kind: "bar",
-            labels: ["Jan", "Feb"],
-            series: [{ label: "ARR", values: [10, 20] }],
-          },
-          details: {
-            id: "details",
-            type: "keyValue",
-            items: [{ label: "ARR", value: "$24k" }],
-          },
-          progress: { id: "progress", type: "progress", label: "Quota", value: 72 },
-          list: {
-            id: "list",
-            type: "list",
-            items: [{ title: "Next", body: "Call customer" }],
-          },
-          loading: { id: "loading", type: "loading", label: "Refreshing dashboard" },
+        has() {
+          throw new Error("predicate boom");
         },
       },
-      [catalogTheme],
     );
-
-    expect(out).not.toContain("<section");
-    expect(out).toContain("Dashboard");
-    expect(out).toContain("Live operating view");
-    expect(out).toContain("box-shadow:0 14px 36px rgba(0, 0, 0, 0.18)");
-    expect(out).toContain('role="button"');
-    expect(out).toContain("Refresh");
-    expect(out).toContain("background:#123456");
-    expect(out).toContain("<table");
-    expect(out).toMatch(/<caption[^>]*>Pipeline<\/caption>/);
-    expect(out).toContain("<svg");
-    expect(out).toContain("Trend");
-    expect(out).toContain("$24k");
-    expect(out).toContain('role="progressbar"');
-    expect(out).toContain("Call customer");
-    expect(out).toContain('role="status"');
-    expect(out).toContain("Refreshing dashboard");
-  });
-
-  it("renders survivor brick recipe parts", () => {
-    const partsTheme: FacetTheme = {
-      name: "parts",
-      color: {
-        fg: "#111827",
-        "fg-muted": "#475569",
-        surface: "#f8fafc",
-        "surface-2": "#eef2ff",
-        accent: "#0f766e",
-        "accent-fg": "#ffffff",
-        border: "#64748b",
-        danger: "#dc2626",
-        warning: "#b45309",
-        info: "#2563eb",
-      },
-      space: { xs: "3px", sm: "7px", md: "13px" },
-      radius: { sm: "5px", lg: "17px", full: "999px" },
-      recipes: {
-        table: {
-          default: {
-            parts: {
-              headerCell: { text: { color: "info", weight: "bold" } },
-              cell: { text: { color: "warning" } },
-            },
-          },
-        },
-        chart: {
-          default: {
-            parts: {
-              title: { text: { color: "danger", weight: "bold" } },
-              plot: { box: { bg: "surface-2", radius: "lg" } },
-            },
-          },
-        },
-        progress: {
-          default: {
-            parts: {
-              label: { text: { color: "danger", weight: "bold" } },
-              track: { box: { bg: "surface-2", radius: "full" } },
-              fill: { box: { bg: "accent", radius: "full" } },
-            },
-          },
-        },
-        keyValue: {
-          default: {
-            parts: {
-              item: { box: { bg: "surface-2", pad: "xs", radius: "sm" } },
-              label: { text: { color: "info", weight: "bold" } },
-              value: { text: { color: "danger", weight: "bold" } },
-            },
-          },
-        },
-        list: {
-          default: {
-            parts: {
-              item: { box: { bg: "surface-2", pad: "xs", radius: "sm" } },
-              itemTitle: { text: { color: "danger", weight: "bold" } },
-              itemText: { text: { color: "warning" } },
-            },
-          },
-        },
-        input: {
-          default: {
-            parts: {
-              label: { text: { color: "danger", weight: "bold" } },
-              control: { field: { width: "full" } },
-            },
-          },
-        },
-        loading: {
-          default: {
-            parts: {
-              label: { text: { color: "warning", weight: "bold" } },
-            },
-          },
-        },
-      },
-    };
-    const out = renderThemed(
-      {
-        root: "root",
-        theme: "parts",
-        screens: { pipeline: "root", accounts: "accountsRoot" },
-        entry: "pipeline",
-        nodes: {
-          root: {
-            id: "root",
-            type: "box",
-            children: [
-              "overview",
-              "internals",
-              "card",
-              "table",
-              "chart",
-              "details",
-              "progress",
-              "list",
-              "email",
-              "loading",
-            ],
-          },
-          overview: { id: "overview", type: "text", value: "Overview" },
-          internals: { id: "internals", type: "text", value: "Part-driven internals" },
-          card: { id: "card", type: "box", children: ["revenue", "quarter"] },
-          revenue: { id: "revenue", type: "text", value: "Revenue" },
-          quarter: { id: "quarter", type: "text", value: "Current quarter" },
-          accountsRoot: {
-            id: "accountsRoot",
-            type: "box",
-            children: [],
-          },
-          table: {
-            id: "table",
-            type: "table",
-            columns: [
-              { key: "name", label: "Name" },
-              { key: "value", label: "Value", align: "end" },
-            ],
-            rows: [{ name: "Acme", value: 42 }],
-          },
-          chart: {
-            id: "chart",
-            type: "chart",
-            title: "Trend",
-            kind: "bar",
-            series: [{ label: "ARR", values: [10, 20] }],
-          },
-          progress: { id: "progress", type: "progress", label: "Completion", value: 72 },
-          details: {
-            id: "details",
-            type: "keyValue",
-            items: [{ label: "ARR", value: "$24k" }],
-          },
-          list: {
-            id: "list",
-            type: "list",
-            items: [{ title: "Next", body: "Call customer" }],
-          },
-          email: {
-            id: "email",
-            type: "input",
-            name: "email",
-            input: "email",
-            label: "Email",
-            placeholder: "you@example.com",
-          },
-          loading: { id: "loading", type: "loading", label: "Loading rows" },
-        },
-      },
-      [partsTheme],
-    );
-
-    expect(out).toContain("Overview");
-    expect(out).toContain("Part-driven internals");
-    expect(out).toContain("Revenue");
-    expect(out).toContain("Current quarter");
-    expect(out).toMatch(/<th style="[^"]*color:#2563eb[^"]*font-weight:700[^"]*">Name/);
-    expect(out).toMatch(/<td style="[^"]*color:#b45309[^"]*">Acme/);
-    expect(out).not.toMatch(/<th[^>]*style="[^"]*display:flex/);
-    expect(out).not.toMatch(/<td[^>]*style="[^"]*display:flex/);
-    expect(out).toMatch(/<figcaption style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Trend/);
-    expect(out).toMatch(/<figure[^>]*style="(?=[^"]*margin:0)(?=[^"]*max-width:100%)[^"]*">/);
-    expect(out).toMatch(
-      /<svg[^>]*style="(?=[^"]*background:#eef2ff)(?=[^"]*border-radius:17px)(?=[^"]*display:block)[^"]*"/,
-    );
-    expect(out).not.toMatch(/<svg[^>]*style="[^"]*display:flex/);
-    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Completion/);
-    expect(out).toMatch(
-      /role="progressbar" aria-valuenow="72" aria-valuemin="0" aria-valuemax="100"[^>]*style="(?=[^"]*width:100%)(?=[^"]*background:#eef2ff)[^"]*"><div style="[^"]*width:72%/,
-    );
-    expect(out).not.toMatch(/<label[^>]*style="[^"]*background:/);
-    expect(out).not.toContain("<progress");
-    expect(out).toMatch(/<dt style="(?=[^"]*font-weight:700)(?=[^"]*color:#2563eb)[^"]*">ARR/);
-    expect(out).toMatch(/<dd style="(?=[^"]*font-weight:700)(?=[^"]*color:#dc2626)[^"]*">\$24k/);
-    expect(out).toMatch(
-      /<li style="(?=[^"]*background:#eef2ff)(?=[^"]*padding:3px)(?=[^"]*border-radius:5px)[^"]*"><span style="[^"]*color:#dc2626[^"]*">Next/,
-    );
-    expect(out).toMatch(/<p style="[^"]*color:#b45309[^"]*">Call customer/);
-    expect(out).toMatch(/<span style="[^"]*font-weight:700[^"]*color:#dc2626[^"]*">Email/);
-    expect(out).toMatch(/<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*width:100%/);
-    expect(out).toMatch(
-      /<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*background:#ffffff/,
-    );
-    expect(out).toMatch(
-      /<input[^>]*data-facet-field-id="email"[^>]*style="[^"]*border:1px solid #64748b/,
-    );
-    expect(out).toMatch(
-      /role="status"[^>]*><span[^>]*><\/span><span[^>]*color:#b45309[^>]*>Loading rows/,
-    );
-  });
-
-  it("keeps survivor raw-path malformed data fail-safe", () => {
-    const noisy = {
+    const raw = tree({
       root: {
         id: "root",
         type: "box",
-        children: ["body", "table", "chart", "details", "progress", "list", "loading", "text"],
-      },
-      body: text("body", "still renders"),
-      table: { id: "table", type: "table", columns: "bad", rows: [{ value: { nope: true } }] },
-      chart: { id: "chart", type: "chart", kind: "space", series: "bad", title: "Bad chart" },
-      details: {
-        id: "details",
-        type: "keyValue",
-        items: [
-          { label: "Plan", value: "Team" },
-          { label: "Bad", value: { nope: true } },
-        ],
-      },
-      progress: { id: "progress", type: "progress", label: { bad: true }, value: Infinity },
-      list: { id: "list", type: "list", items: ["Plain item", { title: 9, body: "bad title" }] },
-      loading: { id: "loading", type: "loading", label: { bad: true } },
-      text: text("text", "safe child"),
-    } as unknown as Record<NodeId, FacetNode>;
-
-    expect(() => render(tree(noisy))).not.toThrow();
-    const out = render(tree(noisy));
-    expect(out).toContain("still renders");
-    expect(out).toContain("Team");
-    expect(out).toContain("Plain item");
-    expect(out).toContain("Loading");
-    expect(out).toContain("safe child");
-    expect(out).not.toContain("[object Object]");
-    expect(out).not.toContain("Bad chart");
-  });
-
-  it("caps raw-path table, chart, and list collections at the core validator limits", () => {
-    const columns = Array.from({ length: MAX_TABLE_COLUMNS + 8 }, (_, index) => ({
-      key: `c${String(index)}`,
-      label: `Column ${String(index)}`,
-    }));
-    const rows = Array.from({ length: MAX_TABLE_ROWS + 20 }, (_, rowIndex) =>
-      Object.fromEntries(columns.map((column) => [column.key, `r${String(rowIndex)}`])),
-    );
-    const series = Array.from({ length: MAX_CHART_SERIES + 4 }, (_, seriesIndex) => ({
-      label: `Series ${String(seriesIndex)}`,
-      values: Array.from({ length: MAX_CHART_POINTS + 25 }, (_, valueIndex) => valueIndex),
-    }));
-    const longLabel = "x".repeat(MAX_NODE_LABEL_CHARS + 25);
-    const out = render(
-      tree({
-        root: box("root", ["table", "chart", "list"]),
-        table: { id: "table", type: "table", columns, rows } as unknown as FacetNode,
-        chart: { id: "chart", type: "chart", kind: "bar", series } as unknown as FacetNode,
-        list: {
-          id: "list",
-          type: "list",
-          items: Array.from({ length: MAX_LIST_ITEMS + 4 }, () => longLabel),
-        } as unknown as FacetNode,
-      }),
-    );
-
-    expect(out.match(/<th\b/g)).toHaveLength(MAX_TABLE_COLUMNS);
-    expect(out.match(/<tr/g)).toHaveLength(MAX_TABLE_ROWS + 1);
-    expect(out.match(/<rect/g)).toHaveLength(MAX_CHART_SERIES * MAX_CHART_POINTS);
-    expect(out.match(/<li/g)).toHaveLength(MAX_LIST_ITEMS);
-    expect(out).not.toContain(longLabel);
-  });
-
-  it("does not read raw-path collection entries beyond the render caps", () => {
-    const readPastCap = new Set<string>();
-    const defineThrowingPastCap = <T>(values: T[], index: number, label: string): T[] => {
-      values.length = index + 1;
-      Object.defineProperty(values, String(index), {
-        get() {
-          readPastCap.add(label);
-          throw new Error(`read past ${label} cap`);
+        activeWhen: predicate,
+        style: {
+          background: "surface",
+          active: { background: "dangerSurface" },
         },
-        configurable: true,
-      });
-      return values;
-    };
-
-    const columns = defineThrowingPastCap(
-      Array.from({ length: MAX_TABLE_COLUMNS }, (_, index) => ({
-        key: `c${String(index)}`,
-        label: `Column ${String(index)}`,
-      })),
-      MAX_TABLE_COLUMNS,
-      "columns",
-    );
-    const longCell = "x".repeat(MAX_TABLE_CELL_CHARS + 20);
-    const rows = defineThrowingPastCap(
-      Array.from({ length: MAX_TABLE_ROWS }, (_, rowIndex) => ({
-        c0: rowIndex === 0 ? longCell : `r${String(rowIndex)}`,
-      })),
-      MAX_TABLE_ROWS,
-      "rows",
-    );
-    const values = defineThrowingPastCap(
-      Array.from({ length: MAX_CHART_POINTS }, (_, index) => index + 1),
-      MAX_CHART_POINTS,
-      "chart points",
-    );
-    const series = defineThrowingPastCap(
-      Array.from({ length: MAX_CHART_SERIES }, (_, index) => ({
-        label: `Series ${String(index)}`,
-        values,
-      })),
-      MAX_CHART_SERIES,
-      "chart series",
-    );
-    const listItems = defineThrowingPastCap(
-      Array.from({ length: MAX_LIST_ITEMS }, (_, index) => `Item ${String(index)}`),
-      MAX_LIST_ITEMS,
-      "list",
-    );
-
-    let out = "";
-    expect(() => {
-      out = render(
-        tree({
-          root: box("root", ["table", "chart", "list"]),
-          table: { id: "table", type: "table", columns, rows } as unknown as FacetNode,
-          chart: { id: "chart", type: "chart", kind: "bar", series } as unknown as FacetNode,
-          list: { id: "list", type: "list", items: listItems } as unknown as FacetNode,
-        }),
-      );
-    }).not.toThrow();
-
-    expect(readPastCap.size).toBe(0);
-    expect(out.match(/<th\b/g)).toHaveLength(MAX_TABLE_COLUMNS);
-    expect(out.match(/<tr/g)).toHaveLength(MAX_TABLE_ROWS + 1);
-    expect(out.match(/<rect/g)).toHaveLength(MAX_CHART_SERIES * MAX_CHART_POINTS);
-    expect(out.match(/<li/g)).toHaveLength(MAX_LIST_ITEMS);
-    expect(out).toContain("x".repeat(MAX_TABLE_CELL_CHARS));
-    expect(out).not.toContain(longCell);
-  });
-
-  it("renders line and donut charts as distinct chart primitives, not bars", () => {
-    const line = render(
-      tree({
-        root: box("root", ["chart"]),
-        chart: {
-          id: "chart",
-          type: "chart",
-          title: "Line",
-          kind: "line",
-          series: [{ label: "Revenue", values: [1, 3, 2] }],
-        },
-      }),
-    );
-    expect(line).toContain("<polyline");
-    expect(line).not.toContain("<rect");
-
-    const donut = render(
-      tree({
-        root: box("root", ["chart"]),
-        chart: {
-          id: "chart",
-          type: "chart",
-          title: "Donut",
-          kind: "donut",
-          series: [{ label: "Mix", values: [2, 3, 5] }],
-        },
-      }),
-    );
-    expect(donut).toContain("<circle");
-    expect(donut).not.toContain("<rect");
-  });
-});
-
-// The live patch path can produce a box whose children list repeats an id
-// (validateTree dedupes siblings; the raw path does not). React needs unique
-// keys, so the renderer keeps only the first occurrence.
-describe("StageRenderer sibling dedupe", () => {
-  it("renders a duplicated sibling id only once", () => {
-    const out = render(
-      tree({ root: box("root", ["a", "a", "b"]), a: text("a", "dup"), b: text("b", "other") }),
-    );
-    expect(out.match(/dup/g)).toHaveLength(1);
-    expect(out).toContain("other");
-  });
-});
-
-// The raw live-patch path can put arbitrary JSON in a field's name/placeholder/
-// input. name/placeholder coerce to strings (omitted otherwise) and input is
-// constrained to the INPUT_KINDS token set (else "text"), mirroring core.
-describe("StageRenderer field coercion", () => {
-  const field = (extra: Record<string, unknown>): FacetTree =>
-    tree({
-      root: box("root", ["f"]),
-      f: { id: "f", type: "input", ...extra } as unknown as FacetNode,
+        children: ["copy"],
+      } as unknown as FacetNode,
+      copy: text("copy", "base survives"),
     });
 
-  it("falls back to type=text for a junk input value", () => {
-    const out = render(field({ input: 999 }));
-    expect(out).toContain('type="text"');
-  });
-
-  it("falls back to type=text for an unknown input token", () => {
-    const out = render(field({ input: "color" }));
-    expect(out).toContain('type="text"');
-  });
-
-  it("keeps a valid input token (email)", () => {
-    const out = render(field({ input: "email" }));
-    expect(out).toContain('type="email"');
-  });
-
-  it("omits a non-string name and placeholder", () => {
-    const out = render(field({ name: 42, placeholder: { bad: 1 } }));
-    expect(out).not.toContain("name=");
-    expect(out).not.toContain("placeholder=");
-  });
-
-  it("keeps string name and placeholder", () => {
-    const out = render(field({ name: "email", placeholder: "you@x.com" }));
-    expect(out).toContain('name="email"');
-    expect(out).toContain('placeholder="you@x.com"');
+    expect(() => render(raw)).not.toThrow();
+    expect(render(raw)).toContain("background:#f8fafc");
   });
 });
 
-describe("StageRenderer happy path", () => {
-  it("renders primitive box/text variants through default theme recipes", () => {
-    const out = render(
-      tree({
-        root: { id: "root", type: "box", variant: "panel", children: ["title"] },
-        title: { id: "title", type: "text", value: "Welcome", variant: "heading" },
-      }),
-    );
-
-    expect(out).toContain("background:#f6f7f9");
-    expect(out).toContain("border:1px solid #e2e5ea");
-    expect(out).toContain("box-shadow:0 1px 2px rgba(15, 23, 42, 0.08)");
-    expect(out).toContain("font-size:36px");
-    expect(out).toContain("font-weight:700");
-  });
-
-  it("renders primitive media and field variants through default theme recipes", () => {
-    const out = render(
-      tree({
-        root: box("root", ["hero", "email"]),
-        hero: {
-          id: "hero",
-          type: "media",
-          kind: "image",
-          variant: "hero",
-          src: "https://example.com/hero.png",
-          alt: "Hero",
-        },
-        email: {
-          id: "email",
-          type: "input",
-          name: "email",
-          input: "email",
-          variant: "default",
-          label: "Email",
-        },
-      }),
-    );
-
-    expect(out).toContain("aspect-ratio:16 / 9");
-    expect(out).toContain("border-radius:16px");
-    expect(out).toContain("width:100%");
-  });
-
-  it("renders default text and select fields with token-resolved control chrome", () => {
-    const out = render(
-      tree({
-        root: box("root", ["email", "surface"]),
-        email: {
-          id: "email",
-          type: "input",
-          name: "email",
-          input: "email",
-          label: "Email",
-        },
-        surface: {
-          id: "surface",
-          type: "input",
-          name: "surface",
-          input: "select",
-          options: ["Dashboard", "Pricing"],
-          label: "Surface",
-        },
-      }),
-    );
-
-    expect(out).toMatch(/<input[^>]*style="[^"]*background:#ffffff/);
-    expect(out).toMatch(/<input[^>]*style="[^"]*border:1px solid #e2e5ea/);
-    expect(out).toMatch(/<input[^>]*style="[^"]*border-radius:6px/);
-    expect(out).toMatch(/<input[^>]*style="[^"]*padding:8px/);
-    expect(out).toMatch(/<select[^>]*style="[^"]*background:#ffffff/);
-    expect(out).toMatch(/<select[^>]*style="[^"]*border:1px solid #e2e5ea/);
-    expect(out).not.toMatch(/<input[^>]*style="[^"]*display:flex/);
-    expect(out).not.toMatch(/<select[^>]*style="[^"]*display:flex/);
-  });
-
-  it("renders all four bricks", () => {
-    const out = render(
-      tree({
-        root: box("root", ["t", "i", "f"]),
-        t: text("t", "hello"),
-        i: {
-          id: "i",
-          type: "media",
-          kind: "image",
-          src: "https://example.com/a.png",
-          alt: "pic",
-        },
-        f: { id: "f", type: "input", name: "email", input: "email", label: "Email" },
-      }),
-    );
-    expect(out).toContain("hello");
-    expect(out).toContain('src="https://example.com/a.png"');
-    expect(out).toContain('name="email"');
-    expect(out).toContain("Email");
-  });
-
-  it("caps raw final-brick strings before rendering", () => {
-    const longLabel = "L".repeat(MAX_NODE_LABEL_CHARS + 10);
-    const longBody = "B".repeat(MAX_NODE_BODY_CHARS + 10);
-    const out = render(
-      tree({
-        root: box("root", [
-          "table",
-          "chart",
-          "details",
-          "progress",
-          "list",
-          "loading",
-          "text",
-          "media",
-          "field",
-        ]),
-        table: {
-          id: "table",
-          type: "table",
-          caption: longLabel,
-          columns: [{ key: "name", label: longLabel }],
-          rows: [{ name: longLabel }],
-        },
-        chart: {
-          id: "chart",
-          type: "chart",
-          title: longLabel,
-          kind: "bar",
-          series: [{ label: "A", values: [1] }],
-        },
-        details: {
-          id: "details",
-          type: "keyValue",
-          items: [{ label: longLabel, value: longLabel }],
-        },
-        progress: { id: "progress", type: "progress", value: 50, label: longLabel },
-        list: { id: "list", type: "list", items: [{ title: longLabel, body: longBody }] },
-        loading: { id: "loading", type: "loading", label: longLabel },
-        text: { id: "text", type: "text", value: longBody },
-        media: {
-          id: "media",
-          type: "media",
-          kind: "image",
-          src: "https://example.com/a.png",
-          alt: longLabel,
-        },
-        field: {
-          id: "field",
-          type: "input",
-          name: "field-name",
-          label: longLabel,
-          placeholder: longLabel,
-        },
-      } as Record<NodeId, FacetNode>),
-    );
-
-    expect(out).not.toContain(longLabel);
-    expect(out).not.toContain(longBody);
-    expect(out).toContain("L".repeat(MAX_NODE_LABEL_CHARS));
-    expect(out).toContain("B".repeat(MAX_NODE_BODY_CHARS));
-  });
-
-  it("renders a pressable box as a button", () => {
-    const out = render(
-      tree({
-        root: { id: "root", type: "box", onPress: { name: "go" }, children: ["t"] },
-        t: text("t", "press me"),
-      }),
-    );
-    expect(out).toContain('role="button"');
-    expect(out).toContain("press me");
-  });
-});
-
-// onRecord (WU-4, RISK-API-3): the record-only channel is an INTERACTION channel
-// — it never fires during render, so supplying or omitting it must not change a
-// single byte of the rendered markup. This pins the "handler-less output stays
-// byte-identical" invariant and confirms the agent-tap path is untouched.
-describe("StageRenderer onRecord is render-inert (static)", () => {
-  const navToggleTree = (): FacetTree =>
-    tree({
-      root: box("root", ["go", "toggleBtn", "agentBtn"]),
-      go: { id: "go", type: "box", onPress: { kind: "navigate", to: "about" }, children: ["gt"] },
-      gt: text("gt", "Go"),
-      toggleBtn: {
-        id: "toggleBtn",
-        type: "box",
-        onPress: { kind: "toggle", target: "go" },
-        children: ["tt"],
-      },
-      tt: text("tt", "Toggle"),
-      agentBtn: {
-        id: "agentBtn",
-        type: "box",
-        onPress: { kind: "agent", name: "go" },
-        children: ["at"],
-      },
-      at: text("at", "Agent"),
-    });
-
-  it("markup is byte-identical whether onRecord is omitted or supplied", () => {
-    const without = renderToStaticMarkup(createElement(StageRenderer, { tree: navToggleTree() }));
-    const withRecord = renderToStaticMarkup(
-      createElement(StageRenderer, { tree: navToggleTree(), onRecord: () => {} }),
-    );
-    expect(withRecord).toBe(without);
-    // The agent-tap box still renders exactly as before (a button) — onRecord
-    // does not touch the agent-routed path.
-    expect(withRecord).toContain('role="button"');
-    expect(withRecord).toContain("Agent");
-  });
-});
-
-// Screens are named roots into the same flat nodes map; a screenless tree is the
-// single-screen form. The raw live-patch path bypasses validateTree, so garbage
-// screens/entry/hidden must degrade to a plain render — never throw.
-describe("StageRenderer screens + hidden (static)", () => {
-  it("renders ONLY the entry screen's content for a screens tree", () => {
-    const out = render({
-      root: "root",
-      nodes: {
-        root: box("root", ["rt"]),
-        rt: text("rt", "plain root content"),
-        home: box("home", ["h"]),
-        h: text("h", "home content"),
-        about: box("about", ["a"]),
-        a: text("a", "about content"),
-      },
-      screens: { home: "home", about: "about" },
-      entry: "home",
-    });
-    expect(out).toContain("home content");
-    expect(out).not.toContain("about content");
-    expect(out).not.toContain("plain root content");
-  });
-
-  it("renders a screenless tree from root exactly as before", () => {
-    const plain = tree({ root: box("root", ["t"]), t: text("t", "single screen") });
-    expect(render(plain)).toContain("single screen");
-  });
-
-  it("omits a hidden: true box from the output", () => {
-    const out = render(
-      tree({
-        root: box("root", ["shown", "menu"]),
-        shown: text("shown", "visible line"),
-        menu: { id: "menu", type: "box", hidden: true, children: ["m"] },
-        m: text("m", "secret menu"),
-      }),
-    );
-    expect(out).toContain("visible line");
-    expect(out).not.toContain("secret menu");
-  });
-
-  it("only literal true hides — a hidden patched to a non-boolean stays visible", () => {
-    const noisy = {
-      root: box("root", ["p"]),
-      p: { id: "p", type: "box", hidden: "yes", children: ["t"] },
-      t: text("t", "still shown"),
-    } as unknown as Record<NodeId, FacetNode>;
-    expect(render(tree(noisy))).toContain("still shown");
-  });
-
-  it("never throws on garbage screens/entry on the raw path (falls back to root)", () => {
-    const nodes = { root: box("root", ["t"]), t: text("t", "root fallback") };
-    const junkTrees = [
-      { root: "root", nodes, screens: "not an object", entry: "x" },
-      { root: "root", nodes, screens: 42 },
-      { root: "root", nodes, screens: null },
-      { root: "root", nodes, screens: { a: 99, b: null, c: {} }, entry: "a" },
-      { root: "root", nodes, screens: { a: "missingNode" }, entry: 7 },
-      { root: "root", nodes, screens: {}, entry: "a" },
-    ] as unknown as FacetTree[];
-    for (const junk of junkTrees) {
-      expect(() => render(junk)).not.toThrow();
-      expect(render(junk)).toContain("root fallback");
-    }
-  });
-});
-
-// Appear (DC-001/DC-005): a classifiable appear token maps to a class name and
-// gates ONE per-stage <style> element (detected during the budget-bounded render
-// walk — reachable nodes only); token-free trees carry no style element or class
-// attribute beyond the renderer's containment guard, and raw-path junk —
-// including cyclic trees and null/scalar node VALUES in the nodes record —
-// renders plain, never throws or hangs.
-describe("StageRenderer appear (static)", () => {
-  it("renders the appear class and a single style element for appear tokens", () => {
-    const out = render(
-      tree({
-        root: { id: "root", type: "box", style: { appear: "fade" }, children: ["s", "t"] },
-        s: { id: "s", type: "box", style: { appear: "slide" }, children: [] },
-        t: text("t", "animated"),
-      }),
-    );
-    expect(out).toContain('class="facet-appear-fade"');
-    expect(out).toContain('class="facet-appear-slide"');
-    expect(out).toContain("@keyframes facet-appear-fade");
-    // Once per stage, no matter how many nodes use appear.
-    expect(out.match(/<style/g)).toHaveLength(1);
-  });
-
-  it("renders the appear class on a pressable (role=button) box", () => {
-    // FIX-B: the press-only branch must thread className exactly like the
-    // plain branch — an appear token on an interactive box must not vanish.
+describe("StageRenderer central style resolution", () => {
+  it("resolves Theme default then Preset then direct style", () => {
     const out = render(
       tree({
         root: {
           id: "root",
           type: "box",
-          style: { appear: "slide" },
-          onPress: { kind: "agent", name: "go" },
-          children: ["t"],
+          style: { preset: "panel", background: "successSurface" },
+          children: ["heading"],
         },
-        t: text("t", "press me"),
+        heading: {
+          id: "heading",
+          type: "text",
+          value: "Resolved",
+          style: { preset: "heading", color: "success" },
+        },
+      }),
+    );
+
+    expect(out).toContain("background:#dcfce7");
+    expect(out).toContain("padding:16px");
+    expect(out).toContain("font-size:36px");
+    expect(out).toContain("color:#15803d");
+  });
+
+  it("uses default plus valid direct choices when a Preset is unknown", () => {
+    const out = render(
+      tree({
+        root: box("root", ["copy"]),
+        copy: {
+          id: "copy",
+          type: "text",
+          value: "Fallback",
+          style: { preset: "missing", color: "success" },
+        } as unknown as FacetNode,
+      }),
+    );
+    expect(out).toContain("Fallback");
+    expect(out).toContain("color:#15803d");
+  });
+
+  it("ignores unknown targets and properties", () => {
+    const raw = tree({
+      root: {
+        id: "root",
+        type: "box",
+        style: {
+          color: "foreground",
+          arbitraryTarget: { cssText: "position:fixed" },
+        },
+        children: [],
+      } as unknown as FacetNode,
+    });
+    const out = render(raw);
+    expect(out).toContain("color:#172033");
+    expect(out).not.toContain("position:fixed");
+  });
+
+  it("applies style.active only when activeWhen matches the local view", () => {
+    const activeTree = {
+      root: "root",
+      screens: { home: "root" },
+      entry: "home",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          activeWhen: { screen: "home" },
+          style: { background: "surface", active: { background: "dangerSurface" } },
+          children: ["copy"],
+        },
+        copy: text("copy", "active"),
+      },
+    } as FacetTree;
+    expect(render(activeTree)).toContain("background:#fee2e2");
+  });
+
+  it("renders a pressable box without changing its Brick identity", () => {
+    const out = render(
+      tree({
+        root: {
+          id: "root",
+          type: "box",
+          onPress: { kind: "agent", name: "save" },
+          children: ["label"],
+        },
+        label: text("label", "Save"),
       }),
     );
     expect(out).toContain('role="button"');
-    expect(out).toContain('class="facet-appear-slide"');
-    expect(out.match(/<style/g)).toHaveLength(1);
+    expect(out).toContain("Save");
+  });
+});
+
+describe("StageRenderer tree traversal", () => {
+  it("renders a duplicated sibling only once", () => {
+    const out = render(tree({ root: box("root", ["child", "child"]), child: text("child", "x") }));
+    expect(out.match(/>x<\/p>/g)).toHaveLength(1);
   });
 
-  it("renders an explicit appear:'none' with no class and no style element", () => {
-    const out = render(
-      tree({
-        root: { id: "root", type: "box", style: { appear: "none" }, children: ["t"] },
-        t: text("t", "instant"),
-      }),
-    );
-    expect(out).toContain("instant");
-    expect(out).not.toContain("class=");
-    expect(out).not.toContain("<style");
-  });
-
-  it("keeps a token-free tree free of appear CSS while retaining containment", () => {
-    const plain = tree({
-      root: { id: "root", type: "box", children: ["t", "f"] },
-      t: text("t", "hello"),
-      f: { id: "f", type: "input", name: "email", label: "Email" },
-    });
-    const out = render(plain);
-    expect(out).not.toContain("<style");
-    expect(out).not.toContain("class=");
-    // The exact-markup pin for a plain box — className={undefined} must add
-    // nothing, while root containment remains part of the renderer contract.
-    expect(render(tree({ root: { id: "root", type: "box", children: [] } }))).toBe(
-      '<div style="display:flex;flex-direction:column;box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere"></div>',
-    );
-  });
-
-  it("renders raw-path junk (appear:'explode', onHold:42, scroll:'sideways') plain, never throws", () => {
-    const junkRoot = {
-      id: "root",
-      type: "box",
-      style: { appear: "explode", scroll: "sideways" },
-      onHold: 42,
-      children: ["t"],
-    } as unknown as FacetNode;
-    const junkTree = tree({ root: junkRoot, t: text("t", "still up") });
-    expect(() => render(junkTree)).not.toThrow();
-    const out = render(junkTree);
-    expect(out).toContain("still up");
-    expect(out).not.toContain("class=");
-    expect(out).not.toContain("<style");
-    expect(out).not.toContain('role="button"'); // junk onHold never makes a button
-  });
-
-  it("server-renders a valid onHold box (HoldableBox) without touching window", () => {
-    // The static suite is the SSR contract: HoldableBox's render body must stay
-    // free of window/document access (the interceptor arms only inside the
-    // hold-timer callback), or every server render of an onHold tree throws.
-    const held = tree({
-      root: { id: "root", type: "box", children: ["h"] },
-      h: { id: "h", type: "box", onHold: { kind: "agent", name: "peek" }, children: ["t"] },
-      t: text("t", "hold me"),
-    });
-    expect(() => render(held)).not.toThrow();
-    const out = render(held);
-    expect(out).toContain("hold me");
-    expect(out).toContain('role="button"'); // holdable ⇒ interactive markup
-    // iOS long-press affordances: a holdable box disables text selection and
-    // the native long-press callout so the gesture runs the hold, not a
-    // selection / share sheet (review r6). Press-only and plain boxes must NOT
-    // carry these (asserted below).
-    expect(out).toContain("user-select:none");
-    expect(out).toContain("-webkit-touch-callout:none");
-  });
-
-  it("does not add hold-only CSS to press-only or plain boxes", () => {
-    const pressOnly = tree({
-      root: { id: "root", type: "box", children: ["b"] },
-      b: { id: "b", type: "box", onPress: { kind: "agent", name: "open" }, children: ["t"] },
-      t: text("t", "press me"),
-    });
-    const pressOut = render(pressOnly);
-    expect(pressOut).toContain('role="button"');
-    expect(pressOut).not.toContain("user-select:none");
-    expect(pressOut).not.toContain("-webkit-touch-callout");
-    // A plain box carries no interactivity CSS at all.
-    const plain = render(tree({ root: { id: "root", type: "box", children: [] } }));
-    expect(plain).toBe(
-      '<div style="display:flex;flex-direction:column;box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere"></div>',
-    );
-  });
-
-  it("renders a CYCLIC raw tree containing an appear token without hanging or throwing", () => {
-    const cyclic = tree({
-      root: box("root", ["a"]),
-      a: { id: "a", type: "box", style: { appear: "slide" }, children: ["root", "t"] },
-      t: text("t", "cycled once"),
-    });
-    expect(() => render(cyclic)).not.toThrow();
-    const out = render(cyclic);
-    expect(out).toContain("cycled once");
-    expect(out).toContain('class="facet-appear-slide"');
-    expect(out.match(/<style/g)).toHaveLength(1);
-  });
-
-  it("ignores appear on raw-path text/media/field styles (appear is BoxStyle-only)", () => {
-    // validateTree strips appear from non-box styles, so the raw unvalidated
-    // path must render identically: no class on <p>/<img>/<label> and no
-    // appear <style> element for a tree whose only appear tokens sit on
-    // non-box nodes.
-    const noisy = {
-      root: box("root", ["t", "i", "f"]),
-      t: { id: "t", type: "text", value: "plain text", style: { appear: "fade" } },
-      i: {
-        id: "i",
-        type: "media",
-        kind: "image",
-        src: "https://example.com/a.png",
-        alt: "pic",
-        style: { appear: "fade" },
+  it("renders only the entry screen and respects literal hidden true", () => {
+    const screened: FacetTree = {
+      root: "fallback",
+      screens: { home: "homeRoot", settings: "settingsRoot" },
+      entry: "home",
+      nodes: {
+        fallback: text("fallback", "fallback"),
+        homeRoot: box("homeRoot", ["home", "hidden"]),
+        home: text("home", "Home"),
+        hidden: { id: "hidden", type: "box", hidden: true, children: ["hiddenCopy"] },
+        hiddenCopy: text("hiddenCopy", "Hidden"),
+        settingsRoot: box("settingsRoot", ["settings"]),
+        settings: text("settings", "Settings"),
       },
-      f: { id: "f", type: "input", name: "n", placeholder: "p", style: { appear: "fade" } },
-    } as unknown as Record<NodeId, FacetNode>;
-    const out = render(tree(noisy));
-    expect(out).toContain("plain text");
-    expect(out).toContain("<img");
-    expect(out).toContain("<input");
-    expect(out).not.toContain("facet-appear");
-    expect(out).not.toContain("class=");
-    expect(out).not.toContain("<style");
+    };
+    const out = render(screened);
+    expect(out).toContain("Home");
+    expect(out).not.toContain("Hidden");
+    expect(out).not.toContain("Settings");
+    expect(out).not.toContain("fallback");
+  });
 
-    // Positive control: the same token on a BOX still gets class + stylesheet.
-    const withBox = render(
-      tree({
-        root: { id: "root", type: "box", style: { appear: "fade" }, children: [] },
-      }),
+  it("keeps onRecord render-inert", () => {
+    const value = tree({ root: box("root", ["copy"]), copy: text("copy", "same") });
+    const without = renderToStaticMarkup(createElement(StageRenderer, { tree: value }));
+    const withRecord = renderToStaticMarkup(
+      createElement(StageRenderer, { tree: value, onRecord: () => {} }),
     );
-    expect(withBox).toContain('class="facet-appear-fade"');
-    expect(withBox.match(/<style/g)).toHaveLength(1);
+    expect(withRecord).toBe(without);
   });
+});
 
-  it("renders a raw tree with NULL and SCALAR node values alongside an appear node without throwing", () => {
-    // Legal on the live path: a patch can set any node value to JSON null (or a
-    // scalar) — isTreeShaped only checks that `nodes` is an object. renderNode's
-    // own `node == null` / unknown-type guards skip the junk values; the
-    // reachable appear box still emits the stylesheet.
-    const noisy = tree({
-      root: box("root", ["x", "n", "s"]),
-      x: { id: "x", type: "box", style: { appear: "fade" }, children: ["t"] },
-      t: text("t", "guarded"),
-      n: null as unknown as FacetNode,
-      s: 42 as unknown as FacetNode,
-    });
-    expect(() => render(noisy)).not.toThrow();
-    const out = render(noisy);
-    expect(out).toContain("guarded");
-    expect(out).toContain('class="facet-appear-fade"');
-    expect(out.match(/<style/g)).toHaveLength(1);
-  });
-
-  it("does not emit the appear stylesheet for an UNREACHABLE appear node (review r7)", () => {
-    // Appear detection rides the budget-bounded render walk, not a scan of the
-    // whole node map: an appear token on a node that root never reaches renders
-    // nothing and must NOT force a <style> (also the fail-safe against a huge
-    // map of unreachable/dangling nodes re-triggering an O(N) per-render scan).
+describe("StageRenderer enter animation", () => {
+  it("maps the closed enterAnimation choice and emits one animation stylesheet", () => {
     const out = render(
       tree({
-        root: box("root", ["shown"]),
-        shown: text("shown", "visible"),
-        orphan: { id: "orphan", type: "box", style: { appear: "fade" }, children: [] },
+        root: box("root", ["fade", "slide"]),
+        fade: { id: "fade", type: "box", style: { enterAnimation: "fade" }, children: [] },
+        slide: { id: "slide", type: "box", style: { enterAnimation: "slide" }, children: [] },
       }),
     );
-    expect(out).toContain("visible");
-    expect(out).not.toContain("<style");
-    expect(out).not.toContain("facet-appear");
+    expect(out).toMatch(/class="[^"]*\bfacet-appear-fade\b[^"]*"/);
+    expect(out).toMatch(/class="[^"]*\bfacet-appear-slide\b[^"]*"/);
+    expect(out.match(/@keyframes facet-appear-fade/g)).toHaveLength(1);
+    expect(out.match(/@keyframes facet-appear-slide/g)).toHaveLength(1);
+    // One centralized interaction-state sheet is unconditional; the second
+    // sheet is the reachable enter-animation sheet under test.
+    expect(out.match(/<style/g)).toHaveLength(2);
+  });
+
+  it("ignores an unknown raw choice and an unreachable animation", () => {
+    const raw = {
+      root: "root",
+      nodes: {
+        root: box("root", ["junk"]),
+        junk: {
+          id: "junk",
+          type: "box",
+          style: { enterAnimation: "explode" },
+          children: [],
+        },
+        unreachable: {
+          id: "unreachable",
+          type: "box",
+          style: { enterAnimation: "fade" },
+          children: [],
+        },
+      },
+    } as unknown as FacetTree;
+    const out = render(raw);
+    expect(out).not.toContain("facet-appear-");
+    expect(out).not.toContain("@keyframes facet-appear");
+    expect(out.match(/<style/g)).toHaveLength(1);
   });
 });

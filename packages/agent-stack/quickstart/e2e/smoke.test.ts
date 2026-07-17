@@ -16,11 +16,14 @@
  */
 import { describe, expect, it } from "vitest";
 import { validateTree } from "@facet/core";
+import { DEFAULT_THEME } from "@facet/react";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
 import { MemorySink } from "@facet/runtime";
 import { startQuickstart, type RunningQuickstart } from "../src/index.js";
 
 const REQUIRE_BOTH = process.env["FACET_SMOKE_PROVIDERS"] === "both";
+
+const SMOKE_GUIDE = `This is a live-link smoke check. On every visit, immediately call render_page exactly once with a minimal unstyled page: root box id "root" with child "message", and text id "message" whose value is "Facet is live". The exact tree is already specified, so do not call discovery or inspection tools and do not answer with prose before the page is rendered.`;
 
 interface ProviderCase {
   readonly name: "openai" | "anthropic";
@@ -72,7 +75,13 @@ async function boot(providerName: "openai" | "anthropic"): Promise<RunningQuicks
   if (provider === null) throw new Error(`no provider resolved for ${providerName}`);
   const sink = new MemorySink();
   const agentId = `quickstart-smoke-${providerName}`;
-  const agent = createReferenceAgent({ provider, sink, agentId });
+  const agent = createReferenceAgent({
+    provider,
+    guide: SMOKE_GUIDE,
+    sink,
+    agentId,
+    assets: { theme: DEFAULT_THEME, patterns: [] },
+  });
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     try {
@@ -131,20 +140,21 @@ for (const { name, envVar } of PROVIDERS) {
         };
         expect(Array.isArray(patch.patches)).toBe(true);
 
-        // …and when it is the full-replace snapshot (the empty-stage render
-        // path), its tree validates and has a renderable root. Any other patch
-        // shape still counts — content/shape beyond validity is never pinned.
+        // …and the smoke-specific guide's render_page call emitted the expected
+        // full replacement. Content remains loose, but an unattached node patch
+        // cannot masquerade as a rendered page.
         const full = patch.patches?.find((p) => p.path === "");
-        if (full !== undefined) {
-          // validateTree is fail-safe (never throws); "passes" here means the
-          // survivor is renderable — a root box with at least one child, i.e.
-          // not the EMPTY_TREE fallback. Issues are tolerated (loose).
-          const { tree } = validateTree(full.value);
-          const root = tree.nodes[tree.root];
-          expect(root).toBeDefined();
-          expect(root?.type).toBe("box");
-          expect(root?.type === "box" && root.children.length > 0).toBe(true);
-        }
+        expect(full).toBeDefined();
+        if (full === undefined) throw new Error("render_page did not emit a root replacement");
+
+        // validateTree is fail-safe (never throws); "passes" here means the
+        // survivor is renderable — a root box with at least one child, i.e.
+        // not the EMPTY_TREE fallback. Issues are tolerated (loose).
+        const { tree } = validateTree(full.value);
+        const root = tree.nodes[tree.root];
+        expect(root).toBeDefined();
+        expect(root?.type).toBe("box");
+        expect(root?.type === "box" && root.children.length > 0).toBe(true);
       } finally {
         await running.close();
       }

@@ -23,7 +23,7 @@ const PERSISTENT_EVENT_POLICY: BridgeEventPromptPolicy = {
 };
 
 const SPAWN_SYSTEM_PROMPT = `You control a live web page via the \`facet\` command. Change the page by running:
-  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet theme <name>   facet say <text>
+  facet render '<tree-json>'   facet append <parentId> '<node-json>'   facet set '<node-json>'   facet remove <id>   facet screens '<map-json>' <entry>   facet say <text>
 
 ${STAGE_SPEC}
 
@@ -34,7 +34,6 @@ export const PERSISTENT_SYSTEM_PROMPT = `You own a live web page and update it a
 - append(parentId, node): add a node under a parent
 - set(node): add or replace a node by id
 - remove(id): delete a node
-- theme(name): select a validated theme name
 - say(text): send a short chat reply
 
 ${STAGE_SPEC}

@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import type { FacetTree } from "@facet/core";
 import { executeInspectNode, executeInspectStage } from "./executor-inspect.js";
 
+describe("document Theme hard cut", () => {
+  it("omits a retired document Theme from stage inspection", () => {
+    const legacyTree = {
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+      theme: "legacy-brand",
+    } as unknown as FacetTree;
+
+    const result = executeInspectStage({}, legacyTree);
+
+    expect(result.status).toBe("ok");
+    expect(result.observation.text).not.toContain("legacy-brand");
+    expect(result.observation.text).not.toContain("theme");
+  });
+});
+
 /**
  * WU-5 / RISK-API-4 — `describeNode` must report the RESOLVED row/series/item
  * counts for a from-bound node (what the visitor sees), not the inline `0`s.

@@ -6,6 +6,7 @@ import { createElement } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { FacetNode, FacetTheme, FacetTree, NodeId, ViewSnapshot } from "@facet/core";
+import { DEFAULT_THEME } from "@facet/assets";
 import { StageRenderer } from "./StageRenderer.js";
 import { MOTION_CLASS_NAMES, STAGE_CROSSFADE_MS } from "./motion.js";
 
@@ -89,13 +90,12 @@ describe("StageRenderer onViewSnapshot (jsdom)", () => {
   });
 });
 
-// Enabler B (WU-4): a box/text brick may carry `active` (a closed ViewPredicate)
-// plus `activeVariant`/`activeStyle`. At render time the renderer evaluates the
+// A box/text brick may carry `activeWhen` (a closed ViewPredicate) while its
+// active appearance stays under `style.active`. At render time the renderer evaluates the
 // predicate READ-ONLY against the ALREADY-THREADED snapshot view-state
 // (`activeScreen` + `visibilityOverrides`) and folds the active look into the
 // pure style merge. It writes no view-state and fires no event. Observable via
-// `activeStyle: { weight: "bold" }` → the text's inline `font-weight:700`, and
-// `activeStyle: { bg: "accent" }` → a box's `background:#4f46e5`.
+// `style.active.fontWeight: "bold"` → the text's inline `font-weight:700`.
 describe("active look", () => {
   afterEach(cleanup);
 
@@ -121,8 +121,8 @@ describe("active look", () => {
         id: "banner",
         type: "text",
         value: "Nav",
-        active: { screen: predicateScreen },
-        activeStyle: { weight: "bold" },
+        activeWhen: { screen: predicateScreen },
+        style: { active: { fontWeight: "bold" } },
       } as FacetNode,
       goAbout: {
         id: "goAbout",
@@ -156,8 +156,8 @@ describe("active look", () => {
       banner: {
         id: "banner",
         type: "box",
-        active: { screen: predicateScreen },
-        activeStyle: { radius: "lg" },
+        activeWhen: { screen: predicateScreen },
+        style: { active: { borderRadius: "lg" } },
         children: ["bannerText"],
       } as FacetNode,
       bannerText: { id: "bannerText", type: "text", value: "BoxBanner" },
@@ -190,7 +190,7 @@ describe("active look", () => {
     );
 
     // On `home`: predicate {screen:about} is false → default look (not bold).
-    expect(fontWeightOf(screen.getByText("Nav"))).toBe("");
+    expect(fontWeightOf(screen.getByText("Nav"))).toBe("400");
 
     fireEvent.click(screen.getByText("Go about")); // local navigate → about
 
@@ -226,8 +226,8 @@ describe("active look", () => {
             id: "banner",
             type: "text",
             value: "Nav",
-            active: { screen: "home" },
-            activeStyle: { weight: "bold" },
+            activeWhen: { screen: "home" },
+            style: { active: { fontWeight: "bold" } },
           } as FacetNode,
         },
         screens: { home: "home" },
@@ -242,8 +242,8 @@ describe("active look", () => {
             id: "banner",
             type: "text",
             value: "Nav",
-            active: { screen: "home" },
-            activeStyle: { weight: "bold" },
+            activeWhen: { screen: "home" },
+            style: { active: { fontWeight: "bold" } },
           } as FacetNode,
         },
         screens: { about: "about" },
@@ -273,7 +273,7 @@ describe("active look", () => {
       // The inert exit clone (snapshot.activeScreen === "home") KEEPS the old
       // highlight; the live copy (activeScreen === "about") does not.
       expect(fontWeightOf(previousBanner)).toBe("700");
-      expect(fontWeightOf(liveBanner)).toBe("");
+      expect(fontWeightOf(liveBanner)).toBe("400");
 
       act(() => {
         vi.advanceTimersByTime(STAGE_CROSSFADE_MS);
@@ -306,15 +306,15 @@ describe("active look", () => {
             id: "marker",
             type: "text",
             value: "Marker",
-            active: { toggled: "panel" },
-            activeStyle: { weight: "bold" },
+            activeWhen: { toggled: "panel" },
+            style: { active: { fontWeight: "bold" } },
           } as FacetNode,
         })}
       />,
     );
 
     // Never toggled: no override entry for "panel" → predicate false → default.
-    expect(fontWeightOf(screen.getByText("Marker"))).toBe("");
+    expect(fontWeightOf(screen.getByText("Marker"))).toBe("400");
 
     fireEvent.click(screen.getByText("Toggle")); // override panel → true (shown)
 
@@ -326,13 +326,13 @@ describe("active look", () => {
   // DC-006: an unknown/future predicate kind or a dangling screen/nodeId degrades
   // to the DEFAULT look and never throws (future-kind additive-safe).
   it("renders the default look for unknown-kind / dangling predicates (DC-006)", () => {
-    const bold = (id: NodeId, value: string, active: unknown): FacetNode =>
+    const bold = (id: NodeId, value: string, activeWhen: unknown): FacetNode =>
       ({
         id,
         type: "text",
         value,
-        active,
-        activeStyle: { weight: "bold" },
+        activeWhen,
+        style: { active: { fontWeight: "bold" } },
       }) as unknown as FacetNode;
     let rendered: ReturnType<typeof render> | undefined;
     expect(() => {
@@ -352,9 +352,9 @@ describe("active look", () => {
       );
     }).not.toThrow();
     expect(rendered).toBeDefined();
-    expect(fontWeightOf(screen.getByText("UnknownKind"))).toBe("");
-    expect(fontWeightOf(screen.getByText("DanglingScreen"))).toBe("");
-    expect(fontWeightOf(screen.getByText("DanglingToggle"))).toBe("");
+    expect(fontWeightOf(screen.getByText("UnknownKind"))).toBe("400");
+    expect(fontWeightOf(screen.getByText("DanglingScreen"))).toBe("400");
+    expect(fontWeightOf(screen.getByText("DanglingToggle"))).toBe("400");
   });
 
   // DC-007: evaluating either binding is READ-ONLY — a pure mount with active
@@ -378,8 +378,8 @@ describe("active look", () => {
               id: "banner",
               type: "text",
               value: "Nav",
-              active: { screen: "home" },
-              activeStyle: { weight: "bold" },
+              activeWhen: { screen: "home" },
+              style: { active: { fontWeight: "bold" } },
             } as FacetNode,
             bound: {
               id: "bound",
@@ -408,10 +408,9 @@ describe("active look", () => {
     expect(onViewSnapshot).toHaveBeenCalled();
   });
 
-  // P2: the BOX active-look fold is a physically-separate branch from the text
-  // fold (renderer-render.tsx: the `box` case merges `activeStyleTokens` into
-  // `boxStyle`, not `textStyle`). A `box` carrying a box-only `activeStyle`
-  // (`radius:"lg"`) must gain that token's CSS (`border-radius:16px`) ONLY on the
+  // The BOX active-look fold is a physically-separate branch from the text
+  // fold. A `box` carrying a box-only active style (`borderRadius:"lg"`) must
+  // gain that token's CSS (`border-radius:16px`) ONLY on the
   // matching screen and lose it after a local navigate away — with ZERO
   // onAction/onRecord beyond the navigate's own tap. Fails if the box branch
   // drops or mis-spreads the active tokens.
@@ -427,7 +426,7 @@ describe("active look", () => {
     );
 
     // On `home`: predicate {screen:about} is false → default box (no radius).
-    expect(borderRadiusOf(boxOfMarker("BoxBanner"))).toBe("");
+    expect(borderRadiusOf(boxOfMarker("BoxBanner"))).toBe("0px");
 
     fireEvent.click(screen.getByText("Go about")); // local navigate → about
 
@@ -446,21 +445,34 @@ describe("active look", () => {
     });
   });
 
-  // P3: `activeVariant` (a recipe NAME resolved through `resolveRecipe`, the
-  // PREFERRED path the prompt teaches) folds at render for BOTH a box and a text.
-  // The `hl` variants live only in `activeVariant` here (no base variant), so the
-  // recipe look must appear ONLY while the predicate holds. Uses a themes-prop
-  // registry theme carrying box+text `hl` recipes. Fails if the render fold stops
-  // resolving `activeVariant` through the recipe table.
+  // An active Preset folds at render for BOTH a box and a text. The `hl`
+  // Presets live only in `style.active.preset`, so they apply only while the
+  // predicate holds.
   const HIGHLIGHT_VARIANT_THEME: FacetTheme = {
+    ...DEFAULT_THEME,
     name: "hl-theme",
-    recipes: {
-      box: { hl: { box: { radius: "lg" } } },
-      text: { hl: { text: { weight: "bold" } } },
+    presets: {
+      ...DEFAULT_THEME.presets,
+      box: {
+        ...DEFAULT_THEME.presets?.box,
+        hl: {
+          description: "Highlight a box.",
+          useWhen: "The active view needs a strong box cue.",
+          style: { borderRadius: "lg" },
+        },
+      },
+      text: {
+        ...DEFAULT_THEME.presets?.text,
+        hl: {
+          description: "Highlight text.",
+          useWhen: "The active view needs a strong text cue.",
+          style: { fontWeight: "bold" },
+        },
+      },
     },
   };
 
-  const activeVariantTree = (predicateScreen: string): FacetTree => ({
+  const activePresetTree = (predicateScreen: string): FacetTree => ({
     root: "root",
     nodes: {
       root: { id: "root", type: "box", children: ["avBox", "avText", "goAbout"] },
@@ -469,8 +481,8 @@ describe("active look", () => {
       avBox: {
         id: "avBox",
         type: "box",
-        active: { screen: predicateScreen },
-        activeVariant: "hl",
+        activeWhen: { screen: predicateScreen },
+        style: { active: { preset: "hl" } },
         children: ["avBoxText"],
       } as FacetNode,
       avBoxText: { id: "avBoxText", type: "text", value: "AvBox" },
@@ -478,8 +490,8 @@ describe("active look", () => {
         id: "avText",
         type: "text",
         value: "AvText",
-        active: { screen: predicateScreen },
-        activeVariant: "hl",
+        activeWhen: { screen: predicateScreen },
+        style: { active: { preset: "hl" } },
       } as FacetNode,
       goAbout: {
         id: "goAbout",
@@ -498,27 +510,26 @@ describe("active look", () => {
     },
     screens: { home: "home", about: "about" },
     entry: "home",
-    theme: "hl-theme",
   });
 
-  it("resolves activeVariant through the recipe table for box AND text on the matching screen", () => {
+  it("resolves active Presets for box AND text on the matching screen", () => {
     const onAction = vi.fn();
     render(
       <StageRenderer
         onAction={onAction}
-        themes={[HIGHLIGHT_VARIANT_THEME]}
-        tree={activeVariantTree("about")}
+        theme={HIGHLIGHT_VARIANT_THEME}
+        tree={activePresetTree("about")}
       />,
     );
 
     // On `home`: predicate false → neither node resolves its `hl` recipe (no base
-    // variant, so the base look is the plain default).
-    expect(borderRadiusOf(boxOfMarker("AvBox"))).toBe("");
-    expect(fontWeightOf(screen.getByText("AvText"))).toBe("");
+    // Preset, so the base look is the plain default).
+    expect(borderRadiusOf(boxOfMarker("AvBox"))).toBe("0px");
+    expect(fontWeightOf(screen.getByText("AvText"))).toBe("400");
 
     fireEvent.click(screen.getByText("Go about")); // local navigate → about
 
-    // On `about`: predicate true → each node folds ITS component's `hl` recipe
+    // On `about`: predicate true → each node folds ITS Brick's `hl` Preset
     // (box → radius.lg "16px"; text → weight bold "700").
     expect(borderRadiusOf(boxOfMarker("AvBox"))).toBe("16px");
     expect(fontWeightOf(screen.getByText("AvText"))).toBe("700");

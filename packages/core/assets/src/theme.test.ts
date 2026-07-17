@@ -1,387 +1,149 @@
-import { readFileSync } from "node:fs";
-import type { Color, FacetTheme, FontFamily, RecipePartName, Shadow, Space } from "@facet/core";
-import { DEFAULT_CATALOG, validateTheme } from "@facet/core";
+import type { FacetTheme } from "@facet/core";
+import { validateTheme } from "@facet/core";
 import { describe, expect, it } from "vitest";
 import {
+  ASPECT_RATIO,
+  BORDER_WIDTH,
+  CHART_THICKNESS,
   COLOR,
   COLOR_DARK,
+  CONTROL_HEIGHT,
   DEFAULT_THEME,
   FONT_FAMILY,
   FONT_SIZE,
+  FONT_WEIGHT,
   GRADIENT,
   HIGHLIGHT,
-  LEADING,
+  INDICATOR_SIZE,
+  LETTER_SPACING,
+  LINE_HEIGHT,
   MAX_WIDTH,
   MIN_HEIGHT,
+  PROGRESS_THICKNESS,
+  RADIUS,
   SCRIM,
-  TRACKING,
+  SHADOW,
+  SPACE,
 } from "./theme.js";
 
-// COLOR is the single source of truth for the palette (ChatDock consumes it via
-// the renderer re-export), so its values are pinned here — byte-identical to the
-// values @facet/react shipped before the data moved into @facet/assets.
-describe("COLOR", () => {
-  it("is exported with a pinned palette", () => {
-    expect(COLOR.border).toBe("#e2e5ea");
-    expect(COLOR.fg).toBe("#1a1d23");
-    expect(COLOR.bg).toBe("#ffffff");
-    expect(COLOR.accent).toBe("#4f46e5");
-    expect(COLOR["fg-muted"]).toBe("#6b7280");
-    expect(COLOR["surface-2"]).toBe("#eceef1");
-    expect(COLOR["accent-fg"]).toBe("#ffffff");
-  });
+const EXPECTED_TARGETS = {
+  box: [],
+  text: [],
+  media: [],
+  input: ["control", "indicator", "label", "option", "placeholder"],
+  richtext: ["code", "heading1", "heading2", "heading3", "link", "listMarker", "quote"],
+  table: ["caption", "cell", "header", "row"],
+  chart: ["plot", "series", "title"],
+  list: ["body", "item", "marker", "title"],
+  keyValue: ["item", "label", "value"],
+  progress: ["fill", "label", "track"],
+  loading: ["indicator", "label"],
+} as const;
 
-  it("is a null-prototype map so a hostile token name resolves to nothing", () => {
-    expect(Object.getPrototypeOf(COLOR)).toBeNull();
-    expect(COLOR["constructor" as Color]).toBeUndefined();
-    expect(COLOR["__proto__" as Color]).toBeUndefined();
-  });
-});
+const TOKEN_GROUPS = [
+  "space",
+  "fontSize",
+  "fontFamily",
+  "fontWeight",
+  "radius",
+  "borderWidth",
+  "aspectRatio",
+  "minHeight",
+  "maxWidth",
+  "letterSpacing",
+  "lineHeight",
+  "controlHeight",
+  "indicatorSize",
+  "progressThickness",
+  "chartThickness",
+  "paint",
+] as const;
 
-// DEFAULT_THEME is today's values expressed as an operator FacetTheme document.
-// It must round-trip through core's validator with no errors so operators can
-// copy it as a starting point and hosts can register it by name.
 describe("DEFAULT_THEME", () => {
-  it("passes validateTheme with zero issues", () => {
+  it("ships one complete default Theme", () => {
     const result = validateTheme(DEFAULT_THEME);
-    expect(result.theme).toBeDefined();
+
+    expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
     expect(result.issues).toEqual([]);
-  });
-
-  // Pinned shape: the name + the eight base token groups + recipes, plus the
-  // validator-legal landing-grade groups (tracking/gradient/scrim/highlight/
-  // colorDark). The landing-grade dimension groups (minHeight/maxWidth/leading)
-  // are intentionally NOT part of the document (their svh/ch/unitless defaults
-  // are not document-expressible); they resolve via @facet/react's fallback.
-  it("keeps the name + base token groups + recipes + validator-legal landing groups", () => {
-    expect(Object.keys(DEFAULT_THEME).sort()).toEqual(
-      [
-        "color",
-        "colorDark",
-        "fontFamily",
-        "fontSize",
-        "fontWeight",
-        "gradient",
-        "highlight",
-        "name",
-        "radius",
-        "ratio",
-        "recipes",
-        "scrim",
-        "shadow",
-        "space",
-        "tracking",
-      ].sort(),
-    );
-  });
-
-  it("includes a complete default font family token map", () => {
-    expect(FONT_FAMILY.sans).toBe("Nunito, sans-serif");
-    expect(FONT_FAMILY.serif).toBe('Georgia, "Times New Roman", serif');
-    expect(FONT_FAMILY.mono).toBe("ui-monospace, SFMono-Regular, Menlo, monospace");
-    expect(Object.getPrototypeOf(FONT_FAMILY)).toBeNull();
-    expect(FONT_FAMILY["constructor" as FontFamily]).toBeUndefined();
-
-    expect(DEFAULT_THEME.fontFamily).toBe(FONT_FAMILY);
-    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
-  });
-
-  it('is named "default" and covers every token group with the pinned values', () => {
     expect(DEFAULT_THEME.name).toBe("default");
-    expect(DEFAULT_THEME.color?.bg).toBe("#ffffff");
-    expect(DEFAULT_THEME.space?.md).toBe("16px");
-    expect(DEFAULT_THEME.fontFamily?.sans).toBe("Nunito, sans-serif");
-    expect(DEFAULT_THEME.fontSize?.md).toBe("16px");
-    expect(DEFAULT_THEME.fontWeight?.bold).toBe(700);
-    expect(DEFAULT_THEME.radius?.md).toBe("10px");
-    expect(DEFAULT_THEME.ratio?.wide).toBe("16 / 9");
-    expect(DEFAULT_THEME.shadow?.md).toBe("0 12px 30px rgba(15, 23, 42, 0.14)");
-  });
-
-  it("uses null-prototype group maps (hostile token names resolve to nothing)", () => {
-    const theme = DEFAULT_THEME as Required<
-      Pick<
-        FacetTheme,
-        "color" | "space" | "fontFamily" | "fontSize" | "fontWeight" | "radius" | "ratio" | "shadow"
-      >
-    >;
-    expect(Object.getPrototypeOf(theme.color)).toBeNull();
-    expect(Object.getPrototypeOf(theme.space)).toBeNull();
-    expect(Object.getPrototypeOf(theme.fontFamily)).toBeNull();
-    expect(Object.getPrototypeOf(theme.fontSize)).toBeNull();
-    expect(Object.getPrototypeOf(theme.fontWeight)).toBeNull();
-    expect(Object.getPrototypeOf(theme.radius)).toBeNull();
-    expect(Object.getPrototypeOf(theme.ratio)).toBeNull();
-    expect(Object.getPrototypeOf(theme.shadow)).toBeNull();
-    expect(theme.space["__proto__" as Space]).toBeUndefined();
-    expect(theme.shadow["__proto__" as Shadow]).toBeUndefined();
-  });
-});
-
-describe("DEFAULT_THEME recipes", () => {
-  it("ships selected brick recipes without retired recipe keys", () => {
-    const recipes = DEFAULT_THEME.recipes;
-    expect(recipes).toBeDefined();
-    expect(Object.keys(recipes ?? {}).sort()).toEqual(
-      [
-        "box",
-        "chart",
-        "input",
-        "keyValue",
-        "list",
-        "loading",
-        "media",
-        "progress",
-        "table",
-        "text",
-      ].sort(),
+    expect(DEFAULT_THEME.description).toMatch(/Facet/);
+    expect(Object.keys(DEFAULT_THEME.tokens).sort()).toEqual([...TOKEN_GROUPS].sort());
+    expect(Object.keys(DEFAULT_THEME.defaults).sort()).toEqual(
+      Object.keys(EXPECTED_TARGETS).sort(),
     );
-    expect(recipes?.box?.selected).toEqual({
-      box: { bg: "accent", border: true, pad: "sm", radius: "md" },
-    });
-    expect(recipes?.text?.selected).toBeUndefined();
 
-    for (const brick of ["table", "chart", "keyValue", "progress", "list", "loading"] as const) {
-      expect(recipes?.[brick]?.default, brick).toBeDefined();
+    for (const [brick, targets] of Object.entries(EXPECTED_TARGETS)) {
+      const style = DEFAULT_THEME.defaults[brick as keyof FacetTheme["defaults"]];
+      for (const target of targets) expect(style).toHaveProperty(target);
     }
-    for (const retired of [
-      "button",
-      "form",
-      "filterBar",
-      "metric",
-      "tabs",
-      "nav",
-      "stat",
-    ] as const) {
-      expect(recipes).not.toHaveProperty(retired);
-    }
-    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
-  });
 
-  it("omits retired container-pattern recipes", () => {
-    expect(DEFAULT_THEME.recipes).toBeDefined();
-    expect(DEFAULT_THEME.recipes).not.toHaveProperty("section");
-    expect(DEFAULT_THEME.recipes).not.toHaveProperty("card");
-    expect(DEFAULT_THEME.recipes).not.toHaveProperty("emptyState");
-
-    expect(DEFAULT_THEME.recipes?.loading?.default).toBeDefined();
-  });
-
-  it("recipes validate with required semantic, chart, and shadow token maps", () => {
-    const result = validateTheme(DEFAULT_THEME);
-
-    expect(result.theme).toBeDefined();
-    expect(result.issues).toEqual([]);
-    expect(DEFAULT_THEME.color?.neutral).toBe("#64748b");
-    expect(DEFAULT_THEME.color?.info).toBe("#0284c7");
-    expect(DEFAULT_THEME.color?.success).toBe("#16a34a");
-    expect(DEFAULT_THEME.color?.warning).toBe("#d97706");
-    expect(DEFAULT_THEME.color?.danger).toBe("#dc2626");
-    expect(DEFAULT_THEME.color?.["chart-1"]).toBe("#2563eb");
-    expect(DEFAULT_THEME.color?.["chart-6"]).toBe("#0891b2");
-    expect(DEFAULT_THEME.shadow?.none).toBe("none");
-    expect(DEFAULT_THEME.shadow?.sm).toBe("0 1px 2px rgba(15, 23, 42, 0.08)");
-    expect(DEFAULT_THEME.shadow?.md).toBe("0 12px 30px rgba(15, 23, 42, 0.14)");
-    expect(DEFAULT_THEME.shadow?.lg).toBe("0 24px 60px rgba(15, 23, 42, 0.18)");
-    expect(DEFAULT_THEME.recipes?.box?.selected?.box).toEqual({
-      bg: "accent",
-      border: true,
-      pad: "sm",
-      radius: "md",
-    });
-    expect(DEFAULT_THEME.recipes?.box?.selected?.text).toBeUndefined();
-    expect(DEFAULT_THEME.recipes?.chart?.default?.box).toEqual({
-      bg: "surface",
-      border: true,
-      pad: "md",
-      radius: "md",
-      shadow: "sm",
-    });
-    expect(DEFAULT_THEME.recipes?.input?.default?.parts?.control?.box).toEqual({
-      bg: "bg",
-      border: true,
-      pad: "sm",
-      radius: "sm",
-    });
-    expect(DEFAULT_THEME.recipes?.input?.default?.parts?.control?.field).toEqual({
-      width: "full",
-    });
-  });
-
-  it("recipes stay node-free and renderer-free", () => {
-    const recipeData = DEFAULT_THEME.recipes;
-    const forbiddenRecipeKeys = new Set([
-      "id",
-      "type",
-      "children",
-      "nodes",
-      "root",
-      "onPress",
-      "onHold",
-      "items",
-      "rows",
-      "series",
-    ]);
-    const seenForbiddenKeys: string[] = [];
-    const visit = (value: unknown): void => {
-      if (typeof value !== "object" || value === null || Array.isArray(value)) return;
-      for (const [key, child] of Object.entries(value)) {
-        if (forbiddenRecipeKeys.has(key)) seenForbiddenKeys.push(key);
-        visit(child);
-      }
-    };
-
-    expect(recipeData).toBeDefined();
-    visit(recipeData);
-    expect(seenForbiddenKeys).toEqual([]);
-
-    const source = ["./theme.ts", "./theme-tokens.ts"]
-      .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"))
-      .join("\n");
-    expect(source).not.toMatch(
-      /\bfrom\s+["@']@facet\/(react|runtime|server|client|reference-agent|quickstart)["']/,
+    expect(Object.keys(DEFAULT_THEME.tokens.paint.light.color).sort()).toEqual(
+      Object.keys(DEFAULT_THEME.tokens.paint.dark.color).sort(),
     );
-    expect(source).not.toMatch(/\b(CSSProperties|React)\b/);
-  });
+    expect(DEFAULT_THEME.tokens.paint.light.color.background).toBe("#ffffff");
+    expect(DEFAULT_THEME.tokens.paint.dark.color.background).toBe("#0b0b0f");
+    expect(DEFAULT_THEME.tokens.paint.light.color.inherit).toBe("inherit");
+    expect(DEFAULT_THEME.tokens.paint.dark.color.inherit).toBe("inherit");
 
-  it("brick default recipes define token-only parts for survivor affordances", () => {
-    const expectedParts: ReadonlyArray<{
-      readonly brick: keyof NonNullable<FacetTheme["recipes"]>;
-      readonly variant: string;
-      readonly parts: readonly RecipePartName[];
-    }> = [
-      {
-        brick: "input",
-        variant: "default",
-        parts: ["label", "control", "input", "helpText", "errorText"],
-      },
-      {
-        brick: "table",
-        variant: "default",
-        parts: ["title", "table", "headerRow", "headerCell", "row", "cell"],
-      },
-      { brick: "chart", variant: "default", parts: ["title", "plot", "legend"] },
-      { brick: "keyValue", variant: "default", parts: ["item", "label", "value"] },
-      { brick: "progress", variant: "default", parts: ["label", "track", "fill"] },
-      { brick: "list", variant: "default", parts: ["item", "itemTitle", "itemText"] },
-      { brick: "loading", variant: "default", parts: ["label"] },
-    ];
+    expect(DEFAULT_THEME.presets?.box?.panel).toMatchObject({
+      description: expect.any(String),
+      useWhen: expect.any(String),
+      style: { background: "surface", borderRadius: "md" },
+    });
+    expect(DEFAULT_THEME.presets?.box?.primaryAction?.avoidWhen).toBeTruthy();
+    expect(DEFAULT_THEME.presets?.text?.heading?.style).toMatchObject({
+      fontSize: "2xl",
+      fontWeight: "bold",
+    });
+    expect(DEFAULT_THEME.presets?.progress?.success?.style.fill).toMatchObject({
+      background: "success",
+    });
 
-    for (const { brick, variant, parts } of expectedParts) {
-      const recipe = DEFAULT_THEME.recipes?.[brick]?.[variant];
-      expect(recipe, `${String(brick)}.${variant}`).toBeDefined();
-      for (const part of parts) {
-        expect(recipe?.parts?.[part], `${String(brick)}.${variant}.parts.${part}`).toBeDefined();
+    let presetCount = 0;
+    for (const presets of Object.values(DEFAULT_THEME.presets ?? {})) {
+      expect(Object.keys(presets).length).toBeLessThanOrEqual(16);
+      for (const preset of Object.values(presets)) {
+        presetCount += 1;
+        expect(preset.description.length).toBeGreaterThan(0);
+        expect(preset.useWhen.length).toBeGreaterThan(0);
       }
     }
+    expect(presetCount).toBeGreaterThanOrEqual(11);
+    expect(presetCount).toBeLessThanOrEqual(64);
 
-    const tokenOnly = (value: unknown, path: string): void => {
-      if (typeof value === "string") {
-        expect(value, path).not.toMatch(/#|rgb\(|hsl\(|url\(|var\(|\b\d+(px|rem|em|%)\b/);
-        return;
-      }
-      if (typeof value === "boolean" || value === undefined) return;
-      expect(typeof value === "object" && value !== null && !Array.isArray(value), path).toBe(true);
-      for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-        tokenOnly(child, `${path}.${key}`);
-      }
-    };
-
-    tokenOnly(DEFAULT_THEME.recipes, "DEFAULT_THEME.recipes");
-    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
+    expect(DEFAULT_THEME).not.toHaveProperty("recipes");
+    expect(JSON.stringify(DEFAULT_THEME)).not.toContain('"recipe"');
   });
 
-  it("defines every catalog-advertised default variant as a recipe", () => {
-    for (const brick of DEFAULT_CATALOG.bricks) {
-      for (const variant of brick.variants ?? []) {
-        expect(
-          DEFAULT_THEME.recipes?.[brick.type]?.[variant],
-          `${brick.type}.${variant}`,
-        ).toBeDefined();
-      }
-    }
-  });
-});
-
-// WU-4 (DC-005 + DC-001): concrete default CSS for every new landing-grade token
-// group + the 3 new FONT_SIZE keys (RISK-API-1 repair). The dimension groups
-// (minHeight/maxWidth/leading) carry viewport/character/unitless CSS that WU-2's
-// strict dimensionHandler cannot express, so their defaults live only in the raw
-// maps that @facet/react's DEFAULT_RESOLVED imports directly; DEFAULT_THEME wires
-// in only the validator-legal groups (tracking/gradient/scrim/highlight/colorDark)
-// and must still round-trip through validateTheme with zero issues.
-describe("landing-grade-vocab", () => {
-  it("extends FONT_SIZE to a 10-step display ramp (RISK-API-1 repair)", () => {
-    expect(Object.keys(FONT_SIZE).sort()).toEqual(
-      ["xs", "sm", "md", "lg", "xl", "2xl", "3xl", "4xl", "5xl", "6xl"].sort(),
-    );
-    expect(FONT_SIZE["4xl"]).toBe("64px");
-    expect(FONT_SIZE["5xl"]).toBe("80px");
-    expect(FONT_SIZE["6xl"]).toBe("96px");
-    expect(Object.getPrototypeOf(FONT_SIZE)).toBeNull();
-  });
-
-  it("provides resolvable min-height + max-width defaults", () => {
-    expect(MIN_HEIGHT.auto).toBe("auto");
-    expect(MIN_HEIGHT.half).toBe("50svh");
-    expect(MIN_HEIGHT.screen).toBe("100svh");
-    expect(MAX_WIDTH.none).toBe("none");
-    expect(MAX_WIDTH.prose).toBe("65ch");
-    expect(MAX_WIDTH.narrow).toBe("640px");
-    expect(MAX_WIDTH.wide).toBe("1200px");
-  });
-
-  it("provides tracking + leading defaults", () => {
-    expect(TRACKING.tight).toBe("-0.02em");
-    expect(TRACKING.normal).toBe("0");
-    expect(TRACKING.wide).toBe("0.04em");
-    expect(LEADING.tight).toBe("1.1");
-    expect(LEADING.normal).toBe("1.5");
-    expect(LEADING.relaxed).toBe("1.75");
-  });
-
-  it("provides gradient / scrim / highlight CSS defaults", () => {
-    expect(GRADIENT.none).toBe("none");
-    expect(GRADIENT.accent).toMatch(/^linear-gradient\(/);
-    expect(GRADIENT.dusk).toMatch(/^linear-gradient\(/);
-    expect(GRADIENT.dawn).toMatch(/^linear-gradient\(/);
-    expect(SCRIM.none).toBe("transparent");
-    expect(SCRIM.light).toMatch(/^rgba\(/);
-    expect(SCRIM.dark).toMatch(/^rgba\(/);
-    expect(HIGHLIGHT.none).toBe("none");
-    expect(HIGHLIGHT.accent).toMatch(/^linear-gradient\(/);
-    expect(HIGHLIGHT.band).toMatch(/^linear-gradient\(/);
-  });
-
-  it("provides a full dark-scheme palette with the same Color keys", () => {
-    expect(Object.keys(COLOR_DARK).sort()).toEqual(Object.keys(COLOR).sort());
-    expect(COLOR_DARK.bg).toBe("#0b0b0f");
-    expect(COLOR_DARK.fg).toBe("#f5f5f7");
-    expect(COLOR_DARK.bg).not.toBe(COLOR.bg);
-    expect(COLOR_DARK.fg).not.toBe(COLOR.fg);
-  });
-
-  it("uses null-prototype maps for every new group", () => {
-    for (const map of [
+  it("exports every complete token map as null-prototype data", () => {
+    const maps = [
+      SPACE,
+      FONT_SIZE,
+      FONT_FAMILY,
+      FONT_WEIGHT,
+      RADIUS,
+      BORDER_WIDTH,
+      ASPECT_RATIO,
       MIN_HEIGHT,
       MAX_WIDTH,
-      TRACKING,
-      LEADING,
+      LETTER_SPACING,
+      LINE_HEIGHT,
+      CONTROL_HEIGHT,
+      INDICATOR_SIZE,
+      PROGRESS_THICKNESS,
+      CHART_THICKNESS,
+      COLOR,
+      COLOR_DARK,
+      SHADOW,
       GRADIENT,
       SCRIM,
       HIGHLIGHT,
-      COLOR_DARK,
-    ]) {
-      expect(Object.getPrototypeOf(map)).toBeNull();
-    }
-  });
+    ];
 
-  it("wires the validator-legal groups into DEFAULT_THEME and still validates clean", () => {
-    expect(DEFAULT_THEME.tracking).toBe(TRACKING);
-    expect(DEFAULT_THEME.gradient).toBe(GRADIENT);
-    expect(DEFAULT_THEME.scrim).toBe(SCRIM);
-    expect(DEFAULT_THEME.highlight).toBe(HIGHLIGHT);
-    expect(DEFAULT_THEME.colorDark).toBe(COLOR_DARK);
-    expect(validateTheme(DEFAULT_THEME).issues).toEqual([]);
+    for (const map of maps) {
+      expect(Object.getPrototypeOf(map)).toBeNull();
+      expect(Reflect.get(map, "__proto__")).toBeUndefined();
+      expect(Reflect.get(map, "constructor")).toBeUndefined();
+    }
   });
 });

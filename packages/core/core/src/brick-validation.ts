@@ -1,21 +1,24 @@
 import { isPlainObject, nullMap, printableKey, printableValue, type IssueSink } from "./issues.js";
 import {
   CHART_KINDS,
-  TONES,
+  type ChartStyle,
   type ChartKind,
   type ChartNode,
   type KeyValueItem,
   type KeyValueNode,
+  type KeyValueStyle,
   type ListNode,
+  type ListStyle,
   type LoadingNode,
+  type LoadingStyle,
   type ProgressNode,
+  type ProgressStyle,
   type TableCell,
   type TableNode,
   type TableRow,
-  type Tone,
+  type TableStyle,
 } from "./nodes.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
-import { TEXT_ALIGNS } from "./tokens.js";
 import {
   MAX_CHART_POINTS,
   MAX_CHART_SERIES,
@@ -30,10 +33,9 @@ import {
   capArray,
   setFrom,
   setText,
-  setTone,
-  setVariant,
   tokenValue,
 } from "./brick-validation-shared.js";
+import { sanitizeBrickStyle } from "./style-validation.js";
 
 export function validateTable(
   id: string,
@@ -47,12 +49,13 @@ export function validateTable(
     columns: typeof columns;
     rows: readonly TableRow[];
     caption?: string;
-    variant?: string;
     from?: string;
+    style?: TableStyle;
   } = { id, type: "table", columns, rows: tableRows(raw.rows, columns, id, issues) };
   setText(raw.caption, id, "caption", node, "caption", MAX_NODE_LABEL_CHARS, issues);
-  setVariant(raw.variant, id, node, issues);
   setFrom(raw, id, node, issues);
+  const style = sanitizeBrickStyle("table", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   return node;
 }
 
@@ -69,14 +72,15 @@ export function validateChart(
     series: ReturnType<typeof chartSeries>;
     labels?: readonly string[];
     title?: string;
-    variant?: string;
     from?: string;
+    style?: ChartStyle;
   } = { id, type: "chart", kind, series: chartSeries(raw.series, id, issues) };
   const labels = stringList(raw.labels, id, "labels", issues);
   if (labels !== undefined) node.labels = labels;
   setText(raw.title, id, "title", node, "title", MAX_NODE_LABEL_CHARS, issues);
-  setVariant(raw.variant, id, node, issues);
   setFrom(raw, id, node, issues);
+  const style = sanitizeBrickStyle("chart", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   return node;
 }
 
@@ -89,11 +93,12 @@ export function validateList(
     id: string;
     type: "list";
     items: ReturnType<typeof listItems>;
-    variant?: string;
     from?: string;
+    style?: ListStyle;
   } = { id, type: "list", items: listItems(raw.items, id, issues) };
-  setVariant(raw.variant, id, node, issues);
   setFrom(raw, id, node, issues);
+  const style = sanitizeBrickStyle("list", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   return node;
 }
 
@@ -108,21 +113,20 @@ export function validateKeyValue(
     const label = boundedString(item.label, id, "item label", MAX_NODE_LABEL_CHARS, issues);
     const value = boundedString(item.value, id, "item value", MAX_NODE_LABEL_CHARS, issues);
     if (label === undefined || value === undefined) continue;
-    const next: { key?: string; label: string; value: string; tone?: Tone } = { label, value };
+    const next: { key?: string; label: string; value: string } = { label, value };
     if (typeof item.key === "string") next.key = item.key;
-    const tone = tokenValue<Tone>(item.tone, TONES);
-    if (tone !== undefined) next.tone = tone;
     items.push(next);
   }
   const node: {
     id: string;
     type: "keyValue";
     items: readonly KeyValueItem[];
-    variant?: string;
     from?: string;
+    style?: KeyValueStyle;
   } = { id, type: "keyValue", items };
-  setVariant(raw.variant, id, node, issues);
   setFrom(raw, id, node, issues);
+  const style = sanitizeBrickStyle("keyValue", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   return node;
 }
 
@@ -136,12 +140,11 @@ export function validateProgress(
     type: "progress";
     value: number;
     label?: string;
-    tone?: Tone;
-    variant?: string;
+    style?: ProgressStyle;
   } = { id, type: "progress", value: progressValue(raw.value, id, issues) };
   setText(raw.label, id, "label", node, "label", MAX_NODE_LABEL_CHARS, issues);
-  setTone(raw.tone, id, node, issues, true);
-  setVariant(raw.variant, id, node, issues);
+  const style = sanitizeBrickStyle("progress", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   return node;
 }
 
@@ -150,12 +153,13 @@ export function validateLoading(
   raw: Record<string, unknown>,
   issues: IssueSink,
 ): LoadingNode {
-  const node: { id: string; type: "loading"; label?: string; variant?: string } = {
+  const node: { id: string; type: "loading"; label?: string; style?: LoadingStyle } = {
     id,
     type: "loading",
   };
   setText(raw.label, id, "label", node, "label", MAX_NODE_LABEL_CHARS, issues);
-  setVariant(raw.variant, id, node, issues);
+  const style = sanitizeBrickStyle("loading", raw.style, { nodeId: id, issues });
+  if (style !== undefined) node.style = style;
   return node;
 }
 
@@ -164,7 +168,6 @@ function tableColumns(value: unknown, id: string, issues: IssueSink) {
   const columns: {
     key: string;
     label: string;
-    align?: "start" | "center" | "end";
     sortable?: boolean;
   }[] = [];
   for (const raw of capArray(value, MAX_TABLE_COLUMNS, id, "columns", issues)) {
@@ -175,11 +178,8 @@ function tableColumns(value: unknown, id: string, issues: IssueSink) {
     const column: {
       key: string;
       label: string;
-      align?: "start" | "center" | "end";
       sortable?: boolean;
     } = { key, label };
-    const align = tokenValue<"start" | "center" | "end">(raw.align, TEXT_ALIGNS);
-    if (align !== undefined) column.align = align;
     if (raw.sortable !== undefined) {
       if (typeof raw.sortable === "boolean") column.sortable = raw.sortable;
       else

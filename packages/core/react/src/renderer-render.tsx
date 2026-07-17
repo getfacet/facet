@@ -7,25 +7,25 @@ import {
   OVERLAY_KINDS,
   evaluateViewPredicate,
   resolveNodeData,
-  type BoxStyle,
   type FacetTree,
   type NodeId,
   type OverlayKind,
+  type RichTextNode,
   type SortDirection,
-  type TextStyle,
+  type TextNode,
   type ViewPredicate,
 } from "@facet/core";
 import { appearClass } from "./appear.js";
 import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
-import { brickRecipe } from "./brick-renderer-recipe.js";
 import { MOTION_CLASS_NAMES, composeMotionClassName } from "./motion.js";
 import { backdropHostStyle, scrimStyle } from "./layout-contract.js";
 import { OverlayFrame } from "./overlay-frame.js";
-import { boxStyle, textStyle } from "./theme.js";
 import type { ResolvedTheme } from "./theme.js";
+import { layoutBoxTargetStyle, layoutTextTargetStyle } from "./brick-style-layout.js";
 import { BoxElement } from "./renderer-hold.js";
 import { renderMediaNode } from "./renderer-media.js";
 import { renderRichText } from "./render-richtext.js";
+import { resolveBrickStyle } from "./style-resolver.js";
 import type { ExitRecord, RenderMode } from "./renderer-motion.js";
 import { classifyPress, type ClassifiedPress } from "./renderer-press.js";
 import {
@@ -35,7 +35,8 @@ import {
   childIdsOf,
   isHiddenByDefault,
   isRenderableMedia,
-  styleOf,
+  safeOwnValue,
+  safeTreeNode,
 } from "./renderer-safe.js";
 
 const EMPTY_EXIT_RECORDS_BY_PARENT: ReadonlyMap<NodeId, readonly ExitRecord[]> = new Map<
@@ -165,6 +166,20 @@ interface ContainerChildrenRenderArgs {
   readonly activeScreen: string | null;
   readonly sortControl?: SortControl | undefined;
   readonly overlayClose?: OverlayClose | undefined;
+}
+
+function renderMediaFailSoft(
+  raw: unknown,
+  theme: ResolvedTheme,
+  className?: string,
+  inert = false,
+  cover = false,
+): ReactNode {
+  try {
+    return renderMediaNode(raw, theme, className, inert, cover);
+  } catch {
+    return null;
+  }
 }
 
 function renderContainerChildren({
@@ -315,7 +330,7 @@ export function renderNode({
   sortControl,
   overlayClose,
 }: RenderArgs): ReactNode {
-  const node = tree.nodes[id];
+  const node = safeTreeNode(tree, id);
   // == null also skips a node a patch replaced with JSON null (not just missing
   // ids), and short-circuits BEFORE the budget decrement so a skipped id doesn't
   // spend budget.
@@ -343,8 +358,9 @@ export function renderNode({
   }
   const inert = renderMode === "inert";
   const motionClassName = motionClassById.get(id);
-  if ((node as { readonly type?: unknown }).type === "image") {
-    return renderMediaNode(node, theme, motionClassName, inert);
+  const nodeType = safeOwnValue(node, "type");
+  if (nodeType === "image") {
+    return renderMediaFailSoft(node, theme, motionClassName, inert);
   }
   const renderPressable = (args: PressableRenderArgs<ClassifiedPress>): ReactNode => (
     <BoxElement {...args} />
@@ -360,60 +376,58 @@ export function renderNode({
       ? undefined
       : (column: string): void => sortControl.onSort(id, column);
   const renderBrick = (children?: ReactNode): ReactNode =>
-    renderBrickNode(node, {
-      theme,
-      className: motionClassName,
-      inert,
-      nodeId: id,
-      activeScreen,
-      visibilityOverrides,
-      data: tree.data,
-      children,
-      classifyPress,
-      dispatch: dispatchBrickPress,
-      navigate: (to: string): void => onPress({ kind: "navigate", to }, id),
-      sort: sortForNode,
-      onHeaderSort,
-      renderPressable,
-    });
+    (() => {
+      try {
+        return renderBrickNode(node, {
+          theme,
+          className: motionClassName,
+          inert,
+          nodeId: id,
+          activeScreen,
+          visibilityOverrides,
+          data: safeOwnValue(tree, "data") as FacetTree["data"],
+          children,
+          classifyPress,
+          dispatch: dispatchBrickPress,
+          navigate: (to: string): void => onPress({ kind: "navigate", to }, id),
+          sort: sortForNode,
+          onHeaderSort,
+          renderPressable,
+        });
+      } catch {
+        return null;
+      }
+    })();
 
   // Enabler B (active look): evaluate the closed `active` predicate READ-ONLY
   // against the ALREADY-THREADED snapshot view-state (`activeScreen` +
   // `visibilityOverrides`) — never a live/`useFacet` read, so the inert exit
   // clone (which carries its OWN snapshot's screen/overrides) keeps the OLD
   // highlight instead of flashing the live one (RISK-INV-1). This writes
-  // nothing: it only SELECTS whether the active variant/style folds into the
-  // pure style merge below (RISK-INV-2).
-  const looks = node as {
-    readonly active?: ViewPredicate;
-    readonly activeVariant?: unknown;
-    readonly activeStyle?: unknown;
-  };
-  const activeLook = evaluateViewPredicate(looks.active, { activeScreen, visibilityOverrides });
+  // nothing: it only SELECTS whether style.active folds into the pure style
+  // resolution below (RISK-INV-2).
+  let activeLook = false;
+  try {
+    activeLook = evaluateViewPredicate(
+      safeOwnValue(node, "activeWhen") as ViewPredicate | undefined,
+      { activeScreen, visibilityOverrides },
+    );
+  } catch {
+    // A hostile predicate is simply not active; style resolution stays silent.
+  }
 
-  switch (node.type) {
+  switch (nodeType) {
     case "box": {
-      const boxStyleValue = styleOf(node.style) as
-        { readonly scheme?: unknown; readonly backdropScrim?: unknown } | undefined;
-      // `scheme` (pinned): a bounded, READ-ONLY per-subtree color-map swap.
-      // Children render with the light/dark palette this box selects; it writes
-      // no stage state, cannot leak upward, and a nested `scheme:"light"` island
-      // restores the light map. An unknown/absent scheme leaves the map
-      // unchanged (light default).
-      const scheme = boxStyleValue?.scheme;
-      const childTheme: ResolvedTheme =
-        scheme === "dark"
-          ? { ...theme, color: theme.colorDark }
-          : scheme === "light"
-            ? { ...theme, color: theme.colorLight }
-            : theme;
+      const resolvedStyle = resolveBrickStyle(theme, "box", safeOwnValue(node, "style"), {
+        active: activeLook,
+      });
       const children = renderContainerChildren({
         tree,
         parentId: id,
         childIds: childIdsOf(node),
         onPress,
         visibilityOverrides,
-        theme: childTheme,
+        theme,
         ancestors,
         budget,
         appearSeen,
@@ -433,9 +447,9 @@ export function renderNode({
       // so it can't escape MAX_RENDER_NODES. Node-consumption is render-both (no
       // de-dupe): an id also present in `children` renders in BOTH places.
       let backdropLayers: ReactNode = null;
-      const backdropId = (node as { readonly backdrop?: unknown }).backdrop;
+      const backdropId = safeOwnValue(node, "backdrop");
       if (typeof backdropId === "string") {
-        const backdropNode = tree.nodes[backdropId];
+        const backdropNode = safeTreeNode(tree, backdropId);
         if (backdropNode != null && isRenderableMedia(backdropNode)) {
           // The backdrop is a followed reference AND a rendered node: count it
           // against both budgets; the paint decision gates on the render budget
@@ -449,14 +463,13 @@ export function renderNode({
               );
             }
           } else {
-            const scrimToken = boxStyleValue?.backdropScrim;
-            const scrimKey = scrimToken === "light" || scrimToken === "dark" ? scrimToken : "none";
+            const scrimKey = resolvedStyle.backdropScrim ?? "none";
             // Exactly two renderer-synthesized layers: the media cover layer
             // (the ONLY `position:absolute`, via `renderMediaNode` COVER) and the
             // scrim tint sibling. Both aria-hidden; flow children render on top.
             backdropLayers = (
               <>
-                {renderMediaNode(backdropNode, theme, undefined, false, true)}
+                {renderMediaFailSoft(backdropNode, theme, undefined, false, true)}
                 <div aria-hidden={true} style={scrimStyle(theme.scrim[scrimKey])} />
               </>
             );
@@ -465,50 +478,25 @@ export function renderNode({
       }
       // onPress is untrusted on the raw path — an unclassifiable action renders
       // a plain non-pressable box instead of a dead or dangerous button.
-      const press = classifyPress(node.onPress);
+      const press = classifyPress(safeOwnValue(node, "onPress"));
       // onHold is untrusted the same way, classified by the SAME classifier
       // (one classifier, one switch — RISK-INV-1): junk (`onHold: 42`)
       // classifies null and the box renders today's exact press-only or plain
       // markup (byte-identical DOM). Only a classifiable onHold attaches the
       // gesture-detecting pointer handlers.
-      const hold = classifyPress(node.onHold);
+      const hold = classifyPress(safeOwnValue(node, "onHold"));
       // appearClass is TOTAL on raw-path junk: only "fade"/"slide" yield a
       // class; undefined adds no attribute, keeping token-free output
       // byte-identical.
-      const appear = appearClass(styleOf(node.style));
+      const appear = appearClass({ appear: resolvedStyle.enterAnimation });
       // Record appear use during the budget-bounded walk (review r7): the
       // one-per-stage <style> is gated on this flag, never a separate O(N) scan
       // of the whole node map.
       if (appear !== undefined) {
         appearSeen.used = true;
       }
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const recipe = brickRecipe(theme, "box", variant);
-      // Active look folds in ONLY when the predicate is true (else both are
-      // empty and the merge below is byte-identical to today — DC-008).
-      // `activeVariant` resolves via `resolveRecipe` like the base variant;
-      // `activeStyle` merges like the base inline style. Both OVERLAY the base
-      // (active last) so the highlight wins while active.
-      const activeRecipe =
-        activeLook && typeof looks.activeVariant === "string"
-          ? brickRecipe(theme, "box", looks.activeVariant)
-          : undefined;
-      const activeStyleTokens = activeLook
-        ? styleOf(looks.activeStyle as BoxStyle | undefined)
-        : undefined;
-      // Resolve the box's OWN style against `childTheme` too, so a `scheme:"dark"`
-      // box paints its own `bg`/`border` from the dark palette — a "dark band"
-      // must be dark itself, not just its descendants (else near-white bg + dark
-      // text = illegible). `childTheme` aliases `theme` when no scheme is set.
-      const boxCss = boxStyle(
-        {
-          ...(recipe.box ?? {}),
-          ...(styleOf(node.style) ?? {}),
-          ...(activeRecipe?.box ?? {}),
-          ...(activeStyleTokens ?? {}),
-        },
-        childTheme,
-      );
+      const boxTarget = layoutBoxTargetStyle(resolvedStyle, theme);
+      const boxCss = boxTarget.style;
       // ONE element type for every box (review r6): a live patch that adds or
       // removes onPress/onHold changes only BoxElement's props, never the
       // element type at this position — so React updates in place instead of
@@ -526,7 +514,7 @@ export function renderNode({
           press={inert ? null : press}
           hold={inert ? null : hold}
           dispatch={dispatch}
-          className={composeMotionClassName(appear, motionClassName)}
+          className={composeMotionClassName(appear, motionClassName, boxTarget.className)}
           style={backdropLayers === null ? boxCss : backdropHostStyle(boxCss)}
           inert={inert}
         >
@@ -559,26 +547,21 @@ export function renderNode({
       // yields "" (never throws), and a text WITHOUT `from` returns `node.value`
       // unchanged (byte-identical — DC-008). A non-string result (an object would
       // make React itself throw) is then skipped by `cappedString`.
-      const value = cappedString(resolveNodeData(node, tree.data), MAX_NODE_BODY_CHARS);
+      let resolvedValue: unknown;
+      try {
+        resolvedValue = resolveNodeData(
+          node as TextNode,
+          safeOwnValue(tree, "data") as FacetTree["data"],
+        );
+      } catch {
+        return null;
+      }
+      const value = cappedString(resolvedValue, MAX_NODE_BODY_CHARS);
       if (value === undefined) return null;
-      const variant = (node as { readonly variant?: unknown }).variant;
-      const recipe = brickRecipe(theme, "text", variant);
-      // Active look (enabler B): same read-only overlay discipline as the box
-      // case — active variant/style fold in only while the predicate is true.
-      const activeRecipe =
-        activeLook && typeof looks.activeVariant === "string"
-          ? brickRecipe(theme, "text", looks.activeVariant)
-          : undefined;
-      const activeStyleTokens = activeLook
-        ? styleOf(looks.activeStyle as TextStyle | undefined)
-        : undefined;
-      const textCss = textStyle(
-        {
-          ...(recipe.text ?? {}),
-          ...(styleOf(node.style) ?? {}),
-          ...(activeRecipe?.text ?? {}),
-          ...(activeStyleTokens ?? {}),
-        },
+      const textCss = layoutTextTargetStyle(
+        resolveBrickStyle(theme, "text", safeOwnValue(node, "style"), {
+          active: activeLook,
+        }),
         theme,
       );
       return (
@@ -592,18 +575,22 @@ export function renderNode({
       );
     }
     case "media":
-      return renderMediaNode(node, theme, motionClassName, inert);
+      return renderMediaFailSoft(node, theme, motionClassName, inert);
     case "richtext":
       // Bespoke leaf path (RISK-API-3): flow blocks/runs, theme-owned mark look +
       // renderer-owned flow indent, internal links dispatched through the SAME
       // `onPress` writer (`dispatchBrickPress`), external hrefs re-gated client-side.
-      return renderRichText(node, {
-        theme,
-        className: motionClassName,
-        inert,
-        nodeId: id,
-        dispatch: dispatchBrickPress,
-      });
+      try {
+        return renderRichText(node as RichTextNode, {
+          theme,
+          className: motionClassName,
+          inert,
+          nodeId: id,
+          dispatch: dispatchBrickPress,
+        });
+      } catch {
+        return null;
+      }
     default:
       // Every non-bespoke final brick is a leaf in the own-property registry.
       // Raw unknown/prototype names reach the same lookup and fail soft to null.

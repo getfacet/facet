@@ -7,15 +7,20 @@ import {
   type FacetNode,
   type TableRow,
 } from "@facet/core";
-import { resolveRecipePart } from "./recipe-parts.js";
+import {
+  tableCaptionTargetStyle,
+  tableCellTargetStyle,
+  tableHeaderTargetStyle,
+  tableRootTargetStyle,
+  tableRowTargetStyle,
+} from "./brick-style-layout.js";
 import { rootContainmentStyle } from "./layout-contract.js";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
-import { brickBoxStyle, brickRecipe } from "./brick-renderer-recipe.js";
+import { resolveBrickStyle } from "./style-resolver.js";
 import { applySort } from "./table-sort.js";
 import {
   cappedArray,
   cappedString,
-  intrinsicBoxStyle,
   isObjectRecord,
   safeOwnValue,
   stringValue,
@@ -60,18 +65,10 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
     columns.map((column) => ({ key: column.key, label: column.label, sortable: column.sortable })),
   );
   const caption = cappedString(safeOwnValue(node, "caption"), MAX_NODE_LABEL_CHARS);
-  const variant = safeOwnValue(node, "variant");
-  const recipe = brickRecipe(theme, "table", variant);
-  const style = brickBoxStyle(theme, recipe, {
-    scroll: "x",
-    width: "full",
-  });
-  const tablePart = resolveRecipePart(recipe, "table", theme);
-  const captionPart = resolveRecipePart(recipe, "title", theme);
-  const headerRowPart = resolveRecipePart(recipe, "headerRow", theme);
-  const rowPart = resolveRecipePart(recipe, "row", theme);
-  const headerCellPart = resolveRecipePart(recipe, "headerCell", theme);
-  const cellPart = resolveRecipePart(recipe, "cell", theme);
+  const resolvedStyle = resolveBrickStyle(theme, "table", safeOwnValue(node, "style"));
+  const style = tableRootTargetStyle(resolvedStyle, theme);
+  const captionStyle = tableCaptionTargetStyle(resolvedStyle.caption ?? {}, theme);
+  const cellStyle = tableCellTargetStyle(resolvedStyle.cell ?? {}, theme);
   return (
     <div
       className={className}
@@ -82,25 +79,27 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
         style={rootContainmentStyle({
           width: "100%",
           borderCollapse: "collapse",
-          ...intrinsicBoxStyle(tablePart.box),
-          ...(tablePart.text ?? {}),
         })}
       >
-        {caption === undefined ? null : <caption style={captionPart.text}>{caption}</caption>}
+        {caption === undefined ? null : <caption style={captionStyle}>{caption}</caption>}
         <thead>
-          <tr style={intrinsicBoxStyle(headerRowPart.box)}>
+          <tr>
             {columns.map((column) => {
+              const activeDirection =
+                context.sort?.column === column.key ? context.sort.direction : undefined;
+              const headerTarget = tableHeaderTargetStyle(
+                resolvedStyle.header ?? {},
+                theme,
+                activeDirection !== undefined,
+              );
               const headerStyle: CSSProperties = {
-                borderBottom: `1px solid ${theme.color.border}`,
-                color: theme.color["fg-muted"],
-                ...intrinsicBoxStyle(headerCellPart.box),
-                ...(headerCellPart.text ?? {}),
-                textAlign: column.align,
+                ...headerTarget.style,
+                ...(column.align === undefined ? {} : { textAlign: column.align }),
               };
               // A non-sortable header stays exactly today's plain cell (DC-006).
               if (!column.sortable) {
                 return (
-                  <th key={column.key} style={headerStyle}>
+                  <th key={column.key} className={headerTarget.className} style={headerStyle}>
                     {column.label}
                   </th>
                 );
@@ -108,8 +107,6 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
               // Inline direction glyph — flow text only, never a positioned caret
               // (RISK-INV-5). Shown ONLY when THIS column is the active sort, so an
               // unsorted sortable table keeps byte-identical header text.
-              const activeDirection =
-                context.sort?.column === column.key ? context.sort.direction : undefined;
               const glyph =
                 activeDirection === "asc" ? " ▲" : activeDirection === "desc" ? " ▼" : "";
               return (
@@ -123,6 +120,7 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
                         : "none"
                   }
                   onClick={inert ? undefined : () => context.onHeaderSort?.(column.key)}
+                  className={headerTarget.className}
                   style={{
                     ...headerStyle,
                     cursor: inert ? undefined : "pointer",
@@ -137,23 +135,28 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
           </tr>
         </thead>
         <tbody>
-          {sortedRows.map((row, rowIndex) => (
-            <tr key={String(rowIndex)} style={intrinsicBoxStyle(rowPart.box)}>
-              {columns.map((column) => (
-                <td
-                  key={column.key}
-                  style={{
-                    borderBottom: `1px solid ${theme.color.border}`,
-                    ...intrinsicBoxStyle(cellPart.box),
-                    ...(cellPart.text ?? {}),
-                    textAlign: column.align,
-                  }}
-                >
-                  {tableCellText(safeOwnValue(row, column.key))}
-                </td>
-              ))}
-            </tr>
-          ))}
+          {sortedRows.map((row, rowIndex) => {
+            const rowTarget = tableRowTargetStyle(
+              resolvedStyle.row ?? {},
+              theme,
+              rowIndex % 2 === 1,
+            );
+            return (
+              <tr key={String(rowIndex)} className={rowTarget.className} style={rowTarget.style}>
+                {columns.map((column) => (
+                  <td
+                    key={column.key}
+                    style={{
+                      ...cellStyle,
+                      ...(column.align === undefined ? {} : { textAlign: column.align }),
+                    }}
+                  >
+                    {tableCellText(safeOwnValue(row, column.key))}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

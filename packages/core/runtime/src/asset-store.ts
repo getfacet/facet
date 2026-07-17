@@ -3,9 +3,10 @@
  * single validation gate in `loadAssets`.
  */
 export interface AssetDocuments {
-  readonly themes: readonly unknown[];
-  readonly compositions: readonly unknown[];
-  readonly catalog?: unknown;
+  /** One complete Theme document. Absence selects Facet's bundled Theme. */
+  readonly theme?: unknown;
+  /** One exact Pattern list. Absence selects bundled Patterns; `[]` selects none. */
+  readonly patterns?: unknown;
   readonly initialTree?: unknown;
   /** Backend-level problems (unreadable file, bad JSON) — surfaced, never thrown. */
   readonly issues?: readonly string[];

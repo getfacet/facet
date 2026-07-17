@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { NodeId, SortDirection } from "@facet/core";
-import { captureViewSnapshot, useViewportScheme } from "./view-snapshot.js";
+import { captureViewSnapshot, useViewportColorMode } from "./view-snapshot.js";
 
 afterEach(cleanup);
 
@@ -46,7 +46,7 @@ describe("captureViewSnapshot", () => {
       screen: "pricing",
       toggled: { "faq-3": "shown", menu: "hidden" },
       viewport: "narrow",
-      scheme: "dark",
+      colorMode: "dark",
     });
   });
 
@@ -55,7 +55,7 @@ describe("captureViewSnapshot", () => {
     expect(captureViewSnapshot(undefined, new Map(), "medium")).toEqual({ viewport: "medium" });
   });
 
-  it("keeps toggled alone when only overrides exist (no viewport/scheme)", () => {
+  it("keeps toggled alone when only overrides exist (no viewport/colorMode)", () => {
     expect(captureViewSnapshot(undefined, new Map<NodeId, boolean>([["a", true]]))).toEqual({
       toggled: { a: "shown" },
     });
@@ -76,7 +76,7 @@ describe("captureViewSnapshot", () => {
     expect(captureViewSnapshot(undefined, new Map(), undefined, undefined, new Map())).toEqual({});
   });
 
-  it("carries sort alongside screen/toggled/viewport/scheme", () => {
+  it("carries sort alongside screen/toggled/viewport/colorMode", () => {
     const overrides = new Map<NodeId, boolean>([["menu", false]]);
     const sort = new Map<NodeId, { column: string; direction: SortDirection }>([
       ["t1", { column: "age", direction: "asc" }],
@@ -85,13 +85,13 @@ describe("captureViewSnapshot", () => {
       screen: "home",
       toggled: { menu: "hidden" },
       viewport: "wide",
-      scheme: "light",
+      colorMode: "light",
       sort: { t1: { column: "age", direction: "asc" } },
     });
   });
 });
 
-describe("useViewportScheme", () => {
+describe("useViewportColorMode", () => {
   const original = window.matchMedia;
   afterEach(() => {
     if (original === undefined) {
@@ -102,26 +102,45 @@ describe("useViewportScheme", () => {
     }
   });
 
-  it("returns {} when matchMedia is unavailable (SSR / older browser)", () => {
+  it("uses light for system on SSR and honors a forced mode", () => {
     // jsdom does not implement matchMedia; make sure it is absent.
     // @ts-expect-error force-remove for this assertion
     delete window.matchMedia;
-    const { result } = renderHook(() => useViewportScheme());
-    expect(result.current).toEqual({});
+    const { result } = renderHook(() => useViewportColorMode());
+    expect(result.current).toEqual({ colorMode: "light" });
+    const forced = renderHook(() => useViewportColorMode("dark"));
+    expect(forced.result.current).toEqual({ colorMode: "dark" });
   });
 
-  it("detects viewport and scheme from a mocked matchMedia", () => {
-    // max-width query matches ⇒ narrow; dark scheme query matches ⇒ dark.
+  it("detects viewport and colorMode from a mocked matchMedia", () => {
+    // max-width query matches ⇒ narrow; dark color-mode query matches ⇒ dark.
     stubMatchMedia((q) => q.includes("max-width") || q.includes("prefers-color-scheme: dark"));
-    const { result } = renderHook(() => useViewportScheme());
-    expect(result.current).toEqual({ viewport: "narrow", scheme: "dark" });
+    const { result } = renderHook(() => useViewportColorMode());
+    expect(result.current).toEqual({ viewport: "narrow", colorMode: "dark" });
   });
 
   it("reports the wide breakpoint when only the min-width query matches", () => {
     stubMatchMedia((q) => q.includes("min-width"));
-    const { result } = renderHook(() => useViewportScheme());
+    const { result } = renderHook(() => useViewportColorMode());
     expect(result.current.viewport).toBe("wide");
-    expect(result.current.scheme).toBe("light");
+    expect(result.current.colorMode).toBe("light");
+  });
+
+  it("does not subscribe to system color changes while a mode is forced", () => {
+    const subscribedQueries: string[] = [];
+    window.matchMedia = vi.fn((query: string) => ({
+      matches: query.includes("prefers-color-scheme"),
+      media: query,
+      addEventListener: () => subscribedQueries.push(query),
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+      onchange: null,
+    })) as unknown as typeof window.matchMedia;
+    const { result } = renderHook(() => useViewportColorMode("light"));
+    expect(result.current.colorMode).toBe("light");
+    expect(subscribedQueries).not.toContain("(prefers-color-scheme: dark)");
   });
 });
 
@@ -129,7 +148,7 @@ describe("useViewportScheme", () => {
 // event send, no local record, no fetch. Proven two ways: a transport-like spy
 // stays at zero calls when a change fires, and the module source references
 // none of send/record/fetch (the hook has no transport to reach).
-describe("useViewportScheme fires no transport traffic (DC-006)", () => {
+describe("useViewportColorMode fires no transport traffic (DC-006)", () => {
   const original = window.matchMedia;
   afterEach(() => {
     if (original === undefined) {
@@ -145,7 +164,7 @@ describe("useViewportScheme fires no transport traffic (DC-006)", () => {
     const changeListeners: Array<() => void> = [];
     stubMatchMedia((q) => (q.includes("min-width") ? wide : false), changeListeners);
 
-    const { result } = renderHook(() => useViewportScheme());
+    const { result } = renderHook(() => useViewportColorMode());
     expect(result.current.viewport).toBe("wide");
 
     // The listener re-reads fresh device classes; it must never fire transport
@@ -167,18 +186,13 @@ describe("useViewportScheme fires no transport traffic (DC-006)", () => {
 });
 
 // RISK-INV-5 structural fence: the view-state DEVICE signal — the visitor's
-// viewport size class + browser-reported color scheme carried in `ViewSnapshot`
+// viewport size class + effective browser color mode carried in `ViewSnapshot`
 // (view-snapshot.ts) — is report-only inert event data that must NEVER drive
 // layout. So layout code must not import view-snapshot.ts nor read a `viewport`
-// device field. NOTE: `scheme` is deliberately NOT banned — landing-grade's
-// `BoxStyle.scheme` is an AUTHORED layout PALETTE token (`ColorScheme`, a
-// separate type from the device `Scheme`) that legitimately drives the subtree
-// color swap in `renderer-render.tsx`. The real property this fence protects is
-// "the device signal doesn't reach layout", not the word "scheme".
+// device field. The effective color mode reaches only Theme paint selection in
+// StageRenderer and never enters a layout-role module.
 describe("view-snapshot layout fence (RISK-INV-5)", () => {
-  // Include renderer-render.tsx (where the authored `scheme` palette swap lives)
-  // so the fence covers the file that actually resolves per-box color, closing
-  // the gap where the swap could have imported the device signal unnoticed.
+  // Cover the files that resolve layout and recursively render the tree.
   for (const file of ["./brick-renderer-layout.tsx", "./theme.ts", "./renderer-render.tsx"]) {
     it(`${file} does not import the view-state device signal or read a viewport device field`, () => {
       const src = readSrc(file);

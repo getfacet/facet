@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  COLOR_MODE_PREFERENCES,
+  COLOR_MODES,
   evaluateViewPredicate,
   MAX_VIEW_SORT_KEYS,
   MAX_VIEW_TOGGLED_KEYS,
   sanitizeView,
   sanitizeViewPredicate,
-  SCHEMES,
   SORT_DIRECTIONS,
   VIEWPORTS,
 } from "./view.js";
@@ -15,7 +16,8 @@ import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 describe("sanitizeView", () => {
   it("exports the closed enums and the toggled-entry cap", () => {
     expect(VIEWPORTS).toEqual(["narrow", "medium", "wide"]);
-    expect(SCHEMES).toEqual(["light", "dark"]);
+    expect(COLOR_MODES).toEqual(["light", "dark"]);
+    expect(COLOR_MODE_PREFERENCES).toEqual(["system", "light", "dark"]);
     expect(MAX_VIEW_TOGGLED_KEYS).toBe(256);
   });
 
@@ -24,7 +26,7 @@ describe("sanitizeView", () => {
       screen: "pricing",
       toggled: { faq: "shown", promo: "hidden" },
       viewport: "narrow",
-      scheme: "dark",
+      colorMode: "dark",
     };
     expect(sanitizeView(snapshot)).toEqual(snapshot);
   });
@@ -38,19 +40,29 @@ describe("sanitizeView", () => {
     expect(sanitizeView(true)).toBeUndefined();
   });
 
-  it("drops unknown viewport/scheme enum values but keeps the rest", () => {
-    expect(sanitizeView({ screen: "home", viewport: "ultrawide", scheme: "sepia" })).toEqual({
+  it("sanitizes effective colorMode and rejects scheme", () => {
+    expect(
+      sanitizeView({
+        screen: "home",
+        viewport: "narrow",
+        colorMode: "dark",
+        scheme: "light", // style-hard-cut: allowed-negative
+      }),
+    ).toEqual({ screen: "home", viewport: "narrow", colorMode: "dark" });
+    expect(sanitizeView({ screen: "home", viewport: "ultrawide", colorMode: "sepia" })).toEqual({
       screen: "home",
     });
-    expect(sanitizeView({ screen: "home", viewport: 3, scheme: null })).toEqual({
+    expect(sanitizeView({ screen: "home", viewport: 3, colorMode: null })).toEqual({
       screen: "home",
     });
+    expect(sanitizeView({ scheme: "dark" })).toBeUndefined(); // style-hard-cut: allowed-negative
+    expect(sanitizeView({ colorMode: "system" })).toBeUndefined();
   });
 
   it("drops an over-cap or non-string screen, keeps one exactly at the cap", () => {
     const overCap = "s".repeat(MAX_FIELD_VALUE_CHARS + 1);
-    expect(sanitizeView({ screen: overCap, scheme: "light" })).toEqual({ scheme: "light" });
-    expect(sanitizeView({ screen: 7, scheme: "light" })).toEqual({ scheme: "light" });
+    expect(sanitizeView({ screen: overCap, colorMode: "light" })).toEqual({ colorMode: "light" });
+    expect(sanitizeView({ screen: 7, colorMode: "light" })).toEqual({ colorMode: "light" });
     const atCap = "s".repeat(MAX_FIELD_VALUE_CHARS);
     expect(sanitizeView({ screen: atCap })).toEqual({ screen: atCap });
   });
@@ -97,7 +109,7 @@ describe("sanitizeView", () => {
   it("returns undefined when nothing valid remains", () => {
     expect(sanitizeView({})).toBeUndefined();
     expect(sanitizeView({ unrelated: true })).toBeUndefined();
-    expect(sanitizeView({ screen: 42, viewport: "huge", scheme: "sepia" })).toBeUndefined();
+    expect(sanitizeView({ screen: 42, viewport: "huge", colorMode: "sepia" })).toBeUndefined();
     expect(sanitizeView({ toggled: {} })).toBeUndefined();
     expect(sanitizeView({ toggled: { a: "nope" } })).toBeUndefined();
   });

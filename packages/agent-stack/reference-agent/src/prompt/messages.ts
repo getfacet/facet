@@ -94,12 +94,10 @@ function describeView(view: unknown, revisit: boolean): string {
     }
   }
 
-  const device: string[] = [];
   const viewport = view["viewport"];
-  if (typeof viewport === "string") device.push(viewport);
-  const scheme = view["scheme"];
-  if (typeof scheme === "string") device.push(scheme);
-  if (device.length > 0) parts.push(`device: ${device.join(", ")}`);
+  if (typeof viewport === "string") parts.push(`device: ${viewport}`);
+  const colorMode = view["colorMode"];
+  if (typeof colorMode === "string") parts.push(`colorMode: ${colorMode}`);
 
   if (parts.length === 0) return "";
   const label = revisit ? "[visitor view, last visit]" : "[visitor view]";

@@ -239,6 +239,47 @@ try {
   );
   run(process.execPath, ["cjs-smoke.cjs"], { cwd: fixture });
 
+  writeFileSync(
+    join(fixture, "contract-smoke.mjs"),
+    `${environmentGuard}
+import assert from "node:assert/strict";
+const core = await import("@facet/core");
+const assets = await import("@facet/assets");
+const tools = await import("@facet/agent-tools");
+for (const name of ["BRICK_CONTRACT", "STYLE_VALUE_CONTRACT", "validateTheme", "validatePattern", "validateAuthorTree"]) {
+  assert.ok(name in core, \`missing new @facet/core export \${name}\`);
+}
+for (const name of ["FacetCatalog", "DEFAULT_CATALOG", "FacetComposition", "validateComposition"]) { // style-hard-cut: allowed-negative
+  assert.equal(name in core, false, \`retired @facet/core export survived: \${name}\`);
+}
+assert.deepEqual(Object.keys(assets).sort(), ["DEFAULT_PATTERNS", "DEFAULT_THEME"]);
+assert.equal(core.validateTheme(assets.DEFAULT_THEME).issues.length, 0);
+assert.ok(assets.DEFAULT_PATTERNS.length > 0);
+for (const pattern of assets.DEFAULT_PATTERNS) {
+  assert.equal(core.validatePattern(pattern, assets.DEFAULT_THEME).issues.length, 0);
+}
+for (const name of ["get_brick_spec", "get_style_choices", "get_preset", "get_pattern"]) {
+  assert.ok(tools.FACET_STAGE_TOOL_NAMES.includes(name), \`missing tool \${name}\`);
+}
+for (const name of ["get_composition", "set_theme"]) { // style-hard-cut: allowed-negative
+  assert.equal(tools.FACET_STAGE_TOOL_NAMES.includes(name), false, \`retired tool survived: \${name}\`);
+}
+for (const name of ["createStageToolAssetSnapshot", "selectPatternReference"]) {
+  assert.ok(name in tools, \`missing @facet/agent-tools export \${name}\`);
+}
+for (const name of ["selectCompositionReferences", "executeGetComposition"]) { // style-hard-cut: allowed-negative
+  assert.equal(name in tools, false, \`retired @facet/agent-tools export survived: \${name}\`);
+}
+const snapshot = tools.createStageToolAssetSnapshot({
+  theme: assets.DEFAULT_THEME,
+  patterns: assets.DEFAULT_PATTERNS,
+});
+assert.ok(Object.isFrozen(snapshot));
+assert.equal(snapshot.patternIndex.length, assets.DEFAULT_PATTERNS.length);
+`,
+  );
+  run(process.execPath, ["contract-smoke.mjs"], { cwd: fixture });
+
   const typeImports = typeSurfaces
     .map(
       (specifier, index) =>
@@ -250,7 +291,39 @@ try {
     .join(", ");
   writeFileSync(
     join(fixture, "types-smoke.ts"),
-    `${typeImports}\nexport type PublishedSurfaces = [${typeUses}];\n`,
+    `${typeImports}
+import type { AuthorIssue, BrickStyle, FacetPattern, FacetTheme } from "@facet/core";
+import type { AssetDocuments, LoadedAssets } from "@facet/runtime";
+import type { GetBrickSpecToolInput, GetPatternToolInput, GetPresetToolInput, GetStyleChoicesToolInput, StageToolAssets } from "@facet/agent-tools";
+import type { ReferenceAgentAssetSource } from "@facet/reference-agent";
+// @ts-expect-error retired hard-cut type
+import type { FacetCatalog } from "@facet/core"; // style-hard-cut: allowed-negative
+// @ts-expect-error retired hard-cut type
+import type { FacetComposition } from "@facet/core"; // style-hard-cut: allowed-negative
+// @ts-expect-error retired hard-cut type
+import type { GetCompositionToolInput } from "@facet/agent-tools"; // style-hard-cut: allowed-negative
+export type PublishedSurfaces = [${typeUses}];
+export type NewStyleContract = [
+  FacetTheme,
+  FacetPattern,
+  BrickStyle<"box">,
+  AuthorIssue,
+  AssetDocuments,
+  LoadedAssets,
+  StageToolAssets,
+  GetBrickSpecToolInput,
+  GetStyleChoicesToolInput,
+  GetPresetToolInput,
+  GetPatternToolInput,
+  ReferenceAgentAssetSource,
+];
+export const brickSpecInput = { type: "box" } satisfies GetBrickSpecToolInput;
+export const styleChoicesInput = {
+  brick: "progress",
+  target: "track",
+  property: "height",
+} satisfies GetStyleChoicesToolInput;
+`,
   );
   writeFileSync(
     join(fixture, "tsconfig.json"),

@@ -33,7 +33,7 @@ landed, the exhaustive matrix did not.
 - **server backpressure** — no global cap on in-flight turns/timers; SSE
   `res.write` return values ignored (slow-client buffering). Trust-model
   territory; the resource-exhaustion surface of the reference server.
-- ~~era/LRU continuity-guard variant untested~~ — RESOLVED by refactor-audit-1:
+- ~~era/LRU continuity-guard case untested~~ — RESOLVED by refactor-audit-1:
   the frame-log store is now a unit seam (`frame-log.test.ts` covers eviction /
   era re-mint / ring bound directly).
 - **client/server version pairing** — the client no longer synthesizes `reset`
@@ -198,21 +198,12 @@ Bundle B PR review record.
 - ~~quickstart/cli.ts (--assets guard)~~ — RESOLVED in-branch (review r6): the
   explicit path must be a readable directory (statSync + readdirSync probe,
   exit 1), pinned by a cli test.
-- ~~core/validate.ts (composition validator bounds, now
-  `validateComposition`)~~ — RESOLVED in-branch (review r5+r6): composition
-  names share `isValidThemeName`, descriptions truncate at the shared 200-char
-  cap, and the refusal issue never echoes the raw name.
-- ~~quickstart/prompt.ts (composition budget)~~ — OBSOLETE after the component
-  model: the canonical `@facet/agent-tools` prompt advertises a bounded
-  name-description reference index. The agent can request one exact reference on
-  demand; that JSON stays in the provider conversation and never enters browser
-  frames. The unpublished quickstart prompt shim was removed by the agent-stack
-  ownership cleanup.
-- **agent-tools/executor-node.ts (set_theme)** — an unknown theme name returns
-  `ok`/`mutated:true` while the page silently keeps the default look. *Fix:*
-  error observation naming the available themes (append_node precedent).
-- ~~runtime/assets.ts (composition dedup)~~ — RESOLVED in-branch (review r6):
-  first-wins + issue, mirroring themes; pinned by an assets test.
+- ~~agent-authored Theme selection and reference exposure policy~~ — OBSOLETE
+  after the style-system hard cut. The Facet Document has no Theme field and no
+  stage tool, CLI, or bridge command can change it. Per-agent assets resolve one
+  complete host-owned Theme and one exact compatible Pattern list; the prompt
+  advertises bounded Pattern/Preset/Brick indexes and exact details stay in the
+  provider conversation until explicitly read.
 - ~~core/validate.ts (sanitizeScreens)~~ — RESOLVED before
   gate-release-hygiene, recorded here on 2026-07-12: screens accumulate in a
   null-prototype map, forbidden prototype keys are rejected with an issue, and
@@ -221,20 +212,16 @@ Bundle B PR review record.
   RESOLVED before gate-release-hygiene, recorded here on 2026-07-12: runtime
   seeding and server offline selection both delegate to core's fail-safe
   `treeHasContent`; its invariant matrix is covered directly in `tree.test.ts`.
-- ~~local theme action surface drift~~ — RESOLVED by refactor-audit-cleanup-1:
-  the CLI and bridge now expose validated, name-only theme selection.
-- ~~core font-size clamp naming~~ — RESOLVED by refactor-audit-cleanup-1:
-  font-size clamping now has a distinct range constant instead of borrowing the
-  spacing range name.
-- **core/theme.ts** — redundant `theme as FacetTheme` cast at the return
-  (compiles clean without it).
-- ~~reference prompt oversized-composition suppression test~~ — OBSOLETE with
-  the concrete reference model: valid composition names and bounded descriptions
-  remain indexed, while an exact reference is read on demand and retained only
-  in the provider conversation; the canonical reference-agent prompt suite pins
-  that contract.
-- **tests** — `core/src/theme.test.ts`: negative-dimension clamp floor
-  (`"-20px"` → `"0px"`) untested.
+- ~~core font-size clamp naming~~ — OBSOLETE under the complete Theme contract.
+  Each concrete token group now has an explicit grammar/range handler and an
+  out-of-range value rejects the whole Theme instead of being clamped.
+- ~~core/theme.ts redundant return cast~~ — RESOLVED by the style-system hard
+  cut. The module is now a typed Theme facade; whole-document assembly lives in
+  `theme-validation.ts` and returns the constructed `FacetTheme` directly.
+- ~~Theme negative-dimension clamp floor coverage~~ — OBSOLETE under the
+  complete Theme contract. Concrete values outside a token group's grammar are
+  rejected with the whole Theme; no value is clamped or partially retained.
+  The boundary matrix is pinned in `core/src/theme.test.ts`.
 - ~~server/server.ts:385 (seed frame vs lastApplied)~~ — RESOLVED in-branch
   (review r6, upgraded to P2): `FacetRuntime.handle`/`applyMessages` return
   `TurnResult` with `agentMutated` (computed pre-seed), and the server gates
@@ -266,7 +253,7 @@ Bundle B PR review record.
   r12, upgraded to P2): `StageFoldResult.mutated` (true iff a non-`test` op
   actually applied) now feeds `TurnResult.agentMutated`; over-cap/empty/
   non-array/all-salvage-dropped turns no longer bump `recordApplied` (r13
-  closed the late-apply seam variant with the same effect-based gate).
+  closed the late-apply seam case with the same effect-based gate).
 - ~~core/stage-fold.ts (test-guard pre-guard ops, r13)~~ — RESOLVED by
   core-runtime-hardening (2026-07-08): the misleading RFC whole-document-abort
   comment was removed and the in-code contract now states the deliberate

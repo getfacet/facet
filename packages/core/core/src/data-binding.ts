@@ -236,7 +236,7 @@ export function resolveKeyValue(
   node: KeyValueNode,
   warehouse: DataWarehouse | undefined,
 ): readonly KeyValueItem[] {
-  if (node.from === undefined) return node.items;
+  if (node.from === undefined) return projectInlineKeyValue(node.items);
   const dataset = lookupDataset(warehouse, node.from);
   if (dataset === undefined || dataset.length === 0) return [];
   return projectKeyValue(dataset);
@@ -335,6 +335,24 @@ function projectKeyValue(dataset: Dataset): readonly KeyValueItem[] {
     });
   }
   return items;
+}
+
+/** Keep inline key/value projection on the current content-only item shape. */
+function projectInlineKeyValue(items: readonly KeyValueItem[]): readonly KeyValueItem[] {
+  if (!Array.isArray(items)) return [];
+  const projectedItems: KeyValueItem[] = [];
+  for (const item of items) {
+    if (!isPlainObject(item) || typeof item.label !== "string" || typeof item.value !== "string") {
+      continue;
+    }
+    const projected: { key?: string; label: string; value: string } = {
+      label: item.label,
+      value: item.value,
+    };
+    if (typeof item.key === "string") projected.key = item.key;
+    projectedItems.push(projected);
+  }
+  return projectedItems;
 }
 
 /** Normalize a `row` selector to an in-window index, or `undefined` (⇒ empty). */

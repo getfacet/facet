@@ -1,9 +1,6 @@
-import type { TextAlign } from "./tokens.js";
-
 export interface TableColumn {
   readonly key: string;
   readonly label: string;
-  readonly align?: TextAlign;
   readonly sortable?: boolean;
 }
 

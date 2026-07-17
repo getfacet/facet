@@ -23,6 +23,142 @@ function validate(
 }
 
 describe("brick survivor validation", () => {
+  it("styles six data bricks without variant or tone", () => {
+    expect(
+      validate(validateTable, "table", {
+        columns: [{ key: "name", label: "Name", align: "end" }],
+        rows: [{ name: "Facet" }],
+        variant: "dense", // style-hard-cut: allowed-negative
+        style: {
+          preset: "dense",
+          width: "full",
+          header: { background: "accentSurface", sorted: { fontWeight: "bold" } },
+          cell: { padding: "sm" },
+        },
+      }),
+    ).toEqual({
+      node: {
+        id: "table",
+        type: "table",
+        columns: [{ key: "name", label: "Name" }],
+        rows: [{ name: "Facet" }],
+        style: {
+          preset: "dense",
+          width: "full",
+          header: { background: "accentSurface", sorted: { fontWeight: "bold" } },
+          cell: { padding: "sm" },
+        },
+      },
+      issues: [],
+    });
+
+    expect(
+      validate(validateChart, "chart", {
+        series: [{ label: "Revenue", values: [1, 2] }],
+        variant: "dashboard", // style-hard-cut: allowed-negative
+        style: {
+          gap: "md",
+          title: { fontSize: "xl" },
+          series: { color1: "chart1", thickness: "lg" },
+        },
+      }),
+    ).toEqual({
+      node: {
+        id: "chart",
+        type: "chart",
+        kind: "bar",
+        series: [{ label: "Revenue", values: [1, 2] }],
+        style: {
+          gap: "md",
+          title: { fontSize: "xl" },
+          series: { color1: "chart1", thickness: "lg" },
+        },
+      },
+      issues: [],
+    });
+
+    expect(
+      validate(validateList, "list", {
+        items: ["One"],
+        variant: "stack", // style-hard-cut: allowed-negative
+        style: { gap: "sm", item: { padding: "md" }, marker: { color: "accent" } },
+      }),
+    ).toEqual({
+      node: {
+        id: "list",
+        type: "list",
+        items: [{ title: "One" }],
+        style: { gap: "sm", item: { padding: "md" }, marker: { color: "accent" } },
+      },
+      issues: [],
+    });
+
+    expect(
+      validate(validateKeyValue, "keyValue", {
+        items: [{ label: "Revenue", value: "$12", tone: "success" }], // style-hard-cut: allowed-negative
+        variant: "summary", // style-hard-cut: allowed-negative
+        style: { gap: "xs", value: { fontWeight: "semibold" } },
+      }),
+    ).toEqual({
+      node: {
+        id: "keyValue",
+        type: "keyValue",
+        items: [{ label: "Revenue", value: "$12" }],
+        style: { gap: "xs", value: { fontWeight: "semibold" } },
+      },
+      issues: [],
+    });
+
+    expect(
+      validate(validateProgress, "progress", {
+        value: 75,
+        tone: "success", // style-hard-cut: allowed-negative
+        variant: "positive", // style-hard-cut: allowed-negative
+        style: {
+          width: "full",
+          track: { height: "md" },
+          fill: { backgroundGradient: "success" },
+        },
+      }),
+    ).toEqual({
+      node: {
+        id: "progress",
+        type: "progress",
+        value: 75,
+        style: {
+          width: "full",
+          track: { height: "md" },
+          fill: { backgroundGradient: "success" },
+        },
+      },
+      issues: [],
+    });
+
+    expect(
+      validate(validateLoading, "loading", {
+        label: "Waiting",
+        variant: "inline", // style-hard-cut: allowed-negative
+        style: {
+          direction: "row",
+          indicator: { size: "sm", animation: "pulse" },
+          label: { color: "mutedForeground" },
+        },
+      }),
+    ).toEqual({
+      node: {
+        id: "loading",
+        type: "loading",
+        label: "Waiting",
+        style: {
+          direction: "row",
+          indicator: { size: "sm", animation: "pulse" },
+          label: { color: "mutedForeground" },
+        },
+      },
+      issues: [],
+    });
+  });
+
   it("preserves all six survivor validators under the brick roster", () => {
     const longLabel = "x".repeat(201);
 
@@ -35,17 +171,15 @@ describe("brick survivor validation", () => {
         ],
         rows: [{ name: "Facet", ignored: "drop" }],
         caption: "Results",
-        variant: "dense",
         from: "sales",
       }),
     ).toEqual({
       node: {
         id: "table",
         type: "table",
-        columns: [{ key: "name", label: "Name", align: "end" }],
+        columns: [{ key: "name", label: "Name" }],
         rows: [{ name: "Facet" }],
         caption: "Results",
-        variant: "dense",
         from: "sales",
       },
       issues: ['node "table": non-boolean sortable "yes" dropped'],
@@ -58,7 +192,6 @@ describe("brick survivor validation", () => {
         series: [{ label: "Revenue", values: [1, 2, "3", Number.POSITIVE_INFINITY] }],
         labels: ["Q1", 2],
         title: "Revenue",
-        variant: "bad variant",
         from: "bad dataset",
       }),
     ).toEqual({
@@ -70,14 +203,13 @@ describe("brick survivor validation", () => {
         labels: ["Q1"],
         title: "Revenue",
       },
-      issues: ['node "chart": malformed variant dropped', 'node "chart": malformed from dropped'],
+      issues: ['node "chart": malformed from dropped'],
     });
 
     expect(
       validate(validateList, "list", {
         type: "list",
         items: ["One", { title: "Two", body: "Body" }, { title: 3 }],
-        variant: "stack",
         from: "sales",
       }),
     ).toEqual({
@@ -85,7 +217,6 @@ describe("brick survivor validation", () => {
         id: "list",
         type: "list",
         items: [{ title: "One" }, { title: "Two", body: "Body" }],
-        variant: "stack",
         from: "sales",
       },
       issues: [],
@@ -95,22 +226,18 @@ describe("brick survivor validation", () => {
       validate(validateKeyValue, "keyValue", {
         type: "keyValue",
         items: [
-          { key: "revenue", label: "Revenue", value: "$12", tone: "success" },
+          { key: "revenue", label: "Revenue", value: "$12" },
           { label: "Dropped", value: 12 },
         ],
-        variant: "bad variant",
         from: "bad dataset",
       }),
     ).toEqual({
       node: {
         id: "keyValue",
         type: "keyValue",
-        items: [{ key: "revenue", label: "Revenue", value: "$12", tone: "success" }],
+        items: [{ key: "revenue", label: "Revenue", value: "$12" }],
       },
-      issues: [
-        'node "keyValue": malformed variant dropped',
-        'node "keyValue": malformed from dropped',
-      ],
+      issues: ['node "keyValue": malformed from dropped'],
     });
 
     expect(
@@ -118,30 +245,20 @@ describe("brick survivor validation", () => {
         type: "progress",
         value: 101,
         label: "Done",
-        tone: "invented",
-        variant: "bad variant",
       }),
     ).toEqual({
       node: { id: "progress", type: "progress", value: 100, label: "Done" },
-      issues: [
-        'node "progress": progress value clamped to 100',
-        'node "progress": unknown tone "invented" dropped',
-        'node "progress": malformed variant dropped',
-      ],
+      issues: ['node "progress": progress value clamped to 100'],
     });
 
     expect(
       validate(validateLoading, "loading", {
         type: "loading",
         label: longLabel,
-        variant: "bad variant",
       }),
     ).toEqual({
       node: { id: "loading", type: "loading", label: longLabel.slice(0, 200) },
-      issues: [
-        'node "loading": label truncated to 200 characters',
-        'node "loading": malformed variant dropped',
-      ],
+      issues: ['node "loading": label truncated to 200 characters'],
     });
   });
 
@@ -199,6 +316,8 @@ describe("brick survivor validation", () => {
       "filterBar",
       "component",
       "control",
+      "variant",
+      "tone",
     ]) {
       expect(source).not.toMatch(new RegExp(`\\b${retired}\\b`, "i"));
     }

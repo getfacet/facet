@@ -144,10 +144,6 @@ async function say(text: string): Promise<void> {
   await h.toolHandlers.get("say")!({ text });
 }
 
-async function theme(name: string): Promise<{ content: { type: string; text: string }[] }> {
-  return h.toolHandlers.get("theme")!({ name });
-}
-
 afterEach(() => {
   // Release any background `run()` loop still awaiting SDK output.
   h.active?.end();
@@ -200,7 +196,9 @@ describe("createPersistentDriver", () => {
     // The brain drives the page: render a tree, then say a reply.
     const tree: FacetTree = {
       root: "root",
-      nodes: { root: { id: "root", type: "box", style: { direction: "col" }, children: [] } },
+      nodes: {
+        root: { id: "root", type: "box", style: { direction: "column" }, children: [] },
+      },
     };
     await h.toolHandlers.get("render")!({ tree });
     await say("welcome");
@@ -215,29 +213,6 @@ describe("createPersistentDriver", () => {
     expect(patch.patches[0]).toMatchObject({ op: "replace", path: "" });
     expect(messages[1]).toEqual({ kind: "say", text: "welcome" });
 
-    driver.close();
-  });
-
-  it("theme tool records a /theme patch for valid names and rejects invalid names", async () => {
-    const ctrl = h.makeController();
-    h.active = ctrl;
-    const driver = createPersistentDriver();
-
-    const handle = driver.agent(message("go dark"), SESSION);
-    await ctrl.pull();
-
-    const bad = await theme("Dark Mode!");
-    expect(bad.content[0]?.text).toMatch(/invalid theme name/);
-
-    const good = await theme("midnight");
-    expect(good.content[0]?.text).toContain("midnight");
-
-    ctrl.emit({ type: "result" });
-
-    const messages = (await handle) as ServerMessage[];
-    expect(messages).toEqual([
-      { kind: "patch", patches: [{ op: "add", path: "/theme", value: "midnight" }] },
-    ]);
     driver.close();
   });
 
@@ -328,7 +303,8 @@ describe("createPersistentDriver", () => {
     expect(options.tools).toEqual([]);
     expect(options.allowedTools).toContain("mcp__facet__render");
     expect(options.allowedTools).toContain("mcp__facet__say");
-    expect(options.allowedTools).toContain("mcp__facet__theme");
+    expect(options.allowedTools).not.toContain("mcp__facet__theme");
+    expect(h.toolHandlers.has("theme")).toBe(false);
     expect(options.permissionMode).toBe("bypassPermissions");
     expect(options.model).toBe("claude-test");
 

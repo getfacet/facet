@@ -1,12 +1,9 @@
-import { selectCompositionReferences, type StageToolAssets } from "@facet/agent-tools";
-import type {
-  FacetAgent,
-  FacetCatalog,
-  FacetComposition,
-  FacetTheme,
-  ServerMessage,
-} from "@facet/core";
-import { validateCatalog } from "@facet/core";
+import {
+  createStageToolAssetSnapshot,
+  type StageToolAssets,
+  type StageToolAssetSource,
+} from "@facet/agent-tools";
+import type { FacetAgent, ServerMessage } from "@facet/core";
 import { sessionKey, type Sink, type SummaryStore } from "@facet/runtime";
 import {
   enqueueBackgroundCompaction,
@@ -52,13 +49,12 @@ export interface ReferenceAgentOptions {
   readonly historyTurns?: number;
   /** Legacy alias for budget.maxSteps. Ignored when budget.maxSteps is set. */
   readonly maxSteps?: number;
-  /** Operator themes offered to the model by NAME in prompt ② (validated by the
-   * caller). The model selects one with `set_theme`; values never reach it. */
-  readonly themes?: readonly FacetTheme[];
-  /** Concrete native reference datasets advertised by name for optional read-only inspection. */
-  readonly compositions?: readonly FacetComposition[];
-  /** Active catalog policy advertised to the model and enforced by stage tools. */
-  readonly catalog?: FacetCatalog;
+  /**
+   * Static operator assets or a dynamic source acquired once at the start of
+   * each provider turn. The result is validated, detached, and deeply frozen
+   * before either the prompt or a stage tool can observe it.
+   */
+  readonly assets: ReferenceAgentAssetSource;
   /**
    * Rolling-summary store. When present, cross-turn context compaction is enabled:
    * a persisted summary is injected on assembly (WU-7) and a background task after
@@ -67,6 +63,9 @@ export interface ReferenceAgentOptions {
    */
   readonly summaryStore?: SummaryStore;
 }
+
+export type ReferenceAgentAssetSource =
+  StageToolAssetSource | (() => StageToolAssetSource | Promise<StageToolAssetSource>);
 
 /** Internal dependency seam used by package-local tests; not exported from the package root. */
 export interface ReferenceAgentDependencies {
@@ -87,22 +86,6 @@ export function createReferenceAgentWithDependencies(
   options: ReferenceAgentOptions,
   dependencies: ReferenceAgentDependencies = {},
 ): FacetAgent {
-  // Select once at creation. Validation both detaches and deeply freezes the
-  // exposed reference documents, so the prompt index and read-only tool assets
-  // share one policy-filtered source that caller mutation cannot drift.
-  const compositions = selectCompositionReferences(options.compositions ?? [], options.catalog);
-  const catalog =
-    options.catalog === undefined ? undefined : validateCatalog(options.catalog).catalog;
-  const assets: StageToolAssets = {
-    themes: options.themes ?? [],
-    compositions,
-    ...(catalog !== undefined ? { catalog } : {}),
-  };
-  const system = buildSystem(options.guide ?? DEFAULT_GUIDE, {
-    ...assets,
-    themes: assets.themes ?? [],
-    compositions: assets.compositions ?? [],
-  });
   const budget = normalizeBudget({
     ...(options.budgetPreset !== undefined ? { budgetPreset: options.budgetPreset } : {}),
     ...(options.budget !== undefined ? { budget: options.budget } : {}),
@@ -119,10 +102,13 @@ export function createReferenceAgentWithDependencies(
   const contextWindowTokens = options.provider.contextWindowTokens;
 
   return async function* (event, session) {
+    let turnSystem: string | undefined;
     try {
+      const assets = await acquireTurnAssets(options.assets);
+      turnSystem = buildSystem(options.guide ?? DEFAULT_GUIDE, assets);
       const summary = yield* runReferenceAgentLoop({
         provider: options.provider,
-        system,
+        system: turnSystem,
         event,
         session,
         sink: options.sink,
@@ -143,8 +129,13 @@ export function createReferenceAgentWithDependencies(
 
     // Cross-turn compaction runs AFTER the turn, detached, on the serial lane.
     // The generator returns without awaiting it; the task can never reject.
-    if (options.summaryStore !== undefined && summarizer !== undefined) {
+    if (
+      options.summaryStore !== undefined &&
+      summarizer !== undefined &&
+      turnSystem !== undefined
+    ) {
       const store = options.summaryStore;
+      const system = turnSystem;
       const key = sessionKey(options.agentId, session.visitor.visitorId);
       const task = enqueueBackgroundCompaction(key, async () => {
         try {
@@ -169,6 +160,11 @@ export function createReferenceAgentWithDependencies(
       dependencies.onBackgroundTask?.(task);
     }
   };
+}
+
+async function acquireTurnAssets(source: ReferenceAgentAssetSource): Promise<StageToolAssets> {
+  const documents = typeof source === "function" ? await source() : source;
+  return createStageToolAssetSnapshot(documents);
 }
 
 function logStopSummary(summary: ReferenceAgentLoopSummary): void {

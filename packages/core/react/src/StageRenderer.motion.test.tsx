@@ -1,7 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { EMPTY_TREE, MAX_DEPTH, type FacetNode, type FacetTree, type NodeId } from "@facet/core";
+import {
+  EMPTY_TREE,
+  MAX_DEPTH,
+  type FacetNode,
+  type FacetTheme,
+  type FacetTree,
+  type NodeId,
+} from "@facet/core";
+import { DEFAULT_THEME } from "@facet/assets";
 import { StageRenderer } from "./StageRenderer.js";
 import {
   MANY_CHANGE_THRESHOLD,
@@ -11,6 +19,8 @@ import {
   MOTION_EXIT_MS,
   STAGE_CROSSFADE_MS,
 } from "./motion.js";
+import { captureResolvedThemeSnapshot } from "./renderer-motion.js";
+import { resolveTheme } from "./theme.js";
 
 afterEach(cleanup);
 
@@ -26,6 +36,54 @@ function pointerEvent(type: string): Event {
   const event = new Event(type, { bubbles: true, cancelable: true });
   Object.assign(event, { clientX: 0, clientY: 0, pointerId: 1, button: 0, isPrimary: true });
   return event;
+}
+
+function snapshotTheme(
+  name: string,
+  accent: string,
+): {
+  readonly theme: FacetTheme;
+  readonly accentColors: Record<string, string>;
+  readonly selectedPresetStyle: { fontWeight: "bold" | "regular"; color: "accent" };
+} {
+  const accentColors = {
+    ...DEFAULT_THEME.tokens.paint.light.color,
+    accent,
+  };
+  const selectedPresetStyle: { fontWeight: "bold" | "regular"; color: "accent" } = {
+    fontWeight: "bold",
+    color: "accent",
+  };
+  const theme: FacetTheme = {
+    ...DEFAULT_THEME,
+    name,
+    tokens: {
+      ...DEFAULT_THEME.tokens,
+      paint: {
+        ...DEFAULT_THEME.tokens.paint,
+        light: {
+          ...DEFAULT_THEME.tokens.paint.light,
+          color: accentColors,
+        },
+      },
+    },
+    presets: {
+      ...DEFAULT_THEME.presets,
+      text: {
+        "motion-base": {
+          description: "Base motion snapshot label.",
+          useWhen: "Rendering the live and inert snapshot fixture.",
+          style: { fontWeight: "regular", color: "accent" },
+        },
+        "motion-active": {
+          description: "Active motion snapshot label.",
+          useWhen: "The captured screen view is active.",
+          style: selectedPresetStyle,
+        },
+      },
+    },
+  };
+  return { theme, accentColors, selectedPresetStyle };
 }
 
 describe("StageRenderer lifecycle motion (jsdom)", () => {
@@ -62,6 +120,116 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
       },
       stay: { id: "stay", type: "text", value: "Staying content" },
     });
+
+  it("captures Theme style and view snapshots without a second writer", () => {
+    const old = snapshotTheme("motion-old", "rgb(1, 2, 3)");
+    const current = snapshotTheme("motion-current", "rgb(4, 5, 6)");
+    const mutableResolved = resolveTheme(old.theme, "light");
+    const resolvedSnapshot = captureResolvedThemeSnapshot(mutableResolved);
+    (mutableResolved.color as Record<string, string>).accent = "rgb(88, 88, 88)";
+    const mutableResolvedActive = mutableResolved.presets?.text?.["motion-active"]?.style as
+      { fontWeight?: "bold" | "regular" } | undefined;
+    if (mutableResolvedActive !== undefined) mutableResolvedActive.fontWeight = "regular";
+    expect(resolvedSnapshot.color.accent).toBe("rgb(1, 2, 3)");
+    expect(resolvedSnapshot.presets?.text?.["motion-active"]?.style.fontWeight).toBe("bold");
+    const onAction = vi.fn();
+    const onRecord = vi.fn();
+    const authoredLabel: FacetNode = {
+      id: "label",
+      type: "text",
+      value: "Snapshot label",
+      activeWhen: { screen: "home" },
+      style: { preset: "motion-base", active: { preset: "motion-active" } },
+    };
+    const home = tree(
+      {
+        home: { id: "home", type: "box", children: ["label", "old-action"] },
+        label: authoredLabel,
+        "old-action": {
+          id: "old-action",
+          type: "box",
+          onPress: { kind: "agent", name: "stale-action" },
+          children: ["old-action-copy"],
+        },
+        "old-action-copy": { id: "old-action-copy", type: "text", value: "Old action" },
+      },
+      "home",
+    );
+    const homeWithScreen: FacetTree = { ...home, screens: { home: "home" }, entry: "home" };
+    const about = tree(
+      {
+        about: { id: "about", type: "box", children: ["label"] },
+        label: authoredLabel,
+      },
+      "about",
+    );
+    const aboutWithScreen: FacetTree = {
+      ...about,
+      screens: { about: "about" },
+      entry: "about",
+    };
+    const { container, rerender } = render(
+      <StageRenderer
+        tree={homeWithScreen}
+        theme={old.theme}
+        colorMode="light"
+        transition={transition(0)}
+        onAction={onAction}
+        onRecord={onRecord}
+      />,
+    );
+
+    rerender(
+      <StageRenderer
+        tree={aboutWithScreen}
+        theme={current.theme}
+        colorMode="light"
+        transition={transition(1, true, 1)}
+        onAction={onAction}
+        onRecord={onRecord}
+      />,
+    );
+
+    const previous = container.querySelector(`.${MOTION_CLASS_NAMES.stagePrevious}`);
+    expect(previous).not.toBeNull();
+    const labels = screen.getAllByText("Snapshot label") as HTMLElement[];
+    const previousLabel = labels.find((label) => previous?.contains(label)) as HTMLElement;
+    const liveLabel = labels.find((label) => !previous?.contains(label)) as HTMLElement;
+    expect(previousLabel.style.color).toBe("rgb(1, 2, 3)");
+    expect(previousLabel.style.fontWeight).toBe("700");
+    expect(liveLabel.style.color).toBe("rgb(4, 5, 6)");
+    expect(liveLabel.style.fontWeight).toBe("400");
+
+    // A snapshot is a value, not a live alias to the operator's mutable Theme.
+    // Mutating the retired input after capture must not recolor/re-resolve the
+    // inert frame, including the Preset selected by its captured screen view.
+    old.accentColors.accent = "rgb(99, 99, 99)";
+    old.selectedPresetStyle.fontWeight = "regular";
+    rerender(
+      <StageRenderer
+        tree={aboutWithScreen}
+        theme={current.theme}
+        colorMode="light"
+        transition={transition(1, true, 1)}
+        onAction={onAction}
+        onRecord={onRecord}
+      />,
+    );
+
+    const capturedPrevious = container.querySelector(`.${MOTION_CLASS_NAMES.stagePrevious}`);
+    const capturedLabel = screen
+      .getAllByText("Snapshot label")
+      .find((label) => capturedPrevious?.contains(label)) as HTMLElement;
+    expect(capturedLabel.style.color).toBe("rgb(1, 2, 3)");
+    expect(capturedLabel.style.fontWeight).toBe("700");
+
+    const staleAction = screen.getByText("Old action").parentElement as HTMLElement;
+    expect(staleAction.getAttribute("aria-hidden")).toBe("true");
+    expect(staleAction.style.pointerEvents).toBe("none");
+    fireEvent.click(staleAction);
+    expect(onAction).not.toHaveBeenCalled();
+    expect(onRecord).not.toHaveBeenCalled();
+  });
 
   it("renders the first contentful server paint from EMPTY_TREE without crossfade", () => {
     const firstContent = tree({
@@ -178,7 +346,12 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
         card: { id: "card", type: "box", children: ["label", "field"] },
         label: { id: "label", type: "text", value: label },
         field: { id: "field", type: "input", name: "email", label: "Email" },
-        badge: { id: "badge", type: "box", style: { appear: "fade" }, children: ["badgeText"] },
+        badge: {
+          id: "badge",
+          type: "box",
+          style: { enterAnimation: "fade" },
+          children: ["badgeText"],
+        },
         badgeText: { id: "badgeText", type: "text", value: "New badge" },
       });
     const { rerender } = render(

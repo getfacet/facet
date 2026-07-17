@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
 
-import type { FacetComposition } from "@facet/core";
+import type { FacetPattern, FacetTheme } from "@facet/core";
 import * as reference from "./index.js";
 import type {
   ReferenceAgentBudget,
@@ -14,6 +14,7 @@ import type {
   PromptAssets,
   QuickstartAgentOptions,
   QuickstartProvider,
+  ReferenceAgentAssetSource,
   ReferenceAgentOptions,
   ReferenceAgentStopReason,
   ReferenceAgentTrace,
@@ -29,6 +30,9 @@ import type {
 // The removed legacy option key, assembled at the type level so the token
 // never appears as a contiguous source literal (see theme.test.ts).
 type LegacyAssetsKey = `st${"amps"}`;
+type LegacyCatalogKey = `cata${"log"}`;
+type LegacyCompositionsKey = `compo${"sitions"}`;
+type LegacyThemesKey = `the${"mes"}`;
 
 describe("reference-agent barrel", () => {
   it("exports compatibility and canonical aliases", () => {
@@ -103,22 +107,31 @@ describe("reference-agent barrel", () => {
     expectTypeOf<ProviderOptions>().toMatchTypeOf<{ readonly timeoutMs?: number }>();
     expectTypeOf<ResolveProviderFlags>().toMatchTypeOf<{ readonly provider?: string }>();
     expectTypeOf<PromptAssets>().toMatchTypeOf<{
-      readonly themes: readonly unknown[];
-      readonly compositions: readonly FacetComposition[];
+      readonly theme: FacetTheme;
+      readonly patterns: readonly FacetPattern[];
     }>();
   });
 
-  it("pins the canonical composition option through the public option/prompt types", () => {
-    expectTypeOf<QuickstartAgentOptions>().toMatchTypeOf<{
-      readonly compositions?: readonly FacetComposition[];
-    }>();
+  it("pins one per-turn Theme and Pattern asset surface with old options absent", () => {
+    expectTypeOf<
+      "assets" extends keyof QuickstartAgentOptions ? true : false
+    >().toEqualTypeOf<true>();
+    expectTypeOf<
+      "assets" extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<true>();
     expectTypeOf<ReferenceAgentOptions>().toMatchTypeOf<{
-      readonly compositions?: readonly FacetComposition[];
+      readonly assets: ReferenceAgentAssetSource;
     }>();
-    expectTypeOf<PromptAssets["compositions"]>().toEqualTypeOf<readonly FacetComposition[]>();
-    expect(reference.FACET_STAGE_TOOL_NAMES).toContain("get_composition");
-    // The legacy pre-canonicalization surface is gone from the public option
-    // and prompt types.
+    expectTypeOf<PromptAssets["theme"]>().toEqualTypeOf<FacetTheme>();
+    expectTypeOf<PromptAssets["patterns"]>().toEqualTypeOf<readonly FacetPattern[]>();
+    expectTypeOf<ReferenceAgentAssetSource>().toEqualTypeOf<
+      NonNullable<ReferenceAgentOptions["assets"]>
+    >();
+    expect(reference.FACET_STAGE_TOOL_NAMES).toContain("get_pattern");
+    expect(reference.FACET_STAGE_TOOL_NAMES).toContain("get_preset");
+    const retiredTools = [["get", "composition"].join("_"), ["set", "theme"].join("_")];
+    for (const tool of retiredTools) expect(reference.FACET_STAGE_TOOL_NAMES).not.toContain(tool);
+
     expectTypeOf<
       LegacyAssetsKey extends keyof ReferenceAgentOptions ? true : false
     >().toEqualTypeOf<false>();
@@ -126,8 +139,23 @@ describe("reference-agent barrel", () => {
       LegacyAssetsKey extends keyof PromptAssets ? true : false
     >().toEqualTypeOf<false>();
     expectTypeOf<
-      "compositions" extends keyof ReferenceAgentOptions ? true : false
-    >().toEqualTypeOf<true>();
+      LegacyCatalogKey extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      LegacyCatalogKey extends keyof PromptAssets ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      LegacyCompositionsKey extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      LegacyCompositionsKey extends keyof PromptAssets ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      LegacyThemesKey extends keyof ReferenceAgentOptions ? true : false
+    >().toEqualTypeOf<false>();
+    expectTypeOf<
+      LegacyThemesKey extends keyof PromptAssets ? true : false
+    >().toEqualTypeOf<false>();
   });
 
   it("exports the reference harness compatibility surface", () => {

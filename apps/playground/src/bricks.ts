@@ -20,7 +20,7 @@ export function text(value: string, style?: TextStyle): Block {
 
 export interface PageOptions {
   readonly gap?: Space;
-  readonly pad?: Space;
+  readonly padding?: Space;
 }
 
 /** Assemble Blocks into a complete FacetTree with a root box. */
@@ -30,7 +30,11 @@ export function page(blocks: readonly Block[], options: PageOptions = {}): Facet
   builder.nodes["root"] = {
     id: "root",
     type: "box",
-    style: { direction: "col", gap: options.gap ?? "lg", pad: options.pad ?? "xl" },
+    style: {
+      direction: "column",
+      gap: options.gap ?? "lg",
+      padding: options.padding ?? "xl",
+    },
     children,
   };
   return { root: "root", nodes: builder.nodes };

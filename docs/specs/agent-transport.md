@@ -55,7 +55,7 @@ The external agent returns the same agent-emitted `ServerMessage[]` as an
 in-process agent: `patch` and `say`. Supported authoring surfaces are:
 
 - `@facet/agent` for TypeScript `Stage` operations.
-- The `facet` CLI for render/set/append/remove/screens/theme/say commands.
+- The `facet` CLI for render/set/append/remove/screens/say commands.
 - `@facet/bridge`, which exposes those actions to local Claude/Codex runners.
 
 All three ultimately produce the same closed Facet document and JSON Patch

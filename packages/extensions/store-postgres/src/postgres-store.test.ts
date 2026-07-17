@@ -4,9 +4,10 @@ import type { CollectedEvent, FacetSession } from "@facet/core";
 import type { StoredEvent } from "@facet/runtime";
 import { initSchema, PostgresSink, PostgresStageStore } from "./postgres-store.js";
 
-// Built at runtime so the legacy token never appears as a source literal
-// (same idiom as theme.test.ts).
-const legacyColumn = ["st", "amp"].join("") + "s";
+const retiredThemeColumn = ["theme", "s"].join("");
+const retiredPatternColumn = ["composition", "s"].join("");
+const retiredPolicyColumn = ["catalog"].join("");
+const replacementAssetColumns = ["agent_id", "initial_tree", "patterns", "theme", "updated_at"];
 
 interface Call {
   readonly text: string;
@@ -23,6 +24,20 @@ function fakePool(rows: readonly unknown[] = []): { pool: Pool; calls: Call[] } 
     query: (text: string, values: readonly unknown[] = []) => {
       calls.push({ text, values });
       return Promise.resolve({ rows });
+    },
+  } as unknown as Pool;
+  return { pool, calls };
+}
+
+function schemaPool(columns: readonly string[]): { pool: Pool; calls: Call[] } {
+  const calls: Call[] = [];
+  const pool = {
+    query: (text: string, values: readonly unknown[] = []) => {
+      calls.push({ text, values });
+      if (/information_schema\.columns/i.test(text)) {
+        return Promise.resolve({ rows: columns.map((column_name) => ({ column_name })) });
+      }
+      return Promise.resolve({ rows: [] });
     },
   } as unknown as Pool;
   return { pool, calls };
@@ -67,29 +82,73 @@ const session: FacetSession = {
 };
 
 describe("initSchema", () => {
-  it("initSchema creates the facet_assets table with a compositions column and no legacy DDL", async () => {
-    const { pool, calls } = fakePool();
+  it("creates and accepts only the exact replacement asset schema", async () => {
+    const { pool, calls } = schemaPool(replacementAssetColumns);
     await initSchema(pool);
 
     const ddl = calls.find((call) => /create table if not exists facet_assets/i.test(call.text));
     expect(ddl).toBeDefined();
     const sql = normalizeSql(ddl?.text ?? "");
     expect(sql).toContain("agent_id text primary key");
-    expect(sql).toContain("themes jsonb");
-    expect(sql).toContain("compositions jsonb");
-    expect(sql).toContain("catalog jsonb");
+    expect(sql).toContain("theme jsonb");
+    expect(sql).toContain("patterns jsonb");
     expect(sql).toContain("initial_tree jsonb");
     expect(sql).toContain("updated_at timestamptz not null default now()");
-    expect(sql).not.toMatch(new RegExp(`\\b${legacyColumn}\\b`));
-    expect(calls.some((call) => /add column if not exists catalog jsonb/i.test(call.text))).toBe(
-      true,
+    for (const retired of [retiredThemeColumn, retiredPatternColumn, retiredPolicyColumn]) {
+      expect(sql).not.toMatch(new RegExp(`\\b${retired}\\b`));
+    }
+
+    const inspection = calls.find((call) => /information_schema\.columns/i.test(call.text));
+    expect(normalizeSql(inspection?.text ?? "")).toContain("table_name = 'facet_assets'");
+    expect(calls.some((call) => /\b(?:alter|copy)\b/i.test(normalizeSql(call.text)))).toBe(false);
+  });
+
+  it("rejects old and mixed asset schemas as migration-required without compatibility SQL", async () => {
+    const old = schemaPool([
+      "agent_id",
+      retiredThemeColumn,
+      retiredPatternColumn,
+      retiredPolicyColumn,
+      "initial_tree",
+      "updated_at",
+    ]);
+    await expect(initSchema(old.pool)).rejects.toThrow(/migration required/i);
+
+    const mixed = schemaPool([...replacementAssetColumns, retiredPatternColumn]);
+    await expect(initSchema(mixed.pool)).rejects.toThrow(/migration required/i);
+
+    for (const calls of [old.calls, mixed.calls]) {
+      expect(calls.some((call) => /\b(?:alter|copy)\b/i.test(normalizeSql(call.text)))).toBe(false);
+      expect(calls.filter((call) => /information_schema\.columns/i.test(call.text))).toHaveLength(
+        1,
+      );
+    }
+  });
+
+  it("rejects incomplete or unexpected replacement layouts", async () => {
+    const incomplete = schemaPool(
+      replacementAssetColumns.filter((column) => column !== "patterns"),
     );
-    expect(
-      calls.some((call) => /add column if not exists compositions jsonb/i.test(call.text)),
-    ).toBe(true);
-    expect(
-      calls.some((call) => new RegExp(`\\b${legacyColumn}\\b`, "i").test(normalizeSql(call.text))),
-    ).toBe(false);
+    await expect(initSchema(incomplete.pool)).rejects.toThrow(/migration required/i);
+
+    const unexpected = schemaPool([...replacementAssetColumns, "extra"]);
+    await expect(initSchema(unexpected.pool)).rejects.toThrow(/migration required/i);
+  });
+
+  it("bounds the migration-required error without echoing arbitrary column names", async () => {
+    const hostileColumn = "x".repeat(10_000);
+    const { pool } = schemaPool([...replacementAssetColumns, hostileColumn]);
+
+    let message = "";
+    try {
+      await initSchema(pool);
+    } catch (error) {
+      message = error instanceof Error ? error.message : String(error);
+    }
+
+    expect(message).toMatch(/migration required/i);
+    expect(message.length).toBeLessThan(512);
+    expect(message).not.toContain(hostileColumn);
   });
 });
 

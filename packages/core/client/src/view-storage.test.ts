@@ -34,7 +34,7 @@ const SNAP: ViewSnapshot = {
   screen: "home",
   toggled: { menu: "shown" },
   viewport: "wide",
-  scheme: "dark",
+  colorMode: "dark",
 };
 
 afterEach(() => {
@@ -73,7 +73,7 @@ describe("persistView / loadPersistedView", () => {
 
   it("keys are per-agent so two agent ids never collide", () => {
     mockLocalStorage();
-    const other: ViewSnapshot = { screen: "settings", scheme: "light" };
+    const other: ViewSnapshot = { screen: "settings", colorMode: "light" };
     persistView("agent-a", SNAP);
     persistView("agent-b", other);
     expect(loadPersistedView("agent-a")).toEqual(SNAP);

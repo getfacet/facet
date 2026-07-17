@@ -79,6 +79,66 @@ export interface NormalizedTransitionHint {
   readonly rootReplacedRevision: number | null;
 }
 
+function cloneStyleGraph(value: unknown, seen: WeakMap<object, unknown>): unknown {
+  if (typeof value !== "object" || value === null) return value;
+  const known = seen.get(value);
+  if (known !== undefined) return known;
+  if (Array.isArray(value)) {
+    const copy: unknown[] = [];
+    seen.set(value, copy);
+    for (const item of value) copy.push(cloneStyleGraph(item, seen));
+    return copy;
+  }
+  const copy: Record<string, unknown> = {};
+  seen.set(value, copy);
+  for (const key of Object.keys(value)) {
+    copy[key] = cloneStyleGraph((value as Record<string, unknown>)[key], seen);
+  }
+  return copy;
+}
+
+/**
+ * Capture the resolved design-system value used by an inert motion frame.
+ * Token maps and Preset/default style graphs are copied so a retired frame is
+ * never a live alias to an operator-owned object. Concrete values are already
+ * validated strings/numbers; the recursive copy exists only for style bundles.
+ */
+export function captureResolvedThemeSnapshot(theme: ResolvedTheme): ResolvedTheme {
+  return {
+    name: theme.name,
+    ...(theme.description === undefined ? {} : { description: theme.description }),
+    colorMode: theme.colorMode,
+    space: { ...theme.space },
+    fontSize: { ...theme.fontSize },
+    fontFamily: { ...theme.fontFamily },
+    fontWeight: { ...theme.fontWeight },
+    radius: { ...theme.radius },
+    borderWidth: { ...theme.borderWidth },
+    aspectRatio: { ...theme.aspectRatio },
+    minHeight: { ...theme.minHeight },
+    maxWidth: { ...theme.maxWidth },
+    letterSpacing: { ...theme.letterSpacing },
+    lineHeight: { ...theme.lineHeight },
+    controlHeight: { ...theme.controlHeight },
+    indicatorSize: { ...theme.indicatorSize },
+    progressThickness: { ...theme.progressThickness },
+    chartThickness: { ...theme.chartThickness },
+    color: { ...theme.color },
+    shadow: { ...theme.shadow },
+    gradient: { ...theme.gradient },
+    scrim: { ...theme.scrim },
+    highlight: { ...theme.highlight },
+    defaults: cloneStyleGraph(theme.defaults, new WeakMap()) as ResolvedTheme["defaults"],
+    ...(theme.presets === undefined
+      ? {}
+      : {
+          presets: cloneStyleGraph(theme.presets, new WeakMap()) as NonNullable<
+            ResolvedTheme["presets"]
+          >,
+        }),
+  };
+}
+
 export function emptyMotionState(): MotionState {
   return {
     enterIds: new Set<NodeId>(),

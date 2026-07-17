@@ -8,14 +8,14 @@
 "@facet/client": minor
 ---
 
-Kits & themes as data — reskin and pre-seed a Facet page without touching code.
-Four additive layers, one flow, and the invariants hold: **the LLM never authors
-theme values** (it selects a theme by NAME), **composition data stays out of the
-system prompt** (the prompt contains only a validated name/description index;
-the provider may fetch one complete concrete dataset on demand with the
-read-only `get_composition` tool), and **no new protocol messages** are
-introduced (the theme map and initial stage ship inline in the quickstart
-shell, while composition reads remain provider-side).
+Themes and Patterns as data — reskin and pre-seed a Facet page without touching
+code. Per-agent assets contain one complete Theme, one exact Pattern list, and
+an optional initial tree. The LLM sees semantic token/Preset names but never raw
+Theme CSS values. Pattern bodies stay out of the system prompt: the prompt holds
+only a validated name/description/useWhen index and the provider may fetch one
+complete Pattern with the read-only `get_pattern` tool. No new protocol message
+is introduced; Theme paint and the initial stage ship inline in the quickstart
+shell while Pattern reads remain provider-side.
 
 PRE-1.0 BREAKING (in-repo consumers all updated): `FacetRuntime.handle` and
 `applyMessages` now return `TurnResult` (`{ messages, agentMutated }`) instead
@@ -34,13 +34,12 @@ and the salvage clone.
   CSS enters, as OPERATOR data only (per-group token-name allowlist,
   `url()`/`var()`/`expression()`/`javascript:` denied, dimensions clamped, hostile
   keys never resolve, WCAG contrast measured as a warning never a rejection);
-  `FacetTree.theme?: string` (a name, kept-if-string by `validateTree`);
-  `FacetComposition` + `validateComposition`; the `STAGE_SPEC` theme line
-  (select-by-name).
-- `@facet/agent`: `Stage.theme(name)` — one top-level RFC 6902 `add`.
+  `FacetPattern` + `validatePattern`; the `STAGE_SPEC` closed authoring rules.
+- `@facet/agent`: native stage authoring remains RFC 6902-only; Theme is host
+  asset data and cannot be selected from the document.
 - `@facet/react`: `DEFAULT_THEME`, `ResolvedTheme`, `resolveTheme`; the style fns
   gain a defaulted trailing theme parameter (zero-arg output byte-identical);
-  `StageRenderer` gains an optional `themes` prop. ChatDock keeps the default
+  `StageRenderer` gains one optional `theme` prop. ChatDock keeps the default
   palette.
 - `@facet/runtime`: the `AssetsStore` registry adapter (`MemoryAssets`, plus
   `FileAssets` behind `@facet/runtime/node`), `loadAssets` (runs the core
@@ -50,16 +49,15 @@ and the salvage clone.
   travels the patch channel as the first versioned frame of the seeding turn (and
   the quickstart shell also ships it for an instant first paint).
 - `@facet/assets`: node-free default-asset DATA (deps = `@facet/core` only) —
-  `DEFAULT_THEME` and `DEFAULT_COMPOSITIONS` (hero, card, cta-button, and more as
-  validated compositions), the single source of default-theme truth
+  `DEFAULT_THEME` and `DEFAULT_PATTERNS` (hero, card, cta-button, and more as
+  validated Patterns), the single source of default-Theme truth
   (`@facet/react` derives its floor from it; `loadAssets` seeds it as the base
   layer).
-- `@facet/quickstart`: `--assets <dir>` (reads `*.theme.json`,
-  `*.composition.json`, `initial.tree.json`), theme names + descriptions and
-  a validated composition name/description index injected into the prompt, a
-  `set_theme` tool (a NAME argument only) plus `get_composition` (an exact,
-  read-only lookup by listed name), and the escaped theme map inlined into the
-  shell. After a read, the model authors ordinary native stage nodes through the
-  existing tools. With no `--assets`, boot is byte-identical.
+- `@facet/quickstart`: `--assets <dir>` reads only `theme.json`,
+  `patterns.json`, and `initial.tree.json`; injects compact Pattern, Preset, and
+  Brick indexes; exposes exact `get_pattern`, `get_preset`, `get_brick_spec`, and
+  `get_style_choices` reads; and inlines the escaped Theme into the shell. After
+  discovery the model authors ordinary native stage nodes through existing
+  mutation tools. With no `--assets`, bundled defaults apply.
 
 (`@facet/*` are versioned together as a fixed group.)

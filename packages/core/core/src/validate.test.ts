@@ -6,125 +6,8 @@ import {
   MAX_DEPTH,
   MAX_RENDER_NODES,
   MAX_SCREENS,
-  validateComposition,
   validateTree,
 } from "./validate.js";
-import { MAX_DESCRIPTION_LENGTH } from "./theme.js";
-
-describe("canonical composition validation surface", () => {
-  it("validates canonical compositions", () => {
-    const exports = validationModule as Record<string, unknown>;
-    const candidate = exports["validateComposition"];
-
-    expect(typeof candidate).toBe("function");
-    expect(exports).not.toHaveProperty(["validate", "Sta", "mp"].join(""));
-    if (typeof candidate !== "function") return;
-
-    const validateComposition = candidate as (input: unknown) => {
-      readonly composition?: { readonly nodes: Readonly<Record<string, unknown>> };
-      readonly issues: readonly string[];
-    };
-    const forbidden = validateComposition({
-      name: "leadCapture",
-      metadata: { description: "Forbidden composition fields" },
-      root: "root",
-      nodes: {
-        root: {
-          id: "root",
-          type: "box",
-          children: [],
-          html: "<form></form>",
-          js: "alert(1)",
-          css: ".lead { display: none }",
-          dataSource: "leads",
-          query: "select * from leads",
-          endpoint: "https://api.example.test/leads",
-        },
-      },
-    });
-    expect(forbidden.composition).toBeUndefined();
-    expect(
-      forbidden.issues.filter((issue) => issue.includes("not allowed in compositions")),
-    ).toHaveLength(6);
-
-    const nodes = Object.fromEntries(
-      Array.from({ length: 1024 }, (_, index) => {
-        const id = index === 0 ? "root" : `n${String(index)}`;
-        return [id, { id, type: "text", value: id }];
-      }),
-    );
-    const oversized = validateComposition({ name: "oversized", root: "root", nodes });
-    expect(oversized.composition).toBeUndefined();
-    expect(oversized.issues.length).toBeLessThanOrEqual(65);
-  });
-});
-
-describe("concrete composition contract", () => {
-  it("requires metadata.description and keeps only native nodes", () => {
-    const valid = validateComposition({
-      name: "reference-card",
-      metadata: { description: "A concrete reference card" },
-      root: "label",
-      nodes: {
-        label: { id: "label", type: "text", value: "{{literal-label}}" }, // composition-hard-cut: allowed-negative
-      },
-    });
-
-    expect(valid.issues).toHaveLength(0);
-    expect(valid.composition).toEqual({
-      name: "reference-card",
-      metadata: { description: "A concrete reference card" },
-      root: "label",
-      nodes: {
-        label: { id: "label", type: "text", value: "{{literal-label}}", style: {} }, // composition-hard-cut: allowed-negative
-      },
-    });
-
-    for (const legacy of [
-      {
-        name: "top-level-description",
-        description: "legacy",
-        root: "label",
-        nodes: { label: { id: "label", type: "text", value: "legacy" } },
-      },
-      {
-        name: "missing-description",
-        metadata: { category: "legacy" },
-        root: "label",
-        nodes: { label: { id: "label", type: "text", value: "legacy" } },
-      },
-      {
-        name: "nested-reference",
-        metadata: { description: "legacy reference" },
-        root: "root",
-        nodes: {
-          root: { id: "root", type: "box", children: ["ref"] },
-          ref: { use: "badge", slots: { label: "legacy" } }, // composition-hard-cut: allowed-negative
-        },
-      },
-    ]) {
-      expect(validateComposition(legacy).composition).toBeUndefined();
-    }
-  });
-
-  it("applies ordinary native media safety instead of marker semantics", () => {
-    const { composition, issues } = validateComposition({
-      name: "literal-markers",
-      metadata: { description: "Marker-looking strings are ordinary values" },
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["copy", "media"] },
-        copy: { id: "copy", type: "text", value: "{{literal-copy}}" }, // composition-hard-cut: allowed-negative
-        media: { id: "media", type: "media", src: "{{not-a-safe-url}}" }, // composition-hard-cut: allowed-negative
-      },
-    });
-
-    expect(composition?.nodes["copy"]).toMatchObject({ value: "{{literal-copy}}" }); // composition-hard-cut: allowed-negative
-    expect(composition?.nodes["media"]).toBeUndefined();
-    expect(composition?.nodes["root"]).toMatchObject({ children: ["copy"] });
-    expect(issues.some((issue) => issue.includes("unsafe media src"))).toBe(true);
-  });
-});
 
 describe("validateTree", () => {
   it("keeps a valid tree unchanged", () => {
@@ -157,30 +40,40 @@ describe("validateTree", () => {
     const input = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", style: { gap: "HUGE", pad: "md" }, children: [] },
+        root: {
+          id: "root",
+          type: "box",
+          style: { gap: "HUGE", padding: "md" },
+          children: [],
+        },
       },
     };
     const root = validateTree(input).tree.nodes["root"] as unknown as {
       style?: Record<string, unknown>;
     };
     expect(root.style?.["gap"]).toBeUndefined();
-    expect(root.style?.["pad"]).toBe("md");
+    expect(root.style?.["padding"]).toBe("md");
   });
 
-  it("keeps valid primitive recipe variants and drops malformed ones", () => {
+  it("keeps valid Preset names inside style and drops malformed ones", () => {
     const run = validateTree({
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", variant: "panel", children: ["t", "bad"] },
-        t: { id: "t", type: "text", value: "Title", variant: "heading" },
-        bad: { id: "bad", type: "text", value: "Bad", variant: "bad variant" },
+        root: {
+          id: "root",
+          type: "box",
+          style: { preset: "panel" },
+          children: ["t", "bad"],
+        },
+        t: { id: "t", type: "text", value: "Title", style: { preset: "heading" } },
+        bad: { id: "bad", type: "text", value: "Bad", style: { preset: "bad preset" } },
       },
     });
 
-    expect(run.tree.nodes["root"]).toMatchObject({ variant: "panel" });
-    expect(run.tree.nodes["t"]).toMatchObject({ variant: "heading" });
-    expect(run.tree.nodes["bad"]).not.toHaveProperty("variant");
-    expect(run.issues.some((issue) => issue.includes("malformed variant dropped"))).toBe(true);
+    expect(run.tree.nodes["root"]).toMatchObject({ style: { preset: "panel" } });
+    expect(run.tree.nodes["t"]).toMatchObject({ style: { preset: "heading" } });
+    expect(run.tree.nodes["bad"]).toMatchObject({ style: {} });
+    expect(run.issues.some((issue) => issue.includes("malformed Preset name"))).toBe(true);
   });
 
   it("keeps valid font family tokens on text styles", () => {
@@ -188,7 +81,7 @@ describe("validateTree", () => {
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["t"] },
-        t: { id: "t", type: "text", value: "hi", style: { family: "mono" } },
+        t: { id: "t", type: "text", value: "hi", style: { fontFamily: "mono" } },
       },
     };
 
@@ -196,7 +89,7 @@ describe("validateTree", () => {
       style?: Record<string, unknown>;
     };
 
-    expect(text.style?.["family"]).toBe("mono");
+    expect(text.style?.["fontFamily"]).toBe("mono");
   });
 
   it("strips invalid font family tokens from text styles", () => {
@@ -204,8 +97,8 @@ describe("validateTree", () => {
       root: "root",
       nodes: {
         root: { id: "root", type: "box", children: ["bad", "nonString"] },
-        bad: { id: "bad", type: "text", value: "bad", style: { family: "display" } },
-        nonString: { id: "nonString", type: "text", value: "bad", style: { family: 123 } },
+        bad: { id: "bad", type: "text", value: "bad", style: { fontFamily: "display" } },
+        nonString: { id: "nonString", type: "text", value: "bad", style: { fontFamily: 123 } },
       },
     });
 
@@ -214,8 +107,8 @@ describe("validateTree", () => {
       style?: Record<string, unknown>;
     };
 
-    expect(bad.style?.["family"]).toBeUndefined();
-    expect(nonString.style?.["family"]).toBeUndefined();
+    expect(bad.style?.["fontFamily"]).toBeUndefined();
+    expect(nonString.style?.["fontFamily"]).toBeUndefined();
   });
 
   it("removes dangling child references", () => {
@@ -281,10 +174,10 @@ describe("validateTree", () => {
     expect(validateTree(null).tree.root).toBe("root");
   });
 
-  it("rejects every retired type at every core boundary", () => {
+  it("rejects every retired type at the document boundary", () => {
     const retiredTypes = ["button", "form", "filterBar", "metric", "tabs", "nav", "stat"];
 
-    expect(validationModule).not.toHaveProperty("MAX_TABS_ITEMS"); // composition-hard-cut: allowed-negative
+    expect(validationModule).not.toHaveProperty("MAX_TABS_ITEMS"); // style-hard-cut: allowed-negative
 
     for (const type of retiredTypes) {
       const rootRun = validateTree({
@@ -293,20 +186,6 @@ describe("validateTree", () => {
       });
       expect(rootRun.tree.nodes["retired"], `root:${type}`).toBeUndefined();
       expect(rootRun.issues.some((issue) => issue.includes(`unknown type "${type}"`))).toBe(true);
-
-      const compositionRun = validateComposition({
-        name: `retired-${type}`,
-        metadata: { description: "Retired repeatable reference", repeatable: true },
-        root: "root",
-        nodes: {
-          root: { id: "root", type: "box", children: ["retired", "retired"] },
-          retired: { id: "retired", type },
-        },
-      });
-      expect(compositionRun.composition, `composition:${type}`).toBeUndefined();
-      expect(
-        compositionRun.issues.some((issue) => issue.includes(`unknown brick type "${type}"`)),
-      ).toBe(true);
     }
 
     const staleNodes = Object.fromEntries(
@@ -519,7 +398,7 @@ describe("validateTree data bricks", () => {
         keyValue: {
           id: "keyValue",
           type: "keyValue",
-          items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+          items: [{ label: "Plan", value: "Pro" }],
         },
         loading: { id: "loading", type: "loading", label: "Loading customers" },
       },
@@ -528,7 +407,7 @@ describe("validateTree data bricks", () => {
     expect(issues).toHaveLength(0);
     expect(tree.nodes["keyValue"]).toMatchObject({
       type: "keyValue",
-      items: [{ label: "Plan", value: "Pro", tone: "accent" }],
+      items: [{ label: "Plan", value: "Pro" }],
     });
     expect(tree.nodes["loading"]).toMatchObject({ type: "loading", label: "Loading customers" });
   });
@@ -540,14 +419,14 @@ describe("validateTree data bricks", () => {
         root: { id: "root", type: "box", children: ["form", "badMetric"] },
         form: {
           id: "form",
-          type: "form", // composition-hard-cut: allowed-negative
+          type: "form", // style-hard-cut: allowed-negative
           title: "Lead capture",
           endpoint: "https://api.example.test/leads",
           html: "<form></form>",
           css: ".lead { display: none }",
           children: [],
         },
-        badMetric: { id: "badMetric", type: "metric", label: "ARR" }, // composition-hard-cut: allowed-negative
+        badMetric: { id: "badMetric", type: "metric", label: "ARR" }, // style-hard-cut: allowed-negative
       },
     });
 
@@ -565,18 +444,21 @@ describe("validateTree data bricks", () => {
         root: {
           id: "root",
           type: "box",
-          variant: "dashboard",
-          style: { gap: "md" },
+          style: { preset: "dashboard", gap: "md" },
           children: ["panel", "table", "chart", "progress", "list"],
         },
         panel: {
           id: "panel",
           type: "box",
-          variant: "metric",
-          style: { bg: "surface", gap: "sm" },
+          style: { preset: "metric", background: "surface", gap: "sm" },
           children: ["label"],
         },
-        label: { id: "label", type: "text", value: "Refresh", variant: "heading" },
+        label: {
+          id: "label",
+          type: "text",
+          value: "Refresh",
+          style: { preset: "heading" },
+        },
         table: {
           id: "table",
           type: "table",
@@ -601,7 +483,7 @@ describe("validateTree data bricks", () => {
     expect(tree.nodes["root"]).toMatchObject({ type: "box", style: { gap: "md" } });
     expect(tree.nodes["panel"]).toMatchObject({
       type: "box",
-      style: { bg: "surface", gap: "sm" },
+      style: { preset: "metric", background: "surface", gap: "sm" },
       children: ["label"],
     });
     expect(tree.nodes["label"]).toMatchObject({ type: "text", value: "Refresh" });
@@ -679,16 +561,14 @@ describe("validateTree data bricks", () => {
           id: "highProgress",
           type: "progress",
           value: 175,
-          tone: "not-a-tone",
         },
-        badStat: { id: "badStat", type: "stat", label: "ARR" }, // composition-hard-cut: allowed-negative
+        badStat: { id: "badStat", type: "stat", label: "ARR" }, // style-hard-cut: allowed-negative
         good: { id: "good", type: "text", value: "kept" },
       },
     });
 
     expect((tree.nodes["lowProgress"] as { value?: unknown }).value).toBe(0);
-    expect((tree.nodes["highProgress"] as { value?: unknown; tone?: unknown }).value).toBe(100);
-    expect((tree.nodes["highProgress"] as { tone?: unknown }).tone).toBeUndefined();
+    expect((tree.nodes["highProgress"] as { value?: unknown }).value).toBe(100);
     expect(tree.nodes["badStat"]).toBeUndefined();
     expect(tree.nodes["good"]).toMatchObject({ type: "text", value: "kept" });
     expect(issues.some((issue) => issue.includes("progress value clamped to 0"))).toBe(true);
@@ -711,7 +591,7 @@ describe("validateTree data bricks", () => {
             type: "box",
             children: ["badge", "alert", "divider", "keep"],
           },
-          badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" },
+          badge: { id: "badge", type: "badge", label: "Healthy", tone: "success" }, // style-hard-cut: allowed-negative
           alert: { id: "alert", type: "alert", title: "Heads up", body: "Review pricing." },
           divider: { id: "divider", type: "divider", label: "Details" },
           keep: { id: "keep", type: "text", value: "kept" },
@@ -735,9 +615,9 @@ describe("validateTree data bricks", () => {
   });
 });
 
-describe("retired container-pattern boundaries", () => {
-  it("drops retired container patterns and stale metadata", () => {
-    const retiredTypes = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
+describe("retired container brick boundaries", () => {
+  it("drops retired container bricks while preserving valid siblings", () => {
+    const retiredTypes = ["section", "card", "emptyState"] as const; // style-hard-cut: allowed-negative
     const staleNodes = Object.fromEntries(
       retiredTypes.map((type) => [type, { id: type, type, children: [] }]),
     );
@@ -756,52 +636,19 @@ describe("retired container-pattern boundaries", () => {
     for (const type of retiredTypes) {
       expect(treeIssues.some((issue) => issue.includes(`unknown type "${type}"`))).toBe(true);
     }
-
-    const { composition, issues: compositionIssues } = validateComposition({
-      name: "stale-metadata",
-      metadata: {
-        description: "Stale metadata is dropped",
-        preferredParent: "section", // composition-hard-cut: allowed-negative
-        composedOf: [...retiredTypes, "box", "stat"],
-      },
-      root: "root",
-      nodes: { root: { id: "root", type: "box", children: [] } },
-    });
-
-    expect(composition).toBeDefined();
-    expect(composition?.metadata.preferredParent).toBeUndefined();
-    expect(composition?.metadata.composedOf).toEqual(["box"]);
-    expect(
-      compositionIssues.some((issue) => issue.includes("preferredParent is invalid; dropped")),
-    ).toBe(true);
   });
 });
 
-describe("validateTree theme", () => {
+describe("validateTree asset isolation", () => {
   const base = {
     root: "root",
     nodes: { root: { id: "root", type: "box", children: [] } },
   };
 
-  it("keeps a string theme and drops a non-string theme", () => {
-    const kept = validateTree({ ...base, theme: "brand" });
-    expect((kept.tree as { theme?: unknown }).theme).toBe("brand");
-    expect(kept.issues).toHaveLength(0);
-
-    for (const bad of [42, {}, null]) {
-      const { tree, issues } = validateTree({ ...base, theme: bad });
-      expect((tree as { theme?: unknown }).theme).toBeUndefined();
-      expect("theme" in tree).toBe(false);
-      expect(issues.some((issue) => issue.includes("theme"))).toBe(true);
-    }
-  });
-
-  it("drops a string theme that is not a valid theme name (unbounded / control chars)", () => {
-    for (const bad of ["a".repeat(100_000), "brand\u0000ctl", "has space", "x".repeat(65)]) {
-      const { tree, issues } = validateTree({ ...base, theme: bad });
-      expect((tree as { theme?: unknown }).theme).toBeUndefined();
-      expect("theme" in tree).toBe(false);
-      expect(issues.some((issue) => issue.includes("theme is not a valid theme name"))).toBe(true);
+  it("never retains a document-authored Theme selector", () => {
+    for (const authoredTheme of ["brand", 42, {}, null, "a".repeat(100_000)]) {
+      const { tree } = validateTree({ ...base, theme: authoredTheme });
+      expect(tree).not.toHaveProperty("theme");
     }
   });
 
@@ -810,307 +657,6 @@ describe("validateTree theme", () => {
       const { tree } = validateTree(garbage);
       expect("theme" in tree).toBe(false);
     }
-  });
-});
-
-describe("validateComposition", () => {
-  it("never throws on a hostile composition nodes getter", () => {
-    const run = validateComposition({
-      name: "bad",
-      root: "root",
-      get nodes(): unknown {
-        throw new Error("boom");
-      },
-    });
-
-    expect(run.composition).toBeUndefined();
-    expect(run.issues).toContain("composition could not be read safely; refused");
-  });
-
-  it("keeps a valid fragment with a resolving root and metadata description", () => {
-    const { composition, issues } = validateComposition({
-      name: "hero",
-      metadata: { description: "a big hero" },
-      root: "h",
-      nodes: {
-        h: { id: "h", type: "box", style: { gap: "md" }, children: ["t"] },
-        t: { id: "t", type: "text", value: "hi" },
-      },
-    });
-    expect(issues).toHaveLength(0);
-    expect(composition).toBeDefined();
-    expect(composition?.name).toBe("hero");
-    expect(composition?.metadata.description).toBe("a big hero");
-    expect(composition?.root).toBe("h");
-    expect(composition?.nodes["t"]).toMatchObject({ type: "text", value: "hi" });
-    expect(Object.getPrototypeOf(composition?.nodes)).toBeNull();
-  });
-
-  it("normalizes safe data bricks and refuses unknown brick names", () => {
-    const safe = validateComposition({
-      name: "customerSummaryCard",
-      metadata: { description: "Customer summary card" },
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["details"] },
-        details: {
-          id: "details",
-          type: "keyValue",
-          items: [{ label: "ARR", value: "$24k" }],
-        },
-      },
-    });
-    expect(safe.issues).toHaveLength(0);
-    expect(safe.composition?.nodes["details"]).toMatchObject({
-      type: "keyValue",
-      items: [{ label: "ARR", value: "$24k" }],
-    });
-
-    const unknown = validateComposition({
-      name: "badSummary",
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["custom"] },
-        custom: { id: "custom", type: "customerSummaryCard", children: [] },
-      },
-    });
-    expect(unknown.composition).toBeUndefined();
-    expect(unknown.issues.some((issue) => issue.includes("unknown brick type"))).toBe(true);
-  });
-
-  it("accepts 1023 raw nodes and rejects 1024 before sanitization", () => {
-    const nodes: Record<string, unknown> = Object.fromEntries(
-      Array.from({ length: 1023 }, (_, index) => {
-        const id = index === 0 ? "root" : `n${String(index)}`;
-        return [id, { id, type: "text", value: id }];
-      }),
-    );
-    const accepted = validateComposition({
-      name: "bounded",
-      metadata: { description: "Bounded reference" },
-      root: "root",
-      nodes,
-    });
-    expect(accepted.composition).toBeDefined();
-    expect(Object.keys(accepted.composition?.nodes ?? {})).toHaveLength(1023);
-
-    nodes["overflow"] = { id: "overflow", type: "text", value: "overflow" };
-    const rejected = validateComposition({ name: "oversized", root: "root", nodes });
-    expect(rejected.composition).toBeUndefined();
-    expect(rejected.issues).toContain("composition nodes exceeded the 1023-node cap; refused");
-  });
-
-  it("bounds issues while refusing hostile node vocabulary", () => {
-    const nodes = Object.fromEntries(
-      Array.from({ length: 100 }, (_, index) => {
-        const id = index === 0 ? "root" : `n${String(index)}`;
-        return [id, { id, type: `unknown-${String(index)}` }];
-      }),
-    );
-    const run = validateComposition({ name: "hostile", root: "root", nodes });
-    expect(run.composition).toBeUndefined();
-    expect(run.issues).toHaveLength(65);
-    expect(run.issues.at(-1)).toBe("...further issues suppressed");
-  });
-
-  it("refuses a fragment whose root does not resolve", () => {
-    const { composition, issues } = validateComposition({
-      name: "x",
-      root: "ghost",
-      nodes: { a: { id: "a", type: "box", children: [] } },
-    });
-    expect(composition).toBeUndefined();
-    expect(issues.length).toBeGreaterThan(0);
-  });
-
-  it("accepts a single text node as the root (the root need not be a box)", () => {
-    const { composition, issues } = validateComposition({
-      name: "label",
-      metadata: { description: "Single label" },
-      root: "t",
-      nodes: { t: { id: "t", type: "text", value: "solo" } },
-    });
-    expect(issues).toHaveLength(0);
-    expect(composition?.root).toBe("t");
-    expect(composition?.nodes["t"]).toMatchObject({ type: "text", value: "solo" });
-  });
-
-  it("refuses input with no string name", () => {
-    for (const bad of [
-      { root: "t", nodes: { t: { id: "t", type: "text", value: "x" } } },
-      42,
-      null,
-    ]) {
-      const { composition, issues } = validateComposition(bad);
-      expect(composition).toBeUndefined();
-      expect(issues.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("drops hostile node ids without flipping the map prototype", () => {
-    const input = JSON.parse(
-      '{"name":"h","metadata":{"description":"Hostile ids"},"root":"root","nodes":{"root":{"id":"root","type":"box","children":["value"]},"__proto__":{"id":"__proto__","type":"text","value":"x"}}}',
-    ) as unknown;
-    const { composition, issues } = validateComposition(input);
-    expect(Object.keys(composition?.nodes ?? {})).toEqual(["root"]);
-    expect(issues.some((issue) => issue.includes("forbidden node id"))).toBe(true);
-    const root = composition?.nodes["root"] as unknown as { children: string[] };
-    expect(root.children).toEqual([]);
-  });
-
-  it("sanitizes junk style tokens on composition nodes", () => {
-    const { composition } = validateComposition({
-      name: "s",
-      metadata: { description: "Styled reference" },
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", style: { gap: "HUGE", pad: "md" }, children: [] },
-      },
-    });
-    const root = composition?.nodes["root"] as unknown as { style?: Record<string, unknown> };
-    expect(root.style?.["gap"]).toBeUndefined();
-    expect(root.style?.["pad"]).toBe("md");
-  });
-
-  it("breaks a cyclic fragment a -> b -> a with an issue and no throw", () => {
-    const run = (): ReturnType<typeof validateComposition> =>
-      validateComposition({
-        name: "cyc",
-        metadata: { description: "Cyclic reference" },
-        root: "a",
-        nodes: {
-          a: { id: "a", type: "box", children: ["b"] },
-          b: { id: "b", type: "box", children: ["a"] },
-        },
-      });
-    expect(run).not.toThrow();
-    const { composition, issues } = run();
-    const b = composition?.nodes["b"] as unknown as { children: string[] };
-    expect(b.children).toEqual([]); // the back-edge b -> a is removed
-    expect(issues.some((issue) => issue.includes("cyclic"))).toBe(true);
-  });
-
-  it("clamps a fragment deeper than MAX_DEPTH with an issue and no throw", () => {
-    const nodes: Record<string, unknown> = {
-      root: { id: "root", type: "box", children: ["n0"] },
-    };
-    for (let i = 0; i < 150; i += 1) {
-      nodes[`n${String(i)}`] = {
-        id: `n${String(i)}`,
-        type: "box",
-        children: i < 149 ? [`n${String(i + 1)}`] : [],
-      };
-    }
-    const run = (): ReturnType<typeof validateComposition> =>
-      validateComposition({
-        name: "deep",
-        metadata: { description: "Deep reference" },
-        root: "root",
-        nodes,
-      });
-    expect(run).not.toThrow();
-    const { issues } = run();
-    expect(issues.some((issue) => issue.includes("max depth"))).toBe(true);
-  });
-
-  it("keeps bounded prompt-safe composition metadata", () => {
-    const { composition, issues } = validateComposition({
-      name: "dashboard-summary",
-      metadata: {
-        description: "Dashboard cards",
-        category: "dashboard",
-        useWhen: "Summarizing KPIs",
-        avoidWhen: "Long narrative content",
-        variants: ["compact", "detailed"],
-        tags: ["dashboard", "metrics"],
-        repeatable: true,
-        preferredParent: "box",
-        composedOf: ["box", "stat", "not-a-node"],
-        dataRequirements: ["metric_label", "current_value"],
-        followUpEdits: ["refresh_value"],
-      },
-      root: "root",
-      nodes: { root: { id: "root", type: "box", children: [] } },
-    });
-
-    expect(issues).toHaveLength(0);
-    expect(composition?.metadata).toEqual({
-      description: "Dashboard cards",
-      category: "dashboard",
-      useWhen: "Summarizing KPIs",
-      avoidWhen: "Long narrative content",
-      variants: ["compact", "detailed"],
-      tags: ["dashboard", "metrics"],
-      repeatable: true,
-      preferredParent: "box",
-      composedOf: ["box"],
-      dataRequirements: ["metric_label", "current_value"],
-      followUpEdits: ["refresh_value"],
-    });
-  });
-
-  it("keeps every surviving FacetNode type in composedOf", () => {
-    const composedOf = [
-      "box",
-      "text",
-      "media",
-      "input",
-      "richtext",
-      "table",
-      "chart",
-      "list",
-      "keyValue",
-      "progress",
-      "loading",
-    ];
-    const { composition, issues } = validateComposition({
-      name: "brick-heavy",
-      metadata: {
-        description: "Brick-heavy reference",
-        composedOf,
-      },
-      root: "root",
-      nodes: { root: { id: "root", type: "box", children: [] } },
-    });
-
-    expect(issues).toHaveLength(0);
-    expect(composition?.metadata.composedOf).toEqual(composedOf);
-  });
-
-  it("keeps sentence-like dataRequirements/followUpEdits as free text after bounded sanitation", () => {
-    const longEntry = "x".repeat(MAX_DESCRIPTION_LENGTH + 50);
-    const { composition, issues } = validateComposition({
-      name: "free-text-metadata",
-      metadata: {
-        description: "Free-text metadata reference",
-        dataRequirements: [
-          "The current account balance in USD.",
-          "A list of recent transactions with dates.",
-          "tab\tbedentry",
-          longEntry,
-          42,
-          "   ",
-        ],
-        followUpEdits: ["Add a refresh button to reload the balance."],
-      },
-      root: "root",
-      nodes: { root: { id: "root", type: "box", children: [] } },
-    });
-
-    const dataRequirements = composition?.metadata?.dataRequirements ?? [];
-    expect(dataRequirements).toContain("The current account balance in USD.");
-    expect(dataRequirements).toContain("A list of recent transactions with dates.");
-    // C0/DEL/C1 control chars are stripped; the surviving text is kept.
-    expect(dataRequirements).toContain("tabbedentry");
-    // Over-long entry truncated to the description cap; whitespace-only dropped.
-    expect(dataRequirements.some((entry) => entry.length === MAX_DESCRIPTION_LENGTH)).toBe(true);
-    expect(dataRequirements).not.toContain(longEntry);
-    expect(dataRequirements).not.toContain("   ");
-    expect(composition?.metadata?.followUpEdits).toEqual([
-      "Add a refresh button to reload the balance.",
-    ]);
-    expect(issues.some((issue) => issue.includes("truncated"))).toBe(true);
-    expect(issues.some((issue) => issue.includes("is not a string"))).toBe(true);
   });
 });
 
@@ -1172,51 +718,6 @@ describe("validateTree shared-child DAG (single-parent per walk root)", () => {
     expect(tree.nodes["leaf"]).toBeDefined();
     // Nothing was dropped: each walk root sees "shared" under a single parent.
     expect(issues.some((i) => i.includes("removed shared child"))).toBe(false);
-  });
-});
-
-describe("validateComposition caps (name + metadata.description)", () => {
-  it("rejects a composition name that is not a valid theme-name (too long / bad chars)", () => {
-    for (const bad of ["x".repeat(65), "has space", "-lead"]) {
-      const { composition, issues } = validateComposition({
-        name: bad,
-        root: "t",
-        nodes: { t: { id: "t", type: "text", value: "x" } },
-      });
-      expect(composition, bad).toBeUndefined();
-      expect(issues.length).toBeGreaterThan(0);
-    }
-  });
-
-  it("refuses a malformed name WITHOUT echoing its raw bytes into the issue string", () => {
-    // The refusal branch must not embed the untrusted name — an unbounded or
-    // terminal-escape name would otherwise inject into prompt/issue/log strings.
-    const huge = "x".repeat(5_000_000);
-    const escape = "\x1b[2Jwipe";
-    for (const bad of [huge, escape]) {
-      const { composition, issues } = validateComposition({
-        name: bad,
-        root: "t",
-        nodes: { t: { id: "t", type: "text", value: "x" } },
-      });
-      expect(composition).toBeUndefined();
-      const joined = issues.join("; ");
-      // Contains neither the raw bytes nor a length anywhere near the input.
-      expect(joined.includes(bad)).toBe(false);
-      expect(joined.includes("\x1b")).toBe(false);
-      expect(joined.length).toBeLessThan(200);
-    }
-  });
-
-  it("truncates an over-long metadata.description to the shared 200-char cap with an issue", () => {
-    const { composition, issues } = validateComposition({
-      name: "hero",
-      metadata: { description: "d".repeat(5000) },
-      root: "t",
-      nodes: { t: { id: "t", type: "text", value: "x" } },
-    });
-    expect(composition?.metadata.description).toHaveLength(200);
-    expect(issues.some((i) => i.includes("description truncated"))).toBe(true);
   });
 });
 
@@ -1404,21 +905,6 @@ describe("validate issue echo is bounded and never throws", () => {
   });
 });
 
-describe("validateComposition metadata.description", () => {
-  it("refuses a non-string required description WITH an issue", () => {
-    for (const bad of [123, {}, null, [1]]) {
-      const { composition, issues } = validateComposition({
-        name: "hero",
-        metadata: { description: bad },
-        root: "t",
-        nodes: { t: { id: "t", type: "text", value: "x" } },
-      });
-      expect(composition).toBeUndefined();
-      expect(issues.some((i) => i.includes("description is not a string"))).toBe(true);
-    }
-  });
-});
-
 describe("isSafeMediaSrc", () => {
   it("accepts data:image/ URLs", () => {
     expect(isSafeMediaSrc("data:image/png;base64,AAAA")).toBe(true);
@@ -1473,11 +959,10 @@ describe("brick-vocab v1 core validation", () => {
           type: "media",
           kind: "video",
           src: "https://cdn.example.com/clip.mp4",
-          variant: "hero",
           alt: "Launch",
           poster: "/posters/launch.png",
           controls: true,
-          style: { radius: "md", width: "full", ratio: "wide" },
+          style: { preset: "hero", borderRadius: "md", width: "full", aspectRatio: "wide" },
         },
         legacy: {
           id: "legacy",
@@ -1501,11 +986,10 @@ describe("brick-vocab v1 core validation", () => {
       type: "media",
       kind: "video",
       src: "https://cdn.example.com/clip.mp4",
-      variant: "hero",
       alt: "Launch",
       poster: "/posters/launch.png",
       controls: true,
-      style: { radius: "md", width: "full", ratio: "wide" },
+      style: { preset: "hero", borderRadius: "md", width: "full", aspectRatio: "wide" },
     });
     expect(tree.nodes["legacy"]).toMatchObject({
       id: "legacy",
@@ -1566,7 +1050,7 @@ describe("brick-vocab v1 core validation", () => {
           id: "select",
           type: "input",
           name: "plan",
-          variant: "default",
+          style: { preset: "default" },
           input: "select",
           options: ["Free", 7, "Pro", long],
         },
@@ -1584,7 +1068,7 @@ describe("brick-vocab v1 core validation", () => {
     ]);
     expect(tree.nodes["select"]).toMatchObject({
       type: "input",
-      variant: "default",
+      style: { preset: "default" },
       input: "select",
       options: ["Free", "Pro", "x".repeat(2000)],
     });
@@ -1596,7 +1080,7 @@ describe("brick-vocab v1 core validation", () => {
     expect(tree.nodes["unknown"]).not.toHaveProperty("input");
   });
 
-  it("drops malformed media and input variants", () => {
+  it("ignores retired node-level variants without an error", () => {
     const { tree, issues } = validateTree(
       rootWith({
         media: {
@@ -1604,20 +1088,20 @@ describe("brick-vocab v1 core validation", () => {
           type: "media",
           kind: "image",
           src: "https://cdn.example.com/a.png",
-          variant: "bad variant",
+          variant: "bad variant", // style-hard-cut: allowed-negative
         },
         field: {
           id: "field",
           type: "input",
           name: "email",
-          variant: "bad variant",
+          variant: "bad variant", // style-hard-cut: allowed-negative
         },
       }),
     );
 
     expect(tree.nodes["media"]).not.toHaveProperty("variant");
     expect(tree.nodes["field"]).not.toHaveProperty("variant");
-    expect(issues.filter((issue) => issue.includes("malformed variant dropped"))).toHaveLength(2);
+    expect(issues).toHaveLength(0);
   });
 
   it("keeps scroll axes and columns tokens while stripping unknown values with issues", () => {
@@ -1629,8 +1113,8 @@ describe("brick-vocab v1 core validation", () => {
           type: "box",
           children: ["x", "y", "legacy", "grid", "badScroll", "badColumns"],
         },
-        x: { id: "x", type: "box", style: { scroll: "x" }, children: [] },
-        y: { id: "y", type: "box", style: { scroll: "y" }, children: [] },
+        x: { id: "x", type: "box", style: { scroll: "horizontal" }, children: [] },
+        y: { id: "y", type: "box", style: { scroll: "vertical" }, children: [] },
         legacy: { id: "legacy", type: "box", style: { scroll: true }, children: [] },
         grid: { id: "grid", type: "box", style: { columns: 3 }, children: [] },
         badScroll: { id: "badScroll", type: "box", style: { scroll: "sideways" }, children: [] },
@@ -1640,9 +1124,9 @@ describe("brick-vocab v1 core validation", () => {
 
     const styleOf = (id: string): Record<string, unknown> | undefined =>
       (tree.nodes[id] as unknown as { style?: Record<string, unknown> }).style;
-    expect(styleOf("x")?.["scroll"]).toBe("x");
-    expect(styleOf("y")?.["scroll"]).toBe("y");
-    expect(styleOf("legacy")?.["scroll"]).toBe("y");
+    expect(styleOf("x")?.["scroll"]).toBe("horizontal");
+    expect(styleOf("y")?.["scroll"]).toBe("vertical");
+    expect(styleOf("legacy")?.["scroll"]).toBeUndefined();
     expect(styleOf("grid")?.["columns"]).toBe(3);
     expect(styleOf("badScroll")?.["scroll"]).toBeUndefined();
     expect(styleOf("badColumns")?.["columns"]).toBeUndefined();
@@ -1659,9 +1143,9 @@ describe("brick-vocab v1 core validation", () => {
   });
 });
 
-describe("validateTree appear/scroll/onHold vocabulary", () => {
-  it("strips unknown appear scroll tokens and malformed onHold", () => {
-    // Valid new vocabulary is KEPT: appear token, scroll boolean, onHold action
+describe("validateTree motion/scroll/onHold vocabulary", () => {
+  it("strips unknown motion and scroll tokens and malformed onHold", () => {
+    // Valid new vocabulary is KEPT: enterAnimation token, scroll choice, onHold action
     // with payload/collect intact — zero issues.
     const valid = {
       root: "root",
@@ -1669,7 +1153,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
         root: {
           id: "root",
           type: "box",
-          style: { appear: "fade", scroll: true },
+          style: { enterAnimation: "fade", scroll: "vertical" },
           onHold: { kind: "agent", name: "peek", payload: { id: 7 }, collect: "form" },
           children: [],
         },
@@ -1681,8 +1165,8 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
       style?: Record<string, unknown>;
       onHold?: Record<string, unknown>;
     };
-    expect(keptRoot.style?.["appear"]).toBe("fade");
-    expect(keptRoot.style?.["scroll"]).toBe("y");
+    expect(keptRoot.style?.["enterAnimation"]).toBe("fade");
+    expect(keptRoot.style?.["scroll"]).toBe("vertical");
     expect(keptRoot.onHold).toEqual({
       kind: "agent",
       name: "peek",
@@ -1690,18 +1174,25 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
       collect: "form",
     });
 
-    // appear:"explode" is not in APPEARS → stripped WITH an issue recorded.
+    // enterAnimation:"explode" is outside the closed domain → stripped WITH an issue.
     const explodeRun = validateTree({
       root: "root",
-      nodes: { root: { id: "root", type: "box", style: { appear: "explode" }, children: [] } },
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          style: { enterAnimation: "explode" },
+          children: [],
+        },
+      },
     });
     const explodeRoot = explodeRun.tree.nodes["root"] as unknown as {
       style?: Record<string, unknown>;
     };
-    expect(explodeRoot.style?.["appear"]).toBeUndefined();
-    expect(explodeRun.issues.some((i) => i.includes("appear"))).toBe(true);
+    expect(explodeRoot.style?.["enterAnimation"]).toBeUndefined();
+    expect(explodeRun.issues.some((i) => i.includes("enterAnimation"))).toBe(true);
 
-    // scroll junk — only axes or legacy true survive; other strings/numbers are stripped.
+    // scroll junk — only the closed names survive; other strings/numbers are stripped.
     for (const scroll of ["sideways", 1]) {
       const { tree, issues } = validateTree({
         root: "root",
@@ -1732,31 +1223,6 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     expect(legacyRoot.onHold).toEqual({ kind: "agent", name: "peek" });
     expect(legacy.issues).toHaveLength(0);
 
-    // validateComposition parity: the shared sanitizeNode strips the same junk.
-    const { composition, issues: compositionIssues } = validateComposition({
-      name: "junky",
-      metadata: { description: "Junky reference" },
-      root: "b",
-      nodes: {
-        b: {
-          id: "b",
-          type: "box",
-          style: { appear: "explode", scroll: "sideways" },
-          onHold: 42,
-          children: [],
-        },
-      },
-    });
-    const compositionRoot = composition?.nodes["b"] as unknown as {
-      style?: Record<string, unknown>;
-      onHold?: unknown;
-    };
-    expect(compositionRoot.style?.["appear"]).toBeUndefined();
-    expect(compositionRoot.style?.["scroll"]).toBeUndefined();
-    expect(compositionRoot.onHold).toBeUndefined();
-    expect(compositionIssues.some((i) => i.includes("onHold"))).toBe(true);
-    expect(compositionIssues.some((i) => i.includes("onPress"))).toBe(false);
-
     // A pre-D tree (none of the new fields) passes through byte-identical.
     const preD = {
       root: "root",
@@ -1776,8 +1242,8 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     expect(preDRun.tree).toEqual(preD);
   });
 
-  it("strips appear/scroll from non-box styles — the new style tokens are BoxStyle-only", () => {
-    // appear and scroll live on BoxStyle only; text/media/field styles never
+  it("strips motion/scroll from non-box styles — these properties are BoxStyle-only", () => {
+    // enterAnimation and scroll live on BoxStyle only; text/media/input styles never
     // carry them, so validateTree must drop them there (the renderer's
     // BoxStyle-only raw path then matches the validated path — no divergence).
     const run = validateTree({
@@ -1788,7 +1254,7 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
           id: "t",
           type: "text",
           value: "hi",
-          style: { appear: "fade", size: "lg" },
+          style: { enterAnimation: "fade", fontSize: "lg" },
         },
         f: {
           id: "f",
@@ -1800,8 +1266,8 @@ describe("validateTree appear/scroll/onHold vocabulary", () => {
     });
     const t = run.tree.nodes["t"] as unknown as { style?: Record<string, unknown> };
     const f = run.tree.nodes["f"] as unknown as { style?: Record<string, unknown> };
-    expect(t.style?.["appear"]).toBeUndefined(); // stripped from a text style
-    expect(t.style?.["size"]).toBe("lg"); // a real text token survives
+    expect(t.style?.["enterAnimation"]).toBeUndefined(); // stripped from a text style
+    expect(t.style?.["fontSize"]).toBe("lg"); // a real text token survives
     expect(f.style?.["scroll"]).toBeUndefined(); // stripped from an input style
   });
 });
@@ -2019,7 +1485,7 @@ describe("validateTree input style", () => {
     const { tree } = validateTree(input);
     const field = tree.nodes["f"] as unknown as { style?: unknown };
     expect(field).toBeDefined();
-    expect(field.style).toBeUndefined();
+    expect(field.style).toEqual({});
   });
 });
 
@@ -2152,13 +1618,13 @@ describe("landing-grade-vocab", () => {
     };
   }
 
-  // DC-002 — new BoxStyle tokens: accepted when valid.
+  // DC-002 — closed BoxStyle values: accepted when valid.
   const boxTokenCases: ReadonlyArray<readonly [string, string]> = [
     ["minHeight", "screen"],
     ["maxWidth", "prose"],
-    ["gradient", "dusk"],
-    ["backdropScrim", "dark"],
-    ["scheme", "dark"],
+    ["backgroundGradient", "accent"],
+    ["backdropScrim", "strong"],
+    ["borderRadius", "lg"],
   ];
   for (const [key, valid] of boxTokenCases) {
     it(`DC-002 accepts a valid ${key} box token`, () => {
@@ -2185,11 +1651,11 @@ describe("landing-grade-vocab", () => {
     expect(bad.issues.some((i) => i.includes("sticky"))).toBe(true);
   });
 
-  // DC-002 — new TextStyle tokens.
+  // DC-002 — closed TextStyle values.
   const textTokenCases: ReadonlyArray<readonly [string, string]> = [
-    ["tracking", "wide"],
-    ["leading", "relaxed"],
-    ["highlight", "band"],
+    ["letterSpacing", "wide"],
+    ["lineHeight", "relaxed"],
+    ["highlight", "accent"],
   ];
   for (const [key, valid] of textTokenCases) {
     it(`DC-002 accepts a valid ${key} text token`, () => {
@@ -2205,14 +1671,20 @@ describe("landing-grade-vocab", () => {
     });
   }
 
-  // DC-002 — extended FONT_SIZES accept the new display sizes.
-  for (const size of ["4xl", "5xl", "6xl"] as const) {
+  // DC-002 — the locked display sizes survive.
+  for (const size of ["3xl", "4xl"] as const) {
     it(`DC-002 accepts extended font size ${size}`, () => {
-      const { style, issues } = runText({ size });
-      expect(style?.["size"]).toBe(size);
+      const { style, issues } = runText({ fontSize: size });
+      expect(style?.["fontSize"]).toBe(size);
       expect(issues).toHaveLength(0);
     });
   }
+
+  it("DC-002 drops a font size outside the locked scale", () => {
+    const { style, issues } = runText({ fontSize: "5xl" });
+    expect(style?.["fontSize"]).toBeUndefined();
+    expect(issues.some((entry) => entry.includes("fontSize"))).toBe(true);
+  });
 
   // DC-003 — backdrop is a node-id STRING passthrough (not token membership).
   it("DC-003 keeps a string backdrop and drops a non-string backdrop WITH an issue", () => {
@@ -2246,9 +1718,9 @@ describe("landing-grade-vocab", () => {
         },
       },
       maxWidth: 42,
-      gradient: [],
+      backgroundGradient: [],
       backdropScrim: null,
-      scheme: Symbol("x") as unknown,
+      borderRadius: Symbol("x") as unknown,
       sticky: { nope: true },
     };
     expect(() =>
@@ -2265,16 +1737,26 @@ describe("landing-grade-vocab", () => {
         },
       }),
     ).not.toThrow();
-    expect(() => runText({ tracking: 3, leading: false, highlight: [] })).not.toThrow();
+    expect(() => runText({ letterSpacing: 3, lineHeight: false, highlight: [] })).not.toThrow();
   });
 
-  // DC-006 — a tree with NO new tokens / no backdrop validates byte-identically.
-  it("DC-006 back-compat: a box with only legacy vocabulary is byte-identical, no new keys injected", () => {
+  // DC-006 — a tree with only current direct choices validates byte-identically.
+  it("DC-006 keeps current direct style vocabulary byte-identically", () => {
     const input = {
       root: "root",
       nodes: {
-        root: { id: "root", type: "box", style: { gap: "md", pad: "lg" }, children: ["t"] },
-        t: { id: "t", type: "text", value: "hi", style: { size: "xl", weight: "bold" } },
+        root: {
+          id: "root",
+          type: "box",
+          style: { gap: "md", padding: "lg" },
+          children: ["t"],
+        },
+        t: {
+          id: "t",
+          type: "text",
+          value: "hi",
+          style: { fontSize: "xl", fontWeight: "bold" },
+        },
       },
     };
     const { tree, issues } = validateTree(input);
@@ -2284,16 +1766,15 @@ describe("landing-grade-vocab", () => {
       backdrop?: unknown;
     };
     const text = tree.nodes["t"] as unknown as { style?: Record<string, unknown> };
-    // No backdrop own-property, and style keys are exactly the legacy set.
+    // No backdrop own-property, and style keys are exactly the authored set.
     expect(Object.prototype.hasOwnProperty.call(box, "backdrop")).toBe(false);
-    expect(box.style).toEqual({ gap: "md", pad: "lg" });
-    expect(text.style).toEqual({ size: "xl", weight: "bold" });
+    expect(box.style).toEqual({ gap: "md", padding: "lg" });
+    expect(text.style).toEqual({ fontSize: "xl", fontWeight: "bold" });
   });
 });
 
-describe("text from active", () => {
-  // DC-002 — enabler A (store-bound text) + enabler B (active look) validation.
-  it("DC-002: keeps valid from/column/row + activeVariant, drops a non-token activeStyle value and an unknown-kind active with issues", () => {
+describe("text binding and active style", () => {
+  it("DC-002: keeps binding and style.active while dropping invalid active pieces", () => {
     const { tree, issues } = validateTree({
       root: "root",
       nodes: {
@@ -2305,12 +1786,15 @@ describe("text from active", () => {
           from: "kpis",
           column: "arr",
           row: 2,
-          activeVariant: "highlighted",
-          // color is a real text token (kept); tracking carries a non-token
-          // value + boxShadow is a raw-CSS key — both must be rejected because
-          // activeStyle routes through the SAME textStyle() sanitizer as style.
-          activeStyle: { color: "accent", tracking: "ginormous", boxShadow: "0 0 5px red" },
-          active: { totallyUnknownKind: "nope" },
+          style: {
+            active: {
+              preset: "highlighted",
+              color: "accent",
+              letterSpacing: "ginormous",
+              boxShadow: "0 0 5px red",
+            },
+          },
+          activeWhen: { totallyUnknownKind: "nope" },
         },
       },
     });
@@ -2318,42 +1802,36 @@ describe("text from active", () => {
       from?: string;
       column?: string;
       row?: number;
-      activeVariant?: string;
-      activeStyle?: Record<string, unknown>;
-      active?: unknown;
+      style?: { active?: Record<string, unknown> };
+      activeWhen?: unknown;
     };
     expect(t.from).toBe("kpis");
     expect(t.column).toBe("arr");
     expect(t.row).toBe(2);
-    expect(t.activeVariant).toBe("highlighted");
-    // RISK-INV-4: activeStyle is token-only — a valid token survives, a non-token
-    // value / raw-CSS key is dropped exactly like base style (no token bypass).
-    expect(t.activeStyle?.["color"]).toBe("accent");
-    expect(t.activeStyle).not.toHaveProperty("tracking");
-    expect(t.activeStyle).not.toHaveProperty("boxShadow");
-    expect(issues.some((issue) => issue.includes("unknown tracking token"))).toBe(true);
+    expect(t.style?.active).toEqual({ preset: "highlighted", color: "accent" });
+    expect(issues.some((issue) => issue.includes("letterSpacing"))).toBe(true);
     // An unknown-kind predicate degrades to no predicate, dropped with an issue.
-    expect(t.active).toBeUndefined();
-    expect(issues.some((issue) => issue.includes("unknown active predicate"))).toBe(true);
+    expect(t.activeWhen).toBeUndefined();
+    expect(issues.some((issue) => issue.includes("unknown activeWhen predicate"))).toBe(true);
   });
 
-  it("DC-006: an unknown-kind active degrades while a valid closed predicate is kept (box + text)", () => {
+  it("DC-006: an unknown activeWhen degrades while a valid closed predicate is kept", () => {
     const { tree } = validateTree({
       root: "root",
       nodes: {
         root: {
           id: "root",
           type: "box",
-          active: { kind: "future-thing", foo: 1 },
+          activeWhen: { kind: "future-thing", foo: 1 },
           children: ["t"],
         },
-        t: { id: "t", type: "text", value: "hi", active: { screen: "home" } },
+        t: { id: "t", type: "text", value: "hi", activeWhen: { screen: "home" } },
       },
     });
-    const root = tree.nodes["root"] as unknown as { active?: unknown };
-    const t = tree.nodes["t"] as unknown as { active?: { screen?: string } };
-    expect(root.active).toBeUndefined();
-    expect(t.active).toEqual({ screen: "home" });
+    const root = tree.nodes["root"] as unknown as { activeWhen?: unknown };
+    const t = tree.nodes["t"] as unknown as { activeWhen?: { screen?: string } };
+    expect(root.activeWhen).toBeUndefined();
+    expect(t.activeWhen).toEqual({ screen: "home" });
   });
 
   it("DC-008: a text without the new fields validates byte-identically (no keys injected)", () => {
@@ -2366,12 +1844,12 @@ describe("text from active", () => {
     });
     expect(issues).toHaveLength(0);
     const text = tree.nodes["t"] as object;
-    expect(Object.keys(text).sort()).toEqual(["id", "style", "type", "value"]);
-    expect(text).toEqual({ id: "t", type: "text", value: "plain", style: {} });
+    expect(Object.keys(text).sort()).toEqual(["id", "type", "value"]);
+    expect(text).toEqual({ id: "t", type: "text", value: "plain" });
     expect(text).not.toHaveProperty("from");
-    expect(text).not.toHaveProperty("active");
-    expect(text).not.toHaveProperty("activeVariant");
-    expect(text).not.toHaveProperty("activeStyle");
+    expect(text).not.toHaveProperty("activeWhen");
+    expect(text).not.toHaveProperty("activeVariant"); // style-hard-cut: allowed-negative
+    expect(text).not.toHaveProperty("activeStyle"); // style-hard-cut: allowed-negative
   });
 });
 
@@ -2433,5 +1911,57 @@ describe("validateTree box overlay (WU-1)", () => {
   // DC-004 — no author-positioning leak: only `kind` survives, extras stripped.
   it("DC-004 overlay strips extra author keys (z/top) — only kind survives", () => {
     expect(runOverlay({ kind: "modal", z: 999, top: 10 }).overlay).toEqual({ kind: "modal" });
+  });
+});
+
+describe("validateTree fail-soft Brick styles", () => {
+  it("keeps styled nodes and valid siblings when nested style data is hostile", () => {
+    const nested = new Proxy(
+      { color: "foreground", fontSize: "lg" },
+      {
+        getOwnPropertyDescriptor(target, property) {
+          if (property === "fontSize") throw new Error("hostile style descriptor");
+          return Reflect.getOwnPropertyDescriptor(target, property);
+        },
+      },
+    );
+
+    const result = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          style: { gap: "md", hover: nested },
+          children: ["hostile", "sibling"],
+        },
+        hostile: {
+          id: "hostile",
+          type: "input",
+          name: "email",
+          style: { control: nested, indicator: { indicatorSize: "4px" } },
+        },
+        sibling: {
+          id: "sibling",
+          type: "text",
+          value: "still here",
+          style: { fontSize: "xl", color: "foreground" },
+        },
+      },
+    });
+
+    expect(result.tree.nodes["root"]).toMatchObject({
+      style: { gap: "md", hover: { color: "foreground" } },
+      children: ["hostile", "sibling"],
+    });
+    expect(result.tree.nodes["hostile"]).toMatchObject({
+      type: "input",
+      style: { control: { color: "foreground" } },
+    });
+    expect(result.tree.nodes["sibling"]).toMatchObject({
+      type: "text",
+      value: "still here",
+      style: { fontSize: "xl", color: "foreground" },
+    });
   });
 });

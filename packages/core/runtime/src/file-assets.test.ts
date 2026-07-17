@@ -2,21 +2,14 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_COMPOSITIONS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_PATTERNS } from "@facet/assets";
 import { loadAssets } from "./assets.js";
 import { FileAssets } from "./file-assets.js";
 
-// Legacy vocabulary is built at runtime so the removed tokens never appear as
-// source literals (same idiom as theme.test.ts).
-const legacy = ["st", "amp"].join("");
-const legacyTitle = ["St", "amp"].join("");
-
 /**
- * Instrumented `node:fs` seam (DC-007): every export delegates to the real
- * implementation by default, but records directory reads/closes and file opens,
- * and lets a test swap in a fake directory stream, a hostile throw value, or a
- * fake bounded-read source — so the suite can PROVE "zero opens" and "decode/
- * parse never called", not merely observe outcomes.
+ * Instrumented `node:fs` seam: every export delegates to the real
+ * implementation by default, while tests can prove bounded discovery, zero
+ * retired-file opens, pre-decode byte rejection, and hostile-error sanitation.
  */
 const FAKE_FD = 0x7fffffff;
 
@@ -104,26 +97,13 @@ vi.mock("node:fs", async (importOriginal) => {
   return { ...actual, opendirSync, openSync, readSync, closeSync };
 });
 
-// --- Fixtures -------------------------------------------------------------------
-
 const MAX_FILE_BYTES = 1_048_576;
-
-function compositionDoc(name: string, value = "Go"): Record<string, unknown> {
-  return {
-    name,
-    metadata: { description: `${name} native reference example` },
-    root: "r",
-    nodes: {
-      r: { id: "r", type: "box", children: ["t"] },
-      t: { id: "t", type: "text", value },
-    },
-  };
-}
-
 const tempDirs: string[] = [];
+
 afterAll(() => {
   for (const dir of tempDirs) rmSync(dir, { recursive: true, force: true });
 });
+
 afterEach(() => {
   fsSpy.reset();
   vi.restoreAllMocks();
@@ -135,292 +115,205 @@ function makeTempDir(): string {
   return dir;
 }
 
-/** A padded-but-valid JSON theme document of exactly `bytes` bytes. */
-function paddedThemeJson(name: string, bytes: number): string {
-  const head = JSON.stringify({ name });
+function paddedJson(value: unknown, bytes: number): string {
+  const head = JSON.stringify(value);
   return head + " ".repeat(bytes - head.length);
 }
 
-// --- Canonical suffix + bounded discovery ----------------------------------------
-
 describe("FileAssets", () => {
-  it("loads only bounded composition files", async () => {
-    // Structural pin FIRST so this fails as an assertion while the loader still
-    // materializes the whole directory: discovery must be the bounded
-    // opendirSync/readSync walk, never a full readdirSync snapshot.
+  it("loads only theme patterns and initial tree files", async () => {
     const source = readFileSync(new URL("./file-assets.ts", import.meta.url), "utf8");
     expect(source.includes("opendirSync")).toBe(true);
     expect(source.includes("readdirSync")).toBe(false);
 
     const dir = makeTempDir();
-    writeFileSync(join(dir, "a.composition.json"), JSON.stringify(compositionDoc("cta")));
-    writeFileSync(
-      join(dir, `b.${legacy}.json`),
-      JSON.stringify(compositionDoc(`old${legacyTitle}`)),
-    );
-    writeFileSync(
-      join(dir, ["c.comp", "onent.json"].join("")),
-      JSON.stringify(compositionDoc("oldComponent")),
-    );
-    writeFileSync(join(dir, "d.theme.json"), JSON.stringify({ name: "midnight" }));
+    const theme = { name: "brand" };
+    const patterns = [{ name: "hero" }];
+    const initialTree = { root: null, nodes: {} };
+    writeFileSync(join(dir, "theme.json"), JSON.stringify(theme));
+    writeFileSync(join(dir, "patterns.json"), JSON.stringify(patterns));
+    writeFileSync(join(dir, "initial.tree.json"), JSON.stringify(initialTree));
+    writeFileSync(join(dir, "old.theme.json"), JSON.stringify({ name: "retired" }));
+    writeFileSync(join(dir, "old.composition.json"), JSON.stringify({ name: "retired" }));
+    writeFileSync(join(dir, "catalog.json"), JSON.stringify({ theme: "retired" }));
+    writeFileSync(join(dir, "other.json"), JSON.stringify({ ignored: true }));
 
     const docs = await new FileAssets(dir).load("a");
-    // Exactly one raw collection per canonical suffix; old suffixes never execute.
-    expect(docs.compositions).toHaveLength(1);
-    expect(docs.themes).toHaveLength(1);
 
-    const loaded = await loadAssets(new FileAssets(dir), "a");
-    const names = loaded.compositions.map((c) => c.name);
-    expect(names).toContain("cta");
-    expect(names).not.toContain(`old${legacyTitle}`);
-    expect(names).not.toContain("oldComponent");
-    expect(loaded.themes.map((t) => t.name)).toContain("midnight");
+    expect(docs).toMatchObject({ theme, patterns, initialTree });
+    expect(fsSpy.openedPaths).toEqual([
+      join(dir, "initial.tree.json"),
+      join(dir, "patterns.json"),
+      join(dir, "theme.json"),
+    ]);
+    expect(docs.issues).toHaveLength(3);
+    expect(docs.issues?.every((issue) => issue.includes("retired"))).toBe(true);
   });
 
-  it("processes composition files in sorted filename order (first file wins a name)", async () => {
+  it("distinguishes an absent patterns file from an explicit empty list", async () => {
+    const absentDir = makeTempDir();
+    const absentRaw = await new FileAssets(absentDir).load("a");
+    expect(absentRaw).not.toHaveProperty("patterns");
+    const absentLoaded = await loadAssets(new FileAssets(absentDir), "a");
+    expect(absentLoaded.patterns).toEqual(DEFAULT_PATTERNS);
+
+    const emptyDir = makeTempDir();
+    writeFileSync(join(emptyDir, "patterns.json"), "[]");
+    const emptyRaw = await new FileAssets(emptyDir).load("a");
+    expect(emptyRaw.patterns).toEqual([]);
+    const emptyLoaded = await loadAssets(new FileAssets(emptyDir), "a");
+    expect(emptyLoaded.patterns).toEqual([]);
+  });
+
+  it("reports retired files without opening or interpreting them", async () => {
     const dir = makeTempDir();
-    writeFileSync(join(dir, "z.composition.json"), JSON.stringify(compositionDoc("dup", "z-last")));
-    writeFileSync(
-      join(dir, "a.composition.json"),
-      JSON.stringify(compositionDoc("dup", "a-first")),
-    );
+    const retired = ["brand.theme.json", "card.composition.json", "catalog.json"];
+    for (const file of retired) writeFileSync(join(dir, file), "{ not json");
 
-    const loaded = await loadAssets(new FileAssets(dir), "a");
-    const dup = loaded.compositions.find((c) => c.name === "dup");
-    const copy = dup?.nodes["t"] as { value?: string } | undefined;
-    expect(copy?.value).toBe("a-first");
-    expect(
-      loaded.issues.some((i) => i.includes("duplicate composition name") && i.includes("dup")),
-    ).toBe(true);
-  });
+    const docs = await new FileAssets(dir).load("a");
 
-  it("keeps raw composition files opaque while loadAssets admits native docs and skips legacy shapes", async () => {
-    const legacySlotsField = ["sl", "ots"].join("");
-    const legacyReferenceField = ["u", "se"].join("");
-    const native = compositionDoc("native-example", "Ready");
-    const legacyTemplate = {
-      name: "legacy-template",
-      description: "An obsolete template",
-      [legacySlotsField]: { label: "Default" },
-      root: "copy",
-      nodes: { copy: { id: "copy", type: "text", value: "Default" } },
-    };
-    const legacyReference = {
-      name: "legacy-reference",
-      metadata: { description: "An obsolete nested reference" },
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["ref"] },
-        ref: { [legacyReferenceField]: "legacy-template" },
-      },
-    };
-    const dir = makeTempDir();
-    writeFileSync(join(dir, "a-native.composition.json"), JSON.stringify(native));
-    writeFileSync(join(dir, "b-template.composition.json"), JSON.stringify(legacyTemplate));
-    writeFileSync(join(dir, "c-reference.composition.json"), JSON.stringify(legacyReference));
-
-    const store = new FileAssets(dir);
-    await expect(store.load("a")).resolves.toMatchObject({
-      compositions: [native, legacyTemplate, legacyReference],
-    });
-
-    const loaded = await loadAssets(store, "a");
-    const names = loaded.compositions.map((composition) => composition.name);
-    expect(names).toContain("native-example");
-    expect(names).not.toContain("legacy-template");
-    expect(names).not.toContain("legacy-reference");
-    expect(
-      loaded.compositions.find((composition) => composition.name === "native-example"),
-    ).toMatchObject(native);
-    expect(loaded.issues.some((issue) => issue.includes("composition document skipped"))).toBe(
-      true,
-    );
-  });
-
-  it("records an issue for an unparseable file, never throws, and boots", async () => {
-    const dir = makeTempDir();
-    writeFileSync(join(dir, "broken.theme.json"), "{ not json");
-    writeFileSync(join(dir, "ok.theme.json"), JSON.stringify({ name: "midnight" }));
-    const loaded = await loadAssets(new FileAssets(dir), "a");
-    expect(loaded.themes.map((t) => t.name)).toContain("midnight");
-    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    expect(loaded.issues.length).toBeGreaterThan(0);
-  });
-
-  it("records an issue for an unreadable directory instead of throwing", async () => {
-    const loaded = await loadAssets(new FileAssets(join(tmpdir(), "facet-nope-missing")), "a");
-    // The backend failed, but the seeded default base layer still resolves.
-    expect(loaded.themes.map((t) => t.name)).toEqual([DEFAULT_THEME.name]);
-    for (const c of DEFAULT_COMPOSITIONS) {
-      expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
+    expect(fsSpy.openedPaths).toEqual([]);
+    expect(docs).not.toHaveProperty("theme");
+    expect(docs).not.toHaveProperty("patterns");
+    expect(docs.issues).toHaveLength(retired.length);
+    for (const file of retired) {
+      expect(docs.issues?.some((issue) => issue.includes(file))).toBe(true);
     }
-    expect(loaded.issues.length).toBeGreaterThan(0);
   });
 
-  // --- 4096/4097 directory enumeration bound -------------------------------------
-
-  it("enumerates exactly 4096 entries plus one overflow probe and succeeds at the cap", async () => {
+  it("records invalid current JSON and continues with the remaining exact files", async () => {
     const dir = makeTempDir();
-    writeFileSync(join(dir, "keep.composition.json"), JSON.stringify(compositionDoc("kept")));
-    const junk = Array.from({ length: 4095 }, (_, i) => `junk-${String(i).padStart(4, "0")}`);
-    fsSpy.fakeEntries = [...junk, "keep.composition.json"];
+    writeFileSync(join(dir, "theme.json"), "{ not json");
+    writeFileSync(join(dir, "patterns.json"), "[]");
 
     const docs = await new FileAssets(dir).load("a");
 
-    // 4096 entry reads + 1 probe that returns null — never a 4098th read.
+    expect(docs).not.toHaveProperty("theme");
+    expect(docs.patterns).toEqual([]);
+    expect(docs.issues?.some((issue) => issue.includes("theme.json"))).toBe(true);
+  });
+
+  it("enumerates exactly 4096 entries plus one null probe at the cap", async () => {
+    const dir = makeTempDir();
+    writeFileSync(join(dir, "theme.json"), JSON.stringify({ name: "brand" }));
+    fsSpy.fakeEntries = [
+      ...Array.from({ length: 4095 }, (_, index) => `junk-${String(index)}`),
+      "theme.json",
+    ];
+
+    const docs = await new FileAssets(dir).load("a");
+
     expect(fsSpy.dirReads).toBe(4097);
     expect(fsSpy.dirCloses).toBe(1);
-    expect(docs.compositions).toHaveLength(1);
-    expect(docs.issues ?? []).toEqual([]);
+    expect(docs.theme).toEqual({ name: "brand" });
+    expect(docs.issues).toEqual([]);
   });
 
-  it("stops at the 4097th entry, opens/decodes/parses nothing, and boot falls back to defaults", async () => {
+  it("fails an overflowing directory closed before any open decode or parse", async () => {
     const dir = makeTempDir();
-    // Real matching asset files exist — proving they are never opened on overflow.
-    writeFileSync(join(dir, "aa.theme.json"), JSON.stringify({ name: "midnight" }));
-    writeFileSync(join(dir, "bb.composition.json"), JSON.stringify(compositionDoc("cta")));
+    writeFileSync(join(dir, "theme.json"), JSON.stringify({ name: "brand" }));
     fsSpy.fakeEntries = [
-      "aa.theme.json",
-      "bb.composition.json",
-      ...Array.from({ length: 4095 }, (_, i) => `junk-${String(i).padStart(4, "0")}`),
+      "theme.json",
+      ...Array.from({ length: 4096 }, (_, index) => `junk-${String(index)}`),
     ];
-    expect(fsSpy.fakeEntries).toHaveLength(4097);
-
     const decodeSpy = vi.spyOn(TextDecoder.prototype, "decode");
     const parseSpy = vi.spyOn(JSON, "parse");
-    const store = new FileAssets(dir);
-    const docs = await store.load("a");
 
-    // The 4097th read detects overflow, then enumeration stops and the dir closes.
+    const docs = await new FileAssets(dir).load("a");
+
     expect(fsSpy.dirReads).toBe(4097);
     expect(fsSpy.dirCloses).toBe(1);
-    // The whole raw directory fails closed BEFORE any asset open/decode/parse.
     expect(fsSpy.openedPaths).toEqual([]);
     expect(decodeSpy).not.toHaveBeenCalled();
     expect(parseSpy).not.toHaveBeenCalled();
-    expect(docs.themes).toEqual([]);
-    expect(docs.compositions).toEqual([]);
-    expect(docs.issues?.some((i) => i.includes("4096"))).toBe(true);
-
-    // Boot continues safely: loadAssets over the overflowing store still seeds
-    // the bundled defaults.
-    const loaded = await loadAssets(store, "a");
-    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    for (const c of DEFAULT_COMPOSITIONS) {
-      expect(loaded.compositions.map((x) => x.name)).toContain(c.name);
-    }
-    expect(loaded.issues.some((i) => i.includes("4096"))).toBe(true);
+    expect(docs).not.toHaveProperty("theme");
+    expect(docs.issues?.some((issue) => issue.includes("4096"))).toBe(true);
   });
 
-  // --- 1024/1025 files per collection ----------------------------------------------
-
-  it("opens at most 1024 sorted files per collection; the 1025th is never opened", async () => {
+  it("accepts an exact 1048576-byte current file", async () => {
     const dir = makeTempDir();
-    for (let i = 0; i < 1025; i += 1) {
-      const n = String(i).padStart(4, "0");
-      writeFileSync(join(dir, `t${n}.theme.json`), JSON.stringify({ name: `theme_${n}` }));
-      writeFileSync(
-        join(dir, `c${n}.composition.json`),
-        JSON.stringify(compositionDoc(`composition_${n}`)),
-      );
-    }
-    fsSpy.openedPaths = [];
+    const theme = { name: "max" };
+    writeFileSync(join(dir, "theme.json"), paddedJson(theme, MAX_FILE_BYTES));
 
     const docs = await new FileAssets(dir).load("a");
 
-    expect(docs.themes).toHaveLength(1024);
-    expect(docs.compositions).toHaveLength(1024);
-    // The lexicographically-last file of each collection is beyond the cap and
-    // must never be opened.
-    expect(fsSpy.openedPaths).not.toContain(join(dir, "t1024.theme.json"));
-    expect(fsSpy.openedPaths).not.toContain(join(dir, "c1024.composition.json"));
-    expect(fsSpy.openedPaths).toContain(join(dir, "t1023.theme.json"));
-    expect(fsSpy.openedPaths).toContain(join(dir, "c1023.composition.json"));
-    expect(fsSpy.openedPaths).toHaveLength(2048);
-    expect(docs.issues?.filter((i) => i.includes("1024"))).toHaveLength(2);
-  });
-
-  // --- 1048576/1048577 per-file byte bound -----------------------------------------
-
-  it("accepts a file of exactly 1048576 bytes", async () => {
-    const dir = makeTempDir();
-    writeFileSync(join(dir, "max.theme.json"), paddedThemeJson("maxok", MAX_FILE_BYTES));
-
-    const docs = await new FileAssets(dir).load("a");
-    expect(docs.themes).toEqual([{ name: "maxok" }]);
-    expect(docs.issues ?? []).toEqual([]);
+    expect(docs.theme).toEqual(theme);
+    expect(docs.issues).toEqual([]);
   });
 
   it("rejects a 1048577-byte file before UTF-8 decode or JSON.parse", async () => {
     const dir = makeTempDir();
-    writeFileSync(join(dir, "over.theme.json"), paddedThemeJson("toobig", MAX_FILE_BYTES + 1));
-
+    writeFileSync(join(dir, "patterns.json"), paddedJson([], MAX_FILE_BYTES + 1));
     const decodeSpy = vi.spyOn(TextDecoder.prototype, "decode");
     const parseSpy = vi.spyOn(JSON, "parse");
+
     const docs = await new FileAssets(dir).load("a");
 
-    expect(docs.themes).toEqual([]);
+    expect(docs).not.toHaveProperty("patterns");
     expect(decodeSpy).not.toHaveBeenCalled();
     expect(parseSpy).not.toHaveBeenCalled();
-    expect(docs.issues?.some((i) => i.includes("1048576"))).toBe(true);
+    expect(docs.issues?.some((issue) => issue.includes("1048576"))).toBe(true);
   });
 
-  it("rejects an initially-1MiB file that grows during the read, before decode/parse", async () => {
-    // The race DC-007 pins: a stat taken before the read reports exactly the
-    // 1048576-byte cap, then the file grows by one byte mid-read. The loader
-    // never trusts a pre-read size — it bounded-reads cap+1 bytes and must see
-    // the 1048577th byte, reject, and never decode or parse.
+  it("detects a file that grows past the byte cap during its bounded read", async () => {
     const dir = makeTempDir();
-    fsSpy.fakeEntries = ["grow.theme.json"];
+    fsSpy.fakeEntries = ["theme.json"];
     let delivered = 0;
     const grownSize = MAX_FILE_BYTES + 1;
     fsSpy.fakeRead = (buffer, offset, length) => {
-      const n = Math.min(length, grownSize - delivered, 65_536);
-      if (n <= 0) return 0;
-      buffer.fill(0x20, offset, offset + n);
-      delivered += n;
-      return n;
+      const count = Math.min(length, grownSize - delivered, 65_536);
+      if (count <= 0) return 0;
+      buffer.fill(0x20, offset, offset + count);
+      delivered += count;
+      return count;
     };
-
     const decodeSpy = vi.spyOn(TextDecoder.prototype, "decode");
     const parseSpy = vi.spyOn(JSON, "parse");
+
     const docs = await new FileAssets(dir).load("a");
 
-    // Consumed at most cap+1 bytes — just enough to detect the overflow.
     expect(delivered).toBe(MAX_FILE_BYTES + 1);
+    expect(docs).not.toHaveProperty("theme");
     expect(decodeSpy).not.toHaveBeenCalled();
     expect(parseSpy).not.toHaveBeenCalled();
-    expect(docs.themes).toEqual([]);
-    expect(docs.issues?.some((i) => i.includes("1048576"))).toBe(true);
   });
 
-  // --- hostile fs throw values -----------------------------------------------------
+  it("bounds and sanitizes retired-file issue text", async () => {
+    const dir = makeTempDir();
+    fsSpy.fakeEntries = Array.from(
+      { length: 70 },
+      (_, index) => `retired-${String(index)}\n.theme.json`,
+    );
 
-  it("never rethrows or leaks a hostile opendir throw value through issues", async () => {
-    const sentinel = "SENTINEL_SECRET_XYZ";
+    const docs = await new FileAssets(dir).load("a");
+
+    expect(docs.issues?.length).toBeLessThanOrEqual(65);
+    expect(docs.issues?.at(-1)).toContain("suppressed");
+    expect(JSON.stringify(docs.issues)).not.toContain("\\n");
+    expect(fsSpy.openedPaths).toEqual([]);
+  });
+
+  it("never rethrows or leaks a hostile directory error", async () => {
+    const sentinel = "SENTINEL_DIRECTORY_SECRET";
     fsSpy.opendirError = {
       message: sentinel,
       toString(): string {
         throw new Error(sentinel);
       },
     };
-    const store = new FileAssets(join(tmpdir(), "facet-hostile"));
-    const docs = await store.load("a");
-    expect(docs.themes).toEqual([]);
-    expect(docs.compositions).toEqual([]);
+
+    const docs = await new FileAssets(join(tmpdir(), "facet-hostile")).load("a");
+
+    expect(docs).not.toHaveProperty("theme");
+    expect(docs).not.toHaveProperty("patterns");
     expect(docs.issues?.length).toBeGreaterThan(0);
     expect(JSON.stringify(docs.issues)).not.toContain(sentinel);
-
-    // Boot continues safely with the defaults.
-    const loaded = await loadAssets(store, "a");
-    expect(loaded.themes.map((t) => t.name)).toContain(DEFAULT_THEME.name);
-    expect(JSON.stringify(loaded.issues)).not.toContain(sentinel);
   });
 
-  it("never rethrows or leaks a hostile file-open throw value through issues", async () => {
-    const sentinel = "SENTINEL_OPEN_ABC";
+  it("never rethrows or leaks a hostile current-file open error", async () => {
+    const sentinel = "SENTINEL_OPEN_SECRET";
     const dir = makeTempDir();
-    writeFileSync(join(dir, "a.theme.json"), JSON.stringify({ name: "midnight" }));
+    writeFileSync(join(dir, "theme.json"), JSON.stringify({ name: "brand" }));
     fsSpy.openError = {
       message: sentinel,
       toString(): string {
@@ -429,7 +322,8 @@ describe("FileAssets", () => {
     };
 
     const docs = await new FileAssets(dir).load("a");
-    expect(docs.themes).toEqual([]);
+
+    expect(docs).not.toHaveProperty("theme");
     expect(docs.issues?.length).toBeGreaterThan(0);
     expect(JSON.stringify(docs.issues)).not.toContain(sentinel);
   });

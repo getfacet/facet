@@ -1,761 +1,372 @@
 # Architecture
 
-This document explains how Facet is put together and why. For the elevator
-pitch, see the [README](../README.md).
+Facet is a TypeScript framework for UI a language model authors as safe data.
+The agent has real freedom to arrange a small native vocabulary, but it never
+gets an open HTML, script, CSS, or arbitrary-style surface.
 
-## The problem
+## The central contract
 
-An agent's public link is, today, one of two things: a static page (same for
-everyone, dead) or a chat box (dynamic, but it's just text). Neither lets the
-agent present a *page* that is built for the specific person reading it and that
-evolves as they talk.
+Facet has two layers:
 
-Facet's job is to make "one agent, one link" mean "a page that is alive and
-personal for every visitor at once."
+1. **Brain.** An LLM or deterministic agent decides what to show and calls
+   tools. Applications may replace the reference brain.
+2. **Stage.** Facet validates a document, stores it, applies RFC 6902 patches,
+   and renders it. This layer is the stable framework contract.
 
-## Two layers
+Two invariants hold across every package:
 
-A Facet page is the **Stage** plus the **Chat dock**.
+1. The agent emits only declarative native Bricks, fields, actions, and style
+   choices intentionally defined by `@facet/core`.
+2. Only patches travel after initial state, and server and client use the same
+   pure `applyPatch` implementation.
 
-- The **Stage** is the dynamic body. It is owned by the agent and rebuilt per
-  visitor. It is represented as a declarative tree of bricks, never as markup.
-- The **Chat dock** is persistent UI the visitor uses to talk to the agent. It
-  is not part of the generated spec; it is the control surface that produces
-  `message` events.
+The stage is permissive about arrangement and strict about vocabulary. That is
+the main design trade: an agent can build an interface Facet's authors did not
+preassemble, while every individual part stays bounded and inspectable.
 
-The Stage diverges along two axes:
+## Native Bricks
 
-- **Who** — `VisitorContext` (referrer, locale, prior relationship) shapes the
-  first paint before any conversation.
-- **What they say** — each `message`/`action` event lets the agent patch the
-  Stage further.
+Core defines exactly 11 Bricks:
 
-## Why a closed vocabulary plus catalog (the central bet)
+| Brick | Purpose |
+| --- | --- |
+| `box` | The sole container; normal-flow layout, actions, bounded backdrop and modal/drawer behavior. |
+| `text` | One plain text value, optionally bound to one data cell. |
+| `media` | A gated image or video source. |
+| `input` | A renderer-owned named control. |
+| `richtext` | Closed blocks, runs, marks, and gated links. |
+| `table` | Bounded tabular data with renderer-owned optional local sort. |
+| `chart` | Bounded display-only chart data. |
+| `list` | Ordered compact data rows. |
+| `keyValue` | Label/value data rows. |
+| `progress` | A bounded progress value. |
+| `loading` | A renderer-owned loading indicator. |
 
-Every existing way to let an agent build UI sits at one of two extremes:
+Only `box` owns `children`. A new content kind becomes a Brick only when it needs
+renderer computation that existing Bricks cannot express. A new way for `box`
+to arrange or present its own content is added as a deliberate closed `box`
+field instead. This keeps the roster small without turning `box` or `text` into
+open-ended escape hatches.
 
-- **Semantic widgets** (A2UI, Adaptive Cards, DivKit, Thesys C1): the agent picks
-  from a catalog of finished components (Card, Button, Chart). Safe and easy to
-  get right in one shot, but *not free* — anything not in the catalog is
-  impossible.
-- **Raw HTML/iframe** (MCP-UI, MCP Apps, "generate a website" tools): the agent
-  writes actual page code. Total freedom, but unsafe (injection) and prone to
-  visual breakage.
+Actions are also closed:
 
-Facet takes the empty middle: a **closed core vocabulary** the agent composes
-freely, guided by a catalog when a project wants stronger design-system policy.
-The trick that makes this safe *and* one-shot-reliable is that freedom and
-fragility are separated onto different axes:
+- `agent` sends a named event to the brain and may collect visible named inputs;
+- `navigate` switches among pre-authored screens locally;
+- `toggle` changes local visibility.
 
-- Freedom comes from **native composition**: the model combines one closed
-  11-brick vocabulary freely. Optional catalog reference datasets show
-  validated concrete patterns without becoming stage syntax or an authoring
-  tier.
-- Safety comes from **constraining the vocabulary, not handing over markup**:
-  nodes are typed data (no raw HTML/JS), style values are **tokens** not scalars,
-  layout is **flow-only** (no absolute positioning), every prop has a
-  **default**, and the renderer is **fail-safe**.
+Local navigation, toggles, and table sort never write document content. They are
+browser view-state, so the server remains the sole document writer.
 
-So "broken" splits into two kinds, and both are designed out: *crashes /
-injection / overlap* are made structurally impossible; *ugliness* is prevented
-because tokens and recipes force every choice onto a coherent scale. One-shot
-leverage (the thing semantic catalogs were good at) comes from catalog policy,
-brick recipes, and optional reference examples, while the composable brick
-vocabulary keeps the system from becoming an opaque widget-only catalog.
+## Facet Document
 
-## Native Bricks And Reference Compositions
-
-`FacetNode` is a closed union in `packages/core/core/src/nodes.ts`. The union can
-grow only by adding typed node shapes, validators, tool policy, and renderer
-support on purpose; it never accepts raw HTML, JS, CSS, or arbitrary renderer
-code.
-
-The complete native roster is:
-
-- `box` — the universal flow container. Flow layout (`direction: row|col`),
-  token styles (including `appear`, `scroll`, and `columns`), optional
-  `onPress`/`onHold`, and optional `hidden`.
-- `text` — a string with token text styles.
-- `media` — a static safe `src`, optional `alt`, `kind: "image" | "video"`, and
-  token styles. Legacy stored `image` nodes normalize to media images.
-- `input` — a native input (`name`, `input` kind incl. `search`, capped `options`
-  for select/radio, token styles). Consolidates the former `field`/`search`
-  surfaces; a search box is `input:"search"`, and a search-with-submit is an
-  `input` plus a pressable label box.
-- `richtext` — a flowing block of prose carrying MIXED inline formatting the
-  single-string `text` node cannot express. A native leaf: it holds its own
-  `blocks` (`paragraph`/`heading`/`listItem`/`quote`) whose `runs` flow inline,
-  each run carrying CLOSED semantic `marks` (`bold`/`italic`/`underline`/
-  `strike`/`code`/`link`) — never raw HTML/markdown/CSS; an unknown mark drops
-  and the text is kept. Heading `level` (1–3) and list `depth` (0–5) are clamped
-  to renderer-owned flow indent, never author pixels. A `link` mark targets
-  either an INTERNAL Action (the same union as `onPress`) or a gated EXTERNAL
-  `{ href }` (only http(s)/protocol-relative/local; `javascript:`/`data:` and
-  other schemes drop to inert text) — a link is navigated, never fetched.
-- `table` — display-only tabular data with capped columns, rows, and cells.
-- `chart` — display-only chart data with capped series and points.
-- `list` — a capped list display.
-- `keyValue` — bounded label/value details.
-- `progress` — a bounded progress display.
-- `loading` — a pending/busy display.
-
-Only `box` is a container. The other ten bricks are leaves. Actions, tabs,
-navigation, forms, filter choices, metric-style summaries, sections, cards, and
-empty states are box/text/input composition patterns rather than node types.
-For example, an action is a pressable box containing label text; a form is a box
-of inputs plus a pressable submit box; local navigation combines
-`onPress:{kind:"navigate",to}` with an `active:{screen}` look. Fixed filters can
-use browser-local navigate/toggle actions, while open-ended filtering stays with
-the agent through an ordinary action and later patch.
-
-**Theme recipes** are operator data that map approved brick variants and
-renderer-owned parts to token-only styles. **Composition references** are
-concrete, validated native-brick examples an LLM may inspect. Neither adds a
-node kind, stage syntax, automatic insertion, or client-side behavior.
-`DEFAULT_COMPOSITIONS` includes the reusable patterns above, plus badge and alert
-patterns; a visual separator is a plain bordered box.
-
-Tables and charts are display-only; there is no client fetch,
-agent-authored sort/filter engine, data-source/resolver/query binding, expression
-language, or inline script. (Binding a data-bearing node to the in-tree `data`
-warehouse by NAME via `from` is allowed and is not a data source — see "Data
-warehouse + bindings"; it stays agent-authored declared content. A table column
-opted into `sortable` reorders locally, but the comparator is a closed
-renderer-owned mechanism, not a sort engine the agent writes — see "Local table
-sort".) Overlap stays impossible EXCEPT through two bounded, renderer-owned
-descriptors — never a general z-index/absolute-positioning escape hatch:
-
-- a `box`'s `backdrop` — a bounded two-layer background painted BELOW normal-flow
-  content (negative z; see "Landing-grade vocabulary"); and
-- a `box`'s `overlay: { kind: "modal" | "drawer" }` — the box floats ABOVE flow in
-  a renderer-fixed positive-z band (modal centered, drawer at the end edge, each
-  with a scrim), opened/closed via the existing local `toggle`. The author gives
-  only the closed `kind`; the renderer owns placement, scrim, z, focus, and close.
-  (`popover` + an anchored variant remain out of v1, added additively later.)
-
-## Renderer Layout Contract
-
-The renderer enforces the containment rule for every native brick:
-
-- **Parent owns placement.** A parent's direction, gap, align, justify, columns,
-  and wrap place only its immediate children.
-- **Child owns internal layout.** A child can choose its own internal structure
-  and variant, but only inside the placement slot its parent gives it.
-- **Renderer owns containment.** Children may not force the parent wider than
-  its own box. Default horizontal overflow is hidden/bounded; long text wraps;
-  media, charts, tables, and controls get `max-width: 100%` and `min-width: 0`.
-- Horizontal scrolling is allowed only in renderer-owned bounded regions such as
-  tables or an explicit `scroll: "x"` box.
-- Absolute/fixed positioning remains outside the stage vocabulary.
-
-This contract is intentionally central: brick renderers must satisfy it at
-their root element. Theme recipes only select token styles, and any model output
-adapted from a reference dataset still passes the ordinary native-node validator.
-
-`onPress` is a small **behavior language** — a discriminated union so the agent
-can pre-declare what an interaction does:
-
-- `{ kind: "agent", name, payload? }` — send an event to the agent (the open-ended
-  path; a bare `{ name }` is treated as this). This is the only kind that reaches
-  the transport.
-- `{ kind: "navigate", to }` — switch to another pre-drawn screen.
-- `{ kind: "toggle", target }` — show/hide an in-flow node.
-
-`navigate`/`toggle` run **instantly in the browser with no agent turn** — the
-renderer owns that view-state (which screen is showing, per-node visibility)
-while the server stays the only writer of stage content, so the two never
-contend. Pre-draw the reachable screens (how deep is the agent's call) and let
-the browser flip between them for free; reserve `kind:"agent"` for anything that
-needs new reasoning. Clicking a `sortable` table column header is the same shape
-of local view-state (a per-table sort spec the renderer applies at render time —
-see "Local table sort"): no event kind, no transport, no agent turn.
-
-Style values are **tokens** defined in `packages/core/core/src/tokens.ts`
-(`Space`, `FontFamily`, `FontSize`, `Color`, `Radius`, …). Token names are the
-agent-facing vocabulary; the concrete default token values live in
-`@facet/assets` (`packages/core/assets/src/theme.ts`), while `@facet/react`
-resolves those data maps to CSS at render time. Reskinning every page is a data
-change and the agent never deals in pixels, hex, or font stacks. The token names
-are kept compatible-in-spirit with the W3C Design Tokens (DTCG) format.
-
-**Landing-grade vocabulary.** The token set reaches beyond dashboard scale so an
-agent can compose a landing/marketing page (a full-height hero, dark bands,
-gradients) without pixels or raw CSS. `FontSize` extends to `4xl/5xl/6xl` for
-display type, and closed token groups add `minHeight` (`half`/`screen`),
-`maxWidth` (a centered content column), `tracking` (letter-spacing), `leading`
-(line-height), `gradient`, `backdropScrim`, `scheme`, and `highlight`. Two are
-not plain token swaps: `scheme:"dark"` selects a per-subtree dark color palette
-(`ColorScheme`, a distinct authored token from view-state's report-only device
-`Scheme`), and a `box`'s optional `backdrop: "<mediaNodeId>"` paints a referenced
-media node as a **bounded background layer** behind the box's normal-flow
-children. Layering stays flow-safe by construction: the backdrop yields exactly
-two renderer-synthesized layers (the media cover + a readability scrim) at
-NEGATIVE z-index inside a stacking-context host, so the flow children always
-paint above them and no author z-index/absolute-positioning is ever emitted onto
-content. The backdrop resolves read-only to a MEDIA node only (never recurses)
-through the existing safe-`src` gate, and it counts against the render budget.
-
-### The brick-vs-field growth rule (two axes)
-
-New capability requests hit one recurring question: does this become a **new
-brick**, or a **field on an existing brick**? Facet answers it on two axes, so
-the vocabulary grows deliberately instead of by accretion.
-
-- **Axis 1 — DATA (content).** When the ask is to show a NEW KIND of content
-  that needs renderer computation `box`+`text` cannot express — draw shapes
-  (`chart`), capture input (`input`), project rows (`table`), carry mixed inline
-  prose (`richtext`) — add a **new native data brick**. Never pile more fields
-  or modes onto `text` to fake it. `text`'s recent growth (`from`, `active`) is
-  the exception that proves the rule: those are not text-specific fields but
-  cross-cutting mixin packs (`DataBound`, `ActiveLook`) applied uniformly, so
-  `text` itself accretes no ad-hoc surface.
-- **Axis 2 — STRUCTURE (behavior/presentation).** When `box` gains a new WAY IT
-  BEHAVES OR PRESENTS — pressable, layered/overlapping, hidden — add it as a
-  **named concern pack on `box`** (a deliberate act, like adding a token), never
-  a loose ad-hoc field. `box` today composes as
-  `BaseNode & Styleable & ActiveLook & ContainerFields & Pressable & Layered`
-  (plus a direct `hidden`), each pack a bounded, named unit rather than a
-  scatter of one-off props.
-- **The fuzzy-middle tie-breaker.** If a capability needs a renderer
-  COMPUTATION that `box`+`text` cannot express, it is a **brick**; if it is just
-  a way `box` overlaps, decorates, or behaves, it is a **box concern (a pack)**.
-  Worked example: `overlay` requires no new content computation — only a bounded
-  way `box` floats over its siblings — so it is a `box` concern and lives on the
-  `Layered` pack (alongside `backdrop`), not a new brick.
-
-## Catalog policy
-
-`FacetCatalog` is the agent-facing usage manual for the active project. It says
-which bricks and variants are allowed, which optional composition references
-may be inspected, whether theme switching is locked, and whether the agent
-should prefer compact screens or edit-before-append behavior. Missing or
-malformed catalog input falls back to `DEFAULT_CATALOG` with bounded issues.
-The normalized model exposes one `bricks` roster, a required
-composition-reference exposure policy (`{ mode: "all" }` by default, or
-`{ mode: "allow", names }`), theme policy, and compact/edit guidance. Reference
-exposure is independent from node authoring and never creates another node tier.
-
-The catalog is deliberately neutral UI vocabulary/policy. It is not LiveFrame and
-it is not a hosted control plane. Tenant/project lookup, browser auth, agent
-auth, billing, usage metering, rate limits, abuse operations, audit logs, secrets
-management, and custom-domain routing stay outside Facet in the platform edge or
-operator environment.
-
-## Catalog, Themes, Compositions, And Seeds: Reskin As Data
-
-The renderer-owns-the-CSS rule above makes a reskin a one-file change; the theme
-layer makes it a **data** change — without moving the pixel boundary into the
-spec. Raw CSS values enter Facet in exactly one place — `validateTheme` in
-`@facet/core` — and only as **operator data**, never as tree content or model
-output. A `FacetTheme` is a partial override document (token name → CSS value)
-plus optional `recipes` for bricks, variants, and closed internal recipe parts
-such as field labels/controls, table cells, chart plots, progress
-tracks/fills, and list rows. The validator is the single gate it
-passes: an allowlist per token group, recipe style group, and recipe part name, a deny-list
-(`url()`, `var()`, `expression()`, `javascript:` and injection characters are
-refused), dimension clamps so a theme can't push content off-screen, a bounded
-font-family grammar for typography values, safe parseable opaque colors (hex,
-`rgb()`/`rgba()`, `hsl()`/`hsla()`, and a conservative named-color table), and a
-WCAG contrast check that is *measured as a warning, never a rejection* (Facet
-measures; the caller sets policy). The same color parser gates the value and
-feeds the contrast measurement, so an accepted color cannot skip the warning
-path. Output maps are built on `Object.create(null)` so a hostile key can never
-resolve. The validator is pure and dependency-free, so it runs identically on
-the server and in the browser.
-
-The stage tree carries only a **name**: `FacetTree.theme?: string`,
-kept-if-string by `validateTree`. `STAGE_SPEC` teaches the agent to set it to a
-theme name it has been given and nothing else — **the LLM never authors theme
-values**. Nodes carry `variant`/`tone` selectors where supported, while brick
-styles still carry token names. Recipe parts are not stage syntax; they
-are renderer-owned subrecipes inside validated operator theme data. Resolution is
-a boot-shipped map plus local lookups: the validated theme documents ship to the
-browser **once**, inline in the quickstart HTML shell as an escaped
-`window.__FACET_THEMES__` global, `resolveTheme` (`@facet/react`) maps the
-tree's theme name to a resolved token map, `resolveRecipe` maps a brick +
-variant/tone to token-only style bundles, and the renderer resolves recipe parts
-for internal brick affordances. Unknown theme names, recipes, variants, tones,
-or parts fall back to the default recipe/style path. This is pure lookup — the
-browser writes no stage state — and it introduces **no new protocol message**:
-`@facet/server` and `@facet/client` are untouched, and a live theme switch is
-just a normal `/theme` patch re-resolved locally when catalog policy allows it.
-
-The document library itself is a **pluggable adapter, exactly like `StageStore`**:
-`AssetsStore` is an interface with a browser-safe `MemoryAssets` reference in
-`@facet/runtime`'s main barrel and a file-backed `FileAssets` behind
-`@facet/runtime/node` (so a browser bundle never drags in `node:fs`); a database
-adapter would live outside, the `@facet/store-postgres` precedent. `loadAssets`
-runs the core validators once at boot (no hot reload), resolves catalog, theme,
-composition, and initial-tree assets fail-soft, caps hostile asset/issue arrays before
-iterating them, and skips any invalid document with a logged issue — the same
-skip-and-log posture the file stage store already uses.
-
-**Composition references** — `*.composition.json` documents with validated
-`{ name, metadata: { description, ... }, root, nodes }` shape — are optional,
-concrete native-node datasets. `metadata.description` is required and bounded;
-every node uses the existing closed `FacetNode` vocabulary and token rules. The
-fragment root may be any retained native leaf or container. The same native
-sanitizer, dangling-child pruning, cycle breaking, depth cap, and node cap apply
-at load; unusable documents are skipped with bounded issues. There are no
-parameters, substitution markers, nested reference nodes, or graph semantics.
-
-`@facet/agent-tools` builds one detached, deeply frozen per-agent snapshot for
-both prompt indexing and lookup. It revalidates inputs, keeps the first valid
-duplicate name, applies the catalog's `all`/allow-list exposure policy, and stops
-after 128 selected references so the index remains inside the smallest
-reference-agent context profile; a supplied malformed catalog fails closed to no
-references. The system prompt sees only each selected name plus
-`metadata.description`, never `root`, `nodes`, other metadata, or unknown asset
-fields.
-
-For complex work, the model may call `get_composition({ name })`. This is a
-read-only agent-side lookup: success returns the complete selected composition
-JSON in a standard `no_stage_change` observation with zero messages, patches, or
-changed node ids. The model then authors or adapts ordinary native nodes through
-the existing stage tools as a separate action; no ids are minted and nothing is
-inserted automatically. Unknown, catalog-disallowed, or malformed requests are
-rejected fail-safe without touching the stage or pending edit buffer.
-
-The exact read is a narrow exception to generic observation and transcript text
-caps so the next provider call receives the whole validated object. The newest
-read group stays verbatim through that first handoff even when configured recent
-retention is zero. If the complete next request cannot fit the total provider
-context, the loop stops with `context_limit` before calling the provider rather
-than slicing or summarizing the result. Composition JSON remains provider-side:
-it is absent from the browser shell, globals, SSE frames, reconnect snapshots,
-and server/client protocols. The browser and renderer see only native stage
-nodes later authored through ordinary patches.
-
-Seeding a page before the first model call is a `StageStore` **decorator**,
-`withInitialStage`, that opens a fresh session on a validated initial tree
-instead of `EMPTY_TREE`. Because every `open()` runs under the runtime's
-per-`(agent, visitor)` serial queue and *before* the agent's first turn, the seed
-is inside the same serialized stage-write path (the server stays the only writer)
-and is visible to that first turn, which then refines it. The seed also
-**travels the patch channel**: the browser's first connection rehydrated before
-the session existed, so the store reports the fresh seed once (`takeSeeded`) and
-the runtime prepends a root `replace` as that turn's first frame — ordered,
-replayable, and applied by the same `applyPatch` on both sides. The frame is
-consumed only when the turn persists; a failed first turn re-emits it, and a
-durable commit-then-reject first save can recover the seed report even after the
-bounded pending-key set evicts the original armed key. A
-reconnect gets the seed the normal way, via the rehydrate snapshot. For the
-very first paint the quickstart shell also ships the seed (and the resolved
-theme's canvas colors) with the page itself — `useFacet` can start from a
-boot-shipped tree, so nothing waits on the model; the seed frame then applies
-idempotently. The zero-config `facet-quickstart` path uses its own compact
-four-screen quickstart tour seed when no explicit guide or operator initial tree is
-present, while custom `initial.tree.json` assets still win. One
-trap is closed deliberately: `validateTree` returns `EMPTY_TREE` on garbage,
-which would silently seed a blank page and flip the server's offline face, so a
-tree that isn't *seedable* (the initial render root has visible, renderable
-content such as text, media, inputs, or data-backed bricks) is refused
-as a seed and boot falls back to today's model-first paint. Empty containers,
-blank entry screens, empty table/chart/list leaves, and empty radio groups
-with no label or options are not seedable.
-
-## The stage tree
-
-A Stage is a `FacetTree`: a flat map of nodes keyed by id, with one node whose id
-is `root`.
+A document is a flat tree:
 
 ```ts
 interface FacetTree {
   root: NodeId;
   nodes: Record<NodeId, FacetNode>;
-  screens?: Record<string, NodeId>; // named screens → their root node id
-  entry?: string; // which screen shows first
-  data?: Record<string, Dataset>; // named datasets; bind by name via node `from`
+  screens?: Record<string, NodeId>;
+  entry?: string;
+  data?: Record<string, Dataset>;
 }
 ```
 
-The flat-list-with-id-references shape (the same idea as Google A2UI) lets an
-agent stream and patch a tree incrementally — adding one node at a time — instead
-of re-emitting a whole page on every change.
+The root and every screen root are `box` Bricks. Nodes are stored by stable id;
+containers refer to child ids. This shape lets an agent add a leaf, assemble a
+subtree bottom-up, and patch only the changed paths.
 
-**Data warehouse + bindings.** A `data`-bearing node (`table`, `chart`, `list`,
-`keyValue`, and — for a single cell — `text`) may carry inline
-data (`table.rows`, `chart.series`, a `text.value`, …) OR reference a named
-dataset in the optional top-level `data` warehouse via `from: "<name>"` (a
-single-cell node adds `column`/`row`, default row 0) —
-so one dataset feeds many views and a single
-`/data/<name>` (or `/data/<name>/<i>/<col>`) patch updates every bound view at
-once. A dataset is a closed `Array<Record<string, string | number | boolean>>`
-(row-records) — the same cell type as `table.rows`, never nested/arbitrary JSON.
-`from` wins over inline; a dangling/absent/malformed `from` renders the node
-empty (never throws), and fills in when a later patch adds the data. This is
-data as **declared, agent-authored content** (UI-OUT), NOT a fetch/resolver/query
-— Facet adds no client data source, no binding-expression language, and no
-agent-authored sort/filter engine. The one built-in local view operation is table
-sort (opt-in per column via `sortable`; see "Local table sort" below); local
-row-predicate filtering over a bound dataset is still a deliberate follow-up;
-fixed category choices can already navigate among pre-authored screens locally.
-`data` is sanitized inside `validateTree`, so the one pure `applyPatch`/fold keeps
-it identical on server and client; the single `resolveNodeData` helper does the
-name→dataset projection for BOTH the "shows content?" gate and the renderer, so
-the two never diverge. Deliberately unlike A2UI (which converged on the same
-structure↔data split), Facet keeps the schema closed, travels only RFC-6902
-deltas rather than whole-model snapshots, stays server-sole-writer (no two-way
-binding), and ships no repeater/template/`${…}` expression layer.
+The optional `data` map stores named arrays of flat row records. Data-bearing
+Bricks may use inline data or a disclosed `from` name. A name is not a URL,
+query, expression, or resolver. Missing data renders empty and can be supplied by
+a later patch. Facet has no agent-authored client fetch or browser business
+logic.
 
-**Local table sort.** A `table` column marked `sortable: true` lets the visitor
-click its header to reorder the rows locally — ascending → descending → unsorted
-on repeat clicks — with **no agent turn and no transport**, the same
-two-writers-safe discipline as `navigate`/`toggle`. The sort is pure browser
-**view-state** (a per-table `{ column, direction }` spec keyed by node id, held
-in `StageRenderer` beside `screen`/`toggled`); the renderer applies a closed,
-renderer-owned, TOTAL, STABLE comparator (`applySort`: numeric < string <
-boolean < empty, ties by original index) to the freshly-resolved+capped rows at
-render time. The browser never writes `data`/`rows`, so the server stays the sole
-content writer and a later `data` patch simply re-applies the current spec to the
-new rows (no drift, no cached sorted array). The agent authors no sort logic — only
-the `sortable` flag — and the current spec rides the visitor's next event on the
-`view` snapshot (below), so the brain can see how they sorted. Filtering is
-deliberately deferred: it would open a predicate/expression surface v1 avoids.
+Theme selection and display mode are deliberately absent from the document.
+They are host configuration and browser view-state, not content.
 
-**Active-look binding.** A `box`/`text` may carry an `activeVariant`/`activeStyle`
-plus a closed `active` **view-state predicate** — `{ screen: "<name>" }` or
-`{ toggled: "<nodeId>" }` — so the brick highlights *itself* when that view-state
-holds, **with no agent turn**: a tab authored as a `box` + `onPress:{navigate}`
-self-highlights while its screen is current; a box `{ toggled }` marks a selected/
-open item. This is a **read-only** binding — the renderer evaluates the predicate
-(the single `evaluateViewPredicate` in `@facet/core`) against the *already-threaded*
-snapshot view-state (`activeScreen` + the raw `visibilityOverrides` map, so the
-inert previous-screen clone keeps its OLD highlight through a crossfade) and folds
-the active variant/style into the same pure token merge as the base look. It writes
-nothing (the browser stays the sole owner of view-state; the server the sole writer
-of the tree). The predicate is a **closed, extensible tagged union** (unknown/future
-kinds degrade to the default look, never a DSL); `activeStyle` passes the identical
-token allowlist as base `style`, so it is token-only by construction. This is the
-brick-level capability that lets segmented/navigation-style active highlighting
-be authored from `box`+`text` with no dedicated node type.
+## The style system
 
-**Screens** are named roots INTO the same flat `nodes` map (not separate trees),
-so every `/nodes/<id>` patch path, `applyPatch`, and existing consumer keeps
-working unchanged: a screenless tree simply renders `root` (the single-screen
-form). `navigate` picks which screen the browser shows; the server never needs to
-be involved in the switch.
+The style system has four concepts:
 
-## Patches: RFC 6902 JSON Patch
+1. **Style property** — an authored key such as `gap`, `fontSize`, or
+   `background`.
+2. **Style target** — a Brick-owned part such as `input.style.control` or
+   `progress.style.track`.
+3. **Token name or fixed choice** — the closed value accepted by one property.
+4. **Theme** — the operator-owned data that supplies concrete token values,
+   Brick defaults, and optional Presets.
 
-Change travels as standard **RFC 6902 JSON Patch** operations rather than a
-bespoke format — the same standard AG-UI uses for `STATE_DELTA`. Paths are JSON
-Pointers into the `FacetTree`:
+There is no global target table. Identical target names on two Bricks remain two
+separate contracts. Core's `BRICK_CONTRACT` is the single source for each
+Brick's fields, targets, properties, allowed states, input-kind applicability,
+and whether it supports `activeWhen`.
 
-| Agent intent          | RFC 6902 operation(s)                                            |
-| --------------------- | --------------------------------------------------------------- |
-| replace the stage     | `replace ""` with the new tree                                  |
-| upsert a node         | `add /nodes/<id>` (add replaces an existing member)             |
-| append a child        | `add /nodes/<id>` + `add /nodes/<parent>/children/-`            |
-| remove a node         | `remove /nodes/<id>` (dangling child refs are skipped on render)|
+### Tokens and fixed choices
 
-`applyPatch(tree, operations)` (in `packages/core/core/src/patch.ts`) is a small,
-dependency-free implementation of the six standard ops, and it is pure. Pointer
-reads require the source to exist for `move`, `copy`, and `test`; object-member
-`replace`/`remove` targets must exist too. A stale op therefore throws before it
-can create a ghost value or count as a stage mutation. One level up,
-`foldPatchIntoStage` (in `packages/core/core/src/stage-fold.ts`) is the shared
-fail-safe wrapper both sides actually run per delivered batch: a
-batch-atomic apply, per-op salvage on a throwing batch (bounded, capped at
-`MAX_PATCH_OPS`, with a failed `test` guard dropping itself and the following
-ops in that salvage stream), then `validateTree` on the result. Because the
-server (to keep the session's authoritative stage) and the client (to update
-the DOM) fold the same delivered batches through the same pure function, the two
-can never drift.
+Token names are Theme-sensitive meanings. Examples include spacing names such
+as `sm`/`md`/`lg`, semantic paint names such as `accent`/`success`, and named
+font, radius, thickness, and size scales. The Theme decides their CSS values.
 
-## The event loop
+Fixed choices are closed renderer semantics that do not change by brand. Examples
+include `row`/`column`, `auto`/`full`, and boolean choices.
 
-```
-ClientEvent  →  FacetRuntime  →  FacetAgent  →  ServerMessage[] | AsyncIterable<ServerMessage[]>
-                    │                                  │
-                    └── applies patches to the session ┘
-```
+Both sources are defined in Core with bounded descriptions and `useWhen`
+guidance. A Brick property points to exactly one allowed value set. The agent
+cannot supply a raw scalar where a token or fixed choice is expected.
 
-- `ClientEvent` is what a visitor does that the agent answers: `visit`, `message`,
-  `tap` (a pressed box's agent action). It is the **forward** subset — a subtype of
-  `CollectedEvent`, the log currency (`visit | message | tap`, where a local
-  navigate/toggle `tap` carries a resolved `effect` instead of an `action`).
-- Every event may also carry an optional **`view`** snapshot — the visitor's
-  current browser view-state (`screen`, per-node `toggled` overrides, `viewport`
-  size class, color `scheme`). Like `fields`, it is inert data riding the event,
-  never part of the tree; it lets the agent target the screen the visitor is
-  actually on. See the view-snapshot paragraph below.
-- Local `navigate`/`toggle` taps never reach the agent, but they are still recorded
-  for an **ordered replay log**: the browser fires them at `POST /record` (log-only,
-  no agent turn), which `runtime.record` appends to the `Sink` on the same
-  per-visitor order as forwarded turns (append order = the join key).
-- `Sink` calls still receive `(agentId, visitorId)` as their lookup key, but the
-  `StoredEvent.event` body is log-safe: duplicate `visitorId` values are redacted
-  inside visit events, and sensitive collected field names (`password`, `token`,
-  `api_key`, provider-key-like names) or key-looking field values store
-  `[redacted]`. The browser-safe rule is owned by `@facet/runtime` and reused by
-  downstream prompt/history boundaries; those boundaries still redact again so
-  legacy or externally supplied Sink entries receive the same defense.
-- `FacetRuntime.handle(visitor, event)` opens (or finds) the session for that
-  `(agent, visitor)` pair, runs the agent, applies each returned batch to the
-  stored stage, and ships that batch over the visitor's connection before
-  pulling the next one. A non-streaming agent is just a one-batch agent.
-- `ServerMessage` is what the agent answers with: `patch` (RFC 6902 operations)
-  and/or `say` (chat text).
+### One complete Theme
 
-Sessions are keyed by `(agentId, visitorId)`, which is exactly why the page is
-"different for everyone": each visitor has an isolated stage.
-
-## Package taxonomy
-
-Facet's source packages are grouped by maintainer-facing directory role while
-npm package names stay stable:
-
-- **Core** (`packages/core/*`) owns the contract, runtime, reference transport,
-  browser transport, React renderer, and default asset data.
-- **Agent Stack** (`packages/agent-stack/*`) owns the reusable stage-tool
-  mechanism, the reference LLM brain, deterministic test fixture, and
-  one-command quickstart.
-- **Extensions** (`packages/extensions/*`) owns optional agent authoring and
-  integration surfaces: in-process agents, dial-in agents, AG-UI adapters, CLI,
-  bridge, and Postgres stores.
-- **Labs** (`packages/labs`) is reserved for experiments and carries no
-  supported package contract.
-
-The product-facing support tiers are different from the physical directories.
-The physical layout does not need to mirror these tiers; it is an ownership and
-maintenance layout, while the tiers describe what users should treat as stable
-contracts, reference implementations, or local tools.
-
-- **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`, and
-  `@facet/assets`.
-- **Agent Authoring:** `@facet/agent-tools` and `@facet/agent`.
-- **Integration Adapters:** `@facet/ag-ui`.
-- **Reference Implementations:** `@facet/server`, `@facet/client`,
-  `@facet/agent-client`, `@facet/store-postgres`, and
-  `@facet/reference-agent`.
-- **Local Tools:** `@facet/quickstart`, `@facet/bridge`, and `@facet/cli`.
-
-This distinction matters most for `@facet/server`: it is intentionally a
-reference transport for local/self-hosted single-operator deployments. A public
-multi-tenant platform should put its own edge/API layer in front of Facet for
-tenant/project lookup, authentication, authorization, rate limits, usage
-metering, abuse controls, audit logging, secrets management, and custom-domain
-routing. Those concerns are not part of `@facet/server` or `@facet/runtime`.
-`@facet/ag-ui` is the public adapter path for AG-UI event interop. Likewise,
-native `@facet/client` and `@facet/agent-client` speak the reference transport;
-hosted platforms usually implement their own `FacetTransport` and agent
-connection client while preserving the core Facet contracts. `Self-host` is a
-way to run the reference implementation, not a separate package tier.
-
-## Agent authoring surfaces
-
-Agents don't hand-assemble patch arrays. There are two authoring surfaces:
-
-- `@facet/agent-tools` is the LLM/tool-loop mechanism: provider-neutral tool
-  specs, execution, local stage-shadow folding, observations, and reusable
-  Facet prompt-kit sections. Use it when you are building your own
-  OpenAI/Anthropic/LangGraph/etc. loop.
-- `@facet/agent` is the in-process TypeScript authoring SDK. It keeps existing
-  because rules engines, tests, demos, and code-authored agents still need a
-  convenient `Stage` API. It is not the LLM tool schema package.
-
-`@facet/agent` gives a fluent control surface that records standard RFC 6902 ops
-underneath:
+Each agent asset snapshot has exactly one complete `FacetTheme`. Absence selects
+`DEFAULT_THEME`. A Theme contains:
 
 ```ts
-defineAgent(({ event, session, stage }) => {
-  stage
-    .append("root", card)   // → add /nodes/<id> + add /nodes/root/children/-
-    .say("Added it below.");
-});
+interface FacetTheme {
+  name: string;
+  description?: string;
+  tokens: FacetThemeTokens;
+  defaults: BrickStyleDefinitionMap;
+  presets?: FacetPresets;
+}
 ```
 
-`Stage` coalesces consecutive stage edits into one `patch` message and preserves
-ordering relative to `say(...)`. `defineAgent` flushes once at the end of the
-turn; `defineStreamingAgent` lets generator logic yield producer-chosen
-boundaries, flushing the commands recorded since the previous yield as the next
-batch. Each batch is closed over its child references before it is delivered, so
-the shared fail-safe fold never permanently prunes content that arrives in a
-later batch. Replace the hand-written branches with an LLM call that emits the
-same operations and nothing else in the stack changes. The shared prompt kit
-covers Facet-specific guidance such as compact page UX, edit-before-append
-behavior, bounded `render_page` use, visible-completion rules, and
-theme/reference-asset privacy; the consuming agent still owns the page brief,
-provider context, history, budgets, retries, stop policy, and any business/domain
-tools.
+`tokens` is complete, including `paint.light` and `paint.dark`. `defaults`
+provides one valid base style for every Brick. A Preset is scoped to one Brick
+and contains bounded discovery prose plus one style definition for that Brick.
+Concrete CSS values exist only inside Theme data.
 
-## Reference brain: `@facet/reference-agent`
+`validateTheme` is an all-or-nothing operator boundary. It requires complete
+token maps, validates every default and Preset against the owning Brick
+vocabulary, bounds strings and collections, rejects unsafe CSS constructs, and
+reports contrast findings as warnings. An invalid custom Theme is not partially
+merged; asset loading and rendering fall back to the complete bundled Theme.
 
-The brain is out of scope for Facet — the user brings the LLM/rules — but a
-*reference* brain ships anyway, exactly as a reference transport does:
-`@facet/reference-agent` is to brains what `@facet/server` is to transports. Its
-agent is an ordinary `FacetAgent` handed to the existing `createFacetServer({
-agent })` seam, its LLM calls sit behind a small `ReferenceProvider` interface
-(with `QuickstartProvider` retained as a compatibility type alias for existing
-consumers; OpenAI/Anthropic adapters implement the canonical interface), and core/runtime/
-server gain zero LLM awareness — any user brain drops into the same slot, so the
-boundary stays intact while `npx facet-quickstart` gives a one-command first run
-by composing it. The package also keeps a deterministic stub agent as a test
-fixture for live-link gates; it is not the public quickstart path.
+### Four authoring forms
 
-The reference agent is a **streaming tool-calling loop** (not a single completion):
-each provider step yields the stage/chat batch produced so far, so the browser
-can watch the page build while the model continues deciding the next tool. The
-provider-agnostic tool vocabulary, executor, inspection helpers, local stage
-shadow, structured observation contract, and shared Facet prompt kit live in
-`@facet/agent-tools`; `@facet/reference-agent` supplies only the reference brain
-around that mechanism.
+Every Brick has one optional `style` entry point. The supported forms are:
 
-Inside `@facet/reference-agent`, `provider/` holds the OpenAI/Anthropic adapters
-and provider turn types, `prompt/` holds the system prompt plus event/history and
-stage-summary text, and `harness/` owns the bounded turn machinery: transcript
-assembly, token-calibrated context sizing, LLM + deterministic compaction,
-budget presets, retry/stop classification, fallback policy, and sanitized trace
-events. Context is sized in **tokens**: the adapters report provider usage
-(Anthropic's count includes the cache-creation/read tokens of the
-`cache_control` prefix caching the adapter enables on the stable system+tools
-prefix), and a clamped chars-per-token estimator calibrates against it. When a
-`SummaryStore` is configured, the harness **compacts with the same LLM** on two
-surfaces. Cross-turn: after a turn, a background task on a per-visitor serial
-lane folds older sink history (chunked under an input cap) into a rolling,
-redacted, schema-validated conversation summary, persisted with a monotonic
-covered-through marker plus a conversation-identity anchor so a wiped sink
-rebuilds from scratch instead of resurrecting a foreign summary; the next
-assembly injects it as a pinned user-role data block ahead of the verbatim
-tail. In-turn: when the transcript passes the trigger ratio, the oldest whole
-tool step-groups fold into one summary message — pair-safe for both provider
-wire formats, with the stage block refreshed from the tool-buffer shadow under
-a never-inflate guard — so the turn continues instead of hard-stopping. Every
-summarizer failure degrades to the deterministic char-budget truncation, which
-remains the final guard; without a store the behavior is exactly the
-deterministic pipeline. The harness reads sink history, keeps the current
-visitor event, includes full stage JSON only after a bounded length check says
-it can fit, otherwise sends a deterministic bounded stage summary, and stops
-before a provider call if compaction still cannot fit the configured context
-budget. Corrupt sink history rows and
-malformed stage metadata degrade to placeholders/summaries instead of aborting
-prompt assembly. Tool observations are appended to the transcript before the
-next provider step as structured JSON emitted by `@facet/agent-tools`. The model
-reads `status`, `outcome`, `visible_to_visitor`, `warnings`, and `next_action`
-instead of matching prose. Generic observation fields and transcript entries are
-bounded. The one role-specific exception is a successful `get_composition`
-payload: its exact `data` string and newest tool group remain intact for the
-first provider handoff, or the harness stops `context_limit` before that call.
-Trace callbacks remain sanitized and bounded; saturated async trace queues
-preserve terminal `stop`/`turn_error` events over ordinary trace events.
+1. no `style` — Theme default only;
+2. `{ "preset": "name" }` — Theme default plus a same-Brick Preset;
+3. direct properties — Theme default plus local style;
+4. a same-Brick Preset plus a small direct adjustment.
 
-The native write/chat tools correspond to the `Stage` control API —
-`append_node` / `set_node` / `remove_node` (incremental edits), `render_page` (a
-full redraw), and `say` (chat) — via the provider's native function-calling
-(OpenAI) / tool-use (Anthropic). `get_composition` is deliberately separate: it
-reads one provider-side reference with exact `{ name }` input and has no `Stage`
-method or write effect. It is fail-safe throughout: a bad tool argument becomes a
-structured `status: "error"` / `outcome: "rejected"` observation the model
-recovers from (never a throw), buffered forward references become
-`outcome: "pending"`, and non-visible writes are reported as
-`outcome: "applied_not_visible"` so the model cannot treat them as completed
-visible work. Retry happens only before tools from that provider step execute,
-provider failure mid-loop keeps whatever the stage already has, and a turn that
-accomplishes nothing degrades to one fallback chat line. External agent authors
-can use `@facet/agent-tools` without importing the reference provider loop.
+Resolution is one deterministic merge:
 
-Quickstart's flagship interaction is the **input snapshot**: a pressable box's
-agent action may declare `collect: "<box id>"`, and at press time the renderer
-takes a synchronous snapshot of the visible `input` controls under that box and
-ships them as `fields` on the tap event — the values ride the event, **never the
-tree**. Text-like fields and selects contribute their current string value, a
-radio group contributes only its checked member's string value, checked
-checkbox/switch controls contribute boolean `true`, unchecked checkbox/switch
-controls are omitted, password fields are excluded, and all keys/string values
-stay capped (`MAX_FIELDS_KEYS`, `MAX_FIELD_VALUE_CHARS`). Field state is browser
-view-state like screen/toggle state (inputs are uncontrolled; there is no value
-property on an input node to write), and the server re-validates `fields` at the
-boundary, so the two-writers rule holds: the server stays the only writer of
-stage content. The reference-agent prompt redacts sensitive field names and
-key-looking field values again when rendering current events or Sink history,
-using the runtime-owned redaction rule rather than a duplicated pattern set.
-The `facet-quickstart` bin stays in `@facet/quickstart`: it loads guides/assets,
-serves the page itself (HTML shell + prebuilt client bundle), composes
-`@facet/reference-agent` with a provider-backed reference agent, and proxies the
-protocol routes to an internal loopback `createFacetServer` with a random
-per-boot agent token, never exposing `/agent/*`.
+```text
+Theme default → same-Brick Preset → direct style
+```
 
-The **view snapshot** is the read-side counterpart of the field snapshot: the
-same browser view-state Facet already resolves locally (which `screen` is
-showing, which nodes are `toggled`, and each sorted table's `sort` spec) plus a
-`viewport` size class and color `scheme`, sampled at send time and attached as an
-optional `view` on the forwarded event — no extra round-trip
-(`navigate`/`toggle`/sort/resize/scheme-change never send on their own). The
-single pure `sanitizeView` in `@facet/core` is the one bounds source: it drops
-unknown enum values (including a `sort` direction outside the closed
-`SORT_DIRECTIONS`), length-caps `screen`/keys, and caps `toggled` at
-`MAX_VIEW_TOGGLED_KEYS` and `sort` at `MAX_VIEW_SORT_KEYS` (drop-oldest); every untrusted boundary that accepts
-`view` — `@facet/server`'s `/event` and `/record`, and the `@facet/ag-ui`
-normalizers — clamps through it, so a hostile `view` is bounded (never rejecting
-the event) before it reaches the Sink or the agent. `view` is UI-IN inert data:
-it rides browser→agent events only, is provably unable to reach any
-patch/fold/executor path, and the renderer never writes stage view-state from it
-(the server stays the sole stage writer — no auto-restore). `@facet/react`'s
-`StageRenderer` publishes the live snapshot read-only via an optional
-`onViewSnapshot` callback; `@facet/client` persists it per agent link in
-`localStorage`, exposes `withView` to attach it without mutating an event, and
-replays it on the next `visit` as report-only revisit context;
-`@facet/reference-agent` renders it as one inert, escaped prompt line so the
-model can target the visitor's current screen.
+Each layer copies only properties, targets, and states owned by the Brick
+contract. Unknown data is never spread into a renderer style object. Later
+layers override only exact allowed properties.
 
-`@facet/core` also owns the closed untrusted-input normalizers
-(`normalizeVisitorContext`, `normalizeClientEvent`, and
-`normalizeLocalCollectedEvent`). The native server and AG-UI adapter reuse
-those functions, so visitor, action, field, sequence, local-effect, and view
-rules cannot drift between transport edges.
+`box` and `text` may declare `activeWhen` with `style.active`. When the predicate
+matches browser-local screen or toggle state, the active Preset/direct layer is
+applied after the base look. Other renderer states — hover, pressed, focus,
+checked, sorted, or alternating rows — are available only on the targets and
+properties that declare them.
 
-## What we adopt vs build (and why)
+### `colorMode` belongs to the client
 
-A deep prior-art review (2026) found **no single open standard** offers Facet's
-low-level + token + flow declarative model under a permissive license — the
-closest (A2UI, Adaptive Cards) are semantic widget catalogs. So:
+`StageRenderer` accepts `colorMode: "light" | "dark" | "system"`. The default
+is `system`; the browser resolves it and selects one of the Theme's two paint
+maps. Server rendering falls back deterministically to light.
 
-- **Stage spec / renderer / CLI = built here**, but aligned to A2UI conventions
-  (flat map, `root` id, progressive streaming) for future interop.
-- **Patch format = adopted RFC 6902** instead of inventing ops.
-- **Token names = aligned to the W3C DTCG format.**
-- **AG-UI = adopted optional/public edge adapter** via `@facet/ag-ui` for event
-  transport, while Facet owns the stage spec, renderer, and patch safety. The
-  adapter maps Facet stage frames only as `STATE_DELTA`/`STATE_SNAPSHOT` events
-  under the reserved `/facet/stage` path; `RunAgentInput.state` is not stage
-  authority and cannot replace `StageStore`/runtime state. External NAT-safe
-  AG-UI dial-out is deferred to future `@facet/ag-ui/agent`; native
-  `@facet/agent-client` remains unchanged.
-- Adaptive Cards independently validates the flow-only + semantic-token choices.
+The effective mode is included in the renderer's read-only view snapshot so a
+host may attach it to the visitor's next event. Changing it does not alter the
+Facet Document, emit a patch, or give the agent a second styling mechanism.
 
-### What belongs in `@facet/core`
+## Patterns
 
-`@facet/core` is the contract everything else depends on and depends on nothing
-itself, so its surface is guarded. Beyond the protocol types, it may carry
-**zero-dependency, browser-safe primitives** (`createSerialQueue`,
-`createSemaphore`, `createLruMap`) — but only when **≥2 packages that share no
-other common home** need them. A helper used by a single package, or one that
-would pull in a dependency or Node built-in, lives in that package instead.
+A Pattern is an ordinary valid Facet tree plus bounded discovery metadata:
 
-## Boundaries and what's still out of scope
+```ts
+interface FacetPattern extends FacetTree {
+  name: string;
+  description: string;
+  useWhen: string;
+  avoidWhen?: string;
+}
+```
 
-The current repo implements the **core model** (closed 11-brick vocabulary,
-catalog policy, tokens/recipes, RFC 6902 patches), sessions
-and the event loop, a React renderer, reference SSE+POST transports,
-browser-side transports, the optional AG-UI adapter/event layer, local agent
-surfaces (CLI/bridge), default asset data, file/in-memory asset references, a
-Postgres store adapter, the playground, and the quickstart reference brain.
+Patterns are read-only examples for the brain. They add no node kind, runtime
+reference, parameter substitution, provenance field, or automatic insertion.
+`validatePatternList` validates each complete tree against the effective Theme,
+bounds the list and node count, keeps valid entries, and reports invalid entries.
 
-Deliberately still out of scope:
+The agent sees Pattern metadata in its prompt. If one fits, `get_pattern`
+returns the exact validated tree; the agent then adapts and re-authors ordinary
+native Bricks through mutation tools. Pattern trees stay on the agent side until
+the agent authors a document change.
 
-- **Hosted scale infrastructure** — Redis fan-out, multi-region delivery, queues,
-  and durable orchestration beyond pluggable `StageStore`/`Sink`/`AssetsStore`
-  adapters.
-- **Hosted control planes** — tenant/project auth, API keys, billing, usage
-  metering, rate limits, abuse operations, admin dashboards, audit logs, secrets
-  management, and custom-domain routing.
-- **Domain/backend work** — fetching data, taking payments, placing orders, or
-  calling business APIs; those stay in the agent/operator's own tools.
-- **Safety operations** — content moderation and abuse workflows for public,
-  agent-authored pages.
-- **SEO/crawlers** — production crawler rendering and indexing strategy.
-- **Product UI** — dashboards, asset editors, tenant management, analytics,
-  replay, evals, and deployment operations.
+## Progressive discovery
 
-These are tracked in the README roadmap.
+Putting every Brick and style rule inside every mutation schema would make the
+tool surface too large. `@facet/agent-tools` instead creates one immutable turn
+snapshot containing:
+
+- the complete validated Theme for internal validation;
+- the exact validated Pattern list;
+- bounded Pattern, Preset, and Brick indexes for the prompt.
+
+The prompt teaches a simple order:
+
+1. Pattern metadata first; call `get_pattern` when a worked structure fits.
+2. Preset metadata next; call `get_preset` when a same-Brick visual role fits.
+3. Brick metadata next; call `get_brick_spec({ type })` for one unfamiliar Brick.
+4. When directly choosing one unfamiliar value, call
+   `get_style_choices({ brick, target, property })`.
+
+`get_brick_spec` returns exact fields and a compact map of Brick-owned style
+paths. It identifies each property as token-backed or fixed without repeating
+all choice metadata. `get_style_choices` resolves one exact local path through
+Core and returns its property guidance and allowed values with meanings. It is
+not a global token browser.
+
+Pattern and Preset styles already present in the validated snapshot are known
+valid and may be re-authored without redundant choice lookups. All four asset
+reads are no-stage-change operations with zero messages and patches.
+
+The reference brain preserves the newest exact asset-read group through its
+first provider handoff. If the complete next request cannot fit the context
+budget, the loop stops with `context_limit` instead of truncating authoritative
+style or Pattern data.
+
+## Strict authoring and fail-soft rendering
+
+Facet intentionally uses two validation policies.
+
+### Agent mutation boundary: strict and atomic
+
+`validateAuthorNode` and `validateAuthorTree` reject a mutation when any authored
+field, target, property, state, Preset name, token name, fixed choice, reference,
+or bound is invalid. The executor returns:
+
+- `status: "error"` and `outcome: "rejected"`;
+- bounded structured errors with exact paths and repair guidance;
+- zero patches and unchanged local shadow state.
+
+This is the normal feedback loop. The agent reads the result, repairs the whole
+call, and retries. A renderer fallback never turns invalid authoring into
+success.
+
+### Persisted/render boundary: fail-soft
+
+`validateTree`, the style resolver, and `StageRenderer` are the last defense for
+stale, partially patched, persisted, or bypassed data. They ignore invalid style
+fragments, prune unusable references, break cycles, cap traversal, and skip
+unknown or dangling nodes. Valid Bricks and siblings continue to render.
+
+This asymmetry gives the agent precise correction while keeping a visitor's page
+alive under imperfect external state.
+
+## Renderer layout contract
+
+Every native renderer root follows three rules:
+
+- **Parent owns placement.** Direction, gap, alignment, wrapping, and columns
+  place immediate children.
+- **Child owns internal layout.** A child stays inside the slot its parent gives
+  it.
+- **Renderer owns containment.** Long text wraps; controls and media stay within
+  bounds; tables use renderer-owned bounded overflow.
+
+There is no general authored positioning or z-index. A `box` backdrop and
+modal/drawer are bounded renderer-owned mechanisms with fixed layering and
+containment, not arbitrary CSS escape hatches.
+
+## Patches and the event loop
+
+The runtime event loop is:
+
+```text
+visitor event
+  → open the current stage
+  → run the agent against one immutable asset snapshot
+  → validate tool calls and fold local shadow state
+  → emit RFC 6902 patch messages
+  → persist the resulting stage
+  → record conversation output through Sink
+```
+
+`StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` are Promise-based
+interfaces so production deployments can provide durable adapters. The runtime
+serializes work per `(agent, visitor)` while allowing different visitors to run
+independently.
+
+The browser applies patches with the same `applyPatch` as the server. Browser
+view-state — current screen, toggles, local table sort, viewport class, and
+effective `colorMode` — remains separate. An outgoing event may carry a snapshot
+of that state, but it never becomes a second content writer.
+
+## Assets and boot
+
+The per-agent asset store exposes three current documents:
+
+```text
+theme.json
+patterns.json
+initial.tree.json   # optional
+```
+
+`loadAssets` validates them once into a deeply frozen snapshot. Missing Theme or
+Pattern documents select bundled defaults; an explicit empty Pattern list
+selects none. A malformed custom Theme falls back whole. Invalid Patterns are
+omitted. An invalid or non-seedable initial tree is ignored so boot can continue
+with model-first paint.
+
+`MemoryAssets` is browser-safe. `FileAssets` lives behind `@facet/runtime/node`
+and bounds directory enumeration, file bytes, parsing, and issue text before
+handing raw documents to `loadAssets`.
+
+`withInitialStage` is a `StageStore` decorator. A valid seed enters through the
+same serialized stage path and reaches the browser as ordinary initial state and
+patch data; it does not create another writer or protocol.
+
+## Package boundaries
+
+Dependencies point toward `@facet/core`; Core has no dependencies. Nothing
+depends on the playground app.
+
+- **Foundation:** `@facet/core`, `@facet/runtime`, `@facet/react`,
+  `@facet/assets`.
+- **Agent authoring:** `@facet/agent-tools`, `@facet/agent`.
+- **Integration adapter:** `@facet/ag-ui`.
+- **Reference implementations:** `@facet/server`, `@facet/client`,
+  `@facet/agent-client`, `@facet/store-postgres`, `@facet/reference-agent`.
+- **Local tools:** `@facet/quickstart`, `@facet/cli`, `@facet/bridge`.
+
+The server/client packages are reference transports, not a hosted edge. See
+[Package boundaries](PACKAGE-BOUNDARIES.md) for support and deployment language.
+
+## AG-UI edge adapter
+
+AG-UI is an optional/public edge adapter implemented by `@facet/ag-ui`; it is
+not a second Stage implementation. Facet owns the stage spec, renderer, and
+patch safety. The adapter translates Facet patch frames and authoritative Stage
+snapshots to `STATE_DELTA`/`STATE_SNAPSHOT` events under the reserved
+`/facet/stage` path, and converts only that reserved state subtree back to native
+Facet messages. `RunAgentInput.state` is not stage authority: visitor events and
+local records enter through bounded `forwardedProps.facet` data, while
+`StageStore` and the Facet runtime remain authoritative for document state.
+
+External NAT-safe AG-UI dial-out is deferred to a future
+`@facet/ag-ui/agent`; native `@facet/agent-client` remains unchanged. The native
+`@facet/client`/`@facet/server` path remains the local/reference fallback rather
+than depending on this adapter.
+
+## Out of scope
+
+Facet does not own the brain's business policy, external tool selection, tenant
+identity, API-key issuance, billing, rate limits, abuse operations, audit logs,
+secret management, or custom-domain routing. It also does not prescribe a
+distributed stage backend. Those concerns wrap or implement the interfaces
+above without changing the Facet Document contract.
+
+## Pre-1.0 hard cut
+
+The current Theme/Preset/Pattern and Brick-owned style contract has no
+compatibility bridge for pre-cutover documents or tool calls. Current validators,
+asset loaders, file loaders, public exports, and tool schemas reject or ignore
+retired shapes rather than guessing at intent. See
+[Style system migration](STYLE-SYSTEM-MIGRATION.md) for the supported replacement
+workflow.

@@ -45,13 +45,13 @@ type ExecutorRegistry = { [K in FacetNode["type"]]: ExecutorBrickEntry<K> };
 
 // --- shared helpers (relocated verbatim from executor-input / executor-inspect) ---
 
-export function nodeVariant(node: FacetNode): string | undefined {
-  return "variant" in node && typeof node.variant === "string" ? node.variant : undefined;
+export function nodePreset(node: FacetNode): string | undefined {
+  return node.style?.preset;
 }
 
-function variantSuffix(node: FacetNode): string {
-  const variant = nodeVariant(node);
-  return variant === undefined ? "" : ` variant=${variant}`;
+function presetSuffix(node: FacetNode): string {
+  const preset = nodePreset(node);
+  return preset === undefined ? "" : ` preset=${preset}`;
 }
 
 function preview(value: string): string {
@@ -194,7 +194,7 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
       };
     },
     describe: (facetNode, warehouse) =>
-      `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`,
+      `${facetNode.id} table columns=${String(facetNode.columns.length)} rows=${String(resolveNodeData(facetNode, warehouse).length)}${presetSuffix(facetNode)}`,
   },
   chart: {
     asNode: (value) => {
@@ -224,7 +224,7 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
       };
     },
     describe: (facetNode, warehouse) =>
-      `${facetNode.id} chart kind=${facetNode.kind} series=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`,
+      `${facetNode.id} chart kind=${facetNode.kind} series=${String(resolveNodeData(facetNode, warehouse).length)}${presetSuffix(facetNode)}`,
   },
   list: {
     asNode: (value) => {
@@ -237,7 +237,7 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
       return { facetNode: value as unknown as FacetNode };
     },
     describe: (facetNode, warehouse) =>
-      `${facetNode.id} list items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`,
+      `${facetNode.id} list items=${String(resolveNodeData(facetNode, warehouse).length)}${presetSuffix(facetNode)}`,
   },
   keyValue: {
     asNode: (value) => {
@@ -250,7 +250,7 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
       return { facetNode: value as unknown as FacetNode };
     },
     describe: (facetNode, warehouse) =>
-      `${facetNode.id} keyValue items=${String(resolveNodeData(facetNode, warehouse).length)}${variantSuffix(facetNode)}`,
+      `${facetNode.id} keyValue items=${String(resolveNodeData(facetNode, warehouse).length)}${presetSuffix(facetNode)}`,
   },
   progress: {
     asNode: (value) => {
@@ -263,12 +263,12 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
       return { facetNode: value as unknown as FacetNode };
     },
     describe: (facetNode) =>
-      `${facetNode.id} progress value=${String(facetNode.value)}${variantSuffix(facetNode)}`,
+      `${facetNode.id} progress value=${String(facetNode.value)}${presetSuffix(facetNode)}`,
   },
   loading: {
     asNode: asNodePassthrough,
     describe: (facetNode) =>
-      `${facetNode.id} loading${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${variantSuffix(facetNode)}`,
+      `${facetNode.id} loading${facetNode.label === undefined ? "" : ` label="${preview(facetNode.label)}"`}${presetSuffix(facetNode)}`,
   },
 };
 

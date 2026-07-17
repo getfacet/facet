@@ -43,7 +43,6 @@ export function summarizeStageForPrompt(
     `screens=${String(screenCount)}`,
   ];
   if (typeof safeStage.entry === "string") lines.push(`entry=${safeField(safeStage.entry)}`);
-  if (typeof safeStage.theme === "string") lines.push(`theme=${safeField(safeStage.theme)}`);
   lines.push(`node_summaries=${String(visibleIds.length)}/${String(nodeIds.length)} sorted_by=id`);
   for (const id of visibleIds) {
     lines.push(`- ${safeField(id)}: ${summarizeNode(safeStage.nodes[id])}`);
@@ -101,7 +100,6 @@ const STAGE_SUMMARY_REGISTRY: Record<BrickType, NodeSummarizer> = {
       `columns=${String(arrayCount(node["columns"]))}`,
       `rows=${String(arrayCount(node["rows"]))}`,
       charSummary(node["caption"], "captionChars"),
-      safeStringSummary(node["variant"], "variant"),
     ]),
   chart: (node) => {
     const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
@@ -111,35 +109,18 @@ const STAGE_SUMMARY_REGISTRY: Record<BrickType, NodeSummarizer> = {
       `points=${String(chartPointCount(node["series"]))}`,
       `labels=${String(arrayCount(node["labels"]))}`,
       charSummary(node["title"], "titleChars"),
-      safeStringSummary(node["variant"], "variant"),
     ]);
   },
-  list: (node) =>
-    compactSummary([
-      "type=list",
-      `items=${String(arrayCount(node["items"]))}`,
-      safeStringSummary(node["variant"], "variant"),
-    ]),
+  list: (node) => compactSummary(["type=list", `items=${String(arrayCount(node["items"]))}`]),
   keyValue: (node) =>
-    compactSummary([
-      "type=keyValue",
-      `items=${String(arrayCount(node["items"]))}`,
-      safeStringSummary(node["variant"], "variant"),
-    ]),
+    compactSummary(["type=keyValue", `items=${String(arrayCount(node["items"]))}`]),
   progress: (node) =>
     compactSummary([
       "type=progress",
       numberSummary(node["value"], "value"),
       charSummary(node["label"], "labelChars"),
-      safeStringSummary(node["tone"], "tone"),
-      safeStringSummary(node["variant"], "variant"),
     ]),
-  loading: (node) =>
-    compactSummary([
-      "type=loading",
-      charSummary(node["label"], "labelChars"),
-      safeStringSummary(node["variant"], "variant"),
-    ]),
+  loading: (node) => compactSummary(["type=loading", charSummary(node["label"], "labelChars")]),
 };
 
 /** Exposed for the registry-exhaustiveness test; not part of the package barrel. */
@@ -154,7 +135,59 @@ function summarizeNode(node: FacetTree["nodes"][string] | undefined): string {
   const summarize = Object.hasOwn(STAGE_SUMMARY_REGISTRY, type)
     ? (STAGE_SUMMARY_REGISTRY as Record<string, NodeSummarizer | undefined>)[type]
     : undefined;
-  return summarize ? summarize(node) : "type=unknown";
+  return summarize
+    ? compactSummary([summarize(node), summarizeStyle(node["style"])])
+    : "type=unknown";
+}
+
+const STYLE_STATE_KEYS = new Set(["hover", "pressed", "focus", "checked", "sorted", "alternate"]);
+const STYLE_ENTRY_LIMIT = 64;
+
+/**
+ * Stage summaries expose only bounded style metadata. Full token choices stay
+ * available through inspect_stage/inspect_node, while a large or malformed
+ * style object cannot dominate the prompt or inject extra lines.
+ */
+function summarizeStyle(value: unknown): string | undefined {
+  if (!isRecord(value)) return undefined;
+  try {
+    const preset = typeof value["preset"] === "string" ? safeField(value["preset"]) : undefined;
+    let direct = 0;
+    let targets = 0;
+    let states = 0;
+    let visited = 0;
+
+    for (const [key, nested] of Object.entries(value)) {
+      if (visited >= STYLE_ENTRY_LIMIT) break;
+      visited += 1;
+      if (key === "preset" || key === "active") continue;
+      if (!isRecord(nested)) {
+        direct += 1;
+        continue;
+      }
+      if (STYLE_STATE_KEYS.has(key)) {
+        states += 1;
+        continue;
+      }
+      targets += 1;
+      let nestedVisited = 0;
+      for (const [nestedKey, nestedValue] of Object.entries(nested)) {
+        if (nestedVisited >= STYLE_ENTRY_LIMIT) break;
+        nestedVisited += 1;
+        if (STYLE_STATE_KEYS.has(nestedKey) && isRecord(nestedValue)) states += 1;
+      }
+    }
+
+    return compactSummary([
+      `style=${preset === undefined ? "preset:none" : `preset:${preset}`}`,
+      `direct=${String(direct)}`,
+      `targets=${String(targets)}`,
+      `states=${String(states)}`,
+      `active=${isRecord(value["active"]) ? "yes" : "no"}`,
+    ]);
+  } catch {
+    return undefined;
+  }
 }
 
 function compactSummary(parts: readonly (string | undefined)[]): string {
@@ -163,10 +196,6 @@ function compactSummary(parts: readonly (string | undefined)[]): string {
 
 function charSummary(value: unknown, label: string): string | undefined {
   return typeof value === "string" ? `${label}=${String(value.length)}` : undefined;
-}
-
-function safeStringSummary(value: unknown, label: string): string | undefined {
-  return typeof value === "string" ? `${label}=${safeField(value)}` : undefined;
 }
 
 function numberSummary(value: unknown, label: string): string | undefined {

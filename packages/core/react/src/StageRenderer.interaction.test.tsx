@@ -10,6 +10,7 @@ import {
   type ViewSnapshot,
 } from "@facet/core";
 import { StageRenderer } from "./StageRenderer.js";
+import { resolveTheme } from "./theme.js";
 
 afterEach(() => {
   cleanup();
@@ -46,6 +47,118 @@ const screensTree = (): FacetTree => ({
 // These jsdom tests cover the INTERACTION path — clicks reaching onAction — which
 // a string render can't exercise. This is the seam the action-vocabulary work builds on.
 describe("StageRenderer interactions (jsdom)", () => {
+  it("renders input targets and states by input kind", () => {
+    const theme = resolveTheme();
+    const normalizedColor = (value: string): string => {
+      const sample = document.createElement("span");
+      sample.style.color = value;
+      return sample.style.color;
+    };
+    const { container } = render(
+      <StageRenderer
+        tree={tree({
+          root: { id: "root", type: "box", children: ["email", "check", "radio"] },
+          email: {
+            id: "email",
+            type: "input",
+            name: "email",
+            input: "email",
+            label: "Email",
+            placeholder: "you@example.com",
+            style: {
+              gap: "lg",
+              label: { fontSize: "lg", color: "info" },
+              control: {
+                background: "successSurface",
+                controlHeight: "lg",
+                hover: { background: "warningSurface" },
+                focus: { borderColor: "danger", borderWidth: "thick" },
+              },
+              placeholder: { color: "warning", fontStyle: "italic" },
+              // Raw renderer path: these valid-but-inapplicable targets must not leak.
+              indicator: { background: "danger", indicatorSize: "lg" },
+              option: { color: "danger" },
+            },
+          },
+          check: {
+            id: "check",
+            type: "input",
+            name: "consent",
+            input: "checkbox",
+            label: "Consent",
+            style: {
+              control: { color: "info" },
+              indicator: {
+                indicatorSize: "lg",
+                borderColor: "warning",
+                checked: { background: "success", color: "successForeground" },
+                focus: { borderColor: "focusRing", borderWidth: "medium" },
+              },
+              // Inapplicable for checkbox and therefore absent from rendered CSS.
+              placeholder: { color: "danger", fontStyle: "italic" },
+            },
+          },
+          radio: {
+            id: "radio",
+            type: "input",
+            name: "plan",
+            input: "radio",
+            label: "Plan",
+            options: ["Free", "Pro"],
+            style: {
+              option: {
+                color: "info",
+                checked: { color: "success", fontWeight: "bold" },
+                hover: { color: "warning", fontWeight: "medium" },
+              },
+            },
+          },
+        })}
+      />,
+    );
+
+    const email = container.querySelector('input[name="email"]') as HTMLInputElement;
+    const emailRoot = email.closest("label") as HTMLLabelElement;
+    const emailLabel = emailRoot.querySelector("span") as HTMLSpanElement;
+    expect(emailRoot.style.gap).toBe(theme.space.lg);
+    expect(emailLabel.style.fontSize).toBe(theme.fontSize.lg);
+    expect(emailLabel.style.color).toBe(normalizedColor(theme.color.info));
+    expect(email.style.background).toBe(normalizedColor(theme.color.successSurface));
+    expect(email.style.minHeight).toBe(theme.controlHeight.lg);
+    expect(email.classList).toContain("facet-hover-background");
+    expect(email.classList).toContain("facet-focus-borderColor");
+    expect(email.style.getPropertyValue("--facet-hover-background")).toBe(
+      theme.color.warningSurface,
+    );
+    expect(email.style.getPropertyValue("--facet-focus-borderColor")).toBe(theme.color.danger);
+    expect(email.classList).toContain("facet-placeholder-color");
+    expect(email.style.getPropertyValue("--facet-placeholder-color")).toBe(theme.color.warning);
+    expect(email.style.width).toBe("100%");
+    expect(email.style.height).toBe("");
+
+    const check = container.querySelector('input[name="consent"]') as HTMLInputElement;
+    expect(check.style.width).toBe(theme.indicatorSize.lg);
+    expect(check.style.height).toBe(theme.indicatorSize.lg);
+    expect(check.style.borderColor).toBe(normalizedColor(theme.color.warning));
+    expect(check.classList).toContain("facet-checked-background");
+    expect(check.classList).toContain("facet-focus-borderColor");
+    expect(check.style.getPropertyValue("--facet-checked-background")).toBe(theme.color.success);
+    expect(check.classList).not.toContain("facet-placeholder-color");
+
+    const pro = Array.from(container.querySelectorAll("label")).find(
+      (label) => label.textContent === "Pro",
+    ) as HTMLLabelElement;
+    expect(pro.style.color).toBe(normalizedColor(theme.color.info));
+    expect(pro.classList).toContain("facet-checked-color");
+    expect(pro.classList).toContain("facet-hover-color");
+    expect(pro.classList).toContain("facet-hover-fontWeight");
+    expect(pro.style.getPropertyValue("--facet-checked-color")).toBe(theme.color.success);
+    expect(pro.style.getPropertyValue("--facet-hover-color")).toBe(theme.color.warning);
+    expect(pro.style.getPropertyValue("--facet-hover-fontWeight")).toBe(
+      String(theme.fontWeight.medium),
+    );
+  });
+
   it("fires onAction with the box's action when a pressable box is clicked", () => {
     const onAction = vi.fn();
     render(
@@ -315,9 +428,9 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
               id: "banner",
               type: "text",
               value: "Nav",
-              active: { screen: "about" },
-              activeStyle: { weight: "bold" },
-            } as FacetNode,
+              activeWhen: { screen: "about" },
+              style: { active: { fontWeight: "bold" } },
+            },
             goAbout: {
               id: "goAbout",
               type: "box",
@@ -332,7 +445,7 @@ describe("StageRenderer screens + navigate (jsdom)", () => {
       />,
     );
 
-    expect((screen.getByText("Nav") as HTMLElement).style.fontWeight).toBe("");
+    expect((screen.getByText("Nav") as HTMLElement).style.fontWeight).toBe("400");
     fireEvent.click(screen.getByText("Go about"));
     expect((screen.getByText("Nav") as HTMLElement).style.fontWeight).toBe("700");
     // No agent event; the only record is the navigate's own pre-existing tap —
@@ -354,8 +467,8 @@ describe("StageRenderer native local-navigation references (jsdom)", () => {
       [id]: {
         id,
         type: "box",
-        active: { screen: to },
-        activeVariant: "selected",
+        activeWhen: { screen: to },
+        style: { active: { borderColor: "accent" } },
         onPress: { kind: "navigate", to },
         children: [labelId],
       },
@@ -1958,7 +2071,7 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
           btn: {
             id: "btn",
             type: "box",
-            style: { appear: "fade" },
+            style: { enterAnimation: "fade" },
             onHold: { kind: "agent", name: "held" },
             children: ["bt"],
           },
@@ -1968,7 +2081,7 @@ describe("StageRenderer hold gesture (jsdom, fake timers)", () => {
     );
 
     const btn = screen.getByRole("button");
-    expect(btn.className).toBe("facet-appear-fade");
+    expect(btn.classList).toContain("facet-appear-fade");
   });
 
   it("a second finger's pointerdown does not defeat the post-hold click swallow (multi-touch)", () => {
@@ -2271,7 +2384,12 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
     const scrollTree = (label: string): FacetTree =>
       tree({
         root: { id: "root", type: "box", children: ["list", "status"] },
-        list: { id: "list", type: "box", style: { scroll: true }, children: ["row"] },
+        list: {
+          id: "list",
+          type: "box",
+          style: { scroll: "vertical" },
+          children: ["row"],
+        },
         row: { id: "row", type: "text", value: "row content" },
         status: { id: "status", type: "text", value: label },
       });
@@ -2303,14 +2421,19 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
             children: ["bt"],
           },
           bt: { id: "bt", type: "text", value: "Toggle" },
-          peek: { id: "peek", type: "box", style: { appear: "fade" }, children: ["pt"] },
+          peek: {
+            id: "peek",
+            type: "box",
+            style: { enterAnimation: "fade" },
+            children: ["pt"],
+          },
           pt: { id: "pt", type: "text", value: "peek content" },
         })}
       />,
     );
 
     const first = screen.getByText("peek content").parentElement as HTMLElement;
-    expect(first.className).toBe("facet-appear-fade");
+    expect(first.classList).toContain("facet-appear-fade");
 
     fireEvent.click(screen.getByRole("button", { name: "Toggle" })); // hide ⇒ unmount
     expect(screen.queryByText("peek content")).toBeNull();
@@ -2318,7 +2441,7 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
 
     const second = screen.getByText("peek content").parentElement as HTMLElement;
     expect(second).not.toBe(first); // a fresh element ⇒ the CSS animation replays
-    expect(second.className).toBe("facet-appear-fade");
+    expect(second.classList).toContain("facet-appear-fade");
   });
 
   it("adding the first / removing the last appear token never remounts the stage (review r3)", () => {
@@ -2329,27 +2452,41 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
     const flipTree = (appear: boolean): FacetTree =>
       tree({
         root: { id: "root", type: "box", children: ["list", "badge"] },
-        list: { id: "list", type: "box", style: { scroll: true }, children: ["row"] },
+        list: {
+          id: "list",
+          type: "box",
+          style: { scroll: "vertical" },
+          children: ["row"],
+        },
         row: { id: "row", type: "text", value: "row content" },
         badge: appear
-          ? { id: "badge", type: "box", style: { appear: "fade" }, children: [] }
+          ? {
+              id: "badge",
+              type: "box",
+              style: { enterAnimation: "fade" },
+              children: [],
+            }
           : { id: "badge", type: "box", children: [] },
       });
     const { rerender, container } = render(
       <StageRenderer onAction={onAction} tree={flipTree(false)} />,
     );
-    expect(container.querySelector("style")).toBeNull();
+    const hasAppearStylesheet = (): boolean =>
+      Array.from(container.querySelectorAll("style")).some((style) =>
+        style.textContent?.includes("@keyframes facet-appear-fade"),
+      );
+    expect(hasAppearStylesheet()).toBe(false);
     const listEl = screen.getByText("row content").parentElement as HTMLElement;
     listEl.scrollTop = 120;
     const kept = listEl.scrollTop;
 
     rerender(<StageRenderer onAction={onAction} tree={flipTree(true)} />); // first appear token arrives
-    expect(container.querySelector("style")).not.toBeNull();
+    expect(hasAppearStylesheet()).toBe(true);
     expect(screen.getByText("row content").parentElement).toBe(listEl); // NO remount
     expect(listEl.scrollTop).toBe(kept);
 
     rerender(<StageRenderer onAction={onAction} tree={flipTree(false)} />); // last appear token leaves
-    expect(container.querySelector("style")).toBeNull();
+    expect(hasAppearStylesheet()).toBe(false);
     expect(screen.getByText("row content").parentElement).toBe(listEl);
     expect(listEl.scrollTop).toBe(kept);
   });
@@ -2367,7 +2504,12 @@ describe("StageRenderer view-state coherence (jsdom)", () => {
           ...(withHold ? { onHold: { kind: "agent", name: "peek" } } : {}),
           children: ["list", "f"],
         },
-        list: { id: "list", type: "box", style: { scroll: true }, children: ["row"] },
+        list: {
+          id: "list",
+          type: "box",
+          style: { scroll: "vertical" },
+          children: ["row"],
+        },
         row: { id: "row", type: "text", value: "row content" },
         f: { id: "f", type: "input", name: "email", label: "Email" },
       });

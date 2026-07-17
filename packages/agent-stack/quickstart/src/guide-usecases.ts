@@ -1,16 +1,16 @@
 import type { FacetTree } from "@facet/core";
 import { QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
 
-const NAV_ITEM_STYLE = { border: true, pad: "sm", radius: "md" } as const;
-const NAV_LABEL_STYLE = { color: "fg", align: "center", weight: "semibold" } as const;
-const ACTION_STYLE = {
-  direction: "row",
-  bg: "surface",
-  border: true,
-  pad: "sm",
-  radius: "md",
+const NAV_ITEM_STYLE = {
+  preset: "secondaryAction",
+  active: { preset: "primaryAction" },
 } as const;
-const ACTION_LABEL_STYLE = { color: "fg", align: "center", weight: "semibold" } as const;
+const NAV_LABEL_STYLE = {
+  preset: "actionLabel",
+  active: { color: "accentForeground" },
+} as const;
+const ACTION_STYLE = { preset: "secondaryAction" } as const;
+const ACTION_LABEL_STYLE = { preset: "actionLabel" } as const;
 
 /**
  * The intake nodes are assembled before the home summary to preserve the
@@ -21,7 +21,7 @@ export const QUICKSTART_INTAKE_NODES = {
   "qs.intake": {
     id: "qs.intake",
     type: "box",
-    style: { bg: "surface", border: true, gap: "sm", pad: "md", radius: "md", shadow: "sm" },
+    style: { preset: "panel", gap: "sm" },
     children: [
       "qs.intake.title",
       "qs.intake.body",
@@ -35,13 +35,13 @@ export const QUICKSTART_INTAKE_NODES = {
     id: "qs.intake.title",
     type: "text",
     value: "Give the agent a target",
-    style: { color: "fg", size: "lg", weight: "bold" },
+    style: { preset: "subheading" },
   },
   "qs.intake.body": {
     id: "qs.intake.body",
     type: "text",
     value: "Field values remain browser view-state until this action collects them.",
-    style: { color: "fg-muted" },
+    style: { preset: "muted" },
   },
   "qs.intake.goal": {
     id: "qs.intake.goal",
@@ -49,7 +49,7 @@ export const QUICKSTART_INTAKE_NODES = {
     name: "goal",
     label: "What should the agent build?",
     placeholder: "A customer onboarding flow",
-    variant: "default",
+    style: { preset: "standard" },
   },
   "qs.intake.surface": {
     id: "qs.intake.surface",
@@ -58,31 +58,31 @@ export const QUICKSTART_INTAKE_NODES = {
     input: "select",
     label: "Surface",
     options: ["Dashboard", "Pricing", "Form flow", "Replay view"],
-    variant: "default",
+    style: { preset: "standard" },
   },
   "qs.intake.alert": {
     id: "qs.intake.alert",
     type: "box",
-    style: { gap: "sm", pad: "md", bg: "surface", border: true, radius: "md" },
+    style: { preset: "infoAlert" },
     children: ["qs.intake.alert.title", "qs.intake.alert.body"],
   },
   "qs.intake.alert.title": {
     id: "qs.intake.alert.title",
     type: "text",
     value: "Provider-backed",
-    style: { weight: "bold", color: "info" },
+    style: { preset: "infoAlert" },
   },
   "qs.intake.alert.body": {
     id: "qs.intake.alert.body",
     type: "text",
     value:
       "The normal quickstart path still uses your OpenAI or Anthropic key; this seed is just the first paint.",
-    style: { color: "fg" },
+    style: { preset: "body", color: "infoForeground" },
   },
   "qs.intake.submit": {
     id: "qs.intake.submit",
     type: "box",
-    style: { direction: "row", bg: "accent", pad: "sm", radius: "md", shadow: "sm" },
+    style: { preset: "primaryAction" },
     children: ["qs.intake.submit.label"],
     onPress: {
       kind: "agent",
@@ -94,7 +94,7 @@ export const QUICKSTART_INTAKE_NODES = {
     id: "qs.intake.submit.label",
     type: "text",
     value: "Transform this page",
-    style: { color: "accent-fg", align: "center", weight: "semibold" },
+    style: { preset: "actionLabel" },
   },
 } satisfies FacetTree["nodes"];
 
@@ -102,7 +102,7 @@ export const QUICKSTART_USE_CASE_NODES = {
   "qs.usecases.root": {
     id: "qs.usecases.root",
     type: "box",
-    style: { direction: "col", gap: "lg", pad: "xl" },
+    style: { direction: "column", gap: "lg", padding: "xl" },
     children: ["qs.nav.usecases", "qs.usecases.hero", "qs.usecases.examples", "qs.intake"],
   },
   "qs.nav.usecases": {
@@ -119,8 +119,7 @@ export const QUICKSTART_USE_CASE_NODES = {
   "qs.nav.usecases.what": {
     id: "qs.nav.usecases.what",
     type: "box",
-    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
-    activeVariant: "selected",
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[0].to },
     style: NAV_ITEM_STYLE,
     children: ["qs.nav.usecases.what.label"],
     onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[0].to },
@@ -129,15 +128,13 @@ export const QUICKSTART_USE_CASE_NODES = {
     id: "qs.nav.usecases.what.label",
     type: "text",
     value: QUICKSTART_NAV_ITEMS[0].label,
-    active: { screen: QUICKSTART_NAV_ITEMS[0].to },
-    activeStyle: { color: "accent-fg" },
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[0].to },
     style: NAV_LABEL_STYLE,
   },
   "qs.nav.usecases.structure": {
     id: "qs.nav.usecases.structure",
     type: "box",
-    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
-    activeVariant: "selected",
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[1].to },
     style: NAV_ITEM_STYLE,
     children: ["qs.nav.usecases.structure.label"],
     onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[1].to },
@@ -146,15 +143,13 @@ export const QUICKSTART_USE_CASE_NODES = {
     id: "qs.nav.usecases.structure.label",
     type: "text",
     value: QUICKSTART_NAV_ITEMS[1].label,
-    active: { screen: QUICKSTART_NAV_ITEMS[1].to },
-    activeStyle: { color: "accent-fg" },
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[1].to },
     style: NAV_LABEL_STYLE,
   },
   "qs.nav.usecases.system": {
     id: "qs.nav.usecases.system",
     type: "box",
-    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
-    activeVariant: "selected",
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[2].to },
     style: NAV_ITEM_STYLE,
     children: ["qs.nav.usecases.system.label"],
     onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[2].to },
@@ -163,15 +158,13 @@ export const QUICKSTART_USE_CASE_NODES = {
     id: "qs.nav.usecases.system.label",
     type: "text",
     value: QUICKSTART_NAV_ITEMS[2].label,
-    active: { screen: QUICKSTART_NAV_ITEMS[2].to },
-    activeStyle: { color: "accent-fg" },
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[2].to },
     style: NAV_LABEL_STYLE,
   },
   "qs.nav.usecases.usecases": {
     id: "qs.nav.usecases.usecases",
     type: "box",
-    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
-    activeVariant: "selected",
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[3].to },
     style: NAV_ITEM_STYLE,
     children: ["qs.nav.usecases.usecases.label"],
     onPress: { kind: "navigate", to: QUICKSTART_NAV_ITEMS[3].to },
@@ -180,14 +173,20 @@ export const QUICKSTART_USE_CASE_NODES = {
     id: "qs.nav.usecases.usecases.label",
     type: "text",
     value: QUICKSTART_NAV_ITEMS[3].label,
-    active: { screen: QUICKSTART_NAV_ITEMS[3].to },
-    activeStyle: { color: "accent-fg" },
+    activeWhen: { screen: QUICKSTART_NAV_ITEMS[3].to },
     style: NAV_LABEL_STYLE,
   },
   "qs.usecases.hero": {
     id: "qs.usecases.hero",
     type: "box",
-    style: { bg: "surface", gap: "md", pad: "lg", radius: "lg", width: "full" },
+    style: {
+      preset: "panel",
+      padding: "lg",
+      borderWidth: "none",
+      borderRadius: "lg",
+      shadow: "none",
+      width: "full",
+    },
     children: [
       "qs.usecases.hero.eyebrow",
       "qs.usecases.hero.title",
@@ -199,44 +198,44 @@ export const QUICKSTART_USE_CASE_NODES = {
     id: "qs.usecases.hero.eyebrow",
     type: "text",
     value: "Your turn",
-    style: { color: "fg-muted", size: "sm", weight: "semibold" },
+    style: { preset: "eyebrow" },
   },
   "qs.usecases.hero.title": {
     id: "qs.usecases.hero.title",
     type: "text",
     value: "Use Cases",
-    style: { color: "fg", size: "xl", weight: "bold" },
+    style: { preset: "heading" },
   },
   "qs.usecases.hero.body": {
     id: "qs.usecases.hero.body",
     type: "text",
     value:
-      "Ask Facet to draw a concrete app surface. The agent should update the page with ordinary native bricks, token styles, and fields instead of only replying in chat.",
-    style: { color: "fg" },
+      "Ask Facet to draw a concrete app surface. The agent can inspect a Pattern, then author ordinary native bricks with Presets and deliberate direct style instead of only replying in chat.",
+    style: { preset: "body" },
   },
   "qs.usecases.alert": {
     id: "qs.usecases.alert",
     type: "box",
-    style: { gap: "sm", pad: "md", bg: "surface", border: true, radius: "md" },
+    style: { preset: "infoAlert" },
     children: ["qs.usecases.alert.title", "qs.usecases.alert.body"],
   },
   "qs.usecases.alert.title": {
     id: "qs.usecases.alert.title",
     type: "text",
     value: "Try a real request",
-    style: { weight: "bold", color: "info" },
+    style: { preset: "infoAlert" },
   },
   "qs.usecases.alert.body": {
     id: "qs.usecases.alert.body",
     type: "text",
     value:
       "Examples: customer onboarding, pricing comparison, CRM dashboard, evaluation replay, or support triage.",
-    style: { color: "fg" },
+    style: { preset: "body", color: "infoForeground" },
   },
   "qs.usecases.examples": {
     id: "qs.usecases.examples",
     type: "box",
-    style: { gap: "md", pad: "lg", width: "full" },
+    style: { gap: "md", padding: "lg", width: "full" },
     children: [
       "qs.usecases.examples.title",
       "qs.usecases.examples.body",
@@ -248,18 +247,18 @@ export const QUICKSTART_USE_CASE_NODES = {
     id: "qs.usecases.examples.title",
     type: "text",
     value: "Starting points",
-    style: { color: "fg", size: "xl", weight: "bold" },
+    style: { preset: "heading" },
   },
   "qs.usecases.examples.body": {
     id: "qs.usecases.examples.body",
     type: "text",
-    value: "These are prompts the agent can turn into a live page.",
-    style: { color: "fg" },
+    value: "These are prompts the agent can turn into a live page using Patterns as references.",
+    style: { preset: "body" },
   },
   "qs.usecases.list": {
     id: "qs.usecases.list",
     type: "list",
-    variant: "default",
+    style: { preset: "standard" },
     items: [
       { title: "Dashboard", body: "KPIs, chart, table, status, and next action." },
       { title: "Pricing", body: "Plan comparison with a conversion path." },

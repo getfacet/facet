@@ -23,14 +23,14 @@ export const nova = defineAgent(({ event, stage }) => {
           root: {
             id: "root",
             type: "box",
-            style: { direction: "col", gap: "lg", pad: "xl" },
+            style: { direction: "column", gap: "lg", padding: "xl" },
             children: [heading, intro, cta],
           },
           [heading]: {
             id: heading,
             type: "text",
             value: "Hi, I'm Nova",
-            style: { size: "3xl", weight: "bold", color: "fg" },
+            style: { fontSize: "3xl", fontWeight: "bold", color: "foreground" },
           },
           [intro]: {
             id: intro,
@@ -38,12 +38,17 @@ export const nova = defineAgent(({ event, stage }) => {
             value: fromTwitter
               ? "Saw you came from Twitter — here's the short version."
               : "Ask me anything, and this page rebuilds itself for you.",
-            style: { size: "md", color: "fg-muted" },
+            style: { fontSize: "md", color: "mutedForeground" },
           },
           [cta]: {
             id: cta,
             type: "box",
-            style: { bg: "accent", radius: "md", pad: "md", align: "center" },
+            style: {
+              background: "accent",
+              borderRadius: "md",
+              padding: "md",
+              alignItems: "center",
+            },
             onPress: { kind: "agent", name: "view_pricing" },
             children: [ctaLabel],
           },
@@ -51,7 +56,7 @@ export const nova = defineAgent(({ event, stage }) => {
             id: ctaLabel,
             type: "text",
             value: "See pricing",
-            style: { color: "accent-fg", weight: "semibold" },
+            style: { color: "accentForeground", fontWeight: "semibold" },
           },
         },
       });
@@ -66,21 +71,27 @@ export const nova = defineAgent(({ event, stage }) => {
           id: card,
           type: "box",
           style: {
-            direction: "col",
+            direction: "column",
             gap: "sm",
-            pad: "lg",
-            bg: "surface",
-            radius: "lg",
-            border: true,
+            padding: "lg",
+            background: "surface",
+            borderColor: "border",
+            borderWidth: "thin",
+            borderRadius: "lg",
           },
           children: [title, price],
         });
-        stage.set({ id: title, type: "text", value: "Pro", style: { size: "lg", weight: "bold" } });
+        stage.set({
+          id: title,
+          type: "text",
+          value: "Pro",
+          style: { fontSize: "lg", fontWeight: "bold" },
+        });
         stage.set({
           id: price,
           type: "text",
           value: "$20/mo — everything, no limits.",
-          style: { color: "fg-muted" },
+          style: { color: "mutedForeground" },
         });
         stage.say("Added the pricing card below 👇");
       } else {

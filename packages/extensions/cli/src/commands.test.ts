@@ -1,5 +1,13 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildMessages } from "./commands.js";
+
+const COMMANDS_SOURCE = readFileSync(
+  fileURLToPath(new URL("./commands.ts", import.meta.url)),
+  "utf8",
+);
+const CLI_SOURCE = readFileSync(fileURLToPath(new URL("./cli.ts", import.meta.url)), "utf8");
 
 describe("buildMessages", () => {
   it("render → a single replace-root patch", () => {
@@ -73,17 +81,10 @@ describe("buildMessages", () => {
     expect(() => buildMessages("screens", ["{not json", "home"])).toThrow(/invalid JSON/);
   });
 
-  it("theme → add theme patch", () => {
-    const [message] = buildMessages("theme", ["midnight"]);
-    if (message?.kind !== "patch") throw new Error("expected a patch");
-    expect(message.patches).toEqual([{ op: "add", path: "/theme", value: "midnight" }]);
-  });
-
-  it("theme rejects missing or malformed names before emitting a patch", () => {
-    expect(() => buildMessages("theme", [])).toThrow(/theme name/);
-    expect(() => buildMessages("theme", ["Dark", "Mode!"])).toThrow(/one theme name/);
-    expect(() => buildMessages("theme", ["Dark Mode!"])).toThrow(/valid theme name/);
-    expect(() => buildMessages("theme", ["#000000"])).toThrow(/valid theme name/);
+  it("has no Theme command or help entry", () => {
+    expect(() => buildMessages("theme", ["midnight"])).toThrow(/unknown command/);
+    expect(COMMANDS_SOURCE).not.toContain('case "theme"');
+    expect(CLI_SOURCE).not.toContain("facet theme");
   });
 
   it("throws on an unknown command", () => {

@@ -2,11 +2,19 @@ import { describe, expect, it } from "vitest";
 
 import { EMPTY_TREE, isTreeShaped, treeHasContent, treeRenderableNodeIds } from "./tree.js";
 import type { FacetTree } from "./tree.js";
+import { validateTree } from "./tree-validation.js";
 
 describe("isTreeShaped", () => {
   it("accepts a well-formed tree (including EMPTY_TREE)", () => {
     expect(isTreeShaped(EMPTY_TREE)).toBe(true);
     expect(isTreeShaped({ root: "root", nodes: {} })).toBe(true);
+  });
+
+  it("uses the current closed direction token in EMPTY_TREE", () => {
+    expect(EMPTY_TREE.nodes["root"]).toMatchObject({
+      type: "box",
+      style: { direction: "column", gap: "md" },
+    });
   });
 
   it("rejects non-objects and arrays", () => {
@@ -32,6 +40,18 @@ describe("isTreeShaped", () => {
     // The stricter layers (root-node existence, box-ness, child resolution)
     // belong to callers — this base guard only checks the outer shape.
     expect(isTreeShaped({ root: "missing", nodes: {} })).toBe(true);
+  });
+});
+
+describe("FacetTree document appearance hard cut", () => {
+  it("never retains a document-authored theme", () => {
+    const { tree } = validateTree({
+      root: "root",
+      nodes: { root: { id: "root", type: "box", children: [] } },
+      theme: "legacy-brand",
+    });
+
+    expect(tree).not.toHaveProperty("theme");
   });
 });
 
@@ -248,7 +268,7 @@ describe("treeHasContent", () => {
   });
 
   it("does not count retired container patterns as renderable content", () => {
-    const retiredTypes = ["section", "card", "emptyState"] as const; // composition-hard-cut: allowed-negative
+    const retiredTypes = ["section", "card", "emptyState"] as const; // style-hard-cut: allowed-negative
     for (const type of retiredTypes) {
       const t = tree({
         r: { id: "r", type: "box", children: ["child"] },
