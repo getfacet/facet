@@ -885,6 +885,66 @@ test("scans only locked roots and excludes only locked generated directories", a
   );
 });
 
+test("excludes only the two playground runtime output directories", async (t) => {
+  const cwd = await makeFixture(t);
+  const legacy = 'const legacy = { style: { bg: "surface" } };\n';
+  await writeFixture(cwd, "apps/playground/.facet-sessions/visitor/session.ts", legacy);
+  await writeFixture(cwd, "apps/playground/generated/visitor/page.ts", legacy);
+  await writeFixture(cwd, "apps/playground/.facet-sessions-backup/legacy.ts", legacy);
+  await writeFixture(cwd, "apps/playground/generated-source/legacy.ts", legacy);
+  await writeFixture(cwd, "apps/playground/src/legacy.ts", legacy);
+
+  const result = scanHardCut({ cwd, mode: "production" });
+
+  assert.deepEqual(
+    result.violations.map(({ path: violationPath }) => violationPath),
+    [
+      "apps/playground/.facet-sessions-backup/legacy.ts",
+      "apps/playground/generated-source/legacy.ts",
+      "apps/playground/src/legacy.ts",
+    ],
+  );
+});
+
+test("continues scanning untracked source ignored by git", async (t) => {
+  const cwd = await makeFixture(t);
+  const initialized = spawnSync("git", ["init", "--quiet"], { cwd, encoding: "utf8" });
+  assert.equal(initialized.status, 0, initialized.stderr);
+  await writeFixture(cwd, ".gitignore", "apps/playground/local-source/\n");
+  await writeFixture(
+    cwd,
+    "apps/playground/local-source/legacy.ts",
+    'const legacy = { style: { bg: "surface" } };\n',
+  );
+
+  const result = scanHardCut({ cwd, mode: "production" });
+
+  assert.deepEqual(
+    result.violations.map(({ path: violationPath }) => violationPath),
+    ["apps/playground/local-source/legacy.ts"],
+  );
+});
+
+test("does not expose excluded playground session contents in CLI diagnostics", async (t) => {
+  const cwd = await makeFixture(t);
+  const sessionSecret = "session-secret-that-must-not-reach-diagnostics";
+  await writeFixture(
+    cwd,
+    "apps/playground/.facet-sessions/visitor/session.ts",
+    `const legacy = { style: { bg: "${sessionSecret}" } };\n`,
+  );
+
+  const scanner = new URL("./check-style-hard-cut.mjs", import.meta.url);
+  const result = spawnSync(process.execPath, [scanner.pathname], {
+    cwd,
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, "");
+  assert.equal(result.stdout.includes(sessionSecret), false);
+});
+
 test("production mode excludes current docs while all mode includes them", async (t) => {
   const cwd = await makeFixture(t);
   const legacy = `${retiredSymbol()}();\n`;

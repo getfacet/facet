@@ -17,7 +17,7 @@ const NAV_LABEL_STYLE = {
 } as const;
 
 /** Builds one screen-local copy of the shared quickstart navigation subtree. */
-export function quickstartNavNodes(namespace: string): FacetTree["nodes"] {
+export function buildQuickstartNavigation(namespace: string): FacetTree["nodes"] {
   const rootId = `qs.nav.${namespace}`;
   const nodes: Record<NodeId, FacetNode> = {
     [rootId]: {

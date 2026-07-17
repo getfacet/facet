@@ -11,7 +11,14 @@ import ts from "typescript";
 const PRODUCTION_ROOTS = ["packages", "apps", "scripts"];
 const ALL_ROOTS = [...PRODUCTION_ROOTS, "docs", ".changeset", "README.md", "AGENTS.md"];
 
-const EXCLUDED_GLOBS = ["!**/node_modules/**", "!**/dist/**", "!**/coverage/**", "!**/.turbo/**"];
+const EXCLUDED_GLOBS = [
+  "!**/node_modules/**",
+  "!**/dist/**",
+  "!**/coverage/**",
+  "!**/.turbo/**",
+  "!apps/playground/.facet-sessions/**",
+  "!apps/playground/generated/**",
+];
 
 const ALLOWED_ANNOTATION = ["style-hard-cut", "allowed-negative"].join(": ");
 const LEGACY_ALLOWED_ANNOTATION = ["composition-hard-cut", "allowed-negative"].join(": ");

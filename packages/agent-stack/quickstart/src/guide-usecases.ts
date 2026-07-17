@@ -1,5 +1,5 @@
 import type { FacetTree } from "@facet/core";
-import { quickstartNavNodes } from "./guide-shared.js";
+import { buildQuickstartNavigation } from "./guide-shared.js";
 const ACTION_STYLE = { preset: "secondaryAction" } as const;
 const ACTION_LABEL_STYLE = { preset: "actionLabel" } as const;
 
@@ -96,7 +96,7 @@ export const QUICKSTART_USE_CASE_NODES = {
     style: { direction: "column", gap: "lg", padding: "xl" },
     children: ["qs.nav.usecases", "qs.usecases.hero", "qs.usecases.examples", "qs.intake"],
   },
-  ...quickstartNavNodes("usecases"),
+  ...buildQuickstartNavigation("usecases"),
   "qs.usecases.hero": {
     id: "qs.usecases.hero",
     type: "box",

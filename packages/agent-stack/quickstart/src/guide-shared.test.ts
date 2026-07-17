@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { QUICKSTART_NAV_ITEMS, quickstartNavNodes } from "./guide-shared.js";
+import { buildQuickstartNavigation, QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
 
-describe("quickstartNavNodes", () => {
+describe("buildQuickstartNavigation", () => {
   it("builds the stable nine-node navigation subtree for one screen namespace", () => {
-    const nodes = quickstartNavNodes("home");
+    const nodes = buildQuickstartNavigation("home");
     const expectedIds = [
       "qs.nav.home",
       ...QUICKSTART_NAV_ITEMS.flatMap(({ to }) => [`qs.nav.home.${to}`, `qs.nav.home.${to}.label`]),

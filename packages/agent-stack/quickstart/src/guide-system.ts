@@ -1,5 +1,5 @@
 import type { FacetTree } from "@facet/core";
-import { quickstartNavNodes } from "./guide-shared.js";
+import { buildQuickstartNavigation } from "./guide-shared.js";
 
 export const QUICKSTART_SYSTEM_NODES = {
   "qs.system.root": {
@@ -15,7 +15,7 @@ export const QUICKSTART_SYSTEM_NODES = {
       "qs.system.discovery",
     ],
   },
-  ...quickstartNavNodes("system"),
+  ...buildQuickstartNavigation("system"),
   "qs.system.hero": {
     id: "qs.system.hero",
     type: "box",
