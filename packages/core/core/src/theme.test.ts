@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BRICK_CONTRACT, BRICK_TYPES, type BrickType } from "./brick-contract.js";
+import { isAllowedColor } from "./theme-color.js";
 import {
   ASPECT_RATIOS,
   BORDER_WIDTHS,
@@ -96,6 +97,33 @@ function expectInvalid(theme: unknown): void {
 }
 
 describe("validateTheme", () => {
+  it("keeps opaque background acceptance aligned with the canonical color parser", () => {
+    const corpus = [
+      "#fff",
+      "#ffffffff",
+      "#ffffff00",
+      "rgb(0, 127.5, 255)",
+      "rgb(0%, 50%, 100%)",
+      "rgb(0%, 2, 3%)",
+      "rgb(256, 0, 0)",
+      "hsl(-360, 100%, 50%)",
+      "hsl(0, 101%, 50%)",
+      "orange",
+      "transparent",
+      "inherit",
+      "var(--paint)",
+    ];
+
+    for (const value of corpus) {
+      const theme = completeTheme();
+      const tokens = theme.tokens as Record<string, unknown>;
+      const paint = tokens.paint as Record<string, unknown>;
+      const light = paint.light as Record<string, Record<string, unknown>>;
+      light.color!.background = value;
+      expect(validateTheme(theme).theme !== undefined, value).toBe(isAllowedColor(value));
+    }
+  });
+
   it("keeps specific structural issues when an incomplete Theme cannot be contrast-checked", () => {
     const result = validateTheme({ name: "incomplete", tokens: {}, defaults: {} });
 

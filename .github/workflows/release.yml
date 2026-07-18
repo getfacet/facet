@@ -30,6 +30,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - run: pnpm verify
+
       # Runs third-party registry code only in this read-only, token-free job.
       - run: pnpm package:smoke
 
@@ -51,7 +53,8 @@ jobs:
 
       # Opens/maintains a "Version Packages" PR as changesets land; when that PR
       # is merged, runs `pnpm release` (build + changeset publish) to npm. The
-      # token-free package-smoke job above must pass before this job can start.
+      # token-free verification + package-smoke job above must pass before this
+      # credentialed job can start.
       - name: Create Release PR or publish
         uses: changesets/action@v1
         with:

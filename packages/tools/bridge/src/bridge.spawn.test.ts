@@ -73,11 +73,12 @@ if (failTokens.includes(token)) {
   }).unref();
   setTimeout(() => {}, 30000); // hang until the bridge SIGKILLs us
 } else {
-  setTimeout(() => {
+  const finish = () => {
     const end = Date.now();
     fs.writeFileSync(path.join(dir, token + ".json"), JSON.stringify({ token, start, end }));
     process.exit(0);
-  }, ${String(sleepMs)});
+  };
+  ${sleepMs === 0 ? "finish();" : `setTimeout(finish, ${String(sleepMs)});`}
 }
 `;
   const scriptPath = join(dir, "brain.cjs");
@@ -144,6 +145,15 @@ function readStarts(dir: string): string[] {
   return readFileSync(join(dir, "starts.log"), "utf8")
     .split("\n")
     .filter((line) => line.length > 0);
+}
+
+async function waitForStart(dir: string, token: string): Promise<void> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    if (existsSync(join(dir, "starts.log")) && readStarts(dir).includes(token)) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(`stub brain ${token} did not start`);
 }
 
 /** Max number of spans overlapping at any instant (end-before-start at ties). */
@@ -226,23 +236,23 @@ describe("createSpawnAgent concurrency cap", () => {
     // timeout callback settling `runOne` can free the slot for the second visitor.
     const agent = spawnBridge({
       dir,
-      sleepMs: 30,
+      sleepMs: 0,
       maxConcurrent: 1,
-      brainTimeoutMs: 250,
+      brainTimeoutMs: 1_500,
       hangTokens: ["1"],
     });
 
+    const first = Promise.resolve(agent(visit("v0"), sessionFor("v0")));
+    await waitForStart(dir, "1");
     const t0 = Date.now();
-    await Promise.all([
-      Promise.resolve(agent(visit("v0"), sessionFor("v0"))),
-      Promise.resolve(agent(visit("v1"), sessionFor("v1"))),
-    ]);
+    const second = Promise.resolve(agent(visit("v1"), sessionFor("v1")));
+    await Promise.all([first, second]);
     const elapsed = Date.now() - t0;
 
-    // With the fix the queued turn runs ~right after the 250ms timeout. Without
+    // With the fix the queued turn runs right after the 1.5s timeout. Without
     // it, the leaked pipe delays `close` (the grandchild lives 4s), so this would
-    // not complete until then — the 2000ms bound is the regression guard.
+    // not complete until then — the 3000ms bound is the regression guard.
     expect(existsSync(join(dir, "2.json"))).toBe(true);
-    expect(elapsed).toBeLessThan(2000);
+    expect(elapsed).toBeLessThan(3_000);
   }, 15000);
 });

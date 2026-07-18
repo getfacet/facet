@@ -1,16 +1,15 @@
 import {
   BRICK_CONTRACT,
   BRICK_TYPES,
-  FIXED_STYLE_VALUE_CONTRACT,
-  TOKEN_STYLE_VALUE_CONTRACT,
   isValidThemeName,
+  styleValueChoicesForProperty,
+  styleValueDomainForProperty,
   type BrickStylePropertyContract,
   type BrickStyleTargetContract,
   type BrickContractEntry,
   type BrickType,
   type FacetTree,
   type StyleValue,
-  type StyleValueDomain,
   type StyleValueMetadata,
 } from "@facet/core";
 import { formatAssetObservation } from "./asset-observation.js";
@@ -58,10 +57,8 @@ function exactName(input: Input): string | undefined {
   return typeof value === "string" && isValidThemeName(value) ? value : undefined;
 }
 
-function propertyValueDomain(property: BrickStylePropertyContract): StyleValueDomain {
-  const domains: Readonly<Record<string, StyleValueDomain>> =
-    property.source === "token" ? TOKEN_STYLE_VALUE_CONTRACT : FIXED_STYLE_VALUE_CONTRACT;
-  const domain = domains[property.domain];
+function propertyValueDomain(property: BrickStylePropertyContract) {
+  const domain = styleValueDomainForProperty(property);
   if (domain === undefined) {
     throw new Error(`Core Brick contract references missing ${property.source} domain.`);
   }
@@ -297,7 +294,7 @@ export function executeGetStyleChoices(
       source: property.source,
       valueSetDescription: domain.description,
       choiceFields: ["name", "description", "useWhen", "avoidWhen?"],
-      choices: domain.values.map(choiceTuple),
+      choices: styleValueChoicesForProperty(propertyName, property).map(choiceTuple),
     },
     shadow,
   );

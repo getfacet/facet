@@ -7,6 +7,7 @@ import {
   visibleStageNodeIds,
 } from "./observation.js";
 import { formatAssetObservation } from "./asset-observation.js";
+import { AGENT_TOOL_OUTCOMES, STAGE_TOOL_ERROR_CODES } from "./types.js";
 
 // Legacy vocabulary is built at runtime so the removed tokens never appear as
 // source literals (same idiom as theme.test.ts).
@@ -23,6 +24,35 @@ const TREE: FacetTree = {
 };
 
 describe("agent tool observation contract", () => {
+  it("round-trips every canonical outcome and error code", () => {
+    for (const outcome of AGENT_TOOL_OUTCOMES) {
+      const observation = formatAgentToolObservation({
+        tool: "contract_test",
+        status: outcome === "rejected" ? "error" : outcome === "pending" ? "pending" : "ok",
+        outcome,
+        message: "Contract parity.",
+        ...(outcome === "rejected" ? { code: "invalid_input" as const } : {}),
+      });
+      expect(parseAgentToolObservation(observation.text)?.outcome).toBe(outcome);
+    }
+    for (const code of STAGE_TOOL_ERROR_CODES) {
+      const observation = formatAgentToolObservation({
+        tool: "contract_test",
+        status: "error",
+        outcome: "rejected",
+        code,
+        message: "Contract parity.",
+        ...(code === "invalid_authoring"
+          ? {
+              errors: [{ path: "/nodes/root", message: "Invalid authoring." }],
+              omittedErrorCount: 0,
+            }
+          : {}),
+      });
+      expect(parseAgentToolObservation(observation.text)?.code).toBe(code);
+    }
+  });
+
   it("serializes bounded structured author errors", () => {
     const observation = formatAgentToolObservation({
       tool: "render_page",

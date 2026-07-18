@@ -107,7 +107,9 @@ lint, format-check, and build, followed by these repository checks in order:
 2. `node scripts/check-docs.mjs`
 3. `node --test scripts/check-package-layout.test.mjs`
 4. `node scripts/check-package-layout.mjs`
-5. `node scripts/check-source-nuls.mjs`
+5. `node --test scripts/check-style-hard-cut.test.mjs`
+6. `node scripts/check-style-hard-cut.mjs`
+7. `node scripts/check-source-nuls.mjs`
 
 The first documentation command pins the checker; the second validates
 current-document links and anchors plus explicitly marked concrete
@@ -117,10 +119,10 @@ check helps diagnosis but does not replace the full check. The package-layout
 test/check pair and the source NUL scan are likewise part of `pnpm verify`, not
 optional follow-ups.
 
-Style-system hard cuts also run `node scripts/check-style-hard-cut.mjs`:
-shipping source, docs, package READMEs, fixtures, and current changesets must
-contain no retired symbol, data, or functional-tier claim. Ephemeral plans live
-only under the gitignored `.agents/work/<slug>/` path and are outside repository
+The style-system regression suite runs immediately before the scanner. Shipping
+source, docs, package READMEs, fixtures, and current changesets must contain no
+retired symbol, data, or functional-tier claim. Ephemeral plans live only under
+the gitignored `.agents/work/<slug>/` path and are outside repository
 documentation. A committed root `specs/`, `docs/specs/`, or `docs/comparisons/`
 path is a layout failure. Only an intentional negative in a test or fixture may
 use the scanner's exact annotation; annotations cannot waive production code or

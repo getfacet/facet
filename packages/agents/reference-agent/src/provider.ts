@@ -23,7 +23,6 @@ export type {
   ProviderTurn,
   ProviderUsage,
   ReferenceProvider,
-  ReferenceProvider as QuickstartProvider,
   ToolCall,
   ToolSpec,
   TurnMessage,

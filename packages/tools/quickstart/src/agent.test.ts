@@ -20,7 +20,7 @@ vi.mock("@facet/reference-agent", async (importOriginal) => {
   return { ...actual, createReferenceAgent: createReferenceAgentSpy };
 });
 
-import { composeQuickstartAgent, type ComposeQuickstartAgentOptions } from "./agent.js";
+import { createQuickstartAgent, type QuickstartAgentOptions } from "./agent.js";
 
 const provider: ReferenceProvider = {
   name: "openai",
@@ -34,7 +34,7 @@ beforeAll(async () => {
   defaultAssets = await loadAssets(new MemoryAssets({}), "quickstart");
 });
 
-function options(): Omit<ComposeQuickstartAgentOptions, "summaryStore"> {
+function options(): Omit<QuickstartAgentOptions, "summaryStore"> {
   return {
     provider,
     sink: new MemorySink(),
@@ -44,13 +44,13 @@ function options(): Omit<ComposeQuickstartAgentOptions, "summaryStore"> {
   };
 }
 
-describe("composeQuickstartAgent", () => {
+describe("createQuickstartAgent", () => {
   beforeEach(() => {
     createReferenceAgentSpy.mockClear();
   });
 
   it("enables cross-turn compaction with a fresh MemorySummaryStore by default", () => {
-    composeQuickstartAgent(options());
+    createQuickstartAgent(options());
 
     expect(createReferenceAgentSpy).toHaveBeenCalledTimes(1);
     expect(createReferenceAgentSpy.mock.calls[0]?.[0].summaryStore).toBeInstanceOf(
@@ -65,26 +65,26 @@ describe("composeQuickstartAgent", () => {
       delete: () => Promise.resolve(),
     };
 
-    composeQuickstartAgent({ ...options(), summaryStore: store });
+    createQuickstartAgent({ ...options(), summaryStore: store });
 
     expect(createReferenceAgentSpy.mock.calls[0]?.[0].summaryStore).toBe(store);
   });
 
   it("treats summaryStore null as an explicit compaction opt-out", () => {
-    composeQuickstartAgent({ ...options(), summaryStore: null });
+    createQuickstartAgent({ ...options(), summaryStore: null });
 
     expect(createReferenceAgentSpy.mock.calls[0]?.[0]).not.toHaveProperty("summaryStore");
   });
 
   it("adds seeded progressive context defaults to the quickstart composition", () => {
-    composeQuickstartAgent(options());
+    createQuickstartAgent(options());
     expect(createReferenceAgentSpy.mock.calls[0]?.[0].budget).toEqual({
       maxContextChars: 160_000,
       maxContextTokens: 40_000,
       maxSummarizerInputChars: 80_000,
     });
 
-    composeQuickstartAgent({ ...options(), budgetPreset: "quickstart" });
+    createQuickstartAgent({ ...options(), budgetPreset: "quickstart" });
     expect(createReferenceAgentSpy.mock.calls[1]?.[0].budget).toEqual({
       maxContextChars: 160_000,
       maxContextTokens: 40_000,
@@ -93,7 +93,7 @@ describe("composeQuickstartAgent", () => {
   });
 
   it("derives missing token and summarizer caps from a custom quickstart char cap", () => {
-    composeQuickstartAgent({
+    createQuickstartAgent({
       ...options(),
       budget: { maxContextChars: 120_004, maxSteps: 7, maxProviderRetries: 0 },
     });
@@ -116,26 +116,26 @@ describe("composeQuickstartAgent", () => {
       maxObservationChars: 2_000,
     };
 
-    composeQuickstartAgent({ ...options(), budget });
+    createQuickstartAgent({ ...options(), budget });
 
     expect(createReferenceAgentSpy.mock.calls[0]?.[0].budget).toEqual(budget);
   });
 
   it("leaves explicit hosted and local-dev preset budgets unchanged", () => {
     for (const budgetPreset of ["hosted", "local-dev"] as const) {
-      composeQuickstartAgent({ ...options(), budgetPreset });
+      createQuickstartAgent({ ...options(), budgetPreset });
       const presetOnly = createReferenceAgentSpy.mock.calls.at(-1)?.[0];
       expect(presetOnly?.budgetPreset).toBe(budgetPreset);
       expect(presetOnly).not.toHaveProperty("budget");
 
       const budget = { maxContextChars: 123_456, maxSteps: 5 };
-      composeQuickstartAgent({ ...options(), budgetPreset, budget });
+      createQuickstartAgent({ ...options(), budgetPreset, budget });
       expect(createReferenceAgentSpy.mock.calls.at(-1)?.[0].budget).toBe(budget);
     }
   });
 
   it("uses one immutable Theme and Pattern snapshot", () => {
-    composeQuickstartAgent({
+    createQuickstartAgent({
       ...options(),
       theme: defaultAssets.theme,
       patterns: defaultAssets.patterns,

@@ -20,12 +20,8 @@ export type {
   StageSummaryOptions,
   ToolInputByName,
 } from "./prompt.js";
-export { createReferenceAgent, createReferenceAgent as createQuickstartAgent } from "./agent.js";
-export type {
-  ReferenceAgentAssetSource,
-  ReferenceAgentOptions,
-  ReferenceAgentOptions as QuickstartAgentOptions,
-} from "./agent.js";
+export { createReferenceAgent } from "./agent.js";
+export type { ReferenceAgentAssetSource, ReferenceAgentOptions } from "./agent.js";
 export * from "./stub.js";
 export * from "./harness/budget.js";
 export * from "./harness/trace.js";

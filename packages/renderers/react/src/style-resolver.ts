@@ -1,8 +1,4 @@
-import {
-  BRICK_CONTRACT,
-  FIXED_STYLE_VALUE_CONTRACT,
-  TOKEN_STYLE_VALUE_CONTRACT,
-} from "@facet/core";
+import { BRICK_CONTRACT, isStyleValueAllowedForProperty } from "@facet/core";
 import type {
   BrickStyle,
   BrickStyleDefinition,
@@ -10,18 +6,13 @@ import type {
   BrickStyleTargetContract,
   BrickType,
   InputKind,
-  StyleValue,
-  StyleValueDomain,
 } from "@facet/core";
 import type { ResolvedTheme } from "./theme.js";
 
 const ABSENT = Symbol("absent style value");
 type SafeValue = unknown | typeof ABSENT;
 
-const TOKEN_DOMAINS: Readonly<Record<string, StyleValueDomain>> = TOKEN_STYLE_VALUE_CONTRACT;
-const FIXED_DOMAINS: Readonly<Record<string, StyleValueDomain>> = FIXED_STYLE_VALUE_CONTRACT;
-
-export interface ResolveBrickStyleOptions {
+interface ResolveBrickStyleOptions {
   /** Whether this node's already-evaluated activeWhen predicate currently matches. */
   readonly active?: boolean;
   /** Effective input kind used to omit targets that cannot render for that kind. */
@@ -45,23 +36,6 @@ function readOwn(value: unknown, key: string): SafeValue {
   }
 }
 
-function allowedDomain(property: BrickStylePropertyContract): StyleValueDomain | undefined {
-  return property.source === "token"
-    ? TOKEN_DOMAINS[property.domain]
-    : FIXED_DOMAINS[property.domain];
-}
-
-function allowedValue(
-  propertyName: string,
-  property: BrickStylePropertyContract,
-  value: unknown,
-): value is StyleValue {
-  if (value === "inherit" && propertyName !== "color") return false;
-  return (
-    allowedDomain(property)?.values.some((candidate) => Object.is(candidate.name, value)) ?? false
-  );
-}
-
 function mutableChild(output: Record<string, unknown>, key: string): Record<string, unknown> {
   const current = output[key];
   if (typeof current === "object" && current !== null) return current as Record<string, unknown>;
@@ -80,7 +54,9 @@ function applyProperties(
     const property = properties[name];
     if (property === undefined) continue;
     const value = readOwn(raw, name);
-    if (value !== ABSENT && allowedValue(name, property, value)) output[name] = value;
+    if (value !== ABSENT && isStyleValueAllowedForProperty(name, property, value)) {
+      output[name] = value;
+    }
   }
 }
 

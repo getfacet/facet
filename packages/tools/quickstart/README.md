@@ -66,6 +66,14 @@ parents.
 Each closed tool batch is yielded as soon as it is ready, so the browser can
 show the page changing during a model turn.
 
+## Programmatic composition
+
+`@facet/quickstart` owns `createQuickstartAgent` and
+`QuickstartAgentOptions`. This wrapper applies Quickstart's budget and summary
+defaults while composing `@facet/reference-agent`; the reference-agent package
+exports only its canonical `createReferenceAgent` and `ReferenceAgentOptions`
+names.
+
 ## Flags
 
 ```text
@@ -261,7 +269,7 @@ spend controls.
 - Sink records redact sensitive field names and key-looking values.
 - Provider keys remain server-side.
 - Context compaction is enabled by default with `MemorySummaryStore`. Pass
-  `summaryStore: null` to `composeQuickstartAgent` to disable it, or provide a
+  `summaryStore: null` to `createQuickstartAgent` to disable it, or provide a
   durable store paired with a durable Sink.
 
 Quickstart is not a multi-tenant server and does not implement tenant isolation,

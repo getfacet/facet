@@ -7,12 +7,7 @@ import {
   type BrickType,
   type InputKind,
 } from "./brick-contract.js";
-import {
-  FIXED_STYLE_VALUE_CONTRACT,
-  TOKEN_STYLE_VALUE_CONTRACT,
-  type StyleValue,
-  type StyleValueDomain,
-} from "./style-value-contract.js";
+import { styleValueNamesForProperty, type StyleValue } from "./style-value-contract.js";
 import { isControlChar, isForbiddenKey, isPlainObject, printableKey } from "./issues.js";
 import { escapeJsonPointerToken } from "./patch.js";
 import { sanitizeNode } from "./brick-node-validation.js";
@@ -120,21 +115,6 @@ function readOwn(value: Record<string, unknown>, key: string): SafeRead {
   }
 }
 
-function domainFor(property: BrickStylePropertyContract): StyleValueDomain | undefined {
-  const token: Readonly<Record<string, StyleValueDomain>> = TOKEN_STYLE_VALUE_CONTRACT;
-  const fixed: Readonly<Record<string, StyleValueDomain>> = FIXED_STYLE_VALUE_CONTRACT;
-  return property.source === "token" ? token[property.domain] : fixed[property.domain];
-}
-
-function allowedValues(
-  propertyName: string,
-  property: BrickStylePropertyContract,
-): readonly StyleValue[] {
-  return (domainFor(property)?.values ?? [])
-    .map(({ name }) => name)
-    .filter((name) => name !== "inherit" || propertyName === "color");
-}
-
 function validateProperties(
   raw: Record<string, unknown>,
   properties: Readonly<Record<string, BrickStylePropertyContract>>,
@@ -151,7 +131,7 @@ function validateProperties(
     if (!read.present) continue;
     const property = properties[name];
     if (property === undefined) continue;
-    const allowed = allowedValues(name, property);
+    const allowed = styleValueNamesForProperty(name, property);
     if (!allowed.some((choice) => Object.is(choice, read.value))) {
       issues.add(childPath(path, name), "Choose one allowed style value.", allowed);
     }

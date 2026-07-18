@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { validateTree } from "@facet/core";
-import { DEFAULT_THEME } from "@facet/react";
+import { DEFAULT_THEME } from "@facet/assets";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
 import { MemorySink } from "@facet/runtime";
 import { startQuickstart, type RunningQuickstart } from "../src/index.js";

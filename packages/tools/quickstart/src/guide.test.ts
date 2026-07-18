@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { BRICK_TYPES, collectMessages, validateAuthorTree, validateTree } from "@facet/core";
-import { DEFAULT_THEME } from "@facet/react";
+import { DEFAULT_THEME } from "@facet/assets";
 import {
   formatCurrentStageForPrompt,
   normalizeBudget,
@@ -11,7 +11,7 @@ import {
   type ToolCall,
 } from "@facet/reference-agent";
 import { loadAssets, MemoryAssets, MemorySink } from "@facet/runtime";
-import { composeQuickstartAgent } from "./agent.js";
+import { createQuickstartAgent } from "./agent.js";
 import { QUICKSTART_INITIAL_STAGE, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 
 const EXPECTED_NODE_ORDER = [
@@ -448,7 +448,7 @@ describe("quickstart guide", () => {
       },
     };
     const trace: ReferenceAgentTraceEvent[] = [];
-    const agent = composeQuickstartAgent({
+    const agent = createQuickstartAgent({
       provider,
       guide: QUICKSTART_PAGE_BRIEF,
       sink: new MemorySink(),

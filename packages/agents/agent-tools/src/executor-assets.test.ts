@@ -178,6 +178,22 @@ describe("asset read executor", () => {
     expect(visiblePayloads).not.toMatch(/(?:#[0-9a-f]{3,8}|rgba?\(|\d+(?:px|rem|em))/i);
   });
 
+  it("does not advertise inherit for non-foreground color properties", () => {
+    const background = exactData(
+      executeGetStyleChoices(
+        { brick: "box", target: "root", property: "background" },
+        SHADOW,
+        ASSETS,
+      ),
+    ) as { choices: readonly (readonly [unknown, ...unknown[]])[] };
+    const color = exactData(
+      executeGetStyleChoices({ brick: "box", target: "root", property: "color" }, SHADOW, ASSETS),
+    ) as { choices: readonly (readonly [unknown, ...unknown[]])[] };
+
+    expect(background.choices.map(([name]) => name)).not.toContain("inherit");
+    expect(color.choices.map(([name]) => name)).toContain("inherit");
+  });
+
   it("keeps every Brick and local style-choice observation under 4,000 chars", () => {
     let maxBrickObservation = 0;
     let maxChoiceObservation = 0;

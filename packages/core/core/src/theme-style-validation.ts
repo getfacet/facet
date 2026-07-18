@@ -5,32 +5,12 @@ import {
   type BrickType,
 } from "./brick-contract.js";
 import { isForbiddenKey, isPlainObject, nullMap, printableKey } from "./issues.js";
-import {
-  FIXED_STYLE_VALUE_CONTRACT,
-  TOKEN_STYLE_VALUE_CONTRACT,
-  type StyleValue,
-  type StyleValueDomain,
-} from "./style-value-contract.js";
+import { isStyleValueAllowedForProperty, type StyleValue } from "./style-value-contract.js";
 import type { BrickStyleDefinition } from "./style-types.js";
 import { IssueList } from "./theme-issues.js";
 
 function styleError(issues: IssueList, path: string, message: string): void {
   issues.push({ severity: "error", message: `${path}: ${message}` });
-}
-
-function domainFor(property: BrickStylePropertyContract): StyleValueDomain | undefined {
-  const tokens: Readonly<Record<string, StyleValueDomain>> = TOKEN_STYLE_VALUE_CONTRACT;
-  const fixed: Readonly<Record<string, StyleValueDomain>> = FIXED_STYLE_VALUE_CONTRACT;
-  return property.source === "token" ? tokens[property.domain] : fixed[property.domain];
-}
-
-function allowedValue(
-  propertyName: string,
-  property: BrickStylePropertyContract,
-  value: unknown,
-): value is StyleValue {
-  if (value === "inherit" && propertyName !== "color") return false;
-  return domainFor(property)?.values.some((candidate) => Object.is(candidate.name, value)) ?? false;
 }
 
 function validatePropertySet(
@@ -51,7 +31,7 @@ function validatePropertySet(
       styleError(issues, `${path}.${name}`, "style value could not be read safely");
       continue;
     }
-    if (property === undefined || !allowedValue(name, property, value)) {
+    if (property === undefined || !isStyleValueAllowedForProperty(name, property, value)) {
       styleError(issues, `${path}.${name}`, "invalid token or fixed style value");
       continue;
     }

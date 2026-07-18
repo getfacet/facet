@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { EMPTY_TREE, isTreeShaped, treeHasContent, treeRenderableNodeIds } from "./tree.js";
+import {
+  EMPTY_TREE,
+  isTreeShaped,
+  resolveTreeScreen,
+  treeHasContent,
+  treeRenderableNodeIds,
+} from "./tree.js";
 import type { FacetTree } from "./tree.js";
 import { validateTree } from "./tree-validation.js";
 
@@ -52,6 +58,44 @@ describe("FacetTree document appearance hard cut", () => {
     });
 
     expect(tree).not.toHaveProperty("theme");
+  });
+});
+
+describe("resolveTreeScreen", () => {
+  const tree: FacetTree = {
+    root: "shell",
+    nodes: {
+      shell: { id: "shell", type: "box", children: [] },
+      home: { id: "home", type: "box", children: [] },
+      about: { id: "about", type: "box", children: [] },
+      copy: { id: "copy", type: "text", value: "not a screen root" },
+    },
+    screens: { bad: "copy", home: "home", about: "about" },
+    entry: "home",
+  };
+
+  it("uses preferred, entry, first-live, then plain root in that order", () => {
+    expect(resolveTreeScreen(tree, "about")).toEqual({ rootId: "about", activeScreen: "about" });
+    expect(resolveTreeScreen(tree, "missing")).toEqual({ rootId: "home", activeScreen: "home" });
+    expect(resolveTreeScreen({ ...tree, entry: "missing" })).toEqual({
+      rootId: "home",
+      activeScreen: "home",
+    });
+    expect(resolveTreeScreen({ root: "shell", nodes: tree.nodes })).toEqual({
+      rootId: "shell",
+      activeScreen: null,
+    });
+  });
+
+  it("never throws on hostile accessors and falls back safely", () => {
+    const hostile = Object.defineProperty({ root: "shell", nodes: tree.nodes }, "screens", {
+      enumerable: true,
+      get() {
+        throw new Error("hostile screens");
+      },
+    }) as FacetTree;
+    expect(() => resolveTreeScreen(hostile, "home")).not.toThrow();
+    expect(resolveTreeScreen(hostile, "home")).toEqual({ rootId: "shell", activeScreen: null });
   });
 });
 

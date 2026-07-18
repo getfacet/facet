@@ -42,7 +42,7 @@ import {
   rendersAlways,
   rendersBox,
   rendersChart,
-  rendersField,
+  rendersInput,
   rendersKeyValue,
   rendersList,
   rendersMedia,
@@ -111,7 +111,7 @@ export const BRICK_REGISTRY = {
   },
   input: {
     validate: validateInput,
-    rendersSelf: rendersField,
+    rendersSelf: rendersInput,
   },
   richtext: {
     validate: validateRichText,

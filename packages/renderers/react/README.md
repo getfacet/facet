@@ -66,6 +66,10 @@ the host to attach to the next event; it does not write the Facet Document.
 Likewise, local navigate/toggle actions update view state and use `onRecord`
 rather than causing a second document writer.
 
+Screen navigation and rendering use Core's fail-soft `resolveTreeScreen`
+policy, so the renderer and Core content checks agree on the preferred live
+screen, `entry`, first live screen, and plain-root fallback order.
+
 Read next:
 
 - [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)

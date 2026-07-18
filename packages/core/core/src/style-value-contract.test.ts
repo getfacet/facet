@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { BRICK_CONTRACT } from "./brick-contract.js";
 
 import {
   ALIGNMENTS,
@@ -34,7 +35,11 @@ import {
   TEXT_ALIGNS,
   WIDTHS,
 } from "./tokens.js";
-import { STYLE_VALUE_CONTRACT } from "./style-value-contract.js";
+import {
+  isStyleValueAllowedForProperty,
+  STYLE_VALUE_CONTRACT,
+  styleValueChoicesForProperty,
+} from "./style-value-contract.js";
 
 const names = (domain: { readonly values: readonly { readonly name: unknown }[] }) =>
   domain.values.map(({ name }) => name);
@@ -113,5 +118,20 @@ describe("STYLE_VALUE_CONTRACT", () => {
         }
       }
     }
+  });
+
+  it("filters property-specific choices through one canonical rule", () => {
+    const properties = BRICK_CONTRACT.box.style.root.properties;
+    const color = properties.color!;
+    const background = properties.background!;
+
+    expect(styleValueChoicesForProperty("color", color).map(({ name }) => name)).toContain(
+      "inherit",
+    );
+    expect(
+      styleValueChoicesForProperty("background", background).map(({ name }) => name),
+    ).not.toContain("inherit");
+    expect(isStyleValueAllowedForProperty("color", color, "inherit")).toBe(true);
+    expect(isStyleValueAllowedForProperty("background", background, "inherit")).toBe(false);
   });
 });

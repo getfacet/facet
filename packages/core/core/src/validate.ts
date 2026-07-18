@@ -5,7 +5,7 @@ export {
   sanitizeActionPayload,
 } from "./brick-node-validation.js";
 export { MAX_DEPTH, MAX_RENDER_NODES, MAX_SCREENS, validateTree } from "./tree-validation.js";
-export type { ValidationResult } from "./tree-validation.js";
+export type { TreeValidationResult } from "./tree-validation.js";
 export { validateTheme } from "./theme-validation.js";
 export type { ThemeIssue, ThemeValidationResult } from "./theme-types.js";
 export { MAX_AUTHOR_ISSUES, validateAuthorNode, validateAuthorTree } from "./author-validation.js";

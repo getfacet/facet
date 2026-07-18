@@ -29,14 +29,8 @@ import {
   SseTransport,
   withView,
 } from "@facet/client";
-import {
-  ChatDock,
-  DEFAULT_THEME,
-  resolveTheme,
-  StageRenderer,
-  useFacet,
-  type ChatMessage,
-} from "@facet/react";
+import { DEFAULT_THEME } from "@facet/assets";
+import { ChatDock, resolveTheme, StageRenderer, useFacet, type ChatMessage } from "@facet/react";
 
 declare global {
   interface Window {

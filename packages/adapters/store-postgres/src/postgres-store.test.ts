@@ -100,6 +100,9 @@ describe("initSchema", () => {
 
     const inspection = calls.find((call) => /information_schema\.columns/i.test(call.text));
     expect(normalizeSql(inspection?.text ?? "")).toContain("table_name = 'facet_assets'");
+    expect(calls.some((call) => /create table if not exists facet_summary/i.test(call.text))).toBe(
+      true,
+    );
     expect(calls.some((call) => /\b(?:alter|copy)\b/i.test(normalizeSql(call.text)))).toBe(false);
   });
 

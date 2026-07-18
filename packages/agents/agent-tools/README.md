@@ -57,6 +57,10 @@ details are progressive reads:
 - `get_brick_spec` reads one Brick's fields and owned style paths; and
 - `get_style_choices` reads allowed names for one exact local style property.
 
+Style-choice discovery uses the same property-specific Core decision as strict
+author and Theme validation. A broader domain member that the exact property
+does not allow is never returned as an available choice.
+
 These reads return `no_stage_change`; the model must adapt the guidance and
 author ordinary native Bricks with `render_page`, `append_node`, or `set_node`.
 The complete Theme remains in the snapshot for strict validation, while its

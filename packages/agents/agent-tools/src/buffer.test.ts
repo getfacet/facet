@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MAX_PATCH_OPS } from "@facet/core";
 import type { FacetPattern, FacetTheme, FacetTree } from "@facet/core";
 import {
@@ -7,6 +7,11 @@ import {
 } from "./buffer.js";
 import { parseAgentToolObservation } from "./observation.js";
 import type { StageToolAssets } from "./types.js";
+
+vi.mock("@facet/core", async (importOriginal) => {
+  const core = await importOriginal<typeof import("@facet/core")>();
+  return { ...core, MAX_PATCH_OPS: 8 };
+});
 
 const retiredCompositionTool = ["get", "composition"].join("_");
 const retiredTestName = `treats retired ${retiredCompositionTool} as unknown without touching pending edits`;
@@ -235,7 +240,7 @@ describe("createStageToolBuffer", () => {
       children: ["leaf"],
     });
     expect(buffer.drainUnresolved()).toEqual([]);
-  }, 10_000);
+  });
 
   it("rejects an invalid direct style before buffering a forward-referenced container", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);

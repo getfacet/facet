@@ -30,11 +30,12 @@ corresponding collaborator.
 
 ## Stage and conversation storage
 
-`initSchema(pool)` creates three tables:
+`initSchema(pool)` creates all four package tables:
 
 - `facet_stage(agent_id, visitor_id, session, updated_at)`;
 - `facet_event(id, agent_id, visitor_id, at, event, messages, recorded_at)`;
-- `facet_assets(agent_id, theme, patterns, initial_tree, updated_at)`.
+- `facet_assets(agent_id, theme, patterns, initial_tree, updated_at)`; and
+- `facet_summary(agent_id, visitor_id, payload, covered_through, generation, updated_at)`.
 
 The current `facet_assets` column-name set is checked after creation. If an
 existing table has a missing or extra column name, `initSchema` throws and
@@ -136,7 +137,8 @@ await new PostgresAssets(pool).putAssets("live", {
 
 ## Rolling summaries
 
-Call `initSummarySchema(pool)` separately to create
+`initSchema(pool)` includes the summary table. Hosts provisioning only that
+optional seam can call `initSummarySchema(pool)` separately to create
 `facet_summary(agent_id, visitor_id, payload, covered_through, generation,
 updated_at)`. `PostgresSummaryStore` treats `payload` as opaque JSON and uses a
 SQL monotonic guard so only a strictly newer `covered_through` value wins. Pair

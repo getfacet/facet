@@ -15,24 +15,19 @@ import {
   childIdsOf,
   isHiddenByDefault,
   isRenderableMedia,
-  safeObjectKeys,
-  safeTreeEntry,
-  safeTreeNodes,
-  safeTreeRoot,
-  safeTreeScreens,
 } from "./renderer-safe.js";
 
 export type TimerHandle = ReturnType<typeof setTimeout>;
 export type RenderMode = "live" | "inert";
 
-export interface VisibleNodeInfo {
+interface VisibleNodeInfo {
   readonly parentId: NodeId | null;
   readonly index: number;
   readonly ancestors: ReadonlySet<NodeId>;
   readonly depth: number;
 }
 
-export interface VisibleInfo {
+interface VisibleInfo {
   readonly ids: ReadonlySet<NodeId>;
   readonly nodes: ReadonlyMap<NodeId, VisibleNodeInfo>;
 }
@@ -68,13 +63,13 @@ export interface MotionState {
   readonly stagePrevious: StagePreviousRecord | null;
 }
 
-export interface MotionRenderPlan {
+interface MotionRenderPlan {
   readonly motionClassById: ReadonlyMap<NodeId, string>;
   readonly exitRecordsByParent: ReadonlyMap<NodeId, readonly ExitRecord[]>;
   readonly rootExitRecords: readonly ExitRecord[];
 }
 
-export interface NormalizedTransitionHint {
+interface NormalizedTransitionHint {
   readonly revision: number;
   readonly rootReplacedRevision: number | null;
 }
@@ -371,73 +366,6 @@ export function motionRenderPlan(state: MotionState): MotionRenderPlan {
   }
   rootExitRecords.sort((left, right) => left.index - right.index);
   return { motionClassById, exitRecordsByParent, rootExitRecords };
-}
-
-/**
- * Resolves `name` to a screen's live root node id, or null. Defensive against
- * raw-path junk: `screens` may not be an object, its values may not be strings,
- * and a value may name a node that no longer exists. The target must resolve to
- * a BOX — a screen root is rendered as a root, and `sanitizeScreens` drops a
- * non-box target on the stored tree, so the live fail-safe must match it (else a
- * raw-path patch pointing a screen at a text node would render that text as the
- * whole screen before the corrective frame arrives).
- */
-export function liveScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
-  const screens = safeTreeScreens(tree);
-  if (screens === undefined || typeof name !== "string") {
-    return null;
-  }
-  if (!Object.prototype.hasOwnProperty.call(screens, name)) {
-    return null;
-  }
-  const rootId: unknown = screens[name];
-  if (typeof rootId !== "string") {
-    return null;
-  }
-  const nodes = safeTreeNodes(tree);
-  if (nodes === undefined) return null;
-  const node = nodes[rootId];
-  return node != null && isContainer(node) ? rootId : null;
-}
-
-/**
- * Total function from view-state to the node id to render (invariant #6):
- * current screen if live → entry if live → first live screen → plain `root`.
- */
-export function resolveScreenRoot(tree: FacetTree, currentScreen: string | null): NodeId {
-  const current = liveScreenRoot(tree, currentScreen);
-  if (current !== null) {
-    return current;
-  }
-  const entry = liveScreenRoot(tree, safeTreeEntry(tree));
-  if (entry !== null) {
-    return entry;
-  }
-  const screens = safeTreeScreens(tree);
-  if (screens !== undefined) {
-    for (const name of safeObjectKeys(screens)) {
-      const first = liveScreenRoot(tree, name);
-      if (first !== null) return first;
-    }
-  }
-  return safeTreeRoot(tree) ?? "root";
-}
-
-export function resolveActiveScreen(tree: FacetTree, currentScreen: string | null): string | null {
-  if (liveScreenRoot(tree, currentScreen) !== null) {
-    return currentScreen;
-  }
-  const entry = safeTreeEntry(tree);
-  if (typeof entry === "string" && liveScreenRoot(tree, entry) !== null) {
-    return entry;
-  }
-  const screens = safeTreeScreens(tree);
-  if (screens !== undefined) {
-    for (const name of safeObjectKeys(screens)) {
-      if (liveScreenRoot(tree, name) !== null) return name;
-    }
-  }
-  return null;
 }
 
 /** A press the renderer has classified from an UNTRUSTED `onPress` value. */

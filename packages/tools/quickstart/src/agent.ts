@@ -19,7 +19,7 @@ export type { SummaryStore } from "@facet/runtime";
  *   own default);
  * - a store instance ⇒ bring your own (e.g. a durable backend).
  */
-export interface ComposeQuickstartAgentOptions extends Omit<
+export interface QuickstartAgentOptions extends Omit<
   ReferenceAgentOptions,
   "assets" | "summaryStore"
 > {
@@ -41,7 +41,7 @@ const SEEDED_PROGRESSIVE_CONTEXT_CHARS = 160_000;
  * as the existing compaction-and-calibration policy.
  */
 function seededProgressiveBudget(
-  options: Pick<ComposeQuickstartAgentOptions, "budget" | "budgetPreset">,
+  options: Pick<QuickstartAgentOptions, "budget" | "budgetPreset">,
 ): ReferenceAgentOptions["budget"] {
   if (options.budgetPreset !== undefined && options.budgetPreset !== "quickstart") {
     return options.budget;
@@ -66,7 +66,7 @@ function seededProgressiveBudget(
  * restores the off path — the shape the deterministic stub tier relies on, which
  * never composes through here and so never builds a summarizer.
  */
-export function composeQuickstartAgent(options: ComposeQuickstartAgentOptions): FacetAgent {
+export function createQuickstartAgent(options: QuickstartAgentOptions): FacetAgent {
   const { patterns, summaryStore, theme, ...rest } = options;
   const store: SummaryStore | undefined =
     summaryStore === null ? undefined : (summaryStore ?? new MemorySummaryStore());

@@ -42,7 +42,6 @@ function detail(node: FacetNode): string {
     case "box":
       return "";
   }
-  return "";
 }
 
 function nodePress(node: FacetNode): FacetAction | undefined {

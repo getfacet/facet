@@ -57,6 +57,12 @@ chooses whether to allow it.
 by deliberately extending those Core contracts, validation, and rendering—not
 by accepting arbitrary CSS.
 
+A property's allowed values are the property-specific subset of its named
+token or fixed-choice domain. Core derives validation, Theme checks, renderer
+resolution, and `get_style_choices` from that same subset; membership in a
+broader domain alone does not make a value valid at every property that uses
+the domain.
+
 ## The four authoring forms
 
 An agent always authors a Brick. Styling that Brick is optional and has four

@@ -33,6 +33,7 @@ import {
   TEXT_ALIGNS,
   WIDTHS,
 } from "./tokens.js";
+import type { BrickStylePropertyContract } from "./brick-contract.js";
 
 export type StyleValue = string | number | boolean;
 
@@ -439,3 +440,39 @@ export const STYLE_VALUE_CONTRACT = {
   tokens: TOKEN_STYLE_VALUE_CONTRACT,
   fixed: FIXED_STYLE_VALUE_CONTRACT,
 } as const;
+
+const TOKEN_DOMAINS: Readonly<Record<string, StyleValueDomain>> = TOKEN_STYLE_VALUE_CONTRACT;
+const FIXED_DOMAINS: Readonly<Record<string, StyleValueDomain>> = FIXED_STYLE_VALUE_CONTRACT;
+
+/** Resolves the closed value domain named by one Brick-owned style property. */
+export function styleValueDomainForProperty(
+  property: BrickStylePropertyContract,
+): StyleValueDomain | undefined {
+  return (property.source === "token" ? TOKEN_DOMAINS : FIXED_DOMAINS)[property.domain];
+}
+
+/** Returns the exact values valid for one property, including property-specific restrictions. */
+export function styleValueChoicesForProperty(
+  propertyName: string,
+  property: BrickStylePropertyContract,
+): readonly StyleValueMetadata[] {
+  const values = styleValueDomainForProperty(property)?.values ?? [];
+  return propertyName === "color" ? values : values.filter(({ name }) => name !== "inherit");
+}
+
+export function styleValueNamesForProperty(
+  propertyName: string,
+  property: BrickStylePropertyContract,
+): readonly StyleValue[] {
+  return styleValueChoicesForProperty(propertyName, property).map(({ name }) => name);
+}
+
+export function isStyleValueAllowedForProperty(
+  propertyName: string,
+  property: BrickStylePropertyContract,
+  value: unknown,
+): value is StyleValue {
+  return styleValueChoicesForProperty(propertyName, property).some((candidate) =>
+    Object.is(candidate.name, value),
+  );
+}

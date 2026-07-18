@@ -19,7 +19,7 @@ import { join } from "node:path";
 import { BRICK_TYPES } from "@facet/core";
 import type { FacetPattern, FacetTheme, FacetTree } from "@facet/core";
 import { defineAgent } from "@facet/agent";
-import { DEFAULT_THEME } from "@facet/react";
+import { DEFAULT_THEME } from "@facet/assets";
 import { MemorySink } from "@facet/runtime";
 import { createStubAgent } from "@facet/reference-agent";
 import { runCli, type RunCliHooks } from "./cli.js";

@@ -10,17 +10,17 @@ import { describe, expect, it, vi } from "vitest";
 
 // Spy on the compaction-enabled wiring so a regression back to the bare
 // createReferenceAgent (compaction OFF) fails a test instead of shipping.
-const { composeSpy } = vi.hoisted(() => ({ composeSpy: vi.fn() }));
+const { quickstartSpy } = vi.hoisted(() => ({ quickstartSpy: vi.fn() }));
 vi.mock("./agent.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("./agent.js")>();
-  composeSpy.mockImplementation(actual.composeQuickstartAgent as (...args: unknown[]) => unknown);
-  return { ...actual, composeQuickstartAgent: composeSpy };
+  quickstartSpy.mockImplementation(actual.createQuickstartAgent as (...args: unknown[]) => unknown);
+  return { ...actual, createQuickstartAgent: quickstartSpy };
 });
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BRICK_TYPES, type FacetPattern, type FacetTheme } from "@facet/core";
-import { DEFAULT_THEME } from "@facet/react";
+import { DEFAULT_THEME } from "@facet/assets";
 import * as referenceAgent from "@facet/reference-agent";
 import * as quickstartBarrel from "./index.js";
 import { runCli, type RunCliHooks } from "./cli.js";
@@ -33,9 +33,10 @@ const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_A
 const TEST_PROVIDER_ENV = { OPENAI_API_KEY: "sk-test" } as const;
 
 describe("@facet/quickstart barrel", () => {
-  it("quickstart barrel exposes reference-agent aliases", () => {
+  it("owns its Quickstart factory while forwarding canonical reference exports", () => {
     expect(quickstartBarrel.startQuickstart).toBe(startQuickstart);
-    expect(quickstartBarrel.createQuickstartAgent).toBe(referenceAgent.createQuickstartAgent);
+    expect(quickstartBarrel.createQuickstartAgent).toBe(quickstartSpy);
+    expect(referenceAgent).not.toHaveProperty("createQuickstartAgent");
     expect(quickstartBarrel.createReferenceAgent).toBe(referenceAgent.createReferenceAgent);
     expect(quickstartBarrel.resolveProvider).toBe(referenceAgent.resolveProvider);
     expect(quickstartBarrel.createStubAgent).toBe(referenceAgent.createStubAgent);
@@ -206,7 +207,7 @@ describe("runCli — guide resolution (DC-005)", () => {
 
 describe("runCli — --assets (DC-009)", () => {
   it("wires one Theme and exact Patterns", async () => {
-    composeSpy.mockClear();
+    quickstartSpy.mockClear();
     let resolved: { readonly theme: FacetTheme; readonly patterns: readonly FacetPattern[] };
     const { running } = await bootCli([], {
       onResolvedAssets: (assets) => {
@@ -218,7 +219,7 @@ describe("runCli — --assets (DC-009)", () => {
       expect(resolved!.patterns.map((pattern) => pattern.name)).toEqual(
         expect.arrayContaining(["hero", "card", "pricing-section"]),
       );
-      const options = composeSpy.mock.calls[0]?.[0] as
+      const options = quickstartSpy.mock.calls[0]?.[0] as
         { readonly theme?: FacetTheme; readonly patterns?: readonly FacetPattern[] } | undefined;
       expect(options?.theme).toBe(resolved!.theme);
       expect(options?.patterns).toBe(resolved!.patterns);
@@ -442,7 +443,7 @@ describe("runCli — provider-backed boot (DC-004)", () => {
   });
 
   it("keeps the compaction-enabled provider boot on the resolved static snapshot", async () => {
-    composeSpy.mockClear();
+    quickstartSpy.mockClear();
     let resolved: { readonly theme: FacetTheme; readonly patterns: readonly FacetPattern[] };
     const { running } = await bootCli([], {
       onResolvedAssets: (assets) => {
@@ -450,10 +451,10 @@ describe("runCli — provider-backed boot (DC-004)", () => {
       },
     });
     try {
-      // The CLI must compose via composeQuickstartAgent (default MemorySummaryStore),
+      // The CLI must compose via createQuickstartAgent (default MemorySummaryStore),
       // not the bare createReferenceAgent whose default is compaction OFF.
-      expect(composeSpy).toHaveBeenCalledTimes(1);
-      const options = composeSpy.mock.calls[0]?.[0] as
+      expect(quickstartSpy).toHaveBeenCalledTimes(1);
+      const options = quickstartSpy.mock.calls[0]?.[0] as
         | {
             readonly summaryStore?: unknown;
             readonly theme?: FacetTheme;

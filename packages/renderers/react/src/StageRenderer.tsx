@@ -1,15 +1,16 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
-import type {
-  CollectedEvent,
-  ColorModePreference,
-  FacetAction,
-  FacetTheme,
-  FacetTree,
-  FieldValues,
-  NodeId,
-  SortDirection,
-  ViewSnapshot,
+import {
+  resolveTreeScreen,
+  type CollectedEvent,
+  type ColorModePreference,
+  type FacetAction,
+  type FacetTheme,
+  type FacetTree,
+  type FieldValues,
+  type NodeId,
+  type SortDirection,
+  type ViewSnapshot,
 } from "@facet/core";
 import { captureViewSnapshot, useViewportColorMode } from "./view-snapshot.js";
 import { APPEAR_CSS } from "./appear.js";
@@ -23,12 +24,7 @@ import {
 } from "./motion.js";
 import { resolveTheme } from "./theme.js";
 import type { StageTransitionHint } from "./useFacet.js";
-import {
-  isMotionStateEmpty,
-  liveScreenRoot,
-  motionRenderPlan,
-  type ExitRecord,
-} from "./renderer-motion.js";
+import { isMotionStateEmpty, motionRenderPlan, type ExitRecord } from "./renderer-motion.js";
 import { collectFieldValues, type ClassifiedPress } from "./renderer-press.js";
 import { RENDER_BUDGET, isHiddenByDefault } from "./renderer-safe.js";
 import { renderExitRecord, renderNode } from "./renderer-render.js";
@@ -196,7 +192,7 @@ export function StageRenderer({
     switch (press.kind) {
       case "navigate":
         // Only a live screen is navigable; unknown targets no-op (DC-004).
-        if (liveScreenRoot(tree, press.to) !== null) {
+        if (resolveTreeScreen(tree, press.to).activeScreen === press.to) {
           setCurrentScreen(press.to);
           // Record AFTER the optimistic mutation, carrying the resolved effect
           // (captured here, never re-derived) + the pressed box's id.

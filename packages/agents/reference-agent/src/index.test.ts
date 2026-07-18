@@ -12,15 +12,12 @@ import type {
   ProviderStep,
   ProviderTurn,
   PromptAssets,
-  QuickstartAgentOptions,
-  QuickstartProvider,
   ReferenceAgentAssetSource,
   ReferenceAgentOptions,
   ReferenceAgentStopReason,
   ReferenceAgentTrace,
   ReferenceAgentTraceEvent,
   ReferenceAgentTraceEventType,
-  ReferenceProvider,
   ResolveProviderFlags,
   ToolCall,
   ToolSpec,
@@ -35,14 +32,13 @@ type LegacyCompositionsKey = `compo${"sitions"}`;
 type LegacyThemesKey = `the${"mes"}`;
 
 describe("reference-agent barrel", () => {
-  it("exports compatibility and canonical aliases", () => {
-    expect(reference.createReferenceAgent).toBe(reference.createQuickstartAgent);
+  it("exports the canonical reference-agent surface without Quickstart aliases", () => {
+    expect(reference).not.toHaveProperty("createQuickstartAgent");
     expect(reference).not.toHaveProperty("__resetCompactionCooldownForTests");
     expect(reference).not.toHaveProperty("resetBackgroundCompactionForTests");
     expect(reference).not.toHaveProperty("createReferenceAgentWithDependencies");
 
     const runtimeExports = [
-      "createQuickstartAgent",
       "createReferenceAgent",
       "resolveProvider",
       "DEFAULT_OPENAI_MODEL",
@@ -65,9 +61,7 @@ describe("reference-agent barrel", () => {
     }
   });
 
-  it("types every compatibility and canonical export row", () => {
-    expectTypeOf<ReferenceAgentOptions>().toEqualTypeOf<QuickstartAgentOptions>();
-    expectTypeOf<ReferenceProvider>().toEqualTypeOf<QuickstartProvider>();
+  it("types every canonical export row", () => {
     expectTypeOf<
       "summarizerFactory" extends keyof ReferenceAgentOptions ? true : false
     >().toEqualTypeOf<false>();
@@ -113,9 +107,6 @@ describe("reference-agent barrel", () => {
   });
 
   it("pins one per-turn Theme and Pattern asset surface with old options absent", () => {
-    expectTypeOf<
-      "assets" extends keyof QuickstartAgentOptions ? true : false
-    >().toEqualTypeOf<true>();
     expectTypeOf<
       "assets" extends keyof ReferenceAgentOptions ? true : false
     >().toEqualTypeOf<true>();
@@ -183,11 +174,6 @@ describe("reference-agent barrel", () => {
 
     expect(reference).not.toHaveProperty("executeStageTool");
 
-    expectTypeOf<QuickstartAgentOptions>().toMatchTypeOf<{
-      readonly budgetPreset?: ReferenceAgentBudgetPreset;
-      readonly budget?: ReferenceAgentBudgetOverrides;
-      readonly trace?: ReferenceAgentTrace;
-    }>();
     expectTypeOf<ReferenceAgentOptions>().toMatchTypeOf<{
       readonly budgetPreset?: ReferenceAgentBudgetPreset;
       readonly budget?: ReferenceAgentBudgetOverrides;

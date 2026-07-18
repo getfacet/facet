@@ -21,7 +21,7 @@ type TableHeaderDefinition = NonNullable<TableDefinition["header"]>;
 type TableRowDefinition = NonNullable<TableDefinition["row"]>;
 type TableCellDefinition = NonNullable<TableDefinition["cell"]>;
 
-export interface LayoutTargetStyle {
+interface LayoutTargetStyle {
   readonly style: CSSProperties;
   readonly className?: string;
 }

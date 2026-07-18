@@ -5,18 +5,10 @@ import {
   type BrickType,
   type InputKind,
 } from "./brick-contract.js";
-import {
-  FIXED_STYLE_VALUE_CONTRACT,
-  TOKEN_STYLE_VALUE_CONTRACT,
-  type StyleValue,
-  type StyleValueDomain,
-} from "./style-value-contract.js";
+import { isStyleValueAllowedForProperty, type StyleValue } from "./style-value-contract.js";
 import type { BrickStyle } from "./style-types.js";
 import { isPlainObject, printableKey, type IssueSink } from "./issues.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
-
-const TOKEN_DOMAINS: Readonly<Record<string, StyleValueDomain>> = TOKEN_STYLE_VALUE_CONTRACT;
-const FIXED_DOMAINS: Readonly<Record<string, StyleValueDomain>> = FIXED_STYLE_VALUE_CONTRACT;
 
 const ABSENT = Symbol("absent style property");
 type SafeRead = unknown | typeof ABSENT;
@@ -65,22 +57,6 @@ function readOwn(
   }
 }
 
-function domainFor(property: BrickStylePropertyContract): StyleValueDomain | undefined {
-  const domains = property.source === "token" ? TOKEN_DOMAINS : FIXED_DOMAINS;
-  return domains[property.domain];
-}
-
-function isAllowedValue(
-  propertyName: string,
-  property: BrickStylePropertyContract,
-  value: unknown,
-): value is StyleValue {
-  // `inherit` is a foreground choice only. Background, border, chart-series,
-  // and other paint properties share the color domain but cannot inherit.
-  if (value === "inherit" && propertyName !== "color") return false;
-  return domainFor(property)?.values.some((candidate) => Object.is(candidate.name, value)) ?? false;
-}
-
 function sanitizeProperties(
   value: Record<string, unknown>,
   properties: Readonly<Record<string, BrickStylePropertyContract>>,
@@ -95,7 +71,7 @@ function sanitizeProperties(
     const path = prefix === "" ? name : `${prefix}.${name}`;
     const raw = readOwn(value, name, context, path);
     if (raw === ABSENT || raw === undefined) continue;
-    if (isAllowedValue(name, property, raw)) {
+    if (isStyleValueAllowedForProperty(name, property, raw)) {
       result[name] = raw;
     } else {
       issue(context, path, "invalid style value");

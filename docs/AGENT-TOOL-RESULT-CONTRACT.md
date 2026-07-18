@@ -77,6 +77,10 @@ stage:
 | `get_brick_spec` | `{ "type": "<one exact Brick type>" }` | One compact Core projection: fields, root/owned style paths, value source, states, and applicability. It never accepts a batch. |
 | `get_style_choices` | `{ "brick": "<Brick type>", "target": "<root or owned target>", "property": "<owned property>" }` | The allowed names and metadata for that one exact local property. It is never a global token lookup. |
 
+For `get_style_choices`, "allowed" means the property-specific subset used by
+strict Core validation, not every member of the property's broader token or
+fixed-choice domain.
+
 A successful read uses the standard observation envelope. For example:
 
 ```json

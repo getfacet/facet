@@ -1,13 +1,7 @@
 import { isContainer, type FacetTheme, type FacetTree, type JsonPatchOperation } from "@facet/core";
 import { authorErrorResult } from "./author-errors.js";
 import { parseNodeInput } from "./executor-input.js";
-import {
-  childrenPath,
-  isForbiddenNodeId,
-  nodeChildrenPath,
-  nodePath,
-  screenPath,
-} from "./executor-paths.js";
+import { childrenPath, nodeChildrenPath, nodePath, screenPath } from "./executor-paths.js";
 import { errorResult, okMessageResult, okPatchResult } from "./executor-result.js";
 
 export function executeAppendNode(
@@ -144,16 +138,6 @@ export function executeRemoveNode(input: Readonly<Record<string, unknown>>, shad
       shadow,
       [],
       "Pass nodeId as a non-empty string. Use inspect_stage if you need to find one.",
-    );
-  }
-  if (isForbiddenNodeId(nodeId)) {
-    return errorResult(
-      "remove_node",
-      "invalid_input",
-      `error: remove_node — node id "${nodeId}" is forbidden`,
-      shadow,
-      [],
-      "Choose a normal stage node id.",
     );
   }
   if (nodeId === shadow.root) {

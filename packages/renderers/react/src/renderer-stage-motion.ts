@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { FacetTree, NodeId } from "@facet/core";
+import { resolveTreeScreen, type FacetTree, type NodeId } from "@facet/core";
 import {
   MANY_CHANGE_THRESHOLD,
   MOTION_ENTER_MS,
@@ -15,8 +15,6 @@ import {
   isBlankBootSnapshot,
   isMotionStateEmpty,
   normalizeTransitionHint,
-  resolveActiveScreen,
-  resolveScreenRoot,
   topmostExitingIds,
   visibleSubtreeIds,
   type ExitRecord,
@@ -42,7 +40,7 @@ interface UseStageMotionArgs {
   readonly theme: ResolvedTheme;
 }
 
-export interface StageMotionResult {
+interface StageMotionResult {
   readonly motionState: MotionState;
   readonly normalizedTransition: ReturnType<typeof normalizeTransitionHint>;
   readonly renderable: boolean;
@@ -71,8 +69,9 @@ export function useStageMotion({
     [visibilityOverrides],
   );
   const renderable = isRenderableTree(tree);
-  const currentRootId = renderable ? resolveScreenRoot(tree, currentScreen) : null;
-  const activeScreen = renderable ? resolveActiveScreen(tree, currentScreen) : null;
+  const resolvedScreen = renderable ? resolveTreeScreen(tree, currentScreen) : null;
+  const currentRootId = resolvedScreen?.rootId ?? null;
+  const activeScreen = resolvedScreen?.activeScreen ?? null;
   const visibleInfo = useMemo(
     () =>
       currentRootId === null

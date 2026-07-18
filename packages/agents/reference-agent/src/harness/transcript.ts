@@ -54,7 +54,7 @@ export function appendProviderStepTranscript(
   return appended;
 }
 
-export function appendToolResultObservation(
+function appendToolResultObservation(
   messages: TurnMessage[],
   observation: TranscriptToolObservation,
   options: TranscriptObservationOptions,

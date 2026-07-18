@@ -146,6 +146,10 @@ The Facet prompt teaches this discovery order:
 4. Call `get_style_choices` only for one unfamiliar Brick/target/property value.
 5. Author ordinary native Bricks with a mutation tool.
 
+The style-choice result is already filtered through the exact property's Core
+allow-list. It does not expose broader token or fixed-domain members that the
+subsequent strict mutation would reject at that path.
+
 Pattern and Preset reads are guidance, not stage writes. A Pattern is not a
 component reference or insertion command. The model adapts it and re-authors
 native Bricks. A Preset is a same-Brick style name, not a new Brick kind.

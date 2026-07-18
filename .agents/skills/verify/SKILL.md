@@ -22,6 +22,8 @@ node --test scripts/check-docs.test.mjs
 node scripts/check-docs.mjs
 node --test scripts/check-package-layout.test.mjs
 node scripts/check-package-layout.mjs
+node --test scripts/check-style-hard-cut.test.mjs
+node scripts/check-style-hard-cut.mjs
 node scripts/check-source-nuls.mjs
 ```
 
@@ -41,6 +43,8 @@ node scripts/check-source-nuls.mjs
   `scripts/check-package-layout.mjs` pin the exact 15
   package name-to-path map, workspace uniqueness, repository directories, role
   groups, root `labs/`, and the absence of current references to retired paths.
+- **style hard cut** — the Node regression suite pins the scanner, then the
+  scanner rejects retired style syntax or claims in production and documentation.
 - **raw-NUL scan** — `scripts/check-source-nuls.mjs` must report PASS.
   A raw `0x00` byte in tracked source (use the `\x00` string escape instead) makes
   git treat the file as binary, hiding its whole diff from `/code-review`. This

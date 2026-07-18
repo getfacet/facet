@@ -1,14 +1,15 @@
 import type { Pool } from "pg";
 import type { CollectedEvent, FacetSession, ServerMessage, VisitorContext } from "@facet/core";
 import { openSession, type Sink, type StageStore, type StoredEvent } from "@facet/runtime";
+import { initSummarySchema } from "./postgres-summary-store.js";
 
 /**
  * Postgres adapter for Facet's persistence seams — a durable `StageStore` and
  * `Sink` backed by Postgres (Supabase works too). You bring the `pg.Pool`; Facet
  * only ever calls the interface methods, so the runtime/server don't know it's a
- * database. Three tables: `facet_stage` (current page, one row per session),
+ * database. Four tables: `facet_stage` (current page, one row per session),
  * `facet_event` (append-only conversation), and `facet_assets` (per-agent raw
- * asset documents).
+ * asset documents), and `facet_summary` (the optional rolling-summary seam).
  *
  * Run `initSchema(pool)` once at startup, or manage the tables with your own
  * migrations.
@@ -63,6 +64,7 @@ export async function initSchema(pool: Pool): Promise<void> {
       "Facet asset schema migration required before use; replace facet_assets with the current schema.",
     );
   }
+  await initSummarySchema(pool);
 }
 
 export class PostgresStageStore implements StageStore {

@@ -283,6 +283,9 @@ importers:
         specifier: workspace:*
         version: link:../../adapters/server
     devDependencies:
+      '@facet/assets':
+        specifier: workspace:*
+        version: link:../../core/assets
       '@facet/client':
         specifier: workspace:*
         version: link:../../adapters/client

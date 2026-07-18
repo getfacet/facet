@@ -1,11 +1,14 @@
 import { MAX_AUTHOR_ISSUES, treeRenderableNodeIds, type FacetTree, type NodeId } from "@facet/core";
-import type {
-  AgentToolObservationData,
-  AgentToolObservationStatus,
-  AgentToolOutcome,
-  StageToolAuthorIssue,
-  StageToolErrorCode,
-  StageToolObservation,
+import {
+  AGENT_TOOL_OBSERVATION_ERROR_CODES,
+  AGENT_TOOL_OBSERVATION_STATUSES,
+  AGENT_TOOL_OUTCOMES,
+  type AgentToolObservationData,
+  type AgentToolObservationStatus,
+  type AgentToolOutcome,
+  type StageToolAuthorIssue,
+  type StageToolErrorCode,
+  type StageToolObservation,
 } from "./types.js";
 import { stableJson } from "./stable-json.js";
 
@@ -23,6 +26,9 @@ const MAX_AUTHOR_PATH_CHARS = 240;
 const MAX_AUTHOR_MESSAGE_CHARS = 240;
 const MAX_AUTHOR_ALLOWED_VALUES = 32;
 const MAX_AUTHOR_ALLOWED_CHARS = 80;
+const OBSERVATION_STATUSES = new Set<string>(AGENT_TOOL_OBSERVATION_STATUSES);
+const OBSERVATION_OUTCOMES = new Set<string>(AGENT_TOOL_OUTCOMES);
+const OBSERVATION_ERROR_CODES = new Set<string>(AGENT_TOOL_OBSERVATION_ERROR_CODES);
 
 export interface AgentToolObservationInput {
   readonly tool: string;
@@ -222,18 +228,11 @@ function isObservationData(value: unknown): value is AgentToolObservationData {
 }
 
 function isStatus(value: unknown): value is AgentToolObservationStatus {
-  return value === "ok" || value === "error" || value === "pending";
+  return typeof value === "string" && OBSERVATION_STATUSES.has(value);
 }
 
 function isOutcome(value: unknown): value is AgentToolOutcome {
-  return (
-    value === "applied_visible" ||
-    value === "applied_not_visible" ||
-    value === "applied_with_warnings" ||
-    value === "pending" ||
-    value === "rejected" ||
-    value === "no_stage_change"
-  );
+  return typeof value === "string" && OBSERVATION_OUTCOMES.has(value);
 }
 
 function outcomeFacts(input: AgentToolObservationInput): {
@@ -341,17 +340,7 @@ function hasCoherentOutcome(value: AgentToolObservationData): boolean {
 }
 
 function isErrorCode(value: unknown): value is StageToolErrorCode | "pending" {
-  return (
-    value === "unknown_tool" ||
-    value === "invalid_input" ||
-    value === "invalid_tree" ||
-    value === "invalid_parent" ||
-    value === "invalid_authoring" ||
-    value === "not_available" ||
-    value === "patch_limit" ||
-    value === "fold_error" ||
-    value === "pending"
-  );
+  return typeof value === "string" && OBSERVATION_ERROR_CODES.has(value);
 }
 
 function hasValidAuthorErrors(value: Record<string, unknown>): boolean {

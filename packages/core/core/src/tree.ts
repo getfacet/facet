@@ -10,6 +10,7 @@ import {
 import type { DataWarehouse } from "./data-types.js";
 import { resolveNodeData } from "./data-binding.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
+import { MAX_FIELD_OPTIONS } from "./protocol.js";
 
 const TREE_RENDERABLE_NODE_BUDGET = 5_000;
 const TREE_RENDERABLE_MAX_DEPTH = 100;
@@ -17,7 +18,6 @@ const TREE_RENDERABLE_MAX_TABLE_COLUMNS = 12;
 const TREE_RENDERABLE_MAX_CHART_SERIES = 8;
 const TREE_RENDERABLE_MAX_CHART_POINTS = 200;
 const TREE_RENDERABLE_MAX_LIST_ITEMS = 50;
-const TREE_RENDERABLE_MAX_FIELD_OPTIONS = 64;
 const TREE_RENDERABLE_MAX_KEY_VALUE_ITEMS = 50;
 
 interface RenderableBudget {
@@ -57,6 +57,41 @@ export interface FacetTree {
   readonly data?: DataWarehouse;
 }
 
+export interface ResolvedTreeScreen {
+  readonly rootId: NodeId;
+  readonly activeScreen: string | null;
+}
+
+/**
+ * Resolves the one live root a renderer or content check should use. The
+ * document-owned policy is preferred live screen → entry → first live screen →
+ * plain root. Every read is fail-soft so hostile raw-patch objects cannot throw.
+ */
+export function resolveTreeScreen(
+  tree: FacetTree,
+  preferredScreen: string | null = null,
+): ResolvedTreeScreen {
+  const preferred = liveTreeScreenRoot(tree, preferredScreen);
+  if (preferred !== null) return { rootId: preferred, activeScreen: preferredScreen };
+
+  const entryName = safeOwnValue(tree, "entry");
+  const entry = liveTreeScreenRoot(tree, entryName);
+  if (entry !== null && typeof entryName === "string") {
+    return { rootId: entry, activeScreen: entryName };
+  }
+
+  const screens = readableRecord(safeOwnValue(tree, "screens"));
+  if (screens !== undefined) {
+    for (const name of safeRecordKeys(screens)) {
+      const first = liveTreeScreenRoot(tree, name);
+      if (first !== null) return { rootId: first, activeScreen: name };
+    }
+  }
+
+  const root = safeOwnValue(tree, "root");
+  return { rootId: typeof root === "string" ? root : "root", activeScreen: null };
+}
+
 /**
  * The BASE structural check for a `FacetTree`: `value` is a plain (non-array)
  * object with a string `root` and a non-null, non-array `nodes` map. This is the
@@ -94,36 +129,13 @@ export function treeHasContent(tree: FacetTree): boolean {
 export function treeRenderableNodeIds(tree: FacetTree): ReadonlySet<NodeId> {
   const ids = new Set<NodeId>();
   try {
-    collectRenderableRoot(tree, renderRootId(tree), ids, new Set(), {
+    collectRenderableRoot(tree, resolveTreeScreen(tree).rootId, ids, new Set(), {
       left: TREE_RENDERABLE_NODE_BUDGET,
     });
   } catch {
     ids.clear();
   }
   return ids;
-}
-
-function renderRootId(tree: FacetTree): NodeId {
-  const entry = liveScreenRoot(tree, (tree as { readonly entry?: unknown }).entry);
-  if (entry !== null) return entry;
-  const screens = (tree as { readonly screens?: unknown }).screens;
-  if (isRecord(screens)) {
-    for (const name of Object.keys(screens)) {
-      const first = liveScreenRoot(tree, name);
-      if (first !== null) return first;
-    }
-  }
-  return tree.root;
-}
-
-function liveScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
-  const screens = (tree as { readonly screens?: unknown }).screens;
-  if (!isRecord(screens) || typeof name !== "string") return null;
-  if (!Object.prototype.hasOwnProperty.call(screens, name)) return null;
-  const id = screens[name];
-  if (typeof id !== "string") return null;
-  const node = tree.nodes[id];
-  return isRecord(node) && isContainer(node as FacetNode) ? id : null;
 }
 
 function collectRenderableRoot(
@@ -209,8 +221,8 @@ export function rendersMedia(node: Record<string, unknown>): boolean {
   if (node.kind !== undefined && node.kind !== "image" && node.kind !== "video") return false;
   return typeof node.src === "string" && isRenderableMediaSrc(node.src);
 }
-export function rendersField(node: Record<string, unknown>): boolean {
-  return fieldHasRenderableControl(node);
+export function rendersInput(node: Record<string, unknown>): boolean {
+  return inputHasRenderableControl(node);
 }
 export function rendersTable(node: Record<string, unknown>): boolean {
   return hasRenderableArray(
@@ -277,6 +289,47 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function readableRecord(value: unknown): Record<string, unknown> | undefined {
+  try {
+    return isRecord(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeOwnValue(value: unknown, key: string): unknown {
+  const record = readableRecord(value);
+  if (record === undefined) return undefined;
+  try {
+    return Object.prototype.hasOwnProperty.call(record, key) ? Reflect.get(record, key) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function safeRecordKeys(record: Record<string, unknown>): readonly string[] {
+  try {
+    return Object.keys(record);
+  } catch {
+    return [];
+  }
+}
+
+function liveTreeScreenRoot(tree: FacetTree, name: unknown): NodeId | null {
+  if (typeof name !== "string") return null;
+  const screens = readableRecord(safeOwnValue(tree, "screens"));
+  if (screens === undefined) return null;
+  const id = safeOwnValue(screens, name);
+  if (typeof id !== "string") return null;
+  const nodes = readableRecord(safeOwnValue(tree, "nodes"));
+  const node = nodes === undefined ? undefined : safeOwnValue(nodes, id);
+  try {
+    return readableRecord(node) !== undefined && isContainer(node as FacetNode) ? id : null;
+  } catch {
+    return null;
+  }
+}
+
 function hasString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;
 }
@@ -318,13 +371,10 @@ function isRenderableKeyValueItem(item: unknown): boolean {
   return isRecord(item) && typeof item.label === "string" && typeof item.value === "string";
 }
 
-function fieldHasRenderableControl(node: Record<string, unknown>): boolean {
+function inputHasRenderableControl(node: Record<string, unknown>): boolean {
   if (typeof node.name !== "string") return false;
   if (node.input !== "radio") return true;
-  return (
-    hasString(node.label) ||
-    hasRenderableArray(node.options, TREE_RENDERABLE_MAX_FIELD_OPTIONS, hasString)
-  );
+  return hasString(node.label) || hasRenderableArray(node.options, MAX_FIELD_OPTIONS, hasString);
 }
 
 function chartHasRenderableData(node: Record<string, unknown>): boolean {

@@ -3,7 +3,7 @@
  * the prompt, so the operator's secrets (API keys, tokens, cloud creds) are
  * withheld. Both the spawn CLI and the persistent Agent SDK session use this.
  */
-export const SAFE_ENV_KEYS = [
+const SAFE_ENV_KEYS = [
   "HOME",
   "PATH",
   "LANG",

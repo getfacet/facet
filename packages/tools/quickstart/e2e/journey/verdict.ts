@@ -198,7 +198,6 @@ async function main(argv: readonly string[]): Promise<void> {
   } catch (error) {
     process.stderr.write(`verdict: could not read votes (${String(error)}) — failing closed\n`);
     process.exit(1);
-    return;
   }
 
   let votes: readonly Vote[];
@@ -211,7 +210,6 @@ async function main(argv: readonly string[]): Promise<void> {
   } catch {
     process.stderr.write("verdict: could not parse votes JSON — failing closed\n");
     process.exit(1);
-    return;
   }
 
   const verdict = aggregateVerdict(votes);

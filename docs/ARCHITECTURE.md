@@ -80,6 +80,11 @@ The root and every screen root are `box` Bricks. Nodes are stored by stable id;
 containers refer to child ids. This shape lets an agent add a leaf, assemble a
 subtree bottom-up, and patch only the changed paths.
 
+Core's fail-soft `resolveTreeScreen` owns the live-root order used by document
+content checks and renderers: preferred live screen, live `entry`, first live
+screen, then the plain root. A missing, dangling, hostile, or non-`box` screen
+target is skipped rather than becoming a second resolution policy or a throw.
+
 The optional `data` map stores named arrays of flat row records. Data-bearing
 Bricks may use inline data or a disclosed `from` name. A name is not a URL,
 query, expression, or resolver. Missing data renders empty and can be supplied by
@@ -168,6 +173,11 @@ Theme default → same-Brick Preset → direct style
 Each layer copies only properties, targets, and states owned by the Brick
 contract. Unknown data is never spread into a renderer style object. Later
 layers override only exact allowed properties.
+
+The value decision is property-specific as well: Core intersects the declared
+token or fixed-choice domain with that property's exact allow-list. Strict
+author validation, Theme validation, discovery, and rendering all consume that
+one result, so an advertised choice cannot disagree with the validation path.
 
 `box` and `text` may declare `activeWhen` with `style.active`. When the predicate
 matches browser-local screen or toggle state, the active Preset/direct layer is

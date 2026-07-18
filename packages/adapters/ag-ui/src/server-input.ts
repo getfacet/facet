@@ -70,7 +70,7 @@ export async function authorizeDirectRunInput(
   throw new AgUiHttpInputError(403, "FORBIDDEN", "AG-UI visitor resolver required");
 }
 
-export async function authorizeHttpRunInput(
+async function authorizeHttpRunInput(
   req: IncomingMessage,
   input: RunAgentInput,
   options: HandleAgUiRequestOptions,

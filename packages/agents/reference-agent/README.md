@@ -156,7 +156,7 @@ ignored; async callbacks are serialized with a bounded pending queue.
 
 ## Exports
 
-- `createReferenceAgent` and compatibility alias `createQuickstartAgent`.
+- `createReferenceAgent`.
 - `ReferenceAgentOptions`, `ReferenceAgentAssetSource`, provider types, and
   provider factories/resolution helpers.
 - `REFERENCE_AGENT_BUDGET_PRESETS`, budget normalization, stop/retry helpers,

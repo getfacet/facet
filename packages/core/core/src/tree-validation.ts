@@ -13,7 +13,7 @@ import { sanitizeNode } from "./brick-node-validation.js";
 import { sanitizeDataWarehouse } from "./data-binding.js";
 import type { DataWarehouse } from "./data-types.js";
 
-export interface ValidationResult {
+export interface TreeValidationResult {
   readonly tree: FacetTree;
   readonly issues: readonly string[];
 }
@@ -251,7 +251,7 @@ export function breakCycles(
   return { worstRoot, maxReachable };
 }
 
-export function validateTree(input: unknown): ValidationResult {
+export function validateTree(input: unknown): TreeValidationResult {
   const issues = new BoundedIssues();
   try {
     return validateTreeUnsafe(input, issues);
@@ -261,7 +261,7 @@ export function validateTree(input: unknown): ValidationResult {
   }
 }
 
-function validateTreeUnsafe(input: unknown, issues: BoundedIssues): ValidationResult {
+function validateTreeUnsafe(input: unknown, issues: BoundedIssues): TreeValidationResult {
   if (!isObject(input) || !isObject(input.nodes)) {
     issues.push("input is not a tree object with a nodes map");
     return { tree: EMPTY_TREE, issues: issues.list };

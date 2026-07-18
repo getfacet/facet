@@ -1,37 +1,17 @@
 import { isControlChar, isForbiddenKey, isPlainObject, nullMap, printableKey } from "./issues.js";
+import { isAllowedColor } from "./theme-color.js";
 import { IssueList } from "./theme-issues.js";
+import {
+  parseThemeDecimal,
+  THEME_SIGNED_DECIMAL_SOURCE,
+  THEME_UNSIGNED_DECIMAL_SOURCE,
+} from "./theme-number.js";
 import { MAX_THEME_CSS_VALUE_BYTES } from "./theme-types.js";
+
+const DANGEROUS = ["url(", "var(", "calc(", "expression(", "javascript:"];
 
 export type ThemeValueResult<V> = { readonly value: V } | { readonly error: string };
 export type ThemeValueHandler<V> = (value: unknown, token: string) => ThemeValueResult<V>;
-
-const UNSIGNED_DECIMAL_SOURCE = String.raw`(?:0|[1-9]\d*)(?:\.\d{1,4})?`;
-const SIGNED_DECIMAL_SOURCE = String.raw`-?${UNSIGNED_DECIMAL_SOURCE}`;
-const UNSIGNED_DECIMAL_RE = new RegExp(`^${UNSIGNED_DECIMAL_SOURCE}$`);
-const SIGNED_DECIMAL_RE = new RegExp(`^${SIGNED_DECIMAL_SOURCE}$`);
-const DANGEROUS = ["url(", "var(", "calc(", "expression(", "javascript:"];
-const NAMED_COLORS = new Set([
-  "aqua",
-  "black",
-  "blue",
-  "cyan",
-  "fuchsia",
-  "gray",
-  "green",
-  "grey",
-  "lime",
-  "magenta",
-  "maroon",
-  "navy",
-  "olive",
-  "orange",
-  "purple",
-  "red",
-  "silver",
-  "teal",
-  "white",
-  "yellow",
-]);
 
 function utf8Bytes(value: string): number {
   let bytes = 0;
@@ -70,12 +50,6 @@ function safeCssString(value: unknown): ThemeValueResult<string> {
   return { value };
 }
 
-function decimal(raw: string, signed = false): number | undefined {
-  if (!(signed ? SIGNED_DECIMAL_RE : UNSIGNED_DECIMAL_RE).test(raw)) return undefined;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : undefined;
-}
-
 interface UnitBounds {
   readonly min: number;
   readonly max: number;
@@ -97,9 +71,9 @@ export function lengthHandler(options: {
     const keyword = options.keywords?.[token];
     if (keyword !== undefined && value === keyword) return { value };
     if (options.unitlessZero === true && value === "0") return { value };
-    const match = new RegExp(`^(${SIGNED_DECIMAL_SOURCE})(px|rem|em|ch|svh)$`).exec(value);
+    const match = new RegExp(`^(${THEME_SIGNED_DECIMAL_SOURCE})(px|rem|em|ch|svh)$`).exec(value);
     if (match === null) return { error: "value has an invalid length grammar or unit" };
-    const scalar = decimal(match[1]!, true);
+    const scalar = parseThemeDecimal(match[1]!, true);
     const bounds = options[match[2]! as "px" | "rem" | "em" | "ch" | "svh"];
     if (
       scalar === undefined ||
@@ -132,7 +106,7 @@ export const fontFamilyHandler: ThemeValueHandler<string> = (raw) => {
 export const lineHeightHandler: ThemeValueHandler<string> = (raw) => {
   const safe = safeCssString(raw);
   if ("error" in safe) return safe;
-  const value = decimal(safe.value);
+  const value = parseThemeDecimal(safe.value);
   return value !== undefined && value >= 0.8 && value <= 3
     ? safe
     : { error: "lineHeight is outside 0.8..3" };
@@ -143,12 +117,12 @@ export const aspectRatioHandler: ThemeValueHandler<string> = (raw, token) => {
   if ("error" in safe) return safe;
   if (token === "auto")
     return safe.value === "auto" ? safe : { error: "aspectRatio.auto must be auto" };
-  const match = new RegExp(`^(${UNSIGNED_DECIMAL_SOURCE}) / (${UNSIGNED_DECIMAL_SOURCE})$`).exec(
-    safe.value,
-  );
+  const match = new RegExp(
+    `^(${THEME_UNSIGNED_DECIMAL_SOURCE}) / (${THEME_UNSIGNED_DECIMAL_SOURCE})$`,
+  ).exec(safe.value);
   if (match === null) return { error: "aspectRatio must be formatted as a / b" };
-  const left = decimal(match[1]!);
-  const right = decimal(match[2]!);
+  const left = parseThemeDecimal(match[1]!);
+  const right = parseThemeDecimal(match[2]!);
   return left !== undefined &&
     right !== undefined &&
     left >= 0.01 &&
@@ -161,54 +135,17 @@ export const aspectRatioHandler: ThemeValueHandler<string> = (raw, token) => {
 
 function percent(raw: string): number | undefined {
   if (!raw.endsWith("%")) return undefined;
-  const value = decimal(raw.slice(0, -1));
+  const value = parseThemeDecimal(raw.slice(0, -1));
   return value !== undefined && value >= 0 && value <= 100 ? value : undefined;
 }
 
-function opaqueColor(value: string): boolean {
-  const hex = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.exec(value);
-  if (hex !== null) {
-    const digits = hex[1]!.toLowerCase();
-    return (
-      digits.length === 3 ||
-      digits.length === 6 ||
-      digits.endsWith(digits.length === 4 ? "f" : "ff")
-    );
-  }
-  if (NAMED_COLORS.has(value.toLowerCase())) return true;
-  const rgb = /^rgb\((.*)\)$/.exec(value);
-  if (rgb !== null) {
-    const parts = rgb[1]!.split(",").map((part) => part.trim());
-    if (parts.length !== 3) return false;
-    const percentages = parts.every((part) => part.endsWith("%"));
-    if (percentages) return parts.every((part) => percent(part) !== undefined);
-    if (parts.some((part) => part.endsWith("%"))) return false;
-    return parts.every((part) => {
-      const channel = decimal(part);
-      return channel !== undefined && channel >= 0 && channel <= 255;
-    });
-  }
-  const hsl = /^hsl\((.*)\)$/.exec(value);
-  if (hsl !== null) {
-    const parts = hsl[1]!.split(",").map((part) => part.trim());
-    const hue = parts[0] === undefined ? undefined : decimal(parts[0], true);
-    return (
-      parts.length === 3 &&
-      hue !== undefined &&
-      percent(parts[1]!) !== undefined &&
-      percent(parts[2]!) !== undefined
-    );
-  }
-  return false;
-}
-
 function alpha(raw: string): number | undefined {
-  const value = decimal(raw);
+  const value = parseThemeDecimal(raw);
   return value !== undefined && value >= 0 && value <= 1 ? value : undefined;
 }
 
 function translucentColor(value: string): boolean {
-  if (opaqueColor(value)) return true;
+  if (isAllowedColor(value)) return true;
   const rgba = /^rgba\((.*)\)$/.exec(value);
   if (rgba !== null) {
     const parts = rgba[1]!.split(",").map((part) => part.trim());
@@ -217,7 +154,7 @@ function translucentColor(value: string): boolean {
     if (percentages) return parts.slice(0, 3).every((part) => percent(part) !== undefined);
     if (parts.slice(0, 3).some((part) => part.endsWith("%"))) return false;
     return parts.slice(0, 3).every((part) => {
-      const channel = decimal(part);
+      const channel = parseThemeDecimal(part);
       return channel !== undefined && channel >= 0 && channel <= 255;
     });
   }
@@ -226,7 +163,7 @@ function translucentColor(value: string): boolean {
   const parts = hsla[1]!.split(",").map((part) => part.trim());
   return (
     parts.length === 4 &&
-    decimal(parts[0]!, true) !== undefined &&
+    parseThemeDecimal(parts[0]!, true) !== undefined &&
     percent(parts[1]!) !== undefined &&
     percent(parts[2]!) !== undefined &&
     alpha(parts[3]!) !== undefined
@@ -238,7 +175,7 @@ export const colorHandler: ThemeValueHandler<string> = (raw, token) => {
   if ("error" in safe) return safe;
   if (token === "inherit")
     return safe.value === "inherit" ? safe : { error: "color.inherit must be inherit" };
-  return opaqueColor(safe.value) ? safe : { error: "value is not an allowed opaque color" };
+  return isAllowedColor(safe.value) ? safe : { error: "value is not an allowed opaque color" };
 };
 
 export const scrimHandler: ThemeValueHandler<string> = (raw, token) => {
@@ -270,11 +207,11 @@ function splitTopLevel(value: string): string[] | undefined {
 }
 
 function gradientStop(value: string): number | undefined {
-  const match = new RegExp(`^(.+) (${UNSIGNED_DECIMAL_SOURCE}%)$`).exec(value);
+  const match = new RegExp(`^(.+) (${THEME_UNSIGNED_DECIMAL_SOURCE}%)$`).exec(value);
   if (match === null) return undefined;
   const color = match[1]!;
   const position = percent(match[2]!);
-  return position !== undefined && (color === "transparent" || opaqueColor(color))
+  return position !== undefined && (color === "transparent" || isAllowedColor(color))
     ? position
     : undefined;
 }
@@ -290,8 +227,8 @@ export const gradientHandler: ThemeValueHandler<string> = (raw) => {
     const parts = splitTopLevel(body);
     if (parts === undefined || parts.length < 3 || parts.length > 9)
       return { error: "gradient must contain 2..8 stops" };
-    const angleMatch = new RegExp(`^(${SIGNED_DECIMAL_SOURCE})deg$`).exec(parts.shift()!);
-    const angle = angleMatch === null ? undefined : decimal(angleMatch[1]!, true);
+    const angleMatch = new RegExp(`^(${THEME_SIGNED_DECIMAL_SOURCE})deg$`).exec(parts.shift()!);
+    const angle = angleMatch === null ? undefined : parseThemeDecimal(angleMatch[1]!, true);
     headValid = angle !== undefined && angle >= -360 && angle <= 360;
     body = parts.join(",");
   } else if (safe.value.startsWith("radial-gradient(") && safe.value.endsWith(")")) {
@@ -300,7 +237,7 @@ export const gradientHandler: ThemeValueHandler<string> = (raw) => {
     if (parts === undefined || parts.length < 3 || parts.length > 9)
       return { error: "gradient must contain 2..8 stops" };
     const position = new RegExp(
-      `^circle at (${UNSIGNED_DECIMAL_SOURCE}%) (${UNSIGNED_DECIMAL_SOURCE}%)$`,
+      `^circle at (${THEME_UNSIGNED_DECIMAL_SOURCE}%) (${THEME_UNSIGNED_DECIMAL_SOURCE}%)$`,
     ).exec(parts.shift()!);
     headValid =
       position !== null &&
@@ -325,10 +262,10 @@ export const gradientHandler: ThemeValueHandler<string> = (raw) => {
 function shadowLength(value: string, negative: boolean): boolean {
   if (value === "0") return true;
   const match = new RegExp(
-    `^(${negative ? SIGNED_DECIMAL_SOURCE : UNSIGNED_DECIMAL_SOURCE})(px|rem|em)$`,
+    `^(${negative ? THEME_SIGNED_DECIMAL_SOURCE : THEME_UNSIGNED_DECIMAL_SOURCE})(px|rem|em)$`,
   ).exec(value);
   if (match === null) return false;
-  const scalar = decimal(match[1]!, negative);
+  const scalar = parseThemeDecimal(match[1]!, negative);
   if (scalar === undefined) return false;
   const maximum = match[2] === "px" ? 256 : 16;
   return scalar >= (negative ? -maximum : 0) && scalar <= maximum;

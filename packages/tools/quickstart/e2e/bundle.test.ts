@@ -17,7 +17,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { DEFAULT_THEME } from "@facet/react";
+import { DEFAULT_THEME } from "@facet/assets";
 
 // NOT `new URL("../dist/page/app.js", import.meta.url)`: Vite statically
 // rewrites that exact pattern into a served-asset URL (http://localhost:3000/…
@@ -274,44 +274,50 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
 
     // Evaluate the real bundle against the current globals and wait for React to
     // mount. Returns the freshly-created #root so callers can assert on the DOM.
-    const runBoot = async (): Promise<HTMLElement> => {
+    const runBoot = async (expectedBackground: string): Promise<HTMLElement> => {
       document.body.innerHTML = '<div id="root"></div>';
       document.body.style.background = "";
       const root = document.getElementById("root");
       expect(root).not.toBeNull();
+      const sourceCount = StubEventSource.instances.length;
       expect(() => {
         (0, eval)(bundleText);
       }).not.toThrow();
       const deadline = Date.now() + 10_000;
-      while (root!.children.length === 0 && Date.now() < deadline) {
+      while (
+        (root!.children.length === 0 ||
+          document.body.style.background !== expectedBackground ||
+          StubEventSource.instances.length <= sourceCount) &&
+        Date.now() < deadline
+      ) {
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
       return root!;
     };
 
-    // Default canvas is white (theme.ts default bg #ffffff) — the fallback both
-    // junk cases must land on. Compute via a probe so the assertion doesn't
-    // hardcode jsdom's hex→rgb normalization.
-    const whiteProbe = document.createElement("div");
-    whiteProbe.style.background = "#ffffff";
+    // Both junk cases must land on the asset package's default light canvas.
+    // Compute via a probe so the assertion follows the canonical Theme and
+    // doesn't hardcode jsdom's hex→rgb normalization.
+    const defaultProbe = document.createElement("div");
+    defaultProbe.style.background = DEFAULT_THEME.tokens.paint.light.color.background;
 
     try {
       // Case 1: a non-object Theme global and a non-tree seed both fail their
       // shape floors, so the page mounts on EMPTY_TREE + default Theme.
       bootWindow.__FACET_THEME__ = "junk";
       bootWindow.__FACET_INITIAL_STAGE__ = { root: 5 };
-      let root = await runBoot();
+      let root = await runBoot(defaultProbe.style.background);
       expect(root.children.length).toBeGreaterThan(0); // mounted, not a blank page
       expect(root.textContent).not.toContain("Seeded"); // no node from the junk seed
-      expect(document.body.style.background).toBe(whiteProbe.style.background);
+      expect(document.body.style.background).toBe(defaultProbe.style.background);
 
       // Case 2: a name-only Theme passes the cheap page floor but fails complete
       // Theme validation in the renderer, so fallback remains whole/default.
       bootWindow.__FACET_THEME__ = { name: "incomplete" };
       bootWindow.__FACET_INITIAL_STAGE__ = { root: 5 };
-      root = await runBoot();
+      root = await runBoot(defaultProbe.style.background);
       expect(root.children.length).toBeGreaterThan(0);
-      expect(document.body.style.background).toBe(whiteProbe.style.background);
+      expect(document.body.style.background).toBe(defaultProbe.style.background);
 
       // Case 3: one complete Theme is observable with a valid styled seed. The
       // document contains no Theme selector; the host-owned asset alone controls paint.
@@ -334,10 +340,10 @@ describe("quickstart page bundle (Tier 1b — the real dist/page/app.js)", () =>
           },
         },
       };
-      root = await runBoot();
-      expect(root.textContent).toContain("ok-seed");
       const okProbe = document.createElement("div");
       okProbe.style.background = okBg;
+      root = await runBoot(okProbe.style.background);
+      expect(root.textContent).toContain("ok-seed");
       expect(document.body.style.background).toBe(okProbe.style.background);
     } finally {
       delete bootWindow.__FACET_INITIAL_STAGE__;

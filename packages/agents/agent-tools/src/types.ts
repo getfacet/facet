@@ -138,30 +138,38 @@ export interface StageToolContext {
   readonly assets?: StageToolAssets;
 }
 
-export type StageToolStatus = "ok" | "error";
+export const STAGE_TOOL_STATUSES = ["ok", "error"] as const;
+export type StageToolStatus = (typeof STAGE_TOOL_STATUSES)[number];
 
-export type StageToolErrorCode =
-  | "unknown_tool"
-  | "invalid_input"
-  | "invalid_tree"
-  | "invalid_parent"
-  | "invalid_authoring"
-  | "not_available"
-  | "patch_limit"
-  | "fold_error";
+export const STAGE_TOOL_ERROR_CODES = [
+  "unknown_tool",
+  "invalid_input",
+  "invalid_tree",
+  "invalid_parent",
+  "invalid_authoring",
+  "not_available",
+  "patch_limit",
+  "fold_error",
+] as const;
+export type StageToolErrorCode = (typeof STAGE_TOOL_ERROR_CODES)[number];
 
 /** Public structured repair item returned for strict authoring failures. */
 export type StageToolAuthorIssue = AuthorIssue;
 
-export type AgentToolObservationStatus = StageToolStatus | "pending";
+export const AGENT_TOOL_OBSERVATION_STATUSES = [...STAGE_TOOL_STATUSES, "pending"] as const;
+export type AgentToolObservationStatus = (typeof AGENT_TOOL_OBSERVATION_STATUSES)[number];
 
-export type AgentToolOutcome =
-  | "applied_visible"
-  | "applied_not_visible"
-  | "applied_with_warnings"
-  | "pending"
-  | "rejected"
-  | "no_stage_change";
+export const AGENT_TOOL_OUTCOMES = [
+  "applied_visible",
+  "applied_not_visible",
+  "applied_with_warnings",
+  "pending",
+  "rejected",
+  "no_stage_change",
+] as const;
+export type AgentToolOutcome = (typeof AGENT_TOOL_OUTCOMES)[number];
+
+export const AGENT_TOOL_OBSERVATION_ERROR_CODES = [...STAGE_TOOL_ERROR_CODES, "pending"] as const;
 
 export interface AgentToolObservationData {
   readonly version: 1;

@@ -369,13 +369,11 @@ async function main(argv: readonly string[]): Promise<void> {
   if (outDir === undefined) {
     process.stderr.write("journey: --out <dir> is required\n");
     process.exit(1);
-    return;
   }
   const fixture = args["fixture"] === "broken" ? ("broken" as const) : undefined;
   if (fixture === undefined && (args["url"] === undefined || args["url"] === "")) {
     process.stderr.write("journey: --url <url> is required in normal mode\n");
     process.exit(1);
-    return;
   }
 
   const browser = await chromium.launch({ headless: true });

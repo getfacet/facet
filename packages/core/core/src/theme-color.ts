@@ -1,5 +1,6 @@
 import type { Color } from "./tokens.js";
 import { MAX_THEME_CSS_VALUE_BYTES } from "./theme-types.js";
+import { parseThemeDecimal } from "./theme-number.js";
 
 export const CONTRAST_PAIRS: readonly (readonly [Color, Color])[] = [
   ["foreground", "background"],
@@ -15,8 +16,6 @@ export const CONTRAST_PAIRS: readonly (readonly [Color, Color])[] = [
 ];
 export const MIN_CONTRAST = 4.5;
 
-const UNSIGNED_DECIMAL_RE = /^(?:0|[1-9]\d*)(?:\.\d{1,4})?$/;
-const SIGNED_DECIMAL_RE = /^-?(?:0|[1-9]\d*)(?:\.\d{1,4})?$/;
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const NAMED_COLORS: Readonly<Record<string, readonly [number, number, number]>> = {
   aqua: [0, 255, 255],
@@ -95,7 +94,7 @@ function parseRgb(value: string): readonly [number, number, number] | undefined 
   const percentages = parts.every((part) => part.endsWith("%"));
   if (!percentages && parts.some((part) => part.endsWith("%"))) return undefined;
   const channel = (raw: string): number | undefined => {
-    const parsed = percentages ? parsePercent(raw) : parseDecimal(raw, false);
+    const parsed = percentages ? parsePercent(raw) : parseThemeDecimal(raw);
     if (parsed === undefined) return undefined;
     if (percentages) return parsed * 255;
     return parsed >= 0 && parsed <= 255 ? parsed : undefined;
@@ -109,22 +108,16 @@ function parseHsl(value: string): readonly [number, number, number] | undefined 
   if (hsl === null) return undefined;
   const parts = hsl[1]!.split(",").map((part) => part.trim());
   if (parts.length !== 3) return undefined;
-  const hue = parseDecimal(parts[0]!, true);
+  const hue = parseThemeDecimal(parts[0]!, true);
   const saturation = parsePercent(parts[1]!);
   const lightness = parsePercent(parts[2]!);
   if (hue === undefined || saturation === undefined || lightness === undefined) return undefined;
   return hslToSrgb(((hue % 360) + 360) % 360, saturation, lightness);
 }
 
-function parseDecimal(raw: string, signed: boolean): number | undefined {
-  if (!(signed ? SIGNED_DECIMAL_RE : UNSIGNED_DECIMAL_RE).test(raw)) return undefined;
-  const value = Number(raw);
-  return Number.isFinite(value) ? value : undefined;
-}
-
 function parsePercent(raw: string): number | undefined {
   if (!raw.endsWith("%")) return undefined;
-  const value = parseDecimal(raw.slice(0, -1), false);
+  const value = parseThemeDecimal(raw.slice(0, -1));
   if (value === undefined || value < 0 || value > 100) return undefined;
   return value / 100;
 }

@@ -36,6 +36,11 @@ The same contract drives strict author validation, renderer style resolution,
 and progressive agent discovery through `get_brick_spec` and
 `get_style_choices`.
 
+Core's property-specific style-value helpers are the shared decision point for
+those consumers. They intersect a token or fixed-choice domain with the exact
+property's allow-list, so discovery never advertises a value that author or
+Theme validation would reject at that path.
+
 ## Style, Theme, and Presets
 
 Every Brick has one optional `style` object, but each Brick owns a different
@@ -74,7 +79,11 @@ Core exposes two deliberately different validation paths:
   or value rejects the complete authored value with bounded repair issues.
 - `validateTree` is the fail-safe boundary for stale or bypassed stored data. It
   keeps safe siblings, drops invalid fragments, prunes dangling references, and
-  never throws on unknown nodes.
+  never throws on unknown nodes. It returns a `TreeValidationResult`.
+
+`resolveTreeScreen(tree, preferredScreen)` exposes the shared fail-soft live-root
+policy used by Core content checks and the React renderer: preferred live screen,
+then live `entry`, then the first live screen, then the plain tree root.
 
 `validateTheme` accepts one complete Theme or refuses it whole. It allow-lists
 every token group, Brick default, Preset, target, state, and property; rejects

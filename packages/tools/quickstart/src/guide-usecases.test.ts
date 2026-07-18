@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validateAuthorNode } from "@facet/core";
-import { DEFAULT_THEME } from "@facet/react";
+import { DEFAULT_THEME } from "@facet/assets";
 import { QUICKSTART_INTAKE_NODES, QUICKSTART_USE_CASE_NODES } from "./guide-usecases.js";
 
 const RETIRED_NODE_FIELDS = ["active", "activeStyle", "activeVariant", "variant"] as const; // style-hard-cut: allowed-negative

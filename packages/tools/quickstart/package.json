@@ -35,6 +35,7 @@
     "@facet/server": "workspace:*"
   },
   "devDependencies": {
+    "@facet/assets": "workspace:*",
     "@facet/client": "workspace:*",
     "@facet/react": "workspace:*",
     "@types/react": "^19.0.0",
