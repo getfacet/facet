@@ -21,3 +21,19 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm verify
+
+      - name: Install Lab Chromium
+        run: pnpm --filter @facet/lab exec playwright install --with-deps chromium
+
+      - name: Facet Lab deterministic gate
+        run: node scripts/check-lab-gates.mjs --mode deterministic
+        env:
+          FACET_LAB_GATE_ROOT: ${{ runner.temp }}/facet-lab-gate
+
+      - name: Upload Facet Lab gate artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: facet-lab-deterministic
+          path: ${{ runner.temp }}/facet-lab-gate/deterministic/artifacts
+          if-no-files-found: ignore

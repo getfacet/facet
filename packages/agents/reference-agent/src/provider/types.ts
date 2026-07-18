@@ -41,13 +41,22 @@ export interface ProviderTurn {
   readonly messages: readonly TurnMessage[];
 }
 
+export interface ProviderRunContext {
+  /** Abort this provider attempt without changing the provider-wide timeout. */
+  readonly signal?: AbortSignal;
+}
+
 export interface ReferenceProvider {
   readonly name: "openai" | "anthropic";
   readonly model: string;
   /** The model's total context window in tokens, when the adapter knows it. */
   readonly contextWindowTokens?: number;
   /** One tool-use step. Rejects on HTTP error, malformed body, or the timeout. */
-  run(turn: ProviderTurn, tools: readonly ToolSpec[]): Promise<ProviderStep>;
+  run(
+    turn: ProviderTurn,
+    tools: readonly ToolSpec[],
+    context?: ProviderRunContext,
+  ): Promise<ProviderStep>;
 }
 
 /** Per-attempt abort deadline for one `run` call. */
@@ -56,12 +65,23 @@ export const TURN_TIMEOUT_MS = 60_000;
 export interface ProviderOptions {
   /** Override the per-attempt timeout (tests inject a short one). */
   readonly timeoutMs?: number;
+  /** Override the provider's default model with a trimmed 1–200 character identifier. */
+  readonly model?: string;
 }
 
 export type FetchImpl = typeof fetch;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+export function resolveProviderModel(model: string | undefined, defaultModel: string): string {
+  if (model === undefined) return defaultModel;
+  const normalized = model.trim();
+  if (normalized.length === 0 || normalized.length > 200) {
+    throw new Error("provider model must contain 1–200 characters after trimming");
+  }
+  return normalized;
 }
 
 /**
@@ -108,8 +128,16 @@ export async function postJson(
   body: unknown,
   timeoutMs: number,
   providerName: string,
+  callerSignal?: AbortSignal,
 ): Promise<unknown> {
   const controller = new AbortController();
+  const abortFromCaller = (): void => controller.abort(callerSignal?.reason);
+  const listensToCaller = callerSignal !== undefined && !callerSignal.aborted;
+  if (listensToCaller) {
+    callerSignal.addEventListener("abort", abortFromCaller, { once: true });
+  } else if (callerSignal?.aborted === true) {
+    abortFromCaller();
+  }
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetchImpl(url, {
@@ -124,5 +152,8 @@ export async function postJson(
     return (await response.json()) as unknown;
   } finally {
     clearTimeout(timer);
+    if (listensToCaller) {
+      callerSignal.removeEventListener("abort", abortFromCaller);
+    }
   }
 }

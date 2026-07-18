@@ -16,6 +16,10 @@ import {
   type ReferenceAgentStopReason,
 } from "./harness/budget.js";
 import {
+  createReferenceAgentDiagnosticEmitter,
+  type ReferenceAgentDiagnosticObserver,
+} from "./harness/diagnostic-observer.js";
+import {
   REFERENCE_AGENT_FAILURE_SAY,
   runReferenceAgentLoop,
   type ReferenceAgentLoopSummary,
@@ -45,6 +49,10 @@ export interface ReferenceAgentOptions {
   readonly budget?: ReferenceAgentBudgetOverrides;
   /** Optional bounded trace callback. Failures are ignored by the harness. */
   readonly trace?: ReferenceAgentTrace;
+  /** Optional cancellation shared by provider attempts and retry backoff. */
+  readonly abortSignal?: AbortSignal;
+  /** Optional synchronous bounded lifecycle/tool diagnostic observer. */
+  readonly diagnosticObserver?: ReferenceAgentDiagnosticObserver;
   /** Legacy alias for budget.maxHistoryTurns. Ignored when budget.maxHistoryTurns is set. */
   readonly historyTurns?: number;
   /** Legacy alias for budget.maxSteps. Ignored when budget.maxSteps is set. */
@@ -100,8 +108,13 @@ export function createReferenceAgentWithDependencies(
       ? (dependencies.summarizerFactory ?? createProviderSummarizer)(options.provider)
       : undefined;
   const contextWindowTokens = options.provider.contextWindowTokens;
+  const diagnostics = createReferenceAgentDiagnosticEmitter(options.diagnosticObserver);
 
   return async function* (event, session) {
+    if (isSignalAborted(options.abortSignal)) {
+      diagnostics({ kind: "stop", reason: "aborted" });
+      return;
+    }
     let turnSystem: string | undefined;
     try {
       const assets = await acquireTurnAssets(options.assets);
@@ -116,6 +129,8 @@ export function createReferenceAgentWithDependencies(
         budget,
         assets,
         ...(options.trace !== undefined ? { trace: options.trace } : {}),
+        ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
+        diagnostics,
         ...(summarizer !== undefined ? { summarizer } : {}),
         ...(options.summaryStore !== undefined ? { summaryStore: options.summaryStore } : {}),
         ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
@@ -124,7 +139,11 @@ export function createReferenceAgentWithDependencies(
       logStopSummary(summary);
     } catch (error) {
       console.error("[facet-reference-agent] turn failed:", errMsg(error));
-      yield sayBatch(REFERENCE_AGENT_FAILURE_SAY);
+      diagnostics({
+        kind: "stop",
+        reason: isSignalAborted(options.abortSignal) ? "aborted" : "invalid-output",
+      });
+      if (!isSignalAborted(options.abortSignal)) yield sayBatch(REFERENCE_AGENT_FAILURE_SAY);
     }
 
     // Cross-turn compaction runs AFTER the turn, detached, on the serial lane.
@@ -132,7 +151,8 @@ export function createReferenceAgentWithDependencies(
     if (
       options.summaryStore !== undefined &&
       summarizer !== undefined &&
-      turnSystem !== undefined
+      turnSystem !== undefined &&
+      !isSignalAborted(options.abortSignal)
     ) {
       const store = options.summaryStore;
       const system = turnSystem;
@@ -185,4 +205,8 @@ function stopReasonMessage(stopReason: ReferenceAgentStopReason): string {
 
 function errMsg(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function isSignalAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }

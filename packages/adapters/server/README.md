@@ -66,6 +66,50 @@ being discarded. Its result may still be delivered later, but a stale result
 cannot overwrite a newer stage. Per-visitor delivery stays serialized. These
 mechanics are reference behavior, not a hosted availability guarantee.
 
+## Accepted-frame observation
+
+`createFacetServer` accepts an optional `observer`. Omitting it preserves the
+existing transport behavior and does no observation work. When present, it
+receives two detached, deeply frozen evidence shapes:
+
+- `ui-in` records a validated, normalized browser input on its per-visitor
+  lane. `source: "forwarded"` identifies `/event`; `source: "record"`
+  identifies the local-only `/record` channel. A forwarded record has a stable
+  `turnId`; a local-only record has `turnId: null` because no agent turn exists.
+- `accepted-frame` records messages after the authoritative fold accepted them,
+  with the matching `turnId`, originating event, `source: "live" | "late"`,
+  per-frame `agentMutated`, and the post-fold stage when it can be read.
+  `disposition: "applied"` is a normal accepted frame. `"say-only-stale"`
+  means a late result's stale patches were discarded while its accepted chat
+  messages and the newer authoritative stage were retained.
+
+```ts
+import {
+  createFacetServer,
+  type FacetServerObservation,
+} from "@facet/server";
+
+const observations: FacetServerObservation[] = [];
+const server = createFacetServer({
+  port: 5291,
+  host: "127.0.0.1",
+  agentId: "demo",
+  agent,
+  observer: (observation) => {
+    observations.push(observation);
+  },
+});
+```
+
+The observer is best-effort diagnostics, not a writer or durable audit log. It
+cannot replace messages, mutate the persisted stage, change stale-frame
+disposition, or reject an input. Callback throws, rejected returned promises,
+hostile thenables, clone failures, and attempted mutation are swallowed;
+returned promises are not awaited. Because evidence lookup is non-controlling,
+an `accepted-frame` can carry `stage: undefined` when that evidence is
+unavailable, including when a diagnostic stage read fails; authoritative
+processing still continues.
+
 ## Trust model
 
 This server is intended for local/self-hosted, single-operator, public/anonymous

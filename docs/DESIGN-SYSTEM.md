@@ -184,6 +184,23 @@ The package contains data only. The host passes these values through its asset
 and renderer wiring; importing them does not create a renderer, runtime, or
 agent.
 
+### Inspect and validate assets in Facet Lab
+
+Repository contributors can use [Facet Lab's Catalog](../apps/facet-lab/README.md#catalog-and-asset-truth)
+to inspect the effective vocabulary and real isolated previews. Catalog derives
+Brick, token, and fixed-choice definitions from `@facet/core` and derives
+Theme defaults, same-Brick Presets, and Patterns from the selected validated
+assets. It intentionally has no hand-maintained Lab roster.
+
+Lab custom-asset import uses the same ownership model described here: one
+complete Theme plus an exact Pattern list in a versioned JSON envelope. The
+operation is bounded and transactional. If the envelope, Theme, or any Pattern
+is invalid, the whole import is rejected with diagnostics and the previous
+selection remains active. A successful selection applies only to future runs;
+each run keeps an immutable, content-digested asset snapshot for evidence and
+replay. Lab does not turn Theme authoring into model-authored CSS or a general
+visual page builder.
+
 ## How an operator defines a Theme
 
 Each agent asset snapshot has exactly one complete `FacetTheme`. If the operator
@@ -345,6 +362,8 @@ hidden as a whole while other valid Patterns may remain available.
 
 ## Where to look next
 
+- [Facet Lab](../apps/facet-lab/README.md) — inspect package-defined assets and
+  test transactional imports in the private contributor workbench.
 - [Architecture](ARCHITECTURE.md) — invariants, runtime behavior, validation,
   layout, assets, and package boundaries.
 - [`@facet/core`](https://github.com/getfacet/facet/blob/main/packages/core/core/README.md)

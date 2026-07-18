@@ -14,6 +14,12 @@ import {
 import { assembleProviderContext } from "./context.js";
 import { createTokenEstimator, estimateProviderTurnChars, estimateTurnChars } from "./estimate.js";
 import {
+  createReferenceAgentDiagnosticEmitter,
+  type ReferenceAgentDiagnosticEmitter,
+  type ReferenceAgentDiagnosticEvent,
+  type ReferenceAgentDiagnosticObserver,
+} from "./diagnostic-observer.js";
+import {
   compactInTurnTranscript,
   hasPendingExactAssetReadHandoff,
   shouldCompactInTurn,
@@ -48,6 +54,9 @@ export interface ReferenceAgentLoopOptions {
   readonly assets?: StageToolAssets;
   readonly tools?: readonly ToolSpec[];
   readonly trace?: ReferenceAgentTrace;
+  readonly abortSignal?: AbortSignal;
+  readonly diagnosticObserver?: ReferenceAgentDiagnosticObserver;
+  readonly diagnostics?: ReferenceAgentDiagnosticEmitter;
   readonly bufferFactory?: ReferenceAgentLoopBufferFactory;
   readonly fallbackSay?: string;
   /** In-turn transcript summarizer. Absent ⇒ deterministic step-group truncation. */
@@ -75,6 +84,8 @@ interface ReadyLoopOptions {
   readonly tools: readonly ToolSpec[];
   readonly budget: ReferenceAgentBudget;
   readonly trace: ReferenceAgentTrace | undefined;
+  readonly abortSignal: AbortSignal | undefined;
+  readonly diagnostics: ReferenceAgentDiagnosticEmitter;
   readonly summarizer: Summarizer | undefined;
   readonly contextWindowTokens: number | undefined;
 }
@@ -92,6 +103,8 @@ interface LoopState {
 interface FinishLoopOptions extends LoopState {
   readonly fallbackSay: string;
   readonly trace: ReferenceAgentTrace | undefined;
+  readonly abortSignal: AbortSignal | undefined;
+  readonly diagnostics: ReferenceAgentDiagnosticEmitter;
 }
 
 export async function* runReferenceAgentLoop(
@@ -101,6 +114,8 @@ export async function* runReferenceAgentLoop(
   const tools = options.tools ?? TOOLS;
   const bufferFactory = options.bufferFactory ?? createStageToolBuffer;
   const fallbackSay = options.fallbackSay ?? REFERENCE_AGENT_FAILURE_SAY;
+  const diagnostics =
+    options.diagnostics ?? createReferenceAgentDiagnosticEmitter(options.diagnosticObserver);
 
   let state = emptyLoopState("empty_turn");
 
@@ -140,6 +155,8 @@ export async function* runReferenceAgentLoop(
         tools,
         budget: options.budget,
         trace,
+        abortSignal: options.abortSignal,
+        diagnostics,
         summarizer: options.summarizer,
         contextWindowTokens: options.contextWindowTokens,
       });
@@ -155,7 +172,13 @@ export async function* runReferenceAgentLoop(
     });
   }
 
-  const summary = yield* finishReferenceAgentLoop({ ...state, fallbackSay, trace });
+  const summary = yield* finishReferenceAgentLoop({
+    ...state,
+    fallbackSay,
+    trace,
+    abortSignal: options.abortSignal,
+    diagnostics,
+  });
   return summary;
 }
 
@@ -176,6 +199,10 @@ async function* runReadyProviderLoop(
 
   try {
     while (stepCount < options.budget.maxSteps) {
+      if (options.abortSignal?.aborted === true) {
+        stopReason = "provider_error";
+        break;
+      }
       const budgetTokens = effectiveTokenBudget(options.budget, options.contextWindowTokens);
       let estimatedContextChars = estimateProviderTurnChars(options.system, messages);
       let turnChars = estimateTurnChars(options.system, messages, options.tools);
@@ -287,6 +314,8 @@ async function* runReadyProviderLoop(
         tools: options.tools,
         budget: options.budget,
         ...(options.trace !== undefined ? { trace: options.trace } : {}),
+        ...(options.abortSignal !== undefined ? { signal: options.abortSignal } : {}),
+        diagnostics: options.diagnostics,
         estimatedContextChars,
       });
       if (providerResult.status === "error") {
@@ -319,6 +348,7 @@ async function* runReadyProviderLoop(
         messages,
         budget: options.budget,
         trace: options.trace,
+        diagnostics: options.diagnostics,
       });
       toolCallCount += toolResult.toolCallCount;
       mutated = mutated || toolResult.mutated;
@@ -359,9 +389,10 @@ async function* finishReferenceAgentLoop(
   let said = options.said;
   let finalText = options.finalText;
   let fallbackEmitted = false;
+  const aborted = options.abortSignal?.aborted === true;
 
   const unresolved = options.buffer?.drainUnresolved() ?? [];
-  if (unresolved.length > 0) {
+  if (!aborted && unresolved.length > 0) {
     stopReason = "unresolved_buffer";
     finalText = "";
     if (!fallbackEmitted) {
@@ -373,14 +404,14 @@ async function* finishReferenceAgentLoop(
     }
   }
 
-  if (!fallbackEmitted && !said && finalText.length > 0) {
+  if (!aborted && !fallbackEmitted && !said && finalText.length > 0) {
     const batch = sayBatch(finalText);
     emitBatchYieldTrace(options.trace, batch);
     yield batch;
     said = true;
   }
 
-  if (!fallbackEmitted && !options.mutated && !said) {
+  if (!aborted && !fallbackEmitted && !options.mutated && !said) {
     const batch = sayBatch(options.fallbackSay);
     emitBatchYieldTrace(options.trace, batch);
     yield batch;
@@ -395,6 +426,10 @@ async function* finishReferenceAgentLoop(
     toolCallCount: options.toolCallCount,
     ...(finalText.length > 0 ? { finalTextChars: finalText.length } : {}),
   });
+  options.diagnostics({
+    kind: "stop",
+    reason: diagnosticStopReason(stopReason, aborted),
+  });
 
   return {
     stopReason,
@@ -403,6 +438,26 @@ async function* finishReferenceAgentLoop(
     ...(finalText.length > 0 ? { finalTextChars: finalText.length } : {}),
     ...(unresolved.length > 0 ? { unresolved } : {}),
   };
+}
+
+function diagnosticStopReason(
+  stopReason: ReferenceAgentStopReason,
+  aborted: boolean,
+): Extract<ReferenceAgentDiagnosticEvent, { readonly kind: "stop" }>["reason"] {
+  if (aborted) return "aborted";
+  switch (stopReason) {
+    case "provider_stop":
+      return "complete";
+    case "max_steps":
+    case "tool_call_limit":
+    case "context_limit":
+      return "budget";
+    case "provider_error":
+    case "retry_exhausted":
+      return "provider-error";
+    default:
+      return "invalid-output";
+  }
 }
 
 function emptyLoopState(stopReason: ReferenceAgentStopReason): LoopState {

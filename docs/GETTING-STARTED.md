@@ -40,6 +40,23 @@ Quickstart is a local/reference path. It is useful for evaluation and as working
 integration evidence; it is not a tenant, identity, billing, or operations
 platform.
 
+### Quickstart, Facet Lab, and adoption are different paths
+
+Quickstart remains the shortest runnable evaluation of one reference-agent
+page. [Facet Lab](../apps/facet-lab/README.md) is the repository's unpublished
+local/self-hosted developer workbench for package-defined asset inspection,
+official deterministic/real-provider scenarios, run evidence, replay,
+comparison, evaluation, and Contract Sandbox testing. Lab is not an npm package,
+hosted Facet service, or replacement for Quickstart, and applications should not
+depend on it.
+
+Use the integration sections below when building a product: start from the
+public `@facet/*` package role you need and supply your own surrounding platform
+policy. Use Lab only when evaluating or contributing to those contracts in this
+repository. Its [operator guide](../apps/facet-lab/README.md#launch-locally)
+owns launch commands, storage, keys, workflows, and gates so this adoption guide
+does not maintain a parallel workbench manual.
+
 ## Run the reference transport
 
 Use the native reference transport when you want a small Node server with a
@@ -248,6 +265,8 @@ official, or optional package as a complete deployment.
 
 ## Next
 
+- [Facet Lab](../apps/facet-lab/README.md) — private contributor workbench,
+  workflows, evidence, and gates.
 - [Design System](DESIGN-SYSTEM.md) — styling concepts and operator assets.
 - [Agent Integration](AGENT-INTEGRATION.md) — custom LLM authoring loop.
 - [Architecture](ARCHITECTURE.md) — complete ownership and data-flow behavior.

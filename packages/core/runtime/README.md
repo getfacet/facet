@@ -45,6 +45,13 @@ one result batch or an async stream of batches from the agent. Every batch is
 folded into the stored session, saved, and delivered before the next batch is
 pulled. Sessions are isolated and serialized per `(agent, visitor)`.
 
+An optional `RuntimeFrameSink` receives each delivered batch plus evidence for
+that batch. `context.agentMutated` is true only when that individual batch
+changed the Stage; an initial seed frame reports false. `context.stage` is a
+lazy detached snapshot of the post-fold Stage and may be undefined if diagnostic
+cloning fails. This context is for observation and transport delivery, not a
+second content writer.
+
 The runtime applies the same patch fold used by the client and salvages safe
 operations when stale or bypassed data appears. `FacetRuntime.applyMessages`
 uses that same queue for an already-produced result.

@@ -120,6 +120,24 @@ goes through `@facet/ag-ui`.
 is an unpublished experimental area; neither creates another public package
 role, and `labs/` is not included in workspace or publish discovery.
 
+### Unpublished applications
+
+`apps/facet-lab` is the complete local maintainer workbench for inspecting the
+package-defined Brick, Preset, Pattern, token, and fixed-choice truth; running
+deterministic or provider-backed capability scenarios; and reviewing bounded
+evidence, replay, comparison, and isolated Sandbox edits. It is a dependency
+leaf: it may compose public `@facet/*` packages, while public packages and other
+applications must not import from it. It is private workspace tooling, not an
+npm package, hosted service, Quickstart replacement, or additional authoring
+contract.
+
+Lab-specific orchestration remains application policy. This includes scenario
+expectations, contract and advisory visual evaluation, screenshot capture,
+evidence retention/export/import, provider availability, and the single-process
+loopback UI. Reusable mechanisms enter published packages only through explicit,
+additive public APIs such as the reference-agent diagnostic observer, the server
+accepted-frame observer, and the renderer's one-shot replay view.
+
 ## Cross-Package Rules
 
 - **Publish smoke:** packages use dev-time `src` entrypoints plus

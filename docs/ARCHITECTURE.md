@@ -330,6 +330,36 @@ view-state — current screen, toggles, local table sort, viewport class, and
 effective `colorMode` — remains separate. An outgoing event may carry a snapshot
 of that state, but it never becomes a second content writer.
 
+### Observation and replay truth
+
+Two additive observers expose evidence without joining the authoritative path:
+
+- `@facet/reference-agent` can report bounded provider attempts, tool calls and
+  results, batches, overflow, and terminal reasons. Values are detached,
+  redacted, bounded, and frozen before the callback runs; callback failures do
+  not control the model loop.
+- `@facet/server` can report accepted browser input and accepted live or late
+  frames. The callback receives a detached, frozen snapshot only after the
+  transport has made its acceptance decision. Throws and rejecting thenables
+  are ignored. A stable `turnId` correlates one forwarded UI-IN with every frame
+  it produces (`turnId: null` marks a local-only record), while per-frame
+  `agentMutated` distinguishes a Stage-changing batch from say-only or seed
+  delivery.
+
+An accepted-frame observation is evidence of what the server accepted. It is
+not the `Sink`, the conversation log, the server's resume buffer, a second
+`StageStore`, or permission to modify delivery. Consumers that need a replay
+record must persist their own bounded evidence and fold only the recorded
+accepted frames with Core's `applyPatch`.
+
+Renderer replay is similarly separated from document truth.
+`StageRenderer.initialView` hydrates the screen, toggle, and sort portions of one
+sanitized browser-private checkpoint only when the component is created.
+Viewport and effective color mode remain host/browser inputs. Later prop changes
+do not overwrite live interaction state; replay tools remount the renderer to
+select a different checkpoint. The document tree continues to come from
+accepted stage frames.
+
 Patch producers use Core's `escapeJsonPointerToken` for every dynamic RFC 6901
 path token, so node ids, screen names, and dataset names share one escaping
 implementation across packages.
@@ -375,6 +405,13 @@ depends on the playground app.
   the Postgres package is optional.
 - **Tools:** `@facet/quickstart`, `@facet/cli`, and `@facet/bridge` are local
   human-run entry points and development tools.
+
+`apps/facet-lab` is an unpublished dependency leaf and maintainer workbench. It
+composes the public packages to inspect package-defined assets, exercise
+official scenarios, retain bounded run evidence, replay accepted frames, compare
+runs, and edit isolated trees. Its evaluation rules, retention, screenshots,
+and provider selection are application policy, not new Core, runtime, renderer,
+or transport contracts. No published package depends on it.
 
 The server/client packages are reference transports, not a hosted edge. Root
 `labs/` is an unpublished experimental area. See

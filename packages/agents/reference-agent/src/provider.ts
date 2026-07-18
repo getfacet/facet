@@ -19,6 +19,7 @@
 export { TURN_TIMEOUT_MS } from "./provider/types.js";
 export type {
   ProviderOptions,
+  ProviderRunContext,
   ProviderStep,
   ProviderTurn,
   ProviderUsage,

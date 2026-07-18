@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FACET_STAGE_TOOL_SPECS } from "@facet/agent-tools";
 
 import {
@@ -94,7 +94,7 @@ interface AdapterCase {
   readonly create: (
     apiKey: string,
     fetchImpl?: typeof fetch,
-    options?: { readonly timeoutMs?: number },
+    options?: { readonly timeoutMs?: number; readonly model?: string },
   ) => ReferenceProvider;
   readonly url: string;
   readonly defaultModel: string;
@@ -205,6 +205,42 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     const provider = adapter.create(API_KEY, hangingFetch);
     expect(provider.name).toBe(adapter.label);
     expect(provider.model).toBe(adapter.defaultModel);
+  });
+
+  it("supports configured models and caller abort", async () => {
+    const configuredModel = `${adapter.label}-configured-model`;
+    const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("ok")));
+    const configured = adapter.create(API_KEY, fetchImpl, {
+      model: `  ${configuredModel}  `,
+    });
+
+    await configured.run(TURN, PROVIDER_TOOLS);
+
+    expect(configured.model).toBe(configuredModel);
+    expect(bodyOf(calls[0]!)["model"]).toBe(configuredModel);
+    expect(() => adapter.create(API_KEY, fetchImpl, { model: "   " })).toThrow(/model/i);
+    expect(() => adapter.create(API_KEY, fetchImpl, { model: "m".repeat(201) })).toThrow(/model/i);
+
+    const caller = new AbortController();
+    const addListener = vi.spyOn(caller.signal, "addEventListener");
+    const removeListener = vi.spyOn(caller.signal, "removeEventListener");
+    const abortable = adapter.create(API_KEY, hangingFetch, { timeoutMs: 10_000 });
+    const request = abortable.run(TURN, PROVIDER_TOOLS, { signal: caller.signal });
+
+    caller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: "AbortError" });
+    expect(addListener).toHaveBeenCalledWith("abort", expect.any(Function), { once: true });
+    expect(removeListener).toHaveBeenCalledWith("abort", expect.any(Function));
+
+    const twoArgumentProvider: ReferenceProvider = {
+      name: adapter.label,
+      model: adapter.defaultModel,
+      run: async (_turn, _tools) => ({ text: "compatible", toolCalls: [] }),
+    };
+    await expect(
+      twoArgumentProvider.run(TURN, PROVIDER_TOOLS, { signal: caller.signal }),
+    ).resolves.toMatchObject({ text: "compatible" });
   });
 
   it("parses a text-only step (no tool calls)", async () => {

@@ -37,6 +37,10 @@ const PACKAGE_PATHS = Object.freeze({
   "@facet/cli": "packages/tools/cli",
   "@facet/bridge": "packages/tools/bridge",
 });
+const APP_PATHS = Object.freeze({
+  "@facet/playground": "apps/playground",
+  "@facet/lab": "apps/facet-lab",
+});
 
 function writeJson(path, value) {
   mkdirSync(dirname(path), { recursive: true });
@@ -47,7 +51,6 @@ function makeFixture(t) {
   const cwd = mkdtempSync(join(tmpdir(), "facet-package-layout-"));
   t.after(() => rmSync(cwd, { recursive: true, force: true }));
 
-  mkdirSync(join(cwd, "apps/playground"), { recursive: true });
   mkdirSync(join(cwd, "labs"), { recursive: true });
   mkdirSync(join(cwd, "scripts"), { recursive: true });
   writeFileSync(join(cwd, ".gitignore"), ".agents/work/\n");
@@ -58,6 +61,9 @@ function makeFixture(t) {
       name,
       repository: { directory: path },
     });
+  }
+  for (const [name, path] of Object.entries(APP_PATHS)) {
+    writeJson(join(cwd, path, "package.json"), { name, private: true });
   }
 
   const fakeBin = join(cwd, "test-bin");
@@ -75,7 +81,7 @@ function makeFixture(t) {
 function workspaceRows(cwd) {
   return [
     { name: "facet", path: cwd },
-    { name: "@facet/playground", path: join(cwd, "apps/playground") },
+    ...Object.entries(APP_PATHS).map(([name, path]) => ({ name, path: join(cwd, path) })),
     ...Object.entries(PACKAGE_PATHS).map(([name, path]) => ({ name, path: join(cwd, path) })),
   ];
 }
@@ -102,6 +108,44 @@ test("accepts the exact five-group package layout", (t) => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /\[package-layout\] PASS/);
+});
+
+test("accepts Facet Lab only as a private dependency leaf", (t) => {
+  const fixture = makeFixture(t);
+  let result = runCheck(fixture);
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /15 public packages, 18 workspaces/);
+
+  writeJson(join(fixture.cwd, "apps/facet-lab/package.json"), {
+    name: "@facet/lab",
+    private: false,
+  });
+  result = runCheck(fixture);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /@facet\/lab must be private/);
+
+  writeJson(join(fixture.cwd, "apps/facet-lab/package.json"), {
+    name: "@facet/lab",
+    private: true,
+  });
+  writeJson(join(fixture.cwd, "packages/renderers/react/package.json"), {
+    name: "@facet/react",
+    repository: { directory: "packages/renderers/react" },
+    dependencies: { "@facet/lab": "workspace:*" },
+  });
+  result = runCheck(fixture);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /@facet\/react dependencies depend on private app @facet\/lab/);
+
+  writeJson(join(fixture.cwd, "packages/renderers/react/package.json"), {
+    name: "@facet/react",
+    repository: { directory: "packages/renderers/react" },
+  });
+  writeFileSync(join(fixture.cwd, "packages/renderers/react/leak.ts"), 'import "@facet/lab";\n');
+  result = runCheck(fixture);
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /public package source imports private app/);
 });
 
 test("rejects an extra manifestless compatibility directory", (t) => {

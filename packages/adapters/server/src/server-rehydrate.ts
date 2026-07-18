@@ -2,6 +2,7 @@ import type { ServerResponse } from "node:http";
 import { asAgentServerMessage, type FacetTree, type ServerMessage } from "@facet/core";
 import type { FacetRuntime, StoredEvent } from "@facet/runtime";
 import type { FrameLog, FrameLogStore, LoggedFrame } from "./frame-log.js";
+import type { FacetServerObserver } from "./observer.js";
 import { writeSse } from "./sse.js";
 
 const MAX_REHYDRATE_REREADS = 4;
@@ -369,4 +370,20 @@ export interface PostHandlerDeps {
    * handling — server-local so an LRU eviction of the frame log can't detach it
    * mid-turn. One entry per in-flight visitor turn; deleted when the turn ends. */
   readonly handling: Map<string, HandlingTurn[]>;
+  /** Optional non-controlling diagnostics assembled by the POST paths. */
+  readonly observer: FacetServerObserver | undefined;
+}
+
+/** Read the accepted authoritative stage without letting a diagnostic lookup
+ * failure alter delivery or persistence. Callers remain on the visitor lane, so
+ * a successful result is the exact post-fold stage for that accepted frame. */
+export async function stageForObservation(
+  runtime: FacetRuntime,
+  visitorId: string,
+): Promise<FacetTree | undefined> {
+  try {
+    return await runtime.stageFor(visitorId);
+  } catch {
+    return undefined;
+  }
 }

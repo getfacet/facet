@@ -1,0 +1,45 @@
+{
+  "name": "@facet/lab",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private Facet development workbench for catalog, scenarios, replay, evaluation, and contract sandboxing.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "serve": "tsx src/server/main.ts",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run src",
+    "test:e2e": "vitest run e2e",
+    "test:e2e:deterministic": "vitest run e2e/deterministic.journey.test.ts",
+    "test:e2e:boundaries": "vitest run e2e/boundaries.journey.test.ts",
+    "test:e2e:a11y": "vitest run e2e/accessibility.journey.test.ts",
+    "test:e2e:live": "vitest run e2e/live-provider.journey.test.ts"
+  },
+  "dependencies": {
+    "@facet/assets": "workspace:*",
+    "@facet/client": "workspace:*",
+    "@facet/core": "workspace:*",
+    "@facet/react": "workspace:*",
+    "@facet/reference-agent": "workspace:*",
+    "@facet/runtime": "workspace:*",
+    "@facet/server": "workspace:*",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "^4.10.2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^22.10.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "jsdom": "^29.1.1",
+    "playwright": "^1.61.1",
+    "tsx": "^4.19.0",
+    "vite": "^6.0.7",
+    "vitest": "^3.0.0"
+  }
+}

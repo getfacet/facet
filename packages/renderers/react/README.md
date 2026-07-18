@@ -70,6 +70,31 @@ Screen navigation and rendering use Core's fail-soft `resolveTreeScreen`
 policy, so the renderer and Core content checks agree on the preferred live
 screen, `entry`, first live screen, and plain-root fallback order.
 
+For replay, `StageRenderer.initialView` can seed the renderer-owned screen,
+toggle overrides, and table-sort overrides from a `ViewSnapshot` checkpoint.
+The value passes through Core's fail-soft `sanitizeView` once during component
+initialization. Malformed or out-of-bounds data is dropped, and an unavailable
+screen falls through the normal screen-resolution policy instead of throwing.
+`viewport` and effective `colorMode` remain current browser/host state; they are
+not restored from `initialView`.
+
+```tsx
+<StageRenderer
+  key={checkpoint.id}
+  tree={checkpoint.tree}
+  initialView={checkpoint.view}
+  onViewSnapshot={rememberLatestView}
+/>
+```
+
+This is one-shot initialization, not a controlled state API. Changing
+`initialView` on an already-mounted renderer does not reset local state; remount
+the renderer (for example, with a checkpoint key) to hydrate another replay
+checkpoint. After initialization, navigate, toggle, and sort interactions stay
+renderer-owned and continue from the hydrated values. Hydration does not write
+the Facet Document or route an action to the agent. Omitting `initialView` keeps
+the existing entry/default-hidden/unsorted behavior.
+
 Read next:
 
 - [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)

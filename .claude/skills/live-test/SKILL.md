@@ -16,6 +16,11 @@ Never declare PASS with a blocking tier failed or silently skipped. For
 quickstart or reference-agent provider-loop changes, **SKIPPED = FAIL**
 (DC-009): a missing key does not excuse the smoke tier — it fails it.
 
+Facet Lab adds a built-bundle deterministic tier and keeps its required-provider
+and optional-visual outcomes separate. The deterministic tier is always blocking
+when a Lab or shared Lab seam changed. A missing required provider key is FAIL;
+a missing optional visual capability is an explicit non-blocking SKIP.
+
 ## Step 1 — Tier detection (robust, conservative)
 
 Build the **candidate diff** as the union of:
@@ -42,6 +47,17 @@ smoke turn; under-verifying defeats the gate.
 `packages/agents/reference-agent/package.json`, or is
 `packages/agents/reference-agent/src/agent.ts` or
 `packages/agents/reference-agent/src/provider.ts`.
+
+**lab-deterministic-required** ⇔ any candidate path starts with
+`apps/facet-lab/`, is `scripts/check-lab-gates.mjs`, is
+`scripts/check-lab-gates.test.mjs`, or changes one of the shared diagnostic,
+accepted-frame, or replay-view seams in `@facet/reference-agent`,
+`@facet/server`, or `@facet/react`.
+
+**lab-provider-required** ⇔ a candidate changes Lab provider/agent/server/live
+journey code, `@facet/reference-agent` provider or diagnostic-loop code, or the
+corresponding package metadata. If diff detection is unclear, require both the
+Quickstart provider smoke and the Lab provider tier.
 
 ## Step 2 — Tier 1 (ALWAYS run, blocking)
 
@@ -82,6 +98,18 @@ the built-bin smoke result contract. Any failure ⇒ Tier 1 FAIL.
 Tier 1 failing blocks everything — do not proceed to a verdict of PASS, fix
 the cause and rerun from Step 2.
 
+When `lab-deterministic-required`, install Chromium and run the isolated Lab
+built-bundle gate twice. Both runs must pass:
+
+```bash
+pnpm --filter @facet/lab exec playwright install chromium
+node scripts/check-lab-gates.mjs --mode deterministic
+node scripts/check-lab-gates.mjs --mode deterministic
+```
+
+The policy script removes provider keys from the deterministic child process and
+uses distinct external data and artifact directories. Any failure is blocking.
+
 ## Step 3 — Tier 2 (blocking iff provider-smoke-required)
 
 Requires a real key in the environment: `OPENAI_API_KEY` or
@@ -97,6 +125,16 @@ pnpm exec vitest run --config packages/tools/quickstart/e2e/vitest.config.ts pac
   Do not soften this to a skip.
 - **Not touched** → Tier 2 may be skipped; report `SKIPPED (diff does not
   require provider smoke)` — that skip is OK and non-blocking.
+
+When `lab-provider-required`, also run:
+
+```bash
+node scripts/check-lab-gates.mjs --mode required-provider
+```
+
+This is blocking. It fails before starting the journey when neither provider key
+is present. When Lab provider surfaces were not touched, report this Lab tier as
+`SKIPPED (diff does not require Lab provider smoke)`.
 
 ## Step 4 — Tier 3 (pre-merge / release, on request)
 
@@ -144,6 +182,16 @@ HARD lenses (safety, render, responsiveness) failing ⇒ tier **FAIL**; SOFT len
 (request-fidelity, cross-visitor diversity) failing ⇒ **WARNING**, not FAIL.
 Screenshots + an optional GIF land in the gitignored artifacts dir.
 
+For Facet Lab's advisory visual journey, run:
+
+```bash
+node scripts/check-lab-gates.mjs --mode optional-visual
+```
+
+This result never rewrites the deterministic contract verdict. No key is
+`SKIPPED(optional visual key missing)`; an invoked command failure is reported
+as a visual-tier failure/warning without converting a contract PASS to PASS.
+
 ## Output contract
 
 Report a per-tier table, then the overall verdict:
@@ -155,14 +203,19 @@ Report a per-tier table, then the overall verdict:
 | 1b   | stub E2E (run twice)          | PASS / FAIL                |
 | 1c   | real bundle in jsdom          | PASS / FAIL                |
 | 1d   | journey harness               | PASS / FAIL                |
+| Lab D | built-bundle deterministic (twice) | PASS / FAIL / SKIPPED(why) |
 | 2    | provider smoke (required=yes) | PASS / FAIL / SKIPPED(why) |
+| Lab P | provider journey (required=yes) | PASS / FAIL / SKIPPED(why) |
 | 3    | both providers (pre-merge)    | PASS / FAIL / SKIPPED(why) |
+| Lab V | advisory visual journey      | PASS / FAIL / WARNING / SKIPPED(why) |
 | journey | live browser + LLM, judged (owner-run) | PASS / FAIL / WARNING / SKIPPED(why) |
 ```
 
-- State the tier-detection decision explicitly (base used, provider-smoke-required
-  yes/no, and why).
+- State the tier-detection decision explicitly (base used,
+  provider-smoke-required, lab-deterministic-required, and
+  lab-provider-required yes/no, and why).
 - **Overall verdict: any blocking FAIL ⇒ FAIL.** Blocking = Tier 1 always;
-  Tier 2 when provider smoke is required; Tier 3 when invoked pre-merge/release.
+  Lab D when required; Tier 2 and Lab P when their provider smoke is required;
+  Tier 3 when invoked pre-merge/release.
   A SKIPPED is only acceptable where this skill explicitly allows it, and must
   carry its reason.

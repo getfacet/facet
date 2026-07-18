@@ -57,4 +57,27 @@ churn evicts it — resume then degrades to a full rehydrate, nothing is lost)
 and the late-result window keyed by sequential request ids (bounded FIFO; on an
 unauthenticated port it is one more reason to set `agentToken`).
 
+**Facet Lab — loopback-only maintainer tooling.** `apps/facet-lab` binds only to
+an explicit numeric loopback address and rejects non-loopback binds, unexpected
+`Host`/`Origin` values, ambiguous request targets, direct `/agent` access, and
+oversized bodies before proxying or reading files. Provider keys stay in the
+Node process and provider authorization headers; the browser receives only a
+safe capability projection and never a key value.
+
+Run evidence and screenshots may still contain model-authored or operator
+content. Lab therefore stores them in an external platform application-data
+directory (or an explicit `FACET_LAB_DATA_DIR` outside the repository), applies
+size and retention bounds, redacts on capture/export, scans configured secret
+canaries, and validates schema, digest, artifact identity, and size again on
+import. Corrupt or unsupported records are isolated instead of becoming stage
+input. Imported assets are validated and detached; they remain data, not code.
+
+Loopback is not an authentication boundary if another process, port forward, or
+reverse proxy exposes it. Do not publish the Lab port directly. An operator who
+needs remote access must keep Lab on loopback and place an authenticated,
+authorized, rate-limited, TLS-terminating boundary in front of it, isolate the
+data directory and provider environment, and define retention/audit policy for
+the deployment. Facet Lab itself is not a hardened multi-user or multi-tenant
+service.
+
 [gh-report]: https://docs.github.com/en/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability

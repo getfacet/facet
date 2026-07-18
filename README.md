@@ -32,6 +32,12 @@ Open `http://localhost:5292`. The command starts the reference brain, runtime,
 transport, and React page together. See [Getting Started](docs/GETTING-STARTED.md)
 for provider flags and supported integration paths.
 
+Repository maintainers who need exhaustive asset inspection, deterministic and
+real-provider scenarios, correlated evidence, replay/compare, or contract
+sandboxing should use [Facet Lab](apps/facet-lab/README.md). Lab is an
+unpublished local/self-hosted developer workbench, not another adoption path,
+Quickstart mode, hosted service, or public package.
+
 ## Why Facet
 
 Returning only prose cannot build a live interface. Generating open-ended web
@@ -135,6 +141,8 @@ dependencies, public subpaths, and reference/official/optional labels.
 - [Package Boundaries](docs/PACKAGE-BOUNDARIES.md) — package responsibilities and
   deployment limits.
 - [Security](SECURITY.md) — the reference transport trust model.
+- [Facet Lab](apps/facet-lab/README.md) — the contributor workbench for Catalog,
+  scenarios, evidence, replay, evaluation, and contract sandboxing.
 
 Repository contributors should also read [AGENTS.md](AGENTS.md) and
 [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -146,6 +154,11 @@ pnpm install
 pnpm verify
 pnpm package:smoke
 ```
+
+For workbench development, build and launch the private Lab app with
+`pnpm --filter @facet/lab build` followed by
+`pnpm --filter @facet/lab serve`. Its complete operator and gate guide lives in
+[apps/facet-lab/README.md](apps/facet-lab/README.md).
 
 ## License
 

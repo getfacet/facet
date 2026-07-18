@@ -9,6 +9,7 @@ import { FacetRuntime, type Sink, type StageStore } from "@facet/runtime";
 import { createAgentChannel } from "./agent-channel.js";
 import { createFrameLogStore, type FrameLogStore } from "./frame-log.js";
 import { createLateWindow, LATE_WINDOW_LIMIT } from "./late.js";
+import type { FacetServerObserver } from "./observer.js";
 import { DEFAULT_OFFLINE_FACE } from "./offline.js";
 import { handleControl, handleEvent, handleRecord } from "./server-post.js";
 import {
@@ -19,6 +20,8 @@ import {
   type HandlingTurn,
   type PostHandlerDeps,
 } from "./server-rehydrate.js";
+
+export type { FacetServerObservation, FacetServerObserver } from "./observer.js";
 
 /**
  * The reference Facet transport: a tiny Node server carrying events to an agent
@@ -64,6 +67,9 @@ export interface FacetServerOptions {
   readonly stageStore?: StageStore;
   /** Where the conversation goes — store, forward, or drop. Defaults to in-memory. */
   readonly sink?: Sink;
+  /** Optional detached/frozen UI-IN and accepted-frame diagnostics. The callback
+   * is non-controlling: throws and attempted payload mutation are ignored. */
+  readonly observer?: FacetServerObserver;
 }
 
 export interface FacetServer {
@@ -139,7 +145,14 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
     }
   };
 
-  const postDeps: PostHandlerDeps = { lane, runtime, frameLog, deliver, handling };
+  const postDeps: PostHandlerDeps = {
+    lane,
+    runtime,
+    frameLog,
+    deliver,
+    handling,
+    observer: options.observer,
+  };
 
   const server: Server = createServer((req, res) => {
     // Node delivers malformed request-targets (e.g. `//[`) verbatim, and

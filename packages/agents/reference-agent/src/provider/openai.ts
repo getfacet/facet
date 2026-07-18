@@ -3,6 +3,7 @@ import {
   isRecord,
   postJson,
   readProviderUsage,
+  resolveProviderModel,
   type FetchImpl,
   type ProviderOptions,
   type ProviderStep,
@@ -84,12 +85,12 @@ export function createOpenAiProvider(
   options: ProviderOptions = {},
 ): ReferenceProvider {
   const timeoutMs = options.timeoutMs ?? TURN_TIMEOUT_MS;
-  const model = DEFAULT_OPENAI_MODEL;
+  const model = resolveProviderModel(options.model, DEFAULT_OPENAI_MODEL);
   return {
     name: "openai",
     model,
     contextWindowTokens: OPENAI_CONTEXT_WINDOW_TOKENS,
-    async run(turn, tools) {
+    async run(turn, tools, context) {
       const json = await postJson(
         fetchImpl,
         OPENAI_URL,
@@ -105,6 +106,7 @@ export function createOpenAiProvider(
         },
         timeoutMs,
         "openai",
+        context?.signal,
       );
       return parseOpenAiStep(json);
     },

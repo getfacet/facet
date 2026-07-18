@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { TurnResult } from "@facet/runtime";
+import type { ClientEvent, ServerMessage, VisitorContext } from "@facet/core";
+import type { RuntimeFrameSink, TurnResult } from "@facet/runtime";
 import type { AgentChannel } from "./agent-channel.js";
 import { isStaleLateResult, type LateWindow } from "./late.js";
+import { emitFacetServerObservation, type FacetServerObserver } from "./observer.js";
 import {
   isControlBody,
   normalizeEventBody,
@@ -12,9 +14,33 @@ import {
   addHandlingTurn,
   handlingTurnHasFrames,
   removeHandlingTurn,
+  stageForObservation,
   type HandlingTurn,
   type PostHandlerDeps,
 } from "./server-rehydrate.js";
+
+function createLiveFrameSink(
+  observer: FacetServerObserver | undefined,
+  deliver: (messages: readonly ServerMessage[]) => void,
+  visitor: VisitorContext,
+  event: ClientEvent,
+  turnId: string,
+): RuntimeFrameSink {
+  return (messages, context) => {
+    deliver(messages);
+    emitFacetServerObservation(observer, {
+      kind: "accepted-frame",
+      source: "live",
+      turnId,
+      visitor,
+      event,
+      messages,
+      stage: context?.stage,
+      agentMutated: context?.agentMutated ?? false,
+      disposition: "applied",
+    });
+  };
+}
 
 /** POST /event: shape-check the untrusted body, ack 202, then run the turn on the
  * visitor's lane — {apply → deliver} — with a per-visitor arrival index stamped at
@@ -24,7 +50,7 @@ export function handleEvent(
   res: ServerResponse,
   deps: PostHandlerDeps,
 ): void {
-  const { lane, runtime, frameLog, deliver, handling } = deps;
+  const { lane, runtime, frameLog, deliver, handling, observer } = deps;
   readJson(req)
     .then((body) => {
       const normalized = normalizeEventBody(body);
@@ -41,10 +67,18 @@ export function handleEvent(
       // applied. The pair is atomic: an index paired with a later re-minted era
       // could false-pass the staleness check.
       const arrival = frameLog.nextArrival(visitor.visitorId);
+      const turnId = `${arrival.era}:${String(arrival.index)}`;
       // One lane task per turn: {apply → deliver}. `deliver` assigns seqs and
       // fans out synchronously, so this visitor's frames can't cross or reorder
       // (a late apply for the same visitor enqueues behind this task).
       void lane(visitor.visitorId, async () => {
+        emitFacetServerObservation(observer, {
+          kind: "ui-in",
+          source: "forwarded",
+          turnId,
+          visitor,
+          event,
+        });
         // Tag the in-flight turn so a timed-out park picks up this arrival pair
         // (kept in a server-local map, NOT on the LRU-evictable log entry).
         const turn: HandlingTurn = {
@@ -54,15 +88,17 @@ export function handleEvent(
         addHandlingTurn(handling, visitor.visitorId, turn);
         let recordSettled: Promise<void> | undefined;
         let result: TurnResult = { messages: [], agentMutated: false };
+        const liveFrames = createLiveFrameSink(
+          observer,
+          (messages) => deliver(visitor.visitorId, messages),
+          visitor,
+          event,
+          turnId,
+        );
         try {
-          result = await runtime.handle(
-            visitor,
-            event,
-            (messages) => deliver(visitor.visitorId, messages),
-            (settled) => {
-              recordSettled = settled;
-            },
-          );
+          result = await runtime.handle(visitor, event, liveFrames, (settled) => {
+            recordSettled = settled;
+          });
         } catch (error) {
           // Don't leave the visitor staring at a 202 that went nowhere.
           console.error("[facet] handle failed:", error);
@@ -108,7 +144,7 @@ export function handleRecord(
   res: ServerResponse,
   deps: PostHandlerDeps,
 ): void {
-  const { lane, runtime } = deps;
+  const { lane, runtime, observer } = deps;
   readJson(req)
     .then((body) => {
       const normalized = normalizeRecordBody(body);
@@ -129,6 +165,13 @@ export function handleRecord(
       // — `runtime.record` never rejects (it logs a sink failure internally) — so the
       // lane task returns immediately after the synchronous reservation, order preserved.
       void lane(visitor.visitorId, async () => {
+        emitFacetServerObservation(observer, {
+          kind: "ui-in",
+          source: "record",
+          turnId: null,
+          visitor,
+          event,
+        });
         void runtime.record(visitor, event);
       });
     })
@@ -148,7 +191,7 @@ export function handleControl(
   lateWindow: LateWindow,
   deps: PostHandlerDeps,
 ): void {
-  const { lane, runtime, frameLog, deliver, handling } = deps;
+  const { lane, runtime, frameLog, deliver, handling, observer } = deps;
   readJson(req)
     .then((body) => {
       if (!isControlBody(body)) {
@@ -197,6 +240,20 @@ export function handleControl(
               // would falsely stale an older parked turn's still-valid patch.
               if (!stale && applied.agentMutated) {
                 frameLog.recordApplied(late.visitor.visitorId, parked.index, parked.era);
+              }
+              if (observer !== undefined && applied.messages.length > 0) {
+                const stage = await stageForObservation(runtime, late.visitor.visitorId);
+                emitFacetServerObservation(observer, {
+                  kind: "accepted-frame",
+                  source: "late",
+                  turnId: `${parked.era}:${String(parked.index)}`,
+                  visitor: late.visitor,
+                  event: late.event,
+                  messages: applied.messages,
+                  stage,
+                  agentMutated: applied.agentMutated ?? false,
+                  disposition: stale ? "say-only-stale" : "applied",
+                });
               }
             } catch (error) {
               // Mirror the live path: a store failure here must not leave the

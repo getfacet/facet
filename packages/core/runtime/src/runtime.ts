@@ -49,6 +49,8 @@ export interface TurnResult {
 
 export interface RuntimeFrameContext {
   readonly stage: FacetTree | undefined;
+  /** True only when this individual delivered batch changed the Stage. */
+  readonly agentMutated?: boolean;
 }
 
 export type RuntimeFrameSink = (
@@ -63,10 +65,11 @@ interface RecordSlot {
   readonly settled: Promise<void>;
 }
 
-function runtimeFrameContext(stage: FacetTree): RuntimeFrameContext {
+function runtimeFrameContext(stage: FacetTree, agentMutated: boolean): RuntimeFrameContext {
   let cloned: FacetTree | undefined;
   let attempted = false;
   return {
+    agentMutated,
     get stage(): FacetTree | undefined {
       if (!attempted) {
         attempted = true;
@@ -340,9 +343,9 @@ export class FacetRuntime {
       for (const message of source) target.push(message);
     };
 
-    const deliverFrame = (frame: readonly ServerMessage[]): void => {
+    const deliverFrame = (frame: readonly ServerMessage[], frameMutated: boolean): void => {
       if (frame.length === 0) return;
-      if (onFrame !== undefined) onFrame(frame, runtimeFrameContext(session.stage));
+      if (onFrame !== undefined) onFrame(frame, runtimeFrameContext(session.stage, frameMutated));
       else appendMessages(returned, frame);
     };
 
@@ -402,7 +405,7 @@ export class FacetRuntime {
         }
         if (frame.length > 0) {
           try {
-            deliverFrame(frame);
+            deliverFrame(frame, mutated);
           } catch {
             return finishPartial();
           }
@@ -416,7 +419,7 @@ export class FacetRuntime {
     const seed = seedFrame();
     if (seed !== undefined) {
       try {
-        deliverFrame([seed]);
+        deliverFrame([seed], false);
       } catch {
         return finishPartial();
       }

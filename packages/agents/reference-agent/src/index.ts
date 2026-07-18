@@ -25,6 +25,10 @@ export type { ReferenceAgentAssetSource, ReferenceAgentOptions } from "./agent.j
 export * from "./stub.js";
 export * from "./harness/budget.js";
 export * from "./harness/trace.js";
+export type {
+  ReferenceAgentDiagnosticEvent,
+  ReferenceAgentDiagnosticObserver,
+} from "./harness/diagnostic-observer.js";
 export {
   createProviderSummarizer,
   summaryBlockMessage,

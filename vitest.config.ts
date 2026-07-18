@@ -7,6 +7,7 @@ export default defineConfig({
       "packages/**/src/**/*.test.tsx",
       "packages/tools/quickstart/e2e/journey/verdict.test.ts",
       "apps/**/src/**/*.test.ts",
+      "apps/**/src/**/*.test.tsx",
     ],
   },
 });

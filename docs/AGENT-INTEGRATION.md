@@ -28,6 +28,26 @@ Choose `@facet/agent-tools` for a custom LLM loop. `@facet/agent-client` may
 transport a completed external `FacetAgent`, but it does not replace
 `@facet/agent-tools` inside that agent.
 
+### Reference provider controls and diagnostics
+
+The reference implementation exposes opt-in controls for hosts that need to
+observe or cancel one run without replacing the provider-neutral contracts:
+
+- provider constructors accept an optional trimmed `model` override and keep
+  their documented default when it is omitted;
+- `ReferenceProvider.run` receives an optional `AbortSignal` context;
+- `createReferenceAgent` accepts `abortSignal` and a synchronous
+  `diagnosticObserver`.
+
+Cancellation is cooperative across provider fetches and retry backoff. An
+already-aborted signal starts no provider attempt, and an aborted turn emits no
+fallback chat response. Diagnostics report bounded lifecycle/tool evidence,
+including a terminal reason, but do not replace `Sink` history or server frame
+acceptance. Observer input is redacted, detached, frozen, and bounded; observer
+throws or thenable failures cannot change the turn. These APIs are mechanisms.
+The host still owns when to abort, which model to choose, what to retain, and
+whether a provider failure should be retried.
+
 ## What Facet owns and what the host owns
 
 Facet owns the mechanism between a model tool call and a safe stage message:
@@ -289,6 +309,8 @@ Theme fallback to rescue the call.
   policy.
 - Keep provider keys, identity, authorization, external tools, and business
   data outside the Facet Document.
+- Treat reference-agent diagnostics and server accepted-frame observations as
+  non-controlling evidence, not as another stage or conversation writer.
 - Use public package roots only.
 
 For a maintained example of these decisions, read the public API of

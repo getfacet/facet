@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import {
   resolveTreeScreen,
+  sanitizeView,
   type CollectedEvent,
   type ColorModePreference,
   type FacetAction,
@@ -65,6 +66,12 @@ export interface StageRendererProps {
   /** Host preference; `system` resolves in the browser and falls back to light on SSR. */
   readonly colorMode?: ColorModePreference;
   /**
+   * Optional replay checkpoint for the renderer-owned screen, toggle, and sort
+   * state. Sanitized once during component initialization; later prop changes
+   * do not reset local interaction state. Remount to hydrate another checkpoint.
+   */
+  readonly initialView?: ViewSnapshot;
+  /**
    * Read-only publish of the browser's live view snapshot
    * (`{screen, toggled, viewport, colorMode}`) — the counterpart of how `fields`
    * rides `onAction`. Sampled after each commit whenever screen/overrides or
@@ -100,16 +107,26 @@ export function StageRenderer({
   onRecord,
   theme: rawTheme,
   colorMode = "system",
+  initialView,
   onViewSnapshot,
 }: StageRendererProps): ReactNode {
-  const [currentScreen, setCurrentScreen] = useState<string | null>(null);
+  const [sanitizedInitialView] = useState(() => sanitizeView(initialView));
+  const [currentScreen, setCurrentScreen] = useState<string | null>(
+    () => sanitizedInitialView?.screen ?? null,
+  );
   // A Map, not a plain object: node ids like "toString"/"valueOf" pass
   // validateTree (only __proto__/prototype/constructor are forbidden), and a
   // plain-object lookup would resolve those through Object.prototype — a
   // hidden:true node keyed "toString" would read the inherited function as its
   // override and render visible. A Map never resolves through the prototype.
   const [visibilityOverrides, setVisibilityOverrides] = useState<ReadonlyMap<NodeId, boolean>>(
-    () => new Map(),
+    () =>
+      new Map(
+        Object.entries(sanitizedInitialView?.toggled ?? {}).map(([id, state]) => [
+          id,
+          state === "shown",
+        ]),
+      ),
   );
   // The THIRD browser-private view-state holder (sibling of currentScreen /
   // visibilityOverrides): a per-table-node sort override. A Map, not a plain
@@ -119,7 +136,15 @@ export function StageRenderer({
   // rides only the read-only `view` snapshot — it fires NO transport/agent event.
   const [sortOverrides, setSortOverrides] = useState<
     ReadonlyMap<NodeId, { column: string; direction: SortDirection }>
-  >(() => new Map());
+  >(
+    () =>
+      new Map(
+        Object.entries(sanitizedInitialView?.sort ?? {}).map(([id, sort]) => [
+          id,
+          { column: sort.column, direction: sort.direction },
+        ]),
+      ),
+  );
   // Scope handle for collectFieldValues — reads stay inside THIS renderer
   // instance so two stages on one page never cross-read each other's inputs.
   const stageRootRef = useRef<HTMLDivElement>(null);

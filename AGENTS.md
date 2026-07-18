@@ -91,11 +91,15 @@ package description; they are not additional grouping axes.
 | Tools | `packages/tools/cli` | `@facet/cli` | The `facet` command — a running agent's action surface for the stage. |
 | Tools | `packages/tools/bridge` | `@facet/bridge` | `facet-bridge` — a local coding agent (Claude/Codex) owns a link, driving the page via the `facet` CLI. |
 
-Outside the public package groups, `apps/playground` is an unpublished demo app
-and root `labs/` is an unpublished experimental area. Self-hosting is a
-deployment choice, not a package classification. Hosted/multi-tenant products
-provide their own transport, identity, metering, and operational wrapper around
-Facet's contracts.
+Outside the public package groups, `apps/playground` is an unpublished demo app,
+`apps/facet-lab` is the private local/self-hosted contributor workbench, and
+root `labs/` is an unpublished experimental area. Facet Lab owns Catalog,
+official scenarios, run evidence/evaluation, replay/compare, and Contract
+Sandbox workflows; it is not Quickstart, a published package, or hosted SaaS.
+Its complete operator guide is [apps/facet-lab/README.md](apps/facet-lab/README.md).
+Self-hosting is a deployment choice, not a package classification.
+Hosted/multi-tenant products provide their own transport, identity, metering,
+and operational wrapper around Facet's contracts.
 
 See `docs/PACKAGE-BOUNDARIES.md` before changing package positioning, publishing
 metadata, or hosted-deployment claims.
@@ -105,8 +109,9 @@ so backends can be databases; the in-memory and file references resolve
 immediately. `SummaryStore` payloads are opaque to the runtime — the consuming
 brain owns their schema and validation.
 
-Dependencies flow one way: everything depends on `@facet/core`; nothing depends
-on `apps/playground`.
+Dependencies flow one way: everything depends on `@facet/core`; published
+packages depend on neither `apps/playground` nor `apps/facet-lab`. Lab is a
+private dependency leaf and must keep separate browser/server entry graphs.
 
 ## Commands
 
@@ -121,7 +126,19 @@ pnpm --filter @facet/playground dev     # browser playground (port 5290)
 pnpm --filter @facet/playground serve   # live server (port 5291)
 pnpm --filter @facet/quickstart build   # then: OPENAI_API_KEY=sk-... pnpm exec tsx packages/tools/quickstart/src/cli.ts
                                         # (published as the facet-quickstart bin, port 5292)
+pnpm --filter @facet/lab build          # build private Lab browser assets
+pnpm --filter @facet/lab serve          # loopback workbench server (port 5293)
+pnpm --filter @facet/lab test           # Lab unit/integration suites
 ```
+
+Facet Lab's browser journeys are intentionally separate from its focused unit
+suites: `test:e2e:deterministic` (run twice for reproducibility),
+`test:e2e:boundaries`, `test:e2e:a11y`, and key-gated `test:e2e:live`. A missing
+key is a failure when that provider tier is required, while an explicitly
+optional owner visual journey reports a visible skip. See the
+[Lab contributor gates](apps/facet-lab/README.md#contributor-gates) for exact
+commands and scope. Deterministic Lab failures are blocking; Lab complements
+rather than replaces `/live-test` and Quickstart's existing evidence.
 
 The `/live-test` tiers are vitest runs: Tier 1a pins journey verdict policy;
 Tier 1b runs the deterministic stub E2E twice; Tier 1c executes the built page

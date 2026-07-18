@@ -135,7 +135,43 @@ Summarizer throw, timeout, invalid output, store failure, or insufficient gain
 falls back to deterministic truncation. Compaction never makes the visitor turn
 fail. Without a `summaryStore`, no summarizer is constructed.
 
-## Budgets and tracing
+## Provider model and cancellation
+
+The built-in provider factories accept an optional third `ProviderOptions`
+argument. `model` is additive and opt-in: omitting it keeps the provider default
+listed below. A supplied identifier is trimmed and must contain 1–200
+characters; the returned provider's `model` property and request body both use
+the normalized value.
+
+```ts
+import {
+  createAnthropicProvider,
+  createOpenAiProvider,
+} from "@facet/reference-agent";
+
+const openai = createOpenAiProvider(process.env.OPENAI_API_KEY!, fetch, {
+  model: "gpt-5.4-mini",
+});
+const anthropic = createAnthropicProvider(process.env.ANTHROPIC_API_KEY!, fetch, {
+  model: "claude-sonnet-4-5",
+});
+```
+
+`ReferenceAgentOptions.abortSignal` is also optional. When present, the
+reference loop passes it to each provider attempt and uses it to interrupt retry
+backoff. The built-in adapters combine that caller cancellation with their
+unchanged per-attempt timeout (`60_000` ms by default). An already-aborted
+signal starts no provider work; an abort during a request or backoff ends the
+turn without a failure message.
+
+`ReferenceProvider.run` therefore has an optional third
+`ProviderRunContext` argument containing `signal?`. Existing custom providers
+whose `run` implementation accepts only `(turn, tools)` remain valid; a custom
+provider must use the optional signal itself if it wants an in-flight request
+to be cancellable. With no `abortSignal`, request timeout, retry, and stop
+behavior are unchanged.
+
+## Budgets, tracing, and diagnostics
 
 `createReferenceAgent` accepts:
 
@@ -154,11 +190,42 @@ ceiling within it.
 `tool_result`, `batch_yield`, `stop`, and `turn_error`. Trace failures are
 ignored; async callbacks are serialized with a bounded pending queue.
 
+For synchronous run evidence, pass `diagnosticObserver(event)`. This is a
+separate additive event surface, not an extension of the trace union. It emits
+ordered `provider-attempt`, `tool-call`, `tool-result`, `batch`, and `stop`
+events, plus an explicit `overflow` event when its total-event bound is reached.
+Tool inputs, observations, and messages are projected through depth, entry,
+string, and encoded-size bounds; sensitive fields and key-looking values are
+redacted. Delivered events are detached and deeply frozen.
+
+```ts
+const diagnosticObserver = (event: ReferenceAgentDiagnosticEvent): void => {
+  diagnostics.push(event);
+};
+
+const agent = createReferenceAgent({
+  provider,
+  sink,
+  agentId: "reference",
+  assets,
+  abortSignal: controller.signal,
+  diagnosticObserver,
+});
+```
+
+The observer is evidence-only and non-controlling. Its return value is ignored;
+synchronous throws and rejected returned promises are swallowed, and attempted
+mutation cannot change tool execution, emitted batches, or stop policy. After
+10,000 ordinary events the observer receives one `overflow` notice and later
+events are dropped. Omit `diagnosticObserver` for the previous no-diagnostic
+behavior.
+
 ## Exports
 
 - `createReferenceAgent`.
 - `ReferenceAgentOptions`, `ReferenceAgentAssetSource`, provider types, and
   provider factories/resolution helpers.
+- `ReferenceAgentDiagnosticEvent` and `ReferenceAgentDiagnosticObserver`.
 - `REFERENCE_AGENT_BUDGET_PRESETS`, budget normalization, stop/retry helpers,
   trace event types, and `ReferenceAgentLoopSummary`.
 - `DEFAULT_GUIDE`, `buildSystem`, `TOOLS`, event/stage prompt helpers,

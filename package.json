@@ -15,10 +15,12 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "build": "pnpm -r --filter \"./packages/*/*\" build",
+    "build": "pnpm build:packages && pnpm build:lab",
+    "build:packages": "pnpm -r --filter \"./packages/*/*\" build",
+    "build:lab": "pnpm --filter @facet/lab build",
     "verify": "pnpm typecheck && pnpm test && pnpm lint && pnpm format:check && pnpm build && node --test scripts/check-docs.test.mjs && node scripts/check-docs.mjs && node --test scripts/check-package-layout.test.mjs && node scripts/check-package-layout.mjs && node --test scripts/check-style-hard-cut.test.mjs && node scripts/check-style-hard-cut.mjs && node scripts/check-source-nuls.mjs",
-    "package:smoke": "pnpm build && node scripts/package-smoke.mjs",
-    "release": "pnpm build && changeset publish",
+    "package:smoke": "pnpm build:packages && node scripts/package-smoke.mjs",
+    "release": "pnpm build:packages && changeset publish",
     "demo": "pnpm --filter @facet/playground demo"
   },
   "devDependencies": {

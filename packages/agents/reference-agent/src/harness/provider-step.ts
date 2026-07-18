@@ -5,6 +5,7 @@ import {
   type ReferenceAgentStopReason,
 } from "./budget.js";
 import type { ReferenceAgentContextStats } from "./context.js";
+import type { ReferenceAgentDiagnosticEmitter } from "./diagnostic-observer.js";
 import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
 
 const MAX_TRACE_TOOL_NAMES = 16;
@@ -22,12 +23,16 @@ export interface ProviderRunOptions {
   readonly tools: readonly ToolSpec[];
   readonly budget: ReferenceAgentBudget;
   readonly trace?: ReferenceAgentTrace;
+  readonly signal?: AbortSignal;
+  readonly diagnostics?: ReferenceAgentDiagnosticEmitter;
   readonly estimatedContextChars: number;
 }
 
 export async function runProviderStep(options: ProviderRunOptions): Promise<ProviderRunResult> {
   let attempt = 1;
   while (true) {
+    if (signalAborted(options.signal)) return abortedProviderResult(options.trace);
+    options.diagnostics?.({ kind: "provider-attempt", attempt });
     emitReferenceAgentTrace(options.trace, {
       type: "provider_attempt",
       provider: options.provider.name,
@@ -39,11 +44,15 @@ export async function runProviderStep(options: ProviderRunOptions): Promise<Prov
     });
 
     try {
-      const step = await options.provider.run(options.turn, options.tools);
+      if (signalAborted(options.signal)) return abortedProviderResult(options.trace);
+      const step = await runProviderAttempt(options);
+      if (signalAborted(options.signal)) return abortedProviderResult(options.trace);
       return { status: "ok", step };
     } catch (error) {
       const classification = classifyProviderFailure(error);
-      const canRetry = classification.retryable && attempt <= options.budget.maxProviderRetries;
+      const aborted = signalAborted(options.signal);
+      const canRetry =
+        !aborted && classification.retryable && attempt <= options.budget.maxProviderRetries;
       if (canRetry) {
         const nextAttempt = attempt + 1;
         emitReferenceAgentTrace(options.trace, {
@@ -55,7 +64,8 @@ export async function runProviderStep(options: ProviderRunOptions): Promise<Prov
           reason: classification.reason,
           ...optionalHttpStatus(classification.httpStatus),
         });
-        await sleep(options.budget.retryBackoffMs);
+        const completedBackoff = await sleep(options.budget.retryBackoffMs, options.signal);
+        if (!completedBackoff) return abortedProviderResult(options.trace);
         attempt = nextAttempt;
         continue;
       }
@@ -68,10 +78,25 @@ export async function runProviderStep(options: ProviderRunOptions): Promise<Prov
       });
       return {
         status: "error",
-        stopReason: classification.retryable ? "retry_exhausted" : "provider_error",
+        stopReason: aborted || !classification.retryable ? "provider_error" : "retry_exhausted",
       };
     }
   }
+}
+
+function runProviderAttempt(options: ProviderRunOptions): Promise<ProviderStep> {
+  return options.signal === undefined
+    ? options.provider.run(options.turn, options.tools)
+    : options.provider.run(options.turn, options.tools, { signal: options.signal });
+}
+
+function abortedProviderResult(trace: ReferenceAgentTrace | undefined): ProviderRunResult {
+  emitReferenceAgentTrace(trace, { type: "turn_error", reason: "abort", retryable: true });
+  return { status: "error", stopReason: "provider_error" };
+}
+
+function signalAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 export function emitContextCompactionTrace(
@@ -121,9 +146,17 @@ export function optionalHttpStatus(
   return httpStatus === undefined ? {} : { httpStatus };
 }
 
-async function sleep(ms: number): Promise<void> {
-  if (ms <= 0) return;
-  await new Promise<void>((resolve) => {
-    setTimeout(resolve, ms);
+async function sleep(ms: number, signal: AbortSignal | undefined): Promise<boolean> {
+  if (signal?.aborted === true) return false;
+  if (ms <= 0) return true;
+  return new Promise<boolean>((resolve) => {
+    const onAbort = (): void => finish(false);
+    const timer = setTimeout(() => finish(true), ms);
+    const finish = (completed: boolean): void => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      resolve(completed);
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
   });
 }

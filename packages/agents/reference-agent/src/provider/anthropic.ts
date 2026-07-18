@@ -3,6 +3,7 @@ import {
   isRecord,
   postJson,
   readProviderUsage,
+  resolveProviderModel,
   type FetchImpl,
   type ProviderOptions,
   type ProviderStep,
@@ -120,12 +121,12 @@ export function createAnthropicProvider(
   options: ProviderOptions = {},
 ): ReferenceProvider {
   const timeoutMs = options.timeoutMs ?? TURN_TIMEOUT_MS;
-  const model = DEFAULT_ANTHROPIC_MODEL;
+  const model = resolveProviderModel(options.model, DEFAULT_ANTHROPIC_MODEL);
   return {
     name: "anthropic",
     model,
     contextWindowTokens: ANTHROPIC_CONTEXT_WINDOW_TOKENS,
-    async run(turn, tools) {
+    async run(turn, tools, context) {
       const json = await postJson(
         fetchImpl,
         ANTHROPIC_URL,
@@ -145,6 +146,7 @@ export function createAnthropicProvider(
         },
         timeoutMs,
         "anthropic",
+        context?.signal,
       );
       return parseAnthropicStep(json);
     },

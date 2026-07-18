@@ -2,6 +2,10 @@ import type { StageToolBuffer } from "@facet/agent-tools";
 import type { JsonPatchOperation, ServerMessage } from "@facet/core";
 import type { ProviderStep, TurnMessage } from "../provider.js";
 import type { ReferenceAgentBudget } from "./budget.js";
+import type {
+  ReferenceAgentDiagnosticEmitter,
+  ReferenceAgentDiagnosticEvent,
+} from "./diagnostic-observer.js";
 import { appendProviderStepTranscript, type TranscriptToolObservation } from "./transcript.js";
 import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
 
@@ -11,6 +15,7 @@ export interface ExecuteToolStepOptions {
   readonly messages: TurnMessage[];
   readonly budget: ReferenceAgentBudget;
   readonly trace: ReferenceAgentTrace | undefined;
+  readonly diagnostics?: ReferenceAgentDiagnosticEmitter;
 }
 
 export interface ExecuteToolStepResult {
@@ -27,7 +32,23 @@ export function executeToolStep(options: ExecuteToolStepOptions): ExecuteToolSte
   let said = false;
 
   for (const call of options.step.toolCalls) {
+    emitDiagnostic(options.diagnostics, {
+      kind: "tool-call",
+      callId: call.id,
+      name: call.name,
+      input: call.input,
+      truncated: false,
+    });
     const outcome = options.buffer.run(call);
+    emitDiagnostic(options.diagnostics, {
+      kind: "tool-result",
+      callId: call.id,
+      observation: outcome.observation,
+      messages: outcome.messages,
+      mutated: outcome.mutated,
+      said: outcome.said,
+      truncated: false,
+    });
     mutated = mutated || outcome.mutated;
     said = said || outcome.said;
     appendMessages(batch, outcome.messages);
@@ -39,12 +60,30 @@ export function executeToolStep(options: ExecuteToolStepOptions): ExecuteToolSte
     ...(options.trace !== undefined ? { trace: options.trace } : {}),
   });
 
+  const coalesced = coalescePatchMessages(batch);
+  emitDiagnostic(options.diagnostics, {
+    kind: "batch",
+    callIds: options.step.toolCalls.map((call) => call.id),
+    ...(options.step.usage === undefined ? {} : { usage: options.step.usage }),
+  });
+
   return {
-    batch: coalescePatchMessages(batch),
+    batch: coalesced,
     mutated,
     said,
     toolCallCount: options.step.toolCalls.length,
   };
+}
+
+function emitDiagnostic(
+  diagnostics: ReferenceAgentDiagnosticEmitter | undefined,
+  event: ReferenceAgentDiagnosticEvent,
+): void {
+  try {
+    diagnostics?.(event);
+  } catch {
+    // Diagnostics are non-controlling even if a nonstandard emitter is supplied.
+  }
 }
 
 export function emitBatchYieldTrace(

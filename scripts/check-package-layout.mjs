@@ -4,7 +4,7 @@
 
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,6 +26,10 @@ const EXPECTED_PACKAGES = Object.freeze({
   "@facet/cli": "packages/tools/cli",
   "@facet/bridge": "packages/tools/bridge",
 });
+const EXPECTED_APPS = Object.freeze({
+  "@facet/playground": "apps/playground",
+  "@facet/lab": "apps/facet-lab",
+});
 
 const EXPECTED_GROUPS = Object.freeze(["adapters", "agents", "core", "renderers", "tools"]);
 const EXPECTED_GROUP_CHILDREN = Object.freeze({
@@ -37,9 +41,15 @@ const EXPECTED_GROUP_CHILDREN = Object.freeze({
 });
 const EXPECTED_WORKSPACES = Object.freeze({
   facet: ".",
-  "@facet/playground": "apps/playground",
+  ...EXPECTED_APPS,
   ...EXPECTED_PACKAGES,
 });
+const DEPENDENCY_FIELDS = Object.freeze([
+  "dependencies",
+  "devDependencies",
+  "optionalDependencies",
+  "peerDependencies",
+]);
 
 const RETIRED_PATHS = Object.freeze([
   ["packages", "agent-stack"].join("/"),
@@ -157,6 +167,93 @@ function checkPhysicalLayout() {
   }
 }
 
+function checkPrivateApps() {
+  for (const [expectedName, path] of Object.entries(EXPECTED_APPS)) {
+    const directory = join(repoRoot, path);
+    const manifestPath = join(directory, "package.json");
+    record(existsSync(directory), `missing private app: ${path}`);
+    if (!existsSync(directory)) continue;
+    const stat = lstatSync(directory);
+    record(stat.isDirectory(), `private app is not a directory: ${path}`);
+    record(!stat.isSymbolicLink(), `private app is a symlink: ${path}`);
+    record(existsSync(manifestPath), `private app has no package.json: ${path}`);
+    if (!existsSync(manifestPath)) continue;
+    const manifest = readJson(manifestPath);
+    record(manifest.name === expectedName, `${path} package name must be ${expectedName}`);
+    record(manifest.private === true, `${expectedName} must be private`);
+  }
+}
+
+function importsPrivateApp(text, appName) {
+  const escapedName = appName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+  return new RegExp(
+    `(?:from\\s*|import\\s*\\(|import\\s*|require\\s*\\()(["'])${escapedName}(?:/[^"']*)?\\1`,
+    "u",
+  ).test(text);
+}
+
+function packageSourceFiles(path) {
+  const files = [];
+  const root = join(repoRoot, path);
+  if (!existsSync(root)) return files;
+
+  function visit(absolutePath) {
+    const stat = lstatSync(absolutePath);
+    if (stat.isSymbolicLink()) return;
+    if (stat.isDirectory()) {
+      const name = basename(absolutePath);
+      if (EXCLUDED_REFERENCE_DIRECTORY_NAMES.includes(name)) return;
+      for (const entry of readdirSync(absolutePath)) visit(join(absolutePath, entry));
+      return;
+    }
+    if (/\.(?:[cm]?[jt]sx?)$/u.test(absolutePath)) files.push(absolutePath);
+  }
+
+  visit(root);
+  return files;
+}
+
+function checkPrivateAppLeaves() {
+  const workspaceManifests = [
+    ["facet", "."],
+    ...Object.entries(EXPECTED_APPS),
+    ...Object.entries(EXPECTED_PACKAGES),
+  ];
+  for (const [workspaceName, path] of workspaceManifests) {
+    const manifestPath = join(repoRoot, path, "package.json");
+    if (!existsSync(manifestPath)) continue;
+    const manifest = readJson(manifestPath);
+    for (const field of DEPENDENCY_FIELDS) {
+      const dependencies = manifest[field];
+      if (
+        dependencies === null ||
+        typeof dependencies !== "object" ||
+        Array.isArray(dependencies)
+      ) {
+        continue;
+      }
+      for (const appName of Object.keys(EXPECTED_APPS)) {
+        record(
+          !Object.prototype.hasOwnProperty.call(dependencies, appName),
+          `${workspaceName} ${field} depend on private app ${appName}`,
+        );
+      }
+    }
+  }
+
+  for (const [packageName, path] of Object.entries(EXPECTED_PACKAGES)) {
+    for (const sourcePath of packageSourceFiles(path)) {
+      const source = readFileSync(sourcePath, "utf8");
+      for (const appName of Object.keys(EXPECTED_APPS)) {
+        record(
+          !importsPrivateApp(source, appName),
+          `public package source imports private app: ${packageName} ${repoPath(sourcePath)} -> ${appName}`,
+        );
+      }
+    }
+  }
+}
+
 function checkRepositoryPolicy() {
   for (const path of RETIRED_REPOSITORY_PATHS) {
     record(!existsSync(join(repoRoot, path)), `retired repository path exists: ${path}`);
@@ -268,6 +365,8 @@ function checkRetiredPathReferences() {
 
 function main() {
   checkPhysicalLayout();
+  checkPrivateApps();
+  checkPrivateAppLeaves();
   checkRepositoryPolicy();
   checkWorkspaceDiscovery();
   checkRetiredPathReferences();

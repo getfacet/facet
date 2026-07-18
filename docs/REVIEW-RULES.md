@@ -100,6 +100,21 @@ without an explicit bounded scroll region is at least P1.
 
 ## Commands
 
+Facet Lab has separate deterministic and live evidence tiers:
+
+- the built-bundle deterministic journey is blocking whenever Lab code or its
+  shared observer/replay seams change; it needs no provider key and writes to an
+  isolated external data/artifact directory;
+- a provider journey is blocking when the changed surface requires a configured
+  provider key, and otherwise reports a deliberate skip;
+- screenshot/vision evaluation is advisory and may skip when its optional
+  capability is unavailable. Its result must never rewrite the deterministic
+  contract verdict.
+
+The `/live-test` policy runs these tiers alongside the existing Quickstart
+tiers and keeps their PASS, FAIL, and SKIP outcomes separate. Missing a required
+key is a failure; missing an optional visual capability is not.
+
 Run the canonical mechanical gate with `pnpm verify`. It runs typecheck, tests,
 lint, format-check, and build, followed by these repository checks in order:
 
