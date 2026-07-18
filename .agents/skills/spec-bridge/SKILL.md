@@ -13,8 +13,12 @@ description: >
 
 Convert an approved product brief into two files:
 
-- `specs/dev-specs/<slug>.md`
-- `specs/dev-specs/<slug>.execution.yaml`
+- `.agents/work/<slug>/dev-spec.md`
+- `.agents/work/<slug>/execution.yaml`
+
+Together with `intake.md` and `context.md`, these are ephemeral, gitignored
+planning state. They travel to the implementation worktree but never enter the
+feature commit.
 
 Codex runs this directly. Do not call `Workflow(...)`; do not use
 `.claude/workflows/**`; do not start implementation. Because Codex has no Claude
@@ -29,7 +33,7 @@ Read these before writing:
 1. `AGENTS.md`
 2. `docs/ARCHITECTURE.md`
 3. `docs/REVIEW-RULES.md`
-4. `specs/feature-intake/<slug>.md`
+4. `.agents/work/<slug>/intake.md`
 5. `.agents/skills/spec-bridge/templates/dev-spec.md`
 6. `.agents/skills/spec-bridge/references/execution-manifest-template.yaml`
 7. `.agents/skills/spec-bridge/references/spec-qa-gates.md`
@@ -37,14 +41,14 @@ Read these before writing:
 ## Pick The Slug
 
 Determine `<slug>` from the approved intake brief in
-`specs/feature-intake/<slug>.md`. If multiple briefs match and the user did not
+`.agents/work/<slug>/intake.md`. If multiple briefs match and the user did not
 name one, ask a concise question before proceeding.
 
 Stop if the brief is missing or not approved; run `/feature-intake` first.
 
 ## Stage 0 — Context And Risk Evidence
 
-Create or update `specs/context/<slug>.md` with evidence, not guesses.
+Create or update `.agents/work/<slug>/context.md` with evidence, not guesses.
 
 Gather:
 

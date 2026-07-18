@@ -864,7 +864,7 @@ test("detects inline and multiline slotless raw-use references", async (t) => {
 test("scans only locked roots and excludes only locked generated directories", async (t) => {
   const cwd = await makeFixture(t);
   const legacy = `${retiredSymbol()}();\n`;
-  await writeFixture(cwd, "specs/archive.md", legacy);
+  await writeFixture(cwd, ".agents/work/example/dev-spec.md", legacy);
   await writeFixture(cwd, "notes/outside.md", legacy);
   await writeFixture(cwd, "packages/example/node_modules/pkg/index.js", legacy);
   await writeFixture(cwd, "packages/example/dist/index.js", legacy);

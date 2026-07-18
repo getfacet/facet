@@ -24,7 +24,7 @@ Use order: `/context-scout` (optional) → `/feature-intake` → **`/spec-bridge
 ## Before you launch — pick the slug
 
 The workflow needs the intake-brief slug. Determine it from the approved brief in
-`specs/feature-intake/<slug>.md` (ask the user if ambiguous). This is the one
+`.agents/work/<slug>/intake.md` (ask the user if ambiguous). This is the one
 decision that must be made before the workflow runs.
 
 ## Run it
@@ -38,8 +38,8 @@ Workflow({ name: 'spec-bridge', args: { slug: '<slug>' } })
 The workflow fans out discovery and verification and keeps authoring single:
 **Context** (a package-map agent, then **parallel RISK-lens probes** — INV / API /
 PKG, each an independent investigation — then a context writer assembles
-`specs/context/<slug>.md`) → **Write** (a *single* separate-context author
-produces `specs/dev-specs/<slug>.md` **and** the `.execution.yaml` manifest
+`.agents/work/<slug>/context.md`) → **Write** (a *single* separate-context author
+produces `.agents/work/<slug>/dev-spec.md` **and** `execution.yaml`
 together, so WU ids/files/deps/checks stay identical) → **Review** (an independent
 **multi-reviewer panel**, one reviewer per gate-family — traceability /
 decomposition / invariant-fit / risk-consistency — none of whom saw the writer;
@@ -82,7 +82,7 @@ slug).
 
 The previous inline Stage 2.5 (Codex adversarial review) is not part of the
 workflow. If a Codex reviewer is available and you want a second independent
-opinion, run it against `specs/dev-specs/<slug>.md` after a PASS and merge any
+opinion, run it against `.agents/work/<slug>/dev-spec.md` after a PASS and merge any
 P1+ findings before asking for approval. Skipping it is not a gate violation.
 
 ## Handoff — implementation

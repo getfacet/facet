@@ -56,7 +56,7 @@ Merge into one changed-files list.
 | `packages/adapters/store-postgres/**` | `@facet/store-postgres` |
 | `labs/**` | labs (experimental, unpublished) |
 | `apps/playground/**` | playground (integration surface) |
-| `.agents/**`, `.claude/**`, `.codex/**`, `specs/**`, `.changeset/**`, root `*.md`, `docs/**` | infra/docs/planning |
+| `.agents/**`, `.claude/**`, `.codex/**`, `.changeset/**`, root `*.md`, `docs/**` | infra/docs/planning |
 
 ### Step 3 — Gather evidence per affected package
 For each affected package, collect (as `file:line`):

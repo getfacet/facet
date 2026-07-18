@@ -1,11 +1,11 @@
 # Execution Manifest: [Feature Name]
 #
-# Keep synchronized with specs/dev-specs/<slug>.md (WU ids, files, deps, checks).
+# Keep synchronized with .agents/work/<slug>/dev-spec.md (WU ids, files, deps, checks).
 # Final gate source of truth: AGENTS.md + docs/REVIEW-RULES.md.
 
 feature_slug: "feature-slug"
-spec_path: "specs/dev-specs/feature-slug.md"
-context_evidence_path: "specs/context/feature-slug.md"
+spec_path: ".agents/work/feature-slug/dev-spec.md"
+context_evidence_path: ".agents/work/feature-slug/context.md"
 
 shared_preflight:
   - concern: "baseline-green"

@@ -40,7 +40,7 @@ orchestration files, not Codex procedures.
 Classify changed files by package and select dimensions before looking for
 findings. Build a review packet containing: base ref, changed files, diff, touched
 packages, touched Facet invariants, test commands already run, and any relevant
-`specs/dev-specs/<slug>.md`.
+`.agents/work/<slug>/dev-spec.md`.
 
 Dimension selection is fail-closed:
 
@@ -108,7 +108,7 @@ any obviously under-reviewed area and review it before verdict.
 
 ## Spec-Fidelity Check
 
-If the branch has `specs/dev-specs/<slug>.md`, read it and verify that any risk
+If the worktree has `.agents/work/<slug>/dev-spec.md`, read it and verify that any risk
 resolutions and Done Criteria touched by the diff are implemented. A missing
 risk mitigation is a review finding at the severity implied by the risk.
 

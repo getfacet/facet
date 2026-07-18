@@ -18,8 +18,8 @@ and worktree setup; `/implement` should run inside the prepared worktree.
 ## Required Context
 
 1. `AGENTS.md` — flow and gate definitions.
-2. Feature flow: `specs/dev-specs/<slug>.md` and
-   `specs/dev-specs/<slug>.execution.yaml`.
+2. Feature flow: `.agents/work/<slug>/dev-spec.md` and
+   `.agents/work/<slug>/execution.yaml`.
 3. Refactor flow: the approved `/refactor-audit` finding or owner-approved
    cleanup scope.
 4. Current `git status --short` and `git worktree list`.
@@ -39,8 +39,8 @@ concise question before creating anything.
 
 - Do not stash, reset, or discard another agent's work.
 - If the current worktree has unrelated dirty files, stop and ask where to prep
-  from. Only continue automatically when dirty files are exactly the approved
-  plan artifacts being carried into the new worktree.
+  from. Approved plans are ignored under `.agents/work/<slug>/` and therefore do
+  not justify any tracked or untracked dirty path shown by `git status`.
 - Do not create a branch or worktree that already exists unless the user asks to
   reuse it.
 
@@ -73,16 +73,17 @@ pnpm install
 
 Feature worktrees must contain the approved planning artifacts:
 
-- `specs/feature-intake/<slug>.md` when present
-- `specs/context/<slug>.md`
-- `specs/dev-specs/<slug>.md`
-- `specs/dev-specs/<slug>.execution.yaml`
+- `.agents/work/<slug>/intake.md`
+- `.agents/work/<slug>/context.md`
+- `.agents/work/<slug>/dev-spec.md`
+- `.agents/work/<slug>/execution.yaml`
 
-After creating the worktree, verify each required artifact exists there. If an
-artifact is tracked in git, it should already be present. If it is an approved
-but untracked artifact in the source worktree, copy only that exact file into the
-same relative path in the new worktree and report it. Never copy broad
-directories or unrelated dirty files.
+`.agents/work/` is gitignored, so these files are never carried by Git. After
+creating the target worktree, create only `.agents/work/<slug>/`, copy the four
+exact files from the source worktree, and verify each target file is byte-for-byte
+identical. Never copy the broad `.agents/work/` directory or unrelated ignored
+files. Only after all four target files pass that check, remove the exact source
+`.agents/work/<slug>/` directory so local planning state does not accumulate.
 
 If a required feature artifact is missing from both source and target, stop and
 return `FAIL — missing plan artifact`; run `/spec-bridge` first.
@@ -114,7 +115,7 @@ Slug/scope: <slug>
 Use the Facet repo instructions in AGENTS.md.
 If Flow=feature: run /implement for <slug>. The worktree is already prepared;
 do not create another branch/worktree. Execute WUs TDD-first from
-specs/dev-specs/<slug>.execution.yaml, then run the feature hard gate:
+.agents/work/<slug>/execution.yaml, then run the feature hard gate:
 /update-tests -> /verify -> /code-review -> /live-test -> /update-docs.
 
 If Flow=refactor: execute only the approved refactor scope, avoid behavior

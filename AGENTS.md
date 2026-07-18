@@ -206,6 +206,12 @@ execute scope     apply only the approved cleanup → refactor hard gate
 overlay discipline, two-writers coherence, backend-via-agent). Quick mechanical
 fixes can skip straight to `/verify` → `/code-review`.
 
+Feature planning state is local and temporary:
+`.agents/work/<slug>/{intake.md,context.md,dev-spec.md,execution.yaml}`. The
+directory is gitignored, `/worktree-prep` copies only that slug's four files to
+the implementation worktree, and `/implement` removes them after the hard gate.
+Never commit planning artifacts or recreate the retired root `specs/` tree.
+
 ## Conventions
 
 - Keep responses concise by default. Provide longer explanations only when the

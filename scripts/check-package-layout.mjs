@@ -49,6 +49,8 @@ const RETIRED_PATHS = Object.freeze([
   ["packages", "core", "server"].join("/"),
   ["packages", "core", "client"].join("/"),
 ]);
+const RETIRED_REPOSITORY_PATHS = Object.freeze(["docs/comparisons", "docs/specs", "specs"]);
+const AGENT_WORK_IGNORE = ".agents/work/";
 const CURRENT_REFERENCE_ROOTS = Object.freeze(["."]);
 const EXCLUDED_REFERENCE_DIRECTORY_NAMES = Object.freeze([
   ".turbo",
@@ -58,9 +60,9 @@ const EXCLUDED_REFERENCE_DIRECTORY_NAMES = Object.freeze([
 ]);
 const EXCLUDED_REFERENCE_PATHS = Object.freeze([
   ".git",
+  ".agents/work",
   "apps/playground/.facet-sessions",
   "apps/playground/generated",
-  "specs",
 ]);
 
 const errors = [];
@@ -153,6 +155,20 @@ function checkPhysicalLayout() {
     record(!labsStat.isSymbolicLink(), "labs/ must not be a symlink");
     record(!existsSync(join(labsPath, "package.json")), "labs/ must remain unpublished");
   }
+}
+
+function checkRepositoryPolicy() {
+  for (const path of RETIRED_REPOSITORY_PATHS) {
+    record(!existsSync(join(repoRoot, path)), `retired repository path exists: ${path}`);
+  }
+
+  const gitignorePath = join(repoRoot, ".gitignore");
+  const ignored = existsSync(gitignorePath)
+    ? readFileSync(gitignorePath, "utf8")
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+    : [];
+  record(ignored.includes(AGENT_WORK_IGNORE), `.gitignore must contain ${AGENT_WORK_IGNORE}`);
 }
 
 function checkWorkspaceDiscovery() {
@@ -252,6 +268,7 @@ function checkRetiredPathReferences() {
 
 function main() {
   checkPhysicalLayout();
+  checkRepositoryPolicy();
   checkWorkspaceDiscovery();
   checkRetiredPathReferences();
 

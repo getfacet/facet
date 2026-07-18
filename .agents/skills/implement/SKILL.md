@@ -19,7 +19,8 @@ Pipeline: `/feature-intake` → `/spec-bridge` → `/worktree-prep` → **`/impl
 
 ## Required context
 1. `AGENTS.md` (Facet contract + Definition of Done).
-2. Spec: `specs/dev-specs/<slug>.md` and manifest `specs/dev-specs/<slug>.execution.yaml`.
+2. Spec: `.agents/work/<slug>/dev-spec.md` and manifest
+   `.agents/work/<slug>/execution.yaml`.
 3. `docs/REVIEW-RULES.md` (the P0–P2 model the /code-review gate uses).
 4. `/worktree-prep` output: branch, worktree path, artifact carry report, baseline result.
 The manifest is the delegation source of truth — delegate from it, not from memory.
@@ -30,16 +31,17 @@ The manifest is the delegation source of truth — delegate from it, not from me
 - The current directory is the prepared worktree on `feat/<slug>`.
 - The spec and manifest exist in this worktree. If not, stop and run
   `/worktree-prep`; do not create another branch/worktree here.
-- The working tree is clean except approved plan artifacts and this feature's
-  files. Never touch other agents' uncommitted work; never git stash/switch
-  without being asked.
+- The working tree is clean except this feature's files. The approved plan
+  directory is ignored and must remain under `.agents/work/<slug>/`; never stage
+  it. Never touch other agents' uncommitted work; never git stash/switch without
+  being asked.
 
 ## Stage 0 — Prepared workspace check
 Confirm before any WU:
 
 - branch is `feat/<slug>`
-- `specs/dev-specs/<slug>.md` exists
-- `specs/dev-specs/<slug>.execution.yaml` exists
+- `.agents/work/<slug>/dev-spec.md` exists
+- `.agents/work/<slug>/execution.yaml` exists
 - `/worktree-prep` baseline passed, or rerun `pnpm typecheck && pnpm test && pnpm lint`
 
 ## Stage 1 — Work Unit execution (TDD-first)
@@ -90,6 +92,8 @@ Run in order; on any FAIL, fix and restart the inner loop from the top:
 
 ## Stage 3 — Land it
 Only after Stage 2 PASS:
+- Remove the exact ignored `.agents/work/<slug>/` directory. Planning artifacts
+  must not enter the feature commit.
 - Squash the `wu-N` commits into one feature commit:
   ```
   feat: <feature title>

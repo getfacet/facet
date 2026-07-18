@@ -18,6 +18,7 @@ const SKIPPED_DIRECTORIES = new Set([
   "generated",
   "node_modules",
 ]);
+const SKIPPED_REPOSITORY_PATHS = new Set([".agents/work"]);
 const LINK_NODE_TYPES = new Set(["definition", "image", "link"]);
 const IMAGE_NODE_TYPES = new Set(["image", "imageReference"]);
 const CHECKED_LANGUAGES = new Set(["ts", "tsx", "typescript"]);
@@ -27,10 +28,6 @@ const CHECKED_FENCE =
 
 function toRepoPath(cwd, absolutePath) {
   return path.relative(cwd, absolutePath).split(path.sep).join("/");
-}
-
-function isArchivedSpec(relativePath) {
-  return relativePath.startsWith("specs/") && relativePath !== "specs/README.md";
 }
 
 async function exists(absolutePath) {
@@ -59,7 +56,7 @@ async function collectMarkdownUnder(cwd, absolutePath, files) {
     return;
   }
   if (stat.isFile()) {
-    if (absolutePath.endsWith(".md") && !isArchivedSpec(relativePath)) {
+    if (absolutePath.endsWith(".md")) {
       files.add(absolutePath);
     }
     return;
@@ -72,11 +69,7 @@ async function collectMarkdownUnder(cwd, absolutePath, files) {
   if (relativePath && SKIPPED_DIRECTORIES.has(directoryName)) {
     return;
   }
-  if (relativePath === "specs") {
-    const readme = path.join(absolutePath, "README.md");
-    if (await exists(readme)) {
-      files.add(readme);
-    }
+  if (SKIPPED_REPOSITORY_PATHS.has(relativePath)) {
     return;
   }
 

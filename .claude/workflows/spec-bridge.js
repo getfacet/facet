@@ -1,7 +1,7 @@
 export const meta = {
   name: 'spec-bridge',
   description: 'Facet spec bridge — fanned-out context (package map + parallel risk-lens probes) → single writer → an independent multi-reviewer gate panel → bounded fix loop. Stops at an approvable plan.',
-  whenToUse: 'After a feature-intake brief is approved. Pass args.slug. Produces specs/context, specs/dev-specs (+ execution manifest), and a panel verdict. The calling agent asks the human for approval — this workflow never starts implementation.',
+  whenToUse: 'After a feature-intake brief is approved. Pass args.slug. Produces an ephemeral .agents/work/<slug> context, dev spec, execution manifest, and panel verdict. The calling agent asks the human for approval — this workflow never starts implementation.',
   phases: [
     { title: 'Context', detail: 'map affected packages + gather evidence, then parallel RISK-lens probes (INV / API / PKG), then write the context file', model: 'opus' },
     { title: 'Write', detail: 'single spec writer (separate context) → dev-spec + execution manifest', model: 'opus' },
@@ -29,10 +29,11 @@ const slug = (a && typeof a === 'object' && typeof a.slug === 'string' && a.slug
   : (typeof a === 'string' && a.trim() ? a.trim() : '')
 if (!slug) return { error: "No slug provided. Pass it as args: Workflow({name:'spec-bridge', args:{slug:'<slug>'}})." }
 
-const briefPath = 'specs/feature-intake/' + slug + '.md'
-const contextPath = 'specs/context/' + slug + '.md'
-const specPath = 'specs/dev-specs/' + slug + '.md'
-const manifestPath = 'specs/dev-specs/' + slug + '.execution.yaml'
+const workPath = '.agents/work/' + slug
+const briefPath = workPath + '/intake.md'
+const contextPath = workPath + '/context.md'
+const specPath = workPath + '/dev-spec.md'
+const manifestPath = workPath + '/execution.yaml'
 
 // ─── Risk-lens probes: each is an independent investigation (fan-out for coverage) ───
 const RISK_LENSES = [
@@ -142,7 +143,7 @@ const probeResults = await parallel(RISK_LENSES.map(lens => () =>
 const risks = probeResults.flatMap(p => (p.riskItems || []).map(r => ({ lens: p.lens, ...r })))
 log('Risk probes: ' + risks.length + ' item(s) across ' + probeResults.filter(p => p.triggered).length + ' triggered lens(es)')
 
-// 0c. Context writer — assemble the map evidence + all risks into specs/context/<slug>.md (single writer, no conflict)
+// 0c. Context writer — assemble the map evidence + all risks into the ephemeral context.md (single writer, no conflict)
 const riskBlock = risks.length
   ? risks.map(r => '- ' + r.id + ' (' + r.lens + '): ' + r.detail).join('\n')
   : '(no RISK items raised)'

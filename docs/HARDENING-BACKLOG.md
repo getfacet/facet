@@ -5,15 +5,15 @@
 > as input) → `/implement`, or fix item-by-item with `/verify` after each.
 >
 > **Status:** Hardening campaign 1 (PR #3, merged 2026-07-02) fixed 21 of the 24
-> findings from the original complete sweep (`specs/dev-specs/hardening-1.md` has
-> the finding→fix mapping and recorded waivers). What follows is the REMAINING
+> findings from the original complete sweep. The finding→fix mapping and waivers
+> remain in PR #3 and Git history. What follows is the REMAINING
 > work: the three deferred scale items, the two deliberately-dropped items, and
 > the residual P3s surfaced by campaign 1's own adversarially-verified review.
 
 ## P2 — scale / async-delivery: RESOLVED by async-delivery-1 (2026-07-03)
 
-The deferred umbrella was designed (`specs/dev-specs/async-delivery-1.md`) and
-implemented: late results are applied + delivered (never discarded, with an
+The deferred umbrella was designed and implemented by async-delivery-1: late
+results are applied + delivered (never discarded, with an
 era/index staleness guard so a late result can't overwrite a newer stage);
 browser frames carry `id: era:seq` and reconnects resume via `Last-Event-ID`
 (the RISK-HRD-4 say-loss window is closed); spawn mode is capped by a global

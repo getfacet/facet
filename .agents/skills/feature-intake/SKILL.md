@@ -61,8 +61,10 @@ always the wrong feature — surface the conflict, don't design around it silent
 
 ## Output
 
-One brief file: `specs/feature-intake/<feature-slug>.md`
+One ephemeral brief file: `.agents/work/<feature-slug>/intake.md`
 (template: `.agents/skills/feature-intake/templates/feature-intake-template.md`).
+Create the slug directory if it does not exist. The `.agents/work/` tree is
+gitignored working state. Never stage or commit it.
 
 ## Required sections (must capture)
 

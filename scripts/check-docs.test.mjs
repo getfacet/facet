@@ -189,21 +189,22 @@ test("reports TypeScript errors in opted-in snippets at Markdown lines", async (
   assert.match(result.stderr, /Type 'string' is not assignable to type 'number'/);
 });
 
-test("excludes archived spec bodies but checks specs README", async (t) => {
+test("excludes ephemeral agent work but treats committed specs as current", async (t) => {
   const cwd = await makeFixture(t);
   await writeFixture(cwd, "README.md", "# Fixture\n");
-  await writeFixture(cwd, "specs/completed/old.md", "[Historical broken link](missing.md)\n");
+  await writeFixture(
+    cwd,
+    ".agents/work/completed/dev-spec.md",
+    "[Ephemeral broken link](missing.md)\n",
+  );
+  await writeFixture(cwd, "specs/old.md", "[Committed broken link](missing.md)\n");
 
-  let result = runCheck(cwd);
-  assert.equal(result.status, 0, result.stderr);
-  assert.match(result.stdout, /1 Markdown file,/);
-
-  await writeFixture(cwd, "specs/README.md", "# Specs\n\n[Current broken link](missing.md)\n");
-  result = runCheck(cwd);
+  const result = runCheck(cwd);
 
   assert.equal(result.status, 1);
-  assert.match(result.stderr, /specs\/README\.md:3:\d+ \[link\]/);
-  assert.doesNotMatch(result.stderr, /specs\/completed\/old\.md/);
+  assert.match(result.stderr, /specs\/old\.md:1:\d+ \[link\]/);
+  assert.doesNotMatch(result.stderr, /\.agents\/work\/completed\/dev-spec\.md/);
+  assert.match(result.stderr, /2 Markdown files,/);
 });
 
 test("supports checking an explicit scope without scanning other Markdown", async (t) => {

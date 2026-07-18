@@ -12,5 +12,8 @@ generated/
 .idea/
 .vscode/
 
+# Ephemeral feature-intake/spec-bridge plans copied between worktrees.
+.agents/work/
+
 # live-journey tier screenshots + GIF (not committed)
 packages/tools/quickstart/e2e/journey/artifacts/

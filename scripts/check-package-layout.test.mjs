@@ -50,6 +50,7 @@ function makeFixture(t) {
   mkdirSync(join(cwd, "apps/playground"), { recursive: true });
   mkdirSync(join(cwd, "labs"), { recursive: true });
   mkdirSync(join(cwd, "scripts"), { recursive: true });
+  writeFileSync(join(cwd, ".gitignore"), ".agents/work/\n");
   writeFileSync(join(cwd, "scripts/check-package-layout.mjs"), SCRIPT_SOURCE);
 
   for (const [name, path] of Object.entries(PACKAGE_PATHS)) {
@@ -139,7 +140,7 @@ test("scans untracked CI files and rejects bare retired group roots", (t) => {
   );
 });
 
-test("rejects retired child paths but excludes generated runtime output", (t) => {
+test("rejects retired child paths but excludes generated and ephemeral output", (t) => {
   const fixture = makeFixture(t);
   const retiredGroup = ["packages", "extensions"].join("/");
   const retiredChild = [retiredGroup, "agent"].join("/");
@@ -152,6 +153,7 @@ test("rejects retired child paths but excludes generated runtime output", (t) =>
 
   rmSync(join(fixture.cwd, "docs/current.md"));
   const runtimePaths = [
+    ".agents/work/example/dev-spec.md",
     "apps/playground/.facet-sessions/session.txt",
     "apps/playground/generated/page.txt",
   ];
@@ -163,6 +165,30 @@ test("rejects retired child paths but excludes generated runtime output", (t) =>
 
   result = runCheck(fixture);
   assert.equal(result.status, 0, result.stderr);
+});
+
+test("rejects retired documentation and committed planning roots", (t) => {
+  const fixture = makeFixture(t);
+  mkdirSync(join(fixture.cwd, "docs/comparisons"), { recursive: true });
+  mkdirSync(join(fixture.cwd, "docs/specs"), { recursive: true });
+  mkdirSync(join(fixture.cwd, "specs"), { recursive: true });
+
+  const result = runCheck(fixture);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /retired repository path exists: docs\/comparisons/);
+  assert.match(result.stderr, /retired repository path exists: docs\/specs/);
+  assert.match(result.stderr, /retired repository path exists: specs/);
+});
+
+test("requires the ephemeral agent work directory to stay ignored", (t) => {
+  const fixture = makeFixture(t);
+  writeFileSync(join(fixture.cwd, ".gitignore"), "node_modules/\n");
+
+  const result = runCheck(fixture);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /\.gitignore must contain \.agents\/work\//);
 });
 
 test("allows path-segment lookalikes that only share a retired prefix", (t) => {

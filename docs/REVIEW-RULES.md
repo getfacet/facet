@@ -119,7 +119,9 @@ optional follow-ups.
 
 Style-system hard cuts also run `node scripts/check-style-hard-cut.mjs`:
 shipping source, docs, package READMEs, fixtures, and current changesets must
-contain no retired symbol, data, or functional-tier claim. Historical
-`specs/**` are archival. Only an intentional negative in a test or fixture may
+contain no retired symbol, data, or functional-tier claim. Ephemeral plans live
+only under the gitignored `.agents/work/<slug>/` path and are outside repository
+documentation. A committed root `specs/`, `docs/specs/`, or `docs/comparisons/`
+path is a layout failure. Only an intentional negative in a test or fixture may
 use the scanner's exact annotation; annotations cannot waive production code or
 documentation.
