@@ -13,8 +13,9 @@ system model or package decision table.
   or multi-tenant data. The native server/client packages are reference
   transports, not a hosted security perimeter.
 
-Commands below use npm for published packages. The Facet repository itself uses
-pnpm.
+Facet packages have not been published to npm yet. Package-install examples
+below describe the first-release contract; current evaluation runs from this
+repository with pnpm.
 
 ## Try it first
 
@@ -22,7 +23,12 @@ The quickest evaluation runs the reference brain, in-memory runtime, reference
 SSE + POST transport, and React page together:
 
 ```bash
-OPENAI_API_KEY=sk-… npx --package=@facet/quickstart -- facet-quickstart
+git clone https://github.com/getfacet/facet.git
+cd facet
+corepack enable
+pnpm install
+pnpm --filter @facet/quickstart build
+OPENAI_API_KEY=sk-… pnpm exec tsx packages/tools/quickstart/src/cli.ts
 ```
 
 Open `http://localhost:5292`. `ANTHROPIC_API_KEY` also works. Put a page brief in

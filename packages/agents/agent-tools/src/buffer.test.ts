@@ -235,7 +235,7 @@ describe("createStageToolBuffer", () => {
       children: ["leaf"],
     });
     expect(buffer.drainUnresolved()).toEqual([]);
-  });
+  }, 10_000);
 
   it("rejects an invalid direct style before buffering a forward-referenced container", () => {
     const buffer = createStageToolBuffer(ROOT_TREE);

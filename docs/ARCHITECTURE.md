@@ -394,13 +394,3 @@ identity, API-key issuance, billing, rate limits, abuse operations, audit logs,
 secret management, or custom-domain routing. It also does not prescribe a
 distributed stage backend. Those concerns wrap or implement the interfaces
 above without changing the Facet Document contract.
-
-## Pre-1.0 hard cut
-
-The current Theme/Preset/Pattern and Brick-owned style contract has no
-compatibility bridge for pre-cutover documents or tool calls. Current validators,
-asset loaders, file loaders, public exports, and tool schemas reject or ignore
-retired shapes rather than guessing at intent. See
-[Style system migration](STYLE-SYSTEM-MIGRATION.md) for the supported replacement
-workflow. The [Design System guide](DESIGN-SYSTEM.md) describes only the current
-model.

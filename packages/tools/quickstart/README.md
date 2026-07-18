@@ -18,9 +18,8 @@ With no `facet.md`, quickstart starts from a validated four-screen product tour:
 uses all eleven native Bricks. Navigation, actions, cards, controls, summaries,
 badges, and alerts are ordinary Brick trees styled by the active Theme.
 
-```bash
-OPENAI_API_KEY=sk-… npx --package=@facet/quickstart -- facet-quickstart
-```
+Facet packages have not been published to npm yet. Run Quickstart from this
+workspace until the first release.
 
 Prerequisites:
 
@@ -35,7 +34,7 @@ Facet quickstart running at http://localhost:5292
 Brain: openai (gpt-5.4-mini)
 ```
 
-In the workspace, build the browser bundle first:
+Build the browser bundle first:
 
 ```bash
 pnpm --filter @facet/quickstart build

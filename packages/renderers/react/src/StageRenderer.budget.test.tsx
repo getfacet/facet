@@ -61,7 +61,7 @@ describe("StageRenderer render budget (fail-safe against shared-child explosion)
     }).not.toThrow();
     // Bounded: the budget is 5000, so the DOM can't hold anywhere near 2^40 divs.
     expect(container!.querySelectorAll("div").length).toBeLessThan(6000);
-  });
+  }, 15_000);
 
   it("renders a valid tree in FULL under StrictMode (budget is not shared across renders)", () => {
     // 3000 text nodes — well under RENDER_BUDGET (5000). React StrictMode

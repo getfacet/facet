@@ -345,5 +345,3 @@ hidden as a whole while other valid Patterns may remain available.
   — exact contract and validation entry points.
 - [`@facet/assets`](https://github.com/getfacet/facet/blob/main/packages/core/assets/README.md)
   — bundled Theme and Pattern data.
-- [Style system migration](STYLE-SYSTEM-MIGRATION.md) — pre-1.0 hard-cut
-  replacement steps only.

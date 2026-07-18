@@ -48,10 +48,11 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement at
-**[INSERT CONTACT — e.g. conduct@facet.run]**. All complaints will be reviewed
-and investigated promptly and fairly. Community leaders are obligated to respect
-the privacy and security of the reporter of any incident.
+reported privately through the repository's
+[security reporting channel](SECURITY.md#reporting-a-vulnerability); identify
+the submission as a conduct report. All complaints will be reviewed and
+investigated promptly and fairly. Community leaders are obligated to respect the
+privacy and security of the reporter of any incident.
 
 ## Attribution
 

@@ -48,7 +48,6 @@ surfaces instead of copying the same explanation:
 | Invariants, ownership, data flow, validation boundaries, renderer behavior | `docs/ARCHITECTURE.md` |
 | Exact stage-tool result shape, outcomes, false-success, and recovery rules | `docs/AGENT-TOOL-RESULT-CONTRACT.md` |
 | Package roles, collaborators, public/private boundaries, and deployment claims | `docs/PACKAGE-BOUNDARIES.md` |
-| Pre-1.0 style hard-cut replacement steps only | `docs/STYLE-SYSTEM-MIGRATION.md` |
 | One package's purpose, when/not to use it, install/API minimum | that package's `README.md` |
 
 Do not add hand-maintained exhaustive Brick/property/token tables to a guide;
@@ -69,7 +68,6 @@ vocabulary.
 | Package role, collaborator, public subpath, or deployment positioning | `docs/PACKAGE-BOUNDARIES.md` + that package's `README.md` |
 | `packages/tools/cli` / `packages/tools/bridge` commands or env vars | the package `README.md` + `docs/GETTING-STARTED.md` only when an adoption path changes + `CONTRIBUTING.md` for contributor-only usage + the CLI `--help` text |
 | `packages/adapters/server` auth / CORS / trust behavior | `SECURITY.md` (trust model) + the server package `README.md`; `docs/GETTING-STARTED.md` only when adopter wiring or production guidance changes |
-| Pre-1.0 style cutover/removal instructions | `docs/STYLE-SYSTEM-MIGRATION.md`; keep current model explanation in `docs/DESIGN-SYSTEM.md` |
 | `.agents/skills/**`, `.claude/**`, `.codex/**`, review rubric | `docs/REVIEW-RULES.md`, `AGENTS.md` (Definition of Done) |
 | Release/versioning setup | `CONTRIBUTING.md`, `CHANGELOG.md` |
 

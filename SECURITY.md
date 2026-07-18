@@ -6,7 +6,6 @@
 
 Report them privately using GitHub's [private vulnerability reporting][gh-report]
 — open the repository's **Security** tab and click **Report a vulnerability**.
-(Alternatively, email **[INSERT CONTACT — e.g. security@facet.run]**.)
 
 Please include:
 
@@ -20,19 +19,20 @@ you prefer to remain anonymous.
 
 ## Supported Versions
 
-Facet is pre-1.0; only the latest published version of each `@facet/*` package
-receives security fixes.
+Facet has not published an npm release yet; security fixes currently target
+`main`. After the first release, only the latest published version of each
+`@facet/*` package will receive security fixes.
 
 ## Trust model
 
 Different parts of Facet assume different trust levels — know which you're in.
 
-**`@facet/core` renderer/validator — fail-safe, untrusted input.** The renderer
-and `validateTree` are the safety boundary: only the closed, validated
-primitive/component vocabulary reaches the DOM (no raw HTML/JS), unsafe image
-URL schemes are dropped, and
-malformed/cyclic/too-deep input renders as "plain", never a crash. Model output
-is untrusted and is treated as such here.
+**Core validation and the React renderer — fail-safe, untrusted input.**
+`validateTree` and `StageRenderer` form the display safety boundary: only the
+closed, validated native Brick vocabulary reaches the DOM (no raw HTML/JS),
+unsafe media URL schemes are dropped, and malformed, cyclic, or overly deep
+input is sanitized or skipped without crashing the page. Model output is
+untrusted and is treated as such here.
 
 **`@facet/server` — a reference transport, not a hardened multi-tenant server.**
 It is designed for local/self-hosted, single-operator use where the page is

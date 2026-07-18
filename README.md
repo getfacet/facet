@@ -10,17 +10,22 @@ vocabulary; Facet validates it, stores it per visitor, sends live changes as RFC
 6902 patches, and renders it safely. The agent never emits raw HTML, JavaScript,
 or CSS.
 
-> **Status: pre-1.0.** Facet currently makes intentional hard cuts instead of
-> carrying compatibility layers. Check the
-> [migration guide](docs/STYLE-SYSTEM-MIGRATION.md) before upgrading an older
-> integration.
+> **Status: pre-1.0 and not yet published to npm.** Facet currently makes
+> intentional hard cuts instead of carrying compatibility layers. Until the
+> first release, evaluate it from this repository.
 
 ## Try it
 
-Facet requires Node.js 20 or newer. With an OpenAI or Anthropic API key:
+Facet requires Node.js 20 or newer and pnpm 9. With an OpenAI or Anthropic API
+key:
 
 ```bash
-OPENAI_API_KEY=sk-… npx --package=@facet/quickstart -- facet-quickstart
+git clone https://github.com/getfacet/facet.git
+cd facet
+corepack enable
+pnpm install
+pnpm --filter @facet/quickstart build
+OPENAI_API_KEY=sk-… pnpm exec tsx packages/tools/quickstart/src/cli.ts
 ```
 
 Open `http://localhost:5292`. The command starts the reference brain, runtime,

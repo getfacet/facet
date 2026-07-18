@@ -30,9 +30,8 @@ supported use case to one detailed guide:
 - [Package Boundaries](docs/PACKAGE-BOUNDARIES.md) — package ownership and
   deployment boundaries.
 
-[Style System Migration](docs/STYLE-SYSTEM-MIGRATION.md) is only for pre-1.0
-cutover work. The rest of this file governs contributors and coding agents
-changing the Facet repository itself.
+The rest of this file governs contributors and coding agents changing the Facet
+repository itself.
 
 ## Two invariants (do not break)
 
