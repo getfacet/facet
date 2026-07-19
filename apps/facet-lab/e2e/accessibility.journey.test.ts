@@ -46,6 +46,9 @@ describe("Facet Lab accessible inspection controls", () => {
   it("supports skip, named-area, catalog, trace, replay, compare, and sandbox keyboard paths", async () => {
     const page = await harness.newPage();
     await page.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });
+    expect(
+      await page.getByRole("heading", { name: "Catalog", exact: true, level: 1 }).count(),
+    ).toBe(1);
 
     await page.keyboard.press("Tab");
     expect(await page.evaluate(() => document.activeElement?.textContent?.trim())).toBe(
@@ -62,9 +65,13 @@ describe("Facet Lab accessible inspection controls", () => {
     expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Generate");
     await page.keyboard.press("Enter");
     await page.waitForURL("**/generate");
-    expect(
-      await page.getByRole("heading", { name: "Generate", exact: true }).last().isVisible(),
-    ).toBe(true);
+    const generateHeading = page.getByRole("heading", {
+      name: "Generate",
+      exact: true,
+      level: 1,
+    });
+    expect(await generateHeading.count()).toBe(1);
+    expect(await generateHeading.isVisible()).toBe(true);
 
     await page.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });
     const patterns = page.getByRole("button", { name: "Patterns (17/17)" });

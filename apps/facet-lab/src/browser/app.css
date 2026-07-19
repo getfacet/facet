@@ -270,22 +270,11 @@ a {
   padding: clamp(20px, 3vw, 44px);
 }
 
-.lab-stage-header {
+.lab-stage-toolbar {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 24px;
+  justify-content: flex-end;
   max-width: 1480px;
   margin: 0 auto 20px;
-}
-
-.lab-stage-header h1 {
-  margin: 0;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(28px, 4vw, 52px);
-  font-weight: 500;
-  letter-spacing: -0.04em;
-  line-height: 0.98;
 }
 
 .lab-secondary-nav {
@@ -1065,10 +1054,6 @@ a {
     padding: 20px 14px 34px;
   }
 
-  .lab-stage-header {
-    align-items: flex-start;
-  }
-
   .catalog-hero,
   .catalog-reading-guide,
   .catalog-browser {
@@ -1128,11 +1113,14 @@ a {
     font-size: 18px;
   }
 
-  .lab-stage-header,
   .lab-context-bar,
   .lab-footer {
     display: grid;
     grid-template-columns: 1fr;
+  }
+
+  .lab-stage-toolbar {
+    justify-content: flex-start;
   }
 
   .lab-secondary-nav {

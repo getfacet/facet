@@ -528,14 +528,8 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
         </nav>
 
         <section className="lab-stage" aria-label="Selected Facet Lab area">
-          <header className="lab-stage-header">
-            <div>
-              <p className="lab-eyebrow">
-                {activeArea?.shortLabel ?? "—"} / {activeArea?.label ?? "Unknown area"}
-              </p>
-              <h1>{route.label}</h1>
-            </div>
-            {secondaryRoutes.length > 1 ? (
+          {secondaryRoutes.length > 1 ? (
+            <div className="lab-stage-toolbar">
               <nav
                 className="lab-secondary-nav"
                 aria-label={`${activeArea?.label ?? "Area"} views`}
@@ -554,8 +548,8 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
                   </a>
                 ))}
               </nav>
-            ) : null}
-          </header>
+            </div>
+          ) : null}
           <div
             id="lab-main"
             className="lab-page-frame"
