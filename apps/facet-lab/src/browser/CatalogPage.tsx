@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { ComponentProps, ReactNode } from "react";
 
 import { StageRenderer } from "@facet/react";
@@ -29,6 +29,8 @@ export interface CatalogPageProps {
 
 const VIEWPORTS: readonly ViewportName[] = ["mobile", "tablet", "desktop"];
 const COLOR_MODES: readonly ColorMode[] = ["light", "dark"];
+const INSPECTOR_VIEWS = ["preview", "document", "definition"] as const;
+type InspectorView = (typeof INSPECTOR_VIEWS)[number];
 
 const CATEGORY_META: Readonly<
   Record<PresentedCatalogCategoryId, { readonly singular: string; readonly description: string }>
@@ -68,6 +70,11 @@ function definitionText(item: PresentedCatalogItem): string {
   return JSON.stringify(item.outcome.definition, null, 2);
 }
 
+function documentText(item: PresentedCatalogItem): string {
+  if (item.outcome.status !== "render" || item.outcome.previewTree === null) return "";
+  return JSON.stringify(item.outcome.previewTree, null, 2);
+}
+
 function itemContext(item: PresentedCatalogItem): string | null {
   if (item.qualifier === null || item.qualifier === item.name) return null;
   if (item.kind === "preset") return `Styles the ${item.qualifier} Brick`;
@@ -105,6 +112,44 @@ function sourceDataOrigin(item: PresentedCatalogItem): string {
   }
 }
 
+function JsonCodePanel({
+  label,
+  value,
+}: {
+  readonly label: string;
+  readonly value: string;
+}): ReactNode {
+  const [copyStatus, setCopyStatus] = useState<"idle" | "copied" | "failed">("idle");
+  const copy = (): void => {
+    if (typeof navigator === "undefined" || navigator.clipboard === undefined) {
+      setCopyStatus("failed");
+      return;
+    }
+    void navigator.clipboard.writeText(value).then(
+      () => setCopyStatus("copied"),
+      () => setCopyStatus("failed"),
+    );
+  };
+  return (
+    <div className="catalog-json-panel">
+      <div>
+        <strong>{label}</strong>
+        <button className="facet-lab-focusable" type="button" onClick={copy}>
+          Copy JSON
+        </button>
+      </div>
+      <pre aria-label={`${label} JSON`}>{value}</pre>
+      <p className="catalog-copy-status" role="status" aria-live="polite">
+        {copyStatus === "copied"
+          ? "Copied to clipboard."
+          : copyStatus === "failed"
+            ? "Clipboard access is unavailable. Select the JSON directly instead."
+            : ""}
+      </p>
+    </div>
+  );
+}
+
 function ItemInspector({
   item,
   theme,
@@ -119,6 +164,12 @@ function ItemInspector({
   readonly onViewChange: (viewport: ViewportName, colorMode: ColorMode) => void;
 }): ReactNode {
   const context = itemContext(item);
+  const [view, setView] = useState<InspectorView>("preview");
+  const viewRefs = useRef(new Map<InspectorView, HTMLButtonElement>());
+  const focusView = (candidate: InspectorView): void => {
+    setView(candidate);
+    viewRefs.current.get(candidate)?.focus();
+  };
   return (
     <article
       className="catalog-item-inspector"
@@ -162,19 +213,74 @@ function ItemInspector({
         </section>
       ) : (
         <>
+          <div className="catalog-inspector-tabs" role="tablist" aria-label="Inspector view">
+            {INSPECTOR_VIEWS.map((candidate) => {
+              const label =
+                candidate === "preview"
+                  ? "Preview"
+                  : candidate === "document"
+                    ? "Facet document"
+                    : "Package definition";
+              return (
+                <button
+                  key={candidate}
+                  ref={(node) => {
+                    if (node === null) viewRefs.current.delete(candidate);
+                    else viewRefs.current.set(candidate, node);
+                  }}
+                  id={`catalog-${candidate}-tab`}
+                  className="facet-lab-focusable"
+                  type="button"
+                  role="tab"
+                  aria-selected={view === candidate}
+                  aria-controls={`catalog-${candidate}-panel`}
+                  tabIndex={view === candidate ? 0 : -1}
+                  onClick={() => setView(candidate)}
+                  onKeyDown={(event) => {
+                    const current = INSPECTOR_VIEWS.indexOf(candidate);
+                    const target =
+                      event.key === "ArrowRight"
+                        ? INSPECTOR_VIEWS[(current + 1) % INSPECTOR_VIEWS.length]
+                        : event.key === "ArrowLeft"
+                          ? INSPECTOR_VIEWS[
+                              (current - 1 + INSPECTOR_VIEWS.length) % INSPECTOR_VIEWS.length
+                            ]
+                          : event.key === "Home"
+                            ? INSPECTOR_VIEWS[0]
+                            : event.key === "End"
+                              ? INSPECTOR_VIEWS[INSPECTOR_VIEWS.length - 1]
+                              : undefined;
+                    if (target === undefined) return;
+                    event.preventDefault();
+                    focusView(target);
+                  }}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
           {item.outcome.previewTree === null ? (
-            <section className="catalog-effect-note" aria-label={`${item.name} effect`}>
-              <p className="catalog-section-label">Not a standalone UI element</p>
-              <h3>This value changes how a Brick is allowed to render.</h3>
-              <p>
-                Tokens and fixed choices appear through Brick styles, so they do not have a useful
-                preview on their own.
-              </p>
+            <section
+              id="catalog-preview-panel"
+              className="catalog-effect-note"
+              role="tabpanel"
+              aria-labelledby="catalog-preview-tab"
+              hidden={view !== "preview"}
+            >
+              <p className="catalog-section-label">Preview unavailable</p>
+              <h3>No valid example document could be produced.</h3>
+              <p>The package definition remains available for inspection.</p>
             </section>
           ) : (
             <section
+              id="catalog-preview-panel"
               className="catalog-preview"
               aria-label={`${item.name} preview`}
+              role="tabpanel"
+              aria-labelledby="catalog-preview-tab"
+              hidden={view !== "preview"}
               data-preview-viewport={viewport}
               data-preview-color-mode={colorMode}
             >
@@ -238,18 +344,60 @@ function ItemInspector({
             </section>
           )}
 
-          <details className="catalog-package-data">
-            <summary className="facet-lab-focusable">Validated source data (advanced)</summary>
-            <div>
-              <h3>What this data does</h3>
-              <p>{sourceDataUsage(item)}</p>
-              <p>
-                This JSON is from the {sourceDataOrigin(item)} used for this item. It is shown for
-                debugging and authoring; users do not need to read it to understand the preview.
-              </p>
-              <pre>{definitionText(item)}</pre>
-            </div>
-          </details>
+          <section
+            id="catalog-document-panel"
+            className="catalog-document-panel"
+            role="tabpanel"
+            aria-labelledby="catalog-document-tab"
+            hidden={view !== "document"}
+          >
+            <p className="catalog-section-label">Exact renderer input</p>
+            <h3>Validated Facet document</h3>
+            {item.outcome.previewTree === null ? (
+              <p>No valid example document is available for this item.</p>
+            ) : (
+              <>
+                <p>
+                  This complete tree is passed to <code>StageRenderer</code>. The preview and this
+                  JSON are two views of the same document.
+                </p>
+                <dl className="catalog-document-summary">
+                  <div>
+                    <dt>Root</dt>
+                    <dd>
+                      <code>{item.outcome.previewTree.root}</code>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Nodes</dt>
+                    <dd>{String(Object.keys(item.outcome.previewTree.nodes).length)}</dd>
+                  </div>
+                  <div>
+                    <dt>Validation</dt>
+                    <dd>Passed</dd>
+                  </div>
+                </dl>
+                <JsonCodePanel label="Facet document" value={documentText(item)} />
+              </>
+            )}
+          </section>
+
+          <section
+            id="catalog-definition-panel"
+            className="catalog-package-data"
+            role="tabpanel"
+            aria-labelledby="catalog-definition-tab"
+            hidden={view !== "definition"}
+          >
+            <p className="catalog-section-label">Package-owned source</p>
+            <h3>What this definition does</h3>
+            <p>{sourceDataUsage(item)}</p>
+            <p>
+              This JSON is from the {sourceDataOrigin(item)}. It defines what is allowed or reused;
+              it is not necessarily the document sent to the renderer.
+            </p>
+            <JsonCodePanel label="Package definition" value={definitionText(item)} />
+          </section>
         </>
       )}
     </article>
@@ -275,12 +423,13 @@ export function CatalogPage({
       presentCatalog({
         status,
         ...(catalog === undefined ? {} : { catalog }),
+        ...(theme === undefined ? {} : { theme }),
         ...(errorMessage === undefined ? {} : { errorMessage }),
         query,
         categoryId,
         ...(selectedItemId === undefined ? {} : { selectedItemId }),
       }),
-    [catalog, categoryId, errorMessage, query, selectedItemId, status],
+    [catalog, categoryId, errorMessage, query, selectedItemId, status, theme],
   );
   const activeCategory = presentation.categories.find(({ id }) => id === categoryId);
   const activeCategoryMeta = CATEGORY_META[categoryId];
@@ -448,15 +597,18 @@ export function CatalogPage({
 
           <aside
             className="catalog-inspector"
-            aria-label="Catalog preview and validated source data"
+            aria-label="Catalog preview, Facet document, and package definition"
           >
             {presentation.selectedItem === null ? (
               <div className="catalog-empty-inspector">
                 <h2>Select an item</h2>
-                <p>Its purpose, Facet preview, and optional source data will appear here.</p>
+                <p>
+                  Its purpose, Facet preview, document, and package definition will appear here.
+                </p>
               </div>
             ) : (
               <ItemInspector
+                key={presentation.selectedItem.id}
                 item={presentation.selectedItem}
                 viewport={viewport}
                 colorMode={colorMode}

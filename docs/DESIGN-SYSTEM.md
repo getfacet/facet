@@ -187,10 +187,12 @@ agent.
 ### Inspect and validate assets in Facet Lab
 
 Repository contributors can use [Facet Lab's Catalog](../apps/facet-lab/README.md#catalog-and-asset-truth)
-to inspect the effective vocabulary and real isolated previews. Catalog derives
-Brick, token, and fixed-choice definitions from `@facet/core` and derives
-Theme defaults, same-Brick Presets, and Patterns from the selected validated
-assets. It intentionally has no hand-maintained Lab roster.
+to inspect the effective vocabulary and real isolated previews. Each preview is
+paired with the complete validated Facet document sent to `StageRenderer` and a
+separate package-definition view. Catalog derives Brick, token, and fixed-choice
+definitions from `@facet/core` and derives Theme defaults, same-Brick Presets,
+and Patterns from the selected validated assets. It intentionally has no
+hand-maintained Lab roster.
 
 Lab custom-asset import uses the same ownership model described here: one
 complete Theme plus an exact Pattern list in a versioned JSON envelope. The

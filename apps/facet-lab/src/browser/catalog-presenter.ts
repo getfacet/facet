@@ -1,4 +1,14 @@
-import { validateTree, type FacetTree } from "@facet/core";
+import { DEFAULT_THEME } from "@facet/assets";
+import {
+  BRICK_CONTRACT,
+  BRICK_TYPES,
+  validateTree,
+  type BrickStylePropertyContract,
+  type BrickType,
+  type FacetTheme,
+  type FacetTree,
+  type StyleValue,
+} from "@facet/core";
 
 import { createBrickSample } from "../catalog/catalog-brick-samples.js";
 import { cloneBoundedJson } from "../shared/redaction.js";
@@ -79,6 +89,7 @@ export interface CatalogPresentation {
 export interface CatalogPresenterInput {
   readonly status: "loading" | "ready" | "error";
   readonly catalog?: unknown;
+  readonly theme?: FacetTheme;
   readonly errorMessage?: string;
   readonly query?: string;
   readonly categoryId?: string;
@@ -148,6 +159,34 @@ function safeDefinition(value: unknown): JsonValue | undefined {
   return projected.ok ? projected.value : undefined;
 }
 
+function sameJson(left: JsonValue, right: JsonValue): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return (
+      Array.isArray(left) &&
+      Array.isArray(right) &&
+      left.length === right.length &&
+      left.every((value, index) => sameJson(value, right[index] as JsonValue))
+    );
+  }
+  if (!isRecord(left) || !isRecord(right)) return false;
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every(
+      (key) =>
+        Object.prototype.hasOwnProperty.call(right, key) &&
+        sameJson(left[key] as JsonValue, right[key] as JsonValue),
+    )
+  );
+}
+
+function validatedPreview(candidate: unknown): FacetTree | undefined {
+  const validated = validateTree(candidate);
+  return validated.issues.length === 0 ? validated.tree : undefined;
+}
+
 function patternPreview(definition: JsonValue): FacetTree | undefined {
   if (!isRecord(definition) || typeof definition.root !== "string" || !isRecord(definition.nodes)) {
     return undefined;
@@ -159,24 +198,125 @@ function patternPreview(definition: JsonValue): FacetTree | undefined {
     ...(typeof definition.entry === "string" ? { entry: definition.entry } : {}),
     ...(isRecord(definition.data) ? { data: definition.data } : {}),
   };
-  const validated = validateTree(candidate);
-  return validated.issues.length === 0 ? validated.tree : undefined;
+  return validatedPreview(candidate);
+}
+
+interface StyleValuePlacement {
+  readonly brick: BrickType;
+  readonly target: string | null;
+  readonly property: string;
+}
+
+function styleValue(definition: JsonValue): StyleValue | undefined {
+  if (!isRecord(definition)) return undefined;
+  const name = definition.name;
+  return typeof name === "string" || typeof name === "number" || typeof name === "boolean"
+    ? name
+    : undefined;
+}
+
+function styleValuePlacements(
+  source: "token" | "fixed",
+  domain: string,
+): readonly StyleValuePlacement[] {
+  const placements: StyleValuePlacement[] = [];
+  for (const brick of BRICK_TYPES) {
+    const contract = BRICK_CONTRACT[brick];
+    for (const [property, propertyContract] of Object.entries(contract.style.root.properties)) {
+      if (propertyContract.source === source && propertyContract.domain === domain) {
+        placements.push({ brick, target: null, property });
+      }
+    }
+    for (const [target, targetContract] of Object.entries(contract.style.targets)) {
+      for (const [property, propertyContract] of Object.entries(
+        targetContract.properties,
+      ) as readonly [string, BrickStylePropertyContract][]) {
+        if (propertyContract.source === source && propertyContract.domain === domain) {
+          placements.push({ brick, target, property });
+        }
+      }
+    }
+  }
+  return placements;
+}
+
+function treeWithStyleValue(
+  placement: StyleValuePlacement,
+  value: StyleValue,
+): FacetTree | undefined {
+  const sample = createBrickSample(placement.brick);
+  if (sample === undefined) return undefined;
+  const sampleNode = sample.tree.nodes[sample.nodeId];
+  if (sampleNode === undefined) return undefined;
+  const existingStyle = isRecord(sampleNode.style) ? sampleNode.style : {};
+  const existingTargetStyle =
+    placement.target === null ? undefined : existingStyle[placement.target];
+  const style =
+    placement.target === null
+      ? { ...existingStyle, [placement.property]: value }
+      : {
+          ...existingStyle,
+          [placement.target]: {
+            ...(isRecord(existingTargetStyle) ? existingTargetStyle : {}),
+            [placement.property]: value,
+          },
+        };
+  const candidate = {
+    ...sample.tree,
+    nodes: {
+      ...sample.tree.nodes,
+      [sample.nodeId]: { ...sampleNode, style },
+    },
+  };
+  return validatedPreview(candidate);
+}
+
+function styleValuePreview(
+  item: Record<string, unknown>,
+  kind: "token" | "fixed",
+  definition: JsonValue,
+): FacetTree | undefined {
+  if (typeof item.domain !== "string") return undefined;
+  const value = styleValue(definition);
+  if (value === undefined) return undefined;
+  if (typeof item.name !== "string" || String(value) !== item.name) return undefined;
+  for (const placement of styleValuePlacements(kind, item.domain)) {
+    const tree = treeWithStyleValue(placement, value);
+    if (tree !== undefined) return tree;
+  }
+  return undefined;
 }
 
 function previewTree(
   item: Record<string, unknown>,
   kind: PresentedCatalogItemKind,
   definition: JsonValue,
+  theme: FacetTheme,
 ): FacetTree | null | undefined {
   if (kind === "brick") {
-    if (typeof item.brick !== "string") return undefined;
-    return createBrickSample(item.brick)?.tree;
+    if (
+      typeof item.brick !== "string" ||
+      typeof item.name !== "string" ||
+      item.name !== item.brick
+    ) {
+      return undefined;
+    }
+    return validatedPreview(createBrickSample(item.brick)?.tree);
   }
   if (kind === "preset") {
     if (typeof item.brick !== "string" || typeof item.name !== "string") return undefined;
-    return createBrickSample(item.brick, item.name)?.tree;
+    if (!isRecord(definition) || !isRecord(definition.style)) return undefined;
+    const brick = BRICK_TYPES.find((candidate) => candidate === item.brick);
+    if (brick === undefined) return undefined;
+    const themeDefinition = safeDefinition(theme.presets?.[brick]?.[item.name]);
+    if (themeDefinition === undefined || !sameJson(definition, themeDefinition)) return undefined;
+    return validatedPreview(createBrickSample(brick, item.name)?.tree);
   }
-  if (kind === "pattern") return patternPreview(definition);
+  if (kind === "pattern") {
+    if (!isRecord(definition) || definition.name !== item.name) return undefined;
+    return patternPreview(definition);
+  }
+  if (kind === "token" || kind === "fixed") return styleValuePreview(item, kind, definition);
   return null;
 }
 
@@ -190,6 +330,7 @@ function parseItem(
   value: unknown,
   categoryId: PresentedCatalogCategoryId,
   index: number,
+  theme: FacetTheme,
 ): PresentedCatalogItem {
   const fallbackId = `invalid:${categoryId}:${String(index)}`;
   if (!isRecord(value)) {
@@ -229,7 +370,7 @@ function parseItem(
     if (definition === undefined) {
       diagnostics.push(diagnostic(id, "Item definition was not safe JSON."));
     } else {
-      preview = previewTree(value, kind, definition);
+      preview = previewTree(value, kind, definition, theme);
       if (preview === undefined) {
         diagnostics.push(diagnostic(id, "No valid safe preview could be built for this item."));
       }
@@ -338,13 +479,14 @@ export function presentCatalog(input: CatalogPresenterInput): CatalogPresentatio
   }
 
   const allItems: PresentedCatalogItem[] = [];
+  const theme = input.theme ?? DEFAULT_THEME;
   const categories = CATALOG_CATEGORY_ORDER.map((id): PresentedCatalogCategory => {
     const rawCategory = rawByCategory.get(id);
     if (rawCategory === undefined) {
       globalDiagnostics.push(diagnostic(`category:${id}`, "Catalog category was missing."));
     }
     const rawItems = Array.isArray(rawCategory?.items) ? rawCategory.items : [];
-    const parsed = rawItems.map((item, index) => parseItem(item, id, index));
+    const parsed = rawItems.map((item, index) => parseItem(item, id, index, theme));
     allItems.push(...parsed);
     const visible = parsed.filter((item) => matches(item, query));
     return Object.freeze({

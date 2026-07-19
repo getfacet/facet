@@ -70,7 +70,7 @@ routes keep related work together.
 
 | Area | Routes | What it is for |
 | --- | --- | --- |
-| Catalog | `/catalog` | Search and inspect package-defined Bricks, Presets, Patterns, token values, fixed choices, real definitions, and isolated previews. |
+| Catalog | `/catalog` | Search package-defined Bricks, Presets, Patterns, token values, and fixed choices; compare each isolated preview with its exact Facet document and package definition. |
 | Generate | `/generate`, `/scenarios` | Run a free-form prompt or an official scenario through deterministic or configured real-provider execution, then interact with the live stage. |
 | Runs | `/runs`, `/runs/:runId` | Filter immutable history and inspect correlated traces, provenance, checks, visual evidence, usage, warnings, and artifacts. |
 | Replay | `/replay`, `/replay/:runId`, `/compare` | Scrub accepted checkpoints without a provider, open a capture-safe immutable run route, and compare two to four records with explicit evidence gaps. |
@@ -93,6 +93,19 @@ Consequently, adding or removing package-defined assets changes Catalog through
 the package source rather than a Lab-only list. Each item is either rendered or
 shown with an item-scoped diagnostic; an empty category and a load failure are
 different states.
+
+Every renderable item has three explicitly separate inspector views:
+
+- **Preview** renders an isolated example through `StageRenderer`;
+- **Facet document** shows and copies the complete validated tree passed to that
+  renderer, including its root, nodes, and applied style values; and
+- **Package definition** shows the Core contract or selected asset data that
+  defines what is allowed or reusable. It is not necessarily a stage document.
+
+Token values and fixed choices also receive a validated example document. Lab
+places the selected value on one compatible Brick style property discovered
+from Core's contract, so the preview and JSON demonstrate actual usage without
+inventing a second vocabulary.
 
 The asset-source workflow accepts package defaults or a JSON bundle with this
 exact envelope:

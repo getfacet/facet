@@ -83,6 +83,22 @@ describe("Facet Lab accessible inspection controls", () => {
     await firstPattern.focus();
     await page.keyboard.press("Enter");
     expect(await page.locator("[data-catalog-item]").isVisible()).toBe(true);
+    const previewTab = page.getByRole("tab", { name: "Preview" });
+    await previewTab.focus();
+    await page.keyboard.press("ArrowRight");
+    const documentTab = page.getByRole("tab", { name: "Facet document" });
+    expect(await documentTab.getAttribute("aria-selected")).toBe("true");
+    expect(await page.getByLabel("Facet document JSON").isVisible()).toBe(true);
+    await page.keyboard.press("End");
+    expect(
+      await page.getByRole("tab", { name: "Package definition" }).getAttribute("aria-selected"),
+    ).toBe("true");
+    await page.keyboard.press("Home");
+    expect(await previewTab.getAttribute("aria-selected")).toBe("true");
+    await page.keyboard.press("ArrowLeft");
+    expect(
+      await page.getByRole("tab", { name: "Package definition" }).getAttribute("aria-selected"),
+    ).toBe("true");
 
     await page.goto(`${harness.url}/runs/${firstRunId}`, { waitUntil: "networkidle" });
     const promptSummary = page.getByText("Inspect prompt");
