@@ -71,7 +71,7 @@ routes keep related work together.
 | Area | Routes | What it is for |
 | --- | --- | --- |
 | Catalog | `/catalog` | Search package-defined Bricks, Presets, Patterns, token values, and fixed choices; compare each isolated preview with its exact Facet document and package definition. |
-| Generate | `/generate`, `/scenarios` | Run a free-form prompt or an official scenario through deterministic or configured real-provider execution, then interact with the live stage. |
+| Generate | `/generate`, `/scenarios` | Run a free-form prompt or an official scenario through deterministic or configured real-provider execution, then interact with the live stage. Its collapsed advanced settings select custom assets for new runs. |
 | Runs | `/runs`, `/runs/:runId` | Filter immutable history and inspect correlated traces, provenance, checks, visual evidence, usage, warnings, and artifacts. |
 | Replay | `/replay`, `/replay/:runId`, `/compare` | Scrub accepted checkpoints without a provider, open a capture-safe immutable run route, and compare two to four records with explicit evidence gaps. |
 | Sandbox | `/sandbox`, `/settings` | Create or clone an isolated safe tree, apply revision-checked patches, checkpoint view state separately, and inspect secret-free server capabilities. |
@@ -107,8 +107,8 @@ places the selected value on one compatible Brick style property discovered
 from Core's contract, so the preview and JSON demonstrate actual usage without
 inventing a second vocabulary.
 
-The asset-source workflow accepts package defaults or a JSON bundle with this
-exact envelope:
+Generate's collapsed **Advanced asset settings** accepts package defaults or a
+JSON bundle with this exact envelope:
 
 ```json
 {

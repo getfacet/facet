@@ -13,14 +13,33 @@ export interface AssetSelectionView {
 }
 
 export interface AssetImportPanelProps {
-  readonly api: Pick<LabApiClient, "selectDefaultAssets" | "importAssets">;
+  readonly api: Pick<LabApiClient, "getAssets" | "selectDefaultAssets" | "importAssets">;
   readonly current: AssetSelectionView;
   readonly onAssetsChanged: (assets: AssetSelectionView) => void;
+  readonly onAssetsUnavailable: () => void;
+  readonly onBusyChange?: (busy: boolean) => void;
+  readonly disabled?: boolean;
+  readonly requestTimeoutMs?: number;
 }
 
 interface ImportIssueView {
   readonly code: string;
   readonly message: string;
+}
+
+const DEFAULT_ASSET_REQUEST_TIMEOUT_MS = 30_000;
+
+async function withRequestTimeout<T>(
+  milliseconds: number,
+  request: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), milliseconds);
+  try {
+    return await request(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -67,21 +86,31 @@ export function AssetImportPanel({
   api,
   current,
   onAssetsChanged,
+  onAssetsUnavailable,
+  onBusyChange,
+  disabled = false,
+  requestTimeoutMs = DEFAULT_ASSET_REQUEST_TIMEOUT_MS,
 }: AssetImportPanelProps): ReactNode {
   const [source, setSource] = useState<AssetSelectionView["source"]>(current.source);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState("No asset change is pending.");
+  const [message, setMessage] = useState("The current selection will be used for new runs.");
   const [importIssues, setImportIssues] = useState<readonly ImportIssueView[]>([]);
+  const [fileInputVersion, setFileInputVersion] = useState(0);
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (busy) return;
+    if (busy || disabled) return;
     setBusy(true);
+    onBusyChange?.(true);
     setImportIssues([]);
     try {
       if (source === "default") {
-        const result = selection(await api.selectDefaultAssets());
+        const result = selection(
+          await withRequestTimeout(requestTimeoutMs, (signal) =>
+            api.selectDefaultAssets({ signal }),
+          ),
+        );
         if (result === undefined) throw new Error("invalid default asset response");
         onAssetsChanged(result);
         setMessage("Package default assets are selected for future runs.");
@@ -103,7 +132,9 @@ export function AssetImportPanel({
         setMessage("The selected asset bundle is not valid JSON.");
         return;
       }
-      const response = await api.importAssets(bundle);
+      const response = await withRequestTimeout(requestTimeoutMs, (signal) =>
+        api.importAssets(bundle, { signal }),
+      );
       if (!isRecord(response) || typeof response.accepted !== "boolean") {
         throw new Error("invalid custom asset response");
       }
@@ -120,22 +151,38 @@ export function AssetImportPanel({
       onAssetsChanged(snapshot);
       setMessage("Custom assets were validated and selected for future runs.");
     } catch {
-      setMessage("Asset selection failed safely. The current selection was not changed.");
+      try {
+        const recovered = selection(
+          await withRequestTimeout(requestTimeoutMs, (signal) => api.getAssets({ signal })),
+        );
+        if (recovered === undefined) throw new Error("invalid recovered asset response");
+        onAssetsChanged(recovered);
+        setSource(recovered.source);
+        setFile(null);
+        setFileInputVersion((version) => version + 1);
+        setMessage(
+          "The asset response was interrupted. The current server selection was restored.",
+        );
+      } catch {
+        onAssetsUnavailable();
+      }
     } finally {
       setBusy(false);
+      onBusyChange?.(false);
     }
   };
 
   return (
-    <section aria-labelledby="asset-import-title">
-      <h2 id="asset-import-title">Asset source</h2>
-      <p>
-        Current selection: <strong>{current.source}</strong> ({current.digest})
+    <section className="asset-import-panel" aria-label="Asset source">
+      <p className="asset-current-selection">
+        Current assets:{" "}
+        <strong>{current.source === "default" ? "Package defaults" : "Custom"}</strong>
       </p>
+      <code className="asset-snapshot-digest">{current.digest}</code>
       <form onSubmit={(event) => void submit(event)}>
-        <fieldset disabled={busy}>
-          <legend>Select assets for future runs</legend>
-          <label>
+        <fieldset disabled={busy || disabled}>
+          <legend>Assets for new runs</legend>
+          <label className="asset-source-option">
             <input
               className="facet-lab-focusable"
               type="radio"
@@ -144,9 +191,9 @@ export function AssetImportPanel({
               checked={source === "default"}
               onChange={() => setSource("default")}
             />
-            Package defaults
+            <span>Package defaults</span>
           </label>
-          <label>
+          <label className="asset-source-option">
             <input
               className="facet-lab-focusable"
               type="radio"
@@ -155,22 +202,31 @@ export function AssetImportPanel({
               checked={source === "custom"}
               onChange={() => setSource("custom")}
             />
-            Custom Theme and Patterns
+            <span>Custom Theme and Patterns</span>
           </label>
 
-          <label htmlFor="asset-bundle-file">Custom asset JSON bundle</label>
-          <input
-            id="asset-bundle-file"
-            className="facet-lab-focusable"
-            type="file"
-            accept="application/json,.json"
-            required={source === "custom"}
-            disabled={source !== "custom" || busy}
-            onChange={(event) => setFile(event.currentTarget.files?.item(0) ?? null)}
-          />
+          {source === "custom" ? (
+            <label htmlFor="asset-bundle-file">
+              Custom asset JSON bundle
+              <input
+                key={fileInputVersion}
+                id="asset-bundle-file"
+                className="facet-lab-focusable"
+                type="file"
+                accept="application/json,.json"
+                required
+                disabled={busy}
+                onChange={(event) => setFile(event.currentTarget.files?.item(0) ?? null)}
+              />
+            </label>
+          ) : null}
 
           <button className="facet-lab-focusable" type="submit" disabled={busy}>
-            {busy ? "Validating assets…" : "Apply asset source"}
+            {busy
+              ? "Validating assets…"
+              : source === "default"
+                ? "Use package defaults"
+                : "Validate and use custom assets"}
           </button>
         </fieldset>
       </form>

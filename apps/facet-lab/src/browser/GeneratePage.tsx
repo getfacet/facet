@@ -38,6 +38,9 @@ export interface GeneratePageProps {
   readonly initialConstraint?: string | null;
   readonly theme?: FacetTheme;
   readonly onRunStarted?: (run: BrowserCreatedRun) => void;
+  readonly assetSettings?: ReactNode;
+  readonly assetSettingsBusy?: boolean;
+  readonly onStartingChange?: (starting: boolean) => void;
 }
 
 interface ActiveRun {
@@ -93,6 +96,9 @@ export function GeneratePage({
   initialConstraint = null,
   theme,
   onRunStarted,
+  assetSettings,
+  assetSettingsBusy = false,
+  onStartingChange,
 }: GeneratePageProps = {}): ReactNode {
   const client = useMemo(() => providedClient ?? createLabApiClient(), [providedClient]);
   const gate = useMemo(() => createRunActivationGate(client.createRun), [client]);
@@ -214,8 +220,16 @@ export function GeneratePage({
 
   const start = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (readiness === null || !readiness.ready || readiness.configuration === null) return;
+    if (
+      assetSettingsBusy ||
+      readiness === null ||
+      !readiness.ready ||
+      readiness.configuration === null
+    ) {
+      return;
+    }
     setStarting(true);
+    onStartingChange?.(true);
     setError(null);
     try {
       const result = await gate.start(readiness.configuration);
@@ -236,6 +250,7 @@ export function GeneratePage({
       setError(errorMessage("start"));
     } finally {
       setStarting(false);
+      onStartingChange?.(false);
     }
   };
 
@@ -268,8 +283,18 @@ export function GeneratePage({
   return (
     <section aria-labelledby="generate-title">
       <h1 id="generate-title">Generate</h1>
+      {assetSettings === undefined ? null : (
+        <details className="generate-asset-settings">
+          <summary>Advanced asset settings</summary>
+          <p>
+            Choose the Theme and Patterns for new runs. Existing runs keep their recorded asset
+            snapshot.
+          </p>
+          {assetSettings}
+        </details>
+      )}
       <form onSubmit={(event) => void start(event)} aria-describedby="run-readiness">
-        <fieldset disabled={starting}>
+        <fieldset disabled={starting || assetSettingsBusy}>
           <legend>Run configuration</legend>
 
           <label htmlFor="generate-scenario">Scenario</label>
@@ -379,7 +404,9 @@ export function GeneratePage({
         </fieldset>
 
         <div id="run-readiness" aria-live="polite">
-          {readiness?.ready ? (
+          {assetSettingsBusy ? (
+            <p>Finish applying the asset selection before starting a run.</p>
+          ) : readiness?.ready ? (
             <p>Ready to start a distinct run.</p>
           ) : (
             <ul>
@@ -390,7 +417,7 @@ export function GeneratePage({
           )}
         </div>
         {error === null ? null : <p role="alert">{error}</p>}
-        <button type="submit" disabled={starting || !readiness?.ready}>
+        <button type="submit" disabled={starting || assetSettingsBusy || !readiness?.ready}>
           {starting ? "Starting…" : "Start new run"}
         </button>
       </form>

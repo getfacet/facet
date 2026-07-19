@@ -83,18 +83,24 @@ function openAiToolResponse(): Response {
   });
 }
 
-function offlineAfterInitialMountsFetch(): typeof fetch {
+function offlineAfterInitialStageFetch(): typeof fetch {
   let providerCalls = 0;
-  return async () => {
-    providerCalls += 1;
-    if (providerCalls === 1 || providerCalls === 3) return openAiToolResponse();
-    if (providerCalls === 2 || providerCalls === 4) {
-      return Response.json({
-        choices: [{ message: { content: `Initial provider stage is ready. ${SECRET_CANARY}` } }],
-        usage: { prompt_tokens: 4, completion_tokens: 2 },
-      });
+  return async (input, init) => {
+    const requestBody =
+      typeof init?.body === "string"
+        ? init.body
+        : input instanceof Request
+          ? await input.clone().text()
+          : "";
+    if (requestBody.includes("Continue while the provider is offline")) {
+      throw new Error("injected provider offline boundary");
     }
-    throw new Error("injected provider offline boundary");
+    providerCalls += 1;
+    if (providerCalls % 2 === 1) return openAiToolResponse();
+    return Response.json({
+      choices: [{ message: { content: `Initial provider stage is ready. ${SECRET_CANARY}` } }],
+      usage: { prompt_tokens: 4, completion_tokens: 2 },
+    });
   };
 }
 
@@ -116,7 +122,7 @@ async function startProviderRun(page: Page, harness: LabHarness): Promise<string
   await stage.waitFor();
   const runId = await stage.getAttribute("data-run-id");
   if (runId === null) throw new Error("provider run did not expose its run id");
-  await waitForEvidence(harness, runId, (evidence) => completedTurns(evidence) >= 2);
+  await waitForEvidence(harness, runId, (evidence) => completedTurns(evidence) >= 1);
   return runId;
 }
 
@@ -134,12 +140,124 @@ describe("Facet Lab boundary and recovery journey", () => {
         OPENAI_API_KEY: SECRET_CANARY,
         FACET_LAB_OPENAI_MODELS: PROVIDER_MODEL,
       },
-      providerFetch: offlineAfterInitialMountsFetch(),
+      providerFetch: offlineAfterInitialStageFetch(),
     });
   }, 120_000);
 
   afterAll(async () => {
     await harness?.close();
+  });
+
+  it("recovers asset prerequisites from both Catalog and Generate", async () => {
+    for (const path of ["/catalog", "/generate"] as const) {
+      const page = await harness.newPage();
+      let assetRequests = 0;
+      let catalogRequests = 0;
+      let rejectAssetRequests = true;
+      page.on("request", (request) => {
+        if (new URL(request.url()).pathname === "/api/catalog") catalogRequests += 1;
+      });
+      await page.route("**/api/assets", async (route) => {
+        assetRequests += 1;
+        if (rejectAssetRequests) {
+          await route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ error: "injected asset outage" }),
+          });
+          return;
+        }
+        await route.continue();
+      });
+
+      await page.goto(`${harness.url}${path}`, { waitUntil: "networkidle" });
+      await page.getByRole("heading", { name: "Asset selection could not be loaded." }).waitFor();
+      const assetRequestsBeforeRetry = assetRequests;
+      const catalogRequestsBeforeRetry = catalogRequests;
+      rejectAssetRequests = false;
+      await page.getByRole("button", { name: "Retry" }).click();
+      await page
+        .getByRole("heading", { name: path === "/catalog" ? "Catalog" : "Generate", level: 1 })
+        .waitFor();
+      await waitFor(
+        async () => ({ assetRequests, catalogRequests }),
+        (requests) =>
+          requests.assetRequests > assetRequestsBeforeRetry &&
+          requests.catalogRequests > catalogRequestsBeforeRetry,
+      );
+      await page.close();
+    }
+  }, 30_000);
+
+  it("blocks run creation while an asset change is in flight", async () => {
+    const page = await harness.newPage();
+    let releaseRequest = (): void => undefined;
+    const requestHold = new Promise<void>((resolve) => {
+      releaseRequest = resolve;
+    });
+    await page.route("**/api/assets/default", async (route) => {
+      await requestHold;
+      await route.continue();
+    });
+
+    try {
+      await page.goto(`${harness.url}/generate`, { waitUntil: "networkidle" });
+      await page.getByText("Advanced asset settings").click();
+      await page.getByRole("button", { name: "Use package defaults" }).click();
+      await page.getByRole("link", { name: "Scenarios" }).click();
+      const start = page.getByRole("button", { name: "Start new run" });
+      await waitFor(
+        () => start.isDisabled(),
+        (disabled) => disabled,
+      );
+
+      releaseRequest();
+      await waitFor(
+        () => start.isEnabled(),
+        (enabled) => enabled,
+      );
+    } finally {
+      releaseRequest();
+      await page.close();
+    }
+  });
+
+  it("blocks asset mutation while run creation is in flight", async () => {
+    const page = await harness.newPage();
+    let releaseRequest = (): void => undefined;
+    const requestHold = new Promise<void>((resolve) => {
+      releaseRequest = resolve;
+    });
+    try {
+      await page.goto(`${harness.url}/generate`, { waitUntil: "networkidle" });
+      await page.getByText("Advanced asset settings").click();
+      const useDefaults = page.getByRole("button", { name: "Use package defaults" });
+      await page.route("**/api/runs", async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        await requestHold;
+        await route.continue();
+      });
+
+      await page.getByRole("button", { name: "Start new run" }).click();
+      await waitFor(
+        () => useDefaults.isDisabled(),
+        (disabled) => disabled,
+      );
+
+      releaseRequest();
+      await page.getByLabel("Live Facet stage").waitFor();
+      await waitFor(
+        () => useDefaults.isEnabled(),
+        (enabled) => enabled,
+      );
+      await page.getByRole("button", { name: "Cancel run" }).click();
+    } finally {
+      releaseRequest();
+      await page.close();
+    }
   });
 
   it("keeps the last valid stage through provider failure, cancellation, restart, and rapid activation", async () => {
@@ -236,7 +354,7 @@ describe("Facet Lab boundary and recovery journey", () => {
     await catalogPage.locator("#catalog-search").fill("primaryAction");
     await catalogPage.getByRole("button", { name: /primaryAction/u }).click();
     const usesCustomAccent = await catalogPage
-      .getByLabel("primaryAction preview")
+      .getByRole("tabpanel", { name: "Preview" })
       .locator("*")
       .evaluateAll((elements) =>
         elements.some((element) => getComputedStyle(element).backgroundColor === "rgb(1, 2, 3)"),

@@ -47,12 +47,16 @@ export interface LabApiClientOptions {
   readonly fetchImpl?: typeof fetch;
 }
 
+export interface LabApiRequestOptions {
+  readonly signal?: AbortSignal;
+}
+
 export interface LabApiClient {
   getCatalog(): Promise<JsonValue>;
   getCapabilities(): Promise<LabCapabilities>;
-  getAssets(): Promise<JsonValue>;
-  selectDefaultAssets(): Promise<JsonValue>;
-  importAssets(bundle: unknown): Promise<JsonValue>;
+  getAssets(options?: LabApiRequestOptions): Promise<JsonValue>;
+  selectDefaultAssets(options?: LabApiRequestOptions): Promise<JsonValue>;
+  importAssets(bundle: unknown, options?: LabApiRequestOptions): Promise<JsonValue>;
   createRun(configuration: RunConfiguration): Promise<BrowserCreatedRun>;
   listRuns(filters?: BrowserRunFilters): Promise<readonly RunEvidenceV1[]>;
   getRun(runId: string): Promise<RunEvidenceV1>;
@@ -402,6 +406,7 @@ export function createLabApiClient(options: LabApiClientOptions = {}): LabApiCli
     body: unknown,
     requestMaximum = MAX_JSON_REQUEST_BYTES,
     responseMaximum = requestMaximum,
+    options?: LabApiRequestOptions,
   ): Promise<JsonValue> =>
     jsonValue(
       path,
@@ -409,6 +414,7 @@ export function createLabApiClient(options: LabApiClientOptions = {}): LabApiCli
         method: "POST",
         headers: jsonHeaders(),
         body: encodeJsonBody(body, requestMaximum),
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
       },
       responseMaximum,
     );
@@ -421,10 +427,22 @@ export function createLabApiClient(options: LabApiClientOptions = {}): LabApiCli
         throw new LabApiError(200, "invalid-response", "Lab capabilities are invalid.");
       return decoded;
     },
-    getAssets: () => jsonValue("/api/assets", undefined, MAX_EVIDENCE_BUNDLE_BYTES),
-    selectDefaultAssets: () => mutation("/api/assets/default", {}),
-    importAssets: (bundle: unknown) =>
-      mutation("/api/assets/import", bundle, MAX_ASSET_BUNDLE_BYTES, MAX_EVIDENCE_BUNDLE_BYTES),
+    getAssets: (options) =>
+      jsonValue(
+        "/api/assets",
+        options?.signal === undefined ? undefined : { signal: options.signal },
+        MAX_EVIDENCE_BUNDLE_BYTES,
+      ),
+    selectDefaultAssets: (options) =>
+      mutation("/api/assets/default", {}, MAX_JSON_REQUEST_BYTES, MAX_JSON_REQUEST_BYTES, options),
+    importAssets: (bundle: unknown, options) =>
+      mutation(
+        "/api/assets/import",
+        bundle,
+        MAX_ASSET_BUNDLE_BYTES,
+        MAX_EVIDENCE_BUNDLE_BYTES,
+        options,
+      ),
     async createRun(configuration: RunConfiguration) {
       const decoded = decodeCreatedRun(
         await read("/api/runs", {

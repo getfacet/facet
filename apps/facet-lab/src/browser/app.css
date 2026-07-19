@@ -370,6 +370,49 @@ a {
   font-weight: 750;
 }
 
+.generate-asset-settings {
+  margin-bottom: 20px;
+}
+
+.generate-asset-settings > p {
+  margin: 12px 0 0;
+  color: var(--lab-muted);
+}
+
+.asset-import-panel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--lab-line);
+}
+
+.asset-current-selection {
+  margin: 0 0 4px;
+}
+
+.asset-snapshot-digest {
+  display: block;
+  color: var(--lab-muted);
+  overflow-wrap: anywhere;
+}
+
+.asset-import-panel form {
+  margin-top: 16px;
+}
+
+.lab-page-frame .asset-source-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.lab-page-frame .asset-source-option > input[type="radio"] {
+  flex: 0 0 auto;
+  width: 18px;
+  min-height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
 .lab-page-frame :where(button, input, select, textarea):not([style]):not([data-facet-field-id]) {
   min-height: 40px;
   border: 1px solid var(--lab-line-strong);

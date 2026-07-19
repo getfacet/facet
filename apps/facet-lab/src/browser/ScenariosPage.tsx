@@ -1,8 +1,10 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { FacetTheme } from "@facet/core";
+
 import { OFFICIAL_SCENARIOS, type OfficialScenario } from "../scenarios/scenarios.js";
-import type { LabApiClient } from "./api-client.js";
+import type { BrowserCreatedRun, LabApiClient } from "./api-client.js";
 import { GeneratePage } from "./GeneratePage.js";
 import type { LabCapabilities } from "./run-config.js";
 
@@ -10,6 +12,10 @@ export interface ScenariosPageProps {
   readonly client?: LabApiClient;
   readonly capabilities?: LabCapabilities;
   readonly scenarios?: readonly OfficialScenario[];
+  readonly theme?: FacetTheme;
+  readonly assetSettingsBusy?: boolean;
+  readonly onRunStarted?: (run: BrowserCreatedRun) => void;
+  readonly onStartingChange?: (starting: boolean) => void;
 }
 
 interface ConstraintOption {
@@ -38,6 +44,10 @@ export function ScenariosPage({
   client,
   capabilities,
   scenarios = OFFICIAL_SCENARIOS,
+  theme,
+  assetSettingsBusy = false,
+  onRunStarted,
+  onStartingChange,
 }: ScenariosPageProps = {}): ReactNode {
   const [selectedId, setSelectedId] = useState(scenarios[0]?.id ?? "");
   const [constraint, setConstraint] = useState<string | null>(null);
@@ -114,6 +124,10 @@ export function ScenariosPage({
           scenarios={scenarios}
           initialScenarioId={selected.id}
           initialConstraint={constraint}
+          {...(theme === undefined ? {} : { theme })}
+          assetSettingsBusy={assetSettingsBusy}
+          {...(onRunStarted === undefined ? {} : { onRunStarted })}
+          {...(onStartingChange === undefined ? {} : { onStartingChange })}
         />
       </section>
     </section>

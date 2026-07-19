@@ -278,12 +278,22 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
   const [theme, setTheme] = useState<ChromeTheme>(initialChromeTheme);
   const [catalog, setCatalog] = useState<Resource<unknown>>({ status: "loading" });
   const [assets, setAssets] = useState<Resource<AssetSelectionView>>({ status: "loading" });
+  const [activeAssetChanges, setActiveAssetChanges] = useState(0);
+  const [activeRunStarts, setActiveRunStarts] = useState(0);
   const [capabilities, setCapabilities] = useState<Resource<LabCapabilities>>({
     status: "loading",
   });
   const [runs, setRuns] = useState<Resource<readonly RunEvidenceV1[]>>({ status: "loading" });
   const mainRef = useRef<HTMLDivElement>(null);
   const areaRefs = useRef(new Map<ProductAreaId, HTMLAnchorElement>());
+  const assetsBusy = activeAssetChanges > 0;
+  const runStarting = activeRunStarts > 0;
+  const handleAssetBusyChange = useCallback((busy: boolean): void => {
+    setActiveAssetChanges((count) => Math.max(0, count + (busy ? 1 : -1)));
+  }, []);
+  const handleRunStartingChange = useCallback((starting: boolean): void => {
+    setActiveRunStarts((count) => Math.max(0, count + (starting ? 1 : -1)));
+  }, []);
 
   const loadCatalog = useCallback((): void => {
     setCatalog({ status: "loading" });
@@ -311,6 +321,10 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
       () => setAssets({ status: "error" }),
     );
   }, [api]);
+  const retryAssets = useCallback((): void => {
+    loadAssets();
+    loadCatalog();
+  }, [loadAssets, loadCatalog]);
   const loadRuns = useCallback((): void => {
     setRuns({ status: "loading" });
     void api.listRuns({ limit: 100 }).then(
@@ -362,43 +376,50 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
   const resourcePage = (): ReactNode => {
     switch (route.id) {
       case "catalog":
-        return (
-          <div className="lab-composed-page">
-            <CatalogPage
-              status={catalog.status}
-              {...(assets.status === "ready" ? { theme: assets.value.theme } : {})}
-              {...(catalog.status === "ready" ? { catalog: catalog.value } : {})}
-              {...(catalog.status === "error"
-                ? { errorMessage: "The package catalog could not be loaded." }
-                : {})}
-            />
-            {assets.status === "loading" ? (
-              <ResourceLoading label="asset selection" />
-            ) : assets.status === "error" ? (
-              <ResourceFailure label="Asset selection" retry={loadAssets} />
-            ) : (
-              <AssetImportPanel
-                api={api}
-                current={assets.value}
-                onAssetsChanged={(next) => {
-                  setAssets({ status: "ready", value: next });
-                  loadCatalog();
-                }}
-              />
-            )}
-          </div>
+        return assets.status === "loading" ? (
+          <ResourceLoading label="asset selection" />
+        ) : assets.status === "error" ? (
+          <ResourceFailure label="Asset selection" retry={retryAssets} />
+        ) : (
+          <CatalogPage
+            status={catalog.status}
+            theme={assets.value.theme}
+            {...(catalog.status === "ready" ? { catalog: catalog.value } : {})}
+            {...(catalog.status === "error"
+              ? { errorMessage: "The package catalog could not be loaded." }
+              : {})}
+          />
         );
       case "generate":
-        return capabilities.status === "loading" || assets.status === "loading" ? (
+        return capabilities.status === "loading" ? (
           <ResourceLoading label="capabilities" />
-        ) : capabilities.status === "error" || assets.status === "error" ? (
+        ) : capabilities.status === "error" ? (
           <ResourceFailure label="Run capabilities" retry={loadCapabilities} />
+        ) : assets.status === "loading" ? (
+          <ResourceLoading label="asset selection" />
+        ) : assets.status === "error" ? (
+          <ResourceFailure label="Asset selection" retry={retryAssets} />
         ) : (
           <GeneratePage
             client={api}
             capabilities={capabilities.value}
             theme={assets.value.theme}
             onRunStarted={loadRuns}
+            assetSettingsBusy={assetsBusy}
+            onStartingChange={handleRunStartingChange}
+            assetSettings={
+              <AssetImportPanel
+                api={api}
+                current={assets.value}
+                disabled={assetsBusy || runStarting}
+                onBusyChange={handleAssetBusyChange}
+                onAssetsChanged={(next) => {
+                  setAssets({ status: "ready", value: next });
+                  loadCatalog();
+                }}
+                onAssetsUnavailable={() => setAssets({ status: "error" })}
+              />
+            }
           />
         );
       case "scenarios":
@@ -406,8 +427,19 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
           <ResourceLoading label="capabilities" />
         ) : capabilities.status === "error" ? (
           <ResourceFailure label="Scenario capabilities" retry={loadCapabilities} />
+        ) : assets.status === "loading" ? (
+          <ResourceLoading label="asset selection" />
+        ) : assets.status === "error" ? (
+          <ResourceFailure label="Asset selection" retry={retryAssets} />
         ) : (
-          <ScenariosPage client={api} capabilities={capabilities.value} />
+          <ScenariosPage
+            client={api}
+            capabilities={capabilities.value}
+            theme={assets.value.theme}
+            assetSettingsBusy={assetsBusy}
+            onRunStarted={loadRuns}
+            onStartingChange={handleRunStartingChange}
+          />
         );
       case "runs":
         return <RunsPage api={api} onInspect={(runId) => navigate(pathForRun(runId))} />;

@@ -72,8 +72,14 @@ describe("Facet Lab accessible inspection controls", () => {
     });
     expect(await generateHeading.count()).toBe(1);
     expect(await generateHeading.isVisible()).toBe(true);
+    const assetSettings = page.getByText("Advanced asset settings", { exact: true });
+    await assetSettings.waitFor({ state: "visible" });
+    expect(await page.getByRole("group", { name: "Assets for new runs" }).isVisible()).toBe(false);
+    await assetSettings.click();
+    expect(await page.getByRole("group", { name: "Assets for new runs" }).isVisible()).toBe(true);
 
     await page.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });
+    expect(await page.getByText("Advanced asset settings").count()).toBe(0);
     const patterns = page.getByRole("button", { name: "Patterns (17/17)" });
     await patterns.focus();
     await page.keyboard.press("Enter");
