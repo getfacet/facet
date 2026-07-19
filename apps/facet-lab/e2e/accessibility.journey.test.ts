@@ -56,7 +56,7 @@ describe("Facet Lab accessible inspection controls", () => {
       await page.locator("#lab-main").evaluate((element) => element === document.activeElement),
     ).toBe(true);
 
-    const catalogArea = page.getByRole("link", { name: /Catalog Inspect/u });
+    const catalogArea = page.getByRole("link", { name: "Catalog", exact: true });
     await catalogArea.focus();
     await page.keyboard.press("ArrowRight");
     expect(await page.evaluate(() => document.activeElement?.textContent)).toContain("Generate");

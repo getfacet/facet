@@ -504,7 +504,6 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
 
       <div className="lab-workbench">
         <nav className="lab-primary-nav" aria-label="Facet Lab product areas">
-          <p className="lab-nav-kicker">Workbench</p>
           <ol>
             {PRODUCT_AREAS.map((area) => (
               <li key={area.id}>
@@ -521,18 +520,11 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
                     navigate(area.path);
                   }}
                 >
-                  <span className="lab-nav-index">{area.shortLabel}</span>
-                  <span>
-                    <strong>{area.label}</strong>
-                    <small>{area.description}</small>
-                  </span>
+                  {area.label}
                 </a>
               </li>
             ))}
           </ol>
-          <p className="lab-nav-help">
-            Arrow keys move between named areas. Home and End jump to the edges.
-          </p>
         </nav>
 
         <section className="lab-stage" aria-label="Selected Facet Lab area">
