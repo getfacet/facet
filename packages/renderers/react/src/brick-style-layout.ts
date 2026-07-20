@@ -10,6 +10,7 @@ import {
 import { rootContainmentStyle, scrollContainmentStyle } from "./layout-contract.js";
 import { projectSurface, projectTypography } from "./style-projection.js";
 import { boxStyle, mediaStyle, textStyle, type ResolvedTheme } from "./theme.js";
+import { projectWidthStyle } from "./width-style.js";
 
 type BoxDefinition = BrickStyleDefinition<"box">;
 type TextDefinition = BrickStyleDefinition<"text">;
@@ -112,9 +113,8 @@ export function layoutMediaTargetStyle(
 }
 
 export function tableRootTargetStyle(style: TableDefinition, theme: ResolvedTheme): CSSProperties {
-  const width: CSSProperties = style.width === "full" ? { width: "100%" } : {};
   return rootContainmentStyle({
-    ...width,
+    ...projectWidthStyle(style.width),
     ...projectSurface(style, theme),
     ...scrollContainmentStyle("x"),
   });

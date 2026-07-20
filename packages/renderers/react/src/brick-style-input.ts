@@ -12,6 +12,7 @@ import { rootContainmentStyle } from "./layout-contract.js";
 import { resolveBrickStyle } from "./style-resolver.js";
 import { projectSurface, projectTypography } from "./style-projection.js";
 import type { ResolvedTheme } from "./theme.js";
+import { projectWidthStyle } from "./width-style.js";
 
 type InputDefinition = BrickStyleDefinition<"input">;
 type RichTextDefinition = BrickStyleDefinition<"richtext">;
@@ -174,7 +175,7 @@ export function resolveInputStylePresentation(
         : style.alignItems === "end"
           ? "flex-end"
           : style.alignItems;
-  if (style.width === "full") root.width = "100%";
+  Object.assign(root, projectWidthStyle(style.width));
 
   const controlValues = style.control;
   const controlBase: CSSProperties = {
