@@ -59,6 +59,15 @@ const TOKEN_GROUPS = [
   "paint",
 ] as const;
 
+const COMPACT_BOX_PRESETS = [
+  "primaryAction",
+  "secondaryAction",
+  "badge",
+  "successBadge",
+  "warningBadge",
+  "dangerBadge",
+] as const;
+
 describe("DEFAULT_THEME", () => {
   it("ships one complete default Theme", () => {
     const result = validateTheme(DEFAULT_THEME);
@@ -113,6 +122,27 @@ describe("DEFAULT_THEME", () => {
 
     expect(DEFAULT_THEME).not.toHaveProperty("recipes");
     expect(JSON.stringify(DEFAULT_THEME)).not.toContain('"recipe"');
+  });
+
+  it("keeps default badges and actions compact", () => {
+    const result = validateTheme(DEFAULT_THEME);
+    expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
+    expect(result.issues).toEqual([]);
+
+    const boxPresets = DEFAULT_THEME.presets?.box;
+    for (const presetName of COMPACT_BOX_PRESETS) {
+      expect(boxPresets?.[presetName]?.style.width, presetName).toBe("fit");
+    }
+    expect(boxPresets?.primaryAction?.style).toMatchObject({
+      direction: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    });
+    expect(boxPresets?.secondaryAction?.style).toMatchObject({
+      direction: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    });
   });
 
   it("exports every complete token map as null-prototype data", () => {
