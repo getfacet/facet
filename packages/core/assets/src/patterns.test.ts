@@ -48,6 +48,7 @@ const RETIRED_STYLE_KEYS = new Set([
 ]);
 
 const ACTION_BOX_PRESETS = ["primaryAction", "secondaryAction"] as const;
+const ACTIVE_LAYER_KEY = "active";
 
 type ActionBoxPreset = (typeof ACTION_BOX_PRESETS)[number];
 
@@ -61,8 +62,8 @@ const actionPresetFromStyle = (style: unknown): ActionBoxPreset | undefined => {
   if (!isRecord(style)) return undefined;
   if (isActionBoxPreset(style.preset)) return style.preset;
 
-  const activeStyle = style.active;
-  if (isRecord(activeStyle) && isActionBoxPreset(activeStyle.preset)) return activeStyle.preset;
+  const activeLayer = style[ACTIVE_LAYER_KEY];
+  if (isRecord(activeLayer) && isActionBoxPreset(activeLayer.preset)) return activeLayer.preset;
   return undefined;
 };
 
