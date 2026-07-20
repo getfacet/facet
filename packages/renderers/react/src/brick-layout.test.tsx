@@ -344,6 +344,9 @@ describe("StageRenderer brick layout contract", () => {
     expect(out.match(/min-width:0/g)?.length ?? 0).toBeGreaterThan(8);
     expect(out.match(/max-width:100%/g)?.length ?? 0).toBeGreaterThan(8);
     expect(out.match(/overflow-wrap:anywhere/g)?.length ?? 0).toBeGreaterThan(8);
+    expect(out).toContain('data-facet-list-content="true"');
+    expect(out).toContain('data-facet-key-value-item="true"');
+    expect(out).not.toContain("list-style-position:inside");
     expect(out.match(/overflow-x:auto/g)).toHaveLength(1);
     expect(out).not.toContain("Legacy ARR");
   });

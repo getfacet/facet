@@ -99,7 +99,7 @@ export function listTargetStyles(
 ): ListTargetStyles {
   return {
     root: rootStyle(style, theme),
-    item: { ...targetBoxStyle(style.item, theme), display: "list-item" },
+    item: targetBoxStyle(style.item, theme),
     itemGap: style.item?.gap === undefined ? undefined : theme.space[style.item.gap],
     title: targetTextStyle(style.title, theme),
     body: targetTextStyle(style.body, theme),
@@ -122,9 +122,9 @@ export function keyValueTargetStyles(
     root: rootStyle(style, theme),
     item: {
       ...boxStyle(style.item, theme),
-      flexDirection: "row",
-      justifyContent: "space-between",
-      flexWrap: "wrap",
+      display: "grid",
+      gridTemplateColumns: "auto minmax(0, 1fr)",
+      alignItems: "baseline",
     },
     label: targetTextStyle(style.label, theme),
     value: targetTextStyle(style.value, theme),
