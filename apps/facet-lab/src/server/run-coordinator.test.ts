@@ -4,7 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import { OFFICIAL_SCENARIOS } from "../scenarios/scenarios.js";
 import { digestReplayTree } from "../runs/replay.js";
-import { MAX_EVIDENCE_ITEMS_PER_RUN, type RunStatus } from "../shared/run-contract.js";
+import {
+  MAX_EVIDENCE_ITEMS_PER_RUN,
+  type RunEvidenceV1,
+  type RunStatus,
+} from "../shared/run-contract.js";
 import { createDefaultAssetSnapshot } from "./asset-snapshot.js";
 import { DETERMINISTIC_MODEL } from "./deterministic-provider.js";
 import { createRunCoordinator, type CreateCoordinatedRunInput } from "./run-coordinator.js";
@@ -31,6 +35,25 @@ function request(): CreateCoordinatedRunInput {
 }
 
 describe("run coordinator", () => {
+  it("persists package-default asset provenance", async () => {
+    const persisted: RunEvidenceV1[] = [];
+    const coordinator = createRunCoordinator({
+      persist: (evidence) => {
+        persisted.push(evidence);
+        return true;
+      },
+    });
+    const created = coordinator.create(request());
+    expect(coordinator.start(created.runId).ok).toBe(true);
+
+    expect(await coordinator.cancel(created.runId)).toMatchObject({ ok: true, changed: true });
+    expect(persisted).toHaveLength(1);
+    expect(persisted[0]).toMatchObject({
+      run: { assetSource: "default" },
+      assets: { source: "default" },
+    });
+  });
+
   it("seals cancelled generations and isolates restart from late completion", async () => {
     const persisted: string[] = [];
     const published: string[] = [];

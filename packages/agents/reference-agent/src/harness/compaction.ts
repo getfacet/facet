@@ -283,7 +283,12 @@ function rewriteMessageText(message: TurnMessage, text: string): TurnMessage {
     case "tool_result":
       return { role: "tool_result", callId: message.callId, content: text };
     case "assistant_tools":
-      return { role: "assistant_tools", text, toolCalls: message.toolCalls };
+      return {
+        role: "assistant_tools",
+        text,
+        toolCalls: message.toolCalls,
+        ...(message.providerState === undefined ? {} : { providerState: message.providerState }),
+      };
   }
 }
 
@@ -295,7 +300,9 @@ function estimateMessageChars(message: TurnMessage): number {
     case "tool_result":
       return `${message.role} ${message.callId}: ${message.content}\n`.length;
     case "assistant_tools":
-      return `${message.role}: ${message.text}\n${safeJson(message.toolCalls)}\n`.length;
+      return `${message.role}: ${message.text}\n${safeJson(message.toolCalls)}\n${safeJson(
+        message.providerState,
+      )}\n`.length;
   }
 }
 

@@ -5,6 +5,7 @@ export const EVIDENCE_SCHEMA_VERSION = 1 as const;
 
 export const MAX_PROMPT_CODE_UNITS = 20_000;
 export const MAX_MODEL_CODE_UNITS = 200;
+export const MAX_CAPABILITY_MODELS = 100;
 export const MAX_RUN_GUIDE_CODE_UNITS = 20_000;
 export const MAX_JSON_REQUEST_BYTES = 2 * 1024 * 1024;
 export const MAX_EVIDENCE_BUNDLE_BYTES = 32 * 1024 * 1024;

@@ -19,6 +19,8 @@ export interface ProviderStep {
   readonly text: string;
   readonly toolCalls: readonly ToolCall[];
   readonly usage?: ProviderUsage;
+  /** Provider-owned continuation data that must round-trip with a tool step. */
+  readonly providerState?: unknown;
 }
 
 /**
@@ -33,6 +35,7 @@ export type TurnMessage =
       readonly role: "assistant_tools";
       readonly text: string;
       readonly toolCalls: readonly ToolCall[];
+      readonly providerState?: unknown;
     }
   | { readonly role: "tool_result"; readonly callId: string; readonly content: string };
 
@@ -59,7 +62,7 @@ export interface ReferenceProvider {
   ): Promise<ProviderStep>;
 }
 
-/** Per-attempt abort deadline for one `run` call. */
+/** Standard per-attempt deadline. OpenAI Pro Responses use a documented longer default. */
 export const TURN_TIMEOUT_MS = 60_000;
 
 export interface ProviderOptions {

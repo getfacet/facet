@@ -136,14 +136,16 @@ export function SandboxPage({
   };
 
   return (
-    <section aria-labelledby="sandbox-title">
-      <h1 id="sandbox-title">Contract Sandbox</h1>
-      <p>
-        Create an isolated Facet tree or clone a saved run. Sandbox edits never write to the source
-        run.
-      </p>
+    <section className="lab-page lab-sandbox-page" aria-labelledby="sandbox-title">
+      <header className="lab-page-header">
+        <h1 id="sandbox-title">Contract Sandbox</h1>
+        <p>
+          Create an isolated Facet tree or clone a saved run. Sandbox edits never write to the
+          source run.
+        </p>
+      </header>
 
-      <form onSubmit={createNew}>
+      <form className="lab-sandbox-tree-form" onSubmit={createNew}>
         <fieldset>
           <legend>Create an isolated sandbox</legend>
           <label htmlFor="sandbox-tree">{SANDBOX_CONTROL_LABELS.tree}</label>
@@ -159,7 +161,7 @@ export function SandboxPage({
       </form>
 
       <form onSubmit={(event) => void cloneRun(event)}>
-        <fieldset disabled={cloning}>
+        <fieldset className="lab-inline-fieldset" disabled={cloning}>
           <legend>Clone a saved or live run</legend>
           <label htmlFor="sandbox-source-run">{SANDBOX_CONTROL_LABELS.sourceRun}</label>
           <input
@@ -174,7 +176,11 @@ export function SandboxPage({
       </form>
 
       {diagnostic === null ? null : (
-        <section role="alert" aria-labelledby="sandbox-diagnostic-title">
+        <section
+          className="lab-page-section"
+          role="alert"
+          aria-labelledby="sandbox-diagnostic-title"
+        >
           <h2 id="sandbox-diagnostic-title">Sandbox diagnostic</h2>
           <p>
             <strong>{diagnostic.target}</strong>: {diagnostic.message}
@@ -184,9 +190,11 @@ export function SandboxPage({
       )}
 
       {snapshot === null ? (
-        <p role="status">Create or clone a sandbox to begin editing.</p>
+        <p className="lab-status-line" role="status">
+          Create or clone a sandbox to begin editing.
+        </p>
       ) : (
-        <section aria-labelledby="sandbox-editor-title">
+        <section className="lab-page-section" aria-labelledby="sandbox-editor-title">
           <h2 id="sandbox-editor-title">Isolated editor</h2>
           <dl>
             <dt>Sandbox</dt>
@@ -237,7 +245,7 @@ export function SandboxPage({
             <button type="submit">Save separate view checkpoint</button>
           </form>
 
-          <section aria-labelledby="sandbox-preview-title">
+          <section className="lab-page-section" aria-labelledby="sandbox-preview-title">
             <h3 id="sandbox-preview-title">Last safe preview</h3>
             <StageRenderer tree={snapshot.previewTree} theme={theme} />
           </section>

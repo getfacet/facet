@@ -87,6 +87,13 @@ describe("Facet Lab web host", () => {
     });
     expect(hostileApiOrigin.status).toBe(403);
 
+    const oversizedApi = await fetch(`${listening.baseUrl}/api/catalog`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ padding: "x".repeat(256) }),
+    });
+    expect(oversizedApi.status).toBe(413);
+
     const unregistered = await fetch(`${listening.baseUrl}/event`, {
       method: "POST",
       headers: { "content-type": "application/json" },

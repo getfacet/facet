@@ -36,10 +36,13 @@ observe or cancel one run without replacing the provider-neutral contracts:
 - provider constructors accept an optional trimmed `model` override and keep
   their documented default when it is omitted;
 - `ReferenceProvider.run` receives an optional `AbortSignal` context;
+- `ProviderStep.providerState` may carry opaque provider continuation data that
+  the reference harness round-trips only with the matching assistant tool step;
 - `createReferenceAgent` accepts `abortSignal` and a synchronous
   `diagnosticObserver`.
 
-Cancellation is cooperative across provider fetches and retry backoff. An
+Cancellation is cooperative across acting and model-assisted summarizer
+provider fetches, retry backoff, and cross-turn summary persistence. An
 already-aborted signal starts no provider attempt, and an aborted turn emits no
 fallback chat response. Diagnostics report bounded lifecycle/tool evidence,
 including a terminal reason, but do not replace `Sink` history or server frame

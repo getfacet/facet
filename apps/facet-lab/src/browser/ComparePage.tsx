@@ -14,8 +14,8 @@ export function ComparePage({ runs }: ComparePageProps): ReactNode {
   const runById = new Map((runs ?? []).map((run) => [run.run.runId, run] as const));
 
   return (
-    <main aria-labelledby="compare-page-title">
-      <header>
+    <main className="lab-page lab-compare-page" aria-labelledby="compare-page-title">
+      <header className="lab-page-header">
         <h1 id="compare-page-title">Immutable run comparison</h1>
         <p>
           Compare two to four recorded runs without starting providers or changing source evidence.
@@ -27,7 +27,7 @@ export function ComparePage({ runs }: ComparePageProps): ReactNode {
 
       {presentation.state !== "ready" ? null : (
         <>
-          <section aria-labelledby="comparison-render-title">
+          <section className="lab-page-section" aria-labelledby="comparison-render-title">
             <h2 id="comparison-render-title">Rendered stages and evidence</h2>
             <div data-comparison-columns={presentation.columns.length}>
               {presentation.columns.map((column) => {
@@ -85,7 +85,7 @@ export function ComparePage({ runs }: ComparePageProps): ReactNode {
             </div>
           </section>
 
-          <section aria-labelledby="comparison-provenance-title">
+          <section className="lab-page-section" aria-labelledby="comparison-provenance-title">
             <h2 id="comparison-provenance-title">Evidence and provenance matrix</h2>
             <div tabIndex={0} role="region" aria-label="Scrollable run comparison table">
               <table>

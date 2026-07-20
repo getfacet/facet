@@ -4,11 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
-import {
-  MAX_ASSET_BUNDLE_BYTES,
-  MAX_EVIDENCE_BUNDLE_BYTES,
-  MAX_PROMPT_CODE_UNITS,
-} from "../shared/run-contract.js";
+import { MAX_PROMPT_CODE_UNITS } from "../shared/run-contract.js";
 import { createLabApiClient } from "./api-client.js";
 import { applyRunStreamEvent, createInitialRunStreamState, selectRunStream } from "./run-stream.js";
 import { validateRunConfiguration, type LabCapabilities } from "./run-config.js";
@@ -130,27 +126,5 @@ describe("browser run foundation", () => {
     });
     expect(cancelled).toBe(true);
     expect(reads).toBe(1);
-  });
-
-  it("keeps the 24 MiB asset request bound separate from its larger response envelope", async () => {
-    const bundle = { padding: "x".repeat(MAX_ASSET_BUNDLE_BYTES - 32) };
-    const requestText = JSON.stringify(bundle);
-    const responseText = JSON.stringify({ accepted: true, snapshot: bundle, issues: [] });
-    const encoder = new TextEncoder();
-    expect(encoder.encode(requestText).byteLength).toBeLessThanOrEqual(MAX_ASSET_BUNDLE_BYTES);
-    expect(encoder.encode(responseText).byteLength).toBeGreaterThan(MAX_ASSET_BUNDLE_BYTES);
-    expect(encoder.encode(responseText).byteLength).toBeLessThan(MAX_EVIDENCE_BUNDLE_BYTES);
-
-    const client = createLabApiClient({
-      fetchImpl: async (_input, init) => {
-        expect(init?.body).toBe(requestText);
-        return new Response(responseText, {
-          status: 200,
-          headers: { "content-type": "application/json" },
-        });
-      },
-    });
-
-    await expect(client.importAssets(bundle)).resolves.toMatchObject({ accepted: true });
   });
 });

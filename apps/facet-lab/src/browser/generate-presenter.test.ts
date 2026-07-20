@@ -38,9 +38,9 @@ const CAPABILITIES: LabCapabilities = {
 
 function configuration(overrides: Partial<RunConfiguration> = {}): RunConfiguration {
   return {
-    mode: "deterministic",
+    mode: "provider",
     provider: "openai",
-    model: "facet-deterministic",
+    model: "gpt-live",
     scenarioId: "analytics-dashboard",
     prompt: "Build the analytics scenario.",
     constraint: null,
@@ -125,7 +125,9 @@ describe("generate presenter", () => {
   it("supports official and free-form autonomous drafts across display modes", () => {
     const official = createGenerateDraft(CAPABILITIES, OFFICIAL_SCENARIOS[1]!);
     expect(official).toMatchObject({
-      mode: "deterministic",
+      mode: "provider",
+      provider: "openai",
+      model: "gpt-live",
       scenarioId: "analytics-dashboard",
       prompt: OFFICIAL_SCENARIOS[1]!.prompt,
       constraint: null,
@@ -148,6 +150,22 @@ describe("generate presenter", () => {
       ready: true,
       scenarioKind: "free-form",
       constraintOutcome: "autonomous",
+    });
+  });
+
+  it("starts with Anthropic when it is the only configured real provider", () => {
+    const anthropicOnly: LabCapabilities = {
+      ...CAPABILITIES,
+      providers: {
+        openai: { ...CAPABILITIES.providers.openai, available: false },
+        anthropic: { ...CAPABILITIES.providers.anthropic, available: true },
+      },
+    };
+
+    expect(createGenerateDraft(anthropicOnly)).toMatchObject({
+      mode: "provider",
+      provider: "anthropic",
+      model: "claude-live",
     });
   });
 

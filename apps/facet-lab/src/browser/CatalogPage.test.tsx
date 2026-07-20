@@ -25,14 +25,17 @@ describe("CatalogPage", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Only Bricks render on the stage" })).toBeTruthy();
-    expect(screen.getByText("Bricks are the UI.")).toBeTruthy();
-    expect(screen.getByText("Presets style one Brick.")).toBeTruthy();
-    expect(screen.getByText("Patterns stay outside the stage.")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Only Bricks render on the stage" })).toBeNull();
+
+    const bricksCategory = screen.getByRole("button", { name: "Bricks (11/11)" });
+    expect(within(bricksCategory).getByText("Bricks")).toBeTruthy();
+    expect(within(bricksCategory).getByText("11/11")).toBeTruthy();
+    expect(within(bricksCategory).queryByText(/safe UI building blocks/u)).toBeNull();
 
     const box = screen.getByRole("button", { name: "Inspect Brick box" });
     expect(within(box).getByText("Brick")).toBeTruthy();
     expect(within(box).getByText("box")).toBeTruthy();
+    expect(within(box).queryByText(/sole container Brick/u)).toBeNull();
     expect(within(box).queryByText("render")).toBeNull();
 
     expect(screen.getByRole("heading", { name: "This frame is rendered by Facet." })).toBeTruthy();
@@ -71,16 +74,12 @@ describe("CatalogPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Presets (43/43)" }));
     fireEvent.click(screen.getByRole("tab", { name: "Package definition" }));
     expect(screen.getByText(/The renderer applies this data when a/u)).toBeTruthy();
-    expect(
-      screen.getByText(/This JSON is from the currently selected Theme asset snapshot/u),
-    ).toBeTruthy();
+    expect(screen.getByText(/This JSON is from the @facet\/assets default Theme/u)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Patterns (17/17)" }));
     fireEvent.click(screen.getByRole("tab", { name: "Package definition" }));
     expect(screen.getByText(/Agents can read and adapt this validated example tree/u)).toBeTruthy();
-    expect(
-      screen.getByText(/This JSON is from the currently selected Pattern asset snapshot/u),
-    ).toBeTruthy();
+    expect(screen.getByText(/This JSON is from the @facet\/assets default Patterns/u)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Token values (106/106)" }));
     expect(screen.getByRole("heading", { name: "This frame is rendered by Facet." })).toBeTruthy();

@@ -40,10 +40,11 @@ function ReplaySession({ evidence }: ReplayPageProps): ReactNode {
 
   return (
     <main
+      className="lab-page lab-replay-page"
       aria-labelledby="replay-page-title"
       {...(presentation.runId === null ? {} : { "data-replay-run-id": presentation.runId })}
     >
-      <header>
+      <header className="lab-page-header">
         <h1 id="replay-page-title">Provider-free replay</h1>
         <p>
           Scrub immutable accepted stages and recorded browser views without starting a provider.
@@ -55,7 +56,7 @@ function ReplaySession({ evidence }: ReplayPageProps): ReactNode {
 
       {presentation.state !== "ready" || selected === null ? null : (
         <>
-          <section aria-labelledby="replay-timeline-title">
+          <section className="lab-page-section" aria-labelledby="replay-timeline-title">
             <h2 id="replay-timeline-title">Accepted timeline</h2>
             <label htmlFor="replay-scrubber">Replay checkpoint</label>
             <input
@@ -69,7 +70,7 @@ function ReplaySession({ evidence }: ReplayPageProps): ReactNode {
               onChange={(event) => setSelectedIndex(Number(event.currentTarget.value))}
             />
             <output htmlFor="replay-scrubber">{selected.label}</output>
-            <div role="group" aria-label="Replay navigation">
+            <div className="lab-action-group" role="group" aria-label="Replay navigation">
               <button
                 className="facet-lab-focusable"
                 type="button"
@@ -103,7 +104,7 @@ function ReplaySession({ evidence }: ReplayPageProps): ReactNode {
             </ol>
           </section>
 
-          <section aria-labelledby="replay-stage-title">
+          <section className="lab-page-section" aria-labelledby="replay-stage-title">
             <h2 id="replay-stage-title">Recorded stage</h2>
             <dl>
               <dt>Stage version</dt>
@@ -143,7 +144,7 @@ function ReplaySession({ evidence }: ReplayPageProps): ReactNode {
             )}
           </section>
 
-          <section aria-labelledby="replay-diagnostics-title">
+          <section className="lab-page-section" aria-labelledby="replay-diagnostics-title">
             <h2 id="replay-diagnostics-title">Replay diagnostics</h2>
             {presentation.issues.length === 0 ? (
               <p>No replay integrity issues detected.</p>

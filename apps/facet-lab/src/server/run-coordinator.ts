@@ -154,10 +154,6 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value);
 }
 
-function assetSource(source: AssetSnapshot["source"]): RunEvidenceV1["run"]["assetSource"] {
-  return source === "default" ? "default" : "imported";
-}
-
 function createIdentity(createId: () => string, generation: number): CoordinatedRunIdentity {
   return Object.freeze({
     runId: createId(),
@@ -203,12 +199,12 @@ function timelineBudget(
       startedAt: createdAt,
       completedAt: null,
       assetDigest: assets.digest,
-      assetSource: assetSource(assets.source),
+      assetSource: "default",
       importedFromRunId: null,
     },
     assets: {
       digest: assets.digest,
-      source: assetSource(assets.source),
+      source: "default",
       theme: assets.theme,
       patterns: assets.patterns,
     },
@@ -347,12 +343,12 @@ export function createRunCoordinator(options: CreateRunCoordinatorOptions = {}):
         startedAt: entry.startedAt,
         completedAt: entry.completedAt,
         assetDigest: entry.assets.digest,
-        assetSource: assetSource(entry.assets.source),
+        assetSource: "default",
         importedFromRunId: null,
       },
       assets: {
         digest: entry.assets.digest,
-        source: assetSource(entry.assets.source),
+        source: "default",
         theme: entry.assets.theme,
         patterns: entry.assets.patterns,
       },

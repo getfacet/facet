@@ -58,6 +58,7 @@ describe("Facet Lab accessible inspection controls", () => {
     expect(
       await page.locator("#lab-main").evaluate((element) => element === document.activeElement),
     ).toBe(true);
+    await page.evaluate(() => window.history.replaceState({}, "", "/catalog"));
 
     const catalogArea = page.getByRole("link", { name: "Catalog", exact: true });
     await catalogArea.focus();
@@ -72,11 +73,14 @@ describe("Facet Lab accessible inspection controls", () => {
     });
     expect(await generateHeading.count()).toBe(1);
     expect(await generateHeading.isVisible()).toBe(true);
-    const assetSettings = page.getByText("Advanced asset settings", { exact: true });
-    await assetSettings.waitFor({ state: "visible" });
-    expect(await page.getByRole("group", { name: "Assets for new runs" }).isVisible()).toBe(false);
-    await assetSettings.click();
-    expect(await page.getByRole("group", { name: "Assets for new runs" }).isVisible()).toBe(true);
+    expect(await page.getByText("Advanced asset settings").count()).toBe(0);
+
+    await page.getByLabel("Prompt", { exact: true }).focus();
+    await page.evaluate(() => window.history.back());
+    await page.waitForURL((url) => url.pathname === "/catalog");
+    expect(
+      await page.locator("#lab-main").evaluate((element) => element === document.activeElement),
+    ).toBe(true);
 
     await page.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });
     expect(await page.getByText("Advanced asset settings").count()).toBe(0);

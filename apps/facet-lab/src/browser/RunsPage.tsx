@@ -122,13 +122,17 @@ export function RunsPage({
   };
 
   return (
-    <main aria-labelledby="runs-heading">
-      <header>
+    <main className="lab-page lab-runs-page" aria-labelledby="runs-heading">
+      <header className="lab-page-header">
         <h1 id="runs-heading">Run history</h1>
         <p>Saved evidence is immutable. Actions append or derive new evidence.</p>
       </header>
 
-      <form aria-label="Run history filters" onSubmit={(event) => event.preventDefault()}>
+      <form
+        className="lab-filter-grid"
+        aria-label="Run history filters"
+        onSubmit={(event) => event.preventDefault()}
+      >
         <label>
           Search
           <input value={filters.query ?? ""} onChange={updateFilter("query")} type="search" />
@@ -168,7 +172,11 @@ export function RunsPage({
         </label>
       </form>
 
-      <form aria-label="Import run evidence" onSubmit={(event) => void importRun(event)}>
+      <form
+        className="lab-inline-form"
+        aria-label="Import run evidence"
+        onSubmit={(event) => void importRun(event)}
+      >
         <label htmlFor="run-import-file">Import a Facet Lab run bundle</label>
         <input
           id="run-import-file"
@@ -182,7 +190,7 @@ export function RunsPage({
         </button>
       </form>
 
-      <p role="status" aria-live="polite">
+      <p className="lab-status-line" role="status" aria-live="polite">
         {loadState === "loading"
           ? "Loading run history."
           : loadState === "error"
@@ -196,46 +204,61 @@ export function RunsPage({
         <p>{presentation.emptyLabel}</p>
       ) : null}
       {presentation.rows.length > 0 ? (
-        <table>
-          <caption>Immutable Facet Lab runs</caption>
-          <thead>
-            <tr>
-              <th>Run</th>
-              <th>Status</th>
-              <th>Scenario</th>
-              <th>Provider</th>
-              <th>Created</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {presentation.rows.map((row) => (
-              <tr key={`${row.runId}:${String(row.generation)}`}>
-                <th scope="row">
-                  <button onClick={() => onInspect(row.runId)}>{row.runId}</button>
-                </th>
-                <td>{row.statusLabel}</td>
-                <td>{row.scenarioId}</td>
-                <td>
-                  {row.mode} · {row.provider} · {row.model}
-                </td>
-                <td>{row.createdAt}</td>
-                <td>
-                  {row.actions.map((action) => (
-                    <button
-                      key={action}
-                      type="button"
-                      disabled={actionRunId !== null}
-                      onClick={() => void runAction(row.runId, action)}
-                    >
-                      {action}
-                    </button>
-                  ))}
-                </td>
+        <div
+          className="lab-table-shell"
+          role="region"
+          aria-label="Scrollable immutable run history"
+          tabIndex={0}
+        >
+          <table>
+            <caption>Immutable Facet Lab runs</caption>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Status</th>
+                <th>Scenario</th>
+                <th>Provider</th>
+                <th>Created</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {presentation.rows.map((row) => (
+                <tr key={`${row.runId}:${String(row.generation)}`}>
+                  <th scope="row">
+                    <button
+                      className="lab-button-quiet lab-button-compact lab-run-id-button"
+                      onClick={() => onInspect(row.runId)}
+                    >
+                      {row.runId}
+                    </button>
+                  </th>
+                  <td>{row.statusLabel}</td>
+                  <td>{row.scenarioId}</td>
+                  <td>
+                    {row.mode} · {row.provider} · {row.model}
+                  </td>
+                  <td>{row.createdAt}</td>
+                  <td>
+                    <div className="lab-action-group">
+                      {row.actions.map((action) => (
+                        <button
+                          className={`lab-button-compact${action === "cancel" ? " lab-button-danger" : ""}`}
+                          key={action}
+                          type="button"
+                          disabled={actionRunId !== null}
+                          onClick={() => void runAction(row.runId, action)}
+                        >
+                          {action}
+                        </button>
+                      ))}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : null}
     </main>
   );

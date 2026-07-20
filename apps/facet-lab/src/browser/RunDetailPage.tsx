@@ -188,10 +188,10 @@ export function RunDetailPage({
   }
 
   return (
-    <main aria-labelledby="run-detail-heading">
-      <header>
+    <main className="lab-page lab-run-detail-page" aria-labelledby="run-detail-heading">
+      <header className="lab-page-header">
         {onBack === undefined ? null : (
-          <button type="button" onClick={onBack}>
+          <button className="lab-button-quiet" type="button" onClick={onBack}>
             Back to runs
           </button>
         )}
@@ -202,7 +202,7 @@ export function RunDetailPage({
         <p>{detail.scenarioId}</p>
       </header>
 
-      <section aria-labelledby="evidence-states-heading">
+      <section className="lab-page-section" aria-labelledby="evidence-states-heading">
         <h2 id="evidence-states-heading">Evidence states</h2>
         <dl>
           <dt>Completion</dt>
@@ -227,7 +227,7 @@ export function RunDetailPage({
         ) : null}
       </section>
 
-      <section aria-labelledby="provenance-heading">
+      <section className="lab-page-section" aria-labelledby="provenance-heading">
         <h2 id="provenance-heading">Provenance</h2>
         <dl>
           <dt>Mode</dt>
@@ -255,20 +255,23 @@ export function RunDetailPage({
         </details>
       </section>
 
-      <section aria-labelledby="run-actions-heading">
+      <section className="lab-page-section" aria-labelledby="run-actions-heading">
         <h2 id="run-actions-heading">Run actions</h2>
-        {detail.actions
-          .filter((action) => action !== "inspect")
-          .map((action) => (
-            <button
-              key={action}
-              type="button"
-              disabled={busy !== null}
-              onClick={() => void mutate(action)}
-            >
-              {actionLabel(action)}
-            </button>
-          ))}
+        <div className="lab-action-group">
+          {detail.actions
+            .filter((action) => action !== "inspect")
+            .map((action) => (
+              <button
+                className={action === "cancel" ? "lab-button-danger" : undefined}
+                key={action}
+                type="button"
+                disabled={busy !== null}
+                onClick={() => void mutate(action)}
+              >
+                {actionLabel(action)}
+              </button>
+            ))}
+        </div>
         {message === null ? null : (
           <p role="status" aria-live="polite">
             {message}
@@ -276,9 +279,9 @@ export function RunDetailPage({
         )}
       </section>
 
-      <TracePanel trace={detail.trace} />
+      <TracePanel className="lab-page-section" trace={detail.trace} />
 
-      <section aria-labelledby="contract-heading">
+      <section className="lab-page-section" aria-labelledby="contract-heading">
         <h2 id="contract-heading">Blocking contract verdict: {detail.contract.verdict}</h2>
         <p>{detail.contract.blockingFailureCount} blocking checks did not pass.</p>
         <ul>
@@ -307,7 +310,7 @@ export function RunDetailPage({
         ) : null}
       </section>
 
-      <section aria-labelledby="visual-heading">
+      <section className="lab-page-section" aria-labelledby="visual-heading">
         <h2 id="visual-heading">Advisory visual evidence</h2>
         <p>{detail.visual.label} Visual evidence never changes the blocking contract verdict.</p>
         {detail.visual.items.length === 0 ? (
@@ -356,7 +359,7 @@ export function RunDetailPage({
         </form>
       </section>
 
-      <section aria-labelledby="artifacts-heading">
+      <section className="lab-page-section" aria-labelledby="artifacts-heading">
         <h2 id="artifacts-heading">Artifacts</h2>
         {detail.artifacts.length === 0 ? (
           <p>No artifacts were captured.</p>
@@ -379,7 +382,7 @@ export function RunDetailPage({
       </section>
 
       {detail.warnings.length === 0 ? null : (
-        <section aria-labelledby="warnings-heading">
+        <section className="lab-page-section" aria-labelledby="warnings-heading">
           <h2 id="warnings-heading">Warnings</h2>
           <ul>
             {detail.warnings.map((warning) => (

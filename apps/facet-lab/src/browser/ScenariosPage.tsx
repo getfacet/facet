@@ -13,9 +13,7 @@ export interface ScenariosPageProps {
   readonly capabilities?: LabCapabilities;
   readonly scenarios?: readonly OfficialScenario[];
   readonly theme?: FacetTheme;
-  readonly assetSettingsBusy?: boolean;
   readonly onRunStarted?: (run: BrowserCreatedRun) => void;
-  readonly onStartingChange?: (starting: boolean) => void;
 }
 
 interface ConstraintOption {
@@ -45,9 +43,7 @@ export function ScenariosPage({
   capabilities,
   scenarios = OFFICIAL_SCENARIOS,
   theme,
-  assetSettingsBusy = false,
   onRunStarted,
-  onStartingChange,
 }: ScenariosPageProps = {}): ReactNode {
   const [selectedId, setSelectedId] = useState(scenarios[0]?.id ?? "");
   const [constraint, setConstraint] = useState<string | null>(null);
@@ -72,10 +68,12 @@ export function ScenariosPage({
   };
 
   return (
-    <section aria-labelledby="scenarios-title">
-      <h1 id="scenarios-title">Official scenarios</h1>
-      <p>Browse the supported capabilities, then configure an autonomous or constrained run.</p>
-      <ul aria-label="Official scenario catalog">
+    <section className="lab-page lab-scenarios-page" aria-labelledby="scenarios-title">
+      <header className="lab-page-header">
+        <h1 id="scenarios-title">Official scenarios</h1>
+        <p>Browse the supported capabilities, then configure an autonomous or constrained run.</p>
+      </header>
+      <ul className="lab-scenario-grid" aria-label="Official scenario catalog">
         {scenarios.map((scenario) => (
           <li key={scenario.id}>
             <article aria-labelledby={`scenario-${scenario.id}`}>
@@ -103,7 +101,7 @@ export function ScenariosPage({
         ))}
       </ul>
 
-      <section aria-labelledby="scenario-run-title">
+      <section className="lab-page-section" aria-labelledby="scenario-run-title">
         <h2 id="scenario-run-title">Run {selected.name}</h2>
         <label htmlFor="scenario-constraint">Starting asset constraint</label>
         <select
@@ -125,9 +123,7 @@ export function ScenariosPage({
           initialScenarioId={selected.id}
           initialConstraint={constraint}
           {...(theme === undefined ? {} : { theme })}
-          assetSettingsBusy={assetSettingsBusy}
           {...(onRunStarted === undefined ? {} : { onRunStarted })}
-          {...(onStartingChange === undefined ? {} : { onStartingChange })}
         />
       </section>
     </section>

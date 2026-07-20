@@ -32,29 +32,12 @@ const COLOR_MODES: readonly ColorMode[] = ["light", "dark"];
 const INSPECTOR_VIEWS = ["preview", "document", "definition"] as const;
 type InspectorView = (typeof INSPECTOR_VIEWS)[number];
 
-const CATEGORY_META: Readonly<
-  Record<PresentedCatalogCategoryId, { readonly singular: string; readonly description: string }>
-> = {
-  bricks: {
-    singular: "Brick",
-    description: "The 11 safe UI building blocks an agent can place on a Facet stage.",
-  },
-  presets: {
-    singular: "Preset",
-    description: "Named, reusable styling for one specific Brick type.",
-  },
-  patterns: {
-    singular: "Pattern",
-    description: "Validated example layouts composed entirely from ordinary Bricks.",
-  },
-  "token-values": {
-    singular: "Token",
-    description: "Theme-aware style names whose concrete value can change by theme and color mode.",
-  },
-  "fixed-choices": {
-    singular: "Fixed choice",
-    description: "Closed, non-theme choices such as row or column that Core accepts exactly.",
-  },
+const CATEGORY_META: Readonly<Record<PresentedCatalogCategoryId, { readonly singular: string }>> = {
+  bricks: { singular: "Brick" },
+  presets: { singular: "Preset" },
+  patterns: { singular: "Pattern" },
+  "token-values": { singular: "Token" },
+  "fixed-choices": { singular: "Fixed choice" },
 };
 
 const KIND_LABELS: Readonly<Record<PresentedCatalogItemKind, string>> = {
@@ -103,9 +86,9 @@ function sourceDataOrigin(item: PresentedCatalogItem): string {
     case "brick":
       return "@facet/core Brick contract";
     case "preset":
-      return "currently selected Theme asset snapshot";
+      return "@facet/assets default Theme";
     case "pattern":
-      return "currently selected Pattern asset snapshot";
+      return "@facet/assets default Patterns";
     case "token":
     case "fixed":
       return "@facet/core style-value contract";
@@ -432,7 +415,6 @@ export function CatalogPage({
     [catalog, categoryId, errorMessage, query, selectedItemId, status, theme],
   );
   const activeCategory = presentation.categories.find(({ id }) => id === categoryId);
-  const activeCategoryMeta = CATEGORY_META[categoryId];
 
   const updateView = (nextViewport: ViewportName, nextColorMode: ColorMode): void => {
     setViewport(nextViewport);
@@ -444,11 +426,9 @@ export function CatalogPage({
     <main className="catalog-page" aria-labelledby="catalog-page-title">
       <header className="catalog-hero">
         <div>
-          <p className="catalog-overline">Package vocabulary</p>
           <h1 id="catalog-page-title">Catalog</h1>
           <p className="catalog-lead">
-            See what Facet gives an agent, what each item is for, and how it renders—without reading
-            package internals first.
+            Inspect every Brick, Preset, Pattern, token, and fixed choice included with Facet.
           </p>
         </div>
         {presentation.sourceName === null && presentation.assetDigest === null ? null : (
@@ -471,30 +451,9 @@ export function CatalogPage({
         )}
       </header>
 
-      <section className="catalog-reading-guide" aria-labelledby="catalog-reading-guide-title">
-        <div>
-          <p className="catalog-section-label">How to read the catalog</p>
-          <h2 id="catalog-reading-guide-title">Only Bricks render on the stage</h2>
-        </div>
-        <ol>
-          <li>
-            <strong>Bricks are the UI.</strong>
-            <span>Every visible Facet stage is a safe tree of the 11 Brick types.</span>
-          </li>
-          <li>
-            <strong>Presets style one Brick.</strong>
-            <span>A Preset is a named style recipe, never a new component.</span>
-          </li>
-          <li>
-            <strong>Patterns stay outside the stage.</strong>
-            <span>An agent can read an example, then author its own ordinary Brick tree.</span>
-          </li>
-        </ol>
-      </section>
-
       <section className="catalog-toolbar" aria-label="Catalog filters">
         <label className="catalog-search" htmlFor="catalog-search">
-          <span>Search all names and guidance</span>
+          <span>Search catalog</span>
           <input
             id="catalog-search"
             className="facet-lab-focusable"
@@ -526,7 +485,6 @@ export function CatalogPage({
                       {String(category.visible)}/{String(category.total)}
                     </span>
                   </span>
-                  <small>{CATEGORY_META[category.id].description}</small>
                 </button>
               </li>
             ))}
@@ -563,9 +521,7 @@ export function CatalogPage({
         <div className="catalog-browser">
           <section className="catalog-results" aria-labelledby="catalog-results-title">
             <header>
-              <p className="catalog-section-label">Choose one to inspect</p>
               <h2 id="catalog-results-title">{activeCategory?.label ?? "Catalog items"}</h2>
-              <p>{activeCategoryMeta.description}</p>
             </header>
             {activeCategory?.items.length === 0 ? (
               <p className="catalog-empty">No items in this category match the current search.</p>
@@ -584,7 +540,6 @@ export function CatalogPage({
                         <span>{KIND_LABELS[item.kind]}</span>
                         <strong>{item.name}</strong>
                       </span>
-                      <small>{item.description ?? "No description supplied."}</small>
                       {item.outcome.status === "diagnostic" ? (
                         <span className="catalog-result-warning">Needs attention</span>
                       ) : null}

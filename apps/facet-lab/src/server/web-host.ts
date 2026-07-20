@@ -94,6 +94,7 @@ export interface LabWebHostOptions {
   readonly innerBaseUrl: string;
   readonly visitors: LabVisitorRegistry;
   readonly apiHandler?: (request: LabWebHostApiRequest) => void | Promise<void>;
+  readonly isKnownApiPath?: (pathname: string) => boolean;
   readonly staticRoot?: string;
   readonly host?: string;
   readonly port?: number;
@@ -334,31 +335,38 @@ export function createLabWebHost(options: LabWebHostOptions): LabWebHost {
       return;
     }
     const metadata = requestMetadata(req);
-    const inspected = inspectLabRequest(metadata, {
-      authority,
-      maxBodyBytes: Math.max(maxBodyBytes, apiMaxBodyBytes, apiImportMaxBodyBytes),
-    });
+    const inspected = inspectLabRequest(
+      { ...metadata, contentLength: undefined },
+      {
+        authority,
+        maxBodyBytes: Math.max(maxBodyBytes, apiMaxBodyBytes, apiImportMaxBodyBytes),
+      },
+    );
     if (!inspected.ok) {
       sendText(res, inspected.status, inspected.message);
       return;
     }
     const requestBodyMaximum =
-      inspected.pathname === "/api/assets/import" || inspected.pathname === "/api/runs/import"
+      inspected.pathname === "/api/runs/import"
         ? apiImportMaxBodyBytes
         : inspected.pathname === "/api" || inspected.pathname.startsWith("/api/")
           ? apiMaxBodyBytes
           : maxBodyBytes;
-    const bounded = inspectLabRequest(metadata, { authority, maxBodyBytes: requestBodyMaximum });
-    if (!bounded.ok) {
-      sendText(res, bounded.status, bounded.message);
-      return;
+    const isApiRequest = inspected.pathname === "/api" || inspected.pathname.startsWith("/api/");
+    const unknownApiPath = isApiRequest && options.isKnownApiPath?.(inspected.pathname) === false;
+    if (!unknownApiPath) {
+      const bounded = inspectLabRequest(metadata, { authority, maxBodyBytes: requestBodyMaximum });
+      if (!bounded.ok) {
+        sendText(res, bounded.status, bounded.message);
+        return;
+      }
     }
     if (req.method === "OPTIONS") {
       res.writeHead(204, { "Cache-Control": "no-store" });
       res.end();
       return;
     }
-    if (inspected.pathname === "/api" || inspected.pathname.startsWith("/api/")) {
+    if (isApiRequest) {
       if (options.apiHandler === undefined) {
         sendText(res, 404, "not found");
         return;

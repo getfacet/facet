@@ -191,17 +191,14 @@ to inspect the effective vocabulary and real isolated previews. Each preview is
 paired with the complete validated Facet document sent to `StageRenderer` and a
 separate package-definition view. Catalog derives Brick, token, and fixed-choice
 definitions from `@facet/core` and derives Theme defaults, same-Brick Presets,
-and Patterns from the selected validated assets. It intentionally has no
+and Patterns from the validated package-default assets. It intentionally has no
 hand-maintained Lab roster.
 
-Lab custom-asset import uses the same ownership model described here: one
-complete Theme plus an exact Pattern list in a versioned JSON envelope. The
-operation is bounded and transactional. If the envelope, Theme, or any Pattern
-is invalid, the whole import is rejected with diagnostics and the previous
-selection remains active. A successful selection applies only to future runs;
-each run keeps an immutable, content-digested asset snapshot for evidence and
-replay. Lab does not turn Theme authoring into model-authored CSS or a general
-visual page builder.
+Facet Lab intentionally uses only `@facet/assets` package defaults. This keeps
+Catalog previews, Generate runs, saved evidence, and Replay comparisons on one
+known Theme and Pattern baseline. Test a custom Theme or Pattern list in the
+integrating application that owns those assets; Lab does not provide a custom
+asset import or turn Theme authoring into model-authored CSS.
 
 ## How an operator defines a Theme
 

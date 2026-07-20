@@ -83,6 +83,7 @@ describe("reference-agent barrel", () => {
     expectTypeOf<ProviderStep>().toMatchTypeOf<{
       readonly text: string;
       readonly toolCalls: readonly ToolCall[];
+      readonly providerState?: unknown;
     }>();
     expectTypeOf<TurnMessage>().toMatchTypeOf<
       | { readonly role: "user"; readonly content: string }
@@ -91,6 +92,7 @@ describe("reference-agent barrel", () => {
           readonly role: "assistant_tools";
           readonly text: string;
           readonly toolCalls: readonly ToolCall[];
+          readonly providerState?: unknown;
         }
       | { readonly role: "tool_result"; readonly callId: string; readonly content: string }
     >();

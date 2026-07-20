@@ -50,26 +50,42 @@ interface StubProvider {
   readonly provider: ReferenceProvider;
   readonly turns: ProviderTurn[];
   readonly toolSpecs: ToolSpec[][];
+  readonly signals: Array<AbortSignal | undefined>;
 }
 
 function stubProvider(...steps: readonly ScriptedStep[]): StubProvider {
   const turns: ProviderTurn[] = [];
   const toolSpecs: ToolSpec[][] = [];
+  const signals: Array<AbortSignal | undefined> = [];
   let next = 0;
   const provider: ReferenceProvider = {
     name: "openai",
     model: "stub-model",
-    run(turn, tools) {
+    run(turn, tools, context) {
       turns.push({ system: turn.system, messages: [...turn.messages] });
       toolSpecs.push([...tools]);
+      signals.push(context?.signal);
       const step = steps[Math.min(next, steps.length - 1)];
       next += 1;
-      if (step === "hang") return new Promise<ProviderStep>(() => {});
+      if (step === "hang") {
+        return new Promise<ProviderStep>((_resolve, reject) => {
+          const signal = context?.signal;
+          if (signal?.aborted === true) {
+            reject(new DOMException("aborted", "AbortError"));
+            return;
+          }
+          signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("aborted", "AbortError")),
+            { once: true },
+          );
+        });
+      }
       if (step instanceof Error) return Promise.reject(step);
       return Promise.resolve(step as ProviderStep);
     },
   };
-  return { provider, turns, toolSpecs };
+  return { provider, turns, toolSpecs, signals };
 }
 
 function requestOf(overrides: Partial<SummarizerRequest> = {}): SummarizerRequest {
@@ -272,6 +288,23 @@ describe("summary schema and summarizer", () => {
       );
       expect(result).toBeUndefined();
       expect(stub.turns.length).toBe(2);
+      expect(stub.signals).toHaveLength(2);
+      expect(stub.signals.every((signal) => signal?.aborted === true)).toBe(true);
+    });
+
+    it("aborts the provider attempt and suppresses retries when the owning run is cancelled", async () => {
+      const stub = stubProvider("hang", "hang");
+      const controller = new AbortController();
+      const pending = createProviderSummarizer(stub.provider)(
+        requestOf({ signal: controller.signal, timeoutMs: 1000, retries: 1 }),
+      );
+
+      controller.abort();
+
+      await expect(pending).resolves.toBeUndefined();
+      expect(stub.turns).toHaveLength(1);
+      expect(stub.signals).toHaveLength(1);
+      expect(stub.signals[0]?.aborted).toBe(true);
     });
 
     it("applies the self-cap to summarizer output", async () => {

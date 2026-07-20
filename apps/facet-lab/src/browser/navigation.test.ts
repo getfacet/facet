@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   LAB_ROUTES,
   PRODUCT_AREAS,
+  focusSelectedRoute,
   isProductAreaActive,
   moveProductAreaFocus,
   resolveLabRoute,
@@ -49,5 +50,23 @@ describe("Lab navigation", () => {
         expect(isProductAreaActive(area.id, route), `${path}:${area.id}`).toBe(area.id === areaId);
       }
     }
+  });
+
+  it("moves a selected route to the top without letting focus restore the old scroll", () => {
+    const target = { focus: vi.fn() };
+    const viewport = { scrollTo: vi.fn() };
+
+    focusSelectedRoute(target, viewport);
+
+    expect(target.focus).toHaveBeenCalledWith({ preventScroll: true });
+    expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+  });
+
+  it("still resets the route scroll when no focus target is mounted", () => {
+    const viewport = { scrollTo: vi.fn() };
+
+    focusSelectedRoute(null, viewport);
+
+    expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
 });

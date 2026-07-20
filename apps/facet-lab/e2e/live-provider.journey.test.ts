@@ -103,7 +103,6 @@ async function runLiveProvider(
   activeHarness = harness;
   const page = await harness.newPage();
   await page.goto(`${harness.url}/generate`, { waitUntil: "networkidle" });
-  await page.locator("#generate-mode").selectOption("provider");
   await page.locator("#generate-provider").selectOption(provider);
   await page.getByRole("button", { name: "Start new run" }).click();
   const stage = page.getByLabel("Live Facet stage");

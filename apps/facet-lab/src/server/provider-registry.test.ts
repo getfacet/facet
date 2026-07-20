@@ -1,9 +1,10 @@
 import type { ProviderTurn, ToolSpec } from "@facet/reference-agent";
-import { DEFAULT_ANTHROPIC_MODEL, DEFAULT_OPENAI_MODEL } from "@facet/reference-agent";
+import { DEFAULT_ANTHROPIC_MODEL } from "@facet/reference-agent";
 import { describe, expect, it } from "vitest";
 
+import { MAX_CAPABILITY_MODELS } from "../shared/run-contract.js";
 import { DETERMINISTIC_MODEL } from "./deterministic-provider.js";
-import { createProviderRegistry } from "./provider-registry.js";
+import { DEFAULT_FACET_LAB_OPENAI_MODELS, createProviderRegistry } from "./provider-registry.js";
 
 const EMPTY_TURN: ProviderTurn = { system: "system", messages: [{ role: "user", content: "hi" }] };
 const NO_TOOLS: readonly ToolSpec[] = [];
@@ -91,8 +92,8 @@ describe("provider registry", () => {
     expect(unavailable.capabilities.providers).toEqual({
       openai: {
         available: false,
-        defaultModel: DEFAULT_OPENAI_MODEL,
-        models: [DEFAULT_OPENAI_MODEL],
+        defaultModel: "gpt-5.6-sol",
+        models: DEFAULT_FACET_LAB_OPENAI_MODELS,
         provider: "openai",
       },
       anthropic: {
@@ -112,5 +113,16 @@ describe("provider registry", () => {
         environment: { FACET_LAB_OPENAI_MODELS: "valid,,also-valid" },
       }),
     ).toThrow(/model allowlist/i);
+
+    expect(() =>
+      createProviderRegistry({
+        environment: {
+          FACET_LAB_OPENAI_MODELS: Array.from(
+            { length: MAX_CAPABILITY_MODELS + 1 },
+            (_, index) => `gpt-boundary-${String(index)}`,
+          ).join(","),
+        },
+      }),
+    ).toThrow(/at most 100/iu);
   });
 });

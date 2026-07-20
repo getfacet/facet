@@ -133,7 +133,10 @@ Pass a `summaryStore` to enable model-assisted compaction. Quickstart wires a
 
 Summarizer throw, timeout, invalid output, store failure, or insufficient gain
 falls back to deterministic truncation. Compaction never makes the visitor turn
-fail. Without a `summaryStore`, no summarizer is constructed.
+fail. The agent's optional `abortSignal` reaches both in-turn and detached
+cross-turn summarizer attempts; cancellation suppresses retries and prevents a
+cancelled cross-turn task from writing a new summary. Without a `summaryStore`,
+no summarizer is constructed.
 
 ## Provider model and cancellation
 
@@ -142,6 +145,27 @@ argument. `model` is additive and opt-in: omitting it keeps the provider default
 listed below. A supplied identifier is trimmed and must contain 1–200
 characters; the returned provider's `model` property and request body both use
 the normalized value.
+
+When an OpenAI GPT-5.6 model is used with Facet's function tools through Chat
+Completions, the adapter sends `reasoning_effort: "none"`. GPT-5.6 requires that
+effective effort for Chat Completions function calls; other models and
+tool-free GPT-5.6 calls keep their provider defaults.
+
+OpenAI `gpt-5.5-pro` and `gpt-5.4-pro` use the Responses API because those Pro
+models are not available through the Chat Completions tool loop. The adapter
+translates the same provider-neutral transcript and tool results into stateless
+Responses input items, disables response storage, and returns the same
+`ProviderStep` shape. Their dated snapshots use the same path. Because Pro
+responses can take several minutes, their default per-attempt timeout is ten
+minutes; caller cancellation and an explicit `timeoutMs` override still take
+precedence. Other OpenAI models continue to use Chat Completions with the
+standard 60-second default.
+
+`ProviderStep.providerState` is an optional opaque continuation payload. The
+reference harness copies it only onto the matching `assistant_tools` transcript
+entry and never interprets it. The stateless OpenAI Responses adapter uses this
+field to round-trip encrypted reasoning items and assistant phase metadata with
+the next function result; custom providers may omit it.
 
 ```ts
 import {
@@ -158,11 +182,12 @@ const anthropic = createAnthropicProvider(process.env.ANTHROPIC_API_KEY!, fetch,
 ```
 
 `ReferenceAgentOptions.abortSignal` is also optional. When present, the
-reference loop passes it to each provider attempt and uses it to interrupt retry
-backoff. The built-in adapters combine that caller cancellation with their
-unchanged per-attempt timeout (`60_000` ms by default). An already-aborted
-signal starts no provider work; an abort during a request or backoff ends the
-turn without a failure message.
+reference loop passes it to each acting or summarizing provider attempt and uses
+it to interrupt retry backoff. The built-in adapters combine that caller
+cancellation with their per-attempt timeout. The standard default is `60_000`
+ms; OpenAI Pro Responses use the ten-minute default described above. An
+already-aborted signal starts no provider work; an abort during a request or
+backoff ends the turn without a failure message.
 
 `ReferenceProvider.run` therefore has an optional third
 `ProviderRunContext` argument containing `signal?`. Existing custom providers

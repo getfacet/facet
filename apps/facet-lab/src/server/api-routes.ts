@@ -13,7 +13,6 @@ import {
   type RunMode,
   type RunStatus,
 } from "../shared/run-contract.js";
-import { MAX_ASSET_BUNDLE_BYTES } from "./asset-snapshot.js";
 import { LabHttpError, readBoundedBody } from "./http-security.js";
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
@@ -58,8 +57,6 @@ export interface LabApiBackend {
   getCatalog(): unknown | Promise<unknown>;
   getCapabilities(): unknown | Promise<unknown>;
   getAssets(): unknown | Promise<unknown>;
-  selectDefaultAssets(): unknown | Promise<unknown>;
-  importAssets(bundle: unknown): unknown | Promise<unknown>;
   createRun(configuration: RunConfiguration): CreatedLabRun | Promise<CreatedLabRun>;
   listRuns(filters: LabRunListFilters): unknown | Promise<unknown>;
   getRun(runId: string): RunEvidenceV1 | undefined | Promise<RunEvidenceV1 | undefined>;
@@ -89,6 +86,7 @@ export interface CreateLabApiRoutesOptions {
 }
 
 export interface LabApiRoutes {
+  hasPath(pathname: string): boolean;
   handle(request: LabApiRequest): Promise<LabApiResponse>;
 }
 
@@ -394,6 +392,16 @@ function routeRunPath(pathname: string):
   return undefined;
 }
 
+function isKnownLabApiPath(pathname: string): boolean {
+  return (
+    pathname === "/api/catalog" ||
+    pathname === "/api/capabilities" ||
+    pathname === "/api/assets" ||
+    pathname === "/api/runs" ||
+    pathname.startsWith("/api/runs/")
+  );
+}
+
 /** Strict allowlist router. It never reflects request bodies, headers, stack traces, or secrets. */
 export function createLabApiRoutes(options: CreateLabApiRoutesOptions): LabApiRoutes {
   const heartbeatMs = options.heartbeatMs ?? 15_000;
@@ -402,6 +410,7 @@ export function createLabApiRoutes(options: CreateLabApiRoutesOptions): LabApiRo
   }
 
   return Object.freeze({
+    hasPath: isKnownLabApiPath,
     async handle(request: LabApiRequest): Promise<LabApiResponse> {
       try {
         const url = safeTarget(request.target);
@@ -420,29 +429,6 @@ export function createLabApiRoutes(options: CreateLabApiRoutesOptions): LabApiRo
         if (url.pathname === "/api/assets") {
           if (method !== "GET") return methodNotAllowed("GET");
           return noQuery(url) ?? json(200, await options.backend.getAssets());
-        }
-        if (url.pathname === "/api/assets/default") {
-          if (method !== "POST") return methodNotAllowed("POST");
-          const queryFailure = noQuery(url);
-          if (queryFailure !== undefined) return queryFailure;
-          const parsed = emptyObjectBody(request);
-          return parsed.ok
-            ? json(200, await options.backend.selectDefaultAssets())
-            : parsed.response;
-        }
-        if (url.pathname === "/api/assets/import") {
-          if (method !== "POST") return methodNotAllowed("POST");
-          const queryFailure = noQuery(url);
-          if (queryFailure !== undefined) return queryFailure;
-          const parsed = parseJsonBody(request, MAX_ASSET_BUNDLE_BYTES);
-          if (!parsed.ok) return parsed.response;
-          if (
-            !isRecord(parsed.value) ||
-            !exactKeys(parsed.value, ["schemaVersion", "theme", "patterns"])
-          ) {
-            return badRequest("invalid-asset-bundle");
-          }
-          return json(200, await options.backend.importAssets(parsed.value));
         }
         if (url.pathname === "/api/runs/import") {
           if (method !== "POST") return methodNotAllowed("POST");

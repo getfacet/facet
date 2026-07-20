@@ -53,22 +53,19 @@ export function SettingsPage({
   }, [client, metadata, providedCapabilities]);
 
   return (
-    <section aria-labelledby="settings-title">
-      <h1 id="settings-title">Settings</h1>
-      <p>Read-only server capabilities. Provider credentials are never sent to this page.</p>
+    <section className="lab-page lab-settings-page" aria-labelledby="settings-title">
+      <header className="lab-page-header">
+        <h1 id="settings-title">Settings</h1>
+        <p>Read-only server capabilities. Provider credentials are never sent to this page.</p>
+      </header>
       {error === null ? null : <p role="alert">{error}</p>}
       {settings === null ? (
         <p role="status">Loading secret-free settings…</p>
       ) : (
-        <>
+        <div className="lab-settings-grid">
           <section aria-labelledby="settings-providers-title">
             <h2 id="settings-providers-title">Provider capabilities</h2>
             <dl>
-              <dt>Deterministic fixture</dt>
-              <dd>
-                Available — {settings.deterministic.models.join(", ")} (default:{" "}
-                {settings.deterministic.defaultModel})
-              </dd>
               {settings.providers.map((provider) => (
                 <div key={provider.provider}>
                   <dt>{provider.provider}</dt>
@@ -102,7 +99,7 @@ export function SettingsPage({
               ))}
             </dl>
           </section>
-        </>
+        </div>
       )}
     </section>
   );

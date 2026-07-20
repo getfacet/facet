@@ -12,7 +12,6 @@ import type {
   ColorMode,
   ProviderName,
   RunConfiguration,
-  RunMode,
   ViewportName,
   RunStatus,
 } from "../shared/run-contract.js";
@@ -38,9 +37,6 @@ export interface GeneratePageProps {
   readonly initialConstraint?: string | null;
   readonly theme?: FacetTheme;
   readonly onRunStarted?: (run: BrowserCreatedRun) => void;
-  readonly assetSettings?: ReactNode;
-  readonly assetSettingsBusy?: boolean;
-  readonly onStartingChange?: (starting: boolean) => void;
 }
 
 interface ActiveRun {
@@ -63,24 +59,6 @@ function scenarioForId(
   return scenarios.find(({ id }) => id === scenarioId) ?? scenarios[0] ?? FREE_FORM_SCENARIO;
 }
 
-function providerForMode(
-  mode: RunMode,
-  capabilities: LabCapabilities,
-): Pick<RunConfiguration, "provider" | "model"> {
-  if (mode === "deterministic") {
-    return {
-      provider: capabilities.deterministic.provider,
-      model: capabilities.deterministic.defaultModel,
-    };
-  }
-  const capability = capabilities.providers.openai.available
-    ? capabilities.providers.openai
-    : capabilities.providers.anthropic.available
-      ? capabilities.providers.anthropic
-      : capabilities.providers.openai;
-  return { provider: capability.provider, model: capability.defaultModel };
-}
-
 function errorMessage(kind: "load" | "start" | "cancel"): string {
   if (kind === "load") return "Run capabilities could not be loaded.";
   if (kind === "cancel")
@@ -96,9 +74,6 @@ export function GeneratePage({
   initialConstraint = null,
   theme,
   onRunStarted,
-  assetSettings,
-  assetSettingsBusy = false,
-  onStartingChange,
 }: GeneratePageProps = {}): ReactNode {
   const client = useMemo(() => providedClient ?? createLabApiClient(), [providedClient]);
   const gate = useMemo(() => createRunActivationGate(client.createRun), [client]);
@@ -180,8 +155,11 @@ export function GeneratePage({
 
   if (capabilities === null || draft === null) {
     return (
-      <section aria-labelledby="generate-title">
-        <h1 id="generate-title">Generate</h1>
+      <section className="lab-page lab-generate-page" aria-labelledby="generate-title">
+        <header className="lab-page-header">
+          <h1 id="generate-title">Generate</h1>
+          <p>Configure a real-provider run and inspect the resulting live Facet stage.</p>
+        </header>
         {error === null ? (
           <p role="status">Loading run capabilities…</p>
         ) : (
@@ -196,12 +174,6 @@ export function GeneratePage({
     value: RunConfiguration[Key],
   ): void => setDraft((current) => (current === null ? current : { ...current, [key]: value }));
 
-  const handleMode = (event: ChangeEvent<HTMLSelectElement>): void => {
-    const mode = event.target.value as RunMode;
-    setDraft((current) =>
-      current === null ? current : { ...current, mode, ...providerForMode(mode, capabilities) },
-    );
-  };
   const handleProvider = (event: ChangeEvent<HTMLSelectElement>): void => {
     const provider = event.target.value as ProviderName;
     const capability = capabilities.providers[provider];
@@ -220,16 +192,10 @@ export function GeneratePage({
 
   const start = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
-    if (
-      assetSettingsBusy ||
-      readiness === null ||
-      !readiness.ready ||
-      readiness.configuration === null
-    ) {
+    if (readiness === null || !readiness.ready || readiness.configuration === null) {
       return;
     }
     setStarting(true);
-    onStartingChange?.(true);
     setError(null);
     try {
       const result = await gate.start(readiness.configuration);
@@ -250,7 +216,6 @@ export function GeneratePage({
       setError(errorMessage("start"));
     } finally {
       setStarting(false);
-      onStartingChange?.(false);
     }
   };
 
@@ -277,24 +242,16 @@ export function GeneratePage({
   };
 
   const providerCapability = capabilities.providers[draft.provider];
-  const modelOptions =
-    draft.mode === "deterministic" ? capabilities.deterministic.models : providerCapability.models;
+  const modelOptions = providerCapability.models;
 
   return (
-    <section aria-labelledby="generate-title">
-      <h1 id="generate-title">Generate</h1>
-      {assetSettings === undefined ? null : (
-        <details className="generate-asset-settings">
-          <summary>Advanced asset settings</summary>
-          <p>
-            Choose the Theme and Patterns for new runs. Existing runs keep their recorded asset
-            snapshot.
-          </p>
-          {assetSettings}
-        </details>
-      )}
+    <section className="lab-page lab-generate-page" aria-labelledby="generate-title">
+      <header className="lab-page-header">
+        <h1 id="generate-title">Generate</h1>
+        <p>Configure a real-provider run and inspect the resulting live Facet stage.</p>
+      </header>
       <form onSubmit={(event) => void start(event)} aria-describedby="run-readiness">
-        <fieldset disabled={starting || assetSettingsBusy}>
+        <fieldset disabled={starting}>
           <legend>Run configuration</legend>
 
           <label htmlFor="generate-scenario">Scenario</label>
@@ -316,19 +273,8 @@ export function GeneratePage({
             onChange={(event) => update("prompt", event.target.value)}
           />
 
-          <label htmlFor="generate-mode">Execution</label>
-          <select id="generate-mode" value={draft.mode} onChange={handleMode}>
-            <option value="deterministic">Deterministic fixture</option>
-            <option value="provider">Real provider</option>
-          </select>
-
           <label htmlFor="generate-provider">Provider</label>
-          <select
-            id="generate-provider"
-            value={draft.provider}
-            disabled={draft.mode === "deterministic"}
-            onChange={handleProvider}
-          >
+          <select id="generate-provider" value={draft.provider} onChange={handleProvider}>
             {(["openai", "anthropic"] as const).map((provider) => {
               const capability = capabilities.providers[provider];
               return (
@@ -338,7 +284,7 @@ export function GeneratePage({
               );
             })}
           </select>
-          {draft.mode === "provider" && !providerCapability.available ? (
+          {!providerCapability.available ? (
             <p role="status">
               This provider is unavailable because it is not configured on the Lab server.
             </p>
@@ -404,9 +350,7 @@ export function GeneratePage({
         </fieldset>
 
         <div id="run-readiness" aria-live="polite">
-          {assetSettingsBusy ? (
-            <p>Finish applying the asset selection before starting a run.</p>
-          ) : readiness?.ready ? (
+          {readiness?.ready ? (
             <p>Ready to start a distinct run.</p>
           ) : (
             <ul>
@@ -417,13 +361,13 @@ export function GeneratePage({
           )}
         </div>
         {error === null ? null : <p role="alert">{error}</p>}
-        <button type="submit" disabled={starting || assetSettingsBusy || !readiness?.ready}>
+        <button type="submit" disabled={starting || !readiness?.ready}>
           {starting ? "Starting…" : "Start new run"}
         </button>
       </form>
 
       {active === null ? null : (
-        <section aria-labelledby="live-run-title">
+        <section className="lab-page-section lab-live-run" aria-labelledby="live-run-title">
           <h2 id="live-run-title">Live run</h2>
           <p role="status">
             Run {active.run.runId}: {lifecycle}
@@ -431,10 +375,16 @@ export function GeneratePage({
           <p role="status">
             Evidence trace: {trace.connection} · {String(trace.items.length)} correlated items
           </p>
-          <button type="button" disabled={lifecycle !== "running"} onClick={() => void cancel()}>
+          <button
+            className="lab-button-danger"
+            type="button"
+            disabled={lifecycle !== "running"}
+            onClick={() => void cancel()}
+          >
             Cancel run
           </button>
           <div
+            className="lab-live-stage-shell"
             data-viewport={active.configuration.viewport}
             style={{ maxWidth: VIEWPORT_WIDTHS[active.configuration.viewport], width: "100%" }}
           >

@@ -87,8 +87,6 @@ function fakeBackend(): LabApiBackend & { readonly calls: string[] } {
       dataDirectory: "Facet Lab",
     }),
     getAssets: () => ({ source: "default", digest: "sha256:assets" }),
-    selectDefaultAssets: () => ({ source: "default", digest: "sha256:assets" }),
-    importAssets: () => ({ source: "custom", digest: "sha256:custom" }),
     createRun: (configuration) => {
       calls.push(`create:${configuration.scenarioId}`);
       return {
@@ -157,8 +155,6 @@ describe("Lab API routes", () => {
       ["GET", "/api/catalog"],
       ["GET", "/api/capabilities"],
       ["GET", "/api/assets"],
-      ["POST", "/api/assets/default", {}],
-      ["POST", "/api/assets/import", { schemaVersion: 1, theme: {}, patterns: [] }],
       [
         "POST",
         "/api/runs",
@@ -204,7 +200,6 @@ describe("Lab API routes", () => {
     expect(sse).not.toContain(SECRET);
 
     for (const [method, target, body] of [
-      ["POST", "/api/assets/default", { unknown: SECRET }],
       ["POST", "/api/runs", { prompt: SECRET }],
       ["POST", `/api/runs/${RUN_ID}/cancel`, { unknown: true }],
       ["POST", `/api/runs/${RUN_ID}/evaluations`, { kind: "execute", code: SECRET }],
@@ -221,6 +216,16 @@ describe("Lab API routes", () => {
     );
     expect((await request(routes, "DELETE", `/api/runs/${RUN_ID}`)).status).toBe(405);
     expect((await request(routes, "GET", "/api/unknown")).status).toBe(404);
+    expect((await request(routes, "POST", "/api/assets/default", {})).status).toBe(404);
+    expect(
+      (
+        await request(routes, "POST", "/api/assets/import", {
+          schemaVersion: 1,
+          theme: {},
+          patterns: [],
+        })
+      ).status,
+    ).toBe(404);
     expect((await request(routes, "GET", "/api/catalog?secret=x")).status).toBe(400);
     expect((await request(routes, "POST", `/api/runs/${RUN_ID}/cancel?x=1`, {})).status).toBe(400);
     expect(
@@ -244,7 +249,7 @@ describe("Lab API routes", () => {
 
     const malformed: LabApiRequest = {
       method: "POST",
-      target: "/api/assets/default",
+      target: "/api/runs",
       headers: { authorization: SECRET },
       body: "{",
     };
@@ -299,7 +304,12 @@ describe("Lab API routes", () => {
 
       const evidence = await fetch(`${running.url}/api/runs/${created.runId}`);
       expect(evidence.status).toBe(200);
-      expect(JSON.stringify(await evidence.json())).not.toContain(SECRET);
+      const liveEvidence = (await evidence.json()) as RunEvidenceV1;
+      expect(liveEvidence).toMatchObject({
+        run: { assetSource: "default" },
+        assets: { source: "default" },
+      });
+      expect(JSON.stringify(liveEvidence)).not.toContain(SECRET);
 
       const cancelled = await fetch(`${running.url}/api/runs/${created.runId}/cancel`, {
         method: "POST",
@@ -350,13 +360,25 @@ describe("Lab API routes", () => {
       });
       expect(boundedOrdinary.status).toBe(413);
 
-      const boundedImport = await fetch(`${running.url}/api/assets/import`, {
+      const removedAssetImport = await fetch(`${running.url}/api/assets/import`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ schemaVersion: 1, theme: { name: largeValue }, patterns: [] }),
+        body: JSON.stringify({ schemaVersion: 1, theme: {}, patterns: [] }),
       });
-      expect(boundedImport.status).toBe(200);
-      expect(await boundedImport.json()).toMatchObject({ accepted: false });
+      expect(removedAssetImport.status).toBe(404);
+
+      const removedAssetDefaultWithoutJson = await fetch(`${running.url}/api/assets/default`, {
+        method: "POST",
+        body: "{}",
+      });
+      expect(removedAssetDefaultWithoutJson.status).toBe(404);
+
+      const removedAssetImportAboveFormerLimit = await fetch(`${running.url}/api/assets/import`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ obsolete: largeValue }),
+      });
+      expect(removedAssetImportAboveFormerLimit.status).toBe(404);
     } finally {
       await running.close();
       await rm(root, { recursive: true, force: true });

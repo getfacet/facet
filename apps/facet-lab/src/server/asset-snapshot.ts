@@ -3,53 +3,24 @@ import { createHash } from "node:crypto";
 import { DEFAULT_PATTERNS, DEFAULT_THEME } from "@facet/assets";
 import { validatePatternList, validateTheme } from "@facet/core";
 import type { FacetPattern, FacetTheme } from "@facet/core";
-import { MAX_ASSET_BUNDLE_BYTES, MIN_RUN_EVIDENCE_RESERVE_BYTES } from "../shared/run-contract.js";
-
 export const ASSET_SNAPSHOT_SCHEMA_VERSION = 1 as const;
-export { MAX_ASSET_BUNDLE_BYTES, MIN_RUN_EVIDENCE_RESERVE_BYTES };
-export const MAX_ASSET_DOCUMENT_BYTES = 1024 * 1024;
 export const MAX_ASSET_INPUT_DEPTH = 32;
 export const MAX_ASSET_INPUT_NODES = 250_000;
 
-export type AssetSnapshotSource = "default" | "custom";
-
 export interface AssetSnapshot {
   readonly schemaVersion: typeof ASSET_SNAPSHOT_SCHEMA_VERSION;
-  readonly source: AssetSnapshotSource;
+  readonly source: "default";
   readonly digest: `sha256:${string}`;
   readonly theme: FacetTheme;
   readonly patterns: readonly FacetPattern[];
 }
 
-export type AssetImportIssueCode =
-  | "invalid-bundle"
-  | "unsupported-version"
-  | "unknown-field"
-  | "too-deep"
-  | "too-many-nodes"
-  | "cyclic-input"
-  | "non-json-input"
-  | "bundle-too-large"
-  | "document-too-large"
-  | "invalid-theme"
-  | "invalid-pattern";
+type AssetCopyIssueCode = "too-deep" | "too-many-nodes" | "cyclic-input" | "non-json-input";
 
-export interface AssetImportIssue {
-  readonly code: AssetImportIssueCode;
+interface AssetCopyIssue {
+  readonly code: AssetCopyIssueCode;
   readonly message: string;
 }
-
-export type AssetImportResult =
-  | {
-      readonly accepted: true;
-      readonly snapshot: AssetSnapshot;
-      readonly issues: readonly AssetImportIssue[];
-    }
-  | {
-      readonly accepted: false;
-      readonly snapshot: AssetSnapshot;
-      readonly issues: readonly AssetImportIssue[];
-    };
 
 type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 interface JsonObject {
@@ -58,14 +29,14 @@ interface JsonObject {
 
 type JsonCopyResult =
   | { readonly ok: true; readonly value: JsonValue }
-  | { readonly ok: false; readonly issue: AssetImportIssue };
+  | { readonly ok: false; readonly issue: AssetCopyIssue };
 
 interface JsonCopyBudget {
   nodes: number;
   readonly ancestors: WeakSet<object>;
 }
 
-function issue(code: AssetImportIssueCode, message: string): AssetImportIssue {
+function issue(code: AssetCopyIssueCode, message: string): AssetCopyIssue {
   return Object.freeze({ code, message });
 }
 
@@ -171,14 +142,6 @@ function copyJson(input: unknown): JsonCopyResult {
   return copyJsonValue(input, 0, { nodes: 0, ancestors: new WeakSet<object>() });
 }
 
-function isJsonObject(value: JsonValue): value is JsonObject {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function jsonBytes(value: JsonValue): number {
-  return Buffer.byteLength(JSON.stringify(value), "utf8");
-}
-
 function stableJson(value: JsonValue): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(stableJson).join(",")}]`;
@@ -208,26 +171,18 @@ export function computeAssetDigest(
   return `sha256:${createHash("sha256").update(stableJson(digestInput.value)).digest("hex")}`;
 }
 
-function createSnapshot(
-  source: AssetSnapshotSource,
-  theme: FacetTheme,
-  patterns: readonly FacetPattern[],
-): AssetSnapshot {
+function createSnapshot(theme: FacetTheme, patterns: readonly FacetPattern[]): AssetSnapshot {
   const themeCopy = deepFreeze(cloneAsJson(theme));
   const patternCopy = deepFreeze(cloneAsJson(patterns));
   const digest = computeAssetDigest(themeCopy, patternCopy);
   if (digest === undefined) throw new Error("Validated Facet assets were not JSON-compatible");
   return deepFreeze({
     schemaVersion: ASSET_SNAPSHOT_SCHEMA_VERSION,
-    source,
+    source: "default",
     digest,
     theme: themeCopy,
     patterns: patternCopy,
   });
-}
-
-function rejected(snapshot: AssetSnapshot, firstIssue: AssetImportIssue): AssetImportResult {
-  return Object.freeze({ accepted: false, snapshot, issues: Object.freeze([firstIssue]) });
 }
 
 /** Builds the known-good bundled selection through the same public Core validators. */
@@ -240,73 +195,10 @@ export function createDefaultAssetSnapshot(): AssetSnapshot {
   if (patternResult.issues.length > 0) {
     throw new Error("Bundled Facet Lab Patterns failed Core validation");
   }
-  return createSnapshot("default", themeResult.theme, patternResult.patterns);
-}
-
-/**
- * Strict all-or-nothing import. Any envelope, budget, Theme, or Pattern issue
- * returns the exact prior selection and cannot mutate the selected assets.
- */
-export function importAssetBundle(prior: AssetSnapshot, candidate: unknown): AssetImportResult {
-  const copied = copyJson(candidate);
-  if (!copied.ok) return rejected(prior, copied.issue);
-  if (!isJsonObject(copied.value)) {
-    return rejected(prior, issue("invalid-bundle", "Asset bundle must be a JSON object"));
-  }
-  if (jsonBytes(copied.value) > MAX_ASSET_BUNDLE_BYTES) {
-    return rejected(
-      prior,
-      issue("bundle-too-large", "Asset bundle left too little space for terminal run evidence"),
-    );
-  }
-
-  const allowedFields = new Set(["schemaVersion", "theme", "patterns"]);
-  if (Object.keys(copied.value).some((key) => !allowedFields.has(key))) {
-    return rejected(prior, issue("unknown-field", "Asset bundle contained an unknown field"));
-  }
-  if (copied.value.schemaVersion !== ASSET_SNAPSHOT_SCHEMA_VERSION) {
-    return rejected(
-      prior,
-      issue("unsupported-version", "Asset bundle schema version is missing or unsupported"),
-    );
-  }
-  if (!("theme" in copied.value) || !("patterns" in copied.value)) {
-    return rejected(prior, issue("invalid-bundle", "Asset bundle is missing a required field"));
-  }
-  if (jsonBytes(copied.value.theme) > MAX_ASSET_DOCUMENT_BYTES) {
-    return rejected(prior, issue("document-too-large", "Theme document exceeded the byte limit"));
-  }
-  if (Array.isArray(copied.value.patterns)) {
-    for (const pattern of copied.value.patterns) {
-      if (jsonBytes(pattern) > MAX_ASSET_DOCUMENT_BYTES) {
-        return rejected(
-          prior,
-          issue("document-too-large", "Pattern document exceeded the byte limit"),
-        );
-      }
-    }
-  }
-
-  const themeResult = validateTheme(copied.value.theme);
-  if (themeResult.theme === undefined) {
-    return rejected(prior, issue("invalid-theme", "Theme failed strict Core validation"));
-  }
-  const patternResult = validatePatternList(copied.value.patterns, themeResult.theme);
-  if (patternResult.issues.length > 0) {
-    return rejected(
-      prior,
-      issue("invalid-pattern", "One or more Patterns failed strict Core validation"),
-    );
-  }
-
-  return Object.freeze({
-    accepted: true,
-    snapshot: createSnapshot("custom", themeResult.theme, patternResult.patterns),
-    issues: Object.freeze([]),
-  });
+  return createSnapshot(themeResult.theme, patternResult.patterns);
 }
 
 /** Captures a detached, deeply frozen, content-digested asset view for one run. */
 export function createRunAssetSnapshot(selection: AssetSnapshot): AssetSnapshot {
-  return createSnapshot(selection.source, selection.theme, selection.patterns);
+  return createSnapshot(selection.theme, selection.patterns);
 }

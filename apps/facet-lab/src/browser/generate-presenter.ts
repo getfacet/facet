@@ -9,6 +9,7 @@ import {
 import type { RunConfiguration } from "../shared/run-contract.js";
 import type { BrowserCreatedRun } from "./api-client.js";
 import {
+  defaultProviderConfiguration,
   validateRunConfiguration,
   type LabCapabilities,
   type RunConfigurationIssue,
@@ -95,9 +96,7 @@ export function createGenerateDraft(
 ): RunConfiguration {
   const scenario = selection === "free-form" ? FREE_FORM_SCENARIO : selection;
   return Object.freeze({
-    mode: "deterministic",
-    provider: capabilities.deterministic.provider,
-    model: capabilities.deterministic.defaultModel,
+    ...defaultProviderConfiguration(capabilities),
     scenarioId: scenario.id,
     prompt: scenario.prompt,
     constraint: null,
@@ -156,7 +155,7 @@ export function projectGenerateReadiness(
             readinessIssue(
               "constraint-unavailable",
               "constraint",
-              `${describeConstraint(constraint)} is not available in the selected asset source.`,
+              `${describeConstraint(constraint)} is not available in the package-default assets.`,
             ),
           );
         }

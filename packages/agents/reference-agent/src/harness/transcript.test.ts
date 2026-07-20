@@ -45,6 +45,25 @@ describe("provider transcript helpers", () => {
     ]);
   });
 
+  it("carries opaque provider continuation state into the next tool step", () => {
+    const providerState = [{ type: "reasoning", encrypted_content: "opaque" }];
+    const messages: TurnMessage[] = [];
+    appendAssistantToolCalls(messages, {
+      text: "Checking.",
+      toolCalls: [toolCalls[0]],
+      providerState,
+    });
+
+    expect(messages).toEqual([
+      {
+        role: "assistant_tools",
+        text: "Checking.",
+        toolCalls: [toolCalls[0]],
+        providerState,
+      },
+    ]);
+  });
+
   it("preserves ordered observations even when a provider repeats a tool call id", () => {
     const messages: TurnMessage[] = [];
     const duplicateStep: ProviderStep = {

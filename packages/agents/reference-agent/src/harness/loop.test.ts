@@ -51,6 +51,7 @@ interface RunLoopOptions {
   readonly system?: string;
   readonly tools?: readonly ToolSpec[];
   readonly summarizer?: Summarizer;
+  readonly abortSignal?: AbortSignal;
   readonly contextWindowTokens?: number;
   readonly summaryStore?: Pick<SummaryStore, "get">;
 }
@@ -135,6 +136,7 @@ async function runLoop(options: RunLoopOptions): Promise<{
     bufferFactory: options.bufferFactory ?? (() => bufferWith()),
     ...(options.tools !== undefined ? { tools: options.tools } : {}),
     ...(options.summarizer !== undefined ? { summarizer: options.summarizer } : {}),
+    ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
     ...(options.contextWindowTokens !== undefined
       ? { contextWindowTokens: options.contextWindowTokens }
       : {}),
@@ -792,6 +794,7 @@ describe("in-turn compaction", () => {
 
   it("calls a summarizer with kind 'transcript' and injects the returned summary block", async () => {
     const requests: SummarizerRequest[] = [];
+    const controller = new AbortController();
     const provider = providerOf(...toolSteps(4), textStep("done"));
 
     const result = await runLoop({
@@ -799,12 +802,14 @@ describe("in-turn compaction", () => {
       bufferFactory: bufferFactoryFor(bigObservationBuffer()),
       budget: compactionBudget(),
       tools: [],
+      abortSignal: controller.signal,
       summarizer: summarizerOf(sampleSummary(), requests),
     });
 
     expect(requests).not.toHaveLength(0);
     expect(requests[0]?.kind).toBe("transcript");
     expect(requests[0]?.content).toContain("inspect_stage");
+    expect(requests[0]?.signal).toBe(controller.signal);
 
     const summaryTurn = turnWith(provider, SUMMARY_MARKER);
     expect(summaryTurn).toBeDefined();

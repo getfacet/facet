@@ -25,6 +25,7 @@ export interface CompactInTurnOptions {
   readonly shadow: FacetTree;
   readonly budget: ReferenceAgentBudget;
   readonly summarizer: Summarizer | undefined;
+  readonly abortSignal?: AbortSignal;
   readonly generation: number;
   /** Landing target for the whole turn, in chars (compactionTargetRatio × budget). */
   readonly targetChars: number;
@@ -107,6 +108,7 @@ export async function compactInTurnTranscript(
     compactedGroupCount,
     omittedChars,
     summarizer: options.summarizer,
+    ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
     generation: options.generation,
     budget: options.budget,
   });
@@ -226,6 +228,7 @@ interface SummarizeGroupsOptions {
   readonly compactedGroupCount: number;
   readonly omittedChars: number;
   readonly summarizer: Summarizer | undefined;
+  readonly abortSignal?: AbortSignal;
   readonly generation: number;
   readonly budget: ReferenceAgentBudget;
 }
@@ -241,6 +244,7 @@ async function summarizeCompactableGroups(
       maxSummaryChars: summaryCharBudget(options.budget.maxSummaryTokens),
       timeoutMs: options.budget.summarizerTimeoutMs,
       retries: options.budget.summarizerRetries,
+      ...(options.abortSignal !== undefined ? { signal: options.abortSignal } : {}),
     });
     if (summary !== undefined) {
       return {

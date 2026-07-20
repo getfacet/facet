@@ -38,9 +38,10 @@ evidence persistence. Rebuild after browser changes before restarting it. The
 Vite `dev` script serves browser assets only and is not the complete workbench
 server.
 
-Deterministic generation works without a provider key. To enable real-provider
-runs, put one or both keys in the server process environment; values remain
-Node-only:
+Generate always uses a configured real provider. Put one or both keys in the
+server process environment; values remain Node-only. The deterministic fixture
+is reserved for contributor regression tests and is not exposed in the
+workbench UI:
 
 ```bash
 OPENAI_API_KEY=sk-… pnpm --filter @facet/lab serve
@@ -54,7 +55,7 @@ Supported server configuration:
 | --- | --- |
 | `OPENAI_API_KEY` | Enables the configured OpenAI models. The browser receives only availability and allowlisted model IDs. |
 | `ANTHROPIC_API_KEY` | Enables the configured Anthropic models under the same boundary. |
-| `FACET_LAB_OPENAI_MODELS` | Optional comma-separated OpenAI model allowlist. |
+| `FACET_LAB_OPENAI_MODELS` | Optional comma-separated OpenAI model allowlist. Without it, Lab offers GPT-5.6 Sol/Terra/Luna, GPT-5.5/Pro, and GPT-5.4/Pro/mini/nano. |
 | `FACET_LAB_ANTHROPIC_MODELS` | Optional comma-separated Anthropic model allowlist. |
 | `FACET_LAB_PORT` | Loopback port, `5293` by default. |
 | `FACET_LAB_DATA_DIR` | External application-data root. It must resolve outside the repository checkout. |
@@ -71,7 +72,7 @@ routes keep related work together.
 | Area | Routes | What it is for |
 | --- | --- | --- |
 | Catalog | `/catalog` | Search package-defined Bricks, Presets, Patterns, token values, and fixed choices; compare each isolated preview with its exact Facet document and package definition. |
-| Generate | `/generate`, `/scenarios` | Run a free-form prompt or an official scenario through deterministic or configured real-provider execution, then interact with the live stage. Its collapsed advanced settings select custom assets for new runs. |
+| Generate | `/generate`, `/scenarios` | Run a free-form prompt or an official scenario through a configured real provider, then interact with the live stage using the package-default Theme and Patterns. |
 | Runs | `/runs`, `/runs/:runId` | Filter immutable history and inspect correlated traces, provenance, checks, visual evidence, usage, warnings, and artifacts. |
 | Replay | `/replay`, `/replay/:runId`, `/compare` | Scrub accepted checkpoints without a provider, open a capture-safe immutable run route, and compare two to four records with explicit evidence gaps. |
 | Sandbox | `/sandbox`, `/settings` | Create or clone an isolated safe tree, apply revision-checked patches, checkpoint view state separately, and inspect secret-free server capabilities. |
@@ -86,8 +87,8 @@ Catalog does not maintain a second asset roster. It derives:
 
 - Brick identities and definitions from `@facet/core`'s public contracts;
 - token and fixed-choice metadata from Core's style-value contract; and
-- defaults, same-Brick Presets, and Patterns from the selected validated Theme
-  and Pattern list, initially `@facet/assets`.
+- defaults, same-Brick Presets, and Patterns from the package-default Theme and
+  Pattern list in `@facet/assets`.
 
 Consequently, adding or removing package-defined assets changes Catalog through
 the package source rather than a Lab-only list. Each item is either rendered or
@@ -107,47 +108,27 @@ places the selected value on one compatible Brick style property discovered
 from Core's contract, so the preview and JSON demonstrate actual usage without
 inventing a second vocabulary.
 
-Generate's collapsed **Advanced asset settings** accepts package defaults or a
-JSON bundle with this exact envelope:
-
-```json
-{
-  "schemaVersion": 1,
-  "theme": { "complete": "FacetTheme" },
-  "patterns": []
-}
-```
-
-The placeholder above describes the shape; `theme` must be a complete real
-`FacetTheme`, and `patterns` must contain complete real `FacetPattern` values.
-The import is bounded and all-or-nothing. Unknown envelope fields, an unsupported
-version, a non-JSON value, an invalid Theme, or any invalid Pattern rejects the
-whole bundle, reports a diagnostic, and retains the prior selected assets. A
-successful selection affects future runs only. Every run stores a detached,
-content-digested snapshot, so a later asset change cannot rewrite active or
-saved evidence. The complete asset bundle is capped at 24 MiB and each Theme or
-Pattern document at 1 MiB. The lower bundle cap reserves at least 8 MiB of the
-32 MiB run envelope for terminal evidence instead of letting frozen assets
-crowd out the result needed to explain a run.
+Facet Lab always uses `@facet/assets` package defaults for new runs. It exposes
+the default Theme and Patterns read-only for Catalog previews and records a
+detached, content-digested snapshot with each run. Custom Theme/Pattern import
+is intentionally not a Lab feature; use the package authoring workflow when
+testing a custom design system in an integrating application.
 
 Use the [Design System guide](../../docs/DESIGN-SYSTEM.md) to author a Theme or
 Pattern; Lab is an inspector and validator, not a general visual page builder.
 
 ## Generate and scenarios
 
-Generate separates four choices:
+Generate separates three choices and always executes through a configured real
+provider/model:
 
 1. **Free-form or official.** Free-form uses the operator prompt. Official
-   scenarios provide a checked brief and deterministic fixture.
-2. **Deterministic or real provider.** Deterministic mode drives the same
-   reference-agent/tool/patch path with scripted provider responses and needs
-   no key. Real mode is limited to the server's available provider/model
-   allowlist.
-3. **Autonomous or constrained assets.** Autonomous lets the agent discover the
-   selected snapshot. A constraint names one exact `brick:…`, `pattern:…`, or
+   scenarios provide a checked brief.
+2. **Autonomous or constrained assets.** Autonomous lets the agent discover the
+   package-default snapshot. A constraint names one exact `brick:…`, `pattern:…`, or
    `preset:<brick>:<name>`; unavailable and known-unmet constraints are shown
    instead of silently passing.
-4. **Viewport and color mode.** Each run records mobile, tablet, or desktop plus
+3. **Viewport and color mode.** Each run records mobile, tablet, or desktop plus
    light or dark provenance.
 
 The eight official scenario families are:
@@ -207,9 +188,10 @@ the platform application-data location:
 resolved path inside the repository. Run bundles are written atomically under
 the root's `runs` directory, and the store retains 500 runs by default. Product
 bounds include 20,000 prompt code units, 2 MiB JSON requests, 32 MiB evidence
-bundles, 24 MiB imported asset bundles with an 8 MiB terminal-evidence reserve,
-10,000 evidence items per run, depth 32, and 250,000 projected nodes. The shared
-run contract is authoritative if these values change.
+bundles, a 24 MiB ceiling for the asset snapshot embedded in imported run
+evidence with an 8 MiB terminal-evidence reserve, 10,000 evidence items per run,
+depth 32, and 250,000 projected nodes. The shared run contract is authoritative
+if these values change.
 
 Replay starts from recorded state and folds only accepted patches; it never
 calls a provider. The scrubber remounts on run identity changes, reports digest
@@ -252,7 +234,8 @@ Lab browser suite; the narrower commands support focused diagnosis. Run the
 deterministic journey twice when checking reproducibility. The boundary journey
 owns invalid-input, race/cancellation, offline-recovery, corruption, and
 secret-canary coverage; the accessibility journey owns keyboard and automated
-accessibility checks.
+accessibility checks. The deterministic journey installs a test-only browser
+adapter; it does not restore a deterministic choice in Generate.
 
 Real-provider evidence is key-gated:
 

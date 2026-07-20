@@ -2,6 +2,7 @@ import { Component, useCallback, useEffect, useMemo, useRef, useState } from "re
 import type { ErrorInfo, KeyboardEvent, ReactNode } from "react";
 
 import { validateTheme } from "@facet/core";
+import type { FacetTheme } from "@facet/core";
 
 import type { RunEvidenceV1 } from "../shared/run-contract.js";
 import { CatalogPage } from "./CatalogPage.js";
@@ -13,11 +14,11 @@ import { RunsPage } from "./RunsPage.js";
 import { SandboxPage } from "./SandboxPage.js";
 import { ScenariosPage } from "./ScenariosPage.js";
 import { SettingsPage } from "./SettingsPage.js";
-import { AssetImportPanel, type AssetSelectionView } from "./AssetImportPanel.js";
 import { createLabApiClient, type LabApiClient } from "./api-client.js";
 import {
   LAB_ROUTES,
   PRODUCT_AREAS,
+  focusSelectedRoute,
   isProductAreaActive,
   moveProductAreaFocus,
   pathForRun,
@@ -33,6 +34,12 @@ type Resource<T> =
   | { readonly status: "error" };
 
 type ChromeTheme = "light" | "dark";
+
+interface DefaultAssetsView {
+  readonly source: "default";
+  readonly digest: string;
+  readonly theme: FacetTheme;
+}
 
 export interface AppProps {
   readonly api?: LabApiClient;
@@ -131,11 +138,11 @@ function ResourceLoading({ label }: { readonly label: string }): ReactNode {
   );
 }
 
-function assetSelection(value: unknown): AssetSelectionView | undefined {
+function defaultAssetsView(value: unknown): DefaultAssetsView | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Readonly<Record<string, unknown>>;
   if (
-    (record["source"] !== "default" && record["source"] !== "custom") ||
+    record["source"] !== "default" ||
     typeof record["digest"] !== "string" ||
     record["digest"].length === 0 ||
     record["digest"].length > 200
@@ -277,23 +284,13 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
   const [route, setRoute] = useState(() => resolveLabRoute(initialBrowserPath(initialPath)));
   const [theme, setTheme] = useState<ChromeTheme>(initialChromeTheme);
   const [catalog, setCatalog] = useState<Resource<unknown>>({ status: "loading" });
-  const [assets, setAssets] = useState<Resource<AssetSelectionView>>({ status: "loading" });
-  const [activeAssetChanges, setActiveAssetChanges] = useState(0);
-  const [activeRunStarts, setActiveRunStarts] = useState(0);
+  const [assets, setAssets] = useState<Resource<DefaultAssetsView>>({ status: "loading" });
   const [capabilities, setCapabilities] = useState<Resource<LabCapabilities>>({
     status: "loading",
   });
   const [runs, setRuns] = useState<Resource<readonly RunEvidenceV1[]>>({ status: "loading" });
   const mainRef = useRef<HTMLDivElement>(null);
   const areaRefs = useRef(new Map<ProductAreaId, HTMLAnchorElement>());
-  const assetsBusy = activeAssetChanges > 0;
-  const runStarting = activeRunStarts > 0;
-  const handleAssetBusyChange = useCallback((busy: boolean): void => {
-    setActiveAssetChanges((count) => Math.max(0, count + (busy ? 1 : -1)));
-  }, []);
-  const handleRunStartingChange = useCallback((starting: boolean): void => {
-    setActiveRunStarts((count) => Math.max(0, count + (starting ? 1 : -1)));
-  }, []);
 
   const loadCatalog = useCallback((): void => {
     setCatalog({ status: "loading" });
@@ -313,7 +310,7 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
     setAssets({ status: "loading" });
     void api.getAssets().then(
       (value) => {
-        const selection = assetSelection(value);
+        const selection = defaultAssetsView(value);
         setAssets(
           selection === undefined ? { status: "error" } : { status: "ready", value: selection },
         );
@@ -342,7 +339,12 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
 
   useEffect(() => {
     if (initialPath !== undefined || typeof window === "undefined") return;
-    const onPopState = (): void => setRoute(resolveLabRoute(window.location.pathname));
+    const onPopState = (): void => {
+      setRoute(resolveLabRoute(window.location.pathname));
+      requestAnimationFrame(() => {
+        focusSelectedRoute(mainRef.current, window);
+      });
+    };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
   }, [initialPath]);
@@ -358,7 +360,10 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
     if (typeof window !== "undefined" && initialPath === undefined)
       window.history.pushState({}, "", path);
     setRoute(next);
-    if (focusMain) requestAnimationFrame(() => mainRef.current?.focus());
+    if (focusMain)
+      requestAnimationFrame(() => {
+        focusSelectedRoute(mainRef.current, window);
+      });
   };
 
   const handleAreaKey = (event: KeyboardEvent<HTMLAnchorElement>, current: ProductAreaId): void => {
@@ -377,9 +382,9 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
     switch (route.id) {
       case "catalog":
         return assets.status === "loading" ? (
-          <ResourceLoading label="asset selection" />
+          <ResourceLoading label="package assets" />
         ) : assets.status === "error" ? (
-          <ResourceFailure label="Asset selection" retry={retryAssets} />
+          <ResourceFailure label="Package assets" retry={retryAssets} />
         ) : (
           <CatalogPage
             status={catalog.status}
@@ -396,30 +401,15 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
         ) : capabilities.status === "error" ? (
           <ResourceFailure label="Run capabilities" retry={loadCapabilities} />
         ) : assets.status === "loading" ? (
-          <ResourceLoading label="asset selection" />
+          <ResourceLoading label="package assets" />
         ) : assets.status === "error" ? (
-          <ResourceFailure label="Asset selection" retry={retryAssets} />
+          <ResourceFailure label="Package assets" retry={retryAssets} />
         ) : (
           <GeneratePage
             client={api}
             capabilities={capabilities.value}
             theme={assets.value.theme}
             onRunStarted={loadRuns}
-            assetSettingsBusy={assetsBusy}
-            onStartingChange={handleRunStartingChange}
-            assetSettings={
-              <AssetImportPanel
-                api={api}
-                current={assets.value}
-                disabled={assetsBusy || runStarting}
-                onBusyChange={handleAssetBusyChange}
-                onAssetsChanged={(next) => {
-                  setAssets({ status: "ready", value: next });
-                  loadCatalog();
-                }}
-                onAssetsUnavailable={() => setAssets({ status: "error" })}
-              />
-            }
           />
         );
       case "scenarios":
@@ -428,17 +418,15 @@ export function App({ api: apiProp, initialPath }: AppProps = {}): ReactNode {
         ) : capabilities.status === "error" ? (
           <ResourceFailure label="Scenario capabilities" retry={loadCapabilities} />
         ) : assets.status === "loading" ? (
-          <ResourceLoading label="asset selection" />
+          <ResourceLoading label="package assets" />
         ) : assets.status === "error" ? (
-          <ResourceFailure label="Asset selection" retry={retryAssets} />
+          <ResourceFailure label="Package assets" retry={retryAssets} />
         ) : (
           <ScenariosPage
             client={api}
             capabilities={capabilities.value}
             theme={assets.value.theme}
-            assetSettingsBusy={assetsBusy}
             onRunStarted={loadRuns}
-            onStartingChange={handleRunStartingChange}
           />
         );
       case "runs":

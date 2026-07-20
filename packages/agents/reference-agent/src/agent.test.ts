@@ -1400,6 +1400,50 @@ describe("compaction", () => {
     expect(providerTurnText(nextProvider.turns[0]!)).toContain("CONVERSATION SUMMARY");
   });
 
+  it("cancels detached cross-turn summarization and skips its store write", async () => {
+    const sink = new MemorySink();
+    await recordLongHistory(sink, 8);
+    const summaryStore = new MemorySummaryStore();
+    const controller = new AbortController();
+    const calls: SummarizerRequest[] = [];
+    let markStarted: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve;
+    });
+    const summarizer: Summarizer = async (request) => {
+      calls.push(request);
+      markStarted?.();
+      await new Promise<void>((resolve) => {
+        if (request.signal?.aborted === true) {
+          resolve();
+          return;
+        }
+        request.signal?.addEventListener("abort", () => resolve(), { once: true });
+      });
+      return SMALL_SUMMARY;
+    };
+    const agent = createReferenceAgent({
+      provider: providerOf(toolStep(call("say", { text: "done" })), END),
+      sink,
+      agentId: "quickstart",
+      assets: testAssets(),
+      summaryStore,
+      summarizerFactory: () => summarizer,
+      budget: TRIGGERING_BUDGET,
+      onBackgroundTask,
+      abortSignal: controller.signal,
+    });
+
+    await runAgent(agent, { kind: "message", text: "hello" });
+    await started;
+    controller.abort();
+    await drainBackground();
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.signal).toBe(controller.signal);
+    expect(await summaryStore.get("quickstart", "v1")).toBeUndefined();
+  });
+
   it("rolls a generation-2 summary that extends generation-1 and rejects a regressive write", async () => {
     const sink = new MemorySink();
     await recordLongHistory(sink, 8);

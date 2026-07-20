@@ -34,11 +34,7 @@ import {
   type RunEvidenceV1,
 } from "../shared/run-contract.js";
 import { redactForCapture } from "../shared/redaction.js";
-import {
-  createDefaultAssetSnapshot,
-  importAssetBundle,
-  type AssetSnapshot,
-} from "./asset-snapshot.js";
+import { createDefaultAssetSnapshot, type AssetSnapshot } from "./asset-snapshot.js";
 import { resolveFacetLabDataDirectory, type FacetLabDataDirectory } from "./data-directory.js";
 import { exportEvidenceBundle, type EvidenceArtifact } from "./evidence-bundle.js";
 import { createEvidenceStore, type EvidenceStore } from "./evidence-store.js";
@@ -144,6 +140,16 @@ function isAsyncText(value: unknown): value is AsyncIterable<string> {
   return typeof value === "object" && value !== null && Symbol.asyncIterator in value;
 }
 
+function awaitsJsonBody(response: LabApiResponse): boolean {
+  if (response.status !== 400 || typeof response.body !== "object" || response.body === null) {
+    return false;
+  }
+  const error = Reflect.get(response.body, "error");
+  return (
+    typeof error === "object" && error !== null && Reflect.get(error, "code") === "missing-body"
+  );
+}
+
 async function writeApiResponse(response: ServerResponse, result: LabApiResponse): Promise<void> {
   response.writeHead(result.status, result.headers);
   if (result.body instanceof Uint8Array) {
@@ -185,8 +191,21 @@ export function createNodeLabApiHandler(
   return async ({ request, response, url, maxBodyBytes }) => {
     const controller = new AbortController();
     response.once("close", () => controller.abort());
+    const method = request.method ?? "GET";
+    const target = `${url.pathname}${url.search}`;
+    const headers = apiHeaders(request.headers);
     let body: Uint8Array | undefined;
-    if (request.method !== "GET" && request.method !== "HEAD") {
+    if (method !== "GET" && method !== "HEAD") {
+      const preliminary = await routes.handle({
+        method,
+        target,
+        headers,
+        signal: controller.signal,
+      });
+      if (!awaitsJsonBody(preliminary)) {
+        await writeApiResponse(response, preliminary);
+        return;
+      }
       if (!singleHeader(request.headers["content-type"])?.startsWith("application/json")) {
         await writeApiResponse(response, {
           status: 415,
@@ -200,9 +219,7 @@ export function createNodeLabApiHandler(
         return;
       }
       const routeMaximum =
-        url.pathname === "/api/assets/import" || url.pathname === "/api/runs/import"
-          ? MAX_EVIDENCE_BUNDLE_BYTES
-          : MAX_JSON_REQUEST_BYTES;
+        url.pathname === "/api/runs/import" ? MAX_EVIDENCE_BUNDLE_BYTES : MAX_JSON_REQUEST_BYTES;
       try {
         body = new Uint8Array(await readBoundedBody(request, Math.min(maxBodyBytes, routeMaximum)));
       } catch (error: unknown) {
@@ -225,18 +242,14 @@ export function createNodeLabApiHandler(
       }
     }
     const apiRequest: LabApiRequest = {
-      method: request.method ?? "GET",
-      target: `${url.pathname}${url.search}`,
-      headers: apiHeaders(request.headers),
+      method,
+      target,
+      headers,
       signal: controller.signal,
       ...(body === undefined ? {} : { body }),
     };
     await writeApiResponse(response, await routes.handle(apiRequest));
   };
-}
-
-function assetSource(source: AssetSnapshot["source"]): "default" | "imported" {
-  return source === "default" ? "default" : "imported";
 }
 
 function toLiveEvidence(
@@ -253,12 +266,12 @@ function toLiveEvidence(
       startedAt: metadata.startedAt,
       completedAt: null,
       assetDigest: metadata.assets.digest,
-      assetSource: assetSource(metadata.assets.source),
+      assetSource: "default",
       importedFromRunId: null,
     },
     assets: {
       digest: metadata.assets.digest,
-      source: assetSource(metadata.assets.source),
+      source: "default",
       theme: metadata.assets.theme,
       patterns: metadata.assets.patterns,
     },
@@ -486,7 +499,6 @@ interface BackendOptions {
   readonly activeByVisitor: Map<string, CoordinatedGeneration>;
   readonly liveRuns: Map<string, LiveRunMetadata>;
   readonly getAssets: () => AssetSnapshot;
-  readonly setAssets: (assets: AssetSnapshot) => void;
   readonly screenshotDriver?: ScreenshotDriver;
   readonly dataDirectoryLabel: string;
   readonly now: () => string;
@@ -562,21 +574,6 @@ function createLabBackend(options: BackendOptions): LabApiBackend {
         theme: assets.theme,
         patterns: assets.patterns,
       };
-    },
-    selectDefaultAssets() {
-      const assets = createDefaultAssetSnapshot();
-      options.setAssets(assets);
-      return {
-        source: assets.source,
-        digest: assets.digest,
-        theme: assets.theme,
-        patterns: assets.patterns,
-      };
-    },
-    importAssets(bundle) {
-      const result = importAssetBundle(options.getAssets(), bundle);
-      if (result.accepted) options.setAssets(result.snapshot);
-      return result;
     },
     createRun(configuration) {
       if (options.activeByVisitor.size >= MAX_ACTIVE_RUNS) {
@@ -854,7 +851,7 @@ export async function startFacetLab(options: StartFacetLabOptions = {}): Promise
           },
         }
       : undefined);
-  let selectedAssets = createDefaultAssetSnapshot();
+  const defaultAssets = createDefaultAssetSnapshot();
   let publicBaseUrl = "http://127.0.0.1:0";
 
   const coordinator = createRunCoordinator({
@@ -885,10 +882,7 @@ export async function startFacetLab(options: StartFacetLabOptions = {}): Promise
     visitors,
     activeByVisitor,
     liveRuns,
-    getAssets: () => selectedAssets,
-    setAssets: (assets) => {
-      selectedAssets = assets;
-    },
+    getAssets: () => defaultAssets,
     ...(screenshotDriver === undefined ? {} : { screenshotDriver }),
     dataDirectoryLabel:
       typeof dataDirectory === "string"
@@ -908,6 +902,7 @@ export async function startFacetLab(options: StartFacetLabOptions = {}): Promise
     staticRoot: resolve(options.staticRoot ?? STATIC_ROOT),
     apiMaxBodyBytes: MAX_JSON_REQUEST_BYTES,
     apiImportMaxBodyBytes: MAX_EVIDENCE_BUNDLE_BYTES,
+    isKnownApiPath: routes.hasPath,
     apiHandler: createNodeLabApiHandler(routes),
   });
 

@@ -4,6 +4,7 @@ import { FACET_STAGE_TOOL_SPECS } from "@facet/agent-tools";
 import {
   DEFAULT_ANTHROPIC_MODEL,
   DEFAULT_OPENAI_MODEL,
+  TURN_TIMEOUT_MS,
   createAnthropicProvider,
   createOpenAiProvider,
   resolveProvider,
@@ -486,6 +487,307 @@ describe("openai tool-loop wire translation", () => {
   });
 });
 
+describe("openai Responses API translation", () => {
+  const RESPONSES_URL = "https://api.openai.com/v1/responses";
+
+  it.each(["gpt-5.5-pro", "gpt-5.5-pro-2026-04-23", "gpt-5.4-pro", "gpt-5.4-pro-2026-03-05"])(
+    "routes %s through Responses and preserves the tool loop",
+    async (model) => {
+      const { calls, fetchImpl } = createCapturingFetch(
+        okJson({
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              role: "assistant",
+              content: [{ type: "output_text", text: "done" }],
+            },
+          ],
+        }),
+      );
+
+      const step = await createOpenAiProvider(API_KEY, fetchImpl, { model }).run(
+        TOOL_LOOP_TURN,
+        PROVIDER_TOOLS,
+      );
+
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.url).toBe(RESPONSES_URL);
+      const body = bodyOf(calls[0]!);
+      expect(body["model"]).toBe(model);
+      expect(body["instructions"]).toBe(TOOL_LOOP_TURN.system);
+      expect(body["tool_choice"]).toBe("auto");
+      expect(body["include"]).toEqual(["reasoning.encrypted_content"]);
+      expect(body["store"]).toBe(false);
+      expect(body["tools"]).toEqual(
+        PROVIDER_TOOLS.map((tool) => ({
+          type: "function",
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
+      );
+
+      const input = body["input"] as Array<Record<string, unknown>>;
+      expect(input[0]).toEqual({ role: "user", content: "make a page" });
+      expect(input[1]).toEqual({
+        type: "function_call",
+        call_id: "t1",
+        name: "render_page",
+        arguments: JSON.stringify({ tree: { root: "root" } }),
+      });
+      expect(input[2]).toEqual({
+        type: "function_call",
+        call_id: "t2",
+        name: "say",
+        arguments: JSON.stringify({ text: "done" }),
+      });
+      expect(input[3]).toEqual({
+        type: "function_call_output",
+        call_id: "t1",
+        output: "ok: page replaced",
+      });
+      expect(input[4]).toEqual({
+        type: "function_call_output",
+        call_id: "t2",
+        output: "ok: said",
+      });
+      expect(step).toMatchObject({ text: "done", toolCalls: [] });
+    },
+  );
+
+  it("parses Responses text, function calls, and usage", async () => {
+    const { fetchImpl } = createCapturingFetch(
+      okJson({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            content: [
+              { type: "output_text", text: "Working. " },
+              { type: "output_text", text: "Done." },
+            ],
+          },
+          {
+            type: "function_call",
+            call_id: "call-7",
+            name: "say",
+            arguments: JSON.stringify({ text: "hello" }),
+          },
+        ],
+        usage: { input_tokens: 321, output_tokens: 45 },
+      }),
+    );
+
+    const step = await createOpenAiProvider(API_KEY, fetchImpl, {
+      model: "gpt-5.5-pro",
+    }).run(TURN, PROVIDER_TOOLS);
+
+    expect(step).toMatchObject({
+      text: "Working. Done.",
+      toolCalls: [{ id: "call-7", name: "say", input: { text: "hello" } }],
+      usage: { inputTokens: 321, outputTokens: 45 },
+      providerState: expect.any(Array),
+    });
+  });
+
+  it("replays opaque reasoning items and assistant phases before tool results", async () => {
+    const providerState = [
+      {
+        type: "reasoning",
+        id: "reasoning-1",
+        encrypted_content: "encrypted-state",
+        summary: [],
+      },
+      {
+        type: "message",
+        id: "message-1",
+        role: "assistant",
+        status: "completed",
+        phase: "commentary",
+        content: [{ type: "output_text", text: "I will inspect it first." }],
+      },
+      {
+        type: "function_call",
+        id: "function-1",
+        call_id: "call-1",
+        name: "inspect_stage",
+        arguments: "{}",
+        status: "completed",
+      },
+    ] as const;
+    const first = createCapturingFetch(okJson({ status: "completed", output: providerState }));
+    const firstStep = await createOpenAiProvider(API_KEY, first.fetchImpl, {
+      model: "gpt-5.5-pro",
+    }).run(TURN, PROVIDER_TOOLS);
+
+    expect(firstStep.providerState).toEqual(providerState);
+
+    const second = createCapturingFetch(
+      okJson({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            phase: "final_answer",
+            content: [{ type: "output_text", text: "Done." }],
+          },
+        ],
+      }),
+    );
+    await createOpenAiProvider(API_KEY, second.fetchImpl, {
+      model: "gpt-5.5-pro",
+    }).run(
+      {
+        system: "sys",
+        messages: [
+          { role: "user", content: "Inspect the stage." },
+          {
+            role: "assistant_tools",
+            text: firstStep.text,
+            toolCalls: firstStep.toolCalls,
+            providerState: firstStep.providerState,
+          },
+          { role: "tool_result", callId: "call-1", content: "stage is empty" },
+        ],
+      },
+      PROVIDER_TOOLS,
+    );
+
+    expect(bodyOf(second.calls[0]!)["input"]).toEqual([
+      { role: "user", content: "Inspect the stage." },
+      ...providerState,
+      { type: "function_call_output", call_id: "call-1", output: "stage is empty" },
+    ]);
+  });
+
+  it("rejects non-completed Responses and unfinished output items", async () => {
+    for (const response of [
+      { output: [] },
+      { status: null, output: [] },
+      { status: 1, output: [] },
+      { status: "incomplete", output: [] },
+      { status: "failed", output: [] },
+      {
+        status: "completed",
+        output: [
+          {
+            type: "function_call",
+            call_id: "call-1",
+            name: "say",
+            arguments: "{}",
+            status: "incomplete",
+          },
+        ],
+      },
+    ]) {
+      const { fetchImpl } = createCapturingFetch(okJson(response));
+      await expect(
+        createOpenAiProvider(API_KEY, fetchImpl, { model: "gpt-5.4-pro" }).run(
+          TURN,
+          PROVIDER_TOOLS,
+        ),
+      ).rejects.toThrow(/not complete|unfinished/);
+    }
+  });
+
+  it("surfaces a valid Responses refusal as provider text", async () => {
+    const { fetchImpl } = createCapturingFetch(
+      okJson({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            phase: "final_answer",
+            content: [{ type: "refusal", refusal: "I cannot help with that." }],
+          },
+        ],
+      }),
+    );
+
+    const step = await createOpenAiProvider(API_KEY, fetchImpl, {
+      model: "gpt-5.4-pro",
+    }).run(TURN, PROVIDER_TOOLS);
+
+    expect(step.text).toBe("I cannot help with that.");
+    expect(step.toolCalls).toEqual([]);
+  });
+
+  it("keeps malformed Responses function arguments observable", async () => {
+    const { fetchImpl } = createCapturingFetch(
+      okJson({
+        status: "completed",
+        output: [
+          {
+            type: "function_call",
+            call_id: "call-bad",
+            name: "say",
+            arguments: "{not json",
+          },
+        ],
+      }),
+    );
+
+    const step = await createOpenAiProvider(API_KEY, fetchImpl, {
+      model: "gpt-5.4-pro",
+    }).run(TURN, PROVIDER_TOOLS);
+
+    expect(step.toolCalls[0]!.input).toEqual({ __parseError: "{not json" });
+  });
+
+  it("rejects malformed Responses output items", async () => {
+    for (const output of [
+      undefined,
+      [{ type: "function_call", call_id: "", name: "say", arguments: "{}" }],
+      [{ type: "function_call", call_id: "call-1", name: "", arguments: "{}" }],
+    ]) {
+      const { fetchImpl } = createCapturingFetch(okJson({ status: "completed", output }));
+      await expect(
+        createOpenAiProvider(API_KEY, fetchImpl, { model: "gpt-5.4-pro" }).run(
+          TURN,
+          PROVIDER_TOOLS,
+        ),
+      ).rejects.toThrow(/openai Responses response/);
+    }
+  });
+
+  it("gives slow Pro requests a bounded ten-minute default while preserving cancellation", async () => {
+    vi.useFakeTimers();
+    try {
+      const caller = new AbortController();
+      let settled = false;
+      const request = createOpenAiProvider(API_KEY, hangingFetch, {
+        model: "gpt-5.5-pro",
+      })
+        .run(TURN, PROVIDER_TOOLS, { signal: caller.signal })
+        .then(
+          () => {
+            settled = true;
+            return undefined;
+          },
+          (error: unknown) => {
+            settled = true;
+            return error;
+          },
+        );
+
+      await vi.advanceTimersByTimeAsync(TURN_TIMEOUT_MS);
+      expect(settled).toBe(false);
+
+      await vi.advanceTimersByTimeAsync(9 * TURN_TIMEOUT_MS);
+      await expect(request).resolves.toMatchObject({ name: "AbortError" });
+      expect(settled).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("anthropic tool-loop wire translation", () => {
   it("merges consecutive user text messages before sending the Anthropic request", async () => {
     const { calls, fetchImpl } = createCapturingFetch(okJson(anthropicCase.textResponse("")));
@@ -745,6 +1047,23 @@ describe("openai request body has no cache fields (usage change is response-only
     expect("system" in body).toBe(false);
     const messages = body["messages"] as Array<Record<string, unknown>>;
     expect(messages[0]).toEqual({ role: "system", content: TURN.system });
+  });
+
+  it("pins GPT-5.6 Chat Completions tool calls to reasoning none", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(openaiCase.textResponse("ok")));
+    await createOpenAiProvider(API_KEY, fetchImpl, { model: "gpt-5.6-terra" }).run(
+      TURN,
+      PROVIDER_TOOLS,
+    );
+
+    expect(bodyOf(calls[0]!)["reasoning_effort"]).toBe("none");
+  });
+
+  it("keeps the GPT-5.6 provider default when a turn offers no tools", async () => {
+    const { calls, fetchImpl } = createCapturingFetch(okJson(openaiCase.textResponse("ok")));
+    await createOpenAiProvider(API_KEY, fetchImpl, { model: "gpt-5.6-sol" }).run(TURN, []);
+
+    expect(bodyOf(calls[0]!)).not.toHaveProperty("reasoning_effort");
   });
 });
 

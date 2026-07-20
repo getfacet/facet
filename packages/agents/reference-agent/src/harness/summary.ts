@@ -243,6 +243,8 @@ export interface SummarizerRequest {
   readonly timeoutMs: number;
   /** Retry-once = 1. */
   readonly retries: number;
+  /** Abort the current attempt and suppress retries when the owning run is cancelled. */
+  readonly signal?: AbortSignal;
 }
 
 export type Summarizer = (request: SummarizerRequest) => Promise<ConversationSummary | undefined>;
@@ -321,24 +323,53 @@ function runWithTimeout(
   turn: ProviderTurn,
   tools: readonly ToolSpec[],
   timeoutMs: number,
+  callerSignal?: AbortSignal,
 ): Promise<ProviderStep> {
   return new Promise<ProviderStep>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("summarizer timeout")), timeoutMs);
-    provider.run(turn, tools).then(
-      (step) => {
-        clearTimeout(timer);
-        resolve(step);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error instanceof Error ? error : new Error("summarizer failed"));
-      },
-    );
+    const controller = new AbortController();
+    let settled = false;
+    const listensToCaller = callerSignal !== undefined && !callerSignal.aborted;
+    const cleanup = (): void => {
+      clearTimeout(timer);
+      if (listensToCaller) callerSignal.removeEventListener("abort", abortFromCaller);
+    };
+    const finish = (complete: () => void): void => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      complete();
+    };
+    const abortFromCaller = (): void => {
+      controller.abort(callerSignal?.reason);
+      finish(() => reject(new DOMException("aborted", "AbortError")));
+    };
+    const timer = setTimeout(() => {
+      controller.abort();
+      finish(() => reject(new Error("summarizer timeout")));
+    }, timeoutMs);
+    if (listensToCaller) callerSignal.addEventListener("abort", abortFromCaller, { once: true });
+    if (callerSignal?.aborted === true) {
+      abortFromCaller();
+      return;
+    }
+    try {
+      provider.run(turn, tools, { signal: controller.signal }).then(
+        (step) => finish(() => resolve(step)),
+        (error: unknown) =>
+          finish(() => reject(error instanceof Error ? error : new Error("summarizer failed"))),
+      );
+    } catch (error) {
+      finish(() => reject(error instanceof Error ? error : new Error("summarizer failed")));
+    }
   });
 }
 
 function firstEmitCall(step: ProviderStep): ToolCall | undefined {
   return step.toolCalls.find((call) => call.name === SUMMARIZER_TOOL_NAME);
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 /**
@@ -356,8 +387,15 @@ export function createProviderSummarizer(provider: ReferenceProvider): Summarize
     };
     const maxAttempts = Math.max(1, request.retries + 1);
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      if (isAborted(request.signal)) return undefined;
       try {
-        const step = await runWithTimeout(provider, turn, [EMIT_SUMMARY_TOOL], request.timeoutMs);
+        const step = await runWithTimeout(
+          provider,
+          turn,
+          [EMIT_SUMMARY_TOOL],
+          request.timeoutMs,
+          request.signal,
+        );
         const call = firstEmitCall(step);
         if (call !== undefined) {
           // Redact BEFORE validation truncates fields: a secret split by the
@@ -373,6 +411,7 @@ export function createProviderSummarizer(provider: ReferenceProvider): Summarize
       } catch {
         // Throw / timeout — fall through to the next attempt, then undefined.
       }
+      if (isAborted(request.signal)) return undefined;
     }
     return undefined;
   };

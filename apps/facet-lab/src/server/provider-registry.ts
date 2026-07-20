@@ -1,14 +1,26 @@
 import {
   DEFAULT_ANTHROPIC_MODEL,
-  DEFAULT_OPENAI_MODEL,
   createAnthropicProvider,
   createOpenAiProvider,
 } from "@facet/reference-agent";
 import type { ReferenceProvider } from "@facet/reference-agent";
 
+import { MAX_CAPABILITY_MODELS } from "../shared/run-contract.js";
 import { DETERMINISTIC_MODEL } from "./deterministic-provider.js";
 
 export type ProviderName = ReferenceProvider["name"];
+
+export const DEFAULT_FACET_LAB_OPENAI_MODELS = Object.freeze([
+  "gpt-5.6-sol",
+  "gpt-5.6-terra",
+  "gpt-5.6-luna",
+  "gpt-5.5",
+  "gpt-5.5-pro",
+  "gpt-5.4",
+  "gpt-5.4-pro",
+  "gpt-5.4-mini",
+  "gpt-5.4-nano",
+] as const);
 
 export interface ProviderCapability<Name extends ProviderName = ProviderName> {
   readonly provider: Name;
@@ -60,16 +72,24 @@ function hasControlCharacter(value: string): boolean {
   return false;
 }
 
-function readModelAllowlist(value: string | undefined, fallback: string, label: string): string[] {
-  if (value === undefined) return [fallback];
+function readModelAllowlist(
+  value: string | undefined,
+  fallback: readonly string[],
+  label: string,
+): string[] {
+  if (value === undefined) return [...fallback];
   const models = value.split(",").map((model) => model.trim());
+  const uniqueModels = [...new Set(models)];
   if (
     models.length === 0 ||
+    uniqueModels.length > MAX_CAPABILITY_MODELS ||
     models.some((model) => model.length === 0 || model.length > 200 || hasControlCharacter(model))
   ) {
-    throw new Error(`${label} model allowlist must contain comma-separated 1–200 character IDs`);
+    throw new Error(
+      `${label} model allowlist must contain at most ${String(MAX_CAPABILITY_MODELS)} comma-separated 1–200 character IDs`,
+    );
   }
-  return [...new Set(models)];
+  return uniqueModels;
 }
 
 /** Keeps raw provider keys in closure scope and exposes only safe UI capabilities. */
@@ -80,12 +100,12 @@ export function createProviderRegistry(options: ProviderRegistryOptions = {}): P
   const anthropicKey = readKey(environment.ANTHROPIC_API_KEY);
   const openAiModels = readModelAllowlist(
     environment.FACET_LAB_OPENAI_MODELS,
-    DEFAULT_OPENAI_MODEL,
+    DEFAULT_FACET_LAB_OPENAI_MODELS,
     "OpenAI",
   );
   const anthropicModels = readModelAllowlist(
     environment.FACET_LAB_ANTHROPIC_MODELS,
-    DEFAULT_ANTHROPIC_MODEL,
+    [DEFAULT_ANTHROPIC_MODEL],
     "Anthropic",
   );
 

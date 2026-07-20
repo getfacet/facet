@@ -243,6 +243,7 @@ async function* runReadyProviderLoop(
           shadow: options.buffer.shadow,
           budget: options.budget,
           summarizer: options.summarizer,
+          ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
           generation: compactionGeneration,
           // Landing target in chars: keep as many recent step groups verbatim as
           // fit under compactionTargetRatio of the effective budget.

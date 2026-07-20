@@ -130,6 +130,21 @@ function modeCapability(
     : capabilities.providers[provider];
 }
 
+export function defaultProviderConfiguration(
+  capabilities: LabCapabilities,
+): Pick<RunConfiguration, "mode" | "provider" | "model"> {
+  const capability = capabilities.providers.openai.available
+    ? capabilities.providers.openai
+    : capabilities.providers.anthropic.available
+      ? capabilities.providers.anthropic
+      : capabilities.providers.openai;
+  return Object.freeze({
+    mode: "provider",
+    provider: capability.provider,
+    model: capability.defaultModel,
+  });
+}
+
 /**
  * Strict browser-side readiness check. The server repeats authoritative validation;
  * this function only prevents submitting an impossible or over-bound form.
@@ -222,9 +237,7 @@ export function defaultRunConfiguration(
   scenarioId: string,
 ): RunConfiguration {
   return Object.freeze({
-    mode: "deterministic",
-    provider: capabilities.deterministic.provider,
-    model: capabilities.deterministic.defaultModel,
+    ...defaultProviderConfiguration(capabilities),
     scenarioId,
     prompt: "",
     constraint: null,

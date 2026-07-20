@@ -24,7 +24,12 @@ export interface TranscriptObservationOptions {
 }
 
 export function appendAssistantToolCalls(messages: TurnMessage[], step: ProviderStep): void {
-  messages.push({ role: "assistant_tools", text: step.text, toolCalls: step.toolCalls });
+  messages.push({
+    role: "assistant_tools",
+    text: step.text,
+    toolCalls: step.toolCalls,
+    ...(step.providerState === undefined ? {} : { providerState: step.providerState }),
+  });
 }
 
 export function appendProviderStepTranscript(

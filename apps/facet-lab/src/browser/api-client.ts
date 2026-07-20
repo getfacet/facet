@@ -1,7 +1,7 @@
 import { validateRunEvidence } from "../shared/evidence-schema.js";
 import { cloneBoundedJson } from "../shared/redaction.js";
 import {
-  MAX_ASSET_BUNDLE_BYTES,
+  MAX_CAPABILITY_MODELS,
   MAX_EVIDENCE_BUNDLE_BYTES,
   MAX_JSON_REQUEST_BYTES,
   MAX_RETAINED_RUNS,
@@ -19,8 +19,6 @@ import type { LabCapabilities } from "./run-config.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const ARTIFACT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$/u;
-const MAX_CAPABILITY_MODELS = 100;
-
 export interface BrowserCreatedRun {
   readonly runId: string;
   readonly sessionId: string;
@@ -55,8 +53,6 @@ export interface LabApiClient {
   getCatalog(): Promise<JsonValue>;
   getCapabilities(): Promise<LabCapabilities>;
   getAssets(options?: LabApiRequestOptions): Promise<JsonValue>;
-  selectDefaultAssets(options?: LabApiRequestOptions): Promise<JsonValue>;
-  importAssets(bundle: unknown, options?: LabApiRequestOptions): Promise<JsonValue>;
   createRun(configuration: RunConfiguration): Promise<BrowserCreatedRun>;
   listRuns(filters?: BrowserRunFilters): Promise<readonly RunEvidenceV1[]>;
   getRun(runId: string): Promise<RunEvidenceV1>;
@@ -432,16 +428,6 @@ export function createLabApiClient(options: LabApiClientOptions = {}): LabApiCli
         "/api/assets",
         options?.signal === undefined ? undefined : { signal: options.signal },
         MAX_EVIDENCE_BUNDLE_BYTES,
-      ),
-    selectDefaultAssets: (options) =>
-      mutation("/api/assets/default", {}, MAX_JSON_REQUEST_BYTES, MAX_JSON_REQUEST_BYTES, options),
-    importAssets: (bundle: unknown, options) =>
-      mutation(
-        "/api/assets/import",
-        bundle,
-        MAX_ASSET_BUNDLE_BYTES,
-        MAX_EVIDENCE_BUNDLE_BYTES,
-        options,
       ),
     async createRun(configuration: RunConfiguration) {
       const decoded = decodeCreatedRun(

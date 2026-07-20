@@ -39,6 +39,14 @@ export interface ResolvedLabRoute {
 export type ProductNavigationKey =
   "ArrowLeft" | "ArrowRight" | "ArrowUp" | "ArrowDown" | "Home" | "End";
 
+export interface RouteFocusTarget {
+  focus(options?: FocusOptions): void;
+}
+
+export interface RouteViewport {
+  scrollTo(options: ScrollToOptions): void;
+}
+
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 
 export const LAB_ROUTES: readonly LabRouteDefinition[] = Object.freeze([
@@ -168,6 +176,11 @@ export function moveProductAreaFocus(current: ProductAreaId, key: string): Produ
   if (direction === 0) return null;
   const target = (index + direction + PRODUCT_AREA_IDS.length) % PRODUCT_AREA_IDS.length;
   return PRODUCT_AREA_IDS[target] ?? null;
+}
+
+export function focusSelectedRoute(target: RouteFocusTarget | null, viewport: RouteViewport): void {
+  target?.focus({ preventScroll: true });
+  viewport.scrollTo({ top: 0, behavior: "auto" });
 }
 
 export function pathForRoute(routeId: Exclude<LabRouteId, "run-detail">): string {

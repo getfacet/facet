@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
 
 import type { RunEvidenceV1 } from "../src/shared/run-contract.js";
+import { DETERMINISTIC_MODEL } from "../src/server/deterministic-provider.js";
 import { startFacetLab, type RunningFacetLab } from "../src/server/main.js";
 import {
   createPlaywrightScreenshotDriver,
@@ -341,6 +342,47 @@ async function liveStageText(page: Page): Promise<string> {
   return page.getByLabel("Live Facet stage").innerText();
 }
 
+async function installDeterministicGenerateAdapter(page: Page): Promise<void> {
+  await page.route("**/api/capabilities", async (route) => {
+    const response = await route.fetch();
+    const capabilities = (await response.json()) as {
+      readonly providers: Readonly<Record<string, unknown>>;
+      readonly [key: string]: unknown;
+    };
+    await route.fulfill({
+      response,
+      json: {
+        ...capabilities,
+        providers: {
+          ...capabilities.providers,
+          openai: {
+            provider: "openai",
+            available: true,
+            models: [DETERMINISTIC_MODEL],
+            defaultModel: DETERMINISTIC_MODEL,
+          },
+        },
+      },
+    });
+  });
+  await page.route("**/api/runs", async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST") {
+      await route.continue();
+      return;
+    }
+    const configuration = request.postDataJSON() as Readonly<Record<string, unknown>>;
+    await route.continue({
+      postData: JSON.stringify({
+        ...configuration,
+        mode: "deterministic",
+        provider: "openai",
+        model: DETERMINISTIC_MODEL,
+      }),
+    });
+  });
+}
+
 /** Drives initial render + UI-IN follow-ups + terminal persistence through the browser UI. */
 export async function runDeterministicJourney(
   harness: LabHarness,
@@ -349,6 +391,7 @@ export async function runDeterministicJourney(
 ): Promise<DeterministicJourneyResult> {
   const scenarioId = options.scenarioId ?? "landing-marketing";
   const followUps = options.followUps ?? ["Apply the follow-up state"];
+  await installDeterministicGenerateAdapter(page);
   await page.goto(`${harness.url}/generate`, { waitUntil: "domcontentloaded" });
   await page.getByRole("heading", { name: "Generate", exact: true }).last().waitFor();
   await page.locator("#generate-scenario").selectOption(scenarioId);

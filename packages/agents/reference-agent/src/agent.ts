@@ -147,7 +147,8 @@ export function createReferenceAgentWithDependencies(
     }
 
     // Cross-turn compaction runs AFTER the turn, detached, on the serial lane.
-    // The generator returns without awaiting it; the task can never reject.
+    // The generator returns without awaiting it; the task can never reject, but
+    // it remains cancellation-cooperative with the owning run.
     if (
       options.summaryStore !== undefined &&
       summarizer !== undefined &&
@@ -171,6 +172,7 @@ export function createReferenceAgentWithDependencies(
             summaryStore: store,
             summarizer,
             trace: options.trace,
+            ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
             ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
           });
         } catch {

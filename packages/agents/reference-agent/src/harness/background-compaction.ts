@@ -80,7 +80,12 @@ export interface BackgroundCompactionOptions {
   readonly summaryStore: SummaryStore;
   readonly summarizer: Summarizer;
   readonly trace: ReferenceAgentTrace | undefined;
+  readonly abortSignal?: AbortSignal;
   readonly contextWindowTokens?: number;
+}
+
+function isAborted(signal: AbortSignal | undefined): boolean {
+  return signal?.aborted === true;
 }
 
 /**
@@ -90,6 +95,7 @@ export interface BackgroundCompactionOptions {
  */
 export async function runBackgroundCompaction(options: BackgroundCompactionOptions): Promise<void> {
   const { trace, budget } = options;
+  if (isAborted(options.abortSignal)) return;
 
   let history: readonly StoredEvent[];
   try {
@@ -102,6 +108,7 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     });
     return;
   }
+  if (isAborted(options.abortSignal)) return;
 
   const anchor = conversationAnchor(history);
   if (anchor === undefined) return;
@@ -121,6 +128,7 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     });
     return;
   }
+  if (isAborted(options.abortSignal)) return;
   const vetted = vetStoredSummary(stored, history);
   if (vetted.status === "ok") {
     previous = vetted.summary;
@@ -137,6 +145,7 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
       });
       return;
     }
+    if (isAborted(options.abortSignal)) return;
   }
 
   if (isWithinMinGainCooldown(key, history.length, budget.compactionCooldownSteps)) return;
@@ -218,10 +227,12 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
       maxSummaryChars: summaryCharBudget(budget.maxSummaryTokens),
       timeoutMs: budget.summarizerTimeoutMs,
       retries: budget.summarizerRetries,
+      ...(options.abortSignal !== undefined ? { signal: options.abortSignal } : {}),
     });
   } catch {
     summary = undefined;
   }
+  if (isAborted(options.abortSignal)) return;
   if (summary === undefined) {
     emitReferenceAgentTrace(trace, {
       type: "compaction_failed",
@@ -250,6 +261,7 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
   }
 
   let written: boolean;
+  if (isAborted(options.abortSignal)) return;
   try {
     written = await options.summaryStore.put(options.agentId, options.visitorId, {
       payload: summaryPayload(summary, anchor),
