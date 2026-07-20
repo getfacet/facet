@@ -80,6 +80,12 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await catalogPage.getByRole("button", { name: /^Inspect Preset primaryAction$/u }).click();
     await visible(catalogPage.locator("[data-catalog-item='preset:box:primaryAction']"));
     await visible(catalogPage.locator(".catalog-preview-canvas [role='button']").first());
+    await catalogPage
+      .getByRole("button", { name: /^Inspect Preset badge$/u })
+      .first()
+      .click();
+    await visible(catalogPage.locator("[data-catalog-item='preset:box:badge']"));
+    await visible(catalogPage.locator(".catalog-preview-canvas [style*='width: fit-content']"));
 
     await catalogPage.getByRole("button", { name: /^Bricks \(/u }).click();
     await catalogPage.getByRole("button", { name: /^Inspect Brick chart$/u }).click();
