@@ -351,6 +351,11 @@ export const FIXED_STYLE_VALUE_CONTRACT = {
   ]),
   width: defineDomain("Bounded width behavior", WIDTHS, [
     ["auto", "Use content or parent-led width.", "Use for ordinary flow sizing."],
+    [
+      "fit",
+      "Use intrinsic content width while staying bounded by the parent.",
+      "Use for compact pills, badges, or controls that should not fill a full row.",
+    ],
     ["full", "Fill the available parent width.", "Use for full-row controls or sections."],
   ]),
   scroll: defineDomain("Bounded internal scrolling", SCROLLS, [

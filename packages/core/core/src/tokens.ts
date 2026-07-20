@@ -110,7 +110,7 @@ export type Justification = (typeof JUSTIFICATIONS)[number];
 export const BOOLEAN_VALUES = [false, true] as const;
 export type BooleanValue = (typeof BOOLEAN_VALUES)[number];
 
-export const WIDTHS = ["auto", "full"] as const;
+export const WIDTHS = ["auto", "fit", "full"] as const;
 export type Width = (typeof WIDTHS)[number];
 
 export const SCROLLS = ["none", "horizontal", "vertical"] as const;

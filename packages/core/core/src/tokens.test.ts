@@ -129,7 +129,7 @@ describe("Core style value domains", () => {
       direction: ["row", "column"],
       alignment: ["start", "center", "end", "stretch"],
       justification: ["start", "center", "end", "between", "around"],
-      width: ["auto", "full"],
+      width: ["auto", "fit", "full"],
       scroll: ["none", "horizontal", "vertical"],
       columns: ["none", 2, 3, 4],
       textAlign: ["start", "center", "end"],
@@ -139,6 +139,10 @@ describe("Core style value domains", () => {
       enterAnimation: ["none", "fade", "slide"],
       animation: ["none", "pulse"],
     });
+  });
+
+  it("keeps width fit as a closed fixed choice between auto and full", () => {
+    expect(WIDTHS).toEqual(["auto", "fit", "full"]);
   });
 
   it("does not export retired style value domains", () => {
