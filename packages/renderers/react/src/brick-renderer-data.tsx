@@ -145,7 +145,10 @@ export function renderList<Press>(node: FacetNode, context: BrickRenderContext<P
     <ul
       className={className}
       aria-hidden={inert ? true : undefined}
-      style={withInert({ ...styles.root, margin: 0, paddingInlineStart: 0, listStyle: "none" }, inert)}
+      style={withInert(
+        { ...styles.root, margin: 0, paddingInlineStart: 0, listStyle: "none" },
+        inert,
+      )}
     >
       {items.map((item, index) => (
         <li
@@ -174,9 +177,9 @@ export function renderList<Press>(node: FacetNode, context: BrickRenderContext<P
             })}
           >
             <span style={styles.title}>{item.title}</span>
-          {item.body === undefined ? null : (
+            {item.body === undefined ? null : (
               <p style={{ ...styles.body, margin: 0 }}>{item.body}</p>
-          )}
+            )}
           </span>
         </li>
       ))}

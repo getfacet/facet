@@ -164,7 +164,9 @@ function renderChartBars(
   const groupGap = 12;
   const groupWidth = series.length * barWidth + Math.max(0, series.length - 1) * barGap;
   const groupStep =
-    pointCount <= 1 ? groupWidth + groupGap : Math.max(groupWidth + groupGap, PLOT_WIDTH / pointCount);
+    pointCount <= 1
+      ? groupWidth + groupGap
+      : Math.max(groupWidth + groupGap, PLOT_WIDTH / pointCount);
   const bars = series.map((item, seriesIndex) =>
     item.values.map((value, valueIndex) => {
       const barHeight = Math.round((Math.abs(value) / max) * 100);

@@ -32,7 +32,9 @@ function presetStyle(preset: string | undefined): OptionalPresetStyle {
   return preset === undefined ? {} : { style: { preset } };
 }
 
-function presetAction(preset: string | undefined): Pick<BoxNode, "onPress"> | Record<string, never> {
+function presetAction(
+  preset: string | undefined,
+): Pick<BoxNode, "onPress"> | Record<string, never> {
   if (preset === "primaryAction") {
     return { onPress: { kind: "agent", name: "catalog_primary_action" } };
   }
@@ -247,7 +249,8 @@ function keyValueSample(preset?: string): BrickCatalogSample {
     items: [
       {
         label: "Source",
-        value: "Package exports are reflected directly in Lab; no handwritten roster decides what exists.",
+        value:
+          "Package exports are reflected directly in Lab; no handwritten roster decides what exists.",
       },
       {
         label: "Status",
