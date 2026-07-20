@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Facet Lab">
+  <rect width="64" height="64" rx="14" fill="#0f766e" />
+  <rect x="9" y="9" width="46" height="46" rx="10" fill="#f8fafc" opacity="0.14" />
+  <path
+    d="M23 45V18h19v6H30v6h10v6H30v9z"
+    fill="#f8fafc"
+  />
+</svg>
