@@ -76,6 +76,22 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await inspectEveryItem(catalogPage, "Presets", 43);
     await inspectEveryItem(catalogPage, "Patterns", 17);
 
+    await catalogPage.getByRole("button", { name: /^Presets \(/u }).click();
+    await catalogPage.getByRole("button", { name: /^Inspect Preset primaryAction$/u }).click();
+    await visible(catalogPage.locator("[data-catalog-item='preset:box:primaryAction']"));
+    await visible(catalogPage.locator(".catalog-preview-canvas [role='button']").first());
+
+    await catalogPage.getByRole("button", { name: /^Bricks \(/u }).click();
+    await catalogPage.getByRole("button", { name: /^Inspect Brick chart$/u }).click();
+    await visible(catalogPage.locator(".catalog-preview-canvas [data-facet-chart-axis='x']"));
+    await visible(catalogPage.locator(".catalog-preview-canvas [data-facet-chart-legend='true']"));
+    await catalogPage.getByRole("button", { name: /^Inspect Brick list$/u }).click();
+    await visible(
+      catalogPage.locator(".catalog-preview-canvas [data-facet-list-content='true']").first(),
+    );
+    await catalogPage.getByRole("button", { name: /^Inspect Brick progress$/u }).click();
+    await visible(catalogPage.locator(".catalog-preview-canvas").getByText("62%"));
+
     await catalogPage.locator("#catalog-preview-viewport").selectOption("mobile");
     await catalogPage.locator("#catalog-preview-color").selectOption("dark");
     await visible(catalogPage.locator("[data-preview-viewport='mobile']"));
