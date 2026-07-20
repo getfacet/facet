@@ -122,7 +122,12 @@ as `sm`/`md`/`lg`, semantic paint names such as `accent`/`success`, and named
 font, radius, thickness, and size scales. The Theme decides their CSS values.
 
 Fixed choices are closed renderer semantics that do not change by brand. Examples
-include `row`/`column`, `auto`/`full`, and boolean choices.
+include `row`/`column`, `auto`/`fit`/`full`, and boolean choices.
+
+For width, `auto` keeps default normal-flow sizing, `fit` requests bounded
+content-sized flow, and `full` fills the parent slot. All three remain named
+renderer semantics: the author cannot provide raw widths, margins, percentages,
+or arbitrary CSS.
 
 Both sources are defined in Core with bounded descriptions and `useWhen`
 guidance. A Brick property points to exactly one allowed value set. The agent
@@ -305,6 +310,11 @@ Every native renderer root follows three rules:
 There is no general authored positioning or z-index. A `box` backdrop and
 modal/drawer are bounded renderer-owned mechanisms with fixed layering and
 containment, not arbitrary CSS escape hatches.
+
+Compact sizing stays inside the same layout boundary. A child may request
+`width:"fit"` or `width:"full"`, but both are normal-flow choices interpreted
+and bounded by the renderer; neither grants coordinates, custom breakpoints, or
+open CSS.
 
 ## Patches and the event loop
 

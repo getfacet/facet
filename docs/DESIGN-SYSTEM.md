@@ -22,7 +22,7 @@ copy an exhaustive Brick, property, or token table.
 | `fontSize`, `gap`, `background` | style property | Core defines it per Brick and target; the agent may choose it there. |
 | `label`, `control`, `track`, `fill` | Brick-owned style target | Core defines it for one Brick; the renderer owns the corresponding internal part. |
 | `md`, `lg`, `success` | token name | Core defines its meaning and where it is allowed; the agent chooses the name. |
-| `row`, `column`, `auto`, `full` | fixed choice | Core and the renderer define behavior that does not change with a brand. |
+| `row`, `column`, `auto`, `fit`, `full` | fixed choice | Core and the renderer define behavior that does not change with a brand. |
 | `16px`, `#16a34a`, a font stack | concrete Theme value | The operator supplies it inside Theme data; the agent never puts it in a Facet Document. |
 | `space.md = 16px` | Theme token definition | The Theme maps one Core token name to one concrete value. |
 | `panel`, `heading` | Preset name | A Theme defines it for one Brick; the agent may select it from that Brick's style. |
@@ -62,6 +62,12 @@ token or fixed-choice domain. Core derives validation, Theme checks, renderer
 resolution, and `get_style_choices` from that same subset; membership in a
 broader domain alone does not make a value valid at every property that uses
 the domain.
+
+For width, authors choose only the fixed choices Core exposes. `auto` leaves the
+Brick in its default normal-flow sizing, `fit` asks the renderer for compact
+content-sized flow that is still bounded by the parent slot, and `full` fills
+the parent slot. Authors do not send pixel widths, percentages, margins, or
+arbitrary CSS to achieve those behaviors.
 
 ## The four authoring forms
 
@@ -183,6 +189,11 @@ export const assets = {
 The package contains data only. The host passes these values through its asset
 and renderer wiring; importing them does not create a renderer, runtime, or
 agent.
+
+The bundled badge and action Presets use compact `width:"fit"` sizing by
+default. If an application or Pattern needs a full-row call to action, author
+that specific Brick with a direct `width:"full"` override instead of treating
+the Preset itself as globally full-width.
 
 ### Inspect and validate assets in Facet Lab
 
