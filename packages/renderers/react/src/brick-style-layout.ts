@@ -157,12 +157,13 @@ export function tableCaptionTargetStyle(
 }
 
 function tableHeaderBaseStyle(style: TableHeaderDefinition, theme: ResolvedTheme): CSSProperties {
+  const typography = projectTypography(style, theme);
   const css: CSSProperties = {
-    ...projectTypography(style, theme),
+    ...typography,
     ...tableTargetPaintStyle(style, theme),
     ...tableDividerStyle(style, theme),
-    whiteSpace: "nowrap",
-    overflowWrap: "normal",
+    whiteSpace: typography.whiteSpace ?? "nowrap",
+    overflowWrap: typography.overflowWrap ?? "normal",
     verticalAlign: "bottom",
   };
   if (style.padding !== undefined) css.padding = theme.space[style.padding];
@@ -205,12 +206,13 @@ export function tableCellTargetStyle(
   style: TableCellDefinition,
   theme: ResolvedTheme,
 ): CSSProperties {
+  const typography = projectTypography(style, theme);
   const css: CSSProperties = {
-    ...projectTypography(style, theme),
+    ...typography,
     ...tableTargetPaintStyle(style, theme),
     ...tableDividerStyle(style, theme),
-    whiteSpace: "nowrap",
-    overflowWrap: "normal",
+    whiteSpace: typography.whiteSpace ?? "nowrap",
+    overflowWrap: typography.overflowWrap ?? "normal",
     verticalAlign: "top",
   };
   if (style.padding !== undefined) css.padding = theme.space[style.padding];

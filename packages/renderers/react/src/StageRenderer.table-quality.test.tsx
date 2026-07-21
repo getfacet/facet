@@ -16,6 +16,63 @@ function stage(nodes: readonly FacetNode[]): FacetTree {
 }
 
 describe("StageRenderer table quality", () => {
+  it("renders aligned dense data-grid columns", () => {
+    mountClient(
+      createElement(StageRenderer, {
+        tree: stage([
+          {
+            id: "grid",
+            type: "table",
+            caption: "Search analytics",
+            columns: [
+              { key: "query", label: "Query", sortable: true },
+              { key: "clicks", label: "Clicks", align: "end", sortable: true },
+              { key: "ctr", label: "CTR", align: "center" },
+            ],
+            rows: [
+              {
+                query: "ama2 messenger for agent teams",
+                clicks: 128,
+                ctr: "4.2%",
+              },
+            ],
+            style: {
+              width: "full",
+              header: { padding: "xs", textWrap: "nowrap" },
+              cell: { padding: "xs", textWrap: "wrap", lineClamp: 2 },
+            },
+          },
+        ]),
+      }),
+    );
+
+    const table = screen.getByRole("table", { name: "Search analytics" });
+    const scroller = table.parentElement as HTMLElement;
+    expect(scroller.style.overflowX).toBe("auto");
+    expect(scroller.style.maxWidth).toBe("100%");
+    expect(table.style.minWidth).toBe("max-content");
+
+    const clicksHeader = screen.getByRole("columnheader", { name: "Clicks" });
+    expect(clicksHeader.style.textAlign).toBe("right");
+    expect(clicksHeader.style.whiteSpace).toBe("nowrap");
+    expect(clicksHeader.style.padding).toBe("4px");
+
+    const ctrHeader = screen.getByRole("columnheader", { name: "CTR" });
+    expect(ctrHeader.style.textAlign).toBe("center");
+
+    const queryCell = screen.getByText("ama2 messenger for agent teams").closest("td");
+    expect(queryCell?.style.whiteSpace).toBe("normal");
+    expect(queryCell?.style.overflowWrap).toBe("break-word");
+    expect(queryCell?.style.webkitLineClamp).toBe("2");
+    expect(queryCell?.style.padding).toBe("4px");
+    expect(queryCell?.style.position).not.toBe("absolute");
+
+    const clicksCell = screen.getByText("128").closest("td");
+    expect(clicksCell?.style.textAlign).toBe("right");
+    const ctrCell = screen.getByText("4.2%").closest("td");
+    expect(ctrCell?.style.textAlign).toBe("center");
+  });
+
   it("renders dense table chrome without escaping containment", () => {
     mountClient(
       createElement(StageRenderer, {
