@@ -438,13 +438,63 @@ function sourceLineAt(source, index) {
   return source.slice(lineStart, lineEnd);
 }
 
-function groupRegExp(group) {
-  return new RegExp(group.pattern, `gmu${group.caseInsensitive ? "i" : ""}`);
+function groupRegExp(group, { multiline }) {
+  return new RegExp(group.pattern, `gu${multiline ? "m" : ""}${group.caseInsensitive ? "i" : ""}`);
+}
+
+function sourceLineEntries(source) {
+  const entries = [];
+  let start = 0;
+  let line = 1;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (character !== "\n" && character !== "\r") continue;
+    entries.push({ line, text: source.slice(start, index) });
+    if (character === "\r" && source[index + 1] === "\n") index += 1;
+    start = index + 1;
+    line += 1;
+  }
+  if (start <= source.length) entries.push({ line, text: source.slice(start) });
+  return entries;
+}
+
+function searchLineMode({ source, relativePath, group }) {
+  const pattern = groupRegExp(group, { multiline: false });
+  const matches = [];
+  for (const entry of sourceLineEntries(source)) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(entry.text)) !== null) {
+      matches.push({
+        group: group.name,
+        path: relativePath,
+        line: entry.line,
+        text: entry.text,
+      });
+      if (match[0].length === 0) pattern.lastIndex += 1;
+    }
+  }
+  return matches;
+}
+
+function searchMultilineMode({ source, relativePath, group }) {
+  const pattern = groupRegExp(group, { multiline: true });
+  const matches = [];
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    matches.push({
+      group: group.name,
+      path: relativePath,
+      line: lineNumberAt(source, match.index),
+      text: sourceLineAt(source, match.index),
+    });
+    if (match[0].length === 0) pattern.lastIndex += 1;
+  }
+  return matches;
 }
 
 function searchGroupPortable({ cwd, group, mode }) {
   const resolvedCwd = path.resolve(cwd);
-  const pattern = groupRegExp(group);
   const matches = [];
   for (const relativePath of listScannedFilesPortable({ cwd, mode })) {
     const absolutePath = path.resolve(resolvedCwd, relativePath);
@@ -452,17 +502,11 @@ function searchGroupPortable({ cwd, group, mode }) {
       throw new Error(`Hard-cut search rejected an out-of-root path: ${relativePath}`);
     }
     const source = readBoundedSource(absolutePath, relativePath);
-    pattern.lastIndex = 0;
-    let match;
-    while ((match = pattern.exec(source)) !== null) {
-      matches.push({
-        group: group.name,
-        path: relativePath,
-        line: lineNumberAt(source, match.index),
-        text: sourceLineAt(source, match.index),
-      });
-      if (match[0].length === 0) pattern.lastIndex += 1;
-    }
+    matches.push(
+      ...(group.multiline
+        ? searchMultilineMode({ source, relativePath, group })
+        : searchLineMode({ source, relativePath, group })),
+    );
   }
   return matches.sort(
     (left, right) =>

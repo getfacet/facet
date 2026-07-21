@@ -960,6 +960,7 @@ test("does not expose excluded playground session contents in CLI diagnostics", 
 test("falls back to portable search when default rg is unavailable", async (t) => {
   const cwd = await makeFixture(t);
   await writeFixture(cwd, "packages/example/src/legacy.ts", `${retiredSymbol()}();\n`);
+  await writeFixture(cwd, "packages/example/src/multiline.ts", `${multilineRawUse()}\n`);
   await writeFixture(
     cwd,
     "packages/example/node_modules/pkg/ignored.ts",
@@ -978,6 +979,7 @@ test("falls back to portable search when default rg is unavailable", async (t) =
 
   assert.equal(result.status, 1);
   assert.match(result.stderr, /packages\/example\/src\/legacy\.ts:1:/);
+  assert.match(result.stderr, /packages\/example\/src\/multiline\.ts:2:/);
   assert.equal(result.stderr.includes("node_modules"), false);
 });
 
