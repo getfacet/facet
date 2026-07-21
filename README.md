@@ -82,6 +82,10 @@ The essential nouns are small:
 - A **Brick** is one of 11 native nodes: `box`, `text`, `media`, `input`,
   `richtext`, `table`, `chart`, `list`, `keyValue`, `progress`, or `loading`.
   Only `box` contains other Bricks.
+- Brick capability still grows inside that roster: `media` covers images,
+  videos, and a closed generic icon set; text-bearing Bricks expose bounded text
+  wrapping and clamping; tables expose column alignment; charts expose bounded
+  axis, grid, label, and line-style controls.
 - A **Theme** is operator configuration: concrete token definitions, one default
   per Brick, and optional same-Brick Presets.
 - A **Pattern** is a validated worked tree an agent may read and adapt. It is not

@@ -311,9 +311,10 @@ Every native renderer root follows three rules:
   place immediate children.
 - **Child owns internal layout.** A child stays inside the slot its parent gives
   it.
-- **Renderer owns containment.** Long text wraps; controls and media stay within
-  bounds; tables use renderer-owned bounded overflow; charts own their internal
-  axis, mark, tick, and legend geometry.
+- **Renderer owns containment.** Long text wraps or clamps through closed
+  text-flow choices; media images, videos, and generic icons stay within bounds;
+  tables use renderer-owned bounded overflow plus column alignment; charts own
+  their internal axis, grid, mark, tick, line-style, and legend geometry.
 
 There is no general authored positioning or z-index. A `box` backdrop and
 modal/drawer are bounded renderer-owned mechanisms with fixed layering and

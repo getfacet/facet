@@ -41,6 +41,12 @@ those consumers. They intersect a token or fixed-choice domain with the exact
 property's allow-list, so discovery never advertises a value that author or
 Theme validation would reject at that path.
 
+The product-grade surface stays closed even where it needs more precision:
+`media` accepts only images, videos, and known generic icon names; text-bearing
+styles expose bounded wrap/clamp choices only at compatible paths; table columns
+may declare closed text alignment; and chart series/plot metadata accepts only
+known line-style and token-backed axis/grid/label color controls.
+
 ## Style, Theme, and Presets
 
 Every Brick has one optional `style` object, but each Brick owns a different

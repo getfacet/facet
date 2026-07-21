@@ -69,6 +69,19 @@ content-sized flow that is still bounded by the parent slot, and `full` fills
 the parent slot. Authors do not send pixel widths, percentages, margins, or
 arbitrary CSS to achieve those behaviors.
 
+Product-grade details use the same rule. They are not arbitrary CSS escapes:
+
+- `media` may render a closed generic `kind:"icon"` value for common UI
+  controls, or image/video media from safe URLs. Brand-specific marks still
+  belong in service assets.
+- `text`, `richtext`, `list`, and `table` can opt into bounded text-flow choices
+  such as `textWrap` and `lineClamp` where Core exposes them.
+- `table.columns[].align` is column metadata for numeric and status alignment;
+  it is not a table-layout engine.
+- `chart.series[].lineStyle` and `chart.style.plot.axisColor/gridColor/labelColor`
+  cover common report polish while the renderer still owns the axis, tick, grid,
+  bar, line, and legend geometry.
+
 ## The four authoring forms
 
 An agent always authors a Brick. Styling that Brick is optional and has four

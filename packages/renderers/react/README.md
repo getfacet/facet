@@ -65,6 +65,13 @@ overflow for dense data chrome, and charts compute internal axis, mark, tick,
 and legend geometry. These are renderer responsibilities, not new document
 syntax.
 
+Closed product-grade style/data fields project through that same pipeline:
+generic `media` icons render from the allow-listed icon set; `textWrap` and
+`lineClamp` become bounded text-flow CSS; table column `align` controls header
+and cell alignment; chart `lineStyle` maps to renderer-owned stroke patterns;
+and chart plot axis/grid/label colors resolve from Theme tokens. The renderer
+does not expose raw SVG, arbitrary CSS, or authored chart geometry.
+
 ## View-state ownership
 
 The renderer owns browser-local screen, toggle, table-sort, viewport, and
