@@ -4,6 +4,8 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 
 import {
   BRICK_TYPES,
+  MEDIA_ICON_NAMES,
+  MEDIA_KINDS,
   isContainer,
   type BoxNode,
   type BrickType,
@@ -18,6 +20,7 @@ import {
   type ListItem,
   type ListNode,
   type LoadingNode,
+  type MediaIconName,
   type MediaNode,
   type ProgressNode,
   type TableColumn,
@@ -25,6 +28,7 @@ import {
   type TableRow,
   type TextNode,
 } from "./nodes.js";
+import type { LineStyle, TextAlign } from "./tokens.js";
 
 const FINAL_BRICK_TYPES = [
   "box",
@@ -166,6 +170,123 @@ describe("unified public node model", () => {
     });
   });
 
+  it("gives media chart and table product-grade closed fields", () => {
+    expect(BRICK_TYPES).toEqual(FINAL_BRICK_TYPES);
+    expect(MEDIA_KINDS).toEqual(["image", "video", "icon"]);
+    expect(MEDIA_ICON_NAMES).toEqual([
+      "activity",
+      "alert",
+      "arrowRight",
+      "bell",
+      "calendar",
+      "cart",
+      "check",
+      "chevronDown",
+      "chevronRight",
+      "clock",
+      "database",
+      "download",
+      "externalLink",
+      "file",
+      "filter",
+      "grid",
+      "heart",
+      "help",
+      "home",
+      "info",
+      "link",
+      "mail",
+      "menu",
+      "minus",
+      "moreHorizontal",
+      "play",
+      "plus",
+      "search",
+      "settings",
+      "sort",
+      "star",
+      "table",
+      "user",
+      "users",
+      "x",
+    ]);
+    expectTypeOf<MediaIconName>().toEqualTypeOf<(typeof MEDIA_ICON_NAMES)[number]>();
+    expectTypeOf<MediaNode["kind"]>().toEqualTypeOf<"image" | "video" | "icon">();
+    expectTypeOf<keyof MediaNode>().toEqualTypeOf<
+      "id" | "type" | "kind" | "src" | "icon" | "alt" | "poster" | "controls" | "style"
+    >();
+    expectTypeOf<TableColumn["align"]>().toEqualTypeOf<TextAlign | undefined>();
+    expectTypeOf<ChartSeries["lineStyle"]>().toEqualTypeOf<LineStyle | undefined>();
+    expectTypeOf<MediaNode["src"]>().toEqualTypeOf<string | undefined>();
+
+    const image: MediaNode = {
+      id: "hero",
+      type: "media",
+      kind: "image",
+      src: "https://example.com/hero.png",
+      alt: "Hero image",
+    };
+    const icon: MediaNode = {
+      id: "status",
+      type: "media",
+      kind: "icon",
+      icon: "check",
+      alt: "Complete",
+      style: {
+        width: "fit",
+        iconSize: "lg",
+        color: "accent",
+        background: "accentSurface",
+        borderColor: "accent",
+        borderWidth: "thin",
+        borderRadius: "full",
+        padding: "sm",
+      },
+    };
+    const column: TableColumn = { key: "amount", label: "Amount", sortable: true, align: "end" };
+    const series: ChartSeries = { label: "Forecast", values: [12, 18], lineStyle: "dashed" };
+    const text: TextNode = {
+      id: "headline",
+      type: "text",
+      value: "Balanced headline",
+      style: { textWrap: "balance", lineClamp: 2 },
+    };
+    const table: TableNode = {
+      id: "table",
+      type: "table",
+      columns: [column],
+      rows: [{ amount: 12 }],
+      style: {
+        caption: { textWrap: "balance" },
+        header: { textWrap: "nowrap" },
+        cell: { lineClamp: 1 },
+      },
+    };
+    const chart: ChartNode = {
+      id: "chart",
+      type: "chart",
+      kind: "line",
+      series: [series],
+      style: {
+        plot: { axisColor: "border", gridColor: "mutedForeground", labelColor: "foreground" },
+      },
+    };
+    const list: ListNode = {
+      id: "list",
+      type: "list",
+      items: [{ title: "Insight", body: "Two line preview" }],
+      style: { title: { lineClamp: 2 }, body: { textWrap: "wrap", lineClamp: 3 } },
+    };
+
+    expect({ image, icon, table, chart, list, text }).toMatchObject({
+      icon: { kind: "icon", icon: "check" },
+      table: { columns: [{ align: "end" }] },
+      chart: { series: [{ lineStyle: "dashed" }] },
+      list: { style: { body: { textWrap: "wrap", lineClamp: 3 } } },
+      text: { style: { textWrap: "balance", lineClamp: 2 } },
+    });
+  });
+
   it("uses neutral brick validation support wording", () => {
     for (const source of [NODES_SOURCE, SLOT_MARKER_SOURCE, ISSUES_SOURCE]) {
       expect(source).not.toMatch(/\b(?:component|components|intrinsic)\b/i);
@@ -214,7 +335,7 @@ describe("native Brick regression guards", () => {
       "id" | "type" | "value" | "style" | "from" | "column" | "row" | "activeWhen"
     >();
     expectTypeOf<keyof MediaNode>().toEqualTypeOf<
-      "id" | "type" | "kind" | "src" | "alt" | "poster" | "controls" | "style"
+      "id" | "type" | "kind" | "src" | "icon" | "alt" | "poster" | "controls" | "style"
     >();
     expectTypeOf<keyof InputNode>().toEqualTypeOf<
       "id" | "type" | "name" | "input" | "options" | "label" | "placeholder" | "style"

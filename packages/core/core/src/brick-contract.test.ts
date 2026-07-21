@@ -53,7 +53,7 @@ const EXPECTED_FIELDS = {
     "activeWhen",
   ],
   text: ["id", "type", "value", "from", "column", "row", "activeWhen"],
-  media: ["id", "type", "kind", "src", "alt", "poster", "controls"],
+  media: ["id", "type", "kind", "src", "icon", "alt", "poster", "controls"],
   input: ["id", "type", "name", "input", "options", "label", "placeholder"],
   richtext: ["id", "type", "blocks"],
   table: ["id", "type", "columns", "rows", "caption", "from"],
@@ -75,6 +75,16 @@ const typography = {
   textAlign: "fixed:textAlign",
   letterSpacing: "token:letterSpacing",
   lineHeight: "token:lineHeight",
+} as const;
+
+const textFlow = {
+  textWrap: "fixed:textWrap",
+  lineClamp: "fixed:lineClamp",
+} as const;
+
+const flowTypography = {
+  ...typography,
+  ...textFlow,
 } as const;
 
 const EXPECTED_STYLE_PATHS = {
@@ -102,12 +112,18 @@ const EXPECTED_STYLE_PATHS = {
     backdropScrim: "token:scrim",
     enterAnimation: "fixed:enterAnimation",
   },
-  text: { ...typography, highlight: "token:highlight" },
+  text: { ...flowTypography, highlight: "token:highlight" },
   media: {
     width: "fixed:width",
     aspectRatio: "token:aspectRatio",
     objectFit: "fixed:objectFit",
     objectPosition: "fixed:objectPosition",
+    iconSize: "token:indicatorSize",
+    padding: "token:space",
+    background: "token:color",
+    color: "token:color",
+    borderColor: "token:color",
+    borderWidth: "token:borderWidth",
     borderRadius: "token:radius",
   },
   input: {
@@ -157,7 +173,7 @@ const EXPECTED_STYLE_PATHS = {
     "option.lineHeight": "token:lineHeight",
   },
   richtext: {
-    ...typography,
+    ...flowTypography,
     blockGap: "token:space",
     ...Object.fromEntries(
       ["heading1", "heading2", "heading3"].flatMap((target) =>
@@ -208,10 +224,10 @@ const EXPECTED_STYLE_PATHS = {
     borderWidth: "token:borderWidth",
     borderRadius: "token:radius",
     shadow: "token:shadow",
-    ...Object.fromEntries(Object.entries(typography).map(([p, d]) => [`caption.${p}`, d])),
+    ...Object.fromEntries(Object.entries(flowTypography).map(([p, d]) => [`caption.${p}`, d])),
     "caption.padding": "token:space",
     "caption.background": "token:color",
-    ...Object.fromEntries(Object.entries(typography).map(([p, d]) => [`header.${p}`, d])),
+    ...Object.fromEntries(Object.entries(flowTypography).map(([p, d]) => [`header.${p}`, d])),
     "header.padding": "token:space",
     "header.background": "token:color",
     "header.borderColor": "token:color",
@@ -220,7 +236,7 @@ const EXPECTED_STYLE_PATHS = {
     "row.color": "token:color",
     "row.borderColor": "token:color",
     "row.borderWidth": "token:borderWidth",
-    ...Object.fromEntries(Object.entries(typography).map(([p, d]) => [`cell.${p}`, d])),
+    ...Object.fromEntries(Object.entries(flowTypography).map(([p, d]) => [`cell.${p}`, d])),
     "cell.padding": "token:space",
     "cell.borderColor": "token:color",
     "cell.borderWidth": "token:borderWidth",
@@ -239,6 +255,9 @@ const EXPECTED_STYLE_PATHS = {
     "plot.borderColor": "token:color",
     "plot.borderWidth": "token:borderWidth",
     "plot.borderRadius": "token:radius",
+    "plot.axisColor": "token:color",
+    "plot.gridColor": "token:color",
+    "plot.labelColor": "token:color",
     "series.color1": "token:color",
     "series.color2": "token:color",
     "series.color3": "token:color",
@@ -263,7 +282,7 @@ const EXPECTED_STYLE_PATHS = {
     "item.borderRadius": "token:radius",
     ...Object.fromEntries(
       ["title", "body"].flatMap((target) =>
-        Object.entries(typography).map(([p, d]) => [`${target}.${p}`, d]),
+        Object.entries(flowTypography).map(([p, d]) => [`${target}.${p}`, d]),
       ),
     ),
     "marker.color": "token:color",

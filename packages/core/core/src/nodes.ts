@@ -9,6 +9,7 @@
  */
 import type { TableColumn, TableRow } from "./data-types.js";
 import type { InputKind } from "./brick-contract.js";
+import type { LineStyle } from "./tokens.js";
 import type { ViewPredicate } from "./view.js";
 import type {
   BoxStyle,
@@ -231,13 +232,53 @@ export interface TextNode extends BaseNode, Styleable<TextStyle>, ActiveWhen, Da
   readonly value: string;
 }
 
-export const MEDIA_KINDS = ["image", "video"] as const;
+export const MEDIA_KINDS = ["image", "video", "icon"] as const;
 export type MediaKind = (typeof MEDIA_KINDS)[number];
+
+export const MEDIA_ICON_NAMES = [
+  "activity",
+  "alert",
+  "arrowRight",
+  "bell",
+  "calendar",
+  "cart",
+  "check",
+  "chevronDown",
+  "chevronRight",
+  "clock",
+  "database",
+  "download",
+  "externalLink",
+  "file",
+  "filter",
+  "grid",
+  "heart",
+  "help",
+  "home",
+  "info",
+  "link",
+  "mail",
+  "menu",
+  "minus",
+  "moreHorizontal",
+  "play",
+  "plus",
+  "search",
+  "settings",
+  "sort",
+  "star",
+  "table",
+  "user",
+  "users",
+  "x",
+] as const;
+export type MediaIconName = (typeof MEDIA_ICON_NAMES)[number];
 
 export interface MediaNode extends BaseNode, Styleable<MediaStyle> {
   readonly type: "media";
   readonly kind: MediaKind;
-  readonly src: string;
+  readonly src?: string;
+  readonly icon?: MediaIconName;
   readonly alt?: string;
   readonly poster?: string;
   readonly controls?: boolean;
@@ -333,6 +374,7 @@ export type ChartKind = (typeof CHART_KINDS)[number];
 export interface ChartSeries {
   readonly label: string;
   readonly values: readonly number[];
+  readonly lineStyle?: LineStyle;
 }
 
 export interface ChartNode extends BaseNode, Styleable<ChartStyle> {

@@ -18,7 +18,9 @@ import type {
   IndicatorSize,
   Justification,
   LetterSpacing,
+  LineClamp,
   LineHeight,
+  TextWrap,
   LoadingAnimation,
   MaxWidth,
   MinHeight,
@@ -44,6 +46,13 @@ interface TypographyStyle {
   readonly letterSpacing?: LetterSpacing;
   readonly lineHeight?: LineHeight;
 }
+
+interface TextFlowStyle {
+  readonly textWrap?: TextWrap;
+  readonly lineClamp?: LineClamp;
+}
+
+interface FlowTypographyStyle extends TypographyStyle, TextFlowStyle {}
 
 interface SurfaceStyle {
   readonly background?: Color;
@@ -98,7 +107,7 @@ export interface BoxStyleDefinition extends BoxDirectStyle {
   readonly focus?: FocusState;
 }
 
-export interface TextStyleDefinition extends TypographyStyle {
+export interface TextStyleDefinition extends FlowTypographyStyle {
   readonly highlight?: Highlight;
 }
 
@@ -107,6 +116,12 @@ export interface MediaStyleDefinition {
   readonly aspectRatio?: AspectRatio;
   readonly objectFit?: ObjectFit;
   readonly objectPosition?: ObjectPosition;
+  readonly iconSize?: IndicatorSize;
+  readonly padding?: Space;
+  readonly background?: Color;
+  readonly color?: Color;
+  readonly borderColor?: Color;
+  readonly borderWidth?: BorderWidth;
   readonly borderRadius?: Radius;
 }
 
@@ -203,7 +218,7 @@ interface MarkerStyle {
   readonly fontWeight?: FontWeight;
 }
 
-interface RichTextDirectStyle extends TypographyStyle {
+interface RichTextDirectStyle extends FlowTypographyStyle {
   readonly blockGap?: Space;
   readonly heading1?: TypographyStyle;
   readonly heading2?: TypographyStyle;
@@ -222,12 +237,12 @@ interface TableRootStyle extends SurfaceStyle {
   readonly width?: Width;
 }
 
-interface TableCaptionStyle extends TypographyStyle {
+interface TableCaptionStyle extends FlowTypographyStyle {
   readonly padding?: Space;
   readonly background?: Color;
 }
 
-interface TableHeaderDirectStyle extends TypographyStyle {
+interface TableHeaderDirectStyle extends FlowTypographyStyle {
   readonly padding?: Space;
   readonly background?: Color;
   readonly borderColor?: Color;
@@ -259,7 +274,7 @@ interface TableRowStyle extends TableRowDirectStyle {
   readonly hover?: TableRowDirectStyle;
 }
 
-interface TableCellStyle extends TypographyStyle {
+interface TableCellStyle extends FlowTypographyStyle {
   readonly padding?: Space;
   readonly borderColor?: Color;
   readonly borderWidth?: BorderWidth;
@@ -282,6 +297,9 @@ interface ChartPlotStyle {
   readonly borderColor?: Color;
   readonly borderWidth?: BorderWidth;
   readonly borderRadius?: Radius;
+  readonly axisColor?: Color;
+  readonly gridColor?: Color;
+  readonly labelColor?: Color;
 }
 
 interface ChartSeriesStyle {
@@ -326,8 +344,8 @@ export interface ListStyleDefinition {
   readonly borderWidth?: BorderWidth;
   readonly borderRadius?: Radius;
   readonly item?: ListItemStyle;
-  readonly title?: TypographyStyle;
-  readonly body?: TypographyStyle;
+  readonly title?: FlowTypographyStyle;
+  readonly body?: FlowTypographyStyle;
   readonly marker?: MarkerStyle;
 }
 

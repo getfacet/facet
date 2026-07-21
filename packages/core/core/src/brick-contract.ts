@@ -101,6 +101,16 @@ const typography = {
   lineHeight: "token:lineHeight",
 } as const;
 
+const textFlow = {
+  textWrap: "fixed:textWrap",
+  lineClamp: "fixed:lineClamp",
+} as const;
+
+const flowTypography = {
+  ...typography,
+  ...textFlow,
+} as const;
+
 const boxRoot = properties({
   direction: "fixed:direction",
   gap: "token:space",
@@ -126,7 +136,7 @@ const boxRoot = properties({
   enterAnimation: "fixed:enterAnimation",
 });
 
-const textRoot = properties({ ...typography, highlight: "token:highlight" });
+const textRoot = properties({ ...flowTypography, highlight: "token:highlight" });
 
 const surface = {
   background: "token:color",
@@ -138,6 +148,7 @@ const surface = {
 } as const;
 
 const labelTarget = { properties: properties(typography) };
+const flowLabelTarget = { properties: properties(flowTypography) };
 
 const BRICK_CONTRACT_VALUE = {
   box: {
@@ -186,14 +197,15 @@ const BRICK_CONTRACT_VALUE = {
   },
   media: {
     name: "media",
-    description: "A safe image or video Brick rendered from a gated media source.",
-    useWhen: "Use when the interface needs an image, illustration, or bounded video.",
+    description: "A safe image, video, or closed icon Brick rendered by the renderer.",
+    useWhen: "Use when the interface needs an image, illustration, bounded video, or icon.",
     fields: {
       id,
       type,
-      kind: field(true, "Closed image or video media kind."),
-      src: field(true, "Gated media source URL."),
-      alt: field(false, "Accessible alternative text for image media."),
+      kind: field(true, "Closed image, video, or icon media kind."),
+      src: field(false, "Gated media source URL for image and video media."),
+      icon: field(false, "Closed icon name from Core's fixed media icon vocabulary."),
+      alt: field(false, "Accessible alternative text for image or icon media."),
       poster: field(false, "Gated poster source for video media."),
       controls: field(false, "Whether renderer-owned video controls are visible."),
     },
@@ -205,6 +217,12 @@ const BRICK_CONTRACT_VALUE = {
           aspectRatio: "token:aspectRatio",
           objectFit: "fixed:objectFit",
           objectPosition: "fixed:objectPosition",
+          iconSize: "token:indicatorSize",
+          padding: "token:space",
+          background: "token:color",
+          color: "token:color",
+          borderColor: "token:color",
+          borderWidth: "token:borderWidth",
           borderRadius: "token:radius",
         }),
       },
@@ -282,7 +300,7 @@ const BRICK_CONTRACT_VALUE = {
     fields: { id, type, blocks: field(true, "Ordered structured prose blocks and marked runs.") },
     supportsActiveWhen: false,
     style: {
-      root: { properties: properties({ ...typography, blockGap: "token:space" }) },
+      root: { properties: properties({ ...flowTypography, blockGap: "token:space" }) },
       targets: {
         heading1: labelTarget,
         heading2: labelTarget,
@@ -329,7 +347,7 @@ const BRICK_CONTRACT_VALUE = {
     fields: {
       id,
       type,
-      columns: field(true, "Closed column descriptors for rendered table fields."),
+      columns: field(true, "Closed column descriptors, including optional text alignment."),
       rows: field(true, "Inline display records used without a dataset binding."),
       caption: field(false, "Accessible title describing the table."),
       from: field(false, "Optional dataset supplying projected table rows."),
@@ -350,14 +368,14 @@ const BRICK_CONTRACT_VALUE = {
       targets: {
         caption: {
           properties: properties({
-            ...typography,
+            ...flowTypography,
             padding: "token:space",
             background: "token:color",
           }),
         },
         header: {
           properties: properties({
-            ...typography,
+            ...flowTypography,
             padding: "token:space",
             background: "token:color",
             borderColor: "token:color",
@@ -384,7 +402,7 @@ const BRICK_CONTRACT_VALUE = {
         },
         cell: {
           properties: properties({
-            ...typography,
+            ...flowTypography,
             padding: "token:space",
             borderColor: "token:color",
             borderWidth: "token:borderWidth",
@@ -401,7 +419,7 @@ const BRICK_CONTRACT_VALUE = {
       id,
       type,
       kind: field(true, "Closed bar, line, or donut chart kind."),
-      series: field(true, "Inline named numeric series used without a dataset binding."),
+      series: field(true, "Inline named numeric series with optional closed line style."),
       labels: field(false, "Optional labels shared by the chart series."),
       title: field(false, "Short human-readable chart title."),
       from: field(false, "Optional dataset projected into numeric chart series."),
@@ -428,6 +446,9 @@ const BRICK_CONTRACT_VALUE = {
             borderColor: "token:color",
             borderWidth: "token:borderWidth",
             borderRadius: "token:radius",
+            axisColor: "token:color",
+            gridColor: "token:color",
+            labelColor: "token:color",
           }),
         },
         series: {
@@ -478,8 +499,8 @@ const BRICK_CONTRACT_VALUE = {
             borderRadius: "token:radius",
           }),
         },
-        title: labelTarget,
-        body: labelTarget,
+        title: flowLabelTarget,
+        body: flowLabelTarget,
         marker: {
           properties: properties({
             color: "token:color",
