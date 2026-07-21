@@ -62,7 +62,9 @@ describe("CatalogPage", () => {
     fireEvent.click(within(documentPanel).getByRole("button", { name: "Copy JSON" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
     expect(writeText.mock.calls[0]?.[0]).toContain('"root": "root"');
-    expect(within(documentPanel).getByText("Copied to clipboard.")).toBeTruthy();
+    await waitFor(() =>
+      expect(within(documentPanel).getByText("Copied to clipboard.")).toBeTruthy(),
+    );
 
     fireEvent.click(definitionTab);
     expect(definitionTab.getAttribute("aria-selected")).toBe("true");
