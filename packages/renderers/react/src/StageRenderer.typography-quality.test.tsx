@@ -29,7 +29,8 @@ describe("StageRenderer typography quality", () => {
           {
             id: "clamp",
             type: "text",
-            value: "A longer summary that should clamp after exactly two lines without requiring authored CSS.",
+            value:
+              "A longer summary that should clamp after exactly two lines without requiring authored CSS.",
             style: { lineClamp: 2 },
           },
           {

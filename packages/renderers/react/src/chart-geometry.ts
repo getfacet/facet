@@ -258,7 +258,10 @@ function valuesFor(series: readonly ChartGeometrySeries[]): readonly number[] {
   return series.flatMap((item) => item.values as number[]);
 }
 
-function barYRange(series: readonly ChartGeometrySeries[]): { readonly yMin: number; readonly yMax: number } {
+function barYRange(series: readonly ChartGeometrySeries[]): {
+  readonly yMin: number;
+  readonly yMax: number;
+} {
   const values = valuesFor(series);
   const rawMin = Math.min(...values);
   const rawMax = Math.max(...values);
@@ -267,7 +270,10 @@ function barYRange(series: readonly ChartGeometrySeries[]): { readonly yMin: num
   return { yMin, yMax };
 }
 
-function lineYRange(series: readonly ChartGeometrySeries[]): { readonly yMin: number; readonly yMax: number } {
+function lineYRange(series: readonly ChartGeometrySeries[]): {
+  readonly yMin: number;
+  readonly yMax: number;
+} {
   const values = valuesFor(series);
   return { yMin: Math.min(0, ...values), yMax: Math.max(1, ...values) };
 }

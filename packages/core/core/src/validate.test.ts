@@ -611,9 +611,9 @@ describe("validateTree data bricks", () => {
       type: "list",
       style: { title: { lineClamp: 1 }, body: { textWrap: "wrap", lineClamp: 3 } },
     });
-    expect(
-      issues.some((issue) => issue.includes('unknown media icon "sparkles" dropped')),
-    ).toBe(true);
+    expect(issues.some((issue) => issue.includes('unknown media icon "sparkles" dropped'))).toBe(
+      true,
+    );
     expect(issues.some((issue) => issue.includes("media needs a string src"))).toBe(true);
     expect(issues.some((issue) => issue.includes("invalid table column align"))).toBe(true);
     expect(issues.some((issue) => issue.includes("invalid chart lineStyle"))).toBe(true);

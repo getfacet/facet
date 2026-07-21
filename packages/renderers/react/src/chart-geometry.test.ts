@@ -45,9 +45,7 @@ describe("chart geometry", () => {
 
     const lines = layoutLineChartGeometry({
       labels,
-      series: [
-        { label: "Actual", values: [-12, 4, 18, 6, 22, 13, 31, 28, 36, 40, 44, 50] },
-      ],
+      series: [{ label: "Actual", values: [-12, 4, 18, 6, 22, 13, 31, 28, 36, 40, 44, 50] }],
     });
     expect(lines.pointCount).toBe(12);
     for (const line of lines.lines) {

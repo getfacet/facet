@@ -57,10 +57,12 @@ export function projectTypography(
   if (values.lineClamp !== undefined && values.lineClamp !== "none") {
     css.display = "-webkit-box";
     css.overflow = "hidden";
-    (css as CSSProperties & { WebkitBoxOrient: "vertical"; WebkitLineClamp: number })
-      .WebkitBoxOrient = "vertical";
-    (css as CSSProperties & { WebkitBoxOrient: "vertical"; WebkitLineClamp: number })
-      .WebkitLineClamp = values.lineClamp;
+    (
+      css as CSSProperties & { WebkitBoxOrient: "vertical"; WebkitLineClamp: number }
+    ).WebkitBoxOrient = "vertical";
+    (
+      css as CSSProperties & { WebkitBoxOrient: "vertical"; WebkitLineClamp: number }
+    ).WebkitLineClamp = values.lineClamp;
   }
   if (values.highlight !== undefined) css.backgroundImage = theme.highlight[values.highlight];
   return css;

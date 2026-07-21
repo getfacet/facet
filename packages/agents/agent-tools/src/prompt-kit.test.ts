@@ -211,9 +211,7 @@ describe("buildFacetAgentSystemPrompt", () => {
   it("teaches product-grade media icon and text flow vocabulary", () => {
     const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
 
-    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toContain(
-      `Bricks are ${BRICK_TYPES.join(", ")}.`,
-    );
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toContain(`Bricks are ${BRICK_TYPES.join(", ")}.`);
     expect(system).toMatch(/media\.kind[^.]*"icon"[^.]*MEDIA_ICON_NAMES/i);
     expect(system).toMatch(/never raw SVG[^.]*path[^.]*CSS/i);
     expect(system).toMatch(/text, list, richtext, and table[^.]*textWrap[^.]*lineClamp/i);

@@ -733,25 +733,22 @@ a {
   opacity: 0.72;
 }
 
-.lab-reference-benchmark-grid button[data-reference-quality-status="blocked-by-gaps"]:not(
-    [aria-pressed="true"]
-  )
+.lab-reference-benchmark-grid
+  button[data-reference-quality-status="blocked-by-gaps"]:not([aria-pressed="true"])
   small {
   color: var(--lab-alert);
   opacity: 1;
 }
 
-.lab-reference-benchmark-grid button[data-reference-quality-status="needs-design-qa"]:not(
-    [aria-pressed="true"]
-  )
+.lab-reference-benchmark-grid
+  button[data-reference-quality-status="needs-design-qa"]:not([aria-pressed="true"])
   small {
   color: var(--lab-muted);
   opacity: 1;
 }
 
-.lab-reference-benchmark-grid button[data-reference-quality-status="product-grade-candidate"]:not(
-    [aria-pressed="true"]
-  )
+.lab-reference-benchmark-grid
+  button[data-reference-quality-status="product-grade-candidate"]:not([aria-pressed="true"])
   small {
   color: var(--lab-accent-strong);
   opacity: 1;

@@ -883,11 +883,7 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       width: "full",
     }),
     ...action("creator-listen-dark", "Listen to In The Dark", "linkButton"),
-    ...action(
-      "creator-video-dark",
-      "Watch the In The Dark Official Music Video",
-      "linkButton",
-    ),
+    ...action("creator-video-dark", "Watch the In The Dark Official Music Video", "linkButton"),
     "creator-section-revival": text("creator-section-revival", "Revival 10 Year Anniversary", {
       preset: "subheading",
       textAlign: "center",

@@ -339,7 +339,7 @@ describe("StageRenderer chart readability", () => {
     host.innerHTML = styled;
     const xAxisLine = host.querySelector('[data-facet-chart-axis="x"] line');
     const gridLines = [...host.querySelectorAll('[data-facet-chart-grid="true"] line')];
-    const labels = [...host.querySelectorAll('[data-facet-chart-axis] text')];
+    const labels = [...host.querySelectorAll("[data-facet-chart-axis] text")];
     const lines = [...host.querySelectorAll("polyline")];
 
     expect(xAxisLine?.getAttribute("stroke")).toBe("#b91c1c");

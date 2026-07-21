@@ -17,9 +17,7 @@ import {
 
 export type PresentedReferenceBenchmarkStatus = "render" | "diagnostic";
 export type PresentedReferenceBenchmarkQualityStatus =
-  | "product-grade-candidate"
-  | "needs-design-qa"
-  | "blocked-by-gaps";
+  "product-grade-candidate" | "needs-design-qa" | "blocked-by-gaps";
 
 export interface PresentedReferenceBenchmarkDiagnostic {
   readonly message: string;
@@ -391,10 +389,7 @@ export function presentReferenceBenchmarks({
     return item.status === "render";
   });
   const selected =
-    items.find((item) => item.id === selectedId) ??
-    renderItems[0] ??
-    items[0] ??
-    null;
+    items.find((item) => item.id === selectedId) ?? renderItems[0] ?? items[0] ?? null;
   return Object.freeze({
     items,
     selected,
