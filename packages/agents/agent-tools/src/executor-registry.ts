@@ -1,5 +1,6 @@
 import {
   CHART_KINDS,
+  MEDIA_ICON_NAMES,
   MEDIA_KINDS,
   isSafeMediaSrc,
   resolveNodeData,
@@ -105,37 +106,53 @@ export const EXECUTOR_REGISTRY: ExecutorRegistry = {
   },
   media: {
     asNode: (value) => {
+      const kind = value["kind"] ?? "image";
+      if (typeof kind !== "string" || !(MEDIA_KINDS as readonly string[]).includes(kind)) {
+        return {
+          error: 'a "media" node kind must be "image", "video", or "icon"',
+          nextAction: 'Use kind "image", "video", or "icon".',
+        };
+      }
+      if (kind === "icon") {
+        if (
+          typeof value["icon"] !== "string" ||
+          !(MEDIA_ICON_NAMES as readonly string[]).includes(value["icon"])
+        ) {
+          return {
+            error: 'a "media" icon node needs a closed "icon" name',
+            nextAction: "Read the media Brick spec and use one of MEDIA_ICON_NAMES.",
+          };
+        }
+        return {
+          facetNode: {
+            ...value,
+            kind,
+          } as unknown as FacetNode,
+        };
+      }
       if (typeof value["src"] !== "string") {
         return {
-          error: 'a "media" node needs string "src"',
-          nextAction: 'Pass a safe static string "src" for media nodes.',
+          error: 'a "media" image/video node needs string "src"',
+          nextAction: 'Pass a safe static string "src" for image/video media nodes.',
         };
       }
       if (!isSafeMediaSrc(value["src"])) {
         return {
-          error: 'a "media" node needs a safe static "src"',
+          error: 'a "media" image/video node needs a safe static "src"',
           nextAction: "Use a safe static media src.",
-        };
-      }
-      if (
-        value["kind"] !== undefined &&
-        (typeof value["kind"] !== "string" ||
-          !(MEDIA_KINDS as readonly string[]).includes(value["kind"]))
-      ) {
-        return {
-          error: 'a "media" node kind must be "image" or "video"',
-          nextAction: 'Use kind "image" or "video".',
         };
       }
       return {
         facetNode: {
           ...value,
-          kind: value["kind"] ?? "image",
+          kind,
         } as unknown as FacetNode,
       };
     },
     describe: (facetNode) =>
-      `${facetNode.id} media kind=${facetNode.kind} src="${preview(facetNode.src)}"`,
+      facetNode.kind === "icon"
+        ? `${facetNode.id} media kind=icon icon="${preview(facetNode.icon ?? "")}"`
+        : `${facetNode.id} media kind=${facetNode.kind} src="${preview(facetNode.src ?? "")}"`,
   },
   input: {
     asNode: (value) => {

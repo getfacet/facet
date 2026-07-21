@@ -90,6 +90,33 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/no client-side fetch/i);
   });
 
+  it("teaches product-grade media icon and text flow vocabulary", () => {
+    expect(BRICK_TYPES).toEqual([
+      "box",
+      "text",
+      "media",
+      "input",
+      "richtext",
+      "table",
+      "chart",
+      "list",
+      "keyValue",
+      "progress",
+      "loading",
+    ]);
+    expect(STAGE_SPEC).toMatch(/eleven native Bricks/i);
+    expect(STAGE_SPEC).toMatch(/media\.kind[^.]*"icon"[^.]*MEDIA_ICON_NAMES/i);
+    expect(STAGE_SPEC).toMatch(/never raw SVG[^.]*path[^.]*CSS/i);
+    expect(STAGE_SPEC).toMatch(/text, list, richtext, and table[^.]*textWrap[^.]*lineClamp/i);
+    expect(STAGE_SPEC).toMatch(/table columns[^.]*align/i);
+    expect(STAGE_SPEC).toMatch(/chart series[^.]*lineStyle/i);
+    expect(STAGE_SPEC).toMatch(/chart plot[^.]*axisColor[^.]*gridColor[^.]*labelColor[^.]*tokens/i);
+    expect(STAGE_SPEC).toMatch(/custom assets[^.]*per-agent or per-user/i);
+    expect(STAGE_SPEC).toMatch(/bundled defaults[^.]*fallback/i);
+    expect(STAGE_SPEC).not.toMatch(/default Presets?[^.]*solve[^.]*benchmark quality/i);
+    expect(STAGE_SPEC).not.toMatch(/default Patterns?[^.]*solve[^.]*benchmark quality/i);
+  });
+
   it("contains no retired style asset or selector guidance", () => {
     const retiredTerms = [
       ["cata", "log"].join(""),

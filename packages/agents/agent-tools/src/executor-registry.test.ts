@@ -75,6 +75,35 @@ describe("input", () => {
   });
 });
 
+describe("media", () => {
+  it("accepts closed icon media without src and describes the icon name", () => {
+    const ok = EXECUTOR_REGISTRY.media.asNode({
+      id: "search",
+      type: "media",
+      kind: "icon",
+      icon: "search",
+    });
+    expect(ok).toMatchObject({ facetNode: { kind: "icon", icon: "search" } });
+    const badIcon = EXECUTOR_REGISTRY.media.asNode({
+      id: "sparkles",
+      type: "media",
+      kind: "icon",
+      icon: "sparkles",
+    });
+    expect(badIcon).toMatchObject({ error: expect.stringContaining("closed") });
+    const badImage = EXECUTOR_REGISTRY.media.asNode({ id: "photo", type: "media", kind: "image" });
+    expect(badImage).toMatchObject({ error: expect.stringContaining("src") });
+
+    const icon = {
+      id: "search",
+      type: "media",
+      kind: "icon",
+      icon: "search",
+    } as unknown as FacetNode;
+    expect(describeNode(icon, undefined)).toBe('search media kind=icon icon="search"');
+  });
+});
+
 describe("describeNode own-property guard", () => {
   it("plain-degrades every prototype-chain type without throwing", () => {
     for (const type of ["constructor", "toString", "prototype"]) {

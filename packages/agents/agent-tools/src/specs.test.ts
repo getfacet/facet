@@ -87,6 +87,33 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     expect(tool("get_pattern").parameters["required"]).toEqual(["name"]);
   });
 
+  it("keeps product-grade vocabulary behind progressive reads", () => {
+    const getBrickSpec = tool("get_brick_spec");
+    const getStyleChoices = tool("get_style_choices");
+    const appendNode = propertiesOf(tool("append_node"))["node"] as Record<string, unknown>;
+    const descriptions = `${getBrickSpec.description}\n${getStyleChoices.description}`;
+
+    expect(String(appendNode["description"])).toContain(BRICK_TYPES.join(", "));
+    expect(Object.keys(appendNode)).toEqual(["type", "description"]);
+    expect(getBrickSpec.parameters).toMatchObject({
+      properties: { type: { enum: BRICK_TYPES } },
+      required: ["type"],
+    });
+    expect(getStyleChoices.parameters).toMatchObject({
+      properties: { brick: { enum: BRICK_TYPES } },
+      required: ["brick", "target", "property"],
+    });
+    expect(descriptions).toMatch(/media icon/i);
+    expect(descriptions).toMatch(/table alignment/i);
+    expect(descriptions).toMatch(/chart line style/i);
+    expect(descriptions).toMatch(/textWrap/i);
+    expect(descriptions).toMatch(/lineClamp/i);
+    expect(descriptions).toMatch(/lineStyle/i);
+    expect(descriptions).toMatch(/axisColor/i);
+    expect(descriptions).toMatch(/gridColor/i);
+    expect(descriptions).toMatch(/labelColor/i);
+  });
+
   it("bounds inspection schemas", () => {
     expect(propertiesOf(tool("inspect_stage"))["maxNodes"]).toMatchObject({
       type: "integer",

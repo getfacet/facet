@@ -208,6 +208,26 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(system).toMatch(/repair the complete call, and retry/i);
   });
 
+  it("teaches product-grade media icon and text flow vocabulary", () => {
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toContain(
+      `Bricks are ${BRICK_TYPES.join(", ")}.`,
+    );
+    expect(system).toMatch(/media\.kind[^.]*"icon"[^.]*MEDIA_ICON_NAMES/i);
+    expect(system).toMatch(/never raw SVG[^.]*path[^.]*CSS/i);
+    expect(system).toMatch(/text, list, richtext, and table[^.]*textWrap[^.]*lineClamp/i);
+    expect(system).toMatch(/table columns[^.]*align/i);
+    expect(system).toMatch(/chart series[^.]*lineStyle/i);
+    expect(system).toMatch(/chart plot[^.]*axisColor[^.]*gridColor[^.]*labelColor[^.]*tokens/i);
+    expect(system).toMatch(/get_brick_spec[^.]*media icon[^.]*lineStyle/i);
+    expect(system).toMatch(/get_style_choices[^.]*textWrap[^.]*lineClamp[^.]*axisColor/i);
+    expect(system).toMatch(/custom assets[^.]*per-agent or per-user/i);
+    expect(system).toMatch(/bundled defaults[^.]*fallback/i);
+    expect(system).not.toMatch(/default Presets?[^.]*solve[^.]*benchmark quality/i);
+    expect(system).not.toMatch(/default Patterns?[^.]*solve[^.]*benchmark quality/i);
+  });
+
   it("requires a visible mutation before completing a requested page change", () => {
     const editingContract = `${FACET_STATE_EDITING_PROMPT}\n${FACET_TOOL_RESULT_CONTRACT_PROMPT}`;
     const preparation = editingContract.indexOf("asset reads and inspections are preparation only");
