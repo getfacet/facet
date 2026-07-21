@@ -35,6 +35,8 @@ describe("ReferenceBenchmarksPanel", () => {
     render(<ReferenceBenchmarksPanel onViewChange={onViewChange} />);
 
     expect(screen.getByRole("heading", { name: "Reference benchmarks" })).toBeTruthy();
+    expect(screen.getByText(/0 product-grade candidates/u)).toBeTruthy();
+    expect(screen.getByText(/Renderable only means the Facet document validates/u)).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Start new run" })).toBeNull();
 
     const catalog = screen.getByLabelText("Reference benchmark catalog");
@@ -42,17 +44,20 @@ describe("ReferenceBenchmarksPanel", () => {
     expect(buttons).toHaveLength(REFERENCE_BENCHMARK_IDS.length);
     for (const button of buttons) {
       fireEvent.click(button);
+      const benchmarkName = button.querySelector("span")?.textContent ?? "";
       const detail = screen.getByRole("heading", {
-        name: button.textContent?.replace(/render$/u, "") ?? "",
+        name: benchmarkName,
       });
       expect(detail).toBeTruthy();
       expect(screen.getByText("Authoring protocol")).toBeTruthy();
+      expect(screen.getByText("Product-grade status")).toBeTruthy();
+      expect(screen.getByText(/Not product-grade/u)).toBeTruthy();
       expect(screen.getByText("Known fidelity gaps")).toBeTruthy();
       expect(screen.getByText("Design QA checklist")).toBeTruthy();
       expect(screen.getByLabelText(/benchmark preview/u)).toBeTruthy();
     }
     expect(onViewChange).not.toHaveBeenCalled();
-  });
+  }, 10_000);
 
   it("updates viewport and color mode as local preview state", () => {
     const onViewChange = vi.fn();

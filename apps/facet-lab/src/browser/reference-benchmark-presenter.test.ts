@@ -35,6 +35,31 @@ describe("reference benchmark presenter", () => {
     );
   });
 
+  it("does not treat renderable as product-grade", () => {
+    const presentation = presentReferenceBenchmarks({
+      benchmarks: REFERENCE_BENCHMARKS,
+      selectedId: "google-search-console-performance",
+    });
+
+    expect(presentation.renderable).toBe(11);
+    expect(presentation.productGradeCandidates).toBe(0);
+    expect(presentation.blockedByGaps).toBeGreaterThan(0);
+    expect(presentation.needsDesignQa).toBeGreaterThan(0);
+    expect(presentation.blockingGaps).toBeGreaterThan(0);
+    expect(presentation.watchGaps).toBeGreaterThan(0);
+
+    expect(presentation.selected).toMatchObject({
+      status: "render",
+      id: "google-search-console-performance",
+      qualityStatus: "blocked-by-gaps",
+      qualityLabel: "Blocked by fidelity gaps",
+    });
+    if (presentation.selected?.status !== "render") throw new Error("Expected render projection.");
+    expect(presentation.selected.qualitySummary).toMatch(/Not product-grade/u);
+    expect(presentation.selected.blockingGapCount).toBeGreaterThan(0);
+    expect(presentation.selected.watchGapCount).toBeGreaterThan(0);
+  });
+
   it("renders reference benchmarks with benchmark-specific custom assets", () => {
     const supabase = presentReferenceBenchmarks({
       benchmarks: REFERENCE_BENCHMARKS,

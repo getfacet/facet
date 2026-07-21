@@ -145,6 +145,11 @@ do not fabricate run evidence, and use synthetic content/assets with source URLs
 recorded only as bounded reference notes. Supabase and AMA2 benchmarks use
 benchmark-specific custom assets so design quality is judged against a
 service-owned Theme/Preset/Pattern set rather than the package default theme.
+Their Lab status separates technical rendering from design fidelity:
+**renderable** means only that the Facet document validates and can be rendered;
+**product-grade candidate** requires no recorded fidelity gaps and still needs
+human screenshot review; **blocked by gaps** and **needs design QA** keep
+remaining Brick, renderer, asset-guidance, and authoring limitations visible.
 
 Reference benchmarks are **human-authored ceiling tests**, not generic samples.
 When adding or revising one:

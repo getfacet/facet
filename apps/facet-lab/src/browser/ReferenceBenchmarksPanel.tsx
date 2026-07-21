@@ -68,12 +68,27 @@ function RenderBenchmark({
   readonly onViewChange: (viewport: ViewportName, colorMode: ColorMode) => void;
 }): ReactNode {
   return (
-    <article className="lab-reference-benchmark-detail" data-reference-benchmark={benchmark.id}>
+    <article
+      className="lab-reference-benchmark-detail"
+      data-reference-benchmark={benchmark.id}
+      data-reference-quality-status={benchmark.qualityStatus}
+    >
       <header>
         <p className="catalog-section-label">Static target preview</p>
         <h3>{benchmark.name}</h3>
         <p>{benchmark.goal}</p>
       </header>
+
+      <section aria-labelledby={`${benchmark.id}-quality`}>
+        <h4 id={`${benchmark.id}-quality`}>Product-grade status</h4>
+        <p>
+          <strong>{benchmark.qualityLabel}</strong> — {benchmark.qualitySummary}
+        </p>
+        <dl className="lab-reference-benchmark-assets">
+          <AssetList label="Blocking gaps" values={[String(benchmark.blockingGapCount)]} />
+          <AssetList label="Watch gaps" values={[String(benchmark.watchGapCount)]} />
+        </dl>
+      </section>
 
       <dl className="lab-reference-benchmark-assets">
         <AssetList label="Service type" values={[benchmark.serviceType]} />
@@ -264,8 +279,15 @@ export function ReferenceBenchmarksPanel({
           Static target previews for judging whether current Bricks, Presets, and Patterns can
           recreate real product surfaces. These are not provider-run official scenarios.
         </p>
+        <p>
+          Renderable only means the Facet document validates. Product-grade status is gap-based and
+          requires side-by-side reference QA.
+        </p>
         <p role="status">
-          {presentation.renderable} renderable · {presentation.diagnostics} diagnostics
+          {presentation.renderable} renderable · {presentation.productGradeCandidates} product-grade
+          candidates · {presentation.blockedByGaps} blocked by gaps · {presentation.needsDesignQa}{" "}
+          need design QA · {presentation.blockingGaps} blocking gaps · {presentation.watchGaps}{" "}
+          watch gaps · {presentation.diagnostics} diagnostics
         </p>
       </header>
 
@@ -276,9 +298,14 @@ export function ReferenceBenchmarksPanel({
               type="button"
               aria-pressed={selected?.id === benchmark.id}
               onClick={() => setSelectedId(benchmark.id)}
+              {...(benchmark.status === "render"
+                ? { "data-reference-quality-status": benchmark.qualityStatus }
+                : {})}
             >
               <span>{benchmark.name}</span>
-              <small>{benchmark.status}</small>
+              <small>
+                {benchmark.status === "render" ? benchmark.qualityLabel : benchmark.status}
+              </small>
             </button>
           </li>
         ))}

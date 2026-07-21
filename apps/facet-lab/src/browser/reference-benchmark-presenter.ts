@@ -16,6 +16,10 @@ import {
 } from "../scenarios/reference-benchmarks.js";
 
 export type PresentedReferenceBenchmarkStatus = "render" | "diagnostic";
+export type PresentedReferenceBenchmarkQualityStatus =
+  | "product-grade-candidate"
+  | "needs-design-qa"
+  | "blocked-by-gaps";
 
 export interface PresentedReferenceBenchmarkDiagnostic {
   readonly message: string;
@@ -53,6 +57,11 @@ export interface PresentedReferenceBenchmarkRender {
   readonly targetNotes: readonly string[];
   readonly qaChecklist: readonly string[];
   readonly gaps: readonly PresentedReferenceBenchmarkGap[];
+  readonly qualityStatus: PresentedReferenceBenchmarkQualityStatus;
+  readonly qualityLabel: string;
+  readonly qualitySummary: string;
+  readonly blockingGapCount: number;
+  readonly watchGapCount: number;
 }
 
 export interface PresentedReferenceBenchmarkDiagnosticItem {
@@ -72,6 +81,11 @@ export interface ReferenceBenchmarkPresentation {
   readonly total: number;
   readonly renderable: number;
   readonly diagnostics: number;
+  readonly productGradeCandidates: number;
+  readonly needsDesignQa: number;
+  readonly blockedByGaps: number;
+  readonly blockingGaps: number;
+  readonly watchGaps: number;
 }
 
 export interface PresentReferenceBenchmarksInput {
@@ -198,6 +212,47 @@ function safeGaps(value: unknown): readonly PresentedReferenceBenchmarkGap[] | s
   return Object.freeze(gaps);
 }
 
+function productGradeQuality(gaps: readonly PresentedReferenceBenchmarkGap[]): {
+  readonly status: PresentedReferenceBenchmarkQualityStatus;
+  readonly label: string;
+  readonly summary: string;
+  readonly blockingGapCount: number;
+  readonly watchGapCount: number;
+} {
+  const blockingGapCount = gaps.filter((gap) => gap.severity === "blocking").length;
+  const watchGapCount = gaps.filter((gap) => gap.severity === "watch").length;
+  if (blockingGapCount > 0) {
+    return Object.freeze({
+      status: "blocked-by-gaps",
+      label: "Blocked by fidelity gaps",
+      summary: `Not product-grade: ${String(blockingGapCount)} blocking gap(s) and ${String(
+        watchGapCount,
+      )} watch gap(s) remain after successful rendering.`,
+      blockingGapCount,
+      watchGapCount,
+    });
+  }
+  if (watchGapCount > 0) {
+    return Object.freeze({
+      status: "needs-design-qa",
+      label: "Needs design QA",
+      summary: `Not product-grade yet: rendering succeeds, but ${String(
+        watchGapCount,
+      )} watch gap(s) still require side-by-side reference QA.`,
+      blockingGapCount,
+      watchGapCount,
+    });
+  }
+  return Object.freeze({
+    status: "product-grade-candidate",
+    label: "Product-grade candidate",
+    summary:
+      "Product-grade candidate: no known fidelity gaps are recorded, pending final human screenshot review.",
+    blockingGapCount,
+    watchGapCount,
+  });
+}
+
 function expectedAssets(candidate: Record<string, unknown>):
   | {
       readonly bricks: readonly string[];
@@ -288,6 +343,8 @@ export function projectReferenceBenchmark(
   if (validTree === undefined) {
     return diagnosticItem(fallbackId, fallbackName, [diagnostic("Benchmark fixture is invalid.")]);
   }
+  const projectedGaps = gaps as Exclude<typeof gaps, string>;
+  const quality = productGradeQuality(projectedGaps);
 
   return Object.freeze({
     status: "render",
@@ -310,7 +367,12 @@ export function projectReferenceBenchmark(
     sources: sources as Exclude<typeof sources, string>,
     targetNotes: notes as Exclude<typeof notes, string>,
     qaChecklist: checklist as Exclude<typeof checklist, string>,
-    gaps: gaps as Exclude<typeof gaps, string>,
+    gaps: projectedGaps,
+    qualityStatus: quality.status,
+    qualityLabel: quality.label,
+    qualitySummary: quality.summary,
+    blockingGapCount: quality.blockingGapCount,
+    watchGapCount: quality.watchGapCount,
   });
 }
 
@@ -325,9 +387,12 @@ export function presentReferenceBenchmarks({
       .slice(0, MAX_BENCHMARKS)
       .map((benchmark) => projectReferenceBenchmark(benchmark, theme, customAssets)),
   );
+  const renderItems = items.filter((item): item is PresentedReferenceBenchmarkRender => {
+    return item.status === "render";
+  });
   const selected =
     items.find((item) => item.id === selectedId) ??
-    items.find((item) => item.status === "render") ??
+    renderItems[0] ??
     items[0] ??
     null;
   return Object.freeze({
@@ -335,8 +400,15 @@ export function presentReferenceBenchmarks({
     selected,
     selectedId: selected?.id ?? null,
     total: items.length,
-    renderable: items.filter((item) => item.status === "render").length,
+    renderable: renderItems.length,
     diagnostics: items.filter((item) => item.status === "diagnostic").length,
+    productGradeCandidates: renderItems.filter(
+      (item) => item.qualityStatus === "product-grade-candidate",
+    ).length,
+    needsDesignQa: renderItems.filter((item) => item.qualityStatus === "needs-design-qa").length,
+    blockedByGaps: renderItems.filter((item) => item.qualityStatus === "blocked-by-gaps").length,
+    blockingGaps: renderItems.reduce((total, item) => total + item.blockingGapCount, 0),
+    watchGaps: renderItems.reduce((total, item) => total + item.watchGapCount, 0),
   });
 }
 

@@ -733,9 +733,50 @@ a {
   opacity: 0.72;
 }
 
+.lab-reference-benchmark-grid button[data-reference-quality-status="blocked-by-gaps"]:not(
+    [aria-pressed="true"]
+  )
+  small {
+  color: var(--lab-alert);
+  opacity: 1;
+}
+
+.lab-reference-benchmark-grid button[data-reference-quality-status="needs-design-qa"]:not(
+    [aria-pressed="true"]
+  )
+  small {
+  color: var(--lab-muted);
+  opacity: 1;
+}
+
+.lab-reference-benchmark-grid button[data-reference-quality-status="product-grade-candidate"]:not(
+    [aria-pressed="true"]
+  )
+  small {
+  color: var(--lab-accent-strong);
+  opacity: 1;
+}
+
 .lab-reference-benchmark-detail {
   display: grid;
   gap: 18px;
+}
+
+.lab-reference-benchmark-detail[data-reference-quality-status] > section:first-of-type {
+  padding: 14px;
+  border: 1px solid var(--lab-line);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--lab-panel-strong) 76%, var(--lab-bg));
+}
+
+.lab-reference-benchmark-detail[data-reference-quality-status="blocked-by-gaps"]
+  > section:first-of-type {
+  border-color: color-mix(in srgb, var(--lab-alert) 42%, var(--lab-line));
+}
+
+.lab-reference-benchmark-detail[data-reference-quality-status="product-grade-candidate"]
+  > section:first-of-type {
+  border-color: color-mix(in srgb, var(--lab-accent-strong) 42%, var(--lab-line));
 }
 
 .lab-reference-benchmark-detail > :where(header, section) > :where(h3, h4, p) {
