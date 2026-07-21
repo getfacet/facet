@@ -44,6 +44,15 @@ function presetAction(
   return {};
 }
 
+function styledText(id: string, value: string, preset?: string): TextNode {
+  return {
+    id,
+    type: "text",
+    value,
+    ...(preset === undefined ? {} : { style: { preset } }),
+  };
+}
+
 function leafSample(brick: Exclude<BrickType, "box">, node: FacetNode): BrickCatalogSample {
   const root: BoxNode = { id: "root", type: "box", children: [node.id] };
   return {
@@ -54,28 +63,122 @@ function leafSample(brick: Exclude<BrickType, "box">, node: FacetNode): BrickCat
 }
 
 function boxSample(preset?: string): BrickCatalogSample {
-  const child: TextNode = { id: "box-content", type: "text", value: "Box content" };
+  const childPreset =
+    preset === "primaryAction" || preset === "secondaryAction"
+      ? "actionLabel"
+      : preset === "badge"
+        ? "badge"
+        : preset === "successBadge"
+          ? "successBadge"
+          : preset === "warningBadge"
+            ? "warningBadge"
+            : preset === "dangerBadge"
+              ? "dangerBadge"
+              : undefined;
+  const childValue =
+    preset === "primaryAction"
+      ? "Continue"
+      : preset === "secondaryAction"
+        ? "View details"
+        : preset === "successBadge"
+          ? "Ready"
+          : preset === "warningBadge"
+            ? "Needs review"
+            : preset === "dangerBadge"
+              ? "Blocked"
+              : preset === "badge"
+                ? "Beta"
+                : "Box content";
+  const child = styledText("box-content", childValue, childPreset);
+  const alertTitlePreset =
+    preset === "infoAlert"
+      ? "infoAlert"
+      : preset === "successAlert"
+        ? "successAlert"
+        : preset === "warningAlert"
+          ? "warningAlert"
+          : preset === "dangerAlert"
+            ? "dangerAlert"
+            : undefined;
+  const alertTitle =
+    preset === "infoAlert"
+      ? "Catalog updated"
+      : preset === "successAlert"
+        ? "Render passed"
+        : preset === "warningAlert"
+          ? "Review contrast"
+          : preset === "dangerAlert"
+            ? "Provider failed"
+            : undefined;
+  const alertBody =
+    preset === "infoAlert"
+      ? "The local package definitions are loaded."
+      : preset === "successAlert"
+        ? "Every required preview rendered successfully."
+        : preset === "warningAlert"
+          ? "One visual token needs owner review before release."
+          : preset === "dangerAlert"
+            ? "The sample run stopped before producing a usable stage."
+            : undefined;
+  const nodes: Record<string, FacetNode> = { [child.id]: child };
+  const children =
+    alertTitle === undefined || alertBody === undefined
+      ? [child.id]
+      : ["box-alert-title", "box-alert-body"];
+  if (alertTitle !== undefined && alertBody !== undefined) {
+    const title = styledText("box-alert-title", alertTitle, alertTitlePreset);
+    const body = styledText("box-alert-body", alertBody);
+    nodes[title.id] = title;
+    nodes[body.id] = body;
+  }
   const root: BoxNode = {
     id: "root",
     type: "box",
-    children: [child.id],
+    children,
     ...presetStyle(preset),
     ...presetAction(preset),
   };
   return {
     brick: "box",
     nodeId: root.id,
-    tree: { root: root.id, nodes: { root, [child.id]: child } },
+    tree: { root: root.id, nodes: { root, ...nodes } },
   };
 }
 
 function textSample(preset?: string): BrickCatalogSample {
-  const node: TextNode = {
-    id: "sample-text",
-    type: "text",
-    value: "A concise text Brick sample.",
-    ...presetStyle(preset),
-  };
+  const value =
+    preset === "heading"
+      ? "Catalog coverage"
+      : preset === "subheading"
+        ? "Renderer states"
+        : preset === "body"
+          ? "Every preview uses the package-owned renderer."
+          : preset === "muted"
+            ? "Updated 2 minutes ago"
+            : preset === "eyebrow"
+              ? "Catalog"
+              : preset === "metric"
+                ? "62%"
+                : preset === "actionLabel"
+                  ? "Continue"
+                  : preset === "successBadge"
+                    ? "Ready"
+                    : preset === "warningBadge"
+                      ? "Needs review"
+                      : preset === "dangerBadge"
+                        ? "Blocked"
+                        : preset === "badge"
+                          ? "Beta"
+                          : preset === "infoAlert"
+                            ? "Catalog updated"
+                            : preset === "successAlert"
+                              ? "Render passed"
+                              : preset === "warningAlert"
+                                ? "Review contrast"
+                                : preset === "dangerAlert"
+                                  ? "Provider failed"
+                                  : "A concise text Brick sample.";
+  const node = styledText("sample-text", value, preset);
   return leafSample("text", node);
 }
 
@@ -84,7 +187,7 @@ function mediaSample(preset?: string): BrickCatalogSample {
     id: "sample-media",
     type: "media",
     kind: "image",
-    src: "/facet-catalog.svg",
+    src: preset === "thumbnail" ? "/facet-catalog-thumbnail.svg" : "/facet-catalog.svg",
     alt: "Catalog media sample",
     ...presetStyle(preset),
   };

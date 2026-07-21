@@ -205,11 +205,14 @@ definitions from `@facet/core` and derives Theme defaults, same-Brick Presets,
 and Patterns from the validated package-default assets. It intentionally has no
 hand-maintained Lab roster.
 
-Facet Lab intentionally uses only `@facet/assets` package defaults. This keeps
-Catalog previews, Generate runs, saved evidence, and Replay comparisons on one
-known Theme and Pattern baseline. Test a custom Theme or Pattern list in the
-integrating application that owns those assets; Lab does not provide a custom
-asset import or turn Theme authoring into model-authored CSS.
+Facet Lab's Catalog, Generate runs, saved evidence, and Replay comparisons use
+the `@facet/assets` package defaults as their stable baseline. Reference
+benchmarks are different: they may carry Lab-private custom Themes and exact
+Pattern lists so contributors can test whether the closed Brick vocabulary can
+match a real product surface when the service/agent supplies its own assets.
+Those custom assets are still ordinary validated Theme/Preset/Pattern data; Lab
+does not turn Theme authoring into model-authored CSS or add a second runtime
+component system.
 
 ## How an operator defines a Theme
 
@@ -220,6 +223,13 @@ does not provide one, Facet uses `DEFAULT_THEME`. A Theme contains:
 - one valid default style for every Brick; and
 - optional same-Brick Presets with `description`, `useWhen`, optional
   `avoidWhen`, and a style bundle.
+
+Density belongs here. A dense admin console and a roomy marketing landing page
+should normally differ through Theme token values, Brick defaults, and
+same-Brick Presets. The document still chooses closed names such as `padding:
+"xs"` or `preset:"dataGrid"`; it does not author pixel widths, margins, or CSS.
+If a benchmark cannot reach the target with a custom Theme/Preset/Pattern list,
+record that as evidence before adding Core vocabulary.
 
 Starting from `DEFAULT_THEME` is the shortest safe way to create a complete
 brand Theme. Concrete CSS values belong only in this operator-side data:

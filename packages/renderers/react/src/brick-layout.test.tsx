@@ -207,7 +207,7 @@ describe("StageRenderer brick layout contract", () => {
     expect(out).toContain("border-radius:9999px");
 
     expect(out).toContain("Styled table");
-    expect(out).toContain("border-collapse:collapse");
+    expect(out).toContain("border-collapse:separate");
     expect(out).toContain("background:#fef3c7");
     expect(out).toContain("font-family:ui-monospace, SFMono-Regular, Menlo, monospace");
     expect(out).toContain("--facet-hover-borderColor:#4f46e5");
@@ -343,7 +343,7 @@ describe("StageRenderer brick layout contract", () => {
     expect(out.match(/box-sizing:border-box/g)?.length ?? 0).toBeGreaterThan(8);
     expect(out.match(/min-width:0/g)?.length ?? 0).toBeGreaterThan(8);
     expect(out.match(/max-width:100%/g)?.length ?? 0).toBeGreaterThan(8);
-    expect(out.match(/overflow-wrap:anywhere/g)?.length ?? 0).toBeGreaterThan(8);
+    expect(out.match(/overflow-wrap:break-word/g)?.length ?? 0).toBeGreaterThan(8);
     expect(out).toContain('data-facet-list-content="true"');
     expect(out).toContain('data-facet-key-value-item="true"');
     expect(out).not.toContain("list-style-position:inside");
@@ -372,7 +372,7 @@ describe("StageRenderer brick layout contract", () => {
 
     expect(out).toContain("max-width:640px");
     expect(out).toContain(long);
-    expect(out.match(/overflow-wrap:anywhere/g)?.length ?? 0).toBeGreaterThan(10);
+    expect(out.match(/overflow-wrap:break-word/g)?.length ?? 0).toBeGreaterThan(10);
     expect(out).not.toContain("position:absolute");
   });
 

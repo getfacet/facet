@@ -169,7 +169,7 @@ export function textStyle(
 ): CSSProperties {
   const css: CSSProperties = {
     margin: 0,
-    wordBreak: "break-word",
+    wordBreak: "normal",
     ...projectTypography(style, theme),
   };
   if (css.fontFamily === undefined) css.fontFamily = theme.fontFamily.sans;

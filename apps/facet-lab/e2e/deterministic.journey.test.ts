@@ -65,6 +65,31 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await harness?.close();
   });
 
+  it("shows reference benchmark previews without turning them into official scenario runs", async () => {
+    const scenarioPage = await harness.newPage();
+    await scenarioPage.goto(`${harness.url}/scenarios`, { waitUntil: "networkidle" });
+
+    await visible(scenarioPage.getByRole("heading", { name: "Reference benchmarks" }));
+    expect(
+      await scenarioPage.getByLabel("Official scenario catalog").locator("article").count(),
+    ).toBe(8);
+    expect(
+      await scenarioPage.getByLabel("Reference benchmark catalog").locator("button").count(),
+    ).toBe(7);
+
+    await scenarioPage.getByRole("button", { name: /Commerce product and checkout/u }).click();
+    await visible(scenarioPage.locator("[data-reference-benchmark='commerce-product-checkout']"));
+    await visible(scenarioPage.getByLabel(/Commerce product and checkout benchmark preview/u));
+    await scenarioPage.locator("#reference-benchmark-viewport").selectOption("mobile");
+    await scenarioPage.locator("#reference-benchmark-color").selectOption("dark");
+    await visible(scenarioPage.locator("[data-reference-preview-viewport='mobile']"));
+    await visible(scenarioPage.locator("[data-reference-preview-color-mode='dark']"));
+    expect(await scenarioPage.locator("#generate-scenario").innerText()).not.toContain(
+      "Commerce product and checkout",
+    );
+    await scenarioPage.close();
+  }, 120_000);
+
   it("accounts for package assets and runs the same live path twice through replay, compare, capture, and hybrid evaluation", async () => {
     const catalogPage = await harness.newPage();
     await catalogPage.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });

@@ -10,6 +10,7 @@ import {
 import {
   tableCaptionTargetStyle,
   tableCellTargetStyle,
+  tableEmptyCellTargetStyle,
   tableHeaderTargetStyle,
   tableRootTargetStyle,
   tableRowTargetStyle,
@@ -69,6 +70,7 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
   const style = tableRootTargetStyle(resolvedStyle, theme);
   const captionStyle = tableCaptionTargetStyle(resolvedStyle.caption ?? {}, theme);
   const cellStyle = tableCellTargetStyle(resolvedStyle.cell ?? {}, theme);
+  const emptyCellStyle = tableEmptyCellTargetStyle(resolvedStyle.cell ?? {}, theme);
   return (
     <div
       className={className}
@@ -78,7 +80,10 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
       <table
         style={rootContainmentStyle({
           width: "100%",
-          borderCollapse: "collapse",
+          minWidth: "max-content",
+          borderCollapse: "separate",
+          borderSpacing: 0,
+          tableLayout: "auto",
         })}
       >
         {caption === undefined ? null : <caption style={captionStyle}>{caption}</caption>}
@@ -135,6 +140,13 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
           </tr>
         </thead>
         <tbody>
+          {sortedRows.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length} style={emptyCellStyle}>
+                No rows
+              </td>
+            </tr>
+          ) : null}
           {sortedRows.map((row, rowIndex) => {
             const rowTarget = tableRowTargetStyle(
               resolvedStyle.row ?? {},

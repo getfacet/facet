@@ -57,6 +57,7 @@ export interface ChartTargetStyles {
   readonly root: CSSProperties;
   readonly title: CSSProperties;
   readonly plot: CSSProperties;
+  readonly axisColor: string;
   readonly seriesColors: readonly string[];
   readonly seriesThickness: string;
 }
@@ -73,10 +74,12 @@ export function chartTargetStyles(
     style.series?.color5,
     style.series?.color6,
   ] as const;
+  const title = targetTextStyle(style.title, theme);
   return {
     root: rootStyle(style, theme),
-    title: targetTextStyle(style.title, theme),
+    title,
     plot: targetBoxStyle(style.plot, theme),
+    axisColor: typeof title.color === "string" ? title.color : theme.color.foreground,
     seriesColors: DEFAULT_CHART_COLORS.map(
       (fallback, index) => theme.color[authoredColors[index] ?? fallback],
     ),

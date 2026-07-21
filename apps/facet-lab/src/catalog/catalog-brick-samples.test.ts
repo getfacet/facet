@@ -45,10 +45,37 @@ describe("catalog Brick samples", () => {
     );
     expect(primaryActionNode.style?.preset).toBe("primaryAction");
     expect(primaryActionNode.onPress).toEqual({ kind: "agent", name: "catalog_primary_action" });
+    expect(primaryAction.tree.nodes["box-content"]).toMatchObject({
+      type: "text",
+      value: "Continue",
+      style: { preset: "actionLabel" },
+    });
+
+    const successBadge = requireSample("box", "successBadge");
+    expect(successBadge.tree.nodes["box-content"]).toMatchObject({
+      type: "text",
+      value: "Ready",
+      style: { preset: "successBadge" },
+    });
+
+    const warningAlert = requireSample("box", "warningAlert");
+    expect(warningAlert.tree.nodes["box-alert-title"]).toMatchObject({
+      type: "text",
+      value: "Review contrast",
+      style: { preset: "warningAlert" },
+    });
 
     const media = nodeAs<MediaNode>(requireSample("media").tree.nodes["sample-media"], "media");
     expect(media.src).toBe("/facet-catalog.svg");
     expect(existsSync(new URL("../../public/facet-catalog.svg", import.meta.url))).toBe(true);
+    const thumbnail = nodeAs<MediaNode>(
+      requireSample("media", "thumbnail").tree.nodes["sample-media"],
+      "media",
+    );
+    expect(thumbnail.src).toBe("/facet-catalog-thumbnail.svg");
+    expect(existsSync(new URL("../../public/facet-catalog-thumbnail.svg", import.meta.url))).toBe(
+      true,
+    );
 
     const inputSample = requireSample("input");
     const inputNodes = Object.values(inputSample.tree.nodes).filter(
