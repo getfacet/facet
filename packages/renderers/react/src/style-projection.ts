@@ -12,6 +12,8 @@ export interface TypographyStyleValues {
   readonly textAlign?: "start" | "center" | "end";
   readonly letterSpacing?: keyof ResolvedTheme["letterSpacing"];
   readonly lineHeight?: keyof ResolvedTheme["lineHeight"];
+  readonly textWrap?: "wrap" | "nowrap" | "balance";
+  readonly lineClamp?: "none" | 1 | 2 | 3 | 4;
   readonly highlight?: keyof ResolvedTheme["highlight"];
 }
 
@@ -42,6 +44,24 @@ export function projectTypography(
   if (values.letterSpacing !== undefined)
     css.letterSpacing = theme.letterSpacing[values.letterSpacing];
   if (values.lineHeight !== undefined) css.lineHeight = theme.lineHeight[values.lineHeight];
+  if (values.textWrap === "nowrap") {
+    css.whiteSpace = "nowrap";
+    css.overflowWrap = "normal";
+  } else if (values.textWrap === "wrap") {
+    css.whiteSpace = "normal";
+    css.overflowWrap = "break-word";
+  } else if (values.textWrap === "balance") {
+    (css as CSSProperties & { textWrap: string }).textWrap = "balance";
+    css.overflowWrap = "break-word";
+  }
+  if (values.lineClamp !== undefined && values.lineClamp !== "none") {
+    css.display = "-webkit-box";
+    css.overflow = "hidden";
+    (css as CSSProperties & { WebkitBoxOrient: "vertical"; WebkitLineClamp: number })
+      .WebkitBoxOrient = "vertical";
+    (css as CSSProperties & { WebkitBoxOrient: "vertical"; WebkitLineClamp: number })
+      .WebkitLineClamp = values.lineClamp;
+  }
   if (values.highlight !== undefined) css.backgroundImage = theme.highlight[values.highlight];
   return css;
 }

@@ -16,6 +16,64 @@ function stage(nodes: readonly FacetNode[]): FacetTree {
 }
 
 describe("StageRenderer typography quality", () => {
+  it("applies wrap and line clamp without layout escape", () => {
+    const { container } = mountClient(
+      createElement(StageRenderer, {
+        tree: stage([
+          {
+            id: "nowrap",
+            type: "text",
+            value: "Single line label",
+            style: { textWrap: "nowrap" },
+          },
+          {
+            id: "clamp",
+            type: "text",
+            value: "A longer summary that should clamp after exactly two lines without requiring authored CSS.",
+            style: { lineClamp: 2 },
+          },
+          {
+            id: "list",
+            type: "list",
+            items: [{ title: "Insight title", body: "Long insight body copy" }],
+            style: { title: { lineClamp: 1 }, body: { textWrap: "wrap", lineClamp: 3 } },
+          },
+          {
+            id: "rich",
+            type: "richtext",
+            style: { textWrap: "balance", lineClamp: "none" },
+            blocks: [{ type: "paragraph", runs: [{ text: "Balanced rich prose" }] }],
+          },
+        ]),
+      }),
+    );
+
+    const nowrap = screen.getByText("Single line label");
+    expect(nowrap.style.whiteSpace).toBe("nowrap");
+    expect(nowrap.style.overflowWrap).toBe("normal");
+    expect(nowrap.style.position).not.toBe("absolute");
+
+    const clamp = screen.getByText(
+      "A longer summary that should clamp after exactly two lines without requiring authored CSS.",
+    );
+    expect(clamp.style.display).toBe("-webkit-box");
+    expect(clamp.style.overflow).toBe("hidden");
+    expect(clamp.style.webkitBoxOrient).toBe("vertical");
+    expect(clamp.style.webkitLineClamp).toBe("2");
+    expect(clamp.style.position).not.toBe("absolute");
+
+    const listTitle = screen.getByText("Insight title");
+    expect(listTitle.style.webkitLineClamp).toBe("1");
+    const listBody = screen.getByText("Long insight body copy");
+    expect(listBody.style.whiteSpace).toBe("normal");
+    expect(listBody.style.webkitLineClamp).toBe("3");
+
+    const richRoot = screen.getByText("Balanced rich prose").parentElement;
+    expect((richRoot as HTMLElement | null)?.style.getPropertyValue("text-wrap")).toBe("balance");
+    expect(container.innerHTML).not.toContain("position:absolute");
+    expect(container.innerHTML).not.toContain("display:contents");
+  });
+
   it("renders rich text list indentation and text wrapping", () => {
     mountClient(
       createElement(StageRenderer, {
