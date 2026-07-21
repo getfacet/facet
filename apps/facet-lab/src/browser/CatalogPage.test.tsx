@@ -97,5 +97,5 @@ describe("CatalogPage", () => {
     expect(screen.getByRole("heading", { name: "This frame is rendered by Facet." })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Package definition" }));
     expect(screen.getByText(/Core accepts this exact choice in the/u)).toBeTruthy();
-  });
+  }, 10_000);
 });

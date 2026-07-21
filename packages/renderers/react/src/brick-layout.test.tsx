@@ -470,7 +470,7 @@ describe("StageRenderer table data bindings", () => {
 
     const before = render(base);
     expect(before).toContain(">100<");
-    expect(before).toContain('height="50"');
+    expect(before).toContain('x="110.5" y="66" width="44" height="44"');
 
     const { tree: updated } = foldPatchIntoStage(base, [
       { op: "replace", path: "/data/sales/1/revenue", value: 200 },
@@ -478,8 +478,9 @@ describe("StageRenderer table data bindings", () => {
 
     const after = render(updated);
     expect(after).toContain(">200<");
-    expect(after).not.toContain(">100<");
-    expect(after).toContain('height="25"');
-    expect(after).not.toContain('height="50"');
+    expect(after).toMatch(/>East<\/td><td[^>]*>200<\/td>/u);
+    expect(after).not.toMatch(/>East<\/td><td[^>]*>100<\/td>/u);
+    expect(after).toContain('x="110.5" y="90" width="44" height="20"');
+    expect(after).not.toContain('x="110.5" y="66" width="44" height="44"');
   });
 });
