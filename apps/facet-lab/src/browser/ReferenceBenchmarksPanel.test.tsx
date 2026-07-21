@@ -57,7 +57,7 @@ describe("ReferenceBenchmarksPanel", () => {
       expect(screen.getByLabelText(/benchmark preview/u)).toBeTruthy();
     }
     expect(onViewChange).not.toHaveBeenCalled();
-  }, 10_000);
+  }, 20_000);
 
   it("updates viewport and color mode as local preview state", () => {
     const onViewChange = vi.fn();

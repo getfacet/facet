@@ -478,8 +478,8 @@ describe("StageRenderer table data bindings", () => {
 
     const after = render(updated);
     expect(after).toContain(">200<");
-    expect(after).toMatch(/>East<\/td><td[^>]*>200<\/td>/u);
-    expect(after).not.toMatch(/>East<\/td><td[^>]*>100<\/td>/u);
+    expect(after).toMatch(/>East<\/span><\/td><td[^>]*><span[^>]*>200<\/span><\/td>/u);
+    expect(after).not.toMatch(/>East<\/span><\/td><td[^>]*><span[^>]*>100<\/span><\/td>/u);
     expect(after).toContain('x="110.5" y="90" width="44" height="20"');
     expect(after).not.toContain('x="110.5" y="66" width="44" height="44"');
   });

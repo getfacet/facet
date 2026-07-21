@@ -63,9 +63,11 @@ describe("StageRenderer table quality", () => {
     const queryCell = screen.getByText("ama2 messenger for agent teams").closest("td");
     expect(queryCell?.style.whiteSpace).toBe("normal");
     expect(queryCell?.style.overflowWrap).toBe("break-word");
-    expect(queryCell?.style.webkitLineClamp).toBe("2");
+    expect(queryCell?.style.display).not.toBe("-webkit-box");
     expect(queryCell?.style.padding).toBe("4px");
     expect(queryCell?.style.position).not.toBe("absolute");
+    expect(screen.getByText("ama2 messenger for agent teams").style.display).toBe("-webkit-box");
+    expect(screen.getByText("ama2 messenger for agent teams").style.webkitLineClamp).toBe("2");
 
     const clicksCell = screen.getByText("128").closest("td");
     expect(clicksCell?.style.textAlign).toBe("right");

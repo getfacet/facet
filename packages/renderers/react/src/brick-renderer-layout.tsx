@@ -14,6 +14,7 @@ import {
   tableHeaderTargetStyle,
   tableRootTargetStyle,
   tableRowTargetStyle,
+  tableTextContentTargetStyle,
 } from "./brick-style-layout.js";
 import { rootContainmentStyle } from "./layout-contract.js";
 import type { BrickRenderContext } from "./brick-renderer-types.js";
@@ -70,6 +71,7 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
   const style = tableRootTargetStyle(resolvedStyle, theme);
   const captionStyle = tableCaptionTargetStyle(resolvedStyle.caption ?? {}, theme);
   const cellStyle = tableCellTargetStyle(resolvedStyle.cell ?? {}, theme);
+  const cellContentStyle = tableTextContentTargetStyle(resolvedStyle.cell ?? {}, theme);
   const emptyCellStyle = tableEmptyCellTargetStyle(resolvedStyle.cell ?? {}, theme);
   return (
     <div
@@ -97,6 +99,10 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
                 theme,
                 activeDirection !== undefined,
               );
+              const headerContentStyle = tableTextContentTargetStyle(
+                resolvedStyle.header ?? {},
+                theme,
+              );
               const headerStyle: CSSProperties = {
                 ...headerTarget.style,
                 ...(column.align === undefined ? {} : { textAlign: column.align }),
@@ -105,7 +111,9 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
               if (!column.sortable) {
                 return (
                   <th key={column.key} className={headerTarget.className} style={headerStyle}>
-                    {column.label}
+                    <span data-facet-table-header-content="true" style={headerContentStyle}>
+                      {column.label}
+                    </span>
                   </th>
                 );
               }
@@ -132,8 +140,10 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
                     userSelect: "none",
                   }}
                 >
-                  {column.label}
-                  {glyph}
+                  <span data-facet-table-header-content="true" style={headerContentStyle}>
+                    {column.label}
+                    {glyph}
+                  </span>
                 </th>
               );
             })}
@@ -163,7 +173,9 @@ export function renderTable<Press>(node: FacetNode, context: BrickRenderContext<
                       ...(column.align === undefined ? {} : { textAlign: column.align }),
                     }}
                   >
-                    {tableCellText(safeOwnValue(row, column.key))}
+                    <span data-facet-table-cell-content="true" style={cellContentStyle}>
+                      {tableCellText(safeOwnValue(row, column.key))}
+                    </span>
                   </td>
                 ))}
               </tr>

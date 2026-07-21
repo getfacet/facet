@@ -60,6 +60,37 @@ function tableDividerStyle(
   return css;
 }
 
+function withoutLineClampDisplay(style: CSSProperties): CSSProperties {
+  const css: CSSProperties = { ...style };
+  delete css.display;
+  delete css.overflow;
+  delete (css as CSSProperties & { WebkitBoxOrient?: unknown }).WebkitBoxOrient;
+  delete (css as CSSProperties & { WebkitLineClamp?: unknown }).WebkitLineClamp;
+  return css;
+}
+
+export function tableTextContentTargetStyle(
+  style: TableHeaderDefinition | TableCellDefinition,
+  theme: ResolvedTheme,
+): CSSProperties {
+  const typography = projectTypography(style, theme) as CSSProperties & {
+    WebkitBoxOrient?: CSSProperties["WebkitBoxOrient"];
+    WebkitLineClamp?: number;
+  };
+  const css: CSSProperties & {
+    WebkitBoxOrient?: CSSProperties["WebkitBoxOrient"];
+    WebkitLineClamp?: number;
+  } = {
+    minWidth: 0,
+    maxWidth: "100%",
+  };
+  if (typography.display !== undefined) css.display = typography.display;
+  if (typography.overflow !== undefined) css.overflow = typography.overflow;
+  if (typography.WebkitBoxOrient !== undefined) css.WebkitBoxOrient = typography.WebkitBoxOrient;
+  if (typography.WebkitLineClamp !== undefined) css.WebkitLineClamp = typography.WebkitLineClamp;
+  return css;
+}
+
 function interactionValues(raw: unknown, theme: ResolvedTheme): InteractionValues {
   if (typeof raw !== "object" || raw === null) return {};
   const value = raw as Readonly<Record<string, unknown>>;
@@ -158,8 +189,9 @@ export function tableCaptionTargetStyle(
 
 function tableHeaderBaseStyle(style: TableHeaderDefinition, theme: ResolvedTheme): CSSProperties {
   const typography = projectTypography(style, theme);
+  const shellTypography = withoutLineClampDisplay(typography);
   const css: CSSProperties = {
-    ...typography,
+    ...shellTypography,
     ...tableTargetPaintStyle(style, theme),
     ...tableDividerStyle(style, theme),
     whiteSpace: typography.whiteSpace ?? "nowrap",
@@ -207,8 +239,9 @@ export function tableCellTargetStyle(
   theme: ResolvedTheme,
 ): CSSProperties {
   const typography = projectTypography(style, theme);
+  const shellTypography = withoutLineClampDisplay(typography);
   const css: CSSProperties = {
-    ...typography,
+    ...shellTypography,
     ...tableTargetPaintStyle(style, theme),
     ...tableDividerStyle(style, theme),
     whiteSpace: typography.whiteSpace ?? "nowrap",
