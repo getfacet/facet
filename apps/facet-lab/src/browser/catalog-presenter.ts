@@ -271,6 +271,29 @@ function treeWithStyleValue(
   return validatedPreview(candidate);
 }
 
+function lineStylePreview(value: StyleValue): FacetTree | undefined {
+  if (value !== "solid" && value !== "dashed" && value !== "dotted") return undefined;
+  const sample = createBrickSample("chart");
+  if (sample === undefined) return undefined;
+  const sampleNode = sample.tree.nodes[sample.nodeId];
+  if (sampleNode?.type !== "chart") return undefined;
+  const candidate = {
+    ...sample.tree,
+    nodes: {
+      ...sample.tree.nodes,
+      [sample.nodeId]: {
+        ...sampleNode,
+        kind: "line",
+        series: sampleNode.series.map((series, index) => ({
+          ...series,
+          lineStyle: index === 0 ? value : "solid",
+        })),
+      },
+    },
+  };
+  return validatedPreview(candidate);
+}
+
 function styleValuePreview(
   item: Record<string, unknown>,
   kind: "token" | "fixed",
@@ -284,6 +307,7 @@ function styleValuePreview(
     const tree = treeWithStyleValue(placement, value);
     if (tree !== undefined) return tree;
   }
+  if (kind === "fixed" && item.domain === "lineStyle") return lineStylePreview(value);
   return undefined;
 }
 

@@ -41,6 +41,12 @@ function nodePreset(tree: FacetTree, id: string): string | undefined {
   return typeof preset === "string" ? preset : undefined;
 }
 
+function node(tree: FacetTree, id: string): FacetTree["nodes"][string] {
+  const found = tree.nodes[id];
+  if (found === undefined) throw new Error(`Missing node ${id}`);
+  return found;
+}
+
 describe("reference benchmark custom assets", () => {
   it("validates benchmark-specific custom assets", () => {
     expect(Object.keys(REFERENCE_BENCHMARK_CUSTOM_ASSETS).sort()).toEqual([
@@ -161,6 +167,81 @@ describe("reference benchmark custom assets", () => {
         "media:productMock",
       ]),
     );
+  });
+
+  it("uses product-grade media icon, text-flow, chart, and table vocabulary", () => {
+    const ama2Messages = benchmarkFixture("ama2-messages-app");
+    const coupang = benchmarkFixture("coupang-product-listing");
+    const linktree = benchmarkFixture("linktree-selena-gomez");
+    const gsc = benchmarkFixture("google-search-console-performance");
+
+    expect(node(ama2Messages, "ama2-messages-mark")).toMatchObject({
+      type: "media",
+      kind: "icon",
+      icon: "activity",
+      style: { preset: "navIconActive" },
+    });
+    expect(node(coupang, "coupang-search-icon")).toMatchObject({
+      type: "media",
+      kind: "icon",
+      icon: "search",
+      style: { preset: "actionIcon" },
+    });
+    expect(node(linktree, "creator-report-link-icon")).toMatchObject({
+      type: "media",
+      kind: "icon",
+      icon: "moreHorizontal",
+      style: { preset: "actionIcon" },
+    });
+
+    const productTitle = node(coupang, "coupang-product-a-title");
+    expect(productTitle).toMatchObject({
+      type: "text",
+      style: { textWrap: "wrap", lineClamp: 2 },
+    });
+
+    const chart = node(gsc, "gsc-chart");
+    expect(chart).toMatchObject({
+      type: "chart",
+      style: {
+        plot: {
+          axisColor: "border",
+          gridColor: "border",
+          labelColor: "mutedForeground",
+        },
+      },
+    });
+    if (chart.type !== "chart") throw new Error("Expected GSC chart");
+    expect(chart.series.map((series) => series.lineStyle)).toEqual([
+      "solid",
+      "solid",
+      "dashed",
+      "dashed",
+    ]);
+
+    const table = node(gsc, "gsc-query-table");
+    if (table.type !== "table") throw new Error("Expected GSC table");
+    expect(table.columns.filter((column) => column.align === "end")).toHaveLength(6);
+    expect(table.columns.some((column) => column.sortable === true)).toBe(true);
+    expect(table.style).toMatchObject({
+      preset: "gscQueryTable",
+    });
+
+    const gscAssets = customAssetsForBenchmark("google-search-console-performance");
+    expect(gscAssets?.theme.presets?.chart?.gscComparison?.style).toMatchObject({
+      plot: {
+        axisColor: "border",
+        gridColor: "border",
+        labelColor: "mutedForeground",
+      },
+    });
+    expect(gscAssets?.theme.presets?.table?.gscQueryTable?.style).toMatchObject({
+      header: { textWrap: "nowrap" },
+      cell: { textWrap: "wrap", lineClamp: 2 },
+    });
+
+    const serialized = JSON.stringify([ama2Messages, coupang, linktree, gsc]);
+    expect(serialized).not.toMatch(/(?:⋮|⧉|☰|⌕|♡|🛒|⬇|◆|▱|⚙|♙|⌁|✹|↗)/u);
   });
 
   it("guards against the AMA2 benchmark regressions seen in visual QA", () => {

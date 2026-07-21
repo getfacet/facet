@@ -4,6 +4,7 @@ import type {
   FacetTree,
   InputStyle,
   ListStyle,
+  MediaIconName,
   MediaStyle,
   TableStyle,
   TextStyle,
@@ -106,6 +107,10 @@ function media(id: string, src: string, alt: string, style: MediaStyle = {}): No
   return { id, type: "media", kind: "image", src, alt, style };
 }
 
+function icon(id: string, name: MediaIconName, alt: string, style: MediaStyle = {}): Node {
+  return { id, type: "media", kind: "icon", icon: name, alt, style };
+}
+
 function input(
   id: string,
   name: string,
@@ -131,10 +136,14 @@ function chart(id: string, labels: readonly string[], style: ChartStyle): Node {
     title: "Search performance comparison",
     labels,
     series: [
-      { label: "Clicks", values: [1, 1, 2, 0, 1, 1, 0] },
-      { label: "Impressions", values: [45, 80, 230, 55, 50, 35, 20] },
-      { label: "Previous clicks", values: [1, 0, 0, 0, 0, 0, 0] },
-      { label: "Previous impressions", values: [35, 38, 28, 36, 32, 35, 38] },
+      { label: "Clicks", values: [1, 1, 2, 0, 1, 1, 0], lineStyle: "solid" },
+      { label: "Impressions", values: [45, 80, 230, 55, 50, 35, 20], lineStyle: "solid" },
+      { label: "Previous clicks", values: [1, 0, 0, 0, 0, 0, 0], lineStyle: "dashed" },
+      {
+        label: "Previous impressions",
+        values: [35, 38, 28, 36, 32, 35, 38],
+        lineStyle: "dashed",
+      },
     ],
     style,
   };
@@ -146,12 +155,12 @@ function table(id: string, style: TableStyle): Node {
     type: "table",
     columns: [
       { key: "query", label: "인기 검색어" },
-      { key: "clicks", label: "클릭수 26. 7. 12. - 26. 7. 18." },
-      { key: "prevClicks", label: "클릭수 26. 7. 5. - 26. 7. 11." },
-      { key: "diff", label: "클릭수 차이" },
-      { key: "impressions", label: "노출" },
-      { key: "prevImpressions", label: "노출 이전" },
-      { key: "impressionDiff", label: "노출 차이" },
+      { key: "clicks", label: "클릭수 26. 7. 12. - 26. 7. 18.", align: "end", sortable: true },
+      { key: "prevClicks", label: "클릭수 26. 7. 5. - 26. 7. 11.", align: "end" },
+      { key: "diff", label: "클릭수 차이", align: "end" },
+      { key: "impressions", label: "노출", align: "end" },
+      { key: "prevImpressions", label: "노출 이전", align: "end" },
+      { key: "impressionDiff", label: "노출 차이", align: "end" },
     ],
     rows: [
       {
@@ -182,16 +191,18 @@ function action(
   label: string,
   preset = "secondaryAction",
   style: BoxStyle = {},
+  trailingIcon: MediaIconName = "moreHorizontal",
 ): NodeMap {
   return {
     [id]: {
       id,
       type: "box",
-      children: [`${id}-label`],
+      children: [`${id}-label`, `${id}-icon`],
       onPress: { kind: "agent", name: `open_${id.replaceAll("-", "_")}` },
       style: { preset, ...style },
     },
     [`${id}-label`]: text(`${id}-label`, label, { preset: "actionLabel" }),
+    [`${id}-icon`]: icon(`${id}-icon`, trailingIcon, "", { preset: "actionIcon" }),
   };
 }
 
@@ -257,7 +268,11 @@ function productCard(
       preset: "productCard",
     }),
     [`${id}-img`]: media(`${id}-img`, src, alt, { preset: "productImage" }),
-    [`${id}-title`]: text(`${id}-title`, title, { preset: "body" }),
+    [`${id}-title`]: text(`${id}-title`, title, {
+      preset: "body",
+      textWrap: "wrap",
+      lineClamp: 2,
+    }),
     [`${id}-price`]: text(`${id}-price`, price, { preset: "price" }),
     [`${id}-shipping`]: text(`${id}-shipping`, shipping, {
       preset: "body",
@@ -278,7 +293,12 @@ function creatorProduct(
   return {
     [id]: box(id, [`${id}-img`, `${id}-title`, `${id}-price`], { preset: "productTile" }),
     [`${id}-img`]: media(`${id}-img`, src, alt, { preset: "productImage" }),
-    [`${id}-title`]: text(`${id}-title`, title, { preset: "body", fontSize: "xs" }),
+    [`${id}-title`]: text(`${id}-title`, title, {
+      preset: "body",
+      fontSize: "xs",
+      textWrap: "wrap",
+      lineClamp: 2,
+    }),
     [`${id}-price`]: text(`${id}-price`, price, { preset: "muted", fontSize: "xs" }),
   };
 }
@@ -336,10 +356,9 @@ export const AMA2_MESSAGES_APP_BENCHMARK_TREE: FacetTree = {
       ["ama2-messages-mark", "ama2-messages-brand-text"],
       { direction: "row", gap: "sm", alignItems: "center", width: "fit" },
     ),
-    "ama2-messages-mark": text("ama2-messages-mark", "◆", {
-      fontSize: "2xl",
-      fontWeight: "bold",
-      color: "accent",
+    "ama2-messages-mark": icon("ama2-messages-mark", "activity", "AMA2 mark", {
+      preset: "navIconActive",
+      iconSize: "lg",
     }),
     "ama2-messages-brand-text": text("ama2-messages-brand-text", "AMA2", {
       fontSize: "xl",
@@ -367,7 +386,7 @@ export const AMA2_MESSAGES_APP_BENCHMARK_TREE: FacetTree = {
         borderColor: "accentSurface",
       },
     ),
-    "ama2-messages-nav-active-label": text("ama2-messages-nav-active-label", "▱  Messages", {
+    "ama2-messages-nav-active-label": text("ama2-messages-nav-active-label", "Messages", {
       preset: "navItem",
       color: "accent",
     }),
@@ -375,25 +394,31 @@ export const AMA2_MESSAGES_APP_BENCHMARK_TREE: FacetTree = {
       color: "accent",
       fontSize: "md",
     }),
-    "ama2-messages-nav-activity": text("ama2-messages-nav-activity", "⌁  Activity", {
+    "ama2-messages-nav-activity": text("ama2-messages-nav-activity", "Activity", {
       preset: "navItem",
     }),
-    "ama2-messages-nav-friends": text("ama2-messages-nav-friends", "♙  Friends", {
+    "ama2-messages-nav-friends": text("ama2-messages-nav-friends", "Friends", {
       preset: "navItem",
     }),
-    "ama2-messages-nav-discovery": text("ama2-messages-nav-discovery", "⌕  Discovery", {
+    "ama2-messages-nav-discovery": text("ama2-messages-nav-discovery", "Discovery", {
       preset: "navItem",
     }),
-    "ama2-messages-nav-settings": text("ama2-messages-nav-settings", "⚙  Settings       ˅", {
+    "ama2-messages-nav-settings": text("ama2-messages-nav-settings", "Settings", {
       preset: "navItem",
     }),
     "ama2-messages-side-spacer": box("ama2-messages-side-spacer", [], { grow: true }),
-    ...action("ama2-messages-copy-setup", "Copy setup prompt    ⧉", "primaryAction", {
-      width: "full",
-      justifyContent: "between",
-      padding: "lg",
-      background: "accent",
-    }),
+    ...action(
+      "ama2-messages-copy-setup",
+      "Copy setup prompt",
+      "primaryAction",
+      {
+        width: "full",
+        justifyContent: "between",
+        padding: "lg",
+        background: "accent",
+      },
+      "externalLink",
+    ),
     "ama2-messages-user": box(
       "ama2-messages-user",
       ["ama2-messages-user-avatar", "ama2-messages-user-name"],
@@ -609,10 +634,10 @@ export const COUPANG_PRODUCT_LISTING_BENCHMARK_TREE: FacetTree = {
         width: "fit",
       },
     ),
-    "coupang-category-menu": text("coupang-category-menu", "☰", {
-      fontSize: "3xl",
-      fontWeight: "bold",
+    "coupang-category-menu": icon("coupang-category-menu", "menu", "menu", {
+      preset: "navIconActive",
       color: "accentForeground",
+      iconSize: "lg",
     }),
     "coupang-category-label": text("coupang-category-label", "카테고리", {
       fontSize: "md",
@@ -636,14 +661,42 @@ export const COUPANG_PRODUCT_LISTING_BENCHMARK_TREE: FacetTree = {
       "reference-search",
       "찾고 싶은 상품을 검색해보세요!",
     ),
-    "coupang-search-icon": text("coupang-search-icon", "⌕", { fontSize: "2xl", color: "accent" }),
+    "coupang-search-icon": icon("coupang-search-icon", "search", "search", {
+      preset: "actionIcon",
+      color: "accent",
+      iconSize: "lg",
+    }),
     "coupang-header-icons": box("coupang-header-icons", ["coupang-my", "coupang-cart"], {
       direction: "row",
       gap: "lg",
       width: "fit",
     }),
-    "coupang-my": text("coupang-my", "♡\n마이쿠팡", { preset: "body", textAlign: "center" }),
-    "coupang-cart": text("coupang-cart", "🛒\n장바구니", { preset: "body", textAlign: "center" }),
+    "coupang-my": box("coupang-my", ["coupang-my-icon", "coupang-my-label"], {
+      gap: "xs",
+      alignItems: "center",
+      width: "fit",
+    }),
+    "coupang-my-icon": icon("coupang-my-icon", "user", "my account", {
+      preset: "navIcon",
+      iconSize: "lg",
+    }),
+    "coupang-my-label": text("coupang-my-label", "마이쿠팡", {
+      preset: "body",
+      textAlign: "center",
+    }),
+    "coupang-cart": box("coupang-cart", ["coupang-cart-icon", "coupang-cart-label"], {
+      gap: "xs",
+      alignItems: "center",
+      width: "fit",
+    }),
+    "coupang-cart-icon": icon("coupang-cart-icon", "cart", "cart", {
+      preset: "navIcon",
+      iconSize: "lg",
+    }),
+    "coupang-cart-label": text("coupang-cart-label", "장바구니", {
+      preset: "body",
+      textAlign: "center",
+    }),
     "coupang-shortcuts": box("coupang-shortcuts", ["coupang-shortcuts-copy"], {
       direction: "row",
       gap: "lg",
@@ -801,8 +854,8 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       justifyContent: "between",
       width: "full",
     }),
-    "creator-theme-dot": text("creator-theme-dot", "✹", { preset: "badge" }),
-    "creator-share": text("creator-share", "↗", { preset: "badge" }),
+    "creator-theme-dot": icon("creator-theme-dot", "settings", "theme", { preset: "actionIcon" }),
+    "creator-share": icon("creator-share", "externalLink", "share", { preset: "actionIcon" }),
     "creator-avatar": media("creator-avatar", CREATOR_AVATAR_SRC, "creator avatar", {
       preset: "avatar",
       borderRadius: "full",
@@ -818,8 +871,8 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       ["creator-report-link", "creator-shop-link"],
       { gap: "sm", width: "full" },
     ),
-    ...action("creator-report-link", "Rare Beauty Social Impact Report     ⋮", "linkButton"),
-    ...action("creator-shop-link", "Selena Gomez - Revival LP - Official Shop     ⋮", "linkButton"),
+    ...action("creator-report-link", "Rare Beauty Social Impact Report", "linkButton"),
+    ...action("creator-shop-link", "Selena Gomez - Revival LP - Official Shop", "linkButton"),
     "creator-section-dark": text("creator-section-dark", "In The Dark", {
       preset: "subheading",
       textAlign: "center",
@@ -829,10 +882,10 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       gap: "sm",
       width: "full",
     }),
-    ...action("creator-listen-dark", "Listen to In The Dark     ⋮", "linkButton"),
+    ...action("creator-listen-dark", "Listen to In The Dark", "linkButton"),
     ...action(
       "creator-video-dark",
-      "Watch the In The Dark Official Music Video     ⋮",
+      "Watch the In The Dark Official Music Video",
       "linkButton",
     ),
     "creator-section-revival": text("creator-section-revival", "Revival 10 Year Anniversary", {
@@ -904,8 +957,8 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       ["creator-impact-giving", "creator-impact-learn"],
       { gap: "sm", width: "full" },
     ),
-    ...action("creator-impact-giving", "Rare Impact Fund Giving Circle     ⋮", "linkButton"),
-    ...action("creator-impact-learn", "Learn More About the Rare Impact Fund     ⋮", "linkButton"),
+    ...action("creator-impact-giving", "Rare Impact Fund Giving Circle", "linkButton"),
+    ...action("creator-impact-learn", "Learn More About the Rare Impact Fund", "linkButton"),
     "creator-section-album": text("creator-section-album", "I SAID I LOVE YOU FIRST", {
       preset: "subheading",
       textAlign: "center",
@@ -939,10 +992,10 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       ["creator-listen-album", "creator-talk", "creator-watch", "creator-collab"],
       { gap: "sm", width: "full" },
     ),
-    ...action("creator-listen-album", "Listen to I Said I Love You First...     ⋮", "linkButton"),
-    ...action("creator-talk", "Watch Talk Music Video     ⋮", "linkButton"),
-    ...action("creator-watch", "Watch My Mind & Me on Apple TV+     ⋮", "linkButton"),
-    ...action("creator-collab", "OREO Selena Gomez | OREO     ⋮", "linkButton"),
+    ...action("creator-listen-album", "Listen to I Said I Love You First...", "linkButton"),
+    ...action("creator-talk", "Watch Talk Music Video", "linkButton"),
+    ...action("creator-watch", "Watch My Mind & Me on Apple TV+", "linkButton"),
+    ...action("creator-collab", "OREO Selena Gomez | OREO", "linkButton"),
   },
 };
 
@@ -971,7 +1024,7 @@ export const GOOGLE_SEARCH_CONSOLE_PERFORMANCE_BENCHMARK_TREE: FacetTree = {
       width: "full",
       justifyContent: "between",
     }),
-    "gsc-property-label": text("gsc-property-label", "◆  ama2.me      ˅", {
+    "gsc-property-label": text("gsc-property-label", "ama2.me      ˅", {
       preset: "body",
       fontWeight: "bold",
     }),
@@ -1014,17 +1067,34 @@ export const GOOGLE_SEARCH_CONSOLE_PERFORMANCE_BENCHMARK_TREE: FacetTree = {
       alignItems: "center",
       width: "full",
     }),
-    "gsc-url-search": box("gsc-url-search", ["gsc-url-search-copy"], {
+    "gsc-url-search": box("gsc-url-search", ["gsc-url-search-icon", "gsc-url-search-copy"], {
       preset: "threadFilter",
       background: "accentSurface",
       width: "full",
       maxWidth: "prose",
     }),
-    "gsc-url-search-copy": text("gsc-url-search-copy", "⌕  'ama2.me'에 있는 모든 URL 검사", {
+    "gsc-url-search-icon": icon("gsc-url-search-icon", "search", "search", {
+      preset: "actionIcon",
+      color: "mutedForeground",
+    }),
+    "gsc-url-search-copy": text("gsc-url-search-copy", "'ama2.me'에 있는 모든 URL 검사", {
       preset: "body",
       color: "mutedForeground",
     }),
-    "gsc-export": text("gsc-export", "⬇  내보내기", { preset: "body", fontWeight: "bold" }),
+    "gsc-export": box("gsc-export", ["gsc-export-icon", "gsc-export-label"], {
+      direction: "row",
+      gap: "xs",
+      alignItems: "center",
+      width: "fit",
+    }),
+    "gsc-export-icon": icon("gsc-export-icon", "download", "download", {
+      preset: "actionIcon",
+      color: "mutedForeground",
+    }),
+    "gsc-export-label": text("gsc-export-label", "내보내기", {
+      preset: "body",
+      fontWeight: "bold",
+    }),
     "gsc-title-row": text("gsc-title-row", "실적", { preset: "heading", fontSize: "xl" }),
     "gsc-filters": box(
       "gsc-filters",
@@ -1074,7 +1144,12 @@ export const GOOGLE_SEARCH_CONSOLE_PERFORMANCE_BENCHMARK_TREE: FacetTree = {
     ...metricCard("gsc-position", "☐ 평균 게재순위", "6.3", "8.6", "gscMetric"),
     "gsc-chart": chart("gsc-chart", ["1", "2", "3", "4", "5", "6", "7"], {
       preset: "gscComparison",
-      plot: { background: "surface" },
+      plot: {
+        background: "surface",
+        axisColor: "border",
+        gridColor: "border",
+        labelColor: "mutedForeground",
+      },
     }),
     "gsc-table-panel": box("gsc-table-panel", ["gsc-tabs", "gsc-query-table"], {
       preset: "reportPanel",

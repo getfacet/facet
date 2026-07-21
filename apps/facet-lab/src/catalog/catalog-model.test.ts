@@ -27,7 +27,7 @@ describe("createCatalogModel", () => {
       presets: 43,
       patterns: 17,
       tokenValues: 106,
-      fixedChoices: 40,
+      fixedChoices: 51,
     });
 
     expect(brickItemsIn(model).map(({ id }) => id)).toEqual(

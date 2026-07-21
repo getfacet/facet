@@ -4,10 +4,10 @@ import { REFERENCE_BENCHMARK_FIXTURES } from "./fixtures-reference-benchmarks.js
 import type { ExpectedPreset, ScenarioExpectedAssets } from "./scenarios.js";
 
 export const REFERENCE_BENCHMARK_GAP_CATEGORIES = [
+  "authoring",
+  "asset-guidance",
   "brick-vocabulary",
   "renderer-quality",
-  "theme-preset",
-  "pattern-sample",
 ] as const;
 export type ReferenceBenchmarkGapCategory = (typeof REFERENCE_BENCHMARK_GAP_CATEGORIES)[number];
 
@@ -124,10 +124,10 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
           "Facet has no app-shell, fixed sidebar, split-pane, column-resize, or anchored floating-card primitive; this benchmark must approximate them with flow Boxes.",
       },
       {
-        category: "brick-vocabulary",
+        category: "asset-guidance",
         severity: "watch",
         summary:
-          "There is no icon primitive; sidebar and toolbar icons are represented as text glyphs, which is not product-grade.",
+          "Generic media icons now cover simple controls, but brand-specific product icons and table-editor affordances still need custom service assets.",
       },
       {
         category: "renderer-quality",
@@ -136,7 +136,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
           "The Table renderer cannot express sticky headers, column widths, column separators, resize handles, or empty-grid fill behavior.",
       },
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary:
           "Package-default presets stay neutral; this Supabase-specific surface still depends on benchmark custom presets and some direct overrides for dense console chrome.",
@@ -201,7 +201,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     ],
     gaps: [
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary:
           "The reference depends on AMA2-specific lavender/peach/mint brand tokens; the fixture uses a media backdrop for the aurora, but exact brand theming still belongs in per-agent assets.",
@@ -219,10 +219,10 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
           "The landing uses very precise first-fold vertical centering and glow placement; current flow-only spacing and named min-height tokens make this approximate.",
       },
       {
-        category: "pattern-sample",
+        category: "authoring",
         severity: "watch",
         summary:
-          "Default marketing Patterns demonstrate generic hero and feature grids, but do not yet show this level of sparse SaaS landing composition.",
+          "This level of sparse SaaS landing composition depends on a deliberate custom Pattern and manual screenshot QA, not the package-default marketing samples.",
       },
     ],
   },
@@ -233,7 +233,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     goal: "Recreate the actual AMA2 messages screen with a persistent lavender sidebar, selected navigation item, setup CTA, user card, horizontal participant filters, and large rounded message-thread rows.",
     fixture: REFERENCE_BENCHMARK_FIXTURES["ama2-messages-app"],
     expectedAssets: {
-      bricks: ["box", "text"],
+      bricks: ["box", "text", "media"],
       presets: presets(
         { brick: "box", name: "messageShell" },
         { brick: "box", name: "sideNav" },
@@ -246,6 +246,8 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         { brick: "text", name: "threadSnippet" },
         { brick: "text", name: "badge" },
         { brick: "text", name: "actionLabel" },
+        { brick: "media", name: "navIconActive" },
+        { brick: "media", name: "actionIcon" },
       ),
       patterns: ["ama2-message-shell", "ama2-thread-row"],
     },
@@ -270,10 +272,10 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     ],
     gaps: [
       {
-        category: "brick-vocabulary",
+        category: "asset-guidance",
         severity: "watch",
         summary:
-          "There is still no icon/avatar primitive, so nav icons and participant avatars are represented with text glyphs and initials.",
+          "Generic media icons cover navigation affordances, but exact AMA2 logo/avatar art still needs service-specific media assets.",
       },
       {
         category: "renderer-quality",
@@ -282,7 +284,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
           "Facet Text has no single-line truncation/ellipsis control; long message snippets wrap or rely on authored shortened copy.",
       },
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary:
           "The result depends on AMA2-specific app-shell presets rather than package-default patterns.",
@@ -333,7 +335,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
           "No dedicated split-view/list-detail selection primitive; box/list/keyValue must carry it.",
       },
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary: "Default list and badge density must support issue-console scanning.",
       },
@@ -377,7 +379,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     ],
     gaps: [
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary: "Input and table presets carry most of the perceived admin-console quality.",
       },
@@ -398,6 +400,9 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         { brick: "text", name: "body" },
         { brick: "text", name: "price" },
         { brick: "text", name: "muted" },
+        { brick: "media", name: "navIcon" },
+        { brick: "media", name: "navIconActive" },
+        { brick: "media", name: "actionIcon" },
         { brick: "media", name: "productImage" },
         { brick: "list", name: "compact" },
         { brick: "list", name: "standard" },
@@ -437,7 +442,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
           "Media cards need stronger equal-height and object-fit behavior for marketplace grids to feel product-grade.",
       },
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary:
           "Dense commerce spacing and price/delivery presets are service-specific assets, not package defaults.",
@@ -516,6 +521,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         { brick: "text", name: "body" },
         { brick: "text", name: "subheading" },
         { brick: "text", name: "actionLabel" },
+        { brick: "media", name: "actionIcon" },
         { brick: "media", name: "avatar" },
         { brick: "media", name: "productImage" },
       ),
@@ -554,7 +560,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
           "There is no avatar/image-size primitive, so exact circular avatar sizing and product-tile sizing are only approximated by media presets.",
       },
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary:
           "The quality depends on creator-page, link-button, and product-tile presets that an agent/brand must author.",
@@ -602,14 +608,15 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     ],
     gaps: [
       {
-        category: "theme-preset",
+        category: "asset-guidance",
         severity: "watch",
         summary: "Button/badge width, padding, and rhythm are decisive for link-page quality.",
       },
       {
-        category: "pattern-sample",
+        category: "authoring",
         severity: "watch",
-        summary: "Default patterns need a real mobile-first creator-page example.",
+        summary:
+          "A mobile-first creator page needs a custom Pattern plus screenshot review; the package defaults should not be treated as the fidelity target.",
       },
     ],
   },
@@ -620,7 +627,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     goal: "Recreate a Google Search Console performance report with left navigation, URL inspection search, filter chips, colored metric cards, comparison line chart, tabs, query table, and export/update chrome.",
     fixture: REFERENCE_BENCHMARK_FIXTURES["google-search-console-performance"],
     expectedAssets: {
-      bricks: ["box", "text", "list", "chart", "table"],
+      bricks: ["box", "text", "media", "list", "chart", "table"],
       presets: presets(
         { brick: "box", name: "gscShell" },
         { brick: "box", name: "sideNav" },
@@ -631,6 +638,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         { brick: "text", name: "metricLabel" },
         { brick: "text", name: "metricValue" },
         { brick: "text", name: "body" },
+        { brick: "media", name: "actionIcon" },
         { brick: "list", name: "compact" },
         { brick: "list", name: "standard" },
         { brick: "chart", name: "gscComparison" },
@@ -649,7 +657,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     targetNotes: [
       "Private property details are out of scope; reproduce the visible dashboard structure and density.",
       "This target is a chart/table-heavy benchmark and should be used to judge whether Facet chart output is credible.",
-      "The reference includes two metric scales and previous-period dashed series; current Facet chart vocabulary cannot express that exactly.",
+      "The reference includes two metric scales and previous-period dashed series; this fixture uses closed lineStyle for dashed comparisons while dual-axis scale remains approximate.",
     ],
     qaChecklist: [
       "Metric cards should align as one dense row with active blue/purple cards and inactive white cards.",
@@ -662,7 +670,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         category: "brick-vocabulary",
         severity: "blocking",
         summary:
-          "Facet Chart has no dual-axis, dashed-series, point/hover, or per-series scale controls, all visible in the reference.",
+          "Facet Chart now covers dashed series, but still has no dual-axis, point/hover, or per-series scale controls, all visible in the reference.",
       },
       {
         category: "renderer-quality",
@@ -722,9 +730,10 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         summary: "Charts need production-grade visual treatment for report credibility.",
       },
       {
-        category: "pattern-sample",
+        category: "authoring",
         severity: "watch",
-        summary: "Default report patterns should demonstrate chart/table/prose composition.",
+        summary:
+          "A credible executive report needs a custom chart/table/prose Pattern and manual visual QA rather than relying on package-default samples.",
       },
     ],
   },

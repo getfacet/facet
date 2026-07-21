@@ -127,6 +127,32 @@ describe("Facet Lab reference benchmarks", () => {
     }
   });
 
+  it("uses media icons and classifies residual benchmark gaps", () => {
+    expect(REFERENCE_BENCHMARK_GAP_CATEGORIES).toEqual([
+      "authoring",
+      "asset-guidance",
+      "brick-vocabulary",
+      "renderer-quality",
+    ]);
+
+    const serializedGaps = JSON.stringify(REFERENCE_BENCHMARKS.flatMap(({ gaps }) => gaps));
+    expect(serializedGaps).not.toContain("theme-preset");
+    expect(serializedGaps).not.toContain("pattern-sample");
+    expect(serializedGaps).not.toMatch(/no icon primitive/iu);
+    expect(serializedGaps).not.toMatch(/cannot express dashed/iu);
+
+    const seenCategories = new Set(
+      REFERENCE_BENCHMARKS.flatMap((benchmark) => benchmark.gaps.map(({ category }) => category)),
+    );
+    expect(seenCategories).toEqual(new Set(REFERENCE_BENCHMARK_GAP_CATEGORIES));
+
+    for (const benchmark of REFERENCE_BENCHMARKS) {
+      for (const gap of benchmark.gaps) {
+        expect(REFERENCE_BENCHMARK_GAP_CATEGORIES).toContain(gap.category);
+      }
+    }
+  });
+
   it("keeps every fixture node reachable from the root", () => {
     for (const benchmark of REFERENCE_BENCHMARKS) {
       const reachable = reachableNodeIds(benchmark.fixture);
