@@ -61,8 +61,8 @@ describe("StageRenderer chart readability", () => {
     expect(bar).toContain('data-facet-chart-axis="x"');
     expect(bar).toContain('data-facet-chart-axis="y"');
     expect(bar).toContain('data-facet-chart-legend="true"');
-    expect(bar).toContain('y1="118"');
-    expect(bar).toContain('y2="118"');
+    expect(bar).toContain('y1="120"');
+    expect(bar).toContain('y2="120"');
     expect(bar).toContain('stroke-linecap="square"');
     expect(bar).toContain(">Jan<");
     expect(bar).toContain(">Feb<");
@@ -255,10 +255,10 @@ describe("StageRenderer chart readability", () => {
     const positiveY = numberAttribute(positiveBar, "y");
     const positiveHeight = numberAttribute(positiveBar, "height");
 
-    expect(negativeY).toBeCloseTo(zeroY);
+    expect(negativeY).toBeGreaterThanOrEqual(zeroY + 4);
     expect(negativeY + negativeHeight).toBeGreaterThan(zeroY);
     expect(positiveY).toBeLessThan(zeroY);
-    expect(positiveY + positiveHeight).toBeCloseTo(zeroY);
+    expect(positiveY + positiveHeight).toBeLessThanOrEqual(zeroY - 4);
   });
 
   it("does not emit invalid SVG values for extreme finite chart data", () => {
@@ -295,7 +295,7 @@ describe("StageRenderer chart readability", () => {
     expect(donut).not.toContain('stroke-dasharray="0.00 ');
   });
 
-  it("uses the resolved color mode for axis labels", () => {
+  it("uses the resolved color mode for chart labels", () => {
     const dark = render(
       tree({
         root: box("root", ["bar"]),
@@ -311,7 +311,46 @@ describe("StageRenderer chart readability", () => {
       { colorMode: "dark" },
     );
 
-    expect(dark).toContain('fill="#f5f5f7"');
+    expect(dark).toContain('fill="#a1a1aa"');
+  });
+
+  it("uses chart line styles and plot color tokens", () => {
+    const styled = chartMarkup({
+      id: "styled-line",
+      type: "chart",
+      kind: "line",
+      title: "Plan vs actual",
+      labels: ["Jan", "Feb", "Mar"],
+      style: {
+        plot: {
+          axisColor: "danger",
+          gridColor: "accent",
+          labelColor: "success",
+        },
+      },
+      series: [
+        { label: "Actual", values: [12, 18, 16], lineStyle: "solid" },
+        { label: "Forecast", values: [10, 20, 22], lineStyle: "dashed" },
+        { label: "Target", values: [14, 21, 25], lineStyle: "dotted" },
+      ],
+    });
+
+    const host = document.createElement("div");
+    host.innerHTML = styled;
+    const xAxisLine = host.querySelector('[data-facet-chart-axis="x"] line');
+    const gridLines = [...host.querySelectorAll('[data-facet-chart-grid="true"] line')];
+    const labels = [...host.querySelectorAll('[data-facet-chart-axis] text')];
+    const lines = [...host.querySelectorAll("polyline")];
+
+    expect(xAxisLine?.getAttribute("stroke")).toBe("#b91c1c");
+    expect(gridLines.length).toBeGreaterThan(2);
+    expect(gridLines.every((line) => line.getAttribute("stroke") === "#4f46e5")).toBe(true);
+    expect(labels.length).toBeGreaterThan(2);
+    expect(labels.every((label) => label.getAttribute("fill") === "#15803d")).toBe(true);
+    expect(lines).toHaveLength(3);
+    expect(lines[0]?.hasAttribute("stroke-dasharray")).toBe(false);
+    expect(lines[1]?.getAttribute("stroke-dasharray")).toBe("6 4");
+    expect(lines[2]?.getAttribute("stroke-dasharray")).toBe("1 5");
   });
 
   it("degrades safely for empty and malformed chart data", () => {
@@ -333,7 +372,7 @@ describe("StageRenderer chart readability", () => {
         title: { nope: true },
         labels: ["Only one", { nope: true }, "<script>alert(1)</script>"],
         series: [
-          { label: "Kept", values: [10, "bad", Number.POSITIVE_INFINITY, -5] },
+          { label: "Kept", values: [10, "bad", Number.POSITIVE_INFINITY, -5], lineStyle: {} },
           { label: { nope: true }, values: [1, 2, 3] },
         ],
       } as unknown as FacetNode,
@@ -345,6 +384,7 @@ describe("StageRenderer chart readability", () => {
     expect(html).toContain("safe child");
     expect(html).toContain(">Kept<");
     expect(html).not.toContain("[object Object]");
+    expect(html).not.toContain("stroke-dasharray");
     expect(html).not.toContain("<script");
   });
 });
