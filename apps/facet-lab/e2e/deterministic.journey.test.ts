@@ -9,6 +9,7 @@ import {
   waitForEvidence,
   type LabHarness,
 } from "./lab-harness.js";
+import { REFERENCE_BENCHMARK_IDS } from "../src/scenarios/reference-benchmarks.js";
 
 interface CaptureResponse {
   readonly persisted: boolean;
@@ -75,7 +76,7 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     ).toBe(8);
     expect(
       await scenarioPage.getByLabel("Reference benchmark catalog").locator("button").count(),
-    ).toBe(7);
+    ).toBe(REFERENCE_BENCHMARK_IDS.length);
 
     await scenarioPage.getByRole("button", { name: /Commerce product and checkout/u }).click();
     await visible(scenarioPage.locator("[data-reference-benchmark='commerce-product-checkout']"));
