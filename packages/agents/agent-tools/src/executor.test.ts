@@ -673,8 +673,8 @@ describe("executeStageTool", () => {
     });
     expect(observation?.errors).toEqual([
       expect.objectContaining({
-        path: "",
-        message: expect.stringContaining("closed Brick contract"),
+        path: "/src",
+        message: expect.stringContaining("safe static media src"),
       }),
     ]);
   });

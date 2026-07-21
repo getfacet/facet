@@ -76,6 +76,40 @@ describe("strict author validation", () => {
     expect(result.value).toEqual(node);
   });
 
+  it("reports media variant-specific author paths", () => {
+    const icon = validateAuthorNode(
+      { id: "search", type: "media", kind: "icon", icon: "search" },
+      theme,
+    );
+    expect(icon.value).toMatchObject({ type: "media", kind: "icon", icon: "search" });
+    expect(icon.issues).toEqual([]);
+
+    const missingSrc = validateAuthorNode({ id: "hero", type: "media", kind: "image" }, theme);
+    expect(missingSrc.value).toBeUndefined();
+    expect(missingSrc.issues.map(({ path }) => path)).toContain("/src");
+
+    const unsafeSrc = validateAuthorNode(
+      { id: "clip", type: "media", kind: "video", src: "javascript:alert(1)" },
+      theme,
+    );
+    expect(unsafeSrc.value).toBeUndefined();
+    expect(unsafeSrc.issues.map(({ path }) => path)).toContain("/src");
+
+    const unknownIcon = validateAuthorNode(
+      { id: "sparkles", type: "media", kind: "icon", icon: "sparkles" },
+      theme,
+    );
+    expect(unknownIcon.value).toBeUndefined();
+    expect(unknownIcon.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          path: "/icon",
+          allowed: expect.arrayContaining(["search", "check", "settings"]),
+        }),
+      ]),
+    );
+  });
+
   it("rejects unknown fields, targets, and input-kind-inapplicable targets", () => {
     const result = validateAuthorNode(
       {

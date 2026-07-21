@@ -903,7 +903,7 @@ describe("createReferenceAgent tool loop", () => {
     const rejected = observations.filter((observation) => observation.code === "invalid_authoring");
     expect(rejected).toHaveLength(3);
     expect(rejected.flatMap((result) => result.errors?.map((error) => error.path) ?? [])).toEqual(
-      expect.arrayContaining(["/type", ""]),
+      expect.arrayContaining(["/type", "/kind", "/src"]),
     );
   });
 

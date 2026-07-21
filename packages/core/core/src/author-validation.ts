@@ -10,10 +10,10 @@ import {
 import { styleValueNamesForProperty, type StyleValue } from "./style-value-contract.js";
 import { isControlChar, isForbiddenKey, isPlainObject, printableKey } from "./issues.js";
 import { escapeJsonPointerToken } from "./patch.js";
-import { sanitizeNode } from "./brick-node-validation.js";
+import { isSafeMediaSrc, sanitizeNode } from "./brick-node-validation.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
 import type { FacetTheme } from "./theme-types.js";
-import type { FacetNode } from "./nodes.js";
+import { MEDIA_ICON_NAMES, MEDIA_KINDS, type FacetNode } from "./nodes.js";
 import type { FacetTree } from "./tree.js";
 import { TREE_FIELDS } from "./tree-fields.js";
 import { validateTree } from "./tree-validation.js";
@@ -449,6 +449,8 @@ function validateNodeInto(
     validateStyle(type, styleRead.value, theme, inputKind, childPath(path, "style"), issues);
   }
 
+  if (type === "media") validateMediaNodeFields(raw, path, issues);
+
   if (id.length === 0) return undefined;
   const legacy: string[] = [];
   let normalized: FacetNode | undefined;
@@ -482,6 +484,59 @@ function validateNodeInto(
     for (const message of legacy) issues.add(path, message);
   }
   return normalized;
+}
+
+function validateMediaNodeFields(
+  raw: Record<string, unknown>,
+  path: string,
+  issues: AuthorIssues,
+): void {
+  const kindRead = readOwn(raw, "kind");
+  if (!kindRead.ok) {
+    issues.add(childPath(path, "kind"), "Brick field could not be read safely.");
+    return;
+  }
+  if (!kindRead.present || typeof kindRead.value !== "string") {
+    issues.add(childPath(path, "kind"), "Choose a media kind.", MEDIA_KINDS);
+    return;
+  }
+  if (!(MEDIA_KINDS as readonly string[]).includes(kindRead.value)) {
+    issues.add(childPath(path, "kind"), "Choose a media kind.", MEDIA_KINDS);
+    return;
+  }
+
+  if (kindRead.value === "icon") {
+    const iconRead = readOwn(raw, "icon");
+    if (!iconRead.ok) {
+      issues.add(childPath(path, "icon"), "Brick field could not be read safely.");
+    } else if (
+      !iconRead.present ||
+      typeof iconRead.value !== "string" ||
+      !(MEDIA_ICON_NAMES as readonly string[]).includes(iconRead.value)
+    ) {
+      issues.add(childPath(path, "icon"), "Choose one closed media icon name.", MEDIA_ICON_NAMES);
+    }
+    return;
+  }
+
+  const srcRead = readOwn(raw, "src");
+  if (!srcRead.ok) {
+    issues.add(childPath(path, "src"), "Brick field could not be read safely.");
+  } else if (!srcRead.present || typeof srcRead.value !== "string") {
+    issues.add(childPath(path, "src"), "Image and video media need a string src.");
+  } else if (!isSafeMediaSrc(srcRead.value)) {
+    issues.add(childPath(path, "src"), "Use a safe static media src.");
+  }
+
+  const posterRead = readOwn(raw, "poster");
+  if (!posterRead.ok) {
+    issues.add(childPath(path, "poster"), "Brick field could not be read safely.");
+  } else if (
+    posterRead.present &&
+    (typeof posterRead.value !== "string" || !isSafeMediaSrc(posterRead.value))
+  ) {
+    issues.add(childPath(path, "poster"), "Use a safe static media poster src.");
+  }
 }
 
 /** Strictly validates one node before a mutation tool constructs any patch. */

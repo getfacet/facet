@@ -72,8 +72,12 @@ const STAGE_SUMMARY_REGISTRY: Record<BrickType, NodeSummarizer> = {
   },
   media: (node) => {
     const kind = typeof node["kind"] === "string" ? safeField(node["kind"]) : "unknown";
-    const src = typeof node["src"] === "string" ? node["src"] : "";
     const alt = typeof node["alt"] === "string" ? ` altChars=${String(node["alt"].length)}` : "";
+    if (kind === "icon") {
+      const icon = typeof node["icon"] === "string" ? ` icon=${safeField(node["icon"])}` : "";
+      return `type=media kind=${kind}${icon}${alt}`;
+    }
+    const src = typeof node["src"] === "string" ? node["src"] : "";
     return `type=media kind=${kind} srcChars=${String(src.length)}${alt}`;
   },
   input: (node) => {
@@ -99,6 +103,8 @@ const STAGE_SUMMARY_REGISTRY: Record<BrickType, NodeSummarizer> = {
       "type=table",
       `columns=${String(arrayCount(node["columns"]))}`,
       `rows=${String(arrayCount(node["rows"]))}`,
+      `alignedColumns=${String(tableAlignedColumnCount(node["columns"]))}`,
+      `sortableColumns=${String(tableSortableColumnCount(node["columns"]))}`,
       charSummary(node["caption"], "captionChars"),
     ]),
   chart: (node) => {
@@ -108,6 +114,7 @@ const STAGE_SUMMARY_REGISTRY: Record<BrickType, NodeSummarizer> = {
       `series=${String(arrayCount(node["series"]))}`,
       `points=${String(chartPointCount(node["series"]))}`,
       `labels=${String(arrayCount(node["labels"]))}`,
+      `lineStyles=${String(chartLineStyleCount(node["series"]))}`,
       charSummary(node["title"], "titleChars"),
     ]);
   },
@@ -208,12 +215,43 @@ function arrayCount(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
+function tableAlignedColumnCount(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  let total = 0;
+  for (const column of value) {
+    if (!isRecord(column)) continue;
+    const align = column["align"];
+    if (align === "start" || align === "center" || align === "end") total += 1;
+  }
+  return total;
+}
+
+function tableSortableColumnCount(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  let total = 0;
+  for (const column of value) {
+    if (isRecord(column) && column["sortable"] === true) total += 1;
+  }
+  return total;
+}
+
 function chartPointCount(value: unknown): number {
   if (!Array.isArray(value)) return 0;
   let total = 0;
   for (const series of value) {
     if (!isRecord(series) || !Array.isArray(series["values"])) continue;
     total += series["values"].length;
+  }
+  return total;
+}
+
+function chartLineStyleCount(value: unknown): number {
+  if (!Array.isArray(value)) return 0;
+  let total = 0;
+  for (const series of value) {
+    if (!isRecord(series)) continue;
+    const lineStyle = series["lineStyle"];
+    if (lineStyle === "solid" || lineStyle === "dashed" || lineStyle === "dotted") total += 1;
   }
   return total;
 }

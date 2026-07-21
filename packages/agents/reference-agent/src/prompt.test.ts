@@ -169,6 +169,19 @@ describe("buildSystem", () => {
     expect(tools).not.toContain("privateConcreteValue");
   });
 
+  it("teaches product-grade same-Brick vocabulary without raw design escapes", () => {
+    const system = buildSystem(DEFAULT_GUIDE);
+
+    expect(system).toMatch(/same eleven Bricks/i);
+    expect(system).toMatch(/media\.kind[^.]*"icon"[^.]*MEDIA_ICON_NAMES/i);
+    expect(system).toMatch(/never raw SVG paths or CSS/i);
+    expect(system).toMatch(/text, list, richtext, and table[^.]*textWrap[^.]*lineClamp/i);
+    expect(system).toMatch(/table columns[^.]*align/i);
+    expect(system).toMatch(/chart series[^.]*lineStyle/i);
+    expect(system).toMatch(/axisColor[^.]*gridColor[^.]*labelColor/i);
+    expect(system).toMatch(/get_brick_spec[^.]*media icon[^.]*lineStyle/i);
+  });
+
   it("exports a non-empty DEFAULT_GUIDE and HISTORY_TURNS = 20", () => {
     expect(DEFAULT_GUIDE.length).toBeGreaterThan(0);
     expect(DEFAULT_GUIDE).toContain("Northstar Studio");

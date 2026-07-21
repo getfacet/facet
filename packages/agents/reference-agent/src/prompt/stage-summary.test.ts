@@ -121,10 +121,10 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
       "- 04-richtext: type=richtext blocks=2 runs=3 text=Welcome aboardMore",
     );
     expect(summary).toContain(
-      "- 05-table: type=table columns=1 rows=2 captionChars=8 style=preset:compact direct=0 targets=1 states=0 active=no",
+      "- 05-table: type=table columns=1 rows=2 alignedColumns=0 sortableColumns=0 captionChars=8 style=preset:compact direct=0 targets=1 states=0 active=no",
     );
     expect(summary).toContain(
-      "- 06-chart: type=chart kind=bar series=2 points=3 labels=2 titleChars=5 style=preset:panel direct=0 targets=1 states=0 active=no",
+      "- 06-chart: type=chart kind=bar series=2 points=3 labels=2 lineStyles=0 titleChars=5 style=preset:panel direct=0 targets=1 states=0 active=no",
     );
     expect(summary).toContain(
       "- 07-list: type=list items=2 style=preset:compact direct=0 targets=0 states=0 active=no",
@@ -139,6 +139,77 @@ describe("STAGE_SUMMARY_REGISTRY", () => {
       "- 10-loading: type=loading labelChars=12 style=preset:subdued direct=0 targets=0 states=0 active=no",
     );
     expect(summary).not.toContain("type=unknown");
+  });
+
+  it("summarizes media icon variants and product-grade data fields", () => {
+    const stage: FacetTree = {
+      root: "00-box",
+      nodes: {
+        "00-box": {
+          id: "00-box",
+          type: "box",
+          children: ["01-icon", "02-table", "03-chart", "04-text"],
+        },
+        "01-icon": {
+          id: "01-icon",
+          type: "media",
+          kind: "icon",
+          icon: "search",
+          alt: "Search",
+        },
+        "02-table": {
+          id: "02-table",
+          type: "table",
+          caption: "Search analytics",
+          columns: [
+            { key: "query", label: "Query", sortable: true },
+            { key: "clicks", label: "Clicks", align: "end", sortable: true },
+            { key: "ctr", label: "CTR", align: "center" },
+          ],
+          rows: [{ query: "ama2", clicks: 3, ctr: "4.2%" }],
+          style: { cell: { textWrap: "wrap", lineClamp: 2 } },
+        },
+        "03-chart": {
+          id: "03-chart",
+          type: "chart",
+          kind: "line",
+          title: "Search performance",
+          labels: ["1", "2", "3"],
+          series: [
+            { label: "Clicks", values: [1, 2, 3], lineStyle: "solid" },
+            { label: "Impressions", values: [10, 20, 30], lineStyle: "dashed" },
+            { label: "CTR", values: [0.1, 0.2, 0.3], lineStyle: "dotted" },
+          ],
+          style: {
+            plot: {
+              axisColor: "foreground",
+              gridColor: "border",
+              labelColor: "mutedForeground",
+            },
+          },
+        },
+        "04-text": {
+          id: "04-text",
+          type: "text",
+          value: "One long product title",
+          style: { textWrap: "balance", lineClamp: 2 },
+        },
+      },
+    };
+
+    const summary = summarizeStageForPrompt(stage);
+    expect(summary).toContain("- 01-icon: type=media kind=icon icon=search altChars=6");
+    expect(summary).toContain(
+      "- 02-table: type=table columns=3 rows=1 alignedColumns=2 sortableColumns=2 captionChars=16 style=preset:none direct=0 targets=1 states=0 active=no",
+    );
+    expect(summary).toContain(
+      "- 03-chart: type=chart kind=line series=3 points=9 labels=3 lineStyles=3 titleChars=18 style=preset:none direct=0 targets=1 states=0 active=no",
+    );
+    expect(summary).toContain(
+      "- 04-text: type=text chars=22 style=preset:none direct=2 targets=0 states=0 active=no",
+    );
+    expect(summary).not.toContain('"axisColor"');
+    expect(summary).not.toContain('"lineClamp"');
   });
 
   it("summarizes style as bounded metadata and omits document Theme and retired selectors", () => {
