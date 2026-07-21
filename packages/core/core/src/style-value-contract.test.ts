@@ -44,6 +44,16 @@ import {
 const names = (domain: { readonly values: readonly { readonly name: unknown }[] }) =>
   domain.values.map(({ name }) => name);
 
+type TestStyleValueDomain = {
+  readonly description: string;
+  readonly values: readonly {
+    readonly name: unknown;
+    readonly description: string;
+    readonly useWhen: string;
+    readonly avoidWhen?: string;
+  }[];
+};
+
 describe("STYLE_VALUE_CONTRACT", () => {
   it("keeps token metadata in exact domain order", () => {
     const domains = {
@@ -86,6 +96,9 @@ describe("STYLE_VALUE_CONTRACT", () => {
       columns: COLUMNS,
       textAlign: TEXT_ALIGNS,
       fontStyle: FONT_STYLES,
+      textWrap: ["wrap", "nowrap", "balance"],
+      lineClamp: ["none", 1, 2, 3, 4],
+      lineStyle: ["solid", "dashed", "dotted"],
       objectFit: OBJECT_FITS,
       objectPosition: OBJECT_POSITIONS,
       enterAnimation: ENTER_ANIMATIONS,
@@ -95,6 +108,33 @@ describe("STYLE_VALUE_CONTRACT", () => {
     expect(Object.keys(STYLE_VALUE_CONTRACT.fixed)).toEqual(Object.keys(domains));
     for (const domainName of Object.keys(domains) as (keyof typeof domains)[]) {
       expect(names(STYLE_VALUE_CONTRACT.fixed[domainName])).toEqual(domains[domainName]);
+    }
+  });
+
+  it("documents product-grade text and chart fixed choices", () => {
+    const fixed = STYLE_VALUE_CONTRACT.fixed as typeof STYLE_VALUE_CONTRACT.fixed & {
+      readonly textWrap: TestStyleValueDomain;
+      readonly lineClamp: TestStyleValueDomain;
+      readonly lineStyle: TestStyleValueDomain;
+    };
+
+    expect(fixed.textWrap).toBeDefined();
+    expect(fixed.lineClamp).toBeDefined();
+    expect(fixed.lineStyle).toBeDefined();
+
+    expect(names(fixed.textWrap)).toEqual(["wrap", "nowrap", "balance"]);
+    expect(names(fixed.lineClamp)).toEqual(["none", 1, 2, 3, 4]);
+    expect(names(fixed.lineStyle)).toEqual(["solid", "dashed", "dotted"]);
+
+    expect(fixed.textWrap.description).toContain("Text wrapping");
+    expect(fixed.lineClamp.description).toContain("Line clamp");
+    expect(fixed.lineStyle.description).toContain("Chart line");
+
+    for (const domain of [fixed.textWrap, fixed.lineClamp, fixed.lineStyle]) {
+      for (const value of domain.values) {
+        expect(value.description).not.toEqual("");
+        expect(value.useWhen).not.toEqual("");
+      }
     }
   });
 

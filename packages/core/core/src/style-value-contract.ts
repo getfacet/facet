@@ -17,8 +17,10 @@ import {
   HIGHLIGHTS,
   INDICATOR_SIZES,
   JUSTIFICATIONS,
+  LINE_CLAMPS,
   LETTER_SPACINGS,
   LINE_HEIGHTS,
+  LINE_STYLES,
   LOADING_ANIMATIONS,
   MAX_WIDTHS,
   MIN_HEIGHTS,
@@ -31,6 +33,7 @@ import {
   SHADOWS,
   SPACES,
   TEXT_ALIGNS,
+  TEXT_WRAPS,
   WIDTHS,
 } from "./tokens.js";
 import type { BrickStylePropertyContract } from "./brick-contract.js";
@@ -388,6 +391,40 @@ export const FIXED_STYLE_VALUE_CONTRACT = {
       "italic",
       "Use an italic posture.",
       "Use for short emphasis or conventional secondary notation.",
+    ],
+  ]),
+  textWrap: defineDomain("Text wrapping behavior", TEXT_WRAPS, [
+    ["wrap", "Allow normal multi-line wrapping.", "Use for body copy and readable labels."],
+    [
+      "nowrap",
+      "Keep text on one line.",
+      "Use for short labels, table headers, or titles where wrapping harms scanning.",
+    ],
+    [
+      "balance",
+      "Balance short multi-line headings.",
+      "Use for short headings whose line breaks should feel even.",
+      "Avoid for long paragraphs or dense data.",
+    ],
+  ]),
+  lineClamp: defineDomain("Line clamp behavior", LINE_CLAMPS, [
+    ["none", "Do not clamp text lines.", "Use when full copy should remain visible."],
+    [1, "Limit text to one line.", "Use for compact labels, chips, and table cells."],
+    [2, "Limit text to two lines.", "Use for compact cards, summaries, and list titles."],
+    [3, "Limit text to three lines.", "Use for richer previews that still need restraint."],
+    [4, "Limit text to four lines.", "Use for longer previews in spacious cards or panels."],
+  ]),
+  lineStyle: defineDomain("Chart line style", LINE_STYLES, [
+    ["solid", "Use a continuous chart line.", "Use for the primary observed series."],
+    [
+      "dashed",
+      "Use a segmented chart line.",
+      "Use for comparison, prior-period, forecast, or planned series.",
+    ],
+    [
+      "dotted",
+      "Use a point-like chart line.",
+      "Use for targets, thresholds, or secondary reference series.",
     ],
   ]),
   objectFit: defineDomain("Media fitting", OBJECT_FITS, [

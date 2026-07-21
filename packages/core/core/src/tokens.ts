@@ -125,6 +125,15 @@ export type TextAlign = (typeof TEXT_ALIGNS)[number];
 export const FONT_STYLES = ["normal", "italic"] as const;
 export type FontStyle = (typeof FONT_STYLES)[number];
 
+export const TEXT_WRAPS = ["wrap", "nowrap", "balance"] as const;
+export type TextWrap = (typeof TEXT_WRAPS)[number];
+
+export const LINE_CLAMPS = ["none", 1, 2, 3, 4] as const;
+export type LineClamp = (typeof LINE_CLAMPS)[number];
+
+export const LINE_STYLES = ["solid", "dashed", "dotted"] as const;
+export type LineStyle = (typeof LINE_STYLES)[number];
+
 export const OBJECT_FITS = ["cover", "contain"] as const;
 export type ObjectFit = (typeof OBJECT_FITS)[number];
 
