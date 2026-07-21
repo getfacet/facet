@@ -153,24 +153,29 @@ remaining Brick, renderer, asset-guidance, and authoring limitations visible.
 
 The Reference benchmarks panel includes a Lab-only **Visual comparison mode**.
 It shows the selected benchmark's reference surface beside a chrome-free
-`StageRenderer` panel at the same viewport, with a local closed verdict
+`StageRenderer` panel at the same captured surface size, with a local closed verdict
 (`unresolved`, `matches-reference`, `minor-drift`, `major-drift`, or `blocked`)
 for contributor review. This mode is internal QA for judging Facet authoring
 fidelity. It is not end-user UI, not provider-run scenario evidence, and does
 not mutate or persist run records.
 
 Reference images are registered as bounded same-origin static assets under
-`apps/facet-lab/public/reference-benchmarks/`. A missing reference image renders
-an explicit unavailable state while the Facet side remains visible. v1 does not
-capture authenticated product pages, save comparison screenshots, or perform a
-blocking pixel/vision score; those decisions stay with the reviewer until a
-separate evidence workflow exists.
+`apps/facet-lab/public/reference-benchmarks/`. They may be cropped
+owner-provided screenshots or deterministic public-page captures committed as
+Lab fixtures for side-by-side review. The comparison renderer preserves the
+registered reference dimensions and scales the reference/Facet surfaces for
+display, so desktop pages do not reflow inside the side-by-side panel and
+long-form mobile screenshots can use their captured page height. A missing
+reference image renders an explicit unavailable state while the Facet side
+remains visible. v1 does not capture authenticated product pages automatically,
+save comparison screenshots, or perform a blocking pixel/vision score; those
+decisions stay with the reviewer until a separate evidence workflow exists.
 
 Reference benchmarks are **human-authored ceiling tests**, not generic samples.
 When adding or revising one:
 
-1. Capture the official public reference at a fixed desktop viewport before
-   authoring.
+1. Capture the official reference at the intended fixed viewport or full-page
+   mobile surface before authoring.
 2. Decompose the reference into page shell, layout regions, component inventory,
    density, hierarchy, and chart/table requirements.
 3. Write the Facet document by hand first; do not treat provider output as the

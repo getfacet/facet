@@ -7,23 +7,58 @@ import {
 } from "./reference-benchmark-snapshots.js";
 
 describe("reference benchmark snapshots", () => {
-  it("projects viewport reference snapshots without raw Facet document styles", () => {
-    const snapshot = projectReferenceBenchmarkSnapshot({
-      benchmarkId: "google-search-console-performance",
-      viewport: "desktop",
-    });
+  it("projects registered viewport reference snapshots without raw Facet document styles", () => {
+    const expectations = [
+      {
+        benchmarkId: "supabase-table-editor",
+        viewport: "desktop",
+        src: "/reference-benchmarks/supabase-table-editor-desktop.png",
+      },
+      {
+        benchmarkId: "ama2-public-landing",
+        viewport: "desktop",
+        src: "/reference-benchmarks/ama2-public-landing-desktop.png",
+      },
+      {
+        benchmarkId: "ama2-messages-app",
+        viewport: "desktop",
+        src: "/reference-benchmarks/ama2-messages-app-desktop.png",
+      },
+      {
+        benchmarkId: "coupang-product-listing",
+        viewport: "desktop",
+        src: "/reference-benchmarks/coupang-product-listing-desktop.png",
+      },
+      {
+        benchmarkId: "linktree-selena-gomez",
+        viewport: "mobile",
+        src: "/reference-benchmarks/linktree-selena-gomez-mobile.png",
+      },
+      {
+        benchmarkId: "google-search-console-performance",
+        viewport: "desktop",
+        src: "/reference-benchmarks/google-search-console-performance-desktop.png",
+      },
+    ] as const;
 
-    expect(snapshot).toMatchObject({
-      availability: "available",
-      benchmarkId: "google-search-console-performance",
-      viewport: "desktop",
-      viewportLabel: "Desktop",
-      width: 1440,
-      height: 900,
-      src: "/reference-benchmarks/google-search-console-performance-desktop.svg",
-      mediaType: "image/svg+xml",
-    });
-    expect(JSON.stringify(snapshot)).not.toMatch(/rawStyle|css|facetDocumentStyle/u);
+    for (const expected of expectations) {
+      const snapshot = projectReferenceBenchmarkSnapshot(expected);
+
+      expect(snapshot).toMatchObject({
+        availability: "available",
+        benchmarkId: expected.benchmarkId,
+        viewport: expected.viewport,
+        src: expected.src,
+        mediaType: "image/png",
+      });
+      if (expected.benchmarkId === "linktree-selena-gomez") {
+        expect(snapshot).toMatchObject({
+          width: 390,
+          height: 1_936,
+        });
+      }
+      expect(JSON.stringify(snapshot)).not.toMatch(/rawStyle|css|facetDocumentStyle/u);
+    }
     expect(REFERENCE_BENCHMARK_SNAPSHOT_VIEWPORTS).toEqual(["mobile", "tablet", "desktop"]);
   });
 
@@ -61,7 +96,7 @@ describe("reference benchmark snapshots", () => {
   it("accepts only bounded same-origin Lab public paths under reference-benchmarks", () => {
     expect(
       validateReferenceBenchmarkSnapshotSource(
-        "/reference-benchmarks/google-search-console-performance-desktop.svg",
+        "/reference-benchmarks/google-search-console-performance-desktop.png",
       ),
     ).toBe(true);
 

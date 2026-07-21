@@ -39,6 +39,8 @@ export type ReferenceBenchmarkSnapshot =
 interface ReferenceBenchmarkSnapshotDefinition {
   readonly src: `/reference-benchmarks/${string}`;
   readonly mediaType: ReferenceBenchmarkSnapshotMediaType;
+  readonly width?: number;
+  readonly height?: number;
   readonly alt: string;
   readonly sourceLabel: string;
   readonly notes: readonly string[];
@@ -66,15 +68,77 @@ const VIEWPORT_DIMENSIONS: Readonly<
 const REFERENCE_BENCHMARK_SNAPSHOT_REGISTRY: Partial<
   Record<ReferenceBenchmarkId, Partial<Record<ViewportName, ReferenceBenchmarkSnapshotDefinition>>>
 > = Object.freeze({
+  "supabase-table-editor": Object.freeze({
+    desktop: Object.freeze({
+      src: "/reference-benchmarks/supabase-table-editor-desktop.png",
+      mediaType: "image/png",
+      alt: "Supabase table editor reference at desktop viewport.",
+      sourceLabel: "User-provided Supabase table editor screenshot crop",
+      notes: Object.freeze([
+        "Static Lab reference snapshot cropped from the owner-provided screenshot.",
+        "Browser chrome and transient hover UI are out of scope; the crop focuses on table editor density, sidebar, toolbar, grid, and empty state.",
+      ]),
+    }),
+  }),
+  "ama2-public-landing": Object.freeze({
+    desktop: Object.freeze({
+      src: "/reference-benchmarks/ama2-public-landing-desktop.png",
+      mediaType: "image/png",
+      alt: "AMA2 public landing page reference at desktop viewport.",
+      sourceLabel: "Playwright capture of AMA2 public landing page",
+      notes: Object.freeze([
+        "Static Lab reference snapshot captured at the desktop viewport.",
+        "Used for first-fold hero, navigation, CTA rhythm, and brand gradient comparison.",
+      ]),
+    }),
+  }),
+  "ama2-messages-app": Object.freeze({
+    desktop: Object.freeze({
+      src: "/reference-benchmarks/ama2-messages-app-desktop.png",
+      mediaType: "image/png",
+      alt: "AMA2 messages app reference at desktop viewport.",
+      sourceLabel: "Redacted user-provided AMA2 messages app screenshot crop",
+      notes: Object.freeze([
+        "Static Lab reference snapshot cropped from the owner-provided screenshot with private row content masked.",
+        "Used for app-shell, sidebar, participant filters, redacted message-row density, avatar stack, and selected-navigation comparison.",
+      ]),
+    }),
+  }),
+  "coupang-product-listing": Object.freeze({
+    desktop: Object.freeze({
+      src: "/reference-benchmarks/coupang-product-listing-desktop.png",
+      mediaType: "image/png",
+      alt: "Coupang product listing reference at desktop viewport.",
+      sourceLabel: "User-provided Coupang product-listing screenshot crop",
+      notes: Object.freeze([
+        "Static Lab reference snapshot cropped from the owner-provided screenshot.",
+        "Browser chrome, extension UI, and transient popovers are out of scope; the crop focuses on marketplace header, filter rail, product grid, price, delivery, and rating hierarchy.",
+      ]),
+    }),
+  }),
+  "linktree-selena-gomez": Object.freeze({
+    mobile: Object.freeze({
+      src: "/reference-benchmarks/linktree-selena-gomez-mobile.png",
+      mediaType: "image/png",
+      width: 390,
+      height: 1_936,
+      alt: "Selena Gomez Linktree reference at mobile viewport.",
+      sourceLabel: "User-provided Linktree mobile screenshot",
+      notes: Object.freeze([
+        "Static Lab reference snapshot from the owner-provided mobile screenshot.",
+        "Used for centered profile header, dense link stack, horizontal shop shelves, repeated section rhythm, and long-page mobile comparison.",
+      ]),
+    }),
+  }),
   "google-search-console-performance": Object.freeze({
     desktop: Object.freeze({
-      src: "/reference-benchmarks/google-search-console-performance-desktop.svg",
-      mediaType: "image/svg+xml",
+      src: "/reference-benchmarks/google-search-console-performance-desktop.png",
+      mediaType: "image/png",
       alt: "Google Search Console performance dashboard reference at desktop viewport.",
-      sourceLabel: "Lab-owned deterministic reference fixture",
+      sourceLabel: "User-provided Google Search Console screenshot crop",
       notes: Object.freeze([
-        "Static public fixture for testing comparison mechanics.",
-        "Not an authenticated Google capture and not provider-run evidence.",
+        "Static Lab reference snapshot cropped from the owner-provided screenshot.",
+        "Used for metric-card row, comparison chart, dual-scale visual treatment, filter chips, sidebar, and query table comparison.",
       ]),
     }),
   }),
@@ -138,8 +202,8 @@ export function projectReferenceBenchmarkSnapshot({
     benchmarkId,
     viewport,
     viewportLabel: VIEWPORT_LABELS[viewport],
-    width: dimensions.width,
-    height: dimensions.height,
+    width: definition.width ?? dimensions.width,
+    height: definition.height ?? dimensions.height,
     src: definition.src,
     mediaType: definition.mediaType,
     alt: definition.alt,

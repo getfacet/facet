@@ -94,15 +94,21 @@ describe("ReferenceBenchmarksPanel", () => {
     expect(comparison.getAttribute("data-reference-comparison-status")).toBe("ready");
     const reference = within(comparison).getByRole("img", { name: /Google Search Console/u });
     const facet = within(comparison).getByTestId("reference-comparison-facet-surface");
-    expect(reference.style.maxWidth).toBe("1440px");
-    expect(facet.style.maxWidth).toBe("1440px");
-    expect(facet.style.aspectRatio).toBe("1440 / 900");
+    expect(
+      reference
+        .closest("[data-reference-comparison-viewport-width]")
+        ?.getAttribute("data-reference-comparison-viewport-width"),
+    ).toBe("1440");
+    expect(facet.getAttribute("data-reference-comparison-viewport-width")).toBe("1440");
+    expect(facet.getAttribute("data-reference-comparison-viewport-height")).toBe("900");
+    expect(facet.style.width).toBe("1440px");
+    expect(facet.style.height).toBe("900px");
     expect(comparison.querySelector(".lab-topbar")).toBeNull();
     expect(comparison.querySelector(".lab-primary-nav")).toBeNull();
   });
 
   it("keeps the Facet panel visible when the reference snapshot is unavailable", () => {
-    render(<ReferenceBenchmarksPanel initialBenchmarkId="supabase-table-editor" />);
+    render(<ReferenceBenchmarksPanel initialBenchmarkId="admin-billing-settings" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open visual comparison" }));
 
@@ -122,7 +128,11 @@ describe("ReferenceBenchmarksPanel", () => {
 
     const comparison = screen.getByTestId("reference-comparison");
     expect(comparison.getAttribute("data-reference-comparison-viewport")).toBe("mobile");
-    expect(screen.getByTestId("reference-comparison-facet-surface").style.maxWidth).toBe("390px");
+    expect(
+      screen
+        .getByTestId("reference-comparison-facet-surface")
+        .getAttribute("data-reference-comparison-viewport-width"),
+    ).toBe("390");
     expect((screen.getByLabelText("Comparison verdict") as HTMLSelectElement).value).toBe(
       "major-drift",
     );

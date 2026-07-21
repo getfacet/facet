@@ -1,4 +1,4 @@
-import { Component } from "react";
+import { Component, useEffect, useRef, useState } from "react";
 import type { CSSProperties, ErrorInfo, ReactNode } from "react";
 
 import { StageRenderer } from "@facet/react";
@@ -70,6 +70,97 @@ function ReferenceComparisonFacetContent({
   return <>{renderFacet(facet)}</>;
 }
 
+function measuredScale({
+  availableWidth,
+  surfaceWidth,
+}: {
+  readonly availableWidth: number | null;
+  readonly surfaceWidth: number;
+}): number {
+  if (availableWidth === null || availableWidth <= 0) return 1;
+  return Math.max(0.18, Math.min(1, availableWidth / surfaceWidth));
+}
+
+function ReferenceComparisonSurfaceFrame({
+  viewport,
+  surfaceClassName,
+  testId,
+  unavailable,
+  children,
+}: {
+  readonly viewport: PresentedReferenceComparison["viewport"];
+  readonly surfaceClassName: string;
+  readonly testId?: string;
+  readonly unavailable?: boolean;
+  readonly children: ReactNode;
+}): ReactNode {
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const [availableWidth, setAvailableWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    const element = shellRef.current;
+    if (element === null) return undefined;
+
+    const updateAvailableWidth = (nextWidth: number): void => {
+      if (nextWidth > 0) setAvailableWidth(nextWidth);
+    };
+
+    updateAvailableWidth(element.clientWidth);
+
+    if (typeof ResizeObserver === "undefined") {
+      const updateFromElement = (): void => updateAvailableWidth(element.clientWidth);
+      window.addEventListener("resize", updateFromElement);
+      return () => window.removeEventListener("resize", updateFromElement);
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const [entry] = entries;
+      updateAvailableWidth(entry?.contentRect.width ?? element.clientWidth);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  const scale = measuredScale({
+    availableWidth,
+    surfaceWidth: viewport.width,
+  });
+  const frameStyle: CSSProperties = {
+    width: viewport.width * scale,
+    height: viewport.height * scale,
+  };
+  const surfaceStyle: CSSProperties = {
+    width: viewport.width,
+    height: viewport.height,
+    transform: `scale(${scale})`,
+  };
+
+  return (
+    <div
+      ref={shellRef}
+      className="lab-reference-comparison-surface-shell"
+      data-reference-comparison-surface-shell="true"
+    >
+      <div className="lab-reference-comparison-surface-frame" style={frameStyle}>
+        <div
+          className={surfaceClassName}
+          data-testid={testId}
+          data-reference-comparison-facet-surface={
+            testId === "reference-comparison-facet-surface" ? "true" : undefined
+          }
+          data-reference-comparison-viewport-width={viewport.width}
+          data-reference-comparison-viewport-height={viewport.height}
+          data-reference-comparison-scaled={scale < 1 ? "true" : "false"}
+          data-reference-comparison-unavailable={unavailable === true ? "true" : undefined}
+          style={surfaceStyle}
+        >
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export interface ReferenceComparisonViewProps {
   readonly comparison: PresentedReferenceComparison;
   readonly onClassificationChange: (classification: ReferenceComparisonClassification) => void;
@@ -81,11 +172,6 @@ export function ReferenceComparisonView({
   onClassificationChange,
   renderFacet = (facet) => <DefaultFacetRenderer facet={facet} />,
 }: ReferenceComparisonViewProps): ReactNode {
-  const viewportSurfaceStyle: CSSProperties = {
-    maxWidth: comparison.viewport.width,
-    aspectRatio: `${String(comparison.viewport.width)} / ${String(comparison.viewport.height)}`,
-  };
-
   return (
     <section
       className="lab-reference-comparison"
@@ -148,20 +234,27 @@ export function ReferenceComparisonView({
             </p>
           </header>
           {comparison.reference.availability === "available" ? (
-            <img
-              src={comparison.reference.src}
-              alt={comparison.reference.alt}
-              style={viewportSurfaceStyle}
-            />
-          ) : (
-            <div
-              role="status"
-              className="lab-reference-comparison-unavailable"
-              style={viewportSurfaceStyle}
+            <ReferenceComparisonSurfaceFrame
+              viewport={comparison.viewport}
+              surfaceClassName="lab-reference-comparison-reference-surface"
             >
-              <strong>Reference unavailable for this viewport</strong>
-              <span>{comparison.reference.reason}</span>
-            </div>
+              <img
+                className="lab-reference-comparison-reference-image"
+                src={comparison.reference.src}
+                alt={comparison.reference.alt}
+              />
+            </ReferenceComparisonSurfaceFrame>
+          ) : (
+            <ReferenceComparisonSurfaceFrame
+              viewport={comparison.viewport}
+              surfaceClassName="lab-reference-comparison-unavailable"
+              unavailable
+            >
+              <div role="status">
+                <strong>Reference unavailable for this viewport</strong>
+                <span>{comparison.reference.reason}</span>
+              </div>
+            </ReferenceComparisonSurfaceFrame>
           )}
         </article>
 
@@ -171,11 +264,10 @@ export function ReferenceComparisonView({
             <p>Chrome-free StageRenderer surface only</p>
           </header>
           {comparison.facet.availability === "available" ? (
-            <div
-              className="lab-reference-comparison-facet-surface"
-              data-testid="reference-comparison-facet-surface"
-              data-reference-comparison-facet-surface="true"
-              style={viewportSurfaceStyle}
+            <ReferenceComparisonSurfaceFrame
+              viewport={comparison.viewport}
+              surfaceClassName="lab-reference-comparison-facet-surface"
+              testId="reference-comparison-facet-surface"
             >
               <ReferenceComparisonRenderBoundary>
                 <ReferenceComparisonFacetContent
@@ -183,16 +275,18 @@ export function ReferenceComparisonView({
                   renderFacet={renderFacet}
                 />
               </ReferenceComparisonRenderBoundary>
-            </div>
+            </ReferenceComparisonSurfaceFrame>
           ) : (
-            <div
-              role="status"
-              className="lab-reference-comparison-unavailable"
-              style={viewportSurfaceStyle}
+            <ReferenceComparisonSurfaceFrame
+              viewport={comparison.viewport}
+              surfaceClassName="lab-reference-comparison-unavailable"
+              unavailable
             >
-              <strong>Facet render unavailable</strong>
-              <span>{comparison.facet.reason}</span>
-            </div>
+              <div role="status">
+                <strong>Facet render unavailable</strong>
+                <span>{comparison.facet.reason}</span>
+              </div>
+            </ReferenceComparisonSurfaceFrame>
           )}
         </article>
       </div>

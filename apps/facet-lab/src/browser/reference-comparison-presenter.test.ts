@@ -43,7 +43,7 @@ describe("reference comparison presenter", () => {
       },
       reference: {
         availability: "available",
-        src: "/reference-benchmarks/google-search-console-performance-desktop.svg",
+        src: "/reference-benchmarks/google-search-console-performance-desktop.png",
       },
       facet: {
         availability: "available",
@@ -58,7 +58,7 @@ describe("reference comparison presenter", () => {
 
   it("keeps the Facet side available when a reference image is missing", () => {
     const comparison = presentReferenceComparison({
-      selected: selectedBenchmark("supabase-table-editor"),
+      selected: selectedBenchmark("admin-billing-settings"),
       viewport: "desktop",
       classification: "matches-reference",
     });
