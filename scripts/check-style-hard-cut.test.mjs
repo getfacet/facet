@@ -957,6 +957,32 @@ test("does not expose excluded playground session contents in CLI diagnostics", 
   assert.equal(result.stdout.includes(sessionSecret), false);
 });
 
+test("falls back to portable search when default rg is unavailable", async (t) => {
+  const cwd = await makeFixture(t);
+  await writeFixture(cwd, "packages/example/src/legacy.ts", `${retiredSymbol()}();\n`);
+  await writeFixture(cwd, "packages/example/src/multiline.ts", `${multilineRawUse()}\n`);
+  await writeFixture(
+    cwd,
+    "packages/example/node_modules/pkg/ignored.ts",
+    `${retiredSymbol()}();\n`,
+  );
+
+  const scanner = new URL("./check-style-hard-cut.mjs", import.meta.url);
+  const result = spawnSync(process.execPath, [scanner.pathname, "--production"], {
+    cwd,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: cwd,
+    },
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /packages\/example\/src\/legacy\.ts:1:/);
+  assert.match(result.stderr, /packages\/example\/src\/multiline\.ts:2:/);
+  assert.equal(result.stderr.includes("node_modules"), false);
+});
+
 test("production mode excludes current docs while all mode includes them", async (t) => {
   const cwd = await makeFixture(t);
   const legacy = `${retiredSymbol()}();\n`;

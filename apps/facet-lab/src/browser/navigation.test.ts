@@ -69,4 +69,16 @@ describe("Lab navigation", () => {
 
     expect(viewport.scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
+
+  it("describes scenarios as official runs plus reference benchmarks", () => {
+    const generate = PRODUCT_AREAS.find(({ id }) => id === "generate");
+
+    expect(generate).toMatchObject({
+      routes: ["generate", "scenarios"],
+      description:
+        "Run free-form prompts, official capability scenarios, and static reference benchmarks.",
+    });
+    expect(LAB_ROUTES.map(({ path }) => path)).toContain("/scenarios");
+    expect(LAB_ROUTES.map(({ path }) => path)).not.toContain("/reference-benchmarks");
+  });
 });

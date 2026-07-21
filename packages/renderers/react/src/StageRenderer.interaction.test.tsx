@@ -25,7 +25,7 @@ describe("StageRenderer interactions (jsdom)", () => {
     const { container } = render(
       <StageRenderer
         tree={tree({
-          root: { id: "root", type: "box", children: ["email", "check", "radio"] },
+          root: { id: "root", type: "box", children: ["email", "check", "stacked", "radio"] },
           email: {
             id: "email",
             type: "input",
@@ -64,6 +64,17 @@ describe("StageRenderer interactions (jsdom)", () => {
               },
               // Inapplicable for checkbox and therefore absent from rendered CSS.
               placeholder: { color: "danger", fontStyle: "italic" },
+            },
+          },
+          stacked: {
+            id: "stacked",
+            type: "input",
+            name: "stacked",
+            input: "checkbox",
+            label: "Stacked",
+            style: {
+              direction: "column",
+              alignItems: "stretch",
             },
           },
           radio: {
@@ -105,6 +116,10 @@ describe("StageRenderer interactions (jsdom)", () => {
     expect(email.style.height).toBe("");
 
     const check = container.querySelector('input[name="consent"]') as HTMLInputElement;
+    const checkRoot = check.closest("label") as HTMLLabelElement;
+    expect(checkRoot.style.flexDirection).toBe("row");
+    expect(checkRoot.style.alignItems).toBe("center");
+    expect(checkRoot.firstElementChild).toBe(check);
     expect(check.style.width).toBe(theme.indicatorSize.lg);
     expect(check.style.height).toBe(theme.indicatorSize.lg);
     expect(check.style.borderColor).toBe(normalizedColor(theme.color.warning));
@@ -112,6 +127,12 @@ describe("StageRenderer interactions (jsdom)", () => {
     expect(check.classList).toContain("facet-focus-borderColor");
     expect(check.style.getPropertyValue("--facet-checked-background")).toBe(theme.color.success);
     expect(check.classList).not.toContain("facet-placeholder-color");
+
+    const stacked = container.querySelector('input[name="stacked"]') as HTMLInputElement;
+    const stackedRoot = stacked.closest("label") as HTMLLabelElement;
+    expect(stackedRoot.style.flexDirection).toBe("column");
+    expect(stackedRoot.style.alignItems).toBe("stretch");
+    expect(stackedRoot.firstElementChild).toBe(stacked);
 
     const pro = Array.from(container.querySelectorAll("label")).find(
       (label) => label.textContent === "Pro",

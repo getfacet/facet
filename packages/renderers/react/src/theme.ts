@@ -35,6 +35,7 @@ import type {
 import { DEFAULT_THEME } from "@facet/assets";
 import { rootContainmentStyle, scrollContainmentStyle, stickyStyle } from "./layout-contract.js";
 import { projectSurface, projectTypography } from "./style-projection.js";
+import { projectWidthStyle } from "./width-style.js";
 
 export { DEFAULT_THEME };
 
@@ -149,7 +150,7 @@ export function boxStyle(
   if (style.backgroundGradient !== undefined)
     css.backgroundImage = theme.gradient[style.backgroundGradient];
   if (style.grow === true) css.flexGrow = 1;
-  if (style.width === "full") css.width = "100%";
+  Object.assign(css, projectWidthStyle(style.width));
   if (style.minHeight !== undefined) css.minHeight = theme.minHeight[style.minHeight];
   if (style.maxWidth !== undefined) {
     css.maxWidth = theme.maxWidth[style.maxWidth];
@@ -168,7 +169,7 @@ export function textStyle(
 ): CSSProperties {
   const css: CSSProperties = {
     margin: 0,
-    wordBreak: "break-word",
+    wordBreak: "normal",
     ...projectTypography(style, theme),
   };
   if (css.fontFamily === undefined) css.fontFamily = theme.fontFamily.sans;
@@ -183,7 +184,7 @@ export function mediaStyle(
   if (style.objectFit !== undefined) css.objectFit = style.objectFit;
   if (style.objectPosition !== undefined) css.objectPosition = style.objectPosition;
   if (style.borderRadius !== undefined) css.borderRadius = theme.radius[style.borderRadius];
-  if (style.width === "full") css.width = "100%";
+  Object.assign(css, projectWidthStyle(style.width));
   if (style.aspectRatio !== undefined) css.aspectRatio = theme.aspectRatio[style.aspectRatio];
   return rootContainmentStyle(css);
 }
@@ -193,7 +194,7 @@ export function fieldStyle(
   _theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
   const css: CSSProperties = {};
-  if (style.width === "full") css.width = "100%";
+  Object.assign(css, projectWidthStyle(style.width));
   if (style.direction !== undefined) css.flexDirection = style.direction;
   if (style.gap !== undefined) css.gap = _theme.space[style.gap];
   if (style.alignItems !== undefined) css.alignItems = alignValue(style.alignItems);

@@ -70,6 +70,12 @@ unresolved style bundle. Style resolution order is:
 The Theme is host input, not Facet Document syntax. The host also owns the
 light/dark color-mode preference; the agent does not mutate either one.
 
+Core vocabulary grows only after evidence. Brand identity, density, and repeated
+composition should first be expressed with custom Themes, same-Brick Presets,
+and Patterns. Add a new Brick or closed `box` layout field only when a
+reference-grade benchmark shows that the existing declarative vocabulary cannot
+represent the target without a raw CSS or markup escape hatch.
+
 ## Validation boundaries
 
 Core exposes two deliberately different validation paths:

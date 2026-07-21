@@ -74,7 +74,8 @@ export const PRODUCT_AREAS: readonly ProductAreaDefinition[] = Object.freeze([
     id: "generate",
     label: "Generate",
     shortLabel: "02",
-    description: "Run free-form prompts and the official capability scenarios.",
+    description:
+      "Run free-form prompts, official capability scenarios, and static reference benchmarks.",
     path: "/generate",
     routes: ["generate", "scenarios"],
   },

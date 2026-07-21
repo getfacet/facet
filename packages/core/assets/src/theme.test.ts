@@ -59,6 +59,15 @@ const TOKEN_GROUPS = [
   "paint",
 ] as const;
 
+const COMPACT_BOX_PRESETS = [
+  "primaryAction",
+  "secondaryAction",
+  "badge",
+  "successBadge",
+  "warningBadge",
+  "dangerBadge",
+] as const;
+
 describe("DEFAULT_THEME", () => {
   it("ships one complete default Theme", () => {
     const result = validateTheme(DEFAULT_THEME);
@@ -113,6 +122,64 @@ describe("DEFAULT_THEME", () => {
 
     expect(DEFAULT_THEME).not.toHaveProperty("recipes");
     expect(JSON.stringify(DEFAULT_THEME)).not.toContain('"recipe"');
+  });
+
+  it("keeps default badges and actions compact", () => {
+    const result = validateTheme(DEFAULT_THEME);
+    expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
+    expect(result.issues).toEqual([]);
+
+    const boxPresets = DEFAULT_THEME.presets?.box;
+    for (const presetName of COMPACT_BOX_PRESETS) {
+      expect(boxPresets?.[presetName]?.style.width, presetName).toBe("fit");
+    }
+    expect(boxPresets?.badge?.style).toMatchObject({
+      padding: "sm",
+      color: "foreground",
+    });
+    expect(boxPresets?.successBadge?.style).toMatchObject({
+      padding: "sm",
+      color: "successForeground",
+    });
+    expect(boxPresets?.warningBadge?.style).toMatchObject({
+      padding: "sm",
+      color: "warningForeground",
+    });
+    expect(boxPresets?.dangerBadge?.style).toMatchObject({
+      padding: "sm",
+      color: "dangerForeground",
+    });
+    expect(boxPresets?.primaryAction?.style).toMatchObject({
+      direction: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    });
+    expect(boxPresets?.secondaryAction?.style).toMatchObject({
+      direction: "row",
+      alignItems: "center",
+      justifyContent: "center",
+    });
+  });
+
+  it("pins renderer-quality default style refinements", () => {
+    const result = validateTheme(DEFAULT_THEME);
+    expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
+    expect(result.issues).toEqual([]);
+
+    expect(DEFAULT_THEME.defaults.richtext.quote?.borderWidth).toBe("thin");
+    expect(DEFAULT_THEME.defaults.table.caption?.color).toBe("foreground");
+    expect(DEFAULT_THEME.defaults.table.header?.color).toBe("foreground");
+    expect(DEFAULT_THEME.presets?.input?.standard?.style).toMatchObject({
+      width: "full",
+      gap: "xs",
+    });
+    expect(DEFAULT_THEME.defaults.input).not.toHaveProperty("direction");
+    expect(DEFAULT_THEME.defaults.input).not.toHaveProperty("alignItems");
+    expect(DEFAULT_THEME.presets?.input?.standard?.style).not.toHaveProperty("direction");
+    expect(DEFAULT_THEME.presets?.input?.standard?.style).not.toHaveProperty("alignItems");
+    expect(DEFAULT_THEME.presets?.loading?.standard?.style.label).toMatchObject({
+      fontWeight: "medium",
+    });
   });
 
   it("exports every complete token map as null-prototype data", () => {

@@ -271,7 +271,9 @@ async function serveStatic(
     sendText(res, 400, "invalid path");
     return;
   }
-  const relativePath = decoded.startsWith("/assets/") ? decoded.slice(1) : "index.html";
+  const requestedPath = decoded.startsWith("/") ? decoded.slice(1) : decoded;
+  const requestedExtension = extname(requestedPath).toLowerCase();
+  const relativePath = decoded === "/" || requestedExtension === "" ? "index.html" : requestedPath;
   const candidate = resolve(staticRoot, relativePath);
   const fromRoot = relative(staticRoot, candidate);
   if (staticPathEscapesRoot(fromRoot)) {

@@ -10,6 +10,7 @@ import {
 import { rootContainmentStyle, scrollContainmentStyle } from "./layout-contract.js";
 import { projectSurface, projectTypography } from "./style-projection.js";
 import { boxStyle, mediaStyle, textStyle, type ResolvedTheme } from "./theme.js";
+import { projectWidthStyle } from "./width-style.js";
 
 type BoxDefinition = BrickStyleDefinition<"box">;
 type TextDefinition = BrickStyleDefinition<"text">;
@@ -33,6 +34,30 @@ type InteractionValues = Partial<
 function joinClasses(...values: readonly (string | undefined)[]): string | undefined {
   const classes = values.flatMap((value) => value?.split(/\s+/).filter(Boolean) ?? []);
   return classes.length === 0 ? undefined : [...new Set(classes)].join(" ");
+}
+
+function tableTargetPaintStyle(
+  style: TableHeaderDefinition | TableCellDefinition,
+  theme: ResolvedTheme,
+): CSSProperties {
+  const css = projectSurface(style, theme);
+  delete css.borderColor;
+  delete css.borderStyle;
+  delete css.borderWidth;
+  return css;
+}
+
+function tableDividerStyle(
+  style: TableHeaderDefinition | TableCellDefinition,
+  theme: ResolvedTheme,
+): CSSProperties {
+  const css: CSSProperties = {};
+  if (style.borderColor !== undefined) css.borderBottomColor = theme.color[style.borderColor];
+  if (style.borderWidth !== undefined) {
+    css.borderBottomStyle = "solid";
+    css.borderBottomWidth = theme.borderWidth[style.borderWidth];
+  }
+  return css;
 }
 
 function interactionValues(raw: unknown, theme: ResolvedTheme): InteractionValues {
@@ -112,9 +137,8 @@ export function layoutMediaTargetStyle(
 }
 
 export function tableRootTargetStyle(style: TableDefinition, theme: ResolvedTheme): CSSProperties {
-  const width: CSSProperties = style.width === "full" ? { width: "100%" } : {};
   return rootContainmentStyle({
-    ...width,
+    ...projectWidthStyle(style.width),
     ...projectSurface(style, theme),
     ...scrollContainmentStyle("x"),
   });
@@ -135,7 +159,11 @@ export function tableCaptionTargetStyle(
 function tableHeaderBaseStyle(style: TableHeaderDefinition, theme: ResolvedTheme): CSSProperties {
   const css: CSSProperties = {
     ...projectTypography(style, theme),
-    ...projectSurface(style, theme),
+    ...tableTargetPaintStyle(style, theme),
+    ...tableDividerStyle(style, theme),
+    whiteSpace: "nowrap",
+    overflowWrap: "normal",
+    verticalAlign: "bottom",
   };
   if (style.padding !== undefined) css.padding = theme.space[style.padding];
   return rootContainmentStyle(css);
@@ -150,7 +178,7 @@ export function tableHeaderTargetStyle(
   const base = {
     ...tableHeaderBaseStyle(style, theme),
     ...projectTypography(sortedStyle, theme),
-    ...projectSurface(sortedStyle, theme),
+    ...tableTargetPaintStyle(sortedStyle, theme),
   };
   return withInteractionStates(base, style, theme);
 }
@@ -179,8 +207,24 @@ export function tableCellTargetStyle(
 ): CSSProperties {
   const css: CSSProperties = {
     ...projectTypography(style, theme),
-    ...projectSurface(style, theme),
+    ...tableTargetPaintStyle(style, theme),
+    ...tableDividerStyle(style, theme),
+    whiteSpace: "nowrap",
+    overflowWrap: "normal",
+    verticalAlign: "top",
   };
   if (style.padding !== undefined) css.padding = theme.space[style.padding];
   return rootContainmentStyle(css);
+}
+
+export function tableEmptyCellTargetStyle(
+  style: TableCellDefinition,
+  theme: ResolvedTheme,
+): CSSProperties {
+  return {
+    ...tableCellTargetStyle(style, theme),
+    color: theme.color.mutedForeground,
+    fontStyle: "italic",
+    textAlign: "center",
+  };
 }

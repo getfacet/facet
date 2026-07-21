@@ -56,7 +56,7 @@ export function renderKeyValue<Press>(
       style={withInert({ ...styles.root, margin: 0 }, inert)}
     >
       {items.map((item) => (
-        <div key={item.key} style={styles.item}>
+        <div key={item.key} data-facet-key-value-item="true" style={styles.item}>
           <dt style={styles.label}>{item.label}</dt>
           <dd style={{ ...styles.value, margin: 0 }}>{item.value}</dd>
         </div>
@@ -72,6 +72,7 @@ export function renderProgress<Press>(
   const { theme, className, inert } = context;
   const value = clampProgress(safeOwnValue(node, "value"));
   const label = cappedString(safeOwnValue(node, "label"), MAX_NODE_LABEL_CHARS);
+  const valueText = `${String(Math.round(value))}%`;
   const styles = progressTargetStyles(
     resolveBrickStyle(theme, "progress", safeOwnValue(node, "style")),
     theme,
@@ -82,7 +83,18 @@ export function renderProgress<Press>(
       aria-hidden={inert ? true : undefined}
       style={withInert(styles.root, inert)}
     >
-      {label === undefined ? null : <span style={styles.label}>{label}</span>}
+      <span
+        style={rootContainmentStyle({
+          display: "flex",
+          width: "100%",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: styles.root.gap,
+        })}
+      >
+        {label === undefined ? null : <span style={styles.label}>{label}</span>}
+        <span style={styles.label}>{valueText}</span>
+      </span>
       <div
         role="progressbar"
         aria-valuenow={value}
@@ -133,14 +145,42 @@ export function renderList<Press>(node: FacetNode, context: BrickRenderContext<P
     <ul
       className={className}
       aria-hidden={inert ? true : undefined}
-      style={withInert({ ...styles.root, margin: 0, listStylePosition: "inside" }, inert)}
+      style={withInert(
+        { ...styles.root, margin: 0, paddingInlineStart: 0, listStyle: "none" },
+        inert,
+      )}
     >
       {items.map((item, index) => (
-        <li key={`${String(index)}:${item.title}`} style={{ ...styles.item, ...styles.marker }}>
-          <span style={styles.title}>{item.title}</span>
-          {item.body === undefined ? null : (
-            <p style={{ ...styles.body, marginBlockStart: styles.itemGap }}>{item.body}</p>
-          )}
+        <li
+          key={`${String(index)}:${item.title}`}
+          style={{
+            ...styles.item,
+            ...styles.marker,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: styles.itemGap,
+          }}
+        >
+          <span
+            aria-hidden={true}
+            data-facet-list-marker="true"
+            style={{ ...styles.marker, flex: "0 0 auto" }}
+          >
+            •
+          </span>
+          <span
+            data-facet-list-content="true"
+            style={rootContainmentStyle({
+              display: "grid",
+              gap: styles.itemGap,
+              flex: "1 1 auto",
+            })}
+          >
+            <span style={styles.title}>{item.title}</span>
+            {item.body === undefined ? null : (
+              <p style={{ ...styles.body, margin: 0 }}>{item.body}</p>
+            )}
+          </span>
         </li>
       ))}
     </ul>

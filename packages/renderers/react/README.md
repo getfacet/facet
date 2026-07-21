@@ -58,6 +58,13 @@ each Brick in this order:
 Document syntax. Invalid Theme input falls back to `DEFAULT_THEME` as a whole.
 Patterns stay agent-side reference data and are never needed by the renderer.
 
+The renderer owns product-grade containment for existing Bricks. Text and
+richtext wrap within their assigned flow slots, richtext list markers and body
+columns align without arbitrary positioning, tables use bounded horizontal
+overflow for dense data chrome, and charts compute internal axis, mark, tick,
+and legend geometry. These are renderer responsibilities, not new document
+syntax.
+
 ## View-state ownership
 
 The renderer owns browser-local screen, toggle, table-sort, viewport, and

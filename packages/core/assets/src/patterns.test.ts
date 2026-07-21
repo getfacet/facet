@@ -47,6 +47,26 @@ const RETIRED_STYLE_KEYS = new Set([
   "weight",
 ]);
 
+const ACTION_BOX_PRESETS = ["primaryAction", "secondaryAction"] as const;
+const ACTIVE_LAYER_KEY = "active";
+
+type ActionBoxPreset = (typeof ACTION_BOX_PRESETS)[number];
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value === "object" && !Array.isArray(value);
+
+const isActionBoxPreset = (value: unknown): value is ActionBoxPreset =>
+  typeof value === "string" && ACTION_BOX_PRESETS.includes(value as ActionBoxPreset);
+
+const actionPresetFromStyle = (style: unknown): ActionBoxPreset | undefined => {
+  if (!isRecord(style)) return undefined;
+  if (isActionBoxPreset(style.preset)) return style.preset;
+
+  const activeLayer = style[ACTIVE_LAYER_KEY];
+  if (isRecord(activeLayer) && isActionBoxPreset(activeLayer.preset)) return activeLayer.preset;
+  return undefined;
+};
+
 const collectKeys = (value: unknown): readonly string[] => {
   if (Array.isArray(value)) return value.flatMap((entry) => collectKeys(entry));
   if (value === null || typeof value !== "object") return [];
@@ -108,6 +128,31 @@ describe("DEFAULT_PATTERNS", () => {
     expect(patterns.get("settings-panel")?.nodes["settings-panel.email"]?.style).toEqual({
       preset: "standard",
     });
+  });
+
+  it("keeps full-width Pattern actions explicit", async () => {
+    const patterns = await loadDefaults();
+    const implicitFullWidthActions: string[] = [];
+    const actionIds: string[] = [];
+
+    for (const pattern of patterns) {
+      for (const node of Object.values(pattern.nodes)) {
+        if (node.type !== "box") continue;
+
+        const style = node.style;
+        const preset = actionPresetFromStyle(style);
+        if (!preset) continue;
+
+        actionIds.push(`${pattern.name}:${node.id}`);
+        if (isRecord(style) && style.width === "full") continue;
+        if (DEFAULT_THEME.presets?.box?.[preset]?.style.width === "full") {
+          implicitFullWidthActions.push(`${pattern.name}:${node.id}`);
+        }
+      }
+    }
+
+    expect(actionIds.length).toBeGreaterThan(0);
+    expect(implicitFullWidthActions).toEqual([]);
   });
 
   it("keeps examples illustrative and explicitly tells agents to adapt them", async () => {

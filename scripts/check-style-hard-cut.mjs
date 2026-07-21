@@ -2,7 +2,7 @@
 
 import { Buffer } from "node:buffer";
 import { spawnSync } from "node:child_process";
-import { closeSync, openSync, readSync } from "node:fs";
+import { closeSync, existsSync, lstatSync, openSync, readdirSync, readSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -351,6 +351,171 @@ function parseMatches(stdout, groupName) {
   return matches;
 }
 
+function isDefaultMissingSearch(error, rgPath) {
+  return rgPath === "rg" && error?.code === "ENOENT";
+}
+
+function pathSegments(relativePath) {
+  return normalizedRelativePath(relativePath)
+    .split("/")
+    .filter((segment) => segment.length > 0);
+}
+
+function isExcludedPath(relativePath, mode) {
+  const normalized = normalizedRelativePath(relativePath);
+  const segments = pathSegments(normalized);
+  if (
+    segments.some(
+      (segment) =>
+        segment === "node_modules" ||
+        segment === "dist" ||
+        segment === "coverage" ||
+        segment === ".turbo",
+    )
+  ) {
+    return true;
+  }
+  if (
+    normalized.startsWith("apps/playground/.facet-sessions/") ||
+    normalized.startsWith("apps/playground/generated/")
+  ) {
+    return true;
+  }
+  return mode === "production" && path.posix.extname(normalized).toLowerCase() === ".md";
+}
+
+function listScannedFilesPortable({ cwd, mode }) {
+  const roots = mode === "production" ? PRODUCTION_ROOTS : ALL_ROOTS;
+  const files = [];
+  const resolvedCwd = path.resolve(cwd);
+  for (const root of roots) {
+    const rootPath = path.resolve(resolvedCwd, root);
+    if (!existsSync(rootPath)) continue;
+    const rootStats = lstatSync(rootPath);
+    if (rootStats.isSymbolicLink()) continue;
+    if (rootStats.isFile()) {
+      const relativePath = normalizedRelativePath(root);
+      if (!isExcludedPath(relativePath, mode)) files.push(relativePath);
+      continue;
+    }
+    if (!rootStats.isDirectory()) continue;
+    const stack = [normalizedRelativePath(root)];
+    while (stack.length > 0) {
+      const current = stack.pop();
+      if (current === undefined || isExcludedPath(`${current}/`, mode)) continue;
+      const entries = readdirSync(path.resolve(resolvedCwd, current), { withFileTypes: true });
+      for (const entry of entries) {
+        const childPath = normalizedRelativePath(path.posix.join(current, entry.name));
+        if (entry.isSymbolicLink() || isExcludedPath(childPath, mode)) continue;
+        if (entry.isDirectory()) {
+          stack.push(childPath);
+        } else if (entry.isFile()) {
+          files.push(childPath);
+        }
+      }
+    }
+  }
+  return files.sort((left, right) => left.localeCompare(right));
+}
+
+function lineNumberAt(source, index) {
+  let line = 1;
+  for (let cursor = 0; cursor < index; cursor += 1) {
+    if (source[cursor] === "\n") line += 1;
+  }
+  return line;
+}
+
+function sourceLineAt(source, index) {
+  let lineStart = index;
+  while (lineStart > 0 && source[lineStart - 1] !== "\n" && source[lineStart - 1] !== "\r") {
+    lineStart -= 1;
+  }
+  let lineEnd = index;
+  while (lineEnd < source.length && source[lineEnd] !== "\n" && source[lineEnd] !== "\r") {
+    lineEnd += 1;
+  }
+  return source.slice(lineStart, lineEnd);
+}
+
+function groupRegExp(group, { multiline }) {
+  return new RegExp(group.pattern, `gu${multiline ? "m" : ""}${group.caseInsensitive ? "i" : ""}`);
+}
+
+function sourceLineEntries(source) {
+  const entries = [];
+  let start = 0;
+  let line = 1;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    if (character !== "\n" && character !== "\r") continue;
+    entries.push({ line, text: source.slice(start, index) });
+    if (character === "\r" && source[index + 1] === "\n") index += 1;
+    start = index + 1;
+    line += 1;
+  }
+  if (start <= source.length) entries.push({ line, text: source.slice(start) });
+  return entries;
+}
+
+function searchLineMode({ source, relativePath, group }) {
+  const pattern = groupRegExp(group, { multiline: false });
+  const matches = [];
+  for (const entry of sourceLineEntries(source)) {
+    pattern.lastIndex = 0;
+    let match;
+    while ((match = pattern.exec(entry.text)) !== null) {
+      matches.push({
+        group: group.name,
+        path: relativePath,
+        line: entry.line,
+        text: entry.text,
+      });
+      if (match[0].length === 0) pattern.lastIndex += 1;
+    }
+  }
+  return matches;
+}
+
+function searchMultilineMode({ source, relativePath, group }) {
+  const pattern = groupRegExp(group, { multiline: true });
+  const matches = [];
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    matches.push({
+      group: group.name,
+      path: relativePath,
+      line: lineNumberAt(source, match.index),
+      text: sourceLineAt(source, match.index),
+    });
+    if (match[0].length === 0) pattern.lastIndex += 1;
+  }
+  return matches;
+}
+
+function searchGroupPortable({ cwd, group, mode }) {
+  const resolvedCwd = path.resolve(cwd);
+  const matches = [];
+  for (const relativePath of listScannedFilesPortable({ cwd, mode })) {
+    const absolutePath = path.resolve(resolvedCwd, relativePath);
+    if (absolutePath !== resolvedCwd && !absolutePath.startsWith(`${resolvedCwd}${path.sep}`)) {
+      throw new Error(`Hard-cut search rejected an out-of-root path: ${relativePath}`);
+    }
+    const source = readBoundedSource(absolutePath, relativePath);
+    matches.push(
+      ...(group.multiline
+        ? searchMultilineMode({ source, relativePath, group })
+        : searchLineMode({ source, relativePath, group })),
+    );
+  }
+  return matches.sort(
+    (left, right) =>
+      left.path.localeCompare(right.path) ||
+      left.line - right.line ||
+      left.text.localeCompare(right.text),
+  );
+}
+
 function searchGroup({ cwd, group, mode, rgPath }) {
   const result = spawnSync(rgPath, searchArguments(group, mode), {
     cwd,
@@ -358,6 +523,9 @@ function searchGroup({ cwd, group, mode, rgPath }) {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error) {
+    if (isDefaultMissingSearch(result.error, rgPath)) {
+      return searchGroupPortable({ cwd, group, mode });
+    }
     throw new Error(`Hard-cut search failed for ${group.name}: ${result.error.message}`);
   }
   if (result.status === 1) return [];
@@ -396,6 +564,9 @@ function listScannedFiles({ cwd, mode, rgPath }) {
     maxBuffer: 64 * 1024 * 1024,
   });
   if (result.error) {
+    if (isDefaultMissingSearch(result.error, rgPath)) {
+      return listScannedFilesPortable({ cwd, mode });
+    }
     throw new Error(`Hard-cut search failed for lexical file list: ${result.error.message}`);
   }
   if (result.status === 1) return [];

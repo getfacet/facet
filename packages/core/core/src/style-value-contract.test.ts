@@ -98,6 +98,19 @@ describe("STYLE_VALUE_CONTRACT", () => {
     }
   });
 
+  it("exposes width fit metadata and allowed property choices", () => {
+    const widthProperty = BRICK_CONTRACT.box.style.root.properties.width!;
+    const widthChoices = styleValueChoicesForProperty("width", widthProperty);
+
+    expect(names(STYLE_VALUE_CONTRACT.fixed.width)).toEqual(["auto", "fit", "full"]);
+    expect(widthChoices.map(({ name }) => name)).toEqual(["auto", "fit", "full"]);
+    expect(widthChoices.find(({ name }) => name === "fit")).toMatchObject({
+      description: expect.stringContaining("intrinsic"),
+      useWhen: expect.stringContaining("compact"),
+    });
+    expect(isStyleValueAllowedForProperty("width", widthProperty, "fit")).toBe(true);
+  });
+
   it("provides bounded agent guidance without concrete CSS values", () => {
     const serialized = JSON.stringify(STYLE_VALUE_CONTRACT);
     expect(serialized).not.toMatch(/#[0-9a-f]{3,8}|\b\d+(?:\.\d+)?(?:px|rem|em|vh|vw)\b/i);

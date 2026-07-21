@@ -1,5 +1,11 @@
 import { DEFAULT_PATTERNS, DEFAULT_THEME } from "@facet/assets";
-import { BRICK_TYPES, validateAuthorTree, type FacetPattern } from "@facet/core";
+import {
+  BRICK_TYPES,
+  validateAuthorTree,
+  type BoxNode,
+  type FacetPattern,
+  type MediaNode,
+} from "@facet/core";
 import { describe, expect, it } from "vitest";
 
 import { BRICK_SAMPLE_CONSTRUCTORS } from "./catalog-brick-samples.js";
@@ -31,6 +37,24 @@ describe("createCatalogSamples", () => {
         expect(sample.tree.nodes[sample.nodeId]?.style?.preset).toBe(sample.preset);
       }
     }
+
+    const primaryAction = samples.find(({ itemId }) => itemId === "preset:box:primaryAction");
+    expect(primaryAction?.status).toBe("render");
+    if (primaryAction?.status !== "render" || primaryAction.kind !== "preset") {
+      throw new Error("Expected primaryAction preview.");
+    }
+    const primaryActionNode = primaryAction.tree.nodes[primaryAction.nodeId] as BoxNode;
+    expect(primaryActionNode.style?.preset).toBe("primaryAction");
+    expect(primaryActionNode.onPress).toEqual({ kind: "agent", name: "catalog_primary_action" });
+
+    const mediaSample = samples.find(({ itemId }) => itemId === "brick:media");
+    expect(mediaSample?.status).toBe("render");
+    if (mediaSample?.status !== "render" || mediaSample.kind !== "brick") {
+      throw new Error("Expected media Brick preview.");
+    }
+    expect((mediaSample.tree.nodes[mediaSample.nodeId] as MediaNode).src).toBe(
+      "/facet-catalog.svg",
+    );
 
     const patternSamples = samples.filter(
       (sample) => sample.status === "render" && sample.kind === "pattern",

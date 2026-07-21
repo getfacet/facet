@@ -40,6 +40,7 @@ describe("Facet Lab web host", () => {
     const staticRoot = await mkdtemp(join(tmpdir(), "facet-lab-web-host-"));
     closeTasks.push(() => rm(staticRoot, { recursive: true, force: true }));
     await writeFile(join(staticRoot, "index.html"), "<!doctype html><title>Facet Lab test</title>");
+    await writeFile(join(staticRoot, "facet-catalog.svg"), '<svg role="img"></svg>');
     const outsideRoot = await mkdtemp(join(tmpdir(), "facet-lab-web-host-outside-"));
     closeTasks.push(() => rm(outsideRoot, { recursive: true, force: true }));
     await writeFile(join(outsideRoot, "secret.txt"), "must not be served");
@@ -73,6 +74,11 @@ describe("Facet Lab web host", () => {
     expect((await fetch(`${listening.baseUrl}/health`)).status).toBe(200);
     expect(await (await fetch(`${listening.baseUrl}/api/catalog`)).json()).toEqual({ ok: true });
     expect((await fetch(`${listening.baseUrl}/`)).status).toBe(200);
+    expect((await fetch(`${listening.baseUrl}/catalog`)).status).toBe(200);
+    const rootAsset = await fetch(`${listening.baseUrl}/facet-catalog.svg`);
+    expect(rootAsset.status).toBe(200);
+    expect(rootAsset.headers.get("content-type")).toBe("image/svg+xml");
+    expect(await rootAsset.text()).toContain("<svg");
     expect((await fetch(`${listening.baseUrl}/assets/leak.txt`)).status).toBe(404);
     expect((await fetch(`${listening.baseUrl}/agent/stream`)).status).toBe(404);
     expect((await fetch(`${listening.baseUrl}/stream?visitorId=unknown`)).status).toBe(403);

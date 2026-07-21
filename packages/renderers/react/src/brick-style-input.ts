@@ -1,5 +1,12 @@
 import type { CSSProperties } from "react";
-import type { BrickStyleDefinition, InputKind, InputStyle, RichTextStyle } from "@facet/core";
+import {
+  BRICK_CONTRACT,
+  isStyleValueAllowedForProperty,
+  type BrickStyleDefinition,
+  type InputKind,
+  type InputStyle,
+  type RichTextStyle,
+} from "@facet/core";
 import {
   INTERACTION_CLASS,
   INTERACTION_PROPERTIES,
@@ -12,6 +19,8 @@ import { rootContainmentStyle } from "./layout-contract.js";
 import { resolveBrickStyle } from "./style-resolver.js";
 import { projectSurface, projectTypography } from "./style-projection.js";
 import type { ResolvedTheme } from "./theme.js";
+import { safeOwnValue } from "./renderer-value-safety.js";
+import { projectWidthStyle } from "./width-style.js";
 
 type InputDefinition = BrickStyleDefinition<"input">;
 type RichTextDefinition = BrickStyleDefinition<"richtext">;
@@ -67,6 +76,48 @@ function ownEntries(value: unknown): readonly [string, unknown][] {
   } catch {
     return [];
   }
+}
+
+function hasAllowedAuthoredInputRootProperty(
+  value: unknown,
+  property: "alignItems" | "direction",
+): boolean {
+  const contract = BRICK_CONTRACT.input.style.root.properties[property];
+  const authored = safeOwnValue(value, property);
+  return isStyleValueAllowedForProperty(property, contract, authored);
+}
+
+function hasAllowedPresetInputRootProperty(
+  theme: ResolvedTheme,
+  authoredStyle: unknown,
+  property: "alignItems" | "direction",
+): boolean {
+  const presetName = safeOwnValue(authoredStyle, "preset");
+  if (typeof presetName !== "string") return false;
+  const inputPresets = safeOwnValue(theme.presets, "input");
+  const preset = safeOwnValue(inputPresets, presetName);
+  const presetStyle = safeOwnValue(preset, "style");
+  return hasAllowedAuthoredInputRootProperty(presetStyle, property);
+}
+
+function hasAllowedThemeDefaultInputRootProperty(
+  theme: ResolvedTheme,
+  property: "alignItems" | "direction",
+): boolean {
+  const inputDefaults = safeOwnValue(theme.defaults, "input");
+  return hasAllowedAuthoredInputRootProperty(inputDefaults, property);
+}
+
+function hasAllowedInputRootLayoutIntent(
+  theme: ResolvedTheme,
+  authoredStyle: unknown,
+  property: "alignItems" | "direction",
+): boolean {
+  return (
+    hasAllowedThemeDefaultInputRootProperty(theme, property) ||
+    hasAllowedAuthoredInputRootProperty(authoredStyle, property) ||
+    hasAllowedPresetInputRootProperty(theme, authoredStyle, property)
+  );
 }
 
 function statePresentation(
@@ -162,19 +213,25 @@ export function resolveInputStylePresentation(
   inputKind: InputKind,
 ): InputStylePresentation {
   const style = resolveBrickStyle(theme, "input", authoredStyle, { inputKind });
+  const isBooleanField = inputKind === "checkbox" || inputKind === "switch";
+  const authoredDirection = hasAllowedInputRootLayoutIntent(theme, authoredStyle, "direction");
+  const authoredAlignItems = hasAllowedInputRootLayoutIntent(theme, authoredStyle, "alignItems");
   const root: CSSProperties = {
     display: "flex",
-    flexDirection: style.direction ?? "column",
+    flexDirection: isBooleanField && !authoredDirection ? "row" : (style.direction ?? "column"),
   };
   if (style.gap !== undefined) root.gap = theme.space[style.gap];
-  if (style.alignItems !== undefined)
+  if (isBooleanField && !authoredAlignItems) {
+    root.alignItems = "center";
+  } else if (style.alignItems !== undefined) {
     root.alignItems =
       style.alignItems === "start"
         ? "flex-start"
         : style.alignItems === "end"
           ? "flex-end"
           : style.alignItems;
-  if (style.width === "full") root.width = "100%";
+  }
+  Object.assign(root, projectWidthStyle(style.width));
 
   const controlValues = style.control;
   const controlBase: CSSProperties = {

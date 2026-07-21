@@ -38,6 +38,12 @@ direct Brick style.
 The default sans stack is `Nunito, sans-serif`. This package exports data only;
 a host that wants the exact Nunito face must load the font in its own shell.
 
+The bundled Theme is a neutral baseline, not the ceiling for a brand. Product
+surfaces that need tighter density, stronger brand color, or exact repeated
+composition should extend `DEFAULT_THEME` into an operator-owned Theme/Preset
+set and pair it with an exact Pattern list. The package defaults stay generic
+and validated; service-specific benchmark assets live outside this package.
+
 ## Default Patterns
 
 `DEFAULT_PATTERNS` contains these reusable references: `hero`, `card`,

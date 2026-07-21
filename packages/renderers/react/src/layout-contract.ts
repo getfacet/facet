@@ -10,7 +10,7 @@ export function rootContainmentStyle(style: CSSProperties = {}): CSSProperties {
     boxSizing: "border-box",
     minWidth: style.minWidth ?? 0,
     maxWidth: style.maxWidth ?? "100%",
-    overflowWrap: style.overflowWrap ?? "anywhere",
+    overflowWrap: style.overflowWrap ?? "break-word",
   };
 }
 

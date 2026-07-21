@@ -9,6 +9,7 @@ import {
   waitForEvidence,
   type LabHarness,
 } from "./lab-harness.js";
+import { REFERENCE_BENCHMARK_IDS } from "../src/scenarios/reference-benchmarks.js";
 
 interface CaptureResponse {
   readonly persisted: boolean;
@@ -65,6 +66,31 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await harness?.close();
   });
 
+  it("shows reference benchmark previews without turning them into official scenario runs", async () => {
+    const scenarioPage = await harness.newPage();
+    await scenarioPage.goto(`${harness.url}/scenarios`, { waitUntil: "networkidle" });
+
+    await visible(scenarioPage.getByRole("heading", { name: "Reference benchmarks" }));
+    expect(
+      await scenarioPage.getByLabel("Official scenario catalog").locator("article").count(),
+    ).toBe(8);
+    expect(
+      await scenarioPage.getByLabel("Reference benchmark catalog").locator("button").count(),
+    ).toBe(REFERENCE_BENCHMARK_IDS.length);
+
+    await scenarioPage.getByRole("button", { name: /Commerce product and checkout/u }).click();
+    await visible(scenarioPage.locator("[data-reference-benchmark='commerce-product-checkout']"));
+    await visible(scenarioPage.getByLabel(/Commerce product and checkout benchmark preview/u));
+    await scenarioPage.locator("#reference-benchmark-viewport").selectOption("mobile");
+    await scenarioPage.locator("#reference-benchmark-color").selectOption("dark");
+    await visible(scenarioPage.locator("[data-reference-preview-viewport='mobile']"));
+    await visible(scenarioPage.locator("[data-reference-preview-color-mode='dark']"));
+    expect(await scenarioPage.locator("#generate-scenario").innerText()).not.toContain(
+      "Commerce product and checkout",
+    );
+    await scenarioPage.close();
+  }, 120_000);
+
   it("accounts for package assets and runs the same live path twice through replay, compare, capture, and hybrid evaluation", async () => {
     const catalogPage = await harness.newPage();
     await catalogPage.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });
@@ -75,6 +101,28 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await inspectEveryItem(catalogPage, "Bricks", 11);
     await inspectEveryItem(catalogPage, "Presets", 43);
     await inspectEveryItem(catalogPage, "Patterns", 17);
+
+    await catalogPage.getByRole("button", { name: /^Presets \(/u }).click();
+    await catalogPage.getByRole("button", { name: /^Inspect Preset primaryAction$/u }).click();
+    await visible(catalogPage.locator("[data-catalog-item='preset:box:primaryAction']"));
+    await visible(catalogPage.locator(".catalog-preview-canvas [role='button']").first());
+    await catalogPage
+      .getByRole("button", { name: /^Inspect Preset badge$/u })
+      .first()
+      .click();
+    await visible(catalogPage.locator("[data-catalog-item='preset:box:badge']"));
+    await visible(catalogPage.locator(".catalog-preview-canvas [style*='width: fit-content']"));
+
+    await catalogPage.getByRole("button", { name: /^Bricks \(/u }).click();
+    await catalogPage.getByRole("button", { name: /^Inspect Brick chart$/u }).click();
+    await visible(catalogPage.locator(".catalog-preview-canvas [data-facet-chart-axis='x']"));
+    await visible(catalogPage.locator(".catalog-preview-canvas [data-facet-chart-legend='true']"));
+    await catalogPage.getByRole("button", { name: /^Inspect Brick list$/u }).click();
+    await visible(
+      catalogPage.locator(".catalog-preview-canvas [data-facet-list-content='true']").first(),
+    );
+    await catalogPage.getByRole("button", { name: /^Inspect Brick progress$/u }).click();
+    await visible(catalogPage.locator(".catalog-preview-canvas").getByText("62%"));
 
     await catalogPage.locator("#catalog-preview-viewport").selectOption("mobile");
     await catalogPage.locator("#catalog-preview-color").selectOption("dark");

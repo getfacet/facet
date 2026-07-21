@@ -114,13 +114,19 @@ detached, content-digested snapshot with each run. Custom Theme/Pattern import
 is intentionally not a Lab feature; use the package authoring workflow when
 testing a custom design system in an integrating application.
 
+Reference benchmarks are the exception for contributor evaluation. A benchmark
+may include a Lab-private custom Theme and exact Pattern list, validated through
+Core, to test whether service-owned assets plus the closed Brick vocabulary can
+recreate a real product surface. These assets are not package defaults, are not
+published Patterns, and do not let benchmark documents emit raw CSS or markup.
+
 Use the [Design System guide](../../docs/DESIGN-SYSTEM.md) to author a Theme or
 Pattern; Lab is an inspector and validator, not a general visual page builder.
 
 ## Generate and scenarios
 
-Generate separates three choices and always executes through a configured real
-provider/model:
+Generate separates provider-backed runs from static reference inspection. Runs
+always execute through a configured real provider/model:
 
 1. **Free-form or official.** Free-form uses the operator prompt. Official
    scenarios provide a checked brief.
@@ -130,6 +136,29 @@ provider/model:
    instead of silently passing.
 3. **Viewport and color mode.** Each run records mobile, tablet, or desktop plus
    light or dark provenance.
+
+The Scenarios route also includes **Reference benchmarks**. These are
+hand-authored static target previews for judging whether the current Brick,
+Preset, and Pattern vocabulary can recreate real product surfaces. They are not
+provider-run official scenarios, are not added to the package-default Patterns,
+do not fabricate run evidence, and use synthetic content/assets with source URLs
+recorded only as bounded reference notes. Supabase and AMA2 benchmarks use
+benchmark-specific custom assets so design quality is judged against a
+service-owned Theme/Preset/Pattern set rather than the package default theme.
+
+Reference benchmarks are **human-authored ceiling tests**, not generic samples.
+When adding or revising one:
+
+1. Capture the official public reference at a fixed desktop viewport before
+   authoring.
+2. Decompose the reference into page shell, layout regions, component inventory,
+   density, hierarchy, and chart/table requirements.
+3. Write the Facet document by hand first; do not treat provider output as the
+   ceiling.
+4. Render the Facet document in Lab and compare screenshots side-by-side with
+   the reference.
+5. Classify remaining gaps as authoring, asset guidance, or Brick/renderer
+   vocabulary before changing Core.
 
 The eight official scenario families are:
 

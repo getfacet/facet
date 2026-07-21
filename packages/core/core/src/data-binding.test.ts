@@ -286,7 +286,7 @@ describe("resolveNodeData (DC-005 precedence + projection)", () => {
         label: "CPU",
         value: "91",
         variant: "emphasis", // style-hard-cut: allowed-negative
-        tone: "success",
+        tone: "success", // style-hard-cut: allowed-negative
       },
     ] as unknown as KeyValueNode["items"];
 

@@ -22,7 +22,7 @@ copy an exhaustive Brick, property, or token table.
 | `fontSize`, `gap`, `background` | style property | Core defines it per Brick and target; the agent may choose it there. |
 | `label`, `control`, `track`, `fill` | Brick-owned style target | Core defines it for one Brick; the renderer owns the corresponding internal part. |
 | `md`, `lg`, `success` | token name | Core defines its meaning and where it is allowed; the agent chooses the name. |
-| `row`, `column`, `auto`, `full` | fixed choice | Core and the renderer define behavior that does not change with a brand. |
+| `row`, `column`, `auto`, `fit`, `full` | fixed choice | Core and the renderer define behavior that does not change with a brand. |
 | `16px`, `#16a34a`, a font stack | concrete Theme value | The operator supplies it inside Theme data; the agent never puts it in a Facet Document. |
 | `space.md = 16px` | Theme token definition | The Theme maps one Core token name to one concrete value. |
 | `panel`, `heading` | Preset name | A Theme defines it for one Brick; the agent may select it from that Brick's style. |
@@ -62,6 +62,12 @@ token or fixed-choice domain. Core derives validation, Theme checks, renderer
 resolution, and `get_style_choices` from that same subset; membership in a
 broader domain alone does not make a value valid at every property that uses
 the domain.
+
+For width, authors choose only the fixed choices Core exposes. `auto` leaves the
+Brick in its default normal-flow sizing, `fit` asks the renderer for compact
+content-sized flow that is still bounded by the parent slot, and `full` fills
+the parent slot. Authors do not send pixel widths, percentages, margins, or
+arbitrary CSS to achieve those behaviors.
 
 ## The four authoring forms
 
@@ -184,6 +190,11 @@ The package contains data only. The host passes these values through its asset
 and renderer wiring; importing them does not create a renderer, runtime, or
 agent.
 
+The bundled badge and action Presets use compact `width:"fit"` sizing by
+default. If an application or Pattern needs a full-row call to action, author
+that specific Brick with a direct `width:"full"` override instead of treating
+the Preset itself as globally full-width.
+
 ### Inspect and validate assets in Facet Lab
 
 Repository contributors can use [Facet Lab's Catalog](../apps/facet-lab/README.md#catalog-and-asset-truth)
@@ -194,11 +205,14 @@ definitions from `@facet/core` and derives Theme defaults, same-Brick Presets,
 and Patterns from the validated package-default assets. It intentionally has no
 hand-maintained Lab roster.
 
-Facet Lab intentionally uses only `@facet/assets` package defaults. This keeps
-Catalog previews, Generate runs, saved evidence, and Replay comparisons on one
-known Theme and Pattern baseline. Test a custom Theme or Pattern list in the
-integrating application that owns those assets; Lab does not provide a custom
-asset import or turn Theme authoring into model-authored CSS.
+Facet Lab's Catalog, Generate runs, saved evidence, and Replay comparisons use
+the `@facet/assets` package defaults as their stable baseline. Reference
+benchmarks are different: they may carry Lab-private custom Themes and exact
+Pattern lists so contributors can test whether the closed Brick vocabulary can
+match a real product surface when the service/agent supplies its own assets.
+Those custom assets are still ordinary validated Theme/Preset/Pattern data; Lab
+does not turn Theme authoring into model-authored CSS or add a second runtime
+component system.
 
 ## How an operator defines a Theme
 
@@ -209,6 +223,13 @@ does not provide one, Facet uses `DEFAULT_THEME`. A Theme contains:
 - one valid default style for every Brick; and
 - optional same-Brick Presets with `description`, `useWhen`, optional
   `avoidWhen`, and a style bundle.
+
+Density belongs here. A dense admin console and a roomy marketing landing page
+should normally differ through Theme token values, Brick defaults, and
+same-Brick Presets. The document still chooses closed names such as `padding:
+"xs"` or `preset:"dataGrid"`; it does not author pixel widths, margins, or CSS.
+If a benchmark cannot reach the target with a custom Theme/Preset/Pattern list,
+record that as evidence before adding Core vocabulary.
 
 Starting from `DEFAULT_THEME` is the shortest safe way to create a complete
 brand Theme. Concrete CSS values belong only in this operator-side data:

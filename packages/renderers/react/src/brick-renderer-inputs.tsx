@@ -95,7 +95,6 @@ function renderBooleanField(model: FieldRenderModel, role?: "switch"): ReactNode
       aria-hidden={model.inert ? true : undefined}
       style={model.wrapperStyle}
     >
-      {model.label}
       <input
         className={model.choiceControlClassName}
         type="checkbox"
@@ -105,6 +104,7 @@ function renderBooleanField(model: FieldRenderModel, role?: "switch"): ReactNode
         style={model.choiceControlStyle}
         {...model.inertControlProps}
       />
+      {model.label}
     </label>
   );
 }

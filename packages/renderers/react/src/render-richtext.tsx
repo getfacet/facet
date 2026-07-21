@@ -221,15 +221,27 @@ function renderBlock(
       <div
         key={key}
         data-facet-list-item=""
-        style={{ ...BLOCK_BASE, display: "flex", ...listIndentCss(depth, context.theme) }}
+        style={{
+          ...BLOCK_BASE,
+          display: "grid",
+          gridTemplateColumns: "max-content minmax(0, 1fr)",
+          columnGap: context.theme.space.sm,
+          alignItems: "start",
+          ...listIndentCss(depth, context.theme),
+        }}
       >
         <span
           aria-hidden={true}
-          style={{ marginInlineEnd: context.theme.space.sm, ...context.presentation.listMarker }}
+          style={{
+            ...context.presentation.listMarker,
+            lineHeight: context.presentation.root.lineHeight,
+          }}
         >
           {"•"}
         </span>
-        <span>{children}</span>
+        <span data-facet-list-body="" style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+          {children}
+        </span>
       </div>
     );
   }

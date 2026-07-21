@@ -52,6 +52,13 @@ to arrange or present its own content is added as a deliberate closed `box`
 field instead. This keeps the roster small without turning `box` or `text` into
 open-ended escape hatches.
 
+The decision order is benchmark-first. First test the target with a custom
+Theme, same-Brick Presets, and Patterns owned by the service/agent. If the gap is
+brand, density, spacing, or repeated composition, keep it in assets. If the gap
+is reusable renderer behavior for existing content, improve the renderer. Add a
+new Brick or a new closed `box` layout field only when the benchmark proves that
+existing Bricks plus custom assets cannot express the product-grade surface.
+
 Actions are also closed:
 
 - `agent` sends a named event to the brain and may collect visible named inputs;
@@ -122,7 +129,12 @@ as `sm`/`md`/`lg`, semantic paint names such as `accent`/`success`, and named
 font, radius, thickness, and size scales. The Theme decides their CSS values.
 
 Fixed choices are closed renderer semantics that do not change by brand. Examples
-include `row`/`column`, `auto`/`full`, and boolean choices.
+include `row`/`column`, `auto`/`fit`/`full`, and boolean choices.
+
+For width, `auto` keeps default normal-flow sizing, `fit` requests bounded
+content-sized flow, and `full` fills the parent slot. All three remain named
+renderer semantics: the author cannot provide raw widths, margins, percentages,
+or arbitrary CSS.
 
 Both sources are defined in Core with bounded descriptions and `useWhen`
 guidance. A Brick property points to exactly one allowed value set. The agent
@@ -300,11 +312,22 @@ Every native renderer root follows three rules:
 - **Child owns internal layout.** A child stays inside the slot its parent gives
   it.
 - **Renderer owns containment.** Long text wraps; controls and media stay within
-  bounds; tables use renderer-owned bounded overflow.
+  bounds; tables use renderer-owned bounded overflow; charts own their internal
+  axis, mark, tick, and legend geometry.
 
 There is no general authored positioning or z-index. A `box` backdrop and
 modal/drawer are bounded renderer-owned mechanisms with fixed layering and
 containment, not arbitrary CSS escape hatches.
+
+Compact sizing stays inside the same layout boundary. A child may request
+`width:"fit"` or `width:"full"`, but both are normal-flow choices interpreted
+and bounded by the renderer; neither grants coordinates, custom breakpoints, or
+open CSS.
+
+Density is not a layout primitive. Compact and spacious products use different
+Theme token values, defaults, and Presets while preserving the same document
+vocabulary. If a density target requires new structural behavior, that evidence
+belongs in the benchmark gap log before Core changes.
 
 ## Patches and the event loop
 

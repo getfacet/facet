@@ -4,14 +4,20 @@ import type { ReactNode } from "react";
 import type { FacetTheme } from "@facet/core";
 
 import { OFFICIAL_SCENARIOS, type OfficialScenario } from "../scenarios/scenarios.js";
+import {
+  REFERENCE_BENCHMARKS,
+  type ReferenceBenchmark,
+} from "../scenarios/reference-benchmarks.js";
 import type { BrowserCreatedRun, LabApiClient } from "./api-client.js";
 import { GeneratePage } from "./GeneratePage.js";
+import { ReferenceBenchmarksPanel } from "./ReferenceBenchmarksPanel.js";
 import type { LabCapabilities } from "./run-config.js";
 
 export interface ScenariosPageProps {
   readonly client?: LabApiClient;
   readonly capabilities?: LabCapabilities;
   readonly scenarios?: readonly OfficialScenario[];
+  readonly referenceBenchmarks?: readonly ReferenceBenchmark[];
   readonly theme?: FacetTheme;
   readonly onRunStarted?: (run: BrowserCreatedRun) => void;
 }
@@ -42,6 +48,7 @@ export function ScenariosPage({
   client,
   capabilities,
   scenarios = OFFICIAL_SCENARIOS,
+  referenceBenchmarks = REFERENCE_BENCHMARKS,
   theme,
   onRunStarted,
 }: ScenariosPageProps = {}): ReactNode {
@@ -100,6 +107,11 @@ export function ScenariosPage({
           </li>
         ))}
       </ul>
+
+      <ReferenceBenchmarksPanel
+        benchmarks={referenceBenchmarks}
+        {...(theme === undefined ? {} : { theme })}
+      />
 
       <section className="lab-page-section" aria-labelledby="scenario-run-title">
         <h2 id="scenario-run-title">Run {selected.name}</h2>

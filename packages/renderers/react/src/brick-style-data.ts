@@ -57,6 +57,7 @@ export interface ChartTargetStyles {
   readonly root: CSSProperties;
   readonly title: CSSProperties;
   readonly plot: CSSProperties;
+  readonly axisColor: string;
   readonly seriesColors: readonly string[];
   readonly seriesThickness: string;
 }
@@ -73,10 +74,12 @@ export function chartTargetStyles(
     style.series?.color5,
     style.series?.color6,
   ] as const;
+  const title = targetTextStyle(style.title, theme);
   return {
     root: rootStyle(style, theme),
-    title: targetTextStyle(style.title, theme),
+    title,
     plot: targetBoxStyle(style.plot, theme),
+    axisColor: typeof title.color === "string" ? title.color : theme.color.foreground,
     seriesColors: DEFAULT_CHART_COLORS.map(
       (fallback, index) => theme.color[authoredColors[index] ?? fallback],
     ),
@@ -99,7 +102,7 @@ export function listTargetStyles(
 ): ListTargetStyles {
   return {
     root: rootStyle(style, theme),
-    item: { ...targetBoxStyle(style.item, theme), display: "list-item" },
+    item: targetBoxStyle(style.item, theme),
     itemGap: style.item?.gap === undefined ? undefined : theme.space[style.item.gap],
     title: targetTextStyle(style.title, theme),
     body: targetTextStyle(style.body, theme),
@@ -122,9 +125,9 @@ export function keyValueTargetStyles(
     root: rootStyle(style, theme),
     item: {
       ...boxStyle(style.item, theme),
-      flexDirection: "row",
-      justifyContent: "space-between",
-      flexWrap: "wrap",
+      display: "grid",
+      gridTemplateColumns: "auto minmax(0, 1fr)",
+      alignItems: "baseline",
     },
     label: targetTextStyle(style.label, theme),
     value: targetTextStyle(style.value, theme),
