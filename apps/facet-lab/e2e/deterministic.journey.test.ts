@@ -85,6 +85,22 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await scenarioPage.locator("#reference-benchmark-color").selectOption("dark");
     await visible(scenarioPage.locator("[data-reference-preview-viewport='mobile']"));
     await visible(scenarioPage.locator("[data-reference-preview-color-mode='dark']"));
+    await scenarioPage.getByRole("button", { name: /Google Search Console performance/u }).click();
+    await scenarioPage.locator("#reference-benchmark-viewport").selectOption("desktop");
+    await scenarioPage.getByRole("button", { name: "Open visual comparison" }).click();
+    await visible(scenarioPage.locator("[data-testid='reference-comparison']"));
+    await visible(
+      scenarioPage.locator("[data-reference-comparison-panel='reference'] img").first(),
+    );
+    await visible(scenarioPage.locator("[data-reference-comparison-facet-surface='true']"));
+    expect(
+      await scenarioPage.locator("[data-testid='reference-comparison'] .lab-topbar").count(),
+    ).toBe(0);
+    expect(
+      await scenarioPage.locator("[data-testid='reference-comparison'] .lab-primary-nav").count(),
+    ).toBe(0);
+    await scenarioPage.locator("#reference-comparison-classification").selectOption("major-drift");
+    await visible(scenarioPage.locator("[data-reference-comparison-classification='major-drift']"));
     expect(await scenarioPage.locator("#generate-scenario").innerText()).not.toContain(
       "Commerce product and checkout",
     );

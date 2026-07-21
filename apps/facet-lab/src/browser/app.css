@@ -1425,6 +1425,142 @@ a {
   width: min(100%, 768px);
 }
 
+.lab-reference-benchmark-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.lab-reference-benchmark-actions button {
+  min-height: 36px !important;
+  padding: 7px 12px !important;
+  font-size: 11px !important;
+}
+
+.lab-reference-comparison {
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid var(--lab-line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--lab-panel-strong) 92%, var(--lab-bg));
+}
+
+.lab-reference-comparison-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.lab-reference-comparison-header h4 {
+  margin: 0;
+  font-size: 19px;
+}
+
+.lab-reference-comparison-header p {
+  margin: 5px 0 0;
+  color: var(--lab-muted);
+}
+
+.lab-reference-comparison-header label {
+  min-width: 220px;
+  margin: 0 !important;
+  font-size: 10px !important;
+}
+
+.lab-reference-comparison-header select {
+  width: 100% !important;
+  min-height: 36px !important;
+  margin-top: 5px;
+}
+
+.lab-reference-comparison-classification-summary {
+  margin: 12px 0 0 !important;
+  color: var(--lab-muted);
+}
+
+.lab-reference-comparison-diagnostics {
+  display: grid;
+  gap: 6px;
+  margin: 12px 0 0;
+  padding-left: 18px;
+  color: var(--lab-muted);
+}
+
+.lab-reference-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.lab-reference-comparison-panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--lab-line);
+  border-radius: 10px;
+  background: var(--lab-panel);
+}
+
+.lab-reference-comparison-panel header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.lab-reference-comparison-panel h5 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.lab-reference-comparison-panel header p {
+  margin: 0;
+  color: var(--lab-muted);
+  font-size: 10px;
+}
+
+.lab-reference-comparison-panel img,
+.lab-reference-comparison-facet-surface {
+  display: block;
+  width: 100%;
+  margin-inline: auto;
+  max-height: 640px;
+  border: 1px solid var(--lab-line);
+  border-radius: 8px;
+  background: var(--lab-panel-strong);
+  overflow: auto;
+}
+
+.lab-reference-comparison-panel img {
+  height: auto;
+  object-fit: contain;
+}
+
+.lab-reference-comparison-facet-surface {
+  padding: 0;
+}
+
+.lab-reference-comparison-unavailable,
+.lab-reference-comparison-render-error {
+  display: grid;
+  gap: 6px;
+  min-height: 220px;
+  align-content: center;
+  padding: 18px;
+  border: 1px dashed var(--lab-line);
+  border-radius: 8px;
+  color: var(--lab-muted);
+  background: color-mix(in srgb, var(--lab-bg) 64%, var(--lab-panel-strong));
+}
+
+.lab-reference-comparison-unavailable strong,
+.lab-reference-comparison-render-error strong {
+  color: var(--lab-ink);
+}
+
 .catalog-document-panel > p,
 .catalog-package-data > p {
   margin: 7px 0 0;
@@ -1689,6 +1825,20 @@ a {
   .catalog-preview > header {
     display: grid;
     align-items: start;
+  }
+
+  .lab-reference-comparison-header,
+  .lab-reference-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .lab-reference-comparison-header {
+    display: grid;
+    align-items: start;
+  }
+
+  .lab-reference-comparison-header label {
+    min-width: 0;
   }
 
   .catalog-preview-controls {

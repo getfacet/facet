@@ -151,6 +151,21 @@ Their Lab status separates technical rendering from design fidelity:
 human screenshot review; **blocked by gaps** and **needs design QA** keep
 remaining Brick, renderer, asset-guidance, and authoring limitations visible.
 
+The Reference benchmarks panel includes a Lab-only **Visual comparison mode**.
+It shows the selected benchmark's reference surface beside a chrome-free
+`StageRenderer` panel at the same viewport, with a local closed verdict
+(`unresolved`, `matches-reference`, `minor-drift`, `major-drift`, or `blocked`)
+for contributor review. This mode is internal QA for judging Facet authoring
+fidelity. It is not end-user UI, not provider-run scenario evidence, and does
+not mutate or persist run records.
+
+Reference images are registered as bounded same-origin static assets under
+`apps/facet-lab/public/reference-benchmarks/`. A missing reference image renders
+an explicit unavailable state while the Facet side remains visible. v1 does not
+capture authenticated product pages, save comparison screenshots, or perform a
+blocking pixel/vision score; those decisions stay with the reviewer until a
+separate evidence workflow exists.
+
 Reference benchmarks are **human-authored ceiling tests**, not generic samples.
 When adding or revising one:
 

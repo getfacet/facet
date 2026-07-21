@@ -19,6 +19,11 @@ import {
   presentReferenceBenchmarks,
   type PresentedReferenceBenchmarkRender,
 } from "./reference-benchmark-presenter.js";
+import { ReferenceComparisonView } from "./ReferenceComparisonView.js";
+import {
+  presentReferenceComparison,
+  type ReferenceComparisonClassification,
+} from "./reference-comparison-presenter.js";
 
 type StageTheme = ComponentProps<typeof StageRenderer>["theme"];
 
@@ -60,13 +65,30 @@ function RenderBenchmark({
   benchmark,
   viewport,
   colorMode,
+  comparisonOpen,
+  comparisonClassification,
   onViewChange,
+  onOpenComparison,
+  onCloseComparison,
+  onClassificationChange,
 }: {
   readonly benchmark: PresentedReferenceBenchmarkRender;
   readonly viewport: ViewportName;
   readonly colorMode: ColorMode;
+  readonly comparisonOpen: boolean;
+  readonly comparisonClassification: ReferenceComparisonClassification;
   readonly onViewChange: (viewport: ViewportName, colorMode: ColorMode) => void;
+  readonly onOpenComparison: () => void;
+  readonly onCloseComparison: () => void;
+  readonly onClassificationChange: (classification: ReferenceComparisonClassification) => void;
 }): ReactNode {
+  const comparison = presentReferenceComparison({
+    selected: benchmark,
+    viewport,
+    colorMode,
+    classification: comparisonClassification,
+  });
+
   return (
     <article
       className="lab-reference-benchmark-detail"
@@ -206,7 +228,24 @@ function RenderBenchmark({
             />
           </div>
         </div>
+        <div className="lab-reference-benchmark-actions">
+          <button type="button" onClick={onOpenComparison}>
+            Open visual comparison
+          </button>
+          {comparisonOpen ? (
+            <button type="button" onClick={onCloseComparison}>
+              Close visual comparison
+            </button>
+          ) : null}
+        </div>
       </section>
+
+      {comparisonOpen ? (
+        <ReferenceComparisonView
+          comparison={comparison}
+          onClassificationChange={onClassificationChange}
+        />
+      ) : null}
 
       <section aria-labelledby={`${benchmark.id}-qa`}>
         <h4 id={`${benchmark.id}-qa`}>Design QA checklist</h4>
@@ -233,6 +272,9 @@ export function ReferenceBenchmarksPanel({
   );
   const [viewport, setViewport] = useState<ViewportName>(initialViewport);
   const [colorMode, setColorMode] = useState<ColorMode>(initialColorMode);
+  const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [comparisonClassification, setComparisonClassification] =
+    useState<ReferenceComparisonClassification>("unresolved");
   const presentation = useMemo(
     () =>
       presentReferenceBenchmarks({
@@ -243,6 +285,12 @@ export function ReferenceBenchmarksPanel({
     [benchmarks, selectedId, theme],
   );
   const selected = presentation.selected;
+
+  const selectBenchmark = (nextSelectedId: string): void => {
+    setSelectedId(nextSelectedId);
+    setComparisonOpen(false);
+    setComparisonClassification("unresolved");
+  };
 
   const updateView = (nextViewport: ViewportName, nextColorMode: ColorMode): void => {
     setViewport(nextViewport);
@@ -297,7 +345,7 @@ export function ReferenceBenchmarksPanel({
             <button
               type="button"
               aria-pressed={selected?.id === benchmark.id}
-              onClick={() => setSelectedId(benchmark.id)}
+              onClick={() => selectBenchmark(benchmark.id)}
               {...(benchmark.status === "render"
                 ? { "data-reference-quality-status": benchmark.qualityStatus }
                 : {})}
@@ -330,7 +378,12 @@ export function ReferenceBenchmarksPanel({
           benchmark={selected}
           viewport={viewport}
           colorMode={colorMode}
+          comparisonOpen={comparisonOpen}
+          comparisonClassification={comparisonClassification}
           onViewChange={updateView}
+          onOpenComparison={() => setComparisonOpen(true)}
+          onCloseComparison={() => setComparisonOpen(false)}
+          onClassificationChange={setComparisonClassification}
         />
       )}
     </section>

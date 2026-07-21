@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="900" viewBox="0 0 1440 900" role="img" aria-labelledby="title desc">
+  <title id="title">Google Search Console performance reference fixture</title>
+  <desc id="desc">A deterministic Lab-owned dashboard reference image for side-by-side comparison tests.</desc>
+  <rect width="1440" height="900" fill="#f1f5f9"/>
+  <rect x="0" y="0" width="212" height="900" fill="#e8eef7"/>
+  <rect x="32" y="42" width="148" height="24" rx="12" fill="#ffffff"/>
+  <rect x="34" y="102" width="144" height="42" rx="20" fill="#bbdefb"/>
+  <rect x="40" y="164" width="128" height="14" rx="7" fill="#6b7280" opacity=".7"/>
+  <rect x="40" y="204" width="112" height="14" rx="7" fill="#6b7280" opacity=".7"/>
+  <rect x="40" y="244" width="132" height="14" rx="7" fill="#6b7280" opacity=".7"/>
+  <rect x="264" y="74" width="304" height="42" rx="21" fill="#dbeafe"/>
+  <rect x="264" y="160" width="1024" height="448" rx="18" fill="#ffffff"/>
+  <rect x="264" y="160" width="150" height="126" fill="#4285f4"/>
+  <rect x="414" y="160" width="150" height="126" fill="#673ab7"/>
+  <rect x="564" y="160" width="150" height="126" fill="#ffffff"/>
+  <rect x="714" y="160" width="150" height="126" fill="#ffffff"/>
+  <line x1="264" y1="286" x2="864" y2="286" stroke="#e5e7eb"/>
+  <line x1="414" y1="160" x2="414" y2="286" stroke="#e5e7eb"/>
+  <line x1="564" y1="160" x2="564" y2="286" stroke="#e5e7eb"/>
+  <line x1="714" y1="160" x2="714" y2="286" stroke="#e5e7eb"/>
+  <polyline points="288,500 464,500 640,374 816,500 992,438 1176,438 1262,560" fill="none" stroke="#4285f4" stroke-width="3"/>
+  <polyline points="288,532 464,520 640,420 816,282 992,484 1176,500 1262,548" fill="none" stroke="#673ab7" stroke-width="3"/>
+  <line x1="288" y1="560" x2="1262" y2="560" stroke="#9ca3af"/>
+  <line x1="288" y1="326" x2="288" y2="560" stroke="#cbd5e1"/>
+  <rect x="264" y="640" width="1024" height="190" rx="18" fill="#ffffff"/>
+  <line x1="264" y1="716" x2="1288" y2="716" stroke="#e5e7eb"/>
+  <line x1="264" y1="778" x2="1288" y2="778" stroke="#e5e7eb"/>
+  <rect x="296" y="666" width="180" height="16" rx="8" fill="#374151" opacity=".85"/>
+  <rect x="296" y="744" width="120" height="14" rx="7" fill="#6b7280" opacity=".55"/>
+  <rect x="796" y="744" width="44" height="14" rx="7" fill="#4285f4"/>
+  <rect x="1110" y="744" width="48" height="14" rx="7" fill="#673ab7"/>
+</svg>
