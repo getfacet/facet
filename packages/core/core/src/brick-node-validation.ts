@@ -2,6 +2,7 @@ import {
   BLOCK_TYPES,
   INPUT_KINDS,
   MARK_KINDS,
+  MEDIA_ICON_NAMES,
   MEDIA_KINDS,
   OVERLAY_KINDS,
   type BlockType,
@@ -13,6 +14,7 @@ import {
   type LinkTarget,
   type Mark,
   type MarkKind,
+  type MediaIconName,
   type MediaKind,
   type MediaStyle,
   type Overlay,
@@ -266,15 +268,6 @@ export function validateMedia(
   rawType: string,
 ): FacetNode | undefined {
   const key = printableKey(id);
-  const src = asString(raw.src);
-  if (src === undefined) {
-    issues.push(`node "${key}": media needs a string src`);
-    return undefined;
-  }
-  if (!isSafeMediaSrc(src)) {
-    issues.push(`node "${key}": unsafe media src dropped`);
-    return undefined;
-  }
   const kind =
     rawType === "image"
       ? "image"
@@ -289,12 +282,32 @@ export function validateMedia(
     id: string;
     type: "media";
     kind: MediaKind;
-    src: string;
+    src?: string;
+    icon?: MediaIconName;
     alt?: string;
     poster?: string;
     controls?: boolean;
     style?: MediaStyle;
-  } = { id, type: "media", kind, src };
+  } = { id, type: "media", kind };
+  if (kind === "icon") {
+    const icon = asToken<MediaIconName>(raw.icon, MEDIA_ICON_NAMES);
+    if (icon === undefined) {
+      issues.push(`node "${key}": unknown media icon ${printableValue(raw.icon)} dropped`);
+      return undefined;
+    }
+    node.icon = icon;
+  } else {
+    const src = asString(raw.src);
+    if (src === undefined) {
+      issues.push(`node "${key}": media needs a string src`);
+      return undefined;
+    }
+    if (!isSafeMediaSrc(src)) {
+      issues.push(`node "${key}": unsafe media src dropped`);
+      return undefined;
+    }
+    node.src = src;
+  }
   const style = sanitizeBrickStyle("media", raw.style, { nodeId: id, issues });
   if (style !== undefined) node.style = style;
   const alt = asString(raw.alt);

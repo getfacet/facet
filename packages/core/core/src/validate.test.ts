@@ -492,6 +492,134 @@ describe("validateTree data bricks", () => {
     expect(tree.screens).toEqual({ home: "root" });
   });
 
+  it("sanitizes media icons chart line styles and table alignment", () => {
+    const { tree, issues } = validateTree({
+      root: "root",
+      nodes: {
+        root: {
+          id: "root",
+          type: "box",
+          children: ["icon", "badIcon", "imageWithoutSrc", "table", "chart", "text", "list"],
+        },
+        icon: {
+          id: "icon",
+          type: "media",
+          kind: "icon",
+          icon: "search",
+          alt: "Search",
+          style: { iconSize: "md", borderWidth: "giant" },
+        },
+        badIcon: {
+          id: "badIcon",
+          type: "media",
+          kind: "icon",
+          icon: "sparkles",
+          alt: "Bad icon",
+        },
+        imageWithoutSrc: {
+          id: "imageWithoutSrc",
+          type: "media",
+          kind: "image",
+          alt: "Missing source",
+        },
+        table: {
+          id: "table",
+          type: "table",
+          columns: [
+            { key: "name", label: "Name", align: "end" },
+            { key: "status", label: "Status", align: "middle" },
+          ],
+          rows: [{ name: "Facet", status: "Active" }],
+          style: {
+            caption: { textWrap: "balance" },
+            header: { textWrap: "nowrap", lineClamp: 1 },
+            cell: { textWrap: "wrap", lineClamp: 2, rawCss: "display:contents" },
+          },
+        },
+        chart: {
+          id: "chart",
+          type: "chart",
+          kind: "line",
+          series: [
+            { label: "Revenue", values: [1, 2], lineStyle: "dashed" },
+            { label: "Bad", values: [3, 4], lineStyle: "zigzag" },
+          ],
+          style: {
+            plot: { axisColor: "border", gridColor: "mutedForeground", labelColor: "foreground" },
+          },
+        },
+        text: {
+          id: "text",
+          type: "text",
+          value: "Balanced heading",
+          style: { textWrap: "balance", lineClamp: 2, css: "position:absolute" },
+        },
+        list: {
+          id: "list",
+          type: "list",
+          items: [{ title: "Insight", body: "Longer body" }],
+          style: { title: { lineClamp: 1 }, body: { textWrap: "wrap", lineClamp: 3 } },
+        },
+      },
+    });
+
+    expect((tree.nodes["root"] as { children?: readonly string[] }).children).toEqual([
+      "icon",
+      "table",
+      "chart",
+      "text",
+      "list",
+    ]);
+    expect(tree.nodes["icon"]).toMatchObject({
+      type: "media",
+      kind: "icon",
+      icon: "search",
+      alt: "Search",
+      style: { iconSize: "md" },
+    });
+    expect(tree.nodes["icon"]).not.toHaveProperty("src");
+    expect(tree.nodes["badIcon"]).toBeUndefined();
+    expect(tree.nodes["imageWithoutSrc"]).toBeUndefined();
+
+    expect(tree.nodes["table"]).toMatchObject({
+      type: "table",
+      columns: [
+        { key: "name", label: "Name", align: "end" },
+        { key: "status", label: "Status" },
+      ],
+      style: {
+        caption: { textWrap: "balance" },
+        header: { textWrap: "nowrap", lineClamp: 1 },
+        cell: { textWrap: "wrap", lineClamp: 2 },
+      },
+    });
+    expect(tree.nodes["chart"]).toMatchObject({
+      type: "chart",
+      series: [
+        { label: "Revenue", values: [1, 2], lineStyle: "dashed" },
+        { label: "Bad", values: [3, 4] },
+      ],
+      style: {
+        plot: { axisColor: "border", gridColor: "mutedForeground", labelColor: "foreground" },
+      },
+    });
+    expect(tree.nodes["text"]).toMatchObject({
+      type: "text",
+      style: { textWrap: "balance", lineClamp: 2 },
+    });
+    expect(tree.nodes["list"]).toMatchObject({
+      type: "list",
+      style: { title: { lineClamp: 1 }, body: { textWrap: "wrap", lineClamp: 3 } },
+    });
+    expect(
+      issues.some((issue) => issue.includes('unknown media icon "sparkles" dropped')),
+    ).toBe(true);
+    expect(issues.some((issue) => issue.includes("media needs a string src"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("invalid table column align"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("invalid chart lineStyle"))).toBe(true);
+    expect(issues.some((issue) => issue.includes("invalid style value"))).toBe(true);
+  });
+
   it("caps chart values before reading past the point limit", () => {
     let readPastCap = false;
     const values = new Array<number>(MAX_CHART_POINTS + 10).fill(1);

@@ -19,6 +19,7 @@ import {
   type TableStyle,
 } from "./nodes.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
+import { LINE_STYLES, TEXT_ALIGNS, type LineStyle, type TextAlign } from "./tokens.js";
 import {
   MAX_CHART_POINTS,
   MAX_CHART_SERIES,
@@ -168,6 +169,7 @@ function tableColumns(value: unknown, id: string, issues: IssueSink) {
   const columns: {
     key: string;
     label: string;
+    align?: TextAlign;
     sortable?: boolean;
   }[] = [];
   for (const raw of capArray(value, MAX_TABLE_COLUMNS, id, "columns", issues)) {
@@ -178,8 +180,17 @@ function tableColumns(value: unknown, id: string, issues: IssueSink) {
     const column: {
       key: string;
       label: string;
+      align?: TextAlign;
       sortable?: boolean;
     } = { key, label };
+    if (raw.align !== undefined) {
+      const align = tokenValue<TextAlign>(raw.align, TEXT_ALIGNS);
+      if (align !== undefined) column.align = align;
+      else
+        issues.push(
+          `node "${printableKey(id)}": invalid table column align ${printableValue(raw.align)} dropped`,
+        );
+    }
     if (raw.sortable !== undefined) {
       if (typeof raw.sortable === "boolean") column.sortable = raw.sortable;
       else
@@ -229,7 +240,7 @@ function tableCell(value: unknown, id: string, issues: IssueSink): TableCell | u
 
 function chartSeries(value: unknown, id: string, issues: IssueSink) {
   if (!Array.isArray(value)) return [];
-  const out: { label: string; values: readonly number[] }[] = [];
+  const out: { label: string; values: readonly number[]; lineStyle?: LineStyle }[] = [];
   for (const raw of capArray(value, MAX_CHART_SERIES, id, "series", issues)) {
     if (!isPlainObject(raw)) continue;
     const label = boundedString(raw.label, id, "series label", MAX_NODE_LABEL_CHARS, issues);
@@ -237,7 +248,19 @@ function chartSeries(value: unknown, id: string, issues: IssueSink) {
     const values = capArray(raw.values, MAX_CHART_POINTS, id, "points", issues).filter(
       (point): point is number => typeof point === "number" && Number.isFinite(point),
     );
-    out.push({ label, values });
+    const series: { label: string; values: readonly number[]; lineStyle?: LineStyle } = {
+      label,
+      values,
+    };
+    if (raw.lineStyle !== undefined) {
+      const lineStyle = tokenValue<LineStyle>(raw.lineStyle, LINE_STYLES);
+      if (lineStyle !== undefined) series.lineStyle = lineStyle;
+      else
+        issues.push(
+          `node "${printableKey(id)}": invalid chart lineStyle ${printableValue(raw.lineStyle)} dropped`,
+        );
+    }
+    out.push(series);
   }
   return out;
 }

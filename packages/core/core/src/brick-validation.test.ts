@@ -40,7 +40,7 @@ describe("brick survivor validation", () => {
       node: {
         id: "table",
         type: "table",
-        columns: [{ key: "name", label: "Name" }],
+        columns: [{ key: "name", label: "Name", align: "end" }],
         rows: [{ name: "Facet" }],
         style: {
           preset: "dense",
@@ -177,7 +177,7 @@ describe("brick survivor validation", () => {
       node: {
         id: "table",
         type: "table",
-        columns: [{ key: "name", label: "Name" }],
+        columns: [{ key: "name", label: "Name", align: "end" }],
         rows: [{ name: "Facet" }],
         caption: "Results",
         from: "sales",
