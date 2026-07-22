@@ -39,6 +39,7 @@ import {
   isStyleValueAllowedForProperty,
   STYLE_VALUE_CONTRACT,
   styleValueChoicesForProperty,
+  styleValueDomainForProperty,
 } from "./style-value-contract.js";
 
 const names = (domain: { readonly values: readonly { readonly name: unknown }[] }) =>
@@ -99,6 +100,7 @@ describe("STYLE_VALUE_CONTRACT", () => {
       textWrap: ["wrap", "nowrap", "balance"],
       lineClamp: ["none", 1, 2, 3, 4],
       lineStyle: ["solid", "dashed", "dotted"],
+      dividers: ["none", "rows", "grid"],
       objectFit: OBJECT_FITS,
       objectPosition: OBJECT_POSITIONS,
       enterAnimation: ENTER_ANIMATIONS,
@@ -186,5 +188,59 @@ describe("STYLE_VALUE_CONTRACT", () => {
     ).not.toContain("inherit");
     expect(isStyleValueAllowedForProperty("color", color, "inherit")).toBe(true);
     expect(isStyleValueAllowedForProperty("background", background, "inherit")).toBe(false);
+  });
+});
+
+describe("analytics-data-surface dividers domain", () => {
+  it("registers the closed fixed dividers domain with exact values", () => {
+    const fixed = STYLE_VALUE_CONTRACT.fixed as typeof STYLE_VALUE_CONTRACT.fixed & {
+      readonly dividers: TestStyleValueDomain;
+    };
+
+    expect(fixed.dividers).toBeDefined();
+    expect(names(fixed.dividers)).toEqual(["none", "rows", "grid"]);
+    for (const value of fixed.dividers.values) {
+      expect(value.description).not.toEqual("");
+      expect(value.useWhen).not.toEqual("");
+    }
+  });
+
+  it("resolves table dividers and stickyHeader properties to their fixed domains", () => {
+    const dividersProperty = BRICK_CONTRACT.table.style.root.properties.dividers;
+    expect(dividersProperty).toMatchObject({ source: "fixed", domain: "dividers" });
+    const dividersDomain = styleValueDomainForProperty(dividersProperty);
+    expect(dividersDomain).toBeDefined();
+    expect(names(dividersDomain!)).toEqual(["none", "rows", "grid"]);
+
+    const stickyProperty = BRICK_CONTRACT.table.style.root.properties.stickyHeader;
+    expect(stickyProperty).toMatchObject({ source: "fixed", domain: "boolean" });
+    const stickyDomain = styleValueDomainForProperty(stickyProperty);
+    expect(stickyDomain).toBeDefined();
+    expect(names(stickyDomain!)).toEqual([false, true]);
+  });
+
+  it("adds no new token scale so the default Theme needs no change", () => {
+    expect(Object.keys(STYLE_VALUE_CONTRACT.tokens)).toEqual([
+      "space",
+      "fontSize",
+      "fontFamily",
+      "fontWeight",
+      "radius",
+      "borderWidth",
+      "aspectRatio",
+      "minHeight",
+      "maxWidth",
+      "letterSpacing",
+      "lineHeight",
+      "controlHeight",
+      "indicatorSize",
+      "progressThickness",
+      "chartThickness",
+      "color",
+      "shadow",
+      "gradient",
+      "scrim",
+      "highlight",
+    ]);
   });
 });

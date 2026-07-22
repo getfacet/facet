@@ -134,6 +134,16 @@ export type LineClamp = (typeof LINE_CLAMPS)[number];
 export const LINE_STYLES = ["solid", "dashed", "dotted"] as const;
 export type LineStyle = (typeof LINE_STYLES)[number];
 
+export const CHART_AXES = ["primary", "secondary"] as const;
+export type ChartAxis = (typeof CHART_AXES)[number];
+
+/** Proportional table column allocation. Distinct from the box `WIDTHS`/`COLUMNS` unions. */
+export const COLUMN_WIDTHS = ["auto", "narrow", "medium", "wide"] as const;
+export type ColumnWidth = (typeof COLUMN_WIDTHS)[number];
+
+export const TABLE_DIVIDERS = ["none", "rows", "grid"] as const;
+export type TableDividers = (typeof TABLE_DIVIDERS)[number];
+
 export const OBJECT_FITS = ["cover", "contain"] as const;
 export type ObjectFit = (typeof OBJECT_FITS)[number];
 

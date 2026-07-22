@@ -93,7 +93,7 @@ describe("CatalogPage", () => {
       screen.getByText(/This JSON is from the @facet\/core style-value contract/u),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Fixed choices (51/51)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fixed choices (54/54)" }));
     expect(screen.getByRole("heading", { name: "This frame is rendered by Facet." })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Package definition" }));
     expect(screen.getByText(/Core accepts this exact choice in the/u)).toBeTruthy();

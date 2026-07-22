@@ -17,7 +17,7 @@ const ICON_PATHS = {
   chevronRight: ["m9 18 6-6-6-6"],
   clock: ["M12 7v5l3 2", "M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"],
   database: ["M4 6c0-2 16-2 16 0s-16 2-16 0", "M4 6v6c0 2 16 2 16 0V6", "M4 12v6c0 2 16 2 16 0v-6"],
-  download: ["M12 3v12", "m7 10-7 7-7-7", "M5 21h14"],
+  download: ["M12 3v12", "m7 10 5 5 5-5", "M5 21h14"],
   externalLink: [
     "M14 3h7v7",
     "M10 14 21 3",

@@ -247,6 +247,8 @@ export const SUPABASE_BENCHMARK_THEME: FacetTheme = {
           background: "background",
           borderRadius: "none",
           shadow: "none",
+          dividers: "grid",
+          stickyHeader: true,
           header: { fontSize: "xs", padding: "xs", background: "surface", borderWidth: "thin" },
           cell: { fontSize: "xs", padding: "xs", borderWidth: "thin" },
         },

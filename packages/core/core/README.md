@@ -44,8 +44,10 @@ Theme validation would reject at that path.
 The product-grade surface stays closed even where it needs more precision:
 `media` accepts only images, videos, and known generic icon names; text-bearing
 styles expose bounded wrap/clamp choices only at compatible paths; table columns
-may declare closed text alignment; and chart series/plot metadata accepts only
-known line-style and token-backed axis/grid/label color controls.
+may declare closed text alignment and a closed width name; a table may declare
+closed dividers, a sticky header, and a bounded empty-state label; and chart
+series/plot metadata accepts only known line-style, a closed primary/secondary
+axis, and token-backed axis/grid/label color controls.
 
 ## Style, Theme, and Presets
 

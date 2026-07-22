@@ -502,6 +502,7 @@ function createRealServiceTheme({
             background: "surface",
             borderColor: "border",
             borderWidth: "thin",
+            dividers: "rows",
             header: { fontSize: "sm", padding: "md", background: "surface", textWrap: "nowrap" },
             cell: { fontSize: "sm", padding: "md", textWrap: "wrap", lineClamp: 2 },
           },

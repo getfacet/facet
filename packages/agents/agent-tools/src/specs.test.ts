@@ -127,3 +127,31 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
     });
   });
 });
+
+describe("analytics-data-surface discovery vocabulary", () => {
+  it("enumerates the new chart and table vocabulary in the progressive-read descriptions", () => {
+    const descriptions = `${tool("get_brick_spec").description}\n${tool("get_style_choices").description}`;
+
+    for (const term of [
+      "width",
+      "narrow",
+      "medium",
+      "wide",
+      "emptyLabel",
+      "dividers",
+      "none",
+      "rows",
+      "grid",
+      "stickyHeader",
+      "axis",
+      "primary",
+      "secondary",
+    ]) {
+      expect(descriptions).toContain(term);
+    }
+    // Existing progressive-read anchors must survive the extension.
+    expect(descriptions).toMatch(/media icon/i);
+    expect(descriptions).toMatch(/table alignment/i);
+    expect(descriptions).toMatch(/chart line style/i);
+  });
+});

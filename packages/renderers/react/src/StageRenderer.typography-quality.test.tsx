@@ -52,6 +52,10 @@ describe("StageRenderer typography quality", () => {
     const nowrap = screen.getByText("Single line label");
     expect(nowrap.style.whiteSpace).toBe("nowrap");
     expect(nowrap.style.overflowWrap).toBe("normal");
+    // Review P1: bare nowrap must clip at the parent edge (containment) —
+    // flow text pairs nowrap with an ellipsis instead of painting past the box.
+    expect(nowrap.style.overflow).toBe("hidden");
+    expect(nowrap.style.textOverflow).toBe("ellipsis");
     expect(nowrap.style.position).not.toBe("absolute");
 
     const clamp = screen.getByText(

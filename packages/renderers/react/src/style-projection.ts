@@ -47,6 +47,12 @@ export function projectTypography(
   if (values.textWrap === "nowrap") {
     css.whiteSpace = "nowrap";
     css.overflowWrap = "normal";
+    // Bare nowrap would let a long line paint past its parent box (the
+    // containment contract): clip at the parent edge with an ellipsis. Table
+    // shells strip the clip (withoutLineClampDisplay) and keep their own
+    // bounded horizontal scroll region instead.
+    css.overflow = "hidden";
+    css.textOverflow = "ellipsis";
   } else if (values.textWrap === "wrap") {
     css.whiteSpace = "normal";
     css.overflowWrap = "break-word";

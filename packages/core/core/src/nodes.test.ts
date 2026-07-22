@@ -28,7 +28,7 @@ import {
   type TableRow,
   type TextNode,
 } from "./nodes.js";
-import type { LineStyle, TextAlign } from "./tokens.js";
+import type { ChartAxis, ColumnWidth, LineStyle, TextAlign } from "./tokens.js";
 
 const FINAL_BRICK_TYPES = [
   "box",
@@ -145,7 +145,7 @@ describe("unified public node model", () => {
 
   it("gives every data and feedback brick an optional closed style", () => {
     expectTypeOf<keyof TableNode>().toEqualTypeOf<
-      "id" | "type" | "columns" | "rows" | "caption" | "from" | "style"
+      "id" | "type" | "columns" | "rows" | "caption" | "emptyLabel" | "from" | "style"
     >();
     expectTypeOf<keyof ChartNode>().toEqualTypeOf<
       "id" | "type" | "kind" | "series" | "labels" | "title" | "from" | "style"
@@ -291,6 +291,34 @@ describe("unified public node model", () => {
     for (const source of [NODES_SOURCE, SLOT_MARKER_SOURCE, ISSUES_SOURCE]) {
       expect(source).not.toMatch(/\b(?:component|components|intrinsic)\b/i);
     }
+  });
+});
+
+describe("analytics-data-surface node fields", () => {
+  it("accepts per-column width, per-series axis, and table emptyLabel", () => {
+    expectTypeOf<TableColumn["width"]>().toEqualTypeOf<ColumnWidth | undefined>();
+    expectTypeOf<ChartSeries["axis"]>().toEqualTypeOf<ChartAxis | undefined>();
+    expectTypeOf<TableNode["emptyLabel"]>().toEqualTypeOf<string | undefined>();
+
+    const column: TableColumn = { key: "amount", label: "Amount", align: "end", width: "narrow" };
+    const series: ChartSeries = {
+      label: "Sessions",
+      values: [3, 4],
+      lineStyle: "dashed",
+      axis: "secondary",
+    };
+    const table: TableNode = {
+      id: "table",
+      type: "table",
+      columns: [column],
+      rows: [],
+      emptyLabel: "No results yet",
+    };
+    const chart: ChartNode = { id: "chart", type: "chart", kind: "line", series: [series] };
+    expect({ table, chart }).toMatchObject({
+      table: { emptyLabel: "No results yet", columns: [{ width: "narrow" }] },
+      chart: { series: [{ axis: "secondary" }] },
+    });
   });
 });
 

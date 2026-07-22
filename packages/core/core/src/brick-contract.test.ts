@@ -56,7 +56,7 @@ const EXPECTED_FIELDS = {
   media: ["id", "type", "kind", "src", "icon", "alt", "poster", "controls"],
   input: ["id", "type", "name", "input", "options", "label", "placeholder"],
   richtext: ["id", "type", "blocks"],
-  table: ["id", "type", "columns", "rows", "caption", "from"],
+  table: ["id", "type", "columns", "rows", "caption", "emptyLabel", "from"],
   chart: ["id", "type", "kind", "series", "labels", "title", "from"],
   list: ["id", "type", "items", "from"],
   keyValue: ["id", "type", "items", "from"],
@@ -218,6 +218,8 @@ const EXPECTED_STYLE_PATHS = {
   },
   table: {
     width: "fixed:width",
+    dividers: "fixed:dividers",
+    stickyHeader: "fixed:boolean",
     background: "token:color",
     color: "token:color",
     borderColor: "token:color",
@@ -498,5 +500,27 @@ describe("Core Brick contract", () => {
     expect(Object.keys(presetOnly)).toEqual(FINAL_BRICKS);
     expect(Object.keys(direct)).toEqual(FINAL_BRICKS);
     expect(Object.keys(combined)).toEqual(FINAL_BRICKS);
+  });
+});
+
+describe("analytics-data-surface contract additions", () => {
+  it("registers the optional table emptyLabel field", () => {
+    const emptyLabel = BRICK_CONTRACT.table.fields.emptyLabel;
+    expect(emptyLabel).toBeDefined();
+    expect(emptyLabel).toMatchObject({ required: false });
+    expect(emptyLabel.description.length).toBeGreaterThan(12);
+    expect(Object.keys(BRICK_CONTRACT.table.fields)).toEqual(EXPECTED_FIELDS.table);
+  });
+
+  it("registers table root dividers and stickyHeader style properties", () => {
+    const dividers = BRICK_CONTRACT.table.style.root.properties.dividers;
+    const stickyHeader = BRICK_CONTRACT.table.style.root.properties.stickyHeader;
+    expect(dividers).toMatchObject({ source: "fixed", domain: "dividers" });
+    expect(stickyHeader).toMatchObject({ source: "fixed", domain: "boolean" });
+  });
+
+  it("documents per-column width and per-series axis choices in field prose", () => {
+    expect(BRICK_CONTRACT.table.fields.columns.description).toContain("width");
+    expect(BRICK_CONTRACT.chart.fields.series.description).toContain("axis");
   });
 });

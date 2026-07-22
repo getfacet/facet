@@ -2,9 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   OVERLAY_FRAME_Z,
   OVERLAY_SCRIM_Z,
+  STICKY_TOP,
+  TABLE_STICKY_HEADER_Z,
+  TABLE_STICKY_MAX_HEIGHT,
   drawerFrameStyle,
   modalFrameStyle,
   overlayScrimStyle,
+  scrollContainmentStyle,
+  tableScrollContainmentStyle,
 } from "./layout-contract.js";
 
 // WU-3: renderer-OWNED positive-z placement presets for overlay (DC-002 / DC-004).
@@ -92,5 +97,55 @@ describe("overlayScrimStyle", () => {
     expect(style.background).toBeTruthy();
     expect(style.zIndex).toBe(OVERLAY_SCRIM_Z);
     expect(style.zIndex).toBeLessThan(OVERLAY_FRAME_Z);
+  });
+});
+
+// ── analytics-data-surface (WU-5): the table's OWN renderer-owned containment.
+// The table wrapper always owns bounded horizontal scroll so a wide table scrolls
+// inside its own box (never pushing parent/page width), and — only when the
+// resolved style pins the header — the SAME wrapper owns a bounded VERTICAL scroll
+// region with a framework max-height so the container-relative sticky `<thead>`
+// has a scroll ancestor to pin against (RISK-INV-1). ──
+describe("tableScrollContainmentStyle (analytics-data-surface)", () => {
+  it("always owns bounded horizontal scroll and never pushes parent width", () => {
+    const style = tableScrollContainmentStyle(false);
+    expect(style.overflowX).toBe("auto");
+    expect(style.maxWidth).toBe("100%");
+    expect(style.minWidth).toBe(0);
+    // No vertical bounding without a sticky header — today's flow height.
+    expect(style.overflowY).toBeUndefined();
+    expect(style.maxHeight).toBeUndefined();
+  });
+
+  it("adds a framework-owned bounded vertical scroll region for a sticky header", () => {
+    const style = tableScrollContainmentStyle(true);
+    expect(style.overflowX).toBe("auto");
+    expect(style.overflowY).toBe("auto");
+    expect(style.maxHeight).toBe(TABLE_STICKY_MAX_HEIGHT);
+    expect(style.minHeight).toBe(0);
+    expect(style.maxWidth).toBe("100%");
+  });
+
+  it("is NOT the box scroll helper (which hides the cross axis and would block sticky)", () => {
+    // `scrollContainmentStyle("x")` sets overflow-y:hidden, so it could never host a
+    // sticky header's vertical scroll — the table wrapper must not reuse it verbatim.
+    expect(scrollContainmentStyle("x").overflowY).toBe("hidden");
+    expect(tableScrollContainmentStyle(false).overflowY).not.toBe("hidden");
+  });
+});
+
+describe("table sticky header constants (analytics-data-surface)", () => {
+  it("pins container-relative with the framework top and a confined LOCAL positive band", () => {
+    // Same framework top as box `sticky`, but the table header pins against the
+    // table's OWN scroll region (container-relative), not the viewport.
+    expect(STICKY_TOP).toBe("0px");
+    expect(TABLE_STICKY_HEADER_Z).toBeGreaterThan(0);
+    // A small local band, far below the overlay band — never a global z-index war.
+    expect(TABLE_STICKY_HEADER_Z).toBeLessThan(OVERLAY_SCRIM_Z);
+  });
+
+  it("uses a framework max-height the author never supplies", () => {
+    expect(typeof TABLE_STICKY_MAX_HEIGHT).toBe("string");
+    expect(TABLE_STICKY_MAX_HEIGHT).toMatch(/(rem|px|vh)$/);
   });
 });

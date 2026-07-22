@@ -48,15 +48,17 @@ describe("reference benchmark presenter", () => {
     expect(presentation.blockingGaps).toBeGreaterThan(0);
     expect(presentation.watchGaps).toBeGreaterThan(0);
 
+    // analytics-data-surface cleared GSC's blocking chart gaps: the benchmark now
+    // classifies as needs-design-qa (watch gaps only), never product-grade.
     expect(presentation.selected).toMatchObject({
       status: "render",
       id: "google-search-console-performance",
-      qualityStatus: "blocked-by-gaps",
-      qualityLabel: "Blocked by fidelity gaps",
+      qualityStatus: "needs-design-qa",
+      qualityLabel: "Needs design QA",
     });
     if (presentation.selected?.status !== "render") throw new Error("Expected render projection.");
     expect(presentation.selected.qualitySummary).toMatch(/Not product-grade/u);
-    expect(presentation.selected.blockingGapCount).toBeGreaterThan(0);
+    expect(presentation.selected.blockingGapCount).toBe(0);
     expect(presentation.selected.watchGapCount).toBeGreaterThan(0);
   });
 

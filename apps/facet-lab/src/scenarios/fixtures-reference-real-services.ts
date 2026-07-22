@@ -136,13 +136,19 @@ function chart(id: string, labels: readonly string[], style: ChartStyle): Node {
     title: "Search performance comparison",
     labels,
     series: [
-      { label: "Clicks", values: [1, 1, 2, 0, 1, 1, 0], lineStyle: "solid" },
-      { label: "Impressions", values: [45, 80, 230, 55, 50, 35, 20], lineStyle: "solid" },
+      { label: "Clicks", values: [1, 1, 2, 0, 1, 1, 0], lineStyle: "solid", axis: "primary" },
+      {
+        label: "Impressions",
+        values: [45, 80, 230, 55, 50, 35, 20],
+        lineStyle: "solid",
+        axis: "secondary",
+      },
       { label: "Previous clicks", values: [1, 0, 0, 0, 0, 0, 0], lineStyle: "dashed" },
       {
         label: "Previous impressions",
         values: [35, 38, 28, 36, 32, 35, 38],
         lineStyle: "dashed",
+        axis: "secondary",
       },
     ],
     style,
@@ -154,13 +160,19 @@ function table(id: string, style: TableStyle): Node {
     id,
     type: "table",
     columns: [
-      { key: "query", label: "인기 검색어" },
-      { key: "clicks", label: "클릭수 26. 7. 12. - 26. 7. 18.", align: "end", sortable: true },
-      { key: "prevClicks", label: "클릭수 26. 7. 5. - 26. 7. 11.", align: "end" },
-      { key: "diff", label: "클릭수 차이", align: "end" },
-      { key: "impressions", label: "노출", align: "end" },
-      { key: "prevImpressions", label: "노출 이전", align: "end" },
-      { key: "impressionDiff", label: "노출 차이", align: "end" },
+      { key: "query", label: "인기 검색어", width: "wide" },
+      {
+        key: "clicks",
+        label: "클릭수 26. 7. 12. - 26. 7. 18.",
+        align: "end",
+        sortable: true,
+        width: "narrow",
+      },
+      { key: "prevClicks", label: "클릭수 26. 7. 5. - 26. 7. 11.", align: "end", width: "narrow" },
+      { key: "diff", label: "클릭수 차이", align: "end", width: "narrow" },
+      { key: "impressions", label: "노출", align: "end", width: "narrow" },
+      { key: "prevImpressions", label: "노출 이전", align: "end", width: "narrow" },
+      { key: "impressionDiff", label: "노출 차이", align: "end", width: "narrow" },
     ],
     rows: [
       {

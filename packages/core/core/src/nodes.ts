@@ -9,7 +9,7 @@
  */
 import type { TableColumn, TableRow } from "./data-types.js";
 import type { InputKind } from "./brick-contract.js";
-import type { LineStyle } from "./tokens.js";
+import type { ChartAxis, LineStyle } from "./tokens.js";
 import type { ViewPredicate } from "./view.js";
 import type {
   BoxStyle,
@@ -364,6 +364,8 @@ export interface TableNode extends BaseNode, Styleable<TableStyle> {
   readonly columns: readonly TableColumn[];
   readonly rows: readonly TableRow[];
   readonly caption?: string;
+  /** Optional label rendered when the table resolves zero rows. */
+  readonly emptyLabel?: string;
   /** Optional binding: project rows from `FacetTree.data[from]` instead of inline `rows`. */
   readonly from?: string;
 }
@@ -375,6 +377,7 @@ export interface ChartSeries {
   readonly label: string;
   readonly values: readonly number[];
   readonly lineStyle?: LineStyle;
+  readonly axis?: ChartAxis;
 }
 
 export interface ChartNode extends BaseNode, Styleable<ChartStyle> {

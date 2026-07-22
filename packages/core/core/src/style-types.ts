@@ -32,6 +32,7 @@ import type {
   Scroll,
   Shadow,
   Space,
+  TableDividers,
   TextAlign,
   Width,
 } from "./tokens.js";
@@ -235,6 +236,8 @@ export interface RichTextStyleDefinition extends Omit<RichTextDirectStyle, "link
 
 interface TableRootStyle extends SurfaceStyle {
   readonly width?: Width;
+  readonly dividers?: TableDividers;
+  readonly stickyHeader?: boolean;
 }
 
 interface TableCaptionStyle extends FlowTypographyStyle {

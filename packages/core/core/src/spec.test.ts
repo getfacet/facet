@@ -117,6 +117,31 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).not.toMatch(/default Patterns?[^.]*solve[^.]*benchmark quality/i);
   });
 
+  it("enumerates the analytics-data-surface chart and table vocabulary", () => {
+    for (const term of [
+      "width",
+      "narrow",
+      "medium",
+      "wide",
+      "dividers",
+      "none",
+      "rows",
+      "grid",
+      "stickyHeader",
+      "emptyLabel",
+      "axis",
+      "primary",
+      "secondary",
+    ]) {
+      expect(STAGE_SPEC).toContain(term);
+    }
+    expect(STAGE_SPEC).toMatch(/table columns[^.]*width/i);
+    expect(STAGE_SPEC).toMatch(/chart series[^.]*axis/i);
+    // Existing closed-choice anchors must survive the extension.
+    expect(STAGE_SPEC).toMatch(/table columns[^.]*align/i);
+    expect(STAGE_SPEC).toMatch(/chart series[^.]*lineStyle/i);
+  });
+
   it("contains no retired style asset or selector guidance", () => {
     const retiredTerms = [
       ["cata", "log"].join(""),

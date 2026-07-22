@@ -1,4 +1,9 @@
-import { BRICK_TYPES, STAGE_SPEC } from "@facet/core";
+import {
+  BRICK_TYPES,
+  CUSTOM_ASSETS_EXPECTATION_SPEC,
+  PRODUCT_GRADE_BRICK_CHOICES_SPEC,
+  STAGE_SPEC,
+} from "@facet/core";
 import { describe, expect, it } from "vitest";
 import {
   FACET_AGENT_ROLE_PROMPT,
@@ -294,5 +299,41 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(system).toMatch(/blocks and runs/i);
     expect(system).toContain("bold, italic, underline, strike, code, and link");
     expect(system).toMatch(/never javascript: or data:/i);
+  });
+
+  it("teaches the analytics-data-surface chart and table vocabulary", () => {
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+
+    for (const term of [
+      "width",
+      "narrow",
+      "medium",
+      "wide",
+      "dividers",
+      "none",
+      "rows",
+      "grid",
+      "stickyHeader",
+      "emptyLabel",
+      "axis",
+      "primary",
+      "secondary",
+    ]) {
+      expect(system).toContain(term);
+    }
+    // The vocabulary sentence is owned by Core's STAGE_SPEC; the assembled
+    // prompt is what the model actually reads.
+    expect(system).toMatch(/table columns[^.]*width/i);
+    expect(system).toMatch(/chart series[^.]*axis/i);
+    // Existing anchors must survive the extension.
+    expect(system).toMatch(/table columns[^.]*align/i);
+    expect(system).toMatch(/chart series[^.]*lineStyle/i);
+    // ...and exactly once: the prompt kit composes Core's sentence instead of
+    // restating it, so the assembled prompt never carries it twice (review P3).
+    expect(system.split(PRODUCT_GRADE_BRICK_CHOICES_SPEC)).toHaveLength(2);
+    expect(system.split(CUSTOM_ASSETS_EXPECTATION_SPEC)).toHaveLength(2);
+    // The Brick guidance still owns the progressive-discovery routing.
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(/get_brick_spec[^.]*table width/i);
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(/get_style_choices[^.]*dividers/i);
   });
 });

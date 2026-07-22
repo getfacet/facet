@@ -92,7 +92,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "get_brick_spec",
     description:
-      "Read exact fields and compact local style paths for one unfamiliar Brick, including media icon fields, table alignment, and the chart line style field lineStyle.",
+      "Read exact fields and compact local style paths for one unfamiliar Brick, including media icon fields, table alignment, per-column width (auto, narrow, medium, wide), the table emptyLabel, the chart line style field lineStyle, and the chart series axis (primary or secondary scale).",
     parameters: {
       type: "object",
       properties: {
@@ -109,7 +109,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "get_style_choices",
     description:
-      "Read allowed values for one exact Brick-owned style property when its choice is unfamiliar, such as textWrap, lineClamp, axisColor, gridColor, or labelColor.",
+      "Read allowed values for one exact Brick-owned style property when its choice is unfamiliar, such as textWrap, lineClamp, table dividers (none, rows, grid), stickyHeader, axisColor, gridColor, or labelColor.",
     parameters: {
       type: "object",
       properties: {

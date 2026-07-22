@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import * as coreBarrel from "./index.js";
 import * as tokenModule from "./tokens.js";
 import {
   ALIGNMENTS,
@@ -175,5 +176,24 @@ describe("Core style value domains", () => {
     expect(GRADIENTS).not.toEqual(expect.arrayContaining(["dusk", "dawn"]));
     expect(SCRIMS).not.toEqual(expect.arrayContaining(["light", "dark"]));
     expect(HIGHLIGHTS).not.toContain("band");
+  });
+});
+
+describe("analytics-data-surface closed unions", () => {
+  it("locks the chart axis, column width, and table dividers unions", () => {
+    expect(tokenModule.CHART_AXES).toEqual(["primary", "secondary"]);
+    expect(tokenModule.COLUMN_WIDTHS).toEqual(["auto", "narrow", "medium", "wide"]);
+    expect(tokenModule.TABLE_DIVIDERS).toEqual(["none", "rows", "grid"]);
+  });
+
+  it("keeps the column width union a distinct domain from box widths and columns", () => {
+    expect(tokenModule.COLUMN_WIDTHS).not.toEqual(WIDTHS);
+    expect(tokenModule.COLUMN_WIDTHS).not.toEqual(COLUMNS);
+  });
+
+  it("exports the new unions through the @facet/core barrel", () => {
+    expect(coreBarrel.CHART_AXES).toBe(tokenModule.CHART_AXES);
+    expect(coreBarrel.COLUMN_WIDTHS).toBe(tokenModule.COLUMN_WIDTHS);
+    expect(coreBarrel.TABLE_DIVIDERS).toBe(tokenModule.TABLE_DIVIDERS);
   });
 });

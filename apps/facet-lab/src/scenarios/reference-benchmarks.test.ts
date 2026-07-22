@@ -153,6 +153,67 @@ describe("Facet Lab reference benchmarks", () => {
     }
   });
 
+  describe("analytics-data-surface benchmark adoption", () => {
+    function nodesOf(id: (typeof REFERENCE_BENCHMARK_IDS)[number]) {
+      const benchmark = referenceBenchmarkById(id);
+      expect(benchmark, id).toBeDefined();
+      return Object.values(benchmark?.fixture.nodes ?? {});
+    }
+
+    it("uses the dual-scale chart axis in the GSC comparison fixture", () => {
+      const charts = nodesOf("google-search-console-performance").filter(
+        (node) => node.type === "chart",
+      );
+      expect(charts.length).toBeGreaterThan(0);
+      const series = charts.flatMap((chart) => (chart.type === "chart" ? [...chart.series] : []));
+      expect(series.some((entry) => entry.axis === "secondary")).toBe(true);
+      expect(series.some((entry) => entry.axis === undefined || entry.axis === "primary")).toBe(
+        true,
+      );
+    });
+
+    it("uses closed column widths and dividers in the GSC query table", () => {
+      const tables = nodesOf("google-search-console-performance").filter(
+        (node) => node.type === "table",
+      );
+      expect(tables.length).toBeGreaterThan(0);
+      const columns = tables.flatMap((table) => (table.type === "table" ? [...table.columns] : []));
+      expect(columns.some((column) => column.width === "wide")).toBe(true);
+      expect(columns.some((column) => column.width === "narrow")).toBe(true);
+    });
+
+    it("uses sticky header, grid dividers, widths, and an authored empty label in the Supabase grid", () => {
+      const tables = nodesOf("supabase-table-editor").filter((node) => node.type === "table");
+      expect(tables.length).toBeGreaterThan(0);
+      const grid = tables.find((table) => table.type === "table" && table.rows.length === 0);
+      expect(grid).toBeDefined();
+      if (grid?.type !== "table") return;
+      expect(grid.emptyLabel).toBeDefined();
+      expect(grid.style?.stickyHeader).toBe(true);
+      expect(grid.style?.dividers).toBe("grid");
+      expect(grid.columns.some((column) => column.width !== undefined)).toBe(true);
+    });
+
+    it("uses row dividers in the executive report table", () => {
+      const tables = nodesOf("executive-report-brief").filter((node) => node.type === "table");
+      expect(tables.length).toBeGreaterThan(0);
+      expect(
+        tables.some((table) => table.type === "table" && table.style?.dividers === "rows"),
+      ).toBe(true);
+    });
+
+    it("clears or re-scopes the chart/table renderer-quality blocking gap entries", () => {
+      const gaps = REFERENCE_BENCHMARKS.flatMap(({ gaps: entries }) => entries);
+      expect(
+        gaps.filter((gap) => gap.category === "renderer-quality" && gap.severity === "blocking"),
+      ).toEqual([]);
+      const serialized = JSON.stringify(gaps);
+      expect(serialized).not.toMatch(/no dual-axis/iu);
+      expect(serialized).not.toMatch(/per-series scale controls/iu);
+      expect(serialized).not.toMatch(/cannot express sticky headers/iu);
+    });
+  });
+
   it("keeps every fixture node reachable from the root", () => {
     for (const benchmark of REFERENCE_BENCHMARKS) {
       const reachable = reachableNodeIds(benchmark.fixture);

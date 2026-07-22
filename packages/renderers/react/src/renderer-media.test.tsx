@@ -11,6 +11,38 @@ function renderMedia(raw: unknown): string {
 }
 
 describe("renderer media", () => {
+  it("analytics-data-surface: default-theme image keeps full width, not the icon frame (review P2)", () => {
+    // The theme-default suppression (directResolvedIconSize/directResolvedWidth)
+    // must keep suppressing un-authored defaults: dropping the comparison would
+    // collapse every default-themed image to a 24px icon square while the whole
+    // suite stayed green.
+    const image = renderMedia({
+      id: "img",
+      type: "media",
+      kind: "image",
+      src: "https://example.com/a.png",
+      alt: "A",
+    });
+    expect(image).toMatch(/(?<!max-)width:100%/u);
+    expect(image).not.toContain("aspect-ratio:1 / 1");
+
+    const icon = renderMedia({ id: "i", type: "media", kind: "icon", icon: "check", alt: "" });
+    // The icon frame stays intrinsic — never stretched to the full row.
+    expect(icon).not.toMatch(/(?<!max-)width:100%/u);
+  });
+
+  it("analytics-data-surface: download icon chevron sits under the stem inside the viewBox (review P2)", () => {
+    const download = renderMedia({
+      id: "d",
+      type: "media",
+      kind: "icon",
+      icon: "download",
+      alt: "",
+    });
+    expect(download).toContain('d="m7 10 5 5 5-5"');
+    expect(download).not.toContain('d="m7 10-7 7-7-7"');
+  });
+
   it("renders safe media icons and avatar sizing", () => {
     expect(
       readRenderableMedia({

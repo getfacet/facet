@@ -76,11 +76,17 @@ Product-grade details use the same rule. They are not arbitrary CSS escapes:
   belong in service assets.
 - `text`, `richtext`, `list`, and `table` can opt into bounded text-flow choices
   such as `textWrap` and `lineClamp` where Core exposes them.
-- `table.columns[].align` is column metadata for numeric and status alignment;
-  it is not a table-layout engine.
-- `chart.series[].lineStyle` and `chart.style.plot.axisColor/gridColor/labelColor`
+- `table.columns[].align` and `table.columns[].width` are column metadata for
+  numeric alignment and closed proportional allocation; they are not a
+  table-layout engine, and `width` never accepts a raw size.
+- `table.style.dividers`, `table.style.stickyHeader`, and `table.emptyLabel`
+  select dense-grid rhythm, a renderer-pinned header, and the empty-state copy;
+  the scroll region, pin offset, and bounded height stay renderer-owned.
+- `chart.series[].lineStyle`, `chart.series[].axis`, and
+  `chart.style.plot.axisColor/gridColor/labelColor`
   cover common report polish while the renderer still owns the axis, tick, grid,
-  bar, line, and legend geometry.
+  bar, line, and legend geometry. A `secondary` axis assignment gives that group
+  its own scale; with no assignment the chart renders exactly one scale.
 
 ## The four authoring forms
 

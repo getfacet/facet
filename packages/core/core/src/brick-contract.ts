@@ -347,9 +347,13 @@ const BRICK_CONTRACT_VALUE = {
     fields: {
       id,
       type,
-      columns: field(true, "Closed column descriptors, including optional text alignment."),
+      columns: field(
+        true,
+        "Closed column descriptors, including optional text alignment and closed width choice.",
+      ),
       rows: field(true, "Inline display records used without a dataset binding."),
       caption: field(false, "Accessible title describing the table."),
+      emptyLabel: field(false, "Optional label rendered when the table resolves zero rows."),
       from: field(false, "Optional dataset supplying projected table rows."),
     },
     supportsActiveWhen: false,
@@ -357,6 +361,8 @@ const BRICK_CONTRACT_VALUE = {
       root: {
         properties: properties({
           width: "fixed:width",
+          dividers: "fixed:dividers",
+          stickyHeader: "fixed:boolean",
           background: "token:color",
           color: "token:color",
           borderColor: "token:color",
@@ -419,7 +425,10 @@ const BRICK_CONTRACT_VALUE = {
       id,
       type,
       kind: field(true, "Closed bar, line, or donut chart kind."),
-      series: field(true, "Inline named numeric series with optional closed line style."),
+      series: field(
+        true,
+        "Inline named numeric series with optional closed line style and axis choice.",
+      ),
       labels: field(false, "Optional labels shared by the chart series."),
       title: field(false, "Short human-readable chart title."),
       from: field(false, "Optional dataset projected into numeric chart series."),

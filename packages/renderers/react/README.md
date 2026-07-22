@@ -60,15 +60,18 @@ Patterns stay agent-side reference data and are never needed by the renderer.
 
 The renderer owns product-grade containment for existing Bricks. Text and
 richtext wrap within their assigned flow slots, richtext list markers and body
-columns align without arbitrary positioning, tables use bounded horizontal
-overflow for dense data chrome, and charts compute internal axis, mark, tick,
-and legend geometry. These are renderer responsibilities, not new document
-syntax.
+columns align without arbitrary positioning, tables own a bounded horizontal
+scroll region (plus a bounded vertical one when a header pins) for dense data
+chrome, and charts compute internal axis, mark, tick, and legend geometry.
+These are renderer responsibilities, not new document syntax.
 
 Closed product-grade style/data fields project through that same pipeline:
 generic `media` icons render from the allow-listed icon set; `textWrap` and
-`lineClamp` become bounded text-flow CSS; table column `align` controls header
-and cell alignment; chart `lineStyle` maps to renderer-owned stroke patterns;
+`lineClamp` become bounded text-flow CSS; table column `align` and `width`
+control cell alignment and renderer-owned column allocation; table `dividers`,
+`stickyHeader`, and `emptyLabel` become separators, a container-relative pinned
+header, and the empty-state cell; chart `lineStyle` maps to renderer-owned
+stroke patterns; chart `axis` routes a series to the primary or secondary scale;
 and chart plot axis/grid/label colors resolve from Theme tokens. The renderer
 does not expose raw SVG, arbitrary CSS, or authored chart geometry.
 

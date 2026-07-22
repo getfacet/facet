@@ -133,7 +133,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         category: "renderer-quality",
         severity: "watch",
         summary:
-          "The Table renderer cannot express sticky headers, column widths, column separators, resize handles, or empty-grid fill behavior.",
+          "Sticky headers, closed column widths, grid dividers, and authored empty-state labels are now table vocabulary (analytics-data-surface); column-resize handles and empty-grid row-fill painting remain out of scope as interactivity/decoration.",
       },
       {
         category: "asset-guidance",
@@ -281,7 +281,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         category: "renderer-quality",
         severity: "watch",
         summary:
-          "Facet Text has no single-line truncation/ellipsis control; long message snippets wrap or rely on authored shortened copy.",
+          "Text truncation is now expressible: textWrap nowrap clips with an ellipsis at the parent edge and lineClamp bounds multi-line snippets; the fixture should adopt it before this row is retired.",
       },
       {
         category: "asset-guidance",
@@ -668,15 +668,15 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     gaps: [
       {
         category: "brick-vocabulary",
-        severity: "blocking",
+        severity: "watch",
         summary:
-          "Facet Chart now covers dashed series, but still has no dual-axis, point/hover, or per-series scale controls, all visible in the reference.",
+          "The closed per-series axis choice now renders the clicks/impressions comparison on independent primary/secondary scales (analytics-data-surface); point markers and hover/tooltip inspection remain deliberately deferred interactivity.",
       },
       {
         category: "renderer-quality",
-        severity: "blocking",
+        severity: "watch",
         summary:
-          "This benchmark raises the bar for chart rendering: gridlines, axes, tick density, line layering, and legend treatment need product-grade polish.",
+          "Nice-step ticks, compact tick labels, an enlarged plot area, dual-axis rendering, and dashed-under-solid layering landed (analytics-data-surface); remaining chart drift is judged against the side-by-side comparison, with hover/point emphasis out of scope.",
       },
       {
         category: "brick-vocabulary",
@@ -726,8 +726,9 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     gaps: [
       {
         category: "renderer-quality",
-        severity: "blocking",
-        summary: "Charts need production-grade visual treatment for report credibility.",
+        severity: "watch",
+        summary:
+          "Chart geometry, tick, and format polish landed (analytics-data-surface); report credibility now rests on authored assets plus the owner side-by-side visual pass.",
       },
       {
         category: "authoring",

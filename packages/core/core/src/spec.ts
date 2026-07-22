@@ -5,6 +5,18 @@
  * progressively readable instead of making every mutation schema carry the
  * whole design system.
  */
+/**
+ * The one product-grade same-Brick vocabulary sentence. Core owns it; the
+ * STAGE_SPEC below and any prompt kit compose it instead of copying it, so a
+ * vocabulary addition is edited in exactly one place.
+ */
+export const PRODUCT_GRADE_BRICK_CHOICES_SPEC =
+  'media.kind "icon" uses MEDIA_ICON_NAMES and never raw SVG paths or CSS; text, list, richtext, and table use textWrap and lineClamp for text flow; table columns may use closed align and per-column width (auto, narrow, medium, wide); a table may set dividers (none, rows, grid), a stickyHeader, and an emptyLabel; chart series may use closed lineStyle and a primary or secondary axis; chart plot style may set axisColor, gridColor, and labelColor as color tokens.';
+
+/** The shared custom-assets expectation sentence (same single-owner rule). */
+export const CUSTOM_ASSETS_EXPECTATION_SPEC =
+  "Custom assets remain expected per-agent or per-user for product-specific quality; bundled defaults are safe fallback assets, not benchmark-quality design solutions.";
+
 export const STAGE_SPEC = `Facet is UI an agent authors as safe data. Author a Facet Document such as {"root":"root","nodes":{"<id>":<Brick>}} with optional "screens", "entry", and "data". The root and all screen roots are box Bricks. Node ids are stable map keys, referenced children must exist, and only box may contain "children". Layout is flow-only. Author declarative data only, never raw HTML, JavaScript, or CSS. Successful changes travel as RFC 6902 patches.
 
 Discovery order (metadata first):
@@ -27,7 +39,7 @@ Vocabulary is exact:
 - concrete values such as pixels, rem values, color codes, gradients, and font stacks are Theme-only.
 Never author raw CSS or invent a property, target, state, token name, or fixed choice. The Theme owns all concrete CSS values. The host supplies one validated Theme containing complete token definitions, light and dark paint values, Brick defaults, and optional Presets. The agent does not select or mutate the Theme. colorMode is host/client view state (system preference resolved to light or dark), never Facet Document syntax.
 
-Brick behavior stays closed. box is the sole container and may carry onPress/onHold actions, hidden state, a bounded media backdrop, or a renderer-owned modal/drawer overlay. text is one plain text value; richtext is closed blocks, runs, and semantic marks; media is a gated image, video, or icon; input is a named renderer-owned control; table, chart, list, keyValue, progress, and loading are bounded display Bricks. Exact fields come from the Brick specification rather than this compact guide. Product-grade details are same-Brick choices, not new Bricks: media.kind "icon" uses MEDIA_ICON_NAMES and never raw SVG paths or CSS; text, list, richtext, and table use textWrap and lineClamp for text flow; table columns may use closed align; chart series may use closed lineStyle; chart plot style may set axisColor, gridColor, and labelColor as color tokens. Custom assets remain expected per-agent or per-user for product-specific quality; bundled defaults are safe fallback assets, not benchmark-quality design solutions.
+Brick behavior stays closed. box is the sole container and may carry onPress/onHold actions, hidden state, a bounded media backdrop, or a renderer-owned modal/drawer overlay. text is one plain text value; richtext is closed blocks, runs, and semantic marks; media is a gated image, video, or icon; input is a named renderer-owned control; table, chart, list, keyValue, progress, and loading are bounded display Bricks. Exact fields come from the Brick specification rather than this compact guide. Product-grade details are same-Brick choices, not new Bricks: ${PRODUCT_GRADE_BRICK_CHOICES_SPEC} ${CUSTOM_ASSETS_EXPECTATION_SPEC}
 
 Actions are agent, navigate, or toggle. navigate and toggle run locally with no agent turn. Agent actions may collect visible named inputs from a containing box. A document may keep reusable rows in its named "data" warehouse; disclosed data Bricks bind by dataset name through "from". These names are never URLs, queries, expressions, or resolvers. There is no client-side fetch or authored browser business logic; backend work stays with the agent.
 

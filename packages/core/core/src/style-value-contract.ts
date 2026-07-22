@@ -32,6 +32,7 @@ import {
   SCROLLS,
   SHADOWS,
   SPACES,
+  TABLE_DIVIDERS,
   TEXT_ALIGNS,
   TEXT_WRAPS,
   WIDTHS,
@@ -397,7 +398,7 @@ export const FIXED_STYLE_VALUE_CONTRACT = {
     ["wrap", "Allow normal multi-line wrapping.", "Use for body copy and readable labels."],
     [
       "nowrap",
-      "Keep text on one line.",
+      "Keep text on one line; flowing text then clips with an ellipsis while a table keeps its own bounded scroll.",
       "Use for short labels, table headers, or titles where wrapping harms scanning.",
     ],
     [
@@ -425,6 +426,19 @@ export const FIXED_STYLE_VALUE_CONTRACT = {
       "dotted",
       "Use a point-like chart line.",
       "Use for targets, thresholds, or secondary reference series.",
+    ],
+  ]),
+  dividers: defineDomain("Table divider lines", TABLE_DIVIDERS, [
+    [
+      "none",
+      "No internal separators beyond theme defaults.",
+      "Use when spacing alone keeps rows scannable.",
+    ],
+    ["rows", "Horizontal row separators.", "Use for ordinary record tables that read row by row."],
+    [
+      "grid",
+      "Row and column separators.",
+      "Use for dense data grids where every cell needs delineation.",
     ],
   ]),
   objectFit: defineDomain("Media fitting", OBJECT_FITS, [

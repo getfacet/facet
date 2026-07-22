@@ -19,7 +19,16 @@ import {
   type TableStyle,
 } from "./nodes.js";
 import { SLOT_NAME_RE } from "./slot-marker.js";
-import { LINE_STYLES, TEXT_ALIGNS, type LineStyle, type TextAlign } from "./tokens.js";
+import {
+  CHART_AXES,
+  COLUMN_WIDTHS,
+  LINE_STYLES,
+  TEXT_ALIGNS,
+  type ChartAxis,
+  type ColumnWidth,
+  type LineStyle,
+  type TextAlign,
+} from "./tokens.js";
 import {
   MAX_CHART_POINTS,
   MAX_CHART_SERIES,
@@ -50,10 +59,12 @@ export function validateTable(
     columns: typeof columns;
     rows: readonly TableRow[];
     caption?: string;
+    emptyLabel?: string;
     from?: string;
     style?: TableStyle;
   } = { id, type: "table", columns, rows: tableRows(raw.rows, columns, id, issues) };
   setText(raw.caption, id, "caption", node, "caption", MAX_NODE_LABEL_CHARS, issues);
+  setText(raw.emptyLabel, id, "emptyLabel", node, "emptyLabel", MAX_NODE_LABEL_CHARS, issues);
   setFrom(raw, id, node, issues);
   const style = sanitizeBrickStyle("table", raw.style, { nodeId: id, issues });
   if (style !== undefined) node.style = style;
@@ -170,6 +181,7 @@ function tableColumns(value: unknown, id: string, issues: IssueSink) {
     key: string;
     label: string;
     align?: TextAlign;
+    width?: ColumnWidth;
     sortable?: boolean;
   }[] = [];
   for (const raw of capArray(value, MAX_TABLE_COLUMNS, id, "columns", issues)) {
@@ -181,6 +193,7 @@ function tableColumns(value: unknown, id: string, issues: IssueSink) {
       key: string;
       label: string;
       align?: TextAlign;
+      width?: ColumnWidth;
       sortable?: boolean;
     } = { key, label };
     if (raw.align !== undefined) {
@@ -189,6 +202,14 @@ function tableColumns(value: unknown, id: string, issues: IssueSink) {
       else
         issues.push(
           `node "${printableKey(id)}": invalid table column align ${printableValue(raw.align)} dropped`,
+        );
+    }
+    if (raw.width !== undefined) {
+      const width = tokenValue<ColumnWidth>(raw.width, COLUMN_WIDTHS);
+      if (width !== undefined) column.width = width;
+      else
+        issues.push(
+          `node "${printableKey(id)}": invalid table column width ${printableValue(raw.width)} dropped`,
         );
     }
     if (raw.sortable !== undefined) {
@@ -240,7 +261,12 @@ function tableCell(value: unknown, id: string, issues: IssueSink): TableCell | u
 
 function chartSeries(value: unknown, id: string, issues: IssueSink) {
   if (!Array.isArray(value)) return [];
-  const out: { label: string; values: readonly number[]; lineStyle?: LineStyle }[] = [];
+  const out: {
+    label: string;
+    values: readonly number[];
+    lineStyle?: LineStyle;
+    axis?: ChartAxis;
+  }[] = [];
   for (const raw of capArray(value, MAX_CHART_SERIES, id, "series", issues)) {
     if (!isPlainObject(raw)) continue;
     const label = boundedString(raw.label, id, "series label", MAX_NODE_LABEL_CHARS, issues);
@@ -248,7 +274,12 @@ function chartSeries(value: unknown, id: string, issues: IssueSink) {
     const values = capArray(raw.values, MAX_CHART_POINTS, id, "points", issues).filter(
       (point): point is number => typeof point === "number" && Number.isFinite(point),
     );
-    const series: { label: string; values: readonly number[]; lineStyle?: LineStyle } = {
+    const series: {
+      label: string;
+      values: readonly number[];
+      lineStyle?: LineStyle;
+      axis?: ChartAxis;
+    } = {
       label,
       values,
     };
@@ -258,6 +289,14 @@ function chartSeries(value: unknown, id: string, issues: IssueSink) {
       else
         issues.push(
           `node "${printableKey(id)}": invalid chart lineStyle ${printableValue(raw.lineStyle)} dropped`,
+        );
+    }
+    if (raw.axis !== undefined) {
+      const axis = tokenValue<ChartAxis>(raw.axis, CHART_AXES);
+      if (axis !== undefined) series.axis = axis;
+      else
+        issues.push(
+          `node "${printableKey(id)}": invalid chart axis ${printableValue(raw.axis)} dropped`,
         );
     }
     out.push(series);

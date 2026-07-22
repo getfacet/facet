@@ -39,8 +39,8 @@ Core defines exactly 11 Bricks:
 | `media` | A gated image or video source. |
 | `input` | A renderer-owned named control. |
 | `richtext` | Closed blocks, runs, marks, and gated links. |
-| `table` | Bounded tabular data with renderer-owned optional local sort. |
-| `chart` | Bounded display-only chart data. |
+| `table` | Bounded tabular data with renderer-owned optional local sort, closed column widths, dividers, sticky header, and empty-state label. |
+| `chart` | Bounded display-only chart data, including a closed per-series primary/secondary value scale. |
 | `list` | Ordered compact data rows. |
 | `keyValue` | Label/value data rows. |
 | `progress` | A bounded progress value. |
@@ -313,8 +313,11 @@ Every native renderer root follows three rules:
   it.
 - **Renderer owns containment.** Long text wraps or clamps through closed
   text-flow choices; media images, videos, and generic icons stay within bounds;
-  tables use renderer-owned bounded overflow plus column alignment; charts own
-  their internal axis, grid, mark, tick, line-style, and legend geometry.
+  a table owns its bounded horizontal scroll region so a wide grid never pushes
+  its parent, and a sticky header pins inside that same renderer-owned region at
+  a framework-owned offset and height; charts own their internal axis, grid,
+  mark, tick, line-style, and legend geometry, including independent primary and
+  secondary value scales when series select them.
 
 There is no general authored positioning or z-index. A `box` backdrop and
 modal/drawer are bounded renderer-owned mechanisms with fixed layering and

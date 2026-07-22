@@ -468,9 +468,19 @@ describe("StageRenderer table data bindings", () => {
       data: SALES,
     };
 
+    // Read the FIRST bar's geometry rather than pinning absolute coordinates:
+    // the assertion is that the data patch moves the mark, and plot constants
+    // are free to change without churning this test.
+    const firstBar = (markup: string): { y: number; height: number } => {
+      const match = /<rect x="[\d.]+" y="([\d.]+)" width="[\d.]+" height="([\d.]+)"/u.exec(markup);
+      if (match === null) throw new Error("no bar rect rendered");
+      return { y: Number(match[1]), height: Number(match[2]) };
+    };
+
     const before = render(base);
     expect(before).toContain(">100<");
-    expect(before).toContain('x="110.5" y="66" width="44" height="44"');
+    const barBefore = firstBar(before);
+    expect(barBefore.height).toBeGreaterThan(0);
 
     const { tree: updated } = foldPatchIntoStage(base, [
       { op: "replace", path: "/data/sales/1/revenue", value: 200 },
@@ -480,7 +490,9 @@ describe("StageRenderer table data bindings", () => {
     expect(after).toContain(">200<");
     expect(after).toMatch(/>East<\/span><\/td><td[^>]*><span[^>]*>200<\/span><\/td>/u);
     expect(after).not.toMatch(/>East<\/span><\/td><td[^>]*><span[^>]*>100<\/span><\/td>/u);
-    expect(after).toContain('x="110.5" y="90" width="44" height="20"');
-    expect(after).not.toContain('x="110.5" y="66" width="44" height="44"');
+    // The West bar (50) now reads against a 0..200 domain, so it must shrink.
+    const barAfter = firstBar(after);
+    expect(barAfter.height).toBeLessThan(barBefore.height);
+    expect(barAfter.y).toBeGreaterThan(barBefore.y);
   });
 });

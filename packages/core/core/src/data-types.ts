@@ -1,10 +1,11 @@
-import type { TextAlign } from "./tokens.js";
+import type { ColumnWidth, TextAlign } from "./tokens.js";
 
 export interface TableColumn {
   readonly key: string;
   readonly label: string;
   readonly sortable?: boolean;
   readonly align?: TextAlign;
+  readonly width?: ColumnWidth;
 }
 
 export type TableCell = string | number | boolean;

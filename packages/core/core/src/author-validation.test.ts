@@ -199,3 +199,103 @@ describe("strict author validation", () => {
     );
   });
 });
+
+describe("analytics-data-surface: strict author boundary for width/axis/emptyLabel/table style", () => {
+  it("rejects a per-column width with an exact JSON-pointer path", () => {
+    const result = validateAuthorNode(
+      {
+        id: "grid",
+        type: "table",
+        columns: [{ key: "name", label: "Name", width: "250px" }],
+        rows: [{ name: "Facet" }],
+      },
+      theme,
+    );
+    expect(result.value).toBeUndefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "/columns/0/width" })]),
+    );
+  });
+
+  it("rejects a chart series axis with an exact JSON-pointer path", () => {
+    const result = validateAuthorNode(
+      {
+        id: "trend",
+        type: "chart",
+        kind: "line",
+        series: [{ label: "Revenue", values: [1, 2], axis: "top" }],
+      },
+      theme,
+    );
+    expect(result.value).toBeUndefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "/series/0/axis" })]),
+    );
+  });
+
+  it("rejects an overlong emptyLabel at its own path (caption precedent)", () => {
+    const result = validateAuthorNode(
+      {
+        id: "grid",
+        type: "table",
+        columns: [{ key: "name", label: "Name" }],
+        rows: [],
+        emptyLabel: "x".repeat(201),
+      },
+      theme,
+    );
+    expect(result.value).toBeUndefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: "/emptyLabel" })]),
+    );
+  });
+
+  it("still rejects an unknown table-root style property", () => {
+    const result = validateAuthorNode(
+      {
+        id: "grid",
+        type: "table",
+        columns: [{ key: "name", label: "Name" }],
+        rows: [],
+        style: { dividers: "grid", bogus: "x" },
+      },
+      theme,
+    );
+    expect(result.value).toBeUndefined();
+    expect(result.issues.map(({ path }) => path)).toContain("/style/bogus");
+  });
+
+  it("accepts valid width/axis/emptyLabel/dividers/stickyHeader without a false reject", () => {
+    const table = validateAuthorNode(
+      {
+        id: "grid",
+        type: "table",
+        columns: [
+          { key: "name", label: "Name", width: "narrow" },
+          { key: "total", label: "Total", width: "wide" },
+        ],
+        rows: [{ name: "Facet", total: "10" }],
+        emptyLabel: "No rows yet",
+        style: { dividers: "grid", stickyHeader: true },
+      },
+      theme,
+    );
+    expect(table.issues).toEqual([]);
+    expect(table.value).toBeDefined();
+
+    const chart = validateAuthorNode(
+      {
+        id: "trend",
+        type: "chart",
+        kind: "line",
+        series: [
+          { label: "Revenue", values: [1, 2], axis: "primary" },
+          { label: "Margin", values: [3, 4], axis: "secondary" },
+        ],
+      },
+      theme,
+    );
+    expect(chart.issues).toEqual([]);
+    expect(chart.value).toBeDefined();
+  });
+});

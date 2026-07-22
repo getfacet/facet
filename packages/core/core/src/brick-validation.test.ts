@@ -10,6 +10,7 @@ import {
   validateTable,
 } from "./brick-validation.js";
 import { MAX_BRICK_ARRAY_ITEMS, MAX_TABLE_COLUMNS } from "./brick-validation-shared.js";
+import { printableValue } from "./issues.js";
 
 type SurvivorValidator = (id: string, raw: Record<string, unknown>, issues: string[]) => unknown;
 
@@ -321,5 +322,96 @@ describe("brick survivor validation", () => {
     ]) {
       expect(source).not.toMatch(new RegExp(`\\b${retired}\\b`, "i"));
     }
+  });
+});
+
+describe("analytics-data-surface: per-member width/axis + emptyLabel render boundary", () => {
+  it("drops an unknown table column width with an issue, keeping the column and its siblings", () => {
+    for (const bad of ["250px", 3, null] as const) {
+      const { node, issues } = validate(validateTable, "table", {
+        columns: [
+          { key: "name", label: "Name", width: bad },
+          { key: "total", label: "Total", width: "narrow" },
+        ],
+        rows: [{ name: "Facet", total: "10" }],
+      });
+      expect(node).toEqual({
+        id: "table",
+        type: "table",
+        columns: [
+          { key: "name", label: "Name" },
+          { key: "total", label: "Total", width: "narrow" },
+        ],
+        rows: [{ name: "Facet", total: "10" }],
+      });
+      expect(issues).toEqual([
+        `node "table": invalid table column width ${printableValue(bad)} dropped`,
+      ]);
+    }
+  });
+
+  it("drops an unknown chart series axis with an issue, keeping the series and its siblings", () => {
+    const { node, issues } = validate(validateChart, "chart", {
+      series: [
+        { label: "Revenue", values: [1, 2], axis: "top" },
+        { label: "Users", values: [3, 4], axis: "secondary" },
+      ],
+    });
+    expect(node).toEqual({
+      id: "chart",
+      type: "chart",
+      kind: "bar",
+      series: [
+        { label: "Revenue", values: [1, 2] },
+        { label: "Users", values: [3, 4], axis: "secondary" },
+      ],
+    });
+    expect(issues).toEqual([`node "chart": invalid chart axis "top" dropped`]);
+  });
+
+  it("drops a non-string emptyLabel silently and clamps an overlong one with an issue", () => {
+    const dropped = validate(validateTable, "table", {
+      columns: [{ key: "name", label: "Name" }],
+      rows: [{ name: "Facet" }],
+      emptyLabel: 42,
+    });
+    expect(dropped.node).toEqual({
+      id: "table",
+      type: "table",
+      columns: [{ key: "name", label: "Name" }],
+      rows: [{ name: "Facet" }],
+    });
+    expect(dropped.issues).toEqual([]);
+
+    const longLabel = "x".repeat(201);
+    const clamped = validate(validateTable, "table", {
+      columns: [{ key: "name", label: "Name" }],
+      rows: [],
+      emptyLabel: longLabel,
+    });
+    expect(clamped.node).toEqual({
+      id: "table",
+      type: "table",
+      columns: [{ key: "name", label: "Name" }],
+      rows: [],
+      emptyLabel: longLabel.slice(0, 200),
+    });
+    expect(clamped.issues).toEqual([`node "table": emptyLabel truncated to 200 characters`]);
+  });
+
+  it("carries a valid emptyLabel onto a table that resolves zero inline rows", () => {
+    const { node, issues } = validate(validateTable, "table", {
+      columns: [{ key: "name", label: "Name" }],
+      rows: [],
+      emptyLabel: "No data yet",
+    });
+    expect(node).toEqual({
+      id: "table",
+      type: "table",
+      columns: [{ key: "name", label: "Name" }],
+      rows: [],
+      emptyLabel: "No data yet",
+    });
+    expect(issues).toEqual([]);
   });
 });

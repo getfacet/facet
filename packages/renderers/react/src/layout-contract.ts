@@ -42,6 +42,56 @@ export function rootContainmentStyle(style: CSSProperties = {}): CSSProperties {
 /** Framework-owned sticky offset. Agents never author a sticky offset. */
 export const STICKY_TOP = "0px";
 
+// ── Table containment: container-relative vs viewport-relative stickiness ──
+// A box `sticky` (stickyStyle above) is `position:sticky; top:STICKY_TOP` pinning
+// against the VIEWPORT (nearest scroll ancestor) — viewport-relative flow. A
+// table's sticky header instead pins against the table's OWN renderer-owned
+// bounded scroll region (`tableScrollContainmentStyle` below), so it is
+// CONTAINER-relative: the header stays put while the wrapper's own rows scroll
+// under it, and it never escapes the table's box. The wrapper ALWAYS owns
+// horizontal scroll so a wide table scrolls inside its own bounds and never
+// pushes parent/page width (DC-006) — with OR without a parent scroll box. Only
+// when the resolved style pins the header does the SAME wrapper additionally own
+// a bounded VERTICAL scroll region (TABLE_STICKY_MAX_HEIGHT), giving the sticky
+// `<thead>` a scroll ancestor to pin against; without it there is NO vertical
+// bounding (byte-identical to today's flow height). SSR string tests cannot prove
+// the pinning — the visible result is confirmed by the live-journey tier
+// (RISK-INV-1). All offsets/heights/z here are framework constants; the author
+// supplies no z/inset/coordinate/height.
+
+/** Framework-owned max-height of a table that pins its header. A sticky header
+ * needs a bounded scroll ancestor, so pinning turns the wrapper into a vertical
+ * scroll region capped at this height. Never authored (RISK-INV-1 / DC-004). */
+export const TABLE_STICKY_MAX_HEIGHT = "28rem";
+
+/** z-index of a sticky `<thead>` cell, confined to a small LOCAL band INSIDE the
+ * table's own scroll region: positive so header cells paint above scrolled body
+ * rows, but far below the overlay band — never a runaway global z-index war. */
+export const TABLE_STICKY_HEADER_Z = 1;
+
+/**
+ * The table's renderer-owned containment wrapper. Always `overflow-x:auto` +
+ * bounded width, so a wide table scrolls inside its own box. It is deliberately
+ * NOT `scrollContainmentStyle("x")` (that helper sets `overflow-y:hidden`, which
+ * would forbid the sticky header its vertical scroll region — RISK-INV-1). When
+ * `stickyHeader` is set the same wrapper additionally owns a bounded vertical
+ * scroll region; otherwise it leaves the vertical axis in normal flow.
+ */
+export function tableScrollContainmentStyle(stickyHeader: boolean): CSSProperties {
+  const base: CSSProperties = {
+    overflowX: "auto",
+    maxWidth: "100%",
+    minWidth: 0,
+  };
+  if (!stickyHeader) return base;
+  return {
+    ...base,
+    overflowY: "auto",
+    maxHeight: TABLE_STICKY_MAX_HEIGHT,
+    minHeight: 0,
+  };
+}
+
 /** z-index of the two backdrop layers: both NEGATIVE so in-flow content paints
  * above them; the media sits below the scrim. */
 const BACKDROP_MEDIA_Z = -2;

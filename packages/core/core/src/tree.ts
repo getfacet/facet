@@ -1,5 +1,6 @@
 import {
   isContainer,
+  MEDIA_ICON_NAMES,
   type ChartNode,
   type FacetNode,
   type KeyValueNode,
@@ -11,6 +12,8 @@ import type { DataWarehouse } from "./data-types.js";
 import { resolveNodeData } from "./data-binding.js";
 import { BRICK_REGISTRY, type BrickEntry } from "./brick-registry.js";
 import { MAX_FIELD_OPTIONS } from "./protocol.js";
+
+const RENDERABLE_MEDIA_ICON_NAMES: ReadonlySet<string> = new Set(MEDIA_ICON_NAMES);
 
 const TREE_RENDERABLE_NODE_BUDGET = 5_000;
 const TREE_RENDERABLE_MAX_DEPTH = 100;
@@ -218,6 +221,11 @@ export function rendersText(node: Record<string, unknown>): boolean {
   return hasString(node.value);
 }
 export function rendersMedia(node: Record<string, unknown>): boolean {
+  // An icon draws from the closed name vocabulary, not a src — mirror the
+  // renderer's MediaIconSvg gate so "shows something" and the render agree.
+  if (node.kind === "icon") {
+    return typeof node.icon === "string" && RENDERABLE_MEDIA_ICON_NAMES.has(node.icon);
+  }
   if (node.kind !== undefined && node.kind !== "image" && node.kind !== "video") return false;
   return typeof node.src === "string" && isRenderableMediaSrc(node.src);
 }

@@ -172,7 +172,9 @@ describe("buildSystem", () => {
   it("teaches product-grade same-Brick vocabulary without raw design escapes", () => {
     const system = buildSystem(DEFAULT_GUIDE);
 
-    expect(system).toMatch(/same eleven Bricks/i);
+    // The vocabulary sentence is single-sourced in Core's STAGE_SPEC and no
+    // longer restated by the prompt kit, so assert Core's phrasing.
+    expect(system).toMatch(/same-Brick choices, not new Bricks/i);
     expect(system).toMatch(/media\.kind[^.]*"icon"[^.]*MEDIA_ICON_NAMES/i);
     expect(system).toMatch(/never raw SVG paths or CSS/i);
     expect(system).toMatch(/text, list, richtext, and table[^.]*textWrap[^.]*lineClamp/i);

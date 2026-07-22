@@ -135,6 +135,33 @@ describe("treeHasContent", () => {
     expect(treeHasContent(tree({ r: { id: "r", type: "text", value: "x" } }))).toBe(false);
   });
 
+  it("analytics-data-surface: counts a valid icon media node as renderable content", () => {
+    // rendersMedia previously required a src, so a src-less icon node — fully
+    // valid and actually drawn by the renderer's MediaIconSvg — was invisible
+    // to "shows something", misreporting icon-only patches as not visible.
+    const withIcon = tree({
+      r: { id: "r", type: "box", children: ["i"] },
+      i: { id: "i", type: "media", kind: "icon", icon: "check" },
+    });
+    expect(treeHasContent(withIcon)).toBe(true);
+    expect(treeRenderableNodeIds(withIcon).has("i")).toBe(true);
+  });
+
+  it("analytics-data-surface: excludes an icon media node with an unknown icon name", () => {
+    const unknownIcon = tree({
+      r: { id: "r", type: "box", children: ["i"] },
+      i: { id: "i", type: "media", kind: "icon", icon: "not-a-real-icon" },
+    });
+    expect(treeHasContent(unknownIcon)).toBe(false);
+    expect(treeRenderableNodeIds(unknownIcon).has("i")).toBe(false);
+
+    const missingIcon = tree({
+      r: { id: "r", type: "box", children: ["i"] },
+      i: { id: "i", type: "media", kind: "icon" },
+    });
+    expect(treeHasContent(missingIcon)).toBe(false);
+  });
+
   it("true for a richtext child carrying a non-empty run, false when every run is empty", () => {
     const withText = tree({
       r: { id: "r", type: "box", children: ["rt"] },
