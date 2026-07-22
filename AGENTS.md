@@ -231,8 +231,9 @@ Never commit planning artifacts or recreate the retired root `specs/` tree.
 
 ## Conventions
 
-- Keep responses concise by default. Provide longer explanations only when the
-  user explicitly asks for detail or the task requires it for correctness.
+- Keep responses to 1–3 short sentences by default. Do not include background,
+  summaries, or detailed explanations unless the user explicitly requests them.
+  If more detail is necessary for correctness, ask first.
 - TypeScript strict (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`,
   `verbatimModuleSyntax`). Use `import type` for types; import with `.js`
   extensions (bundler resolution).
