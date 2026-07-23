@@ -3,6 +3,12 @@ import { CHART_TABLE_VIEW_PATTERN } from "./pattern-chart-table.js";
 import { CARD_PATTERN, EMPTY_STATE_PATTERN, SECTION_PATTERN } from "./pattern-containers.js";
 import { CONTROL_PATTERNS } from "./pattern-controls.js";
 import {
+  APP_SHELL_PATTERN,
+  MEDIA_SHELF_PATTERN,
+  PRODUCT_GRID_PATTERN,
+  SPLIT_PANE_PATTERN,
+} from "./pattern-layout.js";
+import {
   FAQ_SECTION_PATTERN,
   FEATURE_GRID_PATTERN,
   HERO_PATTERN,
@@ -31,4 +37,8 @@ export const DEFAULT_PATTERNS: readonly FacetPattern[] = [
   EMPTY_STATE_PATTERN,
   SUPPORT_TRIAGE_PATTERN,
   CHART_TABLE_VIEW_PATTERN,
+  APP_SHELL_PATTERN,
+  SPLIT_PANE_PATTERN,
+  PRODUCT_GRID_PATTERN,
+  MEDIA_SHELF_PATTERN,
 ];

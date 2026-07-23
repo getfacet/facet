@@ -142,6 +142,19 @@ describe("STAGE_SPEC", () => {
     expect(STAGE_SPEC).toMatch(/chart series[^.]*lineStyle/i);
   });
 
+  it("names the box-layout-foundation capability without leaking resolved CSS", () => {
+    for (const term of ["basis", "itemWidth", "maxHeight", "collapse", 'columns:"auto"']) {
+      expect(STAGE_SPEC).toContain(term);
+    }
+    // The responsive-grid pairing, the bounded-viewport role, and collapse's
+    // row-only scope are all stated in the closed-vocabulary prose.
+    expect(STAGE_SPEC).toMatch(/columns:"auto"[^.]*itemWidth/i);
+    expect(STAGE_SPEC).toMatch(/maxHeight[^.]*(?:scrolling|viewport)/i);
+    expect(STAGE_SPEC).toMatch(/collapse[^.]*row/i);
+    // No resolved CSS value (pixel/rem/viewport unit) leaks into the spec prose.
+    expect(STAGE_SPEC).not.toMatch(/\b\d+(?:\.\d+)?(?:px|rem|em|svh|vh|vw)\b/i);
+  });
+
   it("contains no retired style asset or selector guidance", () => {
     const retiredTerms = [
       ["cata", "log"].join(""),

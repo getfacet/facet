@@ -4,6 +4,7 @@ import {
   BOOLEAN_VALUES,
   BORDER_WIDTHS,
   CHART_THICKNESSES,
+  COLLAPSES,
   COLORS,
   COLUMNS,
   CONTROL_HEIGHTS,
@@ -21,7 +22,9 @@ import {
   LETTER_SPACINGS,
   LINE_HEIGHTS,
   LINE_STYLES,
+  LAYOUT_WIDTHS,
   LOADING_ANIMATIONS,
+  MAX_HEIGHTS,
   MAX_WIDTHS,
   MIN_HEIGHTS,
   OBJECT_FITS,
@@ -171,6 +174,45 @@ export const TOKEN_STYLE_VALUE_CONTRACT = {
     ["prose", "Reading-focused width.", "Use for long-form text."],
     ["narrow", "Compact content width.", "Use for forms, dialogs, and focused summaries."],
     ["wide", "Broad bounded width.", "Use for dashboards and multi-column content."],
+  ]),
+  layoutWidth: defineDomain("Pane and grid-item width scale", LAYOUT_WIDTHS, [
+    [
+      "xs",
+      "Slim pane or grid-item width.",
+      'Use for a narrow sidebar pane (basis), or the tightest column floor of a columns:"auto" grid (itemWidth).',
+    ],
+    [
+      "sm",
+      "Compact pane or grid-item width.",
+      'Use for a standard sidebar pane (basis), or a compact column floor of a columns:"auto" grid (itemWidth).',
+    ],
+    [
+      "md",
+      "Standard pane or grid-item width.",
+      'Use for a roomy pane (basis), or the default column floor of a columns:"auto" grid (itemWidth).',
+    ],
+    [
+      "lg",
+      "Wide pane or grid-item width.",
+      'Use for a broad pane (basis), or a generous column floor of a columns:"auto" grid (itemWidth).',
+    ],
+  ]),
+  maxHeight: defineDomain("Bounded maximum height", MAX_HEIGHTS, [
+    [
+      "none",
+      "No maximum height.",
+      "Use when content should grow to its natural height; identical to leaving maxHeight unset.",
+    ],
+    [
+      "half",
+      "Half-viewport maximum height.",
+      'Use to cap a scroll:"vertical" or unscrolled pane so long content scrolls inside it; on a scroll:"horizontal" shelf it clips vertically instead of scrolling.',
+    ],
+    [
+      "screen",
+      "Full-viewport maximum height.",
+      'Use to cap a scroll:"vertical" or unscrolled viewport pane so it scrolls internally; on a scroll:"horizontal" shelf it clips vertically instead of scrolling.',
+    ],
   ]),
   letterSpacing: defineDomain("Letter spacing scale", LETTER_SPACINGS, [
     ["tight", "Condensed letter spacing.", "Use sparingly for large or dense headings."],
@@ -380,6 +422,23 @@ export const FIXED_STYLE_VALUE_CONTRACT = {
     [2, "Two equal flow columns.", "Use for paired content with enough available width."],
     [3, "Three equal flow columns.", "Use for compact repeated content on wider surfaces."],
     [4, "Four equal flow columns.", "Use sparingly for dense repeated content on wide surfaces."],
+    [
+      "auto",
+      "Responsive auto-fit grid.",
+      "Use with itemWidth to fill each row with as many equal columns as fit; a grid mode, so direction and wrap do not apply, and it falls back to the layoutWidth.md floor when itemWidth is absent.",
+    ],
+  ]),
+  collapse: defineDomain("Responsive row collapse", COLLAPSES, [
+    [
+      "none",
+      "Keep the authored direction at every width.",
+      "Use for rows that must stay horizontal on narrow viewports; identical to leaving collapse unset.",
+    ],
+    [
+      "stack",
+      "Stack the row's children vertically on narrow viewports.",
+      'Use on a direction:"row" box that should reflow to a column below the narrow breakpoint; ignored on grids and column boxes.',
+    ],
   ]),
   textAlign: defineDomain("Text alignment", TEXT_ALIGNS, [
     ["start", "Align text to the reading start.", "Use for most readable copy."],

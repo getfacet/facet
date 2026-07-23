@@ -127,10 +127,17 @@ describe("StageRenderer lifecycle motion (jsdom)", () => {
     const mutableResolved = resolveTheme(old.theme, "light");
     const resolvedSnapshot = captureResolvedThemeSnapshot(mutableResolved);
     (mutableResolved.color as Record<string, string>).accent = "rgb(88, 88, 88)";
+    // The two box-layout token groups are copied in lockstep with every other
+    // ResolvedTheme group (RISK-API-1): mutating the live map must not reach the
+    // retired snapshot frame.
+    (mutableResolved.layoutWidth as Record<string, string>).md = "999rem";
+    (mutableResolved.maxHeight as Record<string, string>).screen = "999svh";
     const mutableResolvedActive = mutableResolved.presets?.text?.["motion-active"]?.style as
       { fontWeight?: "bold" | "regular" } | undefined;
     if (mutableResolvedActive !== undefined) mutableResolvedActive.fontWeight = "regular";
     expect(resolvedSnapshot.color.accent).toBe("rgb(1, 2, 3)");
+    expect(resolvedSnapshot.layoutWidth.md).toBe(DEFAULT_THEME.tokens.layoutWidth.md);
+    expect(resolvedSnapshot.maxHeight.screen).toBe(DEFAULT_THEME.tokens.maxHeight.screen);
     expect(resolvedSnapshot.presets?.text?.["motion-active"]?.style.fontWeight).toBe("bold");
     const onAction = vi.fn();
     const onRecord = vi.fn();

@@ -20,8 +20,10 @@ import type {
   IndicatorSize,
   InputStyle,
   Justification,
+  LayoutWidth,
   LetterSpacing,
   LineHeight,
+  MaxHeight,
   MaxWidth,
   MediaStyle,
   MinHeight,
@@ -33,7 +35,12 @@ import type {
   TextStyle,
 } from "@facet/core";
 import { DEFAULT_THEME } from "@facet/assets";
-import { rootContainmentStyle, scrollContainmentStyle, stickyStyle } from "./layout-contract.js";
+import {
+  isGridColumns,
+  rootContainmentStyle,
+  scrollContainmentStyle,
+  stickyStyle,
+} from "./layout-contract.js";
 import { projectSurface, projectTypography } from "./style-projection.js";
 import { projectWidthStyle } from "./width-style.js";
 
@@ -56,6 +63,8 @@ export interface ResolvedTheme {
   readonly aspectRatio: Readonly<Record<AspectRatio, string>>;
   readonly minHeight: Readonly<Record<MinHeight, string>>;
   readonly maxWidth: Readonly<Record<MaxWidth, string>>;
+  readonly layoutWidth: Readonly<Record<LayoutWidth, string>>;
+  readonly maxHeight: Readonly<Record<MaxHeight, string>>;
   readonly letterSpacing: Readonly<Record<LetterSpacing, string>>;
   readonly lineHeight: Readonly<Record<LineHeight, string>>;
   readonly controlHeight: Readonly<Record<ControlHeight, string>>;
@@ -99,6 +108,8 @@ export function resolveTheme(raw?: unknown, rawColorMode: unknown = "light"): Re
     aspectRatio: theme.tokens.aspectRatio,
     minHeight: theme.tokens.minHeight,
     maxWidth: theme.tokens.maxWidth,
+    layoutWidth: theme.tokens.layoutWidth,
+    maxHeight: theme.tokens.maxHeight,
     letterSpacing: theme.tokens.letterSpacing,
     lineHeight: theme.tokens.lineHeight,
     controlHeight: theme.tokens.controlHeight,
@@ -132,14 +143,37 @@ function justifyValue(justify: Justification): CSSProperties["justifyContent"] {
   return "center";
 }
 
+/**
+ * Grid track template (R3/R4). `columns:"auto"` yields a responsive auto-fit
+ * grid whose item floor is a `layoutWidth` token; the `min(<floor>,100%)` clamp
+ * is load-bearing anti-blowout (a container narrower than the floor collapses to
+ * one clamped track instead of pushing horizontal overflow). A missing/junk
+ * `itemWidth` falls back to `layoutWidth.md` — a Theme token, never a raw scalar
+ * — so the authored `columns:"auto"` intent is never a silent no-op. `2|3|4`
+ * stay byte-identical to the fixed-count template.
+ */
+function gridTemplateColumns(style: BoxStyle, theme: ResolvedTheme): string {
+  if (style.columns === "auto") {
+    const floor =
+      (style.itemWidth !== undefined ? theme.layoutWidth[style.itemWidth] : undefined) ??
+      theme.layoutWidth.md;
+    // Defense-in-depth for `boxStyle` (a public export): the normal resolved-Theme path always
+    // has `layoutWidth.md`, but a hand-built/partial `ResolvedTheme` could leave `floor`
+    // undefined — emit a valid single track rather than `minmax(min(undefined,100%),1fr)`.
+    const minTrack = floor !== undefined ? `min(${floor},100%)` : "0";
+    return `repeat(auto-fit,minmax(${minTrack},1fr))`;
+  }
+  return `repeat(${String(style.columns)},minmax(0,1fr))`;
+}
+
 /** Root box mapping retained as a small public helper; target mappings live in role modules. */
 export function boxStyle(
   style: BoxStyle = {},
   theme: ResolvedTheme = DEFAULT_RESOLVED,
 ): CSSProperties {
-  const isGrid = style.columns === 2 || style.columns === 3 || style.columns === 4;
+  const isGrid = isGridColumns(style.columns);
   const css: CSSProperties = isGrid
-    ? { display: "grid", gridTemplateColumns: `repeat(${String(style.columns)},minmax(0,1fr))` }
+    ? { display: "grid", gridTemplateColumns: gridTemplateColumns(style, theme) }
     : { display: "flex", flexDirection: style.direction ?? "column" };
   if (style.gap !== undefined) css.gap = theme.space[style.gap];
   if (style.padding !== undefined) css.padding = theme.space[style.padding];
@@ -150,6 +184,17 @@ export function boxStyle(
   if (style.backgroundGradient !== undefined)
     css.backgroundImage = theme.gradient[style.backgroundGradient];
   if (style.grow === true) css.flexGrow = 1;
+  // `basis` (R5): request the box's own main-axis size and HOLD it. Disjoint keys
+  // from `grow` (flexBasis + flexShrink:0, never flexGrow), so order is irrelevant
+  // and neither authored intent can silently kill the other. Guarded lookup: an
+  // out-of-domain key omits the whole declaration rather than writing a partial.
+  if (style.basis !== undefined) {
+    const resolvedBasis = theme.layoutWidth[style.basis];
+    if (resolvedBasis !== undefined) {
+      css.flexBasis = resolvedBasis;
+      css.flexShrink = 0;
+    }
+  }
   Object.assign(css, projectWidthStyle(style.width));
   if (style.minHeight !== undefined) css.minHeight = theme.minHeight[style.minHeight];
   if (style.maxWidth !== undefined) {
@@ -159,6 +204,22 @@ export function boxStyle(
   if (style.sticky === true) Object.assign(css, stickyStyle());
   if (style.scroll === "horizontal") Object.assign(css, scrollContainmentStyle("x"));
   else if (style.scroll === "vertical") Object.assign(css, scrollContainmentStyle("y"));
+  // Authored `maxHeight` (R2) is applied LAST, after scroll containment, so an
+  // author cap always beats the renderer's private 20rem SCROLL_MAX_HEIGHT. A
+  // resolved "none" is exactly equivalent to absent (R1): it emits nothing and
+  // never overrides renderer containment. A capped box brings its own overflow
+  // containment (flow-only) — except under scroll:"horizontal", which keeps its
+  // own overflow-y:hidden (the accepted vertical-clip boundary). Guarded lookup.
+  if (style.maxHeight !== undefined && style.maxHeight !== "none") {
+    const resolvedMaxHeight = theme.maxHeight[style.maxHeight];
+    if (resolvedMaxHeight !== undefined) {
+      css.maxHeight = resolvedMaxHeight;
+      if (style.scroll !== "horizontal") {
+        css.overflowY = "auto";
+        css.minHeight = 0;
+      }
+    }
+  }
   return rootContainmentStyle(css);
 }
 

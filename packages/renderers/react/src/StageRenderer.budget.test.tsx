@@ -73,7 +73,7 @@ function renderWithBudget(tree: FacetTree, left = TEST_RENDER_BUDGET) {
         visibilityOverrides: new Map(),
         theme: resolveTheme(),
         budget,
-        appearSeen: { used: false },
+        stageCssSeen: { appear: false, collapse: false },
         depth: 0,
         renderMode: "live",
         motionClassById: new Map(),

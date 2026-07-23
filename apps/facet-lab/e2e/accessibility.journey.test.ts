@@ -84,7 +84,7 @@ describe("Facet Lab accessible inspection controls", () => {
 
     await page.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });
     expect(await page.getByText("Advanced asset settings").count()).toBe(0);
-    const patterns = page.getByRole("button", { name: "Patterns (17/17)" });
+    const patterns = page.getByRole("button", { name: "Patterns (21/21)" });
     await patterns.focus();
     await page.keyboard.press("Enter");
     const firstPattern = page

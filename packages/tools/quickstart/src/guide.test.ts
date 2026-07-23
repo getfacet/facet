@@ -382,7 +382,7 @@ describe("quickstart guide", () => {
   it("reaches a visible mutation after seeded progressive discovery and repair", async () => {
     const agentId = "quickstart-guide-progressive";
     const assets = await loadAssets(new MemoryAssets({}), agentId);
-    expect(assets.patterns).toHaveLength(17);
+    expect(assets.patterns).toHaveLength(21);
     expect(Object.keys(QUICKSTART_INITIAL_STAGE.nodes)).toHaveLength(175);
 
     let callId = 0;

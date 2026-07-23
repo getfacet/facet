@@ -1,5 +1,5 @@
 import type { FacetTheme } from "@facet/core";
-import { validateTheme } from "@facet/core";
+import { LAYOUT_WIDTHS, MAX_HEIGHTS, validateTheme } from "@facet/core";
 import { describe, expect, it } from "vitest";
 import {
   ASPECT_RATIO,
@@ -15,8 +15,10 @@ import {
   GRADIENT,
   HIGHLIGHT,
   INDICATOR_SIZE,
+  LAYOUT_WIDTH,
   LETTER_SPACING,
   LINE_HEIGHT,
+  MAX_HEIGHT,
   MAX_WIDTH,
   MIN_HEIGHT,
   PROGRESS_THICKNESS,
@@ -50,6 +52,8 @@ const TOKEN_GROUPS = [
   "aspectRatio",
   "minHeight",
   "maxWidth",
+  "layoutWidth",
+  "maxHeight",
   "letterSpacing",
   "lineHeight",
   "controlHeight",
@@ -122,6 +126,26 @@ describe("DEFAULT_THEME", () => {
 
     expect(DEFAULT_THEME).not.toHaveProperty("recipes");
     expect(JSON.stringify(DEFAULT_THEME)).not.toContain('"recipe"');
+  });
+
+  // WU-8 (box-layout-foundation): the rail Preset lands within the R12 add-only
+  // budget. Kept beside the <=16 per-brick cap where the Preset budget lives.
+  it("adds exactly one box Preset (rail) within the R12 Preset budget", () => {
+    const result = validateTheme(DEFAULT_THEME);
+    expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
+    expect(result.issues).toEqual([]);
+
+    const boxPresets = DEFAULT_THEME.presets?.box ?? {};
+    expect(Object.keys(boxPresets)).toContain("rail");
+    expect(Object.keys(boxPresets).length).toBe(13);
+    expect(Object.keys(boxPresets).length).toBeLessThanOrEqual(16);
+
+    let total = 0;
+    for (const presets of Object.values(DEFAULT_THEME.presets ?? {})) {
+      total += Object.keys(presets).length;
+    }
+    expect(total).toBe(44);
+    expect(total).toBeLessThanOrEqual(64);
   });
 
   it("keeps default badges and actions compact", () => {
@@ -212,5 +236,34 @@ describe("DEFAULT_THEME", () => {
       expect(Reflect.get(map, "__proto__")).toBeUndefined();
       expect(Reflect.get(map, "constructor")).toBeUndefined();
     }
+  });
+
+  // WU-3 (box-layout-foundation): the two new required token groups. Scoped to
+  // this describe so WU-8's later Preset/Pattern count assertions stay separate.
+  describe("layout token groups", () => {
+    it("adds complete layoutWidth and maxHeight groups so DEFAULT_THEME validates", () => {
+      const result = validateTheme(DEFAULT_THEME);
+
+      expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
+      expect(result.issues).toEqual([]);
+
+      expect(DEFAULT_THEME.tokens.layoutWidth).toBe(LAYOUT_WIDTH);
+      expect(DEFAULT_THEME.tokens.maxHeight).toBe(MAX_HEIGHT);
+      expect(Object.keys(DEFAULT_THEME.tokens.layoutWidth).sort()).toEqual(
+        [...LAYOUT_WIDTHS].sort(),
+      );
+      expect(Object.keys(DEFAULT_THEME.tokens.maxHeight).sort()).toEqual([...MAX_HEIGHTS].sort());
+
+      // maxHeight owns the "none" sentinel; layoutWidth is a pure length scale.
+      expect(DEFAULT_THEME.tokens.maxHeight.none).toBe("none");
+    });
+
+    it("exports both new maps as null-prototype data", () => {
+      for (const map of [LAYOUT_WIDTH, MAX_HEIGHT]) {
+        expect(Object.getPrototypeOf(map)).toBeNull();
+        expect(Reflect.get(map, "__proto__")).toBeUndefined();
+        expect(Reflect.get(map, "constructor")).toBeUndefined();
+      }
+    });
   });
 });

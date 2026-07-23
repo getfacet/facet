@@ -80,6 +80,8 @@ export function intrinsicBoxStyle(style: CSSProperties | undefined): CSSProperti
   delete css.alignItems;
   delete css.justifyContent;
   delete css.flexGrow;
+  delete css.flexBasis;
+  delete css.flexShrink;
   delete css.width;
   delete css.minWidth;
   delete css.maxWidth;

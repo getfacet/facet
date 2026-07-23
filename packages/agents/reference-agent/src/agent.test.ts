@@ -14,8 +14,10 @@ import {
   GRADIENTS,
   HIGHLIGHTS,
   INDICATOR_SIZES,
+  LAYOUT_WIDTHS,
   LETTER_SPACINGS,
   LINE_HEIGHTS,
+  MAX_HEIGHTS,
   MAX_WIDTHS,
   MIN_HEIGHTS,
   PROGRESS_THICKNESSES,
@@ -106,6 +108,8 @@ function completeTheme(): FacetTheme {
       aspectRatio: map(ASPECT_RATIOS, (name) => (name === "auto" ? "auto" : "1 / 1")),
       minHeight: map(MIN_HEIGHTS, (name) => (name === "auto" ? "auto" : "100px")),
       maxWidth: map(MAX_WIDTHS, (name) => (name === "none" ? "none" : "100px")),
+      layoutWidth: map(LAYOUT_WIDTHS, () => "100px"),
+      maxHeight: map(MAX_HEIGHTS, (name) => (name === "none" ? "none" : "100px")),
       letterSpacing: map(LETTER_SPACINGS, () => "0"),
       lineHeight: map(LINE_HEIGHTS, () => "1.5"),
       controlHeight: map(CONTROL_HEIGHTS, () => "32px"),
@@ -2093,10 +2097,12 @@ describe("compaction", () => {
   it("projects the next turn with the budget's stage bounds, not the 48K default (R5)", async () => {
     // A ~3000-char stage JSON with maxStageJsonChars: 100 renders as a SUMMARY in
     // the real assembly. The projection must measure the same rendering: at
-    // maxContextTokens 8400 puts the 75% trigger (~6300 tokens) between the
-    // summary-mode projection (~5900) and the full-JSON projection (~6600).
-    // This deliberately leaves the assertion sensitive to accidentally falling
-    // back to the 48K default while allowing for the current fixed prompt/tools.
+    // maxContextTokens 9000 the 75% trigger (~6750 tokens) sits between the
+    // summary-mode projection and the full-JSON projection. The window tracks the
+    // fixed prompt/tools size, which the box-layout-foundation STAGE_SPEC +
+    // prompt-kit additions grew by ~450 tokens (was 8400 before this feature) —
+    // recalibrated by measurement, not weakened: the assertion is still sensitive
+    // to accidentally falling back to the 48K default.
     const bigStage = {
       root: "root",
       nodes: {
@@ -2124,7 +2130,7 @@ describe("compaction", () => {
         assets: testAssets(),
         summaryStore: new MemorySummaryStore(),
         summarizerFactory: () => spy.summarizer,
-        budget: { maxContextTokens: 8_400, maxStageJsonChars },
+        budget: { maxContextTokens: 9_000, maxStageJsonChars },
         onBackgroundTask,
       });
       await runAgent(agent, { kind: "message", text: "ok" }, bigSession);

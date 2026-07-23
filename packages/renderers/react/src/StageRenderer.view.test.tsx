@@ -549,7 +549,7 @@ describe("StageRenderer view-state setter fence (DC-005)", () => {
       "utf8",
     );
     const start = src.indexOf("const handlePress");
-    const end = src.indexOf("const appearSeen", start);
+    const end = src.indexOf("const stageCssSeen", start);
     expect(start).toBeGreaterThan(-1);
     expect(end).toBeGreaterThan(start);
 

@@ -16,6 +16,7 @@ import {
   type ViewPredicate,
 } from "@facet/core";
 import { appearClass } from "./appear.js";
+import { collapseClass } from "./collapse-style.js";
 import { renderBrickNode, type PressableRenderArgs } from "./brick-renderers.js";
 import { MOTION_CLASS_NAMES, composeMotionClassName } from "./motion.js";
 import { backdropHostStyle, scrimStyle } from "./layout-contract.js";
@@ -43,6 +44,18 @@ const EMPTY_EXIT_RECORDS_BY_PARENT: ReadonlyMap<NodeId, readonly ExitRecord[]> =
   NodeId,
   readonly ExitRecord[]
 >();
+
+/**
+ * The two one-per-stage stylesheet gates, both flipped DURING the budget-bounded
+ * render walk (never a separate O(N) rescan of `tree.nodes`): `appear` when a
+ * reachable box renders an appear class, `collapse` when a reachable box resolves
+ * a collapsible row (R7/R10). `StageRenderer` gates each gated `<style>` slot on
+ * its flag, so a tree using neither stays byte-identical to today.
+ */
+interface StageCssSeen {
+  appear: boolean;
+  collapse: boolean;
+}
 
 /**
  * The browser-private table-sort view-state, threaded from `StageRenderer`
@@ -116,14 +129,15 @@ interface RenderArgs {
    */
   readonly budget: { left: number; refsLeft: number; warned?: boolean };
   /**
-   * Set to `true` the moment a REACHABLE box renders with an appear class, so
-   * the caller can gate the one-per-stage `<style>` on the same budget-bounded
-   * walk that renders the tree — never a separate unbounded scan of the whole
+   * The one-per-stage stylesheet gates. `appear` is set the moment a REACHABLE
+   * box renders an appear class; `collapse` the moment a reachable box resolves a
+   * collapsible row. Both gate their `<style>` on the same budget-bounded walk
+   * that renders the tree — never a separate unbounded scan of the whole
    * `tree.nodes` map (which the raw live path can grow to arbitrary size with
-   * unreachable/dangling entries). Reachable-only is also MORE correct: an
-   * appear token on an unrendered node no longer forces a useless stylesheet.
+   * unreachable/dangling entries). Reachable-only is also MORE correct: a token
+   * on an unrendered node no longer forces a useless stylesheet.
    */
-  readonly appearSeen: { used: boolean };
+  readonly stageCssSeen: StageCssSeen;
   readonly depth: number;
   readonly renderMode: RenderMode;
   readonly motionClassById: ReadonlyMap<NodeId, string>;
@@ -146,7 +160,7 @@ interface RenderArgs {
 interface ExitRenderArgs {
   readonly record: ExitRecord;
   readonly onPress: RenderArgs["onPress"];
-  readonly appearSeen: { used: boolean };
+  readonly stageCssSeen: StageCssSeen;
 }
 
 interface ContainerChildrenRenderArgs {
@@ -158,7 +172,7 @@ interface ContainerChildrenRenderArgs {
   readonly theme: ResolvedTheme;
   readonly ancestors?: ReadonlySet<NodeId> | undefined;
   readonly budget: RenderArgs["budget"];
-  readonly appearSeen: { used: boolean };
+  readonly stageCssSeen: StageCssSeen;
   readonly depth: number;
   readonly renderMode: RenderMode;
   readonly motionClassById: ReadonlyMap<NodeId, string>;
@@ -191,7 +205,7 @@ function renderContainerChildren({
   theme,
   ancestors,
   budget,
-  appearSeen,
+  stageCssSeen,
   depth,
   renderMode,
   motionClassById,
@@ -251,7 +265,7 @@ function renderContainerChildren({
     for (const record of exitsBySlot.get(index) ?? []) {
       children.push(
         <Fragment key={`exit:${record.id}`}>
-          {renderExitRecord({ record, onPress, appearSeen })}
+          {renderExitRecord({ record, onPress, stageCssSeen })}
         </Fragment>,
       );
     }
@@ -272,7 +286,7 @@ function renderContainerChildren({
           theme,
           ancestors: childAncestors,
           budget,
-          appearSeen,
+          stageCssSeen,
           depth: depth + 1,
           renderMode,
           motionClassById,
@@ -287,7 +301,7 @@ function renderContainerChildren({
   return children;
 }
 
-export function renderExitRecord({ record, onPress, appearSeen }: ExitRenderArgs): ReactNode {
+export function renderExitRecord({ record, onPress, stageCssSeen }: ExitRenderArgs): ReactNode {
   return renderNode({
     tree: record.snapshot.tree,
     id: record.id,
@@ -296,7 +310,7 @@ export function renderExitRecord({ record, onPress, appearSeen }: ExitRenderArgs
     theme: record.snapshot.theme,
     ancestors: record.ancestors,
     budget: { left: RENDER_BUDGET, refsLeft: RENDER_BUDGET },
-    appearSeen,
+    stageCssSeen,
     depth: record.depth,
     renderMode: "inert",
     motionClassById: new Map<NodeId, string>([[record.id, MOTION_CLASS_NAMES.brickExit]]),
@@ -321,7 +335,7 @@ export function renderNode({
   theme,
   ancestors,
   budget,
-  appearSeen,
+  stageCssSeen,
   depth,
   renderMode,
   motionClassById,
@@ -430,7 +444,7 @@ export function renderNode({
         theme,
         ancestors,
         budget,
-        appearSeen,
+        stageCssSeen,
         depth,
         renderMode,
         motionClassById,
@@ -493,7 +507,14 @@ export function renderNode({
       // one-per-stage <style> is gated on this flag, never a separate O(N) scan
       // of the whole node map.
       if (appear !== undefined) {
-        appearSeen.used = true;
+        stageCssSeen.appear = true;
+      }
+      // The collapse stylesheet rides the SAME budget-bounded gate (R10): a
+      // reachable box resolving a collapsible row (R7, from THIS post-active
+      // resolved style) flips it, so COLLAPSE_CSS ships once per stage only when
+      // the tree uses collapse — never a separate O(N) rescan, no JS listener.
+      if (collapseClass(resolvedStyle) !== undefined) {
+        stageCssSeen.collapse = true;
       }
       const boxTarget = layoutBoxTargetStyle(resolvedStyle, theme);
       const boxCss = boxTarget.style;

@@ -79,6 +79,7 @@ export const SUPABASE_TABLE_EDITOR_BENCHMARK_TREE = {
         gap: "sm",
         padding: "xs",
         wrap: false,
+        sticky: true,
       },
     },
     "supabase-brand-cluster": {
@@ -198,13 +199,23 @@ export const SUPABASE_TABLE_EDITOR_BENCHMARK_TREE = {
       id: "supabase-user-label",
       type: "text",
       value: "JL",
-      style: { preset: "badge", color: "accent" },
+      // color:"foreground" (not "accent") so the avatar initials clear WCAG contrast on the
+      // accentSurface badge — a pre-existing base-main a11y defect this feature's DC-009a
+      // benchmark evidence surfaced when WU-12 re-enabled the a11y gate.
+      style: { preset: "badge", color: "foreground" },
     },
     "supabase-workspace": {
       id: "supabase-workspace",
       type: "box",
       children: ["supabase-icon-rail", "supabase-sidebar", "supabase-main"],
-      style: { direction: "row", gap: "none", width: "full", grow: true, background: "background" },
+      style: {
+        direction: "row",
+        gap: "none",
+        width: "full",
+        grow: true,
+        collapse: "stack",
+        background: "background",
+      },
     },
     "supabase-icon-rail": {
       id: "supabase-icon-rail",
@@ -283,7 +294,7 @@ export const SUPABASE_TABLE_EDITOR_BENCHMARK_TREE = {
         preset: "sidebar",
         gap: "sm",
         padding: "md",
-        width: "fit",
+        basis: "sm",
       },
     },
     "supabase-sidebar-title": {
@@ -446,7 +457,14 @@ export const SUPABASE_TABLE_EDITOR_BENCHMARK_TREE = {
         "supabase-empty-state",
         "supabase-main-footer",
       ],
-      style: { gap: "none", width: "full", grow: true, background: "background" },
+      style: {
+        gap: "none",
+        width: "full",
+        grow: true,
+        scroll: "vertical",
+        maxHeight: "screen",
+        background: "background",
+      },
     },
     "supabase-editor-tabbar": {
       id: "supabase-editor-tabbar",
@@ -1204,7 +1222,7 @@ export const AMA2_PUBLIC_LANDING_BENCHMARK_TREE = {
       id: "ama2-setup-steps",
       type: "box",
       children: ["ama2-step-one", "ama2-step-two", "ama2-step-three"],
-      style: { preset: "showcasePanel" },
+      style: { preset: "showcasePanel", columns: "auto", itemWidth: "md" },
     },
     "ama2-step-one": {
       id: "ama2-step-one",

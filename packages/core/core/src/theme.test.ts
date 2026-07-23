@@ -13,8 +13,10 @@ import {
   GRADIENTS,
   HIGHLIGHTS,
   INDICATOR_SIZES,
+  LAYOUT_WIDTHS,
   LETTER_SPACINGS,
   LINE_HEIGHTS,
+  MAX_HEIGHTS,
   MAX_WIDTHS,
   MIN_HEIGHTS,
   PROGRESS_THICKNESSES,
@@ -62,6 +64,8 @@ function completeTheme(): Record<string, unknown> {
       aspectRatio: map(ASPECT_RATIOS, (name) => (name === "auto" ? "auto" : "1 / 1")),
       minHeight: map(MIN_HEIGHTS, (name) => (name === "auto" ? "auto" : "100px")),
       maxWidth: map(MAX_WIDTHS, (name) => (name === "none" ? "none" : "100px")),
+      layoutWidth: map(LAYOUT_WIDTHS, () => "16rem"),
+      maxHeight: map(MAX_HEIGHTS, (name) => (name === "none" ? "none" : "50svh")),
       letterSpacing: map(LETTER_SPACINGS, () => "0"),
       lineHeight: map(LINE_HEIGHTS, () => "1.5"),
       controlHeight: map(CONTROL_HEIGHTS, () => "32px"),
@@ -538,6 +542,76 @@ describe("validateTheme", () => {
       expect(result.theme!.defaults[brick]).not.toBe(
         (input.defaults as Record<string, unknown>)[brick],
       );
+    }
+  });
+});
+
+describe("box-layout-foundation: layout token groups", () => {
+  const withLayoutGroups = (theme: Record<string, unknown>): Record<string, unknown> => {
+    const tokens = theme.tokens as Record<string, unknown>;
+    tokens.layoutWidth = map(LAYOUT_WIDTHS, () => "16rem");
+    tokens.maxHeight = map(MAX_HEIGHTS, (name) => (name === "none" ? "none" : "50svh"));
+    return theme;
+  };
+
+  it("accepts a complete Theme carrying the layoutWidth and maxHeight token groups", () => {
+    expectValid(withLayoutGroups(completeTheme()));
+  });
+
+  it("rejects a Theme missing the layoutWidth group whole with an actionable per-group message", () => {
+    const missing = completeTheme();
+    delete (missing.tokens as Record<string, unknown>).layoutWidth;
+    const result = validateTheme(missing);
+    expect(result.theme).toBeUndefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          message: expect.stringMatching(/tokens\.layoutWidth/),
+        }),
+      ]),
+    );
+  });
+
+  it("rejects a Theme missing the maxHeight group whole with an actionable per-group message", () => {
+    const missing = completeTheme();
+    delete (missing.tokens as Record<string, unknown>).maxHeight;
+    const result = validateTheme(missing);
+    expect(result.theme).toBeUndefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: "error",
+          message: expect.stringMatching(/tokens\.maxHeight/),
+        }),
+      ]),
+    );
+  });
+
+  it("enforces the layoutWidth and maxHeight length grammars per group", () => {
+    const dimensions: readonly [string, readonly string[], readonly string[]][] = [
+      [
+        "layoutWidth",
+        ["0px", "4096px", "256rem", "256em", "256ch"],
+        ["-1px", "4097px", "256.0001rem", "1svh", "none"],
+      ],
+      [
+        "maxHeight",
+        ["none", "0", "2000px", "125rem", "100svh"],
+        ["-1px", "2001px", "125.0001rem", "1ch", "auto"],
+      ],
+    ];
+    for (const [group, accepted, rejected] of dimensions) {
+      for (const value of accepted) {
+        const theme = withLayoutGroups(completeTheme());
+        setToken(theme, group, value);
+        expectValid(theme);
+      }
+      for (const value of rejected) {
+        const theme = withLayoutGroups(completeTheme());
+        setToken(theme, group, value);
+        expectInvalid(theme);
+      }
     }
   });
 });

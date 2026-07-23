@@ -15,6 +15,7 @@ import {
 } from "@facet/core";
 import { captureViewSnapshot, useViewportColorMode } from "./view-snapshot.js";
 import { APPEAR_CSS } from "./appear.js";
+import { COLLAPSE_CSS } from "./collapse-style.js";
 import { INPUT_TARGET_CSS } from "./brick-style-input.js";
 import { INTERACTION_CSS } from "./interaction-style.js";
 import {
@@ -302,15 +303,16 @@ export function StageRenderer({
     recordLocalTap({ kind: "tap", target: boxId, effect: { toggle: boxId } });
   };
 
-  // Appear detection (Decision 4, folded into the render walk in review r7):
-  // `renderNode` flips `appearSeen.used` when a REACHABLE box renders with an
-  // appear class, so the one-per-stage <style> is gated on the SAME
+  // Stylesheet detection (Decision 4, folded into the render walk in review r7):
+  // `renderNode` flips `stageCssSeen.appear` when a REACHABLE box renders with an
+  // appear class, and `stageCssSeen.collapse` when a reachable box resolves a
+  // collapsible row (R10), so each one-per-stage <style> is gated on the SAME
   // budget-bounded traversal that renders the tree — never a separate O(N) scan
   // of the whole `tree.nodes` map, which the raw live path can grow to
   // arbitrary size with unreachable/dangling entries (a per-render soft-DoS the
   // budget exists to prevent). Reachable-only is also strictly more correct:
-  // an appear token on an unrendered node no longer forces a useless stylesheet.
-  const appearSeen = { used: false };
+  // a token on an unrendered node no longer forces a useless stylesheet.
+  const stageCssSeen = { appear: false, collapse: false };
   const motionPlan = motionRenderPlan(motionState);
   const hasActiveMotion = !isMotionStateEmpty(motionState);
 
@@ -331,7 +333,7 @@ export function StageRenderer({
     visibilityOverrides,
     theme,
     budget,
-    appearSeen,
+    stageCssSeen,
     depth: 0,
     renderMode: "live",
     motionClassById: motionPlan.motionClassById,
@@ -349,7 +351,7 @@ export function StageRenderer({
   });
   const rootExitNodes = motionPlan.rootExitRecords.map((record) => (
     <Fragment key={`exit:${record.id}`}>
-      {renderExitRecord({ record, onPress: handlePress, appearSeen })}
+      {renderExitRecord({ record, onPress: handlePress, stageCssSeen })}
     </Fragment>
   ));
   const stageContent = (
@@ -385,7 +387,7 @@ export function StageRenderer({
               visibilityOverrides: motionState.stagePrevious.snapshot.visibilityOverrides,
               theme: motionState.stagePrevious.snapshot.theme,
               budget: { left: RENDER_BUDGET, refsLeft: RENDER_BUDGET },
-              appearSeen,
+              stageCssSeen,
               depth: 0,
               renderMode: "inert",
               motionClassById: EMPTY_MOTION_CLASSES,
@@ -413,7 +415,8 @@ export function StageRenderer({
   const staged = (
     <Fragment>
       <style>{BRICK_STATE_CSS}</style>
-      {appearSeen.used ? <style>{APPEAR_CSS}</style> : null}
+      {stageCssSeen.appear ? <style>{APPEAR_CSS}</style> : null}
+      {stageCssSeen.collapse ? <style>{COLLAPSE_CSS}</style> : null}
       {hasActiveMotion ? <style>{MOTION_CSS}</style> : null}
       {stageBody}
     </Fragment>

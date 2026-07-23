@@ -4,6 +4,25 @@ export type RendererScrollAxis = "x" | "y";
 
 const SCROLL_MAX_HEIGHT = "20rem";
 
+// ── One narrow breakpoint (R9) ──
+// The SINGLE source for both the report-only `view.viewport === "narrow"`
+// classification (`view-snapshot.ts` derives `NARROW_QUERY` from this) and the
+// CSS-only collapse reflow threshold (`collapse-style.ts` derives its `@media`
+// rule from this). Framework-owned; NOT barrel-exported and never a style
+// domain, Theme token, or authorable scalar (RISK-PKG-2 / RISK-INV-2), so the
+// agent's "narrow" belief and the CSS reflow threshold can never disagree.
+export const NARROW_BREAKPOINT_PX = 640;
+
+/**
+ * Grid membership (R3): `columns` 2 | 3 | 4 | "auto" all lay out as CSS grid, so
+ * (unlike a flex row/column) `direction`/`wrap` do not apply and a collapse row
+ * is never one of them. Junk-safe — any other value (including "none",
+ * `undefined`, and non-`Columns` live-path input) is not a grid.
+ */
+export function isGridColumns(columns: unknown): boolean {
+  return columns === 2 || columns === 3 || columns === 4 || columns === "auto";
+}
+
 export function rootContainmentStyle(style: CSSProperties = {}): CSSProperties {
   return {
     ...style,
@@ -33,6 +52,16 @@ export function rootContainmentStyle(style: CSSProperties = {}): CSSProperties {
 // FRAMEWORK constants selected purely by `kind`; the author supplies NO
 // z/inset/coordinate/position (DC-002 / DC-004). Positive z (frame above scrim,
 // both above flow) is the deliberate inverse of the backdrop's negative band.
+//
+// Sanctioned position/z-index band inventory (the COMPLETE set of framework
+// constants that may emit `position`/`z-index`/`inset`, RISK-INV-6c):
+//   - backdrop band: BACKDROP_MEDIA_Z / BACKDROP_SCRIM_Z (negative), STICKY_TOP;
+//   - overlay band: OVERLAY_SCRIM_Z / OVERLAY_FRAME_Z (positive);
+//   - table sticky-header band: TABLE_STICKY_HEADER_Z (small local positive) and
+//     its bounded scroll region TABLE_STICKY_MAX_HEIGHT (Analytics-era).
+// Nothing else — and no author-authored value — ever emits position/z-index/inset.
+// The box layout vocabulary (basis / itemWidth / maxHeight / columns:"auto" /
+// collapse) is deliberately OUTSIDE this band: it is flow-only and emits none.
 //
 // NOTE: stacking order is a real-browser property that string SSR tests cannot
 // verify — the z-index values below (negative backdrop band AND positive overlay

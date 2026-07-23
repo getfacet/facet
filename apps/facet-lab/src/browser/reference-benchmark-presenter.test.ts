@@ -43,9 +43,13 @@ describe("reference benchmark presenter", () => {
 
     expect(presentation.renderable).toBe(11);
     expect(presentation.productGradeCandidates).toBe(0);
-    expect(presentation.blockedByGaps).toBeGreaterThan(0);
+    // box-layout-foundation cleared the last two blocking gaps (the Supabase
+    // app-shell gap and the Linktree carousel gap), so the corpus now holds zero
+    // blocking gaps; every renderable benchmark still keeps watch gaps and stays
+    // needs-design-qa rather than product-grade.
+    expect(presentation.blockedByGaps).toBe(0);
     expect(presentation.needsDesignQa).toBeGreaterThan(0);
-    expect(presentation.blockingGaps).toBeGreaterThan(0);
+    expect(presentation.blockingGaps).toBe(0);
     expect(presentation.watchGaps).toBeGreaterThan(0);
 
     // analytics-data-surface cleared GSC's blocking chart gaps: the benchmark now

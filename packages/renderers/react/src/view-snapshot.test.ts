@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import type { NodeId, SortDirection } from "@facet/core";
 import { captureViewSnapshot, useViewportColorMode } from "./view-snapshot.js";
+import { NARROW_BREAKPOINT_PX } from "./layout-contract.js";
 
 afterEach(cleanup);
 
@@ -88,6 +89,54 @@ describe("captureViewSnapshot", () => {
       colorMode: "light",
       sort: { t1: { column: "age", direction: "asc" } },
     });
+  });
+});
+
+// box-layout-foundation (WU-5, R9): the narrow breakpoint is now a SINGLE source
+// in layout-contract.ts — this module derives NARROW_QUERY from it instead of a
+// private NARROW_MAX_PX, so the reported `viewport === "narrow"` and the CSS-only
+// collapse reflow share one threshold and can never disagree. Behavior is
+// unchanged (640 - 1 = 639px, exactly as before).
+describe("NARROW_QUERY single-breakpoint derivation (R9)", () => {
+  const original = window.matchMedia;
+  afterEach(() => {
+    if (original === undefined) {
+      // @ts-expect-error restore jsdom's missing matchMedia
+      delete window.matchMedia;
+    } else {
+      window.matchMedia = original;
+    }
+  });
+
+  it("derives from NARROW_BREAKPOINT_PX and drops the private NARROW_MAX_PX", () => {
+    const src = readSrc("./view-snapshot.ts");
+    expect(src).toContain('import { NARROW_BREAKPOINT_PX } from "./layout-contract.js"');
+    expect(src).toContain("NARROW_BREAKPOINT_PX - 1");
+    // The private duplicate constant is gone — no second source of truth.
+    expect(src).not.toContain("NARROW_MAX_PX");
+  });
+
+  it("still resolves to (max-width: 639px), byte-identical to before", () => {
+    // Behavior parity: the derived query is exactly the old literal.
+    expect(`(max-width: ${String(NARROW_BREAKPOINT_PX - 1)}px)`).toBe("(max-width: 639px)");
+    // And matchMedia is still consulted with that max-width query (narrow class).
+    const queried: string[] = [];
+    window.matchMedia = ((query: string) => {
+      queried.push(query);
+      return {
+        matches: query.includes("max-width"),
+        media: query,
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        addListener: () => {},
+        removeListener: () => {},
+        dispatchEvent: () => false,
+        onchange: null,
+      };
+    }) as unknown as typeof window.matchMedia;
+    const { result } = renderHook(() => useViewportColorMode());
+    expect(result.current.viewport).toBe("narrow");
+    expect(queried).toContain("(max-width: 639px)");
   });
 });
 

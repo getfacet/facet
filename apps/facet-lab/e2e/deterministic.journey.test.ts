@@ -1,3 +1,6 @@
+import { mkdir, stat, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Locator, Page } from "playwright";
 
@@ -10,6 +13,229 @@ import {
   type LabHarness,
 } from "./lab-harness.js";
 import { REFERENCE_BENCHMARK_IDS } from "../src/scenarios/reference-benchmarks.js";
+
+/**
+ * DC-009a real-viewport evidence: the five named benchmark structures, each captured at a REAL
+ * 390x844 mobile viewport (not the CSS-width preview canvas — RISK-INV-7) and a 1440x900 desktop
+ * viewport, with element-level horizontal-containment probes measured on the CONTAINING box.
+ */
+// `paneScrolls` marks the collapse structures whose bounded viewport pane demonstrably overflows at
+// 1440x900. The AMA2 messages inbox is dense enough to prove real internal scrolling; the Supabase
+// table editor faithfully renders an EMPTY data grid (matching the reference), so its pane content
+// fits inside the 100svh cap and does not overflow — the pane-not-page invariant (overflow-y:auto
+// on the pane + a contained, non-scrolling canvas) is still asserted for both.
+const FIVE_STRUCTURES = [
+  {
+    id: "supabase-table-editor",
+    name: "Supabase table editor",
+    structure: "collapse",
+    paneScrolls: false,
+  },
+  { id: "ama2-public-landing", name: "AMA2 public landing", structure: "grid", paneScrolls: false },
+  { id: "ama2-messages-app", name: "AMA2 messages app", structure: "collapse", paneScrolls: true },
+  {
+    id: "coupang-product-listing",
+    name: "Coupang product listing",
+    structure: "grid",
+    paneScrolls: false,
+  },
+  {
+    id: "linktree-selena-gomez",
+    name: "Linktree Selena Gomez",
+    structure: "shelf",
+    paneScrolls: false,
+  },
+] as const;
+
+const EVIDENCE_VIEWPORTS = [
+  { name: "mobile", width: 390, height: 844 },
+  { name: "desktop", width: 1_440, height: 900 },
+] as const;
+
+interface OverflowProbe {
+  readonly scrollWidth: number;
+  readonly clientWidth: number;
+  readonly contained: boolean;
+}
+
+interface PaneScrollProbe {
+  readonly scrollHeight: number;
+  readonly clientHeight: number;
+  readonly contained: boolean;
+}
+
+interface StructureProbe {
+  readonly frame: OverflowProbe;
+  readonly canvas: OverflowProbe;
+  readonly document: OverflowProbe;
+  readonly flexDirection: string | null;
+  readonly gridDisplay: string | null;
+  readonly gridTemplateColumns: string | null;
+  readonly gridTrackCount: number | null;
+  readonly overflowX: string | null;
+  readonly shelfFirstChildFlexShrink: string | null;
+  readonly paneOverflowY: string | null;
+  readonly paneScrollHeight: number | null;
+  readonly paneClientHeight: number | null;
+  readonly canvasScrollHeight: number;
+  readonly canvasClientHeight: number;
+}
+
+interface EvidenceRecord {
+  readonly benchmarkId: string;
+  readonly viewport: string;
+  readonly file: string;
+  readonly flexDirection?: string;
+  readonly gridTemplateColumns?: string;
+  readonly overflowX?: string;
+  readonly layoutFrameOverflow: OverflowProbe;
+  readonly layoutCanvasOverflow: OverflowProbe;
+  readonly layoutDocumentOverflow: OverflowProbe;
+  readonly layoutPaneScroll?: PaneScrollProbe;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+}
+
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Flushes two animation frames so a fresh setViewportSize has fully re-laid out before probing. */
+async function settleLayout(page: Page): Promise<void> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+      }),
+  );
+}
+
+/**
+ * Runs entirely in the browser: measures horizontal containment on the CONTAINING box
+ * (`.catalog-preview-frame` + `.catalog-preview-canvas`), never on `document` alone, plus the
+ * per-structure computed style. The `columns:"auto"` grid is tagged on the first (mobile) pass and
+ * re-read on the desktop pass, since setViewportSize never re-mounts the persisted stage DOM.
+ */
+function probeStructure({ id, structure }: { id: string; structure: string }): StructureProbe {
+  const frameEl = document.querySelector(
+    `[data-reference-benchmark='${id}'] .catalog-preview-frame`,
+  );
+  const canvasEl = document.querySelector(
+    `[data-reference-benchmark='${id}'] .catalog-preview-canvas`,
+  );
+  const scrollingEl = document.scrollingElement ?? document.documentElement;
+  if (frameEl === null || canvasEl === null) {
+    throw new Error(`Missing preview frame/canvas for benchmark ${id}`);
+  }
+
+  const overflow = (element: Element): OverflowProbe => ({
+    scrollWidth: element.scrollWidth,
+    clientWidth: element.clientWidth,
+    contained: element.scrollWidth <= element.clientWidth,
+  });
+
+  const trackCount = (element: Element): number =>
+    getComputedStyle(element)
+      .gridTemplateColumns.trim()
+      .split(/\s+/u)
+      .filter((token) => token.length > 0 && token !== "none").length;
+
+  let flexDirection: string | null = null;
+  let paneOverflowY: string | null = null;
+  let paneScrollHeight: number | null = null;
+  let paneClientHeight: number | null = null;
+  if (structure === "collapse") {
+    const row = canvasEl.querySelector(".facet-collapse");
+    flexDirection = row === null ? null : getComputedStyle(row).flexDirection;
+    // The bounded viewport pane: grow + scroll:"vertical" + maxHeight:"screen" (100svh, ~viewport
+    // height), distinguished from the private 20rem (~320px) SCROLL_MAX_HEIGHT default by its cap.
+    const scrollers = [...canvasEl.querySelectorAll("*")].filter(
+      (element) => getComputedStyle(element).overflowY === "auto",
+    );
+    let pane: Element | null = null;
+    let paneCap = 640;
+    for (const element of scrollers) {
+      const cap = Number.parseFloat(getComputedStyle(element).maxHeight);
+      if (Number.isFinite(cap) && cap > paneCap) {
+        pane = element;
+        paneCap = cap;
+      }
+    }
+    if (pane !== null) {
+      paneOverflowY = getComputedStyle(pane).overflowY;
+      paneScrollHeight = pane.scrollHeight;
+      paneClientHeight = pane.clientHeight;
+    }
+  }
+
+  let gridDisplay: string | null = null;
+  let gridTemplateColumns: string | null = null;
+  let gridTrackCount: number | null = null;
+  if (structure === "grid") {
+    let gridEl = canvasEl.querySelector("[data-box-layout-auto-grid]");
+    if (gridEl === null) {
+      // The columns:"auto" box is a `box` brick; exclude the `list` brick's internal grid
+      // (data-facet-list-content), which is also display:grid but is not this feature's auto grid.
+      const grids = [...canvasEl.querySelectorAll("*")].filter(
+        (element) =>
+          getComputedStyle(element).display === "grid" &&
+          element.closest("[data-facet-list-content]") === null,
+      );
+      gridEl = grids.find((element) => trackCount(element) === 1) ?? grids[0] ?? null;
+      if (gridEl !== null) gridEl.setAttribute("data-box-layout-auto-grid", "1");
+    }
+    if (gridEl !== null) {
+      const computed = getComputedStyle(gridEl);
+      gridDisplay = computed.display;
+      gridTemplateColumns = computed.gridTemplateColumns;
+      gridTrackCount = trackCount(gridEl);
+    }
+  }
+
+  let overflowX: string | null = null;
+  let shelfFirstChildFlexShrink: string | null = null;
+  if (structure === "shelf") {
+    const scrollers = [...canvasEl.querySelectorAll("*")].filter(
+      (element) => getComputedStyle(element).overflowX === "auto",
+    );
+    const shelf =
+      scrollers.find((element) => {
+        const child = element.firstElementChild;
+        return child !== null && getComputedStyle(child).flexShrink === "0";
+      }) ??
+      scrollers[0] ??
+      null;
+    if (shelf !== null) {
+      overflowX = getComputedStyle(shelf).overflowX;
+      const child = shelf.firstElementChild;
+      shelfFirstChildFlexShrink = child === null ? null : getComputedStyle(child).flexShrink;
+    }
+  }
+
+  return {
+    frame: overflow(frameEl),
+    canvas: overflow(canvasEl),
+    document: overflow(scrollingEl),
+    flexDirection,
+    gridDisplay,
+    gridTemplateColumns,
+    gridTrackCount,
+    overflowX,
+    shelfFirstChildFlexShrink,
+    paneOverflowY,
+    paneScrollHeight,
+    paneClientHeight,
+    canvasScrollHeight: canvasEl.scrollHeight,
+    canvasClientHeight: canvasEl.clientHeight,
+  };
+}
 
 interface CaptureResponse {
   readonly persisted: boolean;
@@ -112,11 +338,11 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await catalogPage.goto(`${harness.url}/catalog`, { waitUntil: "networkidle" });
     await visible(catalogPage.getByRole("heading", { name: "Catalog", exact: true }).last());
     await visible(catalogPage.getByRole("button", { name: "Bricks (11/11)" }));
-    await visible(catalogPage.getByRole("button", { name: "Presets (43/43)" }));
-    await visible(catalogPage.getByRole("button", { name: "Patterns (17/17)" }));
+    await visible(catalogPage.getByRole("button", { name: "Presets (44/44)" }));
+    await visible(catalogPage.getByRole("button", { name: "Patterns (21/21)" }));
     await inspectEveryItem(catalogPage, "Bricks", 11);
-    await inspectEveryItem(catalogPage, "Presets", 43);
-    await inspectEveryItem(catalogPage, "Patterns", 17);
+    await inspectEveryItem(catalogPage, "Presets", 44);
+    await inspectEveryItem(catalogPage, "Patterns", 21);
 
     await catalogPage.getByRole("button", { name: /^Presets \(/u }).click();
     await catalogPage.getByRole("button", { name: /^Inspect Preset primaryAction$/u }).click();
@@ -295,5 +521,170 @@ describe("Facet Lab deterministic built-bundle journey", () => {
     await comparePage.close();
 
     expect(harness.pageErrors).toEqual([]);
+  }, 180_000);
+
+  it("captures DC-009a real-viewport box-layout evidence across the five benchmark structures", async () => {
+    // BOX_LAYOUT_EVIDENCE_DIR = harness.artifactDirectory, overridable via FACET_LAB_ARTIFACTS_DIR
+    // (mirrors live-provider.journey.test.ts's artifact-writing precedent). DC-009b reviews files.
+    const evidenceDir = process.env.FACET_LAB_ARTIFACTS_DIR?.trim() || harness.artifactDirectory;
+    await mkdir(evidenceDir, { recursive: true, mode: 0o700 });
+
+    const page = await harness.newPage();
+    await page.goto(`${harness.url}/scenarios`, { waitUntil: "networkidle" });
+    await visible(page.getByRole("heading", { name: "Reference benchmarks" }));
+
+    const records: EvidenceRecord[] = [];
+    const writtenFiles: string[] = [];
+
+    for (const benchmark of FIVE_STRUCTURES) {
+      await page
+        .getByRole("button", { name: new RegExp(escapeRegExp(benchmark.name), "u") })
+        .first()
+        .click();
+      const article = page.locator(`[data-reference-benchmark='${benchmark.id}']`);
+      await visible(article);
+      const frame = article.locator(".catalog-preview-frame");
+      await visible(frame);
+
+      for (const viewport of EVIDENCE_VIEWPORTS) {
+        await page.setViewportSize({ width: viewport.width, height: viewport.height });
+        await settleLayout(page);
+        const probe = await page.evaluate(probeStructure, {
+          id: benchmark.id,
+          structure: benchmark.structure,
+        });
+
+        // DC-004 / R4: horizontal containment measured on the CONTAINING box, never on document
+        // alone — .catalog-preview-frame is itself overflow:auto, so a document probe is vacuous.
+        expect(
+          probe.frame.contained,
+          `${benchmark.id} @${viewport.name} frame horizontal containment`,
+        ).toBe(true);
+        expect(
+          probe.canvas.contained,
+          `${benchmark.id} @${viewport.name} canvas horizontal containment`,
+        ).toBe(true);
+        // Secondary check only.
+        expect(
+          probe.document.contained,
+          `${benchmark.id} @${viewport.name} document horizontal containment`,
+        ).toBe(true);
+
+        if (benchmark.structure === "collapse") {
+          // DC-001 narrow half: the collapse:"stack" row stacks below the breakpoint (real @media).
+          expect(
+            probe.flexDirection,
+            `${benchmark.id} @${viewport.name} collapse row flex-direction`,
+          ).toBe(viewport.name === "mobile" ? "column" : "row");
+        } else if (benchmark.structure === "grid") {
+          // DC-003 / R4: columns:"auto" is a grid at both widths, clamped to a single track at 390
+          // (min(itemWidth,100%)) and expanded to more than one track at desktop.
+          expect(probe.gridDisplay, `${benchmark.id} @${viewport.name} auto grid display`).toBe(
+            "grid",
+          );
+          if (viewport.name === "mobile") {
+            expect(
+              probe.gridTrackCount,
+              `${benchmark.id} @mobile auto grid single-track clamp`,
+            ).toBe(1);
+          } else {
+            expect(
+              probe.gridTrackCount ?? 0,
+              `${benchmark.id} @desktop auto grid multi-track`,
+            ).toBeGreaterThan(1);
+          }
+        } else {
+          // DC-004: the shelf row scrolls horizontally and its first child holds its intrinsic
+          // width (flex-shrink:0) at both widths.
+          expect(probe.overflowX, `${benchmark.id} @${viewport.name} shelf overflow-x`).toBe(
+            "auto",
+          );
+          expect(
+            probe.shelfFirstChildFlexShrink,
+            `${benchmark.id} @${viewport.name} shelf first-child flex-shrink`,
+          ).toBe("0");
+        }
+
+        let paneScroll: PaneScrollProbe | undefined;
+        if (benchmark.structure === "collapse" && viewport.name === "desktop") {
+          // DC-002 pane-not-page (real geometry, not emitted strings): the bounded viewport pane
+          // (grow + scroll:"vertical" + maxHeight:"screen") is the scroll container, and its
+          // .catalog-preview-canvas ancestor does NOT scroll (the pane, not the page).
+          expect(
+            probe.paneOverflowY,
+            `${benchmark.id} @desktop pane is the scroll container (overflow-y:auto)`,
+          ).toBe("auto");
+          expect(
+            probe.canvasScrollHeight,
+            `${benchmark.id} @desktop canvas does not scroll (pane-not-page)`,
+          ).toBeLessThanOrEqual(probe.canvasClientHeight);
+          if (benchmark.paneScrolls) {
+            // Dense inbox content overflows the 100svh cap, proving real internal scrolling.
+            expect(
+              probe.paneScrollHeight ?? 0,
+              `${benchmark.id} @desktop pane scrolls its overflow internally`,
+            ).toBeGreaterThan(probe.paneClientHeight ?? 0);
+          }
+          paneScroll = {
+            scrollHeight: probe.paneScrollHeight ?? 0,
+            clientHeight: probe.paneClientHeight ?? 0,
+            contained: probe.canvasScrollHeight <= probe.canvasClientHeight,
+          };
+        }
+
+        const file = `box-layout-${benchmark.id}-${viewport.name}.png`;
+        await frame.screenshot({ path: join(evidenceDir, file) });
+        writtenFiles.push(file);
+
+        records.push({
+          benchmarkId: benchmark.id,
+          viewport: viewport.name,
+          file,
+          ...(benchmark.structure === "collapse" && probe.flexDirection !== null
+            ? { flexDirection: probe.flexDirection }
+            : {}),
+          ...(benchmark.structure === "grid" && probe.gridTemplateColumns !== null
+            ? { gridTemplateColumns: probe.gridTemplateColumns }
+            : {}),
+          ...(benchmark.structure === "shelf" && probe.overflowX !== null
+            ? { overflowX: probe.overflowX }
+            : {}),
+          layoutFrameOverflow: probe.frame,
+          layoutCanvasOverflow: probe.canvas,
+          layoutDocumentOverflow: probe.document,
+          ...(paneScroll === undefined ? {} : { layoutPaneScroll: paneScroll }),
+        });
+      }
+    }
+
+    // Concrete DC-009a/DC-009b bundle: exactly five ids x two viewports, 10 screenshots + manifest.
+    await writeFile(
+      join(evidenceDir, "box-layout-evidence.json"),
+      `${JSON.stringify(records, null, 2)}\n`,
+    );
+
+    expect(records).toHaveLength(FIVE_STRUCTURES.length * EVIDENCE_VIEWPORTS.length);
+    expect(new Set(records.map(({ benchmarkId }) => benchmarkId)).size).toBe(
+      FIVE_STRUCTURES.length,
+    );
+    for (const benchmark of FIVE_STRUCTURES) {
+      expect(
+        records
+          .filter(({ benchmarkId }) => benchmarkId === benchmark.id)
+          .map(({ viewport }) => viewport),
+      ).toEqual(["mobile", "desktop"]);
+    }
+
+    expect(writtenFiles).toHaveLength(10);
+    for (const file of writtenFiles) {
+      expect(await fileExists(join(evidenceDir, file)), `${file} written`).toBe(true);
+    }
+    expect(
+      await fileExists(join(evidenceDir, "box-layout-evidence.json")),
+      "box-layout-evidence.json written",
+    ).toBe(true);
+
+    expect(harness.pageErrors).toEqual([]);
+    await page.close();
   }, 180_000);
 });

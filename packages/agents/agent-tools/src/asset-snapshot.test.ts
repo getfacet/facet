@@ -12,8 +12,10 @@ import {
   GRADIENTS,
   HIGHLIGHTS,
   INDICATOR_SIZES,
+  LAYOUT_WIDTHS,
   LETTER_SPACINGS,
   LINE_HEIGHTS,
+  MAX_HEIGHTS,
   MAX_PATTERNS,
   MAX_WIDTHS,
   MIN_HEIGHTS,
@@ -22,6 +24,7 @@ import {
   SCRIMS,
   SHADOWS,
   SPACES,
+  validateTheme,
   type FacetPattern,
   type FacetTheme,
 } from "@facet/core";
@@ -64,6 +67,8 @@ function testTheme(): FacetTheme {
       aspectRatio: map(ASPECT_RATIOS, (name) => (name === "auto" ? "auto" : "1 / 1")),
       minHeight: map(MIN_HEIGHTS, (name) => (name === "auto" ? "auto" : "100px")),
       maxWidth: map(MAX_WIDTHS, (name) => (name === "none" ? "none" : "100px")),
+      layoutWidth: map(LAYOUT_WIDTHS, () => "100px"),
+      maxHeight: map(MAX_HEIGHTS, (name) => (name === "none" ? "none" : "100px")),
       letterSpacing: map(LETTER_SPACINGS, () => "0"),
       lineHeight: map(LINE_HEIGHTS, () => "1.5"),
       controlHeight: map(CONTROL_HEIGHTS, () => "32px"),
@@ -122,6 +127,14 @@ function expectDeepFrozen(value: unknown, seen = new Set<object>()): void {
   expect(Object.isFrozen(value)).toBe(true);
   for (const nested of Object.values(value)) expectDeepFrozen(nested, seen);
 }
+
+describe("complete theme fixture", () => {
+  it("validates with no error issues after the required layout token groups widened", () => {
+    const { theme, issues } = validateTheme(testTheme());
+    expect(theme).toBeDefined();
+    expect(issues.filter((issue) => issue.severity === "error")).toEqual([]);
+  });
+});
 
 describe("createStageToolAssetSnapshot", () => {
   it("freezes one exact Theme Preset Pattern snapshot", () => {

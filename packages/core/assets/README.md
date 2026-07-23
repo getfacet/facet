@@ -4,7 +4,7 @@ Node-free default design-system data for Facet. This package depends only on
 `@facet/core` and exports exactly two values:
 
 - `DEFAULT_THEME` — one complete, validated Theme.
-- `DEFAULT_PATTERNS` — 17 exact, validated Pattern trees.
+- `DEFAULT_PATTERNS` — 21 exact, validated Pattern trees.
 
 Role: **Core**.
 
@@ -49,8 +49,9 @@ and validated; service-specific benchmark assets live outside this package.
 `DEFAULT_PATTERNS` contains these reusable references: `hero`, `card`,
 `section`, `empty-state`, `cta-button`, `form`, `fixed-filter`, `metric`,
 `tabs`, `nav`, `pricing-section`, `faq-section`, `feature-grid`,
-`dashboard-summary`, `settings-panel`, `support-triage`, and
-`chart-table-view`.
+`dashboard-summary`, `settings-panel`, `support-triage`, `chart-table-view`,
+and the box-layout structures `app-shell`, `split-pane`, `product-grid`, and
+`media-shelf`.
 
 Each Pattern is an ordinary Facet tree plus discovery metadata:
 

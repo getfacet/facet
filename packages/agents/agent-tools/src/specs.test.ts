@@ -128,6 +128,16 @@ describe("FACET_STAGE_TOOL_SPECS", () => {
   });
 });
 
+describe("box-layout-foundation discovery vocabulary", () => {
+  it("names the new box layout properties in the get_style_choices description", () => {
+    const description = tool("get_style_choices").description;
+
+    for (const term of ["basis", "itemWidth", "maxHeight", "collapse", "columns"]) {
+      expect(description).toContain(term);
+    }
+  });
+});
+
 describe("analytics-data-surface discovery vocabulary", () => {
   it("enumerates the new chart and table vocabulary in the progressive-read descriptions", () => {
     const descriptions = `${tool("get_brick_spec").description}\n${tool("get_style_choices").description}`;

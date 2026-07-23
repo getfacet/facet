@@ -317,11 +317,19 @@ Every native renderer root follows three rules:
   its parent, and a sticky header pins inside that same renderer-owned region at
   a framework-owned offset and height; charts own their internal axis, grid,
   mark, tick, line-style, and legend geometry, including independent primary and
-  secondary value scales when series select them.
+  secondary value scales when series select them. A `box` `maxHeight` bounds a
+  region to its own scrolling viewport — the renderer supplies the overflow
+  containment so bounded content scrolls inside the box instead of spilling over
+  flow siblings — and a `columns:"auto"` grid clamps each track to its container
+  so a responsive grid never pushes horizontal overflow out of the box.
 
 There is no general authored positioning or z-index. A `box` backdrop and
 modal/drawer are bounded renderer-owned mechanisms with fixed layering and
-containment, not arbitrary CSS escape hatches.
+containment, not arbitrary CSS escape hatches. Responsive `collapse:"stack"` is
+likewise flow-only: it is a framework-owned `@media` rule in the per-stage
+stylesheet (no absolute positioning, no JS resize listener, nothing new in the
+view snapshot), keyed to a single renderer-owned narrow breakpoint that is never
+an authorable value.
 
 Compact sizing stays inside the same layout boundary. A child may request
 `width:"fit"` or `width:"full"`, but both are normal-flow choices interpreted
@@ -385,7 +393,13 @@ sanitized browser-private checkpoint only when the component is created.
 Viewport and effective color mode remain host/browser inputs. Later prop changes
 do not overwrite live interaction state; replay tools remount the renderer to
 select a different checkpoint. The document tree continues to come from
-accepted stage frames.
+accepted stage frames. For narrow-viewport layout the agent stays the primary
+authority — it re-authors the tree via patches when an event reports a narrow
+viewport — while a box's `collapse:"stack"` is a pre-authored CSS fallback at the
+*same* renderer-owned breakpoint, so the reported `view.viewport` classification
+and the CSS reflow threshold share one constant and cannot disagree. Below that
+breakpoint a resolved `collapse:"stack"` wins over an authored `direction:"row"`;
+to hold a row unstacked at narrow width the agent patches `collapse:"none"`.
 
 Patch producers use Core's `escapeJsonPointerToken` for every dynamic RFC 6901
 path token, so node ids, screen names, and dataset names share one escaping

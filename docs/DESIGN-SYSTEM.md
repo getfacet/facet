@@ -87,6 +87,15 @@ Product-grade details use the same rule. They are not arbitrary CSS escapes:
   cover common report polish while the renderer still owns the axis, tick, grid,
   bar, line, and legend geometry. A `secondary` axis assignment gives that group
   its own scale; with no assignment the chart renders exactly one scale.
+- `box` layout stays the same closed model: `basis` holds a split-pane or
+  horizontal-shelf item at a chosen pane width (a `layoutWidth` token), a
+  `columns:"auto"` grid pairs with `itemWidth` (its item floor, also a
+  `layoutWidth` token), `maxHeight` bounds a box to its own scrolling viewport (a
+  `maxHeight` token), and a row-only `collapse` (`none` or `stack`) stacks a row
+  at a renderer-owned narrow breakpoint. No breakpoints, pixels, percentages, or
+  CSS are authorable; the breakpoint is a framework constant and layout stays
+  flow-only. `box` remains the only container — these add orthogonal properties,
+  not a layout-mode enum or a new Brick.
 
 ## The four authoring forms
 
@@ -249,6 +258,16 @@ same-Brick Presets. The document still chooses closed names such as `padding:
 "xs"` or `preset:"dataGrid"`; it does not author pixel widths, margins, or CSS.
 If a benchmark cannot reach the target with a custom Theme/Preset/Pattern list,
 record that as evidence before adding Core vocabulary.
+
+A Theme's token names are the complete Core set: the box layout vocabulary adds
+two required token groups, `layoutWidth` (`xs`/`sm`/`md`/`lg`, the pane and
+grid-item widths for `basis`/`itemWidth`) and `maxHeight` (`none`/`half`/
+`screen`, the bounded-viewport caps). A Theme that spreads `...DEFAULT_THEME.tokens`
+inherits both for free. A **standalone** `FacetThemeTokens` literal built from
+scratch must now add both groups — a pre-1.0 breaking change; a Theme missing
+either group fails validation whole and Facet falls back to `DEFAULT_THEME`, and
+a persisted custom-theme JSON payload lacking them reverts that visitor to the
+bundled Theme until the maps are added (data migration, no adapter code).
 
 Starting from `DEFAULT_THEME` is the shortest safe way to create a complete
 brand Theme. Concrete CSS values belong only in this operator-side data:

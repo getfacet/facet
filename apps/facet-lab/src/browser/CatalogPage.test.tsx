@@ -73,17 +73,17 @@ describe("CatalogPage", () => {
     ).toBeTruthy();
     expect(screen.getByText(/This JSON is from the @facet\/core Brick contract/u)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Presets (43/43)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Presets (44/44)" }));
     fireEvent.click(screen.getByRole("tab", { name: "Package definition" }));
     expect(screen.getByText(/The renderer applies this data when a/u)).toBeTruthy();
     expect(screen.getByText(/This JSON is from the @facet\/assets default Theme/u)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Patterns (17/17)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Patterns (21/21)" }));
     fireEvent.click(screen.getByRole("tab", { name: "Package definition" }));
     expect(screen.getByText(/Agents can read and adapt this validated example tree/u)).toBeTruthy();
     expect(screen.getByText(/This JSON is from the @facet\/assets default Patterns/u)).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Token values (106/106)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Token values (113/113)" }));
     expect(screen.getByRole("heading", { name: "This frame is rendered by Facet." })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Facet document" }));
     expect(screen.getByLabelText("Facet document JSON").textContent).toContain('"style"');
@@ -93,7 +93,7 @@ describe("CatalogPage", () => {
       screen.getByText(/This JSON is from the @facet\/core style-value contract/u),
     ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "Fixed choices (54/54)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Fixed choices (57/57)" }));
     expect(screen.getByRole("heading", { name: "This frame is rendered by Facet." })).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "Package definition" }));
     expect(screen.getByText(/Core accepts this exact choice in the/u)).toBeTruthy();

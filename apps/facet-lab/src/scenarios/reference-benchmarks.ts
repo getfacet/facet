@@ -119,9 +119,9 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     gaps: [
       {
         category: "brick-vocabulary",
-        severity: "blocking",
+        severity: "watch",
         summary:
-          "Facet has no app-shell, fixed sidebar, split-pane, column-resize, or anchored floating-card primitive; this benchmark must approximate them with flow Boxes.",
+          "The app surface, fixed rail, and bounded internally-scrolling viewport are now box layout vocabulary (box-layout-foundation); column-resize handles and anchored floating-card chrome remain out of scope as interactivity/decoration.",
       },
       {
         category: "asset-guidance",
@@ -287,7 +287,7 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
         category: "asset-guidance",
         severity: "watch",
         summary:
-          "The result depends on AMA2-specific app-shell presets rather than package-default patterns.",
+          "The result depends on AMA2-specific presets and per-agent theming rather than package-default patterns.",
       },
     ],
   },
@@ -549,9 +549,9 @@ export const REFERENCE_BENCHMARKS: readonly ReferenceBenchmark[] = [
     gaps: [
       {
         category: "brick-vocabulary",
-        severity: "blocking",
+        severity: "watch",
         summary:
-          "Facet has no carousel primitive; horizontal shop shelves are approximated with scrollable Box rows.",
+          "Horizontal shop shelves now render as scrollable box rows with held item widths (box-layout-foundation); carousel snap points, active-index tracking, and pagination controls remain deferred carousel-state interactivity.",
       },
       {
         category: "brick-vocabulary",

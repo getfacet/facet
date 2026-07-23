@@ -236,7 +236,7 @@ export const FEATURE_GRID_PATTERN = {
     "feature-grid.root": {
       id: "feature-grid.root",
       type: "box",
-      style: { gap: "md", padding: "lg", columns: 3, width: "full" },
+      style: { gap: "md", padding: "lg", columns: "auto", itemWidth: "md", width: "full" },
       children: [
         "feature-grid.title",
         "feature-grid.first",

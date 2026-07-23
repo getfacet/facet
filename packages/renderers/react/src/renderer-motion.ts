@@ -112,6 +112,8 @@ export function captureResolvedThemeSnapshot(theme: ResolvedTheme): ResolvedThem
     aspectRatio: { ...theme.aspectRatio },
     minHeight: { ...theme.minHeight },
     maxWidth: { ...theme.maxWidth },
+    layoutWidth: { ...theme.layoutWidth },
+    maxHeight: { ...theme.maxHeight },
     letterSpacing: { ...theme.letterSpacing },
     lineHeight: { ...theme.lineHeight },
     controlHeight: { ...theme.controlHeight },

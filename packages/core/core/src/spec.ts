@@ -11,7 +11,7 @@
  * vocabulary addition is edited in exactly one place.
  */
 export const PRODUCT_GRADE_BRICK_CHOICES_SPEC =
-  'media.kind "icon" uses MEDIA_ICON_NAMES and never raw SVG paths or CSS; text, list, richtext, and table use textWrap and lineClamp for text flow; table columns may use closed align and per-column width (auto, narrow, medium, wide); a table may set dividers (none, rows, grid), a stickyHeader, and an emptyLabel; chart series may use closed lineStyle and a primary or secondary axis; chart plot style may set axisColor, gridColor, and labelColor as color tokens.';
+  'media.kind "icon" uses MEDIA_ICON_NAMES and never raw SVG paths or CSS; text, list, richtext, and table use textWrap and lineClamp for text flow; table columns may use closed align and per-column width (auto, narrow, medium, wide); a table may set dividers (none, rows, grid), a stickyHeader, and an emptyLabel; chart series may use closed lineStyle and a primary or secondary axis; chart plot style may set axisColor, gridColor, and labelColor as color tokens; box layout stays same-Brick closed tokens and fixed choices: a box may set basis to hold a split pane or horizontal-shelf item at a chosen width, pair columns:"auto" with itemWidth for a responsive grid whose item floor comes from itemWidth, set maxHeight to bound a box to its own scrolling viewport, and use a row-only collapse (none or stack) that stacks a row at a narrow viewport.';
 
 /** The shared custom-assets expectation sentence (same single-owner rule). */
 export const CUSTOM_ASSETS_EXPECTATION_SPEC =
@@ -35,7 +35,7 @@ Vocabulary is exact:
 - fontSize, gap, background, and color are examples of style property names;
 - label, control, track, and fill are examples of Brick-owned style targets;
 - md, lg, and success are examples of token names; discovery metadata presents property-local allowed choices as names with description and useWhen meanings;
-- row, column, auto, fit, full, true, and false are examples of closed fixed choices owned by renderer behavior;
+- row, column, auto, fit, full, stack, true, and false are examples of closed fixed choices owned by renderer behavior;
 - concrete values such as pixels, rem values, color codes, gradients, and font stacks are Theme-only.
 Never author raw CSS or invent a property, target, state, token name, or fixed choice. The Theme owns all concrete CSS values. The host supplies one validated Theme containing complete token definitions, light and dark paint values, Brick defaults, and optional Presets. The agent does not select or mutate the Theme. colorMode is host/client view state (system preference resolved to light or dark), never Facet Document syntax.
 

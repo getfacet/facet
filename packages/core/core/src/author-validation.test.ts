@@ -299,3 +299,50 @@ describe("analytics-data-surface: strict author boundary for width/axis/emptyLab
     expect(chart.value).toBeDefined();
   });
 });
+
+describe("box layout foundation: strict author boundary", () => {
+  const boxNode = (style: Record<string, unknown>) => ({
+    id: "shell",
+    type: "box",
+    children: [],
+    style,
+  });
+
+  it("rejects each unknown box layout value with its path and exact allowed list", () => {
+    const result = validateAuthorNode(
+      boxNode({
+        basis: "huge",
+        itemWidth: "enormous",
+        maxHeight: "tall",
+        collapse: "maybe",
+        columns: "five",
+      }),
+      theme,
+    );
+
+    expect(result.value).toBeUndefined();
+    expect(result.issues).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: "/style/basis", allowed: ["xs", "sm", "md", "lg"] }),
+        expect.objectContaining({ path: "/style/itemWidth", allowed: ["xs", "sm", "md", "lg"] }),
+        expect.objectContaining({ path: "/style/maxHeight", allowed: ["none", "half", "screen"] }),
+        expect.objectContaining({ path: "/style/collapse", allowed: ["none", "stack"] }),
+        expect.objectContaining({
+          path: "/style/columns",
+          allowed: ["none", "2", "3", "4", "auto"],
+        }),
+      ]),
+    );
+  });
+
+  it("accepts every valid box layout value including columns 2|3|4|auto", () => {
+    for (const columns of [2, 3, 4, "auto"] as const) {
+      const result = validateAuthorNode(
+        boxNode({ basis: "sm", itemWidth: "md", maxHeight: "screen", collapse: "stack", columns }),
+        theme,
+      );
+      expect(result.issues).toEqual([]);
+      expect(result.value).toBeDefined();
+    }
+  });
+});

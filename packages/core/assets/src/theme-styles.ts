@@ -524,6 +524,19 @@ export const PRESETS = {
         borderRadius: "md",
       },
     },
+    rail: {
+      description: "A quiet side navigation rail surface.",
+      useWhen: "Use for a sidebar or side-navigation column beside the main content.",
+      avoidWhen: "Avoid for primary content, a horizontal toolbar, or a pressable action.",
+      style: {
+        gap: "sm",
+        padding: "md",
+        background: "mutedSurface",
+        borderColor: "border",
+        borderWidth: "thin",
+        borderRadius: "md",
+      },
+    },
   },
   text: {
     heading: {

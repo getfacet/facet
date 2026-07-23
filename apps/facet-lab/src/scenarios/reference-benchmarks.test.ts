@@ -214,6 +214,74 @@ describe("Facet Lab reference benchmarks", () => {
     });
   });
 
+  describe("box-layout-foundation benchmark adoption", () => {
+    function boxStylesOf(id: (typeof REFERENCE_BENCHMARK_IDS)[number]) {
+      const benchmark = referenceBenchmarkById(id);
+      expect(benchmark, id).toBeDefined();
+      return Object.values(benchmark?.fixture.nodes ?? {}).flatMap((node) =>
+        node.type === "box" && node.style !== undefined ? [node.style] : [],
+      );
+    }
+
+    it("authors a rail basis, collapsing split, and bounded scrolling main in the AMA2 messages app", () => {
+      const styles = boxStylesOf("ama2-messages-app");
+      expect(styles.some((style) => style.basis !== undefined)).toBe(true);
+      expect(styles.some((style) => style.collapse === "stack")).toBe(true);
+      expect(
+        styles.some((style) => style.maxHeight === "screen" && style.scroll === "vertical"),
+      ).toBe(true);
+    });
+
+    it("authors an app-shell rail, sticky chrome, and bounded main in the Supabase table editor", () => {
+      const styles = boxStylesOf("supabase-table-editor");
+      expect(styles.some((style) => style.basis !== undefined)).toBe(true);
+      expect(styles.some((style) => style.collapse === "stack")).toBe(true);
+      expect(
+        styles.some((style) => style.maxHeight === "screen" && style.scroll === "vertical"),
+      ).toBe(true);
+      expect(styles.some((style) => style.sticky === true)).toBe(true);
+    });
+
+    it("authors an auto-fit product grid in the Coupang listing", () => {
+      const styles = boxStylesOf("coupang-product-listing");
+      expect(
+        styles.some((style) => style.columns === "auto" && style.itemWidth !== undefined),
+      ).toBe(true);
+    });
+
+    it("authors an auto-fit feature grid in the AMA2 public landing", () => {
+      const styles = boxStylesOf("ama2-public-landing");
+      expect(
+        styles.some((style) => style.columns === "auto" && style.itemWidth !== undefined),
+      ).toBe(true);
+    });
+
+    it("authors a horizontal shelf whose children hold their width via basis in the Linktree page", () => {
+      const styles = boxStylesOf("linktree-selena-gomez");
+      expect(styles.some((style) => style.scroll === "horizontal")).toBe(true);
+      expect(styles.some((style) => style.basis !== undefined)).toBe(true);
+    });
+
+    it("re-scopes the last app-shell and carousel blocking gaps out of the corpus", () => {
+      const gaps = REFERENCE_BENCHMARKS.flatMap(({ gaps: entries }) => entries);
+      // The two brick-vocabulary blocking gaps this feature clears are the only
+      // blocking entries in the corpus, so it now holds zero blocking gaps.
+      expect(gaps.filter((gap) => gap.severity === "blocking")).toEqual([]);
+
+      const serialized = JSON.stringify(gaps);
+      expect(serialized).not.toMatch(/app-shell/iu);
+      expect(serialized).not.toMatch(/\bsidebar\b/iu);
+      expect(serialized).not.toMatch(/split-pane/iu);
+
+      // brick-vocabulary keeps >=1 entry (so seenCategories stays complete) and the
+      // carousel gap is re-scoped to watch — a deferred carousel-state gap — not deleted.
+      expect(gaps.some((gap) => gap.category === "brick-vocabulary")).toBe(true);
+      expect(gaps.some((gap) => gap.severity === "watch" && /carousel/iu.test(gap.summary))).toBe(
+        true,
+      );
+    });
+  });
+
   it("keeps every fixture node reachable from the root", () => {
     for (const benchmark of REFERENCE_BENCHMARKS) {
       const reachable = reachableNodeIds(benchmark.fixture);

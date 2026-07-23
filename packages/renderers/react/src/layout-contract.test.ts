@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  NARROW_BREAKPOINT_PX,
   OVERLAY_FRAME_Z,
   OVERLAY_SCRIM_Z,
   STICKY_TOP,
   TABLE_STICKY_HEADER_Z,
   TABLE_STICKY_MAX_HEIGHT,
   drawerFrameStyle,
+  isGridColumns,
   modalFrameStyle,
   overlayScrimStyle,
   scrollContainmentStyle,
@@ -147,5 +149,36 @@ describe("table sticky header constants (analytics-data-surface)", () => {
   it("uses a framework max-height the author never supplies", () => {
     expect(typeof TABLE_STICKY_MAX_HEIGHT).toBe("string");
     expect(TABLE_STICKY_MAX_HEIGHT).toMatch(/(rem|px|vh)$/);
+  });
+});
+
+// ── box-layout-foundation (WU-5): the framework-owned layout primitives. ──
+describe("NARROW_BREAKPOINT_PX (R9 single source)", () => {
+  it("is the framework 640px narrow breakpoint", () => {
+    // The single source both the report-only viewport classifier (view-snapshot.ts)
+    // and the CSS-only collapse reflow (collapse-style.ts) derive from — so they
+    // can never disagree. A plain number, never a style domain or authorable scalar.
+    expect(NARROW_BREAKPOINT_PX).toBe(640);
+    expect(typeof NARROW_BREAKPOINT_PX).toBe("number");
+  });
+});
+
+describe("isGridColumns (R3 grid membership)", () => {
+  it('is true for every grid column value: 2 | 3 | 4 | "auto"', () => {
+    expect(isGridColumns(2)).toBe(true);
+    expect(isGridColumns(3)).toBe(true);
+    expect(isGridColumns(4)).toBe(true);
+    expect(isGridColumns("auto")).toBe(true);
+  });
+
+  it('is false for "none", undefined, and junk (never a grid)', () => {
+    expect(isGridColumns("none")).toBe(false);
+    expect(isGridColumns(undefined)).toBe(false);
+    expect(isGridColumns(null)).toBe(false);
+    expect(isGridColumns(1)).toBe(false);
+    expect(isGridColumns(5)).toBe(false);
+    expect(isGridColumns("2")).toBe(false);
+    expect(isGridColumns("grid")).toBe(false);
+    expect(isGridColumns({})).toBe(false);
   });
 });

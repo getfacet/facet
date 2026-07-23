@@ -109,7 +109,7 @@ export const FACET_STAGE_TOOL_SPECS = [
   {
     name: "get_style_choices",
     description:
-      "Read allowed values for one exact Brick-owned style property when its choice is unfamiliar, such as textWrap, lineClamp, table dividers (none, rows, grid), stickyHeader, axisColor, gridColor, or labelColor.",
+      "Read allowed values for one exact Brick-owned style property when its choice is unfamiliar, such as textWrap, lineClamp, table dividers (none, rows, grid), stickyHeader, axisColor, gridColor, labelColor, or box layout properties basis, itemWidth, maxHeight, collapse, and columns.",
     parameters: {
       type: "object",
       properties: {

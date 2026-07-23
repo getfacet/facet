@@ -11,8 +11,10 @@ import type {
   Gradient,
   Highlight,
   IndicatorSize,
+  LayoutWidth,
   LetterSpacing,
   LineHeight,
+  MaxHeight,
   MaxWidth,
   MinHeight,
   ProgressThickness,
@@ -93,6 +95,23 @@ export const MAX_WIDTH = tokenMap<MaxWidth, string>({
   prose: "65ch",
   narrow: "640px",
   wide: "1200px",
+});
+
+// One scale serves both `basis` (a pane's own width) and `itemWidth` (an
+// auto-grid item floor). Pure lengths — no keyword, no unitless zero.
+export const LAYOUT_WIDTH = tokenMap<LayoutWidth, string>({
+  xs: "12rem",
+  sm: "16rem",
+  md: "20rem",
+  lg: "24rem",
+});
+
+// `none` is the absent-equivalent sentinel (no CSS max-height emitted); the
+// bounded values fill half or all of the small viewport height.
+export const MAX_HEIGHT = tokenMap<MaxHeight, string>({
+  none: "none",
+  half: "50svh",
+  screen: "100svh",
 });
 
 export const LETTER_SPACING = tokenMap<LetterSpacing, string>({

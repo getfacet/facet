@@ -3,9 +3,14 @@ import { MAX_FIELD_VALUE_CHARS } from "./protocol.js";
 
 /**
  * Closed viewport-width classes a browser may report on an event. A closed
- * enum on purpose (like the style tokens): the agent adapts layout via
- * patches, so the vocabulary must stay small and validated — never a raw
- * pixel width.
+ * enum on purpose (like the style tokens): the agent stays the PRIMARY
+ * narrow-adaptation authority, re-authoring layout via patches when an event
+ * reports a narrow viewport — never a raw pixel width. The box `collapse:"stack"`
+ * property is a pre-authored CSS fallback at the SAME narrow threshold (R9), so
+ * a row already carrying it reflows without an agent turn. Conflict precedence:
+ * below that threshold a resolved `collapse:"stack"` wins over a resolved
+ * `direction:"row"`, so to keep a row unstacked at narrow width the agent
+ * patches `collapse:"none"`, not `direction`.
  */
 export const VIEWPORTS = ["narrow", "medium", "wide"] as const;
 export type Viewport = (typeof VIEWPORTS)[number];

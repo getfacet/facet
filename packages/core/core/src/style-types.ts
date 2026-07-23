@@ -4,6 +4,7 @@ import type {
   AspectRatio,
   BorderWidth,
   ChartThickness,
+  Collapse,
   Color,
   Columns,
   ControlHeight,
@@ -17,11 +18,13 @@ import type {
   Highlight,
   IndicatorSize,
   Justification,
+  LayoutWidth,
   LetterSpacing,
   LineClamp,
   LineHeight,
   TextWrap,
   LoadingAnimation,
+  MaxHeight,
   MaxWidth,
   MinHeight,
   ObjectFit,
@@ -89,6 +92,10 @@ interface BoxDirectStyle {
   readonly width?: Width;
   readonly minHeight?: MinHeight;
   readonly maxWidth?: MaxWidth;
+  readonly basis?: LayoutWidth;
+  readonly itemWidth?: LayoutWidth;
+  readonly maxHeight?: MaxHeight;
+  readonly collapse?: Collapse;
   readonly scroll?: Scroll;
   readonly sticky?: boolean;
   readonly background?: Color;

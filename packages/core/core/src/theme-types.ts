@@ -14,8 +14,10 @@ import type {
   Gradient,
   Highlight,
   IndicatorSize,
+  LayoutWidth,
   LetterSpacing,
   LineHeight,
+  MaxHeight,
   MaxWidth,
   MinHeight,
   ProgressThickness,
@@ -45,6 +47,8 @@ export interface FacetThemeTokens {
   readonly aspectRatio: CompleteMap<AspectRatio, string>;
   readonly minHeight: CompleteMap<MinHeight, string>;
   readonly maxWidth: CompleteMap<MaxWidth, string>;
+  readonly layoutWidth: CompleteMap<LayoutWidth, string>;
+  readonly maxHeight: CompleteMap<MaxHeight, string>;
   readonly letterSpacing: CompleteMap<LetterSpacing, string>;
   readonly lineHeight: CompleteMap<LineHeight, string>;
   readonly controlHeight: CompleteMap<ControlHeight, string>;

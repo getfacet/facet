@@ -7,17 +7,22 @@ import type {
   ViewSnapshot,
   Viewport,
 } from "@facet/core";
+import { NARROW_BREAKPOINT_PX } from "./layout-contract.js";
 
 /**
- * Renderer-owned viewport breakpoints. Report-only: they decide which closed
- * `Viewport` class a browser advertises on an event, NEVER how a brick lays
- * itself out (device layout stays the agent's job via patches — RISK-INV-5).
+ * Renderer-owned viewport breakpoints. Report-only: they classify which closed
+ * `Viewport` class a browser advertises on an event; THIS module never resolves
+ * how a brick lays itself out (device layout stays the agent's job via patches —
+ * RISK-INV-5). The narrow threshold is imported from `layout-contract.ts`, where
+ * the SAME constant also thresholds the CSS-only `collapse` reflow
+ * (`collapse-style.ts`), so the reported `viewport === "narrow"` and the CSS
+ * collapse can never disagree (R9). The `narrow` classification here stays pure
+ * report data — it does not itself trigger any layout change.
  * narrow < 640px; wide ≥ 1024px; medium is everything between.
  */
-const NARROW_MAX_PX = 640;
 const WIDE_MIN_PX = 1024;
 
-const NARROW_QUERY = `(max-width: ${String(NARROW_MAX_PX - 1)}px)`;
+const NARROW_QUERY = `(max-width: ${String(NARROW_BREAKPOINT_PX - 1)}px)`;
 const WIDE_QUERY = `(min-width: ${String(WIDE_MIN_PX)}px)`;
 const DARK_QUERY = "(prefers-color-scheme: dark)";
 
@@ -125,7 +130,9 @@ function detectDeviceClasses(preference: ColorModePreference): DeviceClasses {
  * only for `system`, color-scheme media queries and mirrors the result in React state; the
  * listeners do NOTHING but call `setState` (they have no transport to reach —
  * DC-006). This module is fenced out of layout resolution except for returning
- * the paint-only effective mode to StageRenderer (RISK-INV-5).
+ * the paint-only effective mode to StageRenderer (RISK-INV-5); the narrow
+ * breakpoint it shares with the CSS `collapse` reflow is a one-way import of a
+ * framework constant, not a layout decision made here (R9).
  */
 export function useViewportColorMode(rawPreference: unknown = "system"): DeviceClasses {
   const preference = colorModePreference(rawPreference);

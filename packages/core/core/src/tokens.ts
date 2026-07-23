@@ -33,6 +33,12 @@ export type MinHeight = (typeof MIN_HEIGHTS)[number];
 export const MAX_WIDTHS = ["none", "prose", "narrow", "wide"] as const;
 export type MaxWidth = (typeof MAX_WIDTHS)[number];
 
+export const LAYOUT_WIDTHS = ["xs", "sm", "md", "lg"] as const;
+export type LayoutWidth = (typeof LAYOUT_WIDTHS)[number];
+
+export const MAX_HEIGHTS = ["none", "half", "screen"] as const;
+export type MaxHeight = (typeof MAX_HEIGHTS)[number];
+
 export const LETTER_SPACINGS = ["tight", "normal", "wide"] as const;
 export type LetterSpacing = (typeof LETTER_SPACINGS)[number];
 
@@ -116,8 +122,11 @@ export type Width = (typeof WIDTHS)[number];
 export const SCROLLS = ["none", "horizontal", "vertical"] as const;
 export type Scroll = (typeof SCROLLS)[number];
 
-export const COLUMNS = ["none", 2, 3, 4] as const;
+export const COLUMNS = ["none", 2, 3, 4, "auto"] as const;
 export type Columns = (typeof COLUMNS)[number];
+
+export const COLLAPSES = ["none", "stack"] as const;
+export type Collapse = (typeof COLLAPSES)[number];
 
 export const TEXT_ALIGNS = ["start", "center", "end"] as const;
 export type TextAlign = (typeof TEXT_ALIGNS)[number];

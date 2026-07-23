@@ -301,6 +301,37 @@ describe("buildFacetAgentSystemPrompt", () => {
     expect(system).toMatch(/never javascript: or data:/i);
   });
 
+  it("teaches box layout vocabulary and the narrow-adaptation authority", () => {
+    const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
+
+    for (const term of ["basis", "itemWidth", "maxHeight", "collapse", 'columns:"auto"']) {
+      expect(system).toContain(term);
+    }
+    // The prompt kit's own hand-written guidance (not only Core's STAGE_SPEC)
+    // names the five capabilities, the columns:"auto" <-> itemWidth pairing, and
+    // collapse's row-only scope.
+    for (const term of ["basis", "itemWidth", "maxHeight", "collapse", 'columns:"auto"']) {
+      expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toContain(term);
+    }
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(/columns:"auto"[^.]*itemWidth/i);
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(/collapse[^.]*row/i);
+    // R9 narrow-adaptation authority: the agent stays primary and re-authors via
+    // patches when an event reports a narrow viewport.
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(
+      /narrow[^.]*(?:patch|re-author|authority)/i,
+    );
+    // R9 conflict precedence: below the threshold a resolved collapse:"stack"
+    // wins over direction:"row"; to keep a row unstacked patch collapse:"none".
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toMatch(
+      /collapse:"stack"[^.]*wins over[^.]*direction:"row"/i,
+    );
+    expect(FACET_POLISHED_BRICK_GUIDANCE_PROMPT).toContain('collapse:"none"');
+    // No pixel/breakpoint/resolved-CSS value leaks into any prose surface.
+    expect(system).not.toMatch(
+      /(?:#[0-9a-f]{3,8}|\b\d+(?:\.\d+)?(?:px|rem|em|svh|vh|vw)\b|rgba?\()/i,
+    );
+  });
+
   it("teaches the analytics-data-surface chart and table vocabulary", () => {
     const system = buildFacetAgentSystemPrompt({ pageBrief: PAGE_BRIEF });
 

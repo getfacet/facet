@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { BrickStyleDefinition, TableDividers } from "@facet/core";
+import { collapseClass, collapseItemClass } from "./collapse-style.js";
 import {
   INTERACTION_CLASS,
   interactionClass,
@@ -169,7 +170,20 @@ export function layoutBoxTargetStyle(
   // Horizontal/vertical containment is renderer-owned, but it must not erase
   // the Brick's closed maxWidth choice when both are present.
   if (style.maxWidth !== undefined) css.maxWidth = theme.maxWidth[style.maxWidth];
-  return withInteractionStates(css, style, theme);
+  const interaction = withInteractionStates(css, style, theme);
+  // The collapse markers ride the SAME class channel as INTERACTION_CLASS: the
+  // row marker (collapseClass, R7) and the basis-item marker (collapseItemClass,
+  // R8b) are both computed from this post-active resolved style and joined next
+  // to the interaction classes. Both are `undefined` on a non-collapsing box, so
+  // a collapse-free box stays byte-identical (joinClasses drops the undefineds).
+  const className = joinClasses(
+    interaction.className,
+    collapseClass(style),
+    collapseItemClass(style),
+  );
+  return className === undefined
+    ? { style: interaction.style }
+    : { style: interaction.style, className };
 }
 
 export function layoutTextTargetStyle(style: TextDefinition, theme: ResolvedTheme): CSSProperties {

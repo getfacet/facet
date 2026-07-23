@@ -12,6 +12,7 @@ const sourceUrls = [
   new URL("./pattern-controls.ts", import.meta.url),
   new URL("./pattern-containers.ts", import.meta.url),
   new URL("./pattern-chart-table.ts", import.meta.url),
+  new URL("./pattern-layout.ts", import.meta.url),
 ];
 
 const EXPECTED_NAMES = [
@@ -32,6 +33,10 @@ const EXPECTED_NAMES = [
   "empty-state",
   "support-triage",
   "chart-table-view",
+  "app-shell",
+  "split-pane",
+  "product-grid",
+  "media-shelf",
 ] as const;
 
 const RETIRED_STYLE_KEYS = new Set([
@@ -197,5 +202,73 @@ describe("DEFAULT_PATTERNS", () => {
     const source = sourceUrls.map((url) => readFileSync(url, "utf8")).join("\n");
     expect(source).not.toMatch(/\bfrom\s+["'](?:node:|@facet\/(react|runtime|server|client))\b/);
     expect(source).not.toContain("{{");
+  });
+});
+
+// WU-8 (box-layout-foundation): the four structure Patterns that rebuild the
+// benchmark shapes from ONLY the closed box vocabulary. Between them they must
+// exercise every new box layout property (basis, itemWidth, maxHeight, collapse,
+// columns:"auto").
+describe("box layout patterns", () => {
+  const LAYOUT_PATTERN_NAMES = ["app-shell", "split-pane", "product-grid", "media-shelf"] as const;
+
+  const boxStyles = async (): Promise<readonly Record<string, unknown>[]> => {
+    const patterns = new Map((await loadDefaults()).map((pattern) => [pattern.name, pattern]));
+    return LAYOUT_PATTERN_NAMES.flatMap((name) =>
+      Object.values(patterns.get(name)?.nodes ?? {})
+        .filter((node) => node.type === "box")
+        .map((node) => node.style)
+        .filter(isRecord),
+    );
+  };
+
+  it("registers all four structure Patterns", async () => {
+    const names = (await loadDefaults()).map((pattern) => pattern.name);
+    for (const name of LAYOUT_PATTERN_NAMES) expect(names, name).toContain(name);
+  });
+
+  it("validates against DEFAULT_THEME with no issues using box as the only container", async () => {
+    const patterns = new Map((await loadDefaults()).map((pattern) => [pattern.name, pattern]));
+    for (const name of LAYOUT_PATTERN_NAMES) {
+      const pattern = patterns.get(name);
+      expect(pattern, name).toBeDefined();
+      const result = validatePattern(pattern as FacetPattern, DEFAULT_THEME);
+      expect(result.issues, name).toEqual([]);
+      expect(result.pattern, name).toEqual(pattern);
+
+      // Only box may hold children — the closed-vocabulary container invariant.
+      for (const node of Object.values(pattern?.nodes ?? {})) {
+        if ("children" in node && node.children !== undefined) {
+          expect(node.type, `${name}:${node.id}`).toBe("box");
+        }
+      }
+    }
+  });
+
+  it("exercises every new box layout property across the four Patterns", async () => {
+    const styles = await boxStyles();
+    const some = (predicate: (style: Record<string, unknown>) => boolean): boolean =>
+      styles.some(predicate);
+
+    expect(
+      some((style) => typeof style.basis === "string"),
+      "basis",
+    ).toBe(true);
+    expect(
+      some((style) => typeof style.itemWidth === "string"),
+      "itemWidth",
+    ).toBe(true);
+    expect(
+      some((style) => style.maxHeight === "screen" || style.maxHeight === "half"),
+      "maxHeight",
+    ).toBe(true);
+    expect(
+      some((style) => style.collapse === "stack"),
+      "collapse",
+    ).toBe(true);
+    expect(
+      some((style) => style.columns === "auto"),
+      'columns:"auto"',
+    ).toBe(true);
   });
 });

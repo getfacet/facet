@@ -62,8 +62,12 @@ The renderer owns product-grade containment for existing Bricks. Text and
 richtext wrap within their assigned flow slots, richtext list markers and body
 columns align without arbitrary positioning, tables own a bounded horizontal
 scroll region (plus a bounded vertical one when a header pins) for dense data
-chrome, and charts compute internal axis, mark, tick, and legend geometry.
-These are renderer responsibilities, not new document syntax.
+chrome, and charts compute internal axis, mark, tick, and legend geometry. A
+`box` `maxHeight` bounds a region to its own scrolling viewport, a `columns:"auto"`
+grid clamps its tracks so nothing overflows the container, and `collapse:"stack"`
+reflows a row to a column at a framework-owned narrow breakpoint through a
+per-stage `@media` stylesheet — never absolute positioning or a JS resize
+listener. These are renderer responsibilities, not new document syntax.
 
 Closed product-grade style/data fields project through that same pipeline:
 generic `media` icons render from the allow-listed icon set; `textWrap` and

@@ -6,6 +6,7 @@ import {
   ASPECT_RATIOS,
   BORDER_WIDTHS,
   CHART_THICKNESSES,
+  COLLAPSES,
   COLORS,
   COLUMNS,
   CONTROL_HEIGHTS,
@@ -19,9 +20,11 @@ import {
   HIGHLIGHTS,
   INDICATOR_SIZES,
   JUSTIFICATIONS,
+  LAYOUT_WIDTHS,
   LETTER_SPACINGS,
   LINE_HEIGHTS,
   LOADING_ANIMATIONS,
+  MAX_HEIGHTS,
   MAX_WIDTHS,
   MIN_HEIGHTS,
   OBJECT_FITS,
@@ -40,6 +43,7 @@ import {
   STYLE_VALUE_CONTRACT,
   styleValueChoicesForProperty,
   styleValueDomainForProperty,
+  styleValueNamesForProperty,
 } from "./style-value-contract.js";
 
 const names = (domain: { readonly values: readonly { readonly name: unknown }[] }) =>
@@ -67,6 +71,8 @@ describe("STYLE_VALUE_CONTRACT", () => {
       aspectRatio: ASPECT_RATIOS,
       minHeight: MIN_HEIGHTS,
       maxWidth: MAX_WIDTHS,
+      layoutWidth: LAYOUT_WIDTHS,
+      maxHeight: MAX_HEIGHTS,
       letterSpacing: LETTER_SPACINGS,
       lineHeight: LINE_HEIGHTS,
       controlHeight: CONTROL_HEIGHTS,
@@ -95,6 +101,7 @@ describe("STYLE_VALUE_CONTRACT", () => {
       width: WIDTHS,
       scroll: SCROLLS,
       columns: COLUMNS,
+      collapse: COLLAPSES,
       textAlign: TEXT_ALIGNS,
       fontStyle: FONT_STYLES,
       textWrap: ["wrap", "nowrap", "balance"],
@@ -219,7 +226,7 @@ describe("analytics-data-surface dividers domain", () => {
     expect(names(stickyDomain!)).toEqual([false, true]);
   });
 
-  it("adds no new token scale so the default Theme needs no change", () => {
+  it("locks the token scale roster to the exact 22 entries", () => {
     expect(Object.keys(STYLE_VALUE_CONTRACT.tokens)).toEqual([
       "space",
       "fontSize",
@@ -230,6 +237,8 @@ describe("analytics-data-surface dividers domain", () => {
       "aspectRatio",
       "minHeight",
       "maxWidth",
+      "layoutWidth",
+      "maxHeight",
       "letterSpacing",
       "lineHeight",
       "controlHeight",
@@ -242,5 +251,68 @@ describe("analytics-data-surface dividers domain", () => {
       "scrim",
       "highlight",
     ]);
+  });
+});
+
+describe("box layout vocabulary", () => {
+  it("registers layoutWidth and maxHeight token domains after maxWidth", () => {
+    const tokens = STYLE_VALUE_CONTRACT.tokens as typeof STYLE_VALUE_CONTRACT.tokens & {
+      readonly layoutWidth: TestStyleValueDomain;
+      readonly maxHeight: TestStyleValueDomain;
+    };
+
+    expect(tokens.layoutWidth).toBeDefined();
+    expect(names(tokens.layoutWidth)).toEqual(["xs", "sm", "md", "lg"]);
+    expect(tokens.maxHeight).toBeDefined();
+    expect(names(tokens.maxHeight)).toEqual(["none", "half", "screen"]);
+
+    for (const domain of [tokens.layoutWidth, tokens.maxHeight]) {
+      for (const value of domain.values) {
+        expect(value.description).not.toEqual("");
+        expect(value.useWhen).not.toEqual("");
+      }
+    }
+  });
+
+  it("registers the collapse fixed domain and the columns auto member", () => {
+    const fixed = STYLE_VALUE_CONTRACT.fixed as typeof STYLE_VALUE_CONTRACT.fixed & {
+      readonly collapse: TestStyleValueDomain;
+    };
+
+    expect(fixed.collapse).toBeDefined();
+    expect(names(fixed.collapse)).toEqual(["none", "stack"]);
+    for (const value of fixed.collapse.values) {
+      expect(value.description).not.toEqual("");
+      expect(value.useWhen).not.toEqual("");
+    }
+
+    expect(names(STYLE_VALUE_CONTRACT.fixed.columns)).toEqual(["none", 2, 3, 4, "auto"]);
+  });
+
+  it("wires the new box layout properties to their closed domains", () => {
+    const box = BRICK_CONTRACT.box.style.root.properties;
+    expect(box.basis).toMatchObject({ source: "token", domain: "layoutWidth" });
+    expect(box.itemWidth).toMatchObject({ source: "token", domain: "layoutWidth" });
+    expect(box.maxHeight).toMatchObject({ source: "token", domain: "maxHeight" });
+    expect(box.collapse).toMatchObject({ source: "fixed", domain: "collapse" });
+    expect(box.columns).toMatchObject({ source: "fixed", domain: "columns" });
+  });
+
+  it("resolves every new box layout property through the canonical choice rule", () => {
+    const box = BRICK_CONTRACT.box.style.root.properties;
+    expect(styleValueNamesForProperty("basis", box.basis!)).toEqual(["xs", "sm", "md", "lg"]);
+    expect(styleValueNamesForProperty("itemWidth", box.itemWidth!)).toEqual([
+      "xs",
+      "sm",
+      "md",
+      "lg",
+    ]);
+    expect(styleValueNamesForProperty("maxHeight", box.maxHeight!)).toEqual([
+      "none",
+      "half",
+      "screen",
+    ]);
+    expect(styleValueNamesForProperty("collapse", box.collapse!)).toEqual(["none", "stack"]);
+    expect(styleValueNamesForProperty("columns", box.columns!)).toEqual(["none", 2, 3, 4, "auto"]);
   });
 });

@@ -130,6 +130,34 @@ describe("fail-soft Brick style validation", () => {
     });
   });
 
+  it("keeps valid box layout values and drops junk fail-soft", () => {
+    const keepRun = options("box");
+    expect(
+      sanitizeBrickStyle(
+        "box",
+        { basis: "sm", itemWidth: "md", maxHeight: "screen", collapse: "stack", columns: "auto" },
+        keepRun.context,
+      ),
+    ).toEqual({
+      basis: "sm",
+      itemWidth: "md",
+      maxHeight: "screen",
+      collapse: "stack",
+      columns: "auto",
+    });
+    expect(keepRun.issues).toEqual([]);
+
+    const junkRun = options("box");
+    expect(
+      sanitizeBrickStyle(
+        "box",
+        { basis: "huge", itemWidth: 42, maxHeight: "tall", collapse: "maybe", columns: "five" },
+        junkRun.context,
+      ),
+    ).toEqual({});
+    expect(junkRun.issues.length).toBeGreaterThan(0);
+  });
+
   it("is total for cyclic, deep, throwing, and revoked style values", () => {
     const deep: Record<string, unknown> = {};
     let cursor = deep;

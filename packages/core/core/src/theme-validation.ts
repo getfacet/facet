@@ -38,8 +38,10 @@ import {
   GRADIENTS,
   HIGHLIGHTS,
   INDICATOR_SIZES,
+  LAYOUT_WIDTHS,
   LETTER_SPACINGS,
   LINE_HEIGHTS,
+  MAX_HEIGHTS,
   MAX_WIDTHS,
   MIN_HEIGHTS,
   PROGRESS_THICKNESSES,
@@ -61,6 +63,8 @@ const TOKEN_KEYS = new Set([
   "aspectRatio",
   "minHeight",
   "maxWidth",
+  "layoutWidth",
+  "maxHeight",
   "letterSpacing",
   "lineHeight",
   "controlHeight",
@@ -109,6 +113,20 @@ const length = {
     rem: { min: 0, max: 256 },
     em: { min: 0, max: 256 },
     ch: { min: 0, max: 256 },
+  }),
+  layoutWidth: lengthHandler({
+    px: { min: 0, max: 4096 },
+    rem: { min: 0, max: 256 },
+    em: { min: 0, max: 256 },
+    ch: { min: 0, max: 256 },
+  }),
+  maxHeight: lengthHandler({
+    unitlessZero: true,
+    keywords: { none: "none" },
+    px: { min: 0, max: 2000 },
+    rem: { min: 0, max: 125 },
+    em: { min: 0, max: 125 },
+    svh: { min: 0, max: 100 },
   }),
   letterSpacing: lengthHandler({
     unitlessZero: true,
@@ -259,7 +277,13 @@ function validateLayoutScales(
   issues: IssueList,
 ): Pick<
   FacetThemeTokens,
-  "aspectRatio" | "minHeight" | "maxWidth" | "letterSpacing" | "lineHeight"
+  | "aspectRatio"
+  | "minHeight"
+  | "maxWidth"
+  | "layoutWidth"
+  | "maxHeight"
+  | "letterSpacing"
+  | "lineHeight"
 > {
   return {
     aspectRatio: validateCompleteGroup(
@@ -281,6 +305,20 @@ function validateLayoutScales(
       MAX_WIDTHS,
       "tokens.maxWidth",
       length.maxWidth,
+      issues,
+    ),
+    layoutWidth: validateCompleteGroup(
+      raw.layoutWidth,
+      LAYOUT_WIDTHS,
+      "tokens.layoutWidth",
+      length.layoutWidth,
+      issues,
+    ),
+    maxHeight: validateCompleteGroup(
+      raw.maxHeight,
+      MAX_HEIGHTS,
+      "tokens.maxHeight",
+      length.maxHeight,
       issues,
     ),
     letterSpacing: validateCompleteGroup(

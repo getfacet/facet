@@ -301,9 +301,13 @@ function creatorProduct(
   alt: string,
   title: string,
   price: string,
+  rootStyle: BoxStyle = {},
 ): NodeMap {
   return {
-    [id]: box(id, [`${id}-img`, `${id}-title`, `${id}-price`], { preset: "productTile" }),
+    [id]: box(id, [`${id}-img`, `${id}-title`, `${id}-price`], {
+      preset: "productTile",
+      ...rootStyle,
+    }),
     [`${id}-img`]: media(`${id}-img`, src, alt, { preset: "productImage" }),
     [`${id}-title`]: text(`${id}-title`, title, {
       preset: "body",
@@ -350,7 +354,7 @@ export const AMA2_MESSAGES_APP_BENCHMARK_TREE: FacetTree = {
     "ama2-messages-root": box(
       "ama2-messages-root",
       ["ama2-messages-sidebar", "ama2-messages-main"],
-      { preset: "messageShell" },
+      { preset: "messageShell", direction: "row", collapse: "stack" },
     ),
     "ama2-messages-sidebar": box(
       "ama2-messages-sidebar",
@@ -361,7 +365,7 @@ export const AMA2_MESSAGES_APP_BENCHMARK_TREE: FacetTree = {
         "ama2-messages-copy-setup",
         "ama2-messages-user",
       ],
-      { preset: "sideNav", width: "fit" },
+      { preset: "sideNav", basis: "sm" },
     ),
     "ama2-messages-brand": box(
       "ama2-messages-brand",
@@ -451,7 +455,15 @@ export const AMA2_MESSAGES_APP_BENCHMARK_TREE: FacetTree = {
     "ama2-messages-main": box(
       "ama2-messages-main",
       ["ama2-messages-title", "ama2-messages-filter-row", "ama2-messages-thread-list"],
-      { gap: "xl", padding: "2xl", width: "full", grow: true, background: "background" },
+      {
+        gap: "xl",
+        padding: "2xl",
+        width: "full",
+        grow: true,
+        scroll: "vertical",
+        maxHeight: "screen",
+        background: "background",
+      },
     ),
     "ama2-messages-title": text("ama2-messages-title", "Messages", {
       preset: "heading",
@@ -788,7 +800,7 @@ export const COUPANG_PRODUCT_LISTING_BENCHMARK_TREE: FacetTree = {
     "coupang-product-grid": box(
       "coupang-product-grid",
       ["coupang-product-a", "coupang-product-b", "coupang-product-c", "coupang-product-d"],
-      { columns: 4, gap: "xl", width: "full" },
+      { columns: "auto", itemWidth: "md", gap: "xl", width: "full" },
     ),
     ...productCard(
       "coupang-product-a",
@@ -912,6 +924,7 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       "revival product",
       "Revival 10-Year Anniversary - Store...",
       "US$70",
+      { basis: "sm" },
     ),
     ...creatorProduct(
       "creator-revival-b",
@@ -919,6 +932,7 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       "revival deluxe cd",
       "Revival Deluxe CD + Journal",
       "US$50",
+      { basis: "sm" },
     ),
     ...creatorProduct(
       "creator-revival-c",
@@ -926,6 +940,7 @@ export const LINKTREE_SELENA_GOMEZ_BENCHMARK_TREE: FacetTree = {
       "revival hoodie",
       "Revival Washed Photo Hoodie",
       "US$85",
+      { basis: "sm" },
     ),
     "creator-section-throwback": text(
       "creator-section-throwback",

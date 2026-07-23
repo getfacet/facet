@@ -24,10 +24,10 @@ describe("createCatalogModel", () => {
 
     expect(model.totals).toEqual({
       bricks: 11,
-      presets: 43,
-      patterns: 17,
-      tokenValues: 106,
-      fixedChoices: 54,
+      presets: 44,
+      patterns: 21,
+      tokenValues: 113,
+      fixedChoices: 57,
     });
 
     expect(brickItemsIn(model).map(({ id }) => id)).toEqual(
