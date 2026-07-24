@@ -1,6 +1,6 @@
 {
   "name": "@facet/runtime",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet runtime — per-(agent, visitor) session store and the event loop that drives stage patches.",
   "license": "MIT",
   "repository": {

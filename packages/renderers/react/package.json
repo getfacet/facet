@@ -1,6 +1,6 @@
 {
   "name": "@facet/react",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet React renderer — turns the declarative stage spec into a sandboxed component tree and applies patches live.",
   "license": "MIT",
   "repository": {
