@@ -1,6 +1,6 @@
 {
   "name": "@facet/cli",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet local command surface — a running local agent calls `facet append/say/…` and the bridge forwards the change.",
   "license": "MIT",
   "repository": {

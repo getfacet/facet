@@ -1,6 +1,6 @@
 {
   "name": "@facet/core",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Core types and protocol for Facet — declarative stage spec, patches, and session/event contracts.",
   "license": "MIT",
   "repository": {
