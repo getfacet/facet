@@ -1,6 +1,6 @@
 {
   "name": "@facet/ag-ui",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet AG-UI adapter event conversion helpers and transports.",
   "license": "MIT",
   "repository": {

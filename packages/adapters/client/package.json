@@ -1,6 +1,6 @@
 {
   "name": "@facet/client",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet reference browser transports — connect the React renderer to the reference server or an in-process runtime via FacetTransport.",
   "license": "MIT",
   "repository": {

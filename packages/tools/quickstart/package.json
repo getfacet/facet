@@ -1,6 +1,6 @@
 {
   "name": "@facet/quickstart",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet local quickstart — boots a live reference server/page with a built-in reference LLM agent.",
   "license": "MIT",
   "repository": {

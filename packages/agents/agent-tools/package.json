@@ -1,6 +1,6 @@
 {
   "name": "@facet/agent-tools",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Provider-agnostic Facet stage tool contracts and execution helpers for external agents.",
   "license": "MIT",
   "repository": {

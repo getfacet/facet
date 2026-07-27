@@ -1,6 +1,6 @@
 {
   "name": "@facet/agent-client",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet reference agent-side client — dial into the reference server, receive visitor events, and drive the stage with heartbeat + reconnect.",
   "license": "MIT",
   "repository": {

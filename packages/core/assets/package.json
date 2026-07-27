@@ -1,6 +1,6 @@
 {
   "name": "@facet/assets",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Facet default asset data — the complete default Theme and Pattern reference trees (deps = @facet/core only).",
   "license": "MIT",
   "repository": {
