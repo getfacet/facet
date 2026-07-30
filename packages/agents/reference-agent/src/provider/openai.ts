@@ -212,7 +212,7 @@ export function createOpenAiProvider(
               type: "function",
               name: tool.name,
               description: tool.description,
-              parameters: tool.parameters,
+              parameters: tool.inputSchema,
             })),
             tool_choice: "auto",
             store: false,
@@ -233,7 +233,7 @@ export function createOpenAiProvider(
           messages: toOpenAiMessages(turn.system, turn.messages),
           tools: tools.map((t) => ({
             type: "function",
-            function: { name: t.name, description: t.description, parameters: t.parameters },
+            function: { name: t.name, description: t.description, parameters: t.inputSchema },
           })),
           tool_choice: "auto",
           ...(tools.length > 0 && requiresNoneReasoningForChatTools(model)

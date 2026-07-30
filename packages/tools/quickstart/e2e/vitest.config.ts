@@ -16,7 +16,13 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     root: fileURLToPath(new URL("..", import.meta.url)),
-    include: ["e2e/**/*.test.ts"],
+    include: [
+      "e2e/bundle.test.ts",
+      "e2e/smoke.test.ts",
+      "e2e/journey/harness.test.ts",
+      "e2e/journey/verdict.test.ts",
+      "e2e/journey/journey.selftest.test.ts",
+    ],
     // Real provider turns can be slow; the deterministic tiers share the config.
     testTimeout: 120_000,
     hookTimeout: 120_000,

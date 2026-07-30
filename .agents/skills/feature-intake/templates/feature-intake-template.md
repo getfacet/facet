@@ -60,9 +60,9 @@ Mark each: `OK` / `TOUCHES (mitigation)` / `CONFLICT (must re-scope)`.
 |---|---|---|---|
 | 1 | Responsibility boundary (UI-out/UI-in only; no backend/domain) | | |
 | 2 | Mechanism vs policy (agent authors; Facet provides capability) | | |
-| 3 | Fail-safe (never throw/inject; degrade to plain) | | |
-| 4 | Declarative + tokens only (no raw HTML/JS/CSS/pixels) | | |
-| 5 | Flow-only safety (overlap only via a dedicated overlay brick) | | |
+| 3 | Fail-safe (atomic author rejects; bounded persisted/render fallback) | | |
+| 4 | Declarative registered markup (no executable syntax or open props/styles) | | |
+| 5 | Flow-contained layout (overlap only via the dedicated trusted modal) | | |
 | 6 | Two-writers coherence (local execution vs agent stage) | | |
 | 7 | Backend calls go through the agent, never client fetch | | |
 
@@ -70,7 +70,7 @@ Mark each: `OK` / `TOUCHES (mitigation)` / `CONFLICT (must re-scope)`.
 
 | `@facet/*` package | Change | Additive or Breaking |
 |---|---|---|
-| [e.g. @facet/core] | [new brick / new action kind / new token] | [additive / breaking] |
+| [e.g. @facet/core] | [catalog / markup / action / data contract] | [additive / breaking] |
 
 ## Decision Lock
 

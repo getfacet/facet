@@ -1,169 +1,82 @@
-<h1 align="center">Facet</h1>
+# Facet
 
-<p align="center">
-  <strong>The UI layer for LLMs and agents — interfaces your model draws.</strong>
-</p>
+Facet is a TypeScript framework for UI that a language model renders itself.
+Agents emit declarative component markup. Facet parses it as data, validates it
+against an immutable host catalog, applies only authorized RFC 6902 patches, and
+renders through trusted React components registered by the host.
 
-Facet is a TypeScript framework for UI a language model renders itself. An agent
-authors a declarative Facet Document from 11 native Bricks and a closed style
-vocabulary; Facet validates it, stores it per visitor, sends live changes as RFC
-6902 patches, and renders it safely. The agent never emits raw HTML, JavaScript,
-or CSS.
+Agents never emit executable UI code. Hosts keep control of product data,
+business actions, provider choice, authorization, secrets, and operations.
 
-> **Status: pre-1.0 and not yet published to npm.** Facet currently makes
-> intentional hard cuts instead of carrying compatibility layers. Until the
-> first release, evaluate it from this repository.
+## Why Facet exists
 
-## Try it
+Most agent UI systems either render static chat text or ask the model to produce
+code. Facet gives the model a safe middle path:
 
-Facet requires Node.js 20 or newer and pnpm 9. With an OpenAI or Anthropic API
-key:
+- UI is live and personalized per visitor.
+- The model writes only declarative markup and bounded data.
+- The host decides which components exist and what React code mounts.
+- Invalid output rejects atomically with repair guidance.
+- Runtime and browser use the same patch fold and revision contract.
+
+## Quickstart
+
+Use Quickstart for the complete reference stack:
 
 ```bash
-git clone https://github.com/getfacet/facet.git
-cd facet
-corepack enable
-pnpm install
-pnpm --filter @facet/quickstart build
-OPENAI_API_KEY=sk-… pnpm exec tsx packages/tools/quickstart/src/cli.ts
+npm create facet
 ```
 
-Open `http://localhost:5292`. The command starts the reference brain, runtime,
-transport, and React page together. See [Getting Started](docs/GETTING-STARTED.md)
-for provider flags and supported integration paths.
+Quickstart composes the reference agent, runtime, reference server, React
+renderer, and default component assets in one runnable experience.
 
-Repository maintainers who need exhaustive asset inspection, deterministic and
-real-provider scenarios, correlated evidence, replay/compare, or contract
-sandboxing should use [Facet Lab](apps/facet-lab/README.md). Lab is an
-unpublished local/self-hosted developer workbench, not another adoption path,
-Quickstart mode, hosted service, or public package.
+## Packages
 
-## Why Facet
+| Group | Package | Role |
+| --- | --- | --- |
+| Core | `@facet/core` | Grammar, catalog, data model, document, patch, stage, and protocol contract. |
+| Core | `@facet/runtime` | Session event loop, persistence seams, revision handling, and runtime fail-safe loading. |
+| Core | `@facet/assets` | Default catalog/theme data and trusted default React registry subpath. |
+| Renderers | `@facet/react` | React bootstrap, mounting, local view state, Modal frame, and subtree boundaries. |
+| Agents | `@facet/agent-tools` | Nine provider-neutral tools for markup authoring, reads, and data publication. |
+| Agents | `@facet/agent` | In-process code-authored `Stage` helper. |
+| Agents | `@facet/reference-agent` | Reference provider loop, prompt, compaction, and fixtures. |
+| Adapters | `@facet/server` | Reference server-side transport. |
+| Adapters | `@facet/client` | Visitor-side reference transport package. |
+| Adapters | `@facet/agent-client` | External-agent dial-in transport. |
+| Tools | `@facet/quickstart` | Zero-setup runnable reference experience. |
 
-Returning only prose cannot build a live interface. Generating open-ended web
-code gives a model too much authority and is easy to break. Facet keeps the
-useful middle:
+## Adoption paths
 
-- the agent can compose and update a real interface;
-- Core accepts only known Bricks, fields, actions, and style choices;
-- an operator-owned Theme controls concrete design values;
-- the browser receives patches after initial state, not generated application
-  code; and
-- stale or malformed render input degrades safely instead of crashing the page.
+| Goal | Start with | Guide |
+| --- | --- | --- |
+| Try the complete reference stack | `@facet/quickstart` | [Try it first](docs/GETTING-STARTED.md#try-it-first) |
+| Embed the renderer in React | `@facet/react` | [Embed the React renderer](docs/GETTING-STARTED.md#embed-the-react-renderer) |
+| Build an in-process rules agent | `@facet/agent` | [Use an in-process agent](docs/GETTING-STARTED.md#use-an-in-process-agent) |
+| Build a provider-neutral LLM loop | `@facet/agent-tools` | [Agent Integration](docs/AGENT-INTEGRATION.md) |
+| Run an external agent process | `@facet/agent-client` | [Connect an external agent](docs/GETTING-STARTED.md#connect-an-external-agent) |
+| Use the default component set | `@facet/assets` | [Use the default assets](docs/DESIGN-SYSTEM.md#use-the-default-assets) |
+| Use the reference server transport | `@facet/server` | [Run the reference transport](docs/GETTING-STARTED.md#run-the-reference-transport) |
 
-Facet is the UI contract and runtime, not the agent's brain or a hosted platform.
-Your application still owns model selection, business logic, identity,
-authorization, billing, rate limits, and deployment policy.
+## Core invariants
 
-## How it works
+1. Agents emit declarative component markup, never executable UI code.
+2. Catalog and registry tag sets must match exactly before a session renders.
+3. Only validated patches change the stage.
+4. Facet owns UI-out/UI-in only; domain work stays with the host and agent tools.
+5. Layout remains flow-contained; overlap is only the dedicated Modal contract.
 
-```text
-visitor event → Runtime → agent brain → validated messages
-                                      ├─ chat text
-                                      └─ RFC 6902 patches → Renderer → live UI
-```
-
-The Runtime owns the Facet Document for each agent/visitor pair. The browser
-owns local view state such as the current screen, toggles, table sort, viewport,
-and color mode. Keeping those writers separate avoids patch races.
-
-Two invariants define the system:
-
-1. **Declarative, closed authoring.** Agents emit only Core-defined Bricks and
-   their Brick-owned style vocabulary—never raw HTML, JavaScript, CSS, arbitrary
-   style keys, or absolute positioning.
-2. **Patches only after initial state.** Server and client fold the same RFC 6902
-   operations with the same pure patch logic. The renderer skips invalid or
-   dangling remnants and keeps valid siblings visible.
-
-The essential nouns are small:
-
-- A **Facet Document** is the agent-authored tree and named data.
-- A **Brick** is one of 11 native nodes: `box`, `text`, `media`, `input`,
-  `richtext`, `table`, `chart`, `list`, `keyValue`, `progress`, or `loading`.
-  Only `box` contains other Bricks.
-- Brick capability still grows inside that roster: `media` covers images,
-  videos, and a closed generic icon set; text-bearing Bricks expose bounded text
-  wrapping and clamping; tables expose column alignment; charts expose bounded
-  axis, grid, label, and line-style controls.
-- A **Theme** is operator configuration: concrete token definitions, one default
-  per Brick, and optional same-Brick Presets.
-- A **Pattern** is a validated worked tree an agent may read and adapt. It is not
-  a node kind or an insertion mechanism.
-- A **Patch** is the only stage mutation sent after initial state; the
-  **Runtime** stores and applies it, and the **Renderer** displays the safe
-  result.
-
-For styling terminology and asset ownership, use the
-[Design System guide](docs/DESIGN-SYSTEM.md). For complete data-flow and safety
-behavior, use [Architecture](docs/ARCHITECTURE.md).
-
-## Choose an integration path
-
-“Primary entrypoint” means where to begin, not a one-package installation. Most
-paths intentionally compose several roles.
-
-| You want to… | Primary entrypoint | Collaborators | Next guide |
-| --- | --- | --- | --- |
-| Try the complete reference stack | `facet-quickstart` | Reference brain, runtime, server/client, React | [Try it first](docs/GETTING-STARTED.md#try-it-first) |
-| Embed the live stage in React | `@facet/react` | A `FacetTransport`, usually `@facet/client`; a runtime and brain behind it | [Embed the React renderer](docs/GETTING-STARTED.md#embed-the-react-renderer) |
-| Author an in-process rules/code agent | `@facet/agent` | `@facet/runtime`; optionally the reference server/client | [Use an in-process agent](docs/GETTING-STARTED.md#use-an-in-process-agent) |
-| Build your own LLM tool loop | `@facet/agent-tools` | Your provider/history policy plus runtime or transport handoff | [Agent Integration](docs/AGENT-INTEGRATION.md) |
-| Run an agent outside the server process | `@facet/agent-client` | A `FacetAgent` and the reference `@facet/server` agent channel | [Connect an external agent](docs/GETTING-STARTED.md#connect-an-external-agent) |
-| Use the bundled Theme and Patterns | `@facet/assets` | Runtime asset loading, renderer, and agent discovery as needed | [Use the default assets](docs/DESIGN-SYSTEM.md#use-the-default-assets) |
-| Use the native reference browser transport | `@facet/server` + `@facet/client` | `@facet/runtime`, a brain, and a renderer | [Run the reference transport](docs/GETTING-STARTED.md#run-the-reference-transport) |
-| Carry Facet through AG-UI | `@facet/ag-ui` | `@facet/runtime` and a Facet renderer | [`@facet/ag-ui`](packages/adapters/ag-ui/README.md) |
-| Persist stages, events, assets, and summaries in Postgres | `@facet/store-postgres` | `pg`, `@facet/runtime`, and usually a server | [`@facet/store-postgres`](packages/adapters/store-postgres/README.md) |
-
-Do not confuse the three agent-facing packages: `@facet/agent-tools` is the LLM
-tool mechanism, `@facet/agent` is a TypeScript stage-authoring SDK, and
-`@facet/agent-client` is a network connection for an external agent.
-
-## Package roles
-
-Source packages are grouped by one primary role:
-
-- **Core** — contract, patch/runtime mechanics, stores, and default asset data.
-- **Renderers** — turn a validated Facet tree into platform UI.
-- **Agents** — author stage changes in code or through provider-neutral tools.
-- **Adapters** — connect browsers, external agents, protocols, and persistence.
-- **Tools** — runnable Quickstart, CLI, and local coding-agent bridge.
-
-See [Package Boundaries](docs/PACKAGE-BOUNDARIES.md) for the complete package map,
-dependencies, public subpaths, and reference/official/optional labels.
-
-## Read next
-
-- [Getting Started](docs/GETTING-STARTED.md) — supported adoption paths and
-  known-good wiring.
-- [Design System](docs/DESIGN-SYSTEM.md) — Documents, Brick-owned styles,
-  tokens, Themes, Presets, Patterns, and custom assets.
-- [Agent Integration](docs/AGENT-INTEGRATION.md) — a custom LLM loop,
-  progressive discovery, strict execution, and retries.
-- [Architecture](docs/ARCHITECTURE.md) — invariants, ownership, validation,
-  patch flow, and renderer behavior.
-- [Package Boundaries](docs/PACKAGE-BOUNDARIES.md) — package responsibilities and
-  deployment limits.
-- [Security](SECURITY.md) — the reference transport trust model.
-- [Facet Lab](apps/facet-lab/README.md) — the contributor workbench for Catalog,
-  scenarios, evidence, replay, evaluation, and contract sandboxing.
-
-Repository contributors should also read [AGENTS.md](AGENTS.md) and
-[CONTRIBUTING.md](CONTRIBUTING.md).
+See [Architecture](docs/ARCHITECTURE.md) and
+[Package Boundaries](docs/PACKAGE-BOUNDARIES.md) for the full contract.
 
 ## Development
 
 ```bash
 pnpm install
 pnpm verify
-pnpm package:smoke
 ```
 
-For workbench development, build and launch the private Lab app with
-`pnpm --filter @facet/lab build` followed by
-`pnpm --filter @facet/lab serve`. Its complete operator and gate guide lives in
-[apps/facet-lab/README.md](apps/facet-lab/README.md).
+`pnpm verify` runs typecheck, tests, lint, format, build, docs checks, package
+layout checks, hard-cut scanners, and source integrity checks.
 
-## License
-
-MIT
+See [Contributing](CONTRIBUTING.md) for the contributor workflow.

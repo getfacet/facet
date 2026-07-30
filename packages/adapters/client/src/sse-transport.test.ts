@@ -1,9 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ServerMessage } from "@facet/core";
+
+import { applyPatch } from "@facet/core";
+import type {
+  AgentEvent,
+  ConversationMessage,
+  FacetStage,
+  PatchFrame,
+  ServerFrame,
+} from "@facet/core";
+
 import { SseTransport } from "./sse-transport.js";
 
-/** Minimal EventSource stand-in: captures the URL and exposes the handlers so a
- * test can fire open/message itself. */
 class FakeEventSource {
   static instances: FakeEventSource[] = [];
   onopen: (() => void) | null = null;
@@ -18,12 +25,54 @@ class FakeEventSource {
     this.closed = true;
   }
 
-  emit(data: string): void {
-    this.onmessage?.({ data } as MessageEvent<string>);
+  emit(data: string, lastEventId = ""): void {
+    this.onmessage?.({ data, lastEventId } as MessageEvent<string>);
   }
 }
 
 const fetchMock = vi.fn(() => Promise.resolve(new Response(null, { status: 202 })));
+const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+function event(overrides: Partial<AgentEvent> = {}): AgentEvent {
+  return Object.freeze({
+    eventId: "event1",
+    eventName: "submit",
+    sourceNodeId: "n1",
+    screen: "home",
+    stageRevision: 0,
+    collect: Object.freeze({}),
+    ...overrides,
+  });
+}
+
+function conversation(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
+  return Object.freeze({
+    kind: "conversation" as const,
+    messageId: "event1:assistant",
+    turnId: "event1",
+    role: "assistant" as const,
+    text: "ok",
+    at: 1,
+    ...overrides,
+  });
+}
+
+function stage(data: FacetStage["data"] = {}): FacetStage {
+  return Object.freeze({
+    document: Object.freeze({
+      entry: "home",
+      screens: Object.freeze(["screen"]),
+      nodes: Object.freeze({
+        screen: Object.freeze({
+          tag: "Screen",
+          props: Object.freeze({ name: Object.freeze({ kind: "scalar" as const, value: "home" }) }),
+          children: Object.freeze([]),
+        }),
+      }),
+    }),
+    data,
+  });
+}
 
 beforeEach(() => {
   FakeEventSource.instances = [];
@@ -36,332 +85,100 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const visitor = { visitorId: "v/1" };
-const eventsOf = (mock: { mock: { calls: unknown[] } }): unknown[] =>
-  mock.mock.calls.map((call) => {
-    const [, init] = call as [string, { body: string }];
-    return (JSON.parse(init.body) as { event: unknown }).event;
-  });
-const sentEvents = (): unknown[] => eventsOf(fetchMock);
-
-/** Flush the microtask queue (and any settled promises) by yielding to a
- * macrotask — lets the per-instance send chain advance a step. */
-const flush = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
-
 describe("SseTransport", () => {
-  it("queues events sent before the stream opens and flushes them in order", async () => {
-    const transport = new SseTransport("http://s", visitor);
+  it("subscribes to the session stream and posts AgentEvent without a visitor wrapper", async () => {
+    const transport = new SseTransport("http://s", "session/a");
     transport.subscribe(() => {});
-    transport.send({ kind: "visit", visitor });
-    transport.send({ kind: "message", text: "first" });
+    transport.send(event());
     expect(fetchMock).not.toHaveBeenCalled();
 
     FakeEventSource.instances[0]?.onopen?.();
     await flush();
 
-    expect(sentEvents()).toEqual([
-      { kind: "visit", visitor, seq: 1 },
-      { kind: "message", text: "first", seq: 2 },
-    ]);
-  });
-
-  it("sends immediately once open, with the visitor in the body", async () => {
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-    FakeEventSource.instances[0]?.onopen?.();
-    transport.send({ kind: "message", text: "hi" });
-    await flush();
-
+    expect(FakeEventSource.instances[0]?.url).toBe(
+      `http://s/stream?sessionKey=${encodeURIComponent("session/a")}`,
+    );
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { body: string }];
     expect(url).toBe("http://s/event");
-    expect(JSON.parse(init.body)).toEqual({
-      visitor,
-      event: { kind: "message", text: "hi", seq: 1 },
+    expect(JSON.parse(init.body)).toEqual({ sessionKey: "session/a", event: event() });
+  });
+
+  it("collapses duplicate conversation frames by messageId while preserving patch frames", () => {
+    const received: ServerFrame[] = [];
+    const transport = new SseTransport("http://s", "session1");
+    transport.subscribe((frame) => received.push(frame));
+    const source = FakeEventSource.instances[0];
+    const patch: PatchFrame = Object.freeze({
+      kind: "patch" as const,
+      stageRevision: 1,
+      ops: Object.freeze([{ op: "add" as const, path: "/data/ready", value: true }]),
     });
+
+    source?.emit(JSON.stringify(patch), "era:1");
+    source?.emit(JSON.stringify(conversation()), "era:2");
+    source?.emit(JSON.stringify(conversation({ text: "redelivered" })), "era:2");
+
+    expect(received).toEqual([patch, conversation()]);
   });
 
-  it("escapes the visitorId in the stream URL", () => {
-    new SseTransport("http://s", visitor).subscribe(() => {});
-    expect(FakeEventSource.instances[0]?.url).toBe(
-      `http://s/stream?visitorId=${encodeURIComponent("v/1")}`,
-    );
-  });
-
-  it("delivers parsed frames and ignores malformed ones", () => {
-    const received: ServerMessage[] = [];
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe((message) => received.push(message));
-    const source = FakeEventSource.instances[0];
-
-    source?.emit("not json");
-    source?.emit(JSON.stringify({ kind: "say", text: "ok" }));
-
-    expect(received).toEqual([{ kind: "say", text: "ok" }]);
-  });
-
-  it("closes the stream and stops direct sends on unsubscribe", () => {
-    const transport = new SseTransport("http://s", visitor);
-    const unsubscribe = transport.subscribe(() => {});
-    const source = FakeEventSource.instances[0];
-    source?.onopen?.();
+  it("reconnects from the last stream id and does not synthesize a root replace in-window", () => {
+    const received: ServerFrame[] = [];
+    const transport = new SseTransport("http://s", "session1");
+    const unsubscribe = transport.subscribe((frame) => received.push(frame));
+    FakeEventSource.instances[0]?.emit(JSON.stringify(conversation()), "era:7");
     unsubscribe();
 
-    expect(source?.closed).toBe(true);
-    transport.send({ kind: "message", text: "late" });
-    expect(fetchMock).not.toHaveBeenCalled(); // queued for a future re-subscribe, not sent
-  });
+    transport.subscribe((frame) => received.push(frame));
 
-  it("bounds the pre-connect queue by dropping the oldest events", async () => {
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-    for (let i = 0; i < 150; i += 1) {
-      transport.send({ kind: "message", text: `m${i}` });
-    }
-    FakeEventSource.instances[0]?.onopen?.();
-    await flush();
-
-    const events = sentEvents() as { text: string }[];
-    expect(events).toHaveLength(100);
-    expect(events[0]?.text).toBe("m50"); // oldest 50 dropped
-    expect(events[99]?.text).toBe("m149");
-  });
-
-  it("spares a leading visit when the queue overflows", async () => {
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-    transport.send({ kind: "visit", visitor });
-    for (let i = 0; i < 150; i += 1) {
-      transport.send({ kind: "message", text: `m${i}` });
-    }
-    FakeEventSource.instances[0]?.onopen?.();
-    await flush();
-
-    const events = sentEvents() as { kind: string; text?: string }[];
-    expect(events).toHaveLength(100);
-    expect(events[0]).toEqual({ kind: "visit", visitor, seq: 1 }); // still first
-    expect(events[99]?.text).toBe("m149");
-  });
-
-  it("sends events strictly in order", async () => {
-    // Deferred fetch: each POST hangs until the test resolves it by hand, so we
-    // can observe that the second POST is not issued until the first settles.
-    const resolvers: Array<() => void> = [];
-    const deferredFetch = vi.fn(
-      () =>
-        new Promise<Response>((resolve) => {
-          resolvers.push(() => resolve(new Response(null, { status: 202 })));
-        }),
+    expect(FakeEventSource.instances[1]?.url).toBe(
+      "http://s/stream?sessionKey=session1&lastEventId=era%3A7",
     );
-    vi.stubGlobal("fetch", deferredFetch);
-
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-    FakeEventSource.instances[0]?.onopen?.();
-
-    transport.send({ kind: "message", text: "a" });
-    transport.send({ kind: "message", text: "b" });
-
-    await flush();
-    // First POST in flight; the second must wait for it.
-    expect(deferredFetch).toHaveBeenCalledTimes(1);
-
-    resolvers[0]?.();
-    await flush();
-    // First settled → second POST now issued.
-    expect(deferredFetch).toHaveBeenCalledTimes(2);
+    expect(received).toEqual([conversation()]);
+    expect(
+      received.some(
+        (frame) =>
+          frame.kind === "patch" &&
+          frame.ops.some((operation) => operation.op === "replace" && operation.path === ""),
+      ),
+    ).toBe(false);
   });
 
-  it("keeps the send chain alive after a rejected POST", async () => {
-    let call = 0;
-    const flakyFetch = vi.fn(() => {
-      call += 1;
-      return call === 1
-        ? Promise.reject(new Error("boom"))
-        : Promise.resolve(new Response(null, { status: 202 }));
+  it("surfaces out-of-window root resync before collapsed conversation, with both stage halves", () => {
+    const received: ServerFrame[] = [];
+    const transport = new SseTransport("http://s", "session1");
+    transport.subscribe((frame) => received.push(frame));
+    const serverStage = stage({ sales: [{ revenue: 42 }] });
+    const resync: PatchFrame = Object.freeze({
+      kind: "patch" as const,
+      stageRevision: 12,
+      ops: Object.freeze([{ op: "replace" as const, path: "", value: serverStage }]),
     });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.stubGlobal("fetch", flakyFetch);
 
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-    FakeEventSource.instances[0]?.onopen?.();
-
-    transport.send({ kind: "message", text: "a" });
-    transport.send({ kind: "message", text: "b" });
-
-    await flush();
-    // The rejected first POST does not wedge the chain: the second still fires.
-    expect(flakyFetch).toHaveBeenCalledTimes(2);
-    expect(errorSpy).toHaveBeenCalledWith("[facet] event send failed:", expect.any(Error));
-
-    errorSpy.mockRestore();
-  });
-
-  it("aborts a black-holed POST and sends the next queued event", async () => {
-    // The production POST carries `signal: AbortSignal.timeout(...)`. Stub the
-    // factory to hand back a signal we control (avoids faking Node's timers),
-    // and a fetch that hangs until that signal aborts.
-    const controllers: AbortController[] = [];
-    const timeoutSpy = vi.spyOn(AbortSignal, "timeout").mockImplementation(() => {
-      const controller = new AbortController();
-      controllers.push(controller);
-      return controller.signal;
-    });
-    const blackHoleFetch = vi.fn(
-      (_url: string, init?: { signal?: AbortSignal }) =>
-        new Promise<Response>((_resolve, reject) => {
-          init?.signal?.addEventListener("abort", () => reject(new Error("aborted")));
-        }),
+    FakeEventSource.instances[0]?.emit(JSON.stringify(resync), "era:0");
+    FakeEventSource.instances[0]?.emit(JSON.stringify(conversation()), "era:1");
+    FakeEventSource.instances[0]?.emit(
+      JSON.stringify(conversation({ text: "duplicate" })),
+      "era:1",
     );
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.stubGlobal("fetch", blackHoleFetch);
 
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
+    expect(received).toEqual([resync, conversation()]);
+    expect(
+      applyPatch(stage({ stale: true }), received[0]?.kind === "patch" ? received[0].ops : []),
+    ).toEqual(serverStage);
+  });
+
+  it("ignores malformed frames and stops direct sends on unsubscribe", () => {
+    const received: ServerFrame[] = [];
+    const transport = new SseTransport("http://s", "session1");
+    const unsubscribe = transport.subscribe((frame) => received.push(frame));
     FakeEventSource.instances[0]?.onopen?.();
+    FakeEventSource.instances[0]?.emit("not-json");
+    unsubscribe();
+    transport.send(event({ eventId: "late" }));
 
-    transport.send({ kind: "message", text: "a" });
-    transport.send({ kind: "message", text: "b" });
-
-    await flush();
-    // First POST is black-holed; the second waits behind it.
-    expect(blackHoleFetch).toHaveBeenCalledTimes(1);
-
-    // Fire the timeout abort on the first POST's signal.
-    controllers[0]?.abort();
-    await flush();
-
-    // The abort frees the chain head → the next queued event is issued.
-    expect(blackHoleFetch).toHaveBeenCalledTimes(2);
-    expect(eventsOf(blackHoleFetch)).toEqual([
-      { kind: "message", text: "a", seq: 1 },
-      { kind: "message", text: "b", seq: 2 },
-    ]);
-
-    errorSpy.mockRestore();
-    timeoutSpy.mockRestore();
-  });
-
-  it("passes an abort signal on the POST", async () => {
-    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-    FakeEventSource.instances[0]?.onopen?.();
-    transport.send({ kind: "message", text: "hi" });
-    await flush();
-
-    const [, init] = fetchMock.mock.calls[0] as unknown as [string, { signal: unknown }];
-    expect(init.signal).toBeInstanceOf(AbortSignal);
-    expect(timeoutSpy).toHaveBeenCalledWith(10_000);
-    timeoutSpy.mockRestore();
-  });
-
-  it("does not synthesize a reset on reopen — the server owns that decision", () => {
-    const messages: ServerMessage[] = [];
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe((message) => messages.push(message));
-    const source = FakeEventSource.instances[0];
-
-    source?.onopen?.(); // first open
-    source?.onopen?.(); // re-open: the client no longer decides reset
-    expect(messages).toEqual([]); // zero synthesized messages
-  });
-
-  it("passes a server-sent reset frame through to the handler untouched", () => {
-    const received: ServerMessage[] = [];
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe((message) => received.push(message));
-    const source = FakeEventSource.instances[0];
-
-    source?.emit(JSON.stringify({ kind: "reset" }));
-
-    expect(received).toEqual([{ kind: "reset" }]);
-  });
-
-  it("record rides the shared chain with a monotonic seq and drops on failure", async () => {
-    // A fetch that records each (url, event) and rejects ONLY the /record POST,
-    // so we can prove the record path is best-effort without wedging the chain.
-    const calls: Array<{ url: string; event: { kind: string; seq?: number } }> = [];
-    const recordingFetch = vi.fn((url: string, init?: { body?: string }) => {
-      const body = JSON.parse(init?.body ?? "{}") as { event: { kind: string; seq?: number } };
-      calls.push({ url, event: body.event });
-      return url.endsWith("/record")
-        ? Promise.reject(new Error("record boom"))
-        : Promise.resolve(new Response(null, { status: 202 }));
-    });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    vi.stubGlobal("fetch", recordingFetch);
-
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-    FakeEventSource.instances[0]?.onopen?.();
-
-    // A forwarded event over /event, then a locally-resolved tap over /record.
-    transport.send({ kind: "message", text: "hi" });
-    expect(() =>
-      transport.record({ kind: "tap", target: "n1", effect: { navigate: "home" } }),
-    ).not.toThrow();
-
-    await flush();
-    await flush();
-
-    // Both POST on the SHARED chain, in send order; record targets ONLY the
-    // reference /record path (never an arbitrary/domain URL).
-    expect(calls.map((c) => c.url)).toEqual(["http://s/event", "http://s/record"]);
-    expect(calls[1]?.url).toBe("http://s/record");
-
-    // seq is stamped once at the single serialization point, strictly increasing
-    // across the /event send and the /record record.
-    const seqs = calls.map((c) => c.event.seq);
-    expect(seqs).toEqual([1, 2]);
-    expect((seqs[0] as number) < (seqs[1] as number)).toBe(true);
-
-    // The rejected /record logged + dropped (no throw, no retry) and left the
-    // chain intact: a following send still fires with the next monotonic seq.
-    expect(errorSpy).toHaveBeenCalled();
-    transport.send({ kind: "message", text: "after" });
-    await flush();
-    expect(calls[2]?.url).toBe("http://s/event");
-    expect(calls[2]?.event.seq).toBe(3);
-
-    errorSpy.mockRestore();
-  });
-
-  it("a record() queued before connect flushes to POST /record with a send-order seq", async () => {
-    const calls: Array<{ url: string; event: { kind: string; seq?: number } }> = [];
-    const recordingFetch = vi.fn((url: string, init?: { body?: string }) => {
-      const body = JSON.parse(init?.body ?? "{}") as { event: { kind: string; seq?: number } };
-      calls.push({ url, event: body.event });
-      return Promise.resolve(new Response(null, { status: 202 }));
-    });
-    vi.stubGlobal("fetch", recordingFetch);
-
-    const transport = new SseTransport("http://s", visitor);
-    transport.subscribe(() => {});
-
-    // Queue BEFORE the stream opens: a locally-resolved tap over /record and a
-    // forwarded event over /event, interleaved so send-order (record→send) can
-    // be distinguished from any per-endpoint bucketing.
-    transport.record({ kind: "tap", target: "n1", effect: { navigate: "home" } });
-    transport.send({ kind: "message", text: "hi" });
-    // Nothing leaves the client until the stream is open.
-    expect(recordingFetch).not.toHaveBeenCalled();
-
-    // Flush on connect: the queue drains through `commit`, stamping seq now.
-    FakeEventSource.instances[0]?.onopen?.();
-    await flush();
-    await flush();
-
-    // The queued /record targets ONLY the reference /record path (never a
-    // domain/arbitrary URL), and preserves send order relative to the /event.
-    expect(calls.map((c) => c.url)).toEqual(["http://s/record", "http://s/event"]);
-    expect(calls[0]?.url).toBe("http://s/record");
-
-    // seq is stamped at flush/commit time (not in userland), monotonic across
-    // the two endpoints in send order.
-    expect(calls.map((c) => c.event.seq)).toEqual([1, 2]);
-    expect(calls[0]?.event.kind).toBe("tap");
-    expect(calls[0]?.event.seq).toBe(1);
+    expect(FakeEventSource.instances[0]?.closed).toBe(true);
+    expect(received).toEqual([]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

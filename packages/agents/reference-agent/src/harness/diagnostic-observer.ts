@@ -1,11 +1,7 @@
-import type { ServerMessage } from "@facet/core";
-import {
-  REDACTED_SENSITIVE_VALUE,
-  redactSensitiveText,
-  shouldRedactSensitiveField,
-} from "@facet/runtime";
+import type { TurnOutcome } from "@facet/core";
 
 import type { ProviderUsage } from "../provider.js";
+import { redactSensitiveText } from "../prompt/messages.js";
 
 export type ReferenceAgentDiagnosticEvent =
   | { readonly kind: "provider-attempt"; readonly attempt: number }
@@ -20,9 +16,9 @@ export type ReferenceAgentDiagnosticEvent =
       readonly kind: "tool-result";
       readonly callId: string;
       readonly observation: unknown;
-      readonly messages: readonly ServerMessage[];
+      readonly messages: readonly TurnOutcome[];
       readonly mutated: boolean;
-      readonly said: boolean;
+      readonly conversationDelivered: boolean;
       readonly truncated: boolean;
     }
   | {
@@ -55,6 +51,12 @@ const MAX_DIAGNOSTIC_COUNT = 1_000_000_000;
 const TRUNCATED = "[truncated]";
 const CIRCULAR = "[circular]";
 const UNSUPPORTED = "[unsupported]";
+const REDACTED_SENSITIVE_VALUE = "[redacted]";
+const SENSITIVE_FIELD_PATTERN = /\b(?:api[_-]?key|authorization|bearer|password|secret|token)\b/iu;
+const SENSITIVE_VALUE_PATTERNS: readonly RegExp[] = [
+  /\bsk-[A-Za-z0-9_-]+\b/u,
+  /\bBearer\s+[A-Za-z0-9._-]+\b/iu,
+];
 
 interface ProjectionState {
   entries: number;
@@ -137,10 +139,10 @@ function sanitizeKnownDiagnosticEvent(
         kind: "tool-result",
         callId,
         observation,
-        messages: isServerMessageArray(messages) ? messages : [],
+        messages: isTurnOutcomeArray(messages) ? messages : [],
         mutated: event.mutated === true,
-        said: event.said === true,
-        truncated: event.truncated || state.truncated || !isServerMessageArray(messages),
+        conversationDelivered: event.conversationDelivered === true,
+        truncated: event.truncated || state.truncated || !isTurnOutcomeArray(messages),
       };
     }
     case "batch":
@@ -297,6 +299,13 @@ function projectString(value: string, state: ProjectionState): string {
   return `${redacted.slice(0, MAX_DIAGNOSTIC_STRING_CHARS - TRUNCATED.length)}${TRUNCATED}`;
 }
 
+function shouldRedactSensitiveField(key: string, value: unknown): boolean {
+  if (SENSITIVE_FIELD_PATTERN.test(key)) return true;
+  return (
+    typeof value === "string" && SENSITIVE_VALUE_PATTERNS.some((pattern) => pattern.test(value))
+  );
+}
+
 function boundEncodedEvent(event: ReferenceAgentDiagnosticEvent): ReferenceAgentDiagnosticEvent {
   if (encodedBytes(event) <= MAX_DIAGNOSTIC_EVENT_BYTES) return event;
   switch (event.kind) {
@@ -339,7 +348,7 @@ function encodedBytes(value: unknown): number {
   return new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
-function isServerMessageArray(value: unknown): value is ServerMessage[] {
+function isTurnOutcomeArray(value: unknown): value is TurnOutcome[] {
   return Array.isArray(value);
 }
 

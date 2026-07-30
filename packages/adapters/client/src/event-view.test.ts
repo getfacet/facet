@@ -1,58 +1,83 @@
 import { describe, expect, it } from "vitest";
-import type { ClientEvent, CollectedEvent, ViewSnapshot } from "@facet/core";
-import { withView } from "./event-view.js";
 
-const SNAPSHOT: ViewSnapshot = {
-  screen: "pricing",
-  toggled: { faq: "shown" },
-  viewport: "narrow",
-  colorMode: "dark",
-};
+import type { AgentEvent } from "@facet/core";
 
-describe("withView", () => {
-  it("infers a natural event literal while preserving its discriminant and view", () => {
-    const result = withView({ kind: "message", text: "hi" }, SNAPSHOT);
+import { withEventView } from "./event-view.js";
 
-    expect(result.kind).toBe("message");
-    expect(result.view).toBe(SNAPSHOT);
-  });
-
-  it("decorates forwarded events without mutating them", () => {
-    const event: ClientEvent = Object.freeze({
-      kind: "tap",
-      action: { name: "buy" },
-      fields: { email: "a@b.c" },
-    });
-    const result = withView(event, SNAPSHOT);
-
-    expect(result).toEqual({ ...event, view: SNAPSHOT });
-    expect(result).not.toBe(event);
-    expect("view" in event).toBe(false);
-  });
-
-  it("decorates locally recorded events through the same helper", () => {
-    const event: CollectedEvent = {
-      kind: "tap",
-      target: "cta",
-      effect: { navigate: "pricing" },
-    };
-    expect(withView(event, SNAPSHOT)).toEqual({ ...event, view: SNAPSHOT });
-  });
-
-  it("preserves identity for absent, empty, or hostile snapshots", () => {
-    const event: ClientEvent = { kind: "message", text: "hi" };
-    const hostile = new Proxy(
-      {},
+describe("withEventView", () => {
+  it("stamps eventId and stageRevision and emits only the AgentEvent fields", () => {
+    const event = withEventView(
       {
-        ownKeys() {
-          throw new Error("hostile snapshot");
+        eventName: "submit",
+        sourceNodeId: "n1",
+        arg: "monthly",
+        collect: {
+          email: { kind: "value", value: "a@b.c" },
         },
       },
-    ) as ViewSnapshot;
+      {
+        eventId: "event1",
+        screen: "pricing",
+        stageRevision: 7,
+        toggled: { faq: "shown" },
+        sort: { table: "asc" },
+        viewport: "wide",
+        colorMode: "dark",
+      },
+    );
 
-    expect(withView(event)).toBe(event);
-    expect(withView(event, {})).toBe(event);
-    expect(() => withView(event, hostile)).not.toThrow();
-    expect(withView(event, hostile)).toBe(event);
+    expect(event satisfies AgentEvent).toEqual({
+      eventId: "event1",
+      eventName: "submit",
+      sourceNodeId: "n1",
+      screen: "pricing",
+      stageRevision: 7,
+      arg: "monthly",
+      collect: {
+        email: { kind: "value", value: "a@b.c" },
+      },
+    });
+    expect(Object.keys(event).sort()).toEqual([
+      "arg",
+      "collect",
+      "eventId",
+      "eventName",
+      "screen",
+      "sourceNodeId",
+      "stageRevision",
+    ]);
+  });
+
+  it("omits arg when absent and never copies retired view fields", () => {
+    const event = withEventView(
+      {
+        eventName: "open",
+        sourceNodeId: "n2",
+        collect: {},
+      },
+      {
+        eventId: "event2",
+        screen: "home",
+        stageRevision: 0,
+        toggled: { drawer: "open" },
+        viewport: "narrow",
+        colorMode: "light",
+      },
+    );
+
+    expect(event).toEqual({
+      eventId: "event2",
+      eventName: "open",
+      sourceNodeId: "n2",
+      screen: "home",
+      stageRevision: 0,
+      collect: {},
+    });
+    expect("arg" in event).toBe(false);
+    expect("view" in event).toBe(false);
+    expect("toggled" in event).toBe(false);
+    expect("sort" in event).toBe(false);
+    expect("viewport" in event).toBe(false);
+    expect("colorMode" in event).toBe(false);
   });
 });

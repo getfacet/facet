@@ -1,165 +1,115 @@
 # @facet/runtime
 
-The Facet session event loop and its four storage seams:
-
-- `StageStore` for per-visitor page state;
-- `Sink` for conversation records;
-- `AssetsStore` for one per-agent Theme, an exact Pattern list, and an optional
-  initial tree; and
-- `SummaryStore` for an opaque per-visitor rolling-summary record owned by the
-  consuming brain.
+Facet's in-process session event loop. It serializes one visitor session at a
+time, calls a host-supplied in-process agent, folds validated stage operations,
+persists the updated state, and emits transport-neutral frames for a browser or
+other client to deliver.
 
 Role: **Core**.
 
-## When to use it
-
-Use `@facet/runtime` when your process owns Facet sessions: it receives visitor
-events, calls a `FacetAgent`, folds the returned patches, persists the resulting
-stage, and returns messages for a transport to deliver.
-
-Do not use it as an LLM brain, renderer, or network server. Pair it with an
-authoring package such as `@facet/agent` or `@facet/agent-tools`, a renderer such
-as `@facet/react`, and either your own transport or a Facet adapter. Tenant
-identity, authorization, billing, metering, quotas, and other hosted control
-plane concerns remain host-owned.
-
-## Install and entrypoints
-
 ```bash
-npm install @facet/runtime
+npm install @facet/runtime @facet/agent @facet/assets
 ```
 
-| Import | Environment | Contents |
-| --- | --- | --- |
-| `@facet/runtime` | Browser or server | `FacetRuntime`; store interfaces; asset loading; redaction helpers; browser-safe memory stores. |
-| `@facet/runtime/node` | Node server only | `FileStageStore`, `FileSink`, `FileAssets`, and `FileSummaryStore`. |
+Use this package when your process owns session execution. Do not use it as a
+renderer, network server, hosted control plane, or LLM provider loop.
 
-The root entrypoint has no Node built-ins. Import file-backed stores only from
-the intentional `@facet/runtime/node` subpath; package `src/*` files are private.
-Database implementations live in adapters such as `@facet/store-postgres`.
+## Responsibilities
+
+`FacetRuntime` owns the framework parts of a turn:
+
+- load or seed the stage for an `(agent, visitor)` pair;
+- serialize events through a per-session queue;
+- call the provided `run({ event, session })` agent;
+- apply authorized RFC 6902 patches with revision checks;
+- persist the resulting stage through `StageStore`;
+- record conversation output through `Sink`; and
+- expose optional per-frame observation hooks.
+
+The host still owns identity, authorization, billing, metering, quotas, provider
+selection, API keys, and product-domain work.
+
+## Storage seams
+
+The root entrypoint exposes async interfaces and browser-safe in-memory
+implementations:
+
+- `StageStore` stores the current page document and revision.
+- `Sink` records conversation turns.
+- `SummaryStore` stores an opaque rolling-summary payload owned by the agent
+  brain.
+
+These interfaces are Promise-based so hosts can back them with databases or
+other durable systems. Their payloads remain Facet protocol data; runtime does
+not know a domain schema and does not perform browser-side domain fetches.
 
 ## Event loop
 
-`FacetRuntime.handle` processes one inbound event per visitor and accepts either
-one result batch or an async stream of batches from the agent. Every batch is
-folded into the stored session, saved, and delivered before the next batch is
-pulled. Sessions are isolated and serialized per `(agent, visitor)`.
-
-An optional `RuntimeFrameSink` receives each delivered batch plus evidence for
-that batch. `context.agentMutated` is true only when that individual batch
-changed the Stage; an initial seed frame reports false. `context.stage` is a
-lazy detached snapshot of the post-fold Stage and may be undefined if diagnostic
-cloning fails. This context is for observation and transport delivery, not a
-second content writer.
-
-The runtime applies the same patch fold used by the client and salvages safe
-operations when stale or bypassed data appears. `FacetRuntime.applyMessages`
-uses that same queue for an already-produced result.
+`FacetRuntime.handle` accepts one inbound event and returns the frames that
+should be delivered for that turn. The agent may return a single batch or an
+async stream of batches. Runtime folds, persists, and emits each batch before
+pulling the next one, preserving revision order.
 
 ```ts
 import { defineAgent } from "@facet/agent";
-import { FacetRuntime } from "@facet/runtime";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
+import { bootstrapSession, FacetRuntime, MemorySink, MemoryStageStore } from "@facet/runtime";
 
 const agent = defineAgent(({ event, stage }) => {
-  if (event.kind === "visit") stage.say("Welcome!");
+  if (event.eventName === "visit") {
+    void stage.render(
+      `<Facet entry="home"><Screen name="home"><Text value="Welcome." /></Screen></Facet>`,
+    );
+  }
 });
 
-const runtime = new FacetRuntime({ agentId: "live", agent });
-const turn = await runtime.handle({ visitorId: "alice" }, { kind: "visit" });
-// Deliver turn.messages through the transport chosen by the host.
-```
-
-This example also imports `@facet/agent`, so install that package when using the
-code-authored `defineAgent` path. A custom LLM loop can provide the same
-`FacetAgent` contract instead; the runtime does not choose a provider.
-
-The `Sink` record is written once for the whole turn. Sensitive collected field
-names and key-looking values are redacted before storage. The shared
-`shouldRedactSensitiveField` and `redactSensitiveText` helpers let downstream
-prompt/history boundaries apply the same rule. An optional
-`RuntimeRecordSettlementObserver` observes the fire-and-forget record promise;
-it is not a `Sink`.
-
-## Assets
-
-`AssetsStore.load(agentId)` returns raw `AssetDocuments`:
-
-```ts
-interface AssetDocuments {
-  readonly theme?: unknown;
-  readonly patterns?: unknown;
-  readonly initialTree?: unknown;
-  readonly issues?: readonly string[];
+const store = new MemoryStageStore();
+const boot = bootstrapSession({ catalog: DEFAULT_CATALOG, theme: DEFAULT_THEME });
+if (!boot.ok) {
+  throw new Error(`Session bootstrap failed: ${boot.detail}`);
 }
+await store.save("demo:alice", boot.session, 0);
+
+const runtime = new FacetRuntime({
+  agent,
+  sink: new MemorySink(),
+  store,
+});
+
+const turn = await runtime.handle({
+  sessionKey: "demo:alice",
+  event: {
+    eventId: "visit-1",
+    eventName: "visit",
+    sourceNodeId: "root",
+    screen: "home",
+    stageRevision: 0,
+    collect: {},
+  },
+});
+console.log(turn.outcome);
 ```
 
-`loadAssets(store, agentId)` is the single validation gate. It returns one
-deeply detached and frozen `LoadedAssets` snapshot:
+The example uses the code-authored `@facet/agent` helper for brevity. A custom
+LLM loop can provide the same `run({ event, session })` contract directly.
 
-- `theme`: the complete supplied Theme, or `DEFAULT_THEME` when absent or
-  invalid. A custom Theme is never partially merged with the default.
-- `patterns`: the supplied exact compatible Pattern list. Absence selects
-  `DEFAULT_PATTERNS`; an explicit `[]` exposes none. A malformed entry is
-  hidden whole, and a list over the 64-Pattern cap exposes none.
-- `initialTree`: present only when strict Theme-aware validation succeeds and
-  the tree contains renderable content.
-- `issues`: bounded, sanitized diagnostics for adapter, validation, and fallback
-  events.
+## Fail-safe boundaries
 
-Pattern validation uses the effective Theme, so a Pattern may safely refer to
-its Presets and style names. Loading a Pattern never applies it to the stage.
-The agent may inspect a Pattern and author ordinary Bricks later.
+Runtime does not trust stored or agent-produced stage data. It applies the Core
+patch fold, revision/CAS checks, redaction helpers, and bounded serialization
+contracts before persistence and delivery. Invalid author mutations reject as a
+turn outcome; corrupt persisted input is reduced to a bounded safe state rather
+than thrown into the transport layer.
 
-```ts
-import { loadAssets, MemoryAssets, withInitialStage } from "@facet/runtime";
+The optional `deliver` callback receives committed outbox entries for
+observability or transport delivery. It is read-only: it can inspect what
+happened, but it is not a second writer for stage content.
 
-declare const operatorTheme: unknown;
-declare const operatorPatterns: unknown;
-declare const baseStageStore: Parameters<typeof withInitialStage>[0];
+## Documentation
 
-const loaded = await loadAssets(
-  new MemoryAssets({ theme: operatorTheme, patterns: operatorPatterns }),
-  "live",
-);
-
-const stageStore = withInitialStage(baseStageStore, loaded.initialTree);
-// Send loaded.theme to the renderer and agent; keep loaded.patterns agent-side.
-```
-
-`FileAssets`, imported from `@facet/runtime/node`, reads only these exact files
-from one directory:
-
-| File | Raw document |
-| --- | --- |
-| `theme.json` | One complete Theme object. |
-| `patterns.json` | One array of exact Pattern objects. |
-| `initial.tree.json` | One optional strict initial Facet tree. |
-
-The directory is read once by the host; there is no hot reload. Discovery is
-capped at 4096 entries, each current file is capped at 1 MiB, and filesystem or
-JSON failures become issues instead of throws. The main package remains free of
-`node:fs`.
-
-Raw storage, validation, and initial-stage seeding stay separate. An
-`AssetsStore` backend should preserve raw documents; `loadAssets` owns all
-Theme/Pattern semantics and fallback behavior.
-
-## Summary storage
-
-`SummaryStore` payloads are opaque to the runtime. The consuming brain owns the
-schema and validation. `put` advances only on a strictly newer covered-through
-marker, and `delete` lets the brain rebuild after a conversation mismatch.
-File-backed summaries use `<key>.summary.json`; pair a durable summary store
-with an equally durable `Sink`.
-
-## Learn next
-
-- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
-  for complete package combinations.
-- [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md)
-  for a provider-neutral LLM authoring loop.
-- [Design System](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md)
-  for Theme, Preset, Pattern, and asset ownership.
-- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
-  and [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md)
-  for runtime invariants and deployment scope.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
+  runtime invariants and event flow.
+- [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md) —
+  provider-neutral agent loop wiring.
+- [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md) —
+  deployment and package ownership.

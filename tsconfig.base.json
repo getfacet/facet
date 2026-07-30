@@ -18,21 +18,16 @@
     "paths": {
       "@facet/core": ["packages/core/core/src/index.ts"],
       "@facet/runtime": ["packages/core/runtime/src/index.ts"],
-      "@facet/runtime/node": ["packages/core/runtime/src/node.ts"],
       "@facet/react": ["packages/renderers/react/src/index.ts"],
       "@facet/agent-tools": ["packages/agents/agent-tools/src/index.ts"],
       "@facet/reference-agent": ["packages/agents/reference-agent/src/index.ts"],
       "@facet/quickstart": ["packages/tools/quickstart/src/index.ts"],
       "@facet/agent": ["packages/agents/agent/src/index.ts"],
       "@facet/agent-client": ["packages/adapters/agent-client/src/index.ts"],
-      "@facet/ag-ui": ["packages/adapters/ag-ui/src/index.ts"],
-      "@facet/ag-ui/server": ["packages/adapters/ag-ui/src/server.ts"],
       "@facet/client": ["packages/adapters/client/src/index.ts"],
       "@facet/assets": ["packages/core/assets/src/index.ts"],
-      "@facet/cli": ["packages/tools/cli/src/cli.ts"],
-      "@facet/server": ["packages/adapters/server/src/index.ts"],
-      "@facet/bridge": ["packages/tools/bridge/src/index.ts"],
-      "@facet/store-postgres": ["packages/adapters/store-postgres/src/index.ts"]
+      "@facet/assets/react": ["packages/core/assets/src/react.tsx"],
+      "@facet/server": ["packages/adapters/server/src/index.ts"]
     }
   }
 }

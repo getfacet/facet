@@ -2,10 +2,12 @@
  * WU-1 (Decision A) — unit coverage for the pure verdict-aggregation rule.
  *
  * These tests pin the HARD/SOFT/quorum policy that decides the live-journey
- * tier: HARD lenses (safety/render/responsiveness) fail the tier on any fail or
- * below-quorum (insufficient) row; SOFT lenses (fidelity/diversity) only warn.
- * Below quorum / a missing (lens,visitor) row is NEVER a silent pass — it is
- * `insufficient` ⇒ a HARD fail. Fully deterministic, no I/O.
+ * tier under the component-markup page: HARD lenses (safety/render/
+ * responsiveness) cover safe screenshots, default component or neutral-state
+ * rendering, and stage+conversation responsiveness; SOFT lenses
+ * (fidelity/diversity) only warn. Below quorum / a missing (lens,visitor) row is
+ * NEVER a silent pass — it is `insufficient` ⇒ a HARD fail. Fully deterministic,
+ * no I/O.
  */
 import { describe, expect, it } from "vitest";
 import type { LensPolicy, Vote } from "./verdict.js";

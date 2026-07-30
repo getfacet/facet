@@ -1,71 +1,78 @@
 # @facet/agent-client
 
-The reference agent-side dial-in SDK. `connectAgent` connects an **external**
-`FacetAgent` to the agent channel exposed by `@facet/server`. It dials out over
-SSE, sends heartbeats, reconnects after transient failures, and returns each
-visitor event to the already-assembled agent.
+Reference agent-side dial-in SDK. `connectAgent` connects an external
+`FacetAgent` to the agent channel exposed by `@facet/server`, keeps a heartbeat
+alive, reconnects after transient failures, and posts one validated
+`TurnOutcome` for each visitor event.
 
 Role: **Adapters**.
 
-## When to use it
-
-Use this package when the agent runs in a different process or behind NAT and
-the other side is Facet's reference `@facet/server` transport.
-
-Do not use it to define LLM tools or provider behavior. `@facet/agent-tools`
-supplies the provider-neutral authoring tools; `@facet/agent` supplies the
-code-authored `Stage` API. A host can use either path to build the `FacetAgent`
-passed here. If the agent runs in the same process as `FacetRuntime`, register
-it directly and skip this network client. If the public envelope is AG-UI, use
-`@facet/ag-ui` instead of treating this native reference channel as AG-UI.
-
-## Install
-
 ```bash
-npm install @facet/agent-client @facet/agent
+npm install @facet/agent-client @facet/core
 ```
 
-`@facet/agent` is included here because the example below imports
-`defineAgent`; it is not required when your host supplies another compatible
-`FacetAgent`.
+Use this package when the agent runs outside the server process or behind NAT
+and needs to dial out. Do not use it to define model tools or provider policy:
+`@facet/agent-tools` supplies the LLM tool surface. An external dial-in agent
+implements the core `FacetAgent` protocol directly; it does not receive the
+in-process `Stage` API from `@facet/agent`.
 
 ```ts
 import { connectAgent } from "@facet/agent-client";
-import { defineAgent } from "@facet/agent";
+import { deriveMessageId, type FacetAgent } from "@facet/core";
 
-const agent = defineAgent(({ event, stage }) => {
-  if (event.kind === "visit") stage.say("Connected from an external agent.");
-});
+const agent: FacetAgent = {
+  async handleEvent(frame) {
+    const turnId = frame.event.eventId;
+    return {
+      stageRevision: frame.event.stageRevision,
+      patches: [],
+      conversation: {
+        kind: "conversation",
+        messageId: deriveMessageId(turnId, "assistant"),
+        turnId,
+        role: "assistant",
+        text: "Connected.",
+        at: Date.now(),
+      },
+    };
+  },
+};
 
 const connection = connectAgent({
   serverUrl: "http://localhost:5291",
-  agentId: "live",
+  agentId: "external-agent",
+  token: process.env.FACET_AGENT_TOKEN,
   agent,
 });
 
-// later…
 connection.close();
 ```
 
-Transient network failures and `5xx` responses reconnect. A `403` stops
-immediately; a `409` is retried for a bounded window so a half-open previous
-connection can be reaped before genuine second-owner contention is reported.
+## Turn correlation
+
+The server streams `AgentEventFrame` values. The client runs the supplied agent,
+validates its `TurnOutcome`, derives a deterministic fallback message on
+failure, and posts an `AgentControlFrame` addressed to the original `eventId`.
+Invalid outcomes degrade to a safe assistant message instead of partial stage
+mutation.
+
+## Reconnect behavior
+
+Transient network failures and `5xx` responses reconnect. `403` stops
+immediately because the token is invalid. `409` retries for a bounded window so
+a half-open previous connection can expire before genuine second-owner
+contention is reported. `onStatus` can observe connected/disconnected changes.
 
 ## Trust model
 
-`@facet/agent-client` speaks only the reference agent channel used by
-`@facet/server`. It can send a shared `token` when the server requires one,
-but it does not model tenants, projects, scoped API keys, billing quotas, or
-agent permissions. Production hosted platforms should wrap this package or
-provide a platform-specific client that validates project-scoped credentials
-before routing events to Facet runtime primitives.
+The client speaks only the native reference agent channel used by
+`@facet/server`. It can send a shared token when required, but it does not model
+tenants, projects, scoped API keys, billing, or agent permissions. Production
+platforms should wrap this package or provide their own channel client.
 
-## Learn next
+## Read next
 
 - [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
-  for supported integration paths.
 - [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md)
-  for the LLM tool loop that is deliberately outside this transport.
-- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
-  and [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md)
-  for the trust and hosted-platform boundaries.
+- [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md)

@@ -1,8 +1,9 @@
 /**
- * WU-2 (Decision B) — the journey harness the /live-test "Live Journey" tier
- * builds on: a shared server boot/teardown and a provider-keyed bin
- * smoke. It consumes quickstart's server wrapper (`startQuickstart`) and the
- * reference-agent provider surface (`resolveProvider`) — no `src/` change.
+ * WU-83 — the journey harness the /live-test "Live Journey" tier builds on: a
+ * shared server boot/teardown and a provider-keyed bin smoke. It consumes
+ * quickstart's public server wrapper (`startQuickstart`) and the reference-agent
+ * provider surface (`resolveProvider`) without relying on retired Quickstart
+ * runtime re-exports.
  *
  * - `bootJourney({ agent, agentId })` boots the quickstart wrapper on a random
  *   loopback port, retrying on `EADDRINUSE` (the `smoke.test.ts` bind-retry
@@ -17,16 +18,19 @@
  *   error in `detail`/`stderr`). Needs a prior `pnpm --filter @facet/quickstart
  *   build`.
  * - `resolveJourneyProvider(env)` is a thin wrapper over `resolveProvider`.
+ *   The page/session identity itself is owned by the browser client and travels
+ *   as a `sessionKey`; the harness only chooses fresh per-run agent ids and
+ *   browser contexts.
  */
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import type { FacetAgent } from "@facet/core";
+import type { InProcessFacetAgent } from "@facet/agent";
 import { resolveProvider, type ReferenceProvider } from "@facet/reference-agent";
 import { startQuickstart, type RunningQuickstart } from "../../src/index.js";
 
 /** Options for {@link bootJourney}. */
 export interface BootJourneyOptions {
-  readonly agent: FacetAgent;
+  readonly agent: InProcessFacetAgent;
   /** Defaults to `"journey"`. */
   readonly agentId?: string;
   /**

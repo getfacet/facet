@@ -1,8 +1,7 @@
-import type { StoredEvent, StoredSummary } from "@facet/runtime";
+import type { ConversationMessage } from "@facet/core";
 
 import { redactSensitiveText } from "../prompt/messages.js";
 import { truncateWithMarker as truncateTextWithMarker } from "./compaction.js";
-import { CHARS_PER_TOKEN_DEFAULT } from "./estimate.js";
 import type {
   ProviderStep,
   ProviderTurn,
@@ -47,8 +46,72 @@ const SUMMARY_FIELDS = [
 /** Per-field deterministic cap applied during validation. */
 export const MAX_SUMMARY_FIELD_CHARS = 2000;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
+const MESSAGE_ID_COVERAGE_KEY = "messageIdCoverage";
+
+interface MessageIdCoverage {
+  readonly anchor: string;
+  readonly coveredThroughMessageId?: string;
+  readonly continuityMessageIds: readonly string[];
+}
+
+type SafeOwnValue =
+  | { readonly status: "ok"; readonly value: unknown }
+  | { readonly status: "missing" }
+  | { readonly status: "unsafe" };
+
+function isInspectableRecord(value: unknown): value is object {
+  if (typeof value !== "object" || value === null) return false;
+  try {
+    if (Array.isArray(value)) return false;
+    Reflect.ownKeys(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function safeOwnValue(record: object, key: string): SafeOwnValue {
+  try {
+    const descriptor = Object.getOwnPropertyDescriptor(record, key);
+    if (descriptor === undefined) return { status: "missing" };
+    if (!("value" in descriptor)) return { status: "unsafe" };
+    return { status: "ok", value: descriptor.value };
+  } catch {
+    return { status: "unsafe" };
+  }
+}
+
+function requiredOwnValue(record: object, key: string): unknown | undefined {
+  const read = safeOwnValue(record, key);
+  return read.status === "ok" ? read.value : undefined;
+}
+
+function requiredOwnString(record: object, key: string): string | undefined {
+  const value = requiredOwnValue(record, key);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function safeStringArray(value: unknown): readonly string[] | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  try {
+    if (!Array.isArray(value)) return undefined;
+    Reflect.ownKeys(value);
+  } catch {
+    return undefined;
+  }
+
+  const length = requiredOwnValue(value, "length");
+  if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0) {
+    return undefined;
+  }
+
+  const out: string[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const item = requiredOwnValue(value, String(index));
+    if (typeof item !== "string" || item.length === 0) return undefined;
+    out.push(item);
+  }
+  return out;
 }
 
 /** Truncate a single string to `maxChars` with the shared marker (one source: compaction.ts). */
@@ -56,9 +119,10 @@ function truncateWithMarker(value: string, maxChars: number): string {
   return truncateTextWithMarker(value, maxChars).content;
 }
 
-/** Char budget for a generated summary: `maxSummaryTokens` at the default density. */
-export function summaryCharBudget(maxSummaryTokens: number): number {
-  return maxSummaryTokens * CHARS_PER_TOKEN_DEFAULT;
+/** Character budget for a generated summary. */
+export function summaryCharBudget(maxSummaryChars: number): number {
+  if (!Number.isFinite(maxSummaryChars) || maxSummaryChars <= 0) return 0;
+  return Math.floor(maxSummaryChars);
 }
 
 /**
@@ -68,12 +132,10 @@ export function summaryCharBudget(maxSummaryTokens: number): number {
  * conversation stops matching — even after the new history regrows past the
  * old `coveredThrough` (the index-only check cannot see that).
  */
-export function conversationAnchor(history: readonly StoredEvent[]): string | undefined {
+export function conversationAnchor(history: readonly ConversationMessage[]): string | undefined {
   const first = history[0];
   if (first === undefined) return undefined;
-  const kind =
-    isRecord(first.event) && typeof first.event["kind"] === "string" ? first.event["kind"] : "?";
-  return `${String(first.at)}:${kind}`;
+  return first.messageId;
 }
 
 /** Result of vetting a stored summary record against the CURRENT sink history. */
@@ -86,7 +148,15 @@ export type VettedStoredSummary =
       readonly summary: ConversationSummary;
       readonly coveredThrough: number;
       readonly generation: number;
+      /** Index in the CURRENT, possibly bounded history where verbatim replay resumes. */
+      readonly replayFrom: number;
     };
+
+export interface StoredConversationSummary {
+  readonly payload: unknown;
+  readonly coveredThrough: unknown;
+  readonly generation: unknown;
+}
 
 /**
  * The ONE stored-summary vetting shared by the reader (context assembly) and
@@ -96,28 +166,64 @@ export type VettedStoredSummary =
  * the writer additionally deletes them so a generation-1 rebuild can proceed.
  */
 export function vetStoredSummary(
-  stored: StoredSummary | undefined,
-  history: readonly StoredEvent[],
+  stored: unknown,
+  history: readonly ConversationMessage[],
 ): VettedStoredSummary {
-  if (stored === undefined) return { status: "none" };
-  const summary = validateSummary(stored.payload);
+  if (stored === null || stored === undefined) return { status: "none" };
+  if (!isInspectableRecord(stored)) return { status: "invalid" };
+
+  const payloadRead = safeOwnValue(stored, "payload");
+  if (payloadRead.status !== "ok") return { status: "invalid" };
+  const summary = validateSummary(payloadRead.value);
   if (summary === undefined) return { status: "invalid" };
-  if (!Number.isSafeInteger(stored.coveredThrough) || stored.coveredThrough < 0) {
+  const coveredThroughRead = safeOwnValue(stored, "coveredThrough");
+  if (coveredThroughRead.status !== "ok") return { status: "invalid" };
+  if (
+    typeof coveredThroughRead.value !== "number" ||
+    !Number.isSafeInteger(coveredThroughRead.value) ||
+    coveredThroughRead.value < 0
+  ) {
     return { status: "invalid" };
   }
-  if (!Number.isSafeInteger(stored.generation) || stored.generation < 0) {
+  const coveredThrough = coveredThroughRead.value;
+
+  const generationRead = safeOwnValue(stored, "generation");
+  if (generationRead.status !== "ok") return { status: "invalid" };
+  if (
+    typeof generationRead.value !== "number" ||
+    !Number.isSafeInteger(generationRead.value) ||
+    generationRead.value < 0
+  ) {
     return { status: "invalid" };
   }
-  if (stored.coveredThrough > history.length) return { status: "mismatch" };
-  const anchor = isRecord(stored.payload) ? stored.payload["anchor"] : undefined;
-  if (typeof anchor !== "string" || anchor !== conversationAnchor(history)) {
+  const generation = generationRead.value;
+
+  const coverage = readMessageIdCoverage(payloadRead.value, coveredThrough);
+  if (coverage.status === "invalid") return { status: "invalid" };
+  if (coverage.status === "ok") {
+    const replayFrom = replayFromMessageIdCoverage(coverage.coverage, history, coveredThrough);
+    if (replayFrom === undefined) return { status: "mismatch" };
+    return {
+      status: "ok",
+      summary,
+      coveredThrough,
+      generation,
+      replayFrom,
+    };
+  }
+
+  if (coveredThrough > history.length) return { status: "mismatch" };
+  const anchor = readLegacyAnchor(payloadRead.value);
+  if (anchor.status === "invalid") return { status: "invalid" };
+  if (anchor.value !== conversationAnchor(history)) {
     return { status: "mismatch" };
   }
   return {
     status: "ok",
     summary,
-    coveredThrough: stored.coveredThrough,
-    generation: stored.generation,
+    coveredThrough,
+    generation,
+    replayFrom: coveredThrough,
   };
 }
 
@@ -125,14 +231,50 @@ export function vetStoredSummary(
 export function summaryPayload(
   summary: ConversationSummary,
   anchor: string,
+): Record<string, unknown>;
+
+export function summaryPayload(
+  summary: ConversationSummary,
+  history: readonly ConversationMessage[],
+  coveredThrough: number,
+): Record<string, unknown>;
+
+export function summaryPayload(
+  summary: ConversationSummary,
+  anchorOrHistory: string | readonly ConversationMessage[],
+  coveredThrough?: number,
 ): Record<string, unknown> {
-  return { ...summary, anchor };
+  if (typeof anchorOrHistory === "string") {
+    return { ...summary, anchor: anchorOrHistory };
+  }
+
+  const history = anchorOrHistory;
+  const boundedCoveredThrough = normalizeCoveredThrough(coveredThrough, history.length);
+  const anchor = conversationAnchor(history) ?? "";
+  const coveredThroughMessageId =
+    boundedCoveredThrough > 0 ? history[boundedCoveredThrough - 1]?.messageId : undefined;
+  const continuityMessageIds = history
+    .slice(boundedCoveredThrough)
+    .map((entry) => entry.messageId)
+    .filter((messageId) => messageId.length > 0);
+  const messageIdCoverage: Record<string, unknown> = {
+    version: 1,
+    anchor,
+    continuityMessageIds,
+  };
+  if (coveredThroughMessageId !== undefined && coveredThroughMessageId.length > 0) {
+    messageIdCoverage["coveredThroughMessageId"] = coveredThroughMessageId;
+  }
+  return { ...summary, anchor, [MESSAGE_ID_COVERAGE_KEY]: messageIdCoverage };
 }
 
 /** Redact every string value of a raw record (pre-validation, pre-truncation). */
-function redactStringValues(record: Record<string, unknown>): Record<string, unknown> {
+function redactStringValues(record: object): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(record)) {
+  for (const key of SUMMARY_FIELDS) {
+    const read = safeOwnValue(record, key);
+    if (read.status !== "ok") continue;
+    const value = read.value;
     out[key] = typeof value === "string" ? redactSensitiveText(value) : value;
   }
   return out;
@@ -144,8 +286,8 @@ function redactStringValues(record: Record<string, unknown>): Record<string, unk
  * `undefined`; an over-cap field is truncated (not rejected). NEVER throws.
  */
 export function validateSummary(payload: unknown): ConversationSummary | undefined {
-  if (!isRecord(payload)) return undefined;
-  if (payload["version"] !== 1) return undefined;
+  if (!isInspectableRecord(payload)) return undefined;
+  if (requiredOwnValue(payload, "version") !== 1) return undefined;
   const fields: Record<(typeof SUMMARY_FIELDS)[number], string> = {
     visitor: "",
     pageDecisions: "",
@@ -155,7 +297,7 @@ export function validateSummary(payload: unknown): ConversationSummary | undefin
     omitted: "",
   };
   for (const field of SUMMARY_FIELDS) {
-    const raw = payload[field];
+    const raw = requiredOwnValue(payload, field);
     if (typeof raw !== "string") return undefined;
     fields[field] = truncateWithMarker(raw, MAX_SUMMARY_FIELD_CHARS);
   }
@@ -238,7 +380,7 @@ export interface SummarizerRequest {
   readonly content: string;
   /** Generation being produced. */
   readonly generation: number;
-  /** Self-cap on total summary size (tokens × charsPerToken handled by caller). */
+  /** Self-cap on total summary size in characters. */
   readonly maxSummaryChars: number;
   readonly timeoutMs: number;
   /** Retry-once = 1. */
@@ -267,7 +409,7 @@ const EMIT_SUMMARY_TOOL: ToolSpec = {
   name: SUMMARIZER_TOOL_NAME,
   description:
     "Emit the rolling conversation summary. Provide every field as a factual, plain-text string.",
-  parameters: {
+  inputSchema: {
     type: "object",
     additionalProperties: false,
     required: [...SUMMARY_FIELDS],
@@ -280,6 +422,8 @@ const EMIT_SUMMARY_TOOL: ToolSpec = {
       omitted: SUMMARY_STRING_SCHEMA,
     },
   },
+  mutatesStage: false,
+  producesConversation: false,
 };
 
 function safeJson(value: unknown): string {
@@ -368,6 +512,147 @@ function firstEmitCall(step: ProviderStep): ToolCall | undefined {
   return step.toolCalls.find((call) => call.name === SUMMARIZER_TOOL_NAME);
 }
 
+function readMessageIdCoverage(
+  payload: unknown,
+  coveredThrough: number,
+):
+  | { readonly status: "none" }
+  | { readonly status: "invalid" }
+  | { readonly status: "ok"; readonly coverage: MessageIdCoverage } {
+  if (!isInspectableRecord(payload)) return { status: "invalid" };
+  const read = safeOwnValue(payload, MESSAGE_ID_COVERAGE_KEY);
+  if (read.status === "missing") return { status: "none" };
+  if (read.status === "unsafe") return { status: "invalid" };
+  if (!isInspectableRecord(read.value)) return { status: "invalid" };
+  if (requiredOwnValue(read.value, "version") !== 1) return { status: "invalid" };
+  const anchor = requiredOwnString(read.value, "anchor");
+  if (anchor === undefined) return { status: "invalid" };
+
+  const coveredThroughMessageIdRead = safeOwnValue(read.value, "coveredThroughMessageId");
+  if (coveredThroughMessageIdRead.status === "unsafe") return { status: "invalid" };
+  const coveredThroughMessageId =
+    coveredThroughMessageIdRead.status === "ok" &&
+    typeof coveredThroughMessageIdRead.value === "string" &&
+    coveredThroughMessageIdRead.value.length > 0
+      ? coveredThroughMessageIdRead.value
+      : undefined;
+  if (coveredThroughMessageIdRead.status === "ok" && coveredThroughMessageId === undefined) {
+    return { status: "invalid" };
+  }
+  if (coveredThrough > 0 && coveredThroughMessageId === undefined) return { status: "invalid" };
+
+  const continuityRead = safeOwnValue(read.value, "continuityMessageIds");
+  if (continuityRead.status !== "ok") return { status: "invalid" };
+  const continuityMessageIds = safeStringArray(continuityRead.value);
+  if (continuityMessageIds === undefined) return { status: "invalid" };
+
+  return {
+    status: "ok",
+    coverage:
+      coveredThroughMessageId === undefined
+        ? { anchor, continuityMessageIds }
+        : { anchor, coveredThroughMessageId, continuityMessageIds },
+  };
+}
+
+function replayFromMessageIdCoverage(
+  coverage: MessageIdCoverage,
+  history: readonly ConversationMessage[],
+  coveredThrough: number,
+): number | undefined {
+  const currentMessageIds = history.map((entry) => entry.messageId);
+  const firstCurrentMessageId = currentMessageIds[0];
+  if (firstCurrentMessageId === undefined) return coveredThrough === 0 ? 0 : undefined;
+
+  if (coverage.anchor === firstCurrentMessageId) {
+    if (coveredThrough > currentMessageIds.length) return undefined;
+    if (
+      coveredThrough > 0 &&
+      coverage.coveredThroughMessageId !== currentMessageIds[coveredThrough - 1]
+    ) {
+      return undefined;
+    }
+    return coveredThrough;
+  }
+
+  if (coverage.coveredThroughMessageId !== undefined) {
+    const coveredBoundaryIndex = currentMessageIds.indexOf(coverage.coveredThroughMessageId);
+    if (coveredBoundaryIndex >= 0) return coveredBoundaryIndex + 1;
+  }
+
+  return replayFromContinuity(coverage.continuityMessageIds, currentMessageIds);
+}
+
+function replayFromContinuity(
+  continuityMessageIds: readonly string[],
+  currentMessageIds: readonly string[],
+): number | undefined {
+  for (let currentIndex = 0; currentIndex < currentMessageIds.length; currentIndex += 1) {
+    const currentMessageId = currentMessageIds[currentIndex];
+    if (currentMessageId === undefined) continue;
+    const continuityIndex = continuityMessageIds.indexOf(currentMessageId);
+    if (continuityIndex < 0) continue;
+    if (
+      hasContiguousMessageIdOverlap(
+        continuityMessageIds,
+        continuityIndex,
+        currentMessageIds,
+        currentIndex,
+      )
+    ) {
+      return currentIndex;
+    }
+  }
+  return undefined;
+}
+
+function hasContiguousMessageIdOverlap(
+  continuityMessageIds: readonly string[],
+  continuityIndex: number,
+  currentMessageIds: readonly string[],
+  currentIndex: number,
+): boolean {
+  const overlapLength = Math.min(
+    continuityMessageIds.length - continuityIndex,
+    currentMessageIds.length - currentIndex,
+  );
+  if (overlapLength <= 0) return false;
+  for (let offset = 0; offset < overlapLength; offset += 1) {
+    if (
+      continuityMessageIds[continuityIndex + offset] !== currentMessageIds[currentIndex + offset]
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function readLegacyAnchor(
+  payload: unknown,
+): { readonly status: "invalid" } | { readonly status: "ok"; readonly value: string | undefined } {
+  if (!isInspectableRecord(payload)) return { status: "invalid" };
+  const read = safeOwnValue(payload, "anchor");
+  if (read.status === "unsafe") return { status: "invalid" };
+  if (read.status === "missing") return { status: "ok", value: undefined };
+  return typeof read.value === "string"
+    ? { status: "ok", value: read.value }
+    : { status: "ok", value: undefined };
+}
+
+function normalizeCoveredThrough(
+  coveredThrough: number | undefined,
+  historyLength: number,
+): number {
+  if (
+    typeof coveredThrough !== "number" ||
+    !Number.isSafeInteger(coveredThrough) ||
+    coveredThrough < 0
+  ) {
+    return 0;
+  }
+  return Math.min(coveredThrough, historyLength);
+}
+
 function isAborted(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
 }
@@ -400,7 +685,7 @@ export function createProviderSummarizer(provider: ReferenceProvider): Summarize
         if (call !== undefined) {
           // Redact BEFORE validation truncates fields: a secret split by the
           // per-field cut could otherwise evade the pair-redaction regex.
-          const candidate = isRecord(call.input)
+          const candidate = isInspectableRecord(call.input)
             ? { ...redactStringValues(call.input), version: 1 }
             : { version: 1 };
           const validated = validateSummary(candidate);

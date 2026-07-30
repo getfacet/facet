@@ -3,7 +3,7 @@ export const meta = {
   description: 'Facet structural audit — fan out one audit-structure reviewer per dimension, adversarially verify each finding with a vote panel, run a completeness critic that re-audits under-covered slices, dedup across dimensions, then rank a cleanup plan.',
   whenToUse: 'Owner-run consolidation pass (not per-change). Audits the whole repo for duplication, boundaries, dead code, hygiene, naming. Produces a ranked plan, not applied changes — the maintainer approves scope afterward.',
   phases: [
-    { title: 'Audit', detail: 'one audit-structure agent per dimension over packages/**/src + apps/**/src' },
+    { title: 'Audit', detail: 'one audit-structure agent per dimension over packages/**/src' },
     { title: 'Verify', detail: 'review-verifier panel per finding — 3 votes for P0/P1, 1 for P2/P3 (majority-real survives)' },
     { title: 'Sweep', detail: 'completeness critic names under-audited (dimension, area) slices → targeted re-audit' },
     { title: 'Plan', detail: 'dedup across dimensions, rank by impact/effort, recommend order + what NOT to touch' },
@@ -18,7 +18,7 @@ export const meta = {
 
 const DIMENSIONS = [
   { key: 'duplication', focus: 'the same logic/spec/string in >=2 places (e.g. the LLM stage spec). Cite EVERY location.' },
-  { key: 'boundaries', focus: 'wrong dependency direction, protocol types outside @facet/core, reusable code stuck in apps/playground that consumers need, Node built-ins in a browser entry. Cite the import.' },
+  { key: 'boundaries', focus: 'wrong dependency direction, protocol types outside @facet/core, reusable code stuck in one package that others need, Node built-ins in a browser entry. Cite the import.' },
   { key: 'dead-code', focus: 'unused exports/files/branches, orphans after a refactor. PROVE it with a grep showing no references.' },
   { key: 'hygiene', focus: 'package.json uniformity (build/files/exports/publishConfig/sideEffects), missing tests on pure logic (kit builders, cli op-building), doc drift vs the actual published package set.' },
   { key: 'naming', focus: 'misleading or inconsistent names across the tree.' },
@@ -108,7 +108,7 @@ const dedupeFindings = list => {
 const AUDIT_PROMPT = dim =>
   '## Structural audit dimension: ' + dim.key + '\n\n' +
   'Read `docs/REVIEW-RULES.md` first (the audit dimensions + invariants).\n' +
-  'Audit the WHOLE tree: `packages/**/src`, `apps/**/src`, and package manifests.\n\n' +
+  'Audit the WHOLE tree: `packages/**/src` and package manifests.\n\n' +
   'Cover ONLY the **' + dim.key + '** dimension: ' + dim.focus + '\n\n' +
   'For each finding give a suggested fix and a rough effort (S/M/L). Prove every claim with concrete evidence ' +
   '(the >=2 locations for duplication; a grep showing no references for dead code; the wrong import for boundaries). ' +
@@ -176,7 +176,7 @@ if (!cfg.skipCritic) {
     (round1.length ? round1.map(f => '- [' + f.severity + '] ' + f.dimension + ': ' + f.title + ' (' + f.files.join(', ') + ')').join('\n') : '(none)') + '\n\n' +
     'Identify up to 6 (dimension, area) slices that were LIKELY UNDER-AUDITED — a specific package/subtree × dimension where a single ' +
     'whole-repo pass probably missed things (e.g. duplication between two specific packages, dead exports in a large package, boundary ' +
-    'leaks in apps/playground, hygiene drift in a specific package.json). Use ls/grep to ground your picks in the ACTUAL tree. ' +
+    'leaks between two specific packages, hygiene drift in a specific package.json). Use ls/grep to ground your picks in the ACTUAL tree. ' +
     'Prefer high-value gaps; return an empty list if coverage genuinely looks complete.\n\nStructured output only.',
     { agentType: 'general-purpose', label: 'critic', phase: 'Sweep', schema: CRITIC_SCHEMA }
   )

@@ -1,43 +1,17 @@
 import {
-  collectMessages,
-  EMPTY_TREE,
-  type AgentControlFrame,
-  type AgentEventFrame,
-  type FacetAgent,
-  type FacetSession,
-  type ServerMessage,
+  collectTurnOutcome,
+  deriveMessageId,
+  validateAgentEvent,
+  validateTurnOutcome,
 } from "@facet/core";
+import type { AgentControlFrame, AgentEventFrame, FacetAgent, TurnOutcome } from "@facet/core";
 
-/**
- * Connects an EXTERNAL agent to a Facet server and keeps it there.
- *
- * This is the reusable agent-side core: it dials OUT to the server (so it works
- * behind NAT with no public endpoint), holds the event stream, sends heartbeats,
- * reconnects on drop, and routes each visitor event to your `FacetAgent` — the
- * SAME agent function you'd register in-process. Segment-3 developers import this
- * directly; the segment-2 local bridge is this plus a local-model driver.
- *
- * Reconnect is for TRANSIENT failures (network errors, `5xx`, dropped streams).
- * A `403` (bad token) is TERMINAL: retrying can never succeed, so the connection
- * logs the reason and stops the loop immediately. A `409` (link already owned) is
- * retried for a bounded WALL-CLOCK window before giving up: most 409s are
- * transient — a dropped connection leaves a ghost stream registered until the
- * server's heartbeat reaper clears it, and a NAT'd agent's own redial races that
- * window — so stopping on the first 409 would down the bridge until a human
- * restarts it. The budget is time-based, not attempt-based, so a small
- * `reconnectMs` can't burn it before the reaper window elapses. Only 409s that
- * persist past the budget (genuine second-owner contention) are terminal.
- */
 export interface ConnectOptions {
   readonly serverUrl: string;
   readonly agentId: string;
-  /** Your brain — identical shape to an in-process agent. */
   readonly agent: FacetAgent;
-  /** Heartbeat interval (default 10s). The server reaps agents that go quiet. */
   readonly heartbeatMs?: number;
-  /** Delay before reconnecting after a drop (default 2s). */
   readonly reconnectMs?: number;
-  /** Shared secret for the `/agent/*` channel, if the server requires one. */
   readonly token?: string;
   readonly onStatus?: (status: "connected" | "disconnected") => void;
 }
@@ -46,31 +20,20 @@ export interface AgentConnection {
   close(): void;
 }
 
-// The wire frame contract lives in @facet/core (AgentEventFrame) so the server
-// (emitter) and this consumer can't drift.
-function isEventFrame(value: unknown): value is AgentEventFrame {
-  if (typeof value !== "object" || value === null) return false;
-  const frame = value as {
-    type?: unknown;
-    requestId?: unknown;
-    visitorId?: unknown;
-    event?: unknown;
-  };
-  return (
-    frame.type === "event" &&
-    typeof frame.requestId === "number" &&
-    typeof frame.visitorId === "string" &&
-    typeof frame.event === "object" &&
-    frame.event !== null
-  );
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/**
- * Splits an SSE buffer into complete frames' `data:` payloads plus the leftover
- * (an incomplete trailing frame). Pure and testable: handles a frame split
- * across chunks, multiple frames per chunk, and non-`data:` lines (comments /
- * heartbeats) without losing following frames.
- */
+function readEventFrame(value: unknown): AgentEventFrame | undefined {
+  if (!isRecord(value) || value["kind"] !== "agent_event") {
+    return undefined;
+  }
+  const result = validateAgentEvent(value["event"]);
+  return result.ok
+    ? Object.freeze({ kind: "agent_event" as const, event: result.event })
+    : undefined;
+}
+
 export function parseSseFrames(buffer: string): { readonly data: string[]; readonly rest: string } {
   const data: string[] = [];
   let rest = buffer;
@@ -86,16 +49,23 @@ export function parseSseFrames(buffer: string): { readonly data: string[]; reado
 }
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-// How long to keep retrying 409s before treating the link as genuinely owned by
-// someone else. A 409 is usually the agent's OWN ghost stream from a dropped
-// connection: the server keeps it registered until the heartbeat reaper trips
-// (staleMs 30s + sweep every 10s ≈ 40s worst case). 60s comfortably outlasts
-// that window. This is WALL-CLOCK, not an attempt count, on purpose: reconnectMs
-// is a public option, so an attempt budget would burn out in seconds at a small
-// cadence and terminate the agent on its own ghost — the exact failure this
-// guards against. Only 409s that persist a full minute mean a real second owner.
 const CONFLICT_409_BUDGET_MS = 60_000;
+const GENERIC_AGENT_FAILURE_TEXT = "The agent could not complete this turn.";
+
+function errorOutcome(frame: AgentEventFrame, text: string): TurnOutcome {
+  return Object.freeze({
+    stageRevision: frame.event.stageRevision,
+    patches: Object.freeze([]),
+    conversation: Object.freeze({
+      kind: "conversation" as const,
+      messageId: deriveMessageId(frame.event.eventId, "assistant"),
+      turnId: frame.event.eventId,
+      role: "assistant" as const,
+      text,
+      at: Date.now(),
+    }),
+  });
+}
 
 export function connectAgent(options: ConnectOptions): AgentConnection {
   const { serverUrl, agentId, agent } = options;
@@ -105,11 +75,8 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
   let closed = false;
   let controller: AbortController | null = null;
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-  // Wall-clock start of the current unbroken run of 409s (null = no streak).
   let conflictStreakStartedAt: number | null = null;
 
-  // Send the shared secret as a header, not a query param (query params leak into
-  // access logs / referrers).
   const authHeaders: Record<string, string> =
     options.token !== undefined ? { "x-facet-token": options.token } : {};
 
@@ -120,12 +87,12 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
       body: JSON.stringify(body),
     }).catch(() => undefined);
 
-  // The control reply carries only what the server reads: it routes by requestId
-  // and authenticates the link by token, so the frame omits agentId (see
-  // AgentControlFrame). The heartbeat handler reads nothing from its body — it
-  // just stamps lastHeartbeat — so the beat posts an empty body.
-  const sendControl = (requestId: number, messages: readonly ServerMessage[]): Promise<unknown> => {
-    const frame: AgentControlFrame = { requestId, messages };
+  const sendControl = (eventId: string, outcome: TurnOutcome): Promise<unknown> => {
+    const frame: AgentControlFrame = Object.freeze({
+      kind: "agent_control" as const,
+      eventId,
+      outcome,
+    });
     return post("/agent/control", frame);
   };
 
@@ -134,23 +101,25 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
   };
 
   const handleEvent = async (frame: AgentEventFrame): Promise<void> => {
-    const session: FacetSession = {
-      agentId,
-      visitor: { visitorId: frame.visitorId },
-      stage: frame.stage ?? EMPTY_TREE,
-    };
-    let messages: readonly ServerMessage[];
+    let outcome: TurnOutcome;
     try {
-      messages = await collectMessages(agent(frame.event, session));
-    } catch (error) {
-      messages = [
-        {
-          kind: "say",
-          text: `(agent error: ${error instanceof Error ? error.message : "unknown"})`,
-        },
-      ];
+      const raw = await agent.handleEvent(frame);
+      const validated = validateTurnOutcome(raw);
+      if (
+        !validated.ok ||
+        validated.outcome.patches.length > 0 ||
+        (validated.outcome.conversation !== undefined &&
+          validated.outcome.conversation.turnId !== frame.event.eventId)
+      ) {
+        outcome = errorOutcome(frame, GENERIC_AGENT_FAILURE_TEXT);
+      } else {
+        outcome = validated.outcome;
+      }
+    } catch {
+      outcome = errorOutcome(frame, GENERIC_AGENT_FAILURE_TEXT);
     }
-    await sendControl(frame.requestId, messages);
+    collectTurnOutcome(outcome);
+    await sendControl(frame.event.eventId, outcome);
   };
 
   const runOnce = async (): Promise<void> => {
@@ -162,16 +131,9 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
         signal: controller.signal,
       });
     } catch {
-      // Network error: do NOT reset the 409 streak clock — otherwise a
-      // 409/network-flap alternation could defeat the budget and retry forever.
-      return; // server down — the loop will retry
+      return;
     }
     if (!response.ok) {
-      // 403 (bad token) can never succeed on retry — stop immediately. 409 (link
-      // already owned) is usually a transient ghost-stream race, so retry it for
-      // a bounded wall-clock window (see CONFLICT_409_BUDGET_MS) before concluding
-      // a second owner genuinely holds the link. Other non-ok statuses (e.g. 500)
-      // are transient and fall through to the reconnect delay.
       if (response.status === 403) {
         console.error("[facet] agent connection refused (403: bad token) — not reconnecting");
         closed = true;
@@ -185,9 +147,8 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
           );
           closed = true;
         }
-        return; // keep the streak clock running; other outcomes below reset it
+        return;
       }
-      // A real non-409 HTTP response means the slot state changed — end the streak.
       conflictStreakStartedAt = null;
       return;
     }
@@ -195,7 +156,7 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
       conflictStreakStartedAt = null;
       return;
     }
-    conflictStreakStartedAt = null; // successful connect
+    conflictStreakStartedAt = null;
 
     options.onStatus?.("connected");
     beat();
@@ -213,15 +174,15 @@ export function connectAgent(options: ConnectOptions): AgentConnection {
         buffer = rest;
         for (const payload of data) {
           try {
-            const parsed: unknown = JSON.parse(payload);
-            if (isEventFrame(parsed)) void handleEvent(parsed);
+            const frame = readEventFrame(JSON.parse(payload));
+            if (frame !== undefined) void handleEvent(frame);
           } catch {
-            // skip one malformed frame without dropping the rest of the buffer
+            // One malformed frame is inert; the stream continues.
           }
         }
       }
     } catch {
-      // stream error → fall through to reconnect
+      // stream error → reconnect
     } finally {
       if (heartbeatTimer !== null) {
         clearInterval(heartbeatTimer);

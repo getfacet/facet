@@ -1,217 +1,121 @@
 # Agent Tool Result Contract
 
-For the framework overview and integration-path decision, start with the
-[Facet README](../README.md). This document owns the exact result protocol for
-LLM-facing stage tools.
+Facet's agent-facing tool surface is provider-neutral and closed. Tools let an
+LLM read the current UI contract, author component markup, publish bounded UI
+data, and observe results. They do not fetch domain data, execute business
+actions, or send conversation messages.
 
-Facet stage tools are consumed by LLMs, so their results must be machine-readable
-and hard to misinterpret. A tool result is not just a log line. It is the model's
-only feedback loop for deciding whether to continue editing the stage, inspect
-the current state, or tell the visitor that the work is done.
+## Tool roster
 
-This contract applies to LLM-facing Facet stage tool observations emitted by
-`@facet/agent-tools` and consumed by `@facet/reference-agent`.
+`FACET_TOOL_NAMES` and `FACET_TOOL_SPECS` define exactly nine tools:
 
-If you are assembling a provider loop, start with the
-[Agent Integration guide](AGENT-INTEGRATION.md). This document is the exact
-authority for the observation envelope, outcomes, bounds, visibility, and
-recovery behavior; the integration guide explains where each result goes.
-
-## Required Shape
-
-Every LLM-facing observation is a JSON string with these fields. Generic
-observations are bounded; the four exact design-asset reads described below are
-deliberate provider-context exceptions:
-
-```json
-{
-  "version": 1,
-  "tool": "append_node",
-  "status": "ok",
-  "outcome": "applied_visible",
-  "applied": true,
-  "stage_changed": true,
-  "visible_to_visitor": true,
-  "patch_count": 2,
-  "changed_node_ids": ["root", "headline"],
-  "omitted_changed_node_count": 0,
-  "warnings": [],
-  "omitted_warning_count": 0,
-  "message": "Appended \"headline\" under \"root\".",
-  "next_action": "",
-  "summary": "2 patch ops; changed 2 nodes: headline, root"
-}
-```
-
-The provider transcript receives this JSON as the normal `tool_result` content.
-The field names are intentionally provider-neutral.
-The status, outcome, and fact booleans must be coherent: `rejected`, `pending`,
-and `no_stage_change` are never applied, and `applied_visible` always means the
-stage changed and the changed state is visitor-visible.
-
-### Optional `data` field
-
-Some tools attach an optional `data?: string` field carrying a machine-readable
-payload that would be lossy to squeeze into the prose `message`.
-
-For the public generic formatter, `data` is:
-
-- optional — present only when a tool has structured metadata to hand back;
-- bounded — capped like every other field (≤ 2048 chars);
-- always valid JSON — a consumer can `JSON.parse` it directly.
-
-If a generic `data` value exceeds that bound, it is replaced wholesale with
-`{ "truncated": true }` rather than sliced into invalid JSON. Consumers should
-parse generic `data` inside a `try`/`catch`, ignore parse errors, and treat that
-marker as unavailable detail.
-
-#### Exact design-asset read exceptions
-
-Four read-only tools return unresolved design-system data without changing the
-stage:
-
-| Tool | Exact input | Exact `data` payload |
+| Tool | Mutates stage | Purpose |
 | --- | --- | --- |
-| `get_pattern` | `{ "name": "<Pattern index name>" }` | One complete validated Pattern: bounded discovery metadata plus its concrete native-Brick tree. |
-| `get_preset` | `{ "brick": "<Brick type>", "name": "<Preset index name>" }` | One same-Brick Preset with metadata and unresolved style names. |
-| `get_brick_spec` | `{ "type": "<one exact Brick type>" }` | One compact Core projection: fields, root/owned style paths, value source, states, and applicability. It never accepts a batch. |
-| `get_style_choices` | `{ "brick": "<Brick type>", "target": "<root or owned target>", "property": "<owned property>" }` | The allowed names and metadata for that one exact local property. It is never a global token lookup. |
+| `render_page` | yes | Replace the page with a complete component-markup document. |
+| `insert_subtree` | yes | Insert a component-markup subtree under an existing generated node id. |
+| `replace_subtree` | yes | Replace an existing component subtree with authored markup. |
+| `update_node` | yes | Update one existing node from authored markup. |
+| `remove_subtree` | yes | Remove one existing component subtree. |
+| `read_component_spec` | no | Read the active catalog metadata for one registered tag. |
+| `read_screen` | no | Read one declared screen as bounded serialized markup. |
+| `read_data` | no | Read a bounded projection of the data model at a named-key path. |
+| `publish_data` | yes | Publish one bounded JSON value through the data lane. |
 
-For `get_style_choices`, "allowed" means the property-specific subset used by
-strict Core validation, not every member of the property's broader token or
-fixed-choice domain.
+Every tool response is plain data. A successful mutating response includes the
+stage revision in force after the operation. A successful read response includes
+the requested projection and the current revision.
 
-A successful read uses the standard observation envelope. For example:
+## Common rejection shape
 
-```json
-{
-  "version": 1,
-  "tool": "get_pattern",
-  "status": "ok",
-  "outcome": "no_stage_change",
-  "applied": false,
-  "stage_changed": false,
-  "visible_to_visitor": false,
-  "patch_count": 0,
-  "changed_node_ids": [],
-  "omitted_changed_node_count": 0,
-  "warnings": [],
-  "omitted_warning_count": 0,
-  "message": "Read one exact unresolved Pattern.",
-  "next_action": "Adapt the reference and author ordinary native Bricks separately; do not insert it blindly.",
-  "summary": "no stage changes",
-  "data": "{\"name\":\"hero\",\"description\":\"A hero reference.\",\"useWhen\":\"Use for a focused landing introduction.\",\"root\":\"hero.root\",\"nodes\":{\"hero.root\":{\"id\":\"hero.root\",\"type\":\"box\",\"children\":[\"hero.title\"]},\"hero.title\":{\"id\":\"hero.title\",\"type\":\"text\",\"value\":\"Hello\"}}}"
-}
-```
+Failures use a closed `{ ok: false, code, ... }` shape. The first deterministic
+fault is reported; a rejected mutation emits no patch and leaves the local
+shadow unchanged.
 
-For `get_pattern` and `get_preset`, `JSON.parse(data)` is deep-equal to the
-selected validated object: no fields are dropped, no ids are minted, concrete
-Theme values are not resolved, and no truncation marker is substituted.
-`get_brick_spec` and `get_style_choices` similarly preserve their exact compact
-Core-derived projections. A package-private asset formatter owns these
-exceptions; the public generic formatter keeps its normal cap and exposes no
-bypass.
+Authoring failures use the same author-error vocabulary as Core parsing and
+catalog validation. The error carries one code, one source location, one cause,
+and one repair hint. That is the only path for invalid markup: renderer
+fail-safe behavior is not an authoring acceptance path.
 
-One detached, deeply frozen turn snapshot supplies the Theme, Pattern list, and
-the bounded Pattern/Preset/Brick indexes. The prompt exposes index metadata only;
-exact details appear after an explicit successful read. A missing indexed name
-or unavailable Brick-owned path returns `not_available`. Missing, malformed, or
-extra input fields return `invalid_input`. Every rejection leaves the stage
-shadow and buffered edits unchanged.
+## Mutation outcomes
 
-The reference transcript preserves every complete successful asset read past
-the generic observation cap. Its newest tool group is pinned verbatim through
-the next provider handoff even when recent-step retention is zero. If the whole
-request still exceeds the context budget, the loop sends neither a partial
-value nor a summary; it stops with `context_limit` before that provider call.
-After one complete handoff, normal later step-group compaction may resume.
+`render_page`, `insert_subtree`, `replace_subtree`, `update_node`, and
+`remove_subtree` can return:
 
-All four payloads are agent/provider-side only. They do not enter a stage
-message, patch, browser global, HTML shell, SSE frame, reconnect snapshot, or
-client protocol. A Pattern is guidance, not insertion syntax: the model must
-adapt it and author the desired UI with ordinary native stage tools.
+| Outcome | Meaning |
+| --- | --- |
+| `ok: true` | The authored change was validated, folded, and the response includes `stageRevision`. |
+| `author_error` | Markup parsed or catalog validation failed; no stage change. |
+| `page_not_rendered` | A targeted mutation was requested before any page exists. |
+| `unknown_target_id` | The supplied generated node id is not present in the current document. |
+| `entry_screen_root_removal` | The request attempted to remove the entry screen root. |
+| `invalid_document` | The post-removal document could not be serialized safely. |
+| `invalid_fragment` | Targeted markup did not contain exactly one subtree. |
+| `invalid_markup_input` | The mutation input did not include a markup string. |
+| `reserved-attribute` | A targeted fragment attempted to author the reserved `id` attribute. |
+| `invalid_target_id` | A targeted mutation did not include a valid target id string. |
+| `screen_boundary_violation` | A targeted mutation crossed a screen-root boundary. |
+| `screen_name_changed` | A screen-root update or replacement changed the screen name. |
+| `mutation_authority_rejected` | The runtime write authority expired before the mutation could commit. |
+| `stale_revision` | The mutation expected an older revision than the active session. |
+| `unknown_mutation_kind` | The mutation kind is not in the closed roster. |
+| `invalid_mutation_input` | The submitted mutation input was not an object. |
+| `mutation_rejected` | A future runtime rejection was safely collapsed to the generic mutation failure. |
 
-## Outcomes
+Runtime or transport layers can additionally reject a submitted turn as `busy`,
+`deduped`, or another revision/settlement failure. Those are not model-tool
+success states; they are delivery outcomes around the same single-writer stage
+contract.
 
-| Outcome | Meaning | May the model claim the page is done? |
-| --- | --- | --- |
-| `applied_visible` | The stage changed and the changed stage is reachable from the server-side render root, or a visible stage metadata field changed. | Yes, if the requested work is complete. |
-| `applied_not_visible` | A patch was applied, but the changed node is not reachable from the current server-side render root. | No. Attach the node to a visible parent or inspect first. |
-| `applied_with_warnings` | A patch was applied, but validation/folding dropped or sanitized something. | Usually no. Inspect or repair when the warning affects the requested work. |
-| `pending` | The edit is buffered, usually because a container references child ids that do not exist yet. No patch was emitted. | No. Define the missing children or change the edit. |
-| `rejected` | The tool call was invalid or unsafe. No patch was emitted. | No. Follow `next_action`. |
-| `no_stage_change` | The tool intentionally did not mutate the stage, for example an asset read, `inspect_stage`, `inspect_node`, or `say`. | Only if no page change was required. A design-asset read is not page completion. |
+## Read outcomes
 
-## False-Success Rule
+`read_component_spec` returns `{ ok: true, spec, stageRevision }` or
+`component_not_found` with the available tag list.
 
-A tool result must never report plain success when the visible stage did not
-reflect the requested page change.
+`read_screen` returns `{ ok: true, screen, markup, issues, stageRevision }` or
+`page_not_rendered`. Serialization issues are included as structured issue
+strings; a successful read may still report safe degradation of corrupt stored
+input.
 
-In particular:
+`read_data` returns `{ ok: true, path, value, count, truncated, stageRevision }`
+or `invalid_data_path`. Paths use named keys only and reuse Facet's identifier
+grammar for each segment.
 
-- `set_node` can create or replace a node without attaching it to a visible
-  parent. That is `applied_not_visible`, not visible success.
-- `render_page`, `append_node`, and `set_node` run strict author validation.
-  Unknown Brick fields, unavailable style paths, invalid Preset names, or values
-  outside the local closed choices reject the complete authoring call with
-  `code: "invalid_authoring"`, bounded `errors`, and no patch.
-- Buffered edits are `pending`, not success.
-- Rejected edits emit no patch and must include a concrete `next_action`.
-- Fail-soft sanitation is a separate renderer/fold defense for stale or bypassed
-  data. It may drop only invalid style fragments while keeping valid Bricks and
-  siblings; it is not the normal LLM authoring acceptance path.
+## Data publish outcomes
 
-## Visibility Definition
+`publish_data` returns `{ ok: true, descriptor, stageRevision }` when the value
+fits all payload and model bounds. The descriptor reports path, JSON shape,
+fields, and count.
 
-`visible_to_visitor` is computed from the server-side stage shadow:
+Rejections mirror Core payload evaluation: non-serializable input, model/object
+shape violations, payload length limits, value-count limits, array length
+limits, object-key limits, string length limits, or a specific bound at the
+reported path. The tool never performs a domain fetch; the host must fetch and
+authorize data before publishing it into Facet.
 
-- A node is visible when it is reachable from the active render root and no
-  hidden box on that path suppresses it.
-- `root`, `screens`, or `entry` metadata changes count as visible stage changes
-  because they affect what the renderer can show.
-- Browser-local `navigate` and `toggle` view state is not part of this value.
-  Those effects are local to the browser and are not authoritative stage writes.
+## Visitor event collection
 
-This is deliberately conservative. If a tool result says
-`visible_to_visitor: false`, the model must not claim the visitor can see the
-change.
+The renderer sends `agent:` events with exactly the fields the author requested.
+Each collected field is one of:
 
-## Recovery Rules
+- `{ kind: "value", value }`;
+- `{ kind: "omitted_sensitive" }`; or
+- `{ kind: "collect_source_unavailable" }`.
 
-Every non-complete result should include a concrete `next_action`.
+`collect_source_unavailable` is a runtime fail-safe for a validly authored field
+that is not live or registered at event time. It is not an author-time escape
+hatch for a typo; author validation rejects collect names that the screen cannot
+resolve.
 
-- `applied_not_visible`: append the node under an existing visible container, or
-  call `inspect_stage` / `inspect_node` to find a visible parent.
-- `applied_with_warnings`: inspect the affected stage area or retry with a valid
-  closed tree.
-- `pending`: define the missing child nodes in the same turn, or replace the
-  pending container with a closed node.
-- `rejected` with `invalid_authoring`: use the bounded `errors` entries. Each
-  entry names an exact document path and may include `allowed` choices; repair
-  the complete call and retry.
-- `rejected` with `invalid_input`, `invalid_parent`, `invalid_tree`, or
-  `patch_limit`: follow `next_action` and retry with the corrected shape or a
-  smaller change.
-- `rejected` with `not_available`: choose an exact name from the active index,
-  or an exact Brick/target/property path returned by `get_brick_spec`.
+## Conversation is separate
 
-## Bounds And Privacy
+Conversation messages are runtime/protocol frames, not tool calls in the roster
+above. A turn may produce a conversation frame alongside stage patches, but no
+Facet tool is named "send message" and no authoring operation smuggles
+conversation text through component markup.
 
-Observations must remain safe to place in a provider transcript. Generic
-observations remain bounded; exact design-asset reads follow the dedicated
-whole-value/context-stop rule above.
+## Agent loop rule
 
-- Do not include full stage JSON by default.
-- Bound tool names, changed node id lists, warnings, messages, next actions, and
-  summaries.
-- Normalize non-finite, missing, or negative counts to safe non-negative
-  integers before JSON serialization. A count must never become JSON `null`.
-- If a changed node id is too long for the observation contract, omit it and
-  increment `omitted_changed_node_count`.
-- Do not include provider keys, visitor ids, collected secrets, raw CSS values,
-  resolved Theme values, or unbounded user input. Complete Pattern and Preset
-  data is allowed only through the validated exact-read path; Core-derived Brick
-  and local-choice projections contain closed names and guidance, never concrete
-  CSS. None of these payloads is forwarded to the browser or trace callbacks.
-- Keep the contract provider-neutral; OpenAI and Anthropic receive the same
-  logical observation content.
+After every tool call, return the structured observation to the model. If a
+mutation is rejected, repair the one reported fault and retry. Do not claim the
+requested UI change is complete until a mutating tool returns success and the
+runtime accepts the resulting turn.

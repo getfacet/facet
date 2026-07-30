@@ -39,7 +39,7 @@ Merge into one changed-files list.
 ### Step 2 — Map changed files to packages
 | Path | Package / area |
 |---|---|
-| `packages/core/core/**` | `@facet/core` (bricks/tokens/patch/validate/protocol/spec — browser-safe, node-free) |
+| `packages/core/core/**` | `@facet/core` (markup/catalog/data/document/patch contracts — browser-safe, node-free) |
 | `packages/core/runtime/**` | `@facet/runtime` |
 | `packages/adapters/server/**` | `@facet/server` |
 | `packages/adapters/client/**` | `@facet/client` |
@@ -50,12 +50,7 @@ Merge into one changed-files list.
 | `packages/tools/quickstart/**` | `@facet/quickstart` |
 | `packages/agents/agent/**` | `@facet/agent` |
 | `packages/adapters/agent-client/**` | `@facet/agent-client` |
-| `packages/adapters/ag-ui/**` | `@facet/ag-ui` |
-| `packages/tools/cli/**` | `@facet/cli` |
-| `packages/tools/bridge/**` | `@facet/bridge` |
-| `packages/adapters/store-postgres/**` | `@facet/store-postgres` |
 | `labs/**` | labs (experimental, unpublished) |
-| `apps/playground/**` | playground (integration surface) |
 | `.agents/**`, `.claude/**`, `.codex/**`, `.changeset/**`, root `*.md`, `docs/**` | infra/docs/planning |
 
 ### Step 3 — Gather evidence per affected package
@@ -70,24 +65,26 @@ per package to return evidence; otherwise inline.
 
 ### Step 3.5 — Cross-package consumer sweep (Facet's version of the consumer map)
 **Trigger** when the change adds / renames / removes a PUBLISHED surface — an
-export in a package barrel `index.ts`, a brick/token/action shape in `@facet/core`,
-a protocol type, or a CLI command.
+export in a package barrel `index.ts`, a markup/catalog/data/action shape in
+`@facet/core`, a protocol type, or a CLI command.
 
-Facet's "consumer trees" are the other packages + the playground + examples:
+Facet's "consumer trees" are the other packages + examples:
 ```
-git grep -n -- '<symbol-or-string>' packages apps/playground examples 2>/dev/null
+git grep -n -- '<symbol-or-string>' packages examples 2>/dev/null
 ```
 Record one row per (surface × consumer area). Show `(no match)` with the literal
 command + `0` when empty — never a free-form "not used" claim. For every hit,
 name where the migration happens. Special Facet checks:
-- If the change touches the brick/token/action vocabulary → the LLM-facing
-  `packages/core/core/src/spec.ts` (STAGE_SPEC) is a consumer; flag it.
+- If the change touches markup/catalog/tool discovery → the agent prompt,
+  boundary component index, lazy component-spec read, docs, package smoke, and
+  hard-cut residue scanner are consumers; flag each.
 - `@facet/core` must stay node-free; flag any new Node-only import.
 
 ### Step 3.6 — Invariant touch check (Facet-specific)
 Note which of Facet's invariants the change touches (so implementation stays
 honest): UI-out/UI-in boundary (no backend/domain), mechanism-vs-policy,
-fail-safe, declarative-only, flow-only overlay, two-writers coherence,
+fail-safe, declarative registered markup, immutable catalog/registry trust
+boundary, flow-contained modal behavior, two-writers coherence, and
 backend-via-agent. Mark each `untouched` / `touched (how it stays safe)`.
 
 ### Step 4 — Evaluate
@@ -103,7 +100,8 @@ package.
 - Affected package missing doc or entrypoint evidence (`file:line`) → FAIL.
 - Consumer sweep triggered but a consumer area is missing, or a row is a
   free-form claim instead of a literal grep + count → FAIL.
-- Vocabulary changed but STAGE_SPEC not flagged as a consumer → FAIL.
+- Markup/catalog/tool surface changed but prompt, discovery, docs, package smoke,
+  or residue-gate consumers were not evaluated → FAIL.
 - An open assumption not declared → FAIL.
 
 ## Output contract

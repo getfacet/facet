@@ -1,289 +1,587 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, renderHook } from "@testing-library/react";
 import {
-  EMPTY_TREE,
+  BOUNDS,
+  NEUTRAL_COPY_DEFAULTS,
+  type AgentEvent,
+  type ComponentDocument,
+  type ComponentMountProps,
+  type ComponentNode,
+  type ComponentSpec,
+  type ConversationMessage,
+  type FacetStage,
+  type FacetTheme,
   type FacetTransport,
   type JsonPatchOperation,
-  type ServerMessage,
+  type ServerFrame,
 } from "@facet/core";
+import { act, cleanup, fireEvent, render, renderHook } from "@testing-library/react";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ReactNode } from "react";
+import { afterEach, describe, expect, it } from "vitest";
+
+import { bootstrapRenderer } from "./bootstrap.js";
+import { MODAL_PART_ATTRIBUTE } from "./modal-frame.js";
+import type { ComponentRegistry } from "./registry.js";
+import { StageRenderer } from "./StageRenderer.js";
 import { useFacet } from "./useFacet.js";
 
-afterEach(cleanup);
+class TestTransport implements FacetTransport {
+  readonly listeners = new Set<(frame: ServerFrame) => void>();
 
-function fakeTransport() {
-  let listener: ((message: ServerMessage) => void) | null = null;
-  const transport: FacetTransport = {
-    send: vi.fn(),
-    subscribe: (on) => {
-      listener = on;
-      return () => {
-        listener = null;
-      };
-    },
-  };
+  subscribe(onFrame: (frame: ServerFrame) => void): () => void {
+    this.listeners.add(onFrame);
+    return () => {
+      this.listeners.delete(onFrame);
+    };
+  }
+
+  emit(frame: ServerFrame): void {
+    for (const listener of this.listeners) {
+      listener(frame);
+    }
+  }
+}
+
+const THEME: FacetTheme = {
+  color: {
+    background: "#ffffff",
+    surface: "#f7f7f7",
+    border: "#dddddd",
+    text: "#111111",
+    textMuted: "#666666",
+    accent: "#1d4ed8",
+    onAccent: "#ffffff",
+    success: "#15803d",
+    warning: "#b45309",
+    danger: "#b91c1c",
+  },
+  space: { xs: "0.25rem", sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem" },
+  radius: { sm: "2px", md: "6px", lg: "12px", full: "9999px" },
+  borderWidth: { thin: "1px", thick: "2px" },
+  shadow: {
+    sm: "0 1px 2px rgba(0, 0, 0, 0.08)",
+    md: "0 4px 8px rgba(0, 0, 0, 0.1)",
+    lg: "0 12px 32px rgba(0, 0, 0, 0.2)",
+  },
+  fontFamily: { sans: "Inter, sans-serif", mono: "Menlo, monospace" },
+  fontSize: { xs: "0.75rem", sm: "0.875rem", md: "1rem", lg: "1.25rem", xl: "1.75rem" },
+  fontWeight: { regular: "400", medium: "500", bold: "700" },
+  lineHeight: { tight: "1.2", normal: "1.5", relaxed: "1.7" },
+};
+
+const EMPTY_STAGE: FacetStage = Object.freeze({ document: null, data: Object.freeze({}) });
+
+const SCREEN_SPEC: ComponentSpec = {
+  tag: "Screen",
+  whenToUse: "The root of one named screen.",
+  props: {
+    name: { type: "string", required: true, guidance: "The screen name." },
+  },
+  acceptsChildren: true,
+};
+
+const TEXT_SPEC: ComponentSpec = {
+  tag: "Text",
+  whenToUse: "Show a line of prose.",
+  props: {
+    value: { type: "string", required: true, bindable: true, guidance: "The words to show." },
+  },
+  acceptsChildren: false,
+};
+
+const FIELD_SPEC: ComponentSpec = {
+  tag: "Field",
+  whenToUse: "Ask the visitor for one value.",
+  props: {
+    name: { type: "string", required: true, guidance: "The collection address." },
+    label: { type: "string", required: true, guidance: "The field label." },
+    value: { type: "string", default: "", guidance: "The value shown." },
+  },
+  acceptsChildren: false,
+  collect: { collectable: true, valueProp: "value" },
+};
+
+const MODAL_SPEC: ComponentSpec = {
+  tag: "Modal",
+  whenToUse: "Interrupt the screen for one focused decision.",
+  props: {
+    triggerLabel: { type: "string", required: true, guidance: "The trigger label." },
+    title: { type: "string", required: true, guidance: "The dialog title." },
+  },
+  acceptsChildren: true,
+};
+
+const EXPLODER_SPEC: ComponentSpec = {
+  tag: "Exploder",
+  whenToUse: "A test component that can throw.",
+  props: {
+    mode: { type: "string", required: true, enum: ["boom", "safe"], guidance: "Throw or render." },
+  },
+  acceptsChildren: false,
+};
+
+function screenImpl({ props, children }: ComponentMountProps<ReactNode>): ReactNode {
+  return (
+    <section data-testid="screen" data-screen={String(props["name"] ?? "")}>
+      {children}
+    </section>
+  );
+}
+
+function textImpl({ props }: ComponentMountProps<ReactNode>): ReactNode {
+  return <p data-testid="text">{String(props["value"] ?? "")}</p>;
+}
+
+function fieldImpl({ props, onValueChange }: ComponentMountProps<ReactNode>): ReactNode {
+  return (
+    <input
+      data-testid="field"
+      aria-label={String(props["label"] ?? "")}
+      value={String(props["value"] ?? "")}
+      onChange={(event): void => {
+        onValueChange?.(event.target.value);
+      }}
+    />
+  );
+}
+
+function modalImpl({ props, children }: ComponentMountProps<ReactNode>): ReactNode {
+  return (
+    <div data-testid="modal-content" data-title={String(props["title"] ?? "")}>
+      {children}
+    </div>
+  );
+}
+
+function exploderImpl({ props }: ComponentMountProps<ReactNode>): ReactNode {
+  if (props["mode"] === "boom") {
+    throw new Error("boom");
+  }
+  return <div data-testid="exploder">safe</div>;
+}
+
+const REGISTRY: ComponentRegistry = Object.freeze({
+  Screen: screenImpl,
+  Text: textImpl,
+  Field: fieldImpl,
+  Modal: modalImpl,
+  Exploder: exploderImpl,
+});
+
+const BOOTSTRAP = (() => {
+  const result = bootstrapRenderer({
+    catalog: { components: [SCREEN_SPEC, TEXT_SPEC, FIELD_SPEC, MODAL_SPEC, EXPLODER_SPEC] },
+    registry: REGISTRY,
+    theme: THEME,
+  });
+  if (!result.ok) {
+    throw new Error(`fixture bootstrap failed: ${result.code} at ${result.at}`);
+  }
+  return result;
+})();
+
+function scalar(value: string): ComponentNode["props"][string] {
+  return { kind: "scalar", value };
+}
+
+function documentWithText(value: string): ComponentDocument {
   return {
-    transport,
-    emit: (message: ServerMessage) => act(() => listener?.(message)),
-    emitRaw: (message: ServerMessage) => listener?.(message),
-    subscribed: () => listener !== null,
+    entry: "home",
+    screens: ["s1"],
+    nodes: {
+      s1: { tag: "Screen", props: { name: scalar("home") }, children: ["t1"] },
+      t1: { tag: "Text", props: { value: scalar(value) }, children: [] },
+    },
   };
 }
 
-const validTree = {
-  root: "root",
-  nodes: { root: { id: "root", type: "box" as const, children: [] } },
+const INTERACTIVE_DOCUMENT: ComponentDocument = {
+  entry: "home",
+  screens: ["s1"],
+  nodes: {
+    s1: { tag: "Screen", props: { name: scalar("home") }, children: ["f1", "m1", "e1"] },
+    f1: {
+      tag: "Field",
+      props: { name: scalar("region"), label: scalar("Region") },
+      children: [],
+    },
+    m1: {
+      tag: "Modal",
+      props: { triggerLabel: scalar("Filter"), title: scalar("Filter") },
+      children: [],
+    },
+    e1: { tag: "Exploder", props: { mode: scalar("boom") }, children: [] },
+  },
 };
 
-// A distinct root id (not "root") so "the seed is visible before any frame"
-// can't be satisfied by EMPTY_TREE, which also carries a "root" node.
-const seedTree = {
-  root: "seed",
-  nodes: { seed: { id: "seed", type: "box" as const, children: [] } },
-};
+function message(overrides: Partial<ConversationMessage> = {}): ConversationMessage {
+  return {
+    kind: "conversation",
+    messageId: "turn-1:assistant",
+    turnId: "turn-1",
+    role: "assistant",
+    text: "hello",
+    at: 1,
+    ...overrides,
+  };
+}
 
-describe("useFacet (jsdom)", () => {
-  it("applies a patch message to the tree", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport));
-    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
-    expect(result.current.tree.root).toBe("root");
-    expect(result.current.tree.nodes["root"]).toBeDefined();
+function patch(stageRevision: number, ops: readonly JsonPatchOperation[]): ServerFrame {
+  return { kind: "patch", stageRevision, ops };
+}
+
+function renderHookWith(
+  transport: TestTransport,
+  options: Partial<Parameters<typeof useFacet>[0]> = {},
+): ReturnType<typeof renderHook<ReturnType<typeof useFacet>, void>> {
+  return renderHook(() =>
+    useFacet({
+      transport,
+      initialStage: EMPTY_STAGE,
+      ...options,
+    }),
+  );
+}
+
+function emit(transport: TestTransport, frame: ServerFrame): void {
+  act(() => {
+    transport.emit(frame);
+  });
+}
+
+function sourceOf(file: string): string {
+  return readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), "utf8");
+}
+
+function firstField(): HTMLInputElement {
+  const field = document.querySelector<HTMLInputElement>('[data-testid="field"]');
+  if (field === null) {
+    throw new Error("fixture rendered no field");
+  }
+  return field;
+}
+
+function openModal(label: string): void {
+  const trigger = [
+    ...document.querySelectorAll<HTMLElement>(`[${MODAL_PART_ATTRIBUTE}="trigger"]`),
+  ].find((element) => element.textContent === label);
+  if (trigger === undefined) {
+    throw new Error(`no modal trigger labelled ${label}`);
+  }
+  fireEvent.click(trigger);
+}
+
+function openFrame(): HTMLElement {
+  const frame = document.querySelector<HTMLElement>(`[${MODAL_PART_ATTRIBUTE}="frame"]`);
+  if (frame === null) {
+    throw new Error("fixture has no open modal frame");
+  }
+  return frame;
+}
+
+afterEach(() => {
+  cleanup();
+  document.body.style.overflow = "";
+});
+
+describe("useFacet frame folding", () => {
+  it("keeps local foldCount distinct from server stageRevision", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport);
+
+    emit(
+      transport,
+      patch(7, [{ op: "replace", path: "", value: { document: documentWithText("a"), data: {} } }]),
+    );
+    emit(
+      transport,
+      patch(11, [
+        {
+          op: "replace",
+          path: "",
+          value: { document: documentWithText("b"), data: { count: 2 } },
+        },
+      ]),
+    );
+
+    expect(view.result.current.transition).toEqual({ foldCount: 2, stageRevision: 11 });
+    expect(view.result.current.stage.document).toEqual(documentWithText("b"));
+    expect(view.result.current.stage.data).toEqual({ count: 2 });
   });
 
-  it("appends say messages to chat in order", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport));
-    t.emit({ kind: "say", text: "hello" });
-    t.emit({ kind: "say", text: "again" });
-    expect(result.current.chat).toEqual(["hello", "again"]);
+  it("rejects stale patch revisions instead of merging them", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport);
+
+    emit(
+      transport,
+      patch(5, [
+        { op: "replace", path: "", value: { document: documentWithText("fresh"), data: {} } },
+      ]),
+    );
+    emit(
+      transport,
+      patch(4, [
+        { op: "replace", path: "", value: { document: documentWithText("stale"), data: {} } },
+      ]),
+    );
+
+    expect(view.result.current.transition).toEqual({ foldCount: 1, stageRevision: 5 });
+    expect(view.result.current.stage.document).toEqual(documentWithText("fresh"));
   });
 
-  it("salvages good ops in a mixed batch (per-op fold, matching the server)", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport));
-    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
-    // A batch where one op throws (missing parent) and one applies. The NEW
-    // contract folds per-op: the good op survives, the bad one is dropped — no
-    // whole-batch drop, no crash. This mirrors foldPatchIntoStage on the server.
-    t.emit({
-      kind: "patch",
-      patches: [
-        { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
-        { op: "add", path: "/nodes/missing/children/-", value: "x" }, // throws
-      ],
-    });
-    expect(result.current.tree.nodes["good"]).toBeDefined(); // salvaged
-    expect(result.current.tree.nodes["root"]).toBeDefined(); // still valid
+  it("folds a reconnect root replace through the ordinary stage patch path", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport);
+    const resynced = { document: documentWithText("rehydrated"), data: { totals: { q1: 42 } } };
+
+    emit(transport, patch(17, [{ op: "replace", path: "", value: resynced }]));
+    emit(transport, message({ messageId: "turn-2:assistant", turnId: "turn-2" }));
+    emit(transport, message({ messageId: "turn-2:assistant", turnId: "turn-2" }));
+
+    expect(view.result.current.stage).toEqual(resynced);
+    expect(view.result.current.transition).toEqual({ foldCount: 1, stageRevision: 17 });
+    expect(view.result.current.conversation.map((item) => item.messageId)).toEqual([
+      "turn-2:assistant",
+    ]);
   });
 
-  it("normalizes a root replace carrying a non-tree to the validated EMPTY_TREE", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport));
-    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
-    // `replace "" null` is exactly what the server folds too: applyPatch → null,
-    // validateTree(null) → EMPTY_TREE. The client lands on the SAME normalized
-    // tree (not the stale prior tree), so the two views cannot drift.
-    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: null }] });
-    expect(result.current.tree).toEqual(EMPTY_TREE);
+  it("has no reset or snapshot branch that clears conversation", () => {
+    const source = sourceOf("useFacet.ts");
+
+    expect(source).not.toContain("setChat");
+    expect(source).not.toContain('kind === "reset"');
+    expect(source).not.toContain('kind === "snapshot"');
+  });
+});
+
+describe("useFacet conversation and sends", () => {
+  it("collapses redelivered conversation frames by messageId", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport);
+
+    emit(transport, message({ messageId: "turn-1:assistant", text: "first" }));
+    emit(transport, message({ messageId: "turn-1:assistant", text: "different duplicate" }));
+    emit(transport, message({ messageId: "turn-2:assistant", turnId: "turn-2", text: "second" }));
+
+    expect(view.result.current.conversation.map((item) => item.text)).toEqual(["first", "second"]);
   });
 
-  it("clears chat on a reset message (reconnect), then re-accumulates", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport));
-    t.emit({ kind: "say", text: "one" });
-    t.emit({ kind: "reset" });
-    expect(result.current.chat).toEqual([]);
-    t.emit({ kind: "say", text: "fresh" });
-    expect(result.current.chat).toEqual(["fresh"]);
-  });
-
-  it("ignores an unknown message kind (never pushes undefined into chat)", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport));
-    t.emit({ kind: "mystery" } as unknown as ServerMessage);
-    expect(result.current.chat).toEqual([]);
-  });
-
-  it("renders a boot-shipped initialTree before any transport frame arrives", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
-    // No frame has been emitted yet — the seed is the very first paint.
-    expect(result.current.tree.root).toBe("seed");
-    expect(result.current.tree.nodes["seed"]).toBeDefined();
-  });
-
-  it("the server's root-replace frame wins over the boot seed (server stays the only writer)", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
-    // Pre-frame: the boot seed is the first paint.
-    expect(result.current.tree.root).toBe("seed");
-    // The server is the only writer of stage content: a root-replace frame
-    // carrying a DIFFERENT tree must overwrite the boot seed. A dead
-    // subscription or a rejected patch would leave root === "seed" and fail
-    // here. The tree is a valid box-root so the shared fold keeps it as-is
-    // (a non-box root would normalize to EMPTY_TREE — still an overwrite).
-    const serverTree = {
-      root: "server",
-      nodes: { server: { id: "server", type: "box" as const, children: [] } },
-    };
-    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: serverTree }] });
-    expect(result.current.tree.root).toBe("server");
-    expect(result.current.tree.nodes["server"]).toBeDefined();
-    expect(result.current.tree.nodes["seed"]).toBeUndefined();
-  });
-
-  it("one-arg useFacet still starts from EMPTY_TREE (no boot seed)", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport));
-    expect(result.current.tree).toEqual(EMPTY_TREE);
-    expect(result.current.tree.nodes["seed"]).toBeUndefined();
-  });
-
-  it("exposes transition metadata for root document writes", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
-
-    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
-
-    t.emit({ kind: "patch", patches: [{ op: "test", path: "/root", value: "seed" }] });
-    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
-
-    t.emit({ kind: "patch", patches: "not-an-array" as unknown as [] });
-    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
-
-    t.emit({
-      kind: "patch",
-      patches: [{ op: "replace", path: "/nodes/missing/value", value: "x" }],
-    });
-    expect(result.current.transition).toEqual({ revision: 0, rootReplaced: false });
-
-    t.emit({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
-    expect(result.current.transition).toEqual({
-      revision: 1,
-      rootReplaced: true,
-      rootReplacedRevision: 1,
-    });
-
-    t.emit({
-      kind: "patch",
-      patches: [
-        { op: "add", path: "/nodes/child", value: { id: "child", type: "text", value: "child" } },
-      ],
-    });
-    expect(result.current.transition).toEqual({
-      revision: 2,
-      rootReplaced: false,
-      rootReplacedRevision: 1,
-    });
-
-    t.emit({
-      kind: "patch",
-      patches: [
-        null,
-        { op: "add", path: "/nodes/rawGood", value: { id: "rawGood", type: "text", value: "raw" } },
-      ] as unknown as JsonPatchOperation[],
-    });
-    expect(result.current.tree.nodes["rawGood"]).toBeDefined();
-    expect(result.current.transition).toEqual({
-      revision: 3,
-      rootReplaced: false,
-      rootReplacedRevision: 1,
-    });
-
-    t.emit({
-      kind: "patch",
-      patches: [
-        { op: "remove", path: "" },
-        { op: "add", path: "/nodes/other", value: { id: "other", type: "text", value: "other" } },
-      ],
-    });
-    expect(result.current.transition).toEqual({
-      revision: 4,
-      rootReplaced: false,
-      rootReplacedRevision: 1,
+  it("stamps only eventId and stageRevision onto renderer events", () => {
+    const transport = new TestTransport();
+    const sent: AgentEvent[] = [];
+    const ids = ["event-a", "event-b"];
+    const view = renderHookWith(transport, {
+      onAgentEvent: (event) => {
+        sent.push(event);
+      },
+      createEventId: () => ids.shift() ?? "event-extra",
     });
 
-    for (const patches of [
-      [{ op: "add", path: "", value: validTree }],
-      [{ op: "copy", from: "", path: "" }],
-      [{ op: "move", from: "/nodes/root", path: "" }],
-    ] as const) {
-      t.emit({ kind: "patch", patches });
-      expect(result.current.transition.rootReplaced).toBe(true);
-      expect(result.current.transition.rootReplacedRevision).toBe(
-        result.current.transition.revision,
-      );
-    }
-
-    expect(result.current.transition.revision).toBe(7);
-  });
-
-  it("preserves the last root-write revision across batched follow-up patch messages", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
-
+    emit(
+      transport,
+      patch(9, [
+        { op: "replace", path: "", value: { document: documentWithText("ready"), data: {} } },
+      ]),
+    );
     act(() => {
-      t.emitRaw({ kind: "patch", patches: [{ op: "replace", path: "", value: validTree }] });
-      t.emitRaw({
-        kind: "patch",
-        patches: [
-          { op: "add", path: "/nodes/child", value: { id: "child", type: "text", value: "child" } },
-        ],
+      view.result.current.sendEvent({
+        eventName: "pick",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
+      view.result.current.sendEvent({
+        eventName: "pick",
+        sourceNodeId: "button_2",
+        screen: "home",
+        arg: "north",
+        collect: { region: { kind: "value", value: "EMEA" } },
       });
     });
 
-    expect(result.current.transition).toEqual({
-      revision: 2,
-      rootReplaced: false,
-      rootReplacedRevision: 1,
+    expect(Object.keys(sent[0] ?? {}).sort()).toEqual([
+      "collect",
+      "eventId",
+      "eventName",
+      "screen",
+      "sourceNodeId",
+      "stageRevision",
+    ]);
+    expect("arg" in (sent[0] ?? {})).toBe(false);
+    expect(sent[0]).toMatchObject({ eventId: "event-a", stageRevision: 9 });
+    expect(Object.keys(sent[1] ?? {}).sort()).toEqual([
+      "arg",
+      "collect",
+      "eventId",
+      "eventName",
+      "screen",
+      "sourceNodeId",
+      "stageRevision",
+    ]);
+    expect(sent[1]?.arg).toBe("north");
+  });
+
+  it("surfaces a turn in flight as pending until a server frame settles it", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport, { onAgentEvent: () => {} });
+
+    act(() => {
+      view.result.current.sendEvent({
+        eventName: "refresh",
+        sourceNodeId: "button_1",
+        screen: "home",
+        collect: {},
+      });
     });
+    expect(view.result.current.pending).toBe(true);
+
+    emit(transport, message());
+    expect(view.result.current.pending).toBe(false);
   });
 
-  it("does not mark a root write that was dropped behind a failed test guard", () => {
-    const t = fakeTransport();
-    const { result } = renderHook(() => useFacet(t.transport, { initialTree: seedTree }));
-
-    t.emit({
-      kind: "patch",
-      patches: [
-        { op: "add", path: "/nodes/good", value: { id: "good", type: "text", value: "kept" } },
-        { op: "test", path: "/root", value: "not-the-seed" },
-        { op: "replace", path: "", value: validTree },
-      ],
+  it("rejects visitor text past B-25 before starting a turn", () => {
+    const transport = new TestTransport();
+    const sent: ConversationMessage[] = [];
+    const view = renderHookWith(transport, {
+      onVisitorMessage: (entry) => {
+        sent.push(entry);
+      },
+      createMessageId: () => "visitor-turn",
+      now: () => 123,
     });
 
-    expect(result.current.tree.nodes["good"]).toBeDefined();
-    expect(result.current.tree.root).toBe("seed");
-    expect(result.current.transition).toEqual({ revision: 1, rootReplaced: false });
+    act(() => {
+      view.result.current.sendMessage("x".repeat(BOUNDS.conversationMessageChars + 1));
+    });
+
+    expect(sent).toEqual([]);
+    expect(view.result.current.pending).toBe(false);
+    expect(view.result.current.conversation).toEqual([]);
+    expect(view.result.current.validationError).toBe(
+      NEUTRAL_COPY_DEFAULTS.validation.messageTooLong,
+    );
   });
 
-  it("unsubscribes from the transport on unmount", () => {
-    const t = fakeTransport();
-    const { unmount } = renderHook(() => useFacet(t.transport));
-    expect(t.subscribed()).toBe(true);
-    unmount();
-    expect(t.subscribed()).toBe(false);
+  it("accepts a visitor message at B-25 and records it by messageId", () => {
+    const transport = new TestTransport();
+    const sent: ConversationMessage[] = [];
+    const view = renderHookWith(transport, {
+      onVisitorMessage: (entry) => {
+        sent.push(entry);
+      },
+      createMessageId: () => "visitor-turn",
+      now: () => 123,
+    });
+
+    act(() => {
+      view.result.current.sendMessage("x".repeat(BOUNDS.conversationMessageChars));
+    });
+
+    expect(sent).toEqual([
+      {
+        kind: "conversation",
+        messageId: "visitor-turn:visitor",
+        turnId: "visitor-turn",
+        role: "visitor",
+        text: "x".repeat(BOUNDS.conversationMessageChars),
+        at: 123,
+      },
+    ]);
+    expect(view.result.current.pending).toBe(true);
+    expect(view.result.current.validationError).toBeUndefined();
+    expect(view.result.current.conversation.map((item) => item.messageId)).toEqual([
+      "visitor-turn:visitor",
+    ]);
   });
 
-  it("record forwards a collected tap to the transport's record method", () => {
-    const record = vi.fn();
-    const transport: FacetTransport = { send: vi.fn(), subscribe: () => () => {}, record };
-    const { result } = renderHook(() => useFacet(transport));
-    const tap = { kind: "tap", target: "goAbout", effect: { navigate: "about" } } as const;
-    result.current.record(tap);
-    expect(record).toHaveBeenCalledTimes(1);
-    expect(record).toHaveBeenCalledWith(tap);
-  });
+  it("uses the resolved host validation copy", () => {
+    const transport = new TestTransport();
+    const view = renderHookWith(transport, {
+      copy: {
+        ...NEUTRAL_COPY_DEFAULTS,
+        validation: { messageTooLong: "Shorten this note." },
+      },
+    });
 
-  it("record is a safe no-op when the transport does not implement record", () => {
-    // `FacetTransport.record` is optional (additive protocol method): a transport
-    // without it must not make `record` throw — the renderer wires onRecord to
-    // this unconditionally.
-    const transport: FacetTransport = { send: vi.fn(), subscribe: () => () => {} };
-    const { result } = renderHook(() => useFacet(transport));
-    expect(() =>
-      result.current.record({ kind: "tap", target: "btn", effect: { toggle: "panel" } }),
-    ).not.toThrow();
+    act(() => {
+      view.result.current.sendMessage("x".repeat(BOUNDS.conversationMessageChars + 1));
+    });
+
+    expect(view.result.current.validationError).toBe("Shorten this note.");
+  });
+});
+
+describe("useFacet with StageRenderer", () => {
+  it("preserves field state, focus and modal state across unrelated stage updates", () => {
+    const transport = new TestTransport();
+
+    function Harness(): ReactNode {
+      const facet = useFacet({
+        transport,
+        initialStage: { document: INTERACTIVE_DOCUMENT, data: {} },
+      });
+      return (
+        <StageRenderer
+          bootstrap={BOOTSTRAP}
+          document={facet.stage.document}
+          data={facet.stage.data}
+          onEvent={facet.sendEvent}
+        />
+      );
+    }
+
+    render(<Harness />);
+    fireEvent.change(firstField(), { target: { value: "north" } });
+    firstField().focus();
+    openModal("Filter");
+    expect(openFrame()).not.toBeNull();
+    const focused = document.activeElement;
+    expect(focused).toBe(openFrame());
+    expect(
+      document.querySelector('[data-facet-neutral-state="component-unavailable"]'),
+    ).not.toBeNull();
+
+    emit(
+      transport,
+      patch(1, [
+        {
+          op: "add",
+          path: "/document/nodes/t1",
+          value: { tag: "Text", props: { value: scalar("Added") }, children: [] },
+        },
+        {
+          op: "replace",
+          path: "/document/nodes/s1/children",
+          value: ["f1", "m1", "e1", "t1"],
+        },
+      ]),
+    );
+    expect(firstField().value).toBe("north");
+    expect(document.activeElement).toBe(focused);
+    expect(openFrame()).not.toBeNull();
+    expect(document.querySelector('[data-testid="exploder"]')).toBeNull();
+
+    emit(transport, patch(2, [{ op: "add", path: "/data/flag", value: "fresh" }]));
+    expect(firstField().value).toBe("north");
+    expect(document.activeElement).toBe(focused);
+    expect(openFrame()).not.toBeNull();
+
+    emit(
+      transport,
+      patch(3, [
+        {
+          op: "replace",
+          path: "/document/nodes/e1/props/mode",
+          value: scalar("safe"),
+        },
+      ]),
+    );
+    expect(document.querySelector('[data-testid="exploder"]')?.textContent).toBe("safe");
+    expect(firstField().value).toBe("north");
+    expect(document.activeElement).toBe(focused);
+    expect(openFrame()).not.toBeNull();
   });
 });

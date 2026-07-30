@@ -8,29 +8,21 @@
  * that served it — no new client network capability (invariant #7).
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { ReactNode } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { isTreeShaped } from "@facet/core";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_REGISTRY } from "@facet/assets/react";
+import { browserVisitorId, SseTransport } from "@facet/client";
 import type {
-  ClientEvent,
-  CollectedEvent,
-  ColorModePreference,
-  FacetAction,
+  AgentEvent,
+  ComponentDocument,
+  ConversationMessage,
+  FacetStage,
   FacetTheme,
-  FacetTree,
-  FieldValues,
-  ViewSnapshot,
-  VisitorContext,
+  StageRevision,
 } from "@facet/core";
-import {
-  browserVisitorId,
-  loadPersistedView,
-  persistView,
-  SseTransport,
-  withView,
-} from "@facet/client";
-import { DEFAULT_THEME } from "@facet/assets";
-import { ChatDock, resolveTheme, StageRenderer, useFacet, type ChatMessage } from "@facet/react";
+import { bootstrapRenderer, ConversationSurface, StageRenderer, useFacet } from "@facet/react";
+import type { RendererBootstrap } from "@facet/react";
 
 declare global {
   interface Window {
@@ -39,146 +31,215 @@ declare global {
   }
 }
 
-/**
- * Read the one boot-shipped Theme. `StageRenderer` performs the complete,
- * hostile-input-safe validation; this is only a cheap shape floor after the
- * JSON round trip.
- */
-function readTheme(): FacetTheme | undefined {
-  const raw = window.__FACET_THEME__;
-  if (typeof raw !== "object" || raw === null) return undefined;
-  return typeof (raw as { name?: unknown }).name === "string" ? (raw as FacetTheme) : undefined;
+type AcceptedBootstrap = Extract<RendererBootstrap, { readonly ok: true }>;
+
+const EMPTY_DATA: FacetStage["data"] = Object.freeze({});
+let localEventId = 0;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-const COLOR_MODE: ColorModePreference = "system";
-
-/**
- * Read the boot-shipped seed stage (Decision 4 / Fix A seam) so the first paint
- * doesn't wait for the first model turn. Floor-guarded with the shared
- * `isTreeShaped` check — only a `{ root: string, nodes: object }` survives, so
- * JSON junk becomes `undefined` and `useFacet` falls back to `EMPTY_TREE`. The
- * host `validateTree`d this tree server-side before inlining it; this is the
- * shape floor after the JSON round trip (mirrors `readThemes`' posture).
- */
-function readInitialStage(): FacetTree | undefined {
-  const raw = window.__FACET_INITIAL_STAGE__;
-  return isTreeShaped(raw) ? raw : undefined;
+function readWindowValue(key: "__FACET_THEME__" | "__FACET_INITIAL_STAGE__"): unknown {
+  try {
+    return window[key];
+  } catch {
+    return undefined;
+  }
 }
 
-/**
- * What identifies THIS agent link from inside the page. The quickstart page is
- * same-origin by construction (the transport dials `""`), and one quickstart
- * server hosts exactly one agent, so the serving host is the agent-link
- * identity available to the browser — the server does not inline an agent id.
- * Used only as the `persistView`/`loadPersistedView` storage-key input.
- */
-function agentLinkId(): string {
-  return window.location.host;
+function readInitialDocument(): ComponentDocument | undefined {
+  const raw = readWindowValue("__FACET_INITIAL_STAGE__");
+  if (!isRecord(raw)) {
+    return undefined;
+  }
+  if (
+    typeof raw["entry"] !== "string" ||
+    !Array.isArray(raw["screens"]) ||
+    !raw["screens"].every((screen) => typeof screen === "string") ||
+    !isRecord(raw["nodes"])
+  ) {
+    return undefined;
+  }
+  return raw as unknown as ComponentDocument;
 }
 
-function makeVisitor(): VisitorContext {
-  const referrer = document.referrer;
-  const locale = navigator.language;
-  return {
-    visitorId: browserVisitorId(),
-    ...(referrer !== "" ? { referrer } : {}),
-    ...(locale !== "" ? { locale } : {}),
-  };
+function resolvedBootstrap(): AcceptedBootstrap {
+  const rawTheme = readWindowValue("__FACET_THEME__");
+  const theme = isRecord(rawTheme) ? (rawTheme as unknown as FacetTheme) : DEFAULT_THEME;
+  const candidate = bootstrapRenderer({
+    catalog: DEFAULT_CATALOG,
+    registry: DEFAULT_REGISTRY,
+    theme,
+  });
+  if (candidate.ok) {
+    return candidate;
+  }
+  const fallback = bootstrapRenderer({
+    catalog: DEFAULT_CATALOG,
+    registry: DEFAULT_REGISTRY,
+    theme: DEFAULT_THEME,
+  });
+  if (fallback.ok) {
+    return fallback;
+  }
+  throw new Error("Facet quickstart default renderer bootstrap failed.");
+}
+
+function nextEventId(prefix: string): string {
+  localEventId += 1;
+  return `${prefix}-${Date.now().toString(36)}-${localEventId}`;
+}
+
+function visitorEvent(eventName: string, screen: string, stageRevision: StageRevision): AgentEvent {
+  return Object.freeze({
+    eventId: nextEventId(eventName),
+    eventName,
+    sourceNodeId: "visitor",
+    screen,
+    stageRevision,
+    collect: Object.freeze({}),
+  });
+}
+
+function postMessage(
+  sessionKey: string,
+  message: ConversationMessage,
+  stageRevision: number,
+): void {
+  void fetch("/message", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      sessionKey,
+      messageId: message.turnId,
+      text: message.text,
+      screen: "home",
+      stageRevision,
+    }),
+  }).catch((error: unknown) => {
+    console.error("[facet] message send failed:", error);
+  });
 }
 
 function Page(): ReactNode {
-  const visitor = useMemo(makeVisitor, []);
-  const theme = useMemo(readTheme, []);
-  const initialTree = useMemo(readInitialStage, []);
-  const transport = useMemo(() => new SseTransport("", visitor), [visitor]);
-  // Conditional spread: exactOptionalPropertyTypes forbids an explicit
-  // `initialTree: undefined` — an absent seed must keep the EMPTY_TREE default.
-  const { tree, chat, send, record, transition } = useFacet(
-    transport,
-    initialTree !== undefined ? { initialTree } : {},
-  );
-  const [log, setLog] = useState<readonly ChatMessage[]>([]);
-  const seen = useRef(0);
+  const sessionKey = useMemo(() => browserVisitorId(), []);
+  const initialDocument = useMemo(readInitialDocument, []);
+  const bootstrap = useMemo(resolvedBootstrap, []);
+  const transport = useMemo(() => new SseTransport("", sessionKey), [sessionKey]);
+  const [draft, setDraft] = useState("");
+  const stageRevisionRef = useRef<StageRevision>(0);
+  const visitSent = useRef(false);
 
-  // The latest renderer-published view snapshot, sampled at send time (spec
-  // WU-7). A ref, not state: a snapshot change must never re-render or send —
-  // it only rides the NEXT event the visitor causes.
-  const viewRef = useRef<ViewSnapshot | undefined>(undefined);
-  const agentId = useMemo(agentLinkId, []);
-  // Last session's persisted view, read ONCE at first render — before the
-  // renderer's own publish effect overwrites storage with this session's fresh
-  // (screenless) snapshot. Revisit semantics are report-only: the value seeds
-  // the `visit` event below and is never applied back to the renderer.
-  const persistedView = useMemo(() => loadPersistedView(agentId), [agentId]);
-  const onViewSnapshot = useCallback(
-    (snap: ViewSnapshot): void => {
-      viewRef.current = snap;
-      const resolved = resolveTheme(theme, snap.colorMode);
-      document.body.style.background = resolved.color.background;
-      document.body.style.color = resolved.color.foreground;
-      // Best-effort persistence (persistView swallows storage failures); this
-      // callback only stores — it never sends.
-      persistView(agentId, snap);
+  const sendAgentEvent = useCallback(
+    (event: AgentEvent): void => {
+      transport.send(event);
     },
-    [agentId, theme],
+    [transport],
+  );
+  const sendVisitorMessage = useCallback(
+    (message: ConversationMessage): void => {
+      postMessage(sessionKey, message, stageRevisionRef.current);
+    },
+    [sessionKey],
   );
 
-  // Fire the initial visit → first paint. A returning visitor's visit reports
-  // their last-known view; a first visit falls back to the live snapshot (the
-  // renderer's publish effect runs before this parent effect), if any.
-  useEffect(() => {
-    send(withView({ kind: "visit", visitor }, persistedView ?? viewRef.current));
-  }, [send, visitor, persistedView]);
+  const facet = useFacetWithStableInitialStage(
+    transport,
+    initialDocument,
+    sendAgentEvent,
+    sendVisitorMessage,
+  );
 
-  // Fold new agent says into the conversation log; a server reset shrinks
-  // `chat`, in which case rebuild instead of appending duplicates.
   useEffect(() => {
-    if (chat.length > seen.current) {
-      const fresh = chat.slice(seen.current).map((text): ChatMessage => ({ who: "Agent", text }));
-      seen.current = chat.length;
-      setLog((current) => [...current, ...fresh]);
-    } else if (chat.length < seen.current) {
-      seen.current = chat.length;
-      setLog(chat.map((text): ChatMessage => ({ who: "Agent", text })));
+    stageRevisionRef.current = facet.transition.stageRevision;
+  }, [facet.transition.stageRevision]);
+
+  useEffect(() => {
+    document.body.style.background = bootstrap.theme.color.background;
+    document.body.style.color = bootstrap.theme.color.text;
+  }, [bootstrap.theme]);
+
+  useEffect(() => {
+    if (visitSent.current) {
+      return;
     }
-  }, [chat]);
+    visitSent.current = true;
+    transport.send(
+      visitorEvent(
+        "visit",
+        facet.stage.document?.entry ?? initialDocument?.entry ?? "home",
+        facet.transition.stageRevision,
+      ),
+    );
+  }, [
+    facet.stage.document?.entry,
+    facet.transition.stageRevision,
+    initialDocument?.entry,
+    transport,
+  ]);
 
-  const onAction = (action: FacetAction, fields?: FieldValues): void => {
-    // Conditional construction: exactOptionalPropertyTypes forbids an explicit
-    // `fields: undefined` on the event (the Decision-2 shape).
-    const event: ClientEvent =
-      fields === undefined ? { kind: "tap", action } : { kind: "tap", action, fields };
-    send(withView(event, viewRef.current));
+  const onSubmit = (event: FormEvent<HTMLFormElement>): void => {
+    event.preventDefault();
+    facet.sendMessage(draft);
+    setDraft("");
   };
-
-  const onRecord = (event: CollectedEvent): void => {
-    record(withView(event, viewRef.current));
-  };
-
-  const onSend = (text: string): void => {
-    setLog((current) => [...current, { who: "You", text }]);
-    send(withView({ kind: "message", text }, viewRef.current));
-  };
+  const pageStyle = useMemo(
+    () => ({ ...styles.page, fontFamily: bootstrap.theme.fontFamily.sans }),
+    [bootstrap.theme.fontFamily.sans],
+  );
 
   return (
-    <div style={styles.page}>
-      {/* data-facet-stage marks the agent-drawn stage region (excludes the
-          ChatDock) so the live-journey e2e tier can wait for a real stage
-          paint/edit rather than a chat-dock change. Inert marker, no behavior. */}
-      <div style={styles.stage} data-facet-stage>
+    <div style={pageStyle}>
+      <div
+        style={styles.stage}
+        data-facet-stage
+        data-facet-stage-revision={facet.transition.stageRevision}
+      >
         <StageRenderer
-          tree={tree}
-          onAction={onAction}
-          onRecord={onRecord}
-          transition={transition}
-          colorMode={COLOR_MODE}
-          onViewSnapshot={onViewSnapshot}
-          {...(theme !== undefined ? { theme } : {})}
+          bootstrap={bootstrap}
+          document={facet.stage.document}
+          data={facet.stage.data}
+          onEvent={facet.sendEvent}
         />
       </div>
-      <ChatDock messages={log} onSend={onSend} />
+      <section style={styles.conversationPanel}>
+        <ConversationSurface items={facet.conversation} validationError={facet.validationError} />
+        <form data-facet-message-form style={styles.messageForm} onSubmit={onSubmit}>
+          <textarea
+            aria-label="Message"
+            value={draft}
+            onChange={(event) => setDraft(event.currentTarget.value)}
+            style={styles.messageInput}
+          />
+          <button type="submit" disabled={facet.pending} style={styles.messageButton}>
+            Send
+          </button>
+        </form>
+      </section>
     </div>
   );
+}
+
+function useFacetWithStableInitialStage(
+  transport: SseTransport,
+  initialDocument: ComponentDocument | undefined,
+  onAgentEvent: (event: AgentEvent) => void,
+  onVisitorMessage: (message: ConversationMessage) => void,
+) {
+  const initialStage = useMemo(
+    (): FacetStage | undefined =>
+      initialDocument === undefined
+        ? undefined
+        : Object.freeze({ document: initialDocument, data: EMPTY_DATA }),
+    [initialDocument],
+  );
+  return useFacet({
+    transport,
+    ...(initialStage === undefined ? {} : { initialStage }),
+    onAgentEvent,
+    onVisitorMessage,
+  });
 }
 
 const styles = {
@@ -191,9 +252,29 @@ const styles = {
     display: "flex",
     flexDirection: "column",
     gap: "16px",
-    fontFamily: DEFAULT_THEME.tokens.fontFamily.sans,
   },
   stage: { flex: 1 },
+  conversationPanel: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+    borderTop: `1px solid ${DEFAULT_THEME.color.border}`,
+    paddingTop: "1rem",
+  },
+  messageForm: {
+    display: "flex",
+    gap: "0.5rem",
+    alignItems: "flex-start",
+  },
+  messageInput: {
+    flex: 1,
+    minHeight: "4rem",
+    boxSizing: "border-box",
+    font: "inherit",
+  },
+  messageButton: {
+    font: "inherit",
+  },
 } as const;
 
 const rootElement = document.getElementById("root");

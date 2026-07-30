@@ -1,6 +1,22 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { browserVisitorId } from "./visitor.js";
 
+const ORIGINAL_CRYPTO = Object.getOwnPropertyDescriptor(globalThis, "crypto");
+
+function mockCrypto(source: Partial<Crypto> | undefined): void {
+  if (source === undefined) {
+    Object.defineProperty(globalThis, "crypto", {
+      configurable: true,
+      value: undefined,
+    });
+    return;
+  }
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: source,
+  });
+}
+
 function mockLocalStorage(): void {
   const store = new Map<string, string>();
   globalThis.localStorage = {
@@ -32,15 +48,22 @@ function mockThrowingLocalStorage(overrides: Partial<Storage>): void {
 afterEach(() => {
   // @ts-expect-error remove the stub so the "no storage" case can run
   delete globalThis.localStorage;
+  if (ORIGINAL_CRYPTO === undefined) {
+    // @ts-expect-error restore the pre-test absence of crypto
+    delete globalThis.crypto;
+  } else {
+    Object.defineProperty(globalThis, "crypto", ORIGINAL_CRYPTO);
+  }
 });
 
 describe("browserVisitorId", () => {
-  it("generates and persists a stable id across calls", () => {
+  it("generates and persists a stable session key across reloads", () => {
     mockLocalStorage();
     const first = browserVisitorId();
     const second = browserVisitorId();
     expect(first).toBe(second);
     expect(first.length).toBeGreaterThan(0);
+    expect(localStorage.getItem("facet:visitor")).toBe(first);
   });
 
   it("returns the already-stored id", () => {
@@ -84,5 +107,45 @@ describe("browserVisitorId", () => {
       },
     });
     expect(browserVisitorId().length).toBeGreaterThan(0);
+  });
+
+  it("fails closed when no secure browser crypto source is available", () => {
+    mockLocalStorage();
+    mockCrypto(undefined);
+
+    expect(() => browserVisitorId()).toThrow("crypto.randomUUID or crypto.getRandomValues");
+    expect(localStorage.getItem("facet:visitor")).toBeNull();
+  });
+
+  it("uses getRandomValues when randomUUID is unavailable", () => {
+    mockLocalStorage();
+    mockCrypto({
+      getRandomValues: <T extends ArrayBufferView | null>(array: T): T => {
+        if (array instanceof Uint8Array) {
+          array.fill(7);
+        }
+        return array;
+      },
+    } as Crypto);
+
+    expect(browserVisitorId()).toBe("v-07070707070707070707070707070707");
+  });
+
+  it("keeps storage failures on the secure fresh-id path", () => {
+    let next = 0;
+    mockCrypto({
+      randomUUID: () => {
+        next += 1;
+        return `visitor-${next}` as `${string}-${string}-${string}-${string}-${string}`;
+      },
+    } as Crypto);
+    mockThrowingLocalStorage({
+      setItem: () => {
+        throw new Error("write blocked");
+      },
+    });
+
+    expect(browserVisitorId()).toBe("visitor-1");
+    expect(browserVisitorId()).toBe("visitor-2");
   });
 });

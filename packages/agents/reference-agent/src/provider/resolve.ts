@@ -7,7 +7,7 @@ export interface ResolveProviderFlags {
 }
 
 /**
- * Deterministic key/flag resolution (spec Decision 4):
+ * Deterministic key/flag resolution for the provider entry:
  * - explicit `--provider` wins and REQUIRES its own key (missing => throw
  *   naming exactly `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` -- the name only);
  * - no flag => `OPENAI_API_KEY` => openai (also when both keys are present),

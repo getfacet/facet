@@ -1,57 +1,77 @@
-import type { ClientEvent, FacetAgent, FacetSession, ServerMessage } from "@facet/core";
+import type { AgentEvent, FacetToolSession } from "@facet/core";
+
 import { Stage } from "./stage.js";
 
-export interface FacetContext {
-  readonly event: ClientEvent;
-  readonly session: FacetSession;
-  /** The control surface for this visitor's page. */
+interface FacetRunContext {
+  readonly event: AgentEvent;
+  readonly session: FacetToolSession;
+}
+
+export interface InProcessFacetAgent {
+  run(context: {
+    readonly event: AgentEvent;
+    readonly session: FacetToolSession;
+  }): Promise<{ readonly text: string | null }>;
+}
+
+export interface FacetContext extends FacetRunContext {
   readonly stage: Stage;
 }
 
-/** The logic you write: react to an event by driving the stage. */
 export type FacetLogic = (ctx: FacetContext) => void | Promise<void>;
+
 export type StreamingFacetLogic = (
   ctx: FacetContext,
 ) => Iterable<void> | AsyncIterable<void> | Promise<Iterable<void> | AsyncIterable<void>>;
 
-/**
- * Wraps your logic into a `FacetAgent` the runtime can call. You drive `stage`;
- * the recorded commands are flushed into the messages sent back to the visitor.
- */
-export function defineAgent(logic: FacetLogic): FacetAgent {
-  return async (event: ClientEvent, session: FacetSession): Promise<readonly ServerMessage[]> => {
-    const stage = new Stage(session.stage);
-    await logic({ event, session, stage });
-    return stage.flush();
+function stageFor(session: FacetToolSession): Stage {
+  return new Stage({ session });
+}
+
+async function finishStage(
+  stage: Stage,
+  run: () => Promise<void>,
+): Promise<{ readonly text: string | null }> {
+  let failure: unknown;
+  try {
+    await run();
+  } catch (error) {
+    failure = error;
+  }
+  try {
+    await stage.drain();
+  } catch (error) {
+    if (failure === undefined) {
+      failure = error;
+    }
+  }
+  if (failure !== undefined) {
+    throw failure;
+  }
+  return stage.flush();
+}
+
+export function defineAgent(logic: FacetLogic): InProcessFacetAgent {
+  return {
+    async run({ event, session }: FacetRunContext) {
+      const stage = stageFor(session);
+      return finishStage(stage, async () => {
+        await logic({ event, session, stage });
+      });
+    },
   };
 }
 
-function flushNonEmpty(stage: Stage): readonly ServerMessage[] | undefined {
-  const messages = stage.flush();
-  return messages.length > 0 ? messages : undefined;
-}
-
-/**
- * Wraps async-generator logic into a streaming `FacetAgent`.
- *
- * Each yielded step is a producer-chosen boundary. Any commands recorded since
- * the previous boundary are flushed as one batch; empty boundaries are skipped.
- * A final tail flush preserves commands recorded after the last yielded step.
- */
-export function defineStreamingAgent(logic: StreamingFacetLogic): FacetAgent {
-  return async function* (
-    event: ClientEvent,
-    session: FacetSession,
-  ): AsyncIterable<readonly ServerMessage[]> {
-    const stage = new Stage(session.stage);
-    const steps = await logic({ event, session, stage });
-    for await (const step of steps) {
-      void step;
-      const messages = flushNonEmpty(stage);
-      if (messages !== undefined) yield messages;
-    }
-
-    const tail = flushNonEmpty(stage);
-    if (tail !== undefined) yield tail;
+export function defineStreamingAgent(logic: StreamingFacetLogic): InProcessFacetAgent {
+  return {
+    async run({ event, session }: FacetRunContext) {
+      const stage = stageFor(session);
+      return finishStage(stage, async () => {
+        const steps = await logic({ event, session, stage });
+        for await (const step of steps) {
+          void step;
+        }
+      });
+    },
   };
 }

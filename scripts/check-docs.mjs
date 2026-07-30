@@ -363,7 +363,7 @@ function workspaceResolutionBases(cwd) {
       cwd,
       [".json"],
       ["node_modules", ".git", "dist"],
-      ["packages/*/*/package.json", "apps/*/package.json"],
+      ["packages/*/*/package.json"],
       5,
     )
     .map((packageJson) => path.dirname(packageJson));

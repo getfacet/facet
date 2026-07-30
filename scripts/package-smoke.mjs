@@ -21,21 +21,159 @@ const packageRoots = [
   "packages/adapters",
   "packages/tools",
 ];
-const expectedPackageCount = 15;
+const expectedPackageCount = 11;
 const expectedBins = {
-  facet: { args: [], exitCode: 2, output: "FACET_BRIDGE_URL is not set" },
-  "facet-bridge": {
-    args: [],
-    env: { FACET_RUNNER: "invalid-for-package-smoke" },
-    exitCode: 1,
-    output: "Invalid FACET_RUNNER",
-  },
   "facet-quickstart": {
     args: ["--invalid-for-package-smoke"],
     exitCode: 1,
     output: "Unknown flag",
   },
 };
+const retiredBinNames = ["facet", "facet-bridge"];
+const expectedRuntimeExports = {
+  "@facet/core": [
+    "BOUNDS",
+    "MAX_PATCH_OPS",
+    "NEUTRAL_COPY_DEFAULTS",
+    "applyPatch",
+    "buildCatalogIndex",
+    "buildDocument",
+    "collectTurnOutcome",
+    "createBoundedMap",
+    "deriveMessageId",
+    "evaluateCandidateModel",
+    "isFacetIdentifier",
+    "iterateTurnOutcome",
+    "measurePublishPayload",
+    "nextRevision",
+    "parseAction",
+    "parseDataPath",
+    "parseMarkup",
+    "resolveBinding",
+    "resolveNeutralCopy",
+    "serializeDocument",
+    "serializeScreen",
+    "themeToCssVars",
+    "truncateConversationText",
+    "validateAgentEvent",
+    "validateAuthorMarkup",
+    "validateCatalog",
+    "validateComponentSpec",
+    "validateModalConformance",
+    "validateTheme",
+    "validateTurnOutcome",
+    "validateVisitorText",
+    "writePath",
+  ],
+  "@facet/runtime": [
+    "FacetRuntime",
+    "MemorySink",
+    "MemoryStageStore",
+    "MemorySummaryStore",
+    "bootstrapSession",
+    "loadSession",
+    "validatePersistedSession",
+  ],
+  "@facet/assets": ["DEFAULT_CATALOG", "DEFAULT_COMPONENT_SPECS", "DEFAULT_THEME"],
+  "@facet/assets/react": ["DEFAULT_REGISTRY"],
+  "@facet/react": [
+    "ConversationSurface",
+    "CorruptSubtreeState",
+    "CrashState",
+    "ModalFrame",
+    "PreparingState",
+    "StageRenderer",
+    "SubtreeBoundary",
+    "bootstrapRenderer",
+    "createRegistry",
+    "resolveTheme",
+    "useFacet",
+  ],
+  "@facet/agent-tools": [
+    "FACET_PROMPT_KIT",
+    "FACET_TOOL_NAMES",
+    "FACET_TOOL_SPECS",
+    "buildTurnObservation",
+    "createMarkupBuffer",
+    "executeFacetTool",
+  ],
+  "@facet/agent": ["Stage", "defineAgent", "defineStreamingAgent"],
+  "@facet/reference-agent": [
+    "DEFAULT_ANTHROPIC_MODEL",
+    "DEFAULT_GUIDE",
+    "DEFAULT_OPENAI_MODEL",
+    "DEFAULT_REFERENCE_AGENT_BUDGET_PRESET",
+    "DEFAULT_STAGE_MARKUP_CHAR_LIMIT",
+    "DEFAULT_STAGE_SUMMARY_NODE_LIMIT",
+    "HISTORY_TURNS",
+    "MIN_REFERENCE_AGENT_OBSERVATION_CHARS",
+    "REFERENCE_AGENT_BUDGET_PRESETS",
+    "REFERENCE_AGENT_FALLBACK_TEXT",
+    "REFERENCE_AGENT_NON_RETRYABLE_HTTP_STATUSES",
+    "REFERENCE_AGENT_RETRYABLE_HTTP_STATUSES",
+    "REFERENCE_AGENT_STOP_REASONS",
+    "REFERENCE_AGENT_TRACE_EVENT_TYPES",
+    "STUB_MARKUP",
+    "TOOLS",
+    "TURN_TIMEOUT_MS",
+    "buildInitialMessages",
+    "buildSystem",
+    "classifyProviderFailure",
+    "createAnthropicProvider",
+    "createOpenAiProvider",
+    "createProviderSummarizer",
+    "createReferenceAgent",
+    "createStubAgent",
+    "describeEvent",
+    "effectiveCharBudget",
+    "emitReferenceAgentTrace",
+    "formatCurrentStageForPrompt",
+    "isRetryableProviderFailure",
+    "measureChars",
+    "normalizeBudget",
+    "resolveProvider",
+    "sanitizeReferenceAgentTraceEvent",
+    "summarizeStageForPrompt",
+    "summaryBlockMessage",
+    "validateSummary",
+  ],
+  "@facet/server": ["createFacetServer"],
+  "@facet/client": [
+    "LocalTransport",
+    "SseTransport",
+    "browserVisitorId",
+    "loadPersistedScreen",
+    "persistScreen",
+  ],
+  "@facet/agent-client": ["connectAgent", "parseSseFrames"],
+  "@facet/quickstart": ["QUICKSTART_INITIAL_STAGE", "createQuickstartAgent", "startQuickstart"],
+};
+const expectedDefaultCatalogTags = [
+  "Screen",
+  "Stack",
+  "Row",
+  "Grid",
+  "Modal",
+  "Card",
+  "Empty",
+  "Text",
+  "Metric",
+  "Badge",
+  "Button",
+  "Field",
+  "Table",
+];
+const expectedFacetToolNames = [
+  "render_page",
+  "insert_subtree",
+  "replace_subtree",
+  "update_node",
+  "remove_subtree",
+  "read_component_spec",
+  "read_screen",
+  "read_data",
+  "publish_data",
+];
 
 function fail(message) {
   throw new Error(`[package-smoke] ${message}`);
@@ -166,9 +304,7 @@ try {
   );
   Object.assign(dependencies, {
     "@types/node": "^22.0.0",
-    "@types/pg": "^8.11.0",
     "@types/react": "^19.0.0",
-    pg: "^8.0.0",
     react: "^19.0.0",
     typescript: "^5.9.0",
   });
@@ -249,39 +385,61 @@ try {
     join(fixture, "contract-smoke.mjs"),
     `${environmentGuard}
 import assert from "node:assert/strict";
-const core = await import("@facet/core");
-const assets = await import("@facet/assets");
-const tools = await import("@facet/agent-tools");
-for (const name of ["BRICK_CONTRACT", "STYLE_VALUE_CONTRACT", "validateTheme", "validatePattern", "validateAuthorTree"]) {
-  assert.ok(name in core, \`missing new @facet/core export \${name}\`);
+const expectedRuntimeExports = ${JSON.stringify(expectedRuntimeExports, null, 2)};
+const expectedDefaultCatalogTags = ${JSON.stringify(expectedDefaultCatalogTags, null, 2)};
+const expectedFacetToolNames = ${JSON.stringify(expectedFacetToolNames, null, 2)};
+
+const surfaces = {};
+for (const specifier of Object.keys(expectedRuntimeExports)) {
+  surfaces[specifier] = await import(specifier);
+  assert.deepEqual(
+    Object.keys(surfaces[specifier]).sort(),
+    expectedRuntimeExports[specifier],
+    \`unexpected runtime exports for \${specifier}\`,
+  );
 }
-for (const name of ["FacetCatalog", "DEFAULT_CATALOG", "FacetComposition", "validateComposition"]) { // style-hard-cut: allowed-negative
+
+const core = surfaces["@facet/core"];
+const assets = surfaces["@facet/assets"];
+const assetsReact = surfaces["@facet/assets/react"];
+const tools = surfaces["@facet/agent-tools"];
+
+assert.equal(core.deriveMessageId("turn-1", "assistant"), "turn-1:assistant");
+assert.deepEqual(
+  assets.DEFAULT_CATALOG.components.map((component) => component.tag),
+  expectedDefaultCatalogTags,
+);
+assert.equal(assets.DEFAULT_CATALOG.components.length, 13);
+assert.equal(core.validateCatalog(assets.DEFAULT_CATALOG).ok, true);
+assert.equal(core.validateTheme(assets.DEFAULT_THEME).ok, true);
+assert.deepEqual(Object.keys(assetsReact.DEFAULT_REGISTRY).sort(), [
+  ...expectedDefaultCatalogTags,
+].sort());
+assert.equal(Object.keys(assetsReact.DEFAULT_REGISTRY).length, 13);
+assert.equal("DEFAULT_REGISTRY" in assets, false);
+
+assert.deepEqual([...tools.FACET_TOOL_NAMES], expectedFacetToolNames);
+assert.deepEqual(
+  tools.FACET_TOOL_SPECS.map((spec) => spec.name),
+  expectedFacetToolNames,
+);
+for (const spec of tools.FACET_TOOL_SPECS) {
+  assert.equal(spec.producesConversation, false);
+  assert.equal(typeof spec.inputSchema, "object");
+  assert.equal(spec.inputSchema.type, "object");
+  assert.equal(spec.inputSchema.additionalProperties, false);
+  assert.equal("parameters" in spec, false);
+}
+
+for (const name of ["FacetTree", "AssetsStore", "MemoryAssets", "loadAssets", "ViewSnapshot"]) { // style-hard-cut: allowed-negative
   assert.equal(name in core, false, \`retired @facet/core export survived: \${name}\`);
 }
-assert.deepEqual(Object.keys(assets).sort(), ["DEFAULT_PATTERNS", "DEFAULT_THEME"]);
-assert.equal(core.validateTheme(assets.DEFAULT_THEME).issues.length, 0);
-assert.ok(assets.DEFAULT_PATTERNS.length > 0);
-for (const pattern of assets.DEFAULT_PATTERNS) {
-  assert.equal(core.validatePattern(pattern, assets.DEFAULT_THEME).issues.length, 0);
+for (const name of ["get_brick_spec", "get_style_choices", "get_preset", "get_pattern", "inspect_stage", "inspect_node", "append_node", "set_node", "remove_node", "say"]) { // style-hard-cut: allowed-negative
+  assert.equal(tools.FACET_TOOL_NAMES.includes(name), false, \`retired tool survived: \${name}\`);
 }
-for (const name of ["get_brick_spec", "get_style_choices", "get_preset", "get_pattern"]) {
-  assert.ok(tools.FACET_STAGE_TOOL_NAMES.includes(name), \`missing tool \${name}\`);
-}
-for (const name of ["get_composition", "set_theme"]) { // style-hard-cut: allowed-negative
-  assert.equal(tools.FACET_STAGE_TOOL_NAMES.includes(name), false, \`retired tool survived: \${name}\`);
-}
-for (const name of ["createStageToolAssetSnapshot", "selectPatternReference"]) {
-  assert.ok(name in tools, \`missing @facet/agent-tools export \${name}\`);
-}
-for (const name of ["selectCompositionReferences", "executeGetComposition"]) { // style-hard-cut: allowed-negative
+for (const name of ["createStageToolAssetSnapshot", "selectPatternReference", "executeGetPattern", "executeGetBrickSpec"]) { // style-hard-cut: allowed-negative
   assert.equal(name in tools, false, \`retired @facet/agent-tools export survived: \${name}\`);
 }
-const snapshot = tools.createStageToolAssetSnapshot({
-  theme: assets.DEFAULT_THEME,
-  patterns: assets.DEFAULT_PATTERNS,
-});
-assert.ok(Object.isFrozen(snapshot));
-assert.equal(snapshot.patternIndex.length, assets.DEFAULT_PATTERNS.length);
 `,
   );
   run(process.execPath, ["contract-smoke.mjs"], { cwd: fixture });
@@ -298,37 +456,91 @@ assert.equal(snapshot.patternIndex.length, assets.DEFAULT_PATTERNS.length);
   writeFileSync(
     join(fixture, "types-smoke.ts"),
     `${typeImports}
-import type { AuthorIssue, BrickStyle, FacetPattern, FacetTheme } from "@facet/core";
-import type { AssetDocuments, LoadedAssets } from "@facet/runtime";
-import type { GetBrickSpecToolInput, GetPatternToolInput, GetPresetToolInput, GetStyleChoicesToolInput, StageToolAssets } from "@facet/agent-tools";
-import type { ReferenceAgentAssetSource } from "@facet/reference-agent";
-// @ts-expect-error retired hard-cut type
-import type { FacetCatalog } from "@facet/core"; // style-hard-cut: allowed-negative
-// @ts-expect-error retired hard-cut type
-import type { FacetComposition } from "@facet/core"; // style-hard-cut: allowed-negative
-// @ts-expect-error retired hard-cut type
-import type { GetCompositionToolInput } from "@facet/agent-tools"; // style-hard-cut: allowed-negative
-export type PublishedSurfaces = [${typeUses}];
-export type NewStyleContract = [
+import type {
+  AgentEvent,
+  ComponentDocument,
+  ComponentSpec,
+  ConversationMessage,
+  FacetAgent,
+  FacetCatalog,
+  FacetTargetedMutationInput,
+  FacetTargetedMutationResult,
   FacetTheme,
-  FacetPattern,
-  BrickStyle<"box">,
-  AuthorIssue,
-  AssetDocuments,
-  LoadedAssets,
-  StageToolAssets,
-  GetBrickSpecToolInput,
-  GetStyleChoicesToolInput,
-  GetPresetToolInput,
-  GetPatternToolInput,
-  ReferenceAgentAssetSource,
+  FacetToolSession,
+  TurnOutcome,
+} from "@facet/core";
+import type { Session, Sink, StageStore, SummaryStore } from "@facet/runtime";
+import type {
+  FacetToolName,
+  FacetToolResult,
+  FacetToolSpec,
+  InsertSubtreeInput,
+  PublishDataInput,
+  ReadComponentSpecInput,
+  ReadDataInput,
+  ReadScreenInput,
+  RemoveSubtreeInput,
+  RenderPageInput,
+  ReplaceSubtreeInput,
+  TurnObservation,
+  UpdateNodeInput,
+} from "@facet/agent-tools";
+import type { AgentConnection, ConnectOptions } from "@facet/agent-client";
+import type { ReferenceAgentOptions } from "@facet/reference-agent";
+import type { QuickstartServerOptions, RunningQuickstart } from "@facet/quickstart";
+// @ts-expect-error retired hard-cut type
+import type { FacetTree } from "@facet/core"; // style-hard-cut: allowed-negative
+// @ts-expect-error retired hard-cut type
+import type { LoadedAssets } from "@facet/runtime"; // style-hard-cut: allowed-negative
+// @ts-expect-error retired hard-cut type
+import type { GetBrickSpecToolInput } from "@facet/agent-tools"; // style-hard-cut: allowed-negative
+export type PublishedSurfaces = [${typeUses}];
+export type ComponentMarkupContract = [
+  ComponentSpec,
+  FacetCatalog,
+  ComponentDocument,
+  AgentEvent,
+  TurnOutcome,
+  ConversationMessage,
+  StageStore,
+  Sink,
+  SummaryStore,
+  Session,
+  RenderPageInput,
+  FacetTheme,
+  FacetToolSession,
+  FacetTargetedMutationInput,
+  FacetTargetedMutationResult,
+  FacetToolName,
+  FacetToolSpec,
+  FacetToolResult,
+  TurnObservation,
+  AgentConnection,
+  ConnectOptions,
+  ReferenceAgentOptions,
+  QuickstartServerOptions,
+  RunningQuickstart,
 ];
-export const brickSpecInput = { type: "box" } satisfies GetBrickSpecToolInput;
-export const styleChoicesInput = {
-  brick: "progress",
-  target: "track",
-  property: "height",
-} satisfies GetStyleChoicesToolInput;
+export type ToolInputContract = [
+  RenderPageInput,
+  InsertSubtreeInput,
+  ReplaceSubtreeInput,
+  UpdateNodeInput,
+  RemoveSubtreeInput,
+  ReadComponentSpecInput,
+  ReadScreenInput,
+  ReadDataInput,
+  PublishDataInput,
+];
+export const renderPageInput = { markup: "<Facet><Screen name=\\"home\\" /></Facet>" } satisfies RenderPageInput;
+export const insertInput = { targetId: "n1", markup: "<Text value=\\"Hello\\" />" } satisfies InsertSubtreeInput;
+export const publishInput = { path: "metrics", value: { ok: true } } satisfies PublishDataInput;
+declare const externalAgent: FacetAgent;
+export const agentClientOptions = { serverUrl: "http://localhost:5291", agentId: "external-agent", agent: externalAgent } satisfies ConnectOptions;
+declare const contract: ComponentMarkupContract;
+declare const toolInputs: ToolInputContract;
+void contract;
+void toolInputs;
 `,
   );
   writeFileSync(
@@ -353,6 +565,10 @@ export const styleChoicesInput = {
   run(process.execPath, [join(fixture, "node_modules/typescript/bin/tsc")], { cwd: fixture });
 
   console.log("[package-smoke] exercising installed bin links");
+  for (const name of retiredBinNames) {
+    const executable = join(fixture, "node_modules", ".bin", name);
+    if (existsSync(executable)) fail(`${name} retired bin link was installed`);
+  }
   for (const [name, expectation] of Object.entries(expectedBins)) {
     const executable = join(fixture, "node_modules", ".bin", name);
     if (!existsSync(executable)) fail(`${name} bin link was not installed`);

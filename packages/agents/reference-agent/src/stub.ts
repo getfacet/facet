@@ -1,148 +1,87 @@
 /**
  * The deterministic stub brain (spec Decision 6) — the fixture agent behind
- * local tests and the /live-test Tier-1 gate.
+ * local tests and the quickstart deterministic E2E gate.
  *
- * Zero network, zero randomness, zero clock reads: the same event sequence
- * always yields deep-equal message sequences (DC-008), so the E2E gate can
- * assert exact outputs. One fixture tree exercises collect, screens, and
- * patching in a single boot.
+ * The fixture authors the same component markup every time, never executable
+ * code and never the retired tree model. It has no network, randomness, or
+ * clock read, so the same event sequence produces deep-equal turn text.
  */
-import type { ClientEvent, FacetAgent, FacetTree } from "@facet/core";
-import { defineAgent } from "@facet/agent";
+import { type AgentEvent, type FacetToolSession } from "@facet/core";
 
-/**
- * The fixture stage: a hero line, a `signup` box with name + email fields, a
- * pressable submit box collecting `signup`, and two screens (home/about) with
- * navigate boxes both ways. Valid per `validateTree` (pinned in stub.test.ts).
- */
-export const STUB_TREE: FacetTree = {
-  root: "home",
-  screens: { home: "home", about: "about" },
-  entry: "home",
-  nodes: {
-    home: {
-      id: "home",
-      type: "box",
-      style: { preset: "panel", gap: "lg" },
-      children: ["hero", "signup", "submit", "go-about"],
-    },
-    hero: {
-      id: "hero",
-      type: "text",
-      value: "Facet quickstart — stub stage",
-      style: { preset: "heading" },
-    },
-    signup: {
-      id: "signup",
-      type: "box",
-      style: { preset: "inset", direction: "column" },
-      children: ["signup-name", "signup-email"],
-    },
-    "signup-name": {
-      id: "signup-name",
-      type: "input",
-      name: "name",
-      label: "Name",
-      style: { preset: "standard" },
-    },
-    "signup-email": {
-      id: "signup-email",
-      type: "input",
-      name: "email",
-      input: "email",
-      label: "Email",
-      style: { preset: "standard" },
-    },
-    submit: {
-      id: "submit",
-      type: "box",
-      style: { preset: "primaryAction" },
-      onPress: { kind: "agent", name: "submit", collect: "signup" },
-      children: ["submit-label"],
-    },
-    "submit-label": {
-      id: "submit-label",
-      type: "text",
-      value: "Send",
-      style: { preset: "actionLabel" },
-    },
-    "go-about": {
-      id: "go-about",
-      type: "box",
-      style: { preset: "secondaryAction" },
-      onPress: { kind: "navigate", to: "about" },
-      children: ["go-about-label"],
-    },
-    "go-about-label": {
-      id: "go-about-label",
-      type: "text",
-      value: "About →",
-      style: { preset: "actionLabel" },
-    },
-    about: {
-      id: "about",
-      type: "box",
-      style: { preset: "panel", gap: "lg" },
-      children: ["about-title", "go-home"],
-    },
-    "about-title": {
-      id: "about-title",
-      type: "text",
-      value: "About this stub",
-      style: { preset: "heading" },
-    },
-    "go-home": {
-      id: "go-home",
-      type: "box",
-      style: { preset: "secondaryAction" },
-      onPress: { kind: "navigate", to: "home" },
-      children: ["go-home-label"],
-    },
-    "go-home-label": {
-      id: "go-home-label",
-      type: "text",
-      value: "← Home",
-      style: { preset: "actionLabel" },
-    },
-  },
-};
+type CollectedEntry = AgentEvent["collect"][string];
 
-/** `event.fields ?? {}` as sorted `key=value` pairs after the action name. */
-function describeAction(event: Extract<ClientEvent, { kind: "tap" }>): string {
-  const name = event.action.name ?? event.action.kind;
-  const fields = event.fields ?? {};
-  const pairs = Object.keys(fields)
-    .sort()
-    .map((key) => `${key}=${fields[key] ?? ""}`);
-  return [`${name}:`, ...pairs].join(" ");
+interface RuntimeStubContext {
+  readonly event: AgentEvent;
+  readonly session: FacetToolSession;
 }
 
-export function createStubAgent(): FacetAgent {
-  return defineAgent(({ event, session, stage }) => {
-    switch (event.kind) {
-      case "visit": {
-        stage.render(STUB_TREE);
-        return;
+export interface StubAgent {
+  run(context: RuntimeStubContext): Promise<{ readonly text: string }>;
+}
+
+/**
+ * The fixture page as authored markup: a home form, a submit event that collects
+ * exactly `name email`, and a second screen reached through `nav:about`.
+ */
+export const STUB_MARKUP = `<Facet entry="home">
+  <Screen name="home" title="Facet quickstart">
+    <Stack gap="lg">
+      <Text value="Facet quickstart — stub stage" variant="title" />
+      <Card title="Signup">
+        <Stack gap="md">
+          <Text value="Tell us who should receive the launch plan." />
+          <Field name="name" label="Name" />
+          <Field name="email" label="Email" />
+          <Row gap="sm">
+            <Button label="Send" action="agent:submit" collect="name email" tone="primary" />
+            <Button label="About" action="nav:about" tone="secondary" />
+          </Row>
+        </Stack>
+      </Card>
+    </Stack>
+  </Screen>
+  <Screen name="about" title="About this stub">
+    <Stack gap="md">
+      <Text value="About this stub" variant="heading" />
+      <Text value="This deterministic fixture proves the quickstart can render component markup." />
+      <Button label="Home" action="nav:home" />
+    </Stack>
+  </Screen>
+</Facet>`;
+
+function describeCollectedEntry(entry: CollectedEntry): string {
+  switch (entry.kind) {
+    case "value":
+      return entry.value;
+    case "omitted_sensitive":
+      return "omitted_sensitive";
+    case "collect_source_unavailable":
+      return "collect_source_unavailable";
+  }
+}
+
+function describeEvent(event: AgentEvent): string {
+  const pairs = Object.keys(event.collect)
+    .sort()
+    .map(
+      (key) =>
+        `${key}=${describeCollectedEntry(event.collect[key] ?? { kind: "collect_source_unavailable" })}`,
+    );
+  if (pairs.length === 0) {
+    return event.arg === undefined
+      ? `stub: ${event.eventName}`
+      : `stub: ${event.eventName} ${event.arg}`;
+  }
+  return [`${event.eventName}:`, ...pairs].join(" ");
+}
+
+export function createStubAgent(): StubAgent {
+  return Object.freeze({
+    async run({ event, session }: RuntimeStubContext) {
+      if (session.document === null) {
+        await session.applyAuthorMutation(STUB_MARKUP);
       }
-      case "message": {
-        const echo = {
-          id: "stub-echo",
-          type: "text",
-          value: `echo: ${event.text}`,
-          style: { preset: "body", color: "accent" },
-        } as const;
-        if (session.stage.nodes["stub-echo"] === undefined) {
-          stage.append(session.stage.root, echo);
-        } else {
-          stage.set(echo);
-        }
-        stage.say(`stub: ${event.text}`);
-        return;
-      }
-      case "tap": {
-        stage.say(describeAction(event));
-        return;
-      }
-    }
+      return { text: describeEvent(event) };
+    },
   });
 }

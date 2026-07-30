@@ -1,88 +1,71 @@
-import type { CollectedEvent, ServerMessage } from "@facet/core";
-import { sessionKey } from "./stage-store.js";
+import type { ConversationMessage } from "@facet/core";
 
-/**
- * One recorded interaction: a visitor event and the messages the agent answered
- * with. `event` is a `CollectedEvent` — the log currency — so a row holds both a
- * forwarded turn (`messages` = the agent's reply) and a purely-local `record`
- * (a navigate/toggle tap with `messages: []`, no agent turn).
- *
- * Sinks MUST preserve append order: `record()` is called in send order and
- * `history()` returns oldest-first in that SAME order. Append order (never
- * `at`) is the join key for gap detection — a dropped record leaves a `seq` gap
- * in an otherwise contiguous history.
- */
-export interface StoredEvent {
-  /** Epoch milliseconds when it was recorded. */
-  readonly at: number;
-  readonly event: CollectedEvent;
-  readonly messages: readonly ServerMessage[];
-}
+export type ConversationRecord = ConversationMessage;
 
-/**
- * A conversation sink — where a visitor's interactions (events + agent replies)
- * go. Facet always owns the STAGE (`StageStore`), but the conversation is a
- * separate concern that often already lives elsewhere (a chat platform, AMA2,
- * your own DB). So it's pluggable:
- *
- * - `MemorySink` / `FileSink` — Facet stores it (replayable on reconnect).
- * - `ForwardSink` — hand each interaction to your system; Facet keeps nothing.
- * - `NullSink` — drop it.
- *
- * Methods are async so a backend can be a database. This module is browser-safe;
- * the file backend (`FileSink`) lives in its own module.
- */
 export interface Sink {
-  /** Called once per handled interaction. */
-  record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void>;
-  /** Past interactions for replay, oldest first. `[]` if this sink can't replay. */
-  history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]>;
+  record(
+    key: string,
+    record: ConversationRecord,
+  ): Promise<
+    { readonly ok: true } | { readonly ok: false; readonly code: string; readonly detail: string }
+  >;
+
+  history(key: string, limit: number): Promise<readonly ConversationRecord[]>;
 }
 
-/** Drops everything — for consumers whose conversation lives entirely elsewhere. */
-export class NullSink implements Sink {
-  async record(_agentId: string, _visitorId: string, _entry: StoredEvent): Promise<void> {}
-  async history(_agentId: string, _visitorId: string): Promise<readonly StoredEvent[]> {
-    return [];
+function failure(
+  code: string,
+  detail: string,
+): {
+  readonly ok: false;
+  readonly code: string;
+  readonly detail: string;
+} {
+  return { ok: false, code, detail };
+}
+
+function boundedLimit(limit: number): number {
+  if (!Number.isSafeInteger(limit) || limit <= 0) {
+    return 0;
   }
+  return limit;
 }
 
-/** Keeps history in memory — replayable; the zero-config default. */
 export class MemorySink implements Sink {
-  private readonly log = new Map<string, StoredEvent[]>();
+  readonly #records = new Map<string, Map<string, ConversationRecord>>();
 
-  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
-    const key = sessionKey(agentId, visitorId);
-    const existing = this.log.get(key);
-    if (existing !== undefined) existing.push(entry);
-    else this.log.set(key, [entry]);
+  async record(
+    key: string,
+    record: ConversationRecord,
+  ): Promise<
+    { readonly ok: true } | { readonly ok: false; readonly code: string; readonly detail: string }
+  > {
+    try {
+      if (typeof key !== "string" || key.length === 0) {
+        return failure("sink_invalid_key", "A sink key must be a non-empty string.");
+      }
+      const messageId = record.messageId;
+      if (typeof messageId !== "string" || messageId.length === 0) {
+        return failure("sink_invalid_message_id", "A conversation record needs a messageId.");
+      }
+      const records = this.#records.get(key) ?? new Map<string, ConversationRecord>();
+      records.set(messageId, record);
+      this.#records.set(key, records);
+      return { ok: true };
+    } catch {
+      return failure("sink_write_failed", "The conversation record could not be stored.");
+    }
   }
 
-  async history(agentId: string, visitorId: string): Promise<readonly StoredEvent[]> {
-    return this.log.get(sessionKey(agentId, visitorId)) ?? [];
-  }
-}
-
-/**
- * Forwards each interaction to your system (e.g. AMA2, your own DB). Facet
- * retains nothing, so `history()` is empty — if you want chat replay on
- * reconnect, your system re-injects it. This is the pattern for consumers that
- * already store the conversation.
- */
-export class ForwardSink implements Sink {
-  constructor(
-    private readonly forward: (
-      agentId: string,
-      visitorId: string,
-      entry: StoredEvent,
-    ) => void | Promise<void>,
-  ) {}
-
-  async record(agentId: string, visitorId: string, entry: StoredEvent): Promise<void> {
-    await this.forward(agentId, visitorId, entry);
-  }
-
-  async history(_agentId: string, _visitorId: string): Promise<readonly StoredEvent[]> {
-    return [];
+  async history(key: string, limit: number): Promise<readonly ConversationRecord[]> {
+    try {
+      const records = this.#records.get(key);
+      if (records === undefined) {
+        return [];
+      }
+      return [...records.values()].slice(-boundedLimit(limit));
+    } catch {
+      return [];
+    }
   }
 }

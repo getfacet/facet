@@ -1,4 +1,5 @@
 import type { TurnMessage } from "../provider.js";
+import { measureChars } from "./measure.js";
 
 export interface CompactHistoryMessagesOptions {
   readonly maxChars: number;
@@ -300,9 +301,13 @@ function estimateMessageChars(message: TurnMessage): number {
     case "tool_result":
       return `${message.role} ${message.callId}: ${message.content}\n`.length;
     case "assistant_tools":
-      return `${message.role}: ${message.text}\n${safeJson(message.toolCalls)}\n${safeJson(
-        message.providerState,
-      )}\n`.length;
+      return (
+        `${message.role}: ${message.text}\n`.length +
+        measureChars(message.toolCalls) +
+        "\n".length +
+        measureChars(message.providerState) +
+        "\n".length
+      );
   }
 }
 
@@ -375,12 +380,4 @@ function turnCount(messages: readonly TurnMessage[]): number {
 function safeNonNegativeInteger(value: number): number {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.floor(value);
-}
-
-function safeJson(value: unknown): string {
-  try {
-    return JSON.stringify(value) ?? "";
-  } catch {
-    return "[unserializable]";
-  }
 }

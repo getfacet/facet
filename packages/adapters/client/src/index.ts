@@ -4,5 +4,4 @@
 export { SseTransport } from "./sse-transport.js";
 export { LocalTransport } from "./local-transport.js";
 export { browserVisitorId } from "./visitor.js";
-export { persistView, loadPersistedView } from "./view-storage.js";
-export { withView } from "./event-view.js";
+export { persistScreen, loadPersistedScreen } from "./view-storage.js";

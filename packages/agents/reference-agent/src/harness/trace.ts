@@ -17,7 +17,7 @@ export const REFERENCE_AGENT_TRACE_EVENT_TYPES = [
 
 export type ReferenceAgentTraceEventType = (typeof REFERENCE_AGENT_TRACE_EVENT_TYPES)[number];
 
-export type ReferenceAgentTraceStageMode = "json" | "summary";
+export type ReferenceAgentTraceStageMode = "markup" | "summary";
 
 /** Which compaction surface emitted the event: the cross-turn background lane or in-turn folding. */
 export type ReferenceAgentCompactionSite = "cross_turn" | "in_turn";
@@ -86,7 +86,7 @@ export interface ReferenceAgentBatchYieldTraceEvent {
   readonly type: "batch_yield";
   readonly messageCount: number;
   readonly patchCount: number;
-  readonly sayCount: number;
+  readonly conversationCount: number;
 }
 
 export interface ReferenceAgentStopTraceEvent {
@@ -107,8 +107,8 @@ export interface ReferenceAgentTurnErrorTraceEvent {
 export interface ReferenceAgentCompactionTriggeredTraceEvent {
   readonly type: "compaction_triggered";
   readonly site: ReferenceAgentCompactionSite;
-  readonly estimatedTokens: number;
-  readonly budgetTokens: number;
+  readonly estimatedChars: number;
+  readonly budgetChars: number;
 }
 
 export interface ReferenceAgentCompactionDoneTraceEvent {
@@ -116,8 +116,8 @@ export interface ReferenceAgentCompactionDoneTraceEvent {
   readonly site: ReferenceAgentCompactionSite;
   readonly generation: number;
   readonly coveredThrough: number;
-  readonly beforeTokens: number;
-  readonly afterTokens: number;
+  readonly beforeChars: number;
+  readonly afterChars: number;
 }
 
 export interface ReferenceAgentCompactionFailedTraceEvent {
@@ -259,7 +259,7 @@ function sanitizeKnownReferenceAgentTraceEvent(
         type: "batch_yield",
         messageCount: safeTraceInteger(event.messageCount),
         patchCount: safeTraceInteger(event.patchCount),
-        sayCount: safeTraceInteger(event.sayCount),
+        conversationCount: safeTraceInteger(event.conversationCount),
       };
     case "stop":
       return {
@@ -280,8 +280,8 @@ function sanitizeKnownReferenceAgentTraceEvent(
       return {
         type: "compaction_triggered",
         site: boundCompactionSite(event.site),
-        estimatedTokens: safeTraceInteger(event.estimatedTokens),
-        budgetTokens: safeTraceInteger(event.budgetTokens),
+        estimatedChars: safeTraceInteger(event.estimatedChars),
+        budgetChars: safeTraceInteger(event.budgetChars),
       };
     case "compaction_done":
       return {
@@ -289,8 +289,8 @@ function sanitizeKnownReferenceAgentTraceEvent(
         site: boundCompactionSite(event.site),
         generation: safeTraceInteger(event.generation),
         coveredThrough: safeTraceInteger(event.coveredThrough),
-        beforeTokens: safeTraceInteger(event.beforeTokens),
-        afterTokens: safeTraceInteger(event.afterTokens),
+        beforeChars: safeTraceInteger(event.beforeChars),
+        afterChars: safeTraceInteger(event.afterChars),
       };
     case "compaction_failed":
       return {

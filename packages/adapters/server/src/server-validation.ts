@@ -1,21 +1,13 @@
 import type { IncomingMessage } from "node:http";
 import {
-  asAgentServerMessage,
-  MAX_PATCH_OPS,
-  normalizeClientEvent,
-  normalizeLocalCollectedEvent,
-  normalizeVisitorContext,
-  type AgentControlFrame,
-  type ClientEvent,
-  type LocalCollectedEvent,
-  type VisitorContext,
+  deriveMessageId,
+  validateAgentEvent,
+  validateTurnOutcome,
+  validateVisitorText,
 } from "@facet/core";
+import type { AgentControlFrame, AgentEvent, ConversationMessage } from "@facet/core";
 
-/** Max accepted request body. A single-operator reference transport still shouldn't
- * buffer an unbounded upload into memory, so both POST channels (/event and
- * /agent/control) cap here. Raise it if a legitimate payload (a large stage patch)
- * grows past this; lower it to tighten the DoS surface. */
-const MAX_BODY_BYTES = 5 * 1024 * 1024; // 5 MiB
+const MAX_BODY_BYTES = 5 * 1024 * 1024;
 
 export function readJson(
   req: IncomingMessage,
@@ -24,14 +16,10 @@ export function readJson(
   return new Promise((resolve, reject) => {
     let body = "";
     let size = 0;
-    // utf8 decoding must happen on the stream (a multibyte char split across
-    // two chunks corrupts under per-chunk String()).
     req.setEncoding("utf8");
     req.on("data", (chunk: string) => {
       size += Buffer.byteLength(chunk, "utf8");
       if (size > maxBytes) {
-        // Past the cap: stop buffering, shed the rest of the upload, and reject so
-        // the caller's existing `.catch` answers 400.
         reject(new Error("request body exceeds size cap"));
         req.destroy();
         return;
@@ -49,58 +37,85 @@ export function readJson(
   });
 }
 
-/** Normalize an untrusted native `/event` envelope through the core contract. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readSessionKey(value: Record<string, unknown>): string | undefined {
+  const direct = value["sessionKey"];
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  return undefined;
+}
+
 export function normalizeEventBody(
   body: unknown,
-): { readonly visitor: VisitorContext; readonly event: ClientEvent } | undefined {
-  try {
-    if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined;
-    const value = body as Record<string, unknown>;
-    const visitor = normalizeVisitorContext(value["visitor"]);
-    const event = normalizeClientEvent(value["event"]);
-    return visitor === undefined || event === undefined ? undefined : { visitor, event };
-  } catch {
-    return undefined;
-  }
+): { readonly sessionKey: string; readonly event: AgentEvent } | undefined {
+  if (!isRecord(body)) return undefined;
+  const sessionKey = readSessionKey(body);
+  const event = validateAgentEvent(body["event"]);
+  return sessionKey === undefined || !event.ok
+    ? undefined
+    : Object.freeze({ sessionKey, event: event.event });
 }
 
-/** Normalize an untrusted native `/record` envelope through the core contract. */
-export function normalizeRecordBody(
+export function normalizeMessageBody(
   body: unknown,
-): { readonly visitor: VisitorContext; readonly event: LocalCollectedEvent } | undefined {
-  try {
-    if (typeof body !== "object" || body === null || Array.isArray(body)) return undefined;
-    const value = body as Record<string, unknown>;
-    const visitor = normalizeVisitorContext(value["visitor"]);
-    const event = normalizeLocalCollectedEvent(value["event"]);
-    return visitor === undefined || event === undefined ? undefined : { visitor, event };
-  } catch {
+  now: () => number = Date.now,
+):
+  | {
+      readonly sessionKey: string;
+      readonly event: AgentEvent;
+      readonly visitorMessage: ConversationMessage;
+    }
+  | undefined {
+  if (!isRecord(body)) return undefined;
+  const sessionKey = readSessionKey(body);
+  const messageId = body["messageId"];
+  const text = body["text"];
+  const screen = body["screen"] ?? "home";
+  const stageRevision = body["stageRevision"] ?? 0;
+  if (
+    sessionKey === undefined ||
+    typeof messageId !== "string" ||
+    messageId.length === 0 ||
+    !validateVisitorText(text) ||
+    typeof screen !== "string" ||
+    typeof stageRevision !== "number"
+  ) {
     return undefined;
   }
+  const eventResult = validateAgentEvent({
+    eventId: messageId,
+    eventName: "message",
+    sourceNodeId: "visitor",
+    screen,
+    stageRevision,
+    collect: {},
+  });
+  if (!eventResult.ok) return undefined;
+  return Object.freeze({
+    sessionKey,
+    event: eventResult.event,
+    visitorMessage: Object.freeze({
+      kind: "conversation" as const,
+      messageId: deriveMessageId(messageId, "visitor"),
+      turnId: messageId,
+      role: "visitor" as const,
+      text,
+      at: now(),
+    }),
+  });
 }
 
-/** Shape-check an /agent/control body before resolving a pending request with it —
- * per-kind, so a malformed message can't smuggle a non-array `patches` or a
- * non-string `text` into the runtime and the browser. */
 export function isControlBody(body: unknown): body is AgentControlFrame {
-  if (typeof body !== "object" || body === null) return false;
-  const { requestId, messages } = body as { requestId?: unknown; messages?: unknown };
-  if (typeof requestId !== "number") return false;
-  if (!Array.isArray(messages)) return false;
-  // Cap the op count at the wire boundary on the per-FRAME AGGREGATE (running total
-  // across the frame's patch messages), not per message: the runtime coalesces all
-  // of a turn's patch messages and folds ONCE, so a split body (k messages of
-  // ≤MAX_PATCH_OPS ops each) whose total exceeds the cap would be 202-accepted here
-  // then silently dropped WHOLE at the fold. A hostile 5 MiB batch (~1M junk ops),
-  // split or not, is 400-rejected here before it can reach the runtime's fold path.
-  let totalOps = 0;
-  return messages.every((m) => {
-    const message = asAgentServerMessage(m);
-    if (message === undefined) return false;
-    if (message.kind === "patch") {
-      totalOps += message.patches.length;
-      return totalOps <= MAX_PATCH_OPS;
-    }
-    return true;
-  });
+  if (!isRecord(body)) return false;
+  if (body["kind"] !== "agent_control") return false;
+  if (typeof body["eventId"] !== "string" || body["eventId"].length === 0) return false;
+  const validated = validateTurnOutcome(body["outcome"]);
+  return (
+    validated.ok &&
+    validated.outcome.patches.length === 0 &&
+    (validated.outcome.conversation === undefined ||
+      validated.outcome.conversation.turnId === body["eventId"])
+  );
 }

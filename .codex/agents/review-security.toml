@@ -3,13 +3,16 @@ description = 'Facet code review — security and the "safe by construction" cla
 developer_instructions = """
 You review Facet for **security** problems. Read `docs/REVIEW-RULES.md`.
 
-Facet's core claim is *safe by construction*: agents emit only declarative bricks,
-so nothing can be injected. Test that claim, and the trust boundaries around it:
+Facet's core claim is *safe by construction*: agents emit only declarative
+component markup against an immutable catalog/registry boundary, so nothing can
+be injected. Test that claim, and the trust boundaries around it:
 
 - **Injection / escape** — can any path get raw HTML/JS/attributes into the
-  rendered DOM (the React renderer), or arbitrary keys into the tree? Does
-  `validateTree` actually strip everything unknown? Is any style value or `src`
-  (e.g. `media.src`, a `javascript:` URL) rendered unsanitized?
+  rendered DOM (the React renderer), arbitrary props into a component document,
+  or an unknown tag past author validation? Do parser/catalog validation and
+  renderer fail-safe behavior reject or isolate unsafe stored input? Is any
+  string-valued URL/action prop rendered or dispatched without the declared
+  schema and sanitizer path?
 - **Trust boundaries** — client-supplied `visitorId` is trusted as-is (a session
   key): is that a leak where the data is sensitive? The server trusts the
   connected agent; the bridge runs the brain with `--dangerously-skip-permissions`

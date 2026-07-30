@@ -1,403 +1,464 @@
 import { describe, expect, it } from "vitest";
-import {
-  applyOpInPlace,
-  applyPatch,
-  escapeJsonPointerToken,
-  MAX_PATCH_OPS,
-  type JsonPatchOperation,
-} from "./patch.js";
-import { EMPTY_TREE, type FacetTree } from "./tree.js";
 
-describe("applyPatch (RFC 6902)", () => {
-  it("escapes one RFC 6901 token for shared path builders", () => {
-    expect(escapeJsonPointerToken("a/b~c")).toBe("a~1b~0c");
-  });
+import { BOUNDS } from "./bounds.js";
+import type { ComponentDocument } from "./document.js";
+import { MAX_PATCH_OPS, applyPatch } from "./patch.js";
+import type { JsonPatchOperation } from "./patch.js";
+import type { FacetStage } from "./stage.js";
 
-  it("replace at the root path swaps the whole tree", () => {
-    const next = {
-      root: "root",
-      nodes: { root: { id: "root", type: "box" as const, children: [] } },
-    };
-    const out = applyPatch(EMPTY_TREE, [{ op: "replace", path: "", value: next }]);
-    expect(out).toEqual(next);
-  });
+/**
+ * A small but faithful document: one screen root holding one leaf, addressed the
+ * way an authored mutation addresses it — `/document/nodes/<id>/…` over the flat
+ * id-keyed map, never a positional path into a nested tree.
+ */
+function fixtureDocument(): ComponentDocument {
+  return {
+    entry: "Home",
+    screens: ["n1"],
+    nodes: {
+      n1: {
+        tag: "Screen",
+        props: { name: { kind: "scalar", value: "Home" } },
+        children: ["n2"],
+      },
+      n2: {
+        tag: "Text",
+        props: { content: { kind: "scalar", value: "hello" } },
+        children: [],
+      },
+    },
+  };
+}
 
-  it("add upserts a node by id", () => {
-    const out = applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "hi" } },
-    ]);
-    expect(out.nodes["a"]).toMatchObject({ value: "hi" });
-  });
+/** A fresh stage per test, so no test can observe another test's mutation. */
+function fixtureStage(): FacetStage {
+  return { document: fixtureDocument(), data: { rows: [1, 2, 3], greeting: "hi" } };
+}
 
-  it("append = add node + add id to parent children", () => {
-    const out = applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/c", value: { id: "c", type: "text", value: "x" } },
-      { op: "add", path: "/nodes/root/children/-", value: "c" },
-    ]);
-    const root = out.nodes["root"] as unknown as { children: string[] };
-    expect(root.children).toContain("c");
-  });
+/** The document half, failing loudly when a test expected a live document. */
+function documentOf(stage: FacetStage): ComponentDocument {
+  if (stage.document === null) {
+    throw new Error("expected a live document half");
+  }
+  return stage.document;
+}
 
-  it("remove deletes a node", () => {
-    const added = applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
-    ]);
-    const out = applyPatch(added, [{ op: "remove", path: "/nodes/a" }]);
-    expect(out.nodes["a"]).toBeUndefined();
-  });
+/** The data half as a readable record, for assertions on a published value. */
+function dataOf(stage: FacetStage): Record<string, unknown> {
+  return stage.data as Record<string, unknown>;
+}
 
-  it("remove and replace reject a missing object-member target", () => {
-    expect(() => applyPatch(EMPTY_TREE, [{ op: "remove", path: "/nodes/missing" }])).toThrow(
-      /path not found/,
-    );
-    expect(() =>
-      applyPatch(EMPTY_TREE, [
-        {
-          op: "replace",
-          path: "/nodes/missing",
-          value: { id: "missing", type: "text", value: "x" },
-        },
-      ]),
-    ).toThrow(/path not found/);
-  });
+/**
+ * Asserts an **atomic reject**: the fold answers with the prior stage *by
+ * identity*, and the prior stage — `document` **and** `data` — is byte-identical
+ * to what it was before the call. Identity alone would pass if the fold mutated
+ * in place; the serialization alone would pass if the fold returned a fresh but
+ * equal stage. Both together are the all-or-nothing claim.
+ */
+function expectRejected(stage: FacetStage, operations: readonly JsonPatchOperation[]): void {
+  const before = JSON.stringify(stage);
+  const priorDocument = stage.document;
+  const priorData = stage.data;
 
-  it("is pure — never mutates the input tree", () => {
-    const before = JSON.stringify(EMPTY_TREE);
-    applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
-    ]);
-    expect(JSON.stringify(EMPTY_TREE)).toBe(before);
-  });
+  const result = applyPatch(stage, operations);
 
-  it("never mutates the OPERATIONS — applying the same batch twice yields identical trees", () => {
-    // add a box, then append a child into it: without value-cloning the second
-    // op would mutate the first op's value in place (server apply would corrupt
-    // the outgoing message; the client would then double-append).
-    const batch = [
-      { op: "add" as const, path: "/nodes/boxA", value: { id: "boxA", type: "box", children: [] } },
-      { op: "add" as const, path: "/nodes/boxA/children/-", value: "c" },
-    ];
-    const before = JSON.stringify(batch);
-    const serverSide = applyPatch(EMPTY_TREE, batch);
-    expect(JSON.stringify(batch)).toBe(before); // ops untouched by the first apply
-    const clientSide = applyPatch(EMPTY_TREE, batch);
-    expect(clientSide).toEqual(serverSide); // second apply gives the same result
-    const boxA = clientSide.nodes["boxA"] as unknown as { children: string[] };
-    expect(boxA.children).toEqual(["c"]); // exactly once, not ["c", "c"]
-  });
+  expect(result).toBe(stage);
+  expect(result.document).toBe(priorDocument);
+  expect(result.data).toBe(priorData);
+  expect(JSON.stringify(stage)).toBe(before);
+}
 
-  it("throws on an unknown op instead of returning undefined", () => {
-    const bogus = { op: "append", path: "/nodes/a", value: "x" } as unknown as Parameters<
-      typeof applyPatch
-    >[1][number];
-    expect(() => applyPatch(EMPTY_TREE, [bogus])).toThrow(/unknown patch op/);
-  });
+/**
+ * Asserts an **accepted** fold: a new stage is produced, the prior one is left
+ * byte-identical, and the answer's own key set is exactly the two stage halves —
+ * nothing smuggled in alongside them.
+ */
+function expectAccepted(stage: FacetStage, operations: readonly JsonPatchOperation[]): FacetStage {
+  const before = JSON.stringify(stage);
 
-  it("rejects prototype-polluting pointer tokens", () => {
-    for (const path of ["/__proto__/polluted", "/nodes/__proto__", "/constructor/prototype/x"]) {
-      expect(() => applyPatch(EMPTY_TREE, [{ op: "add", path, value: "HACKED" }])).toThrow(
-        /forbidden pointer token/,
-      );
-    }
-    expect({} as { polluted?: unknown }).not.toHaveProperty("polluted"); // globals untouched
-  });
+  const result = applyPatch(stage, operations);
 
-  it("move relocates a node", () => {
-    const seeded = applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
-    ]);
-    const out = applyPatch(seeded, [{ op: "move", from: "/nodes/a", path: "/nodes/b" }]);
-    expect(out.nodes["a"]).toBeUndefined();
-    expect(out.nodes["b"]).toMatchObject({ value: "x" });
-  });
+  expect(result).not.toBe(stage);
+  expect(Object.keys(result)).toEqual(["document", "data"]);
+  expect(JSON.stringify(stage)).toBe(before);
+  return result;
+}
 
-  it("move rejects a missing object-member source", () => {
-    expect(() =>
-      applyPatch(EMPTY_TREE, [{ op: "move", from: "/nodes/missing", path: "/nodes/b" }]),
-    ).toThrow(/path not found/);
-  });
+/** Casts a deliberately illegal operation, which the typed union cannot express. */
+function illegal(operation: unknown): JsonPatchOperation {
+  return operation as JsonPatchOperation;
+}
 
-  it("copy duplicates a node (deep clone)", () => {
-    const seeded = applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "x" } },
-    ]);
-    const out = applyPatch(seeded, [{ op: "copy", from: "/nodes/a", path: "/nodes/b" }]);
-    expect(out.nodes["a"]).toMatchObject({ value: "x" });
-    expect(out.nodes["b"]).toMatchObject({ value: "x" });
-  });
+/** `n` legal append operations, used for the `MAX_PATCH_OPS` accept/reject pair. */
+function appendOps(count: number): readonly JsonPatchOperation[] {
+  const operations: JsonPatchOperation[] = [];
+  for (let index = 0; index < count; index += 1) {
+    operations.push({ op: "add", path: "/data/rows/-", value: index });
+  }
+  return operations;
+}
 
-  it("test passes on a match and throws on a mismatch", () => {
-    expect(() =>
-      applyPatch(EMPTY_TREE, [{ op: "test", path: "/root", value: "root" }]),
-    ).not.toThrow();
-    expect(() => applyPatch(EMPTY_TREE, [{ op: "test", path: "/root", value: "nope" }])).toThrow();
-  });
-
-  it("test op passes on deep-equal values regardless of key order", () => {
-    const seeded = applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/a", value: { id: "a", type: "text", value: "hi" } },
-    ]);
-    // Same value, keys in a DIFFERENT order. JSON.stringify equality rejects
-    // this (text differs); RFC 6902 compares values, so deep equality accepts.
-    expect(() =>
-      applyPatch(seeded, [
-        { op: "test", path: "/nodes/a", value: { value: "hi", id: "a", type: "text" } },
-      ]),
-    ).not.toThrow();
-  });
-
-  it("test op deep-equals nested arrays and objects (key order aside)", () => {
-    const seeded = applyPatch(EMPTY_TREE, [
+describe("applyPatch — the authorized operation table", () => {
+  it("folds an authored operation under /document", () => {
+    const stage = fixtureStage();
+    const result = expectAccepted(stage, [
       {
-        op: "add",
-        path: "/nodes/a",
-        value: {
-          id: "a",
-          type: "box",
-          children: ["x", "y"],
-          style: { gap: "md", direction: "col" },
-        },
+        op: "replace",
+        path: "/document/nodes/n2/props/content",
+        value: { kind: "scalar", value: "changed" },
       },
     ]);
-    // Nested object keys reordered — still deep-equal.
-    expect(() =>
-      applyPatch(seeded, [
-        {
-          op: "test",
-          path: "/nodes/a",
-          value: {
-            type: "box",
-            children: ["x", "y"],
-            id: "a",
-            style: { direction: "col", gap: "md" },
-          },
-        },
-      ]),
-    ).not.toThrow();
-    // A genuine array-element difference still fails.
-    expect(() =>
-      applyPatch(seeded, [{ op: "test", path: "/nodes/a/children", value: ["x", "z"] }]),
-    ).toThrow();
-    // A differing array length still fails.
-    expect(() =>
-      applyPatch(seeded, [{ op: "test", path: "/nodes/a/children", value: ["x"] }]),
-    ).toThrow();
+
+    expect(documentOf(result).nodes["n2"]?.props["content"]).toEqual({
+      kind: "scalar",
+      value: "changed",
+    });
+    // The other half is carried through untouched.
+    expect(result.data).toEqual({ rows: [1, 2, 3], greeting: "hi" });
   });
 
-  it("throws on an op whose parent path is missing (the documented contract)", () => {
-    expect(() =>
-      applyPatch(EMPTY_TREE, [{ op: "add", path: "/nodes/missing/children/-", value: "x" }]),
-    ).toThrow();
+  it("adds and relinks a node the way an authored mutation does", () => {
+    const stage = fixtureStage();
+    const result = expectAccepted(stage, [
+      {
+        op: "add",
+        path: "/document/nodes/n3",
+        value: { tag: "Text", props: {}, children: [] },
+      },
+      { op: "add", path: "/document/nodes/n1/children/-", value: "n3" },
+    ]);
+
+    expect(documentOf(result).nodes["n3"]).toEqual({ tag: "Text", props: {}, children: [] });
+    expect(documentOf(result).nodes["n1"]?.children).toEqual(["n2", "n3"]);
+  });
+
+  it("removes a node and its parent link", () => {
+    const stage = fixtureStage();
+    const result = expectAccepted(stage, [
+      { op: "remove", path: "/document/nodes/n1/children/0" },
+      { op: "remove", path: "/document/nodes/n2" },
+    ]);
+
+    expect(Object.keys(documentOf(result).nodes)).toEqual(["n1"]);
+    expect(documentOf(result).nodes["n1"]?.children).toEqual([]);
+  });
+
+  it("folds a publish operation under /data", () => {
+    const stage = fixtureStage();
+    const result = expectAccepted(stage, [{ op: "add", path: "/data/sales", value: { q1: 10 } }]);
+
+    expect(dataOf(result)["sales"]).toEqual({ q1: 10 });
+    // The other half is carried through untouched.
+    expect(result.document).toEqual(fixtureDocument());
+  });
+
+  it("replaces and removes inside the data half, including into an array", () => {
+    const stage = fixtureStage();
+    const result = expectAccepted(stage, [
+      { op: "replace", path: "/data/greeting", value: "bye" },
+      { op: "add", path: "/data/rows/-", value: 4 },
+      { op: "add", path: "/data/rows/0", value: 0 },
+    ]);
+
+    expect(dataOf(result)["greeting"]).toBe("bye");
+    expect(dataOf(result)["rows"]).toEqual([0, 1, 2, 3, 4]);
+
+    const removed = expectAccepted(result, [{ op: "remove", path: "/data/greeting" }]);
+    expect(Object.prototype.hasOwnProperty.call(removed.data, "greeting")).toBe(false);
+  });
+
+  it("replaces a whole half: /document back to null, /data back to empty", () => {
+    const preparing = expectAccepted(fixtureStage(), [
+      { op: "replace", path: "/document", value: null },
+    ]);
+    expect(preparing.document).toBeNull();
+    expect(preparing.data).toEqual({ rows: [1, 2, 3], greeting: "hi" });
+
+    const cleared = expectAccepted(fixtureStage(), [{ op: "replace", path: "/data", value: {} }]);
+    expect(cleared.data).toEqual({});
+    expect(cleared.document).toEqual(fixtureDocument());
+  });
+
+  it("rejects exact-root raw markup document writes without blocking document objects", () => {
+    const rawMarkup = '<Facet entry="home"><Screen name="home" /></Facet>';
+    expectRejected(fixtureStage(), [{ op: "add", path: "/document", value: rawMarkup }]);
+    expectRejected(fixtureStage(), [{ op: "replace", path: "/document", value: rawMarkup }]);
+
+    const result = expectAccepted(fixtureStage(), [
+      { op: "replace", path: "/document", value: fixtureDocument() },
+    ]);
+    expect(result.document).toEqual(fixtureDocument());
+  });
+
+  it("root-replaces the ENTIRE stage on a resync, both halves atomically", () => {
+    const stage = fixtureStage();
+    const resynced: FacetStage = {
+      document: {
+        entry: "Other",
+        screens: ["n7"],
+        nodes: {
+          n7: { tag: "Screen", props: { name: { kind: "scalar", value: "Other" } }, children: [] },
+        },
+      },
+      data: { totals: { revenue: 42 } },
+    };
+
+    const result = expectAccepted(stage, [{ op: "replace", path: "", value: resynced }]);
+
+    expect(result.document).toEqual(resynced.document);
+    expect(result.data).toEqual(resynced.data);
+    // Not a document-only snapshot: the data half moved with it.
+    expect(result.data).not.toEqual(stage.data);
+  });
+
+  it("resyncs a stage the prior one could not even be cloned from", () => {
+    // A corrupt in-memory stage is exactly when a resync must still work: the
+    // root replace never reads the prior root, so it does not depend on it.
+    const corrupt = { document: null, data: { boom: () => undefined } } as unknown as FacetStage;
+    const clean: FacetStage = { document: fixtureDocument(), data: { ok: true } };
+
+    const result = applyPatch(corrupt, [{ op: "replace", path: "", value: clean }]);
+
+    expect(result).not.toBe(corrupt);
+    expect(result.data).toEqual({ ok: true });
+    expect(result.document).toEqual(fixtureDocument());
+  });
+
+  it("returns a fresh stage for an empty batch, so identity is a reliable oracle", () => {
+    const stage = fixtureStage();
+    const result = applyPatch(stage, []);
+
+    expect(result).not.toBe(stage);
+    expect(JSON.stringify(result)).toBe(JSON.stringify(stage));
   });
 });
 
-describe("applyPatch — strict RFC 6901 array indices", () => {
-  const seeded = applyPatch(EMPTY_TREE, [
-    { op: "add", path: "/nodes/root/children/-", value: "a" },
-    { op: "add", path: "/nodes/root/children/-", value: "b" },
-  ]);
-  const childrenOf = (tree: typeof seeded): string[] =>
-    (tree.nodes["root"] as unknown as { children: string[] }).children;
+describe("applyPatch — the unauthorized operation table", () => {
+  const unauthorized: readonly (readonly [string, JsonPatchOperation])[] = [
+    // The three RFC 6902 operations Facet does not authorize.
+    ["move", illegal({ op: "move", from: "/data/greeting", path: "/data/moved" })],
+    ["copy", illegal({ op: "copy", from: "/data/greeting", path: "/data/copied" })],
+    ["test", illegal({ op: "test", path: "/data/greeting", value: "hi" })],
+    // Anything outside the vocabulary at all.
+    ["an invented op", illegal({ op: "append", path: "/data/rows", value: 1 })],
+    ["a missing op", illegal({ path: "/data/greeting", value: "x" })],
+    ["a non-string op", illegal({ op: 7, path: "/data/greeting", value: "x" })],
+    // Operation objects carrying anything beyond their exact key set.
+    ["an extra member", illegal({ op: "remove", path: "/data/greeting", value: "hi" })],
+    ["a smuggled from", illegal({ op: "replace", path: "/data/greeting", value: "x", from: "/" })],
+    ["a missing value", illegal({ op: "replace", path: "/data/greeting" })],
+    ["a non-string path", illegal({ op: "replace", path: 7, value: "x" })],
+    // Pointers that are not stage pointers.
+    ["a relative pointer", illegal({ op: "replace", path: "data/greeting", value: "x" })],
+    ["an unknown stage half", illegal({ op: "add", path: "/other", value: 1 })],
+    ["a near-miss half", illegal({ op: "add", path: "/documents/nodes/n2", value: 1 })],
+    ["an invalid tilde escape", illegal({ op: "add", path: "/data/a~2b", value: 1 })],
+    ["a dangling tilde escape", illegal({ op: "add", path: "/data/a~", value: 1 })],
+    // The old document-rooted vocabulary: the fold is stage-rooted, never this.
+    [
+      "a document-rooted pointer",
+      illegal({ op: "replace", path: "/nodes/n2/props/content", value: { kind: "scalar" } }),
+    ],
+    ["a document-rooted entry", illegal({ op: "replace", path: "/entry", value: "Other" })],
+    // The root is a resync, and a resync is a replace — nothing else.
+    ["an add at the root", illegal({ op: "add", path: "", value: { document: null, data: {} } })],
+    ["a remove at the root", illegal({ op: "remove", path: "" })],
+    // Prototype-chain tokens, anywhere in the pointer.
+    ["__proto__", illegal({ op: "add", path: "/data/__proto__/polluted", value: 1 })],
+    ["prototype", illegal({ op: "add", path: "/data/prototype", value: 1 })],
+    ["constructor", illegal({ op: "add", path: "/document/nodes/constructor", value: 1 })],
+    // Ordinary RFC 6902 application failures are rejects, not exceptions.
+    ["a missing target", illegal({ op: "remove", path: "/data/absent" })],
+    ["a replace of an absent key", illegal({ op: "replace", path: "/data/absent", value: 1 })],
+    ["an out-of-range index", illegal({ op: "replace", path: "/data/rows/9", value: 1 })],
+    ["a padded index", illegal({ op: "replace", path: "/data/rows/01", value: 1 })],
+    ["an append token on replace", illegal({ op: "replace", path: "/data/rows/-", value: 1 })],
+    ["a walk through a scalar", illegal({ op: "add", path: "/data/greeting/deeper", value: 1 })],
+  ];
 
-  for (const bad of ["-1", "", "1.5", "01"]) {
-    it(`add rejects a malformed array index "${bad}"`, () => {
-      expect(() =>
-        applyPatch(seeded, [{ op: "add", path: `/nodes/root/children/${bad}`, value: "z" }]),
-      ).toThrow(/invalid array index/);
+  for (const [label, operation] of unauthorized) {
+    it(`rejects ${label} with the entire stage unchanged`, () => {
+      expectRejected(fixtureStage(), [operation]);
     });
   }
 
-  it("add rejects an out-of-range index (> length)", () => {
-    // length is 2, so index 3 would leave a gap.
-    expect(() =>
-      applyPatch(seeded, [{ op: "add", path: "/nodes/root/children/3", value: "z" }]),
-    ).toThrow(/out of range/);
+  it("rejects a root replace whose value is not a stage", () => {
+    const notStages: readonly unknown[] = [
+      42,
+      null,
+      [],
+      "stage",
+      { document: null },
+      { data: {} },
+      { document: null, data: {}, extra: 1 },
+      { document: 7, data: {} },
+      { document: null, data: null },
+      { document: null, data: [] },
+    ];
+    for (const value of notStages) {
+      expectRejected(fixtureStage(), [illegal({ op: "replace", path: "", value })]);
+    }
   });
 
-  it("add allows index == length (the boundary) and `-` append", () => {
-    const viaIndex = applyPatch(seeded, [
-      { op: "add", path: "/nodes/root/children/2", value: "z" },
-    ]);
-    expect(childrenOf(viaIndex)).toEqual(["a", "b", "z"]);
-    const viaAppend = applyPatch(seeded, [
-      { op: "add", path: "/nodes/root/children/-", value: "z" },
-    ]);
-    expect(childrenOf(viaAppend)).toEqual(["a", "b", "z"]);
+  it("rejects any batch that would leave the stage without both halves", () => {
+    expectRejected(fixtureStage(), [{ op: "remove", path: "/data" }]);
+    expectRejected(fixtureStage(), [{ op: "remove", path: "/document" }]);
+    expectRejected(fixtureStage(), [{ op: "replace", path: "/data", value: 42 }]);
+    expectRejected(fixtureStage(), [{ op: "add", path: "/extra", value: 1 }]);
   });
 
-  it("remove/replace require index < length (reject == length and `-`)", () => {
-    expect(() => applyPatch(seeded, [{ op: "remove", path: "/nodes/root/children/2" }])).toThrow(
-      /out of range/,
-    );
-    expect(() =>
-      applyPatch(seeded, [{ op: "replace", path: "/nodes/root/children/2", value: "z" }]),
-    ).toThrow(/out of range/);
-    expect(() => applyPatch(seeded, [{ op: "remove", path: "/nodes/root/children/-" }])).toThrow(
-      /invalid array index/,
-    );
-  });
-
-  it("remove/replace accept a valid in-range index", () => {
-    const removed = applyPatch(seeded, [{ op: "remove", path: "/nodes/root/children/0" }]);
-    expect(childrenOf(removed)).toEqual(["b"]);
-    const replaced = applyPatch(seeded, [
-      { op: "replace", path: "/nodes/root/children/1", value: "z" },
+  it("never pollutes Object.prototype through a rejected pointer", () => {
+    expectRejected(fixtureStage(), [
+      illegal({ op: "add", path: "/data/__proto__/polluted", value: "yes" }),
     ]);
-    expect(childrenOf(replaced)).toEqual(["a", "z"]);
-  });
-
-  it("traversal through a malformed array index throws", () => {
-    const nested = applyPatch(EMPTY_TREE, [
-      { op: "add", path: "/nodes/a", value: { id: "a", type: "box", children: ["x"] } },
-    ]);
-    expect(() =>
-      applyPatch(nested, [{ op: "test", path: "/nodes/a/children/01", value: "x" }]),
-    ).toThrow(/invalid array index/);
+    expect(({} as Record<string, unknown>)["polluted"]).toBeUndefined();
   });
 });
 
-describe("applyPatch — move/copy against array indices", () => {
-  // move/copy are the only ops whose target uses the "add" (insert) mode AND
-  // whose source reads an array element — so their setMember/childOf wiring is
-  // observable only through arrays (with object keys, add vs replace coincide).
-  const seeded = applyPatch(EMPTY_TREE, [
-    { op: "add", path: "/nodes/root/children/-", value: "a" },
-    { op: "add", path: "/nodes/root/children/-", value: "b" },
-    { op: "add", path: "/nodes/root/children/-", value: "c" },
-  ]);
-  const childrenOf = (tree: typeof seeded): string[] =>
-    (tree.nodes["root"] as unknown as { children: string[] }).children;
-
-  it("in-array move reorders children (target inserts, does not overwrite)", () => {
-    // remove index 2 → ["a","b"], then insert "c" at index 0 → ["c","a","b"].
-    // If the target used "replace" mode it would overwrite index 0 → ["c","b"].
-    const out = applyPatch(seeded, [
-      { op: "move", from: "/nodes/root/children/2", path: "/nodes/root/children/0" },
+describe("applyPatch — atomicity", () => {
+  it("discards every earlier operation when a later one is unauthorized", () => {
+    const stage = fixtureStage();
+    expectRejected(stage, [
+      { op: "add", path: "/data/first", value: 1 },
+      { op: "replace", path: "/document/nodes/n2/props/content", value: { kind: "scalar" } },
+      illegal({ op: "move", from: "/data/rows/0", path: "/data/rows/2" }),
     ]);
-    expect(childrenOf(out)).toEqual(["c", "a", "b"]);
   });
 
-  it("copy to `-` appends the copied element", () => {
-    const out = applyPatch(seeded, [
-      { op: "copy", from: "/nodes/root/children/0", path: "/nodes/root/children/-" },
+  it("discards every earlier operation when a later one simply fails to apply", () => {
+    const stage = fixtureStage();
+    expectRejected(stage, [
+      { op: "add", path: "/data/first", value: 1 },
+      { op: "add", path: "/data/second", value: 2 },
+      { op: "remove", path: "/data/absent" },
     ]);
-    expect(childrenOf(out)).toEqual(["a", "b", "c", "a"]);
   });
 
-  it("move-from an out-of-range index throws", () => {
-    expect(() =>
-      applyPatch(seeded, [
-        { op: "move", from: "/nodes/root/children/5", path: "/nodes/root/children/0" },
-      ]),
-    ).toThrow(/out of range/);
+  it("advances the stage when the same batch is legal — the assertions are not vacuous", () => {
+    const stage = fixtureStage();
+    const result = expectAccepted(stage, [
+      { op: "add", path: "/data/first", value: 1 },
+      { op: "add", path: "/data/second", value: 2 },
+    ]);
+
+    expect(dataOf(result)["first"]).toBe(1);
+    expect(dataOf(result)["second"]).toBe(2);
   });
 
-  it("copy-from `-` throws (access mode rejects the append token)", () => {
-    expect(() =>
-      applyPatch(seeded, [
-        { op: "copy", from: "/nodes/root/children/-", path: "/nodes/root/children/-" },
-      ]),
-    ).toThrow(/invalid array index/);
+  it("never aliases an operation's value into the stage", () => {
+    const stage = fixtureStage();
+    const operations: readonly JsonPatchOperation[] = [
+      { op: "add", path: "/data/nested", value: { items: ["a"] } },
+      { op: "add", path: "/data/nested/items/-", value: "b" },
+    ];
+    const payload = JSON.stringify(operations);
+
+    const result = applyPatch(stage, operations);
+
+    expect((dataOf(result)["nested"] as { items: string[] }).items).toEqual(["a", "b"]);
+    // The caller's patch payload is what the server forwards to the browser; a
+    // fold that inserted by reference would have appended "b" into it too.
+    expect(JSON.stringify(operations)).toBe(payload);
   });
 });
 
-describe("applyOpInPlace (non-cloning primitive)", () => {
-  const base: FacetTree = {
-    root: "root",
-    nodes: {
-      root: { id: "root", type: "box", style: {}, children: ["a", "b"] },
-      a: { id: "a", type: "text", value: "A", style: {} },
-      b: { id: "b", type: "text", value: "B", style: {} },
-    },
-  };
-  const childrenOf = (tree: FacetTree): string[] =>
-    (tree.nodes["root"] as unknown as { children: string[] }).children;
+describe("applyPatch — the batch bound", () => {
+  it("accepts a batch at MAX_PATCH_OPS and rejects the one exactly past it", () => {
+    const atLimit = appendOps(MAX_PATCH_OPS);
+    const onePast = appendOps(MAX_PATCH_OPS + 1);
+    expect(onePast.length - atLimit.length).toBe(1);
 
-  it("mutates the given tree in place and returns the same root for a non-root op", () => {
-    const tree = structuredClone(base);
-    const out = applyOpInPlace(tree, {
-      op: "add",
-      path: "/nodes/x",
-      value: { id: "x", type: "text", value: "X" },
-    });
-    expect(out).toBe(tree); // same reference — no clone
-    expect(tree.nodes["x"]).toBeDefined();
+    const accepted = expectAccepted(fixtureStage(), atLimit);
+    expect((dataOf(accepted)["rows"] as readonly unknown[]).length).toBe(3 + MAX_PATCH_OPS);
+
+    expectRejected(fixtureStage(), onePast);
   });
 
-  it("leaves the tree byte-identical when a move's destination is invalid (atomic)", () => {
-    // The source is removed before the destination pointer is resolved; a failed
-    // destination must NOT strand the tree with the source gone.
-    const tree = structuredClone(base);
-    expect(() =>
-      applyOpInPlace(tree, {
-        op: "move",
-        from: "/nodes/root/children/0",
-        path: "/nodes/ghost/children/0", // parent "ghost" does not exist → throws
-      }),
-    ).toThrow();
-    expect(childrenOf(tree)).toEqual(["a", "b"]); // source "a" restored
-  });
-
-  it("leaves the tree byte-identical when a move's destination index is out of range (atomic)", () => {
-    const tree = structuredClone(base);
-    expect(() =>
-      applyOpInPlace(tree, {
-        op: "move",
-        from: "/nodes/root/children/0",
-        path: "/nodes/root/children/9", // out of range after the source removal
-      }),
-    ).toThrow();
-    expect(childrenOf(tree)).toEqual(["a", "b"]);
-  });
-
-  it("leaves no ghost key when a move's object-member source is missing", () => {
-    const tree = structuredClone(base);
-    expect(() =>
-      applyOpInPlace(tree, {
-        op: "move",
-        from: "/nodes/missing",
-        path: "/nodes/ghost/children/0",
-      }),
-    ).toThrow(/path not found/);
-    expect(Object.prototype.hasOwnProperty.call(tree.nodes, "missing")).toBe(false);
-    expect(childrenOf(tree)).toEqual(["a", "b"]);
-  });
-
-  it("leaves the tree byte-identical when remove/replace target a missing object member", () => {
-    const removeTree = structuredClone(base);
-    expect(() =>
-      applyOpInPlace(removeTree, {
-        op: "remove",
-        path: "/nodes/missing",
-      }),
-    ).toThrow(/path not found/);
-    expect(removeTree).toEqual(base);
-
-    const replaceTree = structuredClone(base);
-    expect(() =>
-      applyOpInPlace(replaceTree, {
-        op: "replace",
-        path: "/nodes/missing",
-        value: { id: "missing", type: "text", value: "x" },
-      }),
-    ).toThrow(/path not found/);
-    expect(replaceTree).toEqual(base);
+  it("leaves headroom above the largest batch a bounded mutation can produce", () => {
+    // B-02 bounds nodes per mutation; the widest authored batch is one write per
+    // node plus one parent relink. A cap below that would make a legal mutation
+    // unfoldable, so the two are pinned against each other here.
+    expect(MAX_PATCH_OPS).toBeGreaterThan(2 * BOUNDS.nodesPerMutation);
   });
 });
 
-describe("MAX_PATCH_OPS", () => {
-  it("is a positive integer cap", () => {
-    expect(MAX_PATCH_OPS).toBe(1024);
+describe("applyPatch — totality", () => {
+  it("never throws, whatever the operation list is", () => {
+    const stage = fixtureStage();
+    const hostile: readonly unknown[] = [
+      undefined,
+      null,
+      "not a list",
+      42,
+      [undefined],
+      [null],
+      ["not an operation"],
+      [{ op: "add" }],
+      { length: 1 },
+    ];
+    for (const operations of hostile) {
+      expect(() => applyPatch(stage, operations as readonly JsonPatchOperation[])).not.toThrow();
+      expect(applyPatch(stage, operations as readonly JsonPatchOperation[])).toBe(stage);
+    }
   });
 
-  it("applyPatch itself imposes no op-count cap (the cap lives at the fold/wire boundary)", () => {
-    // A batch well over MAX_PATCH_OPS still applies through applyPatch; the cap is
-    // a fold/server concern, not applyPatch's contract.
-    const ops: JsonPatchOperation[] = Array.from({ length: MAX_PATCH_OPS + 10 }, () => ({
-      op: "add" as const,
-      path: "/nodes/a",
-      value: { id: "a", type: "text" as const, value: "x" },
-    }));
-    expect(() => applyPatch(EMPTY_TREE, ops)).not.toThrow();
+  it("never throws on a value the structured clone cannot carry", () => {
+    const stage = fixtureStage();
+    const uncloneable: readonly unknown[] = [
+      () => undefined,
+      Symbol("nope"),
+      { nested: () => undefined },
+    ];
+    for (const value of uncloneable) {
+      expectRejected(stage, [illegal({ op: "add", path: "/data/x", value })]);
+    }
+  });
+
+  it("never throws on a throwing getter or a corrupt prior stage", () => {
+    const throwing = {
+      document: null,
+      get data(): never {
+        throw new Error("hostile getter");
+      },
+    } as unknown as FacetStage;
+
+    expect(() => applyPatch(throwing, [{ op: "add", path: "/data/x", value: 1 }])).not.toThrow();
+    expect(applyPatch(throwing, [{ op: "add", path: "/data/x", value: 1 }])).toBe(throwing);
+
+    const corrupt = { document: null } as unknown as FacetStage;
+    expect(() => applyPatch(corrupt, [{ op: "add", path: "/data/x", value: 1 }])).not.toThrow();
+    expect(applyPatch(corrupt, [{ op: "add", path: "/data/x", value: 1 }])).toBe(corrupt);
+  });
+
+  it("terminates on a deeply nested pointer instead of exhausting the stack", () => {
+    const stage = fixtureStage();
+    const deep = `/data/${Array.from({ length: 10_000 }, (_unused, index) => `k${index}`).join("/")}`;
+
+    expect(() => applyPatch(stage, [{ op: "add", path: deep, value: 1 }])).not.toThrow();
+    expectRejected(stage, [{ op: "add", path: deep, value: 1 }]);
+  });
+});
+
+describe("applyPatch — the fold is the same on server and browser", () => {
+  it("is pure: the same prior stage and batch always produce the same answer", () => {
+    const operations: readonly JsonPatchOperation[] = [
+      { op: "add", path: "/data/sales", value: { q1: 10 } },
+      { op: "replace", path: "/document/nodes/n2/props/content", value: { kind: "scalar" } },
+    ];
+
+    const server = applyPatch(fixtureStage(), operations);
+    const browser = applyPatch(fixtureStage(), operations);
+
+    expect(JSON.stringify(browser)).toBe(JSON.stringify(server));
+  });
+
+  it("folds a batch step by step to the same stage it folds in one call", () => {
+    const first: JsonPatchOperation = { op: "add", path: "/data/a", value: 1 };
+    const second: JsonPatchOperation = { op: "add", path: "/data/b", value: 2 };
+
+    const together = applyPatch(fixtureStage(), [first, second]);
+    const stepwise = applyPatch(applyPatch(fixtureStage(), [first]), [second]);
+
+    expect(JSON.stringify(stepwise)).toBe(JSON.stringify(together));
   });
 });

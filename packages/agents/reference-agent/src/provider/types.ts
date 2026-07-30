@@ -1,14 +1,41 @@
-import type { ToolCall as AgentToolCall, ToolSpec as AgentToolSpec } from "@facet/agent-tools";
+/**
+ * Provider-facing wire types.
+ *
+ * These are deliberately structural rather than aliases to `@facet/agent-tools`:
+ * providers only need a tool name, description, input schema, and parsed calls.
+ * The stage mutation and conversation outcome are owned by the harness/runtime
+ * layers, not by provider adapters.
+ */
 
-/** A tool offered to the model: a name, a description, and a JSON-schema for its input. */
-export type ToolSpec = AgentToolSpec;
+/** A tool offered to the model: a name, a description, and its input schema. */
+export interface ToolSpec {
+  readonly name: string;
+  readonly description: string;
+  readonly inputSchema: ToolInputSchema;
+  readonly mutatesStage?: boolean;
+  readonly producesConversation?: boolean;
+}
 
-/** One tool call the model wants to make, with its arguments already parsed. */
-export type ToolCall = AgentToolCall;
+/** Provider-facing JSON-schema subset accepted for one tool's input object. */
+export type ToolInputSchema = Readonly<{
+  readonly type: "object";
+  readonly properties: Readonly<Record<string, unknown>>;
+  readonly required?: readonly string[];
+  readonly additionalProperties?: boolean;
+}>;
 
-/** Provider-reported token counts for one step. Both fields are optional: a
- * provider may report neither, one, or both, and a custom adapter may omit
- * usage entirely. */
+/** One tool call the model wants to make, with its input already parsed. */
+export interface ToolCall {
+  readonly id: string;
+  readonly name: string;
+  readonly input: unknown;
+}
+
+/**
+ * Provider-reported token counts for one HTTP/provider step. These remain token
+ * counts because that is what upstream APIs report; Facet's own budgeting
+ * converts conversation and tool context in characters elsewhere.
+ */
 export interface ProviderUsage {
   readonly inputTokens?: number;
   readonly outputTokens?: number;

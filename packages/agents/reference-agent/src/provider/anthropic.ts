@@ -141,7 +141,7 @@ export function createAnthropicProvider(
           tools: tools.map((t) => ({
             name: t.name,
             description: t.description,
-            input_schema: t.parameters,
+            input_schema: t.inputSchema,
           })),
         },
         timeoutMs,

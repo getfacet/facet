@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,11 +8,12 @@ import {
   REFERENCE_AGENT_BUDGET_PRESETS,
   REFERENCE_AGENT_STOP_REASONS,
   classifyProviderFailure,
-  effectiveTokenBudget,
+  effectiveCharBudget,
   normalizeBudget,
   type ReferenceAgentBudget,
   type ReferenceAgentStopReason,
 } from "./budget.js";
+import { measureChars } from "./measure.js";
 import * as budgetModule from "./budget.js";
 
 const COMPACTION_POLICY = {
@@ -18,11 +21,11 @@ const COMPACTION_POLICY = {
   compactionTargetRatio: 0.5,
   minRecentTurnsVerbatim: 4,
   minRecentStepsVerbatim: 4,
-  maxSummaryTokens: 1_200,
+  maxSummaryChars: 4_800,
   summarizerTimeoutMs: 30_000,
   summarizerRetries: 1,
   compactionCooldownSteps: 4,
-  contextWindowTokensDefault: 100_000,
+  contextWindowCharsDefault: 400_000,
 } as const;
 
 const QUICKSTART_BUDGET = {
@@ -37,7 +40,6 @@ const QUICKSTART_BUDGET = {
   maxFinalTextChars: 4_000,
   maxProviderRetries: 1,
   retryBackoffMs: 250,
-  maxContextTokens: 24_000,
   maxSummarizerInputChars: 48_000,
   ...COMPACTION_POLICY,
 } satisfies ReferenceAgentBudget;
@@ -54,7 +56,6 @@ const HOSTED_BUDGET = {
   maxFinalTextChars: 8_000,
   maxProviderRetries: 2,
   retryBackoffMs: 500,
-  maxContextTokens: 40_000,
   maxSummarizerInputChars: 80_000,
   ...COMPACTION_POLICY,
 } satisfies ReferenceAgentBudget;
@@ -71,17 +72,20 @@ const LOCAL_DEV_BUDGET = {
   maxFinalTextChars: 12_000,
   maxProviderRetries: 2,
   retryBackoffMs: 0,
-  maxContextTokens: 60_000,
   maxSummarizerInputChars: 120_000,
   ...COMPACTION_POLICY,
 } satisfies ReferenceAgentBudget;
+
+function source(path: string): string {
+  return readFileSync(new URL(path, import.meta.url), "utf8");
+}
 
 function httpError(status: number): Error {
   return new Error(`openai request failed: HTTP ${status}`);
 }
 
 describe("reference-agent budget presets", () => {
-  it("matches the Budget Profile Contract table exactly", () => {
+  it("matches the Budget Profile Contract table exactly in characters", () => {
     expect(REFERENCE_AGENT_BUDGET_PRESETS).toEqual({
       quickstart: QUICKSTART_BUDGET,
       hosted: HOSTED_BUDGET,
@@ -166,30 +170,26 @@ describe("reference-agent budget presets", () => {
   });
 });
 
-describe("reference-agent token budget model", () => {
-  it("derives per-preset token caps and shared compaction policy constants", () => {
-    expect(REFERENCE_AGENT_BUDGET_PRESETS.quickstart.maxContextTokens).toBe(24_000);
-    expect(REFERENCE_AGENT_BUDGET_PRESETS.hosted.maxContextTokens).toBe(40_000);
-    expect(REFERENCE_AGENT_BUDGET_PRESETS["local-dev"].maxContextTokens).toBe(60_000);
-
+describe("reference-agent character budget model", () => {
+  it("uses character caps and shared compaction policy constants", () => {
     for (const preset of Object.values(REFERENCE_AGENT_BUDGET_PRESETS)) {
       expect(preset.compactionTriggerRatio).toBe(0.75);
       expect(preset.compactionTargetRatio).toBe(0.5);
       expect(preset.minRecentTurnsVerbatim).toBe(4);
       expect(preset.minRecentStepsVerbatim).toBe(4);
-      expect(preset.maxSummaryTokens).toBe(1_200);
+      expect(preset.maxSummaryChars).toBe(4_800);
       expect(preset.summarizerTimeoutMs).toBe(30_000);
       expect(preset.summarizerRetries).toBe(1);
       expect(preset.compactionCooldownSteps).toBe(4);
-      expect(preset.contextWindowTokensDefault).toBe(100_000);
-      // Each token cap is the char cap at the default chars-per-token (÷4).
-      expect(preset.maxContextTokens).toBe(preset.maxContextChars / 4);
-      // The per-call summarizer input cap is half the context char budget.
+      expect(preset.contextWindowCharsDefault).toBe(400_000);
       expect(preset.maxSummarizerInputChars).toBe(preset.maxContextChars / 2);
+      expect("maxContextTokens" in preset).toBe(false);
+      expect("maxSummaryTokens" in preset).toBe(false);
+      expect("contextWindowTokensDefault" in preset).toBe(false);
     }
   });
 
-  it("accepts a valid ratio override and keeps the token caps", () => {
+  it("accepts a valid ratio override and keeps character caps", () => {
     expect(
       normalizeBudget({ budget: { compactionTriggerRatio: 0.8, compactionTargetRatio: 0.4 } }),
     ).toEqual({
@@ -200,19 +200,16 @@ describe("reference-agent token budget model", () => {
   });
 
   it("rejects out-of-range ratio overrides and falls back to the preset ratio", () => {
-    // 0 and > 1 are invalid; the offending field alone falls back.
     expect(normalizeBudget({ budget: { compactionTriggerRatio: 0 } })).toEqual(QUICKSTART_BUDGET);
     expect(normalizeBudget({ budget: { compactionTriggerRatio: 1.2 } })).toEqual(QUICKSTART_BUDGET);
     expect(normalizeBudget({ budget: { compactionTargetRatio: Number.NaN } })).toEqual(
       QUICKSTART_BUDGET,
     );
     expect(normalizeBudget({ budget: { compactionTargetRatio: -0.1 } })).toEqual(QUICKSTART_BUDGET);
-    // 1 is a valid ratio (inclusive upper bound), but trigger must stay above target.
     expect(normalizeBudget({ budget: { compactionTargetRatio: 1 } })).toEqual(QUICKSTART_BUDGET);
   });
 
   it("falls back both ratios to preset when an override breaks trigger > target", () => {
-    // trigger <= target after normalization -> both revert to preset values.
     expect(
       normalizeBudget({ budget: { compactionTriggerRatio: 0.4, compactionTargetRatio: 0.6 } }),
     ).toEqual(QUICKSTART_BUDGET);
@@ -221,41 +218,50 @@ describe("reference-agent token budget model", () => {
     ).toEqual(QUICKSTART_BUDGET);
   });
 
-  it("normalizes the new integer token fields like the legacy fields", () => {
+  it("normalizes the new integer character fields like the legacy fields", () => {
     const budget = normalizeBudget({
       budget: {
-        maxContextTokens: 12_345.9,
-        maxSummaryTokens: -5,
+        maxSummaryChars: -5,
         summarizerRetries: 2.7,
         maxSummarizerInputChars: 9_876.4,
         compactionCooldownSteps: Number.POSITIVE_INFINITY,
-        contextWindowTokensDefault: 50_000,
+        contextWindowCharsDefault: 50_000,
       },
     });
-    expect(budget.maxContextTokens).toBe(12_345);
-    expect(budget.maxSummaryTokens).toBe(QUICKSTART_BUDGET.maxSummaryTokens); // negative -> preset
+    expect(budget.maxSummaryChars).toBe(QUICKSTART_BUDGET.maxSummaryChars);
     expect(budget.summarizerRetries).toBe(2);
-    expect(budget.maxSummarizerInputChars).toBe(9_876); // floored to a safe integer
+    expect(budget.maxSummarizerInputChars).toBe(9_876);
     expect(budget.compactionCooldownSteps).toBe(QUICKSTART_BUDGET.compactionCooldownSteps);
-    expect(budget.contextWindowTokensDefault).toBe(50_000);
-    // Ratios untouched by integer overrides.
+    expect(budget.contextWindowCharsDefault).toBe(50_000);
     expect(budget.compactionTriggerRatio).toBe(0.75);
   });
 });
 
-describe("effectiveTokenBudget", () => {
-  it("takes the smaller of the preset cap and the provider context window", () => {
+describe("measureChars", () => {
+  it("measures strings directly and serializable values through JSON characters", () => {
+    expect(measureChars("hello")).toBe(5);
+    expect(measureChars({ a: "x", b: 2 })).toBe(JSON.stringify({ a: "x", b: 2 }).length);
+  });
+
+  it("uses a bounded fallback for unserializable values", () => {
+    const circular: Record<string, unknown> = { type: "object" };
+    circular["self"] = circular;
+
+    expect(measureChars(circular)).toBe(256);
+    expect(Number.isFinite(measureChars(circular))).toBe(true);
+  });
+});
+
+describe("effectiveCharBudget", () => {
+  it("takes the smaller of the preset character cap and the provider context window", () => {
     const quickstart = normalizeBudget();
-    // No provider window -> falls back to the configured default (100k), cap wins.
-    expect(effectiveTokenBudget(quickstart)).toBe(24_000);
-    expect(effectiveTokenBudget(quickstart, undefined)).toBe(24_000);
-    // A generous provider window still capped by the preset.
-    expect(effectiveTokenBudget(quickstart, 200_000)).toBe(24_000);
-    // A tiny provider window wins.
-    expect(effectiveTokenBudget(quickstart, 10_000)).toBe(10_000);
+    expect(effectiveCharBudget(quickstart)).toBe(96_000);
+    expect(effectiveCharBudget(quickstart, undefined)).toBe(96_000);
+    expect(effectiveCharBudget(quickstart, 200_000)).toBe(96_000);
+    expect(effectiveCharBudget(quickstart, 10_000)).toBe(10_000);
 
     const hosted = normalizeBudget({ budgetPreset: "hosted" });
-    expect(effectiveTokenBudget(hosted, 128_000)).toBe(40_000);
+    expect(effectiveCharBudget(hosted, 128_000)).toBe(128_000);
   });
 });
 
@@ -312,7 +318,7 @@ describe("classifyProviderFailure", () => {
       new Error("openai response had an unexpected shape (no choices[])"),
       new Error("malformed provider response"),
       new Error("Unknown provider flag: llama"),
-      new SyntaxError("Unexpected token < in JSON"),
+      new SyntaxError("Unexpected input"),
     ];
 
     for (const error of nonRetryableCases) {
@@ -333,12 +339,16 @@ describe("classifyProviderFailure", () => {
   });
 });
 
-describe("provider fallback policy", () => {
-  it("does not expose cross-provider fallback helpers or behavior", () => {
+describe("reference-agent budget public surface", () => {
+  it("has no provider fallback helper and no token-count surface in owned production files", () => {
     const providerFallbackExports = Object.keys(budgetModule).filter(
       (name) => /provider/i.test(name) && /fallback/i.test(name),
     );
+    const ownedProduction = [source("./budget.ts"), source("./measure.ts")].join("\n");
 
     expect(providerFallbackExports).toEqual([]);
+    expect(Object.keys(budgetModule)).not.toContain("effectiveTokenBudget");
+    expect(ownedProduction).not.toMatch(/Token|token/u);
+    expect(() => source("./estimate.ts")).toThrow();
   });
 });

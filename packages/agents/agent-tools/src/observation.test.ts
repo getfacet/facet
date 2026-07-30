@@ -1,472 +1,198 @@
 import { describe, expect, it } from "vitest";
-import type { FacetNode, FacetTree } from "@facet/core";
-import {
-  formatAgentToolObservation,
-  isVisitorVisibleStageChange,
-  parseAgentToolObservation,
-  visibleStageNodeIds,
-} from "./observation.js";
-import { formatAssetObservation } from "./asset-observation.js";
-import { AGENT_TOOL_OUTCOMES, STAGE_TOOL_ERROR_CODES } from "./types.js";
 
-// Legacy vocabulary is built at runtime so the removed tokens never appear as
-// source literals (same idiom as theme.test.ts).
-const legacyCode = ["invalid_", "compo", "sition"].join("");
+import { validateCatalog } from "@facet/core";
+import type {
+  AuthorValidationResult,
+  ComponentDocument,
+  DataModel,
+  FacetCatalog,
+  FacetTargetedMutationInput,
+  FacetTargetedMutationResult,
+  PayloadEvaluation,
+} from "@facet/core";
 
-const TREE: FacetTree = {
-  root: "root",
-  nodes: {
-    root: { id: "root", type: "box", children: ["visible", "hidden"] },
-    visible: { id: "visible", type: "text", value: "Visible" },
-    hidden: { id: "hidden", type: "box", hidden: true, children: ["secret"] },
-    secret: { id: "secret", type: "text", value: "Secret" },
-  },
-};
+import { buildTurnObservation } from "./observation.js";
+import type { FacetToolSession } from "./types.js";
 
-describe("agent tool observation contract", () => {
-  it("round-trips every canonical outcome and error code", () => {
-    for (const outcome of AGENT_TOOL_OUTCOMES) {
-      const observation = formatAgentToolObservation({
-        tool: "contract_test",
-        status: outcome === "rejected" ? "error" : outcome === "pending" ? "pending" : "ok",
-        outcome,
-        message: "Contract parity.",
-        ...(outcome === "rejected" ? { code: "invalid_input" as const } : {}),
-      });
-      expect(parseAgentToolObservation(observation.text)?.outcome).toBe(outcome);
-    }
-    for (const code of STAGE_TOOL_ERROR_CODES) {
-      const observation = formatAgentToolObservation({
-        tool: "contract_test",
-        status: "error",
-        outcome: "rejected",
-        code,
-        message: "Contract parity.",
-        ...(code === "invalid_authoring"
-          ? {
-              errors: [{ path: "/nodes/root", message: "Invalid authoring." }],
-              omittedErrorCount: 0,
-            }
-          : {}),
-      });
-      expect(parseAgentToolObservation(observation.text)?.code).toBe(code);
-    }
-  });
-
-  it("serializes bounded structured author errors", () => {
-    const observation = formatAgentToolObservation({
-      tool: "render_page",
-      status: "error",
-      outcome: "rejected",
-      code: "invalid_authoring",
-      message: "Rejected invalid authoring.",
-      errors: Array.from({ length: 20 }, (_, index) => ({
-        path: `/nodes/node-${String(index)}/style/color`,
-        message: `Choose an allowed color for node ${String(index)}.`,
-        allowed: ["fg", "muted", "accent"],
-      })),
-      omittedErrorCount: 3,
-    });
-
-    const data = parseAgentToolObservation(observation.text);
-    expect(data).toMatchObject({
-      status: "error",
-      outcome: "rejected",
-      code: "invalid_authoring",
-      applied: false,
-      stage_changed: false,
-      visible_to_visitor: false,
-      patch_count: 0,
-      omitted_error_count: 7,
-    });
-    expect(data?.errors).toHaveLength(16);
-    expect(data?.errors?.[0]).toEqual({
-      path: "/nodes/node-0/style/color",
-      message: "Choose an allowed color for node 0.",
-      allowed: ["fg", "muted", "accent"],
-    });
-  });
-
-  it("formats a bounded JSON observation with required fields", () => {
-    const observation = formatAgentToolObservation({
-      tool: "append_node",
-      status: "ok",
-      outcome: "applied_visible",
-      message: "Appended a node.",
-      applied: true,
-      stageChanged: true,
-      visibleToVisitor: true,
-      patchCount: 2,
-      changedNodeIds: Array.from({ length: 25 }, (_, index) => `node-${String(index)}`),
-      warnings: Array.from({ length: 7 }, (_, index) => `warning-${String(index)}`),
-      summary: "2 patch ops",
-    });
-
-    const data = parseAgentToolObservation(observation.text);
-    expect(data).toMatchObject({
-      version: 1,
-      tool: "append_node",
-      status: "ok",
-      outcome: "applied_visible",
-      applied: true,
-      stage_changed: true,
-      visible_to_visitor: true,
-      patch_count: 2,
-      message: "Appended a node.",
-      next_action: "",
-      summary: "2 patch ops",
-    });
-    expect(data?.changed_node_ids).toHaveLength(12);
-    expect(data?.omitted_changed_node_count).toBe(13);
-    expect(data?.warnings).toHaveLength(3);
-    expect(data?.omitted_warning_count).toBe(4);
-  });
-
-  it("omits changed node ids that are too long for the bounded transcript", () => {
-    const longId = "x".repeat(120);
-    const observation = formatAgentToolObservation({
-      tool: "set_node",
-      status: "ok",
-      outcome: "applied_not_visible",
-      message: "Set a node.",
-      changedNodeIds: ["short", longId],
-    });
-
-    expect(parseAgentToolObservation(observation.text)).toMatchObject({
-      changed_node_ids: ["short"],
-      omitted_changed_node_count: 1,
-    });
-  });
-
-  it("keeps a worst-case formatted observation under the quickstart transcript cap", () => {
-    const observation = formatAgentToolObservation({
-      tool: "render_page",
-      status: "ok",
-      outcome: "applied_with_warnings",
-      message: "m".repeat(2_000),
-      nextAction: "n".repeat(2_000),
-      summary: "s".repeat(2_000),
-      changedNodeIds: Array.from(
-        { length: 50 },
-        (_, index) => `node-${String(index).padStart(2, "0")}`,
-      ),
-      warnings: Array.from({ length: 10 }, () => "w".repeat(1_000)),
-    });
-
-    expect(observation.text.length).toBeLessThan(4_000);
-    expect(parseAgentToolObservation(observation.text)).toBeDefined();
-  });
-
-  it("bounds tool names and non-finite patch counts", () => {
-    const observation = formatAgentToolObservation({
-      tool: "x".repeat(1_000),
-      status: "ok",
-      outcome: "applied_visible",
-      message: "Applied.",
-      patchCount: Infinity,
-    });
-
-    const data = parseAgentToolObservation(observation.text);
-    expect(data?.tool.length).toBeLessThanOrEqual(80);
-    expect(data?.tool.endsWith("...")).toBe(true);
-    expect(data?.patch_count).toBe(0);
-  });
-
-  it("round-trips a bounded data payload and rejects non-string data", () => {
-    const payload = JSON.stringify({ root: "r1", ids: { box: "r1" } });
-    const observation = formatAgentToolObservation({
-      tool: "inspect_stage",
-      status: "ok",
-      outcome: "no_stage_change",
-      message: "Inspected the stage.",
-      data: payload,
-    });
-
-    const parsed = parseAgentToolObservation(observation.text);
-    expect(parsed?.data).toBe(payload);
-    expect(JSON.parse(parsed?.data ?? "")).toMatchObject({ root: "r1", ids: { box: "r1" } });
-
-    const withNonStringData = JSON.stringify({ ...parsed, data: { root: "r1" } });
-    expect(parseAgentToolObservation(withNonStringData)).toBeUndefined();
-  });
-
-  it("keeps the public generic formatter capped with no asset bypass", () => {
-    const observation = formatAgentToolObservation({
-      tool: "get_pattern",
-      status: "ok",
-      outcome: "no_stage_change",
-      message: "Read a Pattern reference.",
-      data: `{"pad":"${"z".repeat(4_000)}"}`,
-    });
-
-    const parsed = parseAgentToolObservation(observation.text);
-    expect(parsed?.data).toBe('{"truncated":true}');
-    expect(JSON.parse(parsed?.data ?? "")).toEqual({ truncated: true });
-  });
-
-  it("preserves exact validated Pattern data above the generic cap", () => {
-    const pattern = {
-      name: "large-pattern",
-      description: "A complete reference whose serialized data exceeds the generic cap.",
-      useWhen: "Use for a complete large reference.",
-      root: "reference-root",
-      nodes: {
-        "reference-root": {
-          id: "reference-root",
-          type: "box",
-          children: ["reference-copy"],
-        },
-        "reference-copy": {
-          id: "reference-copy",
-          type: "text",
-          value: "x".repeat(3_000),
-        },
+function component(tag: string, whenToUse = `Use ${tag} when it fits.`): Record<string, unknown> {
+  return {
+    tag,
+    whenToUse,
+    props: {
+      value: {
+        type: "string",
+        guidance: `DO_NOT_LEAK_PROP_SCHEMA_FOR_${tag}`,
       },
-    } as const;
-    const serialized = JSON.stringify(pattern);
-    expect(serialized.length).toBeGreaterThan(2_048);
+    },
+    acceptsChildren: false,
+  };
+}
 
-    const observation = formatAssetObservation(
-      {
-        tool: "get_pattern",
-        status: "ok",
-        outcome: "no_stage_change",
-        message: "Read one exact unresolved Pattern.",
+function screenSpec(): Record<string, unknown> {
+  return {
+    tag: "Screen",
+    whenToUse: "Root screen container.",
+    props: {
+      name: {
+        type: "string",
+        required: true,
+        guidance: "Screen name.",
       },
-      serialized,
+    },
+    acceptsChildren: true,
+  };
+}
+
+function catalog(extraComponents: readonly Record<string, unknown>[] = []): FacetCatalog {
+  const result = validateCatalog({
+    components: [screenSpec(), component("Text"), ...extraComponents],
+  });
+  if (!result.ok) {
+    throw new Error(`expected catalog acceptance, got ${result.code} at ${result.at}`);
+  }
+  return result.catalog;
+}
+
+function scalar(value: string): { readonly kind: "scalar"; readonly value: string } {
+  return Object.freeze({ kind: "scalar" as const, value });
+}
+
+function document(hiddenText = "Hidden"): ComponentDocument {
+  return Object.freeze({
+    entry: "home",
+    screens: Object.freeze(["s-home", "s-hidden"]),
+    nodes: Object.freeze({
+      "s-home": Object.freeze({
+        tag: "Screen",
+        props: Object.freeze({ name: scalar("home") }),
+        children: Object.freeze(["n-visible"]),
+      }),
+      "n-visible": Object.freeze({
+        tag: "Text",
+        props: Object.freeze({ value: scalar("Visible") }),
+        children: Object.freeze([]),
+      }),
+      "s-hidden": Object.freeze({
+        tag: "Screen",
+        props: Object.freeze({ name: scalar("hidden") }),
+        children: Object.freeze(["n-hidden"]),
+      }),
+      "n-hidden": Object.freeze({
+        tag: "Text",
+        props: Object.freeze({ value: scalar(hiddenText) }),
+        children: Object.freeze([]),
+      }),
+    }),
+  });
+}
+
+function session(
+  input: {
+    readonly catalog?: FacetCatalog;
+    readonly document?: ComponentDocument | null;
+    readonly data?: DataModel;
+    readonly stageRevision?: number;
+  } = {},
+): FacetToolSession {
+  return {
+    catalog: input.catalog ?? catalog(),
+    document: input.document === undefined ? document() : input.document,
+    data: input.data ?? {},
+    stageRevision: input.stageRevision ?? 7,
+    applyAuthorMutation: async (): Promise<AuthorValidationResult> => ({
+      ok: false,
+      error: {
+        code: "invalid-source",
+        location: { line: 1, column: 1, offset: 0 },
+        cause: "not used",
+        repair: "not used",
+      },
+    }),
+    applyTargetedMutation: async (
+      _input: FacetTargetedMutationInput,
+    ): Promise<FacetTargetedMutationResult> => ({
+      ok: false,
+      code: "not_used",
+      at: "kind",
+      detail: "not used",
+    }),
+    publishData: async (): Promise<PayloadEvaluation> => ({ ok: true, chars: 0 }),
+  };
+}
+
+function renderedLength(value: unknown): number {
+  return JSON.stringify(value).length;
+}
+
+describe("buildTurnObservation", () => {
+  it("returns a deterministic current-screen observation with no prop schemas or values in summaries", () => {
+    const observation = buildTurnObservation(
+      session({ data: { rows: [{ name: "Ada", secret: "do-not-include" }] } }),
     );
-    const parsed = parseAgentToolObservation(observation.text);
 
-    expect(parsed?.data).toBe(serialized);
-    expect(JSON.parse(parsed?.data ?? "null")).toEqual(pattern);
-    expect(observation.data).toEqual(parsed);
+    expect(observation).toMatchObject({
+      stageRevision: 7,
+      screens: ["home", "hidden"],
+      components: [
+        { tag: "Screen", whenToUse: "Root screen container." },
+        { tag: "Text", whenToUse: "Use Text when it fits." },
+      ],
+      data: [{ path: "rows", shape: "array", fields: ["name", "secret"], count: 1 }],
+      issues: [],
+    });
+    expect(observation.currentScreen?.name).toBe("home");
+    expect(observation.currentScreen?.markup).toContain('<Text value="Visible" id="n-visible" />');
+    expect(JSON.stringify(observation)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
+    expect(JSON.stringify(observation)).not.toContain("Ada");
+    expect(JSON.stringify(observation)).not.toContain("do-not-include");
   });
 
-  it("omits the data field entirely when no payload is supplied", () => {
-    const observation = formatAgentToolObservation({
-      tool: "set_node",
-      status: "ok",
-      outcome: "applied_visible",
-      message: "Set a node.",
-    });
+  it("measures unused component scaling in characters and includes only tag plus when-to-use", () => {
+    const one = buildTurnObservation(session({ catalog: catalog([component("Card")]) }));
+    const many = buildTurnObservation(
+      session({
+        catalog: catalog(
+          Array.from({ length: 100 }, (_, index) =>
+            component(`Unused${index}`, `Use component ${index}.`),
+          ),
+        ),
+      }),
+    );
+    const delta = renderedLength(many) - renderedLength(one);
 
-    expect(parseAgentToolObservation(observation.text)?.data).toBeUndefined();
-    expect(observation.text).not.toContain('"data"');
+    expect(delta).toBeGreaterThan(0);
+    expect(delta).toBeLessThan(7_000);
+    expect(JSON.stringify(many)).not.toContain("props");
+    expect(JSON.stringify(many)).not.toContain("DO_NOT_LEAK_PROP_SCHEMA");
   });
 
-  it("defaults outcome facts coherently when callers omit booleans", () => {
-    const observation = formatAgentToolObservation({
-      tool: "append_node",
-      status: "ok",
-      outcome: "applied_visible",
-      message: "Applied.",
-    });
+  it("does not grow when non-current screen content grows", () => {
+    const shortHidden = buildTurnObservation(session({ document: document("x") }));
+    const largeHidden = buildTurnObservation(session({ document: document("x".repeat(100)) }));
 
-    expect(parseAgentToolObservation(observation.text)).toMatchObject({
-      applied: true,
-      stage_changed: true,
-      visible_to_visitor: true,
-    });
+    expect(renderedLength(largeHidden) - renderedLength(shortHidden)).toBe(0);
+    expect(JSON.stringify(largeHidden)).not.toContain("xxxxxxxxxx");
   });
 
-  it("normalizes status and code from the outcome", () => {
-    const rejected = formatAgentToolObservation({
-      tool: "append_node",
-      status: "ok",
-      outcome: "rejected",
-      code: "pending",
-      message: "Rejected.",
-      patchCount: 12,
-    });
-    const rejectedData = parseAgentToolObservation(rejected.text);
-    expect(rejectedData).toMatchObject({
-      status: "error",
-      outcome: "rejected",
-      patch_count: 0,
-    });
-    expect(rejectedData?.code).toBeUndefined();
-
-    const pending = formatAgentToolObservation({
-      tool: "append_node",
-      status: "ok",
-      outcome: "pending",
-      message: "Pending.",
-    });
-    expect(parseAgentToolObservation(pending.text)).toMatchObject({
-      status: "pending",
-      outcome: "pending",
-      code: "pending",
-    });
-  });
-
-  it("defaults non-applied outcomes to unapplied", () => {
-    const observation = formatAgentToolObservation({
-      tool: "inspect_stage",
-      status: "ok",
-      outcome: "no_stage_change",
-      message: "Inspected the current stage.",
-    });
-
-    expect(parseAgentToolObservation(observation.text)).toMatchObject({
-      applied: false,
-      stage_changed: false,
-      visible_to_visitor: false,
-    });
-  });
-
-  it(`accepts the canonical availability code and rejects ${legacyCode}`, () => {
-    const rejected = formatAgentToolObservation({
-      tool: "get_pattern",
-      status: "error",
-      outcome: "rejected",
-      code: "not_available",
-      message: "The requested Pattern is not available in this turn snapshot.",
-    });
-
-    const data = parseAgentToolObservation(rejected.text);
-    expect(data).toMatchObject({
-      tool: "get_pattern",
-      status: "error",
-      outcome: "rejected",
-      code: "not_available",
-      patch_count: 0,
-    });
-    if (data === undefined) throw new Error("expected canonical observation");
-
-    expect(
-      parseAgentToolObservation(JSON.stringify({ ...data, code: legacyCode })),
-    ).toBeUndefined();
-  });
-
-  it("rejects malformed parsed observations", () => {
-    const valid = formatAgentToolObservation({
-      tool: "append_node",
-      status: "error",
-      outcome: "rejected",
-      code: "invalid_input",
-      message: "Bad input.",
-    });
-    const data = parseAgentToolObservation(valid.text);
-    expect(data).toBeDefined();
-    if (data === undefined) throw new Error("expected valid observation");
-
-    expect(parseAgentToolObservation(JSON.stringify({ ...data, patch_count: -1 }))).toBeUndefined();
-    expect(parseAgentToolObservation(JSON.stringify({ ...data, code: "nope" }))).toBeUndefined();
-    expect(
-      parseAgentToolObservation(
-        JSON.stringify({ ...data, status: "ok", outcome: "rejected", code: undefined }),
-      ),
-    ).toBeUndefined();
-    expect(
-      parseAgentToolObservation(
-        JSON.stringify({
-          ...data,
-          status: "ok",
-          outcome: "applied_visible",
-          applied: true,
-          stage_changed: false,
-          visible_to_visitor: true,
-          code: undefined,
-        }),
-      ),
-    ).toBeUndefined();
-  });
-
-  it("classifies visible stage reachability from the server stage shadow", () => {
-    expect(Array.from(visibleStageNodeIds(TREE)).sort()).toEqual(["root", "visible"]);
-
-    const afterVisible: FacetTree = {
-      ...TREE,
-      nodes: {
-        ...TREE.nodes,
-        visible: { id: "visible", type: "text", value: "Updated" },
-      },
-    };
-    expect(isVisitorVisibleStageChange(TREE, afterVisible, ["visible"])).toBe(true);
-
-    const afterOrphan: FacetTree = {
-      ...TREE,
-      nodes: {
-        ...TREE.nodes,
-        orphan: { id: "orphan", type: "text", value: "Not attached" },
-      },
-    };
-    expect(isVisitorVisibleStageChange(TREE, afterOrphan, ["orphan"])).toBe(false);
-  });
-
-  it("classifies nested boxes and populated leaf bricks as visible while skipping blank data bricks", () => {
-    const highLevelTree: FacetTree = {
-      root: "shell",
-      nodes: {
-        shell: { id: "shell", type: "box", children: ["group"] },
-        group: { id: "group", type: "box", children: ["summary", "table"] },
-        summary: {
-          id: "summary",
-          type: "keyValue",
-          items: [{ label: "Revenue", value: "$12k" }],
-          children: ["ghost"],
-        } as unknown as FacetNode,
-        table: { id: "table", type: "table", columns: [], rows: [] },
-        ghost: { id: "ghost", type: "text", value: "Not reachable through a leaf" },
-      },
-    };
-
-    expect(Array.from(visibleStageNodeIds(highLevelTree)).sort()).toEqual([
-      "group",
-      "shell",
-      "summary",
-    ]);
-
-    const afterSummary: FacetTree = {
-      ...highLevelTree,
-      nodes: {
-        ...highLevelTree.nodes,
-        summary: {
-          id: "summary",
-          type: "keyValue",
-          items: [{ label: "Revenue", value: "$18k" }],
+  it("does not grow when published row volume grows", () => {
+    const one = buildTurnObservation(session({ data: { rows: [{ name: "Ada" }] } }));
+    const many = buildTurnObservation(
+      session({
+        data: {
+          rows: Array.from({ length: 100 }, (_, index) => ({ name: `Name ${index}` })),
         },
-      },
-    };
-    expect(isVisitorVisibleStageChange(highLevelTree, afterSummary, ["summary"])).toBe(true);
+      }),
+    );
 
-    const afterGhost: FacetTree = {
-      ...highLevelTree,
-      nodes: {
-        ...highLevelTree.nodes,
-        ghost: { id: "ghost", type: "text", value: "Still hidden" },
-      },
-    };
-    expect(isVisitorVisibleStageChange(highLevelTree, afterGhost, ["ghost"])).toBe(false);
-    expect(isVisitorVisibleStageChange(highLevelTree, highLevelTree, ["table"])).toBe(false);
+    expect(renderedLength(many) - renderedLength(one)).toBe(0);
+    expect(JSON.stringify(many)).not.toContain("Name 99");
   });
 
-  it("does not classify non-entry screen changes as visible on the default render root", () => {
-    const screenTree: FacetTree = {
-      root: "shell",
-      entry: "home",
-      screens: { home: "home", about: "about" },
-      nodes: {
-        shell: { id: "shell", type: "box", children: [] },
-        home: { id: "home", type: "box", children: ["home-copy"] },
-        "home-copy": { id: "home-copy", type: "text", value: "Home" },
-        about: { id: "about", type: "box", children: ["about-copy"] },
-        "about-copy": { id: "about-copy", type: "text", value: "About" },
-      },
-    };
-    const afterAbout: FacetTree = {
-      ...screenTree,
-      nodes: {
-        ...screenTree.nodes,
-        "about-copy": { id: "about-copy", type: "text", value: "Updated" },
-      },
-    };
-
-    expect(Array.from(visibleStageNodeIds(screenTree)).sort()).toEqual(["home", "home-copy"]);
-    expect(isVisitorVisibleStageChange(screenTree, afterAbout, ["about-copy"])).toBe(false);
-  });
-
-  it("treats stage metadata changes as visitor-visible", () => {
-    expect(isVisitorVisibleStageChange(TREE, { ...TREE, root: "visible" }, [])).toBe(true);
+  it("returns an explicit no-screen observation", () => {
+    expect(buildTurnObservation(session({ document: null }))).toMatchObject({
+      currentScreen: null,
+      screens: [],
+      issues: ["no_current_screen"],
+    });
   });
 });

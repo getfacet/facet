@@ -1,7 +1,23 @@
 // @facet/quickstart — the one-command wrapper/server for a live Facet page.
-// The reference brain lives in @facet/reference-agent and is re-exported here
-// for compatibility. The `facet-quickstart` bin (src/cli.ts) is the one
-// non-barrel entry, per repo convention.
-export * from "@facet/reference-agent";
-export * from "./agent.js";
-export * from "./server.js";
+// The `facet-quickstart` bin (src/cli.ts) is the one non-barrel entry.
+export { QUICKSTART_INITIAL_STAGE } from "./guide.js";
+export { createQuickstartAgent } from "./agent.js";
+export type { QuickstartAgentOptions } from "./agent.js";
+export { startQuickstart } from "./server.js";
+export type { QuickstartServerOptions, RunningQuickstart } from "./server.js";
+
+export type {
+  ConversationSummary,
+  ReferenceAgentBudget,
+  ReferenceAgentBudgetOptions,
+  ReferenceAgentBudgetOverrides,
+  ReferenceAgentBudgetPreset,
+  ReferenceAgentDiagnosticEvent,
+  ReferenceAgentDiagnosticObserver,
+  ReferenceAgentOptions,
+  ReferenceAgentTrace,
+  ReferenceAgentTraceEvent,
+  ReferenceProvider,
+  Summarizer,
+  SummarizerRequest,
+} from "@facet/reference-agent";

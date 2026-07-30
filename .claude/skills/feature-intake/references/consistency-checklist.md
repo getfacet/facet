@@ -26,8 +26,8 @@ contradictory (or invariant-breaking) briefs.
   UI capability and the agent calls its tool.
 - Local-execution smell: does an interaction run without the LLM? → invariant #6
   (two-writers) must be addressed in the brief, not deferred.
-- Overlay smell: does anything float over content? → invariant #5, dedicated
-  overlay brick only, never a general escape hatch.
+- Overlap smell: does anything float over content? → invariant #5, dedicated
+  trusted modal only, never a general positioning/z-index escape hatch.
 - DSL smell: do declared actions need conditions/math? → hold the line (static
   patches + tiny closed ops; real logic is the agent's job).
 

@@ -1,275 +1,142 @@
 # Getting Started
 
-This guide helps a coding agent or developer choose and wire a supported Facet
-adoption path. Start at the [Facet README](../README.md) if you first need the
-system model or package decision table.
-
-## Prerequisites
-
-- Node.js 20 or newer.
-- React 18 or newer when using `@facet/react`.
-- An OpenAI or Anthropic API key only when running the reference LLM brain.
-- Your own authentication and tenant boundary before using Facet with sensitive
-  or multi-tenant data. The native server/client packages are reference
-  transports, not a hosted security perimeter.
-
-Facet packages have not been published to npm yet. Package-install examples
-below describe the first-release contract; current evaluation runs from this
-repository with pnpm.
+Facet lets an agent render UI by emitting component markup, not executable
+React, HTML, or browser code. The host chooses the agent brain and domain tools;
+Facet supplies the safe stage contract, runtime loop, renderer, reference
+transport, and default component set.
 
 ## Try it first
 
-The quickest evaluation runs the reference brain, in-memory runtime, reference
-SSE + POST transport, and React page together:
+Use Quickstart when you want the complete reference experience in one process.
+It composes the reference agent, runtime, reference server, React renderer, and
+default assets.
 
 ```bash
-git clone https://github.com/getfacet/facet.git
-cd facet
-corepack enable
-pnpm install
-pnpm --filter @facet/quickstart build
-OPENAI_API_KEY=sk-… pnpm exec tsx packages/tools/quickstart/src/cli.ts
+npm create facet
 ```
 
-Open `http://localhost:5292`. `ANTHROPIC_API_KEY` also works. Put a page brief in
-`./facet.md` or let the bundled tour brief drive the first page. The
-[`@facet/quickstart` README](../packages/tools/quickstart/README.md) documents
-ports, providers, asset directories, and flags.
+Quickstart is the supported runnable evidence path for the public packages. Use
+it to prove a real boot before wiring the individual packages into your own
+host.
 
-Quickstart is a local/reference path. It is useful for evaluation and as working
-integration evidence; it is not a tenant, identity, billing, or operations
-platform.
+## Install the core pieces
 
-### Quickstart, Facet Lab, and adoption are different paths
-
-Quickstart remains the shortest runnable evaluation of one reference-agent
-page. [Facet Lab](../apps/facet-lab/README.md) is the repository's unpublished
-local/self-hosted developer workbench for package-defined asset inspection,
-official deterministic/real-provider scenarios, run evidence, replay,
-comparison, evaluation, and Contract Sandbox testing. Lab is not an npm package,
-hosted Facet service, or replacement for Quickstart, and applications should not
-depend on it.
-
-Use the integration sections below when building a product: start from the
-public `@facet/*` package role you need and supply your own surrounding platform
-policy. Use Lab only when evaluating or contributing to those contracts in this
-repository. Its [operator guide](../apps/facet-lab/README.md#launch-locally)
-owns launch commands, storage, keys, workflows, and gates so this adoption guide
-does not maintain a parallel workbench manual.
-
-## Run the reference transport
-
-Use the native reference transport when you want a small Node server with a
-browser SSE + POST channel. This example uses an in-process TypeScript agent:
+Most integrations choose a subset of these packages:
 
 ```bash
-npm install @facet/server @facet/agent
+npm install @facet/core @facet/runtime @facet/react @facet/assets
 ```
+
+Add `@facet/agent` for code-authored in-process agents, `@facet/agent-tools` for
+a custom LLM loop, `@facet/reference-agent` for the bundled provider loop,
+`@facet/server` for the reference transport server, or `@facet/agent-client`
+when an external agent dials into that server.
+
+## Author component markup
+
+Agents write one `<Facet>` envelope with named screens and registered component
+tags. Core parses and validates that markup against the active catalog.
 
 ```ts check-docs
-import { defineAgent } from "@facet/agent";
-import { createFacetServer } from "@facet/server";
+import { parseMarkup, validateAuthorMarkup } from "@facet/core";
+import { DEFAULT_CATALOG } from "@facet/assets";
 
-const agent = defineAgent(({ event, stage }) => {
-  if (event.kind !== "visit") return;
-  stage.render({
-    root: "root",
-    nodes: {
-      root: { id: "root", type: "box", children: ["welcome"] },
-      welcome: { id: "welcome", type: "text", value: "Welcome to Facet" },
-    },
-  });
-  stage.say("The page is ready.");
-});
+const parsed = parseMarkup(
+  `<Facet entry="home"><Screen name="home"><Text value="Ready" /></Screen></Facet>`,
+);
 
-const server = createFacetServer({ port: 5291, agentId: "demo", agent });
-await server.listen();
+if (!parsed.ok) {
+  throw new Error(parsed.error.repair);
+}
+
+const result = validateAuthorMarkup(parsed.ast, DEFAULT_CATALOG, {});
+if (!result.ok) {
+  throw new Error(result.error.repair);
+}
+
+console.log(result.document.entry);
 ```
-
-`@facet/server` supplies transport and turn delivery. It composes
-`@facet/runtime`; it does not supply the brain. An in-process `FacetAgent` is one
-option, while `@facet/agent-client` can hold the external-agent channel.
-
-The reference browser channel trusts `visitorId` as a bearer session key and
-has no browser authentication. The agent channel is unauthenticated unless you
-set `agentToken`. Keep the server loopback/private for local use, or place a real
-authentication and authorization layer in front of it. Read
-[Security](../SECURITY.md) before hosting it.
 
 ## Embed the React renderer
 
-For the native reference browser path, install the renderer, transport, shared
-types, and React peers:
+React hosts close the catalog/registry trust boundary once, then render the
+current stage document.
 
-```bash
-npm install @facet/react @facet/client @facet/core react react-dom
+```tsx
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_REGISTRY } from "@facet/assets/react";
+import { bootstrapRenderer, StageRenderer } from "@facet/react";
+
+const bootstrap = bootstrapRenderer({
+  catalog: DEFAULT_CATALOG,
+  registry: DEFAULT_REGISTRY,
+  theme: DEFAULT_THEME,
+});
+
+if (!bootstrap.ok) throw new Error(bootstrap.detail);
+
+<StageRenderer bootstrap={bootstrap} document={stage.document} data={stage.data} />;
 ```
 
-The complete live boundary has more than `useFacet` plus `StageRenderer`:
-
-- create the transport once for a stable visitor;
-- send the initial `visit` exactly once—`useFacet` does not send it
-  automatically, and development Strict Mode may run effects twice;
-- preserve optional collected `fields` on agent-routed actions;
-- sample `onViewSnapshot` and attach it to the next outgoing event with
-  `withView`; and
-- send local navigate/toggle records through `onRecord`, not through the agent
-  action channel.
-
-```tsx check-docs
-import { useCallback, useEffect, useMemo, useRef } from "react";
-import type {
-  ClientEvent,
-  CollectedEvent,
-  FacetAction,
-  FieldValues,
-  ViewSnapshot,
-  VisitorContext,
-} from "@facet/core";
-import { browserVisitorId, SseTransport, withView } from "@facet/client";
-import { StageRenderer, useFacet } from "@facet/react";
-
-export function FacetPage() {
-  const visitor = useMemo<VisitorContext>(
-    () => ({ visitorId: browserVisitorId(), locale: navigator.language }),
-    [],
-  );
-  const transport = useMemo(
-    () => new SseTransport("http://localhost:5291", visitor),
-    [visitor],
-  );
-  const { tree, send, record, transition } = useFacet(transport);
-  const viewRef = useRef<ViewSnapshot | undefined>(undefined);
-  const visitSentRef = useRef(false);
-
-  const onViewSnapshot = useCallback((snapshot: ViewSnapshot): void => {
-    viewRef.current = snapshot;
-  }, []);
-
-  useEffect(() => {
-    if (visitSentRef.current) return;
-    visitSentRef.current = true;
-    send(withView({ kind: "visit", visitor }, viewRef.current));
-  }, [send, visitor]);
-
-  const onAction = useCallback(
-    (action: FacetAction, fields?: FieldValues): void => {
-      const event: ClientEvent =
-        fields === undefined
-          ? { kind: "tap", action }
-          : { kind: "tap", action, fields };
-      send(withView(event, viewRef.current));
-    },
-    [send],
-  );
-
-  const onRecord = useCallback(
-    (event: CollectedEvent): void => {
-      record(withView(event, viewRef.current));
-    },
-    [record],
-  );
-
-  return (
-    <StageRenderer
-      tree={tree}
-      transition={transition}
-      onAction={onAction}
-      onRecord={onRecord}
-      onViewSnapshot={onViewSnapshot}
-      colorMode="system"
-    />
-  );
-}
-```
-
-Attach the same latest view snapshot to chat messages before sending them:
-
-```ts
-// Pseudocode — `viewRef` and `send` are owned by the component above.
-send(withView({ kind: "message", text }, viewRef.current));
-```
-
-`StageRenderer` owns browser-local screen, toggle, sort, viewport, and effective
-color-mode state. `onViewSnapshot` only reports that state; attaching it to an
-event does not make it part of the Facet Document. The server/agent remains the
-only writer of document content.
-
-`useFacet` accepts the `FacetTransport` interface from `@facet/core`, so a hosted
-application may replace `SseTransport` without replacing the renderer. A custom
-transport must preserve `send`, `subscribe`, ordered patch delivery, and the
-optional best-effort `record` channel. See [`@facet/client`](../packages/adapters/client/README.md)
-for the reference implementation.
+Use the browser transport package or a custom `FacetTransport` with `useFacet`
+when the page is live. The hook folds server frames into local state and stamps
+visitor events with the latest known revision.
 
 ## Use an in-process agent
 
-Choose `@facet/agent` when TypeScript code, a rules engine, or a test should
-author the stage in the same process as `@facet/runtime`:
+Use `@facet/agent` when the agent's behavior is ordinary TypeScript in the same
+process as runtime.
 
-```bash
-npm install @facet/agent @facet/runtime @facet/core
+```ts check-docs
+import { defineAgent } from "@facet/agent";
+
+export const agent = defineAgent(({ event, stage }) => {
+  if (event.eventName === "visit") {
+    stage.message("Welcome.");
+  }
+});
+
+console.log(typeof agent.run);
 ```
 
-`defineAgent` and `defineStreamingAgent` provide a `Stage` API that records RFC
-6902 changes. They do not provide LLM tool schemas or choose a model. Combine the
-agent with `FacetRuntime` directly for an in-process application, or pass it to
-the reference server as shown above. Start with the
-[`@facet/agent` README](../packages/agents/agent/README.md).
+The runtime supplies the `FacetToolSession`; the agent helper records one
+optional conversation message and any stage operations the code requested.
 
-If your brain is an LLM tool-calling loop, use `@facet/agent-tools` instead. The
-[Agent Integration guide](AGENT-INTEGRATION.md) owns that provider-neutral
-snapshot, discovery, executor, outcome, and retry flow.
+## Build a provider-neutral LLM loop
+
+Use `@facet/agent-tools` when your host already owns provider calls and wants to
+offer Facet tools to the model. The package exports the nine tool specs, a
+markup buffer for streaming providers, the executor, and turn observations.
+
+The loop is:
+
+1. Build a provider prompt using `FACET_PROMPT_KIT`.
+2. Offer `FACET_TOOL_SPECS`.
+3. Execute each model tool call with `executeFacetTool`.
+4. Return the structured result and `buildTurnObservation` to the model.
+5. Forward accepted runtime frames through your transport.
 
 ## Connect an external agent
 
-Choose `@facet/agent-client` when a `FacetAgent` runs outside the reference
-server process. It dials out to `@facet/server`, receives visitor events, and
-returns stage messages over the server's agent channel:
+Use `@facet/agent-client` when the agent process is separate from the reference
+server. The external process receives validated visitor events and returns one
+turn outcome: a revision-stamped patch batch plus at most one conversation
+message.
 
-```bash
-npm install @facet/agent-client @facet/agent @facet/core
-```
+The external agent still cannot bypass Facet's authoring boundary. It emits the
+same component markup or patch-producing tool calls as an in-process loop.
 
-This is different from `@facet/agent-tools`: the client is a network adapter,
-not an LLM schema or executor. When protecting the reference agent channel, set
-the server's `agentToken` and pass the same value as `token` to `connectAgent`.
-That shared secret does not create tenant-scoped credentials or authorization
-policy. Follow the
-[`@facet/agent-client` README](../packages/adapters/agent-client/README.md).
+## Run the reference transport
 
-## Add assets, protocols, or persistence
+`@facet/server` exposes the reference server-side channel. Browser clients
+subscribe to server frames and post visitor events; external agents can dial in
+through the agent channel. The protocol is intentionally small and is defined in
+`@facet/core`.
 
-These paths extend the same Document and Runtime contract:
+Use the reference server when you want a working local transport before replacing
+the transport layer with your own infrastructure.
 
-| Need | Start with | Boundary |
-| --- | --- | --- |
-| Bundled Theme and Patterns | [`@facet/assets`](../packages/core/assets/README.md) | Data only; the renderer and agent use the same validated asset snapshot. |
-| Custom Theme, Presets, or Patterns | [Design System](DESIGN-SYSTEM.md) | Operator assets; never model-authored concrete CSS values. |
-| AG-UI event envelope | [`@facet/ag-ui`](../packages/adapters/ag-ui/README.md) | Official adapter; Facet still owns stage validation and patch folding. |
-| Durable Postgres stores | [`@facet/store-postgres`](../packages/adapters/store-postgres/README.md) | Optional persistence; not a hosted-platform schema or control plane. |
+## Package responsibilities
 
-## Production boundary
-
-Facet provides a neutral UI contract, runtime, renderer, and adapters. Before a
-production deployment, the surrounding platform must decide and enforce:
-
-- authenticated visitor and agent identities;
-- tenant/project isolation and authorization;
-- rate limits, quotas, billing, metering, and abuse controls;
-- durable-store lifecycle, migrations, backup, and fan-out; and
-- model/provider policy, secrets, conversation history, retries, and business
-  tools.
-
-Read [Package Boundaries](PACKAGE-BOUNDARIES.md) before treating a reference,
-official, or optional package as a complete deployment.
-
-## Next
-
-- [Facet Lab](../apps/facet-lab/README.md) — private contributor workbench,
-  workflows, evidence, and gates.
-- [Design System](DESIGN-SYSTEM.md) — styling concepts and operator assets.
-- [Agent Integration](AGENT-INTEGRATION.md) — custom LLM authoring loop.
-- [Architecture](ARCHITECTURE.md) — complete ownership and data-flow behavior.
-- [Agent Tool Result Contract](AGENT-TOOL-RESULT-CONTRACT.md) — exact executor
-  outcomes.
-- [Package Boundaries](PACKAGE-BOUNDARIES.md) — package and deployment roles.
+See [Package Boundaries](PACKAGE-BOUNDARIES.md) for the current package map, and
+[Architecture](ARCHITECTURE.md) for the invariants each package preserves.

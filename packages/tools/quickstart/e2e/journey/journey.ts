@@ -205,10 +205,10 @@ async function capture(page: Page, outDir: string, index: number, label: string)
 
 /** Type a message into the ChatDock and send it. */
 async function sendChat(page: Page, message: string): Promise<void> {
-  // The ChatDock input is the only input WITHOUT a data-facet-field-id stamp
-  // (stage fields carry that attribute). Submit through the focused input's
-  // Enter handler so native stage buttons/tabs cannot steal the click target.
-  const input = page.locator("input:not([data-facet-field-id])").first();
+  // The current quickstart shell exposes a textarea labelled "Message"; stage
+  // fields live inside [data-facet-stage], so this selector targets the dock
+  // directly rather than inferring it from the absence of an old field stamp.
+  const input = page.locator('textarea[aria-label="Message"]').first();
   await input.fill(message);
   await input.press("Enter");
 }
@@ -234,10 +234,10 @@ async function chatStep(
 }
 
 /**
- * Click the most prominent pressable (the first `<div role="button">` in
- * document order — a stage pressable, never the ChatDock's native Send button),
- * settle, and screenshot. A missing/undispatched press is RECORDED
- * (`clicked:false`), never thrown — a page with no pressable is a judge signal.
+ * Click the most prominent default-registry pressable: the first stage-local
+ * `<button type="button">`, never the ChatDock submit button. A
+ * missing/undispatched press is RECORDED (`clicked:false`), never thrown — a
+ * page with no pressable is a judge signal.
  */
 async function clickStep(
   page: Page,
@@ -249,7 +249,10 @@ async function clickStep(
   const baseline = await domFingerprint(page);
   let clicked = false;
   try {
-    await page.locator('div[role="button"]').first().click({ timeout: CLICK_TIMEOUT_MS });
+    await page
+      .locator('[data-facet-stage] button[type="button"]')
+      .first()
+      .click({ timeout: CLICK_TIMEOUT_MS });
     clicked = true;
   } catch {
     // No pressable, off-screen, or not clickable within the bound — record it.

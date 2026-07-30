@@ -1,56 +1,156 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import type { ClientEvent, VisitorContext } from "@facet/core";
-import { createLateWindow, isStaleLateResult, LATE_WINDOW_LIMIT, type ParkedTurn } from "./late.js";
+import { bootstrapSession, MemoryStageStore } from "@facet/runtime";
+import type { ConversationRecord, Sink } from "@facet/runtime";
+import { createFrameLogStore } from "./frame-log.js";
+import { parseResumeToken } from "./late.js";
+import { rehydrate } from "./server-rehydrate.js";
+import {
+  conversation,
+  MARKUP,
+  readFrames,
+  stageFromResync,
+  start,
+  testCatalog,
+  testTheme,
+} from "./server.test-support.js";
 
-const visitor: VisitorContext = { visitorId: "v" };
-const event: ClientEvent = { kind: "message", text: "hi" };
-const turn = (index: number): ParkedTurn => ({ visitor, event, index, era: "e0" });
+class DuplicateHistorySink implements Sink {
+  readonly #messages: readonly ConversationRecord[];
 
-describe("createLateWindow", () => {
-  it("parks and takes a turn, then reports it gone", () => {
-    const window = createLateWindow(4);
-    window.park(1, turn(0));
-    expect(window.size).toBe(1);
-    expect(window.take(1)).toEqual(turn(0));
-    expect(window.size).toBe(0);
-    // A second take is a miss (consumed).
-    expect(window.take(1)).toBeUndefined();
-  });
+  constructor(messages: readonly ConversationRecord[]) {
+    this.#messages = messages;
+  }
 
-  it("takes an unknown requestId as a miss", () => {
-    const window = createLateWindow(4);
-    expect(window.take(99)).toBeUndefined();
-  });
+  async record(): Promise<{ readonly ok: true }> {
+    return { ok: true };
+  }
 
-  it("drops the OLDEST parked turn (FIFO) past the limit", () => {
-    const window = createLateWindow(3);
-    window.park(1, turn(1));
-    window.park(2, turn(2));
-    window.park(3, turn(3));
-    window.park(4, turn(4)); // over the cap → evicts the oldest (id 1)
-    expect(window.size).toBe(3);
-    expect(window.take(1)).toBeUndefined(); // evicted
-    expect(window.take(2)).toEqual(turn(2));
-    expect(window.take(3)).toEqual(turn(3));
-    expect(window.take(4)).toEqual(turn(4));
-  });
+  async history(): Promise<readonly ConversationRecord[]> {
+    return this.#messages;
+  }
+}
 
-  it("exposes a sensible default limit", () => {
-    expect(LATE_WINDOW_LIMIT).toBe(100);
+class OrderedHistorySink implements Sink {
+  readonly #readJoined: () => boolean;
+  readonly order: string[] = [];
+
+  constructor(readJoined: () => boolean) {
+    this.#readJoined = readJoined;
+  }
+
+  async record(): Promise<{ readonly ok: true }> {
+    return { ok: true };
+  }
+
+  async history(): Promise<readonly ConversationRecord[]> {
+    this.order.push(`history:${this.#readJoined()}`);
+    return [];
+  }
+}
+
+class WritableResponse {
+  readonly chunks: string[] = [];
+
+  write(chunk: string): void {
+    this.chunks.push(chunk);
+  }
+
+  end(): void {}
+}
+
+describe("resume token parsing", () => {
+  it("accepts only <era>:<seq> tokens", () => {
+    expect(parseResumeToken("abc:12")).toEqual({ era: "abc", seq: 12 });
+    expect(parseResumeToken(":12")).toBeUndefined();
+    expect(parseResumeToken("abc:-1")).toBeUndefined();
+    expect(parseResumeToken("abc:1.2")).toBeUndefined();
   });
 });
 
-describe("isStaleLateResult", () => {
-  it("is fresh when the era matches and no newer turn has applied", () => {
-    expect(isStaleLateResult({ era: "e0", index: 2 }, { era: "e0", lastApplied: 2 })).toBe(false);
-    expect(isStaleLateResult({ era: "e0", index: 2 }, { era: "e0", lastApplied: 1 })).toBe(false);
+describe("server rehydrate", () => {
+  it("uses a root-replace PatchFrame for an unresumable reconnect, with both stage halves", async () => {
+    const { server, base } = await start();
+    try {
+      const frames = await readFrames(
+        await fetch(`${base}/stream?sessionKey=s1`, { headers: { "Last-Event-ID": "old:1" } }),
+        1,
+      );
+
+      expect(frames[0]?.data.kind).toBe("patch");
+      if (frames[0]?.data.kind !== "patch") throw new Error("expected patch");
+      expect(frames[0].data.ops).toHaveLength(1);
+      expect(frames[0].data.ops[0]).toMatchObject({ op: "replace", path: "" });
+      const stage = stageFromResync(frames[0].data);
+      expect(stage.document).not.toBeNull();
+      expect(stage.data).toEqual({});
+      expect(frames[0].data.stageRevision).toBe(0);
+    } finally {
+      await server.close();
+    }
   });
 
-  it("is stale on an era re-mint", () => {
-    expect(isStaleLateResult({ era: "e0", index: 2 }, { era: "e1", lastApplied: 0 })).toBe(true);
+  it("collapses duplicate conversation history by messageId during rehydrate", async () => {
+    const first = conversation("event1", "assistant", "first");
+    const replacement = { ...first, text: "replacement" };
+    const { server, base } = await start({ sink: new DuplicateHistorySink([first, replacement]) });
+    try {
+      const frames = await readFrames(await fetch(`${base}/stream?sessionKey=s1`), 3);
+      const conversations = frames
+        .map((frame) => frame.data)
+        .filter((frame) => frame.kind === "conversation");
+
+      expect(conversations).toEqual([replacement]);
+    } finally {
+      await server.close();
+    }
   });
 
-  it("is stale when a newer turn already applied", () => {
-    expect(isStaleLateResult({ era: "e0", index: 2 }, { era: "e0", lastApplied: 3 })).toBe(true);
+  it("joins the live stream before reading the persisted snapshot", async () => {
+    let joined = false;
+    const sink = new OrderedHistorySink(() => joined);
+    const store = new MemoryStageStore();
+    const boot = bootstrapSession({
+      catalog: testCatalog(),
+      theme: testTheme(),
+      initialMarkup: MARKUP,
+    });
+    if (!boot.ok) throw new Error(boot.code);
+    await store.save("s1", boot.session, 0);
+    const res = new WritableResponse();
+    const response = res as unknown as Parameters<typeof rehydrate>[0];
+
+    await rehydrate(
+      response,
+      "s1",
+      createFrameLogStore(),
+      store,
+      sink,
+      async () => {
+        sink.order.push("ensure");
+      },
+      () => false,
+      () => {
+        joined = true;
+        sink.order.push("join");
+      },
+    );
+
+    expect(sink.order).toEqual(["ensure", "join", "history:true"]);
+    expect(res.chunks.some((chunk) => chunk.includes('"kind":"patch"'))).toBe(true);
+  });
+
+  it("contains no reset frame branch and leaves messageId dedupe to runtime/sink", () => {
+    const serverSources = ["server-rehydrate.ts", "frame-log.ts", "late.ts", "server.ts"].map(
+      (name) => readFileSync(new URL(`./${name}`, import.meta.url), "utf8"),
+    );
+    const runtimeOutbox = readFileSync(
+      new URL("../../../core/runtime/src/outbox.ts", import.meta.url),
+      "utf8",
+    );
+
+    expect(serverSources.join("\n")).not.toContain('kind: "reset"'); // style-hard-cut: allowed-negative
+    expect(serverSources.join("\n")).not.toContain("messageSeq");
+    expect(runtimeOutbox).toContain("messageSeq");
   });
 });

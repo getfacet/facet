@@ -38,7 +38,6 @@ Audit the whole repo shape, with emphasis on:
 - `packages/{core,renderers,agents,adapters,tools}/*/src`
 - `packages/{core,renderers,agents,adapters,tools}/*/package.json`
 - root package/config files
-- `apps/playground/**`
 - `docs/**`, `AGENTS.md`, `.agents/**`, and `.codex/**` when process drift is
   relevant
 
@@ -81,8 +80,7 @@ For every grouped package manifest under
    `AGENTS.md`.
 4. Treat internally-unused exports as **public API candidates**, not dead code,
    unless docs/package role prove they are accidental.
-5. Verify CLI bins separately (`@facet/cli`, `@facet/bridge`,
-   `@facet/quickstart`).
+5. Verify the CLI bin separately (`@facet/quickstart`).
 
 ### 3. Reference tracing
 
@@ -107,9 +105,10 @@ candidate:
 
 1. Locate adjacent tests (`<file>.test.ts` / `.test.tsx`) and broader package
    tests that exercise it.
-2. Prioritize invariant-bearing pure logic: `validateTree`, `applyPatch`,
-   `foldPatchIntoStage`, `Stage`, stores, queues/semaphores/LRU, CLI command
-   builders, provider/prompt builders, and asset validators.
+2. Prioritize invariant-bearing pure logic: markup parsing, catalog validation,
+   document/data bounds, authorized patch/fold logic, stage/runtime
+   serialization, stores, queues/semaphores/LRU, CLI command builders,
+   provider/prompt builders, registry bootstrap, and asset validators.
 3. Do not demand unit tests for glue, thin barrels, React view composition, or
    Node process wrappers unless there is testable branching/contract logic.
 4. A test gap finding must name the untested behavior and show the grep/test
@@ -148,7 +147,7 @@ Audit whether the current directory/file structure still matches the
 responsibilities that have emerged in the codebase.
 
 1. Review package-local scaffolds under `packages/{core,renderers,agents,adapters,tools}`
-   and `apps/playground` against the package roles in `AGENTS.md`.
+   against the package roles in `AGENTS.md`.
 2. For every extraction candidate from the oversized-file, duplication,
    boundary, or test-gap passes, decide whether the right shape is:
    - a small sibling helper file,
@@ -261,6 +260,6 @@ flow, not the feature flow:
 4. Also run `/live-test` if the cleanup touches a live-link surface
    (`packages/tools/quickstart`, `packages/adapters/server`,
    `packages/adapters/client`, `packages/adapters/agent-client`,
-   `packages/core/runtime`, `packages/tools/bridge`, `packages/renderers/react`
+   `packages/core/runtime`, `packages/renderers/react`
    renderer/useFacet/ChatDock paths, or `packages/core/core`
    patch/protocol/stage vocabulary) or the owner requests it.

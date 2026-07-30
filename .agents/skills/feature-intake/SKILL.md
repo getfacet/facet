@@ -45,14 +45,17 @@ always the wrong feature — surface the conflict, don't design around it silent
    grow backend affordances (no `kind:"fetch"`, no arbitrary-URL data binding).
 2. **Mechanism vs policy.** Facet provides capability; the AGENT authors both
    structure and behavior. Don't move authoring decisions into the framework.
-3. **Fail-safe.** The renderer/validator never throw, never inject, and degrade
-   to "plain" on bad input. Bricks are declarative data — never raw HTML/JS/CSS.
-4. **Declarative + tokens only.** No pixels/hex/raw CSS in the tree; only the
-   token vocabulary. New visual capability = new tokens or a new brick, not an
-   escape hatch.
-5. **Flow-only safety.** Boxes stack/wrap and never overlap or fall off-screen.
-   Overlap (dropdown/modal) is allowed only via a constrained, dedicated brick —
-   never a general z-index escape hatch.
+3. **Fail-safe.** Parsers, validators, runtime folds, and renderers never expose
+   executable input or crash the full page. Bad author mutations reject
+   atomically; corrupt persisted data and trusted-component throws degrade to a
+   bounded safe result.
+4. **Declarative registered markup.** Agents use only registered component tags,
+   declared props, quoted scalar values, and closed references. No raw HTML
+   escape hatch, JavaScript/JSX expression, handler, import, spread, inline
+   structured JSON, raw CSS, arbitrary token, or mid-session registration.
+5. **Flow-contained layout.** Authored layout cannot position arbitrary content
+   or control z-index. Overlap is available only through the dedicated trusted
+   modal contract, never a general escape hatch.
 6. **Two-writers discipline.** If the browser executes interactions locally
    (pre-declared actions), the server-authoritative stage must stay coherent with
    the agent's edits (ordering/version). Any feature that adds local execution
@@ -106,7 +109,7 @@ Walk the 7 invariants explicitly. In particular, ask:
   Re-scope to "Facet gives the capability; the agent calls its own tool."
 - Does an interaction need to run WITHOUT the LLM? → it's a local pre-declared
   action → invoke #6 (two-writers) and record how the stage stays coherent.
-- Does anything need to float/overlap? → #5, constrained overlay brick only.
+- Does anything need to float/overlap? → #5, dedicated trusted modal only.
 - Does it add expression/logic to declared actions? → watch the DSL line: static
   patches + a tiny closed op set at most; real logic is the agent's job.
 

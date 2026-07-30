@@ -1,3 +1,4 @@
+import { deriveMessageId, type ConversationMessage } from "@facet/core";
 import { describe, expect, it } from "vitest";
 
 import { MIN_REFERENCE_AGENT_OBSERVATION_CHARS } from "./budget.js";
@@ -5,21 +6,22 @@ import {
   appendAssistantToolCalls,
   appendProviderStepTranscript,
   boundObservationText,
+  conversationHistoryToMessages,
   finalProseForProviderStop,
 } from "./transcript.js";
 import type { ReferenceAgentTraceEvent } from "./trace.js";
 import type { ProviderStep, ToolCall, TurnMessage } from "../provider.js";
 
 const toolCalls = [
-  { id: "call_1", name: "inspect_stage", input: { maxNodes: 2 } },
-  { id: "call_2", name: "say", input: { text: "Done" } },
+  { id: "call_1", name: "read_screen", input: { screen: "home" } },
+  { id: "call_2", name: "render_page", input: { markup: '<Facet entry="home" />' } },
 ] as const satisfies readonly ToolCall[];
 
 describe("provider transcript helpers", () => {
   it("appends assistant tool calls and ordered tool_result observations before the next provider call", () => {
     const messages: TurnMessage[] = [{ role: "user", content: "Update the page." }];
     const step: ProviderStep = {
-      text: "I will inspect the page before responding.",
+      text: "I will read the screen before responding.",
       toolCalls,
     };
 
@@ -27,8 +29,8 @@ describe("provider transcript helpers", () => {
       messages,
       step,
       [
-        { callId: "call_1", content: "ok: root has two children" },
-        { callId: "call_2", content: "ok: said Done" },
+        { callId: "call_1", content: "ok: home screen has two children" },
+        { callId: "call_2", content: "ok: page rendered" },
       ],
       { maxObservationChars: 200 },
     );
@@ -37,11 +39,11 @@ describe("provider transcript helpers", () => {
       { role: "user", content: "Update the page." },
       {
         role: "assistant_tools",
-        text: "I will inspect the page before responding.",
+        text: "I will read the screen before responding.",
         toolCalls,
       },
-      { role: "tool_result", callId: "call_1", content: "ok: root has two children" },
-      { role: "tool_result", callId: "call_2", content: "ok: said Done" },
+      { role: "tool_result", callId: "call_1", content: "ok: home screen has two children" },
+      { role: "tool_result", callId: "call_2", content: "ok: page rendered" },
     ]);
   });
 
@@ -69,8 +71,8 @@ describe("provider transcript helpers", () => {
     const duplicateStep: ProviderStep = {
       text: "",
       toolCalls: [
-        { id: "call_dup", name: "inspect_stage", input: {} },
-        { id: "call_dup", name: "say", input: { text: "second" } },
+        { id: "call_dup", name: "read_screen", input: { screen: "home" } },
+        { id: "call_dup", name: "render_page", input: { markup: '<Facet entry="home" />' } },
       ],
     };
 
@@ -122,7 +124,7 @@ describe("provider transcript helpers", () => {
     expect(traceEvents).toEqual([
       {
         type: "tool_result",
-        toolName: "inspect_stage",
+        toolName: "read_screen",
         callId: "call_1",
         observationChars: 72,
         truncated: true,
@@ -131,76 +133,59 @@ describe("provider transcript helpers", () => {
     ]);
   });
 
-  it.each(["get_pattern", "get_preset", "get_brick_spec", "get_style_choices"])(
-    "preserves complete %s results while generic observations stay bounded",
-    (exactToolName) => {
-      const messages: TurnMessage[] = [];
-      const exactObservation = JSON.stringify({
-        status: "ok",
-        data: { data: JSON.stringify({ name: "large-reference", nodes: "x".repeat(5_000) }) },
-      });
-      const genericObservation = `inspection ${"y".repeat(5_000)}`;
-      const step: ProviderStep = {
-        text: "",
-        toolCalls: [
-          { id: "asset-1", name: exactToolName, input: { name: "large-reference" } },
-          { id: "inspect-1", name: "inspect_stage", input: {} },
-        ],
-      };
-
-      const bounded = appendProviderStepTranscript(
-        messages,
-        step,
-        [
-          { callId: "asset-1", content: exactObservation },
-          { callId: "inspect-1", content: genericObservation },
-        ],
-        { maxObservationChars: 4_000 },
-      );
-
-      expect(exactObservation.length).toBeGreaterThan(4_000);
-      expect(bounded[0]).toEqual({
-        callId: "asset-1",
-        content: exactObservation,
-        originalChars: exactObservation.length,
-        truncated: false,
-        omittedChars: 0,
-      });
-      expect(bounded[1]).toMatchObject({
-        callId: "inspect-1",
-        originalChars: genericObservation.length,
-        truncated: true,
-      });
-      const exactResult = messages[1];
-      expect(exactResult).toEqual({
-        role: "tool_result",
-        callId: "asset-1",
-        content: exactObservation,
-      });
-      const genericResult = messages[2];
-      expect(genericResult).toMatchObject({ role: "tool_result", callId: "inspect-1" });
-      if (genericResult?.role !== "tool_result") throw new Error("expected generic tool_result");
-      expect(genericResult.content).toHaveLength(4_000);
-      expect(genericResult.content).toMatch(/\[truncated: \d+ chars omitted\]$/);
-    },
-  );
-
-  it("uses the provider call identity instead of producer-supplied tool metadata", () => {
+  it("bounds every tool observation, including read_component_spec", () => {
     const messages: TurnMessage[] = [];
-    const longObservation = "x".repeat(5_000);
-
-    const [bounded] = appendProviderStepTranscript(
+    const longObservation = JSON.stringify({
+      status: "ok",
+      spec: { tag: "Text", guidance: "x".repeat(5_000) },
+    });
+    const bounded = appendProviderStepTranscript(
       messages,
       {
         text: "",
-        toolCalls: [{ id: "inspect-1", name: "inspect_stage", input: {} }],
+        toolCalls: [{ id: "spec-1", name: "read_component_spec", input: { tag: "Text" } }],
       },
-      [{ callId: "inspect-1", content: longObservation, toolName: "get_pattern" }],
+      [{ callId: "spec-1", content: longObservation }],
       { maxObservationChars: 4_000 },
     );
 
-    expect(bounded?.truncated).toBe(true);
-    expect(bounded?.content).toHaveLength(4_000);
+    expect(longObservation.length).toBeGreaterThan(4_000);
+    expect(bounded[0]).toMatchObject({
+      callId: "spec-1",
+      originalChars: longObservation.length,
+      truncated: true,
+    });
+    const result = messages[1];
+    expect(result).toMatchObject({ role: "tool_result", callId: "spec-1" });
+    if (result?.role !== "tool_result") throw new Error("expected tool_result");
+    expect(result.content).toHaveLength(4_000);
+    expect(result.content).toMatch(/\[truncated: \d+ chars omitted\]$/);
+  });
+
+  it("uses the provider call identity instead of producer-supplied tool metadata", () => {
+    const messages: TurnMessage[] = [];
+    const traceEvents: ReferenceAgentTraceEvent[] = [];
+    const observation = "x".repeat(5_000);
+
+    appendProviderStepTranscript(
+      messages,
+      {
+        text: "",
+        toolCalls: [{ id: "screen-1", name: "read_screen", input: { screen: "home" } }],
+      },
+      [{ callId: "screen-1", content: observation, toolName: "publish_data" }],
+      {
+        maxObservationChars: 4_000,
+        trace: (event) => {
+          traceEvents.push(event);
+        },
+      },
+    );
+
+    expect(traceEvents[0]).toMatchObject({ toolName: "read_screen" });
+    const result = messages[1];
+    if (result?.role !== "tool_result") throw new Error("expected tool_result");
+    expect(result.content).toHaveLength(4_000);
   });
 
   it("keeps the truncation marker whole even when a tiny observation cap is requested", () => {
@@ -236,4 +221,71 @@ describe("provider transcript helpers", () => {
       }),
     ).toBe("Clean final answer for the visitor.");
   });
+
+  it("converts ConversationMessage records and folds duplicate messageIds deterministically", () => {
+    const duplicateId = deriveMessageId("turn-1", "visitor");
+    const transcript = conversationHistoryToMessages(
+      [
+        { ...conversation("turn-0", "visitor", "dropped") },
+        { ...conversation("turn-1", "visitor", "stale"), messageId: duplicateId },
+        { ...conversation("turn-1", "visitor", "fresh"), messageId: duplicateId },
+        conversation("turn-1", "assistant", "reply"),
+      ],
+      1,
+    );
+
+    expect(transcript.duplicateMessageCount).toBe(1);
+    expect(transcript.droppedTurnCount).toBe(1);
+    expect(transcript.records.map((record) => record.messageId)).toEqual([
+      duplicateId,
+      deriveMessageId("turn-1", "assistant"),
+    ]);
+    expect(transcript.messages).toEqual([
+      { role: "user", content: "fresh" },
+      { role: "assistant", content: "reply" },
+    ]);
+  });
+
+  it("bounds by whole turns instead of slicing a visitor/assistant pair mid-turn", () => {
+    const transcript = conversationHistoryToMessages(
+      [
+        conversation("turn-0", "visitor", "old visitor"),
+        conversation("turn-0", "assistant", "old assistant"),
+        conversation("turn-1", "visitor", "kept visitor"),
+        conversation("turn-1", "assistant", "kept assistant"),
+        conversation("turn-2", "visitor", "latest visitor"),
+        conversation("turn-2", "assistant", "latest assistant"),
+      ],
+      2,
+    );
+
+    expect(transcript.droppedTurnCount).toBe(1);
+    expect(transcript.records.map((record) => record.turnId)).toEqual([
+      "turn-1",
+      "turn-1",
+      "turn-2",
+      "turn-2",
+    ]);
+    expect(transcript.messages).toEqual([
+      { role: "user", content: "kept visitor" },
+      { role: "assistant", content: "kept assistant" },
+      { role: "user", content: "latest visitor" },
+      { role: "assistant", content: "latest assistant" },
+    ]);
+  });
 });
+
+function conversation(
+  turnId: string,
+  role: ConversationMessage["role"],
+  text: string,
+): ConversationMessage {
+  return {
+    kind: "conversation",
+    turnId,
+    role,
+    messageId: deriveMessageId(turnId, role),
+    text,
+    at: 0,
+  };
+}

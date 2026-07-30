@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { FACET_STAGE_TOOL_SPECS } from "@facet/agent-tools";
+import { FACET_TOOL_SPECS } from "@facet/agent-tools";
 
 import {
   DEFAULT_ANTHROPIC_MODEL,
@@ -81,10 +81,7 @@ const TURN: ProviderTurn = {
   ],
 };
 
-const PROVIDER_TOOLS: readonly ToolSpec[] = [
-  { name: "say", description: "Send a chat message.", parameters: { type: "object" } },
-  { name: "render_page", description: "Replace the page.", parameters: { type: "object" } },
-];
+const PROVIDER_TOOLS: readonly ToolSpec[] = FACET_TOOL_SPECS;
 
 // ---------------------------------------------------------------------------
 // Shared adapter contract — the SAME suite runs against both providers
@@ -142,8 +139,9 @@ const openaiCase: AdapterCase = {
     // Tools are offered as OpenAI functions.
     const tools = body["tools"] as ReadonlyArray<Record<string, unknown>>;
     const names = tools.map((t) => (t["function"] as Record<string, unknown>)["name"]);
-    expect(names).toContain("say");
     expect(names).toContain("render_page");
+    expect(names).toContain("read_screen");
+    expect(names).not.toContain("say");
     expect(body["tool_choice"]).toBe("auto");
   },
 };
@@ -167,7 +165,9 @@ const anthropicCase: AdapterCase = {
     expect(typeof body["max_tokens"]).toBe("number");
     expect(body["max_tokens"]).toBeGreaterThan(0);
     const tools = body["tools"] as ReadonlyArray<Record<string, unknown>>;
-    expect(tools.map((t) => t["name"])).toContain("say");
+    expect(tools.map((t) => t["name"])).toContain("render_page");
+    expect(tools.map((t) => t["name"])).toContain("read_screen");
+    expect(tools.map((t) => t["name"])).not.toContain("say");
     expect(tools[0]).toHaveProperty("input_schema");
   },
 };
@@ -255,7 +255,7 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
 
   it("parses a tool-call step (name + parsed input)", async () => {
     const { fetchImpl } = createCapturingFetch(
-      okJson(adapter.toolResponse("call-1", "say", { text: "hi there" })),
+      okJson(adapter.toolResponse("call-1", "read_screen", { screen: "home" })),
     );
     const provider = adapter.create(API_KEY, fetchImpl);
 
@@ -263,8 +263,8 @@ describe.each([openaiCase, anthropicCase])("$label adapter contract", (adapter) 
     expect(step.toolCalls).toHaveLength(1);
     expect(step.toolCalls[0]).toMatchObject({
       id: "call-1",
-      name: "say",
-      input: { text: "hi there" },
+      name: "read_screen",
+      input: { screen: "home" },
     });
   });
 
@@ -320,76 +320,70 @@ const TOOL_LOOP_TURN: ProviderTurn = {
       role: "assistant_tools",
       text: "",
       toolCalls: [
-        { id: "t1", name: "render_page", input: { tree: { root: "root" } } },
-        { id: "t2", name: "say", input: { text: "done" } },
+        { id: "t1", name: "render_page", input: { markup: '<Screen name="home" />' } },
+        { id: "t2", name: "read_screen", input: { screen: "home" } },
       ],
     },
     { role: "tool_result", callId: "t1", content: "ok: page replaced" },
-    { role: "tool_result", callId: "t2", content: "ok: said" },
+    { role: "tool_result", callId: "t2", content: "ok: screen read" },
   ],
 };
 
-const PATTERN_TOOL = FACET_STAGE_TOOL_SPECS.find((tool) => tool.name === "get_pattern")!;
-const EXACT_PATTERN_RESULT = JSON.stringify({
-  tool: "get_pattern",
+const SPEC_TOOL = FACET_TOOL_SPECS.find((tool) => tool.name === "read_component_spec")!;
+const EXACT_SPEC_RESULT = JSON.stringify({
+  tool: "read_component_spec",
   status: "ok",
   outcome: "no_stage_change",
-  data: JSON.stringify({
-    name: "hero",
-    description: "A compact hero reference.",
-    useWhen: "Use for one focused introduction.",
-    root: "hero.root",
-    nodes: { "hero.root": { id: "hero.root", type: "text", value: "Build boldly" } },
-  }),
+  data: { tag: "Screen", props: ["name"], acceptsChildren: true },
 });
-const PATTERN_WIRE_TURN: ProviderTurn = {
+const SPEC_WIRE_TURN: ProviderTurn = {
   system: "sys",
   messages: [
-    { role: "user", content: "show me a reference" },
+    { role: "user", content: "show me a component spec" },
     {
       role: "assistant_tools",
       text: "",
-      toolCalls: [{ id: "pattern-1", name: "get_pattern", input: { name: "hero" } }],
+      toolCalls: [{ id: "spec-1", name: "read_component_spec", input: { tag: "Screen" } }],
     },
-    { role: "tool_result", callId: "pattern-1", content: EXACT_PATTERN_RESULT },
+    { role: "tool_result", callId: "spec-1", content: EXACT_SPEC_RESULT },
   ],
 };
 
-describe.each([openaiCase, anthropicCase])("$label canonical Pattern wire", (adapter) => {
+describe.each([openaiCase, anthropicCase])("$label canonical component-spec wire", (adapter) => {
   it("maps the shared name-only schema and exact result unchanged", async () => {
     const { calls, fetchImpl } = createCapturingFetch(okJson(adapter.textResponse("")));
 
-    await adapter.create(API_KEY, fetchImpl).run(PATTERN_WIRE_TURN, [PATTERN_TOOL]);
+    await adapter.create(API_KEY, fetchImpl).run(SPEC_WIRE_TURN, [SPEC_TOOL]);
 
     const body = bodyOf(calls[0]!);
     const tools = body["tools"] as Array<Record<string, unknown>>;
     if (adapter.label === "openai") {
       const fn = tools[0]!["function"] as Record<string, unknown>;
-      expect(fn["name"]).toBe("get_pattern");
-      expect(fn["parameters"]).toEqual(PATTERN_TOOL.parameters);
+      expect(fn["name"]).toBe("read_component_spec");
+      expect(fn["parameters"]).toEqual(SPEC_TOOL.inputSchema);
 
       const messages = body["messages"] as Array<Record<string, unknown>>;
       const assistant = messages.find((message) => message["role"] === "assistant")!;
       const calls = assistant["tool_calls"] as Array<Record<string, unknown>>;
       expect(calls[0]).toMatchObject({
-        id: "pattern-1",
-        function: { name: "get_pattern", arguments: JSON.stringify({ name: "hero" }) },
+        id: "spec-1",
+        function: { name: "read_component_spec", arguments: JSON.stringify({ tag: "Screen" }) },
       });
       const result = messages.find((message) => message["role"] === "tool")!;
-      expect(result["content"]).toBe(EXACT_PATTERN_RESULT);
+      expect(result["content"]).toBe(EXACT_SPEC_RESULT);
       return;
     }
 
-    expect(tools[0]!["name"]).toBe("get_pattern");
-    expect(tools[0]!["input_schema"]).toEqual(PATTERN_TOOL.parameters);
+    expect(tools[0]!["name"]).toBe("read_component_spec");
+    expect(tools[0]!["input_schema"]).toEqual(SPEC_TOOL.inputSchema);
     const messages = body["messages"] as Array<Record<string, unknown>>;
     const assistant = messages.find((message) => message["role"] === "assistant")!;
     const uses = assistant["content"] as Array<Record<string, unknown>>;
     expect(uses[0]).toEqual({
       type: "tool_use",
-      id: "pattern-1",
-      name: "get_pattern",
-      input: { name: "hero" },
+      id: "spec-1",
+      name: "read_component_spec",
+      input: { tag: "Screen" },
     });
     const resultMessage = messages.find(
       (message) =>
@@ -404,8 +398,8 @@ describe.each([openaiCase, anthropicCase])("$label canonical Pattern wire", (ada
     const results = resultMessage["content"] as Array<Record<string, unknown>>;
     expect(results[0]).toEqual({
       type: "tool_result",
-      tool_use_id: "pattern-1",
-      content: EXACT_PATTERN_RESULT,
+      tool_use_id: "spec-1",
+      content: EXACT_SPEC_RESULT,
     });
   });
 });
@@ -433,7 +427,11 @@ describe("openai tool-loop wire translation", () => {
           message: {
             content: null,
             tool_calls: [
-              { id: "x", type: "function", function: { name: "say", arguments: "{not json" } },
+              {
+                id: "x",
+                type: "function",
+                function: { name: "read_screen", arguments: "{not json" },
+              },
             ],
           },
         },
@@ -464,7 +462,7 @@ describe("openai tool-loop wire translation", () => {
 
   it("rejects malformed tool calls that lack a usable id or name", async () => {
     for (const toolCall of [
-      { id: "", type: "function", function: { name: "say", arguments: "{}" } },
+      { id: "", type: "function", function: { name: "read_screen", arguments: "{}" } },
       { id: "call_1", type: "function", function: { name: "", arguments: "{}" } },
       { id: "call_1", type: "function" },
     ]) {
@@ -524,7 +522,7 @@ describe("openai Responses API translation", () => {
           type: "function",
           name: tool.name,
           description: tool.description,
-          parameters: tool.parameters,
+          parameters: tool.inputSchema,
         })),
       );
 
@@ -534,13 +532,13 @@ describe("openai Responses API translation", () => {
         type: "function_call",
         call_id: "t1",
         name: "render_page",
-        arguments: JSON.stringify({ tree: { root: "root" } }),
+        arguments: JSON.stringify({ markup: '<Screen name="home" />' }),
       });
       expect(input[2]).toEqual({
         type: "function_call",
         call_id: "t2",
-        name: "say",
-        arguments: JSON.stringify({ text: "done" }),
+        name: "read_screen",
+        arguments: JSON.stringify({ screen: "home" }),
       });
       expect(input[3]).toEqual({
         type: "function_call_output",
@@ -550,7 +548,7 @@ describe("openai Responses API translation", () => {
       expect(input[4]).toEqual({
         type: "function_call_output",
         call_id: "t2",
-        output: "ok: said",
+        output: "ok: screen read",
       });
       expect(step).toMatchObject({ text: "done", toolCalls: [] });
     },
@@ -572,8 +570,8 @@ describe("openai Responses API translation", () => {
           {
             type: "function_call",
             call_id: "call-7",
-            name: "say",
-            arguments: JSON.stringify({ text: "hello" }),
+            name: "read_screen",
+            arguments: JSON.stringify({ screen: "home" }),
           },
         ],
         usage: { input_tokens: 321, output_tokens: 45 },
@@ -586,7 +584,7 @@ describe("openai Responses API translation", () => {
 
     expect(step).toMatchObject({
       text: "Working. Done.",
-      toolCalls: [{ id: "call-7", name: "say", input: { text: "hello" } }],
+      toolCalls: [{ id: "call-7", name: "read_screen", input: { screen: "home" } }],
       usage: { inputTokens: 321, outputTokens: 45 },
       providerState: expect.any(Array),
     });
@@ -612,7 +610,7 @@ describe("openai Responses API translation", () => {
         type: "function_call",
         id: "function-1",
         call_id: "call-1",
-        name: "inspect_stage",
+        name: "read_screen",
         arguments: "{}",
         status: "completed",
       },
@@ -644,7 +642,7 @@ describe("openai Responses API translation", () => {
       {
         system: "sys",
         messages: [
-          { role: "user", content: "Inspect the stage." },
+          { role: "user", content: "Read the screen." },
           {
             role: "assistant_tools",
             text: firstStep.text,
@@ -658,7 +656,7 @@ describe("openai Responses API translation", () => {
     );
 
     expect(bodyOf(second.calls[0]!)["input"]).toEqual([
-      { role: "user", content: "Inspect the stage." },
+      { role: "user", content: "Read the screen." },
       ...providerState,
       { type: "function_call_output", call_id: "call-1", output: "stage is empty" },
     ]);
@@ -677,7 +675,7 @@ describe("openai Responses API translation", () => {
           {
             type: "function_call",
             call_id: "call-1",
-            name: "say",
+            name: "read_screen",
             arguments: "{}",
             status: "incomplete",
           },
@@ -726,7 +724,7 @@ describe("openai Responses API translation", () => {
           {
             type: "function_call",
             call_id: "call-bad",
-            name: "say",
+            name: "read_screen",
             arguments: "{not json",
           },
         ],
@@ -743,7 +741,7 @@ describe("openai Responses API translation", () => {
   it("rejects malformed Responses output items", async () => {
     for (const output of [
       undefined,
-      [{ type: "function_call", call_id: "", name: "say", arguments: "{}" }],
+      [{ type: "function_call", call_id: "", name: "read_screen", arguments: "{}" }],
       [{ type: "function_call", call_id: "call-1", name: "", arguments: "{}" }],
     ]) {
       const { fetchImpl } = createCapturingFetch(okJson({ status: "completed", output }));
@@ -836,8 +834,8 @@ describe("anthropic tool-loop wire translation", () => {
 
   it("rejects malformed tool_use blocks that lack a usable id or name", async () => {
     for (const block of [
-      { type: "tool_use", id: "", name: "say", input: { text: "hello" } },
-      { type: "tool_use", id: "tool_1", name: "", input: { text: "hello" } },
+      { type: "tool_use", id: "", name: "read_screen", input: { screen: "home" } },
+      { type: "tool_use", id: "tool_1", name: "", input: { screen: "home" } },
     ]) {
       const malformed = { content: [block] };
       const { fetchImpl } = createCapturingFetch(okJson(malformed));

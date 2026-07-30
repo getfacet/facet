@@ -45,12 +45,39 @@ Confirm before any WU:
 - `/worktree-prep` baseline passed, or rerun `pnpm typecheck && pnpm test && pnpm lint`
 
 ## Stage 1 — Work Unit execution (TDD-first)
-Read the manifest. Reuse `shared_preflight` once. Execute WUs in the spec's
-`Execution Order` — parallel ONLY where a `parallel_group` marks disjoint file
-sets. For each WU, spawn a Codex subagent with the same role as Claude Code's
-`general-purpose` subagent and this work order. If no subagent tool is available,
-stop and ask whether to run WUs inline; do not silently downgrade. Deviation from
-this work order means the WU is rejected:
+Read the manifest. Reuse `shared_preflight` once. Initialize the ignored
+`.agents/work/<slug>/progress.json` by running the manifest's exact
+`execution_policy.initialize_command`. Its versioned schema and manifest SHA-256
+are authoritative; never hand-edit a stale/hash-mismatched ledger. Run
+`execution_policy.validate_progress_command` after initialization and after
+every status update.
+
+Execute packets in declared order. Replace `PACKET-ID`/`STATUS` in
+`packet_update_command` and transition the next eligible packet to
+`in_progress`; this fails unless every external dependency has complete
+`passed` evidence. Then replace `PACKET-ID` in `packet_view_command`. The view
+runs full ledger validation, refuses pending/failed packets, and materializes
+only complete dependency handoffs.
+
+For every WU transition, write one temporary JSON object containing exactly the
+manifest's required evidence fields except `status`, then replace
+`WU-ID`/`STATUS`/`EVIDENCE.json` in `work_unit_update_command`. Never edit
+`progress.json` directly. Only the main agent invokes update commands, serially
+after handoffs; subagents never mutate the ledger. The command enforces
+`pending -> red -> green -> passed`, failure/retry transitions, dependency
+PASS, exact changed files and complete PASS evidence. After every local WU
+passes, use `packet_update_command` to mark the packet `passed`; it refuses while
+any WU is incomplete. A packet contains at most 8 WUs and 40 owned files; WUs
+inside it still follow the global `Execution Order` and may run in parallel only
+when their `parallel_group` is equal and the packet declares no dependency edge
+between them.
+
+For each packet, give the subagent only: fixed contract sections named by
+`contract_sections`, listed risk IDs, dependency handoffs, exact packet WUs, and
+the TDD work order below. Do not paste the full dev spec or all WUs into every
+subagent prompt. If no subagent tool is available, stop and ask whether to run
+WUs inline; do not silently downgrade. Deviation from this work order means the
+WU is rejected:
 
 - **STEP 1 RED** — run the WU's `red_check` BEFORE touching production code (only
   test files may change). It must FAIL → capture `red_check_output_before`.
@@ -71,7 +98,13 @@ this work order means the WU is rejected:
 - Only the WU's listed files changed.
 - `red_check_output_before` shows FAIL, `_after` shows PASS (or `N/A` justified).
 - `refactor_decision` present + concrete; `green_diff_summary` not disproportionate.
-- On pass: `git commit -m "wu-N: <title>"` on the feature branch.
+- On pass: record the WU result only through
+  `execution_policy.work_unit_update_command`; do not commit until
+  `packet_update_command` accepts `passed`.
+
+After the manifest accepts the packet as passed, retain the per-WU evidence and
+create one packet commit listing its WU IDs. The final squash still produces one
+feature commit.
 
 ### Retry policy (max 3): re-delegate with error context → main agent fixes directly → escalate to the user.
 
@@ -86,9 +119,9 @@ Run in order; on any FAIL, fix and restart the inner loop from the top:
 4. **`/live-test`** — Tier 1 always blocks; Tier 2 blocks when quickstart or the
    reference-agent provider loop changed; Tier 3/journey per `/live-test`
    policy.
-5. **`/update-docs`** — reflect every triggered doc (esp.
-   `packages/core/core/src/spec.ts` STAGE_SPEC when the brick/token/action vocabulary
-   changed), or mark intentionally unchanged with `file:line` evidence.
+5. **`/update-docs`** — reflect every triggered doc and every generated
+   agent-facing grammar/catalog/tool/observation surface, or mark intentionally
+   unchanged with `file:line` evidence.
 
 ## Stage 3 — Land it
 Only after Stage 2 PASS:

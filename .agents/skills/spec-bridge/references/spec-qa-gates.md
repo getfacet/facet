@@ -23,11 +23,14 @@ PASS: for every invariant the brief marked `TOUCHES`, the spec gives a CONCRETE
 safe design, specifically —
 - #1 backend/domain: nothing in `@facet/core`/renderer/protocol reaches toward
   fetch/compute/store of domain data; backend work is the agent's own tool.
-- #3 fail-safe: the renderer/validator behavior on malformed/empty/deep/cyclic
-  input is specified and never throws or injects.
-- #4 declarative: no raw HTML/JS/CSS/pixel escape hatch is introduced.
-- #5 overlay: any floating UI is a dedicated, constrained brick — not a general
-  z-index/overlap capability.
+- #3 fail-safe: parser/catalog/document/runtime/renderer behavior on
+  malformed/empty/deep/cyclic input and trusted-component throws is specified,
+  bounded, and never exposes executable input or crashes the full page.
+- #4 declarative: only registered tags, declared props, quoted scalar values,
+  and closed references are authored; no executable or open style/token escape
+  hatch is introduced.
+- #5 overlap: floating UI is owned only by the dedicated trusted modal contract,
+  not a general positioning/z-index capability.
 - #6 two-writers: if the browser executes interactions locally, the spec defines
   how the server-authoritative stage stays coherent (ordering / version / echo).
 FAIL: any `TOUCHES` invariant is hand-waved, or any invariant is silently broken.
@@ -37,13 +40,16 @@ PASS: the spec's boundary checklist covers malformed/empty/deep/cyclic input,
 offline agent, and rapid/racing events, and each has a test in some WU `test_plan`.
 FAIL: a fail-safe boundary is claimed but untested, or a boundary is missing.
 
-## Gate 5 — Public API Compatibility
+## Gate 5 — Public API Cutover
 Apply when a published `@facet/*` surface changes.
 PASS: additive vs breaking is stated; every existing consumer (other packages,
-`apps/playground`, `examples/`) has a migration or is confirmed unaffected (grep
-evidence). `@facet/core` stays browser-safe/node-free; barrel exports preserved.
-FAIL: a breaking change with no consumer migration, or a core/barrel/boundary
-violation.
+apps, examples, docs, tests, package smoke) moves or is deleted in the same
+atomic cutover with grep evidence. No compatibility alias, adapter, dual
+read/write, saved-document migration, or deprecated export remains.
+`@facet/core` stays browser-safe/node-free and public barrels expose only the
+new contract.
+FAIL: an old consumer or compatibility surface remains, or a
+core/barrel/boundary violation is unresolved.
 
 ## Gate 6 — Module Shape & Scaffold Fit
 Apply when the spec grows a large file, touches an already-large file, creates a
@@ -60,7 +66,9 @@ structure.
 
 ## Gate 7 — Test Traceability
 PASS: every `DC-*` maps to ≥1 test; ≥1 boundary/error test exists; each WU has a
-non-empty `test_plan` (type/target/covers_dc/action); the union of
+non-empty `test_plan` (type/target/covers_dc/action); `action` is `new` or
+`update` for behavioral RED coverage and may be `verify` only for a
+docs/deletion/move-only N/A WU with an executable read-only target; the union of
 `test_plan.covers_dc` covers every `DC-*`.
 FAIL: a `DC-*` is uncovered, or any WU has an empty/missing `test_plan`.
 
@@ -70,14 +78,19 @@ paths match context evidence; dependencies acyclic; each WU has an independently
 verifiable DoD with commands and a no-regression check; parallel groups share no
 writable files; each relevant WU records a module-shape decision; the manifest
 matches the spec, including `final_gate_chain`; an implementer could delegate
-without further design decisions.
+without further design decisions. If execution packets/progress resume are
+used, executable commands bind the ledger to the manifest hash, enforce legal
+packet/WU transitions and complete PASS evidence, reject pending dependencies,
+and materialize only validated handoffs; reviewers exercise both rejection and
+success paths.
 FAIL: any of the above is violated.
 
 ## Gate 9 — TDD-First Enforcement
 PASS: every WU touching non-test/non-docs production files declares a concrete
 `red_check` (a real test target, expected FAIL→PASS, distinct from
 no-regression checks) and a `RED→GREEN evidence` DoD item; deletion/docs/move-only
-WUs carry `red_check: N/A` with a valid one-line justification; every WU's
+WUs carry `red_check: N/A` with a valid one-line justification plus an
+executable read-only verification target and `test_plan.action: verify`; every WU's
 `handoff_format` includes `refactor_decision` + `green_diff_summary`; spec and
 manifest agree on each `red_check`.
 FAIL: a prod-code WU lacks a real `red_check`, or `N/A` is used on a file that

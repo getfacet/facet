@@ -1,617 +1,360 @@
+import { readFileSync } from "node:fs";
+
 import { describe, expect, it } from "vitest";
-import { BRICK_CONTRACT, BRICK_TYPES, type BrickType } from "./brick-contract.js";
-import { isAllowedColor } from "./theme-color.js";
-import {
-  ASPECT_RATIOS,
-  BORDER_WIDTHS,
-  CHART_THICKNESSES,
-  COLORS,
-  CONTROL_HEIGHTS,
-  FONT_FAMILIES,
-  FONT_SIZES,
-  FONT_WEIGHTS,
-  GRADIENTS,
-  HIGHLIGHTS,
-  INDICATOR_SIZES,
-  LAYOUT_WIDTHS,
-  LETTER_SPACINGS,
-  LINE_HEIGHTS,
-  MAX_HEIGHTS,
-  MAX_WIDTHS,
-  MIN_HEIGHTS,
-  PROGRESS_THICKNESSES,
-  RADII,
-  SCRIMS,
-  SHADOWS,
-  SPACES,
-} from "./tokens.js";
-import { validateTheme } from "./index.js";
 
-const map = <K extends string, V>(keys: readonly K[], value: (key: K) => V): Record<K, V> =>
-  Object.fromEntries(keys.map((key) => [key, value(key)])) as Record<K, V>;
+import { BOUNDS } from "./bounds.js";
+import { themeToCssVars, validateTheme } from "./theme.js";
+import type { FacetTheme, ThemeValidationResult } from "./theme.js";
 
-function completeTheme(): Record<string, unknown> {
-  const defaults = Object.fromEntries(
-    BRICK_TYPES.map((brick) => [
-      brick,
-      Object.fromEntries(
-        Object.keys(BRICK_CONTRACT[brick].style.targets).map((target) => [target, {}]),
-      ),
-    ]),
-  );
-  const paint = {
-    color: map(COLORS, (name) => (name === "inherit" ? "inherit" : "#123456")),
-    shadow: map(SHADOWS, (name) => (name === "none" ? "none" : "0 1px 2px rgba(0, 0, 0, 0.25)")),
-    gradient: map(GRADIENTS, (name) =>
-      name === "none" ? "none" : "linear-gradient(90deg, #000000 0%, #ffffff 100%)",
-    ),
-    scrim: map(SCRIMS, (name) => (name === "none" ? "transparent" : "rgba(0, 0, 0, 0.5)")),
-    highlight: map(HIGHLIGHTS, (name) =>
-      name === "none" ? "none" : "linear-gradient(90deg, #ffff00 0%, #ffff00 100%)",
-    ),
-  };
+/**
+ * One exhaustive theme, written out by hand and typed as `FacetTheme`.
+ *
+ * This literal is the **bidirectional pin** between the type's token-name unions
+ * and the runtime token table inside `theme.ts`, and it closes both directions
+ * at run time rather than only under `tsc`:
+ *
+ * - a token the *type* declares but the table omits ends up here (the type
+ *   requires it) and `validateTheme` rejects it as an unknown token name; and
+ * - a token the *table* requires but the type omits cannot be written here (the
+ *   type forbids it) and `validateTheme` rejects the theme as missing a token.
+ *
+ * Either way the acceptance test below fails, so the two statements of the
+ * vocabulary cannot drift apart.
+ */
+const SAMPLE_THEME: FacetTheme = {
+  color: {
+    background: "#ffffff",
+    surface: "#f7f7f8",
+    border: "#e4e4e7",
+    text: "#18181b",
+    textMuted: "#71717a",
+    accent: "#2563eb",
+    onAccent: "#ffffff",
+    success: "#15803d",
+    warning: "#b45309",
+    danger: "#b91c1c",
+  },
+  space: { xs: "0.25rem", sm: "0.5rem", md: "1rem", lg: "1.5rem", xl: "2.5rem" },
+  radius: { sm: "0.25rem", md: "0.5rem", lg: "1rem", full: "9999px" },
+  borderWidth: { thin: "1px", thick: "2px" },
+  shadow: {
+    sm: "0 1px 2px rgba(0, 0, 0, 0.06)",
+    md: "0 4px 12px rgba(0, 0, 0, 0.08)",
+    lg: "0 12px 32px rgba(0, 0, 0, 0.12)",
+  },
+  fontFamily: { sans: "'Inter', system-ui, sans-serif", mono: "'JetBrains Mono', monospace" },
+  fontSize: { xs: "0.75rem", sm: "0.875rem", md: "1rem", lg: "1.25rem", xl: "2rem" },
+  fontWeight: { regular: "400", medium: "500", bold: "700" },
+  lineHeight: { tight: "1.2", normal: "1.5", relaxed: "1.7" },
+};
 
+/**
+ * The complete CSS custom-property projection, in order. Every row is written
+ * out rather than derived, so a renamed token, a changed prefix, or a different
+ * camelCase-to-kebab-case rule fails exactly one row of a readable table.
+ */
+const PROJECTION_TABLE: ReadonlyArray<readonly [string, string]> = [
+  ["--facet-color-background", "#ffffff"],
+  ["--facet-color-surface", "#f7f7f8"],
+  ["--facet-color-border", "#e4e4e7"],
+  ["--facet-color-text", "#18181b"],
+  ["--facet-color-text-muted", "#71717a"],
+  ["--facet-color-accent", "#2563eb"],
+  ["--facet-color-on-accent", "#ffffff"],
+  ["--facet-color-success", "#15803d"],
+  ["--facet-color-warning", "#b45309"],
+  ["--facet-color-danger", "#b91c1c"],
+  ["--facet-space-xs", "0.25rem"],
+  ["--facet-space-sm", "0.5rem"],
+  ["--facet-space-md", "1rem"],
+  ["--facet-space-lg", "1.5rem"],
+  ["--facet-space-xl", "2.5rem"],
+  ["--facet-radius-sm", "0.25rem"],
+  ["--facet-radius-md", "0.5rem"],
+  ["--facet-radius-lg", "1rem"],
+  ["--facet-radius-full", "9999px"],
+  ["--facet-border-width-thin", "1px"],
+  ["--facet-border-width-thick", "2px"],
+  ["--facet-shadow-sm", "0 1px 2px rgba(0, 0, 0, 0.06)"],
+  ["--facet-shadow-md", "0 4px 12px rgba(0, 0, 0, 0.08)"],
+  ["--facet-shadow-lg", "0 12px 32px rgba(0, 0, 0, 0.12)"],
+  ["--facet-font-family-sans", "'Inter', system-ui, sans-serif"],
+  ["--facet-font-family-mono", "'JetBrains Mono', monospace"],
+  ["--facet-font-size-xs", "0.75rem"],
+  ["--facet-font-size-sm", "0.875rem"],
+  ["--facet-font-size-md", "1rem"],
+  ["--facet-font-size-lg", "1.25rem"],
+  ["--facet-font-size-xl", "2rem"],
+  ["--facet-font-weight-regular", "400"],
+  ["--facet-font-weight-medium", "500"],
+  ["--facet-font-weight-bold", "700"],
+  ["--facet-line-height-tight", "1.2"],
+  ["--facet-line-height-normal", "1.5"],
+  ["--facet-line-height-relaxed", "1.7"],
+];
+
+/**
+ * A mutable copy of the sample, one loose record per group, so a test can plant
+ * exactly one fault. Written group by group so that adding a group to
+ * `FacetTheme` without extending this helper is a compile error.
+ */
+type ThemeDraft = { -readonly [G in keyof FacetTheme]: Record<string, unknown> };
+
+function themeDraft(): ThemeDraft {
   return {
-    name: "complete",
-    description: "A complete test Theme.",
-    tokens: {
-      space: map(SPACES, () => "16px"),
-      fontSize: map(FONT_SIZES, () => "16px"),
-      fontFamily: map(FONT_FAMILIES, () => "sans-serif"),
-      fontWeight: map(FONT_WEIGHTS, () => 400),
-      radius: map(RADII, () => "8px"),
-      borderWidth: map(BORDER_WIDTHS, () => "1px"),
-      aspectRatio: map(ASPECT_RATIOS, (name) => (name === "auto" ? "auto" : "1 / 1")),
-      minHeight: map(MIN_HEIGHTS, (name) => (name === "auto" ? "auto" : "100px")),
-      maxWidth: map(MAX_WIDTHS, (name) => (name === "none" ? "none" : "100px")),
-      layoutWidth: map(LAYOUT_WIDTHS, () => "16rem"),
-      maxHeight: map(MAX_HEIGHTS, (name) => (name === "none" ? "none" : "50svh")),
-      letterSpacing: map(LETTER_SPACINGS, () => "0"),
-      lineHeight: map(LINE_HEIGHTS, () => "1.5"),
-      controlHeight: map(CONTROL_HEIGHTS, () => "32px"),
-      indicatorSize: map(INDICATOR_SIZES, () => "16px"),
-      progressThickness: map(PROGRESS_THICKNESSES, () => "4px"),
-      chartThickness: map(CHART_THICKNESSES, () => "2px"),
-      paint: { light: structuredClone(paint), dark: structuredClone(paint) },
-    },
-    defaults,
+    color: { ...SAMPLE_THEME.color },
+    space: { ...SAMPLE_THEME.space },
+    radius: { ...SAMPLE_THEME.radius },
+    borderWidth: { ...SAMPLE_THEME.borderWidth },
+    shadow: { ...SAMPLE_THEME.shadow },
+    fontFamily: { ...SAMPLE_THEME.fontFamily },
+    fontSize: { ...SAMPLE_THEME.fontSize },
+    fontWeight: { ...SAMPLE_THEME.fontWeight },
+    lineHeight: { ...SAMPLE_THEME.lineHeight },
   };
 }
 
-function setToken(theme: Record<string, unknown>, group: string, value: unknown): void {
-  const tokens = theme.tokens as Record<string, Record<string, unknown>>;
-  const target = tokens[group]!;
-  target[Object.keys(target)[0]!] = value;
+/** Unwraps an accepted result and pins the success branch's exact key set. */
+function accepted(result: ThemeValidationResult): FacetTheme {
+  expect(result.ok).toBe(true);
+  if (!result.ok) {
+    throw new Error("expected an accepted theme");
+  }
+  expect(Object.keys(result).sort()).toEqual(["ok", "theme"]);
+  return result.theme;
 }
 
-function preset(style: Record<string, unknown> = {}): Record<string, unknown> {
-  return { description: "Reusable treatment.", useWhen: "Use for this visual role.", style };
+/**
+ * Pins a rejection: one structured error, never an aggregated list. The detail
+ * is framework copy, so it is bounded by `B-24` like every other such string.
+ */
+function rejected(result: ThemeValidationResult, code: string, at: string): void {
+  expect(result.ok).toBe(false);
+  if (result.ok) {
+    throw new Error("expected a rejection");
+  }
+  expect(Object.keys(result).sort()).toEqual(["at", "code", "detail", "ok"]);
+  expect(result.code).toBe(code);
+  expect(result.at).toBe(at);
+  expect(result.detail.length).toBeGreaterThan(0);
+  expect(result.detail.length).toBeLessThanOrEqual(BOUNDS.frameworkCopyChars);
 }
 
-function expectValid(theme: Record<string, unknown>): void {
-  const result = validateTheme(theme);
-  expect(result.theme, result.issues.map(({ message }) => message).join("\n")).toBeDefined();
-  expect(result.issues.some(({ severity }) => severity === "error")).toBe(false);
-}
-
-function expectInvalid(theme: unknown): void {
-  const result = validateTheme(theme);
-  expect(result.theme).toBeUndefined();
-  expect(result.issues.some(({ severity }) => severity === "error")).toBe(true);
-}
-
-describe("validateTheme", () => {
-  it("keeps opaque background acceptance aligned with the canonical color parser", () => {
-    const corpus = [
-      "#fff",
-      "#ffffffff",
-      "#ffffff00",
-      "rgb(0, 127.5, 255)",
-      "rgb(0%, 50%, 100%)",
-      "rgb(0%, 2, 3%)",
-      "rgb(256, 0, 0)",
-      "hsl(-360, 100%, 50%)",
-      "hsl(0, 101%, 50%)",
-      "orange",
-      "transparent",
-      "inherit",
-      "var(--paint)",
-    ];
-
-    for (const value of corpus) {
-      const theme = completeTheme();
-      const tokens = theme.tokens as Record<string, unknown>;
-      const paint = tokens.paint as Record<string, unknown>;
-      const light = paint.light as Record<string, Record<string, unknown>>;
-      light.color!.background = value;
-      expect(validateTheme(theme).theme !== undefined, value).toBe(isAllowedColor(value));
-    }
+describe("the token-name contract is closed", () => {
+  it("accepts a theme that fills exactly the declared token names", () => {
+    // The bidirectional pin: see SAMPLE_THEME's note. A drift in either
+    // direction between the type and the runtime table fails right here.
+    expect(accepted(validateTheme(SAMPLE_THEME))).toEqual(SAMPLE_THEME);
   });
 
-  it("keeps specific structural issues when an incomplete Theme cannot be contrast-checked", () => {
-    const result = validateTheme({ name: "incomplete", tokens: {}, defaults: {} });
-
-    expect(result.theme).toBeUndefined();
-    expect(result.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          severity: "error",
-          message: expect.stringMatching(/tokens\.paint.*missing or not an object/i),
-        }),
-      ]),
-    );
-    expect(result.issues).not.toContainEqual(
-      expect.objectContaining({ message: "theme document threw during validation" }),
-    );
+  it("declares nine token groups and thirty-seven token names", () => {
+    expect(Object.keys(SAMPLE_THEME)).toEqual([
+      "color",
+      "space",
+      "radius",
+      "borderWidth",
+      "shadow",
+      "fontFamily",
+      "fontSize",
+      "fontWeight",
+      "lineHeight",
+    ]);
+    expect(PROJECTION_TABLE).toHaveLength(37);
   });
 
-  it("returns light and dark contrast warnings through the public validator", () => {
-    const result = validateTheme(completeTheme());
-
-    expect(result.theme).toBeDefined();
-    expect(result.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          severity: "warning",
-          message: expect.stringMatching(/paint\.light.*foreground.*background.*4\.5/i),
-        }),
-        expect.objectContaining({
-          severity: "warning",
-          message: expect.stringMatching(/paint\.dark.*foreground.*background.*4\.5/i),
-        }),
-      ]),
-    );
+  it("REJECTS an unknown token name rather than passing it through", () => {
+    const draft = themeDraft();
+    draft.color["brandPurple"] = "#7c3aed";
+    rejected(validateTheme(draft), "unknown_token_name", "color.brandPurple");
   });
 
-  it("accepts only a complete Theme with bounded Presets", () => {
-    const valid = completeTheme();
-    valid.presets = {
-      box: {
-        panel: preset({
-          gap: "md",
-          background: "surface",
-          hover: { background: "accentSurface" },
-        }),
-      },
-    };
-    expectValid(valid);
-
-    const missingGroup = completeTheme();
-    delete (missingGroup.tokens as Record<string, unknown>).space;
-    expectInvalid(missingGroup);
-
-    const missingToken = completeTheme();
-    delete ((missingToken.tokens as Record<string, Record<string, unknown>>).space ?? {}).md;
-    expectInvalid(missingToken);
-
-    const missingBrick = completeTheme();
-    delete (missingBrick.defaults as Record<string, unknown>).table;
-    expectInvalid(missingBrick);
-
-    const missingTarget = completeTheme();
-    delete ((missingTarget.defaults as Record<string, Record<string, unknown>>).input ?? {})
-      .control;
-    expectInvalid(missingTarget);
-
-    const sixteen = completeTheme();
-    sixteen.presets = {
-      box: Object.fromEntries(Array.from({ length: 16 }, (_, index) => [`p${index}`, preset()])),
-    };
-    expectValid(sixteen);
-
-    const seventeen = completeTheme();
-    seventeen.presets = {
-      box: Object.fromEntries(Array.from({ length: 17 }, (_, index) => [`p${index}`, preset()])),
-    };
-    expectInvalid(seventeen);
-
-    const sixtyFour = completeTheme();
-    sixtyFour.presets = Object.fromEntries(
-      (["box", "text", "media", "input"] as const).map((brick) => [
-        brick,
-        Object.fromEntries(Array.from({ length: 16 }, (_, index) => [`p${index}`, preset()])),
-      ]),
-    );
-    expectValid(sixtyFour);
-
-    const sixtyFive = structuredClone(sixtyFour);
-    (sixtyFive.presets as Record<string, Record<string, unknown>>).richtext = {
-      extra: preset(),
-    };
-    expectInvalid(sixtyFive);
+  it("REJECTS an unknown token group rather than passing it through", () => {
+    const draft: Record<string, unknown> = { ...themeDraft(), motion: { fast: "120ms" } };
+    rejected(validateTheme(draft), "unknown_token_group", "motion");
   });
 
-  it("enforces every concrete grammar boundary without clamping", () => {
-    const cases: readonly [string, readonly unknown[], readonly unknown[]][] = [
-      ["space", ["0", "0px", "256px", "16rem", "16em"], ["-1px", "257px", "16.0001rem"]],
-      [
-        "fontSize",
-        ["8px", "256px", "0.5rem", "16em"],
-        ["7px", "257px", "0.4999rem", "16.0001em", "0"],
-      ],
-      ["radius", ["0", "9999px", "625rem", "625em"], ["-1px", "10000px", "625.0001rem"]],
-      ["borderWidth", ["0", "16px", "1rem", "1em"], ["-1px", "17px", "1.0001rem"]],
-      [
-        "controlHeight",
-        ["16px", "256px", "1rem", "16em"],
-        ["15px", "257px", "0.9999rem", "16.0001em"],
-      ],
-      [
-        "indicatorSize",
-        ["4px", "128px", "0.25rem", "8em"],
-        ["3px", "129px", "0.2499rem", "8.0001em"],
-      ],
-      [
-        "progressThickness",
-        ["1px", "64px", "0.0625rem", "4em"],
-        ["0px", "65px", "0.0624rem", "4.0001em"],
-      ],
-      [
-        "chartThickness",
-        ["1px", "32px", "0.0625rem", "2em"],
-        ["0px", "33px", "0.0624rem", "2.0001em"],
-      ],
-      [
-        "letterSpacing",
-        ["0", "-16px", "16px", "-1rem", "1em"],
-        ["-17px", "17px", "-1.0001rem", "1.0001em"],
-      ],
-      ["lineHeight", ["0.8", "3"], ["0.7999", "3.0001", "1rem"]],
-    ];
-    for (const [group, accepted, rejected] of cases) {
-      for (const value of accepted) {
-        const theme = completeTheme();
-        setToken(theme, group, value);
-        expectValid(theme);
-      }
-      for (const value of rejected) {
-        const theme = completeTheme();
-        setToken(theme, group, value);
-        expectInvalid(theme);
-      }
-    }
-
-    for (const value of [1, 1000]) {
-      const theme = completeTheme();
-      setToken(theme, "fontWeight", value);
-      expectValid(theme);
-    }
-    for (const value of [0, 1001, 400.5, Number.POSITIVE_INFINITY]) {
-      const theme = completeTheme();
-      setToken(theme, "fontWeight", value);
-      expectInvalid(theme);
-    }
-
-    for (const value of ["auto", "0.01 / 100", "100 / 0.01"]) {
-      const theme = completeTheme();
-      const token = value === "auto" ? "auto" : "square";
-      (theme.tokens as Record<string, Record<string, unknown>>).aspectRatio![token] = value;
-      expectValid(theme);
-    }
-    for (const value of ["0 / 1", "0.0099 / 1", "100.0001 / 1", "1/1", "auto "]) {
-      const theme = completeTheme();
-      (theme.tokens as Record<string, Record<string, unknown>>).aspectRatio!.square = value;
-      expectInvalid(theme);
-    }
-
-    const dimensions: readonly [string, readonly string[], readonly string[]][] = [
-      [
-        "minHeight",
-        ["auto", "0", "2000px", "125rem", "100svh"],
-        ["-1px", "2001px", "125.0001rem", "100.0001svh", "1ch"],
-      ],
-      [
-        "maxWidth",
-        ["none", "0", "4096px", "256rem", "256em", "256ch"],
-        ["-1px", "4097px", "256.0001rem", "1svh"],
-      ],
-    ];
-    for (const [group, accepted, rejected] of dimensions) {
-      for (const value of accepted) {
-        const theme = completeTheme();
-        setToken(theme, group, value);
-        expectValid(theme);
-      }
-      for (const value of rejected) {
-        const theme = completeTheme();
-        setToken(theme, group, value);
-        expectInvalid(theme);
-      }
-    }
+  it("rejects a theme that omits a declared token", () => {
+    const draft = themeDraft();
+    delete draft.space["md"];
+    rejected(validateTheme(draft), "missing_token", "space.md");
   });
 
-  it("strictly validates font, paint, gradient, and shadow values", () => {
-    for (const value of ["A", "system-ui, -apple-system, 'Open_Sans'", "x".repeat(200)]) {
-      const theme = completeTheme();
-      setToken(theme, "fontFamily", value);
-      expectValid(theme);
-    }
-    for (const value of ["", "x".repeat(201), "url(font)", "sans-serif; color:red", "emoji🙂"]) {
-      const theme = completeTheme();
-      setToken(theme, "fontFamily", value);
-      expectInvalid(theme);
-    }
-
-    const light = (theme: Record<string, unknown>) =>
-      ((theme.tokens as Record<string, unknown>).paint as Record<string, unknown>).light as Record<
-        string,
-        Record<string, unknown>
-      >;
-
-    for (const value of [
-      "#fff",
-      "#ffffffff",
-      "rgb(0, 127.5, 255)",
-      "rgb(0%, 50%, 100%)",
-      "hsl(-360, 100%, 50%)",
-      "orange",
-    ]) {
-      const theme = completeTheme();
-      light(theme).color!.background = value;
-      expectValid(theme);
-    }
-    for (const value of [
-      "#ffffff00",
-      "rgba(0,0,0,.5)",
-      "rgb(256,0,0)",
-      "rgb(0%,2,3%)",
-      "transparent",
-      "inherit",
-      "var(--paint)",
-    ]) {
-      const theme = completeTheme();
-      light(theme).color!.background = value;
-      expectInvalid(theme);
-    }
-
-    const inherited = completeTheme();
-    light(inherited).color!.inherit = "inherit";
-    expectValid(inherited);
-    const wrongInherited = completeTheme();
-    light(wrongInherited).color!.inherit = "#ffffff";
-    expectInvalid(wrongInherited);
-
-    for (const value of [
-      "none",
-      "linear-gradient(-360deg, #000000 0%, transparent 100%)",
-      "radial-gradient(circle at 0% 100%, #000000 0%, #ffffff 100%)",
-      `linear-gradient(360deg, ${Array.from(
-        { length: 8 },
-        (_, index) => `#000000 ${index * 10}%`,
-      ).join(", ")})`,
-    ]) {
-      const theme = completeTheme();
-      light(theme).gradient!.accent = value;
-      expectValid(theme);
-    }
-    for (const value of [
-      "linear-gradient(360.0001deg, #000 0%, #fff 100%)",
-      "linear-gradient(0deg, #000 60%, #fff 50%)",
-      "linear-gradient(0deg, #000 0%)",
-      `linear-gradient(0deg, ${Array.from({ length: 9 }, (_, index) => `#000 ${index * 10}%`).join(", ")})`,
-      "radial-gradient(circle at 100.0001% 0%, #000 0%, #fff 100%)",
-    ]) {
-      const theme = completeTheme();
-      light(theme).gradient!.accent = value;
-      expectInvalid(theme);
-    }
-
-    for (const value of [
-      "none",
-      "-256px 256px 0 rgba(0, 0, 0, 0)",
-      "inset 16rem -16em 256px -256px hsla(0, 100%, 50%, 1)",
-      Array.from({ length: 4 }, () => "0 0 0 #000000").join(", "),
-    ]) {
-      const theme = completeTheme();
-      light(theme).shadow!.sm = value;
-      expectValid(theme);
-    }
-    for (const value of [
-      "257px 0 0 #000",
-      "0 0 -1px #000",
-      "0 0 0 0 0 #000",
-      "0 0 0 url(evil)",
-      Array.from({ length: 5 }, () => "0 0 0 #000").join(", "),
-    ]) {
-      const theme = completeTheme();
-      light(theme).shadow!.sm = value;
-      expectInvalid(theme);
-    }
-
-    for (const value of ["rgba(0, 0, 0, 0)", "rgba(100%, 100%, 100%, 1)"]) {
-      const theme = completeTheme();
-      light(theme).scrim!.soft = value;
-      expectValid(theme);
-    }
-    for (const value of ["transparent", "rgba(0, 0, 0, 1.0001)", "rgba(0, 0, 0, -0.1)"]) {
-      const theme = completeTheme();
-      light(theme).scrim!.soft = value;
-      expectInvalid(theme);
-    }
+  it("rejects a group that is not a plain object", () => {
+    const draft: Record<string, unknown> = { ...themeDraft(), radius: "0.5rem" };
+    rejected(validateTheme(draft), "token_group_not_an_object", "radius");
   });
 
-  it("rejects malformed styles, metadata, unknown keys, and prototype keys atomically", () => {
-    const rawStyle = completeTheme();
-    (rawStyle.defaults as Record<string, Record<string, unknown>>).box!.background = "#ffffff";
-    expectInvalid(rawStyle);
-
-    const unknownStyle = completeTheme();
-    (unknownStyle.defaults as Record<string, Record<string, unknown>>).text!.margin = "md";
-    expectInvalid(unknownStyle);
-
-    const malformedPreset = completeTheme();
-    malformedPreset.presets = { box: { panel: preset({ preset: "other" }) } };
-    expectInvalid(malformedPreset);
-
-    const missingMetadata = completeTheme();
-    missingMetadata.presets = { box: { panel: { description: "Panel", style: {} } } };
-    expectInvalid(missingMetadata);
-
-    const unknownTheme = completeTheme();
-    unknownTheme.recipe = {};
-    expectInvalid(unknownTheme);
-
-    const polluted = completeTheme();
-    (polluted.tokens as Record<string, unknown>).space = JSON.parse(
-      JSON.stringify((polluted.tokens as Record<string, unknown>).space).replace(
-        /}$/,
-        ',"__proto__":"1px"}',
-      ),
-    );
-    expectInvalid(polluted);
+  it("reports the sorted-first unknown name, so the failure never depends on key order", () => {
+    const draft = themeDraft();
+    draft.color["zeta"] = "#000000";
+    draft.color["alpha"] = "#000000";
+    rejected(validateTheme(draft), "unknown_token_name", "color.alpha");
   });
 
-  it("never throws on cyclic or hostile operator input and never returns a partial Theme", () => {
-    const cyclic = completeTheme();
-    cyclic.loop = cyclic;
-    expect(() => validateTheme(cyclic)).not.toThrow();
-    expectInvalid(cyclic);
-
-    const throwing = new Proxy(completeTheme(), {
-      ownKeys() {
-        throw new Error("hostile");
-      },
-    });
-    expect(() => validateTheme(throwing)).not.toThrow();
-    expectInvalid(throwing);
-
-    const invalidLate = completeTheme();
-    const tokens = invalidLate.tokens as Record<string, Record<string, unknown>>;
-    tokens.space!.md = "24px";
-    tokens.chartThickness!.lg = "999px";
-    const result = validateTheme(invalidLate);
-    expect(result.theme).toBeUndefined();
-    expect(tokens.space!.md).toBe("24px");
-    expect(tokens.chartThickness!.lg).toBe("999px");
-  });
-
-  it("reads each Theme style property once and rejects a throwing getter whole", () => {
-    const changing = completeTheme();
-    const box = (changing.defaults as Record<string, Record<string, unknown>>).box!;
-    let changingReads = 0;
-    Object.defineProperty(box, "gap", {
+  it("rebuilds the accepted theme, so a getter cannot re-answer later", () => {
+    const draft = themeDraft();
+    Object.defineProperty(draft.color, "accent", {
+      get: () => "#2563eb",
       enumerable: true,
-      get() {
-        changingReads += 1;
-        return changingReads === 1
-          ? "md"
-          : new Proxy(
-              {},
-              {
-                ownKeys: () => {
-                  throw new Error("second read");
-                },
-              },
-            );
-      },
+      configurable: true,
     });
-
-    const accepted = validateTheme(changing);
-    expect(accepted.theme, accepted.issues.map(({ message }) => message).join("\n")).toBeDefined();
-    expect(accepted.theme?.defaults.box.gap).toBe("md");
-    expect(changingReads).toBe(1);
-
-    const throwing = completeTheme();
-    const throwingBox = (throwing.defaults as Record<string, Record<string, unknown>>).box!;
-    let throwingReads = 0;
-    Object.defineProperty(throwingBox, "gap", {
-      enumerable: true,
-      get() {
-        throwingReads += 1;
-        throw new Error("untrusted style getter");
-      },
-    });
-
-    let rejected: ReturnType<typeof validateTheme> | undefined;
-    expect(() => {
-      rejected = validateTheme(throwing);
-    }).not.toThrow();
-    expect(rejected?.theme).toBeUndefined();
-    expect(rejected?.issues.some(({ severity }) => severity === "error")).toBe(true);
-    expect(throwingReads).toBe(1);
-  });
-
-  it("returns fresh null-prototype maps instead of retaining operator objects", () => {
-    const input = completeTheme();
-    const result = validateTheme(input);
-    expect(result.theme).toBeDefined();
-    expect(result.theme).not.toBe(input);
-    expect(Object.getPrototypeOf(result.theme!.tokens.space)).toBeNull();
-    expect(Object.getPrototypeOf(result.theme!.defaults)).toBeNull();
-    for (const brick of BRICK_TYPES as readonly BrickType[]) {
-      expect(result.theme!.defaults[brick]).not.toBe(
-        (input.defaults as Record<string, unknown>)[brick],
-      );
-    }
+    const theme = accepted(validateTheme(draft));
+    expect(theme.color.accent).toBe("#2563eb");
+    expect(Object.getOwnPropertyDescriptor(theme.color, "accent")?.get).toBeUndefined();
+    expect(Object.isFrozen(theme)).toBe(true);
+    expect(Object.isFrozen(theme.color)).toBe(true);
   });
 });
 
-describe("box-layout-foundation: layout token groups", () => {
-  const withLayoutGroups = (theme: Record<string, unknown>): Record<string, unknown> => {
-    const tokens = theme.tokens as Record<string, unknown>;
-    tokens.layoutWidth = map(LAYOUT_WIDTHS, () => "16rem");
-    tokens.maxHeight = map(MAX_HEIGHTS, (name) => (name === "none" ? "none" : "50svh"));
-    return theme;
-  };
-
-  it("accepts a complete Theme carrying the layoutWidth and maxHeight token groups", () => {
-    expectValid(withLayoutGroups(completeTheme()));
+describe("token values are closed too", () => {
+  it("rejects a non-string token value", () => {
+    const draft = themeDraft();
+    draft.fontWeight["bold"] = 700;
+    rejected(validateTheme(draft), "token_not_a_string", "fontWeight.bold");
   });
 
-  it("rejects a Theme missing the layoutWidth group whole with an actionable per-group message", () => {
-    const missing = completeTheme();
-    delete (missing.tokens as Record<string, unknown>).layoutWidth;
-    const result = validateTheme(missing);
-    expect(result.theme).toBeUndefined();
-    expect(result.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          severity: "error",
-          message: expect.stringMatching(/tokens\.layoutWidth/),
-        }),
-      ]),
-    );
+  it("rejects an empty or whitespace-only token value", () => {
+    const empty = themeDraft();
+    empty.space["md"] = "";
+    rejected(validateTheme(empty), "token_empty", "space.md");
+
+    const blank = themeDraft();
+    blank.space["md"] = "   ";
+    rejected(validateTheme(blank), "token_empty", "space.md");
   });
 
-  it("rejects a Theme missing the maxHeight group whole with an actionable per-group message", () => {
-    const missing = completeTheme();
-    delete (missing.tokens as Record<string, unknown>).maxHeight;
-    const result = validateTheme(missing);
-    expect(result.theme).toBeUndefined();
-    expect(result.issues).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          severity: "error",
-          message: expect.stringMatching(/tokens\.maxHeight/),
-        }),
-      ]),
-    );
+  const forbidden: ReadonlyArray<{ readonly what: string; readonly value: string }> = [
+    { what: "a declaration terminator", value: "red; display: none" },
+    { what: "an opening brace", value: "red } body {" },
+    { what: "a closing brace", value: "red}" },
+    { what: "a tag opener", value: "red</style>" },
+    { what: "a tag closer", value: "red>" },
+    { what: "a backslash escape", value: "\\3c script" },
+    { what: "a NUL", value: "red\u0000" },
+    { what: "a newline", value: "red\n; display: none" },
+    { what: "a delete control character", value: "red\u007f" },
+  ];
+
+  it.each(forbidden)("rejects a value carrying $what", ({ value }) => {
+    const draft = themeDraft();
+    draft.color["accent"] = value;
+    rejected(validateTheme(draft), "token_value_not_allowed", "color.accent");
   });
 
-  it("enforces the layoutWidth and maxHeight length grammars per group", () => {
-    const dimensions: readonly [string, readonly string[], readonly string[]][] = [
-      [
-        "layoutWidth",
-        ["0px", "4096px", "256rem", "256em", "256ch"],
-        ["-1px", "4097px", "256.0001rem", "1svh", "none"],
-      ],
-      [
-        "maxHeight",
-        ["none", "0", "2000px", "125rem", "100svh"],
-        ["-1px", "2001px", "125.0001rem", "1ch", "auto"],
-      ],
-    ];
-    for (const [group, accepted, rejected] of dimensions) {
-      for (const value of accepted) {
-        const theme = withLayoutGroups(completeTheme());
-        setToken(theme, group, value);
-        expectValid(theme);
-      }
-      for (const value of rejected) {
-        const theme = withLayoutGroups(completeTheme());
-        setToken(theme, group, value);
-        expectInvalid(theme);
-      }
+  it("accepts the ordinary CSS a real theme needs", () => {
+    const theme = accepted(validateTheme(SAMPLE_THEME));
+    expect(theme.shadow.md).toBe("0 4px 12px rgba(0, 0, 0, 0.08)");
+    expect(theme.fontFamily.sans).toBe("'Inter', system-ui, sans-serif");
+  });
+});
+
+describe("validateTheme is total", () => {
+  const hostile: ReadonlyArray<{ readonly what: string; readonly value: unknown }> = [
+    { what: "null", value: null },
+    { what: "undefined", value: undefined },
+    { what: "a number", value: 42 },
+    { what: "a string", value: "theme" },
+    { what: "a boolean", value: false },
+    { what: "an array", value: [] },
+    { what: "a function", value: () => SAMPLE_THEME },
+    { what: "a symbol", value: Symbol("theme") },
+  ];
+
+  it.each(hostile)("rejects $what without throwing", ({ value }) => {
+    expect(() => validateTheme(value)).not.toThrow();
+    rejected(validateTheme(value), "theme_not_an_object", "");
+  });
+
+  it("rejects a throwing group accessor without throwing", () => {
+    const throwing = {
+      get color(): unknown {
+        throw new Error("hostile getter");
+      },
+    };
+    expect(() => validateTheme(throwing)).not.toThrow();
+    rejected(validateTheme(throwing), "theme_read_failed", "");
+  });
+
+  it("rejects a throwing token accessor without throwing", () => {
+    const draft = themeDraft();
+    Object.defineProperty(draft.color, "background", {
+      get: () => {
+        throw new Error("hostile getter");
+      },
+      enumerable: true,
+      configurable: true,
+    });
+    expect(() => validateTheme(draft)).not.toThrow();
+    rejected(validateTheme(draft), "theme_read_failed", "");
+  });
+
+  it("accepts a null-prototype theme built from the same tokens", () => {
+    const bare = Object.assign(Object.create(null) as Record<string, unknown>, themeDraft());
+    expect(accepted(validateTheme(bare))).toEqual(SAMPLE_THEME);
+  });
+});
+
+describe("themeToCssVars projects the theme to custom properties", () => {
+  it("emits the complete projection table, in order", () => {
+    expect(Object.entries(themeToCssVars(SAMPLE_THEME))).toEqual(PROJECTION_TABLE);
+  });
+
+  it("emits one variable per declared token and nothing else", () => {
+    const vars = themeToCssVars(SAMPLE_THEME);
+    expect(Object.keys(vars)).toHaveLength(37);
+    for (const name of Object.keys(vars)) {
+      expect(name).toMatch(/^--facet(?:-[a-z0-9]+)+$/);
     }
+  });
+
+  it("is deterministic — byte-identical output across repeat runs", () => {
+    const first = JSON.stringify(themeToCssVars(SAMPLE_THEME));
+    const second = JSON.stringify(themeToCssVars(SAMPLE_THEME));
+    const third = JSON.stringify(themeToCssVars(accepted(validateTheme(SAMPLE_THEME))));
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+  });
+
+  it("is pure — it neither mutates its input nor hands back a mutable map", () => {
+    const before = JSON.stringify(SAMPLE_THEME);
+    const vars = themeToCssVars(SAMPLE_THEME);
+    expect(JSON.stringify(SAMPLE_THEME)).toBe(before);
+    expect(Object.isFrozen(vars)).toBe(true);
+  });
+
+  it("omits a token that is absent or not a string rather than guessing at one", () => {
+    const draft = themeDraft();
+    delete draft.radius["full"];
+    draft.shadow["lg"] = 12;
+    const vars = themeToCssVars(draft as unknown as FacetTheme);
+    expect(vars["--facet-radius-full"]).toBeUndefined();
+    expect(vars["--facet-shadow-lg"]).toBeUndefined();
+    expect(vars["--facet-radius-lg"]).toBe("1rem");
+  });
+
+  it("never throws, even on input that never passed validation", () => {
+    const throwing = {
+      get color(): unknown {
+        throw new Error("hostile getter");
+      },
+    };
+    expect(() => themeToCssVars(throwing as unknown as FacetTheme)).not.toThrow();
+    expect(() => themeToCssVars(null as unknown as FacetTheme)).not.toThrow();
+    expect(themeToCssVars(null as unknown as FacetTheme)).toEqual({});
+  });
+});
+
+describe("the module carries no React and no DOM", () => {
+  const source = readFileSync(new URL("./theme.ts", import.meta.url), "utf8");
+
+  it("imports nothing at all, so it can carry no dependency of any kind", () => {
+    expect(source).not.toMatch(/^\s*import\s/m);
+    expect(source).not.toMatch(/\brequire\s*\(/);
+    expect(source).not.toMatch(/\bfrom\s+["']/);
+  });
+
+  it("touches no DOM global and no nondeterministic source", () => {
+    expect(source).not.toMatch(/\b(?:document|window|navigator|globalThis)\s*[.[]/);
+    expect(source).not.toMatch(/\bMath\.random\b|\bDate\.now\b|\bnew Date\b/);
   });
 });

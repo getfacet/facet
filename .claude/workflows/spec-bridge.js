@@ -41,8 +41,8 @@ const RISK_LENSES = [
     'Facet invariants the brief marks TOUCHES (esp. #5 overlay/flow-only, #6 two-writers coherence, #1 backend/UI-out). ' +
     'For each touched invariant, find the concrete code seam (file:line) and the mitigation the spec must implement.' },
   { key: 'API', label: 'public-API probe', focus:
-    'a changed PUBLISHED @facet/* surface (a barrel export, a brick/token/action shape in @facet/core, a protocol type, a CLI command). ' +
-    'Grep existing consumers (other packages + apps/playground + examples/); classify additive vs breaking; give the migration per consumer.' },
+    'a changed PUBLISHED @facet/* surface (a barrel export, a component catalog/prop-schema shape in @facet/core, a protocol type, a CLI command). ' +
+    'Grep existing consumers (other packages + examples/); classify additive vs breaking; give the migration per consumer.' },
   { key: 'PKG', label: 'cross-package coupling probe', focus:
     'a module move/split or a new cross-package import. Verify @facet/core stays node-free, barrel exports hold, and no import cycle is introduced.' },
 ]
@@ -54,7 +54,7 @@ const GATE_FAMILIES = [
   { key: 'decomposition', focus:
     'Work Unit decomposition: no WU > 5 files; every file assigned to exactly one WU (no orphans); depends_on / parallel_group are sane; every prod-code WU has a valid red_check (a vitest cmd that FAILS before / PASSES after) or a justified N/A.' },
   { key: 'invariant-fit', focus:
-    'Invariant Fit Audit is real, not hand-wave: each TOUCHES invariant has a concrete safe design (#6 ordering/version rule, #5 constrained brick shape, #3 fail-safe behavior); the Fail-safe & boundary checklist covers malformed/empty/deep/cyclic input, offline agent, rapid events.' },
+    'Invariant Fit Audit is real, not hand-wave: each TOUCHES invariant has a concrete safe design (#6 ordering/version rule, #5 modal-only overlap contract, #3 fail-safe behavior); the Fail-safe & boundary checklist covers malformed/empty/deep/cyclic input, offline agent, rapid events.' },
   { key: 'risk-consistency', focus:
     'every RISK-* from the context pass is resolved in-spec or explicitly waived; spec/manifest consistency (WU ids/files/deps/checks/final_gate_chain IDENTICAL between the .md and the .execution.yaml); feature hard gate includes /worktree-prep, /update-tests, /verify, /code-review, /live-test, /update-docs; final_gate_owner = main-agent; file:line paths match the context evidence.' },
 ]

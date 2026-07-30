@@ -1,44 +1,54 @@
-import { sanitizeView, type ViewSnapshot } from "@facet/core";
+import { isFacetIdentifier } from "@facet/core";
 
-const KEY_PREFIX = "facet:view:";
+const KEY_PREFIX = "facet:screen:";
+
+export interface PersistedScreen {
+  readonly screen: string;
+  readonly [key: string]: unknown;
+}
 
 function storageKey(agentId: string): string {
   return `${KEY_PREFIX}${agentId}`;
 }
 
+function readScreen(value: unknown): { readonly screen: string } | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const screen = (value as Readonly<Record<string, unknown>>)["screen"];
+  if (typeof screen !== "string" || !isFacetIdentifier(screen)) {
+    return undefined;
+  }
+  return Object.freeze({ screen });
+}
+
 /**
- * Persist the last-known view snapshot for one agent link under
- * `facet:view:<agentId>`, so a returning visitor's `visit` event can be seeded
- * with where they left off. Framework-neutral (imports only `@facet/core`).
- *
- * `localStorage` can be undefined (SSR), throw on ACCESS (sandboxed iframes with
- * storage blocked), or throw on WRITE (quota / strict privacy modes). Any of
- * those degrades to a silent no-op — the live snapshot still rides the event —
- * rather than crashing the page or spamming the console (mirrors `visitor.ts`).
+ * Persist only the last known screen for one agent link. Retired view snapshot
+ * members are never stored.
  */
-export function persistView(agentId: string, snap: ViewSnapshot): void {
+export function persistScreen(agentId: string, snap: PersistedScreen): void {
+  const projected = readScreen(snap);
+  if (projected === undefined) {
+    return;
+  }
   try {
     if (typeof localStorage === "undefined") return;
-    localStorage.setItem(storageKey(agentId), JSON.stringify(snap));
+    localStorage.setItem(storageKey(agentId), JSON.stringify(projected));
   } catch {
-    // swallow: persistence is best-effort, never fatal.
+    // best-effort only
   }
 }
 
 /**
- * Read the persisted view snapshot for one agent link, or `undefined` when
- * nothing is stored, storage is unavailable/throwing, or the stored payload is
- * corrupt. The stored value is untrusted (any script sharing the origin can
- * write it), so it is validated through core `sanitizeView` before being
- * returned — garbage or an over-cap payload yields `undefined`/a cleaned
- * snapshot, never a crash. Degrades silently, like `persistView`.
+ * Restore the persisted screen projection. Stored values are untrusted, so this
+ * projects the one supported member and rejects corrupt or invalid screen names.
  */
-export function loadPersistedView(agentId: string): ViewSnapshot | undefined {
+export function loadPersistedScreen(agentId: string): { readonly screen: string } | undefined {
   try {
     if (typeof localStorage === "undefined") return undefined;
     const raw = localStorage.getItem(storageKey(agentId));
     if (raw === null || raw.length === 0) return undefined;
-    return sanitizeView(JSON.parse(raw));
+    return readScreen(JSON.parse(raw));
   } catch {
     return undefined;
   }

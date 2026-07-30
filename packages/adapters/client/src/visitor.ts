@@ -1,22 +1,24 @@
 const DEFAULT_STORAGE_KEY = "facet:visitor";
 
 function randomId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
+  const source = globalThis.crypto;
+  if (typeof source?.randomUUID === "function") {
+    return source.randomUUID();
   }
-  // Defensive fallback for environments without crypto.randomUUID (e.g. http on
-  // a non-localhost host). Not as strong, but still hard to guess.
   const rand = new Uint8Array(16);
-  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
-    crypto.getRandomValues(rand);
+  if (typeof source?.getRandomValues === "function") {
+    source.getRandomValues(rand);
+    if (rand.some((byte) => byte !== 0)) {
+      return `v-${Array.from(rand, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+    }
   }
-  return `v-${Array.from(rand, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+  throw new Error("Facet browser visitor ids require crypto.randomUUID or crypto.getRandomValues.");
 }
 
 /**
- * A stable, unguessable anonymous visitor id for the current browser: read from
- * `localStorage`, or generated and stored on first visit so the same person maps
- * to the same session (and page) on return.
+ * A stable, unguessable anonymous visitor/session key for the current browser:
+ * read from `localStorage`, or generated and stored on first visit so the same
+ * person maps to the same Facet session on return.
  *
  * SECURITY: the id IS the session key, and the reference `@facet/server` does not
  * authenticate it — anyone who presents an id gets that session's stage + chat.
@@ -38,7 +40,12 @@ export function browserVisitorId(storageKey: string = DEFAULT_STORAGE_KEY): stri
       return existing;
     }
     const id = randomId();
-    localStorage.setItem(storageKey, id);
+    try {
+      localStorage.setItem(storageKey, id);
+    } catch {
+      // Strict privacy modes may allow reads but reject writes. Keep the
+      // generated bearer fresh and secure rather than retrying or crashing.
+    }
     return id;
   } catch {
     return randomId();

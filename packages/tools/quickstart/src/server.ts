@@ -27,8 +27,15 @@ import {
 import { randomUUID } from "node:crypto";
 import { createReadStream, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { FacetAgent, FacetTheme, FacetTree } from "@facet/core";
-import { MemoryStageStore, withInitialStage, type Sink, type StageStore } from "@facet/runtime";
+import type { InProcessFacetAgent } from "@facet/agent";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
+import {
+  parseMarkup,
+  validateAuthorMarkup,
+  type ComponentDocument,
+  type FacetTheme,
+} from "@facet/core";
+import type { Sink, StageStore } from "@facet/runtime";
 import { createFacetServer, type FacetServer } from "@facet/server";
 
 export interface QuickstartServerOptions {
@@ -43,7 +50,7 @@ export interface QuickstartServerOptions {
    */
   readonly host?: string;
   readonly agentId: string;
-  readonly agent: FacetAgent;
+  readonly agent: InProcessFacetAgent;
   /** Shared with the built-in agent so prompt layer ③ reads real history. */
   readonly sink?: Sink;
   readonly stageStore?: StageStore;
@@ -54,11 +61,11 @@ export interface QuickstartServerOptions {
    */
   readonly theme?: FacetTheme;
   /**
-   * A seedable initial tree (validated by the caller) — wraps the stage store
-   * with `withInitialStage` so a fresh session opens on it before the first
-   * agent turn. Absent ⇒ today's model-first paint.
+   * Optional author markup for the first document. It is validated before the
+   * wrapper listens, inlined as the derived ComponentDocument for first paint,
+   * and passed unchanged to the runtime bootstrap. Absent ⇒ model-first paint.
    */
-  readonly initialStage?: FacetTree;
+  readonly initialMarkup?: string;
   /** Override where `/app.js` streams from (tests inject a fixture bundle). */
   readonly pageBundlePath?: string;
 }
@@ -71,6 +78,30 @@ const NUNITO_STYLESHEET =
 export interface RunningQuickstart {
   readonly url: string;
   close(): Promise<void>;
+}
+
+interface QuickstartBoot {
+  readonly theme: FacetTheme;
+  readonly initialStage?: ComponentDocument;
+  readonly initialMarkup?: string;
+}
+
+function validateInitialMarkup(initialMarkup: string): ComponentDocument {
+  const parsed = parseMarkup(initialMarkup);
+  if (!parsed.ok) throw new Error(`${parsed.error.code}: ${parsed.error.cause}`);
+  const validated = validateAuthorMarkup(parsed.ast, DEFAULT_CATALOG, {});
+  if (!validated.ok) throw new Error(`${validated.error.code}: ${validated.error.cause}`);
+  return validated.document;
+}
+
+function resolveQuickstartBoot(options: QuickstartServerOptions): QuickstartBoot {
+  const theme = options.theme ?? DEFAULT_THEME;
+  if (options.initialMarkup === undefined) return { theme };
+  return {
+    theme,
+    initialStage: validateInitialMarkup(options.initialMarkup),
+    initialMarkup: options.initialMarkup,
+  };
 }
 
 /**
@@ -93,7 +124,7 @@ function escapeForScript(value: unknown): string {
  * byte-identical to the no-assets boot; a single seam present ⇒ exactly its one
  * assignment (the join adds no leading/trailing separator).
  */
-function shellHtml(theme?: FacetTheme, initialStage?: FacetTree): string {
+function shellHtml(theme?: FacetTheme, initialStage?: ComponentDocument): string {
   const globals: string[] = [];
   if (theme !== undefined) {
     globals.push(`window.__FACET_THEME__ = ${escapeForScript(theme)}`);
@@ -270,6 +301,7 @@ function handleRequest(
   res: ServerResponse,
   options: QuickstartServerOptions,
   internalPort: number,
+  boot: QuickstartBoot,
 ): void {
   // Node delivers malformed request-targets (e.g. `//[`) verbatim, and
   // `new URL` throws on them — an unguarded throw here becomes an
@@ -308,7 +340,7 @@ function handleRequest(
       res.end();
       return;
     }
-    res.end(shellHtml(options.theme, options.initialStage));
+    res.end(shellHtml(boot.theme, boot.initialStage));
     return;
   }
   if ((req.method === "GET" || req.method === "HEAD") && pathname === "/app.js") {
@@ -337,24 +369,20 @@ function handleRequest(
  * collisions (the server.test.ts bind-retry pattern). */
 async function bootInternalServer(
   options: QuickstartServerOptions,
+  boot: QuickstartBoot,
 ): Promise<{ server: FacetServer; port: number }> {
-  // Seed a fresh session from the initial tree (Decision 4) by wrapping the
-  // store with `withInitialStage`. With no initialStage we leave `stageStore`
-  // untouched so the runtime's own default applies — today's boot exactly.
-  const stageStore =
-    options.initialStage !== undefined
-      ? withInitialStage(options.stageStore ?? new MemoryStageStore(), options.initialStage)
-      : options.stageStore;
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
     const server = createFacetServer({
       port,
       host: "127.0.0.1",
+      catalog: DEFAULT_CATALOG,
+      theme: boot.theme,
+      ...(boot.initialMarkup === undefined ? {} : { initialMarkup: boot.initialMarkup }),
       agentToken: randomUUID(),
-      agentId: options.agentId,
       agent: options.agent,
       ...(options.sink !== undefined ? { sink: options.sink } : {}),
-      ...(stageStore !== undefined ? { stageStore } : {}),
+      ...(options.stageStore !== undefined ? { stageStore: options.stageStore } : {}),
     });
     try {
       await server.listen();
@@ -371,8 +399,9 @@ async function bootInternalServer(
 export async function startQuickstart(
   options: QuickstartServerOptions,
 ): Promise<RunningQuickstart> {
-  const internal = await bootInternalServer(options);
-  const wrapper = createServer((req, res) => handleRequest(req, res, options, internal.port));
+  const boot = resolveQuickstartBoot(options);
+  const internal = await bootInternalServer(options, boot);
+  const wrapper = createServer((req, res) => handleRequest(req, res, options, internal.port, boot));
 
   try {
     await new Promise<void>((resolve, reject) => {

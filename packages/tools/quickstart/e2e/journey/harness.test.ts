@@ -65,6 +65,14 @@ describe("journey harness", () => {
     );
   });
 
+  it("journey selectors target the current quickstart shell and default registry", () => {
+    const source = readFileSync(new URL("./journey.ts", import.meta.url), "utf8");
+    expect(source).toContain('textarea[aria-label="Message"]');
+    expect(source).toContain('[data-facet-stage] button[type="button"]');
+    expect(source).not.toContain("input:not([data-facet-field-id])");
+    expect(source).not.toContain('div[role="button"]');
+  });
+
   it("bin smoke runs the provider-backed cli and reports a result", async () => {
     const result = await runBinSmoke();
     // DC-005: RUNS + REPORTS a result — NOT ok===true (dev-monorepo resolution

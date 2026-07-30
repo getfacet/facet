@@ -1,121 +1,237 @@
-import { describe, expect, it } from "vitest";
-import { validateTree, type ClientEvent, type FacetSession, type FacetTree } from "@facet/core";
-import { DEFAULT_OFFLINE_FACE, offlineFor } from "./offline.js";
+import type { ServerResponse } from "node:http";
 
-// =========================================================================
-// WU-7 / RISK-API-1 (DC-007): the offline gate is a behavior-changed consumer
-// of core's `treeHasContent` (via the private `hasBuiltStage`, exercised here
-// through `offlineFor`). A RETURNING visitor's built page must NEVER be
-// overwritten by the offline face. WU-2 corrected the content predicate to
-// resolve `from` against `tree.data`, so a page whose content is data-bound is
-// now correctly recognized as "built".
-//
-// Why they genuinely exercise the data path — the built stage below carries its
-// content ONLY in `data.sales` (inline `rows` omitted). Pre-WU-2, `validateTree`
-// stripped `data` and the gate read inline arrays only, so this page scored as
-// EMPTY: `offlineFor` would have OVERWRITTEN it with the offline face and the
-// no-overwrite assertion here would have FAILED.
-// =========================================================================
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AgentControlFrame, AgentEventFrame, TurnOutcome } from "@facet/core";
+import { createAgentChannel, REMOTE_TIMEOUT_TEXT } from "./agent-channel.js";
+import { conversation, eventReader, postEvent, start, agentEvent } from "./server.test-support.js";
+import { OFFLINE_TEXT } from "./offline.js";
 
-const visit: ClientEvent = { kind: "visit", visitor: { visitorId: "v" } };
+let active: { readonly close: () => Promise<void> } | undefined;
 
-const session = (stage: FacetTree): FacetSession => ({
-  agentId: "a",
-  visitor: { visitorId: "v" },
-  stage,
+afterEach(async () => {
+  await active?.close();
+  active = undefined;
+  vi.useRealTimers();
 });
 
-/** A built page whose only content is a table bound to a populated dataset. */
-const dataBoundStage = (): FacetTree =>
-  validateTree({
-    root: "root",
-    nodes: {
-      root: { id: "root", type: "box", children: ["t"] },
-      t: {
-        id: "t",
-        type: "table",
-        columns: [
-          { key: "month", label: "Month" },
-          { key: "revenue", label: "Revenue" },
-        ],
-        from: "sales",
-      },
+function responseDouble(): {
+  readonly response: ServerResponse;
+  readonly writes: readonly string[];
+  readonly endCount: () => number;
+} {
+  const writes: string[] = [];
+  let ended = 0;
+  const response = {
+    write(chunk: string) {
+      writes.push(chunk);
+      return true;
     },
-    data: { sales: [{ month: "Jan", revenue: 100 }] },
-  }).tree;
-
-/** A from-bound page whose dataset is absent — no real content. */
-// A dangling `from` that renders nothing — a CHART (a from-bound table would show
-// a header from its columns and count as content, so it wouldn't be "dangling-only").
-const danglingStage = (): FacetTree =>
-  validateTree({
-    root: "root",
-    nodes: {
-      root: { id: "root", type: "box", children: ["c"] },
-      c: {
-        id: "c",
-        type: "chart",
-        kind: "bar",
-        series: [],
-        from: "sales",
-      },
+    end() {
+      ended += 1;
+      return response;
     },
-    data: { other: [{ month: "Jan" }] },
-  }).tree;
+  } as unknown as ServerResponse;
+  return { response, writes, endCount: () => ended };
+}
 
-/** A structurally-empty page — an empty root box, no content. */
-const emptyStage = (): FacetTree =>
-  validateTree({
-    root: "root",
-    nodes: { root: { id: "root", type: "box", children: [] } },
-  }).tree;
+function controlFrame(eventId: string, text: string): AgentControlFrame {
+  return {
+    kind: "agent_control",
+    eventId,
+    outcome: {
+      stageRevision: 0,
+      patches: [],
+      conversation: conversation(eventId, "assistant", text),
+    },
+  };
+}
 
-const OVERWRITE = [
-  { kind: "patch", patches: [{ op: "replace", path: "", value: DEFAULT_OFFLINE_FACE }] },
-];
+function dataWrites(writes: readonly string[]): readonly string[] {
+  return writes.filter((write) => write.startsWith("data: "));
+}
 
-describe("offlineFor preserves a data-bound built stage (WU-7 / DC-007)", () => {
-  it("uses only current authored style syntax", () => {
-    const validated = validateTree(DEFAULT_OFFLINE_FACE);
+function agentReader(response: Response): {
+  readonly next: () => Promise<AgentEventFrame>;
+  readonly close: () => Promise<void>;
+} {
+  const reader = response.body?.getReader();
+  if (reader === undefined) throw new Error("no agent stream");
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const next = async (): Promise<AgentEventFrame> => {
+    for (;;) {
+      const split = buffer.indexOf("\n\n");
+      if (split >= 0) {
+        const block = buffer.slice(0, split);
+        buffer = buffer.slice(split + 2);
+        const line = block.split("\n").find((candidate) => candidate.startsWith("data: "));
+        if (line !== undefined) {
+          const parsed = JSON.parse(line.slice(6)) as AgentEventFrame;
+          if (parsed.kind === "agent_event") return parsed;
+        }
+      }
+      const { done, value } = await reader.read();
+      if (done) throw new Error("agent stream closed");
+      buffer += decoder.decode(value, { stream: true });
+    }
+  };
+  return { next, close: () => reader.cancel() };
+}
 
-    expect(validated.issues).toEqual([]);
-    expect(validated.tree).toEqual(DEFAULT_OFFLINE_FACE);
-    expect(DEFAULT_OFFLINE_FACE.nodes["root"]?.style).toEqual({
-      direction: "column",
-      gap: "sm",
-      padding: "2xl",
-      alignItems: "center",
+describe("offline and agent channel", () => {
+  it("delivers one offline ConversationMessage and no patch for an event when no agent is connected", async () => {
+    const { server, base } = await start({ agent: undefined });
+    active = server;
+    const stream = await fetch(`${base}/stream?sessionKey=s1`);
+    const reader = eventReader(stream);
+    await reader.next(); // root resync
+
+    const response = await postEvent(base, "s1", agentEvent());
+    const delivered = await reader.next();
+    await reader.close();
+
+    expect(response.status).toBe(202);
+    expect(delivered?.data).toMatchObject({
+      ...conversation("event1", "assistant", OFFLINE_TEXT),
+      at: expect.any(Number) as number,
     });
-    expect(DEFAULT_OFFLINE_FACE.nodes["o1"]?.style).toEqual({
-      fontSize: "xl",
-      fontWeight: "bold",
+  });
+
+  it("sends AgentEventFrame to a connected agent and accepts a correlated TurnOutcome", async () => {
+    const { server, base } = await start({ agent: undefined });
+    active = server;
+    const agentStream = await fetch(`${base}/agent/stream`);
+    const agent = agentReader(agentStream);
+    const browser = eventReader(await fetch(`${base}/stream?sessionKey=s1`));
+    await browser.next(); // root resync
+
+    const pending = postEvent(base, "s1", agentEvent({ eventId: "event1", stageRevision: 0 }));
+    const frame = await agent.next();
+    const outcome: TurnOutcome = {
+      stageRevision: 0,
+      patches: [],
+      conversation: conversation("event1", "assistant", "remote answer"),
+    };
+    const control = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "agent_control", eventId: "event1", outcome }),
     });
-    expect(DEFAULT_OFFLINE_FACE.nodes["o2"]?.style).toEqual({ color: "mutedForeground" });
+    const delivered = await browser.next();
+    await browser.close();
+    await agent.close();
+
+    expect(frame).toEqual({ kind: "agent_event", event: agentEvent({ eventId: "event1" }) });
+    expect(control.status).toBe(202);
+    expect((await pending).status).toBe(202);
+    expect(delivered?.data).toMatchObject({
+      ...conversation("event1", "assistant", "remote answer"),
+      at: expect.any(Number) as number,
+    });
   });
 
-  it("does NOT overwrite a populated data-bound built page", () => {
-    const stage = dataBoundStage();
-    // Guard the fixture: the warehouse survived validation.
-    expect(stage.data?.["sales"]).toEqual([{ month: "Jan", revenue: 100 }]);
+  it("rejects non-empty external control patches instead of dropping them", async () => {
+    const { server, base } = await start({ agent: undefined });
+    active = server;
+    const agentStream = await fetch(`${base}/agent/stream`);
+    const agent = agentReader(agentStream);
+    const browser = eventReader(await fetch(`${base}/stream?sessionKey=s1`));
+    await browser.next(); // root resync
 
-    const msgs = offlineFor(DEFAULT_OFFLINE_FACE, visit, session(stage));
-    // A built page is preserved: a short note, never a stage-replacing patch.
-    expect(msgs.every((m) => m.kind !== "patch")).toBe(true);
-    expect(msgs[0]?.kind).toBe("say");
+    const pending = postEvent(base, "s1", agentEvent({ eventId: "event1", stageRevision: 0 }));
+    await agent.next();
+    const invalidOutcome: TurnOutcome = {
+      stageRevision: 0,
+      patches: [{ op: "replace", path: "/data", value: { status: "not allowed" } }],
+      conversation: conversation("event1", "assistant", "remote answer"),
+    };
+    const invalid = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "agent_control", eventId: "event1", outcome: invalidOutcome }),
+    });
+    const validOutcome: TurnOutcome = {
+      stageRevision: 0,
+      patches: [],
+      conversation: conversation("event1", "assistant", "remote answer"),
+    };
+    const valid = await fetch(`${base}/agent/control`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ kind: "agent_control", eventId: "event1", outcome: validOutcome }),
+    });
+    await browser.next();
+    await browser.close();
+    await agent.close();
+
+    expect(invalid.status).toBe(400);
+    expect(valid.status).toBe(202);
+    expect((await pending).status).toBe(202);
   });
 
-  it("still overwrites a dangling-only from page with the offline face", () => {
-    const msgs = offlineFor(DEFAULT_OFFLINE_FACE, visit, session(danglingStage()));
-    expect(msgs).toEqual(OVERWRITE);
+  it("does not overwrite a pending turn when two sessions reuse the same eventId", async () => {
+    const channel = createAgentChannel();
+    const res = responseDouble();
+    channel.attach(res.response);
+
+    const first = channel.agent.run({ event: agentEvent({ eventId: "same-id" }) });
+    const duplicate = channel.agent.run({
+      event: agentEvent({ eventId: "same-id", screen: "other-screen" }),
+    });
+
+    expect(dataWrites(res.writes)).toHaveLength(1);
+    await expect(duplicate).resolves.toEqual({ text: REMOTE_TIMEOUT_TEXT });
+    expect(channel.resolve(controlFrame("same-id", "first answer"))).toBe(true);
+    await expect(first).resolves.toEqual({ text: "first answer" });
+    expect(channel.resolve(controlFrame("same-id", "late duplicate"))).toBe(false);
+    channel.close();
   });
 
-  it("still overwrites a structurally-empty page (unchanged behavior)", () => {
-    const msgs = offlineFor(DEFAULT_OFFLINE_FACE, visit, session(emptyStage()));
-    expect(msgs).toEqual(OVERWRITE);
+  it("settles a stale heartbeat reaper path once and leaves no pending control entry", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const channel = createAgentChannel();
+    const res = responseDouble();
+    channel.attach(res.response);
+
+    const pending = channel.agent.run({ event: agentEvent({ eventId: "reaped" }) });
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    await expect(pending).resolves.toEqual({ text: REMOTE_TIMEOUT_TEXT });
+    expect(res.endCount()).toBe(1);
+    expect(channel.isConnected()).toBe(false);
+    expect(channel.resolve(controlFrame("reaped", "late"))).toBe(false);
+    channel.close();
+    expect(vi.getTimerCount()).toBe(0);
   });
 
-  it("overwrites for a fresh visitor with no session at all (unchanged behavior)", () => {
-    const msgs = offlineFor(DEFAULT_OFFLINE_FACE, visit, undefined);
-    expect(msgs).toEqual(OVERWRITE);
+  it("settles drop, close, and capped timeout paths without unresolved promises", async () => {
+    const dropped = createAgentChannel();
+    const droppedResponse = responseDouble();
+    dropped.attach(droppedResponse.response);
+    const droppedTurn = dropped.agent.run({ event: agentEvent({ eventId: "drop" }) });
+    dropped.dropIfCurrent(droppedResponse.response);
+    await expect(droppedTurn).resolves.toEqual({ text: REMOTE_TIMEOUT_TEXT });
+    expect(dropped.resolve(controlFrame("drop", "late"))).toBe(false);
+    dropped.close();
+
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    const timedOut = createAgentChannel({ agentTimeoutMs: 120_000 });
+    const timedOutResponse = responseDouble();
+    timedOut.attach(timedOutResponse.response);
+    const timedOutTurn = timedOut.agent.run({ event: agentEvent({ eventId: "timeout" }) });
+    await vi.advanceTimersByTimeAsync(30_000);
+    await expect(timedOutTurn).resolves.toEqual({ text: REMOTE_TIMEOUT_TEXT });
+    expect(timedOut.resolve(controlFrame("timeout", "late"))).toBe(false);
+    timedOut.close();
+    expect(vi.getTimerCount()).toBe(0);
+
+    const closed = createAgentChannel();
+    const closedResponse = responseDouble();
+    closed.attach(closedResponse.response);
+    const closedTurn = closed.agent.run({ event: agentEvent({ eventId: "close" }) });
+    closed.close();
+    await expect(closedTurn).resolves.toEqual({ text: REMOTE_TIMEOUT_TEXT });
   });
 });

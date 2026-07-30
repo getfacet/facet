@@ -1,29 +1,127 @@
-import type { FacetAgent } from "@facet/core";
-import { createFacetServer, type FacetServer } from "./server.js";
+import { deriveMessageId, validateCatalog, validateTheme } from "@facet/core";
+import type {
+  AgentEvent,
+  ComponentDocument,
+  ConversationMessage,
+  FacetCatalog,
+  FacetStage,
+  FacetTheme,
+  ServerFrame,
+} from "@facet/core";
+import { createFacetServer, type FacetServer, type FacetServerOptions } from "./server.js";
 
-export const sayAgent: FacetAgent = () => [{ kind: "say", text: "hello from agent" }];
+export const MARKUP = `<Facet entry="home"><Screen name="home"><Text value="Ready" /></Screen></Facet>`;
 
-/** Bind to a random high port, retrying on collisions. */
+export function testCatalog(): FacetCatalog {
+  const result = validateCatalog({
+    components: [
+      {
+        tag: "Screen",
+        whenToUse: "Root screen.",
+        props: {
+          name: {
+            type: "string",
+            required: true,
+            guidance: "Screen name.",
+          },
+        },
+        acceptsChildren: true,
+      },
+      {
+        tag: "Text",
+        whenToUse: "Short text.",
+        props: {
+          value: { type: "string", guidance: "Text value.", bindable: true },
+          arg: { type: "string", guidance: "Event argument." },
+        },
+        acceptsChildren: false,
+      },
+    ],
+  });
+  if (!result.ok) throw new Error(result.code);
+  return result.catalog;
+}
+
+export function testTheme(): FacetTheme {
+  const result = validateTheme({
+    color: {
+      background: "#fff",
+      surface: "#f9fafb",
+      border: "#e5e7eb",
+      text: "#111827",
+      textMuted: "#6b7280",
+      accent: "#2563eb",
+      onAccent: "#fff",
+      success: "#16a34a",
+      warning: "#ca8a04",
+      danger: "#dc2626",
+    },
+    space: { xs: "2px", sm: "4px", md: "8px", lg: "16px", xl: "24px" },
+    radius: { sm: "4px", md: "8px", lg: "12px", full: "999px" },
+    borderWidth: { thin: "1px", thick: "2px" },
+    shadow: { sm: "none", md: "0 2px 8px #0002", lg: "0 8px 24px #0003" },
+    fontFamily: { sans: "system-ui", mono: "ui-monospace" },
+    fontSize: { xs: "12px", sm: "14px", md: "16px", lg: "18px", xl: "22px" },
+    fontWeight: { regular: "400", medium: "500", bold: "700" },
+    lineHeight: { tight: "1.1", normal: "1.4", relaxed: "1.8" },
+  });
+  if (!result.ok) throw new Error(result.code);
+  return result.theme;
+}
+
+export function agentEvent(overrides: Partial<AgentEvent> = {}): AgentEvent {
+  return {
+    eventId: "event1",
+    eventName: "submit",
+    sourceNodeId: "node1",
+    screen: "home",
+    stageRevision: 0,
+    collect: {},
+    ...overrides,
+  };
+}
+
+export function conversation(
+  turnId: string,
+  role: ConversationMessage["role"],
+  text: string,
+): ConversationMessage {
+  return {
+    kind: "conversation",
+    messageId: deriveMessageId(turnId, role),
+    turnId,
+    role,
+    text,
+    at: 1,
+  };
+}
+
 export async function start(
-  options: Omit<Parameters<typeof createFacetServer>[0], "port">,
-): Promise<{ server: FacetServer; base: string }> {
+  options: Partial<FacetServerOptions> = {},
+): Promise<{ readonly server: FacetServer; readonly base: string }> {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
-    const server = createFacetServer({ ...options, port });
+    const server = createFacetServer({
+      port,
+      catalog: testCatalog(),
+      theme: testTheme(),
+      initialMarkup: MARKUP,
+      agent: { run: async () => ({ text: "hello from agent" }) },
+      ...options,
+    });
     try {
       await server.listen();
       return { server, base: `http://127.0.0.1:${port}` };
     } catch {
-      // EADDRINUSE — try another port.
+      // port collision
     }
   }
   throw new Error("could not bind a test port");
 }
 
-/** One parsed SSE frame: its optional `id:` line and decoded `data:` payload. */
 export interface SseFrame {
   readonly id?: string;
-  readonly data: unknown;
+  readonly data: ServerFrame;
 }
 
 function parseBlock(block: string): SseFrame | undefined {
@@ -31,104 +129,56 @@ function parseBlock(block: string): SseFrame | undefined {
   let dataLine: string | undefined;
   for (const line of block.split("\n")) {
     if (line.startsWith("id: ")) id = line.slice(4);
-    else if (line.startsWith("data: ")) dataLine = line.slice(6);
+    if (line.startsWith("data: ")) dataLine = line.slice(6);
   }
   if (dataLine === undefined) return undefined;
-  return id === undefined ? { data: JSON.parse(dataLine) } : { id, data: JSON.parse(dataLine) };
+  return id === undefined
+    ? { data: JSON.parse(dataLine) as ServerFrame }
+    : { id, data: JSON.parse(dataLine) as ServerFrame };
 }
 
-export function drainFrames(buffer: string): { blocks: string[]; rest: string } {
+export function drainFrames(buffer: string): {
+  readonly blocks: readonly string[];
+  readonly rest: string;
+} {
   const blocks: string[] = [];
-  let index = buffer.indexOf("\n\n");
-  while (index !== -1) {
-    blocks.push(buffer.slice(0, index));
-    buffer = buffer.slice(index + 2);
-    index = buffer.indexOf("\n\n");
+  let rest = buffer;
+  let index = rest.indexOf("\n\n");
+  while (index >= 0) {
+    blocks.push(rest.slice(0, index));
+    rest = rest.slice(index + 2);
+    index = rest.indexOf("\n\n");
   }
-  return { blocks, rest: buffer };
-}
-
-/** Read SSE frames from a /stream response until `count` data frames arrived. */
-export async function readEvents(response: Response, count: number): Promise<SseFrame[]> {
-  const reader = response.body?.getReader();
-  if (reader === undefined) throw new Error("no body");
-  const decoder = new TextDecoder();
-  const frames: SseFrame[] = [];
-  let buffer = "";
-  while (frames.length < count) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const { blocks, rest } = drainFrames(buffer);
-    buffer = rest;
-    for (const block of blocks) {
-      const frame = parseBlock(block);
-      if (frame !== undefined) frames.push(frame);
-    }
-  }
-  await reader.cancel();
-  return frames;
-}
-
-export async function readFrames(response: Response, count: number): Promise<unknown[]> {
-  return (await readEvents(response, count)).map((frame) => frame.data);
-}
-
-/** Collect every SSE frame that arrives during a bounded window. */
-export async function collectEvents(response: Response, ms: number): Promise<SseFrame[]> {
-  const reader = response.body?.getReader();
-  if (reader === undefined) throw new Error("no body");
-  const decoder = new TextDecoder();
-  const frames: SseFrame[] = [];
-  let buffer = "";
-  const deadline = Date.now() + ms;
-  try {
-    while (Date.now() < deadline) {
-      const timeout = new Promise<null>((resolve) =>
-        setTimeout(() => resolve(null), deadline - Date.now()),
-      );
-      const chunk = await Promise.race([reader.read(), timeout]);
-      if (chunk === null || chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
-      const { blocks, rest } = drainFrames(buffer);
-      buffer = rest;
-      for (const block of blocks) {
-        const frame = parseBlock(block);
-        if (frame !== undefined) frames.push(frame);
-      }
-    }
-  } finally {
-    await reader.cancel();
-  }
-  return frames;
+  return { blocks, rest };
 }
 
 export function eventReader(response: Response): {
-  next(ms: number): Promise<SseFrame | undefined>;
-  close(): Promise<void>;
+  readonly next: (ms?: number) => Promise<SseFrame | undefined>;
+  readonly close: () => Promise<void>;
 } {
   const reader = response.body?.getReader();
   if (reader === undefined) throw new Error("no body");
   const decoder = new TextDecoder();
   let buffer = "";
-  const next = async (ms: number): Promise<SseFrame | undefined> => {
+  const next = async (ms = 500): Promise<SseFrame | undefined> => {
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
       const drained = drainFrames(buffer);
       buffer = drained.rest;
       for (const [index, block] of drained.blocks.entries()) {
-        const frame = parseBlock(block);
-        if (frame !== undefined) {
+        const parsed = parseBlock(block);
+        if (parsed !== undefined) {
           buffer =
             drained.blocks
               .slice(index + 1)
               .map((remaining) => `${remaining}\n\n`)
               .join("") + buffer;
-          return frame;
+          return parsed;
         }
       }
-      const timeoutMs = Math.max(0, deadline - Date.now());
-      const timeout = new Promise<null>((resolve) => setTimeout(() => resolve(null), timeoutMs));
+      const timeout = new Promise<null>((resolve) =>
+        setTimeout(() => resolve(null), Math.max(0, deadline - Date.now())),
+      );
       const chunk = await Promise.race([reader.read(), timeout]);
       if (chunk === null || chunk.done) return undefined;
       buffer += decoder.decode(chunk.value, { stream: true });
@@ -138,45 +188,52 @@ export function eventReader(response: Response): {
   return { next, close: () => reader.cancel() };
 }
 
-/** Poll `predicate` until it succeeds or the window elapses. */
-export async function waitFor(predicate: () => Promise<boolean>, timeoutMs = 2_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 5));
+export async function readFrames(response: Response, count: number): Promise<readonly SseFrame[]> {
+  const reader = eventReader(response);
+  const frames: SseFrame[] = [];
+  try {
+    while (frames.length < count) {
+      const frame = await reader.next(1000);
+      if (frame === undefined) break;
+      frames.push(frame);
+    }
+    return frames;
+  } finally {
+    await reader.close();
   }
-  throw new Error("waitFor timed out");
 }
 
-export type ClientEventLike =
-  | { kind: "message"; text: string }
-  | { kind: "visit"; visitor: { visitorId: string } }
-  | { kind: "tap"; action: { name: string; payload?: unknown }; fields?: unknown };
-
-export function postEvent(
-  base: string,
-  visitorId: string,
-  event: ClientEventLike,
-): Promise<Response> {
+export function postEvent(base: string, sessionKey: string, event: AgentEvent): Promise<Response> {
   return fetch(`${base}/event`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ visitor: { visitorId }, event }),
+    body: JSON.stringify({ sessionKey, event }),
   });
 }
 
-export function postRecord(base: string, visitorId: string, event: unknown): Promise<Response> {
-  return fetch(`${base}/record`, {
+export function postMessage(
+  base: string,
+  sessionKey: string,
+  messageId: string,
+  text: string,
+): Promise<Response> {
+  return fetch(`${base}/message`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ visitor: { visitorId }, event }),
+    body: JSON.stringify({ sessionKey, messageId, text, screen: "home", stageRevision: 0 }),
   });
 }
 
-export const sayText = (frames: readonly SseFrame[]): string[] =>
-  frames
-    .map((frame) => frame.data)
-    .filter(
-      (data): data is { kind: "say"; text: string } => (data as { kind?: string }).kind === "say",
-    )
-    .map((data) => data.text);
+export function stageFromResync(frame: ServerFrame): FacetStage {
+  if (frame.kind !== "patch") throw new Error("not a patch");
+  const value = frame.ops[0]?.op === "replace" ? frame.ops[0].value : undefined;
+  return value as FacetStage;
+}
+
+export function textValues(document: ComponentDocument | null): readonly string[] {
+  if (document === null) return [];
+  return Object.values(document.nodes)
+    .filter((node) => node.tag === "Text")
+    .map((node) => node.props["value"])
+    .map((prop) => (prop?.kind === "scalar" ? prop.value : ""));
+}

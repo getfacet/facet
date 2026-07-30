@@ -1,74 +1,39 @@
-import { createServer, type Server, type ServerResponse } from "node:http";
-import {
-  createSerialQueue,
-  type FacetAgent,
-  type FacetTree,
-  type ServerMessage,
-} from "@facet/core";
-import { FacetRuntime, type Sink, type StageStore } from "@facet/runtime";
+import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import type { FacetCatalog, FacetTheme } from "@facet/core";
+import { FacetRuntime, MemorySink, MemoryStageStore, bootstrapSession } from "@facet/runtime";
+import type { Sink, StageStore } from "@facet/runtime";
 import { createAgentChannel } from "./agent-channel.js";
-import { createFrameLogStore, type FrameLogStore } from "./frame-log.js";
-import { createLateWindow, LATE_WINDOW_LIMIT } from "./late.js";
-import type { FacetServerObserver } from "./observer.js";
-import { DEFAULT_OFFLINE_FACE } from "./offline.js";
-import { handleControl, handleEvent, handleRecord } from "./server-post.js";
-import {
-  pruneUnrecoverableHandlingTurns,
-  rehydrate,
-  resumeStream,
-  writeFrame,
-  type HandlingTurn,
-  type PostHandlerDeps,
-} from "./server-rehydrate.js";
+import { createFrameLogStore } from "./frame-log.js";
+import type { FrameLogStore } from "./frame-log.js";
+import { emitFacetServerObservation, type FacetServerObserver } from "./observer.js";
+import { handleControl, handleEvent, handleMessage, type PostHandlerDeps } from "./server-post.js";
+import { rehydrate, resumeStream, writeFrame } from "./server-rehydrate.js";
 
 export type { FacetServerObservation, FacetServerObserver } from "./observer.js";
 
-/**
- * The reference Facet transport: a tiny Node server carrying events to an agent
- * and streaming patches back — dependency-free (Node http only).
- *
- * Two channels, both SSE + POST so an agent behind NAT only ever dials OUT:
- * - browser side: `GET /stream?visitorId=…` (SSE) + `POST /event`.
- * - agent side:   `GET /agent/stream?agentId=…` (SSE) + `POST /agent/control`.
- *
- * An external agent that holds `/agent/stream` becomes the brain for `agentId`;
- * it is exposed to the runtime as an ordinary `FacetAgent` (see the agent channel),
- * so the runtime treats remote and in-process agents identically. If no external
- * agent is connected, the optional in-process `agent` is used as a fallback.
- *
- * TRUST MODEL: this is a REFERENCE transport for local/self-hosted single-operator
- * use with public/anonymous pages — NOT a hardened multi-tenant server. By default
- * the `/agent/*` channel is unauthenticated (set `agentToken` to require a secret)
- * and `visitorId` is trusted verbatim as the session key. Put your own auth in
- * front of it for multi-tenant or sensitive-per-visitor deployments. See SECURITY.md.
- */
+type FacetServerAgent = {
+  run(
+    context: Parameters<ConstructorParameters<typeof FacetRuntime>[0]["agent"]["run"]>[0],
+  ):
+    | Promise<string | { readonly text: string | null } | null | undefined>
+    | string
+    | { readonly text: string | null }
+    | null
+    | undefined;
+};
+
 export interface FacetServerOptions {
   readonly port: number;
-  /** Bind address passed to `listen` (default: all interfaces, unchanged). Set
-   * `"127.0.0.1"` for a loopback-only server (e.g. an internal instance behind
-   * a wrapper). */
   readonly host?: string;
-  readonly agentId: string;
-  /** In-process fallback used when no external agent is connected. */
-  readonly agent?: FacetAgent;
-  /** How long to wait for a remote agent's control response (default 120s — a
-   * persistent session's cold first turn includes model + MCP startup). A turn
-   * that outlives this gets a non-terminal interim note; its real result is
-   * delivered late (see the late window) when the agent finally posts it. */
-  readonly agentTimeoutMs?: number;
-  /** How long an agent stream may go without a heartbeat before it's reaped
-   * (default 30s). The reaper polls at `min(10s, agentStaleMs)`. */
-  readonly agentStaleMs?: number;
-  /** Shared secret required on the `/agent/*` channel. When set, an agent must send a matching `x-facet-token` header. */
+  readonly catalog: FacetCatalog;
+  readonly theme: FacetTheme;
+  readonly copy?: unknown;
+  readonly initialMarkup?: string;
+  readonly agent?: FacetServerAgent | undefined;
+  readonly agentTimeoutMs?: number | undefined;
   readonly agentToken?: string;
-  /** Page shown to a fresh visitor when no agent is connected (the offline face). */
-  readonly offlineFace?: FacetTree;
-  /** Where the page lives — defaults to in-memory. Pass a durable one to survive restarts. */
   readonly stageStore?: StageStore;
-  /** Where the conversation goes — store, forward, or drop. Defaults to in-memory. */
   readonly sink?: Sink;
-  /** Optional detached/frozen UI-IN and accepted-frame diagnostics. The callback
-   * is non-controlling: throws and attempted payload mutation are ignored. */
   readonly observer?: FacetServerObserver;
 }
 
@@ -80,84 +45,121 @@ export interface FacetServer {
 function setCors(res: ServerResponse): void {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  // Last-Event-ID is NOT a CORS-safelisted request header: without it here, a
-  // cross-origin EventSource reconnect (which carries the header after the first
-  // stamped frame) would fail preflight and never resume. Content-Type covers the
-  // POST channels.
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Last-Event-ID");
 }
 
+function sessionKeyFrom(url: URL): string | undefined {
+  return url.searchParams.get("sessionKey") ?? undefined;
+}
+
+function resumeCursorFrom(
+  req: IncomingMessage,
+  url: URL,
+):
+  | { readonly ok: true; readonly cursor: string | undefined }
+  | { readonly ok: false; readonly status: 400 } {
+  const query = url.searchParams.getAll("lastEventId");
+  const header = req.headers["last-event-id"];
+  if (query.length > 1 || Array.isArray(header)) {
+    return { ok: false, status: 400 };
+  }
+  const queryCursor = query[0];
+  if (header !== undefined && queryCursor !== undefined && header !== queryCursor) {
+    return { ok: false, status: 400 };
+  }
+  const cursor = header ?? queryCursor;
+  return { ok: true, cursor: cursor === "" ? undefined : cursor };
+}
+
 export function createFacetServer(options: FacetServerOptions): FacetServer {
-  const offlineFace = options.offlineFace ?? DEFAULT_OFFLINE_FACE;
-  // Live browser connections per visitor (the fan-out set for `deliver`).
-  const browserStreams = new Map<string, Set<ServerResponse>>();
-  // Per-session replay log (server-local — the Sink is NOT the replay store) and the
-  // bounded late-delivery window for parked timed-out/dropped turns.
+  const store = options.stageStore ?? new MemoryStageStore();
+  const sink = options.sink ?? new MemorySink();
   const frameLog: FrameLogStore = createFrameLogStore();
-  // Arrival + frame ranges for turns whose Sink record may not be visible to
-  // rehydrate history yet — server-local so an LRU eviction of the frame log can't
-  // detach them mid-turn. Multiple same-visitor turns can be pending when a durable
-  // Sink is slow; each is removed once its reserved record slot settles.
-  const handling = new Map<string, HandlingTurn[]>();
-  const lateWindow = createLateWindow(LATE_WINDOW_LIMIT);
-  // Per-visitor delivery lane: serializes {apply → seq-assign → log → fan-out} so
-  // apply-order equals delivery-order by construction. Live turns and late applies
-  // are lane tasks; the replay/rehydrate paths run synchronously and never assign seqs.
-  const lane = createSerialQueue<void>();
+  const streams = new Map<string, Set<ServerResponse>>();
+  const runtimes = new Map<string, FacetRuntime>();
+  const closeBrowserStreams = (): void => {
+    for (const set of streams.values()) {
+      for (const res of set) {
+        try {
+          res.end();
+        } catch {
+          // Best-effort shutdown: a response may already be closing.
+        }
+      }
+    }
+    streams.clear();
+  };
 
-  // The agent-side link: validates the stale knob, owns the pending map + reaper, and
-  // presents the remote/fallback/offline agent to the runtime.
-  const channel = createAgentChannel({
-    agentTimeoutMs: options.agentTimeoutMs,
-    agentStaleMs: options.agentStaleMs,
-    fallbackAgent: options.agent,
-    offlineFace,
-    lateWindow,
-    // The active lane turn's arrival pair, from the last server-local pending range.
-    // The empty-era fallback can never match a real era, so an unknown context
-    // degrades toward falsely-stale — never false-fresh.
-    handlingContext: (visitorId) => {
-      const turns = handling.get(visitorId);
-      return turns?.[turns.length - 1] ?? { index: -1, era: "" };
-    },
+  const boot = bootstrapSession({
+    catalog: options.catalog,
+    theme: options.theme,
+    ...(options.copy === undefined ? {} : { copy: options.copy }),
+    ...(options.initialMarkup === undefined ? {} : { initialMarkup: options.initialMarkup }),
   });
+  if (!boot.ok) {
+    throw new Error(`${boot.code}: ${boot.detail}`);
+  }
 
-  const runtime = new FacetRuntime({
-    agentId: options.agentId,
-    agent: channel.agent,
-    ...(options.stageStore !== undefined ? { stageStore: options.stageStore } : {}),
-    ...(options.sink !== undefined ? { sink: options.sink } : {}),
-  });
-
-  /** Deliver messages to a visitor's browser channel — SYNCHRONOUS, no await. The
-   * seq-assign + log-append half is delegated to the frame log (the only seq-assigning
-   * path); this fans the stamped frames out to every live connection. Frames are
-   * logged even with zero connections (that's the late-result-while-disconnected case
-   * the resume path replays). Called ONLY from lane tasks. */
-  const deliver = (visitorId: string, messages: readonly ServerMessage[]): void => {
-    if (messages.length === 0) return;
-    const stamped = frameLog.append(visitorId, messages);
-    pruneUnrecoverableHandlingTurns(handling, visitorId, frameLog.logFor(visitorId));
-    const connections = browserStreams.get(visitorId);
-    if (connections === undefined) return;
-    for (const { id, json } of stamped) {
-      for (const res of connections) writeFrame(res, json, id);
+  const ensureSession = async (sessionKey: string): Promise<void> => {
+    if ((await store.get(sessionKey)) !== null) return;
+    const saved = await store.save(sessionKey, boot.session, 0);
+    if (!saved.ok && saved.currentRevision !== 0) {
+      throw new Error("session bootstrap conflict");
     }
   };
 
+  const fallbackAgent =
+    options.agent === undefined
+      ? undefined
+      : {
+          run: async (
+            context: Parameters<ConstructorParameters<typeof FacetRuntime>[0]["agent"]["run"]>[0],
+          ) => (await options.agent?.run(context)) ?? null,
+        };
+
+  const channel = createAgentChannel({
+    ...(options.agentTimeoutMs === undefined ? {} : { agentTimeoutMs: options.agentTimeoutMs }),
+    ...(fallbackAgent === undefined ? {} : { fallbackAgent }),
+  });
+
+  const runtimeFor = (sessionKey: string): FacetRuntime => {
+    const existing = runtimes.get(sessionKey);
+    if (existing !== undefined) return existing;
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      agent: channel.agent,
+      deliver: (entry) => {
+        const stamped = frameLog.append(sessionKey, entry);
+        emitFacetServerObservation(options.observer, {
+          kind: "accepted-frame",
+          sessionKey,
+          frame: entry.frame,
+          seq: entry.seq,
+        });
+        const live = streams.get(sessionKey);
+        if (live === undefined) return;
+        for (const res of live) writeFrame(res, stamped.json, stamped.id);
+      },
+      diagnostics: (diagnostic) =>
+        emitFacetServerObservation(options.observer, {
+          kind: "diagnostic",
+          sessionKey: diagnostic.sessionKey,
+          code: diagnostic.code,
+          detail: diagnostic.detail,
+        }),
+    });
+    runtimes.set(sessionKey, runtime);
+    return runtime;
+  };
+
   const postDeps: PostHandlerDeps = {
-    lane,
-    runtime,
-    frameLog,
-    deliver,
-    handling,
-    observer: options.observer,
+    runtimeFor,
+    ensureSession,
+    ...(options.observer === undefined ? {} : { observer: options.observer }),
   };
 
   const server: Server = createServer((req, res) => {
-    // Node delivers malformed request-targets (e.g. `//[`) verbatim, and
-    // `new URL` throws on them — an unguarded throw in this handler becomes an
-    // uncaughtException that crashes the process. Reject them as 400 instead.
     let url: URL;
     try {
       url = new URL(req.url ?? "/", "http://localhost");
@@ -166,20 +168,13 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       res.end();
       return;
     }
-    // CORS only on the browser channel — the /agent/* control channel is a
-    // server-side (bridge) connection, not for cross-origin browser use, so don't
-    // advertise it to arbitrary web origins.
+
     if (!url.pathname.startsWith("/agent/")) setCors(res);
     if (req.method === "OPTIONS") {
       res.writeHead(204);
       res.end();
       return;
     }
-    const streamHeaders = {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    };
 
     if (req.method === "GET" && url.pathname === "/health") {
       res.writeHead(200, { "Content-Type": "text/plain" });
@@ -187,41 +182,49 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       return;
     }
 
-    // ── browser side ──────────────────────────────────────────────
     if (req.method === "GET" && url.pathname === "/stream") {
-      const visitorId = url.searchParams.get("visitorId");
-      if (visitorId === null) {
+      const sessionKey = sessionKeyFrom(url);
+      if (sessionKey === undefined) {
         res.writeHead(400);
         res.end();
         return;
       }
-      res.writeHead(200, streamHeaders);
-      res.write(": connected\n\n");
-      let closed = false;
-      req.on("close", () => {
-        closed = true;
-        const set = browserStreams.get(visitorId);
-        set?.delete(res);
-        // Prune the empty Set so browserStreams doesn't grow unbounded.
-        if (set?.size === 0) browserStreams.delete(visitorId);
+      const resumeCursor = resumeCursorFrom(req, url);
+      if (!resumeCursor.ok) {
+        res.writeHead(resumeCursor.status);
+        res.end();
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
       });
+      res.write(": connected\n\n");
+
+      let closed = false;
       const join = (): void => {
-        let set = browserStreams.get(visitorId);
+        let set = streams.get(sessionKey);
         if (set === undefined) {
           set = new Set();
-          browserStreams.set(visitorId, set);
+          streams.set(sessionKey, set);
         }
         set.add(res);
       };
+      req.on("close", () => {
+        closed = true;
+        const set = streams.get(sessionKey);
+        set?.delete(res);
+        if (set?.size === 0) streams.delete(sessionKey);
+      });
 
-      const lastEventId = req.headers["last-event-id"];
       if (
-        typeof lastEventId === "string" &&
-        resumeStream(res, visitorId, lastEventId, frameLog, join)
+        resumeCursor.cursor !== undefined &&
+        resumeStream(res, sessionKey, resumeCursor.cursor, frameLog, join)
       ) {
         return;
       }
-      void rehydrate(res, visitorId, frameLog, runtime, handling, lane, () => closed, join);
+      void rehydrate(res, sessionKey, frameLog, store, sink, ensureSession, () => closed, join);
       return;
     }
 
@@ -230,44 +233,45 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
       return;
     }
 
-    if (req.method === "POST" && url.pathname === "/record") {
-      handleRecord(req, res, postDeps);
+    if (req.method === "POST" && url.pathname === "/message") {
+      handleMessage(req, res, postDeps);
       return;
     }
 
-    // ── agent side ────────────────────────────────────────────────
-    // The agent-side channel is a control surface for the link — gate it with the
-    // shared token so a third party can't connect or inject control responses.
     if (url.pathname.startsWith("/agent/")) {
       if (options.agentToken !== undefined && req.headers["x-facet-token"] !== options.agentToken) {
-        res.writeHead(403, { "Content-Type": "text/plain" });
-        res.end("forbidden");
+        res.writeHead(403);
+        res.end();
         return;
       }
     }
 
     if (req.method === "GET" && url.pathname === "/agent/stream") {
       if (channel.isConnected()) {
-        res.writeHead(409, { "Content-Type": "text/plain" });
-        res.end("agent already connected");
+        res.writeHead(409);
+        res.end();
         return;
       }
-      res.writeHead(200, streamHeaders);
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      });
       res.write(": agent connected\n\n");
       channel.attach(res);
-      req.on("close", () => channel.dropIfCurrent(res, "(agent disconnected)"));
+      req.on("close", () => channel.dropIfCurrent(res));
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/agent/heartbeat") {
       channel.heartbeat();
-      res.writeHead(204);
+      res.writeHead(202);
       res.end();
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/agent/control") {
-      handleControl(req, res, channel, lateWindow, postDeps);
+      handleControl(req, res, channel);
       return;
     }
 
@@ -278,25 +282,17 @@ export function createFacetServer(options: FacetServerOptions): FacetServer {
   return {
     listen: () =>
       new Promise((resolve, reject) => {
-        const onError = (error: Error): void => reject(error); // e.g. EADDRINUSE
-        server.once("error", onError);
-        const onListening = (): void => {
-          server.removeListener("error", onError);
+        server.once("error", reject);
+        server.listen(options.port, options.host, () => {
+          server.off("error", reject);
           resolve();
-        };
-        if (options.host !== undefined) server.listen(options.port, options.host, onListening);
-        else server.listen(options.port, onListening);
+        });
       }),
     close: () =>
       new Promise((resolve, reject) => {
-        // Stop the reaper and end the agent stream first, or server.close() never
-        // resolves on the held-open SSE connections.
         channel.close();
-        for (const set of browserStreams.values()) {
-          for (const res of set) res.end();
-        }
-        server.close((error) => (error ? reject(error) : resolve()));
-        server.closeAllConnections?.();
+        closeBrowserStreams();
+        server.close((error) => (error === undefined ? resolve() : reject(error)));
       }),
   };
 }

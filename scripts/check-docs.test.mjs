@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtemp, mkdir, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
@@ -172,6 +172,65 @@ test("resolves peer types installed inside a workspace package", async (t) => {
 
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /1 checked snippet/);
+});
+
+test("resolves surviving package fences but not deleted app packages", async (t) => {
+  const cwd = await makeFixture(t);
+  await writeFixture(
+    cwd,
+    "README.md",
+    [
+      "# Fixture",
+      "",
+      "```ts check-docs",
+      'import { current } from "@fixture/current-peer";',
+      'import { deleted } from "@fixture/deleted-peer";',
+      "void current;",
+      "void deleted;",
+      "```",
+      "",
+    ].join("\n"),
+  );
+  await writeFixture(
+    cwd,
+    "packages/core/core/package.json",
+    '{"name":"@facet/core","version":"1.0.0"}',
+  );
+  await writeFixture(
+    cwd,
+    "packages/core/core/node_modules/@fixture/current-peer/package.json",
+    '{"name":"@fixture/current-peer","version":"1.0.0","types":"index.d.ts"}',
+  );
+  await writeFixture(
+    cwd,
+    "packages/core/core/node_modules/@fixture/current-peer/index.d.ts",
+    "export const current: number;\n",
+  );
+  const deletedApp = ["apps", "playground"].join("/");
+  await writeFixture(cwd, `${deletedApp}/package.json`, '{"name":"@facet/playground"}');
+  await writeFixture(
+    cwd,
+    `${deletedApp}/node_modules/@fixture/deleted-peer/package.json`,
+    '{"name":"@fixture/deleted-peer","version":"1.0.0","types":"index.d.ts"}',
+  );
+  await writeFixture(
+    cwd,
+    `${deletedApp}/node_modules/@fixture/deleted-peer/index.d.ts`,
+    "export const deleted: number;\n",
+  );
+
+  const result = runCheck(cwd);
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Cannot find module '@fixture\/deleted-peer'/);
+  assert.doesNotMatch(result.stderr, /@fixture\/current-peer/);
+});
+
+test("does not keep a stale apps workspace resolution glob", async () => {
+  const source = await readFile(SCRIPT_PATH, "utf8");
+
+  assert.match(source, /packages\/\*\/\*\/package\.json/);
+  assert.doesNotMatch(source, /apps\/\*\/package\.json/);
 });
 
 test("reports TypeScript errors in opted-in snippets at Markdown lines", async (t) => {

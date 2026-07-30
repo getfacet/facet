@@ -39,19 +39,17 @@ config/build change → do NOT skip.
 
 ## Workflow
 1. **Map to packages.** `packages/<group>/<name>/src/**` → that package.
-   `apps/playground/**` → playground (integration/manual — note if no unit
-   suite). `.agents/**`, `.claude/**`, `.codex/**`, root `*.md` → infra/docs (skip unit
+   `.agents/**`, `.claude/**`, `.codex/**`, root `*.md` → infra/docs (skip unit
    tests).
 2. **Build an obligation ledger** — one row per changed non-test source file:
    `{ package, source_file, test_target, behavior, status: PENDING }`.
    Every changed source file must produce a row; an unmapped file needs an
    explicit manual row or it's a FAIL.
 3. **Cover each row.** Add or update the vitest test that exercises the changed
-   behavior. Prefer testing pure logic directly. The closed `@facet/core`
-   vocabulary is exactly `box`, `text`, `media`, `input`, `richtext`, `table`,
-   `chart`, `list`, `keyValue`, `progress`, and `loading`; patching,
-   validation, tokens, Brick sanitizers, runtime stores/queues, agent Stage operations, CLI
-   command builders, and agent-client SSE parsing are all unit-testable.
+   behavior. Prefer testing pure logic directly. Markup parsing, catalog/prop
+   validation, document/data bounds, authorized patch/fold behavior, immutable
+   catalog/registry bootstrap, runtime stores/queues, agent tool operations, CLI
+   command builders, and transport parsing are all unit-testable.
    For `@facet/react`, split by what the test needs:
    - static output + fail-safe (renders X, degrades to plain, never throws) →
      `renderToStaticMarkup` in a `.test.ts` (node env) — see `StageRenderer.test.ts`.
@@ -64,13 +62,13 @@ config/build change → do NOT skip.
      `useFacet.test.tsx`. This is Facet's "QA": the render loop unit tests can't
      otherwise reach. Only defer to manual/visual dogfood for genuinely
      pixel-visual concerns.
-   - **Fail-safe obligations (Facet-specific):** if the change touches
-     `@facet/core` validate/patch or `@facet/react` StageRenderer, include a
-     boundary test (malformed / empty / deep / cyclic input, unsafe `media.src`) —
-     the "never throws, degrades to plain" invariant must stay covered.
-   - **Vocabulary obligation:** if the brick/token/action vocabulary changed
-     (`nodes.ts`/`tokens.ts`/`protocol.ts`), ensure `validate.test.ts` covers the
-     new/removed shape.
+   - **Fail-safe obligations (Facet-specific):** if the change touches Core
+     parser/catalog/document/data/patch boundaries or React registry/rendering,
+     include malformed, empty, deep, cyclic, mismatched-registry, and throwing
+     trusted-component coverage as applicable.
+   - **Agent-surface obligation:** if markup/catalog/action/data/tool vocabulary
+     changes, cover the compact index, lazy component-spec read, tool schema, and
+     prompt/observation consumers.
 4. **Run the affected suites** (mandatory commands below). Mark each row PASS/FAIL.
 5. **Report** the ledger + executed commands. Any FAIL → fix and re-run.
 
@@ -79,7 +77,6 @@ config/build change → do NOT skip.
 |---|---|
 | `packages/<group>/<name>/src/**` | `pnpm exec vitest run packages/<group>/<name>/src` (from the repository root) |
 | multiple packages | `pnpm test` (root — runs the whole vitest workspace) |
-| `apps/playground/**` | note manual/integration check (no blocking unit gate) |
 
 ## Scale (optional)
 Solo/default: the main agent does the mapping + edits inline. For a large change

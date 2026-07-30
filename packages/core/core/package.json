@@ -1,7 +1,16 @@
 {
   "name": "@facet/core",
   "version": "0.0.0",
-  "description": "Core types and protocol for Facet — declarative stage spec, patches, and session/event contracts.",
+  "description": "Dependency-free contract for Facet — component markup grammar and parser, component catalog and prop schemas, bounded data model and bindings, component document validation and serialization, stage types, and authorized RFC 6902 patch logic.",
+  "keywords": [
+    "facet",
+    "generative-ui",
+    "component-markup",
+    "declarative-ui",
+    "component-catalog",
+    "json-patch",
+    "llm"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",

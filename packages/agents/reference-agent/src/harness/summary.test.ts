@@ -6,12 +6,13 @@ import {
   createProviderSummarizer,
   redactSummary,
   summaryBlockMessage,
+  summaryPayload,
   validateSummary,
   vetStoredSummary,
   type ConversationSummary,
   type SummarizerRequest,
 } from "./summary.js";
-import type { StoredEvent, StoredSummary } from "@facet/runtime";
+import type { ConversationMessage } from "@facet/core";
 import type { ProviderStep, ProviderTurn, ReferenceProvider, ToolSpec } from "../provider.js";
 
 const VALID_INPUT = {
@@ -19,7 +20,7 @@ const VALID_INPUT = {
   pageDecisions: "created home + confirm screens; theme calm",
   collectedData: "name=Ada",
   pending: "awaiting date choice",
-  attempts: "one failed set_node on missing id",
+  attempts: "one failed set_node on missing id", // style-hard-cut: allowed-negative
   omitted: "nothing dropped",
 } as const;
 
@@ -141,16 +142,99 @@ describe("summary schema and summarizer", () => {
     it("never throws on hostile input", () => {
       expect(() => validateSummary({ version: 1, visitor: {} })).not.toThrow();
     });
+
+    it("rejects hostile payload shapes without invoking attacker-controlled reads", () => {
+      const accessorPayload = { ...summaryOf() };
+      Object.defineProperty(accessorPayload, "visitor", {
+        get() {
+          throw new Error("getter should not run");
+        },
+      });
+
+      const ownKeysProxy = new Proxy(summaryOf(), {
+        ownKeys() {
+          throw new Error("ownKeys should be rejected");
+        },
+      });
+
+      const descriptorProxy = new Proxy(summaryOf(), {
+        getOwnPropertyDescriptor() {
+          throw new Error("descriptor should be rejected");
+        },
+        ownKeys(target) {
+          return Reflect.ownKeys(target);
+        },
+      });
+
+      const cyclicPayload: Record<string, unknown> = { ...summaryOf() };
+      cyclicPayload["pending"] = cyclicPayload;
+
+      for (const payload of [
+        accessorPayload,
+        ownKeysProxy,
+        descriptorProxy,
+        { ...summaryOf(), visitor: 1n },
+        cyclicPayload,
+      ]) {
+        expect(() => validateSummary(payload)).not.toThrow();
+        expect(validateSummary(payload)).toBeUndefined();
+      }
+    });
   });
 
   describe("vetStoredSummary", () => {
-    const historyOf = (anchorKind = "message"): readonly StoredEvent[] => [
-      { at: 0, event: { kind: anchorKind, text: "hi" } as StoredEvent["event"], messages: [] },
+    const message = (
+      turnId: string,
+      role: ConversationMessage["role"],
+      index: number,
+    ): ConversationMessage => ({
+      kind: "conversation",
+      messageId: `${turnId}:${role}`,
+      turnId,
+      role,
+      text: `${role} ${index}`,
+      at: index,
+    });
+    const historyOf = (messageId = "message-1"): readonly ConversationMessage[] => [
+      {
+        kind: "conversation",
+        messageId,
+        turnId: "turn-1",
+        role: "visitor",
+        text: "hi",
+        at: 0,
+      },
     ];
-    const storedWith = (coveredThrough: number): StoredSummary => ({
-      payload: { ...summaryOf(), anchor: "0:message" },
+    const storedWith = (coveredThrough: number) => ({
+      payload: { ...summaryOf(), anchor: "message-1" },
       coveredThrough,
       generation: 0,
+    });
+
+    it("accepts an opaque payload only when its anchor matches the first ConversationMessage", () => {
+      expect(vetStoredSummary(storedWith(1), historyOf())).toEqual({
+        status: "ok",
+        summary: summaryOf(),
+        coveredThrough: 1,
+        generation: 0,
+        replayFrom: 1,
+      });
+    });
+
+    it("rejects a stale stored payload when the ConversationMessage anchor changed", () => {
+      expect(vetStoredSummary(storedWith(1), historyOf("message-2")).status).toBe("mismatch");
+    });
+
+    it("rejects a non-number generation as invalid", () => {
+      expect(
+        vetStoredSummary(
+          {
+            ...storedWith(1),
+            generation: "1",
+          },
+          historyOf(),
+        ).status,
+      ).toBe("invalid");
     });
 
     it("rejects a non-safe-integer coveredThrough as invalid", () => {
@@ -160,6 +244,74 @@ describe("summary schema and summarizer", () => {
 
     it("rejects a negative coveredThrough as invalid", () => {
       expect(vetStoredSummary(storedWith(-1), historyOf()).status).toBe("invalid");
+    });
+
+    it("accepts messageId coverage after the original anchor has slid out of a bounded tail", () => {
+      const fullHistory = [
+        message("turn-1", "visitor", 0),
+        message("turn-1", "assistant", 1),
+        message("turn-2", "visitor", 2),
+        message("turn-2", "assistant", 3),
+        message("turn-3", "visitor", 4),
+        message("turn-3", "assistant", 5),
+      ];
+      const payload = summaryPayload(summaryOf(), fullHistory, 4);
+      const boundedTail = fullHistory.slice(4);
+
+      expect(
+        vetStoredSummary(
+          {
+            payload,
+            coveredThrough: 4,
+            generation: 2,
+          },
+          boundedTail,
+        ),
+      ).toEqual({
+        status: "ok",
+        summary: summaryOf(),
+        coveredThrough: 4,
+        generation: 2,
+        replayFrom: 0,
+      });
+    });
+
+    it("rejects stale-reset coverage when the bounded tail has no matching messageId continuity", () => {
+      const oldHistory = [
+        message("old-1", "visitor", 0),
+        message("old-1", "assistant", 1),
+        message("old-2", "visitor", 2),
+      ];
+      const newHistory = [
+        message("new-1", "visitor", 0),
+        message("new-1", "assistant", 1),
+        message("new-2", "visitor", 2),
+      ];
+
+      expect(
+        vetStoredSummary(
+          {
+            payload: summaryPayload(summaryOf(), oldHistory, 2),
+            coveredThrough: 2,
+            generation: 1,
+          },
+          newHistory,
+        ).status,
+      ).toBe("mismatch");
+    });
+
+    it("rejects hostile stored records without throwing", () => {
+      const stored = new Proxy(storedWith(1), {
+        getOwnPropertyDescriptor() {
+          throw new Error("record read rejected");
+        },
+        ownKeys(target) {
+          return Reflect.ownKeys(target);
+        },
+      });
+
+      expect(() => vetStoredSummary(stored, historyOf())).not.toThrow();
+      expect(vetStoredSummary(stored, historyOf()).status).toBe("invalid");
     });
   });
 

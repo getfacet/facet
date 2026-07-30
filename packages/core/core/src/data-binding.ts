@@ -1,370 +1,413 @@
 /**
- * The ONE data-binding module for `@facet/core`. It owns BOTH:
+ * Read-only resolution of a `data:path` reference against the Data Model.
  *
- *  - `sanitizeDataWarehouse` — the hostile-input validator for the per-tree
- *    `data` warehouse (agent-authored declared data, the same trust tier as
- *    inline `rows`). Pure, non-recursive, bounded, forbidden-key-safe; NEVER
- *    throws, drops bad datasets/rows/cells and keeps survivors.
- *  - `resolveNodeData` — the ONE shared precedence-and-projection helper that
- *    BOTH the content gate (`tree.ts`) and every renderer (`@facet/react`) call,
- *    so "shows something" and the actual render can never diverge (RISK-INV-5).
+ * A binding is authorized by the **declared prop schema**, not by the reference:
+ * a prop only accepts a `data:` reference when its component spec declares it
+ * bindable, and the value the path selects must satisfy the same schema an
+ * inline authored value would have to satisfy. Facet reads; it never fetches,
+ * projects, or coerces.
  *
- * Precedence is static: a node that declares a `from` string projects the named
- * warehouse dataset (ignoring inline); a node without `from` returns its inline
- * value. A `from` naming an absent/empty/malformed dataset yields the node
- * type's EMPTY value. Projection is fixed — no DSL or computed columns; the
- * minimal `column`/`row` selector applies only to bound text. `from` is a NAME
- * only: there is no URL/source/resolver/fetch anywhere here.
+ * **A missing path rejects.** It is never rendered as empty. "Empty" is an
+ * explicit, schema-valid value — `""`, `[]`, `{}` — that the model actually
+ * holds, and it is a different outcome from a path that selects nothing.
+ * Collapsing the two would let a typo, a renamed key, or a publish that never
+ * landed present itself to the visitor as real, empty data.
+ *
+ * **The same-domain rule.** A bound value clears exactly the domain an inline
+ * authored value clears — type, `enum`, **and** the numeric `minimum`/`maximum`
+ * `checkNumber` in `document-validation.ts` enforces. A binding is a second way
+ * to fill a prop, never a second, weaker contract: a value the author grammar
+ * refused must not become mountable by arriving through the Data Model instead.
+ *
+ * `resolveBinding` is **total**: it never throws, for any reference, model, or
+ * schema. Totality here is a property of the code, not of this sentence — every
+ * primitive it reaches through (`Array.isArray`, `Object.getPrototypeOf`,
+ * `hasOwnProperty`, `Object.keys`, a property read, an `enum` membership test)
+ * throws on a revoked `Proxy` or a hostile trap, so each is called behind a
+ * guard that turns the failure into one of the closed reject reasons. The cost
+ * of getting this wrong is not confined to one caller: resolving a node's props catches
+ * one throw and loses every sibling prop that had already resolved, reporting
+ * a clean success for a node that failed.
+ *
+ * This module exports exactly `resolveBinding` and `BindingResolution`, and
+ * nothing else; every other symbol here is private.
  */
 
-import {
-  MAX_CHART_POINTS,
-  MAX_CHART_SERIES,
-  MAX_LIST_ITEMS,
-  MAX_TABLE_CELL_CHARS,
-  MAX_TABLE_COLUMNS,
-  MAX_TABLE_ROWS,
-} from "./brick-validation-shared.js";
-import type {
-  ChartNode,
-  ChartSeries,
-  KeyValueItem,
-  KeyValueNode,
-  ListItem,
-  ListNode,
-  TableNode,
-  TextNode,
-} from "./nodes.js";
-import type { DataCell, DataRow, Dataset, DataWarehouse, TableRow } from "./data-types.js";
-import {
-  FORBIDDEN_DATA_KEYS,
-  isForbiddenKey,
-  isPlainObject,
-  nullMap,
-  printableKey,
-  type IssueSink,
-} from "./issues.js";
-import { DATASET_NAME_RE, SLOT_NAME_RE } from "./slot-marker.js";
-import { BRICK_REGISTRY } from "./brick-registry.js";
+import type { DataModel } from "./data-model.js";
+import { parseDataPath } from "./identifiers.js";
 
-// Public re-export (barrel compat): the regex lives in the leaf `slot-marker`
-// module to keep this module's dependency on the brick validators one-way.
-export { DATASET_NAME_RE } from "./slot-marker.js";
+/** The authored prefix of a data reference; the bare dotted path is also accepted. */
+const DATA_PREFIX = "data:";
 
-/** Max distinct datasets kept per tree (mirrors the small brick-array cap). */
-export const MAX_DATASETS = 32;
+/** The prop types a binding may satisfy — the restricted JSON-Schema subset. */
+const BINDABLE_TYPES = ["string", "number", "boolean", "array", "object"] as const;
 
-/** Max dataset-name length (mirrors the 64-char slot-name / key-echo bound). */
-export const MAX_DATASET_NAME_CHARS = 64;
-
-// =========================================================================
-// sanitizeDataWarehouse
-// =========================================================================
+type BindableType = (typeof BINDABLE_TYPES)[number];
 
 /**
- * Validate an untrusted `data` value into a `DataWarehouse` (or `undefined` when
- * nothing valid remains). Pure, non-recursive, NEVER throws. `issues` is
- * optional — the WU-2 `validateTree` path passes a sink; standalone callers
- * (and the renderer/content gate) pass none.
+ * The two **structured** branches. They are shallow, closed and binding-only:
+ * they declare no element or property contract, so a resolution checks that the
+ * value is a collection or a record and stops there. Nothing deeper is declared,
+ * so nothing deeper may be assumed.
  */
-export function sanitizeDataWarehouse(
-  value: unknown,
-  issues?: IssueSink,
-): DataWarehouse | undefined {
-  if (!isPlainObject(value)) {
-    if (value !== undefined) issues?.push("data is not an object; dropped");
-    return undefined;
-  }
-
-  const out = nullMap<Dataset>();
-  let kept = 0;
-  for (const name of Object.keys(value)) {
-    if (kept >= MAX_DATASETS) {
-      issues?.push(`data exceeded the ${String(MAX_DATASETS)}-dataset cap; extra datasets dropped`);
-      break;
-    }
-    if (
-      isForbiddenKey(name) ||
-      name.length > MAX_DATASET_NAME_CHARS ||
-      !DATASET_NAME_RE.test(name)
-    ) {
-      issues?.push(`dataset "${printableKey(name)}" has an invalid name; dropped`);
-      continue;
-    }
-    const rawDataset = value[name];
-    if (!Array.isArray(rawDataset)) {
-      issues?.push(`dataset "${printableKey(name)}" is not an array; dropped`);
-      continue;
-    }
-    out[name] = sanitizeDataset(rawDataset, name, issues);
-    kept += 1;
-  }
-
-  return kept > 0 ? out : undefined;
-}
-
-function sanitizeDataset(rawRows: readonly unknown[], name: string, issues?: IssueSink): Dataset {
-  const rows: DataRow[] = [];
-  let capped = rawRows;
-  if (rawRows.length > MAX_TABLE_ROWS) {
-    issues?.push(
-      `dataset "${printableKey(name)}" exceeded the ${String(MAX_TABLE_ROWS)}-row cap; extra rows dropped`,
-    );
-    capped = rawRows.slice(0, MAX_TABLE_ROWS);
-  }
-  for (const rawRow of capped) {
-    const row = sanitizeRow(rawRow, name, issues);
-    if (row !== undefined) rows.push(row);
-  }
-  return rows;
-}
-
-function sanitizeRow(rawRow: unknown, name: string, issues?: IssueSink): DataRow | undefined {
-  if (!isPlainObject(rawRow)) return undefined;
-  const row = nullMap<DataCell>();
-  let cols = 0;
-  for (const key of Object.keys(rawRow)) {
-    if (cols >= MAX_TABLE_COLUMNS) {
-      issues?.push(
-        `dataset "${printableKey(name)}" row exceeded the ${String(MAX_TABLE_COLUMNS)}-column cap; extra columns dropped`,
-      );
-      break;
-    }
-    if (isForbiddenKey(key) || FORBIDDEN_DATA_KEYS.has(key) || !SLOT_NAME_RE.test(key)) {
-      continue;
-    }
-    const cell = sanitizeCell(rawRow[key]);
-    if (cell === undefined) continue;
-    row[key] = cell;
-    cols += 1;
-  }
-  return cols > 0 ? row : undefined;
-}
-
-function sanitizeCell(value: unknown): DataCell | undefined {
-  if (typeof value === "string") {
-    return value.length <= MAX_TABLE_CELL_CHARS ? value : value.slice(0, MAX_TABLE_CELL_CHARS);
-  }
-  if (typeof value === "number") return Number.isFinite(value) ? value : undefined;
-  if (typeof value === "boolean") return value;
-  return undefined;
-}
-
-// =========================================================================
-// resolveNodeData — precedence + Projection Contract
-// =========================================================================
-
-export function resolveNodeData(
-  node: TableNode,
-  warehouse: DataWarehouse | undefined,
-): readonly TableRow[];
-export function resolveNodeData(
-  node: ChartNode,
-  warehouse: DataWarehouse | undefined,
-): readonly ChartSeries[];
-export function resolveNodeData(
-  node: ListNode,
-  warehouse: DataWarehouse | undefined,
-): readonly ListItem[];
-export function resolveNodeData(
-  node: KeyValueNode,
-  warehouse: DataWarehouse | undefined,
-): readonly KeyValueItem[];
-export function resolveNodeData(node: TextNode, warehouse: DataWarehouse | undefined): string;
-export function resolveNodeData(
-  node: TableNode | ChartNode | ListNode | KeyValueNode | TextNode,
-  warehouse: DataWarehouse | undefined,
-):
-  | readonly TableRow[]
-  | readonly ChartSeries[]
-  | readonly ListItem[]
-  | readonly KeyValueItem[]
-  | string {
-  // Registry lookup replaces the former per-type switch: every data-bearing
-  // brick declares its `resolve` handler in `brick-registry.ts`. `resolve` is
-  // present for exactly the data-bearing types (the exhaustiveness test guards
-  // this), and `node` is one of them here.
-  return BRICK_REGISTRY[node.type].resolve!(node, warehouse);
-}
+const STRUCTURED_TYPES: readonly BindableType[] = ["array", "object"];
 
 /**
- * Safe own-property dataset lookup: forbidden names and non-arrays yield
- * `undefined`. Also drops non-object rows (null / undefined / sparse holes) so
- * every projection helper below is TOTAL even on an UNSANITIZED warehouse — the
- * renderer calls `resolveNodeData` on unvalidated trees (host `initialTree`,
- * direct `StageRenderer tree={…}`, the CLI render path) and must never throw
- * (fail-safe invariant). A sanitized warehouse is already object-only, so this
- * returns the same rows; cell values are re-checked at each read site.
+ * Every keyword a structured branch admits. `enum`, `default`, `minimum` and
+ * `maximum` belong to the scalar branches only, so a structured schema carrying
+ * one is not a `PropSchema` this resolver understands — and silently ignoring an
+ * unadmitted keyword would resolve a binding against a contract the author
+ * believes is being enforced.
  */
-function lookupDataset(warehouse: DataWarehouse | undefined, name: string): Dataset | undefined {
-  if (warehouse === undefined || isForbiddenKey(name)) return undefined;
-  if (!Object.prototype.hasOwnProperty.call(warehouse, name)) return undefined;
-  const dataset = warehouse[name];
-  if (!Array.isArray(dataset)) return undefined;
-  return dataset.filter((row) => isPlainObject(row)) as Dataset;
-}
+const STRUCTURED_KEYWORDS: readonly string[] = ["type", "guidance", "required", "bindable"];
 
-export function resolveTable(
-  node: TableNode,
-  warehouse: DataWarehouse | undefined,
-): readonly TableRow[] {
-  if (node.from === undefined) return node.rows;
-  return lookupDataset(warehouse, node.from) ?? [];
-}
+/**
+ * The part of a declared prop schema a binding needs to consult.
+ *
+ * `minimum` and `maximum` are carried because the author path enforces them: a
+ * resolver that read the type and the `enum` and stopped would accept a bound
+ * value its own catalog refuses to let an author write.
+ */
+type BindingSchema = {
+  readonly type: BindableType;
+  readonly bindable: boolean;
+  readonly enum: readonly unknown[] | null;
+  readonly minimum: number | null;
+  readonly maximum: number | null;
+};
 
-export function resolveChart(
-  node: ChartNode,
-  warehouse: DataWarehouse | undefined,
-): readonly ChartSeries[] {
-  if (node.from === undefined) return node.series;
-  const dataset = lookupDataset(warehouse, node.from);
-  if (dataset === undefined || dataset.length === 0) return [];
-  return projectSeries(dataset);
-}
-
-export function resolveList(
-  node: ListNode,
-  warehouse: DataWarehouse | undefined,
-): readonly ListItem[] {
-  if (node.from === undefined) return node.items;
-  const dataset = lookupDataset(warehouse, node.from);
-  if (dataset === undefined || dataset.length === 0) return [];
-  return projectList(dataset);
-}
-
-export function resolveKeyValue(
-  node: KeyValueNode,
-  warehouse: DataWarehouse | undefined,
-): readonly KeyValueItem[] {
-  if (node.from === undefined) return projectInlineKeyValue(node.items);
-  const dataset = lookupDataset(warehouse, node.from);
-  if (dataset === undefined || dataset.length === 0) return [];
-  return projectKeyValue(dataset);
-}
-
-export function resolveScalar(node: TextNode, warehouse: DataWarehouse | undefined): string {
-  if (node.from === undefined) return node.value;
-  const dataset = lookupDataset(warehouse, node.from);
-  if (dataset === undefined) return "";
-  const { column } = node;
-  if (typeof column !== "string" || isForbiddenKey(column)) return "";
-  const index = normalizeRowIndex(node.row);
-  if (index === undefined) return "";
-  const row = dataset[index];
-  if (row === undefined) return "";
-  const cell = row[column];
-  return cell === undefined ? "" : cellToString(cell);
-}
-
-/** Column keys across a dataset, in first-seen order. */
-function columnOrder(dataset: Dataset): readonly string[] {
-  const order: string[] = [];
-  const seen = new Set<string>();
-  for (const row of dataset) {
-    for (const key of Object.keys(row)) {
-      if (!seen.has(key)) {
-        seen.add(key);
-        order.push(key);
-      }
+/**
+ * The outcome of resolving one binding.
+ *
+ * Exported because `resolveBinding` is: a renderer or validator that stores a
+ * resolution, threads it through a helper, or narrows it in a second function
+ * has to **name** it, and an unexported result type turns that into
+ * `TS2459: declares 'X' locally, but it is not exported`.
+ *
+ * The reject reasons are written out inline rather than behind a shared private
+ * alias. A `.d.ts` may carry an unexported alias, but a consumer cannot name it,
+ * so spelling the union out keeps every part of this emitted signature nameable
+ * while the module's export list stays exactly `resolveBinding` and this type.
+ */
+export type BindingResolution =
+  | {
+      readonly ok: true;
+      /** The selected value, already agreed with the declared prop schema. */
+      readonly value:
+        string | number | boolean | readonly unknown[] | { readonly [key: string]: unknown };
     }
-  }
-  return order;
-}
-
-/** One series per NUMERIC column (all present cells finite numbers), capped. */
-function projectSeries(dataset: Dataset): readonly ChartSeries[] {
-  const series: ChartSeries[] = [];
-  for (const key of columnOrder(dataset)) {
-    if (series.length >= MAX_CHART_SERIES) break;
-    const values: number[] = [];
-    let numeric = true;
-    let hasValue = false;
-    for (const row of dataset) {
-      const cell = row[key];
-      if (cell === undefined) continue;
-      hasValue = true;
-      if (typeof cell === "number" && Number.isFinite(cell)) {
-        if (values.length < MAX_CHART_POINTS) values.push(cell);
-      } else {
-        numeric = false;
-        break;
-      }
-    }
-    if (numeric && hasValue) series.push({ label: key, values });
-  }
-  return series;
-}
-
-/** One item per row: title/body from the first two string-valued columns. */
-function projectList(dataset: Dataset): readonly ListItem[] {
-  const stringColumns = columnOrder(dataset).filter((key) =>
-    dataset.some((row) => typeof row[key] === "string"),
-  );
-  const titleKey = stringColumns[0];
-  if (titleKey === undefined) return [];
-  const bodyKey = stringColumns[1];
-  const items: ListItem[] = [];
-  for (const row of dataset) {
-    if (items.length >= MAX_LIST_ITEMS) break;
-    const title = row[titleKey];
-    if (typeof title !== "string") continue;
-    const item: { title: string; body?: string } = { title };
-    if (bodyKey !== undefined) {
-      const body = row[bodyKey];
-      if (typeof body === "string") item.body = body;
-    }
-    items.push(item);
-  }
-  return items;
-}
-
-/** One `{label, value}` per row from the first two columns; both-empty rows dropped. */
-function projectKeyValue(dataset: Dataset): readonly KeyValueItem[] {
-  const order = columnOrder(dataset);
-  const labelKey = order[0];
-  const valueKey = order[1];
-  const items: KeyValueItem[] = [];
-  for (const row of dataset) {
-    if (items.length >= MAX_TABLE_ROWS) break;
-    const labelCell = labelKey === undefined ? undefined : row[labelKey];
-    const valueCell = valueKey === undefined ? undefined : row[valueKey];
-    if (labelCell === undefined && valueCell === undefined) continue;
-    items.push({
-      label: labelCell === undefined ? "" : cellToString(labelCell),
-      value: valueCell === undefined ? "" : cellToString(valueCell),
-    });
-  }
-  return items;
-}
-
-/** Keep inline key/value projection on the current content-only item shape. */
-function projectInlineKeyValue(items: readonly KeyValueItem[]): readonly KeyValueItem[] {
-  if (!Array.isArray(items)) return [];
-  const projectedItems: KeyValueItem[] = [];
-  for (const item of items) {
-    if (!isPlainObject(item) || typeof item.label !== "string" || typeof item.value !== "string") {
-      continue;
-    }
-    const projected: { key?: string; label: string; value: string } = {
-      label: item.label,
-      value: item.value,
+  | {
+      readonly ok: false;
+      /** Why the binding did not resolve. Closed, structured, and stable. */
+      readonly reason:
+        | "invalid_prop_schema"
+        | "prop_not_bindable"
+        | "invalid_reference"
+        | "path_not_found"
+        | "schema_mismatch";
     };
-    if (typeof item.key === "string") projected.key = item.key;
-    projectedItems.push(projected);
+
+/**
+ * Whether `value` is an array.
+ *
+ * `Array.isArray` is not total: on a revoked `Proxy` it throws
+ * `TypeError: Cannot perform 'IsArray' on a proxy that has been revoked`. Every
+ * array test in this module goes through here so that a revoked proxy reads as
+ * "not an array" — which is the truthful answer for binding purposes, since
+ * nothing can be read out of it either.
+ */
+function isArrayValue(value: unknown): value is readonly unknown[] {
+  try {
+    return Array.isArray(value);
+  } catch {
+    return false;
   }
-  return projectedItems;
 }
 
-/** Normalize a `row` selector to an in-window index, or `undefined` (⇒ empty). */
-function normalizeRowIndex(raw: number | undefined): number | undefined {
-  if (raw === undefined) return 0;
-  if (typeof raw !== "number" || !Number.isFinite(raw)) return undefined;
-  const index = Math.floor(raw);
-  if (index < 0) return 0;
-  if (index >= MAX_TABLE_ROWS) return undefined;
-  return index;
+/**
+ * Whether `value` is a plain JSON object — not an array, Date, Map or instance.
+ *
+ * Total for the same reason `isArrayValue` is: `Object.getPrototypeOf` also
+ * throws on a revoked proxy, and a proxy may install a `getPrototypeOf` trap
+ * that throws on anything. A value whose own shape cannot be established is not
+ * a plain object.
+ *
+ * Deliberately a local copy of the same predicate in `data-model.ts`, which
+ * keeps it private: the shared alternative is a private helper module that
+ * several later core modules will also want. That consolidation belongs to
+ * whoever owns that module, not to a binding resolver.
+ */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  try {
+    if (typeof value !== "object" || value === null || isArrayValue(value)) {
+      return false;
+    }
+    const prototype: unknown = Object.getPrototypeOf(value);
+    return prototype === Object.prototype || prototype === null;
+  } catch {
+    return false;
+  }
 }
 
-function cellToString(cell: DataCell): string {
-  return typeof cell === "string" ? cell : String(cell);
+/** Marks a property read that threw, so a hostile getter can never escape. */
+const READ_FAILED = Symbol("facet.readFailed");
+
+/**
+ * Reads one **own** property without ever throwing.
+ *
+ * Own-property lookup is what keeps `toString` or `constructor` from resolving:
+ * an inherited member is not data the host published, so it must read as
+ * missing rather than as a value.
+ *
+ * The presence test is inside the `try` because it is itself a trapped
+ * operation: `hasOwnProperty` goes through `getOwnPropertyDescriptor`, which a
+ * proxy may refuse. A key whose presence cannot be established is not present.
+ */
+function readOwn(container: Record<string, unknown>, key: string): unknown {
+  try {
+    if (!Object.prototype.hasOwnProperty.call(container, key)) {
+      return READ_FAILED;
+    }
+    return container[key];
+  } catch {
+    return READ_FAILED;
+  }
+}
+
+/**
+ * Reads one keyword off an unvalidated prop schema without ever throwing.
+ *
+ * A prop schema is `unknown`, so it may carry a getter that throws — and every
+ * keyword this resolver consults is a plain property read. `READ_FAILED` is a
+ * symbol, so an unreadable keyword fails each caller's `typeof` or array test
+ * on its own and lands on `invalid_prop_schema` without a special case.
+ */
+function readKeyword(propSchema: Record<string, unknown>, key: string): unknown {
+  try {
+    return propSchema[key];
+  } catch {
+    return READ_FAILED;
+  }
+}
+
+/**
+ * The schema's own enumerable keys, or `null` when they cannot be enumerated.
+ *
+ * The two outcomes must stay distinct: an unreadable key set is not an empty
+ * one. Treating it as empty would let a proxy pass the structured branches'
+ * closed-keyword check by refusing to say what it declares.
+ */
+function schemaKeys(propSchema: Record<string, unknown>): readonly string[] | null {
+  try {
+    return Object.keys(propSchema);
+  } catch {
+    return null;
+  }
+}
+
+/** Reads an optional numeric domain bound: absent, a finite number, or invalid. */
+function readBound(propSchema: Record<string, unknown>, key: string): number | null | "invalid" {
+  const declared = readKeyword(propSchema, key);
+  if (declared === undefined) {
+    return null;
+  }
+  if (typeof declared !== "number" || !Number.isFinite(declared)) {
+    return "invalid";
+  }
+  return declared;
+}
+
+/**
+ * Narrows an unvalidated prop schema to the bindable subset a resolution needs,
+ * or returns `null` when it is not a schema this resolver understands.
+ *
+ * The schema arrives as `unknown` deliberately: the catalog is the trust
+ * boundary that admits it, and an unrecognized shape must reject here rather
+ * than be assumed well-formed.
+ */
+function readSchema(propSchema: unknown): BindingSchema | null {
+  if (!isPlainObject(propSchema)) {
+    return null;
+  }
+  const declaredType = readKeyword(propSchema, "type");
+  if (typeof declaredType !== "string") {
+    return null;
+  }
+  const type = BINDABLE_TYPES.find((candidate) => candidate === declaredType);
+  if (type === undefined) {
+    return null;
+  }
+  const declaredBindable = readKeyword(propSchema, "bindable");
+  if (declaredBindable !== undefined && typeof declaredBindable !== "boolean") {
+    return null;
+  }
+  const bindable = declaredBindable === true;
+
+  if (STRUCTURED_TYPES.includes(type)) {
+    const keywords = schemaKeys(propSchema);
+    if (keywords === null) {
+      return null;
+    }
+    for (const keyword of keywords) {
+      if (!STRUCTURED_KEYWORDS.includes(keyword)) {
+        return null;
+      }
+    }
+    // A structured branch declares no domain — no enum and no range to honour.
+    return { type, bindable, enum: null, minimum: null, maximum: null };
+  }
+
+  const declaredEnum = readKeyword(propSchema, "enum");
+  if (declaredEnum !== undefined && !isArrayValue(declaredEnum)) {
+    return null;
+  }
+
+  // Only the `number` branch admits a range, so only it reads one. Reading
+  // `minimum` off a string schema would enforce a keyword the catalog does not
+  // let that branch declare in the first place.
+  const minimum = type === "number" ? readBound(propSchema, "minimum") : null;
+  const maximum = type === "number" ? readBound(propSchema, "maximum") : null;
+  if (minimum === "invalid" || maximum === "invalid") {
+    return null;
+  }
+
+  return {
+    type,
+    bindable,
+    enum: declaredEnum === undefined ? null : declaredEnum,
+    minimum,
+    maximum,
+  };
+}
+
+/**
+ * The three outcomes of testing a selected value against a declared schema.
+ *
+ * `unreadable` is separate from `mismatch` on purpose: a schema whose own
+ * domain cannot be consulted is not a schema that rejected the value, and
+ * reporting it as a mismatch would blame the published data for a fault in the
+ * declaration.
+ */
+type SchemaAgreement = "agrees" | "mismatch" | "unreadable";
+
+/**
+ * Whether the selected value satisfies the declared type and the full domain —
+ * the same domain `checkNumber` and the string `enum` check enforce on the
+ * author path, in the same order: type, then `enum`, then `minimum`, then
+ * `maximum`.
+ *
+ * The membership test is the one place this module calls back into a value the
+ * catalog handed it: `enum` is declared data, and an `Array` subclass or proxy
+ * can make `includes` throw or make an element read throw. An enum whose
+ * membership cannot be decided leaves the schema unreadable rather than
+ * silently admitting or refusing the value.
+ */
+function agreesWithSchema(value: unknown, schema: BindingSchema): SchemaAgreement {
+  const typeAgrees = ((): boolean => {
+    switch (schema.type) {
+      case "string":
+        return typeof value === "string";
+      case "number":
+        return typeof value === "number" && Number.isFinite(value);
+      case "boolean":
+        return typeof value === "boolean";
+      case "array":
+        return isArrayValue(value);
+      case "object":
+        return isPlainObject(value);
+    }
+  })();
+  if (!typeAgrees) {
+    return "mismatch";
+  }
+
+  if (schema.enum !== null) {
+    let admitted: boolean;
+    try {
+      admitted = schema.enum.includes(value);
+    } catch {
+      return "unreadable";
+    }
+    if (!admitted) {
+      return "mismatch";
+    }
+  }
+
+  if (typeof value === "number") {
+    if (schema.minimum !== null && value < schema.minimum) {
+      return "mismatch";
+    }
+    if (schema.maximum !== null && value > schema.maximum) {
+      return "mismatch";
+    }
+  }
+  return "agrees";
+}
+
+/**
+ * Resolves an authored `data:path` reference against `model`, authorized by the
+ * prop's declared schema.
+ *
+ * The reference may carry its authored `data:` prefix or arrive already
+ * stripped; `data:` can never be a legal first segment, so accepting both is
+ * unambiguous. Path grammar comes from `parseDataPath` — there is one path
+ * grammar in Facet, and it admits **named keys only** (D-06).
+ *
+ * Traversal descends through plain objects only. An array is a terminal value:
+ * a path never addresses a position inside a collection, and refusing to
+ * descend is also what stops `rows.length` from reading as published data.
+ */
+export function resolveBinding(
+  reference: unknown,
+  model: DataModel,
+  propSchema: unknown,
+): BindingResolution {
+  const schema = readSchema(propSchema);
+  if (schema === null) {
+    return { ok: false, reason: "invalid_prop_schema" };
+  }
+  if (!schema.bindable) {
+    return { ok: false, reason: "prop_not_bindable" };
+  }
+
+  const bare =
+    typeof reference === "string" && reference.startsWith(DATA_PREFIX)
+      ? reference.slice(DATA_PREFIX.length)
+      : reference;
+  const path = parseDataPath(bare);
+  if (path === null) {
+    return { ok: false, reason: "invalid_reference" };
+  }
+
+  let cursor: unknown = model;
+  for (const segment of path) {
+    if (!isPlainObject(cursor)) {
+      return { ok: false, reason: "path_not_found" };
+    }
+    const next = readOwn(cursor, segment);
+    if (next === READ_FAILED || next === undefined) {
+      return { ok: false, reason: "path_not_found" };
+    }
+    cursor = next;
+  }
+
+  const agreement = agreesWithSchema(cursor, schema);
+  if (agreement === "unreadable") {
+    return { ok: false, reason: "invalid_prop_schema" };
+  }
+  if (agreement === "mismatch") {
+    return { ok: false, reason: "schema_mismatch" };
+  }
+  // `agreesWithSchema` has just proven `cursor` inhabits one of the five
+  // declarable types, which is exactly the resolved-value union.
+  if (
+    typeof cursor === "string" ||
+    typeof cursor === "number" ||
+    typeof cursor === "boolean" ||
+    isArrayValue(cursor) ||
+    isPlainObject(cursor)
+  ) {
+    return { ok: true, value: cursor };
+  }
+  return { ok: false, reason: "schema_mismatch" };
 }

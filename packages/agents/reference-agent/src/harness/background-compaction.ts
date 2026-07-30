@@ -1,14 +1,12 @@
-import { createSerialQueue } from "@facet/core";
-import type { ClientEvent, FacetSession } from "@facet/core";
-import { sessionKey, type Sink, type StoredEvent, type SummaryStore } from "@facet/runtime";
+import type { AgentEvent, ConversationMessage, FacetToolSession } from "@facet/core";
+import type { Sink, SummaryStore } from "@facet/runtime";
 
-import { buildInitialMessages, renderHistoryEntry, TOOLS } from "../prompt.js";
-import type { ReferenceProvider, TurnMessage } from "../provider.js";
-import { effectiveTokenBudget, type ReferenceAgentBudget } from "./budget.js";
+import { redactSensitiveText } from "../prompt/messages.js";
+import type { TurnMessage } from "../provider.js";
+import { effectiveCharBudget, type ReferenceAgentBudget } from "./budget.js";
 import { truncateWithMarker } from "./compaction.js";
-import { createTokenEstimator, estimateTurnChars } from "./estimate.js";
+import { measureChars } from "./measure.js";
 import {
-  conversationAnchor,
   summaryBlockMessage,
   summaryCharBudget,
   summaryPayload,
@@ -21,13 +19,20 @@ import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
 /** Fraction a new summary must shrink the text it replaces, else the write is skipped. */
 const MIN_COMPACTION_GAIN_RATIO = 0.25;
 const MAX_COOLDOWN_KEYS = 1024;
+const BACKGROUND_HISTORY_READ_LIMIT = 10_000;
 
-/** Background compaction is serialized per agent/visitor while different visitors run concurrently. */
-const compactionLane = createSerialQueue<void>();
+/** Background compaction is serialized per conversation key while different conversations run concurrently. */
+const compactionLanes = new Map<string, Promise<void>>();
 const minGainCooldown = new Map<string, number>();
 
 export function enqueueBackgroundCompaction(key: string, task: () => Promise<void>): Promise<void> {
-  return compactionLane(key, task);
+  const previous = compactionLanes.get(key) ?? Promise.resolve();
+  const next = previous.catch(() => undefined).then(task);
+  compactionLanes.set(key, next);
+  void next.finally(() => {
+    if (compactionLanes.get(key) === next) compactionLanes.delete(key);
+  });
+  return next;
 }
 
 function markMinGainSkip(key: string, historyLength: number): void {
@@ -59,6 +64,7 @@ function isWithinMinGainCooldown(
 
 /** Internal test seam; this module is not exported from the package root. */
 export function resetBackgroundCompactionForTests(): void {
+  compactionLanes.clear();
   minGainCooldown.clear();
 }
 
@@ -69,23 +75,40 @@ interface ProjectedSummary {
 }
 
 export interface BackgroundCompactionOptions {
-  readonly provider: ReferenceProvider;
   readonly system: string;
   readonly budget: ReferenceAgentBudget;
-  readonly event: ClientEvent;
-  readonly session: FacetSession;
-  readonly sink: Sink;
-  readonly agentId: string;
-  readonly visitorId: string;
+  readonly event: AgentEvent;
+  readonly session: FacetToolSession;
+  readonly sink: Pick<Sink, "history">;
+  readonly historyKey?: string | undefined;
   readonly summaryStore: SummaryStore;
+  readonly summaryKey?: string | undefined;
   readonly summarizer: Summarizer;
-  readonly trace: ReferenceAgentTrace | undefined;
-  readonly abortSignal?: AbortSignal;
-  readonly contextWindowTokens?: number;
+  readonly trace?: ReferenceAgentTrace | undefined;
+  readonly abortSignal?: AbortSignal | undefined;
+  readonly contextWindowChars?: number | undefined;
+  /** Transitional fields accepted until the WU-74 caller rewires to historyKey/contextWindowChars. */
+  readonly provider?: unknown;
+  readonly agentId?: string | undefined;
+  readonly visitorId?: string | undefined;
+  readonly contextWindowTokens?: number | undefined;
 }
 
 function isAborted(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
+}
+
+function resolveHistoryKey(options: BackgroundCompactionOptions): string | undefined {
+  if (options.historyKey !== undefined && options.historyKey.length > 0) return options.historyKey;
+  if (
+    options.agentId !== undefined &&
+    options.agentId.length > 0 &&
+    options.visitorId !== undefined &&
+    options.visitorId.length > 0
+  ) {
+    return `${options.agentId}:${options.visitorId}`;
+  }
+  return undefined;
 }
 
 /**
@@ -97,9 +120,19 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
   const { trace, budget } = options;
   if (isAborted(options.abortSignal)) return;
 
-  let history: readonly StoredEvent[];
+  const historyKey = resolveHistoryKey(options);
+  if (historyKey === undefined) {
+    emitReferenceAgentTrace(trace, {
+      type: "compaction_failed",
+      site: "cross_turn",
+      reason: "sink_error",
+    });
+    return;
+  }
+
+  let history: readonly ConversationMessage[];
   try {
-    history = await options.sink.history(options.agentId, options.visitorId);
+    history = await options.sink.history(historyKey, BACKGROUND_HISTORY_READ_LIMIT);
   } catch {
     emitReferenceAgentTrace(trace, {
       type: "compaction_failed",
@@ -108,18 +141,15 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     });
     return;
   }
-  if (isAborted(options.abortSignal)) return;
+  if (isAborted(options.abortSignal) || history.length === 0) return;
 
-  const anchor = conversationAnchor(history);
-  if (anchor === undefined) return;
-
-  const key = sessionKey(options.agentId, options.visitorId);
+  const key = options.summaryKey ?? historyKey;
   let previous: ConversationSummary | undefined;
   let previousCovered = 0;
   let previousGeneration = 0;
-  let stored: Awaited<ReturnType<SummaryStore["get"]>>;
+  let stored: unknown;
   try {
-    stored = await options.summaryStore.get(options.agentId, options.visitorId);
+    stored = await options.summaryStore.read(key);
   } catch {
     emitReferenceAgentTrace(trace, {
       type: "compaction_failed",
@@ -129,52 +159,20 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     return;
   }
   if (isAborted(options.abortSignal)) return;
+
   const vetted = vetStoredSummary(stored, history);
   if (vetted.status === "ok") {
     previous = vetted.summary;
     previousCovered = vetted.coveredThrough;
     previousGeneration = vetted.generation;
-  } else if (vetted.status === "invalid" || vetted.status === "mismatch") {
-    try {
-      await options.summaryStore.delete(options.agentId, options.visitorId);
-    } catch {
-      emitReferenceAgentTrace(trace, {
-        type: "compaction_failed",
-        site: "cross_turn",
-        reason: "store_error",
-      });
-      return;
-    }
-    if (isAborted(options.abortSignal)) return;
   }
 
   if (isWithinMinGainCooldown(key, history.length, budget.compactionCooldownSteps)) return;
 
-  const projectTurnMessages = (
-    priorSummary: ProjectedSummary | undefined,
-    tail: readonly StoredEvent[],
-  ): TurnMessage[] => {
-    const tailMessages = buildInitialMessages(
-      options.event,
-      options.session,
-      tail,
-      budget.maxHistoryTurns,
-      { maxJsonChars: budget.maxStageJsonChars, maxSummaryNodes: budget.maxStageSummaryNodes },
-    );
-    return priorSummary === undefined
-      ? tailMessages
-      : [
-          summaryBlockMessage(
-            priorSummary.summary,
-            priorSummary.generation,
-            priorSummary.coveredThrough,
-          ),
-          ...tailMessages,
-        ];
-  };
-
-  const estimator = createTokenEstimator();
-  const budgetTokens = effectiveTokenBudget(budget, options.contextWindowTokens);
+  const budgetChars = effectiveCharBudget(
+    budget,
+    options.contextWindowChars ?? options.contextWindowTokens,
+  );
   const priorProjection: ProjectedSummary | undefined =
     previous !== undefined
       ? { summary: previous, generation: previousGeneration, coveredThrough: previousCovered }
@@ -183,38 +181,21 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     priorProjection,
     priorProjection !== undefined ? history.slice(previousCovered) : history,
   );
-  const beforeTokens = estimator.estimateTokens(
-    estimateTurnChars(options.system, beforeMessages, TOOLS),
-  );
-  if (beforeTokens <= budget.compactionTriggerRatio * budgetTokens) return;
+  const beforeChars = measureChars({ system: options.system, messages: beforeMessages });
+  if (beforeChars <= budget.compactionTriggerRatio * budgetChars) return;
 
-  const fullEnd = history.length - budget.minRecentTurnsVerbatim;
-  if (fullEnd <= previousCovered) return;
+  const window = summaryWindow(history, previousCovered, budget.minRecentTurnsVerbatim);
+  const rendered = renderSummaryWindow(window.records, budget.maxSummarizerInputChars);
+  if (rendered.recordCount === 0 || rendered.content.length === 0) return;
 
-  const window = history.slice(previousCovered, fullEnd);
-  const renderedLines: string[] = [];
-  let contentChars = 0;
-  for (const [index, entry] of window.entries()) {
-    const line = truncateWithMarker(
-      renderHistoryEntry(entry),
-      budget.maxSummarizerInputChars,
-    ).content;
-    const separator = index === 0 ? 0 : 1;
-    const nextChars = contentChars + separator + line.length;
-    if (index > 0 && nextChars > budget.maxSummarizerInputChars) break;
-    contentChars = nextChars;
-    renderedLines.push(line);
-  }
-
-  const end = previousCovered + renderedLines.length;
+  const coveredThrough = previousCovered + rendered.recordCount;
   const generation = previousGeneration + 1;
-  const content = renderedLines.join("\n");
 
   emitReferenceAgentTrace(trace, {
     type: "compaction_triggered",
     site: "cross_turn",
-    estimatedTokens: beforeTokens,
-    budgetTokens,
+    estimatedChars: beforeChars,
+    budgetChars,
   });
 
   let summary: ConversationSummary | undefined;
@@ -222,9 +203,9 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     summary = await options.summarizer({
       kind: "history",
       ...(previous !== undefined ? { previous } : {}),
-      content,
+      content: rendered.content,
       generation,
-      maxSummaryChars: summaryCharBudget(budget.maxSummaryTokens),
+      maxSummaryChars: summaryCharBudget(budget.maxSummaryChars),
       timeoutMs: budget.summarizerTimeoutMs,
       retries: budget.summarizerRetries,
       ...(options.abortSignal !== undefined ? { signal: options.abortSignal } : {}),
@@ -242,13 +223,12 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     return;
   }
 
-  const coveredThrough = Math.min(end, history.length);
   const block = summaryBlockMessage(summary, generation, coveredThrough);
   const previousBlockChars =
     previous !== undefined
       ? turnMessageChars(summaryBlockMessage(previous, previousGeneration, previousCovered))
       : 0;
-  const replacedChars = previousBlockChars + content.length;
+  const replacedChars = previousBlockChars + rendered.content.length;
   const gain = replacedChars > 0 ? (replacedChars - turnMessageChars(block)) / replacedChars : 0;
   if (gain < MIN_COMPACTION_GAIN_RATIO) {
     markMinGainSkip(key, history.length);
@@ -260,11 +240,11 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     return;
   }
 
-  let written: boolean;
   if (isAborted(options.abortSignal)) return;
+  let written: Awaited<ReturnType<SummaryStore["write"]>>;
   try {
-    written = await options.summaryStore.put(options.agentId, options.visitorId, {
-      payload: summaryPayload(summary, anchor),
+    written = await options.summaryStore.write(key, {
+      payload: summaryPayload(summary, history, coveredThrough),
       coveredThrough,
       generation,
     });
@@ -276,11 +256,11 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     });
     return;
   }
-  if (!written) {
+  if (!written.ok) {
     emitReferenceAgentTrace(trace, {
       type: "compaction_failed",
       site: "cross_turn",
-      reason: "stale_write",
+      reason: "store_error",
     });
     return;
   }
@@ -290,18 +270,140 @@ export async function runBackgroundCompaction(options: BackgroundCompactionOptio
     { summary, generation, coveredThrough },
     history.slice(coveredThrough),
   );
-  const afterTokens = estimator.estimateTokens(
-    estimateTurnChars(options.system, afterMessages, TOOLS),
-  );
+  const afterChars = measureChars({ system: options.system, messages: afterMessages });
 
   emitReferenceAgentTrace(trace, {
     type: "compaction_done",
     site: "cross_turn",
     generation,
     coveredThrough,
-    beforeTokens,
-    afterTokens,
+    beforeChars,
+    afterChars,
   });
+}
+
+function projectTurnMessages(
+  priorSummary: ProjectedSummary | undefined,
+  tail: readonly ConversationMessage[],
+): TurnMessage[] {
+  const tailMessages = tail.map(conversationMessageToTurnMessage);
+  return priorSummary === undefined
+    ? tailMessages
+    : [
+        summaryBlockMessage(
+          priorSummary.summary,
+          priorSummary.generation,
+          priorSummary.coveredThrough,
+        ),
+        ...tailMessages,
+      ];
+}
+
+function summaryWindow(
+  history: readonly ConversationMessage[],
+  start: number,
+  minRecentTurns: number,
+): { readonly records: readonly ConversationMessage[] } {
+  const startIndex = boundedHistoryIndex(start, history.length);
+  const tail = history.slice(startIndex);
+  const turnOrder = orderedTurnIds(tail);
+  const retainedTurns = Math.max(0, Math.floor(minRecentTurns));
+  const summarizedTurnCount = Math.max(0, turnOrder.length - retainedTurns);
+  if (summarizedTurnCount === 0) return { records: [] };
+
+  const summarizedTurnIds = new Set(turnOrder.slice(0, summarizedTurnCount));
+  const records: ConversationMessage[] = [];
+  for (const record of tail) {
+    if (!summarizedTurnIds.has(record.turnId)) break;
+    records.push(record);
+  }
+  return { records };
+}
+
+function renderSummaryWindow(
+  records: readonly ConversationMessage[],
+  maxChars: number,
+): { readonly content: string; readonly recordCount: number } {
+  const groups = contiguousTurnGroups(records);
+  const lines: string[] = [];
+  let contentChars = 0;
+  let recordCount = 0;
+  const limit = boundedSummaryInputChars(maxChars);
+
+  for (const group of groups) {
+    const groupLines = group.map(renderHistoryEntry);
+    const groupContent = groupLines.join("\n");
+    const separator = lines.length === 0 ? 0 : 1;
+    const nextChars = contentChars + separator + groupContent.length;
+    if (nextChars > limit) {
+      if (lines.length === 0) {
+        const truncated = truncateWithMarker(groupContent, limit).content;
+        lines.push(truncated);
+        recordCount += group.length;
+      }
+      break;
+    }
+    lines.push(...groupLines);
+    contentChars = nextChars;
+    recordCount += group.length;
+  }
+
+  return { content: lines.join("\n"), recordCount };
+}
+
+function contiguousTurnGroups(
+  records: readonly ConversationMessage[],
+): readonly (readonly ConversationMessage[])[] {
+  const groups: ConversationMessage[][] = [];
+  let currentTurnId: string | undefined;
+  let current: ConversationMessage[] = [];
+  for (const record of records) {
+    if (currentTurnId === undefined || record.turnId === currentTurnId) {
+      currentTurnId = record.turnId;
+      current.push(record);
+      continue;
+    }
+    groups.push(current);
+    currentTurnId = record.turnId;
+    current = [record];
+  }
+  if (current.length > 0) groups.push(current);
+  return groups;
+}
+
+function orderedTurnIds(history: readonly ConversationMessage[]): readonly string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const record of history) {
+    if (seen.has(record.turnId)) continue;
+    seen.add(record.turnId);
+    ordered.push(record.turnId);
+  }
+  return ordered;
+}
+
+function boundedHistoryIndex(index: number, length: number): number {
+  if (!Number.isSafeInteger(index) || index <= 0) return 0;
+  return Math.min(index, length);
+}
+
+function boundedSummaryInputChars(maxChars: number): number {
+  if (!Number.isFinite(maxChars) || maxChars <= 0) return 1;
+  return Math.floor(maxChars);
+}
+
+function renderHistoryEntry(record: ConversationMessage): string {
+  const role = record.role === "visitor" ? "Visitor" : "Assistant";
+  return `${role} turn=${record.turnId} message=${record.messageId}: ${redactSensitiveText(
+    record.text,
+  )}`;
+}
+
+function conversationMessageToTurnMessage(record: ConversationMessage): TurnMessage {
+  return {
+    role: record.role === "visitor" ? "user" : "assistant",
+    content: record.text,
+  };
 }
 
 function turnMessageChars(message: TurnMessage): number {

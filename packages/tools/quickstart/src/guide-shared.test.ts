@@ -1,25 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { buildQuickstartNavigation, QUICKSTART_NAV_ITEMS } from "./guide-shared.js";
+import {
+  QUICKSTART_NAV_ITEMS,
+  quickstartCardMarkup,
+  quickstartNavigationMarkup,
+} from "./guide-shared.js";
 
-describe("buildQuickstartNavigation", () => {
-  it("builds the stable nine-node navigation subtree for one screen namespace", () => {
-    const nodes = buildQuickstartNavigation("home");
-    const expectedIds = [
-      "qs.nav.home",
-      ...QUICKSTART_NAV_ITEMS.flatMap(({ to }) => [`qs.nav.home.${to}`, `qs.nav.home.${to}.label`]),
-    ];
+describe("quickstart guide markup helpers", () => {
+  it("builds one nav button for each seeded screen", () => {
+    const markup = quickstartNavigationMarkup();
 
-    expect(Object.keys(nodes)).toEqual(expectedIds);
-    expect(nodes["qs.nav.home"]?.type).toBe("box");
     for (const item of QUICKSTART_NAV_ITEMS) {
-      expect(nodes[`qs.nav.home.${item.to}`]).toMatchObject({
-        activeWhen: { screen: item.to },
-        onPress: { kind: "navigate", to: item.to },
-      });
-      expect(nodes[`qs.nav.home.${item.to}.label`]).toMatchObject({
-        value: item.label,
-        activeWhen: { screen: item.to },
-      });
+      expect(markup).toContain(`label="${item.label}"`);
+      expect(markup).toContain(`action="nav:${item.to}"`);
     }
+    expect(markup).not.toContain("local:"); // style-hard-cut: allowed-negative
+  });
+
+  it("escapes card text before embedding it in markup attributes", () => {
+    expect(quickstartCardMarkup('A "quoted" title', "Use <safe> & bounded text.")).toContain(
+      'title="A &quot;quoted&quot; title"',
+    );
+    expect(quickstartCardMarkup('A "quoted" title', "Use <safe> & bounded text.")).toContain(
+      'value="Use &lt;safe&gt; &amp; bounded text."',
+    );
   });
 });

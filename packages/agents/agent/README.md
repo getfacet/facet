@@ -1,82 +1,56 @@
 # @facet/agent
 
-The in-process agent SDK for Facet: `defineAgent` wraps your logic into an agent
-the runtime can call, and `Stage` is the control surface it drives —
-`render` / `set` / `append` / `setData` / `remove` / `screens` / `say`
-— to compose and mutate a visitor's page with native Facet data. Each method
-records standard RFC 6902 operations underneath.
+In-process agent SDK for hosts that want to author the page from trusted
+application code instead of an external LLM loop.
 
-Role: **Agents**. Use this when TypeScript code, tests, a rules engine,
-or a local demo should author stage changes without hand-writing patch arrays.
-For LLM/provider tool-calling loops, start with `@facet/agent-tools`; this
-package is not the LLM tool-schema surface.
-
-`@facet/agent-client` is a separate transport that can dial an external
-`FacetAgent` into the reference server. It does not add model tools. Facet's
-complete sample LLM brain is `@facet/reference-agent`; it is a reference
-implementation, not a requirement for code-authored agents.
+Role: **Agents**.
 
 ```bash
 npm install @facet/agent @facet/core
 ```
 
-You write a function that reacts to an event by driving `stage`; the recorded
-commands are flushed into the messages sent back to the visitor. `defineAgent`
-flushes once at the end of the turn. `defineStreamingAgent` accepts generator
-logic and flushes on each `yield`, so a long-running model loop can let the page
-build live.
+Use `defineAgent` to implement an in-process Facet agent with the
+session-backed `Stage` API. A turn may render component markup, update a
+subtree, publish data through the host-authorized data model, and optionally
+emit one assistant conversation message.
 
 ```ts
 import { defineAgent } from "@facet/agent";
 
-export const agent = defineAgent(({ event, stage }) => {
-  if (event.kind === "visit") {
-    stage.render({
-      root: "root",
-      nodes: {
-        root: { id: "root", type: "box", children: ["title"] },
-        title: { id: "title", type: "text", value: "Welcome" },
-      },
-    });
-  }
-  if (event.kind === "message") {
-    stage
-      .append("root", { id: "price", type: "text", value: "$20/mo" })
-      .say("Added it below.");
-  }
+export const agent = defineAgent(async ({ stage }) => {
+  await stage.publishData(["metrics"], { revenue: 128000 });
+
+  await stage.render(
+    `<Facet entry="home">
+      <Screen name="home" title="Revenue">
+        <Metric label="Revenue" value="data:metrics.revenue" />
+      </Screen>
+    </Facet>`,
+  );
+
+  stage.message("I updated the revenue view.");
 });
 ```
 
-`Stage` has no Pattern-specific mutation method. If application code uses a
-Pattern reference dataset, it should validate or select that data outside this
-SDK, adapt the example into native nodes with ids appropriate for the
-visitor's stage, and author those nodes through `render`, `set`, and `append`.
-The SDK never interprets placeholders, remaps an asset graph, or adds a hidden
-stage writer. Only the native operations recorded by the methods above travel.
+The `Stage` API is the only in-process write surface. It validates authored
+markup through the active catalog, folds successful mutations into authorized
+RFC 6902 patches, and returns structured failures without applying partial
+state.
 
-Use `set` to insert or replace one node by id. Use `append` to record the new
-node and attach its id to an existing container. Use `setData` to upsert a named
-dataset that nodes can bind through `from`; it is declared stage data, not a
-fetch or query. `defineAgent` and `defineStreamingAgent` seed `Stage` with the
-current session tree so data initialization remains correct across turns.
+## Conversation boundary
 
-```ts
-import { defineStreamingAgent } from "@facet/agent";
+`stage.message(text)` records at most one assistant message for the current
+turn. More text belongs in the visible component tree, host logs, or the agent's
+own memory. There is no `say` frame kind and no browser-side chat mutation API.
 
-export const streamingAgent = defineStreamingAgent(async function* ({ event, stage }) {
-  if (event.kind !== "message") return;
-  stage.say("Starting...");
-  yield;
-  stage.append("root", { id: "answer", type: "text", value: "First result" });
-  yield;
-});
-```
+## Trust model
+
+`@facet/agent` is not an LLM provider adapter and does not fetch domain data.
+Hosts remain responsible for model calls, authorization, and backend tools. This
+package only gives trusted in-process code a typed Facet turn interface.
 
 ## Read next
 
-- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
-  for supported runtime and transport wiring.
 - [Agent Integration](https://github.com/getfacet/facet/blob/main/docs/AGENT-INTEGRATION.md)
-  when the author is an LLM rather than TypeScript policy.
+- [Agent Tool Result Contract](https://github.com/getfacet/facet/blob/main/docs/AGENT-TOOL-RESULT-CONTRACT.md)
 - [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
-  for the stage, patch, and single-writer invariants.

@@ -1,105 +1,109 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { ForwardSink, MemorySink, NullSink, type Sink, type StoredEvent } from "./sink.js";
-import { FileSink } from "./file-sink.js";
-import { sessionFilePath } from "./session-file.js";
 
-function tempDir(): string {
-  return mkdtempSync(join(tmpdir(), "facet-sink-"));
+import { deriveMessageId } from "@facet/core";
+import type { ConversationMessage } from "@facet/core";
+
+import { MemorySink } from "./sink.js";
+import type { ConversationRecord, Sink } from "./sink.js";
+
+function message(
+  turnId: string,
+  role: ConversationMessage["role"],
+  text: string,
+): ConversationRecord {
+  return {
+    kind: "conversation",
+    messageId: deriveMessageId(turnId, role),
+    turnId,
+    role,
+    text,
+    at: 10,
+  };
 }
 
-const entry = (at: number, text: string): StoredEvent => ({
-  at,
-  event: { kind: "message", text },
-  messages: [{ kind: "say", text: `re:${text}` }],
-});
+async function expectUpsertByMessageId(sink: Sink): Promise<void> {
+  const first = message("turn-1", "assistant", "First");
+  const replacement = { ...first, text: "Replacement", at: 20 };
 
-function replayable(name: string, make: () => Sink): void {
-  describe(name, () => {
-    it("records and replays history in order", async () => {
-      const sink = make();
-      await sink.record("a", "v", entry(1, "hi"));
-      await sink.record("a", "v", entry(2, "bye"));
-      const history = await sink.history("a", "v");
-      expect(history.map((e) => e.at)).toEqual([1, 2]);
-      expect(history[0]?.event).toMatchObject({ text: "hi" });
-    });
+  await expect(sink.record("session-a", first)).resolves.toEqual({ ok: true });
+  await expect(sink.record("session-a", replacement)).resolves.toEqual({ ok: true });
 
-    it("isolates by (agent, visitor)", async () => {
-      const sink = make();
-      await sink.record("a", "v1", entry(1, "x"));
-      expect(await sink.history("a", "v1")).toHaveLength(1);
-      expect(await sink.history("a", "v2")).toHaveLength(0);
-    });
-  });
+  await expect(sink.history("session-a", 10)).resolves.toEqual([replacement]);
 }
 
-replayable("MemorySink", () => new MemorySink());
-replayable("FileSink", () => new FileSink(tempDir()));
+describe("MemorySink", () => {
+  it("upserts duplicate conversation records by messageId", async () => {
+    await expectUpsertByMessageId(new MemorySink());
+  });
 
-describe("FileSink durability", () => {
-  it("replays after a fresh instance (simulated restart)", async () => {
-    const dir = tempDir();
-    await new FileSink(dir).record("agent", "v", entry(1, "remember"));
-    expect((await new FileSink(dir).history("agent", "v"))[0]?.event).toMatchObject({
-      text: "remember",
+  it("keeps histories session-scoped and returns the last bounded records", async () => {
+    const sink = new MemorySink();
+    const first = message("turn-1", "visitor", "One");
+    const second = message("turn-2", "assistant", "Two");
+
+    await sink.record("session-a", first);
+    await sink.record("session-a", second);
+    await sink.record("session-b", message("turn-3", "assistant", "Other"));
+
+    await expect(sink.history("session-a", 1)).resolves.toEqual([second]);
+    await expect(sink.history("session-b", 10)).resolves.toHaveLength(1);
+  });
+
+  it("records conversation data only, not UI patch payloads", async () => {
+    const sink = new MemorySink();
+    const record = message("turn-1", "assistant", '<Facet entry="home" />');
+
+    await sink.record("session-a", record);
+
+    expect(Object.keys((await sink.history("session-a", 1))[0] ?? {}).sort()).toEqual([
+      "at",
+      "kind",
+      "messageId",
+      "role",
+      "text",
+      "turnId",
+    ]);
+  });
+
+  it("surfaces a write failure diagnostically without throwing into the caller", async () => {
+    const sink = new MemorySink();
+    const hostile = Object.defineProperty(message("turn-1", "assistant", "Boom"), "messageId", {
+      get() {
+        throw new Error("blocked");
+      },
+    }) as unknown as ConversationRecord;
+
+    await expect(sink.record("session-a", hostile)).resolves.toMatchObject({
+      ok: false,
+      code: "sink_write_failed",
     });
+    await expect(sink.history("session-a", 10)).resolves.toEqual([]);
   });
 });
 
-describe("FileSink resilient replay", () => {
-  it("skips a corrupt line but keeps the good lines around it", async () => {
-    const dir = tempDir();
-    writeFileSync(
-      sessionFilePath(dir, "a", "v", "jsonl"),
-      `${JSON.stringify(entry(1, "one"))}\n{ not json\n${JSON.stringify(entry(2, "two"))}\n`,
-    );
-    const history = await new FileSink(dir).history("a", "v");
-    expect(history.map((e) => e.at)).toEqual([1, 2]);
-  });
+describe("Sink conformance", () => {
+  it("lets a test-supplied custom sink prove upsert-by-messageId", async () => {
+    class TestSink implements Sink {
+      readonly #records = new Map<string, Map<string, ConversationRecord>>();
 
-  it("skips a wrong-shape line but keeps the good lines around it", async () => {
-    const dir = tempDir();
-    writeFileSync(
-      sessionFilePath(dir, "a", "v", "jsonl"),
-      `${JSON.stringify(entry(1, "one"))}\n${JSON.stringify({ foo: "bar" })}\n${JSON.stringify(entry(2, "two"))}\n`,
-    );
-    const history = await new FileSink(dir).history("a", "v");
-    expect(history.map((e) => e.at)).toEqual([1, 2]);
-  });
+      async record(
+        key: string,
+        record: ConversationRecord,
+      ): Promise<
+        | { readonly ok: true }
+        | { readonly ok: false; readonly code: string; readonly detail: string }
+      > {
+        const records = this.#records.get(key) ?? new Map<string, ConversationRecord>();
+        records.set(record.messageId, record);
+        this.#records.set(key, records);
+        return { ok: true };
+      }
 
-  it("skips a line whose messages array holds a null element", async () => {
-    const dir = tempDir();
-    // Array.isArray passes but replay's `message.kind` would throw on the null.
-    const badLine = JSON.stringify({ at: 9, event: {}, messages: [null] });
-    writeFileSync(
-      sessionFilePath(dir, "a", "v", "jsonl"),
-      `${JSON.stringify(entry(1, "one"))}\n${badLine}\n${JSON.stringify(entry(2, "two"))}\n`,
-    );
-    const history = await new FileSink(dir).history("a", "v");
-    expect(history.map((e) => e.at)).toEqual([1, 2]);
-  });
-});
+      async history(key: string, limit: number): Promise<readonly ConversationRecord[]> {
+        return [...(this.#records.get(key)?.values() ?? [])].slice(-limit);
+      }
+    }
 
-describe("NullSink", () => {
-  it("keeps nothing", async () => {
-    const sink = new NullSink();
-    await sink.record("a", "v", entry(1, "x"));
-    expect(await sink.history("a", "v")).toHaveLength(0);
-  });
-});
-
-describe("ForwardSink", () => {
-  it("hands each interaction to the forwarder and retains nothing", async () => {
-    const seen: StoredEvent[] = [];
-    const sink = new ForwardSink((_agentId, _visitorId, e) => {
-      seen.push(e);
-    });
-    await sink.record("a", "v", entry(1, "fwd"));
-    expect(seen).toHaveLength(1);
-    expect(seen[0]?.event).toMatchObject({ text: "fwd" });
-    expect(await sink.history("a", "v")).toHaveLength(0);
+    await expectUpsertByMessageId(new TestSink());
   });
 });

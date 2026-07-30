@@ -1,9 +1,9 @@
 # @facet/core
 
-The dependency-free Facet contract: one closed native-Brick document
-vocabulary, one closed Brick style system, validation, the
-[RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902) patch implementation,
-and session/event types. Every other Facet package builds on this package.
+Dependency-free Facet contract package. It defines the component-markup grammar,
+component catalog validation, bounded data model, document serialization,
+conversation/event protocol, revision helpers, and authorized RFC 6902 patch
+folding used by every other Facet package.
 
 Role: **Core**.
 
@@ -11,160 +11,99 @@ Role: **Core**.
 npm install @facet/core
 ```
 
-Start with the practical
-[Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md).
-Use this package README for Core's public contract and validation entry points.
+Use this package when you need the safe data contract without a renderer,
+transport, runtime process, or agent brain.
 
-## Closed authoring surface
+## Component markup
 
-`FacetNode` is a union of exactly eleven Bricks: `box`, `text`, `media`,
-`input`, `richtext`, `table`, `chart`, `list`, `keyValue`, `progress`, and
-`loading`. Only `box` owns child node ids. Documents are declarative data with
-flow layout; they never contain raw HTML, JavaScript, CSS, authored fetches, or
-renderer plug-ins.
+Agents author one declarative markup envelope:
 
-`BRICK_CONTRACT` is the single machine-readable specification for that surface.
-For each Brick it defines:
+- `<Facet entry="...">` wraps the document.
+- `<Screen name="...">` declares each screen root.
+- Registered component tags describe UI through declared scalar props.
+- `data:path`, `nav:screen`, and `agent:action` references are the only
+  reference forms.
 
-- field names and whether they are required;
-- `description`, `useWhen`, and optional `avoidWhen` guidance;
-- the Brick-owned root and nested style targets;
-- each target's exact properties, states, and input-kind applicability; and
-- whether each property accepts a token name or a fixed renderer choice.
+The parser rejects executable or host-escape syntax before catalog validation:
+raw HTML, JavaScript or JSX expressions, event-handler props, imports, spreads,
+inline JSON objects, raw CSS, arbitrary style keys, and unsupported reference
+schemes. The resulting AST is data, not code.
 
-The same contract drives strict author validation, renderer style resolution,
-and progressive agent discovery through `get_brick_spec` and
-`get_style_choices`.
-
-Core's property-specific style-value helpers are the shared decision point for
-those consumers. They intersect a token or fixed-choice domain with the exact
-property's allow-list, so discovery never advertises a value that author or
-Theme validation would reject at that path.
-
-The product-grade surface stays closed even where it needs more precision:
-`media` accepts only images, videos, and known generic icon names; text-bearing
-styles expose bounded wrap/clamp choices only at compatible paths; table columns
-may declare closed text alignment and a closed width name; a table may declare
-closed dividers, a sticky header, and a bounded empty-state label; and chart
-series/plot metadata accepts only known line-style, a closed primary/secondary
-axis, and token-backed axis/grid/label color controls.
-
-## Style, Theme, and Presets
-
-Every Brick has one optional `style` object, but each Brick owns a different
-closed style vocabulary. For example, `input.style.control` and
-`progress.style.track` are valid only because their owning Brick contract
-defines them. Similar target names on two Bricks are still separate local
-vocabularies.
-
-Style properties accept only:
-
-- token names, whose concrete CSS values come from the active Theme; or
-- fixed choices, whose behavior is owned by the renderer.
-
-`TOKEN_STYLE_VALUE_CONTRACT` and `FIXED_STYLE_VALUE_CONTRACT` provide the closed
-value domains plus `description`, `useWhen`, and optional `avoidWhen` metadata.
-An agent never needs concrete CSS values to choose a style.
-
-`FacetTheme` is one complete operator-owned design system. It contains complete
-token maps, light and dark paint branches, a default style for every Brick, and
-optional same-Brick Presets. A `FacetPreset` contains discovery metadata and one
-unresolved style bundle. Style resolution order is:
-
-1. Theme default;
-2. same-Brick Preset named by `style.preset`;
-3. direct values in the Brick's `style`.
-
-The Theme is host input, not Facet Document syntax. The host also owns the
-light/dark color-mode preference; the agent does not mutate either one.
-
-Core vocabulary grows only after evidence. Brand identity, density, and repeated
-composition should first be expressed with custom Themes, same-Brick Presets,
-and Patterns. Add a new Brick or closed `box` layout field only when a
-reference-grade benchmark shows that the existing declarative vocabulary cannot
-represent the target without a raw CSS or markup escape hatch.
-
-## Validation boundaries
-
-Core exposes two deliberately different validation paths:
-
-- `validateAuthorNode` and `validateAuthorTree` are strict, Theme-aware
-  boundaries for agent mutation calls. Any invalid field, style path, Preset,
-  or value rejects the complete authored value with bounded repair issues.
-- `validateTree` is the fail-safe boundary for stale or bypassed stored data. It
-  keeps safe siblings, drops invalid fragments, prunes dangling references, and
-  never throws on unknown nodes. It returns a `TreeValidationResult`.
-
-`resolveTreeScreen(tree, preferredScreen)` exposes the shared fail-soft live-root
-policy used by Core content checks and the React renderer: preferred live screen,
-then live `entry`, then the first live screen, then the plain tree root.
-
-`validateTheme` accepts one complete Theme or refuses it whole. It allow-lists
-every token group, Brick default, Preset, target, state, and property; rejects
-unsafe CSS constructs; bounds dimensions and typography values; and reports
-contrast findings as warnings after structural validation succeeds.
-
-`FacetPattern` is an exact read-only reference tree with `name`, `description`,
-`useWhen`, optional `avoidWhen`, and ordinary Facet tree fields.
-`validatePattern(input, theme)` validates one Pattern against the effective
-Theme. `validatePatternList(input, theme)` accepts at most 64 entries and hides
-each invalid or Theme-incompatible Pattern whole.
+`validateAuthorMarkup` then checks the parsed markup against the active
+`FacetCatalog` and the current data model. Unknown tags, undeclared props,
+invalid scalar values, unauthorized bindings, and unresolved action/collection
+contracts reject atomically with one repair-oriented author error.
 
 ```ts check-docs
-import {
-  applyPatch,
-  escapeJsonPointerToken,
-  validateAuthorTree,
-  validatePattern,
-  validateTheme,
-} from "@facet/core";
+import { parseMarkup, serializeDocument, validateAuthorMarkup } from "@facet/core";
+import { DEFAULT_CATALOG } from "@facet/assets";
 
-declare const operatorTheme: unknown;
-declare const modelDocument: unknown;
-declare const operatorPattern: unknown;
+const parsed = parseMarkup(
+  `<Facet entry="home"><Screen name="home"><Text value="Hello" /></Screen></Facet>`,
+);
 
-const themeResult = validateTheme(operatorTheme);
-if (themeResult.theme === undefined) throw new Error("Invalid Theme");
-
-const authored = validateAuthorTree(modelDocument, themeResult.theme);
-if (authored.value === undefined) {
-  // Return authored.issues to the agent and retry the complete call.
-  throw new Error("Invalid Facet Document");
+if (!parsed.ok) {
+  throw new Error(parsed.error.repair);
 }
 
-const pattern = validatePattern(operatorPattern, themeResult.theme).pattern;
+const validated = validateAuthorMarkup(parsed.ast, DEFAULT_CATALOG, {});
+if (!validated.ok) {
+  throw new Error(validated.error.repair);
+}
 
-const helloId = "hello";
-const helloPath = `/nodes/${escapeJsonPointerToken(helloId)}`;
-
-const next = applyPatch(authored.value, [
-  {
-    op: "add",
-    path: helloPath,
-    value: {
-      id: "hello",
-      type: "text",
-      value: "Hi",
-      style: { preset: "body", color: "accent" },
-    },
-  },
-  { op: "add", path: "/nodes/root/children/-", value: helloId },
-]);
+const serialized = serializeDocument(validated.document);
+console.log(serialized.text);
 ```
 
-Pattern reads do not change a stage. An agent inspects one and then authors
-ordinary Bricks through the normal strict mutation tools. Only the resulting
-RFC 6902 patches travel to the runtime and client.
+## Catalog and component specs
 
-Also exported are the normalized browser event/view contracts, data-binding
-helpers, `FacetAgent`, and small dependency-free async primitives such as
-`createSerialQueue` and `createSemaphore`.
+`FacetCatalog` is the host-owned list of component specifications an agent may
+author against. A catalog declares:
+
+- tag names;
+- accepted props and scalar domains;
+- which props may bind to data paths;
+- which components collect visitor input; and
+- whether a component may contain children.
+
+`validateCatalog`, `buildCatalogIndex`, `validateComponentSpec`, and
+`validateModalConformance` keep that catalog closed and deterministic. `Facet`
+is reserved for the grammar envelope, `Screen` must be registered as the screen
+root component, and a registered `Modal` must satisfy the dedicated trusted
+frame contract.
+
+Core does not ship React components. It only defines what a valid host catalog
+means; renderer packages close that catalog against a trusted registry.
+
+## Documents, data, and patches
+
+Validated author markup becomes a `ComponentDocument`: named screens,
+component nodes, and bounded data. Core provides:
+
+- `buildDocument` for constructing a document from parsed markup;
+- `serializeDocument` and `serializeScreen` for safe prompt/readback text;
+- `writePath`, `measurePublishPayload`, and `evaluateCandidateModel` for data
+  publication limits;
+- `resolveBinding` for schema-authorized read-only bindings; and
+- `applyPatch` for the shared RFC 6902 fold.
+
+Only validated patches change a live stage. Runtime and browser clients use the
+same fold, so stale or bypassed state is either rejected atomically or reduced
+to a safe subset.
+
+## Protocol and runtime-neutral types
+
+Core also owns the transport-neutral message vocabulary:
+`FacetAgent`, `FacetTransport`, `TurnOutcome`, `ServerFrame`, `PatchFrame`,
+`AgentEvent`, `StageRevision`, and related validation helpers. Those types let
+runtime, client transports, renderers, and agent packages agree on revision
+coherence without introducing package cycles.
 
 ## Documentation
 
-- [Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md) —
-  current styling concepts, asset authoring, discovery, and failure boundaries.
 - [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
   system invariants and runtime behavior.
+- [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md) —
+  ownership and dependency direction.
 - [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
-  choose and wire an integration path.
+  supported adoption paths.

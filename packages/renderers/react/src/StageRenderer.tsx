@@ -1,437 +1,360 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties, ReactNode } from "react";
-import {
-  resolveTreeScreen,
-  sanitizeView,
-  type CollectedEvent,
-  type ColorModePreference,
-  type FacetAction,
-  type FacetTheme,
-  type FacetTree,
-  type FieldValues,
-  type NodeId,
-  type SortDirection,
-  type ViewSnapshot,
-} from "@facet/core";
-import { captureViewSnapshot, useViewportColorMode } from "./view-snapshot.js";
-import { APPEAR_CSS } from "./appear.js";
-import { COLLAPSE_CSS } from "./collapse-style.js";
-import { INPUT_TARGET_CSS } from "./brick-style-input.js";
-import { INTERACTION_CSS } from "./interaction-style.js";
-import {
-  MOTION_CSS,
-  stageCurrentClassName,
-  stageFrameClassName,
-  stagePreviousClassName,
-} from "./motion.js";
-import { resolveTheme } from "./theme.js";
-import type { StageTransitionHint } from "./useFacet.js";
-import { isMotionStateEmpty, motionRenderPlan, type ExitRecord } from "./renderer-motion.js";
-import { collectFieldValues, type ClassifiedPress } from "./renderer-press.js";
-import { RENDER_BUDGET, isHiddenByDefault } from "./renderer-safe.js";
-import { renderExitRecord, renderNode } from "./renderer-render.js";
-import { useStageMotion } from "./renderer-stage-motion.js";
+/**
+ * The stage — one session, composed.
+ *
+ * Every renderer module before this one answers a question in isolation:
+ * `bootstrap.ts` closes the trust boundary, `mount-node.tsx` turns a stored node
+ * into trusted React, `binding.ts` resolves props against the model in force,
+ * `nav.ts` holds which screen the visitor is on, `field-store.ts` owns collected
+ * values, and `modal-frame.tsx` owns the one sanctioned overlap. This file is
+ * where they become a page, and the composition is the contract — not an
+ * arrangement a host may vary.
+ *
+ * **The seam is the framework's.** A registered component reports only that the
+ * interaction declared on one of its props was activated: `onAction(prop)`, with
+ * no target, no payload and no return value. This module holds the document, so
+ * it is this module that resolves the reference. A `nav:` moves the visitor
+ * through browser view-state and writes nothing (DC-018). An `agent:` becomes
+ * one forwarded event carrying exactly the fields the author named in the
+ * framework's reserved `collect` prop, read from the **field store** and never
+ * from the page (D-08), plus the one explicit argument the acting node resolved
+ * under the framework's other reserved name, `arg` (D-07). Everything else — an
+ * unparseable reference, a browser-local action scheme, a prop that carries no action at all
+ * — is inert. There is no local action router, and there is nowhere to register
+ * one.
+ *
+ * **Which branch an activation takes is decided from the resolved reference, not
+ * from a prop name.** Facet reserves no action-prop name at all: `action` is one
+ * catalog's spelling of it, so an authored `arg` beside a `nav:` is accepted at
+ * author time and simply never reaches an event — there is no event for it to
+ * reach. And an argument that was not authored is **omitted**, not sent as
+ * `undefined`, because a present key is the claim that one was sent.
+ *
+ * **The overlay root is mounted here, exactly once, as a sibling of the document
+ * tree.** `OverlayRootProvider` renders the portal target beside its children,
+ * and this module is what keeps it out of every containment element: mounting
+ * creates containment *inside* the children, so a target rendered beside them
+ * cannot have one above it unless this composition wrapped the provider in one
+ * (D-13). One provider and one `ModalHost` per `StageRenderer`, so two stages on
+ * one page are two sessions with two ordered open lists and two portal targets.
+ *
+ * **`renderModal` is memo-stable and carries the theme, and both halves matter.**
+ * The callback is the only path from a `Modal` node's content to the framework
+ * frame, and it is supplied to `MountContext` — never to a public prop, so a host
+ * cannot replace the frame with chrome of its own. It closes over the session's
+ * projected custom properties and hands them to `ModalFrame`, which is what makes
+ * a portalled dialog themed at all: the dialog sits outside the screen subtree
+ * entirely, so nothing above it in the DOM carries the properties a registered
+ * component would otherwise inherit. `ModalMountRequest` deliberately excludes
+ * the theme, because it is the composition's to close over rather than mounting's
+ * to thread down. Its identity survives an unrelated stage update, so a document
+ * patch or a data publish does not hand every mounted node a new context field.
+ *
+ * **What "no document" and "no screen" mean, and why they differ.** A `null`
+ * document is a session that has not been authored yet, and it shows the
+ * preparing neutral state. A document that declares no screen this renderer can
+ * derive is the **safe-empty stage** — nothing at all — which is `nav.ts`'s
+ * stated outcome for that case and is deliberately not a neutral state: there is
+ * no fourth slot in `NeutralCopy` and inventing one would put framework words on
+ * a page for a fault the visitor cannot act on.
+ *
+ * **The browser is not a second writer.** Nothing here mutates the document, the
+ * model or a node: navigation is React state, a collected value lives in the
+ * session store, and an event is handed to the host. `StageRenderer.test.tsx`
+ * observes the document across a whole navigate/open/type/send cycle rather than
+ * taking the claim on trust.
+ *
+ * **Visibility: barrel-exported** — `StageRenderer` and `StageRendererProps`
+ * only. No other symbol in this module is public.
+ */
 
-const EMPTY_MOTION_CLASSES: ReadonlyMap<NodeId, string> = new Map<NodeId, string>();
-const EMPTY_EXIT_RECORDS_BY_PARENT: ReadonlyMap<NodeId, readonly ExitRecord[]> = new Map<
-  NodeId,
-  readonly ExitRecord[]
->();
-const DISPLAY_CONTENTS_STYLE: CSSProperties = { display: "contents" };
-const BRICK_STATE_CSS = `${INTERACTION_CSS}\n${INPUT_TARGET_CSS}`;
+import { parseAction, themeToCssVars } from "@facet/core";
+import type { AgentEvent, ComponentDocument, ComponentNode, DataModel } from "@facet/core";
+import type { ReactNode } from "react";
+import { useCallback, useMemo, useState } from "react";
 
+import type { RendererBootstrap } from "./bootstrap.js";
+import { DataProvider, resolveProps } from "./binding.js";
+import { buildCollectPayload } from "./collect.js";
+import { OverlayRootProvider } from "./containment.js";
+import { PreparingState } from "./fallback.js";
+import { createFieldStore } from "./field-store.js";
+import { ModalFrame, ModalHost } from "./modal-frame.js";
+import { MountNode } from "./mount-node.js";
+import type { ModalMountRequest, MountContext } from "./mount-node.js";
+import { useScreenView } from "./nav.js";
+
+/**
+ * The framework's reserved request list, read from the activating node's
+ * resolved props.
+ *
+ * `collect` is a **framework** prop name the catalog reserves and author
+ * validation enforces, not a convention this module inferred from a component
+ * that happens to declare one. That is why reading it here is composition rather
+ * than the renderer growing an opinion about somebody's component.
+ */
+const COLLECT_PROP = "collect";
+
+/**
+ * The framework's reserved event argument, read from the same resolved props.
+ *
+ * `arg` is reserved by the same convention and enforced in the same place as
+ * `collect` (D-07): the catalog refuses a spec that declares `arg` as anything
+ * other than a scalar string carrying no default and no binding, so a component
+ * cannot mean something else by the name. Reading it here is therefore
+ * composition, not the renderer inferring a payload from a prop it liked the
+ * look of.
+ *
+ * What is **not** reserved is the prop that carries the action. `action` is one
+ * catalog's spelling, and a component may name its interaction anything; that is
+ * why the decision below is made from the action reference this module already
+ * resolved and is already dispatching on, and never from a prop called `action`.
+ */
+const ARG_PROP = "arg";
+
+/**
+ * The stage a session shows while there is no document.
+ *
+ * A module constant rather than a fresh object, because `useScreenView` is a
+ * hook and must be called on every render: it is handed this stand-in when there
+ * is nothing to mount, and a new object each time would make the screen
+ * derivation churn for a page that has not been authored yet.
+ */
+const NO_DOCUMENT: ComponentDocument = Object.freeze({
+  entry: "",
+  screens: Object.freeze([]),
+  nodes: Object.freeze({}),
+});
+
+/**
+ * What a host mounts one session with.
+ *
+ * `bootstrap` is the **accepted** branch of `bootstrapRenderer`'s result, so a
+ * rejected bootstrap is not something this component can be handed: half a trust
+ * boundary is not a trust boundary, and narrowing at the host is what makes that
+ * a type error rather than a runtime check. The document and the model are the
+ * stage in force — this component reads both and writes neither.
+ *
+ * There is deliberately **no** prop for the modal frame, the overlay root, the
+ * field store or the neutral copy beyond the one the bootstrap already carries.
+ * Each of those is a framework guarantee, and a prop for it would be the way out
+ * of the guarantee.
+ */
 export interface StageRendererProps {
-  readonly tree: FacetTree;
-  readonly transition?: StageTransitionHint;
+  /** The validated session boundary: catalog index, registry, theme and copy. */
+  readonly bootstrap: Extract<RendererBootstrap, { readonly ok: true }>;
+  /** The document in force, or `null` while the agent has not authored one. */
+  readonly document: ComponentDocument | null;
+  /** The Data Model in force. A publish is a **new** model object, never a mutation. */
+  readonly data: DataModel;
   /**
-   * Invoked when an interactive brick fires (a pressed box, a submitted field).
-   * When the pressed action declares `collect`, `fields` carries the press-time
-   * snapshot of the mounted field values in that box's subtree (possibly `{}`);
-   * without `collect` it is `undefined` — narrower `(action) => void` handlers
-   * remain assignable, so existing consumers compile unchanged.
+   * Receives one forwarded `agent:` event.
+   *
+   * The renderer knows the event's name, the node it came from, the screen it
+   * happened on, and the fields the author asked for; it does **not** know the
+   * client idempotency token or the authoritative stage revision, which the
+   * transport stamps. Omit it for a stage that shows published data and
+   * navigates, but sends nothing.
    */
-  readonly onAction?: (action: FacetAction, fields?: FieldValues) => void;
-  /**
-   * Optional record-only channel for locally-resolved taps (navigate/toggle).
-   * Fired AFTER the optimistic view-state mutation with a `CollectedEvent` tap
-   * carrying the resolved effect (`{navigate}`/`{toggle}`, captured here and
-   * NEVER re-derived) and the pressed box's node id as `target`. Distinct from
-   * `onAction`: this tap is LOGGED for replay, never forwarded to the agent.
-   * Fire-and-forget — the renderer swallows any throw so a record failure can
-   * never unwind `currentScreen`/`visibilityOverrides` (DC-003). Omitted ⇒
-   * navigate/toggle behave exactly as today and the output is byte-identical.
-   */
-  readonly onRecord?: (tap: CollectedEvent) => void;
-  /** One complete operator Theme. Invalid/hostile input falls back as a whole. */
-  readonly theme?: FacetTheme;
-  /** Host preference; `system` resolves in the browser and falls back to light on SSR. */
-  readonly colorMode?: ColorModePreference;
-  /**
-   * Optional replay checkpoint for the renderer-owned screen, toggle, and sort
-   * state. Sanitized once during component initialization; later prop changes
-   * do not reset local interaction state. Remount to hydrate another checkpoint.
-   */
-  readonly initialView?: ViewSnapshot;
-  /**
-   * Read-only publish of the browser's live view snapshot
-   * (`{screen, toggled, viewport, colorMode}`) — the counterpart of how `fields`
-   * rides `onAction`. Sampled after each commit whenever screen/overrides or
-   * the detected device classes change; the host attaches it to an OUTGOING
-   * event, exactly like `fields`. Optional (narrower props stay assignable);
-   * it NEVER writes stage state — the renderer's setters stay private to
-   * `handlePress`, and no server/patch path can drive it.
-   */
-  readonly onViewSnapshot?: (snapshot: ViewSnapshot) => void;
+  readonly onEvent?: (event: {
+    readonly eventName: string;
+    readonly sourceNodeId: string;
+    readonly screen: string;
+    /**
+     * The one explicit argument, present only when the acting node resolved one.
+     *
+     * Optional **exactly**: `exactOptionalPropertyTypes` makes an explicit
+     * `arg: undefined` a type error here, which is the compile-time half of the
+     * rule the emission below keeps at runtime. The distinction is not
+     * decorative — the transport stamps `eventId` and `stageRevision` onto this
+     * object and hands it to `validateAgentEvent`, which reads a present key as
+     * "an argument was sent" and rejects a non-string. An argument that was
+     * never authored has to be absent, not empty.
+     */
+    readonly arg?: string;
+    readonly collect: AgentEvent["collect"];
+  }) => void;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**
- * Renders a stage tree into React elements from the closed brick vocabulary.
+ * Reads one own property without ever throwing, so a hostile getter is inert.
  *
- * This is the security boundary and the fail-safe boundary: only known brick
- * types are rendered, there is no node that carries raw HTML/JS, and any id that
- * can't be resolved (e.g. a removed node still referenced by a parent) is simply
- * skipped — so a partial or imperfect stage renders as "plain", never broken.
- *
- * It also owns the browser's VIEW-STATE (invariant #6): `currentScreen` and
- * `visibilityOverrides` live here as React state. A navigate/toggle press
- * mutates only this state — that optimistic effect runs FIRST and
- * unconditionally and NEVER reaches `onAction` (the agent-routed channel). It
- * then fires the OPTIONAL, fire-and-forget `onRecord` channel with the resolved
- * effect + the pressed box's id, so the tap is LOGGED (not forwarded) for
- * replay; a record failure can never unwind the view-state. Content stays
- * server-owned via the patch flow.
+ * The guard covers the whole read rather than the access alone: a revoked proxy
+ * throws from `Array.isArray` inside the shape check, before any value is
+ * touched.
  */
-export function StageRenderer({
-  tree,
-  transition,
-  onAction,
-  onRecord,
-  theme: rawTheme,
-  colorMode = "system",
-  initialView,
-  onViewSnapshot,
-}: StageRendererProps): ReactNode {
-  const [sanitizedInitialView] = useState(() => sanitizeView(initialView));
-  const [currentScreen, setCurrentScreen] = useState<string | null>(
-    () => sanitizedInitialView?.screen ?? null,
-  );
-  // A Map, not a plain object: node ids like "toString"/"valueOf" pass
-  // validateTree (only __proto__/prototype/constructor are forbidden), and a
-  // plain-object lookup would resolve those through Object.prototype — a
-  // hidden:true node keyed "toString" would read the inherited function as its
-  // override and render visible. A Map never resolves through the prototype.
-  const [visibilityOverrides, setVisibilityOverrides] = useState<ReadonlyMap<NodeId, boolean>>(
-    () =>
-      new Map(
-        Object.entries(sanitizedInitialView?.toggled ?? {}).map(([id, state]) => [
-          id,
-          state === "shown",
-        ]),
-      ),
-  );
-  // The THIRD browser-private view-state holder (sibling of currentScreen /
-  // visibilityOverrides): a per-table-node sort override. A Map, not a plain
-  // object, for the same prototype-safety reason as visibilityOverrides — a node
-  // id like "toString" must never resolve through Object.prototype. Mutated ONLY
-  // in `handleHeaderSort` below (no server/patch path can reach it), and the sort
-  // rides only the read-only `view` snapshot — it fires NO transport/agent event.
-  const [sortOverrides, setSortOverrides] = useState<
-    ReadonlyMap<NodeId, { column: string; direction: SortDirection }>
-  >(
-    () =>
-      new Map(
-        Object.entries(sanitizedInitialView?.sort ?? {}).map(([id, sort]) => [
-          id,
-          { column: sort.column, direction: sort.direction },
-        ]),
-      ),
-  );
-  // Scope handle for collectFieldValues — reads stay inside THIS renderer
-  // instance so two stages on one page never cross-read each other's inputs.
-  const stageRootRef = useRef<HTMLDivElement>(null);
-  // Browser classes are host/view state, never Facet Document syntax. The
-  // effective color mode selects only the Theme's paint branch; viewport stays
-  // report-only and never reaches layout resolution.
-  const { viewport, colorMode: effectiveColorMode } = useViewportColorMode(colorMode);
-  const theme = useMemo(
-    () => resolveTheme(rawTheme, effectiveColorMode),
-    [rawTheme, effectiveColorMode],
-  );
-  const { motionState, normalizedTransition, renderable, currentRootId, activeScreen } =
-    useStageMotion({
-      tree,
-      transition,
-      currentScreen,
-      visibilityOverrides,
-      theme,
-    });
-
-  // Publish the live view snapshot AFTER commit whenever the browser-owned
-  // view-state (screen/overrides) or the detected device classes change. This
-  // is a read-only sample the host attaches to an outgoing event; it writes no
-  // stage state and cannot be driven by a server/patch path.
-  useEffect(() => {
-    if (onViewSnapshot === undefined) {
-      return;
+function readOwn(container: unknown, key: string): unknown {
+  try {
+    if (!isRecord(container) || !Object.prototype.hasOwnProperty.call(container, key)) {
+      return undefined;
     }
-    onViewSnapshot(
-      captureViewSnapshot(
-        currentScreen ?? undefined,
-        visibilityOverrides,
-        viewport,
-        effectiveColorMode,
-        sortOverrides,
-      ),
-    );
-  }, [
-    onViewSnapshot,
-    currentScreen,
-    visibilityOverrides,
-    viewport,
-    effectiveColorMode,
-    sortOverrides,
-  ]);
+    return container[key];
+  } catch {
+    return undefined;
+  }
+}
 
-  // Fail-safe boundary (invariant #2): a malformed tree — e.g. `render 'null'` on
-  // the unvalidated CLI path — renders as nothing, never a crash.
-  if (!renderable || currentRootId === null) {
+/**
+ * Reads the node an interaction came from, or `null` when nothing usable is
+ * stored under that id.
+ *
+ * Deliberately narrower than mounting's reader: an action only needs a tag to
+ * find the spec and a props record to resolve, so the child list is not read
+ * here at all. Mounting's own reader stays the authority on what a **mountable**
+ * node is; this one answers a different question about a node that is already on
+ * the page.
+ */
+function readActingNode(document: ComponentDocument, nodeId: string): ComponentNode | null {
+  const stored = readOwn(readOwn(document, "nodes"), nodeId);
+  if (!isRecord(stored)) {
     return null;
   }
+  const tag = readOwn(stored, "tag");
+  return typeof tag === "string" && tag.length > 0 && isRecord(readOwn(stored, "props"))
+    ? (stored as unknown as ComponentNode)
+    : null;
+}
 
-  // Fire-and-forget record of a locally-resolved tap: the optimistic setState
-  // has ALREADY run when this is called, so a throw here is swallowed and can
-  // never unwind currentScreen/visibilityOverrides (DC-003). No-op when the
-  // host wires no record channel — navigate/toggle then stay exactly as today.
-  const recordLocalTap = (tap: CollectedEvent): void => {
-    if (onRecord === undefined) {
-      return;
-    }
-    try {
-      onRecord(tap);
-    } catch {
-      // Best-effort: a record-channel failure must not unwind the optimistic
-      // view-state or throw out of the press handler (DC-003).
-    }
-  };
+/**
+ * Renders one Facet session.
+ *
+ * The hook order is fixed and unconditional — the store, the theme projection,
+ * the screen view-state, the two callbacks and the context — and only the last
+ * expression branches. A conditional hook here would make "the document arrived"
+ * a remount of the whole session, taking every open modal and every typed value
+ * with it.
+ */
+export function StageRenderer({
+  bootstrap,
+  document: stageDocument,
+  data,
+  onEvent,
+}: StageRendererProps): ReactNode {
+  // One store per session, created once. Two stages on one page therefore share
+  // no collected value, and there is no module-level store for them to share.
+  const [store] = useState(createFieldStore);
+  const themeVars = useMemo(() => themeToCssVars(bootstrap.theme), [bootstrap.theme]);
+  const active = stageDocument ?? NO_DOCUMENT;
+  const { current, navigate } = useScreenView(active);
+  const screen = current === null ? "" : current.name;
 
-  const handlePress = (press: ClassifiedPress, sourceId: NodeId): void => {
-    switch (press.kind) {
-      case "navigate":
-        // Only a live screen is navigable; unknown targets no-op (DC-004).
-        if (resolveTreeScreen(tree, press.to).activeScreen === press.to) {
-          setCurrentScreen(press.to);
-          // Record AFTER the optimistic mutation, carrying the resolved effect
-          // (captured here, never re-derived) + the pressed box's id.
-          recordLocalTap({ kind: "tap", target: sourceId, effect: { navigate: press.to } });
-        }
-        return;
-      case "toggle": {
-        // hasOwnProperty guard: on the raw live path `tree.nodes` is ordinary
-        // JSON, so a target named "constructor"/"toString" would otherwise
-        // resolve an inherited Object.prototype member and treat a nonexistent
-        // node as existing (DC-004: an unknown target must no-op).
-        const target = Object.prototype.hasOwnProperty.call(tree.nodes, press.target)
-          ? tree.nodes[press.target]
-          : undefined;
-        if (target == null) {
-          return; // unknown target no-ops (DC-004)
-        }
-        setVisibilityOverrides((prev) => {
-          const effective = prev.get(press.target) ?? !isHiddenByDefault(target);
-          const next = new Map(prev);
-          next.set(press.target, !effective);
-          return next;
-        });
-        // Record AFTER the optimistic mutation with the resolved toggle effect.
-        recordLocalTap({ kind: "tap", target: sourceId, effect: { toggle: press.target } });
-        return;
-      }
-      case "agent":
-        if (press.collect === undefined) {
-          onAction?.(press.action); // no collect ⇒ today's exact emission (fields undefined)
+  const onAction = useCallback(
+    (nodeId: string, prop: string): void => {
+      try {
+        const node = readActingNode(active, nodeId);
+        if (node === null) {
           return;
         }
-        // Always a fields object when collect is declared — {} on any degrade,
-        // including an unexpectedly null stage root (no document-wide fallback).
-        onAction?.(
-          press.action,
-          stageRootRef.current === null
-            ? {}
-            : collectFieldValues(tree, press.collect, stageRootRef.current),
+        const spec = bootstrap.index.get(node.tag);
+        if (spec === undefined) {
+          return;
+        }
+        // Resolved again rather than remembered: the props a component was
+        // mounted with are the props of the document and model in force, and
+        // re-deriving them from those two is what keeps a captured handler from
+        // acting on a superseded reference.
+        const resolved = resolveProps(node, spec, data);
+        const reference = resolved.props[prop];
+        if (typeof reference !== "string") {
+          // A prop that carries no action reference is a no-op, never an error:
+          // a component may report an interaction without knowing whether the
+          // author wired one up.
+          return;
+        }
+        const parsed = parseAction(reference, active);
+        if (!parsed.ok) {
+          return;
+        }
+        if (parsed.action.kind === "nav") {
+          // `nav.ts` is the sole authority on navigation, so the reference goes
+          // back to it rather than this module acting on the parse it just did.
+          navigate(reference);
+          return;
+        }
+        if (onEvent === undefined) {
+          return;
+        }
+        // Read only here, past the `nav:` return above: a navigation carries no
+        // event, so there is nothing for an argument beside one to ride on, and
+        // the author boundary accepts that pairing rather than calling it a
+        // fault. The read is own by construction — `resolveProps` returns a
+        // null-prototype record — and post-resolution by construction too, which
+        // is what keeps an argument the document merely inherited, or one the
+        // schema refused, out of the payload.
+        const argument = resolved.props[ARG_PROP];
+        const payload = buildCollectPayload(resolved.props[COLLECT_PROP], (name) =>
+          store.collectSource(name),
         );
-    }
-  };
-
-  // Cycle a table's local sort for one column: asc → desc → unsorted (entry
-  // removed). CRITICAL (RISK-INV-2): this is pure browser VIEW-STATE — it fires
-  // NO recordLocalTap/onRecord/onAction and NO transport, unlike navigate/toggle.
-  // The sort rides only the next `view` snapshot. The functional updater form
-  // makes rapid clicks deterministic (last click wins), and a Map keeps node-id
-  // keys off the prototype chain.
-  const handleHeaderSort = (tableId: NodeId, column: string): void => {
-    setSortOverrides((prev) => {
-      const current = prev.get(tableId);
-      const next = new Map(prev);
-      if (current === undefined || current.column !== column) {
-        next.set(tableId, { column, direction: "asc" });
-      } else if (current.direction === "asc") {
-        next.set(tableId, { column, direction: "desc" });
-      } else {
-        next.delete(tableId); // desc → unsorted
+        onEvent({
+          eventName: parsed.action.event,
+          sourceNodeId: nodeId,
+          screen,
+          // Omitted entirely when there is none. An `arg: undefined` would reach
+          // the transport as a key, and a key is the claim that an argument was
+          // sent — `""` is a legitimate argument and must stay tellable apart
+          // from no argument at all.
+          ...(typeof argument === "string" ? { arg: argument } : {}),
+          collect: payload.collect,
+        });
+      } catch {
+        // Total on its own. Mounting already wraps this seam in `safeInvoke`, so
+        // a throw could not unwind a subtree either way — but a property that
+        // depends on a caller's discipline is not a property.
       }
-      return next;
-    });
-  };
-
-  // Renderer-owned overlay close (RISK-INV-3 / RISK-INV-4). A DETERMINISTIC
-  // set-to-hidden — `next.set(boxId, false)`, where the override Map stores
-  // EFFECTIVE VISIBILITY (`true` = shown / `false` = hidden, matching the read
-  // convention in renderer-render.tsx and the view-snapshot toggled loop). It is
-  // idempotent: closing twice stays `false` (hidden) and NEVER re-flips open, so
-  // a rapid double Esc/scrim can't reopen the overlay (unlike the blind
-  // `!effective` flip the TRIGGER uses in `handlePress` above). It reuses the
-  // SAME view-state writer + `recordLocalTap` as a trigger toggle, so
-  // `view.toggled` stays single-sourced (the agent never reads a closed overlay
-  // as open); `onAction` NEVER fires for a close. Threaded to the renderer as the
-  // private `overlayClose` — no new public StageRenderer prop.
-  const closeOverlay = (boxId: NodeId): void => {
-    setVisibilityOverrides((prev) => {
-      const next = new Map(prev);
-      next.set(boxId, false);
-      return next;
-    });
-    recordLocalTap({ kind: "tap", target: boxId, effect: { toggle: boxId } });
-  };
-
-  // Stylesheet detection (Decision 4, folded into the render walk in review r7):
-  // `renderNode` flips `stageCssSeen.appear` when a REACHABLE box renders with an
-  // appear class, and `stageCssSeen.collapse` when a reachable box resolves a
-  // collapsible row (R10), so each one-per-stage <style> is gated on the SAME
-  // budget-bounded traversal that renders the tree — never a separate O(N) scan
-  // of the whole `tree.nodes` map, which the raw live path can grow to
-  // arbitrary size with unreachable/dangling entries (a per-render soft-DoS the
-  // budget exists to prevent). Reachable-only is also strictly more correct:
-  // a token on an unrendered node no longer forces a useless stylesheet.
-  const stageCssSeen = { appear: false, collapse: false };
-  const motionPlan = motionRenderPlan(motionState);
-  const hasActiveMotion = !isMotionStateEmpty(motionState);
-
-  // One mutable budget per render pass, LOCAL to this StageRenderer render and
-  // threaded down the plain `renderNode` recursion. `renderNode` is a plain
-  // function, not a React component, so the counter is never shared across
-  // separate component invocations — under StrictMode React double-invokes
-  // StageRenderer (each making its own fresh budget) rather than double-decrementing
-  // one shared object per node, so a valid tree renders in full at either cap.
-  const budget: { left: number; refsLeft: number; warned?: boolean } = {
-    left: RENDER_BUDGET,
-    refsLeft: RENDER_BUDGET,
-  };
-  const stage = renderNode({
-    tree,
-    id: currentRootId,
-    onPress: handlePress,
-    visibilityOverrides,
-    theme,
-    budget,
-    stageCssSeen,
-    depth: 0,
-    renderMode: "live",
-    motionClassById: motionPlan.motionClassById,
-    exitRecordsByParent: motionPlan.exitRecordsByParent,
-    activeScreen,
-    // The live path carries the sort read map + the cycle setter. The inert
-    // previous-screen clone below deliberately omits this, so it reads no sort and
-    // never becomes a second sort writer mid-transition (RISK-INV-5).
-    sortControl: { overrides: sortOverrides, onSort: handleHeaderSort },
-    // The private overlay-close writer (sibling of sortControl.onSort). Present
-    // only on this LIVE path; the inert previous-screen clone below omits it, so
-    // a valid-overlay box mid-transition renders inline instead of a second
-    // fixed frame (RISK-INV-4 idempotency lives in closeOverlay, not here).
-    overlayClose: closeOverlay,
-  });
-  const rootExitNodes = motionPlan.rootExitRecords.map((record) => (
-    <Fragment key={`exit:${record.id}`}>
-      {renderExitRecord({ record, onPress: handlePress, stageCssSeen })}
-    </Fragment>
-  ));
-  const stageContent = (
-    <Fragment>
-      {stage}
-      {rootExitNodes}
-    </Fragment>
+    },
+    [active, bootstrap.index, data, navigate, onEvent, screen, store],
   );
-  const stageBody =
-    normalizedTransition === null ? (
-      stageContent
-    ) : (
-      <div
-        className={stageFrameClassName(motionState.stagePrevious !== null)}
-        style={motionState.stagePrevious === null ? DISPLAY_CONTENTS_STYLE : undefined}
-      >
-        <div
-          className={stageCurrentClassName()}
-          style={motionState.stagePrevious === null ? DISPLAY_CONTENTS_STYLE : undefined}
-        >
-          {stageContent}
-        </div>
-        {motionState.stagePrevious === null ? null : (
-          <div
-            className={stagePreviousClassName()}
-            aria-hidden={true}
-            style={{ pointerEvents: "none" }}
-          >
-            {renderNode({
-              tree: motionState.stagePrevious.snapshot.tree,
-              id: motionState.stagePrevious.snapshot.rootId,
-              onPress: handlePress,
-              visibilityOverrides: motionState.stagePrevious.snapshot.visibilityOverrides,
-              theme: motionState.stagePrevious.snapshot.theme,
-              budget: { left: RENDER_BUDGET, refsLeft: RENDER_BUDGET },
-              stageCssSeen,
-              depth: 0,
-              renderMode: "inert",
-              motionClassById: EMPTY_MOTION_CLASSES,
-              exitRecordsByParent: EMPTY_EXIT_RECORDS_BY_PARENT,
-              activeScreen: motionState.stagePrevious.snapshot.activeScreen,
-            })}
-          </div>
-        )}
-      </div>
-    );
-  // The appear stylesheet rides ONCE per stage, and only when the tree uses
-  // appear — appear-free trees stay byte-identical to today (Fragment and null
-  // emit no markup). Two stages on one page each emit the identical namespaced
-  // constant (idempotent). The Fragment wrapper is UNCONDITIONAL on purpose:
-  // `usesAppear ? <Fragment>…</Fragment> : stage` would change the root child's
-  // element TYPE when a patch adds the first (or removes the last) appear token,
-  // and React would remount the entire stage subtree — wiping visitor-typed
-  // field text and scroll offsets (review r3). With the stable Fragment, `stage`
-  // keeps its child position and only the <style> slot toggles. Replay
-  // semantics are pinned as replay-on-MOUNT (Decision 2): the animation is pure
-  // CSS on the class, so it runs whenever the element mounts — first paint,
-  // node re-add, toggle re-show, screen navigation (hidden/off-screen nodes are
-  // unmounted) — with no JS played-state bookkeeping; a remounted node
-  // deliberately replays its animation.
-  const staged = (
-    <Fragment>
-      <style>{BRICK_STATE_CSS}</style>
-      {stageCssSeen.appear ? <style>{APPEAR_CSS}</style> : null}
-      {stageCssSeen.collapse ? <style>{COLLAPSE_CSS}</style> : null}
-      {hasActiveMotion ? <style>{MOTION_CSS}</style> : null}
-      {stageBody}
-    </Fragment>
+
+  // Memo-stable across everything but the theme itself. A new identity on each
+  // stage update would hand every mounted node a changed context field for a
+  // callback that does the same thing, and the frame is the one seam where that
+  // churn is most expensive.
+  const renderModal = useCallback(
+    (request: ModalMountRequest): ReactNode => (
+      <ModalFrame nodeId={request.nodeId} props={request.props} themeVars={themeVars}>
+        {request.content}
+      </ModalFrame>
+    ),
+    [themeVars],
   );
-  if (onAction === undefined) {
-    // No handler ⇒ no press can emit, so field collection is unreachable and
-    // the scope wrapper is unnecessary — handler-less output stays byte-
-    // identical to the pre-collect renderer (pinned by the static suite).
-    return staged;
-  }
-  // display: contents adds no layout box, so flow layout is unchanged
-  // (invariant #5); the div exists only to scope the press-time field read.
+
+  const context = useMemo<MountContext>(
+    () => ({
+      document: active,
+      index: bootstrap.index,
+      registry: bootstrap.registry,
+      themeVars,
+      copy: bootstrap.copy,
+      store,
+      onAction,
+      renderModal,
+    }),
+    [
+      active,
+      bootstrap.index,
+      bootstrap.registry,
+      bootstrap.copy,
+      themeVars,
+      store,
+      onAction,
+      renderModal,
+    ],
+  );
+
   return (
-    <div style={{ display: "contents" }} ref={stageRootRef}>
-      {staged}
-    </div>
+    <ModalHost>
+      <OverlayRootProvider>
+        <DataProvider model={data}>
+          {stageDocument === null ? (
+            <PreparingState copy={bootstrap.copy} />
+          ) : current === null ? null : (
+            <MountNode context={context} nodeId={current.nodeId} />
+          )}
+        </DataProvider>
+      </OverlayRootProvider>
+    </ModalHost>
   );
 }

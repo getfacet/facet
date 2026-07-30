@@ -1,32 +1,33 @@
-import { EMPTY_TREE, type ClientEvent, type FacetSession } from "@facet/core";
-import type { Sink, StoredEvent, SummaryStore } from "@facet/runtime";
+import type { AgentEvent, ConversationMessage, FacetToolSession } from "@facet/core";
+import type { Sink, SummaryStore } from "@facet/runtime";
 
 import type { ProviderTurn, TurnMessage } from "../provider.js";
-import { buildInitialMessages, describeEvent, formatCurrentStageForPrompt } from "../prompt.js";
-import type { ReferenceAgentBudget, ReferenceAgentStopReason } from "./budget.js";
+import { buildInitialMessages, formatCurrentStageForPrompt } from "../prompt.js";
+import {
+  effectiveCharBudget,
+  type ReferenceAgentBudget,
+  type ReferenceAgentStopReason,
+} from "./budget.js";
 import { compactHistoryMessages, estimateMessagesChars } from "./compaction.js";
-import { estimateProviderTurnChars } from "./estimate.js";
+import { measureChars } from "./measure.js";
 import { summaryBlockMessage, vetStoredSummary } from "./summary.js";
+import { conversationHistoryToMessages } from "./transcript.js";
 
-export type ReferenceAgentContextStageMode = "json" | "summary";
+export type ReferenceAgentContextStageMode = "markup" | "summary";
 
 /** Why a persisted summary was NOT injected on a turn that had a store. */
 export type ReferenceAgentSummaryDiscardReason = "mismatch" | "invalid" | "store_error" | "budget";
 
 export interface AssembleProviderContextOptions {
   readonly system: string;
-  readonly event: ClientEvent;
-  readonly session: FacetSession;
-  readonly sink: Sink;
-  readonly agentId: string;
+  readonly event: AgentEvent;
+  readonly session: FacetToolSession;
+  readonly sink: Pick<Sink, "history">;
+  readonly historyKey: string;
   readonly budget: ReferenceAgentBudget;
-  /**
-   * Optional rolling-summary source. When present, a valid + consistent summary
-   * is injected ONCE at the head of the history layer and only post-`coveredThrough`
-   * turns replay verbatim. Absent ⇒ exactly the no-summary behavior. Only `get`
-   * is used; a read failure is caught and assembly proceeds without a summary.
-   */
-  readonly summaryStore?: Pick<SummaryStore, "get">;
+  readonly summaryStore?: Pick<SummaryStore, "read">;
+  readonly summaryKey?: string;
+  readonly contextWindowChars?: number;
 }
 
 export interface ReferenceAgentContextStats {
@@ -41,10 +42,12 @@ export interface ReferenceAgentContextStats {
   readonly summaryInjected: boolean;
   /** Generation of the injected summary (present only when injected). */
   readonly summaryGeneration?: number;
-  /** Prior-turn count the injected summary folds in (present only when injected). */
+  /** Prior conversation records the injected summary folds in (present only when injected). */
   readonly summaryCoveredThrough?: number;
   /** Why a stored summary was skipped (present only when a store existed but nothing was injected). */
   readonly summaryDiscarded?: ReferenceAgentSummaryDiscardReason;
+  /** Redelivered conversation messages collapsed by stable messageId. */
+  readonly duplicateHistoryMessages: number;
 }
 
 export type ReferenceAgentContextResult =
@@ -79,87 +82,92 @@ interface SummaryDecisionStats {
   readonly summaryDiscarded?: ReferenceAgentSummaryDiscardReason;
 }
 
-/** Resolved summary state: the block to inject (if any) plus how many turns it covers. */
+/** Resolved summary state: the block to inject (if any) plus how many records it covers. */
 interface ResolvedSummary {
   /** The user-role summary block to inject at the head of the history layer. */
   readonly block?: TurnMessage;
-  /** History entries to skip before verbatim replay (0 when nothing is injected). */
-  readonly coveredThrough: number;
+  /** Conversation records to skip before verbatim replay (0 when nothing is injected). */
+  readonly replayFrom: number;
   readonly stats: SummaryDecisionStats;
 }
 
 export async function assembleProviderContext(
   options: AssembleProviderContextOptions,
 ): Promise<ReferenceAgentContextResult> {
-  let history: Awaited<ReturnType<Sink["history"]>>;
+  let history: readonly ConversationMessage[];
   try {
-    history = await options.sink.history(options.agentId, options.session.visitor.visitorId);
+    history = await options.sink.history(
+      options.historyKey,
+      historyReadLimit(options.budget.maxHistoryTurns),
+    );
   } catch (error) {
     return { status: "sink_error", stopReason: "sink_error", error };
   }
 
-  const summary = await resolveSummary(options, history);
+  const transcript = conversationHistoryToMessages(history, options.budget.maxHistoryTurns);
+  const summary = await resolveSummary(options, transcript.records);
   const verbatimHistory =
-    summary.block !== undefined ? history.slice(summary.coveredThrough) : history;
+    summary.block === undefined
+      ? transcript.messages
+      : transcript.messages.slice(summary.replayFrom);
 
-  const historyMessages = renderHistoryMessages(
-    options.event,
-    options.session,
-    verbatimHistory,
-    options.budget,
-  );
-  const fullStage = formatCurrentStageForPrompt(options.session.stage, {
-    maxJsonChars: options.budget.maxStageJsonChars,
+  const contextLimit = effectiveCharBudget(options.budget, options.contextWindowChars);
+  const fullFinalMessage = finalPromptMessage(options, {
+    maxMarkupChars: options.budget.maxStageJsonChars,
     maxSummaryNodes: options.budget.maxStageSummaryNodes,
   });
-  const fullStageMode = stageModeOf(fullStage);
   const fullCandidate = buildCandidate(
     options,
-    historyMessages,
-    fullStage,
-    fullStageMode,
+    verbatimHistory,
+    transcript.droppedTurnCount,
+    transcript.duplicateMessageCount,
+    fullFinalMessage,
+    stageModeOf(fullFinalMessage),
     summary.block,
     summary.stats,
+    contextLimit,
   );
-  if (fullStageMode === "json" && fitsContext(fullCandidate, options.budget)) {
+  if (fullCandidate.stats.stageMode === "markup" && fitsContext(fullCandidate, contextLimit)) {
     return readyResult(fullCandidate);
   }
 
-  if (fullStageMode === "summary") {
-    return resultForCandidate(fullCandidate, options.budget);
+  if (fullCandidate.stats.stageMode === "summary") {
+    return resultForCandidate(fullCandidate, contextLimit);
   }
 
-  const summaryStage = formatCurrentStageForPrompt(options.session.stage, {
-    maxJsonChars: 0,
+  const summaryFinalMessage = finalPromptMessage(options, {
+    maxMarkupChars: 0,
     maxSummaryNodes: options.budget.maxStageSummaryNodes,
   });
   return resultForCandidate(
-    buildCandidate(options, historyMessages, summaryStage, "summary", summary.block, summary.stats),
-    options.budget,
+    buildCandidate(
+      options,
+      verbatimHistory,
+      transcript.droppedTurnCount,
+      transcript.duplicateMessageCount,
+      summaryFinalMessage,
+      "summary",
+      summary.block,
+      summary.stats,
+      contextLimit,
+    ),
+    contextLimit,
   );
 }
 
-/**
- * Load and vet a persisted rolling summary through the shared `vetStoredSummary`,
- * so the reader applies the SAME consistency checks as the writer — including the
- * conversation-anchor match that catches a durable store re-injecting a wiped
- * sink's OLD summary once the new history regrows past the stale marker. A read
- * failure, invalid payload, or anchor/counter mismatch all resolve to "no
- * injection" with a recorded reason. NEVER throws.
- */
 async function resolveSummary(
   options: AssembleProviderContextOptions,
-  history: readonly StoredEvent[],
+  history: readonly ConversationMessage[],
 ): Promise<ResolvedSummary> {
   const store = options.summaryStore;
-  if (store === undefined) return { coveredThrough: 0, stats: { summaryInjected: false } };
+  if (store === undefined) return { replayFrom: 0, stats: { summaryInjected: false } };
 
-  let stored;
+  let stored: unknown;
   try {
-    stored = await store.get(options.agentId, options.session.visitor.visitorId);
+    stored = await store.read(options.summaryKey ?? options.historyKey);
   } catch {
     return {
-      coveredThrough: 0,
+      replayFrom: 0,
       stats: { summaryInjected: false, summaryDiscarded: "store_error" },
     };
   }
@@ -167,15 +175,15 @@ async function resolveSummary(
   const vetted = vetStoredSummary(stored, history);
   switch (vetted.status) {
     case "none":
-      return { coveredThrough: 0, stats: { summaryInjected: false } };
+      return { replayFrom: 0, stats: { summaryInjected: false } };
     case "invalid":
-      return { coveredThrough: 0, stats: { summaryInjected: false, summaryDiscarded: "invalid" } };
+      return { replayFrom: 0, stats: { summaryInjected: false, summaryDiscarded: "invalid" } };
     case "mismatch":
-      return { coveredThrough: 0, stats: { summaryInjected: false, summaryDiscarded: "mismatch" } };
+      return { replayFrom: 0, stats: { summaryInjected: false, summaryDiscarded: "mismatch" } };
     case "ok":
       return {
         block: summaryBlockMessage(vetted.summary, vetted.generation, vetted.coveredThrough),
-        coveredThrough: vetted.coveredThrough,
+        replayFrom: vetted.replayFrom,
         stats: {
           summaryInjected: true,
           summaryGeneration: vetted.generation,
@@ -185,74 +193,42 @@ async function resolveSummary(
   }
 }
 
-function renderHistoryMessages(
-  event: ClientEvent,
-  session: FacetSession,
-  history: Awaited<ReturnType<Sink["history"]>>,
-  budget: ReferenceAgentBudget,
-): {
-  readonly messages: readonly TurnMessage[];
-  readonly droppedTurnCount: number;
-} {
-  const limit = budget.maxHistoryTurns;
-  const historySession = { ...session, stage: EMPTY_TREE };
-  const initialMessages = buildInitialMessages(event, historySession, history, limit);
-  const verbatim = initialMessages.slice(0, -1);
-  return {
-    messages: verbatim,
-    droppedTurnCount: Math.max(0, history.length - limit),
-  };
-}
-
 function buildCandidate(
   options: AssembleProviderContextOptions,
-  history: {
-    readonly messages: readonly TurnMessage[];
-    readonly droppedTurnCount: number;
-  },
-  stagePrompt: string,
+  historyMessages: readonly TurnMessage[],
+  droppedHistoryTurns: number,
+  duplicateHistoryMessages: number,
+  finalMessage: TurnMessage,
   stageMode: ReferenceAgentContextStageMode,
   summaryBlock: TurnMessage | undefined,
   summaryStats: SummaryDecisionStats,
+  contextLimit: number,
 ): ContextCandidate {
-  const finalMessage: TurnMessage = {
-    role: "user",
-    content: `${describeEvent(options.event)}\n\n${stagePrompt}`,
-  };
-  const baseChars = estimateProviderTurnChars(options.system, [finalMessage]);
+  const baseChars = measureTurnChars(options.system, [finalMessage]);
   const availableHistoryChars = Math.min(
     options.budget.maxHistoryChars,
-    Math.max(0, options.budget.maxContextChars - baseChars),
+    Math.max(0, contextLimit - baseChars),
   );
 
-  // Pin the summary block: reserve its chars up front and compact ONLY the
-  // verbatim tail, so char pressure drops/truncates recent turns instead of the
-  // block that stands in for every covered turn. If the block alone can't fit
-  // the history budget, omit it (recorded as a `"budget"` discard) rather than
-  // sending a partial or misleading `summaryInjected` stat.
-  const blockChars = summaryBlock !== undefined ? estimateMessagesChars([summaryBlock]) : 0;
+  const blockChars = summaryBlock === undefined ? 0 : estimateMessagesChars([summaryBlock]);
   const pinBlock = summaryBlock !== undefined && blockChars <= availableHistoryChars;
   const effectiveStats: SummaryDecisionStats =
     summaryBlock !== undefined && !pinBlock
       ? { summaryInjected: false, summaryDiscarded: "budget" }
       : summaryStats;
-
-  // When the summary block is dropped for budget, the turns it covered were
-  // already sliced off the verbatim tail — so fold their count into the
-  // compaction note's `droppedTurnCount` instead of letting them vanish
-  // silently and understate what the model no longer sees.
-  const droppedForCoveredTurns =
+  const droppedForCoveredRecords =
     summaryBlock !== undefined && !pinBlock ? (summaryStats.summaryCoveredThrough ?? 0) : 0;
 
-  const compactedHistory = compactHistoryMessages(history.messages, {
+  const compactedHistory = compactHistoryMessages(historyMessages, {
     maxChars: pinBlock ? availableHistoryChars - blockChars : availableHistoryChars,
-    droppedTurnCount: history.droppedTurnCount + droppedForCoveredTurns,
+    droppedTurnCount: droppedHistoryTurns + droppedForCoveredRecords,
   });
-  const historyMessages = pinBlock
-    ? [summaryBlock, ...compactedHistory.messages]
-    : compactedHistory.messages;
-  const messages = [...historyMessages, finalMessage];
-  const estimatedContextChars = estimateProviderTurnChars(options.system, messages);
+  const messages = [
+    ...(pinBlock ? [summaryBlock] : []),
+    ...compactedHistory.messages,
+    finalMessage,
+  ];
+  const estimatedContextChars = measureTurnChars(options.system, messages);
 
   return {
     turn: {
@@ -267,6 +243,7 @@ function buildCandidate(
       omittedHistoryChars: compactedHistory.omittedCharCount,
       stageMode,
       messageCount: messages.length,
+      duplicateHistoryMessages,
       ...effectiveStats,
     },
   };
@@ -274,14 +251,14 @@ function buildCandidate(
 
 function resultForCandidate(
   candidate: ContextCandidate,
-  budget: ReferenceAgentBudget,
+  maxContextChars: number,
 ): ReferenceAgentContextResult {
-  if (fitsContext(candidate, budget)) return readyResult(candidate);
+  if (fitsContext(candidate, maxContextChars)) return readyResult(candidate);
   return {
     status: "context_limit",
     stopReason: "context_limit",
     estimatedContextChars: candidate.stats.estimatedContextChars,
-    maxContextChars: budget.maxContextChars,
+    maxContextChars,
     stats: candidate.stats,
   };
 }
@@ -294,10 +271,41 @@ function readyResult(candidate: ContextCandidate): ReferenceAgentContextResult {
   };
 }
 
-function fitsContext(candidate: ContextCandidate, budget: ReferenceAgentBudget): boolean {
-  return candidate.stats.estimatedContextChars <= budget.maxContextChars;
+function fitsContext(candidate: ContextCandidate, maxContextChars: number): boolean {
+  return candidate.stats.estimatedContextChars <= maxContextChars;
 }
 
-function stageModeOf(stagePrompt: string): ReferenceAgentContextStageMode {
-  return stagePrompt.startsWith("CURRENT STAGE: ") ? "json" : "summary";
+function finalPromptMessage(
+  options: AssembleProviderContextOptions,
+  stageOptions: {
+    readonly maxMarkupChars: number;
+    readonly maxSummaryNodes: number;
+  },
+): TurnMessage {
+  return (
+    buildInitialMessages(options.event, options.session, [], 0, stageOptions).at(-1) ?? {
+      role: "user",
+      content: formatCurrentStageForPrompt(options.session, stageOptions),
+    }
+  );
+}
+
+function stageModeOf(message: TurnMessage): ReferenceAgentContextStageMode {
+  const content = "content" in message ? message.content : "";
+  if (
+    content.includes("currentScreenMarkup:\n") &&
+    !content.includes("currentScreenMarkup:\n(omitted by character limit)")
+  ) {
+    return "markup";
+  }
+  return "summary";
+}
+
+function measureTurnChars(system: string, messages: readonly TurnMessage[]): number {
+  return measureChars({ system, messages });
+}
+
+function historyReadLimit(maxHistoryTurns: number): number {
+  if (!Number.isSafeInteger(maxHistoryTurns) || maxHistoryTurns <= 0) return 0;
+  return maxHistoryTurns * 2;
 }

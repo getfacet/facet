@@ -15,15 +15,14 @@
  *   FAILURE, not a skip — pre-merge must exercise both adapters.
  */
 import { describe, expect, it } from "vitest";
-import { validateTree } from "@facet/core";
-import { DEFAULT_THEME } from "@facet/assets";
+import type { AgentEvent, ComponentDocument } from "@facet/core";
 import { createReferenceAgent, resolveProvider } from "@facet/reference-agent";
 import { MemorySink } from "@facet/runtime";
 import { startQuickstart, type RunningQuickstart } from "../src/index.js";
 
 const REQUIRE_BOTH = process.env["FACET_SMOKE_PROVIDERS"] === "both";
 
-const SMOKE_GUIDE = `This is a live-link smoke check. On every visit, immediately call render_page exactly once with a minimal unstyled page: root box id "root" with child "message", and text id "message" whose value is "Facet is live". The exact tree is already specified, so do not call discovery or inspection tools and do not answer with prose before the page is rendered.`;
+const SMOKE_GUIDE = `This is a live-link smoke check. On every visit, immediately call render_page exactly once with this exact component markup, then stop: <Screen name="home"><Text value="Facet is live" /></Screen>. Do not call discovery or inspection tools and do not answer with prose before the page is rendered.`;
 
 interface ProviderCase {
   readonly name: "openai" | "anthropic";
@@ -44,9 +43,9 @@ function parseData(block: string): unknown | undefined {
   return undefined;
 }
 
-/** Read the stream until a `patch` frame arrives (the config's testTimeout
- * bounds the wait), returning that frame's data. */
-async function waitForPatch(response: Response): Promise<unknown> {
+/** Read the stream until a `/document` replacement patch arrives (the config's
+ * testTimeout bounds the wait), skipping the initial stage-root rehydrate. */
+async function waitForDocument(response: Response): Promise<ComponentDocument> {
   const reader = response.body?.getReader();
   if (reader === undefined) throw new Error("no body");
   const decoder = new TextDecoder();
@@ -61,7 +60,18 @@ async function waitForPatch(response: Response): Promise<unknown> {
         const data = parseData(buffer.slice(0, index));
         buffer = buffer.slice(index + 2);
         index = buffer.indexOf("\n\n");
-        if ((data as { kind?: string } | undefined)?.kind === "patch") return data;
+        if ((data as { kind?: string } | undefined)?.kind !== "patch") continue;
+        const patch = data as {
+          readonly ops?: readonly {
+            readonly op?: string;
+            readonly path?: string;
+            readonly value?: unknown;
+          }[];
+        };
+        const document = patch.ops?.find(
+          (op) => op.op === "replace" && op.path === "/document",
+        )?.value;
+        if (document !== undefined) return document as ComponentDocument;
       }
     }
   } finally {
@@ -80,7 +90,6 @@ async function boot(providerName: "openai" | "anthropic"): Promise<RunningQuicks
     guide: SMOKE_GUIDE,
     sink,
     agentId,
-    assets: { theme: DEFAULT_THEME, patterns: [] },
   });
   for (let attempt = 0; attempt < 10; attempt += 1) {
     const port = 20_000 + Math.floor(Math.random() * 20_000);
@@ -121,40 +130,28 @@ for (const { name, envVar } of PROVIDERS) {
     it(`one real visit turn yields a valid, renderable tree (${name})`, async () => {
       const running = await boot(name);
       try {
-        const visitorId = `smoke-${name}`;
-        const stream = await fetch(`${running.url}/stream?visitorId=${visitorId}`);
+        const sessionKey = `smoke-${name}`;
+        const stream = await fetch(`${running.url}/stream?sessionKey=${sessionKey}`);
         expect(stream.status).toBe(200);
+        const event: AgentEvent = {
+          eventId: `visit-${name}`,
+          eventName: "visit",
+          sourceNodeId: "smoke",
+          screen: "home",
+          stageRevision: 0,
+          collect: {},
+        };
         const post = await fetch(`${running.url}/event`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            visitor: { visitorId },
-            event: { kind: "visit", visitor: { visitorId } },
-          }),
+          body: JSON.stringify({ sessionKey, event }),
         });
         expect(post.status).toBe(202);
 
-        // Loose: a patch frame arrives within the config timeout…
-        const patch = (await waitForPatch(stream)) as {
-          patches?: readonly { path?: string; value?: unknown }[];
-        };
-        expect(Array.isArray(patch.patches)).toBe(true);
-
-        // …and the smoke-specific guide's render_page call emitted the expected
-        // full replacement. Content remains loose, but an unattached node patch
-        // cannot masquerade as a rendered page.
-        const full = patch.patches?.find((p) => p.path === "");
-        expect(full).toBeDefined();
-        if (full === undefined) throw new Error("render_page did not emit a root replacement");
-
-        // validateTree is fail-safe (never throws); "passes" here means the
-        // survivor is renderable — a root box with at least one child, i.e.
-        // not the EMPTY_TREE fallback. Issues are tolerated (loose).
-        const { tree } = validateTree(full.value);
-        const root = tree.nodes[tree.root];
-        expect(root).toBeDefined();
-        expect(root?.type).toBe("box");
-        expect(root?.type === "box" && root.children.length > 0).toBe(true);
+        const document = await waitForDocument(stream);
+        const screen = document.nodes[document.screens[0] ?? ""];
+        expect(screen?.tag).toBe("Screen");
+        expect(JSON.stringify(document)).toContain("Facet is live");
       } finally {
         await running.close();
       }

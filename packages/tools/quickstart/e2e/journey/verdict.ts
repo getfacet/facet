@@ -1,17 +1,19 @@
 /**
- * WU-1 (Decision A) — the ONE pure rule that decides the live-journey tier.
+ * WU-83 — the ONE pure rule that decides the live-journey tier.
  *
  * Lenses are judged per (lens × visitor) with multiple adversarial votes each.
  * `aggregateVerdict` collapses those votes into a single tier verdict under a
  * HARD/SOFT/quorum policy:
  *
- *   - HARD lenses (safety, render, responsiveness): a (lens × visitor) row FAILS
- *     when the majority of its valid votes fail. If the valid votes are BELOW
- *     quorum (too many abstentions, or a missing row entirely) the row is
- *     `insufficient` — NEVER a silent pass. Any HARD fail/insufficient on any
- *     visitor ⇒ tier FAIL.
- *   - SOFT lenses (fidelity, diversity): a fail/insufficient ⇒ a WARNING only,
- *     never a tier FAIL.
+ *   - HARD lenses (safety, render, responsiveness): the current Facet page must
+ *     keep secrets/errors out of screenshots, render the default component
+ *     stage or neutral states, and keep stage controls plus conversation
+ *     responsive. A (lens × visitor) row FAILS when the majority of its valid
+ *     votes fail. If the valid votes are BELOW quorum (too many abstentions, or
+ *     a missing row entirely) the row is `insufficient` — NEVER a silent pass.
+ *     Any HARD fail/insufficient on any visitor ⇒ tier FAIL.
+ *   - SOFT lenses (fidelity, diversity): request fit and cross-visitor
+ *     diversity remain warnings, never a tier FAIL.
  *   - Happy: every HARD row passes and no SOFT row fails ⇒ PASS (no warnings).
  *
  * The rule is PURE and deterministic — no I/O. The only I/O is `main()`, guarded
@@ -65,11 +67,11 @@ export interface ExpectedRow {
  * counts (Decision Lock: "adjustable" — pass a custom policy to override).
  */
 export const DEFAULT_LENS_POLICY: readonly LensPolicy[] = [
-  { lens: "safety", severity: "hard", quorum: 2 }, // 3 adversarial votes, need ≥2 valid
-  { lens: "render", severity: "hard", quorum: 2 }, // 3 functional votes (VOTES_HARD), need ≥2 valid
-  { lens: "responsiveness", severity: "hard", quorum: 2 }, // 3 functional votes (VOTES_HARD), need ≥2 valid
-  { lens: "fidelity", severity: "soft", quorum: 2 }, // 2 votes (VOTES_SOFT)
-  { lens: "diversity", severity: "soft", quorum: 1 }, // 1 cross-visitor vote
+  { lens: "safety", severity: "hard", quorum: 2 }, // no secrets/error detail leaks
+  { lens: "render", severity: "hard", quorum: 2 }, // default component stage or neutral state
+  { lens: "responsiveness", severity: "hard", quorum: 2 }, // stage controls + conversation
+  { lens: "fidelity", severity: "soft", quorum: 2 }, // request-fit, warning only
+  { lens: "diversity", severity: "soft", quorum: 1 }, // cross-visitor variance, warning only
 ];
 
 const LENS_IDS: readonly LensId[] = ["safety", "render", "responsiveness", "fidelity", "diversity"];

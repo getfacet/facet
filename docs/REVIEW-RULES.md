@@ -6,26 +6,35 @@ bureaucratic.
 
 ## Invariants (a violation is at least P1)
 
-1. **Declarative closed vocabulary.** Agents/consumers emit only
-   `@facet/core`-validated bricks with **token** style values — never raw
-   HTML/JS/CSS, never raw scalars, never absolute positioning. The complete
-   roster is `box`, `text`, `media`, `input`, `richtext`, `table`, `chart`,
-   `list`, `keyValue`, `progress`, and `loading`; only `box` is a container.
-   Theme Presets may only select validated Brick-owned choices. Patterns are
-   concrete native-node datasets an agent may read, not stage syntax or an
-   authoring tier. Bypassing core validation or
-   admitting arbitrary markup is an invariant violation.
-2. **Patches-only + fail-safe.** Stage changes travel as RFC 6902 patches; the
-   *same* pure `applyPatch` runs on server and client. The renderer/validator is
-   fail-safe — unknown/dangling/invalid input is dropped or skipped, **never
-   thrown on**, never rendered broken.
-3. **Scope boundary.** In scope: spec, patch protocol, runtime, renderer,
-   transports, agent SDKs/CLI/bridge. Out of scope (must stay pluggable behind
+1. **Declarative registered markup.** Agents emit only the bounded author
+   grammar validated by `@facet/core`: registered component tags, declared
+   props, quoted scalar values, and explicit closed references. Raw HTML escape
+   hatches, JavaScript/JSX expressions, handlers, imports, spreads, inline
+   structured JSON, raw CSS, arbitrary token names, and unregistered tags are
+   invariant violations.
+2. **Catalog/registry trust boundary.** The immutable validated catalog and
+   trusted React registry must contain exactly the same tags. The agent can
+   select and compose registered components but cannot register code, mutate the
+   catalog mid-session, or bypass prop schemas.
+3. **Patches-only + fail-safe.** Stage changes travel as RFC 6902 patches; the
+   same authorized fold runs on server and client. Author mutations reject
+   atomically. Persisted corruption and component throws are bounded and
+   isolated; they never crash the full renderer or expose internal details.
+4. **UI boundary.** Facet owns UI-OUT and UI-IN. Backend fetches, domain
+   computation, authorization, and business effects belong to host/agent tools.
+   Browser-side domain fetches and arbitrary-URL data bindings are forbidden.
+5. **Constrained layout and local behavior.** Authored layout is flow-contained.
+   Overlap is owned only by the dedicated trusted modal contract. Intrinsic
+   component behavior may stay local, but there is no general local-action,
+   arbitrary-positioning, or z-index authoring escape hatch.
+6. **Scope boundary.** In scope: spec, patch protocol, runtime, renderer,
+   transports, agent SDKs, and Quickstart. Out of scope (must stay pluggable behind
    interfaces): the agent *brain* (LLM/rules) and distributed/scale infra
    (`StageStore`/`Sink` adapters, fan-out).
-4. **Package hygiene.** `@facet/core` depends on nothing. Dependencies flow one
-   way (everything → core; nothing → `apps/playground`). Barrel exports only.
-   Browser-safe entry points must not import Node built-ins (`node:*`).
+7. **Package hygiene.** `@facet/core` depends on nothing. Dependencies flow one
+   way through published package barrels; private workbenches and unpublished
+   experiments never become dependencies of public packages. Browser-safe entry
+   points must not import Node built-ins (`node:*`).
 
 ## Severity
 
@@ -40,16 +49,14 @@ bureaucratic.
 gate on them. (A P2 may only ship unfixed with an explicit maintainer waiver
 recorded in the PR.)
 
-A Theme Preset may style its owning validated Brick but cannot add behavior or
-fields. A Pattern read may return only a validated concrete native dataset
-and must not itself emit stage messages or patches. Treat any path that accepts
-unvalidated nodes, raw markup, raw scalar styles, client-side business logic on
-display bricks, or absolute positioning as at least P1.
+Treat any path that accepts unvalidated author syntax, mismatched
+catalog/registry tags, executable props, arbitrary styles/tokens, browser-side
+business logic, or unconstrained positioning as at least P1.
 
 Renderer layout containment is part of the contract. Parent owns placement,
-child owns internal layout, and renderer owns containment. A brick renderer
-that lets a child push horizontal width, overlap siblings, or escape its parent
-without an explicit bounded scroll region is at least P1.
+child owns internal layout, and renderer owns containment. A registered
+component that lets its subtree push horizontal width, overlap siblings, or
+escape its parent without an explicit bounded scroll region is at least P1.
 
 ## Gate Profiles
 
@@ -71,49 +78,40 @@ without an explicit bounded scroll region is at least P1.
 - **bugs** — logic errors, wrong results, null/undefined, off-by-one, incorrect state.
 - **types** — `any`, unsafe `as`, missing narrowing, public API typed loosely,
   strict-mode holes (`exactOptionalPropertyTypes`, `noUncheckedIndexedAccess`).
-- **edge** — error handling, the fail-safe boundaries (`validateTree`,
-  `StageRenderer`), empty/malformed input, lifecycle/cleanup.
+- **edge** — parser/catalog/document/data error handling, renderer subtree
+  isolation, empty/malformed input, lifecycle/cleanup.
 - **security** — the "safe by construction" claims, untrusted input (LLM output,
   client-supplied `visitorId`, `--dangerously-skip-permissions`), injection, CORS.
-- **concurrency** — races (same-visitor events, runtime stage), the bridge queue
-  + persistent generator handshake (deadlock/ordering), timeouts, resource leaks.
-- **consistency** — duplication, cross-package drift, dev-vs-published resolution
-  (`publishConfig`/`exports`), barrel usage, naming, docs/prompts that omit the
-  exact 11-Brick roster, describe Patterns as a functional node tier, or retain
-  retired component-tier/style/asset APIs and data shapes. Pattern lookup is
-  optional and separate from node authoring.
-- **test-gaps** — changed behavior without a test; critical pure logic
-  (`validateTree`, `applyPatch`, `Stage`, stores, `createSerialQueue`) losing
-  coverage; untested testable surface (`@facet/cli`); tautological
-  tests.
+- **concurrency** — races (same-visitor events, runtime stage), TurnGate
+  single-flight/dedupe/fencing/deadline release, CAS/outbox ordering, timeouts,
+  resource leaks.
+- **consistency** — duplication, cross-package drift, dev-vs-published
+  resolution (`publishConfig`/`exports`), barrel usage, naming, catalog/registry
+  mismatch, tool-count drift, or docs/prompts that retain retired authoring,
+  styling, asset, event, or data surfaces.
+- **test-gaps** — changed behavior without a test; critical pure logic (markup
+  parser, catalog validation, document/data bounds, authorized patch/fold,
+  stores, turn gates/outbox, and agent tools) losing coverage; untested public
+  surfaces; tautological tests.
 
 ## `/refactor-audit` dimensions
 
-- **duplication** — same logic/spec/string in >1 place (e.g. the LLM stage spec).
+- **duplication** — same logic/spec/string in >1 place (for example duplicated
+  catalog metadata, grammar rules, or tool-result shapes).
 - **boundaries** — dependency direction, misplaced code (protocol types outside
-  core, reusable code stuck in `apps/playground`), leaky abstractions.
+  core, reusable code stranded in a private workbench), leaky abstractions.
 - **dead code** — unused exports/files/branches; orphans after a refactor.
 - **hygiene** — package.json uniformity (`publishConfig`/`exports`/`sideEffects`),
-  test-coverage gaps on pure logic, doc drift vs every published package (+
-  the unpublished playground app).
+  test-coverage gaps on pure logic, doc drift vs every published package and
+  private/unpublished workbench boundaries.
 - **naming** — misleading names, inconsistent conventions.
 
 ## Commands
 
-Facet Lab has separate deterministic and live evidence tiers:
-
-- the built-bundle deterministic journey is blocking whenever Lab code or its
-  shared observer/replay seams change; it needs no provider key and writes to an
-  isolated external data/artifact directory;
-- a provider journey is blocking when the changed surface requires a configured
-  provider key, and otherwise reports a deliberate skip;
-- screenshot/vision evaluation is advisory and may skip when its optional
-  capability is unavailable. Its result must never rewrite the deterministic
-  contract verdict.
-
-The `/live-test` policy runs these tiers alongside the existing Quickstart
-tiers and keeps their PASS, FAIL, and SKIP outcomes separate. Missing a required
-key is a failure; missing an optional visual capability is not.
+The `/live-test` policy is Quickstart-centered for the public hard gate. Missing
+a provider key is a failure whenever that tier is required by the changed
+surface. Optional owner-run visual journeys may report a deliberate skip when
+their optional capability is unavailable.
 
 Run the canonical mechanical gate with `pnpm verify`. It runs typecheck, tests,
 lint, format-check, and build, followed by these repository checks in order:

@@ -1,123 +1,94 @@
 # @facet/react
 
-The native React renderer for Facet. `StageRenderer` turns a declarative Facet
-tree into a sandboxed React tree from the closed 11-Brick vocabulary, while
-`useFacet(transport)` folds RFC 6902 patches into the live stage.
+Trusted React renderer for Facet component documents. It mounts only components
+registered by the host, keeps browser-local view state local, applies transport
+frames through the shared patch fold, and isolates component failures at the
+subtree boundary.
 
-Role: **Renderers**. Use this package to display a Facet Document in React. It
-does not provide a transport, runtime, or agent brain.
-
-React `>=18` is a peer dependency. A reference live-browser setup uses:
+Role: **Renderers**.
 
 ```bash
-npm install @facet/react @facet/client @facet/core react react-dom
+npm install @facet/react @facet/assets react react-dom
 ```
 
-If your application already implements `FacetTransport`, `@facet/client` is
-optional. Follow the canonical
-[React wiring guide](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md#embed-the-react-renderer)
-for a complete, typechecked example.
+Use this package to display a Facet stage in React. It does not provide an
+agent brain, runtime process, product-domain fetch layer, or hosted control
+plane.
 
-## Live wiring contract
+## Bootstrap
 
-`useFacet` subscribes to one transport and exposes `tree`, `chat`, `send`,
-`record`, and `transition`. A complete host must also:
+`bootstrapRenderer({ catalog, registry, theme })` closes the browser trust
+boundary before a session renders. The catalog is what an agent may author; the
+registry is the trusted React code that mounts those tags. The two tag sets must
+match exactly, the catalog must pass Core validation, and the returned boundary
+is frozen for the session.
 
-1. create or memoize the transport once for a stable visitor;
-2. send the initial `visit` exactly once—the hook does not send it automatically,
-   and development Strict Mode may run effects twice;
-3. preserve the optional `fields` argument from `StageRenderer.onAction`;
-4. attach the latest `onViewSnapshot` value to outgoing events; and
-5. pass locally resolved navigate/toggle events from `onRecord` to the
-   transport's best-effort record channel.
+`createRegistry` is a helper for hosts assembling a custom registry. The default
+catalog/registry/theme trio is available from `@facet/assets` and
+`@facet/assets/react`.
 
-The canonical example uses only public exports from `@facet/react`,
-`@facet/client`, and `@facet/core`. Do not copy a smaller render-only snippet and
-mistake it for a complete live integration.
+## Rendering
 
-`useFacet(...).transition` identifies the current folded patch revision. Passing
-it to `StageRenderer` enables the root-replacement crossfade; omitting it keeps
-the latest tree visible without that crossfade.
+`StageRenderer` receives a validated component document and renders the selected
+screen. It skips or reduces unsafe persisted fragments without throwing, while
+valid siblings continue to render. That fail-safe behavior is not an authoring
+acceptance path: invalid model-authored markup must still be rejected before it
+reaches runtime or renderer state.
 
-## Rendering and style resolution
+The renderer owns modal framing, neutral empty/error states, data-binding
+refresh, subtree error boundaries, and local browser state such as selected
+screen and interaction snapshots. Components own their intrinsic React behavior;
+authored markup never supplies executable handlers, imports, raw CSS, or JSX.
 
-`StageRenderer` is the browser fail-safe boundary. Unknown Brick kinds,
-dangling ids, invalid styles, and unsafe media/link values are skipped or
-reduced without throwing; valid siblings continue rendering. This fallback does
-not make invalid agent authoring successful—the authoring boundary must reject
-and repair it first.
+## Live hook
 
-The renderer accepts one complete operator Theme through `theme` and resolves
-each Brick in this order:
-
-1. Theme default for that Brick;
-2. the same-Brick Preset named by `style.preset`;
-3. direct values in the Brick's `style`.
-
-`colorMode` is host/browser view state (`light`, `dark`, or `system`), not Facet
-Document syntax. Invalid Theme input falls back to `DEFAULT_THEME` as a whole.
-Patterns stay agent-side reference data and are never needed by the renderer.
-
-The renderer owns product-grade containment for existing Bricks. Text and
-richtext wrap within their assigned flow slots, richtext list markers and body
-columns align without arbitrary positioning, tables own a bounded horizontal
-scroll region (plus a bounded vertical one when a header pins) for dense data
-chrome, and charts compute internal axis, mark, tick, and legend geometry. A
-`box` `maxHeight` bounds a region to its own scrolling viewport, a `columns:"auto"`
-grid clamps its tracks so nothing overflows the container, and `collapse:"stack"`
-reflows a row to a column at a framework-owned narrow breakpoint through a
-per-stage `@media` stylesheet — never absolute positioning or a JS resize
-listener. These are renderer responsibilities, not new document syntax.
-
-Closed product-grade style/data fields project through that same pipeline:
-generic `media` icons render from the allow-listed icon set; `textWrap` and
-`lineClamp` become bounded text-flow CSS; table column `align` and `width`
-control cell alignment and renderer-owned column allocation; table `dividers`,
-`stickyHeader`, and `emptyLabel` become separators, a container-relative pinned
-header, and the empty-state cell; chart `lineStyle` maps to renderer-owned
-stroke patterns; chart `axis` routes a series to the primary or secondary scale;
-and chart plot axis/grid/label colors resolve from Theme tokens. The renderer
-does not expose raw SVG, arbitrary CSS, or authored chart geometry.
-
-## View-state ownership
-
-The renderer owns browser-local screen, toggle, table-sort, viewport, and
-effective color-mode state. `onViewSnapshot` publishes a read-only snapshot for
-the host to attach to the next event; it does not write the Facet Document.
-Likewise, local navigate/toggle actions update view state and use `onRecord`
-rather than causing a second document writer.
-
-Screen navigation and rendering use Core's fail-soft `resolveTreeScreen`
-policy, so the renderer and Core content checks agree on the preferred live
-screen, `entry`, first live screen, and plain-root fallback order.
-
-For replay, `StageRenderer.initialView` can seed the renderer-owned screen,
-toggle overrides, and table-sort overrides from a `ViewSnapshot` checkpoint.
-The value passes through Core's fail-soft `sanitizeView` once during component
-initialization. Malformed or out-of-bounds data is dropped, and an unavailable
-screen falls through the normal screen-resolution policy instead of throwing.
-`viewport` and effective `colorMode` remain current browser/host state; they are
-not restored from `initialView`.
+`useFacet(transport)` subscribes to a browser transport and returns the current
+stage, conversation items, send helpers, record helpers, and transition state. A
+complete host still sends the initial visit, preserves collected field payloads,
+and forwards explicit visitor events through its chosen transport.
 
 ```tsx
-<StageRenderer
-  key={checkpoint.id}
-  tree={checkpoint.tree}
-  initialView={checkpoint.view}
-  onViewSnapshot={rememberLatestView}
-/>
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_REGISTRY } from "@facet/assets/react";
+import { bootstrapRenderer, StageRenderer, useFacet } from "@facet/react";
+import type { FacetTransport } from "@facet/core";
+
+const boundary = bootstrapRenderer({
+  catalog: DEFAULT_CATALOG,
+  registry: DEFAULT_REGISTRY,
+  theme: DEFAULT_THEME,
+});
+
+if (!boundary.ok) throw new Error(boundary.detail);
+
+declare const transport: FacetTransport;
+
+function FacetView() {
+  const facet = useFacet({ transport });
+
+  return (
+    <StageRenderer
+      bootstrap={boundary}
+      document={facet.stage.document}
+      data={facet.stage.data}
+      onEvent={facet.sendEvent}
+    />
+  );
+}
 ```
 
-This is one-shot initialization, not a controlled state API. Changing
-`initialView` on an already-mounted renderer does not reset local state; remount
-the renderer (for example, with a checkpoint key) to hydrate another replay
-checkpoint. After initialization, navigate, toggle, and sort interactions stay
-renderer-owned and continue from the hydrated values. Hydration does not write
-the Facet Document or route an action to the agent. Omitting `initialView` keeps
-the existing entry/default-hidden/unsorted behavior.
+## Conversation surface
 
-Read next:
+`ConversationSurface` renders transport-neutral conversation items. It is kept
+separate from `StageRenderer` so hosts can place chat chrome wherever their
+application needs it without giving authored markup control over browser shell
+layout.
 
-- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md)
-- [Design System](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md)
-- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md)
+## Documentation
+
+- [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
+  complete React embedding flow.
+- [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
+  renderer trust boundary and fail-safe behavior.
+- [Package Boundaries](https://github.com/getfacet/facet/blob/main/docs/PACKAGE-BOUNDARIES.md) —
+  renderer package ownership.

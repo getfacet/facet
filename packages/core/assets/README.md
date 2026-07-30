@@ -1,10 +1,8 @@
 # @facet/assets
 
-Node-free default design-system data for Facet. This package depends only on
-`@facet/core` and exports exactly two values:
-
-- `DEFAULT_THEME` — one complete, validated Theme.
-- `DEFAULT_PATTERNS` — 21 exact, validated Pattern trees.
+Default Facet component catalog, semantic theme data, and trusted default React
+implementations. The package keeps plain data at the root entrypoint and React
+code behind the explicit browser-safe subpath.
 
 Role: **Core**.
 
@@ -12,70 +10,59 @@ Role: **Core**.
 npm install @facet/assets @facet/core
 ```
 
-Start with the practical
-[Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md).
-Use this package when the host wants Facet's bundled design data unchanged or
-as the complete base for an operator-owned Theme and Pattern list.
+## Root entrypoint
 
-## Default Theme
+`@facet/assets` exports exactly the default data a host can validate and pass
+to Core/runtime surfaces:
 
-`DEFAULT_THEME` contains the complete concrete design system used when an
-operator does not supply one:
+- `DEFAULT_CATALOG` — the registered default component tags and prop schemas.
+- `DEFAULT_COMPONENT_SPECS` — the component spec list used to build the catalog.
+- `DEFAULT_THEME` — one complete semantic theme.
 
-- closed token maps for spacing, typography, radii, borders, layout sizes, and
-  renderer measurements;
-- light and dark paint maps for semantic color, shadow, gradient, scrim, and
-  highlight names;
-- one default Brick style for every native Brick; and
-- optional same-Brick Presets with `description`, `useWhen`, optional
-  `avoidWhen`, and an unresolved token/fixed-name style bundle.
+The root entrypoint imports no React and no browser globals. A server can load
+the default catalog and theme without pulling renderer code into its graph.
 
-Agents author only the closed names in Brick `style`, such as
-`{ "preset": "panel", "gap": "lg" }`. Concrete CSS values remain operator
-Theme data. The renderer resolves Theme default, then same-Brick Preset, then
-direct Brick style.
+## React subpath
 
-The default sans stack is `Nunito, sans-serif`. This package exports data only;
-a host that wants the exact Nunito face must load the font in its own shell.
-
-The bundled Theme is a neutral baseline, not the ceiling for a brand. Product
-surfaces that need tighter density, stronger brand color, or exact repeated
-composition should extend `DEFAULT_THEME` into an operator-owned Theme/Preset
-set and pair it with an exact Pattern list. The package defaults stay generic
-and validated; service-specific benchmark assets live outside this package.
-
-## Default Patterns
-
-`DEFAULT_PATTERNS` contains these reusable references: `hero`, `card`,
-`section`, `empty-state`, `cta-button`, `form`, `fixed-filter`, `metric`,
-`tabs`, `nav`, `pricing-section`, `faq-section`, `feature-grid`,
-`dashboard-summary`, `settings-panel`, `support-triage`, `chart-table-view`,
-and the box-layout structures `app-shell`, `split-pane`, `product-grid`, and
-`media-shelf`.
-
-Each Pattern is an ordinary Facet tree plus discovery metadata:
+`@facet/assets/react` exports `DEFAULT_REGISTRY`, the trusted React
+implementation map for the same default tag set. Renderer bootstrap compares
+the active catalog with the registry exactly, so an authored component can only
+mount when both halves of the host trust boundary agree.
 
 ```ts check-docs
-import { DEFAULT_PATTERNS, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
+import { DEFAULT_REGISTRY } from "@facet/assets/react";
+import { bootstrapRenderer } from "@facet/react";
 
-const hero = DEFAULT_PATTERNS.find((pattern) => pattern.name === "hero");
-const panel = DEFAULT_THEME.presets?.box?.panel;
+const boot = bootstrapRenderer({
+  catalog: DEFAULT_CATALOG,
+  registry: DEFAULT_REGISTRY,
+  theme: DEFAULT_THEME,
+});
+
+if (!boot.ok) {
+  throw new Error(boot.detail);
+}
+
+console.log(boot.catalog.components.length);
 ```
 
-A Pattern has `name`, `description`, `useWhen`, optional `avoidWhen`, `root`,
-and `nodes`, plus the same optional `screens`, `entry`, and `data` fields as a
-Facet tree. Its Bricks already use the active Theme's Presets and direct style
-names. An agent may inspect a relevant Pattern, adapt its structure and style
-ideas, and then author ordinary Bricks. Reading a Pattern never inserts it or
-changes the stage.
+## Default design system
 
-The package contains no renderer, runtime, filesystem access, or provider code.
+The default theme is a neutral baseline for demos, examples, and hosts that do
+not need a custom visual system yet. Component props remain closed by the
+catalog; visual tokens remain host-owned theme data; and registered React
+components decide how those values render.
+
+Use this package unchanged for the built-in component set, or provide your own
+catalog/registry/theme trio when the host has a different trusted component
+system.
 
 ## Documentation
 
-- [Design System guide](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md) —
-  default assets, custom Theme/Preset/Pattern examples, and validation behavior.
+- [Design System](https://github.com/getfacet/facet/blob/main/docs/DESIGN-SYSTEM.md) —
+  catalog, registry, and theme ownership.
 - [Architecture](https://github.com/getfacet/facet/blob/main/docs/ARCHITECTURE.md) —
-  asset ownership and runtime boundaries.
+  trust boundary and runtime behavior.
 - [Getting Started](https://github.com/getfacet/facet/blob/main/docs/GETTING-STARTED.md) —
   supported adoption paths.

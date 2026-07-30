@@ -1,114 +1,227 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { validateTree, type ClientEvent, type ServerMessage } from "@facet/core";
-import { FacetRuntime } from "@facet/runtime";
-import { STUB_TREE, createStubAgent } from "./stub.js";
 
-function saysOf(messages: readonly ServerMessage[]): string[] {
-  return messages.flatMap((message) => (message.kind === "say" ? [message.text] : []));
+import {
+  parseMarkup,
+  serializeDocument,
+  validateAuthorMarkup,
+  type AgentEvent,
+  type AuthorValidationResult,
+  type ComponentDocument,
+  type ComponentNode,
+  type DataModel,
+  type DataPath,
+  type FacetTargetedMutationInput,
+  type FacetTargetedMutationResult,
+  type FacetToolSession,
+  type PayloadEvaluation,
+  type ServerFrame,
+  type StageRevision,
+} from "@facet/core";
+import {
+  FacetRuntime,
+  MemorySink,
+  MemoryStageStore,
+  bootstrapSession,
+  loadSession,
+} from "../../../core/runtime/src/index.js";
+
+// Test-only source import: @facet/reference-agent does not take a production
+// dependency on @facet/assets, but the stub fixture must remain renderable by
+// the shipped default catalog.
+import { DEFAULT_CATALOG, DEFAULT_THEME } from "../../../core/assets/src/index.js";
+import { STUB_MARKUP, createStubAgent } from "./stub.js";
+
+function validateDefaultMarkup(markup: string): AuthorValidationResult {
+  const parsed = parseMarkup(markup);
+  if (!parsed.ok) {
+    return { ok: false, error: parsed.error };
+  }
+  return validateAuthorMarkup(parsed.ast, DEFAULT_CATALOG, {});
 }
 
-function patchesOf(messages: readonly ServerMessage[]): readonly ServerMessage[] {
-  return messages.filter((message) => message.kind === "patch");
+function acceptedDocument(markup: string): ComponentDocument {
+  const result = validateDefaultMarkup(markup);
+  if (!result.ok) {
+    throw new Error(`expected accepted markup, got ${result.error.code}`);
+  }
+  return result.document;
+}
+
+function propText(node: ComponentNode | undefined, name: string): string | undefined {
+  const prop = node?.props[name];
+  if (prop === undefined) return undefined;
+  return prop.kind === "scalar" ? prop.value : `${prop.scheme}:${prop.target}`;
+}
+
+function fieldNames(document: ComponentDocument): readonly string[] {
+  return Object.values(document.nodes)
+    .filter((node) => node.tag === "Field")
+    .map((node) => propText(node, "name") ?? "")
+    .sort();
+}
+
+function buttonActions(document: ComponentDocument): readonly string[] {
+  return Object.values(document.nodes)
+    .filter((node) => node.tag === "Button")
+    .map((node) => propText(node, "action") ?? "")
+    .sort();
+}
+
+function event(
+  eventId: string,
+  collect: AgentEvent["collect"] = {},
+  eventName = "submit",
+): AgentEvent {
+  return {
+    eventId,
+    eventName,
+    sourceNodeId: "submit",
+    screen: "home",
+    stageRevision: 0,
+    collect,
+  };
+}
+
+class RecordingSession implements FacetToolSession {
+  readonly catalog = DEFAULT_CATALOG;
+  readonly data: DataModel = {};
+  document: ComponentDocument | null = null;
+  stageRevision: StageRevision = 0;
+  readonly appliedMarkup: string[] = [];
+
+  async applyAuthorMutation(markup: string): Promise<AuthorValidationResult> {
+    this.appliedMarkup.push(markup);
+    const result = validateDefaultMarkup(markup);
+    if (result.ok) {
+      this.document = result.document;
+      this.stageRevision += 1;
+    }
+    return result;
+  }
+
+  async applyTargetedMutation(
+    input: FacetTargetedMutationInput,
+  ): Promise<FacetTargetedMutationResult> {
+    const markup = input.kind === "remove_subtree" ? STUB_MARKUP : input.markup;
+    const result = validateDefaultMarkup(markup);
+    if (result.ok) {
+      this.document = result.document;
+      this.stageRevision += 1;
+    }
+    return result;
+  }
+
+  async publishData(_path: DataPath, _value: unknown): Promise<PayloadEvaluation> {
+    return { ok: true, chars: 0 };
+  }
 }
 
 describe("createStubAgent", () => {
-  it("authors only Preset and direct style syntax", async () => {
-    const { tree, issues } = validateTree(STUB_TREE);
-    expect(issues).toEqual([]);
-    expect(tree.nodes.home?.style).toEqual({ preset: "panel", gap: "lg" });
-    expect(tree.nodes.hero?.style).toEqual({ preset: "heading" });
-    expect(tree.nodes.submit?.style).toEqual({ preset: "primaryAction" });
-    expect(tree.nodes["submit-label"]?.style).toEqual({ preset: "actionLabel" });
+  it("authors default-catalog component markup, not the retired tree fixture", () => {
+    const source = readFileSync(new URL("./stub.ts", import.meta.url), "utf8");
+    expect(source).not.toContain("STUB_TREE");
+    expect(source).not.toContain("FacetTree"); // style-hard-cut: allowed-negative
+    expect(source).not.toContain("validateTree");
 
-    const retiredKeys = [["vari", "ant"].join(""), ["to", "ne"].join(""), ["sche", "me"].join("")];
-    const serialized = JSON.stringify(STUB_TREE);
-    for (const key of retiredKeys) expect(serialized).not.toContain(`"${key}"`);
+    const document = acceptedDocument(STUB_MARKUP);
+    const serialized = serializeDocument(document);
+    expect(serialized.issues).toEqual([]);
+    expect(serialized.text).toContain('<Facet entry="home">');
+    expect(serialized.text).toContain("<Screen");
 
-    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
-    const visitor = { visitorId: "styled-retry" };
-    await rt.handle(visitor, { kind: "visit", visitor });
-    await rt.handle(visitor, { kind: "message", text: "first" });
-    await rt.handle(visitor, { kind: "message", text: "retry" });
-    const retried = await rt.stageFor(visitor.visitorId);
-    expect(retried?.nodes["stub-echo"]).toMatchObject({
-      type: "text",
-      value: "echo: retry",
-      style: { preset: "body", color: "accent" },
+    expect(document.entry).toBe("home");
+    expect(fieldNames(document)).toEqual(["email", "name"]);
+    expect(buttonActions(document)).toEqual(["agent:submit", "nav:about", "nav:home"]);
+
+    const submit = Object.values(document.nodes).find(
+      (node) => node.tag === "Button" && propText(node, "action") === "agent:submit",
+    );
+    expect(propText(submit, "collect")).toBe("name email");
+  });
+
+  it("renders STUB_MARKUP once through the runtime session and returns sorted collect text", async () => {
+    const agent = createStubAgent();
+    const session = new RecordingSession();
+    const collect: AgentEvent["collect"] = {
+      name: { kind: "value", value: "Ada" },
+      token: { kind: "omitted_sensitive" },
+      email: { kind: "value", value: "a@b.c" },
+      missing: { kind: "collect_source_unavailable" },
+    };
+
+    const first = await agent.run({ event: event("turn1", collect), session });
+    const second = await agent.run({ event: event("turn1", collect), session });
+
+    expect(session.appliedMarkup).toEqual([STUB_MARKUP]);
+    expect(session.document).toEqual(acceptedDocument(STUB_MARKUP));
+    expect(first.text).toBe(
+      "submit: email=a@b.c missing=collect_source_unavailable name=Ada token=omitted_sensitive",
+    );
+    expect(second).toEqual(first);
+  });
+
+  it("renders through real FacetRuntime with one authorized document patch and one revision", async () => {
+    const boot = bootstrapSession({ catalog: DEFAULT_CATALOG, theme: DEFAULT_THEME });
+    if (!boot.ok) throw new Error(`bootstrap failed: ${boot.code}`);
+    const store = new MemoryStageStore();
+    const sink = new MemorySink();
+    const delivered: ServerFrame[] = [];
+    const saved = await store.save("quickstart:v1", boot.session, 0);
+    expect(saved.ok).toBe(true);
+
+    const runtime = new FacetRuntime({
+      store,
+      sink,
+      agent: createStubAgent(),
+      deliver(entry) {
+        delivered.push(entry.frame);
+      },
+      now: () => 123,
     });
+
+    const result = await runtime.handle({
+      sessionKey: "quickstart:v1",
+      event: event("turn-runtime"),
+    });
+    const loaded = await loadSession(store, "quickstart:v1");
+    const expectedDocument = acceptedDocument(STUB_MARKUP);
+    const patch = delivered.find((frame) => frame.kind === "patch");
+
+    expect(result).toMatchObject({ outcome: "accepted", receipt: { triggerId: "turn-runtime" } });
+    expect(loaded.session.document).toEqual(expectedDocument);
+    expect(loaded.session.stageRevision).toBe(1);
+    expect(patch).toBeDefined();
+    if (patch?.kind !== "patch") throw new Error("expected patch frame");
+    expect(patch.stageRevision).toBe(1);
+    expect(patch.ops).toHaveLength(1);
+    expect(patch.ops[0]).toEqual({
+      op: "replace",
+      path: "/document",
+      value: expectedDocument,
+    });
+    expect(
+      patch.ops.some((op) => op.path === "/document" && "value" in op && op.value === STUB_MARKUP),
+    ).toBe(false);
   });
 
-  it("STUB_TREE is valid, renderable, and carries the signup form + screens", () => {
-    const { tree, issues } = validateTree(STUB_TREE);
-    expect(issues).toEqual([]);
+  it("keeps non-collect events deterministic and argument-aware", async () => {
+    const agent = createStubAgent();
+    const session = new RecordingSession();
+    const input: AgentEvent = { ...event("turn2", {}, "refresh"), arg: "north" };
 
-    const root = tree.nodes[tree.root];
-    expect(root?.type).toBe("box");
-    if (root?.type === "box") expect(root.children.length).toBeGreaterThan(0);
+    expect(await agent.run({ event: input, session })).toEqual({ text: "stub: refresh north" });
+    expect(await agent.run({ event: input, session })).toEqual({ text: "stub: refresh north" });
+    expect(session.appliedMarkup).toEqual([STUB_MARKUP]);
+  });
 
-    const signup = tree.nodes["signup"];
-    expect(signup?.type).toBe("box");
-    if (signup?.type === "box") {
-      const names = signup.children
-        .map((id) => tree.nodes[id])
-        .flatMap((n) => (n?.type === "input" ? [n.name] : []));
-      expect(names).toContain("name");
-      expect(names).toContain("email");
-    }
+  it("does not expose an invented patch-producing handleEvent path", () => {
+    const agent = createStubAgent();
+    const source = readFileSync(new URL("./stub.ts", import.meta.url), "utf8");
 
-    const presses = Object.values(tree.nodes).flatMap((n) =>
-      n.type === "box" && n.onPress !== undefined ? [n.onPress] : [],
+    expect("handleEvent" in agent).toBe(false);
+    expect(source).not.toMatch(
+      /TurnOutcome|deriveMessageId|patches:\s*Object\.freeze|value:\s*STUB_MARKUP/u,
     );
-    expect(presses).toContainEqual(
-      expect.objectContaining({ kind: "agent", name: "submit", collect: "signup" }),
-    );
-    expect(Object.keys(tree.screens ?? {}).sort()).toEqual(["about", "home"]);
-    expect(tree.entry).toBe("home");
-    expect(presses).toContainEqual({ kind: "navigate", to: "about" });
-    expect(presses).toContainEqual({ kind: "navigate", to: "home" });
-  });
-
-  it("visit renders STUB_TREE; message patches stub-echo + says; action echoes sorted fields", async () => {
-    const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
-    const visitor = { visitorId: "v" };
-
-    const onVisit = (await rt.handle(visitor, { kind: "visit", visitor })).messages;
-    expect(patchesOf(onVisit)).toHaveLength(1);
-    const stage = await rt.stageFor("v");
-    expect(stage?.nodes["signup"]).toBeDefined();
-
-    const onMessage = (await rt.handle(visitor, { kind: "message", text: "hello" })).messages;
-    expect(saysOf(onMessage)).toEqual(["stub: hello"]);
-    const echoed = await rt.stageFor("v");
-    expect(echoed?.nodes["stub-echo"]).toMatchObject({ type: "text", value: "echo: hello" });
-
-    const onAction = (
-      await rt.handle(visitor, {
-        kind: "tap",
-        action: { kind: "agent", name: "submit", collect: "signup" },
-        fields: { name: "Ada", email: "a@b.c" },
-      })
-    ).messages;
-    expect(saysOf(onAction)).toEqual(["submit: email=a@b.c name=Ada"]);
-  });
-
-  it("is deterministic: the same event sequence yields deep-equal message sequences", async () => {
-    async function run(): Promise<ServerMessage[][]> {
-      const rt = new FacetRuntime({ agentId: "stub", agent: createStubAgent() });
-      const visitor = { visitorId: "v" };
-      const events: ClientEvent[] = [
-        { kind: "visit", visitor },
-        { kind: "message", text: "hello" },
-        { kind: "message", text: "retry" },
-        {
-          kind: "tap",
-          action: { kind: "agent", name: "submit", collect: "signup" },
-          fields: { name: "Ada", email: "a@b.c" },
-        },
-      ];
-      const out: ServerMessage[][] = [];
-      for (const event of events) out.push([...(await rt.handle(visitor, event)).messages]);
-      return out;
-    }
-    expect(await run()).toEqual(await run());
   });
 });

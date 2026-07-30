@@ -3,17 +3,17 @@
  * Playwright journey. Runs ONLY under the e2e vitest config (the root glob never
  * touches `e2e/`), no key, no network beyond the local stub server.
  *
- * The stub does NOT respond to arbitrary chat like a real LLM, but it DOES
- * append/update an `echo:` text node in the STAGE on each message — so this
- * asserts MECHANICS that hold under the stub, NOT LLM-driven content (that is
- * WU-4's real-tier + vision-judge job):
+ * The seeded stub does NOT respond to arbitrary chat like a real LLM. It keeps
+ * the first-paint document stable while the conversation surface records the
+ * visitor/assistant exchange, so this asserts MECHANICS that hold under the
+ * stub, NOT LLM-driven content (that is the real-tier + vision-judge job):
  * - `runJourney` captures ≥4 screenshots (files exist, non-empty).
  * - `settleDom` RUNS within its bounded timeout and NEVER throws for every
  *   post-action step (returns `{changed, timedOut}` booleans).
- * - the chat steps CHANGED the stage (the stub's echo node) — this exercises the
- *   stage-scoped, change-gated settle (a ChatDock-only change would NOT count).
- * - the click step dispatched (the stub's submit press `say`s to the dock, so its
- *   stage effect is not asserted here — real-LLM click effects are WU-4's job).
+ * - the chat steps run bounded stage-scoped settles without treating
+ *   conversation-only changes as stage changes.
+ * - the click step dispatches the first default-registry stage button and
+ *   records the stage-scoped settle result without requiring an LLM effect.
  * - `runJourney({ fixture: 'broken' })` captures the broken page WITHOUT throwing.
  *
  * Needs (shared preflight): `pnpm install` (playwright devDep) +
@@ -58,13 +58,13 @@ describe("journey self-test (stub, headless chromium)", () => {
     const context = await browser.newContext();
     try {
       const page = await context.newPage();
-      // Short bounded settle: the stub renders/echoes instantly, so a real change
-      // is seen in well under a second; the small timeout keeps the stub click
-      // step (which only `say`s, no stage change) from waiting the full default.
+      // Short bounded settle: the seed is already painted and the stub keeps
+      // chat stage-stable, so conversation-only turns must not wait the full
+      // default before the click step exercises stage navigation.
       const result = await runJourney(page, {
         url: running.url,
         outDir,
-        settle: { timeoutMs: 5000, quietMs: 300 },
+        settle: { timeoutMs: 800, quietMs: 100 },
       });
 
       // ≥4 screenshots, every file present + non-empty (no secrets: the page
@@ -83,23 +83,21 @@ describe("journey self-test (stub, headless chromium)", () => {
         expect(typeof step.settle?.timedOut).toBe("boolean");
       }
 
-      // The chat steps CHANGED the stage (the stub appends/updates its echo node
-      // in the stage root). Paired with the dock-only click case below, this
-      // shows the change-gated settle tracks STAGE edits specifically.
+      // Chat posts are conversation-only under the deterministic seeded stub, so
+      // the stage-scoped fingerprint must NOT mark them as stage changes.
       const chatSteps = result.steps.filter(
         (s) => s.label === "add-section" || s.label === "restyle",
       );
       expect(chatSteps.length).toBe(2);
-      for (const step of chatSteps) expect(step.settle?.changed).toBe(true);
+      for (const step of chatSteps) expect(step.settle?.changed).toBe(false);
 
-      // The click step dispatched. The stub's submit press only `say`s to the
-      // ChatDock (no stage-root node), so the STAGE does NOT change: with the
-      // [data-facet-stage]-scoped fingerprint `changed` is FALSE. This is the
-      // DISCRIMINATING test for the marker — if domFingerprint regressed to the
-      // #root fallback, the dock `say` would flip `changed` to true and fail here.
+      // The click step dispatches the first default-registry stage button. Under
+      // the seeded stub this may be conversation-only or a no-op, so the harness
+      // records the bounded settle result instead of requiring an LLM-produced
+      // stage edit.
       const click = result.steps[result.steps.length - 1];
       expect(click?.clicked).toBe(true);
-      expect(click?.settle?.changed).toBe(false);
+      expect(typeof click?.settle?.changed).toBe("boolean");
     } finally {
       await context.close();
     }

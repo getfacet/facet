@@ -1,130 +1,106 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, expectTypeOf, it } from "vitest";
-import type { FacetPattern } from "@facet/core";
+
+import { describe, expect, it } from "vitest";
+
 import * as agentTools from "./index.js";
-import {
-  FACET_AGENT_ROLE_PROMPT,
-  FACET_ASSET_PRIVACY_PROMPT,
-  FACET_PAGE_BRIEF_HEADING,
-  FACET_PAGE_EXPERIENCE_PROMPT,
-  FACET_STAGE_TOOL_NAMES,
-  FACET_STATE_EDITING_PROMPT,
-  FACET_TOOL_PLAYBOOK_PROMPT,
-  FACET_TOOL_RESULT_CONTRACT_PROMPT,
-  buildFacetAgentSystemPrompt,
-  formatAgentToolObservation,
-  parseAgentToolObservation,
-  selectPatternReference,
-} from "./index.js";
-import type {
-  FacetAgentSystemPromptOptions,
-  FacetPromptAssets,
-  GetBrickSpecToolInput,
-  GetPatternToolInput,
-  GetPresetToolInput,
-  GetStyleChoicesToolInput,
-  StageToolAssets,
-} from "./index.js";
 
-// Legacy vocabulary is built at runtime so the removed tokens never appear as
-// source literals (same idiom as theme.test.ts).
-const legacyNaming = new RegExp(["st", "amp"].join(""), "i");
-const legacyTool = ["use_", "st", "amp"].join("");
-const retiredTool = ["use", "composition"].join("_");
-const retiredInput = ["Use", "Composition", "ToolInput"].join("");
+const BARREL_EXPORT_CONTRACT = [
+  "FACET_TOOL_NAMES",
+  "FACET_TOOL_SPECS",
+  "FacetToolName",
+  "FacetToolSpec",
+  "executeFacetTool",
+  "FacetToolResult",
+  "buildTurnObservation",
+  "TurnObservation",
+  "FACET_PROMPT_KIT",
+  "createMarkupBuffer",
+  "MarkupBuffer",
+  "CatalogIndex",
+  "RenderPageInput",
+  "InsertSubtreeInput",
+  "ReplaceSubtreeInput",
+  "UpdateNodeInput",
+  "RemoveSubtreeInput",
+  "ReadComponentSpecInput",
+  "ReadScreenInput",
+  "ReadDataInput",
+  "PublishDataInput",
+  "FacetToolSession",
+] as const;
 
-describe("agent-tools barrel exports", () => {
-  it("exports Pattern selection and the four current asset-read tools", () => {
-    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+const VALUE_EXPORTS = [
+  "FACET_PROMPT_KIT",
+  "FACET_TOOL_NAMES",
+  "FACET_TOOL_SPECS",
+  "buildTurnObservation",
+  "createMarkupBuffer",
+  "executeFacetTool",
+] as const;
 
-    expect(source).toContain("selectPatternReference");
-    expect(source).toContain("GetPatternToolInput");
-    expect(source).toContain("GetPresetToolInput");
-    expect(source).toContain("GetBrickSpecToolInput");
-    expect(source).toContain("GetStyleChoicesToolInput");
-    expect(source).not.toContain(retiredInput);
-    expect(source).not.toContain("formatCompositionObservation");
-    expect("selectPatternReference" in agentTools).toBe(true);
-    expect("formatCompositionObservation" in agentTools).toBe(false);
-    expect(FACET_STAGE_TOOL_NAMES).toContain("get_pattern");
-    expect(FACET_STAGE_TOOL_NAMES).toContain("get_preset");
-    expect(FACET_STAGE_TOOL_NAMES).toContain("get_brick_spec");
-    expect(FACET_STAGE_TOOL_NAMES).toContain("get_style_choices");
-    expect(FACET_STAGE_TOOL_NAMES).not.toContain(retiredTool);
+function source(path: string): string {
+  return readFileSync(new URL(path, import.meta.url), "utf8");
+}
+
+function exportedNames(text: string): readonly string[] {
+  const names = new Set<string>();
+  const re = /export(?: type)? \{([^}]+)\}/g;
+  for (const match of text.matchAll(re)) {
+    const body = match[1];
+    if (body === undefined) {
+      continue;
+    }
+    for (const raw of body.split(",")) {
+      const name = raw
+        .trim()
+        .split(/\s+as\s+/u)
+        .at(-1)
+        ?.trim();
+      if (name !== undefined && name.length > 0) {
+        names.add(name);
+      }
+    }
+  }
+  return [...names].sort();
+}
+
+describe("@facet/agent-tools barrel", () => {
+  it("exports exactly Barrel Export Contract list 6 and no retired names", () => {
+    const text = source("./index.ts");
+
+    expect(text).not.toMatch(/export\s+\*/u);
+    expect(exportedNames(text)).toEqual([...BARREL_EXPORT_CONTRACT].sort());
+    expect(text).not.toMatch(/SayToolInput|StageToolAssets|PatternIndexEntry|PresetIndexEntry/u);
+    expect(Object.keys(agentTools).sort()).toEqual([...VALUE_EXPORTS].sort());
+    expect("FacetToolSession" in agentTools).toBe(false);
   });
 
-  it("keeps retired composition and legacy naming out of the public surface", () => {
-    const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8");
+  it("pins the public roster and package dependency boundary", () => {
+    expect(agentTools.FACET_TOOL_NAMES).toEqual([
+      "render_page",
+      "insert_subtree",
+      "replace_subtree",
+      "update_node",
+      "remove_subtree",
+      "read_component_spec",
+      "read_screen",
+      "read_data",
+      "publish_data",
+    ]);
 
-    expect(source).not.toContain(retiredInput);
-    expect(source).not.toMatch(legacyNaming);
-
-    expect(FACET_STAGE_TOOL_NAMES).not.toContain(retiredTool);
-    expect(FACET_STAGE_TOOL_NAMES).not.toContain(legacyTool);
-    expectTypeOf(selectPatternReference).toEqualTypeOf<
-      (patterns: readonly FacetPattern[], name: string) => FacetPattern | undefined
-    >();
-  });
-
-  it("exports the agent tool observation helpers", () => {
-    const observation = formatAgentToolObservation({
-      tool: "say",
-      status: "ok",
-      outcome: "no_stage_change",
-      message: "Sent a chat message.",
-    });
-
-    expect(parseAgentToolObservation(observation.text)).toMatchObject({
-      tool: "say",
-      outcome: "no_stage_change",
-      applied: false,
-    });
-  });
-
-  it("exports the prompt-kit runtime surface and types", () => {
-    const prompt = buildFacetAgentSystemPrompt({
-      pageBrief: "# Agent page\n\nBuild the visible page.",
-    });
-
-    expect(prompt).toContain(FACET_AGENT_ROLE_PROMPT);
-    expect(prompt).toContain(FACET_PAGE_EXPERIENCE_PROMPT);
-    expect(prompt).toContain(FACET_STATE_EDITING_PROMPT);
-    expect(prompt).toContain(FACET_TOOL_PLAYBOOK_PROMPT);
-    expect(prompt).toContain(FACET_TOOL_RESULT_CONTRACT_PROMPT);
-    expect(prompt).toContain(FACET_ASSET_PRIVACY_PROMPT);
-    expect(prompt).toContain(FACET_PAGE_BRIEF_HEADING);
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_pattern");
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_preset");
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_brick_spec");
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).toContain("get_style_choices");
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toContain(retiredTool);
-    expect(FACET_TOOL_PLAYBOOK_PROMPT).not.toMatch(legacyNaming);
-    expectTypeOf<FacetPromptAssets>().toEqualTypeOf<StageToolAssets>();
-    expectTypeOf<FacetPromptAssets>().toMatchTypeOf<{
-      readonly theme: unknown;
-      readonly patterns: readonly unknown[];
-      readonly brickIndex: readonly unknown[];
-      readonly presetIndex: readonly unknown[];
-      readonly patternIndex: readonly unknown[];
-    }>();
-    expectTypeOf<FacetAgentSystemPromptOptions>().toMatchTypeOf<{
-      readonly pageBrief: string;
-      readonly assets?: FacetPromptAssets;
-    }>();
-    expectTypeOf<GetPatternToolInput>().toEqualTypeOf<{
-      readonly name: string;
-    }>();
-    expectTypeOf<GetPresetToolInput>().toEqualTypeOf<{
-      readonly brick: FacetPattern["nodes"][string]["type"];
-      readonly name: string;
-    }>();
-    expectTypeOf<GetBrickSpecToolInput>().toEqualTypeOf<{
-      readonly type: FacetPattern["nodes"][string]["type"];
-    }>();
-    expectTypeOf<GetStyleChoicesToolInput>().toEqualTypeOf<{
-      readonly brick: FacetPattern["nodes"][string]["type"];
-      readonly target: string;
-      readonly property: string;
-    }>();
+    const productionSources = [
+      "./types.ts",
+      "./specs.ts",
+      "./executor.ts",
+      "./executor-mutations.ts",
+      "./executor-reads.ts",
+      "./executor-publish.ts",
+      "./author-errors.ts",
+      "./observation.ts",
+      "./prompt-kit.ts",
+      "./buffer.ts",
+      "./index.ts",
+    ].map(source);
+    expect(productionSources.join("\n")).not.toContain("@facet/runtime");
   });
 });

@@ -1,321 +1,296 @@
-import type { BoxStyle, FacetTheme } from "@facet/core";
-import type { CSSProperties } from "react";
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
-import { DEFAULT_THEME } from "@facet/assets";
+/**
+ * The proof that a session's theme comes from the host and from nowhere else.
+ *
+ * One claim carries this file: **a missing theme is a bootstrap error, not a
+ * silent default.** The retired renderer answered an omitted theme with
+ * `@facet/assets`'s `DEFAULT_THEME`, which made "the host owns the theme" a
+ * convention rather than a rule — a page whose theme never arrived rendered
+ * anyway, in someone else's palette, with nothing naming the omission
+ * (RISK-API-7). So absence is tested from the outside: the refusal is asserted
+ * to carry **no `theme` key at all**, which is the only assertion a fallback
+ * cannot pass, and the absent code is asserted to be *different* from the code
+ * `validateTheme` gives an unusable object, so "you sent nothing" and "you sent
+ * something wrong" stay tellable apart.
+ *
+ * The second claim is narrower and just as easy to lose: `resolveTheme` **relays
+ * the token contract rather than restating it**. Every rejection below is
+ * asserted against a literal code and location written in this file — not
+ * against a second call to `validateTheme`, which would agree with any
+ * re-implementation as readily as with a relay.
+ *
+ * Two themes are used throughout rather than one. A function that returned a
+ * constant satisfies every assertion made under a single theme, so the accepted
+ * value is checked against two complete, disjoint token sets.
+ *
+ * The suite reads `node:fs` for a source scan, the same exception
+ * `containment.test.ts` and `modal-frame.test.tsx` take. The scan states two
+ * things a rendered value cannot: that this module names `@facet/assets`
+ * nowhere, and that its one parameter carries **no default value** — a
+ * defaulted parameter would swallow the very absence this file is about, and
+ * every behavioural assertion here would still pass.
+ */
+
+import { themeToCssVars } from "@facet/core";
+import type { FacetTheme } from "@facet/core";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { boxStyle, resolveTheme } from "./theme.js";
-import { resolveBrickStyle } from "./style-resolver.js";
-import { TABLE_STICKY_MAX_HEIGHT, tableScrollContainmentStyle } from "./layout-contract.js";
 
-const NON_PAINT_GROUPS = [
-  "space",
-  "fontSize",
-  "fontFamily",
-  "fontWeight",
-  "radius",
-  "borderWidth",
-  "aspectRatio",
-  "minHeight",
-  "maxWidth",
-  "layoutWidth",
-  "maxHeight",
-  "letterSpacing",
-  "lineHeight",
-  "controlHeight",
-  "indicatorSize",
-  "progressThickness",
-  "chartThickness",
-] as const;
+import { resolveTheme } from "./theme.js";
 
-const PAINT_GROUPS = ["color", "shadow", "gradient", "scrim", "highlight"] as const;
+const LIGHT: FacetTheme = {
+  color: {
+    background: "#f7f7f7",
+    surface: "#ffffff",
+    border: "#dcdcdc",
+    text: "#101010",
+    textMuted: "#6b6b6b",
+    accent: "#1d4ed8",
+    onAccent: "#ffffff",
+    success: "#15803d",
+    warning: "#b45309",
+    danger: "#b91c1c",
+  },
+  space: { xs: "0.25rem", sm: "0.5rem", md: "0.75rem", lg: "1rem", xl: "1.5rem" },
+  radius: { sm: "2px", md: "6px", lg: "12px", full: "9999px" },
+  borderWidth: { thin: "1px", thick: "2px" },
+  shadow: {
+    sm: "0 1px 2px rgba(0, 0, 0, 0.08)",
+    md: "0 4px 8px rgba(0, 0, 0, 0.1)",
+    lg: "0 12px 32px rgba(0, 0, 0, 0.2)",
+  },
+  fontFamily: { sans: "Inter, sans-serif", mono: "Menlo, monospace" },
+  fontSize: { xs: "0.75rem", sm: "0.875rem", md: "1rem", lg: "1.25rem", xl: "1.75rem" },
+  fontWeight: { regular: "400", medium: "500", bold: "700" },
+  lineHeight: { tight: "1.2", normal: "1.5", relaxed: "1.7" },
+};
 
-function customTheme(): FacetTheme {
-  return {
-    ...DEFAULT_THEME,
-    name: "custom",
-    tokens: {
-      ...DEFAULT_THEME.tokens,
-      space: { ...DEFAULT_THEME.tokens.space, md: "3rem" },
-      paint: {
-        light: {
-          ...DEFAULT_THEME.tokens.paint.light,
-          color: { ...DEFAULT_THEME.tokens.paint.light.color, accent: "#123456" },
-        },
-        dark: {
-          ...DEFAULT_THEME.tokens.paint.dark,
-          color: { ...DEFAULT_THEME.tokens.paint.dark.color, accent: "#abcdef" },
-        },
-      },
-    },
-  };
+const DARK: FacetTheme = {
+  color: {
+    background: "#0b0b0f",
+    surface: "#17171d",
+    border: "#33333d",
+    text: "#f2f2f5",
+    textMuted: "#9a9aa6",
+    accent: "#7dd3fc",
+    onAccent: "#04121b",
+    success: "#4ade80",
+    warning: "#fbbf24",
+    danger: "#f87171",
+  },
+  space: { xs: "0.2rem", sm: "0.45rem", md: "0.7rem", lg: "1.1rem", xl: "1.6rem" },
+  radius: { sm: "3px", md: "7px", lg: "14px", full: "8888px" },
+  borderWidth: { thin: "2px", thick: "4px" },
+  shadow: {
+    sm: "0 1px 3px rgba(0, 0, 0, 0.5)",
+    md: "0 5px 9px rgba(0, 0, 0, 0.6)",
+    lg: "0 14px 36px rgba(0, 0, 0, 0.7)",
+  },
+  fontFamily: { sans: "Iosevka Aile, sans-serif", mono: "Iosevka, monospace" },
+  fontSize: { xs: "0.7rem", sm: "0.8rem", md: "0.95rem", lg: "1.2rem", xl: "1.7rem" },
+  fontWeight: { regular: "350", medium: "550", bold: "750" },
+  lineHeight: { tight: "1.1", normal: "1.45", relaxed: "1.8" },
+};
+
+/** A theme with one token removed, built without mutating the fixture. */
+function withoutAccent(): unknown {
+  const color = Object.fromEntries(
+    Object.entries(LIGHT.color).filter(([token]) => token !== "accent"),
+  );
+  return { ...LIGHT, color };
 }
 
-describe("resolveTheme", () => {
-  it("resolves every complete Theme token group", () => {
-    const resolved = resolveTheme(DEFAULT_THEME);
+/** The rejection's keys, so a stray `theme` on the refusal branch is visible. */
+function keysOf(value: object): readonly string[] {
+  return Object.keys(value).sort();
+}
 
-    expect(resolved.name).toBe("default");
-    for (const group of NON_PAINT_GROUPS) {
-      expect(resolved[group]).toEqual(DEFAULT_THEME.tokens[group]);
-      expect(Object.getPrototypeOf(resolved[group])).toBeNull();
+function sourceOf(file: string): string {
+  return readFileSync(join(dirname(fileURLToPath(import.meta.url)), file), "utf8");
+}
+
+/**
+ * Every module specifier a source imports, however the import is spelled.
+ *
+ * The dependency edge is what D-09 is about, so the scan reads the import
+ * surface rather than the whole file: naming `@facet/assets` in a docblock —
+ * which this module does, to say what it no longer reaches for — is not an edge.
+ */
+function importedModules(source: string): readonly string[] {
+  return [...source.matchAll(/(?:from|import|require)\s*\(?\s*["']([^"']+)["']/g)].map(
+    (match) => match[1] ?? "",
+  );
+}
+
+describe("a theme the host never supplied", () => {
+  it("is refused with a code of its own and hands back nothing to render with", () => {
+    const result = resolveTheme(undefined);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("an absent theme was accepted");
     }
-    for (const group of PAINT_GROUPS) {
-      expect(resolved[group]).toEqual(DEFAULT_THEME.tokens.paint.light[group]);
-      expect(Object.getPrototypeOf(resolved[group])).toBeNull();
+    expect(result.code).toBe("missing_bootstrap_theme");
+    expect(result.at).toBe("");
+    expect(result.detail.length).toBeGreaterThan(0);
+    // The assertion a fallback cannot pass. `toEqual` would ignore a `theme`
+    // key whose value happened to be `undefined`, so the key set is read.
+    expect(keysOf(result)).toEqual(["at", "code", "detail", "ok"]);
+    expect("theme" in result).toBe(false);
+  });
+
+  it("refuses null the same way, since neither spelling of absence is a theme", () => {
+    const result = resolveTheme(null);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("a null theme was accepted");
     }
-    expect(resolved.defaults).toEqual(DEFAULT_THEME.defaults);
-    expect(resolved.presets).toEqual(DEFAULT_THEME.presets);
+    expect(result.code).toBe("missing_bootstrap_theme");
+    expect("theme" in result).toBe(false);
   });
 
-  it("uses a valid custom Theme whole rather than overlaying a partial document", () => {
-    const theme = customTheme();
-    const resolved = resolveTheme(theme);
+  it("says something different from what an unusable theme says", () => {
+    // "You sent nothing" and "you sent something wrong" are different faults a
+    // host fixes differently, so one code may not stand in for the other.
+    const absent = resolveTheme(undefined);
+    const unusable = resolveTheme("a theme, allegedly");
 
-    expect(resolved.name).toBe("custom");
-    expect(resolved.space.md).toBe("3rem");
-    expect(resolved.color.accent).toBe("#123456");
-  });
-
-  it("changes paint only between light and dark modes", () => {
-    const theme = customTheme();
-    const light = resolveTheme(theme, "light");
-    const dark = resolveTheme(theme, "dark");
-
-    expect(light.colorMode).toBe("light");
-    expect(dark.colorMode).toBe("dark");
-    for (const group of NON_PAINT_GROUPS) expect(dark[group]).toEqual(light[group]);
-    expect(dark.defaults).toEqual(light.defaults);
-    expect(dark.presets).toEqual(light.presets);
-    expect(light.color.accent).toBe("#123456");
-    expect(dark.color.accent).toBe("#abcdef");
-    expect(dark.color).not.toEqual(light.color);
-  });
-
-  it("falls back as a whole for incomplete, hostile, or unknown mode input", () => {
-    const fallback = resolveTheme();
-    const incomplete = resolveTheme({
-      name: "partial",
-      tokens: { space: { md: "4rem" } },
-    });
-    const { proxy, revoke } = Proxy.revocable({}, {});
-    revoke();
-    const hostile = resolveTheme(proxy, "dark");
-    const unknownMode = resolveTheme(DEFAULT_THEME, "sepia");
-
-    expect(incomplete).toEqual(fallback);
-    expect(hostile).toEqual(resolveTheme(DEFAULT_THEME, "dark"));
-    expect(unknownMode.colorMode).toBe("light");
-    expect(unknownMode.color).toEqual(DEFAULT_THEME.tokens.paint.light.color);
-    expect((fallback.color as Record<string, unknown>)["constructor"]).toBeUndefined();
-    expect((fallback.space as Record<string, unknown>)["__proto__"]).toBeUndefined();
+    expect(absent.ok).toBe(false);
+    expect(unusable.ok).toBe(false);
+    if (absent.ok || unusable.ok) {
+      throw new Error("a fault was accepted");
+    }
+    expect(unusable.code).toBe("theme_not_an_object");
+    expect(absent.code).not.toBe(unusable.code);
   });
 });
 
-// The renderer's private vertical-scroll cap (SCROLL_MAX_HEIGHT in
-// layout-contract.ts, not exported). Pinned as a literal here so the DC-006
-// parity and R1 "no clobber" checks are falsifiable.
-const RENDERER_SCROLL_CAP = "20rem";
+describe("a complete theme", () => {
+  it("is accepted, frozen, and rebuilt rather than borrowed", () => {
+    const result = resolveTheme(LIGHT);
 
-const markupOf = (style: CSSProperties): string =>
-  renderToStaticMarkup(createElement("div", { style }));
-
-const assertNoOverlayEmission = (css: CSSProperties): void => {
-  const markup = markupOf(css);
-  expect(markup).not.toContain("position:");
-  expect(markup).not.toContain("z-index:");
-  expect(markup).not.toContain("inset:");
-};
-
-describe("boxStyle box layout translation", () => {
-  const theme = resolveTheme(DEFAULT_THEME);
-
-  // ── R5: basis × grow ──
-  it("emits flexBasis + flexShrink:0 for basis and NEVER flexGrow (R5/DC-001)", () => {
-    const css = boxStyle({ basis: "sm" }, theme);
-    expect(css.flexBasis).toBe(theme.layoutWidth.sm);
-    expect(css.flexShrink).toBe(0);
-    expect(css.flexGrow).toBeUndefined();
+    expect(result.ok).toBe(true);
+    if (!result.ok) {
+      throw new Error(`a complete theme was refused: ${result.code}`);
+    }
+    expect(result.theme).toEqual(LIGHT);
+    expect(Object.isFrozen(result.theme)).toBe(true);
+    // The host keeps its own object; the session holds the contract's rebuild,
+    // so a later mutation of the host's literal cannot reach the page.
+    expect(result.theme).not.toBe(LIGHT);
   });
 
-  it("keeps flexGrow:1 sole-owned by grow when basis and grow coexist (R5)", () => {
-    const css = boxStyle({ basis: "sm", grow: true }, theme);
-    expect(css.flexBasis).toBe(theme.layoutWidth.sm);
-    expect(css.flexShrink).toBe(0);
-    expect(css.flexGrow).toBe(1);
+  it("answers with the theme it was handed, under two disjoint token sets", () => {
+    // A constant satisfies every assertion made under a single theme.
+    const light = resolveTheme(LIGHT);
+    const dark = resolveTheme(DARK);
+
+    expect(light.ok).toBe(true);
+    expect(dark.ok).toBe(true);
+    if (!light.ok || !dark.ok) {
+      throw new Error("a complete theme was refused");
+    }
+    expect(light.theme.color.surface).toBe("#ffffff");
+    expect(dark.theme.color.surface).toBe("#17171d");
+    expect(themeToCssVars(light.theme)).not.toEqual(themeToCssVars(dark.theme));
+    expect(themeToCssVars(dark.theme)["--facet-color-surface"]).toBe("#17171d");
+  });
+});
+
+describe("an unusable theme", () => {
+  it("carries the token contract's own code and location for a missing token", () => {
+    const result = resolveTheme(withoutAccent());
+
+    expect(result.ok).toBe(false);
+    if (result.ok) {
+      throw new Error("an incomplete theme was accepted");
+    }
+    // Pinned literally rather than compared with a second `validateTheme` call:
+    // a re-implementation would agree with that comparison as readily as a
+    // relay does.
+    expect(result.code).toBe("missing_token");
+    expect(result.at).toBe("color.accent");
   });
 
-  // ── R2: maxHeight containment ──
-  it("applies an authored maxHeight AFTER scroll containment, beating the 20rem cap (R2/DC-002)", () => {
-    const css = boxStyle({ scroll: "vertical", maxHeight: "screen" }, theme);
-    expect(css.maxHeight).toBe(theme.maxHeight.screen);
-    expect(css.maxHeight).not.toBe(RENDERER_SCROLL_CAP);
-    expect(css.overflowY).toBe("auto");
-    expect(css.minHeight).toBe(0);
-    assertNoOverlayEmission(css);
+  it("carries them for an unknown group, an unknown token, and a hostile value", () => {
+    const unknownGroup = resolveTheme({ ...LIGHT, spacing: {} });
+    const unknownToken = resolveTheme({ ...LIGHT, color: { ...LIGHT.color, brand: "#000000" } });
+    const hostileValue = resolveTheme({
+      ...LIGHT,
+      color: { ...LIGHT.color, text: "red; position: fixed" },
+    });
+
+    expect(unknownGroup).toMatchObject({ ok: false, code: "unknown_token_group", at: "spacing" });
+    expect(unknownToken).toMatchObject({
+      ok: false,
+      code: "unknown_token_name",
+      at: "color.brand",
+    });
+    expect(hostileValue).toMatchObject({
+      ok: false,
+      code: "token_value_not_allowed",
+      at: "color.text",
+    });
+    for (const result of [unknownGroup, unknownToken, hostileValue]) {
+      expect("theme" in result).toBe(false);
+    }
   });
 
-  it("brings its own containment when maxHeight is set on a box with no scroll (R2)", () => {
-    const css = boxStyle({ maxHeight: "half" }, theme);
-    expect(css.maxHeight).toBe(theme.maxHeight.half);
-    expect(css.overflowY).toBe("auto");
-    expect(css.minHeight).toBe(0);
-    assertNoOverlayEmission(css);
-  });
-
-  it("keeps overflowY:hidden AND the cap for scroll:horizontal + maxHeight (accepted vertical-clip boundary, R2)", () => {
-    const css = boxStyle({ scroll: "horizontal", maxHeight: "screen" }, theme);
-    expect(css.maxHeight).toBe(theme.maxHeight.screen);
-    expect(css.overflowY).toBe("hidden");
-    // The horizontal-scroll box does NOT gain minHeight:0 — it owns overflow-y:hidden.
-    assertNoOverlayEmission(css);
-  });
-
-  // ── R1: "none" sentinel on the BASELINE-APPLIED path ──
-  it("keeps the renderer's 20rem cap when a baselined maxHeight:none resolves onto a scroll:vertical box (R1/DC-006)", () => {
-    const baselineTheme: FacetTheme = {
-      ...DEFAULT_THEME,
-      name: "baseline-box",
-      defaults: {
-        ...DEFAULT_THEME.defaults,
-        box: { ...DEFAULT_THEME.defaults.box, maxHeight: "none", collapse: "none" },
+  it("never throws, whatever the host handed over", () => {
+    const throwing = {
+      get color(): never {
+        throw new Error("hostile theme");
       },
     };
-    const resolved = resolveTheme(baselineTheme);
-    // The custom Theme must be used whole (not fallen back), or the baseline never applies.
-    expect(resolved.name).toBe("baseline-box");
-    const boxResolved = resolveBrickStyle(resolved, "box", { scroll: "vertical" });
-    // The baseline sentinels really did merge into the resolved box style.
-    expect((boxResolved as { maxHeight?: unknown }).maxHeight).toBe("none");
-    expect((boxResolved as { collapse?: unknown }).collapse).toBe("none");
-    const css = boxStyle(boxResolved, resolved);
-    // maxHeight:"none" emits NOTHING, so the renderer's 20rem containment stands.
-    expect(css.maxHeight).toBe(RENDERER_SCROLL_CAP);
-    expect(css.overflowY).toBe("auto");
-  });
+    const revocable = Proxy.revocable({}, {});
+    revocable.revoke();
 
-  it("keeps scroll:vertical byte-identical (20rem) when no maxHeight is authored (DC-006 parity)", () => {
-    const css = boxStyle({ scroll: "vertical" }, theme);
-    expect(css.maxHeight).toBe(RENDERER_SCROLL_CAP);
-    expect(css.overflowY).toBe("auto");
-    expect(css.minHeight).toBe(0);
-  });
-
-  // ── R3 / R4: grid membership + auto-fit template ──
-  it("emits the clamped auto-fit template for columns:auto + itemWidth and NO flexDirection (R3/R4/DC-003)", () => {
-    const css = boxStyle({ columns: "auto", itemWidth: "md" }, theme);
-    expect(css.display).toBe("grid");
-    expect(css.gridTemplateColumns).toBe(
-      `repeat(auto-fit,minmax(min(${theme.layoutWidth.md},100%),1fr))`,
-    );
-    expect(css.flexDirection).toBeUndefined();
-  });
-
-  it("falls back to layoutWidth.md when columns:auto has no itemWidth (R4)", () => {
-    const css = boxStyle({ columns: "auto" }, theme);
-    expect(css.gridTemplateColumns).toBe(
-      `repeat(auto-fit,minmax(min(${theme.layoutWidth.md},100%),1fr))`,
-    );
-    expect(css.display).toBe("grid");
-    expect(css.flexDirection).toBeUndefined();
-  });
-
-  it("resolves a junk itemWidth to the layoutWidth.md floor, same as absent (R4)", () => {
-    const junk = boxStyle({ columns: "auto", itemWidth: "garbage" as never }, theme);
-    const absent = boxStyle({ columns: "auto" }, theme);
-    expect(junk.gridTemplateColumns).toBe(absent.gridTemplateColumns);
-    expect(junk.gridTemplateColumns).toBe(
-      `repeat(auto-fit,minmax(min(${theme.layoutWidth.md},100%),1fr))`,
-    );
-  });
-
-  it("ignores itemWidth when columns is not auto and leaves columns:2|3|4 byte-identical (R4/DC-003)", () => {
-    const withIgnored = boxStyle({ columns: 3, itemWidth: "lg" }, theme);
-    expect(withIgnored.gridTemplateColumns).toBe("repeat(3,minmax(0,1fr))");
-    for (const n of [2, 3, 4] as const) {
-      const css = boxStyle({ columns: n }, theme);
-      expect(css.display).toBe("grid");
-      expect(css.gridTemplateColumns).toBe(`repeat(${String(n)},minmax(0,1fr))`);
-      expect(css.flexDirection).toBeUndefined();
+    for (const candidate of [throwing, revocable.proxy, 42, [], true, Symbol("theme")]) {
+      const result = resolveTheme(candidate);
+      expect(result.ok).toBe(false);
+      expect("theme" in result).toBe(false);
     }
+    expect(resolveTheme(throwing)).toMatchObject({ ok: false, code: "theme_read_failed" });
   });
+});
 
-  it("does not create a grid from itemWidth alone (parent-owned, columns-gated)", () => {
-    const css = boxStyle({ itemWidth: "lg" }, theme);
-    expect(css.display).toBe("flex");
-    expect(css.gridTemplateColumns).toBeUndefined();
-  });
+describe("what the module is written not to reach for", () => {
+  it("imports nothing from @facet/assets and holds no default theme of its own", () => {
+    const source = sourceOf("theme.ts");
+    const imported = importedModules(source);
 
-  // ── DC-004: shelf child no-shrink + row containment ──
-  it("keeps a shelf child at its intrinsic width and the row scroll-contained (DC-004)", () => {
-    const child = boxStyle({ basis: "md" }, theme);
-    expect(child.flexBasis).toBe(theme.layoutWidth.md);
-    expect(child.flexShrink).toBe(0);
-
-    const row = boxStyle({ direction: "row", scroll: "horizontal" }, theme);
-    expect(row.overflowX).toBe("auto");
-    expect(row.maxWidth).toBe("100%");
-    expect(row.minWidth).toBe(0);
-    // No page-level horizontal overflow escapes the row.
-    assertNoOverlayEmission(row);
-  });
-
-  // ── DC-005 / DC-008: fuzz never throws, never emits position/z-index/inset ──
-  const JUNK: readonly unknown[] = [undefined, null, "huge", 999, {}, [], true, "", "AUTO", NaN];
-
-  it("never throws or emits position/z-index/inset for junk on any new property (DC-005/DC-008)", () => {
-    for (const value of JUNK) {
-      for (const key of ["basis", "itemWidth", "maxHeight", "columns"] as const) {
-        const style = { [key]: value } as unknown as BoxStyle;
-        let css: CSSProperties = {};
-        expect(() => {
-          css = boxStyle(style, theme);
-        }).not.toThrow();
-        assertNoOverlayEmission(css);
-      }
+    // The positive control: the reader really does find this module's imports,
+    // so the absence below is an absence rather than a regex that matches
+    // nothing.
+    expect(imported).toContain("@facet/core");
+    for (const specifier of imported) {
+      expect(specifier.startsWith("@facet/assets")).toBe(false);
     }
-    for (const scroll of ["vertical", "horizontal", "none"] as const) {
-      for (const value of JUNK) {
-        const style = {
-          scroll,
-          maxHeight: value,
-          basis: value,
-          columns: value,
-          itemWidth: value,
-        } as unknown as BoxStyle;
-        let css: CSSProperties = {};
-        expect(() => {
-          css = boxStyle(style, theme);
-        }).not.toThrow();
-        assertNoOverlayEmission(css);
-      }
+    expect(source).not.toContain("DEFAULT_THEME");
+  });
+
+  it("declares its one parameter with no default value", () => {
+    // A defaulted parameter would swallow the absence this whole file is about,
+    // and every behavioural assertion above would still pass.
+    const source = sourceOf("theme.ts");
+    const signature = /export function resolveTheme\(([^)]*)\)/.exec(source);
+
+    expect(signature).not.toBeNull();
+    expect(signature?.[1]).toBe("bootstrapTheme: unknown");
+    expect(signature?.[1]).not.toContain("=");
+  });
+
+  it("relays rather than restates: it declares no token names of its own", () => {
+    // The closed token vocabulary is `@facet/core`'s. A second copy here is how
+    // a theme comes to be accepted by one reader and refused by the other.
+    const source = sourceOf("theme.ts");
+    const groups = Object.keys(LIGHT);
+
+    for (const group of groups) {
+      expect(source).not.toContain(`"${group}"`);
     }
-  });
-
-  it("emits no partial declaration for a junk maxHeight or basis (guarded lookups, DC-005)", () => {
-    const mh = boxStyle({ maxHeight: "huge" } as unknown as BoxStyle, theme);
-    expect(mh.maxHeight).toBeUndefined();
-    expect(mh.overflowY).toBeUndefined();
-    expect(mh.minHeight).toBeUndefined();
-
-    const b = boxStyle({ basis: "huge" } as unknown as BoxStyle, theme);
-    expect(b.flexBasis).toBeUndefined();
-    expect(b.flexShrink).toBeUndefined();
-  });
-
-  // ── RISK-API-8: TABLE_STICKY_MAX_HEIGHT interaction ──
-  it("lets a stickyHeader table inside a maxHeight:screen pane keep both caps without throwing (RISK-API-8)", () => {
-    let pane: CSSProperties = {};
-    let tableWrapper: CSSProperties = {};
-    expect(() => {
-      pane = boxStyle({ maxHeight: "screen", scroll: "vertical" }, theme);
-      tableWrapper = tableScrollContainmentStyle(true);
-    }).not.toThrow();
-    // The pane keeps its own screen cap …
-    expect(pane.maxHeight).toBe(theme.maxHeight.screen);
-    expect(pane.overflowY).toBe("auto");
-    // … and the nested table keeps its private 28rem sticky-scroll cap.
-    expect(tableWrapper.maxHeight).toBe(TABLE_STICKY_MAX_HEIGHT);
-    expect(tableWrapper.overflowY).toBe("auto");
+    expect(source).toContain("validateTheme");
   });
 });

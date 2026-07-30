@@ -1,10 +1,7 @@
-import {
-  createStageToolAssetSnapshot,
-  type StageToolAssets,
-  type StageToolAssetSource,
-} from "@facet/agent-tools";
-import type { FacetAgent, ServerMessage } from "@facet/core";
-import { sessionKey, type Sink, type SummaryStore } from "@facet/runtime";
+import type { InProcessFacetAgent } from "@facet/agent";
+import type { FacetToolSession } from "@facet/core";
+import type { Sink, SummaryStore } from "@facet/runtime";
+
 import {
   enqueueBackgroundCompaction,
   runBackgroundCompaction,
@@ -20,7 +17,7 @@ import {
   type ReferenceAgentDiagnosticObserver,
 } from "./harness/diagnostic-observer.js";
 import {
-  REFERENCE_AGENT_FAILURE_SAY,
+  REFERENCE_AGENT_FALLBACK_TEXT,
   runReferenceAgentLoop,
   type ReferenceAgentLoopSummary,
 } from "./harness/loop.js";
@@ -32,15 +29,16 @@ import type { ReferenceProvider } from "./provider.js";
 /**
  * Public factory for the Facet reference agent.
  *
- * The factory owns deployer-facing configuration: guide/assets, compatibility
+ * The factory owns deployer-facing configuration: page brief, compatibility
  * budget aliases, explicit budget overrides, and optional tracing. Turn
- * execution lives in the harness loop.
+ * execution lives in the harness loop, while the runtime owns conversation
+ * framing and persistence.
  */
 export interface ReferenceAgentOptions {
   readonly provider: ReferenceProvider;
-  /** Deployer's page brief (layer ②). Defaults to the built-in DEFAULT_GUIDE. */
+  /** Deployer's page brief. Defaults to the built-in DEFAULT_GUIDE. */
   readonly guide?: string;
-  /** Conversation history source for prompt layer ③ (shared with the runtime). */
+  /** Conversation history source for summary maintenance (shared with the runtime). */
   readonly sink: Sink;
   readonly agentId: string;
   /** Budget profile. Defaults to the quickstart safety profile. */
@@ -58,22 +56,11 @@ export interface ReferenceAgentOptions {
   /** Legacy alias for budget.maxSteps. Ignored when budget.maxSteps is set. */
   readonly maxSteps?: number;
   /**
-   * Static operator assets or a dynamic source acquired once at the start of
-   * each provider turn. The result is validated, detached, and deeply frozen
-   * before either the prompt or a stage tool can observe it.
-   */
-  readonly assets: ReferenceAgentAssetSource;
-  /**
-   * Rolling-summary store. When present, cross-turn context compaction is enabled:
-   * a persisted summary is injected on assembly (WU-7) and a background task after
-   * each turn rolls it forward. Absent ⇒ no summarizer is constructed and behavior
-   * is exactly as before.
+   * Rolling-summary store. When present, cross-turn context compaction is enabled
+   * if the host session exposes a stable conversation key.
    */
   readonly summaryStore?: SummaryStore;
 }
-
-export type ReferenceAgentAssetSource =
-  StageToolAssetSource | (() => StageToolAssetSource | Promise<StageToolAssetSource>);
 
 /** Internal dependency seam used by package-local tests; not exported from the package root. */
 export interface ReferenceAgentDependencies {
@@ -81,11 +68,7 @@ export interface ReferenceAgentDependencies {
   readonly onBackgroundTask?: (task: Promise<void>) => void;
 }
 
-function sayBatch(text: string): readonly ServerMessage[] {
-  return [{ kind: "say", text }];
-}
-
-export function createReferenceAgent(options: ReferenceAgentOptions): FacetAgent {
+export function createReferenceAgent(options: ReferenceAgentOptions): InProcessFacetAgent {
   return createReferenceAgentWithDependencies(options);
 }
 
@@ -93,7 +76,7 @@ export function createReferenceAgent(options: ReferenceAgentOptions): FacetAgent
 export function createReferenceAgentWithDependencies(
   options: ReferenceAgentOptions,
   dependencies: ReferenceAgentDependencies = {},
-): FacetAgent {
+): InProcessFacetAgent {
   const budget = normalizeBudget({
     ...(options.budgetPreset !== undefined ? { budgetPreset: options.budgetPreset } : {}),
     ...(options.budget !== undefined ? { budget: options.budget } : {}),
@@ -107,97 +90,157 @@ export function createReferenceAgentWithDependencies(
     options.summaryStore !== undefined
       ? (dependencies.summarizerFactory ?? createProviderSummarizer)(options.provider)
       : undefined;
-  const contextWindowTokens = options.provider.contextWindowTokens;
+  const contextWindowChars = providerContextWindowChars(options.provider);
   const diagnostics = createReferenceAgentDiagnosticEmitter(options.diagnosticObserver);
 
-  return async function* (event, session) {
-    if (isSignalAborted(options.abortSignal)) {
-      diagnostics({ kind: "stop", reason: "aborted" });
-      return;
-    }
-    let turnSystem: string | undefined;
+  return Object.freeze({
+    async run(context: Parameters<InProcessFacetAgent["run"]>[0]) {
+      const { event, session } = context;
+      if (isSignalAborted(options.abortSignal)) {
+        diagnostics({ kind: "stop", reason: "aborted" });
+        return { text: null };
+      }
+
+      let turnSystem: string | undefined;
+      let finalText: string | null = null;
+      try {
+        turnSystem = buildSystem(options.guide ?? DEFAULT_GUIDE);
+        const historyKey = historyKeyFromSession(options.agentId, session);
+        const iterator = runReferenceAgentLoop({
+          provider: options.provider,
+          system: turnSystem,
+          event,
+          session,
+          budget,
+          ...(historyKey === undefined
+            ? {}
+            : {
+                sink: options.sink,
+                historyKey,
+                ...(options.summaryStore === undefined
+                  ? {}
+                  : { summaryStore: options.summaryStore }),
+                ...(contextWindowChars === undefined ? {} : { contextWindowChars }),
+              }),
+          ...(options.trace !== undefined ? { trace: options.trace } : {}),
+          ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
+          diagnostics,
+          now: Date.now,
+        });
+        while (true) {
+          const next = await iterator.next();
+          if (next.done) {
+            logStopSummary(next.value);
+            break;
+          }
+          finalText = finalConversationText(next.value) ?? finalText;
+        }
+      } catch (error) {
+        console.error("[facet-reference-agent] turn failed:", errMsg(error));
+        diagnostics({
+          kind: "stop",
+          reason: isSignalAborted(options.abortSignal) ? "aborted" : "invalid-output",
+        });
+        finalText = isSignalAborted(options.abortSignal) ? null : REFERENCE_AGENT_FALLBACK_TEXT;
+      }
+
+      maybeStartBackgroundCompaction({
+        options,
+        dependencies,
+        summarizer,
+        turnSystem,
+        event,
+        session,
+        contextWindowChars,
+      });
+
+      return { text: finalText };
+    },
+  });
+}
+
+function maybeStartBackgroundCompaction(input: {
+  readonly options: ReferenceAgentOptions;
+  readonly dependencies: ReferenceAgentDependencies;
+  readonly summarizer: Summarizer | undefined;
+  readonly turnSystem: string | undefined;
+  readonly event: Parameters<InProcessFacetAgent["run"]>[0]["event"];
+  readonly session: FacetToolSession;
+  readonly contextWindowChars: number | undefined;
+}): void {
+  const { options, dependencies, summarizer, turnSystem, event, session, contextWindowChars } =
+    input;
+  const historyKey = historyKeyFromSession(options.agentId, session);
+  const summaryStore = options.summaryStore;
+  if (
+    summaryStore === undefined ||
+    summarizer === undefined ||
+    turnSystem === undefined ||
+    historyKey === undefined ||
+    isSignalAborted(options.abortSignal)
+  ) {
+    return;
+  }
+
+  const task = enqueueBackgroundCompaction(historyKey, async () => {
     try {
-      const assets = await acquireTurnAssets(options.assets);
-      turnSystem = buildSystem(options.guide ?? DEFAULT_GUIDE, assets);
-      const summary = yield* runReferenceAgentLoop({
-        provider: options.provider,
+      await runBackgroundCompaction({
         system: turnSystem,
+        budget: normalizeBudget({
+          ...(options.budgetPreset !== undefined ? { budgetPreset: options.budgetPreset } : {}),
+          ...(options.budget !== undefined ? { budget: options.budget } : {}),
+          ...(options.maxSteps !== undefined ? { maxSteps: options.maxSteps } : {}),
+          ...(options.historyTurns !== undefined ? { historyTurns: options.historyTurns } : {}),
+        }),
         event,
         session,
         sink: options.sink,
-        agentId: options.agentId,
-        budget,
-        assets,
+        historyKey,
+        summaryStore,
+        summarizer,
         ...(options.trace !== undefined ? { trace: options.trace } : {}),
         ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
-        diagnostics,
-        ...(summarizer !== undefined ? { summarizer } : {}),
-        ...(options.summaryStore !== undefined ? { summaryStore: options.summaryStore } : {}),
-        ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
-        fallbackSay: REFERENCE_AGENT_FAILURE_SAY,
+        ...(contextWindowChars !== undefined ? { contextWindowChars } : {}),
       });
-      logStopSummary(summary);
-    } catch (error) {
-      console.error("[facet-reference-agent] turn failed:", errMsg(error));
-      diagnostics({
-        kind: "stop",
-        reason: isSignalAborted(options.abortSignal) ? "aborted" : "invalid-output",
-      });
-      if (!isSignalAborted(options.abortSignal)) yield sayBatch(REFERENCE_AGENT_FAILURE_SAY);
+    } catch {
+      // Background compaction must never surface as an unhandled rejection.
     }
-
-    // Cross-turn compaction runs AFTER the turn, detached, on the serial lane.
-    // The generator returns without awaiting it; the task can never reject, but
-    // it remains cancellation-cooperative with the owning run.
-    if (
-      options.summaryStore !== undefined &&
-      summarizer !== undefined &&
-      turnSystem !== undefined &&
-      !isSignalAborted(options.abortSignal)
-    ) {
-      const store = options.summaryStore;
-      const system = turnSystem;
-      const key = sessionKey(options.agentId, session.visitor.visitorId);
-      const task = enqueueBackgroundCompaction(key, async () => {
-        try {
-          await runBackgroundCompaction({
-            provider: options.provider,
-            system,
-            budget,
-            event,
-            session,
-            sink: options.sink,
-            agentId: options.agentId,
-            visitorId: session.visitor.visitorId,
-            summaryStore: store,
-            summarizer,
-            trace: options.trace,
-            ...(options.abortSignal !== undefined ? { abortSignal: options.abortSignal } : {}),
-            ...(contextWindowTokens !== undefined ? { contextWindowTokens } : {}),
-          });
-        } catch {
-          // Background compaction must never surface as an unhandled rejection.
-        }
-      });
-      dependencies.onBackgroundTask?.(task);
-    }
-  };
+  });
+  dependencies.onBackgroundTask?.(task);
 }
 
-async function acquireTurnAssets(source: ReferenceAgentAssetSource): Promise<StageToolAssets> {
-  const documents = typeof source === "function" ? await source() : source;
-  return createStageToolAssetSnapshot(documents);
+function finalConversationText(
+  fragments: readonly { readonly conversation?: { readonly text: string } }[],
+): string | undefined {
+  for (let index = fragments.length - 1; index >= 0; index -= 1) {
+    const text = fragments[index]?.conversation?.text;
+    if (text !== undefined) return text;
+  }
+  return undefined;
+}
+
+function historyKeyFromSession(agentId: string, session: FacetToolSession): string | undefined {
+  if (!isRecord(session)) return undefined;
+  const direct = session["sessionKey"];
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  const visitor = session["visitor"];
+  if (isRecord(visitor)) {
+    const visitorId = visitor["visitorId"];
+    if (typeof visitorId === "string" && visitorId.length > 0) {
+      return `${agentId}:${visitorId}`;
+    }
+  }
+  return undefined;
+}
+
+function providerContextWindowChars(provider: ReferenceProvider): number | undefined {
+  const tokens = provider.contextWindowTokens;
+  if (tokens === undefined || !Number.isFinite(tokens) || tokens <= 0) return undefined;
+  return Math.floor(tokens * 4);
 }
 
 function logStopSummary(summary: ReferenceAgentLoopSummary): void {
   if (summary.stopReason === "provider_stop") return;
-  if (summary.stopReason === "unresolved_buffer" && summary.unresolved !== undefined) {
-    console.error(
-      "[facet-reference-agent] unresolved buffered edits:",
-      `${String(summary.unresolved.length)} unresolved edit(s)`,
-    );
-    return;
-  }
   console.error("[facet-reference-agent] turn stopped:", stopReasonMessage(summary.stopReason));
 }
 
@@ -211,4 +254,8 @@ function errMsg(error: unknown): string {
 
 function isSignalAborted(signal: AbortSignal | undefined): boolean {
   return signal?.aborted === true;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

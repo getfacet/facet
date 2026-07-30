@@ -1,17 +1,10 @@
-import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { FacetAgent } from "@facet/core";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { InProcessFacetAgent } from "@facet/agent";
 import type { ReferenceAgentOptions, ReferenceProvider } from "@facet/reference-agent";
-import {
-  loadAssets,
-  MemoryAssets,
-  MemorySink,
-  MemorySummaryStore,
-  type LoadedAssets,
-  type SummaryStore,
-} from "@facet/runtime";
+import { MemorySink, MemorySummaryStore, type SummaryStore } from "@facet/runtime";
 
 const { createReferenceAgentSpy } = vi.hoisted(() => ({
-  createReferenceAgentSpy: vi.fn<(options: ReferenceAgentOptions) => FacetAgent>(),
+  createReferenceAgentSpy: vi.fn<(options: ReferenceAgentOptions) => InProcessFacetAgent>(),
 }));
 
 vi.mock("@facet/reference-agent", async (importOriginal) => {
@@ -28,19 +21,11 @@ const provider: ReferenceProvider = {
   run: () => Promise.resolve({ text: "", toolCalls: [] }),
 };
 
-let defaultAssets: LoadedAssets;
-
-beforeAll(async () => {
-  defaultAssets = await loadAssets(new MemoryAssets({}), "quickstart");
-});
-
 function options(): Omit<QuickstartAgentOptions, "summaryStore"> {
   return {
     provider,
     sink: new MemorySink(),
     agentId: "quickstart",
-    theme: defaultAssets.theme,
-    patterns: defaultAssets.patterns,
   };
 }
 
@@ -60,9 +45,8 @@ describe("createQuickstartAgent", () => {
 
   it("passes a caller-supplied summary store through unchanged", () => {
     const store: SummaryStore = {
-      get: () => Promise.resolve(undefined),
-      put: () => Promise.resolve(true),
-      delete: () => Promise.resolve(),
+      read: () => Promise.resolve(null),
+      write: () => Promise.resolve({ ok: true }),
     };
 
     createQuickstartAgent({ ...options(), summaryStore: store });
@@ -80,19 +64,19 @@ describe("createQuickstartAgent", () => {
     createQuickstartAgent(options());
     expect(createReferenceAgentSpy.mock.calls[0]?.[0].budget).toEqual({
       maxContextChars: 160_000,
-      maxContextTokens: 40_000,
+      contextWindowCharsDefault: 160_000,
       maxSummarizerInputChars: 80_000,
     });
 
     createQuickstartAgent({ ...options(), budgetPreset: "quickstart" });
     expect(createReferenceAgentSpy.mock.calls[1]?.[0].budget).toEqual({
       maxContextChars: 160_000,
-      maxContextTokens: 40_000,
+      contextWindowCharsDefault: 160_000,
       maxSummarizerInputChars: 80_000,
     });
   });
 
-  it("derives missing token and summarizer caps from a custom quickstart char cap", () => {
+  it("derives missing context window and summarizer caps from a custom quickstart char cap", () => {
     createQuickstartAgent({
       ...options(),
       budget: { maxContextChars: 120_004, maxSteps: 7, maxProviderRetries: 0 },
@@ -100,7 +84,7 @@ describe("createQuickstartAgent", () => {
 
     expect(createReferenceAgentSpy.mock.calls[0]?.[0].budget).toEqual({
       maxContextChars: 120_004,
-      maxContextTokens: 30_001,
+      contextWindowCharsDefault: 120_004,
       maxSummarizerInputChars: 60_002,
       maxSteps: 7,
       maxProviderRetries: 0,
@@ -110,7 +94,7 @@ describe("createQuickstartAgent", () => {
   it("preserves explicit quickstart context caps and unrelated budget fields", () => {
     const budget = {
       maxContextChars: 120_000,
-      maxContextTokens: 17_000,
+      contextWindowCharsDefault: 68_000,
       maxSummarizerInputChars: 55_000,
       maxSteps: 9,
       maxObservationChars: 2_000,
@@ -134,27 +118,15 @@ describe("createQuickstartAgent", () => {
     }
   });
 
-  it("uses one immutable Theme and Pattern snapshot", () => {
-    createQuickstartAgent({
-      ...options(),
-      theme: defaultAssets.theme,
-      patterns: defaultAssets.patterns,
-    });
+  it("does not pass retired assets or theme/pattern snapshots into the reference agent", () => {
+    createQuickstartAgent(options());
 
     const referenceOptions = createReferenceAgentSpy.mock.calls[0]?.[0];
+    expect(referenceOptions).not.toHaveProperty("assets");
     expect(referenceOptions).not.toHaveProperty("theme");
     expect(referenceOptions).not.toHaveProperty("patterns");
     expect(referenceOptions).not.toHaveProperty("themes");
     expect(referenceOptions).not.toHaveProperty("compositions");
     expect(referenceOptions).not.toHaveProperty("catalog");
-    expect(referenceOptions?.assets).toEqual({
-      theme: defaultAssets.theme,
-      patterns: defaultAssets.patterns,
-    });
-    expect(Object.isFrozen(referenceOptions?.assets)).toBe(true);
-    expect(referenceOptions?.assets).toMatchObject({
-      theme: defaultAssets.theme,
-      patterns: defaultAssets.patterns,
-    });
   });
 });

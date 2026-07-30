@@ -25,9 +25,9 @@ safe. Mark others `N/A`.
 |---|---|---|---|
 | 1 | Responsibility boundary (no backend/domain in Facet) | | |
 | 2 | Mechanism vs policy | | |
-| 3 | Fail-safe (never throw/inject; degrade to plain) | | |
-| 4 | Declarative + tokens only | | |
-| 5 | Flow-only safety (overlay = dedicated brick) | | |
+| 3 | Fail-safe (atomic author rejects; bounded persisted/render fallback) | | |
+| 4 | Declarative registered markup | | |
+| 5 | Flow-contained layout (overlap = dedicated trusted modal) | | |
 | 6 | Two-writers coherence (ordering/version rule) | | |
 | 7 | Backend via agent tools, never client fetch | | |
 

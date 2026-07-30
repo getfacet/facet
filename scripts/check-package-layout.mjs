@@ -3,8 +3,15 @@
 /* global console, process */
 
 import { spawnSync } from "node:child_process";
-import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { basename, dirname, join, relative, resolve } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+} from "node:fs";
+import { dirname, extname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -20,37 +27,62 @@ const EXPECTED_PACKAGES = Object.freeze({
   "@facet/server": "packages/adapters/server",
   "@facet/client": "packages/adapters/client",
   "@facet/agent-client": "packages/adapters/agent-client",
-  "@facet/ag-ui": "packages/adapters/ag-ui",
-  "@facet/store-postgres": "packages/adapters/store-postgres",
   "@facet/quickstart": "packages/tools/quickstart",
-  "@facet/cli": "packages/tools/cli",
-  "@facet/bridge": "packages/tools/bridge",
-});
-const EXPECTED_APPS = Object.freeze({
-  "@facet/playground": "apps/playground",
-  "@facet/lab": "apps/facet-lab",
 });
 
 const EXPECTED_GROUPS = Object.freeze(["adapters", "agents", "core", "renderers", "tools"]);
 const EXPECTED_GROUP_CHILDREN = Object.freeze({
-  adapters: Object.freeze(["ag-ui", "agent-client", "client", "server", "store-postgres"]),
+  adapters: Object.freeze(["agent-client", "client", "server"]),
   agents: Object.freeze(["agent", "agent-tools", "reference-agent"]),
   core: Object.freeze(["assets", "core", "runtime"]),
   renderers: Object.freeze(["react"]),
-  tools: Object.freeze(["bridge", "cli", "quickstart"]),
+  tools: Object.freeze(["quickstart"]),
 });
 const EXPECTED_WORKSPACES = Object.freeze({
   facet: ".",
-  ...EXPECTED_APPS,
   ...EXPECTED_PACKAGES,
 });
-const DEPENDENCY_FIELDS = Object.freeze([
-  "dependencies",
-  "devDependencies",
-  "optionalDependencies",
-  "peerDependencies",
+const EXPECTED_DEPENDENCIES = Object.freeze({
+  "@facet/core": Object.freeze([]),
+  "@facet/runtime": Object.freeze(["@facet/core"]),
+  "@facet/assets": Object.freeze(["@facet/core"]),
+  "@facet/react": Object.freeze(["@facet/core"]),
+  "@facet/agent-tools": Object.freeze(["@facet/core"]),
+  "@facet/agent": Object.freeze(["@facet/core"]),
+  "@facet/reference-agent": Object.freeze([
+    "@facet/agent",
+    "@facet/agent-tools",
+    "@facet/core",
+    "@facet/runtime",
+  ]),
+  "@facet/server": Object.freeze(["@facet/core", "@facet/runtime"]),
+  "@facet/client": Object.freeze(["@facet/core"]),
+  "@facet/agent-client": Object.freeze(["@facet/core"]),
+  "@facet/quickstart": Object.freeze([
+    "@facet/agent",
+    "@facet/assets",
+    "@facet/core",
+    "@facet/reference-agent",
+    "@facet/runtime",
+    "@facet/server",
+  ]),
+});
+const NODE_FREE_ROOT_ENTRY_PACKAGES = Object.freeze([
+  "@facet/core",
+  "@facet/react",
+  "@facet/assets",
+  "@facet/runtime",
 ]);
+const ASSETS_ROOT_ENTRY = "packages/core/assets/src/index.ts";
+const ASSETS_REACT_ENTRY = "packages/core/assets/src/react.tsx";
+const ASSETS_REACT_ALLOWED_IMPORTS = Object.freeze(["@facet/core", "react"]);
+const AGENT_TOOLS_ALLOWED_IMPORTS = Object.freeze(["@facet/core"]);
 
+const AGENT_GUIDANCE_FILE = "AGENTS.md";
+const AGENT_GUIDANCE_ALIAS = "CLAUDE.md";
+
+// Every entry is assembled by join so this file never spells a retired path
+// literally: the checker scans its own repository, including this script.
 const RETIRED_PATHS = Object.freeze([
   ["packages", "agent-stack"].join("/"),
   ["packages", "extensions"].join("/"),
@@ -58,6 +90,12 @@ const RETIRED_PATHS = Object.freeze([
   ["packages", "core", "react"].join("/"),
   ["packages", "core", "server"].join("/"),
   ["packages", "core", "client"].join("/"),
+  ["packages", "adapters", "ag-ui"].join("/"),
+  ["packages", "adapters", "store-postgres"].join("/"),
+  ["packages", "tools", "cli"].join("/"),
+  ["packages", "tools", "bridge"].join("/"),
+  ["apps", "playground"].join("/"),
+  ["apps", "facet-lab"].join("/"),
 ]);
 const RETIRED_REPOSITORY_PATHS = Object.freeze(["docs/comparisons", "docs/specs", "specs"]);
 const AGENT_WORK_IGNORE = ".agents/work/";
@@ -68,12 +106,7 @@ const EXCLUDED_REFERENCE_DIRECTORY_NAMES = Object.freeze([
   "dist",
   "node_modules",
 ]);
-const EXCLUDED_REFERENCE_PATHS = Object.freeze([
-  ".git",
-  ".agents/work",
-  "apps/playground/.facet-sessions",
-  "apps/playground/generated",
-]);
+const EXCLUDED_REFERENCE_PATHS = Object.freeze([".git", ".agents/work"]);
 
 const errors = [];
 
@@ -167,91 +200,25 @@ function checkPhysicalLayout() {
   }
 }
 
-function checkPrivateApps() {
-  for (const [expectedName, path] of Object.entries(EXPECTED_APPS)) {
-    const directory = join(repoRoot, path);
-    const manifestPath = join(directory, "package.json");
-    record(existsSync(directory), `missing private app: ${path}`);
-    if (!existsSync(directory)) continue;
-    const stat = lstatSync(directory);
-    record(stat.isDirectory(), `private app is not a directory: ${path}`);
-    record(!stat.isSymbolicLink(), `private app is a symlink: ${path}`);
-    record(existsSync(manifestPath), `private app has no package.json: ${path}`);
-    if (!existsSync(manifestPath)) continue;
-    const manifest = readJson(manifestPath);
-    record(manifest.name === expectedName, `${path} package name must be ${expectedName}`);
-    record(manifest.private === true, `${expectedName} must be private`);
+function checkGuidanceAlias() {
+  const aliasPath = join(repoRoot, AGENT_GUIDANCE_ALIAS);
+  let aliasStat;
+  try {
+    aliasStat = lstatSync(aliasPath);
+  } catch {
+    record(false, `missing agent guidance alias: ${AGENT_GUIDANCE_ALIAS}`);
+    return;
   }
-}
-
-function importsPrivateApp(text, appName) {
-  const escapedName = appName.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-  return new RegExp(
-    `(?:from\\s*|import\\s*\\(|import\\s*|require\\s*\\()(["'])${escapedName}(?:/[^"']*)?\\1`,
-    "u",
-  ).test(text);
-}
-
-function packageSourceFiles(path) {
-  const files = [];
-  const root = join(repoRoot, path);
-  if (!existsSync(root)) return files;
-
-  function visit(absolutePath) {
-    const stat = lstatSync(absolutePath);
-    if (stat.isSymbolicLink()) return;
-    if (stat.isDirectory()) {
-      const name = basename(absolutePath);
-      if (EXCLUDED_REFERENCE_DIRECTORY_NAMES.includes(name)) return;
-      for (const entry of readdirSync(absolutePath)) visit(join(absolutePath, entry));
-      return;
-    }
-    if (/\.(?:[cm]?[jt]sx?)$/u.test(absolutePath)) files.push(absolutePath);
-  }
-
-  visit(root);
-  return files;
-}
-
-function checkPrivateAppLeaves() {
-  const workspaceManifests = [
-    ["facet", "."],
-    ...Object.entries(EXPECTED_APPS),
-    ...Object.entries(EXPECTED_PACKAGES),
-  ];
-  for (const [workspaceName, path] of workspaceManifests) {
-    const manifestPath = join(repoRoot, path, "package.json");
-    if (!existsSync(manifestPath)) continue;
-    const manifest = readJson(manifestPath);
-    for (const field of DEPENDENCY_FIELDS) {
-      const dependencies = manifest[field];
-      if (
-        dependencies === null ||
-        typeof dependencies !== "object" ||
-        Array.isArray(dependencies)
-      ) {
-        continue;
-      }
-      for (const appName of Object.keys(EXPECTED_APPS)) {
-        record(
-          !Object.prototype.hasOwnProperty.call(dependencies, appName),
-          `${workspaceName} ${field} depend on private app ${appName}`,
-        );
-      }
-    }
-  }
-
-  for (const [packageName, path] of Object.entries(EXPECTED_PACKAGES)) {
-    for (const sourcePath of packageSourceFiles(path)) {
-      const source = readFileSync(sourcePath, "utf8");
-      for (const appName of Object.keys(EXPECTED_APPS)) {
-        record(
-          !importsPrivateApp(source, appName),
-          `public package source imports private app: ${packageName} ${repoPath(sourcePath)} -> ${appName}`,
-        );
-      }
-    }
-  }
+  record(
+    aliasStat.isSymbolicLink(),
+    `${AGENT_GUIDANCE_ALIAS} must be a symlink to ${AGENT_GUIDANCE_FILE}`,
+  );
+  if (!aliasStat.isSymbolicLink()) return;
+  const target = normalizeRepoPath(readlinkSync(aliasPath));
+  record(
+    target === AGENT_GUIDANCE_FILE,
+    `${AGENT_GUIDANCE_ALIAS} must point at ${AGENT_GUIDANCE_FILE}; found ${target}`,
+  );
 }
 
 function checkRepositoryPolicy() {
@@ -300,6 +267,233 @@ function checkWorkspaceDiscovery() {
     JSON.stringify(actual) === JSON.stringify(expected),
     `workspace map differs: expected ${JSON.stringify(expected)}; found ${JSON.stringify(actual)}`,
   );
+}
+
+function packageDirectory(packageName) {
+  return join(repoRoot, EXPECTED_PACKAGES[packageName]);
+}
+
+function packageManifest(packageName) {
+  return readJson(join(packageDirectory(packageName), "package.json"));
+}
+
+function workspaceDependencies(manifest) {
+  const dependencies = manifest.dependencies;
+  if (dependencies === undefined || dependencies === null || typeof dependencies !== "object") {
+    return [];
+  }
+  return sorted(Object.keys(dependencies).filter((name) => EXPECTED_PACKAGES[name] !== undefined));
+}
+
+function exportEntries(exportsField) {
+  if (exportsField === undefined) return [];
+  if (
+    typeof exportsField === "string" ||
+    Array.isArray(exportsField) ||
+    "import" in exportsField ||
+    "types" in exportsField ||
+    "require" in exportsField
+  ) {
+    return [[".", exportsField]];
+  }
+  if (exportsField === null || typeof exportsField !== "object") return [];
+  return Object.entries(exportsField);
+}
+
+function exportSpecifiers(packageName, exportsField) {
+  return sorted(
+    exportEntries(exportsField).map(([subpath]) =>
+      subpath === "." ? packageName : `${packageName}${subpath.slice(1)}`,
+    ),
+  );
+}
+
+function checkDependencyGraph() {
+  const graph = {};
+  for (const packageName of sorted(Object.keys(EXPECTED_PACKAGES))) {
+    const manifest = packageManifest(packageName);
+    const actual = workspaceDependencies(manifest);
+    graph[packageName] = actual;
+    const expected = EXPECTED_DEPENDENCIES[packageName] ?? [];
+    record(
+      JSON.stringify(actual) === JSON.stringify(expected),
+      `dependency graph differs for ${packageName}: expected ${expected.join(", ") || "(none)"}; found ${actual.join(", ") || "(none)"}`,
+    );
+  }
+  checkWorkspaceDependencyCycles(graph);
+}
+
+function checkTsconfigAliases() {
+  const tsconfig = readJson(join(repoRoot, "tsconfig.base.json"));
+  const actual = sorted(Object.keys(tsconfig.compilerOptions?.paths ?? {}));
+  const expected = sorted(
+    Object.keys(EXPECTED_PACKAGES).flatMap((packageName) =>
+      exportSpecifiers(packageName, packageManifest(packageName).exports),
+    ),
+  );
+  record(
+    JSON.stringify(actual) === JSON.stringify(expected),
+    `tsconfig path aliases differ: expected ${expected.join(", ")}; found ${actual.join(", ")}`,
+  );
+}
+
+function checkPublishConfigExports() {
+  for (const packageName of sorted(Object.keys(EXPECTED_PACKAGES))) {
+    const manifest = packageManifest(packageName);
+    const expected = exportSpecifiers(packageName, manifest.exports);
+    const actual = exportSpecifiers(packageName, manifest.publishConfig?.exports);
+    record(
+      JSON.stringify(actual) === JSON.stringify(expected),
+      `publishConfig exports differ for ${packageName}: expected ${expected.join(", ")}; found ${actual.join(", ")}`,
+    );
+  }
+}
+
+function parseImportSpecifiers(source) {
+  const specifiers = [];
+  const importPattern =
+    /\b(?:import|export)\s+(?:type\s+)?(?:[^"'`]*?\s+from\s+)?["']([^"']+)["']|import\s*\(\s*["']([^"']+)["']\s*\)/gu;
+  let match;
+  while ((match = importPattern.exec(source)) !== null) {
+    const specifier = match[1] ?? match[2];
+    if (typeof specifier === "string") specifiers.push(specifier);
+  }
+  return specifiers;
+}
+
+function localCandidates(basePath) {
+  const extension = extname(basePath);
+  if (extension === ".js") return [`${basePath.slice(0, -3)}.ts`, `${basePath.slice(0, -3)}.tsx`];
+  if (extension === ".jsx") return [`${basePath.slice(0, -4)}.tsx`, `${basePath.slice(0, -4)}.ts`];
+  if (extension === ".mjs") return [`${basePath.slice(0, -4)}.mts`, `${basePath.slice(0, -4)}.ts`];
+  if (extension === ".cjs") return [`${basePath.slice(0, -4)}.cts`, `${basePath.slice(0, -4)}.ts`];
+  if (extension !== "") return [basePath];
+  return [
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    join(basePath, "index.ts"),
+    join(basePath, "index.tsx"),
+  ];
+}
+
+function resolveLocalImport(fromFile, specifier) {
+  const basePath = resolve(dirname(fromFile), specifier);
+  return localCandidates(basePath).find((candidate) => existsSync(candidate));
+}
+
+function externalImportName(specifier) {
+  const parts = specifier.split("/");
+  if (specifier.startsWith("@")) return parts.slice(0, 2).join("/");
+  return parts[0] ?? specifier;
+}
+
+function collectEntryGraph(entryPath) {
+  const entry = join(repoRoot, entryPath);
+  const pending = [entry];
+  const visited = new Set();
+  const externalImports = new Set();
+  const nodeImports = [];
+
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current === undefined || visited.has(current)) continue;
+    visited.add(current);
+    if (!existsSync(current)) {
+      record(false, `entry graph file missing: ${repoPath(current)}`);
+      continue;
+    }
+    const source = readFileSync(current, "utf8");
+    for (const specifier of parseImportSpecifiers(source)) {
+      if (specifier.startsWith("node:")) {
+        nodeImports.push(`${repoPath(current)} imports ${specifier}`);
+        continue;
+      }
+      if (specifier.startsWith(".")) {
+        const resolved = resolveLocalImport(current, specifier);
+        if (resolved === undefined) {
+          record(false, `unresolved local import from ${repoPath(current)}: ${specifier}`);
+        } else {
+          pending.push(resolved);
+        }
+        continue;
+      }
+      externalImports.add(externalImportName(specifier));
+    }
+  }
+
+  return {
+    externalImports: sorted(externalImports),
+    files: sorted([...visited].map((file) => repoPath(file))),
+    nodeImports: sorted(nodeImports),
+  };
+}
+
+function checkEntryImportGraphs() {
+  const assetsRoot = collectEntryGraph(ASSETS_ROOT_ENTRY);
+  const assetsRootReactImports = assetsRoot.externalImports.filter(
+    (specifier) => specifier === "react" || specifier === "react-dom",
+  );
+  record(
+    assetsRootReactImports.length === 0,
+    `@facet/assets root entry reaches react imports: ${assetsRootReactImports.join(", ")}`,
+  );
+
+  const assetsReact = collectEntryGraph(ASSETS_REACT_ENTRY);
+  const unexpectedAssetsReactImports = assetsReact.externalImports.filter(
+    (specifier) => !ASSETS_REACT_ALLOWED_IMPORTS.includes(specifier),
+  );
+  record(
+    unexpectedAssetsReactImports.length === 0,
+    `@facet/assets/react imports unexpected packages: ${unexpectedAssetsReactImports.join(", ")}`,
+  );
+
+  for (const packageName of NODE_FREE_ROOT_ENTRY_PACKAGES) {
+    const entryPath = join(EXPECTED_PACKAGES[packageName], "src/index.ts");
+    const graph = collectEntryGraph(entryPath);
+    record(
+      graph.nodeImports.length === 0,
+      `node builtin import reachable from ${packageName}: ${graph.nodeImports.join("; ")}`,
+    );
+  }
+
+  const agentTools = collectEntryGraph("packages/agents/agent-tools/src/index.ts");
+  const agentToolWorkspaceImports = agentTools.externalImports.filter(
+    (specifier) => EXPECTED_PACKAGES[specifier] !== undefined,
+  );
+  record(
+    JSON.stringify(agentToolWorkspaceImports) === JSON.stringify(AGENT_TOOLS_ALLOWED_IMPORTS),
+    `@facet/agent-tools imports unexpected workspace packages: ${agentToolWorkspaceImports.join(", ") || "(none)"}`,
+  );
+}
+
+function checkWorkspaceDependencyCycles(graph) {
+  const visiting = [];
+  const visited = new Set();
+
+  function visit(packageName) {
+    const activeIndex = visiting.indexOf(packageName);
+    if (activeIndex !== -1) return [...visiting.slice(activeIndex), packageName];
+    if (visited.has(packageName)) return undefined;
+
+    visiting.push(packageName);
+    for (const dependency of graph[packageName] ?? []) {
+      const cycle = visit(dependency);
+      if (cycle !== undefined) return cycle;
+    }
+    visiting.pop();
+    visited.add(packageName);
+    return undefined;
+  }
+
+  for (const packageName of sorted(Object.keys(graph))) {
+    const cycle = visit(packageName);
+    if (cycle !== undefined) {
+      record(false, `workspace dependency cycle: ${cycle.join(" -> ")}`);
+      return;
+    }
+  }
 }
 
 function isExcludedReferencePath(path) {
@@ -365,10 +559,13 @@ function checkRetiredPathReferences() {
 
 function main() {
   checkPhysicalLayout();
-  checkPrivateApps();
-  checkPrivateAppLeaves();
+  checkGuidanceAlias();
   checkRepositoryPolicy();
   checkWorkspaceDiscovery();
+  checkDependencyGraph();
+  checkTsconfigAliases();
+  checkPublishConfigExports();
+  checkEntryImportGraphs();
   checkRetiredPathReferences();
 
   if (errors.length > 0) {

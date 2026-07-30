@@ -2,10 +2,10 @@
  * Provider layer for the Facet reference agent.
  *
  * The built-in agent is a TOOL-CALLING loop, not a single-shot completion: each
- * turn the model calls tools (append/set/remove a node, render the whole page,
- * say a chat line) across multiple steps, observing each result. So a provider
- * here exposes native tool-use -- `run(turn, tools)` returns the model's tool
- * calls (and any prose) for one step; the agent executes them and loops.
+ * turn the model calls declarative Facet tools across multiple steps, observing
+ * each result. So a provider here exposes native tool-use -- `run(turn, tools)`
+ * returns the model's tool calls and any final prose for one step; the harness
+ * executes tools and turns prose into the one conversation outcome.
  *
  * Raw `fetch`, no SDK dependencies: each adapter is one POST endpoint plus one
  * response shape, so the official SDKs would add two heavyweight dependency
@@ -25,6 +25,7 @@ export type {
   ProviderUsage,
   ReferenceProvider,
   ToolCall,
+  ToolInputSchema,
   ToolSpec,
   TurnMessage,
 } from "./provider/types.js";

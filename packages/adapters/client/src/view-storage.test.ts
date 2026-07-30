@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ViewSnapshot } from "@facet/core";
-import { loadPersistedView, persistView } from "./view-storage.js";
+
+import { loadPersistedScreen, persistScreen } from "./view-storage.js";
 
 function mockLocalStorage(): void {
   const store = new Map<string, string>();
@@ -30,67 +30,68 @@ function mockThrowingLocalStorage(overrides: Partial<Storage>): void {
   } as Storage;
 }
 
-const SNAP: ViewSnapshot = {
-  screen: "home",
-  toggled: { menu: "shown" },
-  viewport: "wide",
-  colorMode: "dark",
-};
-
 afterEach(() => {
   vi.restoreAllMocks();
   // @ts-expect-error remove the stub so the "no storage" case can run
   delete globalThis.localStorage;
 });
 
-describe("persistView / loadPersistedView", () => {
-  it("persist then load round-trips the snapshot", () => {
+describe("persistScreen / loadPersistedScreen", () => {
+  it("round-trips only the screen field", () => {
     mockLocalStorage();
-    persistView("agent-1", SNAP);
-    expect(loadPersistedView("agent-1")).toEqual(SNAP);
+
+    persistScreen("agent-1", {
+      screen: "pricing",
+      toggled: { faq: "shown" },
+      sort: { table: "asc" },
+      viewport: "wide",
+      colorMode: "dark",
+    });
+
+    expect(localStorage.getItem("facet:screen:agent-1")).toBe(
+      JSON.stringify({ screen: "pricing" }),
+    );
+    expect(loadPersistedScreen("agent-1")).toEqual({ screen: "pricing" });
   });
 
-  it("returns undefined when nothing is stored", () => {
-    mockLocalStorage();
-    expect(loadPersistedView("agent-1")).toBeUndefined();
-  });
-
-  it("returns undefined for corrupt JSON without throwing", () => {
-    mockLocalStorage();
-    localStorage.setItem("facet:view:agent-1", "{not valid json");
-    expect(() => loadPersistedView("agent-1")).not.toThrow();
-    expect(loadPersistedView("agent-1")).toBeUndefined();
-  });
-
-  it("returns undefined when stored payload fails sanitizeView", () => {
+  it("loads legacy or hostile payloads by projecting screen only", () => {
     mockLocalStorage();
     localStorage.setItem(
-      "facet:view:agent-1",
-      JSON.stringify({ screen: 123, viewport: "gigantic", junk: true }),
+      "facet:screen:agent-1",
+      JSON.stringify({
+        screen: "home",
+        toggled: { drawer: "open" },
+        viewport: "narrow",
+        colorMode: "dark",
+      }),
     );
-    expect(loadPersistedView("agent-1")).toBeUndefined();
+
+    expect(loadPersistedScreen("agent-1")).toEqual({ screen: "home" });
   });
 
-  it("keys are per-agent so two agent ids never collide", () => {
+  it("returns undefined for absent, corrupt, or invalid screen payloads", () => {
     mockLocalStorage();
-    const other: ViewSnapshot = { screen: "settings", colorMode: "light" };
-    persistView("agent-a", SNAP);
-    persistView("agent-b", other);
-    expect(loadPersistedView("agent-a")).toEqual(SNAP);
-    expect(loadPersistedView("agent-b")).toEqual(other);
-    expect(localStorage.getItem("facet:view:agent-a")).not.toBeNull();
-    expect(localStorage.getItem("facet:view:agent-b")).not.toBeNull();
+    expect(loadPersistedScreen("agent-1")).toBeUndefined();
+    localStorage.setItem("facet:screen:agent-1", "{not valid json");
+    expect(loadPersistedScreen("agent-1")).toBeUndefined();
+    localStorage.setItem("facet:screen:agent-1", JSON.stringify({ screen: "not valid" }));
+    expect(loadPersistedScreen("agent-1")).toBeUndefined();
   });
 
-  it("persist no-ops and load returns undefined when localStorage is undefined", () => {
-    expect(() => persistView("agent-1", SNAP)).not.toThrow();
-    expect(loadPersistedView("agent-1")).toBeUndefined();
-  });
+  it("keys are per-agent and storage failure is silent", () => {
+    mockLocalStorage();
+    persistScreen("agent-a", { screen: "home" });
+    persistScreen("agent-b", { screen: "settings" });
+    expect(loadPersistedScreen("agent-a")).toEqual({ screen: "home" });
+    expect(loadPersistedScreen("agent-b")).toEqual({ screen: "settings" });
 
-  it("degrades silently, with no console output, when storage access throws", () => {
+    // @ts-expect-error remove localStorage to exercise the no-storage branch
+    delete globalThis.localStorage;
+    expect(() => persistScreen("agent-1", { screen: "home" })).not.toThrow();
+    expect(loadPersistedScreen("agent-1")).toBeUndefined();
+
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-
     mockThrowingLocalStorage({
       getItem: () => {
         throw new Error("read blocked");
@@ -99,9 +100,8 @@ describe("persistView / loadPersistedView", () => {
         throw new Error("write blocked");
       },
     });
-
-    expect(() => persistView("agent-1", SNAP)).not.toThrow();
-    expect(loadPersistedView("agent-1")).toBeUndefined();
+    expect(() => persistScreen("agent-1", { screen: "home" })).not.toThrow();
+    expect(loadPersistedScreen("agent-1")).toBeUndefined();
     expect(errorSpy).not.toHaveBeenCalled();
     expect(warnSpy).not.toHaveBeenCalled();
   });

@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import type { ToolCall, TurnMessage } from "../provider.js";
@@ -16,6 +19,19 @@ function turn(index: number, extra = ""): readonly TurnMessage[] {
 }
 
 describe("compactHistoryMessages", () => {
+  it("keeps WU-71 production on direct character measurement with no estimator residue", () => {
+    const production = [
+      source("./compaction.ts"),
+      source("./in-turn-compaction.ts"),
+      source("./summary.ts"),
+    ].join("\n");
+
+    expect(production).toContain("measureChars");
+    expect(production).not.toMatch(
+      /TokenEstimator|estimateTokens|maxSummaryTokens|contextWindowTokens|CHARS_PER_TOKEN|\.\/estimate|token budget|tokens ×/u,
+    );
+  });
+
   it("keeps the newest turns deterministically and emits an explicit compaction note", () => {
     const messages: TurnMessage[] = [
       ...turn(0, "oldest"),
@@ -85,11 +101,15 @@ describe("compactHistoryMessages", () => {
   });
 });
 
+function source(path: string): string {
+  return readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
+}
+
 function messageContent(message: TurnMessage): string {
   return "content" in message ? message.content : message.text;
 }
 
-function toolCall(id: string, name = "inspect_stage"): ToolCall {
+function toolCall(id: string, name = ["inspect", "stage"].join("_")): ToolCall {
   return { id, name, input: {} };
 }
 

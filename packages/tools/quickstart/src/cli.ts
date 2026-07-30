@@ -9,14 +9,14 @@
  * from env only and never logged (error messages name the VAR, never a value).
  */
 import { readFile } from "node:fs/promises";
-import { readdirSync, realpathSync, statSync } from "node:fs";
+import { realpathSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import type { FacetAgent, FacetPattern, FacetTheme, FacetTree } from "@facet/core";
+import type { InProcessFacetAgent } from "@facet/agent";
+import { DEFAULT_THEME } from "@facet/assets";
 import { resolveProvider } from "@facet/reference-agent";
-import { MemoryAssets, MemorySink, loadAssets, type AssetsStore } from "@facet/runtime";
-import { FileAssets } from "@facet/runtime/node";
+import { MemorySink } from "@facet/runtime";
 import { createQuickstartAgent } from "./agent.js";
-import { QUICKSTART_INITIAL_STAGE, QUICKSTART_PAGE_BRIEF } from "./guide.js";
+import { QUICKSTART_INITIAL_MARKUP, QUICKSTART_PAGE_BRIEF } from "./guide.js";
 import { startQuickstart, type RunningQuickstart } from "./server.js";
 
 export interface RunCliHooks {
@@ -28,13 +28,6 @@ export interface RunCliHooks {
    * close the server (main() ignores it; the listening server keeps the
    * process alive). */
   readonly onStarted?: (running: RunningQuickstart) => void;
-  /** Called with the assets resolved through `loadAssets` (default library +
-   * any `--assets` docs), just before they reach the agent + shell — the
-   * observable seam tests use to assert the defaults seed on every boot. */
-  readonly onResolvedAssets?: (assets: {
-    readonly theme: FacetTheme;
-    readonly patterns: readonly FacetPattern[];
-  }) => void;
 }
 
 const DEFAULT_PORT = 5292;
@@ -44,14 +37,13 @@ const DEFAULT_GUIDE_PATH = "./facet.md";
 const NO_KEY_MESSAGE = "No provider key found. Set OPENAI_API_KEY or ANTHROPIC_API_KEY.";
 
 const USAGE =
-  "Usage: facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--agent-id <id>] [--assets <dir>]";
+  "Usage: facet-quickstart [--guide <path>] [--port <n>] [--provider openai|anthropic] [--agent-id <id>]";
 
 interface CliFlags {
   readonly guide?: string;
   readonly port: number;
   readonly provider?: string;
   readonly agentId: string;
-  readonly assets?: string;
 }
 
 /** Parse argv into flags; throws with a user-facing message on bad input. */
@@ -60,7 +52,6 @@ function parseFlags(argv: readonly string[]): CliFlags {
   let port = DEFAULT_PORT;
   let provider: string | undefined;
   let agentId = DEFAULT_AGENT_ID;
-  let assets: string | undefined;
 
   const takeValue = (flag: string, value: string | undefined): string => {
     if (value === undefined) throw new Error(`${flag} requires a value\n${USAGE}`);
@@ -90,9 +81,6 @@ function parseFlags(argv: readonly string[]): CliFlags {
       case "--agent-id":
         agentId = takeValue("--agent-id", argv[++i]);
         break;
-      case "--assets":
-        assets = takeValue("--assets", argv[++i]);
-        break;
       default:
         throw new Error(`Unknown flag "${String(arg)}"\n${USAGE}`);
     }
@@ -103,7 +91,6 @@ function parseFlags(argv: readonly string[]): CliFlags {
     port,
     ...(provider !== undefined ? { provider } : {}),
     agentId,
-    ...(assets !== undefined ? { assets } : {}),
   };
 }
 
@@ -143,42 +130,11 @@ export async function runCli(
     }
   }
 
-  // Assets registry: resolve through `loadAssets` on EVERY boot so the bundled
-  // Theme + Pattern library seed even with no --assets. An EXPLICIT --assets
-  // path must exist (the --guide precedent) and supplies the operator's exact
-  // optional theme.json / patterns.json / initial.tree.json documents.
-  // Documents are validated once here at boot; each issue is one concise warn
-  // line (never a document value). The one Theme goes to the agent and browser;
-  // Patterns stay in the agent's immutable snapshot and are never shipped to
-  // the browser. A seedable initial tree goes to the server.
-  let store: AssetsStore;
-  if (flags.assets !== undefined) {
-    // An EXPLICIT --assets must be a READABLE DIRECTORY (the --guide hard-fail
-    // precedent). existsSync passes for a regular file or a permission-denied
-    // dir; FileAssets would then warn-and-continue with zero assets and boot at
-    // exit 0 — an explicit registry silently doing nothing. Probe for real.
-    try {
-      if (!statSync(flags.assets).isDirectory()) {
-        error(`Assets path is not a directory: ${flags.assets}`);
-        return 1;
-      }
-      readdirSync(flags.assets);
-    } catch (cause) {
-      error(`Assets directory not readable: ${flags.assets} (${String(cause)})`);
-      return 1;
-    }
-    store = new FileAssets(flags.assets);
-  } else {
-    // No --assets: an empty document set still seeds the default base layer.
-    store = new MemoryAssets({});
-  }
-  const loaded = await loadAssets(store, flags.agentId);
-  const theme = loaded.theme;
-  const patterns = loaded.patterns;
-  const initialStage: FacetTree | undefined =
-    loaded.initialTree ?? (usingQuickstartPageBrief ? QUICKSTART_INITIAL_STAGE : undefined);
-  for (const issue of loaded.issues) error(`[facet-quickstart] ${issue}`);
-  hooks.onResolvedAssets?.({ theme, patterns });
+  // Zero-setup bootstrap is fixed to the framework defaults. The retired
+  // `--assets` flag and file-backed asset registry are gone; custom components
+  // are a host integration concern, not a quickstart CLI branch.
+  const theme = DEFAULT_THEME;
+  const initialMarkup = usingQuickstartPageBrief ? QUICKSTART_INITIAL_MARKUP : undefined;
 
   // One MemorySink shared by the agent (prompt layer ③ reads history) and the
   // facet server (which records into it) — the same conversation, both sides.
@@ -203,13 +159,11 @@ export async function runCli(
   // replaying in full. The summary store lives entirely inside the agent
   // closure (background lane + Sink history), so the server boot needs no
   // summary parameter — it only forwards events to this agent.
-  const agent: FacetAgent = createQuickstartAgent({
+  const agent: InProcessFacetAgent = createQuickstartAgent({
     provider,
     guide,
     sink,
     agentId: flags.agentId,
-    theme,
-    patterns,
   });
   const brain = `${provider.name} (${provider.model})`;
 
@@ -221,7 +175,7 @@ export async function runCli(
       agent,
       sink,
       theme,
-      ...(initialStage !== undefined ? { initialStage } : {}),
+      ...(initialMarkup !== undefined ? { initialMarkup } : {}),
     });
   } catch (cause) {
     error(cause instanceof Error ? cause.message : String(cause));

@@ -1,7 +1,7 @@
 import { emitReferenceAgentTrace, type ReferenceAgentTrace } from "./trace.js";
 import { MIN_REFERENCE_AGENT_OBSERVATION_CHARS, type ReferenceAgentBudget } from "./budget.js";
 import { truncateWithMarker } from "./compaction.js";
-import { isExactAssetReadToolName } from "./asset-read-policy.js";
+import type { ConversationMessage } from "@facet/core";
 import type { ProviderStep, TurnMessage } from "../provider.js";
 
 export interface TranscriptToolObservation {
@@ -21,6 +21,50 @@ export interface BoundedTranscriptObservation {
 export interface TranscriptObservationOptions {
   readonly maxObservationChars: ReferenceAgentBudget["maxObservationChars"];
   readonly trace?: ReferenceAgentTrace;
+}
+
+export interface ConversationTranscriptResult {
+  readonly records: readonly ConversationMessage[];
+  readonly messages: readonly TurnMessage[];
+  readonly droppedTurnCount: number;
+  readonly duplicateMessageCount: number;
+}
+
+interface IndexedConversationMessage {
+  readonly record: ConversationMessage;
+  readonly index: number;
+}
+
+export function conversationHistoryToMessages(
+  history: readonly ConversationMessage[],
+  limit: number,
+): ConversationTranscriptResult {
+  const byMessageId = new Map<string, IndexedConversationMessage>();
+  let duplicateMessageCount = 0;
+  for (const record of history) {
+    if (!isConversationMessage(record)) continue;
+    const existing = byMessageId.get(record.messageId);
+    if (existing === undefined) {
+      byMessageId.set(record.messageId, { record, index: byMessageId.size });
+      continue;
+    }
+    duplicateMessageCount += 1;
+    byMessageId.set(record.messageId, { record, index: existing.index });
+  }
+
+  const deduped = [...byMessageId.values()]
+    .sort((left, right) => left.index - right.index)
+    .map((entry) => entry.record);
+  const bounded = boundedLimit(limit);
+  const turnOrder = orderedTurnIds(deduped);
+  const keptTurnIds = new Set(bounded === 0 ? [] : turnOrder.slice(-bounded));
+  const kept = deduped.filter((record) => keptTurnIds.has(record.turnId));
+  return {
+    records: kept,
+    messages: kept.map(conversationMessageToTurnMessage),
+    droppedTurnCount: Math.max(0, turnOrder.length - keptTurnIds.size),
+    duplicateMessageCount,
+  };
 }
 
 export function appendAssistantToolCalls(messages: TurnMessage[], step: ProviderStep): void {
@@ -65,9 +109,7 @@ function appendToolResultObservation(
   options: TranscriptObservationOptions,
 ): BoundedTranscriptObservation {
   const toolName = observation.toolName ?? "unknown";
-  const bounded = isExactAssetReadToolName(toolName)
-    ? exactObservationText(observation.content)
-    : boundObservationText(observation.content, options.maxObservationChars);
+  const bounded = boundObservationText(observation.content, options.maxObservationChars);
   messages.push({ role: "tool_result", callId: observation.callId, content: bounded.content });
 
   emitReferenceAgentTrace(
@@ -125,11 +167,41 @@ function normalizeObservationLimit(maxObservationChars: number): number {
   return Math.max(MIN_REFERENCE_AGENT_OBSERVATION_CHARS, Math.floor(maxObservationChars));
 }
 
-function exactObservationText(content: string): Omit<BoundedTranscriptObservation, "callId"> {
+function conversationMessageToTurnMessage(record: ConversationMessage): TurnMessage {
   return {
-    content,
-    originalChars: content.length,
-    truncated: false,
-    omittedChars: 0,
+    role: record.role === "visitor" ? "user" : "assistant",
+    content: record.text,
   };
+}
+
+function isConversationMessage(value: unknown): value is ConversationMessage {
+  return (
+    isRecord(value) &&
+    value["kind"] === "conversation" &&
+    typeof value["messageId"] === "string" &&
+    value["messageId"].length > 0 &&
+    typeof value["turnId"] === "string" &&
+    (value["role"] === "visitor" || value["role"] === "assistant") &&
+    typeof value["text"] === "string" &&
+    typeof value["at"] === "number"
+  );
+}
+
+function boundedLimit(limit: number): number {
+  return Number.isSafeInteger(limit) && limit > 0 ? limit : 0;
+}
+
+function orderedTurnIds(history: readonly ConversationMessage[]): readonly string[] {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const record of history) {
+    if (seen.has(record.turnId)) continue;
+    seen.add(record.turnId);
+    ordered.push(record.turnId);
+  }
+  return ordered;
+}
+
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

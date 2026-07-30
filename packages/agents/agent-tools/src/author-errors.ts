@@ -1,37 +1,32 @@
-import type { AuthorValidationResult, FacetTree } from "@facet/core";
-import { errorResult } from "./executor-result.js";
-import type { AgentToolObservationData, StageToolErrorResult } from "./types.js";
+import { BOUNDS } from "@facet/core";
+import type { AuthorError, AuthorErrorCode, SourceLocation } from "@facet/core";
 
-export type AuthorMutationTool = "render_page" | "append_node" | "set_node";
+export interface ProjectedAuthorError {
+  readonly code: AuthorErrorCode;
+  readonly location: SourceLocation;
+  readonly cause: string;
+  readonly repair: string;
+}
 
-/**
- * Turns Core's bounded strict-author issues into the repair payload returned to
- * an agent. Rejected authoring never becomes a warning or a partial success.
- */
-export function authorErrorResult(
-  tool: AuthorMutationTool,
-  validation: AuthorValidationResult<unknown>,
-  shadow: FacetTree,
-): StageToolErrorResult {
-  const base = errorResult(
-    tool,
-    "invalid_authoring",
-    `error: ${tool} rejected invalid authoring; no changes were applied.`,
-    shadow,
-    [],
-    "Fix the reported paths using their allowed choices, then retry the whole call.",
-  );
-  const data: AgentToolObservationData = {
-    ...base.observation.data,
-    errors: validation.issues,
-    omitted_error_count: validation.omittedErrorCount,
-  } as AgentToolObservationData;
-  return {
-    ...base,
-    observation: {
-      status: "error",
-      text: JSON.stringify(data),
-      data,
-    },
-  };
+export interface AuthorErrorResult {
+  readonly ok: false;
+  readonly code: "author_error";
+  readonly error: ProjectedAuthorError;
+}
+
+function bounded(text: string): string {
+  return text.length <= BOUNDS.frameworkCopyChars ? text : text.slice(0, BOUNDS.frameworkCopyChars);
+}
+
+export function renderAuthorError(error: AuthorError): AuthorErrorResult {
+  return Object.freeze({
+    ok: false as const,
+    code: "author_error" as const,
+    error: Object.freeze({
+      code: error.code,
+      location: Object.freeze({ ...error.location }),
+      cause: bounded(error.cause),
+      repair: bounded(error.repair),
+    }),
+  });
 }

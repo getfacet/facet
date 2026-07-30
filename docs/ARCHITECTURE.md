@@ -1,484 +1,125 @@
-# Architecture
+# Facet Architecture
 
-For the first evaluation and integration-path decision, start with the
-[Facet README](../README.md). This document owns Facet's system invariants and
-runtime architecture.
+Facet is a TypeScript framework for UI that a language model renders as data.
+The model emits declarative component markup; Facet parses it, validates it
+against a host-owned immutable catalog, folds only authorized patches into the
+stage, and renders through trusted React components registered by the host.
 
-Facet is a TypeScript framework for UI a language model authors as safe data.
-The agent has real freedom to arrange a small native vocabulary, but it never
-gets an open HTML, script, CSS, or arbitrary-style surface.
+The core boundary is deliberately small: Facet owns UI-out and UI-in. Product
+data fetching, authorization, business actions, provider choice, tenancy,
+secrets, billing, quotas, and operations remain outside Facet.
 
-## The central contract
+## Load-bearing invariants
 
-Facet has two layers:
+1. Agents emit declarative component markup, never executable UI code.
+2. The active catalog and React registry form one immutable trust boundary.
+3. Only validated RFC 6902 patches change the stage.
+4. Facet stores bounded UI data and forwards explicit visitor events; it does not
+   perform browser-side domain fetches.
+5. Layout remains flow-contained. Overlap exists only through the dedicated
+   trusted Modal contract.
+6. Stage revisions and compare-and-save persistence keep the browser, runtime,
+   and agent from becoming competing writers.
+7. All package dependency edges flow through the public barrels and toward
+   `@facet/core`.
 
-1. **Brain.** An LLM or deterministic agent decides what to show and calls
-   tools. Applications may replace the reference brain.
-2. **Stage.** Facet validates a document, stores it, applies RFC 6902 patches,
-   and renders it. This layer is the stable framework contract.
+## Component markup
 
-Two invariants hold across every package:
+The author grammar admits one `<Facet entry="...">` envelope with named
+`<Screen name="...">` children. Inside screens, the agent may use only registered
+component tags, declared props, quoted scalar values, and explicit `data:path`,
+`nav:screen`, and `agent:event` references.
 
-1. The agent emits only declarative native Bricks, fields, actions, and style
-   choices intentionally defined by `@facet/core`.
-2. Only patches travel after initial state, and server and client use the same
-   pure `applyPatch` implementation.
+The parser rejects raw HTML, JavaScript/JSX expressions, event-handler props,
+imports, spreads, inline JSON, raw CSS, arbitrary style keys, and unsupported
+reference schemes before catalog validation runs. The parser output is an AST,
+not executable code.
 
-The stage is permissive about arrangement and strict about vocabulary. That is
-the main design trade: an agent can build an interface Facet's authors did not
-preassemble, while every individual part stays bounded and inspectable.
+Catalog validation is the second gate. The host supplies a `FacetCatalog` whose
+component specs declare tags, props, scalar domains, data-bindable props,
+collection addresses, and child support. `validateAuthorMarkup` rejects unknown
+tags, undeclared props, invalid values, unauthorized bindings, and unresolved
+action/collection contracts atomically with one deterministic author error.
 
-## Native Bricks
+## Catalog and registry trust boundary
 
-Core defines exactly 11 Bricks:
+The catalog is what an agent may author. The registry is trusted React code that
+mounts those tags. `bootstrapRenderer` validates the catalog, validates the
+theme, snapshots the registry, and requires exact tag-set equality before a
+session can render.
 
-| Brick | Purpose |
-| --- | --- |
-| `box` | The sole container; normal-flow layout, actions, bounded backdrop and modal/drawer behavior. |
-| `text` | One plain text value, optionally bound to one data cell. |
-| `media` | A gated image or video source. |
-| `input` | A renderer-owned named control. |
-| `richtext` | Closed blocks, runs, marks, and gated links. |
-| `table` | Bounded tabular data with renderer-owned optional local sort, closed column widths, dividers, sticky header, and empty-state label. |
-| `chart` | Bounded display-only chart data, including a closed per-series primary/secondary value scale. |
-| `list` | Ordered compact data rows. |
-| `keyValue` | Label/value data rows. |
-| `progress` | A bounded progress value. |
-| `loading` | A renderer-owned loading indicator. |
+Registration is pre-session only. There is no mid-session component
+registration, compatibility adapter, alias table, or fallback that makes an
+unknown authored tag render. Component crashes are isolated by subtree error
+boundaries so a bad trusted component does not bring down unrelated siblings.
 
-Only `box` owns `children`. A new content kind becomes a Brick only when it needs
-renderer computation that existing Bricks cannot express. A new way for `box`
-to arrange or present its own content is added as a deliberate closed `box`
-field instead. This keeps the roster small without turning `box` or `text` into
-open-ended escape hatches.
+`Modal` is the only sanctioned overlap surface. If the host registers a Modal
+component, it must conform to the framework frame contract; otherwise authored
+overlap is unavailable.
 
-The decision order is benchmark-first. First test the target with a custom
-Theme, same-Brick Presets, and Patterns owned by the service/agent. If the gap is
-brand, density, spacing, or repeated composition, keep it in assets. If the gap
-is reusable renderer behavior for existing content, improve the renderer. Add a
-new Brick or a new closed `box` layout field only when the benchmark proves that
-existing Bricks plus custom assets cannot express the product-grade surface.
+## Data model and path grammar
 
-Actions are also closed:
+Facet stores a bounded hierarchical data model for UI projection. Providers and
+agent tools fetch and authorize domain data, then publish only the projected
+values Facet should render or read.
 
-- `agent` sends a named event to the brain and may collect visible named inputs;
-- `navigate` switches among pre-authored screens locally;
-- `toggle` changes local visibility.
-
-Local navigation, toggles, and table sort never write document content. They are
-browser view-state, so the server remains the sole document writer.
-
-## Facet Document
-
-A document is a flat tree. The conceptual shape below is pseudocode; the
-exported `@facet/core` type is authoritative:
-
-```ts
-interface FacetTree {
-  root: NodeId;
-  nodes: Record<NodeId, FacetNode>;
-  screens?: Record<string, NodeId>;
-  entry?: string;
-  data?: Record<string, Dataset>;
-}
-```
-
-The root and every screen root are `box` Bricks. Nodes are stored by stable id;
-containers refer to child ids. This shape lets an agent add a leaf, assemble a
-subtree bottom-up, and patch only the changed paths.
-
-Core's fail-soft `resolveTreeScreen` owns the live-root order used by document
-content checks and renderers: preferred live screen, live `entry`, first live
-screen, then the plain root. A missing, dangling, hostile, or non-`box` screen
-target is skipped rather than becoming a second resolution policy or a throw.
-
-The optional `data` map stores named arrays of flat row records. Data-bearing
-Bricks may use inline data or a disclosed `from` name. A name is not a URL,
-query, expression, or resolver. Missing data renders empty and can be supplied by
-a later patch. Facet has no agent-authored client fetch or browser business
-logic.
-
-Theme selection and display mode are deliberately absent from the document.
-They are host configuration and browser view-state, not content.
-
-## The style system
-
-This section is the architectural authority for style ownership and resolution.
-For the practical authoring and operator workflow, see the
-[Design System guide](DESIGN-SYSTEM.md).
-
-The style system has four concepts:
-
-1. **Style property** — an authored key such as `gap`, `fontSize`, or
-   `background`.
-2. **Style target** — a Brick-owned part such as `input.style.control` or
-   `progress.style.track`.
-3. **Token name or fixed choice** — the closed value accepted by one property.
-4. **Theme** — the operator-owned data that supplies concrete token values,
-   Brick defaults, and optional Presets.
-
-There is no global target table. Identical target names on two Bricks remain two
-separate contracts. Core's `BRICK_CONTRACT` is the single source for each
-Brick's fields, targets, properties, allowed states, input-kind applicability,
-and whether it supports `activeWhen`.
-
-### Tokens and fixed choices
-
-Token names are Theme-sensitive meanings. Examples include spacing names such
-as `sm`/`md`/`lg`, semantic paint names such as `accent`/`success`, and named
-font, radius, thickness, and size scales. The Theme decides their CSS values.
-
-Fixed choices are closed renderer semantics that do not change by brand. Examples
-include `row`/`column`, `auto`/`fit`/`full`, and boolean choices.
-
-For width, `auto` keeps default normal-flow sizing, `fit` requests bounded
-content-sized flow, and `full` fills the parent slot. All three remain named
-renderer semantics: the author cannot provide raw widths, margins, percentages,
-or arbitrary CSS.
-
-Both sources are defined in Core with bounded descriptions and `useWhen`
-guidance. A Brick property points to exactly one allowed value set. The agent
-cannot supply a raw scalar where a token or fixed choice is expected.
-
-### One complete Theme
-
-Each agent asset snapshot has exactly one complete `FacetTheme`. Absence selects
-`DEFAULT_THEME`. A Theme's conceptual shape is below; the exported Core type is
-authoritative:
-
-```ts
-interface FacetTheme {
-  name: string;
-  description?: string;
-  tokens: FacetThemeTokens;
-  defaults: BrickStyleDefinitionMap;
-  presets?: FacetPresets;
-}
-```
-
-`tokens` is complete, including `paint.light` and `paint.dark`. `defaults`
-provides one valid base style for every Brick. A Preset is scoped to one Brick
-and contains bounded discovery prose plus one style definition for that Brick.
-Concrete CSS values exist only inside Theme data.
-
-`validateTheme` is an all-or-nothing operator boundary. It requires complete
-token maps, validates every default and Preset against the owning Brick
-vocabulary, bounds strings and collections, rejects unsafe CSS constructs, and
-reports contrast findings as warnings. An invalid custom Theme is not partially
-merged; asset loading and rendering fall back to the complete bundled Theme.
-
-### Four authoring forms
-
-Every Brick has one optional `style` entry point. The supported forms are:
-
-1. no `style` — Theme default only;
-2. `{ "preset": "name" }` — Theme default plus a same-Brick Preset;
-3. direct properties — Theme default plus local style;
-4. a same-Brick Preset plus a small direct adjustment.
-
-Resolution is one deterministic merge:
+The shared Facet identifier grammar is:
 
 ```text
-Theme default → same-Brick Preset → direct style
+/^[A-Za-z][A-Za-z0-9_-]*$/
 ```
 
-Each layer copies only properties, targets, and states owned by the Brick
-contract. Unknown data is never spread into a renderer style object. Later
-layers override only exact allowed properties.
+B-06 is the identifier length bound. D-06 data path segments reuse that exact
+grammar rather than defining a second regex. Paths add only dotted named keys;
+numeric index segments are rejected. The rejected segment shapes include
+`__proto__`, leading underscore, leading hyphen, numeric index segment, space,
+intra-segment dot, and colon.
 
-The value decision is property-specific as well: Core intersects the declared
-token or fixed-choice domain with that property's exact allow-list. Strict
-author validation, Theme validation, discovery, and rendering all consume that
-one result, so an advertised choice cannot disagree with the validation path.
+Arrays may be published only as bounded values. Rows past B-21 are unreachable
+by design: they are not addressable by data paths and cannot be selected by an
+agent-authored binding.
 
-`box` and `text` may declare `activeWhen` with `style.active`. When the predicate
-matches browser-local screen or toggle state, the active Preset/direct layer is
-applied after the base look. Other renderer states — hover, pressed, focus,
-checked, sorted, or alternating rows — are available only on the targets and
-properties that declare them.
+## Stage, patches, and revisions
 
-### `colorMode` belongs to the client
+Runtime stores a `FacetStage`: the current component document, bounded data
+model, and stage revision. Agent-visible authoring operations are converted to
+authorized RFC 6902 patch messages. Browser and server apply the same patch
+fold, so a patch accepted in one environment has the same structural effect in
+the other.
 
-`StageRenderer` accepts `colorMode: "light" | "dark" | "system"`. The default
-is `system`; the browser resolves it and selects one of the Theme's two paint
-maps. Server rendering falls back deterministically to light.
+Every accepted mutation advances `stageRevision`. Runtime persistence uses
+compare-and-save semantics, and browser transports stamp outgoing events with
+the latest known revision. Stale or racing turns fail safe instead of silently
+overwriting newer state.
 
-The effective mode is included in the renderer's read-only view snapshot so a
-host may attach it to the visitor's next event. Changing it does not alter the
-Facet Document, emit a patch, or give the agent a second styling mechanism.
+The runtime event loop is single-flight per session. It loads the current stage,
+calls the agent, folds each emitted batch, saves the result, and delivers frames
+in order before pulling the next batch.
 
-## Patterns
+## Conversation channel
 
-A Pattern is an ordinary valid Facet tree plus bounded discovery metadata. The
-shape below is pseudocode; the exported Core type is authoritative:
+Conversation messages are protocol frames, not component nodes. A runtime or
+transport can deliver assistant/visitor text alongside stage patches, but the
+authoring tool roster remains about UI document/data operations. This keeps chat
+history and page state related but separate.
 
-```ts
-interface FacetPattern extends FacetTree {
-  name: string;
-  description: string;
-  useWhen: string;
-  avoidWhen?: string;
-}
-```
+## Fail-safe behavior
 
-Patterns are read-only examples for the brain. They add no node kind, runtime
-reference, parameter substitution, provenance field, or automatic insertion.
-`validatePatternList` validates each complete tree against the effective Theme,
-bounds the list and node count, keeps valid entries, and reports invalid entries.
+Facet has two fail-safe boundaries:
 
-The agent sees Pattern metadata in its prompt. If one fits, `get_pattern`
-returns the exact validated tree; the agent then adapts and re-authors ordinary
-native Bricks through mutation tools. Pattern trees stay on the agent side until
-the agent authors a document change.
+- Runtime load and patch folding degrade corrupt persisted input to a bounded
+  safe subset or a safe empty document with structured issues.
+- The React renderer isolates bad subtrees during mount and continues rendering
+  valid siblings.
 
-## Progressive discovery
+Invalid model-authored markup is not accepted through either boundary. The
+authoring boundary rejects it before it becomes stage state.
 
-Putting every Brick and style rule inside every mutation schema would make the
-tool surface too large. Core's `STAGE_SPEC` therefore states the portable
-document, style, action, and validation contract without naming one runner's
-tools or result codes. `@facet/agent-tools` adds its concrete discovery/editing
-workflow and creates one immutable turn snapshot containing:
+## Package flow
 
-- the complete validated Theme for internal validation;
-- the exact validated Pattern list;
-- bounded Pattern, Preset, and Brick indexes for the prompt.
+`@facet/core` contains the dependency-free contract. Runtime, renderers, agent
+packages, adapters, and tools build on that contract through public barrels.
+Published packages do not depend on private apps or unexported package source
+files. Browser-facing graphs stay free of Node built-ins.
 
-The prompt teaches a simple order:
-
-1. Pattern metadata first; call `get_pattern` when a worked structure fits.
-2. Preset metadata next; call `get_preset` when a same-Brick visual role fits.
-3. Brick metadata next; call `get_brick_spec({ type })` for one unfamiliar Brick.
-4. When directly choosing one unfamiliar value, call
-   `get_style_choices({ brick, target, property })`.
-
-`get_brick_spec` returns exact fields and a compact map of Brick-owned style
-paths. It identifies each property as token-backed or fixed without repeating
-all choice metadata. `get_style_choices` resolves one exact local path through
-Core and returns its property guidance and allowed values with meanings. It is
-not a global token browser.
-
-Pattern and Preset styles already present in the validated snapshot are known
-valid and may be re-authored without redundant choice lookups. All four asset
-reads are no-stage-change operations with zero messages and patches.
-
-The reference brain preserves the newest exact asset-read group through its
-first provider handoff. If the complete next request cannot fit the context
-budget, the loop stops with `context_limit` instead of truncating authoritative
-style or Pattern data.
-
-## Validation boundaries
-
-Facet intentionally uses three validation policies at different trust
-boundaries. They must not be collapsed into one generic fallback.
-
-### Agent mutation boundary: strict and atomic
-
-`validateAuthorNode` and `validateAuthorTree` reject a mutation when any authored
-field, target, property, state, Preset name, token name, fixed choice, reference,
-or bound is invalid. The executor returns:
-
-- `status: "error"` and `outcome: "rejected"`;
-- bounded structured errors with exact paths and repair guidance;
-- zero patches and unchanged local shadow state.
-
-This is the normal feedback loop. The agent reads the result, repairs the whole
-call, and retries. A renderer fallback never turns invalid authoring into
-success.
-
-### Persisted/render boundary: fail-soft
-
-`validateTree`, the style resolver, and `StageRenderer` are the last defense for
-stale, partially patched, persisted, or bypassed data. They ignore invalid style
-fragments, prune unusable references, break cycles, cap traversal, and skip
-unknown or dangling nodes. Valid Bricks and siblings continue to render.
-
-This asymmetry gives the agent precise correction while keeping a visitor's page
-alive under imperfect external state.
-
-### Custom Theme boundary: reject whole, then fall back whole
-
-`validateTheme` never returns a partial Theme. If any Theme error is present,
-asset loading and rendering use the complete bundled Theme instead. Contrast
-findings may remain warnings when structural validation succeeds. This operator
-fallback is separate from both strict authored-mutation rejection and fail-soft
-handling of stale render input.
-
-## Renderer layout contract
-
-Every native renderer root follows three rules:
-
-- **Parent owns placement.** Direction, gap, alignment, wrapping, and columns
-  place immediate children.
-- **Child owns internal layout.** A child stays inside the slot its parent gives
-  it.
-- **Renderer owns containment.** Long text wraps or clamps through closed
-  text-flow choices; media images, videos, and generic icons stay within bounds;
-  a table owns its bounded horizontal scroll region so a wide grid never pushes
-  its parent, and a sticky header pins inside that same renderer-owned region at
-  a framework-owned offset and height; charts own their internal axis, grid,
-  mark, tick, line-style, and legend geometry, including independent primary and
-  secondary value scales when series select them. A `box` `maxHeight` bounds a
-  region to its own scrolling viewport — the renderer supplies the overflow
-  containment so bounded content scrolls inside the box instead of spilling over
-  flow siblings — and a `columns:"auto"` grid clamps each track to its container
-  so a responsive grid never pushes horizontal overflow out of the box.
-
-There is no general authored positioning or z-index. A `box` backdrop and
-modal/drawer are bounded renderer-owned mechanisms with fixed layering and
-containment, not arbitrary CSS escape hatches. Responsive `collapse:"stack"` is
-likewise flow-only: it is a framework-owned `@media` rule in the per-stage
-stylesheet (no absolute positioning, no JS resize listener, nothing new in the
-view snapshot), keyed to a single renderer-owned narrow breakpoint that is never
-an authorable value.
-
-Compact sizing stays inside the same layout boundary. A child may request
-`width:"fit"` or `width:"full"`, but both are normal-flow choices interpreted
-and bounded by the renderer; neither grants coordinates, custom breakpoints, or
-open CSS.
-
-Density is not a layout primitive. Compact and spacious products use different
-Theme token values, defaults, and Presets while preserving the same document
-vocabulary. If a density target requires new structural behavior, that evidence
-belongs in the benchmark gap log before Core changes.
-
-## Patches and the event loop
-
-The runtime event loop is:
-
-```text
-visitor event
-  → open the current stage
-  → run the agent against one immutable asset snapshot
-  → validate tool calls and fold local shadow state
-  → emit RFC 6902 patch messages
-  → persist the resulting stage
-  → record conversation output through Sink
-```
-
-`StageStore`, `Sink`, `AssetsStore`, and `SummaryStore` are Promise-based
-interfaces so production deployments can provide durable adapters. The runtime
-serializes work per `(agent, visitor)` while allowing different visitors to run
-independently.
-
-The browser applies patches with the same `applyPatch` as the server. Browser
-view-state — current screen, toggles, local table sort, viewport class, and
-effective `colorMode` — remains separate. An outgoing event may carry a snapshot
-of that state, but it never becomes a second content writer.
-
-### Observation and replay truth
-
-Two additive observers expose evidence without joining the authoritative path:
-
-- `@facet/reference-agent` can report bounded provider attempts, tool calls and
-  results, batches, overflow, and terminal reasons. Values are detached,
-  redacted, bounded, and frozen before the callback runs; callback failures do
-  not control the model loop.
-- `@facet/server` can report accepted browser input and accepted live or late
-  frames. The callback receives a detached, frozen snapshot only after the
-  transport has made its acceptance decision. Throws and rejecting thenables
-  are ignored. A stable `turnId` correlates one forwarded UI-IN with every frame
-  it produces (`turnId: null` marks a local-only record), while per-frame
-  `agentMutated` distinguishes a Stage-changing batch from say-only or seed
-  delivery.
-
-An accepted-frame observation is evidence of what the server accepted. It is
-not the `Sink`, the conversation log, the server's resume buffer, a second
-`StageStore`, or permission to modify delivery. Consumers that need a replay
-record must persist their own bounded evidence and fold only the recorded
-accepted frames with Core's `applyPatch`.
-
-Renderer replay is similarly separated from document truth.
-`StageRenderer.initialView` hydrates the screen, toggle, and sort portions of one
-sanitized browser-private checkpoint only when the component is created.
-Viewport and effective color mode remain host/browser inputs. Later prop changes
-do not overwrite live interaction state; replay tools remount the renderer to
-select a different checkpoint. The document tree continues to come from
-accepted stage frames. For narrow-viewport layout the agent stays the primary
-authority — it re-authors the tree via patches when an event reports a narrow
-viewport — while a box's `collapse:"stack"` is a pre-authored CSS fallback at the
-*same* renderer-owned breakpoint, so the reported `view.viewport` classification
-and the CSS reflow threshold share one constant and cannot disagree. Below that
-breakpoint a resolved `collapse:"stack"` wins over an authored `direction:"row"`;
-to hold a row unstacked at narrow width the agent patches `collapse:"none"`.
-
-Patch producers use Core's `escapeJsonPointerToken` for every dynamic RFC 6901
-path token, so node ids, screen names, and dataset names share one escaping
-implementation across packages.
-
-## Assets and boot
-
-The per-agent asset store exposes three current documents:
-
-```text
-theme.json
-patterns.json
-initial.tree.json   # optional
-```
-
-`loadAssets` validates them once into a deeply frozen snapshot. Missing Theme or
-Pattern documents select bundled defaults; an explicit empty Pattern list
-selects none. A malformed custom Theme falls back whole. Invalid Patterns are
-omitted. An invalid or non-seedable initial tree is ignored so boot can continue
-with model-first paint.
-
-`MemoryAssets` is browser-safe. `FileAssets` lives behind `@facet/runtime/node`
-and bounds directory enumeration, file bytes, parsing, and issue text before
-handing raw documents to `loadAssets`.
-
-`withInitialStage` is a `StageStore` decorator. A valid seed enters through the
-same serialized stage path and reaches the browser as ordinary initial state and
-patch data; it does not create another writer or protocol.
-
-## Package boundaries
-
-Dependencies point toward `@facet/core`; Core has no dependencies. Nothing
-depends on the playground app.
-
-- **Core:** `@facet/core`, `@facet/runtime`, `@facet/assets` own the document
-  contract, event loop, stores, and bundled default design data.
-- **Renderers:** `@facet/react` renders a Facet Document into React UI.
-- **Agents:** `@facet/agent-tools`, `@facet/agent`, and
-  `@facet/reference-agent` help agents author Facet Documents. The last is the
-  reference LLM brain, not a production policy boundary.
-- **Adapters:** `@facet/server`, `@facet/client`, `@facet/agent-client`,
-  `@facet/ag-ui`, and `@facet/store-postgres` connect Facet to transports,
-  protocols, and persistence. The server/client pair is a reference transport;
-  the Postgres package is optional.
-- **Tools:** `@facet/quickstart`, `@facet/cli`, and `@facet/bridge` are local
-  human-run entry points and development tools.
-
-`apps/facet-lab` is an unpublished dependency leaf and maintainer workbench. It
-composes the public packages to inspect package-defined assets, exercise
-official scenarios, retain bounded run evidence, replay accepted frames, compare
-runs, and edit isolated trees. Its evaluation rules, retention, screenshots,
-and provider selection are application policy, not new Core, runtime, renderer,
-or transport contracts. No published package depends on it.
-
-The server/client packages are reference transports, not a hosted edge. Root
-`labs/` is an unpublished experimental area. See
-[Package boundaries](PACKAGE-BOUNDARIES.md) for detailed responsibilities and
-deployment language.
-
-## AG-UI edge adapter
-
-AG-UI is an optional/public edge adapter implemented by `@facet/ag-ui`; it is
-not a second Stage implementation. Facet owns the stage spec, renderer, and
-patch safety. The adapter translates Facet patch frames and authoritative Stage
-snapshots to `STATE_DELTA`/`STATE_SNAPSHOT` events under the reserved
-`/facet/stage` path, and converts only that reserved state subtree back to native
-Facet messages. `RunAgentInput.state` is not stage authority: visitor events and
-local records enter through bounded `forwardedProps.facet` data, while
-`StageStore` and the Facet runtime remain authoritative for document state.
-
-External NAT-safe AG-UI dial-out is deferred to a future
-`@facet/ag-ui/agent`; native `@facet/agent-client` remains unchanged. The native
-`@facet/client`/`@facet/server` path remains the local/reference fallback rather
-than depending on this adapter.
-
-## Out of scope
-
-Facet does not own the brain's business policy, external tool selection, tenant
-identity, API-key issuance, billing, rate limits, abuse operations, audit logs,
-secret management, or custom-domain routing. It also does not prescribe a
-distributed stage backend. Those concerns wrap or implement the interfaces
-above without changing the Facet Document contract.
+See [Package Boundaries](PACKAGE-BOUNDARIES.md) for the package map.

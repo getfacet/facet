@@ -1,214 +1,170 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_TREE } from "@facet/core";
-import type { StageToolBuffer } from "@facet/agent-tools";
-import type { Sink } from "@facet/runtime";
+import type {
+  AgentEvent,
+  AuthorValidationResult,
+  ComponentDocument,
+  FacetCatalog,
+  FacetToolSession,
+  PayloadEvaluation,
+} from "@facet/core";
+import { validateCatalog } from "@facet/core";
 
 import { normalizeBudget } from "./budget.js";
-import { compactInTurnTranscript } from "./in-turn-compaction.js";
-import { runReferenceAgentLoop } from "./loop.js";
-import type { ReferenceAgentTraceEvent } from "./trace.js";
-import type { ProviderTurn, ReferenceProvider, TurnMessage } from "../provider.js";
+import { compactInTurnTranscript, shouldCompactInTurn } from "./in-turn-compaction.js";
+import type { TurnMessage } from "../provider.js";
+
+const EVENT: AgentEvent = {
+  eventId: "turn1",
+  eventName: "submit",
+  sourceNodeId: "cta",
+  screen: "home",
+  stageRevision: 0,
+  collect: {},
+};
 
 const INITIAL_CONTEXT: readonly TurnMessage[] = [
-  { role: "user", content: "Visitor said: show me a dashboard\n\nCURRENT STAGE\n(empty)" },
+  { role: "user", content: "Visitor asked for a dashboard\n\nCURRENT FACET OBSERVATION\nold" },
 ];
 
-const EXACT_ASSET_READ_CALLS = [
-  ["get_pattern", { name: "dashboard" }],
-  ["get_preset", { brick: "box", name: "panel" }],
-  ["get_brick_spec", { type: "box" }],
-  ["get_style_choices", { brick: "box", target: "root", property: "gap" }],
-] as const;
-
-function assetReadGroup(toolName: string, input: unknown, content: string): readonly TurnMessage[] {
+function toolGroup(id: string, content: string): readonly TurnMessage[] {
   return [
     {
       role: "assistant_tools",
       text: "",
-      toolCalls: [{ id: "read-1", name: toolName, input }],
+      toolCalls: [{ id: `call-${id}`, name: "read_screen", input: { screen: "home" } }],
     },
-    { role: "tool_result", callId: "read-1", content },
+    { role: "tool_result", callId: `call-${id}`, content },
   ];
 }
 
-function ordinaryToolGroup(content: string): readonly TurnMessage[] {
-  return [
-    {
-      role: "assistant_tools",
-      text: "",
-      toolCalls: [{ id: "inspect-1", name: "inspect_stage", input: {} }],
-    },
-    { role: "tool_result", callId: "inspect-1", content },
-  ];
-}
-
-describe("in-turn exact asset-read compaction", () => {
-  it.each(EXACT_ASSET_READ_CALLS)("pins the latest exact %s result", async (toolName, input) => {
-    const exact = JSON.stringify({
-      name: "dashboard",
-      metadata: { description: "A complete dashboard reference" },
-      nodes: { root: { id: "root", type: "box", children: [] } },
-      padding: "x".repeat(5_000),
-    });
-    const messages = [...INITIAL_CONTEXT, ...assetReadGroup(toolName, input, exact)];
+describe("shouldCompactInTurn", () => {
+  it("triggers from character thresholds without a token estimator", () => {
     const budget = normalizeBudget({
-      budget: { minRecentStepsVerbatim: 0, maxSummaryTokens: 1 },
+      budget: {
+        maxContextChars: 100,
+        compactionTriggerRatio: 0.5,
+        compactionTargetRatio: 0.25,
+        minRecentStepsVerbatim: 1,
+        compactionCooldownSteps: 0,
+      },
     });
+    const messages = [...INITIAL_CONTEXT, ...toolGroup("1", "x"), ...toolGroup("2", "y")];
+
+    expect(
+      shouldCompactInTurn({ budget }, messages, INITIAL_CONTEXT.length, 51, 2, undefined),
+    ).toBe(true);
+    expect(
+      shouldCompactInTurn({ budget }, messages, INITIAL_CONTEXT.length, 49, 2, undefined),
+    ).toBe(false);
+  });
+});
+
+describe("compactInTurnTranscript", () => {
+  it("summarizes the oldest step groups and refreshes the current observation", async () => {
+    const budget = normalizeBudget({
+      budget: {
+        minRecentStepsVerbatim: 1,
+        maxSummaryChars: 80,
+        maxStageJsonChars: 1_000,
+      },
+    });
+    const messages = [
+      ...INITIAL_CONTEXT,
+      ...toolGroup("1", "old observation".repeat(30)),
+      ...toolGroup("2", "latest observation"),
+    ];
 
     const result = await compactInTurnTranscript({
       messages,
       initialContextLength: INITIAL_CONTEXT.length,
-      event: { kind: "message", text: "show me a dashboard" },
-      shadow: EMPTY_TREE,
+      event: EVENT,
+      session: session(),
       budget,
       summarizer: undefined,
       generation: 1,
-      targetChars: 0,
+      targetChars: 400,
       fixedChars: 0,
     });
 
-    expect(result.messages).toContainEqual({
-      role: "tool_result",
-      callId: "read-1",
-      content: exact,
-    });
-    expect(result.compactedGroupCount).toBe(0);
+    const rendered = result.messages
+      .map((message) => ("content" in message ? message.content : message.text))
+      .join("\n");
+    expect(result.compactedGroupCount).toBe(1);
+    expect(result.summarized).toBe(false);
+    expect(rendered).toContain("[transcript compacted:");
+    expect(rendered).toContain("CURRENT FACET OBSERVATION");
+    expect(rendered).toContain("latest observation");
+    expect(rendered).not.toContain("old observationold observation");
   });
-
-  it.each(EXACT_ASSET_READ_CALLS)(
-    "may compact an exact %s result after a later step group exists",
-    async (toolName, input) => {
-      const exact = JSON.stringify({ name: "dashboard", padding: "x".repeat(5_000) });
-      const later = "newer ordinary observation";
-      const messages = [
-        ...INITIAL_CONTEXT,
-        ...assetReadGroup(toolName, input, exact),
-        ...ordinaryToolGroup(later),
-      ];
-
-      const result = await compactInTurnTranscript({
-        messages,
-        initialContextLength: INITIAL_CONTEXT.length,
-        event: {
-          kind: "message",
-          text: "show me a dashboard",
-          view: { viewport: "narrow", colorMode: "dark" },
-        },
-        shadow: EMPTY_TREE,
-        budget: normalizeBudget({
-          budget: { minRecentStepsVerbatim: 0, maxSummaryTokens: 1 },
-        }),
-        summarizer: undefined,
-        generation: 2,
-        targetChars: 1_000,
-        fixedChars: 0,
-      });
-
-      expect(result.compactedGroupCount).toBe(1);
-      expect(result.messages).not.toContainEqual({
-        role: "tool_result",
-        callId: "read-1",
-        content: exact,
-      });
-      expect(result.messages).toContainEqual({
-        role: "tool_result",
-        callId: "inspect-1",
-        content: later,
-      });
-      expect(result.messages[0]).toEqual({
-        role: "user",
-        content: expect.stringContaining("[visitor view] device: narrow; colorMode: dark"),
-      });
-    },
-  );
-
-  it.each(EXACT_ASSET_READ_CALLS)(
-    "stops at context_limit instead of summarizing a newest exact %s result that cannot fit",
-    async (toolName, input) => {
-      const exact = JSON.stringify({ name: "dashboard", padding: "x".repeat(5_000) });
-      const turns: ProviderTurn[] = [];
-      const provider: ReferenceProvider = {
-        name: "openai",
-        model: "mock-model",
-        async run(turn) {
-          turns.push({ system: turn.system, messages: [...turn.messages] });
-          return {
-            text: "",
-            toolCalls: [{ id: "read-1", name: toolName, input }],
-          };
-        },
-      };
-      const buffer: StageToolBuffer = {
-        run() {
-          return {
-            observation: exact,
-            messages: [],
-            mutated: false,
-            said: false,
-            shadow: EMPTY_TREE,
-          };
-        },
-        resetEmittedPatchOps() {},
-        drainUnresolved() {
-          return [];
-        },
-        shadow: EMPTY_TREE,
-      };
-      const sink: Sink = {
-        async record() {},
-        async history() {
-          return [];
-        },
-      };
-      const trace: ReferenceAgentTraceEvent[] = [];
-      const loop = runReferenceAgentLoop({
-        provider,
-        system: "system",
-        event: { kind: "message", text: "show me a dashboard" },
-        session: {
-          agentId: "quickstart",
-          visitor: { visitorId: "visitor-1" },
-          stage: EMPTY_TREE,
-        },
-        sink,
-        agentId: "quickstart",
-        bufferFactory: () => buffer,
-        tools: [],
-        budget: normalizeBudget({
-          budget: {
-            maxContextChars: 800,
-            maxContextTokens: 800,
-            minRecentStepsVerbatim: 0,
-            maxSummaryTokens: 1,
-            compactionCooldownSteps: 0,
-          },
-        }),
-        contextWindowTokens: 800,
-        trace: (event) => {
-          trace.push(event);
-        },
-      });
-
-      let stopReason: string | undefined;
-      for (;;) {
-        const next = await loop.next();
-        if (next.done) {
-          stopReason = next.value.stopReason;
-          break;
-        }
-      }
-
-      expect(stopReason).toBe("context_limit");
-      expect(turns).toHaveLength(1);
-      expect(trace).not.toContainEqual(expect.objectContaining({ type: "compaction_done" }));
-      expect(trace).toContainEqual(
-        expect.objectContaining({
-          type: "tool_result",
-          toolName,
-          observationChars: exact.length,
-          truncated: false,
-        }),
-      );
-    },
-  );
 });
+
+function session(): FacetToolSession {
+  return {
+    catalog: catalog(),
+    document: document(),
+    data: {},
+    stageRevision: 1,
+    async applyAuthorMutation(): Promise<AuthorValidationResult> {
+      return { ok: true, document: document() };
+    },
+    async applyTargetedMutation() {
+      return {
+        ok: false as const,
+        code: "not_used",
+        at: "kind",
+        detail: "not used",
+      };
+    },
+    async publishData(): Promise<PayloadEvaluation> {
+      return { ok: true, chars: 0 };
+    },
+  };
+}
+
+function catalog(): FacetCatalog {
+  const result = validateCatalog({
+    components: [
+      {
+        tag: "Screen",
+        whenToUse: "Root screen container.",
+        props: {
+          name: { type: "string", required: true, guidance: "Screen name." },
+        },
+        acceptsChildren: true,
+      },
+      {
+        tag: "Text",
+        whenToUse: "Text content.",
+        props: {
+          value: { type: "string", guidance: "Text value." },
+        },
+        acceptsChildren: false,
+      },
+    ],
+  });
+  if (!result.ok) throw new Error(`invalid test catalog: ${result.code}`);
+  return result.catalog;
+}
+
+function scalar(value: string): { readonly kind: "scalar"; readonly value: string } {
+  return Object.freeze({ kind: "scalar" as const, value });
+}
+
+function document(): ComponentDocument {
+  return {
+    entry: "home",
+    screens: ["s-home"],
+    nodes: {
+      "s-home": {
+        tag: "Screen",
+        props: { name: scalar("home") },
+        children: ["n1"],
+      },
+      n1: {
+        tag: "Text",
+        props: { value: scalar("Visible") },
+        children: [],
+      },
+    },
+  };
+}

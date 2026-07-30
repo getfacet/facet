@@ -1,460 +1,464 @@
 import {
-  createSerialQueue,
-  asAgentServerMessage,
-  isTestOnlyServerMessageBatch,
-  iterateAgentResult,
-  type ClientEvent,
-  type CollectedEvent,
-  type FacetAgent,
-  type FacetSession,
-  type FacetTree,
-  type ServerMessage,
-  type VisitorContext,
+  deriveMessageId,
+  truncateConversationText,
+  type AgentEvent,
+  type AuthorErrorCode,
+  type AuthorValidationResult,
+  type ConversationMessage,
+  type DataPath,
+  type FacetTargetedMutationInput,
+  type FacetTargetedMutationResult,
+  type FacetToolSession,
+  type JsonPatchOperation,
+  type PayloadEvaluation,
+  type StageRevision,
 } from "@facet/core";
-import { MemoryStageStore, sessionKey, type StageStore } from "./stage-store.js";
-import { MemorySink, type Sink, type StoredEvent } from "./sink.js";
-import { sanitizeEventForSink } from "./sink-event-redaction.js";
-import { foldTurnIntoSession } from "./turn-fold.js";
 
-/** Hygiene cap on armed-but-undelivered seed keys (see `pendingSeeds`). */
-const MAX_PENDING_SEEDS = 10_000;
+import {
+  applyAuthorMutation,
+  type AuthorMutationInput,
+  type AuthorMutationKind,
+} from "./mutate.js";
+import { ConversationOutbox, type OutboxEntry } from "./outbox.js";
+import { applyDataPublish } from "./publish.js";
+import type { DataPublishResult } from "./publish.js";
+import type { Session } from "./session.js";
+import type { ConversationRecord, Sink } from "./sink.js";
+import { loadSession } from "./stage-store.js";
+import type { StageStore } from "./stage-store.js";
+import { TurnGate } from "./turn-gate.js";
+import type { TurnTerminal, WriteAuthority } from "./turn-gate.js";
 
-/** Defensive cap on save-time re-validation issues logged per turn (log-flood belt). */
-const MAX_LOGGED_ISSUES = 64;
-
-export interface FacetRuntimeOptions {
-  readonly agentId: string;
-  readonly agent: FacetAgent;
-  /** Where the current page lives. Defaults to in-memory. */
-  readonly stageStore?: StageStore;
-  /** Where the conversation goes. Defaults to an in-memory (replayable) sink. */
-  readonly sink?: Sink;
+export interface RuntimeDiagnostic {
+  readonly code: string;
+  readonly detail: string;
+  readonly sessionKey: string;
 }
 
-/**
- * What one turn yields. `messages` is the list to fan out to the client (the
- * prepended seed frame included when a fresh session was just seeded).
- * `agentMutated` is whether the AGENT'S OWN turn actually CHANGED the stage —
- * at least one non-`test` op applied, as reported by the fold (effect-based, not
- * merely "carried a patch message"). It excludes the prepended seed frame, so a
- * say-only turn that re-emits a parked seed, and a turn whose patch was dropped
- * whole (over-cap, non-array, empty, or all-ops-failed salvage), both report
- * false. The transport gates `recordApplied` on it: bumping "last applied" on a
- * non-mutating turn would falsely stale an older parked late result.
- */
-export interface TurnResult {
-  readonly messages: readonly ServerMessage[];
-  readonly agentMutated: boolean;
+export type RuntimeSink = Pick<Sink, "record" | "history">;
+
+export interface RuntimeAgent {
+  run(context: {
+    readonly event: AgentEvent;
+    readonly session: FacetToolSession;
+  }): Promise<{ readonly text: string | null } | string | null | undefined>;
 }
 
-export interface RuntimeFrameContext {
-  readonly stage: FacetTree | undefined;
-  /** True only when this individual delivered batch changed the Stage. */
-  readonly agentMutated?: boolean;
+export type RuntimeHandleResult =
+  | { readonly outcome: "accepted"; readonly receipt: { readonly triggerId: string } }
+  | { readonly outcome: "busy" }
+  | { readonly outcome: "conflict"; readonly currentRevision: StageRevision }
+  | { readonly outcome: "deduped" }
+  | { readonly outcome: "failed"; readonly code: string; readonly detail: string };
+
+export type RuntimePublishResult =
+  | { readonly outcome: "accepted"; readonly stageRevision: StageRevision }
+  | { readonly outcome: "conflict"; readonly currentRevision: StageRevision }
+  | { readonly outcome: "rejected"; readonly code: string; readonly detail: string };
+
+export interface RuntimeOptions {
+  readonly store: StageStore;
+  readonly sink: RuntimeSink;
+  readonly agent: RuntimeAgent;
+  readonly deliver?: (entry: OutboxEntry) => Promise<void> | void;
+  readonly diagnostics?: (diagnostic: RuntimeDiagnostic) => void;
+  readonly now?: () => number;
 }
 
-export type RuntimeFrameSink = (
-  messages: readonly ServerMessage[],
-  context?: RuntimeFrameContext,
-) => void;
-/** Observes the non-throwing completion promise for a turn's conversation record. */
-export type RuntimeRecordSettlementObserver = (settled: Promise<void>) => void;
-
-interface RecordSlot {
-  readonly resolve: (entry: StoredEvent | null) => void;
-  readonly settled: Promise<void>;
+export interface RuntimeEventInput {
+  readonly sessionKey: string;
+  readonly event: AgentEvent;
+  readonly visitorMessage?: ConversationMessage;
 }
 
-function runtimeFrameContext(stage: FacetTree, agentMutated: boolean): RuntimeFrameContext {
-  let cloned: FacetTree | undefined;
-  let attempted = false;
+export interface RuntimePublishInput {
+  readonly sessionKey: string;
+  readonly expectedRevision: StageRevision;
+  readonly path: DataPath;
+  readonly value: unknown;
+  readonly operationId: string;
+}
+
+interface LaneState {
+  readonly gate: TurnGate;
+  readonly outbox: ConversationOutbox;
+}
+
+function patchFrame(
+  stageRevision: StageRevision,
+  ops: readonly JsonPatchOperation[],
+): {
+  readonly kind: "patch";
+  readonly stageRevision: StageRevision;
+  readonly ops: readonly JsonPatchOperation[];
+} {
+  return Object.freeze({ kind: "patch" as const, stageRevision, ops });
+}
+
+function conversationFrame(turnId: string, text: string, at: number): ConversationMessage {
+  return Object.freeze({
+    kind: "conversation" as const,
+    messageId: deriveMessageId(turnId, "assistant"),
+    turnId,
+    role: "assistant" as const,
+    text: truncateConversationText(text),
+    at,
+  });
+}
+
+function agentText(result: Awaited<ReturnType<RuntimeAgent["run"]>>): string | null {
+  if (typeof result === "string") {
+    return result;
+  }
+  if (result !== null && typeof result === "object" && typeof result.text === "string") {
+    return result.text;
+  }
+  return null;
+}
+
+function authorValidationFrom(
+  result: ReturnType<typeof applyAuthorMutation>,
+): AuthorValidationResult {
+  if (result.ok) {
+    return { ok: true, document: result.document };
+  }
+  if (result.error !== undefined) {
+    return { ok: false, error: result.error };
+  }
+  const code: AuthorErrorCode = "invalid-source";
   return {
-    agentMutated,
-    get stage(): FacetTree | undefined {
-      if (!attempted) {
-        attempted = true;
-        try {
-          cloned = structuredClone(stage);
-        } catch {
-          cloned = undefined;
-        }
-      }
-      return cloned;
-    },
+    ok: false,
+    error: Object.freeze({
+      code,
+      cause: result.detail,
+      repair: result.detail,
+      location: Object.freeze({ line: 1, column: 1, offset: 0 }),
+    }),
   };
 }
 
-/**
- * Wires a transport's inbound events to the agent and keeps each session's stage
- * up to date. A transport (SSE server, or the in-process demo) calls `handle` for
- * every event from a visitor and ships the returned messages back.
- *
- * Two persistence concerns are kept separate: the STAGE (always Facet's, via
- * `stageStore`) and the CONVERSATION (optional, via `sink` — store, forward, or drop).
- */
+function targetedMutationFrom(
+  result: ReturnType<typeof applyAuthorMutation>,
+): FacetTargetedMutationResult {
+  if (result.ok) {
+    return { ok: true, document: result.document };
+  }
+  if (result.error !== undefined) {
+    return { ok: false, error: result.error };
+  }
+  const failure = Object.freeze({
+    ok: false as const,
+    code: result.code,
+    at: result.at,
+    detail: result.detail,
+  });
+  return result.currentRevision === undefined
+    ? failure
+    : Object.freeze({ ...failure, currentRevision: result.currentRevision });
+}
+
+function payloadEvaluationFrom(result: DataPublishResult): PayloadEvaluation {
+  if (result.ok) {
+    return { ok: true, chars: 0 };
+  }
+  return {
+    ok: false,
+    reason: payloadReason(result.code),
+    bound: result.bound ?? null,
+    path: result.path ?? result.at,
+  };
+}
+
+function payloadReason(code: string): Extract<PayloadEvaluation, { readonly ok: false }>["reason"] {
+  switch (code) {
+    case "data_not_serializable":
+    case "data_model_not_an_object":
+    case "data_model_chars_exceeded":
+    case "data_model_values_exceeded":
+    case "data_array_length_exceeded":
+    case "data_object_keys_exceeded":
+    case "data_string_chars_exceeded":
+    case "publish_payload_chars_exceeded":
+      return code;
+    default:
+      return "data_not_serializable";
+  }
+}
+
+function currentRevision(session: Session): StageRevision {
+  return session.stageRevision;
+}
+
 export class FacetRuntime {
-  private readonly agentId: string;
-  private readonly agent: FacetAgent;
-  private readonly stageStore: StageStore;
-  private readonly sink: Sink;
-  // Serialize events per (agent, visitor) so concurrent same-visitor events don't
-  // race on the open→apply→save read-modify-write. Different visitors stay parallel.
-  private readonly serialize = createSerialQueue<TurnResult>();
-  // Serialize sink records per (agent, visitor) too. Writes are fire-and-forget from
-  // the turn lane, but a transport can observe the reserved slot's settle promise
-  // and keep its own replay fallback alive until history sees the turn. Different
-  // visitors stay parallel.
-  private readonly serializeRecord = createSerialQueue<void>();
-  // Session keys armed by `takeSeeded` but not yet DELIVERED. `takeSeeded`
-  // reports a fresh seed at most once, so parking the KEY here lets a turn that
-  // failed to persist (agent throw or save rejection) re-emit the seed frame on
-  // the next turn — consumed only once a turn actually persists. The frame's
-  // value is always the CURRENT `session.stage` (never a parked tree), so a save
-  // that committed before rejecting can't be rewound by a stale replay. The
-  // per-visitor serial queue means no locking is needed. Entries can only
-  // linger when a seeded visitor's save fails intermittently AND the visitor
-  // never returns, so the insertion-order cap is a hygiene bound, not a hot path.
-  private readonly pendingSeeds = new Set<string>();
+  readonly #store: StageStore;
+  readonly #sink: RuntimeSink;
+  readonly #agent: RuntimeAgent;
+  readonly #deliver: (entry: OutboxEntry) => Promise<void> | void;
+  readonly #diagnostics: (diagnostic: RuntimeDiagnostic) => void;
+  readonly #now: () => number;
+  readonly #lanes = new Map<string, LaneState>();
 
-  constructor(options: FacetRuntimeOptions) {
-    this.agentId = options.agentId;
-    this.agent = options.agent;
-    this.stageStore = options.stageStore ?? new MemoryStageStore();
-    this.sink = options.sink ?? new MemorySink();
+  constructor(options: RuntimeOptions) {
+    this.#store = options.store;
+    this.#sink = options.sink;
+    this.#agent = options.agent;
+    this.#deliver = options.deliver ?? (() => {});
+    this.#diagnostics = options.diagnostics ?? (() => {});
+    this.#now = options.now ?? Date.now;
   }
 
-  /**
-   * The current stage for a visitor, if a session exists. A transport uses this to
-   * send a snapshot when a visitor (re)connects, so a fresh connection or a second
-   * tab immediately shows the live page.
-   */
-  async stageFor(visitorId: string): Promise<FacetTree | undefined> {
-    return (await this.stageStore.get(this.agentId, visitorId))?.stage;
-  }
-
-  /** The recorded conversation for a visitor (events + agent replies), if the sink retains it. */
-  historyFor(visitorId: string): Promise<readonly StoredEvent[]> {
-    return this.sink.history(this.agentId, visitorId);
-  }
-
-  /**
-   * Processes one inbound event for one visitor and returns the messages to send
-   * back. Stage patches are applied to the stored session (server is the source of
-   * truth), then the interaction is handed to the sink.
-   */
-  handle(
-    visitor: VisitorContext,
-    event: ClientEvent,
-    onFrame?: RuntimeFrameSink,
-    onRecordSettled?: RuntimeRecordSettlementObserver,
-  ): Promise<TurnResult> {
-    // Reserve this turn's Sink-write slot on serializeRecord NOW, in call order,
-    // BEFORE the (async) turn runs — otherwise a record() called during the turn
-    // would enqueue its write first and the append log would reverse (see
-    // reserveRecordSlot). persist() fills the slot; a turn that throws resolves it
-    // to null so it records nothing (prior behavior).
-    const recordSlot = this.reserveRecordSlot(visitor.visitorId);
-    const recordEvent = sanitizeEventForSink(event);
-    return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
-      try {
-        return await this.handleOne(
-          visitor,
-          event,
-          recordEvent,
-          recordSlot,
-          onFrame,
-          onRecordSettled,
-        );
-      } catch (error) {
-        recordSlot.resolve(null);
-        throw error;
-      }
-    });
-  }
-
-  /**
-   * Records a purely-local visitor interaction (a navigate/toggle `tap` the
-   * renderer resolved on its own) to the `Sink` WITHOUT invoking the agent — the
-   * UI-IN capture path for events that never become an agent turn. It persists
-   * the `CollectedEvent` with `messages: []` (no agent reply, no stage patch, no
-   * `stageStore.save`), so `history()` is one durable, append-ordered timeline of
-   * both forwarded turns and local taps.
-   *
-   * The write rides the SAME per-visitor `serializeRecord` queue that a forwarded
-   * turn uses, so append order == send order regardless of async sink latency (a
-   * slow earlier write can't be overtaken by a fast later one). This holds even
-   * against a still-in-flight `handle`: that turn RESERVES its slot on the queue
-   * synchronously at call time (`reserveRecordSlot`), so a `record` called after
-   * it can never enqueue its write first. The runtime provides this ordering
-   * itself — it does NOT depend on an outer per-visitor lane (only `@facet/server`
-   * has one; the in-process transports don't). Returns the queue's promise so a
-   * caller MAY await the local write settle, but the `/record` response path need
-   * not; a failed sink write is logged, never thrown.
-   */
-  record(visitor: VisitorContext, event: CollectedEvent): Promise<void> {
-    return this.enqueueRecord(visitor.visitorId, {
-      at: Date.now(),
-      event: sanitizeEventForSink(event),
-      messages: [],
-    });
-  }
-
-  /**
-   * Enqueues a Sink write on the per-visitor `serializeRecord` queue, logging
-   * (never throwing) a failure. Used by `record` (a local tap) to enqueue its
-   * write synchronously at call time. A forwarded turn (`handle`/`applyMessages`)
-   * instead RESERVES its slot up front via `reserveRecordSlot` and fills it in
-   * `persist`; both paths chain onto the SAME per-visitor queue in CALL order, so
-   * append order == send order regardless of async sink latency.
-   */
-  private enqueueRecord(visitorId: string, entry: StoredEvent): Promise<void> {
-    return this.serializeRecord(sessionKey(this.agentId, visitorId), () =>
-      this.sink.record(this.agentId, visitorId, entry),
-    ).catch((error: unknown) => console.error("[facet] sink failed:", error));
-  }
-
-  /**
-   * Reserves this turn's Sink-write slot on serializeRecord NOW, in call order,
-   * so a record() called after this returns can't enqueue its write first (the
-   * in-process transports have no outer lane; @facet/server does). The slot awaits
-   * the turn's entry; a turn that never persists resolves it to null (records
-   * nothing, matching prior behavior). Agent turns can expose `settled` to their
-   * transport, but they do not await it on the stage/delivery lane.
-   */
-  private reserveRecordSlot(visitorId: string): RecordSlot {
-    let resolve!: (entry: StoredEvent | null) => void;
-    const ready = new Promise<StoredEvent | null>((r) => {
-      resolve = r;
-    });
-    const settled = this.serializeRecord(sessionKey(this.agentId, visitorId), async () => {
-      const entry = await ready;
-      if (entry !== null) await this.sink.record(this.agentId, visitorId, entry);
-    }).catch((error: unknown) => console.error("[facet] sink failed:", error));
-    return { resolve, settled };
-  }
-
-  /**
-   * Applies ALREADY-PRODUCED agent messages to a session — the re-injection seam
-   * for a late/out-of-band result: messages produced after the original turn's
-   * wait already ended (e.g. the transport gave up waiting and the agent replied
-   * later). It runs the same open→apply→save→record path as a live turn, MINUS
-   * the agent call, and through the SAME per-visitor serial queue as `handle`, so
-   * a late apply can't race a concurrent live turn for that visitor. Returns the
-   * messages so the transport can deliver them out of band.
-   */
-  applyMessages(
-    visitor: VisitorContext,
-    event: ClientEvent,
-    messages: readonly ServerMessage[],
-    onRecordSettled?: RuntimeRecordSettlementObserver,
-  ): Promise<TurnResult> {
-    // Reserve the Sink-write slot synchronously (same reason as `handle`): this
-    // path also persists, so a later `record` must not overtake its write.
-    const recordSlot = this.reserveRecordSlot(visitor.visitorId);
-    return this.serialize(sessionKey(this.agentId, visitor.visitorId), async () => {
-      try {
-        const session = await this.stageStore.open(this.agentId, visitor);
-        return await this.streamTurn(
-          visitor,
-          session,
-          sanitizeEventForSink(event),
-          messages,
-          recordSlot,
-          undefined,
-          onRecordSettled,
-        );
-      } catch (error) {
-        recordSlot.resolve(null);
-        throw error;
-      }
-    });
-  }
-
-  private async handleOne(
-    visitor: VisitorContext,
-    event: ClientEvent,
-    recordEvent: CollectedEvent,
-    recordSlot: RecordSlot,
-    onFrame: RuntimeFrameSink | undefined,
-    onRecordSettled: RuntimeRecordSettlementObserver | undefined,
-  ): Promise<TurnResult> {
-    const session = await this.stageStore.open(this.agentId, visitor);
-    const result = this.agent(event, session);
-    return this.streamTurn(
-      visitor,
-      session,
-      recordEvent,
-      result,
-      recordSlot,
-      onFrame,
-      onRecordSettled,
-    );
-  }
-
-  /**
-   * Drives one turn's result batches inside the per-visitor serial queue. Each
-   * batch is folded once, saved, then delivered synchronously before the next
-   * batch is pulled. The Sink record stays turn-scoped: raw agent messages are
-   * accumulated and written exactly once after the stream finishes, or after a
-   * mid-stream producer throw with already-persisted batches. The write is resolved
-   * after saved batches have been delivered, without blocking the next lane task.
-   */
-  private async streamTurn(
-    visitor: VisitorContext,
-    initialSession: FacetSession,
-    recordEvent: CollectedEvent,
-    result: Parameters<typeof iterateAgentResult>[0],
-    recordSlot: RecordSlot,
-    onFrame?: RuntimeFrameSink,
-    onRecordSettled?: RuntimeRecordSettlementObserver,
-  ): Promise<TurnResult> {
-    const key = sessionKey(this.agentId, visitor.visitorId);
-    if (this.stageStore.takeSeeded?.(this.agentId, visitor.visitorId) === true) {
-      if (this.pendingSeeds.size >= MAX_PENDING_SEEDS) {
-        const oldest = this.pendingSeeds.values().next().value;
-        if (oldest !== undefined) this.pendingSeeds.delete(oldest);
-      }
-      this.pendingSeeds.add(key);
+  async handle(input: RuntimeEventInput): Promise<RuntimeHandleResult> {
+    const lane = this.#lane(input.sessionKey);
+    const admitted = lane.gate.admit(input.event.eventId);
+    if (admitted.outcome === "busy") {
+      return { outcome: "busy" };
+    }
+    if (admitted.outcome === "deduped") {
+      return { outcome: "deduped" };
     }
 
-    let session = initialSession;
-    const accumulated: ServerMessage[] = [];
-    const returned: ServerMessage[] = [];
-    let agentMutated = false;
-    let persistedAnyBatch = false;
-    let seedPrepended = false;
-    const iterator = iterateAgentResult(result)[Symbol.asyncIterator]();
-    let completedNaturally = false;
-
-    const closeIterator = async (): Promise<void> => {
-      try {
-        await iterator.return?.();
-      } catch (error: unknown) {
-        console.error("[facet] stream cleanup failed:", error);
-      }
-    };
-
-    const seedFrame = (): ServerMessage | undefined =>
-      !seedPrepended && this.pendingSeeds.has(key)
-        ? { kind: "patch", patches: [{ op: "replace", path: "", value: session.stage }] }
-        : undefined;
-
-    const appendMessages = (target: ServerMessage[], source: readonly ServerMessage[]): void => {
-      for (const message of source) target.push(message);
-    };
-
-    const deliverFrame = (frame: readonly ServerMessage[], frameMutated: boolean): void => {
-      if (frame.length === 0) return;
-      if (onFrame !== undefined) onFrame(frame, runtimeFrameContext(session.stage, frameMutated));
-      else appendMessages(returned, frame);
-    };
-
-    const settleRecord = (entry: StoredEvent): void => {
-      recordSlot.resolve(entry);
-      onRecordSettled?.(recordSlot.settled);
-    };
-
-    const finishPartial = (): TurnResult => {
-      settleRecord({ at: Date.now(), event: recordEvent, messages: accumulated });
-      if (seedPrepended) this.pendingSeeds.delete(key);
-      return { messages: onFrame === undefined ? returned : [], agentMutated };
-    };
-
+    const authority: WriteAuthority = { kind: "turn", token: admitted.token };
+    let terminal: TurnTerminal = "success";
     try {
-      while (true) {
-        let next: IteratorResult<readonly ServerMessage[]>;
-        try {
-          next = await iterator.next();
-        } catch (error) {
-          if (!persistedAnyBatch) throw error;
-          return finishPartial();
-        }
-        if (next.done === true) {
-          completedNaturally = true;
-          break;
-        }
-
-        const batch = this.asMessageBatch(next.value);
-        if (batch.length === 0 || isTestOnlyServerMessageBatch(batch)) continue;
-
-        const seed = seedFrame();
-        const {
-          session: applied,
-          issues,
-          messages: delivered,
-          recordMessages,
-          mutated,
-        } = foldTurnIntoSession(session, batch);
-        try {
-          await this.stageStore.save(applied);
-        } catch (error) {
-          if (!persistedAnyBatch) throw error;
-          return finishPartial();
-        }
-        session = applied;
-        persistedAnyBatch = true;
-        appendMessages(accumulated, recordMessages);
-        agentMutated = agentMutated || mutated;
-        this.logIssues(issues);
-
-        let frame = delivered;
-        if (seed !== undefined) {
-          const seededFrame: ServerMessage[] = [seed];
-          appendMessages(seededFrame, delivered);
-          frame = seededFrame;
-        }
-        if (frame.length > 0) {
-          try {
-            deliverFrame(frame, mutated);
-          } catch {
-            return finishPartial();
-          }
-          if (seed !== undefined) seedPrepended = true;
-        }
+      const loaded = await loadSession(this.#store, input.sessionKey);
+      for (const issue of loaded.issues) {
+        this.#diagnose(input.sessionKey, issue.code, issue.detail);
       }
+      if (input.event.stageRevision !== loaded.session.stageRevision) {
+        terminal = "conflict";
+        return { outcome: "conflict", currentRevision: loaded.session.stageRevision };
+      }
+
+      if (input.visitorMessage !== undefined) {
+        await this.#record(input.sessionKey, input.visitorMessage);
+      }
+      const adapter = this.#toolSession(input.sessionKey, loaded.session, authority, lane);
+      const text = agentText(await this.#agent.run({ event: input.event, session: adapter }));
+      if (text !== null) {
+        const frame = conversationFrame(input.event.eventId, text, this.#now());
+        const appended = lane.outbox.append(frame, authority);
+        if (!appended.ok) {
+          terminal = "provider_error";
+          return { outcome: "failed", code: appended.code, detail: appended.detail };
+        }
+        if (appended.emitted) {
+          await this.#deliver(appended.entry);
+        }
+        await this.#record(input.sessionKey, frame);
+      }
+      const receipt = lane.gate.settle(admitted.token, terminal);
+      return { outcome: "accepted", receipt };
+    } catch (error) {
+      terminal = "provider_error";
+      const detail = error instanceof Error ? error.message : "The runtime turn failed.";
+      this.#diagnose(input.sessionKey, "runtime_turn_failed", detail);
+      return { outcome: "failed", code: "runtime_turn_failed", detail };
     } finally {
-      if (!completedNaturally) await closeIterator();
+      lane.gate.settle(admitted.token, terminal);
     }
-
-    const seed = seedFrame();
-    if (seed !== undefined) {
-      try {
-        deliverFrame([seed], false);
-      } catch {
-        return finishPartial();
-      }
-      seedPrepended = true;
-    }
-    settleRecord({ at: Date.now(), event: recordEvent, messages: accumulated });
-    if (persistedAnyBatch || seedPrepended) this.pendingSeeds.delete(key);
-    return { messages: onFrame === undefined ? returned : [], agentMutated };
   }
 
-  private asMessageBatch(value: unknown): readonly ServerMessage[] {
-    if (!Array.isArray(value)) {
-      console.error("[facet] dropped a streamed batch that was not an array");
-      return [];
-    }
-    const messages: ServerMessage[] = [];
-    for (const message of value) {
-      const normalized = asAgentServerMessage(message);
-      if (normalized !== undefined) {
-        messages.push(normalized);
-      } else {
-        console.error("[facet] dropped a malformed server message");
+  async publishData(input: RuntimePublishInput): Promise<RuntimePublishResult> {
+    const lane = this.#lane(input.sessionKey);
+    const lease = lane.gate.mintHostLease(input.operationId);
+    const authority: WriteAuthority = { kind: "host-lease", lease };
+    try {
+      const loaded = await loadSession(this.#store, input.sessionKey);
+      for (const issue of loaded.issues) {
+        this.#diagnose(input.sessionKey, issue.code, issue.detail);
       }
-    }
-    return messages;
-  }
-
-  private logIssues(issues: readonly string[]): void {
-    for (const issue of issues.slice(0, MAX_LOGGED_ISSUES)) {
-      console.error(`[facet] save-time re-validation: ${issue}`);
-    }
-    if (issues.length > MAX_LOGGED_ISSUES) {
-      console.error(
-        `[facet] save-time re-validation: +${String(issues.length - MAX_LOGGED_ISSUES)} more suppressed`,
+      const committed = await this.#commitPublish(
+        input.sessionKey,
+        loaded.session,
+        input.path,
+        input.value,
+        input.expectedRevision,
+        authority,
+        lane,
       );
+      if (!committed.ok) {
+        if (committed.code === "stale_revision" && committed.currentRevision !== undefined) {
+          return { outcome: "conflict", currentRevision: committed.currentRevision };
+        }
+        return { outcome: "rejected", code: committed.code, detail: committed.detail };
+      }
+      return { outcome: "accepted", stageRevision: committed.stageRevision };
+    } finally {
+      lane.gate.fence(authority);
     }
+  }
+
+  #lane(sessionKey: string): LaneState {
+    const existing = this.#lanes.get(sessionKey);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const gate = new TurnGate({ now: this.#now });
+    const lane = Object.freeze({ gate, outbox: new ConversationOutbox(gate) });
+    this.#lanes.set(sessionKey, lane);
+    return lane;
+  }
+
+  #toolSession(
+    sessionKey: string,
+    initial: Session,
+    authority: WriteAuthority,
+    lane: LaneState,
+  ): FacetToolSession {
+    let current = initial;
+    const update = (next: Session): void => {
+      current = next;
+    };
+    const toolSession = {
+      sessionKey,
+      get catalog() {
+        return current.catalog;
+      },
+      get document() {
+        return current.document;
+      },
+      get data() {
+        return current.data;
+      },
+      get stageRevision() {
+        return currentRevision(current);
+      },
+      applyAuthorMutation: async (markup: string) => {
+        const result = await this.#commitMutation(
+          sessionKey,
+          current,
+          "render_page",
+          { markup },
+          current.stageRevision,
+          authority,
+          lane,
+        );
+        if (result.ok) {
+          update(result.session);
+        }
+        return authorValidationFrom(result);
+      },
+      applyTargetedMutation: async (input: FacetTargetedMutationInput) => {
+        const result = await this.#commitMutation(
+          sessionKey,
+          current,
+          input.kind,
+          input,
+          current.stageRevision,
+          authority,
+          lane,
+        );
+        if (result.ok) {
+          update(result.session);
+        }
+        return targetedMutationFrom(result);
+      },
+      publishData: async (path: DataPath, value: unknown) => {
+        const result = await this.#commitPublish(
+          sessionKey,
+          current,
+          path,
+          value,
+          current.stageRevision,
+          authority,
+          lane,
+        );
+        if (result.ok) {
+          update(result.session);
+        }
+        return payloadEvaluationFrom(result);
+      },
+    };
+    return toolSession;
+  }
+
+  async #commitMutation(
+    sessionKey: string,
+    session: Session,
+    kind: AuthorMutationKind,
+    input: AuthorMutationInput,
+    expectedRevision: StageRevision,
+    authority: WriteAuthority,
+    lane: LaneState,
+  ): Promise<ReturnType<typeof applyAuthorMutation>> {
+    const result = applyAuthorMutation(
+      session,
+      kind,
+      input,
+      expectedRevision,
+      authority,
+      lane.gate,
+    );
+    if (!result.ok) {
+      return result;
+    }
+    const saved = await this.#store.save(sessionKey, result.session, expectedRevision, () =>
+      lane.gate.present(authority),
+    );
+    if (!saved.ok) {
+      return {
+        ok: false,
+        code: "stale_revision",
+        at: "expectedRevision",
+        detail: `The mutation expected revision ${expectedRevision}, but the session is at revision ${saved.currentRevision}.`,
+        currentRevision: saved.currentRevision,
+      };
+    }
+    await this.#appendPatch(lane, result.stageRevision, result.patches);
+    return result;
+  }
+
+  async #commitPublish(
+    sessionKey: string,
+    session: Session,
+    path: DataPath,
+    value: unknown,
+    expectedRevision: StageRevision,
+    authority: WriteAuthority,
+    lane: LaneState,
+  ): Promise<DataPublishResult> {
+    const result = applyDataPublish(session, path, value, expectedRevision, authority, lane.gate);
+    if (!result.ok) {
+      return result;
+    }
+    const saved = await this.#store.save(sessionKey, result.session, expectedRevision, () =>
+      lane.gate.present(authority),
+    );
+    if (!saved.ok) {
+      return {
+        ok: false,
+        code: "stale_revision",
+        at: "expectedRevision",
+        detail: `The publish expected revision ${expectedRevision}, but the session is at revision ${saved.currentRevision}.`,
+        currentRevision: saved.currentRevision,
+      };
+    }
+    await this.#appendPatch(lane, result.stageRevision, result.patches);
+    return result;
+  }
+
+  async #appendPatch(
+    lane: LaneState,
+    stageRevision: StageRevision,
+    patches: readonly JsonPatchOperation[],
+  ): Promise<void> {
+    const appended = lane.outbox.appendCommitted(patchFrame(stageRevision, patches));
+    if (!appended.ok) {
+      throw new Error(appended.detail);
+    }
+    if (appended.emitted) {
+      await this.#deliver(appended.entry);
+    }
+  }
+
+  async #record(sessionKey: string, record: ConversationRecord): Promise<void> {
+    const result = await this.#sink.record(sessionKey, record);
+    if (!result.ok) {
+      this.#diagnose(sessionKey, result.code, result.detail);
+    }
+  }
+
+  #diagnose(sessionKey: string, code: string, detail: string): void {
+    this.#diagnostics(Object.freeze({ sessionKey, code, detail }));
   }
 }

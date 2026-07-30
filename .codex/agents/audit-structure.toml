@@ -6,8 +6,8 @@ to cover. Read `docs/REVIEW-RULES.md` for the dimensions and invariants.
 
 - **duplication** — the same logic/spec/string in ≥2 places. Cite every location.
 - **boundaries** — wrong dependency direction, protocol types outside `@facet/core`,
-  reusable code stuck in `apps/playground` that consumers would need (e.g. a
-  browser transport), Node built-ins in a browser entry. Cite the import.
+  reusable code stuck in an unpublished leaf (e.g. `labs/`) that consumers would
+  need, Node built-ins in a browser entry. Cite the import.
 - **dead-code** — unused exports/files/branches, orphans after a refactor. PROVE
   it with a grep showing no references.
 - **hygiene** — `package.json` uniformity (`build`/`files`/`exports`/`publishConfig`/
