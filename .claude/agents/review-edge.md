@@ -8,8 +8,8 @@ You review Facet for **edge cases and error handling**. Read
 `docs/REVIEW-RULES.md`.
 
 Hunt for: empty/malformed/huge input, the fail-safe boundaries not being fail-safe
-(`validateTree`, `StageRenderer` — do they ever throw or render broken on bad
-input?), unhandled error paths, missing cleanup (open handles, listeners, temp
+(markup parsing, component document/catalog validation, `StageRenderer` — do
+they ever throw or render broken on bad input?), unhandled error paths, missing cleanup (open handles, listeners, temp
 dirs, child processes), lifecycle bugs (close/reconnect/heartbeat), a store that
 crashes on a missing dir/row, JSON parse that can throw unguarded, and "success
 that silently did nothing".

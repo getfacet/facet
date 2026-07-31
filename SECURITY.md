@@ -28,19 +28,22 @@ Facet has not published an npm release yet; security fixes currently target
 Different parts of Facet assume different trust levels — know which you're in.
 
 **Core validation and the React renderer — fail-safe, untrusted input.**
-`validateTree` and `StageRenderer` form the display safety boundary: only the
-closed, validated native Brick vocabulary reaches the DOM (no raw HTML/JS),
-unsafe media URL schemes are dropped, and malformed, cyclic, or overly deep
-input is sanitized or skipped without crashing the page. Model output is
-untrusted and is treated as such here.
+The markup parser, component catalog validation, authorized patch fold, and
+`StageRenderer` form the display safety boundary: model output is data, not
+code. Only registered component tags with declared props, validated bindings,
+and trusted host-provided React implementations reach the DOM. Unknown tags,
+invalid props, malformed/cyclic/overly deep documents, and failed trusted
+component subtrees degrade to bounded safe output instead of crashing the page.
+Model output is untrusted and is treated as such here.
 
 **`@facet/server` — a reference transport, not a hardened multi-tenant server.**
 It is designed for local/self-hosted, single-operator use where the page is
 public or anonymous. In its default configuration it does **not** authenticate:
 
-- The `/agent/*` control channel is unauthenticated unless you set `agentToken`
-  (and have the bridge send `FACET_AGENT_TOKEN`). Set it whenever the server is
-  reachable by anything other than your own bridge.
+- The `/agent/*` control channel on the reference server is unauthenticated
+  unless you set `agentToken` and configure external agents to send the matching
+  `x-facet-token` header, for example from `FACET_AGENT_TOKEN`. Set it whenever
+  the server is reachable by anything other than a trusted local process.
 - The browser channel trusts `visitorId` as the session key — it is not verified.
   The default browser id is a 128-bit random UUID (unguessable), which is correct
   for anonymous pages. If you key sessions by a guessable/enumerable id, or your

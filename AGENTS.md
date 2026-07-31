@@ -9,26 +9,23 @@ that Facet parses as data, validates against an immutable component catalog, and
 maps only to trusted React components registered by the host. Agents never emit
 executable UI code. Living, per-visitor pages an agent owns are one application.
 
-Facet is undergoing one atomic public-package hard cut to this component-markup
+Facet has completed the atomic public-package hard cut to this component-markup
 model. Do not preserve the retired authoring model through compatibility
 adapters, aliases, dual reads/writes, migration commands, or saved-document
-support. The durable post-cut contract is this file's core invariants plus
+support. The durable contract is this file's core invariants plus
 `docs/ARCHITECTURE.md`, `docs/PACKAGE-BOUNDARIES.md`, and
 `docs/AGENT-TOOL-RESULT-CONTRACT.md`.
 
 ## Reader map
 
-Until the atomic cutover lands, the public README and guides describe the
-currently released implementation. They are migration inputs, not authority for
-retaining its contracts. Contributors implementing the hard cut start with the
-core invariants below and the durable architecture, boundary, and tool-result
-documents, then use the current guides to find consumers that must move or be
-deleted in the same change:
+The public README and guides describe the component-markup contract contributors
+must preserve. Start with the core invariants below, then use the guides for the
+specific package, runtime, renderer, transport, and agent-tool surfaces you are
+changing:
 
 - [Getting Started](docs/GETTING-STARTED.md) — installation and supported
   adoption paths;
-- [Design System](docs/DESIGN-SYSTEM.md) — current design-system behavior to
-  replace;
+- [Design System](docs/DESIGN-SYSTEM.md) — current design-system behavior;
 - [Agent Integration](docs/AGENT-INTEGRATION.md) — a custom provider-neutral LLM
   loop;
 - [Architecture](docs/ARCHITECTURE.md) — invariants and runtime behavior;

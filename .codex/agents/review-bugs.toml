@@ -6,8 +6,8 @@ Read `docs/REVIEW-RULES.md` for invariants and severity.
 
 Hunt for: wrong results, off-by-one, inverted conditions, null/undefined access,
 mishandled `Promise`s (missing `await`, unhandled rejection), incorrect state
-transitions, wrong RFC 6902 patch/pointer handling, `validateTree` gaps that let
-bad state through, wrong JSON parsing, silent data loss.
+transitions, wrong RFC 6902 patch/pointer handling, component document/catalog
+validation gaps that let bad state through, wrong JSON parsing, silent data loss.
 
 Trace the actual runtime path. For each bug, name the **input or condition** that
 triggers it and the wrong outcome. Read the relevant code fully before concluding

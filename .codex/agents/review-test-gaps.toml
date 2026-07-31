@@ -15,9 +15,9 @@ For a library, the tests ARE the contract. Check that behavior is protected:
   validation has more than one entry path, require parity evidence through the
   public package API rather than accepting isolated helper tests.
 - **Renderer interaction contracts** — do not exempt testable behavior as
-  "UI-render code." Changes to `media.src` safety, input capture, agent-action
-  routing, or browser-local `navigate`/`toggle` resolution and tap recording need
-  focused static/jsdom tests. Pixel-only styling may remain visual coverage.
+  "UI-render code." Changes to input capture, `nav:` screen navigation,
+  `agent:` event routing, data binding refresh, or modal lifecycle need focused
+  static/jsdom tests. Pixel-only styling may remain visual coverage.
 - **Untested testable surface** — discover it from changed production files and
   package barrels; do not repeat an old known-gap list after coverage lands.
   Flag the specific untested function and prove absence after checking adjacent

@@ -13,11 +13,11 @@ share one version.
 ## Pre-release history
 
 Nothing has been published to npm yet, so there are no released versions. The
-initial `0.1.0` line establishes the closed native Brick and style vocabularies,
-RFC 6902 patching, `validateTree`, the runtime (session store + event
-loop, `StageStore` / `Sink` seams), the agent SDKs and `facet` CLI, the React
-renderer, the reference SSE + POST server and browser client, the Postgres store
-adapter, default assets, and the local bridge. Release automation verifies the
-workspace and installs packed tarballs in a token-free clean consumer job before
-the publish job can start. From the first published version onward, see each
-package's own `CHANGELOG.md`.
+initial `0.1.0` line establishes the component-markup contract: parser and
+catalog validation, authorized RFC 6902 patching, the runtime session loop and
+storage seams, the provider-neutral agent SDK/tool surface, the React renderer,
+the reference SSE + POST transports, default catalog/assets, and the zero-setup
+Quickstart experience. Release automation verifies the workspace and installs
+packed tarballs in a token-free clean consumer job before the publish job can
+start. From the first published version onward, see each package's own
+`CHANGELOG.md`.

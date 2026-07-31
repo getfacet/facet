@@ -59,7 +59,8 @@ while assets would need renderer types to define components.
   barrel.
 - Do not import another package's `src/*` files.
 - Do not add compatibility aliases for the retired authoring model.
-- Do not add a dependency to `@facet/core`.
+- Do not add package, Node-only, or runtime-specific dependencies to
+  `@facet/core`; it stays the dependency-free root contract.
 - Do not make a private app, local workbench, or generated fixture part of the
   published package graph.
 

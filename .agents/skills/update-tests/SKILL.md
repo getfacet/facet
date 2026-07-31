@@ -54,8 +54,8 @@ config/build change → do NOT skip.
    - static output + fail-safe (renders X, degrades to plain, never throws) →
      `renderToStaticMarkup` in a `.test.ts` (node env) — see `StageRenderer.test.ts`.
    - **interaction / hook behavior** (an agent action reaching `onAction`, the
-     `useFacet` patch/say/fail-safe loop, input rendering/value capture, and
-     browser-local `navigate`/`toggle` resolution plus tap recording) → a
+     `useFacet` patch/message/fail-safe loop, input rendering/value capture,
+     `nav:` screen navigation, and `agent:` event collection) → a
      **jsdom render test** with
      `@testing-library/react` in a `.test.tsx` file that starts with
      `// @vitest-environment jsdom` — see `StageRenderer.interaction.test.tsx` and

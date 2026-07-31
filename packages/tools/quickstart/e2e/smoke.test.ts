@@ -4,8 +4,8 @@
  * `createReferenceAgent`, post a visit, and wait for a patch frame.
  *
  * LOOSE assertions only, by design: LLM output is nondeterministic, so the
- * test pins the machinery (a patch arrives, its tree passes `validateTree`,
- * the root is renderable, nothing crashes) and NEVER matches content.
+ * test pins the machinery (a patch arrives, its component document is
+ * renderable, nothing crashes) and NEVER matches content.
  *
  * Key gating (DC-009):
  * - default: each provider's describe is skipped unless its key env var is set

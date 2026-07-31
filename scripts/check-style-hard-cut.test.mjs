@@ -294,6 +294,107 @@ test("flags retired residue in documentation scope and token-count-limit languag
   );
 });
 
+test("flags retired operational residue in root docs and agent process surfaces", async (t) => {
+  const cwd = await makeFixture(t);
+  const validateTree = ["validate", "Tree"].join("");
+  const nativeBrick = ["native", ["Br", "ick"].join("")].join(" ");
+  const styleVocabulary = ["style", "vocabulary"].join(" ");
+
+  await writeFixture(
+    cwd,
+    "CHANGELOG.md",
+    [
+      `The first release still advertises ${validateTree}, ${nativeBrick}, ${styleVocabulary}, the facet CLI, a Postgres adapter, and a local bridge.`,
+      "",
+    ].join("\n"),
+  );
+  await writeFixture(
+    cwd,
+    "SECURITY.md",
+    ["The trust model still tells the local bridge to authenticate the agent channel.", ""].join(
+      "\n",
+    ),
+  );
+  await writeFixture(
+    cwd,
+    ".agents/skills/update-tests/SKILL.md",
+    [
+      "React tests still mention browser-local navigate/toggle resolution plus tap recording.",
+      "",
+    ].join("\n"),
+  );
+  await writeFixture(
+    cwd,
+    ".claude/agents/review-bugs.md",
+    [`Review still asks for ${validateTree} gaps.`, ""].join("\n"),
+  );
+  await writeFixture(
+    cwd,
+    ".codex/agents/review-test-gaps.toml",
+    ["Review still treats media.src safety as a current test surface.", ""].join("\n"),
+  );
+  await writeFixture(
+    cwd,
+    ".agents/work/ignored/dev-spec.md",
+    [
+      `Ignored planning state can retain ${validateTree} history without failing the shipping scan.`,
+      "",
+    ].join("\n"),
+  );
+
+  const result = scanHardCut({ cwd });
+
+  assert.deepEqual(
+    result.violations
+      .filter((entry) => entry.group === "retired_operational_contracts")
+      .map(({ group, path: violationPath, line }) => [group, violationPath, line]),
+    [
+      ["retired_operational_contracts", ".agents/skills/update-tests/SKILL.md", 1],
+      ["retired_operational_contracts", ".claude/agents/review-bugs.md", 1],
+      ["retired_operational_contracts", ".codex/agents/review-test-gaps.toml", 1],
+      ["retired_operational_contracts", "CHANGELOG.md", 1],
+      ["retired_operational_contracts", "SECURITY.md", 1],
+    ],
+  );
+  assert.equal(
+    result.violations.some((entry) => entry.path.startsWith(".agents/work/")),
+    false,
+  );
+});
+
+test("allows current lookalikes in scanned root and process surfaces", async (t) => {
+  const cwd = await makeFixture(t);
+  const agentToken = ["FACET", "AGENT", "TOKEN"].join("_");
+
+  await writeFixture(
+    cwd,
+    "SECURITY.md",
+    [
+      `External agents may load ${agentToken} and send it as x-facet-token to the reference server.`,
+      "",
+    ].join("\n"),
+  );
+  await writeFixture(
+    cwd,
+    ".agents/skills/spec-bridge/SKILL.md",
+    [
+      "The spec-bridge workflow may describe generic pattern choices without naming retired contracts.",
+      "Use budgetPreset for the planning budget when the approved template asks for it.",
+      "",
+    ].join("\n"),
+  );
+  await writeFixture(
+    cwd,
+    ".claude/agents/review-edge.md",
+    [
+      "Renderer-internal OverlayRoot behavior remains a legitimate current implementation detail.",
+      "",
+    ].join("\n"),
+  );
+
+  assert.deepEqual(scanHardCut({ cwd }).violations, []);
+});
+
 test("requires the superseded header on the old direction record", async (t) => {
   const cwd = await makeFixture(t);
   await writeFixture(cwd, "labs/markup-model/DIRECTION.md", "# Current direction\n");

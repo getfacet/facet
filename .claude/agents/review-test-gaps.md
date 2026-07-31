@@ -11,16 +11,16 @@ For a library, the tests ARE the contract. Check that behavior is protected:
 - **Changed behavior** — anything modified in the diff whose behavior isn't
   covered by a new/updated test (missing test for changed behavior = P2).
 - **Critical pure logic** — the invariant-carrying code MUST stay covered:
-  `validateTree` (fail-safe sanitizing), `applyPatch` (RFC 6902 + purity), `Stage`
-  op-generation, `foldPatchIntoStage`, component sanitizers, stores (durability),
-  queues/semaphores/LRU structures, CLI command builders, provider/prompt
-  builders, and asset validators. A gap here is P1–P2. When component validation
-  has more than one entry path, require parity evidence through the public
-  `validateTree` API rather than accepting isolated helper tests.
+  markup parsing, component document/catalog validation, authorized patch/fold
+  behavior (RFC 6902 + purity), `Stage` op-generation, stores (durability),
+  queues/semaphores/LRU structures, provider/prompt builders, and asset
+  validators. A gap here is P1–P2. When component document validation has more
+  than one entry path, require parity evidence through the public package API
+  rather than accepting isolated helper tests.
 - **Renderer interaction contracts** — do not exempt testable behavior as
-  "UI-render code." Changes to `media.src` safety, field capture, agent-action
-  routing, or browser-local `navigate`/`toggle` resolution and tap recording need
-  focused static/jsdom tests. Pixel-only styling may remain visual coverage.
+  "UI-render code." Changes to input capture, `nav:` screen navigation,
+  `agent:` event routing, data binding refresh, or modal lifecycle need focused
+  static/jsdom tests. Pixel-only styling may remain visual coverage.
 - **Untested testable surface** — discover it from changed production files and
   package barrels; do not repeat an old known-gap list after coverage lands.
   Flag the specific untested function and prove absence after checking adjacent

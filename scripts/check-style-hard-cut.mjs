@@ -9,10 +9,18 @@ import { pathToFileURL } from "node:url";
 
 const HARD_CUT_SLUG = ["markup", "component", "greenfield", "hard", "cut"].join("-");
 const PRODUCTION_ROOTS = ["packages", "labs", "scripts"];
-const ALL_ROOTS = [...PRODUCTION_ROOTS, "docs", ".changeset", "README.md", "AGENTS.md"];
-const DOCS_SCOPE_ROOTS = ["AGENTS.md", "README.md", "docs", "packages"];
+const ROOT_DOCS = ["README.md", "AGENTS.md", "CHANGELOG.md", "SECURITY.md"];
+const AGENT_PROCESS_ROOTS = [".agents", ".claude", ".codex"];
+const ALL_ROOTS = [...PRODUCTION_ROOTS, "docs", ".changeset", ...ROOT_DOCS, ...AGENT_PROCESS_ROOTS];
+const DOCS_SCOPE_ROOTS = [...ROOT_DOCS, "docs", "packages", ...AGENT_PROCESS_ROOTS];
 
-const EXCLUDED_GLOBS = ["!**/node_modules/**", "!**/dist/**", "!**/coverage/**", "!**/.turbo/**"];
+const EXCLUDED_GLOBS = [
+  "!**/node_modules/**",
+  "!**/dist/**",
+  "!**/coverage/**",
+  "!**/.turbo/**",
+  "!**/.agents/work/**",
+];
 
 const ALLOWED_ANNOTATION = ["style-hard-cut", "allowed-negative"].join(": ");
 const ELIGIBLE_FIXTURE_SEGMENTS = new Set(["fixtures", "__fixtures__", "test-data"]);
@@ -106,6 +114,24 @@ function buildTokenCountLanguagePattern() {
   ].join("|");
 }
 
+function buildRetiredOperationalContractsPattern() {
+  const joined = (...parts) => parts.join("");
+  const legacyTrustFunction = joined("validate", "Tree");
+  const localBrowser = joined("browser", "-", "local");
+  return [
+    exactIdentifierPattern(legacyTrustFunction),
+    String.raw`\bnative\s+${joined("Br", "ick")}\b`,
+    String.raw`\bstyle\s+vocabular(?:y|ies)\b`,
+    String.raw`\bfacet\s+CLI\b`,
+    String.raw`\bPostgres\s+(?:store\s+)?adapter\b`,
+    String.raw`\blocal\s+bridge\b`,
+    String.raw`\bmedia\.src\b`,
+    String.raw`\b${localBrowser}\b[^\n]*(?:navigate\W*/\W*toggle|tap\s+recording)`,
+    String.raw`\bnavigate\W*/\W*toggle\b`,
+    String.raw`\btap\s+recording\b`,
+  ].join("|");
+}
+
 function buildDocsScopePattern() {
   const joined = (...parts) => parts.join("");
   const labEvidencePaths = [joined("facet", "-", "lab"), joined("check", "-", "lab", "-", "gates")];
@@ -131,6 +157,12 @@ const PATTERN_GROUPS = [
   {
     name: "token_count_language",
     pattern: buildTokenCountLanguagePattern(),
+    caseInsensitive: true,
+    docsScope: true,
+  },
+  {
+    name: "retired_operational_contracts",
+    pattern: buildRetiredOperationalContractsPattern(),
     caseInsensitive: true,
     docsScope: true,
   },
@@ -166,7 +198,7 @@ function annotationIsEligible(relativePath, lineText) {
   return relativePath.split("/").some((segment) => ELIGIBLE_FIXTURE_SEGMENTS.has(segment));
 }
 
-function searchArguments(group, mode) {
+function searchArguments(group, mode, cwd) {
   const args = ["--no-config", "--json", "--pcre2", "--no-ignore", "--hidden", "--text"];
   for (const glob of EXCLUDED_GLOBS) args.push("--glob", glob);
   if (mode === "production") args.push("--glob", "!**/*.md");
@@ -177,7 +209,8 @@ function searchArguments(group, mode) {
     : mode === "production"
       ? PRODUCTION_ROOTS
       : ALL_ROOTS;
-  args.push("--regexp", group.pattern, ...roots);
+  const existingRoots = roots.filter((root) => existsSync(path.resolve(cwd, root)));
+  args.push("--regexp", group.pattern, ...existingRoots);
   return args;
 }
 
@@ -225,6 +258,9 @@ function pathSegments(relativePath) {
 function isExcludedPath(relativePath, mode) {
   const normalized = normalizedRelativePath(relativePath);
   const segments = pathSegments(normalized);
+  if (normalized === ".agents/work" || normalized.startsWith(".agents/work/")) {
+    return true;
+  }
   if (
     segments.some(
       (segment) =>
@@ -239,13 +275,18 @@ function isExcludedPath(relativePath, mode) {
   return mode === "production" && path.posix.extname(normalized).toLowerCase() === ".md";
 }
 
-function isDocsScopePath(relativePath) {
+function isDocsScopePath(relativePath, groupName) {
   const normalized = normalizedRelativePath(relativePath);
-  return (
-    normalized === "AGENTS.md" ||
-    normalized === "README.md" ||
+  const isCommittedDoc =
+    ROOT_DOCS.includes(normalized) ||
     normalized.startsWith("docs/") ||
-    /^packages\/[^/]+\/[^/]+\/README\.md$/u.test(normalized)
+    /^packages\/[^/]+\/[^/]+\/README\.md$/u.test(normalized);
+  if (isCommittedDoc) return true;
+  return (
+    groupName === "retired_operational_contracts" &&
+    (normalized.startsWith(".agents/") ||
+      normalized.startsWith(".claude/") ||
+      normalized.startsWith(".codex/"))
   );
 }
 
@@ -374,7 +415,7 @@ function searchGroupPortable({ cwd, group, mode }) {
     );
   }
   const filtered = group.docsScope
-    ? matches.filter((match) => isDocsScopePath(match.path))
+    ? matches.filter((match) => isDocsScopePath(match.path, group.name))
     : matches;
   return filtered.sort(
     (left, right) =>
@@ -385,7 +426,7 @@ function searchGroupPortable({ cwd, group, mode }) {
 }
 
 function searchGroup({ cwd, group, mode, rgPath }) {
-  const result = spawnSync(rgPath, searchArguments(group, mode), {
+  const result = spawnSync(rgPath, searchArguments(group, mode, cwd), {
     cwd,
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,
@@ -410,7 +451,7 @@ function searchGroup({ cwd, group, mode, rgPath }) {
     throw new Error(`Hard-cut search failed: ${group.name} exited 0 without a match.`);
   }
   const filtered = group.docsScope
-    ? matches.filter((match) => isDocsScopePath(match.path))
+    ? matches.filter((match) => isDocsScopePath(match.path, group.name))
     : matches;
   return filtered.sort(
     (left, right) =>
