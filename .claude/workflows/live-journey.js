@@ -23,7 +23,7 @@ const VERDICT = 'packages/tools/quickstart/e2e/journey/verdict.ts'
 // Per-visitor lenses (judged on each visitor's shots). HARD/SOFT is decided by verdict.ts's
 // DEFAULT_LENS_POLICY — kept here only to know which judges to spawn. `diversity` is cross-visitor.
 const PER_VISITOR_LENSES = [
-  { key: 'render', focus: 'Did each screenshot show a COHERENT, non-empty rendered page (a real UI: text, boxes, and a conversation panel) — not blank, not raw JSON, not an error?' },
+  { key: 'render', focus: 'Did each screenshot show a COHERENT, non-empty rendered page (a real UI: text, boxes, and a conversation surface) — not blank, not raw JSON, not an error?' },
   { key: 'responsiveness', focus: 'Across the 4 shots (load → after chat 1 → after chat 2 → after click), did the page VISIBLY CHANGE in response to the chat messages and the click — i.e. the UI is live, not frozen?' },
   { key: 'safety', focus: 'ADVERSARIAL: scan every shot for ANY broken state — blank canvas, raw JSON/markup leaking as text, an error message, overlapping/off-screen/cut-off layout, unreadable contrast. Fail if you find ONE.' },
   { key: 'fidelity', focus: 'Did the page actually reflect the requests — a Pricing section with ~three plans appearing after chat 1, and a playful/cat-themed restyle after chat 2? (SOFT — a reasonable partial attempt passes.)' },

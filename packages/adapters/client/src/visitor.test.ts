@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { browserVisitorId } from "./visitor.js";
+import { browserSessionKey } from "./visitor.js";
 
 const ORIGINAL_CRYPTO = Object.getOwnPropertyDescriptor(globalThis, "crypto");
 
@@ -56,30 +56,30 @@ afterEach(() => {
   }
 });
 
-describe("browserVisitorId", () => {
+describe("browserSessionKey", () => {
   it("generates and persists a stable session key across reloads", () => {
     mockLocalStorage();
-    const first = browserVisitorId();
-    const second = browserVisitorId();
+    const first = browserSessionKey();
+    const second = browserSessionKey();
     expect(first).toBe(second);
     expect(first.length).toBeGreaterThan(0);
-    expect(localStorage.getItem("facet:visitor")).toBe(first);
+    expect(localStorage.getItem("facet:session")).toBe(first);
   });
 
   it("returns the already-stored id", () => {
     mockLocalStorage();
-    localStorage.setItem("facet:visitor", "known-id");
-    expect(browserVisitorId()).toBe("known-id");
+    localStorage.setItem("facet:session", "known-id");
+    expect(browserSessionKey()).toBe("known-id");
   });
 
   it("honors a custom storage key", () => {
     mockLocalStorage();
-    const id = browserVisitorId("my:key");
+    const id = browserSessionKey("my:key");
     expect(localStorage.getItem("my:key")).toBe(id);
   });
 
   it("falls back to a fresh id when storage is unavailable", () => {
-    expect(browserVisitorId().length).toBeGreaterThan(0);
+    expect(browserSessionKey().length).toBeGreaterThan(0);
   });
 
   it("falls back to a fresh id when storage access throws", () => {
@@ -90,7 +90,7 @@ describe("browserVisitorId", () => {
       },
     });
 
-    expect(browserVisitorId().length).toBeGreaterThan(0);
+    expect(browserSessionKey().length).toBeGreaterThan(0);
   });
 
   it("falls back to a fresh id when storage reads or writes throw", () => {
@@ -99,22 +99,22 @@ describe("browserVisitorId", () => {
         throw new Error("read blocked");
       },
     });
-    expect(browserVisitorId().length).toBeGreaterThan(0);
+    expect(browserSessionKey().length).toBeGreaterThan(0);
 
     mockThrowingLocalStorage({
       setItem: () => {
         throw new Error("write blocked");
       },
     });
-    expect(browserVisitorId().length).toBeGreaterThan(0);
+    expect(browserSessionKey().length).toBeGreaterThan(0);
   });
 
   it("fails closed when no secure browser crypto source is available", () => {
     mockLocalStorage();
     mockCrypto(undefined);
 
-    expect(() => browserVisitorId()).toThrow("crypto.randomUUID or crypto.getRandomValues");
-    expect(localStorage.getItem("facet:visitor")).toBeNull();
+    expect(() => browserSessionKey()).toThrow("crypto.randomUUID or crypto.getRandomValues");
+    expect(localStorage.getItem("facet:session")).toBeNull();
   });
 
   it("uses getRandomValues when randomUUID is unavailable", () => {
@@ -128,7 +128,7 @@ describe("browserVisitorId", () => {
       },
     } as Crypto);
 
-    expect(browserVisitorId()).toBe("v-07070707070707070707070707070707");
+    expect(browserSessionKey()).toBe("v-07070707070707070707070707070707");
   });
 
   it("keeps storage failures on the secure fresh-id path", () => {
@@ -136,7 +136,7 @@ describe("browserVisitorId", () => {
     mockCrypto({
       randomUUID: () => {
         next += 1;
-        return `visitor-${next}` as `${string}-${string}-${string}-${string}-${string}`;
+        return `session-${next}` as `${string}-${string}-${string}-${string}-${string}`;
       },
     } as Crypto);
     mockThrowingLocalStorage({
@@ -145,7 +145,7 @@ describe("browserVisitorId", () => {
       },
     });
 
-    expect(browserVisitorId()).toBe("visitor-1");
-    expect(browserVisitorId()).toBe("visitor-2");
+    expect(browserSessionKey()).toBe("session-1");
+    expect(browserSessionKey()).toBe("session-2");
   });
 });

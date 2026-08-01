@@ -104,7 +104,7 @@ describe("journey harness", () => {
 
       expect(result.sessionKey).toBe("contract-session");
       expect(Object.prototype.hasOwnProperty.call(result, "visitorId")).toBe(false);
-      expect(initScripts).toEqual([{ key: "facet:visitor", id: "contract-session" }]);
+      expect(initScripts).toEqual([{ key: "facet:session", id: "contract-session" }]);
       expect(visitedUrl).toContain("/fixtures/broken.html");
       const info = await stat(result.screenshots[0] ?? "");
       expect(info.size).toBeGreaterThan(0);

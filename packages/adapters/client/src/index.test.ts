@@ -7,7 +7,7 @@ import * as client from "./index.js";
 const BARREL_EXPORT_CONTRACT = [
   "SseTransport",
   "LocalTransport",
-  "browserVisitorId",
+  "browserSessionKey",
   "persistScreen",
   "loadPersistedScreen",
 ] as const;

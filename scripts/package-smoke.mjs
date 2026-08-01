@@ -146,7 +146,7 @@ export const expectedRuntimeExports = {
   "@facet/client": [
     "LocalTransport",
     "SseTransport",
-    "browserVisitorId",
+    "browserSessionKey",
     "loadPersistedScreen",
     "persistScreen",
   ],

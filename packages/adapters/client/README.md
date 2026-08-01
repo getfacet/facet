@@ -22,7 +22,7 @@ components, or authorize stage writes.
 - `LocalTransport(runtime, sessionKey)` calls a runtime-like `handle` method,
   delivers the returned frames to subscribers, and resolves `send` after that
   delivery finishes.
-- `browserVisitorId()` creates a random browser session key for local/public
+- `browserSessionKey()` creates a random browser session key for local/public
   anonymous pages.
 - `persistScreen()` and `loadPersistedScreen()` store only the last screen name
   for one agent link; no view snapshot or browser-local component state is
@@ -31,13 +31,13 @@ components, or authorize stage writes.
 ```ts check-docs
 import type { VisitorEvent, ServerFrame } from "@facet/core";
 import {
-  browserVisitorId,
+  browserSessionKey,
   loadPersistedScreen,
   persistScreen,
   SseTransport,
 } from "@facet/client";
 
-const sessionKey = browserVisitorId();
+const sessionKey = browserSessionKey();
 const transport = new SseTransport("http://localhost:5291", sessionKey);
 const screen = loadPersistedScreen("quickstart")?.screen ?? "home";
 

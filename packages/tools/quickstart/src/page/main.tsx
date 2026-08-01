@@ -12,7 +12,7 @@ import type { FormEvent, ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { DEFAULT_CATALOG, DEFAULT_THEME } from "@facet/assets";
 import { DEFAULT_REGISTRY } from "@facet/assets/react";
-import { browserVisitorId, SseTransport } from "@facet/client";
+import { browserSessionKey, SseTransport } from "@facet/client";
 import { validateVisitorText } from "@facet/core";
 import type {
   VisitorEvent,
@@ -121,7 +121,7 @@ function visitorEvent(
 }
 
 function Page(): ReactNode {
-  const sessionKey = useMemo(() => browserVisitorId(), []);
+  const sessionKey = useMemo(() => browserSessionKey(), []);
   const initialDocument = useMemo(readInitialDocument, []);
   const bootstrap = useMemo(resolvedBootstrap, []);
   const transport = useMemo(() => new SseTransport("", sessionKey), [sessionKey]);

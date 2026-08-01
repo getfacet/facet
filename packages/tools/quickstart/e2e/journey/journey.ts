@@ -15,7 +15,7 @@
  *
  * OQ-1 — DOM-settle, NOT a fixed sleep: after each send/click, `settleDom` polls
  * the agent-drawn STAGE fingerprint (not `#root`, which includes the
- * conversation panel) and resolves when it is unchanged across a quiet window
+ * conversation surface) and resolves when it is unchanged across a quiet window
  * (default 800ms) AFTER a real change, OR a bounded max timeout (default 45s, a
  * real LLM paint takes seconds) elapses. A timeout is NOT a harness failure: the
  * shot is captured anyway and the `{changed, timedOut}` result is recorded — a
@@ -34,7 +34,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { chromium, type Page } from "playwright";
 
 /** The localStorage key the served page reads its anonymous session key from. */
-const VISITOR_STORAGE_KEY = "facet:visitor";
+const SESSION_STORAGE_KEY = "facet:session";
 
 /** Chat prompts for steps 2 and 3 — overridable, defaulting to the real prompts. */
 export interface JourneyMessages {
@@ -143,7 +143,7 @@ function sleep(ms: number): Promise<void> {
  */
 function domFingerprint(page: Page): Promise<string> {
   return page.evaluate(() => {
-    // Fingerprint the agent-drawn STAGE (not #root) so a conversation-panel
+    // Fingerprint the agent-drawn STAGE (not #root) so a conversation surface
     // echo is NOT mistaken for a page render. An empty or not-yet-mounted stage
     // ⇒ "0:0", so the shell mounting an empty stage is not a "change"; only a
     // real paint/edit is. Fall back to #root if the marker is absent (older
@@ -204,11 +204,11 @@ async function capture(page: Page, outDir: string, index: number, label: string)
   return path;
 }
 
-/** Type a message into the conversation panel and send it. */
+/** Type a message into the conversation surface and send it. */
 async function sendChat(page: Page, message: string): Promise<void> {
   // The current quickstart shell exposes a textarea labelled "Message"; stage
   // fields live inside [data-facet-stage], so this selector targets the
-  // conversation panel directly rather than inferring it from the absence of an
+  // conversation surface directly rather than inferring it from the absence of an
   // old field stamp.
   const input = page.locator('textarea[aria-label="Message"]').first();
   await input.fill(message);
@@ -237,7 +237,7 @@ async function chatStep(
 
 /**
  * Click the most prominent default-registry pressable: the first stage-local
- * `<button type="button">`, never the conversation-panel submit button. A
+ * `<button type="button">`, never the conversation surface submit button. A
  * missing/undispatched press is RECORDED (`clicked:false`), never thrown — a
  * page with no pressable is a judge signal.
  */
@@ -290,7 +290,7 @@ export async function runJourney(page: Page, opts: JourneyOptions): Promise<Jour
         // Storage unavailable — the page falls back to its own random id.
       }
     },
-    { key: VISITOR_STORAGE_KEY, id: sessionKey },
+    { key: SESSION_STORAGE_KEY, id: sessionKey },
   );
 
   // Negative mode (DC-002): capture the deterministic known-bad page for the

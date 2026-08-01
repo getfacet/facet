@@ -4,5 +4,5 @@
 export { SseTransport } from "./sse-transport.js";
 export type { SseVisitorMessageInput } from "./sse-transport.js";
 export { LocalTransport } from "./local-transport.js";
-export { browserVisitorId } from "./visitor.js";
+export { browserSessionKey } from "./visitor.js";
 export { persistScreen, loadPersistedScreen } from "./view-storage.js";
